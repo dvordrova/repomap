@@ -149,6 +149,8 @@ the stronger relation. `scripts/quality_preflight.sh` checks its necessary
 precondition before any model call—the symbol path must occur in the bounded
 orientation context—and records the clean revision, toolchain, exact model
 contexts, requests, hashes, and prompt versions.
+The quality loader also rejects obvious credentials in a manifest or hashed
+artifact without copying the detected value into its error.
 
 The Prometheus preflight at revision
 `af77de9a5fd8b5391eb65ad770a454c9e84346c2` selected `QueryRange` in

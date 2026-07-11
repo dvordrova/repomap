@@ -75,3 +75,4 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 - Non-2xx DeepSeek responses must include status and response body in the error
 - Committed quality tasks must replay without an API key or network call
 - Quality artifacts must be manifest-relative, bounded, and verified by SHA-256
+- Quality manifests and artifacts must reject obvious credentials without echoing them
