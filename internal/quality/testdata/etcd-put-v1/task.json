@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "id": "etcd-put-orientation-drilldown-v1",
+  "repository": {
+    "name": "etcd",
+    "revision": "58f45a9ff1c083130830eb02b0cc7d9783609095",
+    "scenario": {
+      "orientation": "legacy-default-build-metadata-unrecorded",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "go_version": "unknown",
+      "gopls_version": "v0.23.0",
+      "build_tags": []
+    }
+  },
+  "goal": "I know etcd only at a high level. Show where a client Put enters, then help inspect kvServer.Put and relevant tests.",
+  "captures": {
+    "orientation": {
+      "provider": "deepseek",
+      "model": "unknown",
+      "prompt_version": "legacy-orientation-unversioned",
+      "captured_at": "2026-05-24T09:49:22Z",
+      "model_context_sha256": "1715fc520da02b67367f72d789db334c2b307f7f4ac9d5e3f969fe3fe17fd5ed",
+      "model_context_bytes": 108668,
+      "provider_request_sha256": null,
+      "provider_request_bytes": null,
+      "latency_ms": null
+    },
+    "source": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "source-assessment-json-v2",
+      "captured_at": "2026-07-10",
+      "model_context_sha256": "997a3804cc71818f4c0e2db640d6ae6a5427934230a531ea2263257452219985",
+      "model_context_bytes": 3001,
+      "provider_request_sha256": "6bf5dab4cb4c257a3b0906817ced5551ae7560020edbe2718bf780ed18c80638",
+      "provider_request_bytes": 6601,
+      "latency_ms": null
+    }
+  },
+  "artifacts": {
+    "orientation_context": {
+      "path": "orientation_context.json",
+      "sha256": "9e9964502f5aab097d3b3a062df93d219a12b1d4ee2b681d143e7b8932fbda37"
+    },
+    "orientation_response": {
+      "path": "orientation_response.json",
+      "sha256": "fde152161b5d6549b3cf0f8252e433bd5f43ad0f8112a49fad2bfea812a1e41f"
+    },
+    "source_bundle": {
+      "path": "source_bundle.json",
+      "sha256": "2251f4ce08085ecadb4d484912aa2c8da8cb4090168fe6800f70fca0d5bbd3a6"
+    },
+    "source_response": {
+      "path": "source_response.json",
+      "sha256": "66dca4d55d499955d0e440ae8f9b27065647adc35558d603a1fa81f2853b2074"
+    },
+    "test_evidence": {
+      "path": "test_evidence.json",
+      "sha256": "5d0bfff6f3ec435044a88ac179d92e6456a155db1bcf226fc0b47e6c08ab2b50"
+    }
+  },
+  "expected": {
+    "directions": [
+      {
+        "id": "grpc-put-request",
+        "aliases": [
+          "grpc put request",
+          "put request flow"
+        ],
+        "important_paths": [
+          "server/etcdserver/api/v3rpc/key.go",
+          "server/storage/mvcc/kvstore.go",
+          "server/storage/wal/encoder.go"
+        ]
+      },
+      {
+        "id": "watch-stream",
+        "aliases": [
+          "watch stream",
+          "watch rpc"
+        ],
+        "important_paths": [
+          "server/etcdserver/api/v3rpc/watch.go",
+          "server/storage/mvcc/watchable_store.go",
+          "server/storage/mvcc/watcher.go"
+        ]
+      },
+      {
+        "id": "lease-lifecycle",
+        "aliases": [
+          "lease lifecycle",
+          "lease grant"
+        ],
+        "important_paths": [
+          "server/lease/lessor.go",
+          "server/lease/lease.go",
+          "server/storage/schema/lease.go"
+        ]
+      },
+      {
+        "id": "server-startup",
+        "aliases": [
+          "server startup",
+          "execute server main"
+        ],
+        "important_paths": [
+          "server/main.go",
+          "server/storage/backend/backend.go",
+          "server/etcdserver/api/v3rpc/grpc.go"
+        ]
+      },
+      {
+        "id": "raft-log-write",
+        "aliases": [
+          "raft log write",
+          "raft proposal"
+        ],
+        "important_paths": [
+          "server/etcdserver/api/rafthttp/transport.go",
+          "server/etcdserver/api/rafthttp/peer.go",
+          "server/storage/wal/encoder.go"
+        ]
+      }
+    ],
+    "drilldown": {
+      "symbol": "kvServer.Put",
+      "path": "server/etcdserver/api/v3rpc/key.go",
+      "source_predicates": [
+        "validates_input",
+        "delegates_operation",
+        "maps_error",
+        "fills_response"
+      ],
+      "test_reference_paths": [
+        "server/etcdserver/api/v3rpc/validationfuzz_test.go",
+        "server/etcdserver/api/v3rpc/util_test.go"
+      ]
+    },
+    "forbidden_overclaims": [
+      {
+        "id": "direct-wal-write",
+        "scope": "orientation",
+        "contains_all": [
+          "directly writes",
+          "wal"
+        ]
+      },
+      {
+        "id": "runtime-observed-without-runtime-evidence",
+        "scope": "drilldown",
+        "contains_all": [
+          "observed at runtime"
+        ]
+      },
+      {
+        "id": "test-reference-proves-coverage",
+        "scope": "drilldown",
+        "contains_all": [
+          "test references prove coverage"
+        ]
+      }
+    ]
+  }
+}

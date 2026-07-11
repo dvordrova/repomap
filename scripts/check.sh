@@ -17,4 +17,8 @@ echo "=== go vet ==="
 go vet ./...
 
 echo ""
+echo "=== offline quality replay ==="
+./scripts/quality_check.sh
+
+echo ""
 echo "OK"
