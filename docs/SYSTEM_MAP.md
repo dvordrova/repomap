@@ -16,8 +16,9 @@ onboarding trial. Modules and challenge cards below are supporting seams, not
 competing roadmaps.
 
 [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) applies one external acceptance lens to
-that order: the known-project onboarding calibration is M5, the feature
-`ChangeBrief` is M6, and later bug/impact policies follow them.
+that order: the known-project onboarding calibration is M5, the free
+exploration workspace is M6, `ChangeBrief` is M7, and later bug/impact policies
+follow them.
 
 ## Capability cubes
 
@@ -81,11 +82,11 @@ not separate products.
 
 | User goal | First focus | Desired result | State |
 | --- | --- | --- | --- |
-| Explore a repository | repository | navigable components, entrypoints, and flows | ranked orientation works; named flow-to-symbol handoff remains isolated |
+| Explore a repository | repository | navigable components, entrypoints, and flows | guided local direction drill-down works; free branch/backtrack workspace is planned in M6 |
 | Understand a symbol | exact symbol | evidence-backed responsibility, files, tests, unknowns | resumable CLI vertical slice works |
 | Work on a ticket | issue text | change surface, analogs, risks, test plan | planned playbook |
 | Diagnose a bug | symptom/test/log | reproduction or discriminating next experiment | planned playbook |
-| Onboard | repository + standard questions | evidence-backed learning path | **active**: static browser baseline works; named direction-to-drill-down handoff is next |
+| Onboard | repository + standard questions | evidence-backed learning path | **active**: full overview and named local drill-down work; exact symbol/source handoff is next |
 | Assess impact | diff or symbol | affected callers, flows, tests, boundaries | planned playbook |
 
 ## Whole-system map
@@ -249,9 +250,9 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 
 | Module | State | Owns | Boundary |
 | --- | --- | --- | --- |
-| `internal/report` | works | HTML/text rendering from saved artifacts, including orientation-only direction cards | no collection or model calls; candidate cards are not actions yet |
+| `internal/report` | works | full onboarding overview, safe run metrics, clickable saved direction evidence, non-overwriting feedback note | no collection or model calls; exact-symbol actions remain outside it |
 | `internal/debugdump` | works | redacted, replayable run artifacts | never credentials or Authorization headers |
-| browser report baseline | works | `./repomap` progress, one orientation call, retained directions, automatic static-report opening | no direction selection or session actions |
+| browser report baseline | works | `./repomap` progress, one orientation call, retained overview, click-through local direction bundles, automatic static-report opening | no exact-symbol or reducer actions |
 | friend onboarding browser | **active** | known-project map, named direction choice, first drill-down | consumes saved application state, never collectors directly |
 | MCP/editor adapter | planned | expose focused actions to external agents/editors | should be another adapter, not the core |
 
@@ -487,13 +488,15 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C12 — Friend onboarding presentation boundary
 
-- State: static browser report and split saved session exist; named direction
-  selection and first browser drill-down are active M5 work.
+- State: full static onboarding report, named direction selection, saved local
+  evidence drill-down, feedback note, and split exact-symbol session exist; the
+  direction-to-exact-symbol bridge remains active M5 work.
 - Question: can the browser, CLI, MCP, and editor open the same investigation
   state without owning analysis logic?
-- First experiment: let a knowledgeable friend choose one named direction from
-  the existing report and render the resulting first saved drill-down; opening
-  a cited file is useful but does not block the first trial.
+- Current experiment: let a knowledgeable friend critique the overview and one
+  saved local direction neighborhood, then measure where an exact symbol/source
+  handoff would materially improve trust. Opening a cited file is useful but
+  does not block the first trial.
 - Pass signal: a presentation adapter can be replaced without changing evidence,
   context selection, or reducer tests.
 

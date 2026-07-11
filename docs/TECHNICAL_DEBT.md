@@ -242,26 +242,28 @@ selective policy is not wired into session memory. Measure repetition and
 latency in the friend onboarding trial before adding dependency-aware reuse;
 this is an efficiency limitation, not a stale-evidence hole.
 
-### TD-009: Candidate directions do not yet route to symbols
+### TD-009: Candidate directions do not yet route to exact symbols
 
-**Evidence:** the default `./repomap` pass now retains and displays every
-validated orientation direction, but the cards are read-only. The isolated
-handoff records a selected flow as provenance while `investigation.Runner`
-still requires a separately supplied exact symbol; it does not consume the
-selected flow when choosing evidence. Flow IDs are derived name slugs, and the
-main CLI exposes neither named selection nor deterministic symbol candidates.
+**Evidence:** the default `./repomap` pass now retains every validated direction
+and each card opens a separately saved deterministic local file/test/package/
+import neighborhood without another provider call. The isolated handoff records
+a selected flow as provenance while `investigation.Runner` still requires a
+separately supplied exact symbol. The main CLI has named local selection but no
+bounded deterministic symbol-candidate step.
 
-**Consequence:** the orientation baseline is useful for choosing where a human
-wants to investigate, but clicking or auto-expanding a model-proposed
-entrypoint would falsely promote a navigation hypothesis into a symbol fact.
-The complete journey still needs a manual bridge.
+**Consequence:** the first friend can inspect a useful grounded neighborhood,
+but reaching source-supported claims still needs a manual exact symbol.
+Auto-promoting the model-proposed entrypoint would falsely turn a navigation
+hypothesis into a symbol fact.
 
 **Done when:** one shared application step maps a user-selected direction's
 verified files to a bounded deterministic set of exact analyzer symbols, asks
 the user to confirm one, and enters the existing investigation reducer through
-the main CLI/browser state. The selected direction must affect ranking and be
-bound to repository identity and revision; model prose alone must never become
-the selected symbol.
+the main CLI/browser state. Search should be lazy, filter functions/methods to
+verified non-test Go files before truncation, retain provenance, and require a
+location-matching exact analyzer resolution before entering the reducer. The
+selected direction must affect ranking and be bound to repository identity and
+revision; model prose alone must never become the selected symbol.
 
 ### TD-010: Name-seeded source questions mix hypotheses with observations
 
@@ -304,6 +306,24 @@ this boundary.
 **Done when:** the assessed-source event/session stores a compact validated
 envelope containing report, warning codes, and parser/evaluator/prompt versions;
 resume tests prove those diagnostics survive without storing raw provider text.
+
+### TD-012: Debug artifact writes are not fully symlink-confined
+
+**Evidence:** the debug writer uses predictable `name.tmp` files and ordinary
+`MkdirAll`/`WriteFile`/`Rename` under a caller-selected `--debug-dir`. The
+default OS user-cache directory is private and the README requires a trusted
+custom location, but a pre-created symlink inside an attacker-controlled custom
+directory can redirect a write outside the run directory.
+
+**Consequence:** the default friend trial is not exposed, but placing
+`--debug-dir` inside an untrusted checkout can overwrite another writable file.
+M5 increases the number of local direction artifacts and therefore makes the
+existing writer limitation more important to keep explicit.
+
+**Done when:** the writer resolves a trusted base once, rejects symlink/special
+ancestors, creates randomized exclusive temp files in confined directories, and
+atomically renames them; adversarial tests cover the run directory, `flows/`,
+and temp-file targets.
 
 ## Maintenance rules
 
