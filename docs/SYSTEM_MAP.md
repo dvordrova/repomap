@@ -276,7 +276,7 @@ This table separates real modularity from intended modularity.
 | Orientation model | concrete `deepseek.Client` in `orient` | runtime endpoint/model/auth/timeout only | prompt, response mode, transport type, and orchestration are joined |
 | Response syntax | tolerant JSON/tagged parser | mostly | provider capability negotiation is absent |
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
-| Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone | no shared goal-aware budget/selection trace |
+| Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone; orientation uses user-facing entrypoint dependencies, bounded kind diversity, and one coherent allowlist | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
 | Quality replay | `quality.Task -> quality.Result` | yes, fully offline | etcd and k6 exist; three repository baselines remain |
 | Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
@@ -311,7 +311,8 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Run: `./scripts/etcd_check.sh ../etcd`.
 - Inspect: `tmp/etcd-snapshot.json` and `tmp/etcd-llm-bundle.json`.
 - Pass signal: facts exist, entrypoints have `open_files`, and the LLM bundle has
-  no raw `file_tree` or raw `internal_edges`.
+  no raw `file_tree` or raw `internal_edges`; every model-visible file path is
+  present in `allowed_paths`.
 - Challenge independently: change ranking limits or one fixture in
   `snapshot`, `gofacts`, or `llmbundle`; no provider call is needed.
 

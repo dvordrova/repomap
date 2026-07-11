@@ -1,6 +1,7 @@
 package llmbundle
 
 import (
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,16 +12,16 @@ import (
 )
 
 type Bundle struct {
-	RepoName               string                    `json:"repo_name"`
-	ReadmeExcerpt          string                    `json:"readme_excerpt"`
-	TopLevelDirectoryStats map[string]int            `json:"top_level_directory_stats"`
-	LanguageHints          []snapshot.LanguageHint   `json:"language_hints"`
-	Go                     goSection                 `json:"go"`
-	KnownDocs              []string                  `json:"known_docs"`
-	CandidateFileIndex     []fileIndexEntry          `json:"candidate_file_index"`
-	AllowedPaths           []string                  `json:"allowed_paths"`
-	SourceSignals          []sourcesignals.Signal    `json:"source_signals,omitempty"`
-	Warnings               []string                  `json:"warnings,omitempty"`
+	RepoName               string                  `json:"repo_name"`
+	ReadmeExcerpt          string                  `json:"readme_excerpt"`
+	TopLevelDirectoryStats map[string]int          `json:"top_level_directory_stats"`
+	LanguageHints          []snapshot.LanguageHint `json:"language_hints"`
+	Go                     goSection               `json:"go"`
+	KnownDocs              []string                `json:"known_docs"`
+	CandidateFileIndex     []fileIndexEntry        `json:"candidate_file_index"`
+	AllowedPaths           []string                `json:"allowed_paths"`
+	SourceSignals          []sourcesignals.Signal  `json:"source_signals,omitempty"`
+	Warnings               []string                `json:"warnings,omitempty"`
 }
 
 type fileIndexEntry struct {
@@ -51,11 +52,10 @@ type moduleSummaryCompact struct {
 }
 
 type entrypointCompact struct {
-	Kind        string   `json:"kind"`
-	ImportPath  string   `json:"import_path"`
-	PackageDir  string   `json:"package_dir"`
-	OpenFiles   []string `json:"open_files"`
-	GoFiles     []string `json:"go_files"`
+	Kind       string   `json:"kind"`
+	ImportPath string   `json:"import_path"`
+	PackageDir string   `json:"package_dir"`
+	OpenFiles  []string `json:"open_files"`
 }
 
 type Options struct {
@@ -125,8 +125,11 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			modSummaries = modSummaries[:opts.MaxModules]
 		}
 
-		eps := make([]entrypointCompact, 0, len(f.EntrypointPackages))
-		for _, ep := range f.EntrypointPackages {
+		selectedEntrypoints := selectOrientationEntrypoints(f.EntrypointPackages)
+		selectedEntrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
+		eps := make([]entrypointCompact, 0, len(selectedEntrypoints))
+		for _, ep := range selectedEntrypoints {
+			selectedEntrypointImports[ep.ImportPath] = struct{}{}
 			openFiles := make([]string, 0, len(ep.GoFiles))
 			for _, gf := range ep.GoFiles {
 				if ep.PackageDir == "." || ep.PackageDir == "" {
@@ -140,7 +143,6 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				ImportPath: ep.ImportPath,
 				PackageDir: ep.PackageDir,
 				OpenFiles:  openFiles,
-				GoFiles:    ep.GoFiles,
 			})
 		}
 		if len(eps) > opts.MaxEntrypoints {
@@ -148,7 +150,12 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			eps = eps[:opts.MaxEntrypoints]
 		}
 
-		candidates := f.OrientationCandidates
+		candidates := make([]gofacts.OrientationCandidate, 0, len(f.OrientationCandidates))
+		for _, candidate := range f.OrientationCandidates {
+			if _, ok := selectedEntrypointImports[candidate.EntrypointPackage]; ok {
+				candidates = append(candidates, candidate)
+			}
+		}
 		if len(candidates) > opts.MaxFiles {
 			b.Warnings = append(b.Warnings, "truncated orientation candidates")
 			candidates = candidates[:opts.MaxFiles]
@@ -183,11 +190,19 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
 		if len(fileIndex) > opts.MaxFiles {
 			b.Warnings = append(b.Warnings, "truncated candidate_file_index")
-			fileIndex = fileIndex[:opts.MaxFiles]
+			fileIndex = selectFileIndex(fileIndex, opts.MaxFiles)
 		}
 
 		b.CandidateFileIndex = fileIndex
 		b.AllowedPaths = buildAllowedPaths(fileIndex)
+		allowedSet := makePathSet(b.AllowedPaths)
+		b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
+		b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
+		b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)
+		b.Go.OrientationCandidates = filterOrientationCandidates(
+			b.Go.OrientationCandidates,
+			allowedSet,
+		)
 	}
 
 	return b
@@ -200,8 +215,12 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 	signalMap := sourcesignals.BuildFileSignalMap(fileSignals)
 
 	entrypointPaths := make(map[string]struct{})
+	entrypointDependencyDirs := make(map[string]struct{})
 	if facts != nil {
-		for _, ep := range facts.EntrypointPackages {
+		selectedEntrypoints := selectOrientationEntrypoints(facts.EntrypointPackages)
+		entrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
+		for _, ep := range selectedEntrypoints {
+			entrypointImports[ep.ImportPath] = struct{}{}
 			for _, gf := range ep.GoFiles {
 				p := gf
 				if ep.PackageDir != "." && ep.PackageDir != "" {
@@ -211,8 +230,19 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 			}
 		}
 		for _, oc := range facts.OrientationCandidates {
+			if _, ok := entrypointImports[oc.EntrypointPackage]; !ok {
+				continue
+			}
 			for _, of := range oc.OpenFiles {
 				entrypointPaths[of] = struct{}{}
+			}
+		}
+		for _, edge := range facts.InternalEdges {
+			if _, ok := entrypointImports[edge.From]; !ok {
+				continue
+			}
+			if dir, ok := repositoryDirForImport(edge.To, facts.Modules); ok {
+				entrypointDependencyDirs[dir] = struct{}{}
 			}
 		}
 	}
@@ -225,7 +255,13 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 	for _, f := range fileList {
 		seen[f] = struct{}{}
 		kind := detectFileKind(f)
-		score, signals, reasons := scoreFile(f, kind, entrypointPaths, knownDocSet)
+		score, signals, reasons := scoreFile(
+			f,
+			kind,
+			entrypointPaths,
+			entrypointDependencyDirs,
+			knownDocSet,
+		)
 
 		// Enrich with source signal categories
 		if fileSignalsForFile, ok := signalMap[f]; ok {
@@ -259,6 +295,151 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 	return entries
 }
 
+func selectOrientationEntrypoints(entrypoints []gofacts.Entrypoint) []gofacts.Entrypoint {
+	selected := make([]gofacts.Entrypoint, 0, len(entrypoints))
+	for _, entrypoint := range entrypoints {
+		packageDir := strings.Trim(strings.ReplaceAll(entrypoint.PackageDir, "\\", "/"), "/")
+		userFacingKind := entrypoint.Kind == "primary_binary" || entrypoint.Kind == "cli"
+		rootOrCmdUnknown := entrypoint.Kind == "unknown" &&
+			(packageDir == "" || packageDir == "." || packageDir == "cmd" || strings.HasPrefix(packageDir, "cmd/"))
+		if userFacingKind || rootOrCmdUnknown {
+			selected = append(selected, entrypoint)
+		}
+	}
+	if len(selected) > 0 {
+		return selected
+	}
+
+	const fallbackLimit = 3
+	fallback := append([]gofacts.Entrypoint(nil), entrypoints...)
+	sort.Slice(fallback, func(i, j int) bool {
+		return fallback[i].ImportPath < fallback[j].ImportPath
+	})
+	if len(fallback) > fallbackLimit {
+		return fallback[:fallbackLimit]
+	}
+	return fallback
+}
+
+func selectFileIndex(entries []fileIndexEntry, maxFiles int) []fileIndexEntry {
+	if len(entries) <= maxFiles {
+		return entries
+	}
+
+	testTarget := maxFiles / 10
+	docTarget := maxFiles / 15
+	flexSlots := maxFiles / 10
+	targets := []struct {
+		group string
+		count int
+	}{
+		{group: "source", count: maxFiles - testTarget - docTarget - flexSlots},
+		{group: "test", count: testTarget},
+		{group: "doc", count: docTarget},
+	}
+
+	selected := make([]bool, len(entries))
+	selectedCount := 0
+	selectedByGroup := make(map[string]int)
+	for i := range entries {
+		if selectedCount == maxFiles {
+			break
+		}
+		if !containsFileSignal(entries[i].Signals, "entrypoint") {
+			continue
+		}
+		selected[i] = true
+		selectedCount++
+		selectedByGroup[fileIndexGroup(entries[i].Kind)]++
+	}
+	for _, target := range targets {
+		remaining := target.count - selectedByGroup[target.group]
+		for i := range entries {
+			if remaining <= 0 || selectedCount == maxFiles {
+				break
+			}
+			if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
+				continue
+			}
+			selected[i] = true
+			selectedCount++
+			remaining--
+		}
+	}
+
+	for i := range entries {
+		if selectedCount == maxFiles {
+			break
+		}
+		if selected[i] {
+			continue
+		}
+		selected[i] = true
+		selectedCount++
+	}
+
+	result := make([]fileIndexEntry, 0, maxFiles)
+	for i := range entries {
+		if selected[i] {
+			result = append(result, entries[i])
+		}
+	}
+	return result
+}
+
+func containsFileSignal(signals []string, target string) bool {
+	for _, signal := range signals {
+		if signal == target {
+			return true
+		}
+	}
+	return false
+}
+
+func fileIndexGroup(kind string) string {
+	switch kind {
+	case "source":
+		return "source"
+	case "test":
+		return "test"
+	case "doc":
+		return "doc"
+	default:
+		return "support"
+	}
+}
+
+func repositoryDirForImport(importPath string, modules []gofacts.ModuleFact) (string, bool) {
+	var best *gofacts.ModuleFact
+	for i := range modules {
+		modulePath := strings.TrimSuffix(modules[i].ModulePath, "/")
+		if modulePath == "" || (importPath != modulePath && !strings.HasPrefix(importPath, modulePath+"/")) {
+			continue
+		}
+		if best == nil || len(modulePath) > len(strings.TrimSuffix(best.ModulePath, "/")) {
+			best = &modules[i]
+		}
+	}
+	if best == nil {
+		return "", false
+	}
+
+	modulePath := strings.TrimSuffix(best.ModulePath, "/")
+	relative := strings.TrimPrefix(importPath, modulePath)
+	relative = strings.TrimPrefix(relative, "/")
+	moduleDir := strings.Trim(strings.ReplaceAll(best.ModuleDir, "\\", "/"), "/")
+	if moduleDir == "" || moduleDir == "." {
+		if relative == "" {
+			return ".", true
+		}
+		return path.Clean(relative), true
+	}
+	if relative == "" {
+		return path.Clean(moduleDir), true
+	}
+	return path.Join(moduleDir, relative), true
+}
+
 func detectFileKind(path string) string {
 	lower := strings.ToLower(path)
 	base := strings.ToLower(filepath.Base(path))
@@ -266,7 +447,7 @@ func detectFileKind(path string) string {
 	if strings.HasSuffix(base, "_test.go") {
 		return "test"
 	}
-	if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".drawio") {
+	if isDocumentationFile(path) {
 		return "doc"
 	}
 	if strings.HasSuffix(lower, ".proto") {
@@ -286,11 +467,17 @@ func detectFileKind(path string) string {
 	return "unknown"
 }
 
-func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string]struct{}) (int, []string, []string) {
+func scoreFile(
+	filePath string,
+	kind string,
+	entrypointPaths map[string]struct{},
+	entrypointDependencyDirs map[string]struct{},
+	knownDocSet map[string]struct{},
+) (int, []string, []string) {
 	score := 0
 	var signals []string
 	var reasons []string
-	lower := strings.ToLower(path)
+	lower := strings.ToLower(filePath)
 
 	addSignal := func(s string, sScore int, reason string) {
 		signals = append(signals, s)
@@ -298,8 +485,13 @@ func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string
 		score += sScore
 	}
 
-	if _, ok := entrypointPaths[path]; ok {
+	if _, ok := entrypointPaths[filePath]; ok {
 		addSignal("entrypoint", 100, "entrypoint source file")
+	}
+	if kind == "source" {
+		if _, ok := entrypointDependencyDirs[path.Dir(filePath)]; ok {
+			addSignal("entrypoint-dependency", 80, "package imported directly by an entrypoint")
+		}
 	}
 
 	for _, word := range []string{"server", "etcdserver"} {
@@ -310,7 +502,7 @@ func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string
 	}
 
 	for _, word := range []string{"v3rpc", "lease", "mvcc", "wal", "backend", "rafthttp"} {
-		if strings.Contains(lower, word) {
+		if hasPathToken(lower, word) {
 			addSignal(word, 65, word+" component")
 			break
 		}
@@ -324,7 +516,7 @@ func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string
 	}
 
 	for _, word := range []string{"client", "kv", "watch", "lease", "txn"} {
-		if strings.Contains(lower, "client/") && strings.Contains(lower, word) {
+		if strings.Contains(lower, "client/") && hasPathToken(lower, word) {
 			addSignal("client-"+word, 70, "client "+word+" file")
 			break
 		}
@@ -334,7 +526,7 @@ func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string
 		addSignal("etcdctl-cmd", 70, "etcdctl command file")
 	}
 
-	if _, ok := knownDocSet[path]; ok {
+	if _, ok := knownDocSet[filePath]; ok {
 		addSignal("known-doc", 60, "documentation file")
 
 		for _, docWord := range []string{"internals", "workflow", "architecture", "api", "raft", "watch", "write", "read"} {
@@ -346,7 +538,7 @@ func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string
 	}
 
 	if kind == "test" {
-		addSignal("test", 40, "test file near selected packages")
+		addSignal("test", 15, "Go test file")
 	}
 
 	if kind == "proto" {
@@ -372,6 +564,32 @@ func scoreFile(path string, kind string, entrypointPaths, knownDocSet map[string
 	return score, signals, reasons
 }
 
+func hasPathToken(value, token string) bool {
+	for offset := 0; offset < len(value); {
+		index := strings.Index(value[offset:], token)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		end := start + len(token)
+		if (start == 0 || isPathTokenBoundary(value[start-1])) &&
+			(end == len(value) || isPathTokenBoundary(value[end])) {
+			return true
+		}
+		offset = start + 1
+	}
+	return false
+}
+
+func isPathTokenBoundary(value byte) bool {
+	switch value {
+	case '/', '\\', '.', '_', '-':
+		return true
+	default:
+		return false
+	}
+}
+
 func buildAllowedPaths(index []fileIndexEntry) []string {
 	paths := make([]string, len(index))
 	for i, e := range index {
@@ -379,6 +597,67 @@ func buildAllowedPaths(index []fileIndexEntry) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func makePathSet(paths []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(paths))
+	for _, filePath := range paths {
+		result[filePath] = struct{}{}
+	}
+	return result
+}
+
+func filterPaths(paths []string, allowed map[string]struct{}) []string {
+	result := make([]string, 0, len(paths))
+	for _, filePath := range paths {
+		if _, ok := allowed[filePath]; ok {
+			result = append(result, filePath)
+		}
+	}
+	return result
+}
+
+func filterSourceSignals(signals []sourcesignals.Signal, allowed map[string]struct{}) []sourcesignals.Signal {
+	result := make([]sourcesignals.Signal, 0, len(signals))
+	for _, signal := range signals {
+		if _, ok := allowed[signal.Path]; ok {
+			result = append(result, signal)
+		}
+	}
+	return result
+}
+
+func filterEntrypoints(entrypoints []entrypointCompact, allowed map[string]struct{}) []entrypointCompact {
+	result := make([]entrypointCompact, 0, len(entrypoints))
+	for _, entrypoint := range entrypoints {
+		openFiles := make([]string, 0, len(entrypoint.OpenFiles))
+		for _, openFile := range entrypoint.OpenFiles {
+			if _, ok := allowed[openFile]; !ok {
+				continue
+			}
+			openFiles = append(openFiles, openFile)
+		}
+		if len(openFiles) == 0 {
+			continue
+		}
+		entrypoint.OpenFiles = openFiles
+		result = append(result, entrypoint)
+	}
+	return result
+}
+
+func filterOrientationCandidates(
+	candidates []gofacts.OrientationCandidate,
+	allowed map[string]struct{},
+) []gofacts.OrientationCandidate {
+	result := make([]gofacts.OrientationCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate.OpenFiles = filterPaths(candidate.OpenFiles, allowed)
+		if len(candidate.OpenFiles) > 0 {
+			result = append(result, candidate)
+		}
+	}
+	return result
 }
 
 func findKnownDocs(files []string) []string {
@@ -398,6 +677,9 @@ func findKnownDocs(files []string) []string {
 	var docs []string
 
 	for _, f := range files {
+		if !isDocumentationFile(f) {
+			continue
+		}
 		lower := strings.ToLower(f)
 
 		matched := false
@@ -408,13 +690,10 @@ func findKnownDocs(files []string) []string {
 			}
 		}
 		if !matched {
-			ext := strings.ToLower(f)
-			if strings.HasSuffix(ext, ".md") || strings.HasSuffix(ext, ".drawio") {
-				for _, w := range interestingWords {
-					if strings.Contains(lower, w) {
-						matched = true
-						break
-					}
+			for _, w := range interestingWords {
+				if strings.Contains(lower, w) {
+					matched = true
+					break
 				}
 			}
 		}
@@ -436,6 +715,20 @@ func findKnownDocs(files []string) []string {
 	}
 
 	return docs
+}
+
+func isDocumentationFile(filePath string) bool {
+	base := strings.ToLower(filepath.Base(filePath))
+	switch strings.ToLower(filepath.Ext(base)) {
+	case ".md", ".markdown", ".mdx", ".rst", ".adoc", ".asciidoc", ".drawio":
+		return true
+	}
+	switch base {
+	case "readme", "contributing", "changelog", "architecture", "design":
+		return true
+	default:
+		return false
+	}
 }
 
 func truncateStr(s string, maxBytes int) string {

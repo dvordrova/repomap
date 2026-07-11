@@ -69,6 +69,7 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 - `--llm-bundle-only` must not require `DEEPSEEK_API_KEY`
 - LLM bundle must not include full `file_tree`
 - LLM bundle must include `open_files` for entrypoints
+- Every model-visible repository file path must occur in `allowed_paths`
 - Debug dumps must redact sensitive keys (api_key, token, authorization, password)
 - Debug dumps must never contain Authorization headers
 - Invalid DeepSeek JSON must return a clear error

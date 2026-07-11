@@ -187,6 +187,13 @@ launch, result collection, and teardown. Within the retained window the current
 name-based question seeder emitted only `maps_error`; DeepSeek correctly marked
 it ambiguous, leaving no source-supported claim.
 
+The same boundary now blocks two otherwise linked M3 preflights before a model
+call: NATS `client.processInboundMsg` and golangci-lint
+`runCommand.runAnalysis` are present in their 60-path orientation bundles and
+resolve exactly, but neither produces a bounded source question. This confirms
+that the gap belongs to the source-selection/question cube rather than to model
+quality or orientation ranking.
+
 **Consequence:** blindly selecting a central long method can produce excellent
 navigation but a weak semantic step. Increasing every prompt globally would
 spend context without ensuring that the relevant operation is included.
