@@ -1,12 +1,14 @@
 # repomap core idea
 
 repomap helps understand unfamiliar local Go repositories by extracting
-deterministic local facts and optionally asking DeepSeek to interpret them
-as structured orientation reports.
+deterministic local facts and optionally asking an OpenAI-compatible model to
+interpret them as structured orientation reports. DeepSeek remains the reference
+provider and calibration target; company-hosted compatible endpoints use the
+same bounded request contract.
 
 Product and research decisions that intentionally remain unresolved are tracked
-in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). In particular, DeepSeek is the current
-model integration, not a settled requirement for every installation.
+in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). The concrete client package is still
+named `deepseek`, but endpoint/model/auth/timeout configuration is provider-neutral.
 
 The proposed shared investigation workflow is documented in
 [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md). Demonstrated implementation
@@ -23,7 +25,8 @@ The ordered product outcomes and their observable completion conditions are in
 
 ### 1. Deterministic local extraction
 
-Run entirely locally, no network, no API keys:
+Run without a model or API key. Go package discovery deliberately respects the
+engineer's normal Go environment and may use a configured company proxy:
 
 - `git ls-files` for tracked file inventory
 - README (truncated)
@@ -68,20 +71,28 @@ Must NOT include:
 - full README
 - raw internal_edges beyond limits
 
-### 3. DeepSeek orientation
+### 3. Model orientation
 
-DeepSeek receives only the compact facts bundle.
-DeepSeek returns a JSON orientation report.
+The configured provider receives only the compact facts bundle and returns a
+JSON orientation report. Structured verified paths are normalized against the
+bundle allowlist, and path-like mentions inside evidence prose cannot name an
+unprovided file. Other prose remains an explicit model interpretation.
 
 The report proposes **candidate runtime/event flows**, not folder summaries.
 Every candidate flow must cite evidence from the bundle.
 Confidence must be explicit, warnings for low confidence.
 
-### 4. Later flow analysis (planned, not implemented)
+### 4. Focused flow analysis (implemented, opt-in)
 
-- user chooses one candidate flow
-- repomap gathers focused files/tests/docs for that flow
-- DeepSeek explains only that flow
+- `--flows N` expands only the top N candidate directions;
+- repomap gathers focused files/tests/docs/source signals for each selected flow;
+- the provider explains only the focused bundle;
+- known fields are normalized, verified paths are allowlisted, and unsafe or
+  incomplete reports are rejected locally.
+
+Named user choice and the resumable orientation-to-investigation handoff are not
+yet wired into the main CLI. They exist as an isolated M2 slice and remain the
+important integration boundary for the progressive product journey.
 
 ## Experimental local evidence layer
 

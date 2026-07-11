@@ -8,30 +8,36 @@ Last reviewed: 2026-07-10.
 
 ## Active
 
-### TD-001: Model integration is named and configured as DeepSeek
+### TD-001: Model capability boundary is still named and owned by DeepSeek
 
-**Evidence:** the OpenAI-compatible Ollama endpoint accepted the existing request,
-but configuration and artifacts still use `DEEPSEEK_*` and `deepseek_*` names.
+**Evidence:** the main CLI now has atomic provider-neutral `REPOMAP_LLM_*`
+endpoint/model/auth/timeout configuration, explicit no-auth, DeepSeek aliases,
+`doctor`, and request preview. However, `internal/orient` still constructs the
+concrete `deepseek.Client`; prompt methods, response mode, retries, and several
+artifact/experiment names remain provider-owned.
 
-**Consequence:** provider details leak into CLI configuration and orchestration,
-making local or alternative hosted providers look like unsupported hacks.
+**Consequence:** a compatible company endpoint is a supported runtime choice,
+but changing the model capability contract or using a non-compatible transport
+still requires editing orchestration.
 
-**Done when:** the consuming layer owns a small model-client contract; endpoint,
-model, authentication, timeout, and output mode are provider-neutral; DeepSeek
-configuration remains available through documented compatibility aliases.
+**Done when:** each consuming cube owns its small validated model contract and a
+second client can implement it without importing prompt/domain state from the
+DeepSeek package. Keep the now-working provider-neutral runtime configuration
+and documented DeepSeek aliases.
 
 ### TD-002: HTTP timeout and cancellation do not fit local inference
 
-**Evidence:** the client has a fixed 60-second timeout. Qwen 3B on local CPU did
-not return headers before it expired. Ollama continued generation after the HTTP
-client timed out, and a retry waited behind the abandoned request.
+**Evidence:** timeout is now configurable through `REPOMAP_LLM_TIMEOUT`; the
+doctor uses one small request without retries. Normal orientation/source calls
+still retry retryable failures, and prior Qwen 3B runs showed Ollama continuing
+generation after client cancellation while a retry waited behind it.
 
-**Consequence:** slow local providers fail even when healthy and may waste CPU
-after cancellation.
+**Consequence:** an engineer can choose an adequate timeout, but slow local
+generation may still waste CPU after cancellation and retries may amplify it.
 
-**Done when:** timeout is configurable per provider/profile, cancellation behavior
-has an integration test, and retries do not amplify an already-running local
-generation.
+**Done when:** cancellation behavior has an integration test and retry policy can
+avoid amplifying an already-running local generation. Configurable timeout and
+the no-retry doctor probe are complete.
 
 ### TD-003: The full symbol prompt is unsuitable for CPU-local models
 
@@ -125,15 +131,15 @@ separately.
 
 ### TD-005: Experiment artifacts lack explicit contract versions
 
-**Evidence:** `cmd/symbol-evaluate` now normalizes and scores a captured response
-without another model call, and `scripts/ollama_symbol_experiment.sh` records the
-native Ollama request, envelope, raw response, timing, normalized report, parser
-warnings, and evaluation. The artifacts do not yet record stable prompt, schema,
-parser, or evaluator version identifiers.
+**Evidence:** `cmd/symbol-evaluate` normalizes and scores a captured response
+without another model call. The obsolete monolithic Ollama experiment that
+produced unversioned request/envelope/report directories has been removed; its
+measured failures remain recorded above. Any surviving older captured directory
+still lacks stable prompt, schema, parser, or evaluator version identifiers.
 
 `ollama_symbol_staged_experiment.sh` does record protocol, prompt, schema,
 reducer, evaluator, model, Ollama, options, and bundle-hash metadata. The older
-monolithic path still lacks equivalent versioning.
+monolithic path was removed; any historical captures from it remain incomparable.
 
 The M3 quality task/result pair now records provider, model, prompt version,
 capture precision, model-context bytes/hash, nullable provider-request

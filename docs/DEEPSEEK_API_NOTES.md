@@ -1,6 +1,30 @@
 # DeepSeek API notes
 
-Implementation reference for the DeepSeek client in `internal/deepseek/`.
+Implementation reference for the OpenAI-compatible transport and DeepSeek
+reference prompts in `internal/deepseek/`.
+
+## Configuration modes
+
+New integrations use one atomic namespace:
+
+```text
+REPOMAP_LLM_ENDPOINT      required full chat/completions URL
+REPOMAP_LLM_MODEL         model name
+REPOMAP_LLM_API_KEY       required for bearer auth
+REPOMAP_LLM_AUTH          bearer (default) or none
+REPOMAP_LLM_MAX_TOKENS    positive integer (default 6000)
+REPOMAP_LLM_TIMEOUT       Go duration (default 60s)
+```
+
+Once any `REPOMAP_LLM_*` variable is present, the endpoint is required and no
+`DEEPSEEK_*` value is inherited. This prevents a company key from falling back
+to the public DeepSeek endpoint and prevents a stale DeepSeek key from reaching
+an internal endpoint.
+
+`DEEPSEEK_ENDPOINT`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_KEY`,
+`DEEPSEEK_MAX_TOKENS`, `DEEPSEEK_TIMEOUT`, and `DEEPSEEK_AUTH` remain a
+legacy-only compatibility mode. With no explicit legacy endpoint/model, the
+DeepSeek defaults below are used.
 
 ## Endpoint
 
@@ -8,17 +32,19 @@ Implementation reference for the DeepSeek client in `internal/deepseek/`.
 https://api.deepseek.com/chat/completions
 ```
 
-Configurable via `DEEPSEEK_ENDPOINT` env var.
+This is the default only in legacy/DeepSeek mode.
 
 ## Authentication
 
-Bearer token via `DEEPSEEK_API_KEY`. Sent in `Authorization: Bearer <key>` header.
+Bearer sends `Authorization: Bearer <key>`. Explicit `AUTH=none` sends no
+Authorization header and does not retain an otherwise configured key. No-auth
+requires an explicit endpoint in both generic and legacy modes.
 
 Must NEVER be written to disk or debug artifacts.
 
 ## Model
 
-`DEEPSEEK_MODEL` env var. Default: `deepseek-v4-flash`.
+DeepSeek-mode default: `deepseek-v4-flash`.
 
 ## Request shape
 
@@ -36,7 +62,7 @@ Must NEVER be written to disk or debug artifacts.
     }
   ],
   "temperature": 0.1,
-  "max_tokens": 4000,
+  "max_tokens": 6000,
   "response_format": {"type": "json_object"}
 }
 ```
@@ -46,7 +72,7 @@ Must NEVER be written to disk or debug artifacts.
 - Request must include `"response_format": {"type": "json_object"}`.
 - Prompt must contain the word **json** (case-insensitive match is fine).
 - Prompt must include an example JSON shape so the model knows the expected schema.
-- `max_tokens` must be high enough to avoid truncation (default 4000, configurable via `DEEPSEEK_MAX_TOKENS`).
+- `max_tokens` must be high enough to avoid truncation (default 6000).
 
 ## Expected orientation report shape
 
@@ -84,6 +110,9 @@ Must NEVER be written to disk or debug artifacts.
   ],
   "questions_for_human": [
     "question that helps guide next analysis step"
+  ],
+  "unverified_paths": [
+    {"path": "suspected/repo-relative/path", "reason": "not in allowed_paths"}
   ],
   "warnings": [
     "uncertainty or missing context"
@@ -179,10 +208,13 @@ Stable bundle/response fixtures and an in-memory explainer live in
 
 ## Error handling
 
-- Non-2xx HTTP response: return error with status code and response body (redacted).
+- Non-2xx HTTP response: return status plus a bounded response body. Obvious
+  credential-like content is replaced with a redaction marker rather than echoed
+  into stderr or debug artifacts.
 - Orientation responses still require JSON. Focused symbol responses are parsed
   tolerantly and fail only when neither a JSON object nor tagged report can be recovered.
-- `DEEPSEEK_API_KEY` not required for `--snapshot-only` or `--llm-bundle-only`.
+- No key is required for `--snapshot-only`, `--llm-bundle-only`, or request
+  preview. Live bearer calls require the key from the active namespace.
 
 ## Retry behavior
 
@@ -195,7 +227,7 @@ Stable bundle/response fixtures and an in-memory explainer live in
 
 ```bash
 repomap orient --repo ../etcd --debug-dir .repomap-runs --dump-llm
-./scripts/debug_last_run.sh
+./scripts/debug_last_run.sh .repomap-runs
 ```
 
 Artifacts produced:

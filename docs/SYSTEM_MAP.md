@@ -14,6 +14,10 @@ understanding and the shared investigation loop are complete; the active
 milestone is the five-repository quality suite. Modules and challenge cards
 below are supporting seams, not competing roadmaps.
 
+[ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) applies one external acceptance lens to
+that order: exploration spans M3/M5, the feature `ChangeBrief` is M6, and
+onboarding is M7.
+
 ## Capability cubes
 
 A cube is a typed capability, not a provider wrapper. It has one validated input,
@@ -31,8 +35,9 @@ source`, or `find tests`, never after DeepSeek, Ollama, gopls, or a future UI.
 | evaluate saved journey | versioned task plus hash-verified artifacts | independent quality dimensions | offline `quality.Load` and `quality.Evaluate` |
 | present investigation | saved validated state | CLI/browser/editor view | playground prints pending action/choices; browser/editor adapters planned |
 
-The application composition root selects implementations. The default profile
-uses DeepSeek for interpretation capabilities. A future
+The application composition root selects implementations. The main CLI accepts
+an explicitly configured OpenAI-compatible endpoint; the current prompt and
+client implementation remains in the DeepSeek-named package. A future
 `--really-dumb-model` profile can select alternate implementations that split a
 request into smaller calls and use stronger local reducers, while returning the
 same capability output. There is no generic cube registry and no provider-name
@@ -74,7 +79,7 @@ not separate products.
 
 | User goal | First focus | Desired result | State |
 | --- | --- | --- | --- |
-| Explore a repository | repository | navigable components, entrypoints, and flows | orientation plus one explicit flow-to-symbol handoff works |
+| Explore a repository | repository | navigable components, entrypoints, and flows | ranked orientation works; named flow-to-symbol handoff remains isolated |
 | Understand a symbol | exact symbol | evidence-backed responsibility, files, tests, unknowns | resumable CLI vertical slice works |
 | Work on a ticket | issue text | change surface, analogs, risks, test plan | planned playbook |
 | Diagnose a bug | symptom/test/log | reproduction or discriminating next experiment | planned playbook |
@@ -95,10 +100,10 @@ flowchart LR
         Snapshot --> LLMBundle["llmbundle"]
         LLMBundle -->|"focused scan"| Signals["sourcesignals"]
         Signals -->|"bounded signals"| LLMBundle
-        LLMBundle -->|"orientation request"| DeepSeek["deepseek"]
-        DeepSeek -->|"candidate flows"| Flow["flowexplain"]
-        Flow -->|"bounded flow bundle"| DeepSeek
-        DeepSeek --> Report["report + debugdump"]
+        LLMBundle -->|"orientation request"| OrientModel["configured OpenAI-compatible model"]
+        OrientModel -->|"candidate flows"| Flow["flowexplain"]
+        Flow -->|"bounded flow bundle"| OrientModel
+        OrientModel --> Report["report + debugdump"]
     end
 
     subgraph SymbolPath["Isolated symbol evidence pipeline"]
@@ -143,11 +148,13 @@ flowchart LR
     Normalize -. "future claim events" .-> Investigation
 ```
 
-The user-facing orientation command is still provider-bound, but its saved JSON
-can now cross a deliberately small handoff into the stronger symbol evidence
-path. That integration currently lives in `investigation-playground`, not the
-main CLI or browser. M3 measures this connected slice before broader context
-selection, playbooks, or another orchestration surface are added.
+The user-facing orientation command now has provider-neutral endpoint/model/auth
+configuration, but its prompt, response mode, and orchestration still depend on
+the concrete `deepseek.Client`. Saved JSON can cross a deliberately small
+handoff into the stronger symbol evidence path. That integration currently lives
+in `investigation-playground`, not the main CLI or browser. M3 measures this
+connected slice before broader context selection, playbooks, or another
+orchestration surface are added.
 
 ## Modules that exist
 
@@ -155,7 +162,7 @@ selection, playbooks, or another orchestration surface are added.
 
 | Module | State | Owns | Does not own |
 | --- | --- | --- | --- |
-| `cmd/repomap` | works | CLI flags, wiring, output destination | analysis rules or model prompts |
+| `cmd/repomap` | works | CLI flags, provider doctor/request preview, wiring, output destination | analysis rules or model prompts |
 | `internal/orient` | works, debt | current end-to-end orientation workflow | future shared investigation state |
 | `cmd/gopls-playground` | isolated | direct analyzer experiments and human graph summaries | product orchestration |
 | `cmd/symbol-playground` | isolated | exact-symbol experiment and optional DeepSeek call | provider neutrality or persistence |
@@ -163,8 +170,9 @@ selection, playbooks, or another orchestration surface are added.
 | `cmd/investigation-playground` | isolated | start/handoff/resume wiring, capability execution, saved artifacts | reducer rules or provider registry |
 | `cmd/quality-evaluate` | works | loading one versioned task, writing its replay result, and returning pass/fail | model or repository calls |
 
-`internal/orient` imports the concrete DeepSeek client. This is a known temporary
-boundary: replacing the provider currently requires touching orchestration.
+`internal/orient` imports the concrete DeepSeek client. Runtime endpoint/model/
+auth/timeout no longer require a code change, but replacing the output contract
+or client still requires touching orchestration.
 
 ### Deterministic repository collectors
 
@@ -209,7 +217,7 @@ valid. Do not add a database before measurements require it.
 
 | Module | State | Owns | Boundary |
 | --- | --- | --- | --- |
-| `internal/deepseek` | works, debt | current HTTP client and orientation/symbol prompts | named and configured as one provider |
+| `internal/deepseek` | works, debt | OpenAI-compatible HTTP transport, DeepSeek defaults, and orientation/symbol prompts | runtime config is provider-neutral; prompts/client type are not |
 | `internal/symbol.Service` | isolated | consumer-owned `Explainer` interface and explain/parse/evaluate sequence | model cannot create structural facts |
 | `internal/symbol` parser | isolated | tolerant JSON/tagged normalization and local repair | warnings instead of needless failure where safe |
 | `internal/symbol` evaluator | isolated | observable contract score | does not claim to measure semantic truth |
@@ -263,7 +271,7 @@ This table separates real modularity from intended modularity.
 | --- | --- | --- | --- |
 | Language analyzer | `analyzer.Provider -> evidence.Graph` | yes, in the isolated path | only gopls adapter exists; main CLI does not consume the port |
 | Symbol model | consumer-owned `symbol.Explainer` | yes in tests/services | playground still constructs DeepSeek directly |
-| Orientation model | concrete `deepseek.Client` in `orient` | no | provider config, prompt, transport, and orchestration are joined |
+| Orientation model | concrete `deepseek.Client` in `orient` | runtime endpoint/model/auth/timeout only | prompt, response mode, transport type, and orchestration are joined |
 | Response syntax | tolerant JSON/tagged parser | mostly | provider capability negotiation is absent |
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone | no shared goal-aware budget/selection trace |
@@ -283,7 +291,7 @@ more modular by itself.
 | context assembly | select a goal-relevant evidence slice under node/edge/source/token budgets | beat fixed symbol bundle on size without losing cited evidence | model calls or session transitions |
 | claim ledger | separate facts from inferred/source/test/runtime-supported claims | invalidate one claim when supporting evidence changes | raw model response storage |
 | session catalog | discover and retain multiple investigation sessions | reopen one named session without passing its JSON path | repository fact duplication |
-| provider-neutral model adapter | endpoint/model/auth/timeout/output capability | run one fixture through DeepSeek and Ollama with the same consumer contract | prompt-specific domain state |
+| consumer-owned model capability | one validated request/result contract per cube | run one fixture through two clients with the same consumer contract | endpoint/auth config and prompt-specific domain state |
 | presentation API | read progress/state and request allowed actions | open one recommended file from a symbol result | analyzer/LSP protocol |
 
 Names in this table describe responsibilities, not approved Go package names or
@@ -377,16 +385,14 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Question: what quality/latency/size trade-off does one model provide on the
   same evidence?
 - DeepSeek run: `./scripts/symbol_prompt_experiment.sh LABEL ../etcd kvServer.Put json`.
-- Ollama run: `./scripts/ollama_symbol_experiment.sh MODEL BUNDLE OUTPUT_DIR`.
 - Staged 1.5B run:
   `./scripts/ollama_symbol_staged_experiment.sh MODEL BUNDLE OUTPUT_DIR`.
 - Verify a saved staged run without another model call:
   `./scripts/ollama_staged_check.sh OUTPUT_DIR`.
 - Compare two DeepSeek prompt experiments with
   `./scripts/symbol_prompt_compare.sh LEFT_DIR RIGHT_DIR`.
-- Cross-provider comparison currently uses each directory's
-  `symbol_evaluation.json` plus Ollama's `ollama_metrics.json`; a single
-  provider-neutral comparison command is still missing.
+- The obsolete monolithic Ollama prompt experiment was removed; the constrained
+  staged protocol is the only maintained local-model regression path.
 - Pass signal: request, raw response, warnings, metrics where available, and
   evaluation are replayable with no credentials in artifacts.
 - Challenge independently: swap model, schema, or compact prompt one at a time.
