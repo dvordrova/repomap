@@ -39,17 +39,18 @@ func Reduce(session Session, event Event) (Session, []Action, error) {
 			return original, nil, fmt.Errorf("investigation: repository revision did not change")
 		}
 		next := resetDerived(session)
+		next.Origin = nil
 		next.Repository.Revision = event.Revision
 		issueResolve(&next, "repository revision changed; resolve the focus again before reusing evidence")
 		return finishReduction(original, next)
 	case EventRedirected:
+		if event.Redirect.Revision != "" && event.Redirect.Revision != session.Repository.Revision {
+			return original, nil, fmt.Errorf("investigation: repository revision changes require repository_changed event")
+		}
 		next := resetDerived(session)
 		next.Goal = event.Redirect.Goal
 		next.Focus = event.Redirect.Focus
 		next.Focus.EvidenceID = ""
-		if event.Redirect.Revision != "" {
-			next.Repository.Revision = event.Redirect.Revision
-		}
 		if err := validateStartFields(next.Goal, next.Repository, next.Focus); err != nil {
 			return original, nil, err
 		}
@@ -132,6 +133,7 @@ func startSession(input StartInput) (Session, error) {
 		Goal:       input.Goal,
 		Repository: input.Repository,
 		Focus:      input.Focus,
+		Origin:     input.Origin,
 		Next:       []Action{},
 	}
 	issueResolve(&session, "resolve the exact symbol before collecting focused evidence")

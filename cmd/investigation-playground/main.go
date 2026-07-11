@@ -6,9 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -23,30 +21,33 @@ import (
 )
 
 type config struct {
-	repoPath       string
-	symbolQuery    string
-	outDir         string
-	callDeepSeek   bool
-	goplsBinary    string
-	commandTimeout time.Duration
-	maxCandidates  int
-	maxIncoming    int
-	maxOutgoing    int
-}
-
-type runArtifacts struct {
-	graphJSON       []byte
-	rawSource       []byte
-	evaluationJSON  []byte
-	parseWarnings   []byte
-	deepseekRequest []byte
+	repoPath        string
+	symbolQuery     string
+	orientationJSON string
+	flowID          string
+	resumePath      string
+	finish          bool
+	continueRun     bool
+	repoExplicit    bool
+	outDir          string
+	callDeepSeek    bool
+	goplsBinary     string
+	commandTimeout  time.Duration
+	maxCandidates   int
+	maxIncoming     int
+	maxOutgoing     int
 }
 
 func main() {
 	_ = envfile.Load(".env")
 	var cfg config
 	flag.StringVar(&cfg.repoPath, "repo", ".", "path to a Go repository")
-	flag.StringVar(&cfg.symbolQuery, "symbol", "", "exact gopls workspace symbol name")
+	flag.StringVar(&cfg.symbolQuery, "symbol", "", "exact gopls workspace symbol name (start or redirect)")
+	flag.StringVar(&cfg.orientationJSON, "orientation-json", "", "orientation report to hand off from")
+	flag.StringVar(&cfg.flowID, "flow-id", "", "selected flow ID from --orientation-json")
+	flag.StringVar(&cfg.resumePath, "resume", "", "saved investigation_session.json to resume")
+	flag.BoolVar(&cfg.finish, "finish", false, "finish a resumed session that is waiting for the user")
+	flag.BoolVar(&cfg.continueRun, "continue", false, "execute the pending capability in a resumed session")
 	flag.StringVar(&cfg.outDir, "out-dir", "tmp/investigation-playground", "artifact output directory")
 	flag.BoolVar(&cfg.callDeepSeek, "deepseek", false, "execute the source-assessment action with DeepSeek")
 	flag.StringVar(&cfg.goplsBinary, "gopls", "gopls", "gopls binary")
@@ -55,6 +56,11 @@ func main() {
 	flag.IntVar(&cfg.maxIncoming, "max-incoming", 30, "maximum incoming calls")
 	flag.IntVar(&cfg.maxOutgoing, "max-outgoing", 30, "maximum outgoing calls")
 	flag.Parse()
+	flag.Visit(func(value *flag.Flag) {
+		if value.Name == "repo" {
+			cfg.repoExplicit = true
+		}
+	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -65,13 +71,10 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config) error {
-	if strings.TrimSpace(cfg.symbolQuery) == "" {
-		return fmt.Errorf("--symbol is required")
-	}
 	if strings.TrimSpace(cfg.outDir) == "" {
 		return fmt.Errorf("--out-dir is required")
 	}
-	revision, err := repositoryRevision(ctx, cfg.repoPath)
+	session, stopAfterPreparation, preserveRunArtifacts, err := prepareSession(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -93,34 +96,25 @@ func run(ctx context.Context, cfg config) error {
 		TestOptions: testevidence.Options{},
 	}
 	var deepseekClient *deepseek.Client
-	if cfg.callDeepSeek {
-		deepseekClient, err = deepseek.NewFromEnv()
-		if err != nil {
-			return err
-		}
-		runner.SourceAssessor = deepseekClient
-	}
-
-	session, _, err := investigation.Reduce(investigation.Session{}, investigation.Event{
-		Kind: investigation.EventStarted,
-		Start: &investigation.StartInput{
-			Goal:       investigation.Goal{Text: "understand " + cfg.symbolQuery},
-			Repository: investigation.Repository{Path: cfg.repoPath, Revision: revision},
-			Focus:      investigation.Focus{Kind: investigation.FocusSymbol, Symbol: cfg.symbolQuery},
-		},
-	})
-	if err != nil {
-		return err
-	}
 	artifacts := runArtifacts{}
 	var runErr error
-	for len(session.Next) == 1 {
+	for !stopAfterPreparation && len(session.Next) == 1 {
 		action := session.Next[0]
 		if action.Kind == investigation.ActionAwaitUser ||
 			(action.Kind == investigation.ActionAssessSource && !cfg.callDeepSeek) {
 			break
 		}
-		if action.Kind == investigation.ActionAssessSource && deepseekClient != nil {
+		if action.Kind == investigation.ActionAssessSource {
+			if deepseekClient == nil {
+				deepseekClient, err = deepseek.NewFromEnv()
+				if err != nil {
+					return err
+				}
+				runner.SourceAssessor = deepseekClient
+			}
+			artifacts.sourceProvider = "deepseek"
+			artifacts.sourceModel = deepseekClient.Model
+			artifacts.sourcePromptVersion = deepseek.SourcePromptVersionJSON
 			bundleJSON, marshalErr := json.Marshal(action.AssessSource)
 			if marshalErr != nil {
 				return marshalErr
@@ -162,105 +156,28 @@ func run(ctx context.Context, cfg config) error {
 			break
 		}
 	}
-	if err := writeRun(cfg.outDir, session, artifacts); err != nil {
+	preserveRunArtifacts = preserveRunArtifacts && resumeOwnsRunArtifacts(cfg.resumePath, cfg.outDir)
+	if err := writeRun(cfg.outDir, session, artifacts, preserveRunArtifacts); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "investigation state: %s, sequence: %d\n", session.State, session.Sequence)
 	if len(session.Next) == 1 {
 		fmt.Fprintf(os.Stderr, "next action: %s (%s)\n", session.Next[0].Kind, session.Next[0].Reason)
+		if session.Next[0].AwaitUser != nil {
+			fmt.Fprintf(os.Stderr, "question: %s\n", session.Next[0].AwaitUser.Question)
+			fmt.Fprintf(os.Stderr, "choices: %s\n", formatChoices(session.Next[0].AwaitUser.Choices))
+		}
 	}
 	fmt.Fprintf(os.Stderr, "wrote investigation artifacts to %s\n", cfg.outDir)
 	return runErr
 }
 
-func writeRun(dir string, session investigation.Session, artifacts runArtifacts) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create output directory: %w", err)
+func formatChoices(choices []investigation.UserChoice) string {
+	values := make([]string, len(choices))
+	for index, choice := range choices {
+		values[index] = string(choice)
 	}
-	values := map[string]any{
-		"investigation_session.json": session,
-	}
-	if session.Symbol != nil {
-		values["symbol_bundle.json"] = session.Symbol
-	}
-	if session.Source != nil {
-		values["source_card.json"] = session.Source
-	}
-	if session.Assessment != nil {
-		values["source_assessment_bundle.json"] = session.Assessment
-	}
-	if session.SourceReport != nil {
-		values["source_report.json"] = session.SourceReport
-	}
-	if session.Tests != nil {
-		values["test_evidence.json"] = session.Tests
-	}
-	for name, value := range values {
-		data, err := json.MarshalIndent(value, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal %s: %w", name, err)
-		}
-		if err := writeArtifact(dir, name, data); err != nil {
-			return err
-		}
-	}
-	rawArtifacts := map[string][]byte{
-		"evidence_graph.json":                   artifacts.graphJSON,
-		"deepseek_source_request.redacted.json": artifacts.deepseekRequest,
-		"deepseek_source_response.raw.txt":      artifacts.rawSource,
-		"source_evaluation.json":                artifacts.evaluationJSON,
-		"source_parse_warnings.json":            artifacts.parseWarnings,
-	}
-	for name, data := range rawArtifacts {
-		if len(data) == 0 {
-			continue
-		}
-		if err := writeArtifact(dir, name, data); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func writeArtifact(dir, name string, data []byte) error {
-	path := filepath.Join(dir, name)
-	temporary := path + ".tmp"
-	data = append(append([]byte{}, data...), '\n')
-	if err := os.WriteFile(temporary, data, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", name, err)
-	}
-	if err := os.Rename(temporary, path); err != nil {
-		return fmt.Errorf("rename %s: %w", name, err)
-	}
-	return nil
-}
-
-// repositoryRevision is intentionally a coarse M2 freshness marker. M4 still
-// needs content hashes for dirty files and analyzer/build metadata.
-func repositoryRevision(ctx context.Context, repoPath string) (string, error) {
-	head, err := gitOutput(ctx, repoPath, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	status, err := gitOutput(ctx, repoPath, "status", "--porcelain=v1", "--untracked-files=all")
-	if err != nil {
-		return "", err
-	}
-	revision := strings.TrimSpace(string(head))
-	if len(status) > 0 {
-		revision += "-dirty"
-	}
-	return revision, nil
-}
-
-func gitOutput(ctx context.Context, repoPath string, args ...string) ([]byte, error) {
-	commandArgs := append([]string{"-C", repoPath}, args...)
-	command := exec.CommandContext(ctx, "git", commandArgs...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-	return output, nil
+	return strings.Join(values, ", ")
 }
 
 var _ sourceexplain.Assessor = (*deepseek.Client)(nil)
