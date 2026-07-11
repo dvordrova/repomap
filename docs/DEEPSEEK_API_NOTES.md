@@ -143,12 +143,15 @@ an allowed file nor a provided entrypoint package, it may be replaced with that
 flow's first already-allowed `likely_file`, again with a warning.
 `first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
 invented values: invalid or unallowed structured paths still fail validation.
-Orientation prompt v2 asks for atomic evidence items and tells the model to copy
-every file mention exactly in full; `main.go` is not accepted as an abbreviation
-for `cmd/prometheus/main.go`. The Prometheus capture still contains mixed prose
-items, which quality replay leaves explicitly unscored. Its clean raw-contract
-flag means the JSON wire shape was clean, not that every semantic prompt
-instruction was obeyed.
+Orientation prompt v3 asks for atomic evidence items, treats `allowed_paths` as
+a closed exact set for verified file fields, and explicitly rejects directory,
+package, import, and trailing-slash values in all structured file fields.
+`main.go` is not accepted as an abbreviation for `cmd/prometheus/main.go`, and
+an import such as `pkg/goanalysis` is not accepted as a file. Prompt v2 captures
+remain replayable historical artifacts. The Prometheus capture still contains
+mixed prose items, which quality replay leaves explicitly unscored. Its clean
+raw-contract flag means the JSON wire shape was clean, not that every semantic
+prompt instruction was obeyed.
 
 ## Focused symbol investigation
 

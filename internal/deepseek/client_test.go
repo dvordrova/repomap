@@ -658,6 +658,9 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
+	if OrientationPromptVersionJSON != "orientation-json-v3" {
+		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
+	}
 	c := &Client{
 		HTTPClient: &http.Client{},
 		APIKey:     "test-key",
@@ -678,6 +681,9 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		"questions_for_human",
 		"never shorten cmd/server/main.go to main.go",
 		"each evidence item atomic",
+		"closed exact set",
+		"Directory, package, and import paths are not files",
+		"unverified_paths is only for a suspected file path",
 	}
 
 	for _, field := range expected {
