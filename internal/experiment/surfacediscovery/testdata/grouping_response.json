@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "health-and-readiness",
+      "name": "Health and readiness",
+      "trigger_ids": ["trigger-68bcf830e521d0e67d5a5532"]
+    }
+  ],
+  "recommendations": [
+    {
+      "trigger_id": "trigger-68bcf830e521d0e67d5a5532",
+      "name": "HTTP health check",
+      "reason": "A small route connects process startup, dispatcher ownership, and a concrete handler."
+    }
+  ],
+  "next_question": "What readiness conditions does the health handler verify?"
+}
