@@ -151,6 +151,13 @@ func TestAnalyzeGinConvenienceAndRepositoryWrapper(t *testing.T) {
 	}
 }
 
+func TestAnalyzeCustomRouterStretchRemainsUnsupported(t *testing.T) {
+	result := analyzeFixture(t, "custom_router")
+	if len(result.Catalog.Triggers) != 0 {
+		t.Fatalf("custom registry was promoted without a configured terminal seed: %#v", result.Catalog.Triggers)
+	}
+}
+
 func TestAnalyzeIsDeterministic(t *testing.T) {
 	first := analyzeFixture(t, "wrappers")
 	second := analyzeFixture(t, "wrappers")
