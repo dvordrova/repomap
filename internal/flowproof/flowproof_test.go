@@ -1,6 +1,8 @@
 package flowproof
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -145,9 +147,7 @@ func TestInitConcurrencyIsNotApplicable(t *testing.T) {
 		Symbol: "global.CreateRepository", Path: "cmd/restic/cmd_init.go", Line: 84,
 		Relation: "calls",
 	}}
-	seed.NotApplicableSlots = map[SlotKind]ApplicabilityReason{
-		SlotConcurrency: ApplicabilityNoConcurrentLifecycleInScope,
-	}
+	seed.ConcurrentLifecycle = concurrentLifecycleFixture("go", ConcurrentLifecycleAbsent)
 
 	proof := BuildCLI(seed)
 	concurrency, ok := proof.Slot(SlotConcurrency)
@@ -169,6 +169,108 @@ func TestInitConcurrencyIsNotApplicable(t *testing.T) {
 	session := Start(proof, DefaultBudget(), "restic-init", CLICollectorVersion)
 	if session.Stop == nil || session.Stop.Reason != StopComplete {
 		t.Fatalf("justified not-applicable slot did not satisfy proof: %#v", session.Stop)
+	}
+}
+
+func TestCoreOwnsApplicabilityAndSlotVerdicts(t *testing.T) {
+	for _, language := range []string{"go", "python"} {
+		t.Run(language+" synchronous handler", func(t *testing.T) {
+			seed := resticSeed()
+			seed.FlowID = language + "-synchronous"
+			seed.ScenarioID = language + "-fixture"
+			seed.Calls = nil
+			seed.ConcurrentLifecycle = concurrentLifecycleFixture(language, ConcurrentLifecycleAbsent)
+
+			proof := BuildCLI(seed)
+			concurrency, ok := proof.Slot(SlotConcurrency)
+			if !ok || concurrency.Status != SlotNotApplicable ||
+				concurrency.ApplicabilityReason != ApplicabilityNoConcurrentLifecycleInScope {
+				t.Fatalf("%s concurrency = %#v", language, concurrency)
+			}
+			if len(concurrency.Provenance) != 1 || concurrency.Provenance[0].Provider != language+"-fixture" {
+				t.Fatalf("%s applicability provenance = %#v", language, concurrency.Provenance)
+			}
+		})
+	}
+
+	t.Run("adapter cannot pre-verify lifecycle", func(t *testing.T) {
+		proof := BuildCLI(resticSeed())
+		for index := range proof.Slots {
+			if proof.Slots[index].Kind == SlotConcurrency {
+				proof.Slots[index] = Slot{Kind: SlotConcurrency, Status: SlotVerified, Summary: "adapter says complete"}
+			}
+		}
+
+		session := Start(proof, DefaultBudget(), "fixture", CLICollectorVersion)
+		concurrency, _ := session.Proof.Slot(SlotConcurrency)
+		if concurrency.Status != SlotPartial || concurrency.Missing == "" {
+			t.Fatalf("core accepted adapter verdict without lifecycle facts: %#v", concurrency)
+		}
+	})
+
+	t.Run("concrete lifecycle overrides absent fact", func(t *testing.T) {
+		seed := resticSeed()
+		seed.ConcurrentLifecycle = concurrentLifecycleFixture("contradictory", ConcurrentLifecycleAbsent)
+		proof := BuildCLI(seed)
+		concurrency, _ := proof.Slot(SlotConcurrency)
+		if concurrency.Status != SlotPartial || concurrency.Status == SlotNotApplicable {
+			t.Fatalf("absence fact overrode concrete task start: %#v", concurrency)
+		}
+		if !containsProofWarning(proof.Warnings, "contradicts concrete task-start facts") {
+			t.Fatalf("contradiction warning missing: %v", proof.Warnings)
+		}
+	})
+
+	t.Run("not applicable requires core reason", func(t *testing.T) {
+		proof := BuildCLI(resticSeed())
+		for index := range proof.Slots {
+			proof.Slots[index] = Slot{Kind: proof.Slots[index].Kind, Status: SlotVerified}
+			if proof.Slots[index].Kind == SlotConcurrency {
+				proof.Slots[index] = Slot{Kind: SlotConcurrency, Status: SlotNotApplicable}
+			}
+		}
+		if proof.Satisfied() {
+			t.Fatal("reasonless not_applicable slot satisfied the proof")
+		}
+	})
+
+	t.Run("version one proof and session are rejected", func(t *testing.T) {
+		oldProof := BuildCLI(resticSeed())
+		oldProof.Version = 1
+		if oldProof.Satisfied() {
+			t.Fatal("version 1 proof satisfied version 2 semantics")
+		}
+		oldProofSession := Start(oldProof, DefaultBudget(), "old-proof", CLICollectorVersion)
+		if oldProofSession.Stop == nil || oldProofSession.Stop.Reason != StopUnsupportedVersion {
+			t.Fatalf("old proof stop = %#v", oldProofSession.Stop)
+		}
+
+		oldSession := Start(BuildCLI(resticSeed()), DefaultBudget(), "old-session", CLICollectorVersion)
+		oldSession.Version = 1
+		if err := Run(context.Background(), "", &oldSession, nil); err != nil {
+			t.Fatal(err)
+		}
+		if oldSession.Stop == nil || oldSession.Stop.Reason != StopUnsupportedVersion {
+			t.Fatalf("old session stop = %#v", oldSession.Stop)
+		}
+	})
+}
+
+func containsProofWarning(warnings []string, fragment string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func concurrentLifecycleFixture(language string, presence ConcurrentLifecyclePresence) ConcurrentLifecycleFact {
+	return ConcurrentLifecycleFact{
+		Presence: presence,
+		Provenance: []evidence.Provenance{{
+			Provider: language + "-fixture", Version: "v1", Operation: "inspect_handler_concurrency",
+		}},
 	}
 }
 

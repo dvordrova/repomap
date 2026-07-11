@@ -2,10 +2,13 @@ package evidence
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
 	"sort"
+	"strings"
 )
 
-const GraphVersion = 1
+const GraphVersion = 2
 
 type Certainty string
 
@@ -52,6 +55,29 @@ const (
 	EntityReference  EntityKind = "reference"
 )
 
+func (kind EntityKind) Valid() bool {
+	switch kind {
+	case EntityUnknown,
+		EntityQuery,
+		EntityFile,
+		EntityModule,
+		EntityPackage,
+		EntityFunction,
+		EntityMethod,
+		EntityType,
+		EntityInterface,
+		EntityField,
+		EntityVariable,
+		EntityConstant,
+		EntityTest,
+		EntityEntrypoint,
+		EntityReference:
+		return true
+	default:
+		return false
+	}
+}
+
 // SourceScope says whether an analyzer-resolved entity belongs to the
 // repository or only to its surrounding toolchain. External entities may omit
 // source locations so absolute dependency and toolchain paths do not leak into
@@ -64,6 +90,19 @@ const (
 	SourceScopeDependency       SourceScope = "dependency"
 	SourceScopeOutsideWorkspace SourceScope = "outside_workspace"
 )
+
+func (scope SourceScope) Valid() bool {
+	switch scope {
+	case "",
+		SourceScopeRepository,
+		SourceScopeStandardLibrary,
+		SourceScopeDependency,
+		SourceScopeOutsideWorkspace:
+		return true
+	default:
+		return false
+	}
+}
 
 type RelationKind string
 
@@ -86,6 +125,30 @@ const (
 	RelationReferences       RelationKind = "references"
 )
 
+func (kind RelationKind) Valid() bool {
+	switch kind {
+	case RelationMatchesQuery,
+		RelationResolvesTo,
+		RelationCalls,
+		RelationRegisters,
+		RelationDispatches,
+		RelationCallback,
+		RelationConstructs,
+		RelationStartsGoroutine,
+		RelationCancels,
+		RelationUsesCancellation,
+		RelationJoins,
+		RelationReturns,
+		RelationReads,
+		RelationWrites,
+		RelationImplements,
+		RelationReferences:
+		return true
+	default:
+		return false
+	}
+}
+
 // ResolutionKind records how a relation target was selected. It is
 // intentionally orthogonal to Certainty: a statically selected interface
 // method can still be only possible at runtime, while an observed target may
@@ -102,6 +165,22 @@ const (
 	ResolutionUnresolved      ResolutionKind = "unresolved"
 )
 
+func (kind ResolutionKind) Valid() bool {
+	switch kind {
+	case "",
+		ResolutionUnknown,
+		ResolutionStatic,
+		ResolutionTypeInferred,
+		ResolutionFrameworkRule,
+		ResolutionRuntimeObserved,
+		ResolutionModelSuggested,
+		ResolutionUnresolved:
+		return true
+	default:
+		return false
+	}
+}
+
 // InvocationMode says how control reaches a relation target. Relation.Kind
 // still carries the semantic verb (calls, registers, constructs, ...).
 type InvocationMode string
@@ -114,6 +193,21 @@ const (
 	InvocationCallback    InvocationMode = "callback"
 	InvocationDeferred    InvocationMode = "deferred"
 )
+
+func (mode InvocationMode) Valid() bool {
+	switch mode {
+	case "",
+		InvocationUnknown,
+		InvocationSynchronous,
+		InvocationAwait,
+		InvocationGoroutine,
+		InvocationCallback,
+		InvocationDeferred:
+		return true
+	default:
+		return false
+	}
+}
 
 type Location struct {
 	Path      string `json:"path"`
@@ -325,6 +419,17 @@ func (g Graph) Validate() error {
 		if entity.ID == "" {
 			return fmt.Errorf("evidence: entity id is required")
 		}
+		if !entity.Kind.Valid() {
+			return fmt.Errorf("evidence: entity %q has invalid kind %q", entity.ID, entity.Kind)
+		}
+		if !entity.Scope.Valid() {
+			return fmt.Errorf("evidence: entity %q has invalid source scope %q", entity.ID, entity.Scope)
+		}
+		if entity.Scope == SourceScopeRepository {
+			if entity.Location == nil || !repositoryRelativePath(entity.Location.Path) || entity.Location.Line <= 0 {
+				return fmt.Errorf("evidence: repository entity %q requires a repository-relative location", entity.ID)
+			}
+		}
 		if _, exists := known[entity.ID]; exists {
 			return fmt.Errorf("evidence: duplicate entity id %q", entity.ID)
 		}
@@ -347,6 +452,15 @@ func (g Graph) Validate() error {
 		if _, exists := known[relation.To]; !exists {
 			return fmt.Errorf("evidence: relation target %q is unknown", relation.To)
 		}
+		if !relation.Kind.Valid() {
+			return fmt.Errorf("evidence: relation %q -> %q has invalid kind %q", relation.From, relation.To, relation.Kind)
+		}
+		if !relation.Resolution.Valid() {
+			return fmt.Errorf("evidence: relation %q -> %q has invalid resolution %q", relation.From, relation.To, relation.Resolution)
+		}
+		if !relation.Invocation.Valid() {
+			return fmt.Errorf("evidence: relation %q -> %q has invalid invocation %q", relation.From, relation.To, relation.Invocation)
+		}
 		if !relation.Certainty.Valid() {
 			return fmt.Errorf("evidence: relation %q -> %q has invalid certainty %q", relation.From, relation.To, relation.Certainty)
 		}
@@ -365,6 +479,14 @@ func (g Graph) Validate() error {
 		}
 	}
 	return nil
+}
+
+func repositoryRelativePath(value string) bool {
+	if value == "" || filepath.IsAbs(value) || strings.Contains(value, "\\") {
+		return false
+	}
+	clean := path.Clean(value)
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../")
 }
 
 func appendUniqueStrings(dst []string, values ...string) []string {

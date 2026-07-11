@@ -5,7 +5,7 @@ package flowproof
 
 import "github.com/dvordrova/repomap/internal/evidence"
 
-const Version = 1
+const Version = 2
 
 type Archetype string
 
@@ -55,12 +55,13 @@ const (
 )
 
 type Slot struct {
-	Kind                SlotKind            `json:"kind"`
-	Status              SlotStatus          `json:"status"`
-	Summary             string              `json:"summary,omitempty"`
-	EvidenceIDs         []string            `json:"evidence_ids,omitempty"`
-	Missing             string              `json:"missing,omitempty"`
-	ApplicabilityReason ApplicabilityReason `json:"applicability_reason,omitempty"`
+	Kind                SlotKind              `json:"kind"`
+	Status              SlotStatus            `json:"status"`
+	Summary             string                `json:"summary,omitempty"`
+	EvidenceIDs         []string              `json:"evidence_ids,omitempty"`
+	Provenance          []evidence.Provenance `json:"provenance,omitempty"`
+	Missing             string                `json:"missing,omitempty"`
+	ApplicabilityReason ApplicabilityReason   `json:"applicability_reason,omitempty"`
 }
 
 type AnchorKind string
@@ -138,6 +139,9 @@ func (p Proof) Transition(id string) (Transition, bool) {
 // honest terminal outcome. Missing slots are unsatisfied; omission never means
 // that a collector proved non-applicability.
 func (p Proof) Satisfied() bool {
+	if p.Version != Version {
+		return false
+	}
 	for _, kind := range cliSlotOrder {
 		slot, ok := p.Slot(kind)
 		if !ok || !slotSatisfied(p.Archetype, slot) {
@@ -152,7 +156,8 @@ func slotSatisfied(archetype Archetype, slot Slot) bool {
 	case SlotVerified:
 		return slot.Missing == ""
 	case SlotNotApplicable:
-		return slotMayBeNotApplicable(archetype, slot.Kind) && validApplicabilityReason(slot.ApplicabilityReason)
+		return slotMayBeNotApplicable(archetype, slot.Kind) &&
+			validApplicabilityReason(slot.ApplicabilityReason) && validApplicabilityProvenance(slot.Provenance)
 	default:
 		return false
 	}
@@ -164,4 +169,16 @@ func slotMayBeNotApplicable(archetype Archetype, kind SlotKind) bool {
 
 func validApplicabilityReason(reason ApplicabilityReason) bool {
 	return reason == ApplicabilityNoConcurrentLifecycleInScope
+}
+
+func validApplicabilityProvenance(provenance []evidence.Provenance) bool {
+	if len(provenance) == 0 {
+		return false
+	}
+	for _, item := range provenance {
+		if item.Provider == "" || item.Operation == "" {
+			return false
+		}
+	}
+	return true
 }
