@@ -26,7 +26,7 @@ if [ -n "$(git -C "$TARGET_REPO" status --porcelain --untracked-files=normal)" ]
     exit 2
 fi
 
-for command in awk git go gopls jq shasum wc; do
+for command in awk git go gopls jq wc; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "missing required command: $command" >&2
         exit 2
@@ -66,6 +66,10 @@ SOURCE_REQUEST="$OUTPUT_DIR/source/deepseek_source_request.redacted.json"
     --format json \
     --source \
     --out-dir "$OUTPUT_DIR/source"
+
+ORIENTATION_PROMPT_VERSION="$(
+    "$REPOMAP_BIN" dev prompt-versions | jq -er '.orientation_json'
+)"
 
 extract_context() {
     local request="$1"
@@ -141,6 +145,7 @@ jq -n \
     --arg gopls_version "$GOPLS_VERSION" \
     --arg symbol "$TARGET_SYMBOL" \
     --arg target_path "$TARGET_PATH" \
+    --arg orientation_prompt_version "$ORIENTATION_PROMPT_VERSION" \
     --slurpfile requests "$OUTPUT_DIR/request_metadata.json" \
     --slurpfile source_experiment "$OUTPUT_DIR/source/prompt_experiment.json" \
     '{
@@ -162,7 +167,7 @@ jq -n \
             present_in_orientation_context: true
         },
         prompt_versions: {
-            orientation: "orientation-json-v1",
+            orientation: $orientation_prompt_version,
             source: $source_experiment[0].source_prompt_version
         },
         requests: $requests[0]

@@ -10,9 +10,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/deepseek"
 )
+
+func TestPrintPromptVersions(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	printPromptVersions(&output)
+	var versions map[string]string
+	if err := json.Unmarshal(output.Bytes(), &versions); err != nil {
+		t.Fatalf("prompt versions are not JSON: %v", err)
+	}
+	want := map[string]string{
+		"orientation_json": deepseek.OrientationPromptVersionJSON,
+		"source_json":      deepseek.SourcePromptVersionJSON,
+		"symbol_json":      deepseek.SymbolPromptVersionJSON,
+		"symbol_tagged":    deepseek.SymbolPromptVersionTagged,
+	}
+	if !reflect.DeepEqual(versions, want) {
+		t.Fatalf("prompt versions = %#v, want %#v", versions, want)
+	}
+}
 
 func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	clearLLMEnv(t)

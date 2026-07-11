@@ -67,7 +67,7 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintf(os.Stderr, "Usage: repomap dev render-report <run-dir>\n")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> | prompt-versions")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -80,6 +80,12 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
+		case "prompt-versions":
+			if len(os.Args) != 3 {
+				fmt.Fprintln(os.Stderr, "Usage: repomap dev prompt-versions")
+				os.Exit(2)
+			}
+			printPromptVersions(os.Stdout)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown dev command: %s\n", os.Args[2])
 			os.Exit(2)
@@ -88,6 +94,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+func printPromptVersions(writer io.Writer) {
+	fmt.Fprintf(
+		writer,
+		"{\"orientation_json\":%q,\"source_json\":%q,\"symbol_json\":%q,\"symbol_tagged\":%q}\n",
+		deepseek.OrientationPromptVersionJSON,
+		deepseek.SourcePromptVersionJSON,
+		deepseek.SymbolPromptVersionJSON,
+		deepseek.SymbolPromptVersionTagged,
+	)
 }
 
 func linkLatest(debugDir, runDir string, stderr io.Writer) {
