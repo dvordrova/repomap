@@ -136,6 +136,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	jsonOut := fs.Bool("json", false, "print combined JSON report instead of text")
 	offline := fs.Bool("offline", false, "skip model calls, build local facts/bundles only")
 	flows := fs.Int("flows", 0, "number of top candidate directions to expand after orientation")
+	discoverSurfaces := fs.Bool("discover-surfaces", false, "persist bounded Go HTTP surface discovery artifacts")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
@@ -177,6 +178,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		DumpLLM:                *dumpLLM,
 		DumpRedacted:           true,
 		RequireArtifacts:       dDir != "" && !*previewRequest,
+		DiscoverSurfaces:       *discoverSurfaces,
 		MaxLLMFiles:            60,
 		MaxLocalDirectionFiles: 20,
 		MaxLLMEdges:            60,
@@ -412,6 +414,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --json          output JSON instead of text\n")
 	fmt.Fprintf(os.Stderr, "  --offline       skip model calls, local facts only\n")
 	fmt.Fprintf(os.Stderr, "  --flows N       expand top N directions after orientation (default 0)\n")
+	fmt.Fprintf(os.Stderr, "  --discover-surfaces persist bounded Go HTTP surface artifacts\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")
 	fmt.Fprintf(os.Stderr, "  --debug-dir DIR debug artifact directory (default user cache)\n")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -40,6 +41,7 @@ type Options struct {
 	DumpLLM                bool
 	DumpRedacted           bool
 	RequireArtifacts       bool
+	DiscoverSurfaces       bool
 	ExplainFlows           int
 	Progress               func(ProgressEvent)
 }
@@ -61,6 +63,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	}
 	if opts.RequireArtifacts && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
 		return nil, fmt.Errorf("required browser artifacts need a debug directory")
+	}
+	if opts.DiscoverSurfaces && opts.DebugDir == "" {
+		return nil, fmt.Errorf("surface discovery requires a debug directory")
 	}
 
 	emitProgress(opts, ProgressEvent{
@@ -164,6 +169,15 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			if err := dw.WriteLLMBundle(append(modelBundleJSON, '\n')); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required model bundle: %w", err)
 			}
+		}
+	}
+	if opts.DiscoverSurfaces && dw != nil {
+		surfaceResult, err := surfacediscovery.Analyze(surfacediscovery.DefaultOptions(opts.RepoPath))
+		if err != nil {
+			return nil, fmt.Errorf("discover runtime surfaces: %w", err)
+		}
+		if err := surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult); err != nil {
+			return nil, fmt.Errorf("persist runtime surfaces: %w", err)
 		}
 	}
 
