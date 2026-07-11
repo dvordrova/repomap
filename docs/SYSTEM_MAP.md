@@ -10,13 +10,14 @@ questions remain in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), demonstrated debt in
 [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md).
 
 Execution order belongs to [MILESTONES.md](MILESTONES.md). Source-grounded symbol
-understanding, the shared investigation loop, and the cross-repository quality
-suite are complete; the active milestone is fresh local memory. Modules and
-challenge cards below are supporting seams, not competing roadmaps.
+understanding, the shared investigation loop, the cross-repository quality
+suite, and fresh local memory are complete; the active milestone is the friend
+onboarding trial. Modules and challenge cards below are supporting seams, not
+competing roadmaps.
 
 [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) applies one external acceptance lens to
-that order: exploration spans M3/M5, the feature `ChangeBrief` is M6, and
-onboarding is M7.
+that order: the known-project onboarding calibration is M5, the feature
+`ChangeBrief` is M6, and later bug/impact policies follow them.
 
 ## Capability cubes
 
@@ -68,6 +69,7 @@ branching inside domain packages.
 | Local persistence slice | one symbol neighborhood can be stored, reloaded, replaced, and invalidated by referenced file | `internal/index` |
 | Source-grounded symbol slice | one exact symbol can be read through a bounded lexical card, conservatively assessed by DeepSeek, and connected to provenance-preserving test references | `sourcecard`, `sourceexplain`, `testevidence`, source replay scripts |
 | Shared investigation loop | an orientation-selected candidate flow and exact symbol can traverse the same pure reducer, stop at a user choice, and resume safely | `investigation`, orientation handoff, investigation playground/scripts |
+| Fresh local memory | repository facts, model claims, and session state survive restart separately and reject stale repository/tool/prompt contexts before execution | `freshness`, `memory`, index v2, copied etcd and no-network DeepSeek resumes |
 
 These milestones are capabilities, not a claim that they already form one
 cohesive product workflow.
@@ -83,7 +85,7 @@ not separate products.
 | Understand a symbol | exact symbol | evidence-backed responsibility, files, tests, unknowns | resumable CLI vertical slice works |
 | Work on a ticket | issue text | change surface, analogs, risks, test plan | planned playbook |
 | Diagnose a bug | symptom/test/log | reproduction or discriminating next experiment | planned playbook |
-| Onboard | repository + standard questions | evidence-backed learning path | planned playbook |
+| Onboard | repository + standard questions | evidence-backed learning path | **active**: static browser baseline works; named direction-to-drill-down handoff is next |
 | Assess impact | diff or symbol | affected callers, flows, tests, boundaries | planned playbook |
 
 ## Whole-system map
@@ -205,13 +207,16 @@ adapter. The shared contract is `evidence.Graph`; a new adapter should not force
 | --- | --- | --- | --- |
 | `internal/llmbundle` | works | repository snapshot | bounded orientation bundle; never raw full tree/edges |
 | `internal/symbol` bundle | isolated | exact-resolution evidence graph | bounded target, candidates, callers/callees, allowed paths |
-| `internal/index` | stored | `symbol.Bundle` | versioned local snapshot, target lookup, path invalidation |
+| `internal/freshness` | works | repository plus Go/gopls/collector configuration | stabilized repository state and versioned fact/claim contexts with explicit differences |
+| `internal/index` | stored | `symbol.Bundle` + current `FactContext` | v2 snapshot, fail-closed stale rejection, target lookup, path invalidation |
+| `internal/memory` | works | validated investigation session + current contexts | content-addressed fact/claim documents and a small reconciled session checkpoint |
 
-The current index deliberately stores `symbol.Bundle`; it proves persistence and
-invalidation for one vertical slice. It is not yet the general fact/claim/session
-store described in `INVESTIGATION_ENGINE.md`. Challenging whether the index
-should store generic evidence records, shards, or derived neighborhoods is still
-valid. Do not add a database before measurements require it.
+The current index deliberately stores `symbol.Bundle`; it remains an isolated
+neighborhood cache rather than a generic database. The production vertical
+slice uses `memory` to separate its concrete symbol/source/test facts from the
+source report and state-machine checkpoint. This is sufficient for restart and
+invalidation without pretending that a generic claim ledger or session catalog
+has already been designed. Do not add a database before measurements require it.
 
 ### Model interpretation
 
@@ -247,7 +252,7 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 | `internal/report` | works | HTML/text rendering from saved artifacts, including orientation-only direction cards | no collection or model calls; candidate cards are not actions yet |
 | `internal/debugdump` | works | redacted, replayable run artifacts | never credentials or Authorization headers |
 | browser report baseline | works | `./repomap` progress, one orientation call, retained directions, automatic static-report opening | no direction selection or session actions |
-| progressive browser UI | planned | navigation and investigation choices | should consume application state, not collectors directly |
+| friend onboarding browser | **active** | known-project map, named direction choice, first drill-down | consumes saved application state, never collectors directly |
 | MCP/editor adapter | planned | expose focused actions to external agents/editors | should be another adapter, not the core |
 
 ## Durable artifact contracts
@@ -264,7 +269,9 @@ These are the useful boundaries to inspect before changing implementation:
 | `symbol.Evaluation` | evaluator | prompt experiments | contract quality, not semantic truth |
 | `quality.Task` | fixture author | offline quality loader/evaluator | strict manifest plus exact replay-artifact identity; capture-only hashes remain author metadata |
 | `quality.Result` | offline evaluator | checks, CI, human comparison | separate dimensions; top-level pass is conjunction, not a numeric score |
-| index JSON snapshot | `index.Save` | `index.Load` | versioned local cache; freshness policy incomplete |
+| index JSON snapshot v2 | `index.Save` | `index.Load(current)` | versioned symbol cache; current fact context is mandatory |
+| fact/claim JSON documents | `memory.Save` | `memory.Load(current)` | content-addressed and hash-verified before reconciliation |
+| investigation session checkpoint | `memory.Save` | CLI now; browser next | state/actions plus relative verified refs, with no embedded facts or claims |
 
 Changing an artifact shape should be treated as a contract change: update its
 version or compatibility rules, fixtures, replay tools, and challenge commands.
@@ -279,7 +286,7 @@ This table separates real modularity from intended modularity.
 | Symbol model | consumer-owned `symbol.Explainer` | yes in tests/services | playground still constructs DeepSeek directly |
 | Orientation model | concrete `deepseek.Client` in `orient` | runtime endpoint/model/auth/timeout only | prompt, response mode, transport type, and orchestration are joined |
 | Response syntax | tolerant JSON/tagged parser | mostly | provider capability negotiation is absent |
-| Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
+| Persistence | versioned `freshness`, index v2, and split content-addressed `memory` | repository/fact/claim mismatch policies can be challenged independently | no multi-session catalog or dependency-selective session reuse |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone; orientation uses user-facing entrypoint dependencies, bounded kind diversity, and one coherent allowlist | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
 | Quality replay | `quality.Task -> quality.Result` | yes, fully offline | all five repository baselines plus generic-provider calibration exist |
@@ -293,9 +300,8 @@ more modular by itself.
 
 | Planned module | Responsibility | Smallest useful first proof | Must not absorb |
 | --- | --- | --- | --- |
-| repository freshness | derive repo identity, HEAD, dirty hashes, Go/gopls/build context | reject or selectively invalidate one stale index record | ranking or interpretation |
 | context assembly | select a goal-relevant evidence slice under node/edge/source/token budgets | beat fixed symbol bundle on size without losing cited evidence | model calls or session transitions |
-| claim ledger | separate facts from inferred/source/test/runtime-supported claims | invalidate one claim when supporting evidence changes | raw model response storage |
+| generic claim ledger | generalize beyond the implemented source-report claim document only when a second playbook proves shared fields | invalidate one ticket/bug claim without weakening source-report validation | raw model response storage |
 | session catalog | discover and retain multiple investigation sessions | reopen one named session without passing its JSON path | repository fact duplication |
 | consumer-owned model capability | one validated request/result contract per cube | run one fixture through two clients with the same consumer contract | endpoint/auth config and prompt-specific domain state |
 | presentation API | read progress/state and request allowed actions | open one recommended file from a symbol result | analyzer/LSP protocol |
@@ -410,12 +416,14 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Question: can one bounded neighborhood survive restart and be invalidated when
   any referenced source file changes?
 - Run: `go test ./internal/index -count=1`.
-- Pass signal: defensive put/query, deterministic save/load, replacement, schema
-  rejection, and path invalidation all pass.
+- Pass signal: defensive put/query, atomic concurrent save/load, replacement,
+  schema rejection, unchanged reuse, typed current-context stale rejection, and
+  path invalidation all pass.
 - Challenge independently: measure JSON size and lookup/invalidation cost with
   many recorded symbol bundles before proposing SQLite or another database.
-- Known limitation: freshness metadata is caller-supplied and the index stores
-  symbol bundles rather than a generic fact record.
+- Known limitation: the index stores symbol bundles rather than a generic fact
+  record and is not yet a production investigation consumer. Freshness metadata
+  is now mandatory and validated rather than an unchecked caller convention.
 
 ### C9 — Adaptive context assembly
 
@@ -434,9 +442,10 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   with no model prose; the later source stage may use 500–1,500 tokens while
   keeping every claim linked to retained evidence.
 
-### C10 — Investigation reducer
+### C10 — Investigation reducer and memory
 
-- State: M2 slice complete; quality calibration is active in M3.
+- State: M2 reducer and M4 split-memory restart are complete; the friend
+  onboarding bridge is active in M5.
 - Question: can explore/symbol/ticket/bug reuse one state transition model?
 - Current experiment: pure table tests plus `cmd/investigation-playground` run
   `goal -> resolve symbol -> read source -> assess source -> find tests -> wait`
@@ -446,12 +455,15 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Run the DeepSeek branch: `./scripts/investigation_check.sh ../etcd kvServer.Put tmp/investigation-check deepseek`.
 - Run orientation handoff plus passive resume:
   `./scripts/investigation_handoff_check.sh ../etcd kvServer.Put`.
-- `--resume SESSION` only validates, checks freshness, writes, and presents the
-  pending action. Capability execution requires `--continue`; a pending
+- `--resume SESSION` loads separate hash-verified facts and claims, reconciles
+  repository/tool/options/prompt context, writes, and presents the pending
+  action. Capability execution requires `--continue`; a pending
   `assess_source` additionally requires `--deepseek`. Waiting sessions accept
   either `--finish` or an exact new `--symbol` redirect.
-- Pass signal: collectors and model clients appear only as requested actions or
-  delivered events, not inside the reducer.
+- Pass signal: unchanged facts and claims retain their content hashes across a
+  no-network restart; repository/fact changes request `resolve_symbol`, claim
+  changes request `assess_source`, and collectors/model clients still appear
+  only as requested actions or delivered events, not inside the reducer.
 - Current boundary: orientation flow identity is candidate provenance, never an
   inferred symbol; the user supplies the exact symbol. `read_callee` becomes an
   explicit same-revision symbol redirect, while bounded test-body inspection is
@@ -473,13 +485,15 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Challenge independently: use a deliberately misleading function name and test
   whether the support assessment refuses to overclaim.
 
-### C12 — Presentation boundary
+### C12 — Friend onboarding presentation boundary
 
-- State: isolated CLI proof; browser/editor surfaces planned.
+- State: static browser report and split saved session exist; named direction
+  selection and first browser drill-down are active M5 work.
 - Question: can the browser, CLI, MCP, and editor open the same investigation
   state without owning analysis logic?
-- First experiment: render a saved session and request “open this file” as an
-  action; no live collector or model dependency.
+- First experiment: let a knowledgeable friend choose one named direction from
+  the existing report and render the resulting first saved drill-down; opening
+  a cited file is useful but does not block the first trial.
 - Pass signal: a presentation adapter can be replaced without changing evidence,
   context selection, or reducer tests.
 

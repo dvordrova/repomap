@@ -5,7 +5,8 @@
 `repomap` is a tiny local-first repository orientation CLI for large unfamiliar codebases.
 It produces a compact local snapshot of a git repository and optionally asks an explicitly
 configured OpenAI-compatible model for a structured orientation report. DeepSeek is the
-reference provider and compatibility default.
+reference provider and compatibility default. The active product outcome is a five-minute
+friend onboarding trial on a known Go project, not a broader agent framework.
 
 Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline design.
 
@@ -20,7 +21,9 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ## Design rules
 
 - A model provider must **never** receive full repo contents, raw `file_tree`, or raw `internal_edges`.
-- Do **not** add LSP, gopls, AST parsing, embeddings, diagrams, or third-party dependencies unless explicitly requested.
+- The existing gopls adapter is confined to exact-symbol investigation. Do **not** move it
+  into the default repository survey or add another LSP/AST/embedding/diagram/dependency
+  layer unless explicitly requested.
 - A model must only interpret a compact bounded facts bundle produced by local deterministic extraction.
 
 ## Guiding documents
@@ -59,6 +62,7 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/source_check.sh    # replay fixed DeepSeek source response, no network
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
 ./scripts/investigation_check.sh # replay M2 reducer path (local or DeepSeek)
+./scripts/investigation_handoff_check.sh # copied split-memory restart, no model call
 ./scripts/quality_check.sh   # replay committed quality task, no network/API key
 ./scripts/quality_preflight.sh # verify a linked orientation/symbol target, no network
 ./scripts/debug_last_run.sh  # inspect last debug run
@@ -78,3 +82,6 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 - Committed quality tasks must replay without an API key or network call
 - Quality artifacts must be manifest-relative, bounded, and verified by SHA-256
 - Quality manifests and artifacts must reject obvious credentials without echoing them
+- Saved investigation facts, claims, and session state must remain separate and hash-verified
+- Current repository/fact/claim context must be reconciled before a saved action is executable
+- Repository freshness must hash dirty contents without reading unrelated ignored secrets

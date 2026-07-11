@@ -98,6 +98,17 @@ Named user choice and the resumable orientation-to-investigation handoff are not
 yet wired into the main CLI. They exist as an isolated M2 slice and remain the
 important integration boundary for the progressive product journey.
 
+### 5. Durable focused investigation (implemented, isolated from the browser)
+
+The exact-symbol investigation stores deterministic symbol/source/test facts,
+model-derived source claims, and reducer/session state separately. Repository
+identity, HEAD and dirty contents, Go/gopls/collector/build inputs, and
+prompt/parser/evaluator versions are reconciled before a saved action becomes
+executable. Unchanged sessions resume without a second model call; changed
+facts re-resolve the symbol, while changed claim logic retains local source and
+returns to assessment. M5 connects this already-durable path to a user-selected
+browser direction rather than adding another persistence mechanism.
+
 ## Experimental local evidence layer
 
 The production pipeline above remains unchanged. New analyzers are developed
@@ -170,10 +181,12 @@ explicit unknown.
 ## Non-goals for now
 
 - no AST parsing yet
-- no gopls integration in the production pipeline yet (isolated playground only)
+- no gopls in the default repository-wide survey; it remains a lazy focused
+  investigation adapter
 - no long-lived LSP client yet; the playground uses the experimental gopls CLI
 - no embeddings yet
-- no diagrams/UI yet
+- no autonomous graph/diagram UI; the current browser report is static and M5
+  adds only the first user-selected onboarding drill-down
 - no automatic huge repo upload
 - no autonomous code modification
 

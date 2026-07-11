@@ -10,8 +10,9 @@ pack, or provider plug-in system. The three user goals share the same local fact
 evidence contracts, investigation reducer, model boundary, and quality harness.
 
 This is an acceptance track across the canonical milestones, not a replacement
-roadmap. M3 establishes repeatable cross-repository quality, M5 makes exploration
-progressive, M6 delivers the feature `ChangeBrief`, and M7 adds onboarding policy.
+roadmap. M3 established repeatable cross-repository quality, M4 made one
+investigation durable, M5 now delivers the first handoff-ready onboarding
+calibration, and M6 delivers the feature `ChangeBrief`.
 
 ## Trial prerequisites
 
@@ -204,8 +205,11 @@ These are zero-tolerance conditions for all three scenarios:
 The secure provider configuration, doctor, request preview, bounded orientation,
 source-grounded exact-symbol path, investigation reducer, all five repository
 quality tasks, and one generic-namespace DeepSeek calibration replay exist.
-Public `onboarding` and natural-language `feature` commands do not yet exist,
-and the investigation reducer is not yet the sole main-CLI workflow.
+The default report is not yet a complete onboarding workflow: direction cards
+are read-only, the friend cannot choose one by name and reach the saved
+investigation loop, and public natural-language `feature` input does not exist.
+Whether the onboarding entrypoint is a subcommand or the default no-argument
+journey is deliberately left to M5 usability evidence rather than assumed now.
 The trial is complete only after those profiles are wired and replayable; this
 document must not be read as a claim that all three commands already work.
 
@@ -215,10 +219,11 @@ document must not be read as a claim that all three commands already work.
    repositories plus the requested `deepseek-v4-flash` run through the atomic
    generic provider namespace. This proves compatibility of that path, not
    quality on an arbitrary company-hosted model.
-2. Use M4/M5 to retain a session, let the engineer choose a named direction,
-   and follow it progressively instead of auto-expanding a ranking.
+2. M4 is complete for the exact-symbol slice. Use M5 to give the engineer a
+   five-minute onboarding handoff, choose a named direction, and follow it into
+   the first saved drill-down instead of auto-expanding a ranking.
 3. Use M6 for the held-out feature `ChangeBrief`; ticket text changes ranking
    and stop conditions, not the evidence pipeline.
-4. Use M7 for onboarding questions over the same workflow and store one
-   replayable trial task per user goal.
+4. Add bug and impact-analysis policies after the onboarding and ticket trials,
+   while storing one replayable trial task per user goal.
 5. Run the complete three-scenario acceptance exercise with a company engineer.

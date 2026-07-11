@@ -5,9 +5,11 @@ inspectable facts locally, asks an OpenAI-compatible model for useful directions
 and keeps model hypotheses separate from source, test, and runtime evidence.
 
 The current product path orients you in an unfamiliar repository and can expand
-selected runtime/event directions. Source-grounded symbol investigation and an
-offline quality replay exist as connected internal slices; onboarding and
-natural-language feature playbooks are the next public workflows.
+selected runtime/event directions. Source-grounded symbol investigation,
+content-addressed resumable memory, and offline quality replay exist as
+connected slices. The active product goal is a handoff-ready onboarding pass
+for an engineer evaluating a Go project they already know; natural-language
+feature work follows it.
 
 ## Build
 
@@ -128,6 +130,10 @@ trusted location.
 - runtime behavior remains unknown until separately observed;
 - saved quality tasks report grounding, omissions, contracts, bytes, and latency
   separately.
+- saved investigations keep local facts, model claims, and session state in
+  separate hash-verified documents; unchanged sessions resume without another
+  model call, while repository/tool/prompt changes invalidate the applicable
+  layer before an action can execute.
 
 ## Company engineer trial
 
@@ -138,8 +144,10 @@ trusted location.
 3. a held-out feature counterfactual on the commit before a real change.
 
 The three goals will be policies over one investigation engine, not independent
-prompt pipelines. The trial document distinguishes what works now from the
-remaining onboarding/feature implementation.
+prompt pipelines. The active acceptance target is the first item: one command,
+one browser report, named direction selection, and one evidence-backed
+drill-down that a knowledgeable friend can critique. The trial document
+distinguishes that target from what already works and from later feature work.
 
 ## Development
 

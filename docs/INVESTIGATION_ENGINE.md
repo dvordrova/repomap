@@ -78,9 +78,23 @@ Freshness must include repository content, dirty files, Go/gopls versions, build
 context, and index schema. Changing one file invalidates dependent evidence and
 claims, not the whole repository.
 
-The first persistence format may be versioned JSON shards under ignored local
-storage. Do not add a database until real index size and query patterns justify
-one.
+The implemented first vertical slice uses versioned, content-addressed JSON
+documents under local run storage:
+
+```text
+facts/<sha256>.json       deterministic symbol/source/test evidence
+claims/<sha256>.json      model source report + prompt/evaluator provenance
+investigation_session.json  goal/state/actions + verified relative references
+```
+
+The session document deliberately embeds neither facts nor claims. Pending
+action payloads that duplicate them are stripped on disk and reconstructed only
+after repository, fact, and claim freshness reconciliation succeeds. Repository
+or fact changes currently reset the focused fact layer conservatively; prompt or
+evaluator changes retain local facts and request a new assessment. Dependency-
+selective reuse remains the desired index policy, but it should follow friend-
+trial measurements rather than another storage abstraction. Do not add a
+database until real index size and query patterns justify one.
 
 ## Adaptive context assembly
 
