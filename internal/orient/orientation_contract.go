@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	evidenceFilePathPattern = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_./-])((?:/|\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:go|md|yaml|yml|json|toml|proto|mod|sum|sh|c|h|rs|py|js|ts))(?:[:#][0-9]+)?`)
-	evidenceEscapePattern   = regexp.MustCompile(`(?:^|[\s"'()\[\]{},;=:])((?:/|\.\./)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)`)
+	evidenceFilePathPattern  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_./-])((?:/|\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:go|md|yaml|yml|json|toml|proto|mod|sum|sh|c|h|rs|py|js|ts))(?:[:#][0-9]+)?`)
+	evidenceEscapePattern    = regexp.MustCompile(`(?:^|[\s"'()\[\]{},;=:])((?:/|\.\./)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)`)
+	versionedAPIRoutePattern = regexp.MustCompile(`(?i)^/(?:api/)?v[0-9]+(?:/|$)`)
 )
 
 type orientationPart struct {
@@ -123,7 +124,37 @@ func parseOrientation(data []byte) (orientationPart, error) {
 	for _, field := range unknown {
 		report.Warnings = append(report.Warnings, fmt.Sprintf("parser ignored unknown field %q", field))
 	}
+	if orientationHasWildcardEvidence(report) {
+		report.Warnings = append(report.Warnings, "parser treated wildcard evidence as unverified prose")
+	}
 	return report, nil
+}
+
+func orientationHasWildcardEvidence(report orientationPart) bool {
+	hasWildcard := func(values []string) bool {
+		for _, value := range values {
+			if strings.Contains(value, "/") && strings.ContainsAny(value, "*?[]") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, item := range report.HighLevelMap {
+		if hasWildcard(item.Evidence) {
+			return true
+		}
+	}
+	for _, item := range report.CandidateFlows {
+		if hasWildcard(item.Evidence) {
+			return true
+		}
+	}
+	for _, item := range report.ImportantDomainWords {
+		if hasWildcard(item.Evidence) {
+			return true
+		}
+	}
+	return false
 }
 
 func jsonArrayUsesStrings(data json.RawMessage) bool {
@@ -247,6 +278,9 @@ func evidencePathMentions(statement string) []string {
 				continue
 			}
 			path := strings.TrimSuffix(strings.TrimSuffix(match[1], "."), ",")
+			if looksLikeHTTPRoute(statement, path) {
+				continue
+			}
 			if _, exists := seen[path]; exists {
 				continue
 			}
@@ -255,6 +289,33 @@ func evidencePathMentions(statement string) []string {
 		}
 	}
 	return paths
+}
+
+func looksLikeHTTPRoute(statement, path string) bool {
+	if !strings.HasPrefix(path, "/") || filepath.Ext(path) != "" {
+		return false
+	}
+	if versionedAPIRoutePattern.MatchString(path) {
+		return true
+	}
+	for offset := 0; offset < len(statement); {
+		index := strings.Index(statement[offset:], path)
+		if index < 0 {
+			break
+		}
+		index += offset
+		prefix := strings.TrimSpace(statement[:index])
+		words := strings.Fields(prefix)
+		if len(words) > 0 {
+			method := strings.Trim(words[len(words)-1], "`'\"([{,:;")
+			switch strings.ToUpper(method) {
+			case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS":
+				return true
+			}
+		}
+		offset = index + len(path)
+	}
+	return false
 }
 
 func orientationEntrypoints(bundle llmbundle.Bundle) []string {

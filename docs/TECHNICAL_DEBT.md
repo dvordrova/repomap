@@ -148,13 +148,46 @@ version. Applying it to the historical etcd orientation capture exposed
 genuinely missing model, prompt-version, request, and latency metadata; the
 fixture records those values as `unknown`/`null` instead of inventing them. It
 also keeps the 3,536-byte source replay DTO distinct from the 3,001-byte model
-context and 6,601-byte provider request. This closes the quality-suite path but
-not the older experiment paths described above.
+context. The older 6,601-byte value described an indented preview rather than
+the compact wire request, so task schema v2 records the legacy request hash and
+byte count as `null` instead of preserving false precision. This closes the
+quality-suite path but not the older experiment paths described above.
+
+The k6 task uses task schema v2 to distinguish pre-parser `provider_content`
+from a post-parser `normalized_report`. Evaluator v2 also rejects an ambiguous
+many-candidate match for one expected direction. Request preview and the live
+client now share the same compact serializer;
+`scripts/quality_capture_meta.sh` removes the artifact-only terminal newline
+where present and derives byte-identical context/request hashes without exposing
+credentials. The k6 orientation/source latencies were not instrumented, so they
+remain `null` rather than being reconstructed from filesystem timestamps. The
+compact request/context bodies remain ignored local capture artifacts; offline
+replay pins the recorded values in its baseline test but cannot independently
+recompute them from the five committed replay artifacts.
 
 **Done when:** experiment metadata identifies provider plus stable prompt, schema,
 parser, and evaluator versions, so results remain comparable after any of those
 contracts change. Artifacts must continue to exclude credentials and
 authorization headers.
+
+### TD-006: Large orchestration functions outgrow one source-assessment cube
+
+**Evidence:** the k6 `Scheduler.Run` experiment resolves the exact method and 20
+bounded test references, but the default source card stops after 80 lines at
+`internal/execution/scheduler.go:498`. The method continues through executor
+launch, result collection, and teardown. Within the retained window the current
+name-based question seeder emitted only `maps_error`; DeepSeek correctly marked
+it ambiguous, leaving no source-supported claim.
+
+**Consequence:** blindly selecting a central long method can produce excellent
+navigation but a weak semantic step. Increasing every prompt globally would
+spend context without ensuring that the relevant operation is included.
+
+**Done when:** a bounded continuation or goal-aware source selection can request
+the next relevant segment, and orchestration/delegation questions are seeded
+from local syntax without claiming callee behavior. `Scheduler.Run` should then
+cover setup, executor lifecycle, error selection, and teardown as separate
+evidence-backed steps while preserving the 160-line/32 KiB provider ceiling.
 
 ### TD-007: Test references do not establish test support
 

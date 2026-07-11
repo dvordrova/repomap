@@ -1,0 +1,180 @@
+{
+  "project_guess": "Load testing tool (k6) with embedded JavaScript engine and multiple protocol support",
+  "confidence": 0.95,
+  "high_level_map": [
+    {
+      "name": "HTTP API Server",
+      "evidence": [
+        "internal/api/server.go",
+        "api/v1/client/client.go",
+        "api/v1/client/metrics.go"
+      ],
+      "why_it_matters": "Provides REST API for controlling and monitoring test execution, including live metrics."
+    },
+    {
+      "name": "JavaScript Runtime",
+      "evidence": [
+        "js/modules/k6/html/gen/gen_elements.go",
+        "internal/js/modules/k6/*"
+      ],
+      "why_it_matters": "Executes user-defined test scripts, supporting HTTP, WebSocket, gRPC, and browser protocols."
+    },
+    {
+      "name": "Metrics Engine",
+      "evidence": [
+        "api/v1/client/metrics.go",
+        "api/v1/metric_test.go",
+        "api/v1/metric_routes_test.go"
+      ],
+      "why_it_matters": "Collects, aggregates, and exposes test metrics (e.g., duration, throughput) via API."
+    },
+    {
+      "name": "Cloud Integration",
+      "evidence": [
+        "internal/cloudapi/insights/proto/v1/*",
+        "internal/cloudapi/v6/v6test/server.go"
+      ],
+      "why_it_matters": "Enables sending test results and traces to Grafana Cloud for analysis."
+    },
+    {
+      "name": "Example Servers",
+      "evidence": [
+        "examples/grpc_server/main.go",
+        "examples/secrets/mock_server.go"
+      ],
+      "why_it_matters": "Provide reference implementations for protocol support and extensions."
+    }
+  ],
+  "first_files_to_open": [
+    {
+      "path": "main.go",
+      "reason": "Entry point of the k6 binary; shows how the application is initialized and commands are dispatched."
+    },
+    {
+      "path": "internal/api/server.go",
+      "reason": "HTTP server implementation for the REST API; central to live test monitoring."
+    },
+    {
+      "path": "api/v1/client/metrics.go",
+      "reason": "Client code for fetching metrics; illustrates the API interaction pattern."
+    }
+  ],
+  "candidate_flows": [
+    {
+      "name": "Metrics REST API Retrieval",
+      "trigger": "HTTP GET /v1/metrics by external consumer (e.g., dashboard, CLI status)",
+      "likely_entrypoint": "internal/api/server.go",
+      "likely_files": [
+        "internal/api/server.go",
+        "api/v1/client/metrics.go",
+        "api/v1/metric_routes_test.go",
+        "api/v1/metric_test.go"
+      ],
+      "why_interesting": "Core observation flow: enables real-time visibility into test performance metrics.",
+      "evidence": [
+        "api/v1/client/metrics.go defines a Metrics() client method calling /v1/metrics",
+        "api/v1/metric_routes_test.go tests the /v1/metrics handler with ServeHTTP",
+        "api/v1/metric_test.go tests metric serialization",
+        "internal/api/server.go is the HTTP server that hosts these routes"
+      ],
+      "confidence": 0.8
+    },
+    {
+      "name": "Test Execution Startup",
+      "trigger": "Running 'k6 run' command from CLI",
+      "likely_entrypoint": "main.go",
+      "likely_files": [
+        "main.go"
+      ],
+      "why_interesting": "Central to understanding how a load test is launched and orchestrated.",
+      "evidence": [
+        "main.go is the binary entrypoint",
+        "Go module imports indicate cmd package dispatches subcommands",
+        "internal/cmd package imports execution/local and metrics/engine (from important edges)"
+      ],
+      "confidence": 0.5
+    },
+    {
+      "name": "gRPC Streaming Example",
+      "trigger": "Running the example gRPC server and a k6 script",
+      "likely_entrypoint": "examples/grpc_server/main.go",
+      "likely_files": [
+        "examples/grpc_server/main.go",
+        "examples/grpc_server_streaming.js"
+      ],
+      "why_interesting": "Demonstrates how k6 integrates with gRPC, a key protocol for modern services.",
+      "evidence": [
+        "examples/grpc_server/main.go implements a gRPC server",
+        "examples/grpc_server_streaming.js is a k6 test script for gRPC streaming"
+      ],
+      "confidence": 0.7
+    }
+  ],
+  "important_domain_words": [
+    {
+      "word": "VU",
+      "guess": "Virtual User, a simulated user generating load",
+      "evidence": [
+        "README mentions 'virtual users'"
+      ]
+    },
+    {
+      "word": "thresholds",
+      "guess": "Pass/fail criteria based on metrics",
+      "evidence": [
+        "README example script uses thresholds: 'http_req_duration: [\"p(99) < 3000\"]'"
+      ]
+    },
+    {
+      "word": "scenarios",
+      "guess": "Workload models (open/closed, constant RPS, etc.)",
+      "evidence": [
+        "README documents 'Scenarios' as a key feature"
+      ]
+    },
+    {
+      "word": "stages",
+      "guess": "Ramp-up/ramp-down phases of VU count",
+      "evidence": [
+        "README example uses stages: [{ duration: '30s', target: 15 }, ...]"
+      ]
+    },
+    {
+      "word": "metrics/engine",
+      "guess": "Core metrics collection and aggregation engine",
+      "evidence": [
+        "important edges show internal/metrics/engine imported by many packages"
+      ]
+    },
+    {
+      "word": "insights",
+      "guess": "Cloud-based trace and span data for performance analysis",
+      "evidence": [
+        "proto files in internal/cloudapi/insights/"
+      ]
+    }
+  ],
+  "questions_for_human": [
+    "Should I trace the metrics REST API flow deeper (e.g., how MetricsEngine produces data)?",
+    "Would you like to explore the command-line argument parsing in the cmd package?",
+    "Is understanding the JavaScript runtime integration (goja) a priority?"
+  ],
+  "unverified_paths": [
+    {
+      "path": "internal/cmd/run.go",
+      "reason": "Likely contains the 'run' subcommand logic for test execution."
+    },
+    {
+      "path": "internal/execution/local/local.go",
+      "reason": "Core execution scheduler for local test runs; not listed but referenced in edges."
+    },
+    {
+      "path": "internal/metrics/engine/engine.go",
+      "reason": "Metrics engine implementation; central to metric collection."
+    }
+  ],
+  "warnings": [
+    "Many core packages (cmd, execution, metrics/engine) are not in allowed_paths, so flows are inferred from peripheral files and import edges.",
+    "Confidence for test execution flow is lower due to lack of direct file evidence."
+  ]
+}

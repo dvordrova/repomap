@@ -231,9 +231,10 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 
 | Module | State | Owns | Boundary |
 | --- | --- | --- | --- |
-| `internal/quality` task/loader | works | strict task metadata, safe artifact containment, byte bounds, exact hashes | no model, collector, or repository access |
+| `internal/quality` task/loader | works | strict task metadata, safe artifact containment, byte bounds, exact replay-artifact hashes | capture request/context metadata is recorded but not recomputed without uncommitted capture artifacts |
 | `internal/quality` evaluator | works | directions, grounding, important evidence, drill-down, overclaim tripwires, contract/size observations | no aggregate semantic score and no free-form prose grading |
-| etcd quality fixture | works | one reproducible orientation-to-`kvServer.Put` baseline | one historical capture is not a five-repository benchmark |
+| etcd quality fixture | works | one reproducible orientation-to-`kvServer.Put` baseline | historical normalized orientation contract remains unmeasured |
+| k6 quality fixture | works | current raw orientation plus `Client.Metrics` source/test drill-down | latency was not captured; one test reference is not test support |
 
 ### Presentation and artifacts
 
@@ -256,7 +257,7 @@ These are the useful boundaries to inspect before changing implementation:
 | `symbol.Bundle` | `symbol.Build` | model prompt, parser validator, current index | bounded exact-symbol evidence |
 | `symbol.Report` | tolerant parser | user-facing symbol workflow | interpretation plus locally rebuilt structure |
 | `symbol.Evaluation` | evaluator | prompt experiments | contract quality, not semantic truth |
-| `quality.Task` | fixture author | offline quality loader/evaluator | strict manifest plus exact artifact identity |
+| `quality.Task` | fixture author | offline quality loader/evaluator | strict manifest plus exact replay-artifact identity; capture-only hashes remain author metadata |
 | `quality.Result` | offline evaluator | checks, CI, human comparison | separate dimensions; top-level pass is conjunction, not a numeric score |
 | index JSON snapshot | `index.Save` | `index.Load` | versioned local cache; freshness policy incomplete |
 
@@ -276,7 +277,7 @@ This table separates real modularity from intended modularity.
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
-| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | only the etcd task exists; four repository baselines remain |
+| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | etcd and k6 exist; three repository baselines remain |
 | Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
 
 The next work should improve one red cell at a time and preserve a runnable
@@ -478,8 +479,8 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C13 — Cross-repository product quality
 
-- State: etcd baseline works; k6, Prometheus, NATS Server, and golangci-lint are
-  still missing.
+- State: etcd and k6 baselines work; Prometheus, NATS Server, and golangci-lint
+  are still missing.
 - Question: does the same product journey select useful directions and support a
   grounded drill-down across materially different large Go repositories?
 - Run the committed baseline without network access:
@@ -487,6 +488,10 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Current etcd signal: five directions covered, 21 unique structured paths
   grounded, four `kvServer.Put` predicates present, two useful test-reference
   paths found, and the source contract at 100/100 with zero parser warnings.
+- Current k6 signal: three directions covered, 11 unique structured paths
+  grounded, one `Client.Metrics` predicate present, one compatible test-reference
+  path found, and both retained raw model contracts clean. The orientation
+  request was 38,838 bytes and the source request was 5,167 bytes.
 - Explicitly unscored: 17 free-form orientation evidence strings and all claims
   about what referenced tests assert. The historical normalized orientation
   artifact also cannot measure the original provider-response contract.

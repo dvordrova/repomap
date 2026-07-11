@@ -2,6 +2,7 @@ package orient
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -226,10 +227,45 @@ func TestValidateOrientation(t *testing.T) {
 func TestEvidencePathMentions(t *testing.T) {
 	t.Parallel()
 
-	statement := "server/main.go:12 and ../private support this; import go.etcd.io/etcd/server/v3 is metadata"
+	statement := "server/main.go:12 and ../private support this; " +
+		"GET /metrics and /v1/metrics are HTTP routes; " +
+		"/api/v1/config.yaml, /v1/private.go, and /etc/passwd are files; " +
+		"import go.etcd.io/etcd/server/v3 is metadata"
 	paths := evidencePathMentions(statement)
-	if len(paths) != 2 || paths[0] != "server/main.go" || paths[1] != "../private" {
+	want := map[string]bool{
+		"server/main.go":      true,
+		"../private":          true,
+		"/api/v1/config.yaml": true,
+		"/v1/private.go":      true,
+		"/etc/passwd":         true,
+	}
+	if len(paths) != len(want) {
 		t.Fatalf("evidencePathMentions() = %q", paths)
+	}
+	for _, path := range paths {
+		if !want[path] {
+			t.Fatalf("evidencePathMentions() = %q, unexpected %q", paths, path)
+		}
+	}
+}
+
+func TestValidateOrientationAllowsHTTPRouteEvidence(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "service",
+		Confidence:   0.7,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:             "metrics request",
+			Trigger:          "GET /v1/metrics",
+			LikelyEntrypoint: "server/main.go",
+			LikelyFiles:      []string{"server/main.go"},
+			Evidence:         []string{"server/main.go handles GET /v1/metrics"},
+			Confidence:       0.6,
+		}},
+	}
+	if err := validateOrientation(report, []string{"server/main.go"}, nil); err != nil {
+		t.Fatalf("validateOrientation() error = %v", err)
 	}
 }
 
@@ -263,7 +299,7 @@ func TestParseOrientationRepairsSafeDriftWithWarnings(t *testing.T) {
 	report, err := parseOrientation([]byte(`{
 		"project_guess":"service",
 		"confidence":0.7,
-		"high_level_map":[],
+		"high_level_map":[{"name":"runtime","evidence":["internal/runtime/*"],"why_it_matters":"core"}],
 		"first_files_to_open":["server/main.go"],
 		"candidate_flows":[{
 			"name":"startup",
@@ -287,10 +323,39 @@ func TestParseOrientationRepairsSafeDriftWithWarnings(t *testing.T) {
 		t.Fatal(err)
 	}
 	joinedWarnings := strings.Join(report.Warnings, "\n")
-	for _, want := range []string{"first_files_to_open", "unverified_paths", "extra_provider_field"} {
+	for _, want := range []string{"first_files_to_open", "unverified_paths", "extra_provider_field", "wildcard evidence"} {
 		if !strings.Contains(joinedWarnings, want) {
 			t.Fatalf("warnings = %q, want %q", report.Warnings, want)
 		}
+	}
+}
+
+func TestK6QualityOrientationMatchesProductContract(t *testing.T) {
+	t.Parallel()
+
+	response, err := os.ReadFile("../quality/testdata/k6-metrics-v1/orientation_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextData, err := os.ReadFile("../quality/testdata/k6-metrics-v1/orientation_context.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groundingContext struct {
+		AllowedPaths []string `json:"allowed_paths"`
+	}
+	if err := json.Unmarshal(contextData, &groundingContext); err != nil {
+		t.Fatal(err)
+	}
+	report, err := parseOrientation(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateOrientation(report, groundingContext.AllowedPaths, nil); err != nil {
+		t.Fatalf("validateOrientation() error = %v", err)
+	}
+	if !strings.Contains(strings.Join(report.Warnings, "\n"), "wildcard evidence") {
+		t.Fatalf("parser warnings = %q, want wildcard evidence warning", report.Warnings)
 	}
 }
 

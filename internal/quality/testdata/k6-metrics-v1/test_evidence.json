@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "target_name": "Client.Metrics",
+  "searches": [
+    {
+      "anchor_evidence_id": "resolution-001",
+      "symbol_name": "Client.Metrics",
+      "location": {
+        "path": "api/v1/client/metrics.go",
+        "line": 12,
+        "column": 18,
+        "end_line": 12,
+        "end_column": 25
+      },
+      "source_evidence_ids": []
+    },
+    {
+      "anchor_evidence_id": "call-out-002",
+      "symbol_name": "Metrics",
+      "location": {
+        "path": "api/v1/metric_jsonapi.go",
+        "line": 53,
+        "column": 25,
+        "end_line": 53,
+        "end_column": 32
+      },
+      "predicate": "delegates_operation",
+      "source_evidence_ids": [
+        "source-20"
+      ]
+    }
+  ],
+  "references": [
+    {
+      "evidence_id": "test-ref-001",
+      "search_anchor_id": "call-out-002",
+      "predicate": "delegates_operation",
+      "path": "api/v1/metric_routes_test.go",
+      "line": 71,
+      "column": 25,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "api/v1/metric_jsonapi.go",
+            "line": 53,
+            "column": 25,
+            "end_line": 53,
+            "end_column": 32
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "gopls-active-build",
+      "name": "gopls active build configuration",
+      "build": {
+        "goos": "darwin",
+        "goarch": "amd64"
+      }
+    }
+  ],
+  "warnings": [
+    {
+      "code": "support.reference_only",
+      "message": "test references are navigation evidence only; no claim is test_supported until bounded test source is assessed"
+    }
+  ]
+}
