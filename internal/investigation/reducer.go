@@ -43,6 +43,25 @@ func Reduce(session Session, event Event) (Session, []Action, error) {
 		next.Repository.Revision = event.Revision
 		issueResolve(&next, "repository revision changed; resolve the focus again before reusing evidence")
 		return finishReduction(original, next)
+	case EventFactContextChanged:
+		next := resetDerived(session)
+		issueResolve(&next, fmt.Sprintf("saved facts are stale (%s); resolve the focus again before reusing evidence", event.Message))
+		return finishReduction(original, next)
+	case EventClaimContextChanged:
+		if session.Assessment == nil || session.SourceReport == nil {
+			return original, nil, fmt.Errorf("investigation: no model claims exist to invalidate")
+		}
+		next := session
+		next.SourceReport = nil
+		next.Tests = nil
+		next.Next = nil
+		next.Stop = nil
+		issue(&next, Action{
+			Kind:         ActionAssessSource,
+			Reason:       fmt.Sprintf("saved model claims are stale (%s); reassess the bounded source evidence", event.Message),
+			AssessSource: next.Assessment,
+		}, StateAssessingSource)
+		return finishReduction(original, next)
 	case EventRedirected:
 		if event.Redirect.Revision != "" && event.Redirect.Revision != session.Repository.Revision {
 			return original, nil, fmt.Errorf("investigation: repository revision changes require repository_changed event")
