@@ -306,6 +306,45 @@ func TestFileIndexPrefersEntrypointDependencySourceOverTests(t *testing.T) {
 	}
 }
 
+func TestFileIndexRetainsPackageNamedSourceAmongEqualDependencyFiles(t *testing.T) {
+	facts := &gofacts.Facts{
+		Modules: []gofacts.ModuleFact{
+			{ModulePath: "example.com/project", ModuleDir: "."},
+		},
+		EntrypointPackages: []gofacts.Entrypoint{
+			{
+				ModulePath: "example.com/project",
+				ImportPath: "example.com/project",
+				PackageDir: ".",
+				Kind:       "unknown",
+				GoFiles:    []string{"main.go"},
+			},
+		},
+		InternalEdges: []gofacts.Edge{
+			{From: "example.com/project", To: "example.com/project/server"},
+		},
+	}
+	fileList := []string{"main.go", "server/server.go"}
+	for index := 0; index < 70; index++ {
+		fileList = append(fileList, fmt.Sprintf("server/a%03d.go", index))
+	}
+
+	bundle := Build(
+		snapshot.Snapshot{RepoName: "test", GoFacts: facts},
+		fileList,
+		Options{MaxFiles: 60},
+	)
+	if !containsFileIndexPath(bundle.CandidateFileIndex, "server/server.go") {
+		t.Fatal("package-named source was displaced by equal-scored sibling files")
+	}
+	for _, entry := range bundle.CandidateFileIndex {
+		if entry.Path == "server/server.go" &&
+			!containsString(entry.Signals, "directory-anchor") {
+			t.Fatalf("package anchor signals = %v", entry.Signals)
+		}
+	}
+}
+
 func TestRepositoryDirForImportUsesLongestModuleMatch(t *testing.T) {
 	modules := []gofacts.ModuleFact{
 		{ModulePath: "example.com/project", ModuleDir: "."},
