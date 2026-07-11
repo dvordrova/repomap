@@ -232,7 +232,7 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 | Module | State | Owns | Boundary |
 | --- | --- | --- | --- |
 | `internal/quality` task/loader | works | strict task metadata, safe artifact containment, byte bounds, exact replay-artifact hashes | capture request/context metadata is recorded but not recomputed without uncommitted capture artifacts |
-| `internal/quality` evaluator | works | directions, grounding, important evidence, drill-down, overclaim tripwires, contract/size observations | no aggregate semantic score and no free-form prose grading |
+| `internal/quality` evaluator | works | directions, grounding, required orientation-to-drilldown link, overclaim tripwires, contract/size observations | no aggregate semantic score and no free-form prose grading |
 | etcd quality fixture | works | one reproducible orientation-to-`kvServer.Put` baseline | historical normalized orientation contract remains unmeasured |
 | k6 quality fixture | works | current raw orientation plus `Client.Metrics` source/test drill-down | latency was not captured; one test reference is not test support |
 
@@ -493,6 +493,11 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   grounded, one `Client.Metrics` predicate present, one compatible test-reference
   path found, and both retained raw model contracts clean. The orientation
   request was 38,838 bytes and the source request was 5,167 bytes.
+- Evaluator v3 rejects a drill-down path that is absent from every selected
+  orientation candidate. Prometheus preflight therefore uses `QueryRange` in
+  `cmd/promtool/query.go`; the tempting `Engine.NewInstantQuery` target was
+  rejected because `promql/engine.go` is outside the current bounded orientation
+  context.
 - Explicitly unscored: 17 free-form orientation evidence strings and all claims
   about what referenced tests assert. The historical normalized orientation
   artifact also cannot measure the original provider-response contract.

@@ -148,6 +148,7 @@ remaining onboarding/feature implementation.
 ./scripts/smoke.sh
 ./scripts/etcd_check.sh ../etcd
 ./scripts/quality_check.sh
+./scripts/quality_preflight.sh prometheus-query-range tmp/example-repos/prometheus QueryRange
 ```
 
 Contributor architecture and current execution order:

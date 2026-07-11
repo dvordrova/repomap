@@ -142,6 +142,22 @@ a parser false positive: extensionless `/v1/metrics` is an HTTP route, not a
 repository file path, while actual structured file paths remain
 allowlist-checked.
 
+Evaluator v3 additionally requires the drill-down source path to occur in the
+selected orientation candidate. This prevents two independently useful but
+unrelated artifacts from passing as one journey. Both existing tasks satisfy
+the stronger relation. `scripts/quality_preflight.sh` checks its necessary
+precondition before any model call—the symbol path must occur in the bounded
+orientation context—and records the clean revision, toolchain, exact model
+contexts, requests, hashes, and prompt versions.
+
+The Prometheus preflight at revision
+`af77de9a5fd8b5391eb65ad770a454c9e84346c2` selected `QueryRange` in
+`cmd/promtool/query.go`: unlike `Engine.NewInstantQuery`, that source path is
+actually present in the current 60-path orientation context. The bounded source
+step contains one `maps_error` question and has a direct `TestQueryRange` native
+test. This is not yet the third baseline: raw DeepSeek responses, test-evidence
+capture, expectations, and artifact hashes are still required.
+
 M3 remains active until equivalent small tasks for Prometheus, NATS Server, and
 golangci-lint pass the same offline workflow. Two passing captures establish the
 workflow on etcd and k6, not yet cross-repository product quality.

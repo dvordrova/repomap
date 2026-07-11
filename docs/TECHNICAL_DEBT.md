@@ -154,8 +154,9 @@ byte count as `null` instead of preserving false precision. This closes the
 quality-suite path but not the older experiment paths described above.
 
 The k6 task uses task schema v2 to distinguish pre-parser `provider_content`
-from a post-parser `normalized_report`. Evaluator v2 also rejects an ambiguous
-many-candidate match for one expected direction. Request preview and the live
+from a post-parser `normalized_report`. Evaluator v3 rejects both an ambiguous
+many-candidate match and a drill-down path unrelated to every selected
+orientation candidate. Request preview and the live
 client now share the same compact serializer;
 `scripts/quality_capture_meta.sh` removes the artifact-only terminal newline
 where present and derives byte-identical context/request hashes without exposing
@@ -164,6 +165,13 @@ remain `null` rather than being reconstructed from filesystem timestamps. The
 compact request/context bodies remain ignored local capture artifacts; offline
 replay pins the recorded values in its baseline test but cannot independently
 recompute them from the five committed replay artifacts.
+
+Future orientation and source runs retain measured provider/source-call latency
+in their ignored metadata. `scripts/quality_preflight.sh` also fails before
+network use when the exact symbol path is absent from the bounded orientation
+request, and records clean revision/toolchain plus exact context and request
+hashes for the linked target. It deliberately does not invent raw model
+responses or a passing task manifest.
 
 **Done when:** experiment metadata identifies provider plus stable prompt, schema,
 parser, and evaluator versions, so results remain comparable after any of those
