@@ -1,0 +1,267 @@
+// Package surfacediscovery contains the isolated Go runtime-surface experiment.
+package surfacediscovery
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+const (
+	AnalyzerVersion = "surface-ssa-v1"
+	CatalogVersion  = 1
+)
+
+type Options struct {
+	RepoPath   string
+	BuildTags  []string
+	MaxDepth   int
+	MaxTasks   int
+	MaxTargets int
+}
+
+func DefaultOptions(repoPath string) Options {
+	return Options{
+		RepoPath:   repoPath,
+		MaxDepth:   16,
+		MaxTasks:   1000,
+		MaxTargets: 8,
+	}
+}
+
+type TriggerCatalog struct {
+	Version         int             `json:"version"`
+	AnalyzerVersion string          `json:"analyzer_version"`
+	CatalogVersion  int             `json:"catalog_version"`
+	Repository      Repository      `json:"repository"`
+	Scenario        Scenario        `json:"scenario"`
+	Triggers        []TriggerRecord `json:"triggers"`
+}
+
+type Repository struct {
+	Root       string `json:"root"`
+	ModulePath string `json:"module_path,omitempty"`
+}
+
+type Scenario struct {
+	ID      string   `json:"id"`
+	GOOS    string   `json:"goos"`
+	GOARCH  string   `json:"goarch"`
+	Tags    []string `json:"tags"`
+	GoFlags string   `json:"go_flags,omitempty"`
+}
+
+type TriggerRecord struct {
+	ID                string       `json:"id"`
+	ProvisionalID     bool         `json:"provisional_id"`
+	Kind              string       `json:"kind"`
+	Identity          Identity     `json:"identity"`
+	Transport         string       `json:"transport"`
+	Framework         string       `json:"framework"`
+	ProcessEntrypoint Symbol       `json:"process_entrypoint"`
+	Dispatcher        Value        `json:"dispatcher"`
+	RegistrationSite  Location     `json:"registration_site"`
+	ServerStartSite   *Location    `json:"server_start_site,omitempty"`
+	Handler           Value        `json:"handler"`
+	Middleware        []Value      `json:"middleware"`
+	WrapperChain      []Wrapper    `json:"wrapper_chain"`
+	FinalSeed         string       `json:"final_seed"`
+	DiscoveryBasis    string       `json:"discovery_basis"`
+	Certainty         string       `json:"certainty"`
+	Resolution        string       `json:"resolution"`
+	ScenarioID        string       `json:"scenario_id"`
+	Evidence          []Evidence   `json:"evidence"`
+	Provenance        []Provenance `json:"provenance"`
+	DynamicFrontier   []Frontier   `json:"dynamic_frontier"`
+	Status            string       `json:"status"`
+}
+
+type Identity struct {
+	Method string `json:"method,omitempty"`
+	Path   Value  `json:"path"`
+}
+
+type Value struct {
+	Kind       string   `json:"kind"`
+	Text       string   `json:"text,omitempty"`
+	Known      bool     `json:"known"`
+	Candidates []string `json:"candidates"`
+}
+
+type Symbol struct {
+	ID       string   `json:"id"`
+	Package  string   `json:"package"`
+	Name     string   `json:"name"`
+	Location Location `json:"location"`
+}
+
+type Wrapper struct {
+	Symbol   Symbol   `json:"symbol"`
+	Callsite Location `json:"callsite"`
+	Origin   string   `json:"origin"`
+}
+
+type Location struct {
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Column int    `json:"column,omitempty"`
+}
+
+type Evidence struct {
+	ID       string   `json:"id"`
+	Kind     string   `json:"kind"`
+	Location Location `json:"location"`
+	Detail   string   `json:"detail"`
+}
+
+type Provenance struct {
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+	Operation string `json:"operation"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+type Frontier struct {
+	Kind     string    `json:"kind"`
+	Detail   string    `json:"detail"`
+	Location *Location `json:"location,omitempty"`
+}
+
+type SemanticSummary struct {
+	FunctionID       string           `json:"function_id"`
+	Effect           string           `json:"effect"`
+	FinalSeed        string           `json:"final_seed"`
+	WrapperPath      []string         `json:"wrapper_path"`
+	Projections      map[string]Value `json:"projections"`
+	Certainty        string           `json:"certainty"`
+	ScenarioID       string           `json:"scenario_id"`
+	Provenance       []Provenance     `json:"provenance"`
+	SourceDependency []SourceDigest   `json:"source_dependencies"`
+	Frontier         []Frontier       `json:"frontier"`
+}
+
+type SourceDigest struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+}
+
+type SurfaceCoverage struct {
+	Version                int        `json:"version"`
+	Repository             Repository `json:"repository"`
+	Scenario               Scenario   `json:"scenario"`
+	EntrypointsConsidered  []Symbol   `json:"entrypoints_considered"`
+	DispatchRootsFound     int        `json:"dispatch_roots_found"`
+	ConfiguredSeedsMatched []string   `json:"configured_seeds_matched"`
+	PackagesInspected      int        `json:"packages_inspected"`
+	FunctionsInspected     int        `json:"functions_inspected"`
+	DirectTriggers         int        `json:"direct_triggers"`
+	WrapperDerivedTriggers int        `json:"wrapper_derived_triggers"`
+	UnresolvedHandlers     int        `json:"unresolved_handlers"`
+	PossibleRegistrations  int        `json:"possible_registrations"`
+	DynamicFrontiers       []Frontier `json:"dynamic_frontiers"`
+	UnsupportedDispatch    []Frontier `json:"unsupported_dispatch_mechanisms"`
+	BuildConstraints       []string   `json:"build_constraints"`
+	FilesSkipped           []string   `json:"files_skipped"`
+	PackagesSkipped        []string   `json:"packages_skipped"`
+	BudgetsReached         []string   `json:"budgets_reached"`
+	ColdLatencyMillis      int64      `json:"cold_latency_ms"`
+	WarmLatencyMillis      *int64     `json:"warm_latency_ms,omitempty"`
+	CacheReuse             bool       `json:"cache_reuse"`
+	ScopeStatement         string     `json:"scope_statement"`
+}
+
+type Result struct {
+	Catalog   TriggerCatalog    `json:"trigger_catalog"`
+	Coverage  SurfaceCoverage   `json:"surface_coverage"`
+	Summaries []SemanticSummary `json:"semantic_summaries"`
+}
+
+func (r *Result) normalize() {
+	if r.Catalog.Triggers == nil {
+		r.Catalog.Triggers = []TriggerRecord{}
+	}
+	for index := range r.Catalog.Triggers {
+		trigger := &r.Catalog.Triggers[index]
+		if trigger.Middleware == nil {
+			trigger.Middleware = []Value{}
+		}
+		if trigger.WrapperChain == nil {
+			trigger.WrapperChain = []Wrapper{}
+		}
+		if trigger.Evidence == nil {
+			trigger.Evidence = []Evidence{}
+		}
+		if trigger.Provenance == nil {
+			trigger.Provenance = []Provenance{}
+		}
+		if trigger.DynamicFrontier == nil {
+			trigger.DynamicFrontier = []Frontier{}
+		}
+	}
+	if r.Summaries == nil {
+		r.Summaries = []SemanticSummary{}
+	}
+	if r.Coverage.EntrypointsConsidered == nil {
+		r.Coverage.EntrypointsConsidered = []Symbol{}
+	}
+	if r.Coverage.ConfiguredSeedsMatched == nil {
+		r.Coverage.ConfiguredSeedsMatched = []string{}
+	}
+	if r.Coverage.DynamicFrontiers == nil {
+		r.Coverage.DynamicFrontiers = []Frontier{}
+	}
+	if r.Coverage.UnsupportedDispatch == nil {
+		r.Coverage.UnsupportedDispatch = []Frontier{}
+	}
+	if r.Coverage.BuildConstraints == nil {
+		r.Coverage.BuildConstraints = []string{}
+	}
+	if r.Coverage.FilesSkipped == nil {
+		r.Coverage.FilesSkipped = []string{}
+	}
+	if r.Coverage.PackagesSkipped == nil {
+		r.Coverage.PackagesSkipped = []string{}
+	}
+	if r.Coverage.BudgetsReached == nil {
+		r.Coverage.BudgetsReached = []string{}
+	}
+	sort.Slice(r.Catalog.Triggers, func(i, j int) bool {
+		return r.Catalog.Triggers[i].ID < r.Catalog.Triggers[j].ID
+	})
+	sort.Strings(r.Coverage.ConfiguredSeedsMatched)
+	r.Coverage.ConfiguredSeedsMatched = compactStrings(r.Coverage.ConfiguredSeedsMatched)
+	sort.Slice(r.Summaries, func(i, j int) bool {
+		return r.Summaries[i].FunctionID < r.Summaries[j].FunctionID
+	})
+}
+
+func stableTriggerID(record TriggerRecord) string {
+	parts := []string{
+		"trigger-v1", record.Kind, record.Identity.Method, record.Identity.Path.Text,
+		record.Dispatcher.Text, record.RegistrationSite.Path,
+		strconv.Itoa(record.RegistrationSite.Line), record.Handler.Text, record.FinalSeed,
+	}
+	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "trigger-" + hex.EncodeToString(digest[:12])
+}
+
+func compactStrings(input []string) []string {
+	result := make([]string, 0, len(input))
+	for _, item := range input {
+		if len(result) == 0 || result[len(result)-1] != item {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func MarshalDeterministic(value any) ([]byte, error) {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
