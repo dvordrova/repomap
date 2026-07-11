@@ -492,6 +492,9 @@ func scoreFile(
 		if _, ok := entrypointDependencyDirs[path.Dir(filePath)]; ok {
 			addSignal("entrypoint-dependency", 80, "package imported directly by an entrypoint")
 		}
+		if isDirectoryNamedSource(filePath) {
+			addSignal("directory-anchor", 20, "source file named after its directory")
+		}
 	}
 
 	for _, word := range []string{"server", "etcdserver"} {
@@ -562,6 +565,15 @@ func scoreFile(
 	}
 
 	return score, signals, reasons
+}
+
+func isDirectoryNamedSource(filePath string) bool {
+	directory := path.Dir(filePath)
+	if directory == "." || directory == "/" {
+		return false
+	}
+	base := strings.TrimSuffix(path.Base(filePath), path.Ext(filePath))
+	return strings.EqualFold(base, path.Base(directory))
 }
 
 func hasPathToken(value, token string) bool {

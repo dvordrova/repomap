@@ -195,6 +195,14 @@ locally visible case-branch calls; golangci-lint exposes three immediately
 checked call results and one direct returned call. Live captures and committed
 quality tasks are still required before either repository counts toward M3.
 
+The first NATS live orientation was correctly rejected because the model placed
+the real but unprovided `server/server.go` in a structured `likely_files` list,
+even while warning that it was outside `allowed_paths`. Rather than weakening
+path validation or retrying until lucky, file ranking now gives a small generic
+boost to a source file named after its directory. The next NATS preflight keeps
+`server/server.go`, `server/client.go`, and `server/parser.go` inside the same
+60-path bound; no NATS-specific path is hard-coded.
+
 M3 remains active until equivalent small tasks for NATS Server and golangci-lint
 pass the same offline workflow. Three passing captures establish the workflow on
 etcd, k6, and Prometheus, but not yet the complete five-repository target.
