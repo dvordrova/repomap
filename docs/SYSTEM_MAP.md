@@ -235,6 +235,7 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 | `internal/quality` evaluator | works | directions, grounding, required orientation-to-drilldown link, overclaim tripwires, contract/size observations | no aggregate semantic score and no free-form prose grading |
 | etcd quality fixture | works | one reproducible orientation-to-`kvServer.Put` baseline | historical normalized orientation contract remains unmeasured |
 | k6 quality fixture | works | current raw orientation plus `Client.Metrics` source/test drill-down | latency was not captured; one test reference is not test support |
+| Prometheus quality fixture | works | raw orientation proposes a TSDB direction plus `Labels.IsValid` source/test drill-down | static path and references do not prove runtime ingestion or test coverage |
 
 ### Presentation and artifacts
 
@@ -278,7 +279,7 @@ This table separates real modularity from intended modularity.
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone; orientation uses user-facing entrypoint dependencies, bounded kind diversity, and one coherent allowlist | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
-| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | etcd and k6 exist; three repository baselines remain |
+| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | etcd, k6, and Prometheus exist; two repository baselines remain |
 | Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
 
 The next work should improve one red cell at a time and preserve a runnable
@@ -481,7 +482,7 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C13 — Cross-repository product quality
 
-- State: etcd and k6 baselines work; Prometheus, NATS Server, and golangci-lint
+- State: etcd, k6, and Prometheus baselines work; NATS Server and golangci-lint
   are still missing.
 - Question: does the same product journey select useful directions and support a
   grounded drill-down across materially different large Go repositories?
@@ -494,13 +495,20 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   grounded, one `Client.Metrics` predicate present, one compatible test-reference
   path found, and both retained raw model contracts clean. The orientation
   request was 38,838 bytes and the source request was 5,167 bytes.
+- Current Prometheus signal: one model-proposed TSDB write direction covers four important
+  paths and links to `Labels.IsValid`; one locally grounded call-result
+  observation sits under a name-seeded validation question, and one compatible
+  test-reference path is present. Both retained raw model wire contracts are
+  clean; mixed orientation evidence prose remains unscored. The orientation
+  request was 39,979 bytes / 27,247 ms and the source request was 6,228 bytes /
+  9,216 ms.
 - Evaluator v3 rejects a drill-down path that is absent from every selected
-  orientation candidate. Prometheus preflight therefore uses `QueryRange` in
-  `cmd/promtool/query.go`; the tempting `Engine.NewInstantQuery` target was
-  rejected because `promql/engine.go` is outside the current bounded orientation
-  context.
-- Explicitly unscored: 17 free-form orientation evidence strings and all claims
-  about what referenced tests assert. The historical normalized orientation
+  orientation candidate. The Prometheus capture satisfies that relation without
+  editing the provider response: DeepSeek placed
+  `model/labels/labels_common.go` in `TSDB Write Path (Ingestion to WAL)`.
+- Explicitly unscored: the historical etcd task retains 17 free-form orientation
+  evidence strings, while Prometheus retains 35; no task scores claims about
+  what referenced tests assert. The historical normalized etcd orientation
   artifact also cannot measure the original provider-response contract.
 - Pass signal: every repository has a versioned, revision-pinned, hash-verified
   task; failures identify a dimension instead of hiding behind one score; normal

@@ -26,6 +26,22 @@ an internal endpoint.
 legacy-only compatibility mode. With no explicit legacy endpoint/model, the
 DeepSeek defaults below are used.
 
+The application does not source `.env` files. The current repository may be
+untrusted input and its environment file may contain unrelated credentials or
+shell syntax. Export the selected variable in the launching process; local
+capture tooling may read only `DEEPSEEK_API_KEY` from repomap's own ignored
+`.env` without evaluating the file.
+
+For repository development commands, use the narrow wrapper explicitly:
+
+```bash
+./scripts/with_local_deepseek_key.sh \
+  ./scripts/source_prompt_experiment.sh LABEL ../etcd kvServer.Put
+```
+
+`scripts/deepseek_check.sh` applies the same wrapper automatically when no
+provider environment is already active.
+
 ## Endpoint
 
 ```
@@ -94,7 +110,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     {
       "name": "runtime or event flow name",
       "trigger": "what starts this flow",
-      "likely_entrypoint": "package or repo-relative file",
+      "likely_entrypoint": "exact full path from allowed_paths",
       "likely_files": ["repo-relative paths"],
       "why_interesting": "...",
       "evidence": ["facts from bundle supporting this flow"],
@@ -127,6 +143,12 @@ an allowed file nor a provided entrypoint package, it may be replaced with that
 flow's first already-allowed `likely_file`, again with a warning.
 `first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
 invented values: invalid or unallowed structured paths still fail validation.
+Orientation prompt v2 asks for atomic evidence items and tells the model to copy
+every file mention exactly in full; `main.go` is not accepted as an abbreviation
+for `cmd/prometheus/main.go`. The Prometheus capture still contains mixed prose
+items, which quality replay leaves explicitly unscored. Its clean raw-contract
+flag means the JSON wire shape was clean, not that every semantic prompt
+instruction was obeyed.
 
 ## Focused symbol investigation
 
@@ -213,6 +235,23 @@ prompt versions with:
 
 Stable bundle/response fixtures and an in-memory explainer live in
 `internal/deepseektest`; they let higher layers test without calling DeepSeek.
+Capture tooling reads current contract IDs from `repomap dev prompt-versions`
+instead of duplicating prompt-version literals in shell.
+
+## Source assessment
+
+Source prompt v4 receives one bounded lexical source bundle. For a question
+whose call result is used on a separate line, `shown` must cite both the exact
+call anchor and the candidate result-use line. The response stays compact:
+question ID, verdict, source evidence IDs, explicit unknowns, and one allowed
+next action.
+
+Local parsing remains tolerant without trusting the model to manufacture proof.
+If the model cites the anchor but omits an immediate guard or returned nil
+comparison, the assessment becomes `ambiguous` with
+`assessment.shown_without_predicate_support`, and the evaluator deducts the
+evidence-contract points. Unsupported, reassigned, transformed, non-immediate,
+split-line, or truncated shapes are not promoted.
 
 ## Error handling
 

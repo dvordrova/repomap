@@ -148,7 +148,8 @@ remaining onboarding/feature implementation.
 ./scripts/smoke.sh
 ./scripts/etcd_check.sh ../etcd
 ./scripts/quality_check.sh
-./scripts/quality_preflight.sh prometheus-query-range tmp/example-repos/prometheus QueryRange
+# Before a new live baseline, after choosing a linked source-capable symbol:
+./scripts/quality_preflight.sh LABEL PATH_TO_REPO EXACT_SYMBOL
 ```
 
 Contributor architecture and current execution order:

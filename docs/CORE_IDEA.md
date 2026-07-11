@@ -148,9 +148,16 @@ The completed source-grounded slice is explicit and independently replayable:
 ```
 
 Source lines remain bounded lexical evidence, never a claim that the whole
-function body was parsed. Related `_test.go` locations are `test_reference`
-navigation evidence with gopls provenance; they are not `test_supported` until
-their bounded test source is assessed.
+function body was parsed. For validation-shaped calls, the local source cube can
+lexically connect an assigned multiline call to an immediately following
+`if err != nil` or returned `err == nil` comparison and exposes only the minimal
+supporting source IDs. This uses Go token scanning, not AST semantic inference,
+and still leaves callee behavior and runtime reachability unknown. A weak model
+that cites only the call anchor is reduced to `ambiguous` with a warning rather
+than being allowed to manufacture or inherit the missing proof. Related
+`_test.go` locations are `test_reference` navigation evidence with gopls
+provenance; they are not `test_supported` until their bounded test source is
+assessed.
 
 ## Non-goals for now
 
