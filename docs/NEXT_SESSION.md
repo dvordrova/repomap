@@ -22,10 +22,11 @@ If the user starts with “what do we do next?”, recommend this order:
 Read these first:
 
 1. [CORE_IDEA.md](CORE_IDEA.md) — current pipeline and constraints;
-2. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow proposal;
-3. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated implementation gaps;
-4. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product/research decisions;
-5. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current provider contract.
+2. [SYSTEM_MAP.md](SYSTEM_MAP.md) — current/planned modules and challenge cards;
+3. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow proposal;
+4. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated implementation gaps;
+5. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product/research decisions;
+6. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current provider contract.
 
 ## What works
 
