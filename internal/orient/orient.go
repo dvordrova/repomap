@@ -38,6 +38,7 @@ type Options struct {
 	DumpLLM              bool
 	DumpRedacted         bool
 	ExplainFlows         int
+	Progress             func(ProgressEvent)
 }
 
 type combinedReport struct {
@@ -54,6 +55,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if opts.DumpLLM && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
 		return nil, fmt.Errorf("--dump-llm requires a debug directory")
 	}
+
+	emitProgress(opts, ProgressEvent{
+		Stage:    ProgressSnapshotStarted,
+		RepoPath: opts.RepoPath,
+	})
 
 	s, err := snapshot.Build(snapshot.Options{
 		RepoPath:            opts.RepoPath,
@@ -91,6 +97,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal compact model bundle: %w", err)
 	}
+	emitProgress(opts, ProgressEvent{
+		Stage:       ProgressBundleReady,
+		RepoName:    s.RepoName,
+		BundleBytes: len(modelBundleJSON),
+	})
 
 	if opts.LLMBundleOnly {
 		out := append(bundleJSON, '\n')
@@ -110,7 +121,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return append(requestJSON, '\n'), nil
+		return requestJSON, nil
 	}
 
 	runID := opts.RunID
@@ -199,6 +210,13 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				return nil, fmt.Errorf("write required llm request before provider call: %w", err)
 			}
 		}
+		emitProgress(opts, ProgressEvent{
+			Stage:        ProgressModelRequest,
+			RepoName:     s.RepoName,
+			Model:        client.Model,
+			BundleBytes:  len(modelBundleJSON),
+			RequestBytes: len(requestJSON),
+		})
 
 		raw, err := client.Orient(ctx, modelBundleJSON)
 		if err != nil {
@@ -235,6 +253,12 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, err
 		}
 		report.Orientation = &or
+		emitProgress(opts, ProgressEvent{
+			Stage:          ProgressOrientationDone,
+			RepoName:       s.RepoName,
+			Model:          client.Model,
+			CandidateCount: len(or.CandidateFlows),
+		})
 
 		out, _ := json.MarshalIndent(or, "", "  ")
 		if dw != nil {
