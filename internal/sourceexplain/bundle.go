@@ -104,7 +104,7 @@ func Build(structural symbol.Bundle, card sourcecard.Card) (Bundle, error) {
 		if !ok {
 			continue
 		}
-		candidateIDs := candidateSourceIDs(predicate, call.Callsite.Line, lineByNumber)
+		candidateIDs := candidateSourceIDs(predicate, call.Callsite.Line, call.Callee.Name, lineByNumber)
 		if len(candidateIDs) == 0 {
 			continue
 		}
@@ -372,11 +372,35 @@ func classifyCall(targetName, calleeName string) (Predicate, bool) {
 	}
 }
 
-func candidateSourceIDs(predicate Predicate, anchorLine int, lines map[int]sourcecard.Line) []string {
+func candidateSourceIDs(
+	predicate Predicate,
+	anchorLine int,
+	calleeName string,
+	lines map[int]sourcecard.Line,
+) []string {
+	if predicate == PredicateValidatesInput {
+		orderedLines := make([]sourcecard.Line, 0, len(lines))
+		for _, line := range lines {
+			orderedLines = append(orderedLines, line)
+		}
+		sort.Slice(orderedLines, func(i, j int) bool {
+			return orderedLines[i].Line < orderedLines[j].Line
+		})
+		anchor, ok := lines[anchorLine]
+		if ok {
+			question := Question{
+				Predicate:              predicate,
+				AnchorSourceEvidenceID: anchor.EvidenceID,
+				CalleeName:             calleeName,
+			}
+			if proofIDs, _, proven := validationProofSourceIDs(question, orderedLines); proven {
+				return proofIDs
+			}
+		}
+	}
+
 	lineNumbers := []int{anchorLine}
 	switch predicate {
-	case PredicateValidatesInput:
-		lineNumbers = append(lineNumbers, anchorLine+1, anchorLine+2)
 	case PredicateMapsError:
 		lineNumbers = append([]int{anchorLine - 1}, lineNumbers...)
 	}

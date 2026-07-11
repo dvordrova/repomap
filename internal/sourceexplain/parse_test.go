@@ -51,6 +51,77 @@ func TestParseReportBuildsOnlyGroundedLocalClaims(t *testing.T) {
 	}
 }
 
+func TestParseReportDowngradesIncompleteMultilineValidationEvidence(t *testing.T) {
+	t.Parallel()
+
+	structural, card := labelsIsValidFixture()
+	bundle, err := Build(structural, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := `{
+  "assessments": [{
+    "question_id": "question-call-out-001",
+    "verdict": "shown",
+    "source_evidence_ids": ["source-119"]
+  }],
+  "unknowns": [
+    {"kind":"test_coverage","anchor_evidence_id":"resolution-001"},
+    {"kind":"runtime_reachability","anchor_evidence_id":"resolution-001"}
+  ],
+  "next_action_id": "action-find-tests"
+}`
+	result, err := ParseReport(bundle, []byte(response))
+	if err != nil {
+		t.Fatalf("ParseReport() error = %v", err)
+	}
+	assessment := result.Report.Assessments[0]
+	if assessment.Verdict != VerdictAmbiguous ||
+		!equalStrings(assessment.SourceEvidenceIDs, []string{"source-119"}) ||
+		len(result.Report.Claims) != 0 {
+		t.Fatalf("report = %#v", result.Report)
+	}
+	if !hasParseWarning(result.Warnings, "assessment.shown_without_predicate_support") {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+	evaluation := Evaluate(result)
+	if evaluation.Score != 75 || evaluation.MaxScore != 100 {
+		t.Fatalf("evaluation = %#v", evaluation)
+	}
+}
+
+func TestParseReportAcceptsExplicitMultilineValidationEvidenceCleanly(t *testing.T) {
+	t.Parallel()
+
+	structural, card := labelsIsValidFixture()
+	bundle, err := Build(structural, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := `{
+  "assessments": [{
+    "question_id": "question-call-out-001",
+    "verdict": "shown",
+    "source_evidence_ids": ["source-119", "source-132"]
+  }],
+  "unknowns": [
+    {"kind":"test_coverage","anchor_evidence_id":"resolution-001"},
+    {"kind":"runtime_reachability","anchor_evidence_id":"resolution-001"}
+  ],
+  "next_action_id": "action-find-tests"
+}`
+	result, err := ParseReport(bundle, []byte(response))
+	if err != nil {
+		t.Fatalf("ParseReport() error = %v", err)
+	}
+	if len(result.Warnings) != 0 || len(result.Report.Claims) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if evaluation := Evaluate(result); evaluation.Score != 100 {
+		t.Fatalf("evaluation = %#v", evaluation)
+	}
+}
+
 func TestParseReportDropsValidButIrrelevantEvidence(t *testing.T) {
 	t.Parallel()
 
@@ -350,7 +421,7 @@ const validSourceResponse = `{
     {
       "question_id": "question-call-out-002",
       "verdict": "shown",
-      "source_evidence_ids": ["source-91", "source-92"]
+      "source_evidence_ids": ["source-91"]
     },
     {
       "question_id": "question-call-out-004",

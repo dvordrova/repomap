@@ -2,7 +2,7 @@ package sourceexplain
 
 import "strings"
 
-const EvaluationVersion = 2
+const EvaluationVersion = 3
 
 type Evaluation struct {
 	Version      int               `json:"version"`
@@ -23,7 +23,14 @@ func Evaluate(result ParseResult) Evaluation {
 	checks := []EvaluationCheck{
 		check("all_questions_assessed", 20, !hasWarningPrefix(result.Warnings, "assessment.missing_"), "the model explicitly assessed every seeded question"),
 		check("verdicts_understood", 15, !hasWarningPrefix(result.Warnings, "assessment.verdict_"), "all model verdicts used the supported vocabulary"),
-		check("question_scoped_evidence", 25, !hasWarningPrefix(result.Warnings, "assessment.evidence_") && !hasWarningCode(result.Warnings, "assessment.shown_without_anchor"), "cited source evidence stayed inside each question's candidate set"),
+		check(
+			"question_scoped_evidence",
+			25,
+			!hasWarningPrefix(result.Warnings, "assessment.evidence_") &&
+				!hasWarningCode(result.Warnings, "assessment.shown_without_anchor") &&
+				!hasWarningCode(result.Warnings, "assessment.shown_without_predicate_support"),
+			"cited source evidence stayed inside each question's candidate set and directly supported its predicate",
+		),
 		check("no_conflicting_assessments", 10, !hasWarningCode(result.Warnings, "assessment.duplicate_ambiguous"), "the model did not emit conflicting duplicate assessments"),
 		check("allowed_model_action", 15, result.Report.NextAction.Origin == ActionOriginModel, "the model selected one locally allowed executable action"),
 		check("clean_response_shape", 10, !usedContractRecovery(result.Warnings), "the response used the documented JSON fields and shapes without local format repair"),

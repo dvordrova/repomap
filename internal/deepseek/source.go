@@ -9,7 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 )
 
-const SourcePromptVersionJSON = "source-assessment-json-v2"
+const SourcePromptVersionJSON = "source-assessment-json-v3"
 
 func (c *Client) SourcePromptJSON(bundleJSON []byte) ([]byte, error) {
 	systemPrompt, userPrompt, err := buildSourcePrompts(bundleJSON)
@@ -59,7 +59,7 @@ Return JSON with exactly this shape:
 
 Rules:
 1. Emit exactly one assessment for every question id, without duplicates.
-2. Use "shown" only when the cited source lines directly show the anchored source operation. A shown assessment must cite its anchor_source_evidence_id.
+2. Use "shown" only when the cited source lines directly show the anchored source operation. A shown assessment must cite its anchor_source_evidence_id. When a call result is used by a separate guard or returned comparison, cite both the call anchor and that result-use line; the anchor alone is ambiguous.
 3. source_evidence_ids must be a subset of that question's candidate_source_evidence_ids. An evidence id that belongs to another question is invalid even when it exists elsewhere in the bundle.
 4. The supplied source is a lexical window, not a parsed complete function body. It cannot prove absence. Use "ambiguous", never "not_shown", when an operation is not directly shown.
 5. Match the predicate to written syntax, not the callee name alone. validates_input requires a guard or conditional using the call result. maps_error requires returning the mapped result on a shown error path. delegates_operation supports only that the call is made at the operation step. fills_response requires response data in the shown call. Persistence and I/O names do not prove runtime side effects.
