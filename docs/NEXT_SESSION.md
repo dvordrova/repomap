@@ -10,24 +10,30 @@ repository facts, derived claims, and investigation sessions separately. A
 bounded context assembler selects the next small evidence slice for a human,
 weak/local model, browser UI, or external coding agent.
 
+The canonical execution order is [MILESTONES.md](MILESTONES.md). DeepSeek through
+its OpenAI-compatible API is the default interpretation and product-quality
+target. Existing Qwen 1.5B work remains a useful prototype, but no new local
+model work is on the critical path. Later, `--really-dumb-model` may select
+alternate implementations of the same typed capability contracts.
+
 If the user starts with “what do we do next?”, recommend this order:
 
-1. execute the staged protocol's `read_target` action into a bounded,
-   line-addressable source evidence card;
-2. connect symbol collection and staged context selection to `internal/index`,
-   including a stable repository revision/freshness key;
-3. split contract scoring from high-precision usefulness diagnostics for the
-   remaining prose-based model path;
-4. then run the same source-evidence protocol against Qwen 1.5B and 3B.
+1. implement the M2 investigation state/event/action types and a pure reducer;
+2. replay the completed `kvServer.Put` symbol -> source -> claims -> test
+   references path through reducer-requested capability actions;
+3. persist and resume that state only after the reducer transitions are stable;
+4. then let repository orientation hand one chosen flow/symbol into the same
+   reducer. Dumb-model implementations remain deferred.
 
 Read these first:
 
 1. [CORE_IDEA.md](CORE_IDEA.md) — current pipeline and constraints;
-2. [SYSTEM_MAP.md](SYSTEM_MAP.md) — current/planned modules and challenge cards;
-3. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow proposal;
-4. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated implementation gaps;
-5. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product/research decisions;
-6. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current provider contract.
+2. [MILESTONES.md](MILESTONES.md) — ordered product outcomes and completion gates;
+3. [SYSTEM_MAP.md](SYSTEM_MAP.md) — current/planned modules and challenge cards;
+4. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow proposal;
+5. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated implementation gaps;
+6. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product/research decisions;
+7. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current provider contract.
 
 ## What works
 
@@ -37,6 +43,13 @@ Read these first:
 - language-neutral evidence graph with certainty, provenance, and scenarios;
 - isolated gopls analyzer and example runs for large Go repositories;
 - exact-symbol bundle with bounded callers/callees and locally rebuilt structure;
+- bounded lexical source cards with containment, size, credential, hash, and
+  line-addressability checks;
+- DeepSeek source-assessment v2 with predicate-specific lexical support,
+  conservative locally reconstructed claims, explicit unknowns, replay fixture,
+  and raw-response retention on parse failure;
+- gopls test-reference collection with provider/version/provenance/build scenario;
+  references remain navigation evidence and are not called test-supported;
 - versioned local symbol evidence index with defensive put/query,
   deterministic persistence/reload, and path-based invalidation;
 - JSON and tagged symbol prompts, tolerant normalization, evaluator, fixtures,
@@ -89,8 +102,10 @@ and asks the model to choose an executable action. Three consecutive
 `kvServer.Put` runs were identical at 3.98–4.08 seconds with two model calls,
 380 input tokens, 63 output tokens, 9/9 protocol checks, and a locally rendered
 100/100 contract report. Additional `kvServer.DeleteRange` and `WAL.Save` runs
-also passed all protocol checks. The next action was correctly `read_target`; source
-truth is therefore the next stage, not a solved problem.
+also passed all protocol checks. The staged protocol's `read_target` action has
+now been executed by the default DeepSeek path. This does not make local-model
+source assessment solved; it gives future dumb-model work a stable source-card
+and assessment-cube contract to target.
 
 Do not conclude that local inference is generally solved. The staged result proves
 that 1.5B is useful for constrained selection and planning; behavioral claims
@@ -134,6 +149,8 @@ high-value frontier branch when evidence is insufficient.
 ./scripts/check.sh
 ./scripts/etcd_check.sh ../etcd
 ./scripts/symbol_check.sh ../etcd kvServer.Put
+./scripts/source_artifacts_check.sh ../etcd kvServer.Put
+./scripts/source_check.sh
 ```
 
 ## Workspace caution

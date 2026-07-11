@@ -16,6 +16,9 @@ gaps and experiment follow-ups are tracked in
 For a current/planned module map and independently runnable challenge points,
 read [SYSTEM_MAP.md](SYSTEM_MAP.md).
 
+The ordered product outcomes and their observable completion conditions are in
+[MILESTONES.md](MILESTONES.md). Exactly one milestone is active at a time.
+
 ## Pipeline
 
 ### 1. Deterministic local extraction
@@ -120,6 +123,19 @@ The raw local evidence graph is retained for debugging but is never sent.
 DeepSeek receives only `symbol_bundle.json`; every report claim must cite its
 evidence IDs, and the response is rejected if it invents paths, evidence,
 caller/callee identities, observed runtime behavior, or test files.
+
+The completed source-grounded slice is explicit and independently replayable:
+
+```bash
+./scripts/source_artifacts_check.sh ../etcd kvServer.Put  # local source bundle
+./scripts/source_check.sh                                 # fixed DeepSeek replay
+./scripts/source_prompt_experiment.sh LABEL ../etcd kvServer.Put  # live API
+```
+
+Source lines remain bounded lexical evidence, never a claim that the whole
+function body was parsed. Related `_test.go` locations are `test_reference`
+navigation evidence with gopls provenance; they are not `test_supported` until
+their bounded test source is assessed.
 
 ## Non-goals for now
 
