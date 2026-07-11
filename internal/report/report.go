@@ -5,16 +5,53 @@ import "fmt"
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
-	RepoName            string               `json:"repo_name"`
-	ProjectGuess        string               `json:"project_guess"`
-	CandidateFlows      []string             `json:"candidate_flows"`
-	CandidateDirections []CandidateDirection `json:"candidate_directions,omitempty"`
-	Flows               []FlowData           `json:"flows"`
-	ArtifactsDir        string               `json:"artifacts_dir"`
-	Warnings            []string             `json:"warnings,omitempty"`
+	RepoName                   string               `json:"repo_name"`
+	ProjectGuess               string               `json:"project_guess"`
+	OrientationConfidence      float64              `json:"orientation_confidence"`
+	HighLevelMap               []Subsystem          `json:"high_level_map,omitempty"`
+	FirstFilesToOpen           []FileItem           `json:"first_files_to_open,omitempty"`
+	CandidateFlows             []string             `json:"candidate_flows"`
+	CandidateDirections        []CandidateDirection `json:"candidate_directions,omitempty"`
+	ImportantDomainWords       []DomainWord         `json:"important_domain_words,omitempty"`
+	QuestionsForHuman          []string             `json:"questions_for_human,omitempty"`
+	OrientationUnverifiedPaths []PathItem           `json:"unverified_paths,omitempty"`
+	Flows                      []FlowData           `json:"flows"`
+	ArtifactsDir               string               `json:"artifacts_dir"`
+	FeedbackPath               string               `json:"feedback_path,omitempty"`
+	Warnings                   []string             `json:"warnings,omitempty"`
+	Run                        *RunInfo             `json:"run,omitempty"`
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// RunInfo contains safe, content-free facts about the model boundary used for
+// this report. It intentionally excludes credentials, prompts, responses, and
+// the provider endpoint.
+type RunInfo struct {
+	CreatedAt               string `json:"created_at,omitempty"`
+	Model                   string `json:"model,omitempty"`
+	PromptVersion           string `json:"prompt_version,omitempty"`
+	CompactContextBytes     int    `json:"compact_context_bytes,omitempty"`
+	ExternalRequestBytes    int    `json:"external_request_bytes,omitempty"`
+	ProviderRequestCount    int    `json:"provider_request_count,omitempty"`
+	CandidateDirectionCount int    `json:"candidate_direction_count,omitempty"`
+	ProviderLatencyMillis   *int64 `json:"provider_latency_ms,omitempty"`
+}
+
+// Subsystem is one grounded component from the orientation-stage system map.
+type Subsystem struct {
+	Name         string   `json:"name"`
+	Evidence     []string `json:"evidence"`
+	WhyItMatters string   `json:"why_it_matters"`
+}
+
+// DomainWord records repository vocabulary that helps a new reader interpret
+// names in the source without presenting the model's guess as a verified fact.
+type DomainWord struct {
+	Word     string   `json:"word"`
+	Guess    string   `json:"guess"`
+	Evidence []string `json:"evidence"`
 }
 
 // CandidateDirection is the orientation-stage view of a flow that can be
@@ -44,6 +81,8 @@ type FlowData struct {
 	Warnings        []string    `json:"warnings"`
 	BundleSummary   BundleStats `json:"bundle_summary"`
 	Error           string      `json:"error,omitempty"`
+	EvidenceOnly    bool        `json:"evidence_only,omitempty"`
+	FlowStatus      string      `json:"flow_status,omitempty"`
 
 	ConfidenceLabel  string `json:"confidence_label,omitempty"`
 	BundleStatsLabel string `json:"bundle_stats_label,omitempty"`
@@ -130,7 +169,7 @@ func findBestFlow(flows []FlowData) string {
 }
 
 func enrich(data *ReportData) {
-	data.FormatVersion = 3
+	data.FormatVersion = 5
 	data.FlowCount = len(data.Flows)
 	for i := range data.Flows {
 		data.Flows[i].ConfidenceLabel = confidenceLabel(data.Flows[i].Confidence)

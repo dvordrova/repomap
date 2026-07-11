@@ -312,10 +312,22 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 			return err
 		}
 	}
+	flowIDs := make(map[string]string, len(report.CandidateFlows))
 	for flowIndex, flow := range report.CandidateFlows {
 		if strings.TrimSpace(flow.Name) == "" || strings.TrimSpace(flow.Trigger) == "" {
 			return fmt.Errorf("orientation: candidate_flows[%d] is missing name or trigger", flowIndex)
 		}
+		flowID := flowexplain.GenerateFlowID(flow.Name)
+		if previousName, exists := flowIDs[flowID]; exists {
+			return fmt.Errorf(
+				"orientation: candidate_flows[%d] name %q collides with %q as id %q",
+				flowIndex,
+				flow.Name,
+				previousName,
+				flowID,
+			)
+		}
+		flowIDs[flowID] = flow.Name
 		if flow.Confidence < 0 || flow.Confidence > 1 {
 			return fmt.Errorf("orientation: candidate_flows[%d] confidence is outside [0,1]", flowIndex)
 		}

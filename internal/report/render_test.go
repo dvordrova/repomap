@@ -11,10 +11,22 @@ import (
 var update = flag.Bool("update", false, "update golden files")
 
 func TestWriteReportHTML_Golden(t *testing.T) {
+	latency := int64(432)
 	data := ReportData{
-		FormatVersion:  3,
-		RepoName:       "testrepo",
-		ProjectGuess:   "test project",
+		FormatVersion:         5,
+		RepoName:              "testrepo",
+		ProjectGuess:          "test project",
+		OrientationConfidence: 0.82,
+		HighLevelMap: []Subsystem{{
+			Name:         "command",
+			Evidence:     []string{"main.go wires the server"},
+			WhyItMatters: "owns process startup",
+		}},
+		FirstFilesToOpen: []FileItem{{
+			Path:     "main.go",
+			Reason:   "process entrypoint",
+			Priority: 1,
+		}},
 		CandidateFlows: []string{"flow-a"},
 		CandidateDirections: []CandidateDirection{{
 			ID:               "flow-a",
@@ -26,10 +38,30 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 			Evidence:         []string{"main.go wires the server"},
 			Confidence:       0.75,
 		}},
+		ImportantDomainWords: []DomainWord{{
+			Word:     "worker",
+			Guess:    "background request processor",
+			Evidence: []string{"server/server.go starts workers"},
+		}},
+		QuestionsForHuman: []string{"Which runtime path matters most?"},
+		OrientationUnverifiedPaths: []PathItem{{
+			Path:   "legacy/worker.go",
+			Reason: "mentioned but not included in the bounded context",
+		}},
 		RecommendedFlow: "flow-a",
 		FlowCount:       1,
 		ArtifactsDir:    "/tmp/test-run",
 		Warnings:        []string{"global warning 1"},
+		Run: &RunInfo{
+			CreatedAt:               "2026-07-10T12:00:00Z",
+			Model:                   "deepseek-v4-flash",
+			PromptVersion:           "orientation-json-v3",
+			CompactContextBytes:     12000,
+			ExternalRequestBytes:    18000,
+			ProviderRequestCount:    1,
+			CandidateDirectionCount: 1,
+			ProviderLatencyMillis:   &latency,
+		},
 		Flows: []FlowData{{
 			ID:               "flow-a",
 			Name:             "Test Flow",
@@ -124,10 +156,41 @@ func TestWriteReportHTML_WritesFile(t *testing.T) {
 	}
 }
 
+func TestWriteReportHTML_EscapesModelControlledTitle(t *testing.T) {
+	data := ReportData{
+		RepoName:     "safe-repo",
+		ProjectGuess: `</title><script>globalThis.pwned = true</script>`,
+	}
+	html, err := buildHTML(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(html, []byte(`</title><script>globalThis.pwned`)) {
+		t.Fatalf("model-controlled title was embedded as executable HTML: %s", html)
+	}
+	if !bytes.Contains(html, []byte(`&lt;/title&gt;&lt;script&gt;globalThis.pwned`)) {
+		t.Fatalf("escaped title is missing: %s", html)
+	}
+	if !bytes.Contains(html, []byte(`\u003c/title\u003e\u003cscript\u003e`)) {
+		t.Fatalf("embedded report JSON did not retain safe JSON escaping: %s", html)
+	}
+}
+
 func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T) {
 	data := ReportData{
-		FormatVersion: 3,
-		RepoName:      "orientation-only",
+		FormatVersion:         5,
+		RepoName:              "orientation-only",
+		ProjectGuess:          "metrics service",
+		OrientationConfidence: 0.86,
+		HighLevelMap: []Subsystem{{
+			Name:         "metrics API",
+			Evidence:     []string{"api/server.go registers metrics routes"},
+			WhyItMatters: "serves collected measurements",
+		}},
+		FirstFilesToOpen: []FileItem{{
+			Path:   "api/server.go",
+			Reason: "public API entrypoint",
+		}},
 		CandidateFlows: []string{
 			"HTTP request",
 		},
@@ -140,6 +203,16 @@ func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T
 			WhyInteresting:   "connects the public API to metric collection",
 			Evidence:         []string{"api/server.go registers the route"},
 			Confidence:       0.8,
+		}},
+		ImportantDomainWords: []DomainWord{{
+			Word:     "scrape",
+			Guess:    "collect metrics from a target",
+			Evidence: []string{"metrics/registry.go stores collectors"},
+		}},
+		QuestionsForHuman: []string{"Which collector is representative?"},
+		OrientationUnverifiedPaths: []PathItem{{
+			Path:   "legacy/scrape.go",
+			Reason: "not present in the bounded context",
 		}},
 	}
 
@@ -154,6 +227,19 @@ func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T
 		t.Fatalf("read report.html: %v", err)
 	}
 	for _, want := range [][]byte{
+		[]byte("Purpose"),
+		[]byte("System map"),
+		[]byte("Start here"),
+		[]byte("Important terms"),
+		[]byte("Questions for a teammate"),
+		[]byte("metrics service"),
+		[]byte("metrics API"),
+		[]byte("serves collected measurements"),
+		[]byte("public API entrypoint"),
+		[]byte("scrape"),
+		[]byte("collect metrics from a target"),
+		[]byte("Which collector is representative?"),
+		[]byte("legacy/scrape.go"),
 		[]byte("candidate_directions"),
 		[]byte("HTTP request"),
 		[]byte("GET /metrics"),
@@ -168,6 +254,47 @@ func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T
 	}
 	if bytes.Contains(b, []byte("No flows identified")) {
 		t.Error("orientation-only report contains the misleading old empty-state text")
+	}
+}
+
+func TestWriteReportHTML_DirectionCanOpenSavedLocalEvidence(t *testing.T) {
+	data := ReportData{
+		FormatVersion: 5,
+		RepoName:      "friend-project",
+		CandidateDirections: []CandidateDirection{{
+			ID:               "worker-run",
+			Name:             "Worker run",
+			Trigger:          "the worker starts",
+			LikelyEntrypoint: "internal/worker/worker.go",
+			LikelyFiles:      []string{"internal/worker/worker.go"},
+			Evidence:         []string{"internal/worker/worker.go"},
+			Confidence:       0.8,
+		}},
+		Flows: []FlowData{{
+			ID:           "worker-run",
+			Name:         "Worker run",
+			EvidenceOnly: true,
+			FlowStatus:   "local_only",
+			BundleFiles: []FileItem{{
+				Path:   "internal/worker/worker.go",
+				Reason: "likely_file from candidate_flow",
+			}},
+		}},
+	}
+
+	html, err := buildHTML(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range [][]byte{
+		[]byte(`"evidence_only":true`),
+		[]byte("Explore focused local evidence"),
+		[]byte("No second model call was made"),
+		[]byte("rm-candidate-direction--clickable"),
+	} {
+		if !bytes.Contains(html, want) {
+			t.Errorf("report HTML missing %q", want)
+		}
 	}
 }
 
@@ -232,5 +359,34 @@ func TestGenerate(t *testing.T) {
 	}
 	if bytes.Contains(b, []byte("F:")) || bytes.Contains(b, []byte("S:")) || bytes.Contains(b, []byte("T:")) {
 		t.Error("report.html contains single-letter abbreviations")
+	}
+
+	feedbackPath := filepath.Join(dir, "onboarding-feedback.md")
+	feedback, err := os.ReadFile(feedbackPath)
+	if err != nil {
+		t.Fatalf("read onboarding feedback template: %v", err)
+	}
+	for _, want := range [][]byte{[]byte("Repository: generatetest"), []byte("## Correct"), []byte("## Missing"), []byte("## Misleading")} {
+		if !bytes.Contains(feedback, want) {
+			t.Errorf("feedback template missing %q", want)
+		}
+	}
+	if !bytes.Contains(b, []byte("onboarding-feedback.md")) {
+		t.Error("report HTML does not expose the feedback path")
+	}
+
+	const friendNotes = "friend notes must survive report regeneration\n"
+	if err := os.WriteFile(feedbackPath, []byte(friendNotes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Generate(dir); err != nil {
+		t.Fatalf("regenerate report: %v", err)
+	}
+	feedback, err = os.ReadFile(feedbackPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(feedback) != friendNotes {
+		t.Fatalf("report regeneration overwrote feedback: %q", feedback)
 	}
 }

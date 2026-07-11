@@ -13,17 +13,21 @@ import (
 )
 
 type RunMeta struct {
-	RunID                 string `json:"run_id"`
-	CreatedAt             string `json:"created_at"`
-	RepoName              string `json:"repo_name"`
-	RepoPath              string `json:"repo_path"`
-	Command               string `json:"command"`
-	Model                 string `json:"model"`
-	Endpoint              string `json:"endpoint"`
-	PromptVersion         string `json:"prompt_version,omitempty"`
-	ProviderLatencyMillis *int64 `json:"provider_latency_ms,omitempty"`
-	SnapshotOnly          bool   `json:"snapshot_only"`
-	LLMBundleOnly         bool   `json:"llm_bundle_only"`
+	RunID                   string `json:"run_id"`
+	CreatedAt               string `json:"created_at"`
+	RepoName                string `json:"repo_name"`
+	RepoPath                string `json:"repo_path"`
+	Command                 string `json:"command"`
+	Model                   string `json:"model"`
+	Endpoint                string `json:"endpoint"`
+	PromptVersion           string `json:"prompt_version,omitempty"`
+	CompactContextBytes     int    `json:"compact_context_bytes,omitempty"`
+	ExternalRequestBytes    int    `json:"external_request_bytes,omitempty"`
+	ProviderRequestCount    int    `json:"provider_request_count,omitempty"`
+	CandidateDirectionCount int    `json:"candidate_direction_count,omitempty"`
+	ProviderLatencyMillis   *int64 `json:"provider_latency_ms,omitempty"`
+	SnapshotOnly            bool   `json:"snapshot_only"`
+	LLMBundleOnly           bool   `json:"llm_bundle_only"`
 }
 
 type Writer struct {

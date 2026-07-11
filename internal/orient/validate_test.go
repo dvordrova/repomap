@@ -164,6 +164,15 @@ func TestValidateOrientation(t *testing.T) {
 			want: "has no evidence",
 		},
 		{
+			name: "colliding direction ids",
+			mutate: func(report *orientationPart) {
+				duplicate := report.CandidateFlows[0]
+				duplicate.Name = "server-startup"
+				report.CandidateFlows = append(report.CandidateFlows, duplicate)
+			},
+			want: "collides",
+		},
+		{
 			name: "invented flow evidence path",
 			mutate: func(report *orientationPart) {
 				report.CandidateFlows[0].Evidence = []string{"invented.go handles payments"}

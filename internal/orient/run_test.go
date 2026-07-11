@@ -3,6 +3,7 @@ package orient
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,6 +88,16 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		metadata.PromptVersion != deepseek.OrientationPromptVersionJSON {
 		t.Fatalf("metadata model/endpoint/prompt = %q / %q / %q", metadata.Model, metadata.Endpoint, metadata.PromptVersion)
 	}
+	if metadata.CompactContextBytes <= 0 || metadata.ExternalRequestBytes <= metadata.CompactContextBytes {
+		t.Fatalf(
+			"metadata compact/external bytes = %d / %d",
+			metadata.CompactContextBytes,
+			metadata.ExternalRequestBytes,
+		)
+	}
+	if metadata.ProviderRequestCount != 1 {
+		t.Fatalf("metadata provider request count = %d, want 1", metadata.ProviderRequestCount)
+	}
 	if metadata.ProviderLatencyMillis == nil || *metadata.ProviderLatencyMillis < 0 {
 		t.Fatalf("metadata provider latency = %v", metadata.ProviderLatencyMillis)
 	}
@@ -132,6 +143,21 @@ func TestRunDumpLLMAbortsBeforeNetworkWhenDebugWriterFails(t *testing.T) {
 	if requests != 0 {
 		t.Fatalf("provider requests = %d, want 0", requests)
 	}
+
+	_, err = Run(context.Background(), Options{
+		RepoPath:         repo,
+		OutputJSON:       true,
+		RunID:            "required-browser-artifacts",
+		DebugDir:         blockedDebugDir,
+		DumpRedacted:     true,
+		RequireArtifacts: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "create required debug writer") {
+		t.Fatalf("Run() required-artifact error = %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("required-artifact failure made %d provider request(s), want 0", requests)
+	}
 }
 
 func TestRunOfflineRespectsZeroFlowExpansion(t *testing.T) {
@@ -162,6 +188,269 @@ func TestRunOfflineRespectsZeroFlowExpansion(t *testing.T) {
 	}
 	if len(report.ExplainedFlows) != 0 {
 		t.Fatalf("explained flows = %d, want 0", len(report.ExplainedFlows))
+	}
+}
+
+func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/onboarding\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "cmd", "trial"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "cmd", "trial", "main.go"), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "internal", "worker"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "internal", "worker", "worker.go"), []byte("package worker\nfunc Run() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOrientGit(t, repo, "init", "--quiet")
+	runOrientGit(t, repo, "add", "--", "go.mod", "cmd/trial/main.go", "internal/worker/worker.go")
+
+	orientation := `{
+  "project_guess":"tiny worker command",
+  "confidence":0.9,
+  "high_level_map":[],
+  "first_files_to_open":[],
+  "candidate_flows":[
+    {
+      "name":"Process startup",
+      "trigger":"the executable starts",
+      "likely_entrypoint":"cmd/trial/main.go",
+      "likely_files":["cmd/trial/main.go"],
+      "why_interesting":"shows process wiring",
+      "evidence":["cmd/trial/main.go"],
+      "confidence":0.9
+    },
+    {
+      "name":"Worker run",
+      "trigger":"the worker is invoked",
+      "likely_entrypoint":"internal/worker/worker.go",
+      "likely_files":["internal/worker/worker.go"],
+      "why_interesting":"shows background work",
+      "evidence":["internal/worker/worker.go"],
+      "confidence":0.8
+    }
+  ],
+  "important_domain_words":[],
+  "questions_for_human":[],
+  "unverified_paths":[],
+  "warnings":[]
+}`
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"message": map[string]any{"role": "assistant", "content": orientation},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
+	t.Setenv("REPOMAP_LLM_MODEL", "fixture-model")
+	t.Setenv("REPOMAP_LLM_API_KEY", "")
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+
+	debugDir := t.TempDir()
+	runID := "onboarding-directions"
+	output, err := Run(context.Background(), Options{
+		RepoPath:               repo,
+		OutputJSON:             true,
+		FlowCount:              0,
+		RunID:                  runID,
+		DebugDir:               debugDir,
+		DumpRedacted:           true,
+		MaxReadmeBytes:         1024,
+		MaxReadmeLLMBytes:      512,
+		MaxTreeLines:           50,
+		MaxInterestingFiles:    50,
+		MaxGoPkgs:              50,
+		MaxGoEdges:             50,
+		MaxLLMEntrypoints:      10,
+		MaxLLMModules:          10,
+		MaxLLMFiles:            10,
+		MaxLocalDirectionFiles: 1,
+		MaxLLMEdges:            10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("provider requests = %d, want one orientation request", requests)
+	}
+	var report combinedReport
+	if err := json.Unmarshal(output, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.ExplainedFlows) != 0 {
+		t.Fatalf("model-expanded flows = %d, want 0", len(report.ExplainedFlows))
+	}
+
+	runDir := filepath.Join(debugDir, runID)
+	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata debugdump.RunMeta
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.CandidateDirectionCount != 2 || metadata.ProviderRequestCount != 1 || metadata.CompactContextBytes <= 0 || metadata.ExternalRequestBytes <= 0 {
+		t.Fatalf("onboarding metadata = %#v", metadata)
+	}
+	for _, flowID := range []string{"process-startup", "worker-run"} {
+		bundlePath := filepath.Join(runDir, "flows", flowID, "flow_bundle.json")
+		bundle, err := os.ReadFile(bundlePath)
+		if err != nil {
+			t.Fatalf("read %s: %v", bundlePath, err)
+		}
+		if !strings.Contains(string(bundle), `"flow_seed"`) || !strings.Contains(string(bundle), `"selected_files"`) {
+			t.Fatalf("local direction bundle is incomplete: %s", bundle)
+		}
+		var local struct {
+			FlowSeed struct {
+				ValidSeedFiles []string `json:"valid_seed_files"`
+			} `json:"flow_seed"`
+			SelectedFiles []struct {
+				Path string `json:"path"`
+			} `json:"selected_files"`
+			SelectedTests []json.RawMessage `json:"selected_tests"`
+			SelectedDocs  []json.RawMessage `json:"selected_docs"`
+		}
+		if err := json.Unmarshal(bundle, &local); err != nil {
+			t.Fatal(err)
+		}
+		if total := len(local.SelectedFiles) + len(local.SelectedTests) + len(local.SelectedDocs); total > 1 {
+			t.Fatalf("local direction bundle selected %d items, want at most 1", total)
+		}
+		if len(local.FlowSeed.ValidSeedFiles) != 1 || len(local.SelectedFiles) != 1 || local.SelectedFiles[0].Path != local.FlowSeed.ValidSeedFiles[0] {
+			t.Fatalf("local direction did not preserve its seed: %#v", local)
+		}
+		status, err := os.ReadFile(filepath.Join(runDir, "flows", flowID, "flow_status.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(status), `"mode": "local_only"`) {
+			t.Fatalf("local direction status = %s", status)
+		}
+		if _, err := os.Stat(filepath.Join(runDir, "flows", flowID, "flow_report.json")); !os.IsNotExist(err) {
+			t.Fatalf("flow %s unexpectedly has a model report: %v", flowID, err)
+		}
+	}
+}
+
+func TestRunCountsExpandedFlowRequestBodyAndPersistsStatus(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/expanded\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOrientGit(t, repo, "init", "--quiet")
+	runOrientGit(t, repo, "add", "--", "go.mod", "main.go")
+
+	orientation := `{
+  "project_guess":"tiny command",
+  "confidence":0.9,
+  "high_level_map":[],
+  "first_files_to_open":[{"path":"main.go","reason":"entrypoint"}],
+  "candidate_flows":[{
+    "name":"Process startup",
+    "trigger":"the executable starts",
+    "likely_entrypoint":"main.go",
+    "likely_files":["main.go"],
+    "why_interesting":"shows wiring",
+    "evidence":["main.go"],
+    "confidence":0.9
+  }],
+  "important_domain_words":[],
+  "questions_for_human":[],
+  "unverified_paths":[],
+  "warnings":[]
+}`
+	flowReport := `{
+  "summary":"main starts the process",
+  "confidence":0.8,
+  "flow_name":"Process startup",
+  "likely_chain":[{"step":1,"name":"start","what_happens":"main runs","evidence_files":["main.go"],"confidence":0.8}],
+  "files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1}],
+  "tests_to_read":[],
+  "unverified_paths":[],
+  "unknowns":[],
+  "warnings":[]
+}`
+	var requestSizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			return
+		}
+		requestSizes = append(requestSizes, len(body))
+		content := orientation
+		if len(requestSizes) == 2 {
+			content = flowReport
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"message": map[string]any{"role": "assistant", "content": content},
+			}},
+		})
+	}))
+	defer server.Close()
+	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
+	t.Setenv("REPOMAP_LLM_MODEL", "fixture-model")
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+
+	debugDir := t.TempDir()
+	runID := "expanded-flow"
+	_, err := Run(context.Background(), Options{
+		RepoPath:          repo,
+		OutputJSON:        true,
+		FlowCount:         1,
+		RunID:             runID,
+		DebugDir:          debugDir,
+		DumpRedacted:      true,
+		RequireArtifacts:  true,
+		MaxLLMFiles:       10,
+		MaxLLMEdges:       10,
+		MaxLLMEntrypoints: 10,
+		MaxLLMModules:     10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requestSizes) != 2 {
+		t.Fatalf("provider request count = %d, want 2", len(requestSizes))
+	}
+	runDir := filepath.Join(debugDir, runID)
+	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata debugdump.RunMeta
+	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	wantBytes := requestSizes[0] + requestSizes[1]
+	if metadata.ProviderRequestCount != 2 || metadata.ExternalRequestBytes != wantBytes {
+		t.Fatalf("provider metadata count/bytes = %d/%d, want 2/%d", metadata.ProviderRequestCount, metadata.ExternalRequestBytes, wantBytes)
+	}
+	status, err := os.ReadFile(filepath.Join(runDir, "flows", "process-startup", "flow_status.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(status), `"mode": "succeeded"`) {
+		t.Fatalf("expanded flow status = %s", status)
 	}
 }
 

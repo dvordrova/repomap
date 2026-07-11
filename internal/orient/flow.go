@@ -14,10 +14,26 @@ import (
 )
 
 type explainedFlow struct {
-	FlowSeed          flowexplain.FlowSeed `json:"flow_seed"`
-	FlowBundleSummary flowBundleSummary    `json:"flow_bundle_summary"`
-	FlowReport        json.RawMessage      `json:"flow_report,omitempty"`
-	Error             string               `json:"error,omitempty"`
+	FlowSeed             flowexplain.FlowSeed `json:"flow_seed"`
+	FlowBundleSummary    flowBundleSummary    `json:"flow_bundle_summary"`
+	FlowReport           json.RawMessage      `json:"flow_report,omitempty"`
+	Error                string               `json:"error,omitempty"`
+	ProviderRequestBytes int                  `json:"-"`
+	ArtifactError        string               `json:"-"`
+}
+
+const flowArtifactStatusVersion = 1
+
+const (
+	flowStatusLocalOnly          = "local_only"
+	flowStatusExpansionRequested = "expansion_requested"
+	flowStatusSucceeded          = "succeeded"
+	flowStatusFailed             = "failed"
+)
+
+type flowArtifactStatus struct {
+	Version int    `json:"version"`
+	Mode    string `json:"mode"`
 }
 
 type flowBundleSummary struct {
@@ -27,9 +43,9 @@ type flowBundleSummary struct {
 	UnverifiedSeeds    []string `json:"unverified_seed_paths"`
 }
 
-func buildFlowBundlesFromSnapshot(s snapshot.Snapshot, n int, dw *debugdump.Writer, opts Options) []explainedFlow {
+func buildFlowBundlesFromSnapshot(s snapshot.Snapshot, n int, dw *debugdump.Writer, opts Options) ([]explainedFlow, error) {
 	if s.GoFacts == nil || n <= 0 {
-		return nil
+		return nil, nil
 	}
 	maxFiles := opts.MaxLLMFiles
 	if maxFiles <= 0 {
@@ -52,9 +68,77 @@ func buildFlowBundlesFromSnapshot(s snapshot.Snapshot, n int, dw *debugdump.Writ
 			Confidence:       float64(oc.Priority) / 5.0,
 		}
 		ef := explainOneFlow(context.Background(), nil, cf, s.FilteredFiles, s.GoFacts, maxFiles, dw, opts, false)
+		if ef.ArtifactError != "" {
+			return nil, fmt.Errorf("persist local direction %q: %s", cf.Name, ef.ArtifactError)
+		}
 		flows = append(flows, ef)
 	}
-	return flows
+	return flows, nil
+}
+
+// writeLocalFlowBundles persists a deterministic focused bundle for every
+// orientation direction that is not already going through model expansion.
+// The browser can therefore reveal useful local evidence after a direction is
+// selected without another provider call or a long-lived local server.
+func writeLocalFlowBundles(
+	ctx context.Context,
+	candidates []flowexplain.CandidateFlow,
+	skippedIDs map[string]struct{},
+	trackedFiles []string,
+	facts *gofacts.Facts,
+	dw *debugdump.Writer,
+	opts Options,
+) error {
+	if dw == nil {
+		return nil
+	}
+	maxFiles := opts.MaxLocalDirectionFiles
+	if maxFiles <= 0 {
+		maxFiles = 20
+	}
+	for _, candidate := range candidates {
+		flowID := flowexplain.GenerateFlowID(candidate.Name)
+		if _, skipped := skippedIDs[flowID]; skipped {
+			continue
+		}
+		result := explainOneFlow(
+			ctx,
+			nil,
+			candidate,
+			trackedFiles,
+			facts,
+			maxFiles,
+			dw,
+			opts,
+			false,
+		)
+		if result.Error != "" {
+			return fmt.Errorf("write local evidence for direction %q: %s", candidate.Name, result.Error)
+		}
+	}
+	return nil
+}
+
+func writeFlowArtifactStatus(dw *debugdump.Writer, flowID, mode string, required bool) error {
+	if dw == nil {
+		if required {
+			return fmt.Errorf("flow artifact writer is required")
+		}
+		return nil
+	}
+	data, err := json.MarshalIndent(flowArtifactStatus{
+		Version: flowArtifactStatusVersion,
+		Mode:    mode,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := dw.WriteDirFile("flows/"+flowID, "flow_status.json", append(data, '\n')); err != nil {
+		if required {
+			return err
+		}
+	}
+	return nil
 }
 
 func explainOneFlow(ctx context.Context, client *deepseek.Client, cf flowexplain.CandidateFlow, trackedFiles []string, facts interface{}, maxFiles int, dw *debugdump.Writer, opts Options, callModel bool) explainedFlow {
@@ -118,33 +202,72 @@ func explainOneFlow(ctx context.Context, client *deepseek.Client, cf flowexplain
 		FlowSeed:          seed,
 		FlowBundleSummary: summary,
 	}
+	requireArtifacts := opts.DumpLLM || opts.RequireArtifacts
 	if dw != nil {
-		if err := dw.WriteDirFile("flows/"+fid, "flow_bundle.json", bundleJSON); err != nil && opts.DumpLLM {
-			ef.Error = fmt.Sprintf("write required flow bundle: %v", err)
-			return ef
+		if err := dw.WriteDirFile("flows/"+fid, "flow_bundle.json", bundleJSON); err != nil {
+			if requireArtifacts {
+				ef.Error = fmt.Sprintf("write required flow bundle: %v", err)
+				ef.ArtifactError = ef.Error
+				return ef
+			}
 		}
+	} else if requireArtifacts {
+		ef.Error = "flow artifact writer is required"
+		ef.ArtifactError = ef.Error
+		return ef
 	}
 
-	if callModel && client != nil {
-		raw, err := callModelForFlow(ctx, client, fb, dw, fid, opts.DumpLLM)
-		if err != nil {
-			ef.Error = err.Error()
-			if dw != nil {
-				dw.WriteDirError("flows/"+fid, err)
+	if !callModel {
+		if err := writeFlowArtifactStatus(dw, fid, flowStatusLocalOnly, requireArtifacts); err != nil {
+			ef.Error = fmt.Sprintf("write local flow status: %v", err)
+			ef.ArtifactError = ef.Error
+		}
+		return ef
+	}
+	if client == nil {
+		ef.Error = "flow model client is required"
+		return ef
+	}
+	if err := writeFlowArtifactStatus(dw, fid, flowStatusExpansionRequested, requireArtifacts); err != nil {
+		ef.Error = fmt.Sprintf("write requested flow status: %v", err)
+		ef.ArtifactError = ef.Error
+		return ef
+	}
+
+	raw, requestBytes, artifactFailure, err := callModelForFlow(ctx, client, fb, dw, fid, opts.DumpLLM)
+	ef.ProviderRequestBytes = requestBytes
+	if err != nil {
+		ef.Error = err.Error()
+		if artifactFailure {
+			ef.ArtifactError = ef.Error
+		}
+		if dw != nil {
+			dw.WriteDirError("flows/"+fid, err)
+		}
+		if statusErr := writeFlowArtifactStatus(dw, fid, flowStatusFailed, requireArtifacts); statusErr != nil {
+			ef.ArtifactError = fmt.Sprintf("write failed flow status: %v", statusErr)
+		}
+	} else if normalized, normalizeErr := normalizeFlowReport(raw, fb); normalizeErr != nil {
+		ef.Error = normalizeErr.Error()
+		if dw != nil {
+			dw.WriteDirError("flows/"+fid, normalizeErr)
+		}
+		if statusErr := writeFlowArtifactStatus(dw, fid, flowStatusFailed, requireArtifacts); statusErr != nil {
+			ef.ArtifactError = fmt.Sprintf("write failed flow status: %v", statusErr)
+		}
+	} else {
+		ef.FlowReport = json.RawMessage(normalized)
+		if dw != nil {
+			if err := dw.WriteDirFile("flows/"+fid, "flow_report.json", normalized); err != nil && requireArtifacts {
+				ef.FlowReport = nil
+				ef.Error = fmt.Sprintf("write required normalized flow report: %v", err)
+				ef.ArtifactError = ef.Error
+				return ef
 			}
-		} else if normalized, err := normalizeFlowReport(raw, fb); err != nil {
-			ef.Error = err.Error()
-			if dw != nil {
-				dw.WriteDirError("flows/"+fid, err)
-			}
-		} else {
-			ef.FlowReport = json.RawMessage(normalized)
-			if dw != nil {
-				if err := dw.WriteDirFile("flows/"+fid, "flow_report.json", normalized); err != nil && opts.DumpLLM {
-					ef.FlowReport = nil
-					ef.Error = fmt.Sprintf("write required normalized flow report: %v", err)
-				}
-			}
+		}
+		if statusErr := writeFlowArtifactStatus(dw, fid, flowStatusSucceeded, requireArtifacts); statusErr != nil {
+			ef.Error = fmt.Sprintf("write successful flow status: %v", statusErr)
+			ef.ArtifactError = ef.Error
 		}
 	}
 
@@ -170,9 +293,9 @@ func selectTopFlows(flows []flowexplain.CandidateFlow, n int) []flowexplain.Cand
 	return sorted[:n]
 }
 
-func callModelForFlow(ctx context.Context, client *deepseek.Client, fb flowexplain.FlowBundle, dw *debugdump.Writer, fid string, dumpLLM bool) (json.RawMessage, error) {
+func callModelForFlow(ctx context.Context, client *deepseek.Client, fb flowexplain.FlowBundle, dw *debugdump.Writer, fid string, dumpLLM bool) (json.RawMessage, int, bool, error) {
 	if err := validateFlowBundleForRemote(fb); err != nil {
-		return nil, err
+		return nil, 0, false, err
 	}
 	bundleJSON, _ := json.MarshalIndent(fb, "", "  ")
 
@@ -210,31 +333,31 @@ Good example — ALWAYS do this:
 Focused flow bundle:
 %s`, fb.FlowSeed.Name, string(bundleJSON))
 
+	reqPayload, err := client.FlowExplainPromptJSON(userPrompt, systemPrompt)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("build flow request: %w", err)
+	}
 	if dumpLLM && dw != nil {
-		reqPayload, err := client.FlowExplainPromptJSON(userPrompt, systemPrompt)
-		if err != nil {
-			return nil, fmt.Errorf("build flow request artifact: %w", err)
-		}
 		if err := dw.WriteDirFile("flows/"+fid, "llm_request.redacted.json", reqPayload); err != nil {
-			return nil, fmt.Errorf("write required flow request before provider call: %w", err)
+			return nil, 0, true, fmt.Errorf("write required flow request before provider call: %w", err)
 		}
 	} else if dumpLLM {
-		return nil, fmt.Errorf("flow request dump requires a debug writer")
+		return nil, 0, true, fmt.Errorf("flow request dump requires a debug writer")
 	}
 
 	raw, err := client.FlowExplain(ctx, userPrompt, systemPrompt)
 	if err != nil {
-		return nil, err
+		return nil, len(reqPayload), false, err
 	}
 	if err := validateProviderOutputForStorage(fmt.Sprintf("flow %q", fb.FlowSeed.Name), raw); err != nil {
-		return nil, err
+		return nil, len(reqPayload), false, err
 	}
 
 	if dumpLLM && dw != nil {
 		if err := dw.WriteDirFile("flows/"+fid, "llm_response.raw.json", raw); err != nil {
-			return nil, fmt.Errorf("write required flow response: %w", err)
+			return nil, len(reqPayload), true, fmt.Errorf("write required flow response: %w", err)
 		}
 	}
 
-	return raw, nil
+	return raw, len(reqPayload), false, nil
 }

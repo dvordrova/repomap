@@ -167,27 +167,29 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	}
 
 	opts := orient.Options{
-		RepoPath:             repo,
-		LLMRequestOnly:       *previewRequest,
-		OutputJSON:           *jsonOut,
-		Offline:              *offline,
-		FlowCount:            *flows,
-		RunID:                runID,
-		DebugDir:             dDir,
-		DumpLLM:              *dumpLLM,
-		DumpRedacted:         true,
-		MaxLLMFiles:          60,
-		MaxLLMEdges:          60,
-		MaxLLMModules:        20,
-		MaxLLMEntrypoints:    20,
-		MaxLLMSignals:        30,
-		MaxLLMSignalsPerFile: 3,
-		MaxReadmeBytes:       40000,
-		MaxReadmeLLMBytes:    6000,
-		MaxTreeLines:         800,
-		MaxInterestingFiles:  400,
-		MaxGoPkgs:            600,
-		MaxGoEdges:           1000,
+		RepoPath:               repo,
+		LLMRequestOnly:         *previewRequest,
+		OutputJSON:             *jsonOut,
+		Offline:                *offline,
+		FlowCount:              *flows,
+		RunID:                  runID,
+		DebugDir:               dDir,
+		DumpLLM:                *dumpLLM,
+		DumpRedacted:           true,
+		RequireArtifacts:       dDir != "" && !*previewRequest,
+		MaxLLMFiles:            60,
+		MaxLocalDirectionFiles: 20,
+		MaxLLMEdges:            60,
+		MaxLLMModules:          20,
+		MaxLLMEntrypoints:      20,
+		MaxLLMSignals:          30,
+		MaxLLMSignalsPerFile:   3,
+		MaxReadmeBytes:         40000,
+		MaxReadmeLLMBytes:      6000,
+		MaxTreeLines:           800,
+		MaxInterestingFiles:    400,
+		MaxGoPkgs:              600,
+		MaxGoEdges:             1000,
 	}
 	showProgress := !*jsonOut && *out == "" && !*previewRequest
 	if showProgress {
@@ -218,16 +220,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	if dDir != "" && !*previewRequest {
 		runDir := filepath.Join(dDir, runID)
 		if err := report.Generate(runDir); err != nil {
-			fmt.Fprintf(deps.stderr, "warning: report generation failed: %v\n", err)
-		} else {
-			reportPath := filepath.Join(runDir, "report.html")
-			fmt.Fprintf(deps.stderr, "Report: %s\n", reportPath)
-			linkLatest(dDir, runDir, deps.stderr)
-			shouldOpen := !*noOpen && !*jsonOut && *out == "" && !*offline
-			if shouldOpen && deps.openReport != nil {
-				if err := deps.openReport(reportPath); err != nil {
-					fmt.Fprintf(deps.stderr, "warning: could not open report: %v\n", err)
-				}
+			return fmt.Errorf("generate browser report: %w", err)
+		}
+		reportPath := filepath.Join(runDir, "report.html")
+		fmt.Fprintf(deps.stderr, "Report: %s\n", reportPath)
+		linkLatest(dDir, runDir, deps.stderr)
+		shouldOpen := !*noOpen && !*jsonOut && *out == "" && !*offline
+		if shouldOpen && deps.openReport != nil {
+			if err := deps.openReport(reportPath); err != nil {
+				fmt.Fprintf(deps.stderr, "warning: could not open report: %v\n", err)
 			}
 		}
 	}
@@ -277,29 +278,31 @@ func runOrient(args []string) error {
 	}
 
 	opts := orient.Options{
-		RepoPath:             *repo,
-		SnapshotOnly:         *snapshotOnly,
-		LLMBundleOnly:        *llmBundleOnly,
-		LLMRequestOnly:       *llmRequestOnly,
-		OutputJSON:           true,
-		FlowCount:            *explainFlows,
-		FlowBundlesOnly:      *flowBundlesOnly,
-		RunID:                runID,
-		DebugDir:             dDir,
-		DumpLLM:              *dumpLLM,
-		DumpRedacted:         true,
-		MaxLLMFiles:          *maxLLMFiles,
-		MaxLLMEdges:          500,
-		MaxLLMSignals:        80,
-		MaxLLMSignalsPerFile: 3,
-		MaxLLMModules:        40,
-		MaxLLMEntrypoints:    40,
-		MaxReadmeBytes:       40000,
-		MaxReadmeLLMBytes:    12000,
-		MaxTreeLines:         800,
-		MaxInterestingFiles:  400,
-		MaxGoPkgs:            600,
-		MaxGoEdges:           1000,
+		RepoPath:               *repo,
+		SnapshotOnly:           *snapshotOnly,
+		LLMBundleOnly:          *llmBundleOnly,
+		LLMRequestOnly:         *llmRequestOnly,
+		OutputJSON:             true,
+		FlowCount:              *explainFlows,
+		FlowBundlesOnly:        *flowBundlesOnly,
+		RunID:                  runID,
+		DebugDir:               dDir,
+		DumpLLM:                *dumpLLM,
+		DumpRedacted:           true,
+		RequireArtifacts:       dDir != "",
+		MaxLLMFiles:            *maxLLMFiles,
+		MaxLocalDirectionFiles: 20,
+		MaxLLMEdges:            500,
+		MaxLLMSignals:          80,
+		MaxLLMSignalsPerFile:   3,
+		MaxLLMModules:          40,
+		MaxLLMEntrypoints:      40,
+		MaxReadmeBytes:         40000,
+		MaxReadmeLLMBytes:      12000,
+		MaxTreeLines:           800,
+		MaxInterestingFiles:    400,
+		MaxGoPkgs:              600,
+		MaxGoEdges:             1000,
 	}
 
 	output, err := orient.Run(context.Background(), opts)
@@ -310,11 +313,10 @@ func runOrient(args []string) error {
 	if dDir != "" && !*snapshotOnly && !*llmBundleOnly && !*llmRequestOnly {
 		runDir := filepath.Join(dDir, runID)
 		if err := report.Generate(runDir); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: report generation failed: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "Report: %s/report.html\n", runDir)
-			linkLatest(dDir, runDir, os.Stderr)
+			return fmt.Errorf("generate report: %w", err)
 		}
+		fmt.Fprintf(os.Stderr, "Report: %s/report.html\n", runDir)
+		linkLatest(dDir, runDir, os.Stderr)
 	}
 
 	if *out != "" {

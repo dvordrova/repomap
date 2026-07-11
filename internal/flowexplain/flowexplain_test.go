@@ -82,6 +82,23 @@ func TestExtractTermsStripsPunctuation(t *testing.T) {
 	_ = query
 }
 
+func TestExtractTermsDoesNotPromotePathStructure(t *testing.T) {
+	query, alias := ExtractTerms(
+		"Lease lifecycle (grant, renew, expire)",
+		"client requests a lease",
+		"server/lease/lease.go",
+		[]string{"etcdctl/ctlv3/command/lease_command.go is a CLI seed"},
+	)
+	for _, forbidden := range []string{"command", "ctl", "ctlv3", "etcdctl", "cobra"} {
+		if contains(query, forbidden) || contains(alias, forbidden) {
+			t.Fatalf("path structure term %q leaked into query=%v alias=%v", forbidden, query, alias)
+		}
+	}
+	if !contains(query, "lease") || !contains(alias, "lessor") {
+		t.Fatalf("semantic lease terms missing: query=%v alias=%v", query, alias)
+	}
+}
+
 func TestScoreFileLayeredPrefersV3RPCOverV2(t *testing.T) {
 	v3rpcScore, _, _ := scoreFileLayered("server/etcdserver/api/v3rpc/watch.go", "source", []string{"watch", "v3rpc"}, false)
 	v2storeScore, _, _ := scoreFileLayered("server/storage/mvcc/v2store_watcher.go", "source", []string{"watch", "v2store"}, false)

@@ -105,8 +105,8 @@ func TestEnrich(t *testing.T) {
 	}
 	enrich(data)
 
-	if data.FormatVersion != 3 {
-		t.Errorf("format version = %d, want 3", data.FormatVersion)
+	if data.FormatVersion != 5 {
+		t.Errorf("format version = %d, want 5", data.FormatVersion)
 	}
 	if data.FlowCount != 2 {
 		t.Errorf("flow count = %d, want 2", data.FlowCount)
@@ -129,8 +129,29 @@ func TestReadRunDir_Integration(t *testing.T) {
 	dir := t.TempDir()
 
 	writeTestFile(t, dir, "snapshot.json", `{"repo_name":"etcd","readme":"..."}`)
+	writeTestFile(t, dir, "metadata.json", `{
+		"created_at":"2026-07-10T12:00:00Z",
+		"model":"deepseek-v4-flash",
+		"prompt_version":"orientation-json-v3",
+		"compact_context_bytes":12000,
+		"external_request_bytes":18000,
+		"provider_request_count":1,
+		"candidate_direction_count":1,
+		"provider_latency_ms":432
+	}`)
 	writeTestFile(t, dir, "orientation_report.json", `{
 		"project_guess":"KV store",
+		"confidence":0.88,
+		"high_level_map":[{
+			"name":"API server",
+			"evidence":["server/put.go handles Put"],
+			"why_it_matters":"accepts client writes"
+		}],
+		"first_files_to_open":[{
+			"path":"server/put.go",
+			"reason":"write entrypoint",
+			"priority":1
+		}],
 		"candidate_flows":[{
 			"name":"gRPC Put",
 			"trigger":"a client sends Put",
@@ -139,6 +160,16 @@ func TestReadRunDir_Integration(t *testing.T) {
 			"why_interesting":"shows the write path",
 			"evidence":["server/put.go handles Put"],
 			"confidence":0.82
+		}],
+		"important_domain_words":[{
+			"word":"revision",
+			"guess":"logical version of stored state",
+			"evidence":["storage/kv.go updates revisions"]
+		}],
+		"questions_for_human":["Which write guarantees matter most?"],
+		"unverified_paths":[{
+			"path":"legacy/put.go",
+			"reason":"mentioned but outside the bounded context"
 		}],
 		"warnings":["w1"]
 	}`)
@@ -186,6 +217,26 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if data.ProjectGuess != "KV store" {
 		t.Errorf("project_guess = %q, want KV store", data.ProjectGuess)
 	}
+	if data.Run == nil || data.Run.Model != "deepseek-v4-flash" || data.Run.CompactContextBytes != 12000 ||
+		data.Run.ExternalRequestBytes != 18000 || data.Run.ProviderRequestCount != 1 || data.Run.CandidateDirectionCount != 1 ||
+		data.Run.ProviderLatencyMillis == nil || *data.Run.ProviderLatencyMillis != 432 {
+		t.Fatalf("run info = %#v", data.Run)
+	}
+	if data.OrientationConfidence != 0.88 {
+		t.Errorf("orientation confidence = %v, want 0.88", data.OrientationConfidence)
+	}
+	if len(data.HighLevelMap) != 1 {
+		t.Fatalf("high-level map items = %d, want 1", len(data.HighLevelMap))
+	}
+	if item := data.HighLevelMap[0]; item.Name != "API server" || item.WhyItMatters != "accepts client writes" || len(item.Evidence) != 1 {
+		t.Errorf("high-level map item = %+v", item)
+	}
+	if len(data.FirstFilesToOpen) != 1 {
+		t.Fatalf("first files to open = %d, want 1", len(data.FirstFilesToOpen))
+	}
+	if file := data.FirstFilesToOpen[0]; file.Path != "server/put.go" || file.Reason != "write entrypoint" || file.Priority != 1 {
+		t.Errorf("first file to open = %+v", file)
+	}
 	if len(data.CandidateFlows) != 1 || data.CandidateFlows[0] != "gRPC Put" {
 		t.Errorf("candidate_flows = %v", data.CandidateFlows)
 	}
@@ -204,6 +255,21 @@ func TestReadRunDir_Integration(t *testing.T) {
 	}
 	if len(direction.Evidence) != 1 || direction.Evidence[0] != "server/put.go handles Put" {
 		t.Errorf("candidate direction evidence = %v", direction.Evidence)
+	}
+	if len(data.ImportantDomainWords) != 1 {
+		t.Fatalf("important domain words = %d, want 1", len(data.ImportantDomainWords))
+	}
+	if word := data.ImportantDomainWords[0]; word.Word != "revision" || word.Guess != "logical version of stored state" || len(word.Evidence) != 1 {
+		t.Errorf("important domain word = %+v", word)
+	}
+	if len(data.QuestionsForHuman) != 1 || data.QuestionsForHuman[0] != "Which write guarantees matter most?" {
+		t.Errorf("questions for human = %v", data.QuestionsForHuman)
+	}
+	if len(data.OrientationUnverifiedPaths) != 1 {
+		t.Fatalf("orientation unverified paths = %d, want 1", len(data.OrientationUnverifiedPaths))
+	}
+	if item := data.OrientationUnverifiedPaths[0]; item.Path != "legacy/put.go" || item.Reason == "" {
+		t.Errorf("orientation unverified path = %+v", item)
 	}
 	if len(data.Flows) != 1 {
 		t.Fatalf("expected 1 flow, got %d", len(data.Flows))
@@ -278,8 +344,8 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if data.FlowCount != 1 {
 		t.Errorf("flow count = %d, want 1", data.FlowCount)
 	}
-	if data.FormatVersion != 3 {
-		t.Errorf("format version = %d, want 3", data.FormatVersion)
+	if data.FormatVersion != 5 {
+		t.Errorf("format version = %d, want 5", data.FormatVersion)
 	}
 	if len(data.Warnings) < 1 || data.Warnings[0] != "w1" {
 		t.Errorf("top-level warnings = %v", data.Warnings)
@@ -321,6 +387,65 @@ func TestReadRunDir_FlowWithError(t *testing.T) {
 	}
 	if data.Flows[0].ID != "bad-flow" {
 		t.Errorf("flow ID = %q", data.Flows[0].ID)
+	}
+}
+
+func TestReadRunDir_LocalDirectionBundleIsNotAFlowError(t *testing.T) {
+	dir := t.TempDir()
+	flowDir := filepath.Join(dir, "flows", "worker-run")
+	mkdirAll(t, flowDir)
+	writeTestFile(t, dir, "snapshot.json", `{"repo_name":"test"}`)
+	writeTestFile(t, flowDir, "flow_bundle.json", `{
+		"flow_seed":{"id":"worker-run","name":"Worker run"},
+		"selected_files":[{"path":"internal/worker/worker.go","reasons":["likely_file from candidate_flow"]}],
+		"selected_tests":[{"path":"internal/worker/worker_test.go","reasons":["matched worker"]}],
+		"selected_docs":[],
+		"selected_packages":["example.com/test/internal/worker"],
+		"related_edges":[]
+	}`)
+	writeTestFile(t, flowDir, "flow_status.json", `{"version":1,"mode":"local_only"}`)
+
+	data, err := ReadRunDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Flows) != 1 {
+		t.Fatalf("flows = %d, want 1", len(data.Flows))
+	}
+	flow := data.Flows[0]
+	if !flow.EvidenceOnly || flow.Error != "" {
+		t.Fatalf("local direction flow = %#v", flow)
+	}
+	if flow.Name != "Worker run" || len(flow.BundleFiles) != 1 || len(flow.BundleTests) != 1 {
+		t.Fatalf("local direction evidence = %#v", flow)
+	}
+}
+
+func TestReadRunDir_RequestedExpansionWithoutReportIsNotLocalOnly(t *testing.T) {
+	dir := t.TempDir()
+	flowDir := filepath.Join(dir, "flows", "worker-run")
+	mkdirAll(t, flowDir)
+	writeTestFile(t, dir, "snapshot.json", `{"repo_name":"test"}`)
+	writeTestFile(t, flowDir, "flow_bundle.json", `{
+		"flow_seed":{"id":"worker-run","name":"Worker run"},
+		"selected_files":[{"path":"internal/worker/worker.go"}],
+		"selected_tests":[],
+		"selected_docs":[],
+		"selected_packages":[],
+		"related_edges":[]
+	}`)
+	writeTestFile(t, flowDir, "flow_status.json", `{"version":1,"mode":"expansion_requested"}`)
+
+	data, err := ReadRunDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Flows) != 1 {
+		t.Fatalf("flows = %d, want 1", len(data.Flows))
+	}
+	flow := data.Flows[0]
+	if flow.EvidenceOnly || flow.Error == "" || flow.FlowStatus != "expansion_requested" {
+		t.Fatalf("incomplete expansion was misclassified: %#v", flow)
 	}
 }
 
@@ -380,6 +505,7 @@ func TestReadRunDir_BundleOnlyNoReport(t *testing.T) {
 		"selected_packages": ["pkg"],
 		"related_edges": []
 	}`)
+	writeTestFile(t, flowDir, "flow_status.json", `{"version":1,"mode":"local_only"}`)
 
 	data, err := ReadRunDir(dir)
 	if err != nil {
@@ -389,8 +515,8 @@ func TestReadRunDir_BundleOnlyNoReport(t *testing.T) {
 		t.Fatalf("expected 1 flow, got %d", len(data.Flows))
 	}
 	f := data.Flows[0]
-	if f.Error == "" {
-		t.Error("expected error since flow_report.json is missing")
+	if !f.EvidenceOnly || f.Error != "" {
+		t.Fatalf("bundle-only flow should be local evidence, got %#v", f)
 	}
 	if f.Name != "Test Flow" {
 		t.Errorf("flow name = %q", f.Name)
@@ -454,8 +580,22 @@ func TestWriteReportJSON_RoundTrip(t *testing.T) {
 
 func TestJSONRoundTrip(t *testing.T) {
 	data := ReportData{
-		RepoName:      "test",
-		FormatVersion: 2,
+		RepoName:              "test",
+		FormatVersion:         5,
+		OrientationConfidence: 0.8,
+		HighLevelMap: []Subsystem{{
+			Name:         "runtime",
+			Evidence:     []string{"main.go"},
+			WhyItMatters: "starts the process",
+		}},
+		FirstFilesToOpen: []FileItem{{Path: "main.go", Reason: "entrypoint", Priority: 1}},
+		ImportantDomainWords: []DomainWord{{
+			Word:     "worker",
+			Guess:    "background processor",
+			Evidence: []string{"worker.go"},
+		}},
+		QuestionsForHuman:          []string{"Which path matters?"},
+		OrientationUnverifiedPaths: []PathItem{{Path: "legacy.go", Reason: "not verified"}},
 		Flows: []FlowData{{
 			ID:               "f1",
 			Confidence:       0.5,
@@ -485,6 +625,12 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 	if got.RecommendedFlow != "f1" {
 		t.Errorf("round-trip: recommended_flow = %q", got.RecommendedFlow)
+	}
+	if got.OrientationConfidence != 0.8 || len(got.HighLevelMap) != 1 || len(got.FirstFilesToOpen) != 1 {
+		t.Errorf("round-trip orientation overview = %+v", got)
+	}
+	if len(got.ImportantDomainWords) != 1 || len(got.QuestionsForHuman) != 1 || len(got.OrientationUnverifiedPaths) != 1 {
+		t.Errorf("round-trip orientation guidance = %+v", got)
 	}
 }
 
@@ -1625,8 +1771,8 @@ func TestReportHTML_NoLow0Percent(t *testing.T) {
 	if contains(htmlStr, "cannot unmarshal") {
 		t.Error("report.html contains unmarshal error")
 	}
-	if !contains(htmlStr, "Evidence: not estimated") {
-		t.Error("report.html should show 'Evidence: not estimated' for zero confidence")
+	if !contains(htmlStr, "Model confidence: not estimated") {
+		t.Error("report.html should show 'Model confidence: not estimated' for zero confidence")
 	}
 	if !contains(htmlStr, "z.go") {
 		t.Error("report.html missing file path from zero-confidence flow")

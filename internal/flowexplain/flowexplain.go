@@ -89,16 +89,16 @@ var ignoredTerms = map[string]bool{
 }
 
 var aliasExpansions = map[string][]string{
-	"put":    {"put", "kv", "txn", "key", "v3rpc", "backend", "mvcc"},
-	"watch":  {"watch", "watcher", "watchable", "stream", "event"},
-	"lease":  {"lease", "lessor", "ttl", "keepalive", "expire", "revoke", "grant"},
-	"raft":   {"raft", "rafthttp", "propose", "proposal", "commit", "apply", "wal", "snapshot"},
-	"write":  {"write", "put", "txn", "propose", "proposal", "commit", "apply", "wal", "backend", "mvcc"},
-	"grpc":   {"grpc", "rpc", "v3rpc", "etcdserverpb", "proto"},
-	"etcdctl":{"etcdctl", "ctlv3", "command", "cobra"},
-	"stream": {"stream", "watch", "watcher", "event"},
-	"startup":{"startup", "init", "bootstrap", "config"},
-	"command":{"command", "ctl", "cobra"},
+	"put":     {"put", "kv", "txn", "key", "v3rpc", "backend", "mvcc"},
+	"watch":   {"watch", "watcher", "watchable", "stream", "event"},
+	"lease":   {"lease", "lessor", "ttl", "keepalive", "expire", "revoke", "grant"},
+	"raft":    {"raft", "rafthttp", "propose", "proposal", "commit", "apply", "wal", "snapshot"},
+	"write":   {"write", "put", "txn", "propose", "proposal", "commit", "apply", "wal", "backend", "mvcc"},
+	"grpc":    {"grpc", "rpc", "v3rpc", "etcdserverpb", "proto"},
+	"etcdctl": {"etcdctl", "ctlv3", "command", "cobra"},
+	"stream":  {"stream", "watch", "watcher", "event"},
+	"startup": {"startup", "init", "bootstrap", "config"},
+	"command": {"command", "ctl", "cobra"},
 }
 
 func GenerateFlowID(name string) string {
@@ -142,21 +142,15 @@ func ExtractTerms(flowName, trigger, entrypoint string, evidence []string) (quer
 	extract(flowName)
 
 	if entrypoint != "" {
-		for _, seg := range strings.Split(strings.Trim(entrypoint, "/"), "/") {
-			extract(seg)
-		}
+		base := strings.TrimSuffix(filepath.Base(entrypoint), filepath.Ext(entrypoint))
+		base = strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(base)
+		extract(base)
 	}
 
-	for _, ev := range evidence {
-		// Only use path-like segments from evidence, not full sentences
-		for _, seg := range strings.Split(strings.Trim(ev, "/"), "/") {
-			// Skip long phrases — they're descriptive text, not search terms
-			if len(seg) > 30 || strings.Contains(seg, " ") {
-				continue
-			}
-			extract(seg)
-		}
-	}
+	// likely_files already enter the focused bundle as exact high-priority
+	// seeds. Do not turn their directory structure or model evidence paths into
+	// global search terms: generic segments such as command/ctlv3 otherwise
+	// swamp the small local neighborhood with unrelated sibling files.
 
 	allAlias := map[string]bool{}
 	allQuery := map[string]bool{}
