@@ -43,6 +43,7 @@ type StartInput struct {
 	Goal       Goal       `json:"goal"`
 	Repository Repository `json:"repository"`
 	Focus      Focus      `json:"focus"`
+	Origin     *Origin    `json:"origin,omitempty"`
 }
 
 type RedirectInput struct {

@@ -5,8 +5,11 @@ package investigation
 
 import (
 	"fmt"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/sourcecard"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
@@ -15,6 +18,9 @@ import (
 )
 
 const SessionVersion = 1
+
+var originSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var originIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 type State string
 
@@ -32,6 +38,14 @@ const (
 type FocusKind string
 
 const FocusSymbol FocusKind = "symbol"
+
+type OriginKind string
+
+const OriginOrientationFlow OriginKind = "orientation_flow"
+
+type OriginStatus string
+
+const OriginCandidate OriginStatus = "candidate"
 
 type StopKind string
 
@@ -57,6 +71,19 @@ type Focus struct {
 	EvidenceID string    `json:"evidence_id,omitempty"`
 }
 
+// Origin records why the initial symbol was chosen. Raw orientation prose stays
+// outside the session; only the report hash and selected candidate identity
+// cross the handoff.
+type Origin struct {
+	Kind             OriginKind   `json:"kind"`
+	Status           OriginStatus `json:"status"`
+	ReportSHA256     string       `json:"report_sha256"`
+	RepoName         string       `json:"repo_name"`
+	FlowID           string       `json:"flow_id"`
+	FlowName         string       `json:"flow_name"`
+	AcceptedRevision string       `json:"accepted_revision"`
+}
+
 type Stop struct {
 	Kind    StopKind `json:"kind"`
 	Message string   `json:"message,omitempty"`
@@ -70,6 +97,7 @@ type Session struct {
 	Goal         Goal                  `json:"goal"`
 	Repository   Repository            `json:"repository"`
 	Focus        Focus                 `json:"focus"`
+	Origin       *Origin               `json:"origin,omitempty"`
 	State        State                 `json:"state"`
 	Sequence     uint64                `json:"sequence"`
 	Symbol       *symbol.Bundle        `json:"symbol,omitempty"`
@@ -88,8 +116,14 @@ func (s Session) Validate() error {
 	if strings.TrimSpace(s.Goal.Text) == "" || strings.TrimSpace(s.Repository.Path) == "" || strings.TrimSpace(s.Repository.Revision) == "" {
 		return fmt.Errorf("investigation: goal, repository path, and revision are required")
 	}
+	if !filepath.IsAbs(s.Repository.Path) {
+		return fmt.Errorf("investigation: repository path must be absolute")
+	}
 	if s.Focus.Kind != FocusSymbol || strings.TrimSpace(s.Focus.Symbol) == "" {
 		return fmt.Errorf("investigation: one symbol focus is required")
+	}
+	if err := validateOrigin(s.Origin, s.Repository.Revision); err != nil {
+		return err
 	}
 	if s.Sequence == 0 {
 		return fmt.Errorf("investigation: action sequence has not started")
@@ -101,6 +135,26 @@ func (s Session) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func validateOrigin(origin *Origin, revision string) error {
+	if origin == nil {
+		return nil
+	}
+	if origin.Kind != OriginOrientationFlow || origin.Status != OriginCandidate || origin.AcceptedRevision != revision ||
+		!originSHA256Pattern.MatchString(origin.ReportSHA256) ||
+		!originIDPattern.MatchString(origin.FlowID) || strings.TrimSpace(origin.RepoName) == "" || strings.TrimSpace(origin.FlowName) == "" {
+		return fmt.Errorf("investigation: invalid orientation origin")
+	}
+	if len(origin.RepoName) > 128 || len(origin.FlowID) > 128 || len(origin.FlowName) > 256 ||
+		strings.ContainsAny(origin.RepoName, "/\\") || containsControl(origin.RepoName) || containsControl(origin.FlowName) {
+		return fmt.Errorf("investigation: unsafe orientation origin text")
+	}
+	return nil
+}
+
+func containsControl(value string) bool {
+	return strings.IndexFunc(value, unicode.IsControl) >= 0
 }
 
 func validateArtifactPrefix(s Session) error {
