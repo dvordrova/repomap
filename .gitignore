@@ -2,7 +2,7 @@
 .env
 
 # Build
-repomap
+/repomap
 *.exe
 *.test
 .bin/

@@ -2,7 +2,9 @@ package sourcesignals
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -210,13 +212,13 @@ func TestShouldSkipFile(t *testing.T) {
 	}{
 		{"server/main.go", false},
 		{"server/etcdserver/server.go", false},
-		{"api/etcdserverpb/rpc.pb.go", true},   // generated
-		{"api/etcdserverpb/rpc.pb.gw.go", true}, // generated gateway
-		{"vendor/github.com/foo/bar.go", true},  // vendor
-		{"node_modules/pkg/index.js", true},     // node_modules
-		{".git/hooks/pre-commit", true},         // .git
-		{"README.md", true},                     // not Go
-		{"server/config.yaml", true},            // not Go
+		{"api/etcdserverpb/rpc.pb.go", true},               // generated
+		{"api/etcdserverpb/rpc.pb.gw.go", true},            // generated gateway
+		{"vendor/github.com/foo/bar.go", true},             // vendor
+		{"node_modules/pkg/index.js", true},                // node_modules
+		{".git/hooks/pre-commit", true},                    // .git
+		{"README.md", true},                                // not Go
+		{"server/config.yaml", true},                       // not Go
 		{"server/etcdserver/api/v3rpc/key_test.go", false}, // test files are not skipped
 	}
 	for _, tt := range tests {
@@ -327,6 +329,53 @@ func (s *Server) snapshot() { /* compaction, snapshot, defrag */ }
 	}
 }
 
+func TestScanFilesSkipsTrackedGoFileSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "server"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "handler.go")
+	if err := os.WriteFile(outside, []byte(`package server
+
+func (s *Server) Put() {}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "server", "handler.go")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	trackSourceSignalFiles(t, repo, "server/handler.go")
+
+	signals := ScanFiles(
+		[]string{"server/handler.go"},
+		repo,
+		ScanOptions{MaxPerFile: 5, MaxTotal: 5},
+	)
+	if len(signals) != 0 {
+		t.Fatalf("signals = %#v, want none", signals)
+	}
+}
+
+func TestScanFilesSkipsGoFileOverByteLimit(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	content := "package server\n\nfunc (s *Server) Put() {}\n" + strings.Repeat("x", maxFileBytes)
+	writeTestGoFile(t, repo, "server/handler.go", content)
+	trackSourceSignalFiles(t, repo, "server/handler.go")
+
+	signals := ScanFiles(
+		[]string{"server/handler.go"},
+		repo,
+		ScanOptions{MaxPerFile: 5, MaxTotal: 5},
+	)
+	if len(signals) != 0 {
+		t.Fatalf("signals = %#v, want none", signals)
+	}
+}
+
 func TestScanSelectedFiles(t *testing.T) {
 	dir := t.TempDir()
 
@@ -412,5 +461,23 @@ func writeTestGoFile(t *testing.T, dir, name, content string) {
 	}
 	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", name, err)
+	}
+}
+
+func trackSourceSignalFiles(t *testing.T, repo string, paths ...string) {
+	t.Helper()
+
+	runSourceSignalGit(t, "init", "--quiet", repo)
+	args := []string{"-C", repo, "add", "--"}
+	args = append(args, paths...)
+	runSourceSignalGit(t, args...)
+}
+
+func runSourceSignalGit(t *testing.T, args ...string) {
+	t.Helper()
+
+	output, err := exec.Command("git", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
 }

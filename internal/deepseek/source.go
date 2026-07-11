@@ -76,21 +76,21 @@ SOURCE ASSESSMENT BUNDLE:
 
 func canonicalSourceBundle(bundleJSON []byte) ([]byte, error) {
 	if !json.Valid(bundleJSON) {
-		return nil, fmt.Errorf("deepseek: source assessment bundle is not valid json")
+		return nil, fmt.Errorf("llm: source assessment bundle is not valid json")
 	}
 	var bundle sourceexplain.Bundle
 	if err := json.Unmarshal(bundleJSON, &bundle); err != nil {
-		return nil, fmt.Errorf("deepseek: decode source assessment bundle: %w", err)
+		return nil, fmt.Errorf("llm: decode source assessment bundle: %w", err)
 	}
 	if err := bundle.Validate(); err != nil {
-		return nil, fmt.Errorf("deepseek: invalid source assessment bundle: %w", err)
+		return nil, fmt.Errorf("llm: invalid source assessment bundle: %w", err)
 	}
 	if err := sourcecard.ValidateLinesForRemote(bundle.Source.Lines); err != nil {
-		return nil, fmt.Errorf("deepseek: unsafe source assessment bundle: %w", err)
+		return nil, fmt.Errorf("llm: unsafe source assessment bundle: %w", err)
 	}
 	canonicalJSON, err := json.Marshal(bundle)
 	if err != nil {
-		return nil, fmt.Errorf("deepseek: marshal source assessment bundle: %w", err)
+		return nil, fmt.Errorf("llm: marshal source assessment bundle: %w", err)
 	}
 	return canonicalJSON, nil
 }

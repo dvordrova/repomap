@@ -3,11 +3,11 @@ package sourcesignals
 import (
 	"bufio"
 	"bytes"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/reporead"
 )
 
 type Signal struct {
@@ -160,7 +160,11 @@ func ScanFiles(filePaths []string, repoPath string, opts ScanOptions) []Signal {
 	opts = defaults(opts)
 
 	var signals []Signal
-	repoPath = filepath.Clean(repoPath)
+	reader, err := reporead.New(repoPath)
+	if err != nil {
+		return signals
+	}
+	defer reader.Close()
 
 	for _, f := range filePaths {
 		if shouldSkipFile(f) {
@@ -176,7 +180,7 @@ func ScanFiles(filePaths []string, repoPath string, opts ScanOptions) []Signal {
 			perFile = remaining
 		}
 
-		fileSignals := scanFile(filepath.Join(repoPath, f), f, perFile)
+		fileSignals := scanFile(reader, f, perFile)
 		signals = append(signals, fileSignals...)
 	}
 
@@ -190,28 +194,13 @@ func ScanFiles(filePaths []string, repoPath string, opts ScanOptions) []Signal {
 	return signals
 }
 
-func ScanFile(path string, repoRel string, maxSignals int) []Signal {
-	if maxSignals <= 0 {
-		return nil
-	}
-	return scanFile(path, repoRel, maxSignals)
-}
-
-func scanFile(absPath string, repoRel string, maxSignals int) []Signal {
-	fi, err := os.Stat(absPath)
-	if err != nil {
-		return nil
-	}
-	if fi.Size() > maxFileBytes {
+func scanFile(reader *reporead.Reader, repoRel string, maxSignals int) []Signal {
+	content, err := reader.ReadFile(repoRel, maxFileBytes)
+	if err != nil || content.Truncated {
 		return nil
 	}
 
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil
-	}
-
-	return scanContent(data, repoRel, maxSignals)
+	return scanContent(content.Bytes, repoRel, maxSignals)
 }
 
 type lineMatch struct {

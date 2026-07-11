@@ -8,18 +8,20 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 type RunMeta struct {
-	RunID          string    `json:"run_id"`
-	CreatedAt      string    `json:"created_at"`
-	RepoName       string    `json:"repo_name"`
-	RepoPath       string    `json:"repo_path"`
-	Command        string    `json:"command"`
-	Model          string    `json:"model"`
-	Endpoint       string    `json:"endpoint"`
-	SnapshotOnly   bool      `json:"snapshot_only"`
-	LLMBundleOnly  bool      `json:"llm_bundle_only"`
+	RunID         string `json:"run_id"`
+	CreatedAt     string `json:"created_at"`
+	RepoName      string `json:"repo_name"`
+	RepoPath      string `json:"repo_path"`
+	Command       string `json:"command"`
+	Model         string `json:"model"`
+	Endpoint      string `json:"endpoint"`
+	SnapshotOnly  bool   `json:"snapshot_only"`
+	LLMBundleOnly bool   `json:"llm_bundle_only"`
 }
 
 type Writer struct {
@@ -105,6 +107,9 @@ func (w *Writer) WriteDirError(subdir string, err error) {
 	dir := filepath.Join(w.runDir, subdir)
 	os.MkdirAll(dir, 0o700)
 	data := []byte(fmt.Sprintf("error: %v\n", err))
+	if w.Redacted {
+		data = redactJSON(data)
+	}
 	os.WriteFile(filepath.Join(dir, "error.txt"), data, 0o600)
 }
 
@@ -138,7 +143,11 @@ var sensitiveKeyPattern = regexp.MustCompile(
 )
 
 func redactJSON(data []byte) []byte {
-	return sensitiveKeyPattern.ReplaceAll(data, []byte(`"$1": "[redacted]"`))
+	redacted := sensitiveKeyPattern.ReplaceAll(data, []byte(`"$1": "[redacted]"`))
+	if kind, found := secretscan.Detect(string(redacted)); found {
+		return []byte(fmt.Sprintf("[redacted: %s detected]\n", kind))
+	}
+	return redacted
 }
 
 func GenerateRunID(repoName string) string {

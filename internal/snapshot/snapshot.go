@@ -1,11 +1,9 @@
 package snapshot
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/reporead"
 )
 
 type Options struct {
@@ -154,7 +153,7 @@ func Build(opts Options) (Snapshot, error) {
 	}
 
 	s.Go = goHints(opts.RepoPath, filtered)
-	s.Readme = readReadme(opts.RepoPath, opts.MaxReadmeBytes)
+	s.Readme = readReadme(opts.RepoPath, filtered, opts.MaxReadmeBytes)
 
 	if s.Go.GoModExists || hasGoFiles(filtered) {
 		facts, err := gofacts.Load(context.Background(), opts.RepoPath, filtered, opts.MaxGoPkgs, opts.MaxGoEdges)
@@ -174,16 +173,29 @@ func (s Snapshot) JSON() ([]byte, error) {
 	return json.MarshalIndent(s, "", "  ")
 }
 
-func readReadme(repoPath string, maxBytes int) string {
+func readReadme(repoPath string, trackedFiles []string, maxBytes int) string {
+	reader, err := reporead.New(repoPath)
+	if err != nil {
+		return ""
+	}
+	defer reader.Close()
+
+	tracked := make(map[string]struct{}, len(trackedFiles))
+	for _, path := range trackedFiles {
+		tracked[path] = struct{}{}
+	}
+
 	candidates := []string{"README.md", "README", "readme.md", "Readme.md"}
 	for _, name := range candidates {
-		p := filepath.Join(repoPath, name)
-		b, err := os.ReadFile(p)
+		if _, ok := tracked[name]; !ok {
+			continue
+		}
+		content, err := reader.ReadFile(name, int64(maxBytes))
 		if err != nil {
 			continue
 		}
-		truncated, wasTruncated := truncateUTF8Bytes(string(b), maxBytes)
-		if wasTruncated {
+		truncated, invalidBoundary := truncateUTF8Bytes(string(content.Bytes), maxBytes)
+		if content.Truncated || invalidBoundary {
 			return truncated + "\n...[truncated]"
 		}
 		return truncated
@@ -195,10 +207,13 @@ func truncateUTF8Bytes(s string, maxBytes int) (string, bool) {
 	if maxBytes <= 0 {
 		return "", len(s) > 0
 	}
-	if len(s) <= maxBytes {
+	if len(s) <= maxBytes && utf8.ValidString(s) {
 		return s, false
 	}
 	cut := maxBytes
+	if len(s) < cut {
+		cut = len(s)
+	}
 	for cut > 0 && !utf8.ValidString(s[:cut]) {
 		cut--
 	}
@@ -317,8 +332,16 @@ func goHints(repoPath string, files []string) GoHints {
 	h := GoHints{}
 	for _, f := range files {
 		if f == "go.mod" {
-			h.GoModExists = true
-			h.ModuleName = parseModuleName(filepath.Join(repoPath, "go.mod"))
+			reader, err := reporead.New(repoPath)
+			if err != nil {
+				break
+			}
+			content, readErr := reader.ReadFile("go.mod", 1024*1024)
+			_ = reader.Close()
+			if readErr == nil && !content.Truncated {
+				h.GoModExists = true
+				h.ModuleName = parseModuleName(content.Bytes)
+			}
 			break
 		}
 	}
@@ -352,16 +375,9 @@ func goHints(repoPath string, files []string) GoHints {
 	return h
 }
 
-func parseModuleName(goModPath string) string {
-	f, err := os.Open(goModPath)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+func parseModuleName(goMod []byte) string {
+	for _, rawLine := range strings.Split(string(goMod), "\n") {
+		line := strings.TrimSpace(rawLine)
 		if strings.HasPrefix(line, "module ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
 		}

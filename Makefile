@@ -1,16 +1,15 @@
 SHELL := /usr/bin/env bash
 
--include .env
 export
 
 BIN_DIR  ?= .bin
 TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 
-.PHONY: help test vet check build clean smoke etcd-check symbol-check symbol-prompt-experiment gopls-examples gopls-examples-fetch debug-last run run-json run-offline
+.PHONY: help test vet check quality-check build clean smoke etcd-check symbol-check symbol-prompt-experiment gopls-examples gopls-examples-fetch doctor debug-last run run-json run-offline run-flows2 deepseek-check
 
 help: ## Print available targets
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 test: ## Run go tests
@@ -22,11 +21,14 @@ vet: ## Run go vet
 check: ## Run tests and vet via reusable script
 	./scripts/check.sh
 
+quality-check: ## Replay saved quality tasks without a model call
+	./scripts/quality_check.sh
+
 build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/repomap ./cmd/repomap
 
-clean: ## Remove build/tmp/debug artifacts
+clean: ## Remove project-local build, tmp, and debug artifacts
 	./scripts/clean.sh
 
 smoke: ## Smoke test via reusable script (no network)
@@ -49,16 +51,19 @@ gopls-examples-fetch: ## Fetch missing example repos, then generate gopls eviden
 
 # --- Primary UX targets ---
 
-run: ## Run full pipeline against ETCD_REPO (needs DEEPSEEK_API_KEY)
-	go run ./cmd/repomap $(ETCD_REPO) --flows 10
+doctor: ## Validate configured OpenAI-compatible LLM (no network request)
+	go run ./cmd/repomap doctor llm
+
+run: ## Orient ETCD_REPO with the configured OpenAI-compatible LLM
+	go run ./cmd/repomap $(ETCD_REPO)
 
 run-json: ## Run full pipeline with JSON output
 	go run ./cmd/repomap $(ETCD_REPO) --json | jq .
 
-run-offline: ## Run offline (no API key, local bundles only)
+run-offline: ## Run local extraction only (no model call)
 	go run ./cmd/repomap $(ETCD_REPO) --offline
 
-run-flows2: ## Run with 2 explained flows
+run-flows2: ## Run with 2 opt-in explained flows
 	go run ./cmd/repomap $(ETCD_REPO) --flows 2
 
 debug-last: ## Inspect last debug run
@@ -66,5 +71,5 @@ debug-last: ## Inspect last debug run
 
 # --- Legacy compat (kept for internal dev) ---
 
-deepseek-check: ## Full DeepSeek call via reusable script
+deepseek-check: ## Live configured-LLM call (legacy target name)
 	./scripts/deepseek_check.sh $(ETCD_REPO)

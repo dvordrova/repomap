@@ -3,10 +3,29 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-LAST_RUN=$(find .repomap-runs -maxdepth 1 -type d -not -name .repomap-runs 2>/dev/null | sort -r | head -1)
+if [ -n "${1:-}" ]; then
+    RUNS_DIR="$1"
+elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+    RUNS_DIR="$XDG_CACHE_HOME/repomap/runs"
+elif [ "$(uname -s)" = "Darwin" ]; then
+    RUNS_DIR="${HOME:-.}/Library/Caches/repomap/runs"
+else
+    RUNS_DIR="${HOME:-.}/.cache/repomap/runs"
+fi
+
+if [ ! -d "$RUNS_DIR" ] && [ -z "${1:-}" ] && [ -d .repomap-runs ]; then
+    RUNS_DIR=.repomap-runs
+fi
+
+if [ ! -d "$RUNS_DIR" ]; then
+    echo "No repomap run directory found at $RUNS_DIR"
+    exit 0
+fi
+
+LAST_RUN=$(find "$RUNS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | head -1)
 
 if [ -z "$LAST_RUN" ]; then
-    echo "No .repomap-runs/ directories found"
+    echo "No repomap run directories found under $RUNS_DIR"
     exit 0
 fi
 

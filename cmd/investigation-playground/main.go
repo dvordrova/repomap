@@ -13,7 +13,6 @@ import (
 
 	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/envfile"
 	"github.com/dvordrova/repomap/internal/investigation"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
@@ -39,7 +38,6 @@ type config struct {
 }
 
 func main() {
-	_ = envfile.Load(".env")
 	var cfg config
 	flag.StringVar(&cfg.repoPath, "repo", ".", "path to a Go repository")
 	flag.StringVar(&cfg.symbolQuery, "symbol", "", "exact gopls workspace symbol name (start or redirect)")

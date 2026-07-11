@@ -45,7 +45,7 @@ func (c *Client) ExplainSymbolTagged(ctx context.Context, bundleJSON []byte) ([]
 
 func buildSymbolPrompts(bundleJSON []byte) (string, string, error) {
 	if !json.Valid(bundleJSON) {
-		return "", "", fmt.Errorf("deepseek: symbol bundle is not valid json")
+		return "", "", fmt.Errorf("llm: symbol bundle is not valid json")
 	}
 
 	systemPrompt := `You investigate one selected Go symbol using only a supplied evidence bundle.
@@ -94,7 +94,7 @@ SYMBOL EVIDENCE BUNDLE:
 
 func buildTaggedSymbolPrompts(bundleJSON []byte) (string, string, error) {
 	if !json.Valid(bundleJSON) {
-		return "", "", fmt.Errorf("deepseek: symbol bundle is not valid json")
+		return "", "", fmt.Errorf("llm: symbol bundle is not valid json")
 	}
 
 	systemPrompt := `You investigate one selected Go symbol using only a supplied evidence bundle. Static call edges are not runtime truth. Names may support inference but do not prove semantics. Never invent evidence IDs, paths, tests, execution order, or source behavior. Return only the requested KEY: VALUE lines.`
