@@ -119,7 +119,7 @@ forbidden overclaims, and size/latency observations. Saved model responses are
 evaluated without another API call; live DeepSeek runs refresh baselines but are
 not required by `./scripts/check.sh`.
 
-The first etcd task is now replayable offline. It combines the saved orientation
+The first etcd task is replayable offline. It combines the saved orientation
 response, the `kvServer.Put` source assessment, and sanitized gopls test-reference
 evidence behind exact artifact hashes. The evaluator reports five independent
 direction checks, 21 grounded structured paths, four source predicates, two
@@ -129,9 +129,22 @@ free-form evidence strings explicitly unscored. The historical normalized
 orientation report is valid for semantic replay but cannot prove adherence to
 the original model-output contract, so that check remains `not measured`.
 
-M3 remains active until equivalent small tasks for k6, Prometheus, NATS Server,
-and golangci-lint pass the same offline workflow. One passing etcd capture proves
-the replay machinery, not cross-repository product quality.
+The second task replays a current Grafana k6 capture from revision
+`dfa0d07cee2b535fef57077cca261ea5e155f423`. It covers three runtime-oriented
+directions, 11 grounded structured paths, and a drill-down from the metrics REST
+API direction into `Client.Metrics` and a related gopls test reference. Its raw
+orientation response and source response both have measured clean contracts;
+exact compact provider-request byte counts and hashes were recorded from local
+ignored capture artifacts. Those request bodies are not committed, so the
+offline loader reports but cannot recompute that metadata. Latencies were not
+instrumented and remain explicitly `null`. The live run also exposed and fixed
+a parser false positive: extensionless `/v1/metrics` is an HTTP route, not a
+repository file path, while actual structured file paths remain
+allowlist-checked.
+
+M3 remains active until equivalent small tasks for Prometheus, NATS Server, and
+golangci-lint pass the same offline workflow. Two passing captures establish the
+workflow on etcd and k6, not yet cross-repository product quality.
 
 The external-company slice adds one compatibility/calibration run through
 `doctor`, request preview, and current repository exploration. Its model output

@@ -1,6 +1,69 @@
 package quality
 
-import "testing"
+import (
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+type committedBaseline struct {
+	name     string
+	taskPath string
+	taskID   string
+}
+
+var committedBaselines = []committedBaseline{
+	{
+		name:     "etcd put orientation and drilldown",
+		taskPath: "testdata/etcd-put-v1/task.json",
+		taskID:   "etcd-put-orientation-drilldown-v1",
+	},
+	{
+		name:     "k6 metrics orientation and drilldown",
+		taskPath: "testdata/k6-metrics-v1/task.json",
+		taskID:   "k6-metrics-orientation-drilldown-v1",
+	},
+}
+
+func TestCommittedBaselineSuiteMembership(t *testing.T) {
+	t.Parallel()
+
+	actual, err := filepath.Glob("testdata/*/task.json")
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	expected := make([]string, 0, len(committedBaselines))
+	for _, baseline := range committedBaselines {
+		expected = append(expected, baseline.taskPath)
+	}
+	slices.Sort(actual)
+	slices.Sort(expected)
+	if !slices.Equal(actual, expected) {
+		t.Fatalf("committed task manifests = %v, want %v", actual, expected)
+	}
+}
+
+func TestCommittedBaselinesReplay(t *testing.T) {
+	t.Parallel()
+
+	for _, baseline := range committedBaselines {
+		t.Run(baseline.name, func(t *testing.T) {
+			t.Parallel()
+
+			loaded, err := Load(baseline.taskPath)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			result, err := Evaluate(loaded)
+			if err != nil {
+				t.Fatalf("Evaluate() error = %v", err)
+			}
+			if !result.Passed || result.TaskID != baseline.taskID {
+				t.Fatalf("baseline result = %#v", result)
+			}
+		})
+	}
+}
 
 func TestEtcdPutBaselineReplay(t *testing.T) {
 	t.Parallel()
@@ -101,5 +164,80 @@ func TestEtcdPutBaselineReplay(t *testing.T) {
 			result.BytesAndLatency.Orientation.LatencyMillis,
 			result.BytesAndLatency.Source.LatencyMillis,
 		)
+	}
+}
+
+func TestK6MetricsBaselineReplay(t *testing.T) {
+	t.Parallel()
+
+	loaded, err := Load("testdata/k6-metrics-v1/task.json")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.Passed || result.Version != 2 {
+		t.Fatalf("baseline result = %#v", result)
+	}
+	if len(result.DirectionCoverage.Checks) != 3 ||
+		len(result.DirectionCoverage.Missing) != 0 ||
+		len(result.DirectionCoverage.Ambiguous) != 0 {
+		t.Fatalf("direction coverage = %#v", result.DirectionCoverage)
+	}
+	for _, check := range result.DirectionCoverage.Checks {
+		if !check.Covered || len(check.CandidateNames) != 1 || check.SelectedCandidate == "" {
+			t.Errorf("direction %q association = %#v", check.DirectionID, check)
+		}
+	}
+	grounding := result.Grounding
+	if !grounding.Valid || grounding.AllowedPathCount != 60 ||
+		grounding.ReferencedPathCount != 11 || grounding.UnscoredProseEvidenceCount != 17 ||
+		len(grounding.InvalidReferences) != 0 {
+		t.Fatalf("grounding = %#v", grounding)
+	}
+	if !result.ImportantEvidence.Complete || len(result.ImportantEvidence.Checks) != 7 {
+		t.Fatalf("important evidence = %#v", result.ImportantEvidence)
+	}
+	drilldown := result.SemanticDrilldown
+	if !drilldown.Complete || len(drilldown.Predicates) != 1 ||
+		!drilldown.Predicates[0].Found || len(drilldown.Tests) != 1 ||
+		!drilldown.Tests[0].ContextCompatible {
+		t.Fatalf("drilldown = %#v", drilldown)
+	}
+	orientationContract := result.ContractAdherence.OrientationResponse
+	if !orientationContract.Valid || !orientationContract.Measured || !orientationContract.Clean {
+		t.Fatalf("orientation contract = %#v", orientationContract)
+	}
+	sourceContract := result.ContractAdherence.SourceResponse
+	if !sourceContract.Valid || !sourceContract.Clean || sourceContract.Evaluation == nil ||
+		sourceContract.Evaluation.Score != 100 || sourceContract.Evaluation.MaxScore != 100 {
+		t.Fatalf("source contract = %#v", sourceContract)
+	}
+	observations := result.BytesAndLatency
+	if observations.Orientation.ReplayInputBytes != 2435 ||
+		observations.Orientation.ResponseBytes != 6311 ||
+		observations.Orientation.ModelContextBytes != 32659 ||
+		observations.Orientation.ProviderRequestBytes == nil ||
+		*observations.Orientation.ProviderRequestBytes != 38838 ||
+		observations.Source.ReplayInputBytes != 2553 ||
+		observations.Source.ResponseBytes != 416 ||
+		observations.Source.ModelContextBytes != 1804 ||
+		observations.Source.ProviderRequestBytes == nil ||
+		*observations.Source.ProviderRequestBytes != 5167 ||
+		observations.TestEvidenceBytes != 1880 ||
+		observations.Orientation.LatencyMillis != nil || observations.Source.LatencyMillis != nil {
+		t.Fatalf("bytes and latency = %#v", observations)
+	}
+	const (
+		orientationRequestSHA = "9b24367e89e20e644d15e2c6e559bb450459590f3ddf8c17d838e86a5313c4e2"
+		sourceRequestSHA      = "e07df08d66f82c02f41b53bce6ddb83e9af21b573c2417cc40206b41fe59b122"
+	)
+	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||
+		loaded.Task.Captures.Source.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Source.ProviderRequestSHA256 != sourceRequestSHA {
+		t.Fatalf("request capture metadata = %#v", loaded.Task.Captures)
 	}
 }

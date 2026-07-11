@@ -27,9 +27,9 @@ If the user starts with “так, а че мы там дальше делаем
    current exploration on a known repository; record compatibility, useful
    directions, omissions, unsupported claims, and whether the output is worth a
    second step;
-2. add the second M3 replay task for Grafana k6 using the committed etcd task as
-   the contract example;
-3. add equivalent small tasks for Prometheus, NATS Server, and golangci-lint;
+2. add the third M3 replay task for Prometheus using the committed etcd and k6
+   tasks as contract examples;
+3. add equivalent small tasks for NATS Server and golangci-lint;
 4. compare direction usefulness, grounding, omissions, request size, and latency
    separately from JSON/contract adherence.
 
@@ -60,7 +60,7 @@ the default product path uses the configured OpenAI-compatible provider.
 - exact-symbol evidence, bounded source cards, source assessment, related test
   references, and a pure resumable investigation reducer as isolated connected
   slices;
-- versioned, hash-verified offline quality tasks with one concrete etcd baseline;
+- versioned, hash-verified offline quality tasks for etcd and Grafana k6;
 - staged Qwen 1.5B protocol verification retained as non-critical regression
   tooling.
 
@@ -77,7 +77,8 @@ the default product path uses the configured OpenAI-compatible provider.
 - `internal/deepseek` still owns OpenAI-compatible transport plus concrete
   prompts; runtime configuration is provider-neutral, but orientation lacks a
   consumer-owned model interface.
-- M3 has only the etcd task; cross-repository quality is not established.
+- M3 has two of five tasks; Prometheus, NATS Server, and golangci-lint remain, so
+  cross-repository quality is not established.
 
 ## Read in this order
 
