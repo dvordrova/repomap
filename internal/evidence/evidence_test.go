@@ -108,3 +108,28 @@ func TestGraphValidateRejectsUnknownScenario(t *testing.T) {
 		t.Fatalf("Validate() error = %v, want unknown scenario", err)
 	}
 }
+
+func TestLocationSetRequiresProviderContext(t *testing.T) {
+	t.Parallel()
+
+	valid := LocationSet{
+		Locations:  []Location{{Path: "server/key_test.go", Line: 10, Column: 2}},
+		Certainty:  CertaintyStatic,
+		Provenance: []Provenance{{Provider: "gopls", Version: "v1", Operation: "references"}},
+		Scenarios:  []Scenario{{ID: "active-build", Name: "active Go build"}},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	invalid := valid
+	invalid.Provenance = nil
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("Validate() accepted missing provenance")
+	}
+	invalid = valid
+	invalid.Scenarios = nil
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("Validate() accepted missing build scenario")
+	}
+}

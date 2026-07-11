@@ -88,6 +88,49 @@ type Scenario struct {
 	Build      BuildContext      `json:"build,omitempty"`
 }
 
+// LocationSet is a provider-produced set of source locations with the static
+// analysis context that made them visible. Consumers may filter the locations,
+// but must not invent stronger certainty or discard provenance.
+type LocationSet struct {
+	Locations  []Location   `json:"locations"`
+	Certainty  Certainty    `json:"certainty"`
+	Provenance []Provenance `json:"provenance"`
+	Scenarios  []Scenario   `json:"scenarios"`
+}
+
+func (s LocationSet) Validate() error {
+	if !s.Certainty.Valid() {
+		return fmt.Errorf("evidence: location set has invalid certainty %q", s.Certainty)
+	}
+	if len(s.Provenance) == 0 {
+		return fmt.Errorf("evidence: location set has no provenance")
+	}
+	for index, provenance := range s.Provenance {
+		if provenance.Provider == "" || provenance.Operation == "" {
+			return fmt.Errorf("evidence: location set provenance[%d] is incomplete", index)
+		}
+	}
+	seenScenarios := make(map[string]struct{}, len(s.Scenarios))
+	for index, scenario := range s.Scenarios {
+		if scenario.ID == "" || scenario.Name == "" {
+			return fmt.Errorf("evidence: location set scenarios[%d] is incomplete", index)
+		}
+		if _, exists := seenScenarios[scenario.ID]; exists {
+			return fmt.Errorf("evidence: location set has duplicate scenario %q", scenario.ID)
+		}
+		seenScenarios[scenario.ID] = struct{}{}
+	}
+	if len(s.Scenarios) == 0 {
+		return fmt.Errorf("evidence: location set has no build scenario")
+	}
+	for index, location := range s.Locations {
+		if location.Path == "" || location.Line <= 0 || location.Column <= 0 {
+			return fmt.Errorf("evidence: location set locations[%d] is incomplete", index)
+		}
+	}
+	return nil
+}
+
 type Entity struct {
 	ID       string     `json:"id"`
 	Kind     EntityKind `json:"kind"`

@@ -3,6 +3,8 @@ package gopls
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,9 @@ type fakeRunner struct {
 func (f fakeRunner) Run(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 	key := strings.Join(args, " ")
 	output, ok := f.outputs[key]
+	if key == "version" && !ok {
+		return []byte("golang.org/x/tools/gopls v0.test\n"), nil
+	}
 	if !ok {
 		return nil, fmt.Errorf("unexpected command %q", key)
 	}
@@ -155,5 +160,181 @@ func TestParseImplementationLocations(t *testing.T) {
 	}
 	if locations[0].Line != 14 || locations[0].Column != 6 {
 		t.Fatalf("locations[0] = %#v", locations[0])
+	}
+}
+
+func TestReferencesReturnsUniqueLocalLocations(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	for _, name := range []string{"key.go", "key_test.go"} {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte("package fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsidePath := filepath.Join(filepath.Dir(resolvedRepo), "outside.go")
+	if err := os.WriteFile(outsidePath, []byte("package outside\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	referenceCommand := "references " + filepath.Join(resolvedRepo, "key.go") + ":10:6"
+	runner := fakeRunner{outputs: map[string]string{
+		referenceCommand: strings.Join([]string{
+			filepath.Join(resolvedRepo, "key_test.go") + ":20:4-7",
+			filepath.Join(resolvedRepo, "key_test.go") + ":20:4-7",
+			filepath.Join(resolvedRepo, "key.go") + ":30:2-5",
+			outsidePath + ":40:2-5",
+		}, "\n"),
+	}}
+	analyzer := newWithRunner(Options{CommandTimeout: time.Second}, runner)
+	result, err := analyzer.References(context.Background(), repo, evidence.Location{
+		Path:   "key.go",
+		Line:   10,
+		Column: 6,
+	})
+	if err != nil {
+		t.Fatalf("References() error = %v", err)
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatalf("References().Validate() error = %v", err)
+	}
+	locations := result.Locations
+	if len(locations) != 2 {
+		t.Fatalf("locations = %#v", locations)
+	}
+	if locations[0].Path != "key.go" || locations[1].Path != "key_test.go" {
+		t.Fatalf("locations = %#v", locations)
+	}
+}
+
+func TestReferencesRequiresUsableLocation(t *testing.T) {
+	t.Parallel()
+
+	analyzer := newWithRunner(Options{}, fakeRunner{})
+	if _, err := analyzer.References(context.Background(), t.TempDir(), evidence.Location{}); err == nil {
+		t.Fatal("References() error = nil")
+	}
+}
+
+func TestReferencesResolvesInputSymlinks(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	targetPath := filepath.Join(repo, "key.go")
+	if err := os.WriteFile(targetPath, []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aliasPath := filepath.Join(repo, "alias.go")
+	if err := os.Symlink(targetPath, aliasPath); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	referenceCommand := "references " + filepath.Join(resolvedRepo, "key.go") + ":10:6"
+	runner := fakeRunner{outputs: map[string]string{
+		referenceCommand: targetPath + ":30:2-5\n",
+	}}
+	analyzer := newWithRunner(Options{CommandTimeout: time.Second}, runner)
+	result, err := analyzer.References(context.Background(), repo, evidence.Location{
+		Path:   "alias.go",
+		Line:   10,
+		Column: 6,
+	})
+	if err != nil {
+		t.Fatalf("References() error = %v", err)
+	}
+	locations := result.Locations
+	if len(locations) != 1 || locations[0].Path != "key.go" {
+		t.Fatalf("locations = %#v, want key.go", locations)
+	}
+}
+
+func TestReferencesRejectsInputSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outsidePath := filepath.Join(base, "outside.go")
+	if err := os.WriteFile(outsidePath, []byte("package outside\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsidePath, filepath.Join(repo, "escape.go")); err != nil {
+		t.Skipf("create symlink: %v", err)
+	}
+
+	analyzer := newWithRunner(Options{CommandTimeout: time.Second}, fakeRunner{})
+	_, err := analyzer.References(context.Background(), repo, evidence.Location{
+		Path:   "escape.go",
+		Line:   1,
+		Column: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "outside repository") {
+		t.Fatalf("References() error = %v, want outside repository", err)
+	}
+}
+
+func TestReferencesFiltersOutputSymlinkEscapes(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(repo, "key.go")
+	localPath := filepath.Join(repo, "local_test.go")
+	canonicalPath := filepath.Join(repo, "canonical_test.go")
+	outsidePath := filepath.Join(base, "outside_test.go")
+	for _, path := range []string{keyPath, localPath, canonicalPath, outsidePath} {
+		if err := os.WriteFile(path, []byte("package fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insideAlias := filepath.Join(repo, "inside_alias_test.go")
+	if err := os.Symlink(canonicalPath, insideAlias); err != nil {
+		t.Skipf("create inside symlink: %v", err)
+	}
+	escapeAlias := filepath.Join(repo, "escape_alias_test.go")
+	if err := os.Symlink(outsidePath, escapeAlias); err != nil {
+		t.Skipf("create escaping symlink: %v", err)
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	referenceCommand := "references " + filepath.Join(resolvedRepo, "key.go") + ":10:6"
+	runner := fakeRunner{outputs: map[string]string{
+		referenceCommand: strings.Join([]string{
+			insideAlias + ":20:4-7",
+			canonicalPath + ":20:4-7",
+			escapeAlias + ":30:2-5",
+			localPath + ":40:2-5",
+		}, "\n"),
+	}}
+	analyzer := newWithRunner(Options{CommandTimeout: time.Second}, runner)
+	result, err := analyzer.References(context.Background(), repo, evidence.Location{
+		Path:   "key.go",
+		Line:   10,
+		Column: 6,
+	})
+	if err != nil {
+		t.Fatalf("References() error = %v", err)
+	}
+	locations := result.Locations
+	if len(locations) != 2 {
+		t.Fatalf("locations = %#v, want two local canonical locations", locations)
+	}
+	if locations[0].Path != "canonical_test.go" || locations[1].Path != "local_test.go" {
+		t.Fatalf("locations = %#v", locations)
 	}
 }
