@@ -88,15 +88,19 @@ Confidence must be explicit, warnings for low confidence.
 
 ### 4. Focused flow analysis (implemented, opt-in)
 
+- the default browser run saves a bounded deterministic file/test/package/import
+  neighborhood for every validated direction, with no additional provider call;
+- selecting a direction renders that saved local evidence;
 - `--flows N` expands only the top N candidate directions;
 - repomap gathers focused files/tests/docs/source signals for each selected flow;
 - the provider explains only the focused bundle;
 - known fields are normalized, verified paths are allowlisted, and unsafe or
   incomplete reports are rejected locally.
 
-Named user choice and the resumable orientation-to-investigation handoff are not
-yet wired into the main CLI. They exist as an isolated M2 slice and remain the
-important integration boundary for the progressive product journey.
+Named user choice now reaches the first saved local neighborhood. Exact-symbol
+candidate selection and the resumable orientation-to-investigation handoff are
+not yet wired into the main CLI; they remain the important integration boundary
+for the progressive product journey.
 
 ### 5. Durable focused investigation (implemented, isolated from the browser)
 
@@ -106,8 +110,9 @@ identity, HEAD and dirty contents, Go/gopls/collector/build inputs, and
 prompt/parser/evaluator versions are reconciled before a saved action becomes
 executable. Unchanged sessions resume without a second model call; changed
 facts re-resolve the symbol, while changed claim logic retains local source and
-returns to assessment. M5 connects this already-durable path to a user-selected
-browser direction rather than adding another persistence mechanism.
+returns to assessment. M5 next connects a user-selected browser direction's
+verified files to exact symbol candidates and this already-durable path rather
+than adding another persistence mechanism.
 
 ## Experimental local evidence layer
 

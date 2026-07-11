@@ -12,7 +12,8 @@ evidence contracts, investigation reducer, model boundary, and quality harness.
 This is an acceptance track across the canonical milestones, not a replacement
 roadmap. M3 established repeatable cross-repository quality, M4 made one
 investigation durable, M5 now delivers the first handoff-ready onboarding
-calibration, and M6 delivers the feature `ChangeBrief`.
+calibration, M6 adds free repository exploration, and M7 delivers the feature
+`ChangeBrief`.
 
 ## Trial prerequisites
 
@@ -79,20 +80,23 @@ wc -c /tmp/repomap-request.json
 The preview file is the exact provider body, so the engineer can review both its
 contents and byte size before authorizing the first repository call.
 
-The normal first call performs one bounded orientation request, presents all
-validated candidate directions in the browser report, and stops there.
-`--flows N` additionally expands the top N directions.
+The normal first call performs one bounded orientation request, presents the
+full onboarding overview, and prepares a compact deterministic local evidence
+bundle for every validated direction. Clicking a direction reads that saved
+bundle; it makes no second provider call. `--flows N` additionally asks the
+model to expand the top N directions.
 
 ```bash
 ./repomap /path/to/repo
 ./repomap /path/to/repo --flows 1
 ```
 
-Today `--flows 1` expands the highest-ranked direction. The displayed direction
-cards are not yet actions: named direction choice, deterministic symbol
-candidates, and the resumable investigation handoff still live outside the main
-CLI. The current friend pass is therefore an orientation baseline, not a claim
-that the complete progressive journey is wired.
+Today the direction cards are actions over saved local file/test/package/import
+evidence, while `--flows 1` still expands the highest-ranked direction rather
+than a user-selected one. Deterministic exact-symbol candidates and the
+resumable source/test investigation handoff remain outside the main CLI. The
+current friend pass is a runnable onboarding baseline, not a claim that the
+complete progressive journey is wired.
 
 Debug artifacts default to the user cache rather than the analysed repository.
 Use `--no-debug` to retain nothing or `--debug-dir` to choose an explicit trusted
@@ -205,11 +209,12 @@ These are zero-tolerance conditions for all three scenarios:
 The secure provider configuration, doctor, request preview, bounded orientation,
 source-grounded exact-symbol path, investigation reducer, all five repository
 quality tasks, and one generic-namespace DeepSeek calibration replay exist.
-The default report is not yet a complete onboarding workflow: direction cards
-are read-only, the friend cannot choose one by name and reach the saved
-investigation loop, and public natural-language `feature` input does not exist.
-Whether the onboarding entrypoint is a subcommand or the default no-argument
-journey is deliberately left to M5 usability evidence rather than assumed now.
+The default report now preserves purpose, system map, first files, terms,
+questions, all named directions, safe request/latency metadata, and one saved
+local drill-down per direction. It also creates a non-overwriting feedback note
+for correct/missing/misleading observations. The next gap is exact-symbol
+candidate selection into the saved source/test investigation loop; public
+natural-language `feature` input also does not exist.
 The trial is complete only after those profiles are wired and replayable; this
 document must not be read as a claim that all three commands already work.
 
@@ -222,8 +227,10 @@ document must not be read as a claim that all three commands already work.
 2. M4 is complete for the exact-symbol slice. Use M5 to give the engineer a
    five-minute onboarding handoff, choose a named direction, and follow it into
    the first saved drill-down instead of auto-expanding a ranking.
-3. Use M6 for the held-out feature `ChangeBrief`; ticket text changes ranking
+3. Use M6 to generalize the selected evidence trail into free deepen/branch/back
+   repository exploration without a second workflow engine.
+4. Use M7 for the held-out feature `ChangeBrief`; ticket text changes ranking
    and stop conditions, not the evidence pipeline.
-4. Add bug and impact-analysis policies after the onboarding and ticket trials,
+5. Add bug and impact-analysis policies after the onboarding and ticket trials,
    while storing one replayable trial task per user goal.
-5. Run the complete three-scenario acceptance exercise with a company engineer.
+6. Run the complete three-scenario acceptance exercise with a company engineer.

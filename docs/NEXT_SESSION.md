@@ -19,19 +19,20 @@ The company-engineer acceptance track has three goals:
 These are policies over one investigation engine, not three prompt pipelines.
 The canonical implementation order remains [MILESTONES.md](MILESTONES.md): M4
 fresh local memory is complete, the friend onboarding trial is active in M5,
-and feature work remains M6. The exact acceptance contract is in
+free repository exploration follows in M6, and feature work moves to M7. The
+exact acceptance contract is in
 [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
 If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. treat the next outcome as a five-minute **Friend Onboarding Trial**, not as
-   an abstract browser refactor;
-2. audit the current `./repomap` report from the perspective of an engineer who
-   knows the target project and must judge what is correct, missing, or wrong;
-3. connect one named orientation direction to a first bounded drill-down without
-   asking the friend to know an exact gopls symbol;
-4. package build/config/doctor/run/feedback into a short handoff while keeping
-   the six M3 tasks and Qwen 1.5B structured regression green.
+1. give the current binary and five-line setup to the knowledgeable friend and
+   have them run the first **Friend Onboarding Trial** on a Go project they know;
+2. collect their `onboarding-feedback.md`: what was correct, missing,
+   misleading, and which direction/file became useful first;
+3. implement the next bounded cube, `SelectedFlow + verified files -> ranked
+   exact symbol candidates`, without promoting model prose to analyzer truth;
+4. keep the six M3 tasks and Qwen 1.5B structured regression green while wiring
+   the selected exact symbol into the existing resumable investigation.
 
 Do not restart Qwen prompt tuning. Keep the staged 1.5B regression runnable, but
 the default product path uses the configured OpenAI-compatible provider.
@@ -53,8 +54,12 @@ the default product path uses the configured OpenAI-compatible provider.
 - bounded orientation preserving the full known response shape, with structured
   path validation and credential gates on outbound/retained content;
 - `./repomap` targets the current directory, reports bounded context/request
-  bytes, makes one orientation call, and opens all validated directions in a
-  static browser report;
+  bytes, makes one orientation call, preserves the complete onboarding report,
+  and prepares a clickable bounded local evidence neighborhood for every
+  validated direction without another provider call;
+- safe run metadata (model, context/request bytes, latency, direction count)
+  appears in the report, and every run creates a non-overwriting
+  `onboarding-feedback.md`;
 - opt-in top-N focused flow expansion; flow output is flexibly parsed,
   normalized to known fields, allowlist-validated, and rejected when empty or
   unsupported;
@@ -77,8 +82,9 @@ the default product path uses the configured OpenAI-compatible provider.
 
 ## Honest current boundary
 
-- The main CLI shows ranked directions but cannot yet choose one by name and
-  hand it into the resumable reducer.
+- The browser can choose a named direction and inspect its saved deterministic
+  file/test/package/import neighborhood, but cannot yet choose an exact symbol
+  and hand it into the resumable reducer.
 - `--flows 1` expands the highest-ranked direction, not a user-selected one.
 - `--offline` means no model call; it is not a hard network sandbox for Go tools.
 - Public `onboarding` and natural-language `feature` commands do not exist.
@@ -95,9 +101,11 @@ the default product path uses the configured OpenAI-compatible provider.
   changes conservatively reset all focused facts rather than selectively
   retaining unrelated neighborhoods; optimize this only after friend-trial
   latency or repetition demonstrates a product problem.
-- The next product blocker is the read-only gap between a named browser
-  direction and an exact evidence-backed drill-down. The friend should not have
-  to leave the browser and invent a gopls symbol name.
+- The next product blocker is `SelectedFlow + verified likely files -> ranked
+  exact symbol candidates`. Search must run lazily after selection, filter gopls
+  results to verified Go files before truncation, and require exact identity
+  confirmation before entering the existing investigation reducer. The model's
+  `likely_entrypoint` must never be promoted directly to a symbol.
 - Prometheus is captured at revision
   `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
   `deepseek-v4-flash` orientation proposes a TSDB write direction containing

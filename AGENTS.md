@@ -16,7 +16,8 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 2. **Go facts** — `go list -json ./...` per discovered module, packages/edges/entrypoints
 3. **Compact LLM bundle** — bounded subset (module summaries, entrypoints with open_files, important edges)
 4. **Optional model orientation** — sends only the compact bundle, not full repo contents
-5. **Debug artifacts** — written under `--debug-dir` when requested
+5. **Local direction bundles** — bounded file/test/package/import neighborhoods, no extra model call
+6. **Browser/debug artifacts** — full onboarding view plus inspectable saved facts under `--debug-dir`
 
 ## Design rules
 
@@ -63,6 +64,8 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
 ./scripts/investigation_check.sh # replay M2 reducer path (local or DeepSeek)
 ./scripts/investigation_handoff_check.sh # copied split-memory restart, no model call
+./scripts/friend_check.sh     # build handoff binary + one-request browser journey fixture
+./scripts/friend_artifact_check.sh # validate one generated friend-trial run
 ./scripts/quality_check.sh   # replay committed quality task, no network/API key
 ./scripts/quality_preflight.sh # verify a linked orientation/symbol target, no network
 ./scripts/debug_last_run.sh  # inspect last debug run

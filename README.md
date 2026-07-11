@@ -8,8 +8,8 @@ The current product path orients you in an unfamiliar repository and can expand
 selected runtime/event directions. Source-grounded symbol investigation,
 content-addressed resumable memory, and offline quality replay exist as
 connected slices. The active product goal is a handoff-ready onboarding pass
-for an engineer evaluating a Go project they already know; natural-language
-feature work follows it.
+for an engineer evaluating a Go project they already know; free branch/deepen/
+backtrack repository exploration follows it, then natural-language feature work.
 
 ## Build
 
@@ -92,12 +92,24 @@ remote use.
 ## Explore a repository
 
 The default performs one orientation request, preserves validated candidate
-directions in the browser report, and stops without expanding all of them:
+directions in the browser report, and stops without making per-direction model
+calls:
 
 ```bash
 ./repomap
 ./repomap ../etcd
 ```
+
+The browser starts with the project purpose, system map, first files, important
+terms, questions for a teammate, and alternative directions. Selecting a
+direction opens a compact local evidence neighborhood (ranked files, tests,
+packages, and import edges) prepared without another API call. The report also
+shows compact-context bytes, the complete external request size, provider
+latency, and the model used.
+
+Each run includes `onboarding-feedback.md` beside the report. It is never
+overwritten when the report is regenerated and gives the evaluating engineer a
+small place to record what was correct, missing, or misleading.
 
 Expand the top direction when you want more detail:
 
@@ -156,6 +168,8 @@ distinguishes that target from what already works and from later feature work.
 ./scripts/smoke.sh
 ./scripts/etcd_check.sh ../etcd
 ./scripts/quality_check.sh
+./scripts/friend_check.sh
+./scripts/friend_artifact_check.sh PATH_TO_RUN_DIR
 # Calibrate the atomic generic namespace against the DeepSeek reference:
 ./scripts/with_deepseek_generic_config.sh go run ./cmd/repomap doctor llm --check
 # Before a new live baseline, after choosing a linked source-capable symbol:

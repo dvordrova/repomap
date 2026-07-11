@@ -21,8 +21,8 @@ typed capabilities without changing their inputs or outputs.
 
 [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) is an acceptance track across this order,
 not a competing roadmap: M3 calibrated quality, M4 made one investigation
-durable, M5 is now the handoff-ready onboarding trial, and feature work remains
-M6.
+durable, M5 is the handoff-ready onboarding trial, M6 makes repository
+exploration freely navigable, and feature work follows in M7.
 
 ## Status
 
@@ -33,8 +33,9 @@ M6.
 | M3. Quality suite | **complete** | the same golden tasks expose orientation and drill-down regressions on five large Go repositories |
 | M4. Fresh local memory | **complete** | saved facts, claims, and sessions survive restart and invalidate safely when repository/tool/prompt inputs change |
 | M5. Friend onboarding trial | **active** | a company engineer runs one command on a known Go project, evaluates its map, and chooses one direction for a first drill-down |
-| M6. Ticket playbook | planned | a real ticket produces a bounded change surface, risks, tests, unknowns, and a useful first edit location |
-| M7. Shared follow-on playbooks | planned | bug and impact analysis reuse the same evidence loop after onboarding and ticket work |
+| M6. Free repository exploration | planned | the user can deepen, branch, backtrack, and resume anywhere interesting without losing provenance or crawling the whole repository |
+| M7. Ticket playbook | planned | a real ticket produces a bounded change surface, risks, tests, unknowns, and a useful first edit location |
+| M8. Shared follow-on playbooks | planned | bug and impact analysis reuse the same evidence loop after onboarding, exploration, and ticket work |
 
 ## M1 — Source-grounded symbol
 
@@ -104,7 +105,7 @@ collector, context, filesystem, model client, or presentation call.
 
 Replay coverage includes unit fixtures for every handoff/resume choice and a
 local etcd run through `./scripts/investigation_handoff_check.sh`. Selecting and
-reading a bounded test body remains M3/M7 work; M2 only promises that the shared
+reading a bounded test body remains M3/M8 work; M2 only promises that the shared
 loop reaches an explicit user choice without silently expanding it.
 
 ## M3 — Quality suite
@@ -296,24 +297,44 @@ subsystems, and alternative directions. They can choose one named direction and
 reach a first evidence-backed drill-down without knowing an exact gopls symbol.
 The browser consumes saved application state; it does not own analysis.
 
-An early friend-test baseline now covers the first half of this contract:
-`./repomap` already targets the current directory, reports compact-context and
-exact request bytes, makes one `deepseek-v4-flash` orientation call, retains
-every validated direction, and opens a static HTML report. M5 is complete when
-that baseline has one obvious onboarding entrypoint, named direction selection,
-one session-backed drill-down, a no-secret/no-repository-write handoff check,
-and a compact feedback artifact that records what the knowledgeable engineer
-found correct, missing, or misleading. Editor opening is useful but does not
-block the first friend handoff if every cited file remains directly navigable.
+The first runnable friend baseline now targets the current directory, makes one
+`deepseek-v4-flash` orientation call, preserves the complete onboarding shape,
+shows context/request bytes and latency, and prepares a bounded local evidence
+bundle for every direction without another provider call. Direction cards open
+those saved neighborhoods, `friend_check.sh` builds and replays the handoff
+fixture, and each run creates a non-overwriting correct/missing/misleading
+feedback note. The current etcd proof produced three clickable directions from
+a 42,159-byte compact context and a 49,509-byte external request in 30,983 ms,
+stored explicit `local_only` status for every direction, and capped each
+neighborhood at 20 file/test/doc items.
 
-## M6 — Ticket playbook
+M5 remains active until the knowledgeable friend actually evaluates this pass
+and a selected direction can progress from its verified files to bounded exact
+symbol candidates and the existing resumable source/test investigation. Editor
+opening is useful but does not block that first external calibration.
+
+## M6 — Free repository exploration
+
+Turn the guided onboarding map into a user-directed workspace over the same
+saved evidence and investigation actions. A user can start from a subsystem,
+direction, file, or exact symbol; go deeper into callers, callees, source, and
+tests; branch to a sibling question; return through breadcrumbs; and resume the
+trail after restart. Depth and context budgets remain explicit, and the tool
+must never simulate freedom by eagerly crawling the whole repository.
+
+The first proof is one browser trail with `deeper`, `back`, and `branch` actions
+whose saved nodes retain repository/fact/claim provenance. It reuses M4 memory
+and the M5 direction-to-symbol bridge rather than creating a second exploration
+engine.
+
+## M7 — Ticket playbook
 
 Use a real etcd or k6 ticket to identify a change surface, analogous code,
 affected flows, relevant tests, risks, unknowns, and the first useful source
 location. The ticket is an initial goal and ranking policy, not a separate prompt
 pipeline.
 
-## M7 — Shared follow-on playbooks
+## M8 — Shared follow-on playbooks
 
 Add bug and impact-analysis policies over the same evidence, claims, actions,
 budgets, and stopping rules after the onboarding and ticket trials. Language
