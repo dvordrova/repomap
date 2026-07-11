@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,80 @@ func (a *Analyzer) Analyze(ctx context.Context, req analysis.Request) (evidence.
 		return evidence.Graph{}, fmt.Errorf("gopls: invalid evidence graph: %w", err)
 	}
 	return graph, nil
+}
+
+// References returns deterministic repository-relative locations together
+// with the provider provenance and active build scenario that made them
+// visible. It does not infer how a reference is exercised at runtime or what a
+// test asserts.
+func (a *Analyzer) References(ctx context.Context, repoPath string, location evidence.Location) (evidence.LocationSet, error) {
+	if location.Path == "" || location.Line <= 0 || location.Column <= 0 {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: reference location requires path, line, and column")
+	}
+	repoPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: resolve repo path: %w", err)
+	}
+	repoPath, err = filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: resolve repo symlinks: %w", err)
+	}
+	location, ok, err := normalizeExistingRepoLocation(repoPath, location)
+	if err != nil {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: resolve reference location: %w", err)
+	}
+	if !ok {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: reference location is outside repository")
+	}
+	output, err := a.run(ctx, repoPath, "references", positionArg(repoPath, location))
+	if err != nil {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: references: %w", err)
+	}
+
+	seen := make(map[string]struct{})
+	result := make([]evidence.Location, 0)
+	for _, candidate := range parseLocations(output) {
+		candidate, ok, resolveErr := normalizeExistingRepoLocation(repoPath, candidate)
+		if resolveErr != nil || !ok {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d:%d:%d:%d", candidate.Path, candidate.Line, candidate.Column, candidate.EndLine, candidate.EndColumn)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, candidate)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Path != result[j].Path {
+			return result[i].Path < result[j].Path
+		}
+		if result[i].Line != result[j].Line {
+			return result[i].Line < result[j].Line
+		}
+		return result[i].Column < result[j].Column
+	})
+	set := evidence.LocationSet{
+		Locations: result,
+		Certainty: evidence.CertaintyStatic,
+		Provenance: []evidence.Provenance{{
+			Provider:  "gopls",
+			Version:   a.version(ctx, repoPath),
+			Operation: "references",
+			Detail:    "source references reported by gopls",
+			Location:  cloneLocation(&location),
+		}},
+		Scenarios: []evidence.Scenario{{
+			ID:         activeBuildScenarioID,
+			Name:       "gopls active build configuration",
+			WorkingDir: repoPath,
+			Build:      evidence.BuildContext{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH},
+		}},
+	}
+	if err := set.Validate(); err != nil {
+		return evidence.LocationSet{}, fmt.Errorf("gopls: invalid reference evidence: %w", err)
+	}
+	return set, nil
 }
 
 func (a *Analyzer) addImplementations(ctx context.Context, repoPath, version string, symbols []symbol, graph *evidence.Graph) {
@@ -572,6 +647,34 @@ func normalizeLocation(repoPath string, location evidence.Location, includeExter
 		location.Path = filepath.ToSlash(filepath.Clean(relative))
 	}
 	return location, true
+}
+
+// normalizeExistingRepoLocation resolves every symlink in an existing path
+// before checking containment. filepath.Rel alone is insufficient here: a path
+// can be lexically inside repoPath while its final symlink target is outside.
+func normalizeExistingRepoLocation(repoPath string, location evidence.Location) (evidence.Location, bool, error) {
+	path := filepath.FromSlash(location.Path)
+	if !filepath.IsAbs(path) {
+		if !filepath.IsLocal(path) {
+			return evidence.Location{}, false, nil
+		}
+		path = filepath.Join(repoPath, path)
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return evidence.Location{}, false, err
+	}
+	relative, err := filepath.Rel(repoPath, resolvedPath)
+	if err != nil {
+		return evidence.Location{}, false, err
+	}
+	if relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return evidence.Location{}, false, nil
+	}
+
+	location.Path = filepath.ToSlash(filepath.Clean(relative))
+	return location, true, nil
 }
 
 func entityKind(kind string) evidence.EntityKind {
