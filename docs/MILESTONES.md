@@ -87,6 +87,11 @@ data-only state/events/actions. It composes the existing symbol, source-card,
 source-assessment, and test-reference cubes; it does not rewrite them or add a
 generic plugin registry.
 
+Current progress: that exact path reaches `waiting_user` through the pure
+reducer and explicit runner, and lifecycle/stale-result transitions are tested.
+M2 remains active until orientation can hand a chosen focus into the same
+session and the user-choice boundary is wired rather than only represented.
+
 ## M3 — Quality suite
 
 Maintain small golden tasks for etcd, Grafana k6, Prometheus, NATS Server, and

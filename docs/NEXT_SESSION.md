@@ -50,6 +50,10 @@ Read these first:
   and raw-response retention on parse failure;
 - gopls test-reference collection with provider/version/provenance/build scenario;
   references remain navigation evidence and are not called test-supported;
+- pure investigation reducer plus an explicit capability runner; the real etcd
+  path reaches `assessing_source` locally and `waiting_user` with DeepSeek,
+  while stale action IDs, revision changes, redirects, cancellation, and failure
+  are table-tested;
 - versioned local symbol evidence index with defensive put/query,
   deterministic persistence/reload, and path-based invalidation;
 - JSON and tagged symbol prompts, tolerant normalization, evaluator, fixtures,
@@ -151,6 +155,7 @@ high-value frontier branch when evidence is insufficient.
 ./scripts/symbol_check.sh ../etcd kvServer.Put
 ./scripts/source_artifacts_check.sh ../etcd kvServer.Put
 ./scripts/source_check.sh
+./scripts/investigation_check.sh ../etcd kvServer.Put
 ```
 
 ## Workspace caution
