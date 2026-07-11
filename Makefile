@@ -24,6 +24,16 @@ check: ## Run tests and vet via reusable script
 quality-check: ## Replay saved quality tasks without a model call
 	./scripts/quality_check.sh
 
+SURFACE_REPO ?= internal/experiment/surfacediscovery/testdata/direct
+SURFACE_OUT ?= $(TMP_DIR)/surface-discovery
+
+.PHONY: surface-check surface-playground
+surface-check: ## Run config-driven Go surface discovery fixtures
+	go test ./internal/semantics/catalog ./internal/experiment/surfacediscovery ./internal/surfacebridge
+
+surface-playground: ## Emit local surface JSON and Markdown for SURFACE_REPO
+	go run ./cmd/surface-discovery-playground --repo "$(SURFACE_REPO)" --out "$(SURFACE_OUT)"
+
 build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/repomap ./cmd/repomap
