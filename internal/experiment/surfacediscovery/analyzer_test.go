@@ -4,8 +4,14 @@ import (
 	"bytes"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+var fixtureResults = struct {
+	sync.Mutex
+	values map[string]Result
+}{values: map[string]Result{}}
 
 func TestAnalyzeDirectRoute(t *testing.T) {
 	result := analyzeFixture(t, "direct")
@@ -178,10 +184,16 @@ func TestAnalyzeIsDeterministic(t *testing.T) {
 
 func analyzeFixture(t *testing.T, name string) Result {
 	t.Helper()
+	fixtureResults.Lock()
+	defer fixtureResults.Unlock()
+	if result, ok := fixtureResults.values[name]; ok {
+		return result
+	}
 	result, err := Analyze(DefaultOptions(filepath.Join("testdata", name)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixtureResults.values[name] = result
 	return result
 }
 
