@@ -61,22 +61,21 @@ func Markdown(result Result) string {
 	fmt.Fprintf(&builder, "Scenario: `%s`\n\n", result.Catalog.Scenario.ID)
 	fmt.Fprintf(
 		&builder,
-		"Discovered %d HTTP route registration(s): %d direct, %d wrapper-derived.\n\n",
+		"Discovered %d configured runtime trigger(s): %d direct, %d wrapper-derived.\n\n",
 		len(result.Catalog.Triggers),
 		result.Coverage.DirectTriggers,
 		result.Coverage.WrapperDerivedTriggers,
 	)
 	builder.WriteString("This is not a runtime trace. " + result.Coverage.ScopeStatement + ".\n\n")
 	for _, trigger := range result.Catalog.Triggers {
-		method := trigger.Identity.Method
-		if method != "" {
-			method += " "
+		title := strings.TrimSpace(trigger.Identity.Method + " " + trigger.Identity.Path.Text)
+		if trigger.Identity.Name != "" {
+			title = trigger.Identity.Name
 		}
-		path := trigger.Identity.Path.Text
-		if path == "" {
-			path = "<dynamic>"
+		if title == "" {
+			title = "<dynamic>"
 		}
-		fmt.Fprintf(&builder, "## %s%s\n\n", method, path)
+		fmt.Fprintf(&builder, "## %s\n\n", title)
 		fmt.Fprintf(&builder, "- ID: `%s`\n", trigger.ID)
 		fmt.Fprintf(&builder, "- Status: `%s`; certainty `%s`; resolution `%s`\n", trigger.Status, trigger.Certainty, trigger.Resolution)
 		fmt.Fprintf(&builder, "- Handler: `%s`\n", displayValue(trigger.Handler))
@@ -99,6 +98,21 @@ func Markdown(result Result) string {
 			}
 			sort.Strings(frontiers)
 			fmt.Fprintf(&builder, "- Frontiers: %s\n", strings.Join(frontiers, "; "))
+		}
+		builder.WriteString("\n")
+	}
+	if len(result.Coverage.LoopSignals) > 0 {
+		builder.WriteString("## Loop signals\n\n")
+		for _, signal := range result.Coverage.LoopSignals {
+			fmt.Fprintf(
+				&builder,
+				"- `%s` in `%s` at `%s:%d`: %s\n",
+				signal.Kind,
+				signal.FunctionID,
+				signal.Location.Path,
+				signal.Location.Line,
+				signal.Detail,
+			)
 		}
 		builder.WriteString("\n")
 	}

@@ -209,3 +209,38 @@ semantic seed family is Cobra `Command.AddCommand`: repomap already owns a
 deterministic Cobra trace and CLI `FlowProof`, making it the lowest-risk test of
 whether the generic catalog can replace framework-specific existence logic
 without losing the current command evidence.
+
+## Loop and worker signal increment
+
+The first worker-oriented extension keeps loops subordinate to a configured
+terminal start. The built-in catalog now contains the exact
+`golang.org/x/sync/errgroup.(*Group).Go(func() error)` operation, verified
+against the locally installed `x/sync` v0.19.0 source. The catalog projects the
+callback and owning group; it does not declare loop traversal or worker names.
+
+SSA natural-loop detection records three bounded signal shapes:
+
+- `registration_loop` when a configured registration sink occurs inside a
+  control-flow cycle, indicating potentially dynamic cardinality;
+- `channel_receive_loop` when an async callback loop contains a channel receive;
+- `select_event_loop` when an async callback loop contains a `select`.
+
+A loop alone never creates a trigger. `errgroup.Go(oneShot)` is retained as an
+`async_task`; `errgroup.Go(runWorker)` becomes a `worker` only when `runWorker`
+is resolved and has static loop evidence. The status
+`confirmed_worker_registration` means the async callback registration and its
+static event-loop shape are confirmed under the build scenario. It does not
+claim that the callback executed, that the loop is infinite, that a select arm
+ran, or that cancellation is correct.
+
+The worker fixture produces one worker and one finite async task from the same
+repository wrapper. The existing dynamic HTTP fixture now also emits one
+`registration_loop` without inventing additional routes. The real opt-in CLI
+path was replayed over the worker fixture and persisted the worker,
+`channel_receive_loop`, finite async task, and coverage counts beside the normal
+report artifacts.
+
+Next worker increments should cover direct Go statements, `sync.WaitGroup.Go`,
+and explicit cancellation/termination evidence. These should be separate
+language/library start seeds; ordinary computational loops must remain
+non-triggering noise.
