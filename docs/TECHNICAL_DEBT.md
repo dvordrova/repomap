@@ -46,12 +46,30 @@ Local baselines on an Intel i7-9750H MacBook Pro:
 | Qwen2.5-Coder 0.5B Q4 | tagged | 81.91 s | parseable but mostly copied prompt placeholders |
 | SmolLM2 135M F16 | tagged | 142.81 s | ignored contract and hallucinated unrelated code |
 
+A compact static-facts prompt reduced Qwen 0.5B input from 5,512 to 634 tokens.
+The tagged attempt completed in 18.85 seconds but misunderstood `KEY: VALUE`,
+generated Markdown, hit the 320-token limit, and scored 40/100. A subsequent
+JSON-Schema experiment produced structured fields but was truncated at the same
+limit; its end-to-end rerun was interrupted and remains unfinished.
+
+The same Qwen 0.5B model succeeds on genuinely small requests:
+
+| Smoke test | Context | Time | Outcome |
+| --- | ---: | ---: | --- |
+| one-sentence Go explanation | 22 input tokens | 10.60 s cold | normal text response |
+| code review with runtime JSON Schema | 47 input tokens | 8.16 s warm | valid required fields and enums |
+
+The structured review was parseable but semantically generic: it suggested
+general read error handling instead of naming `scanner.Err()`. This is sufficient
+for provider/contract validation, not proof of useful repository understanding.
+
 The machine is an x86 Intel Mac. Ollama correctly uses CPU-only inference on
 this platform; the Radeon Pro 560X is not used by the macOS Ollama runtime.
 
 **Done when:** a local profile selects a bounded subset of evidence, targets
-roughly 1,000–2,000 input tokens, limits output to 250–400 tokens, and is measured
-again with a quantized local model. The full remote bundle remains available.
+roughly 500–1,500 input tokens, uses runtime JSON Schema where supported, limits
+output to a shape that completes within budget, and is measured again with Qwen
+0.5B and 3B. The full remote bundle remains available.
 
 ### TD-004: Prompt evaluator overestimates semantically useless responses
 
@@ -78,6 +96,11 @@ therefore required manual inspection.
 model call. Experiment metadata records provider, model, prompt/evaluator version,
 input/output tokens, latency, finish reason, and parse warnings. Artifacts must not
 contain credentials or authorization headers.
+
+**Work in progress:** uncommitted `cmd/symbol-evaluate/` and
+`scripts/ollama_*` files implement most of this path. Unit tests for the evaluator
+command passed before the latest script changes. The compact JSON experiment must
+be rerun and the complete diff reviewed before these files are committed.
 
 ### TD-006: Investigation orchestration is still scenario-specific
 
