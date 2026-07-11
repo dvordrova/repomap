@@ -1,6 +1,10 @@
 package report
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/dvordrova/repomap/internal/flowproof"
+)
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
@@ -21,9 +25,24 @@ type ReportData struct {
 	Warnings                   []string             `json:"warnings,omitempty"`
 	Run                        *RunInfo             `json:"run,omitempty"`
 	ArchitectureCanvas         *ArchitectureCanvas  `json:"architecture_canvas,omitempty"`
+	RepositoryGraph            *RepositoryGraph     `json:"repository_graph,omitempty"`
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// RepositoryGraph is the bounded saved package projection used as exact
+// structural input for conceptual architecture. It does not imply runtime
+// execution order.
+type RepositoryGraph struct {
+	Modules      []ModuleInfo `json:"modules,omitempty"`
+	PackageEdges []EdgeInfo   `json:"package_edges,omitempty"`
+}
+
+// ModuleInfo maps a repository-relative directory to its Go import root.
+type ModuleInfo struct {
+	Path string `json:"path"`
+	Dir  string `json:"dir"`
 }
 
 // RunInfo contains safe, content-free facts about the model boundary used for
@@ -59,14 +78,15 @@ type DomainWord struct {
 // explored further. CandidateFlows remains in ReportData as a names-only
 // compatibility view for existing report.json consumers.
 type CandidateDirection struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	Trigger          string   `json:"trigger"`
-	LikelyEntrypoint string   `json:"likely_entrypoint"`
-	LikelyFiles      []string `json:"likely_files"`
-	WhyInteresting   string   `json:"why_interesting"`
-	Evidence         []string `json:"evidence"`
-	Confidence       float64  `json:"confidence"`
+	ID               string             `json:"id"`
+	Name             string             `json:"name"`
+	Trigger          string             `json:"trigger"`
+	LikelyEntrypoint string             `json:"likely_entrypoint"`
+	LikelyFiles      []string           `json:"likely_files"`
+	WhyInteresting   string             `json:"why_interesting"`
+	Evidence         []string           `json:"evidence"`
+	Confidence       float64            `json:"confidence"`
+	LocalProof       *flowproof.Session `json:"local_proof,omitempty"`
 }
 
 type FlowData struct {
