@@ -70,7 +70,7 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read request artifact: %v", err)
 	}
-	if !strings.Contains(string(request), `"model": "company-test-model"`) || !strings.Contains(string(request), `"json_object"`) {
+	if !strings.Contains(string(request), `"model":"company-test-model"`) || !strings.Contains(string(request), `"json_object"`) {
 		t.Fatalf("request artifact does not describe the attempted request: %s", request)
 	}
 
