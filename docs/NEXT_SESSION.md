@@ -12,8 +12,8 @@ weak/local model, browser UI, or external coding agent.
 
 If the user starts with “what do we do next?”, recommend this order:
 
-1. implement the smallest `internal/index` vertical slice for existing symbol
-   evidence: put, query target neighborhood, persist/reload, invalidate one file;
+1. connect the existing symbol collector to `internal/index` and choose a stable
+   repository revision/freshness key;
 2. add goal-personalized graph ranking and pack selected evidence into a roughly
    1K-token budget;
 3. rerun the compact context against Qwen 3B;
@@ -35,6 +35,8 @@ Read these first:
 - language-neutral evidence graph with certainty, provenance, and scenarios;
 - isolated gopls analyzer and example runs for large Go repositories;
 - exact-symbol bundle with bounded callers/callees and locally rebuilt structure;
+- versioned local symbol evidence index with defensive put/query,
+  deterministic persistence/reload, and path-based invalidation;
 - JSON and tagged symbol prompts, tolerant normalization, evaluator, fixtures,
   and replayable HTTP integration tests;
 - prompt experiment scripts and etcd `kvServer.Put` calibration artifacts under
@@ -122,3 +124,8 @@ without deciding their intended fate.
 
 The replay evaluator and Ollama experiment scripts are committed project tooling;
 their generated artifacts remain under ignored `tmp/` directories.
+
+The first `internal/index` slice is implemented but its repository metadata is
+still supplied by the caller. Before treating it as an automatic incremental
+cache, wire revision, dirty-file content, analyzer version, and build context
+into its freshness policy; see TD-008 in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
