@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/dvordrova/repomap/internal/investigation"
+	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
 )
@@ -45,7 +46,8 @@ type runArtifactEntry struct {
 	EvaluatorVersion int    `json:"evaluator_version,omitempty"`
 }
 
-func writeRun(dir string, session investigation.Session, artifacts runArtifacts, preserveRunArtifacts bool) error {
+func writeRun(dir string, checkpoint memory.Input, artifacts runArtifacts, preserveRunArtifacts bool) error {
+	session := checkpoint.Session
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
@@ -68,9 +70,7 @@ func writeRun(dir string, session investigation.Session, artifacts runArtifacts,
 	if err != nil {
 		return err
 	}
-	values := map[string]any{
-		"investigation_session.json": session,
-	}
+	values := map[string]any{}
 	if session.Symbol != nil {
 		values["symbol_bundle.json"] = session.Symbol
 	}
@@ -151,13 +151,17 @@ func writeRun(dir string, session investigation.Session, artifacts runArtifacts,
 		if err := os.Remove(filepath.Join(dir, runArtifactManifestName)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove stale %s: %w", runArtifactManifestName, err)
 		}
-		return nil
+	} else {
+		manifestJSON, err := json.MarshalIndent(nextManifest, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal %s: %w", runArtifactManifestName, err)
+		}
+		if err := writeArtifact(dir, runArtifactManifestName, manifestJSON); err != nil {
+			return err
+		}
 	}
-	manifestJSON, err := json.MarshalIndent(nextManifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", runArtifactManifestName, err)
-	}
-	return writeArtifact(dir, runArtifactManifestName, manifestJSON)
+	_, err = memory.Save(dir, checkpoint)
+	return err
 }
 
 func readRunArtifactManifest(dir string) (runArtifactManifest, error) {
@@ -355,7 +359,6 @@ func sha256Hex(data []byte) string {
 }
 
 var sessionArtifactNames = []string{
-	"investigation_session.json",
 	"symbol_bundle.json",
 	"source_card.json",
 	"source_assessment_bundle.json",

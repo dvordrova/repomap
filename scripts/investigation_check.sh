@@ -37,15 +37,23 @@ go run ./cmd/investigation-playground "${ARGS[@]}"
 if command -v jq >/dev/null 2>&1; then
     jq --arg state "$EXPECTED_STATE" --arg action "$EXPECTED_ACTION" -e '
         .version == 1 and
+        .memory_version == 1 and
         .state == $state and
         (.next | length == 1) and
         .next[0].kind == $action and
-        .symbol.target.entity.name != "" and
-        .source.window.included_bytes > 0 and
-        .assessment.source.complete == false
+        (.facts_ref.path | test("^facts/[0-9a-f]{64}\\.json$")) and
+        (has("symbol") | not) and
+        (has("source") | not) and
+        (has("assessment") | not) and
+        (has("source_report") | not)
     ' "$OUTPUT_DIR/investigation_session.json" >/dev/null
+    jq -e '.target.entity.name != ""' "$OUTPUT_DIR/symbol_bundle.json" >/dev/null
+    jq -e '.window.included_bytes > 0' "$OUTPUT_DIR/source_card.json" >/dev/null
+    jq -e '.source.complete == false' "$OUTPUT_DIR/source_assessment_bundle.json" >/dev/null
 
     if [ "$MODE" = "deepseek" ]; then
+        jq -e '.claims_ref.path | test("^claims/[0-9a-f]{64}\\.json$")' \
+            "$OUTPUT_DIR/investigation_session.json" >/dev/null
         jq -e '.score == 100 and .max_score == 100 and (.warning_codes | length == 0)' \
             "$OUTPUT_DIR/source_evaluation.json" >/dev/null
         jq -e '
@@ -57,6 +65,20 @@ if command -v jq >/dev/null 2>&1; then
                 (.scenarios | length > 0)
             )
         ' "$OUTPUT_DIR/test_evidence.json" >/dev/null
+
+		RESUME_DIR="$OUTPUT_DIR/resumed"
+		go run ./cmd/investigation-playground \
+			--resume "$OUTPUT_DIR/investigation_session.json" \
+			--out-dir "$RESUME_DIR"
+		jq -e '
+			.memory_version == 1 and
+			.state == "waiting_user" and
+			(.facts_ref.path | test("^facts/[0-9a-f]{64}\\.json$")) and
+			(.claims_ref.path | test("^claims/[0-9a-f]{64}\\.json$")) and
+			(has("source_report") | not)
+		' "$RESUME_DIR/investigation_session.json" >/dev/null
+    else
+        jq -e 'has("claims_ref") | not' "$OUTPUT_DIR/investigation_session.json" >/dev/null
     fi
 fi
 

@@ -19,14 +19,11 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 REPO_NAME="$(basename "$(cd "$TARGET_REPO" && pwd)")"
-EXPECTED_REVISION="$(git -C "$TARGET_REPO" rev-parse HEAD)"
-if [ -n "$(git -C "$TARGET_REPO" status --porcelain=v1 --untracked-files=all)" ]; then
-    EXPECTED_REVISION="${EXPECTED_REVISION}-dirty"
-fi
 REPORT_PATH="$OUTPUT_ROOT/orientation_fixture.json"
 HANDOFF_DIR="$OUTPUT_ROOT/handoff"
 RESUME_DIR="$OUTPUT_ROOT/resumed"
-SESSION_PATH="$OUTPUT_ROOT/handoff_session.json"
+SESSION_COPY_DIR="$OUTPUT_ROOT/handoff-copy"
+SESSION_PATH="$SESSION_COPY_DIR/investigation_session.json"
 mkdir -p "$OUTPUT_ROOT"
 
 jq -n --arg repo "$REPO_NAME" '{
@@ -47,18 +44,21 @@ go run ./cmd/investigation-playground \
     --symbol "$TARGET_SYMBOL" \
     --out-dir "$HANDOFF_DIR"
 
-jq --arg revision "$EXPECTED_REVISION" -e '
+jq -e '
+    .memory_version == 1 and
     .state == "assessing_source" and
     .origin.kind == "orientation_flow" and
     .origin.status == "candidate" and
     .origin.flow_id == "investigation-handoff" and
     .origin.flow_name == "Investigation handoff" and
-    .origin.accepted_revision == $revision and
+    .origin.accepted_revision == .repository.revision and
+    (.repository.revision | test("^[0-9a-f]{64}$")) and
     (.origin.report_sha256 | test("^[0-9a-f]{64}$")) and
     (.origin | tostring | contains("must.not.become.Symbol") | not)
 ' "$HANDOFF_DIR/investigation_session.json" >/dev/null
 
-cp "$HANDOFF_DIR/investigation_session.json" "$SESSION_PATH"
+mkdir -p "$SESSION_COPY_DIR"
+cp -R "$HANDOFF_DIR/." "$SESSION_COPY_DIR/"
 go run ./cmd/investigation-playground \
     --resume "$SESSION_PATH" \
     --out-dir "$RESUME_DIR"

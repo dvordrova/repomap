@@ -6,15 +6,30 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
+	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/investigation"
+	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/orient"
+	"github.com/dvordrova/repomap/internal/sourcecard"
+	"github.com/dvordrova/repomap/internal/sourceexplain"
+	"github.com/dvordrova/repomap/internal/symbol"
+	"github.com/dvordrova/repomap/internal/testevidence"
 )
 
 const maxSavedInputBytes = 32 << 20
+
+const investigationFactCollector = "investigation-facts"
+
+type loadedSession struct {
+	Session investigation.Session
+	Native  bool
+	Changes []freshness.Difference
+}
 
 func prepareSession(ctx context.Context, cfg config) (investigation.Session, bool, bool, error) {
 	cfg.resumePath = strings.TrimSpace(cfg.resumePath)
@@ -36,14 +51,15 @@ func prepareSession(ctx context.Context, cfg config) (investigation.Session, boo
 	if (cfg.orientationJSON == "") != (cfg.flowID == "") {
 		return investigation.Session{}, false, false, fmt.Errorf("--orientation-json and --flow-id must be used together")
 	}
-	repoPath, err := canonicalRepositoryPath(ctx, cfg.repoPath)
+	repository, err := freshness.CaptureRepository(ctx, cfg.repoPath)
 	if err != nil {
 		return investigation.Session{}, false, false, err
 	}
-	revision, err := repositoryRevision(ctx, repoPath)
+	revision, err := repository.Digest()
 	if err != nil {
 		return investigation.Session{}, false, false, err
 	}
+	repoPath := repository.Identity
 
 	goal := investigation.Goal{Text: "understand " + cfg.symbolQuery}
 	var origin *investigation.Origin
@@ -101,15 +117,16 @@ func prepareResumedSession(ctx context.Context, cfg config) (investigation.Sessi
 	if err != nil {
 		return investigation.Session{}, false, false, err
 	}
-	var session investigation.Session
-	if err := json.Unmarshal(data, &session); err != nil {
-		return investigation.Session{}, false, false, fmt.Errorf("decode investigation session: %w", err)
+	loaded, err := loadInvestigationSession(ctx, cfg, data)
+	if err != nil {
+		return investigation.Session{}, false, false, err
 	}
-	if err := session.Validate(); err != nil {
-		return investigation.Session{}, false, false, fmt.Errorf("invalid investigation session: %w", err)
-	}
+	session := loaded.Session
 	if !filepath.IsAbs(session.Repository.Path) {
 		return investigation.Session{}, false, false, fmt.Errorf("saved investigation session has a non-canonical repository path")
+	}
+	if loaded.Native && len(loaded.Changes) > 0 {
+		return session, true, false, nil
 	}
 	revision, err := repositoryRevision(ctx, session.Repository.Path)
 	if err != nil {
@@ -119,6 +136,13 @@ func prepareResumedSession(ctx context.Context, cfg config) (investigation.Sessi
 		next, _, err := investigation.Reduce(session, investigation.Event{
 			Kind:     investigation.EventRepositoryChanged,
 			Revision: revision,
+		})
+		return next, true, false, err
+	}
+	if !loaded.Native && session.Symbol != nil {
+		next, _, err := investigation.Reduce(session, investigation.Event{
+			Kind:    investigation.EventFactContextChanged,
+			Message: "legacy session has no versioned fact freshness context",
 		})
 		return next, true, false, err
 	}
@@ -156,6 +180,121 @@ func prepareResumedSession(ctx context.Context, cfg config) (investigation.Sessi
 		return next, false, false, err
 	}
 	return session, !cfg.continueRun, true, nil
+}
+
+func loadInvestigationSession(ctx context.Context, cfg config, data []byte) (loadedSession, error) {
+	var header struct {
+		MemoryVersion   *int                      `json:"memory_version"`
+		Repository      investigation.Repository  `json:"repository"`
+		RepositoryState freshness.RepositoryState `json:"repository_state"`
+		FactsRef        json.RawMessage           `json:"facts_ref"`
+		ClaimsRef       json.RawMessage           `json:"claims_ref"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return loadedSession{}, fmt.Errorf("decode investigation session header: %w", err)
+	}
+	if header.MemoryVersion == nil {
+		var session investigation.Session
+		if err := json.Unmarshal(data, &session); err != nil {
+			return loadedSession{}, fmt.Errorf("decode investigation session: %w", err)
+		}
+		if err := session.Validate(); err != nil {
+			return loadedSession{}, fmt.Errorf("invalid investigation session: %w", err)
+		}
+		return loadedSession{Session: session}, nil
+	}
+	if !filepath.IsAbs(header.Repository.Path) {
+		return loadedSession{}, fmt.Errorf("saved investigation session has a non-canonical repository path")
+	}
+	currentRepository, err := freshness.CaptureRepository(ctx, header.Repository.Path)
+	if err != nil {
+		return loadedSession{}, err
+	}
+	current := memory.Current{Repository: currentRepository}
+	if len(freshness.CompareRepository(header.RepositoryState, currentRepository)) == 0 && hasJSONReference(header.FactsRef) {
+		facts, err := captureInvestigationFactContext(ctx, cfg, currentRepository)
+		if err != nil {
+			return loadedSession{}, err
+		}
+		current.Facts = &facts
+	}
+	if hasJSONReference(header.ClaimsRef) {
+		current.Claims = &freshness.ClaimContext{
+			Version:          freshness.ClaimContextVersion,
+			PromptVersion:    deepseek.SourcePromptVersionJSON,
+			ParserVersion:    sourceexplain.ParserVersion,
+			EvaluatorVersion: sourceexplain.EvaluationVersion,
+		}
+	}
+	record, err := memory.Load(cfg.resumePath, current)
+	if err != nil {
+		return loadedSession{}, err
+	}
+	return loadedSession{Session: record.Session, Native: true, Changes: record.Changes}, nil
+}
+
+func captureInvestigationFactContext(
+	ctx context.Context,
+	cfg config,
+	repository freshness.RepositoryState,
+) (freshness.FactContext, error) {
+	maxCandidates := cfg.maxCandidates
+	if maxCandidates <= 0 {
+		maxCandidates = 12
+	}
+	maxIncoming := cfg.maxIncoming
+	if maxIncoming <= 0 {
+		maxIncoming = 30
+	}
+	maxOutgoing := cfg.maxOutgoing
+	if maxOutgoing <= 0 {
+		maxOutgoing = 30
+	}
+	analyzerOptions, err := json.Marshal(struct {
+		MaxSymbols   int `json:"max_symbols"`
+		MaxCallRoots int `json:"max_call_roots"`
+	}{
+		MaxSymbols:   max(maxCandidates, 40),
+		MaxCallRoots: 1,
+	})
+	if err != nil {
+		return freshness.FactContext{}, err
+	}
+	collectorOptions, err := json.Marshal(struct {
+		MaxCandidates int `json:"max_candidates"`
+		MaxIncoming   int `json:"max_incoming"`
+		MaxOutgoing   int `json:"max_outgoing"`
+	}{
+		MaxCandidates: maxCandidates,
+		MaxIncoming:   maxIncoming,
+		MaxOutgoing:   maxOutgoing,
+	})
+	if err != nil {
+		return freshness.FactContext{}, err
+	}
+	return freshness.CaptureGoFactContext(ctx, repository, freshness.GoOptions{
+		GoBinary:         cfg.goBinary,
+		GoplsBinary:      cfg.goplsBinary,
+		Collector:        investigationFactCollector,
+		CollectorVersion: investigationFactCollectorVersion(),
+		AnalyzerOptions:  string(analyzerOptions),
+		CollectorOptions: string(collectorOptions),
+	})
+}
+
+func investigationFactCollectorVersion() string {
+	return fmt.Sprintf(
+		"gopls-%d.symbol-%d.source-%d.assessment-%d.tests-%d",
+		goplsanalyzer.CollectorVersion,
+		symbol.BundleVersion,
+		sourcecard.Version,
+		sourceexplain.BundleVersion,
+		testevidence.BundleVersion,
+	)
+}
+
+func hasJSONReference(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
 }
 
 func validateContinue(session investigation.Session, callDeepSeek bool) error {
@@ -235,45 +374,19 @@ func readLimitedFile(path string, limit int64) ([]byte, error) {
 }
 
 func canonicalRepositoryPath(ctx context.Context, repoPath string) (string, error) {
-	root, err := gitOutput(ctx, repoPath, "rev-parse", "--show-toplevel")
+	state, err := freshness.CaptureRepository(ctx, repoPath)
 	if err != nil {
 		return "", err
 	}
-	resolved, err := filepath.EvalSymlinks(strings.TrimSpace(string(root)))
-	if err != nil {
-		return "", fmt.Errorf("resolve repository root: %w", err)
-	}
-	absolute, err := filepath.Abs(resolved)
-	if err != nil {
-		return "", fmt.Errorf("resolve repository root: %w", err)
-	}
-	return filepath.Clean(absolute), nil
+	return state.Identity, nil
 }
 
-// repositoryRevision is intentionally a coarse M2 freshness marker. M4 still
-// needs content hashes for dirty files and analyzer/build metadata.
+// repositoryRevision is the stable digest of the canonical root, HEAD, and
+// every non-ignored dirty path's current contents.
 func repositoryRevision(ctx context.Context, repoPath string) (string, error) {
-	head, err := gitOutput(ctx, repoPath, "rev-parse", "HEAD")
+	state, err := freshness.CaptureRepository(ctx, repoPath)
 	if err != nil {
 		return "", err
 	}
-	status, err := gitOutput(ctx, repoPath, "status", "--porcelain=v1", "--untracked-files=all")
-	if err != nil {
-		return "", err
-	}
-	revision := strings.TrimSpace(string(head))
-	if len(status) > 0 {
-		revision += "-dirty"
-	}
-	return revision, nil
-}
-
-func gitOutput(ctx context.Context, repoPath string, args ...string) ([]byte, error) {
-	commandArgs := append([]string{"-C", repoPath}, args...)
-	command := exec.CommandContext(ctx, "git", commandArgs...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-	return output, nil
+	return state.Digest()
 }

@@ -99,6 +99,11 @@ func Save(dir string, input Input) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("memory: create directory: %w", err)
 	}
+	for _, child := range []string{"facts", "claims"} {
+		if err := os.MkdirAll(filepath.Join(dir, child), 0o700); err != nil {
+			return "", fmt.Errorf("memory: create %s directory: %w", child, err)
+		}
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", fmt.Errorf("memory: open directory: %w", err)
@@ -529,9 +534,6 @@ func writeContentFile(root *os.Root, ref reference, data []byte) error {
 
 func writeAtomic(root *os.Root, path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := root.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("memory: create artifact directory: %w", err)
-	}
 	var (
 		temporary     *os.File
 		temporaryPath string
@@ -565,7 +567,7 @@ func writeAtomic(root *os.Root, path string, data []byte) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("memory: close temporary artifact: %w", err)
 	}
-	if err := root.Rename(temporaryPath, path); err != nil {
+	if err := os.Rename(filepath.Join(root.Name(), temporaryPath), filepath.Join(root.Name(), path)); err != nil {
 		return fmt.Errorf("memory: replace artifact: %w", err)
 	}
 	return nil

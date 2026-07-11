@@ -13,6 +13,7 @@ import (
 
 	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/investigation"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
@@ -30,6 +31,7 @@ type config struct {
 	repoExplicit    bool
 	outDir          string
 	callDeepSeek    bool
+	goBinary        string
 	goplsBinary     string
 	commandTimeout  time.Duration
 	maxCandidates   int
@@ -48,6 +50,7 @@ func main() {
 	flag.BoolVar(&cfg.continueRun, "continue", false, "execute the pending capability in a resumed session")
 	flag.StringVar(&cfg.outDir, "out-dir", "tmp/investigation-playground", "artifact output directory")
 	flag.BoolVar(&cfg.callDeepSeek, "deepseek", false, "execute the source-assessment action with DeepSeek")
+	flag.StringVar(&cfg.goBinary, "go", "go", "Go binary used to capture build freshness")
 	flag.StringVar(&cfg.goplsBinary, "gopls", "gopls", "gopls binary")
 	flag.DurationVar(&cfg.commandTimeout, "command-timeout", 2*time.Minute, "timeout for each gopls command")
 	flag.IntVar(&cfg.maxCandidates, "max-candidates", 12, "maximum fuzzy symbol candidates")
@@ -75,6 +78,22 @@ func run(ctx context.Context, cfg config) error {
 	session, stopAfterPreparation, preserveRunArtifacts, err := prepareSession(ctx, cfg)
 	if err != nil {
 		return err
+	}
+	session, repository, repositoryChanged, err := reconcileSessionRepository(ctx, session)
+	if err != nil {
+		return err
+	}
+	if repositoryChanged {
+		stopAfterPreparation = true
+		preserveRunArtifacts = false
+	}
+	var startingFacts *freshness.FactContext
+	if sessionHasFacts(session) || (!stopAfterPreparation && sessionNeedsFactContext(session)) {
+		facts, err := captureInvestigationFactContext(ctx, cfg, repository)
+		if err != nil {
+			return err
+		}
+		startingFacts = &facts
 	}
 
 	analyzer := goplsanalyzer.New(goplsanalyzer.Options{
@@ -122,10 +141,34 @@ func run(ctx context.Context, cfg config) error {
 				return err
 			}
 		}
+		var changed bool
+		session, repository, changed, err = reconcileSessionRepository(ctx, session)
+		if err != nil {
+			return err
+		}
+		if changed {
+			artifacts = runArtifacts{}
+			preserveRunArtifacts = false
+			runErr = nil
+			break
+		}
 		execution, executeErr := runner.Execute(ctx, session, action)
 		if executeErr != nil {
 			return executeErr
 		}
+		sessionAfterExecution, repositoryAfterExecution, changed, reconcileErr := reconcileSessionRepository(ctx, session)
+		if reconcileErr != nil {
+			return reconcileErr
+		}
+		if changed {
+			session = sessionAfterExecution
+			repository = repositoryAfterExecution
+			artifacts = runArtifacts{}
+			preserveRunArtifacts = false
+			runErr = nil
+			break
+		}
+		repository = repositoryAfterExecution
 		if execution.Graph != nil {
 			artifacts.graphJSON, err = json.MarshalIndent(execution.Graph, "", "  ")
 			if err != nil {
@@ -154,8 +197,47 @@ func run(ctx context.Context, cfg config) error {
 			break
 		}
 	}
+	session, repository, repositoryChanged, err = reconcileSessionRepository(ctx, session)
+	if err != nil {
+		return err
+	}
+	if repositoryChanged {
+		artifacts = runArtifacts{}
+		preserveRunArtifacts = false
+		runErr = nil
+	}
+	var finalFacts *freshness.FactContext
+	if sessionHasFacts(session) {
+		facts, err := captureInvestigationFactContext(ctx, cfg, repository)
+		if err != nil {
+			return err
+		}
+		if startingFacts != nil {
+			differences := freshness.CompareFactContext(*startingFacts, facts)
+			if len(differences) > 0 {
+				session, _, err = investigation.Reduce(session, investigation.Event{
+					Kind:    investigation.EventFactContextChanged,
+					Message: formatFreshnessDifferences(differences),
+				})
+				if err != nil {
+					return err
+				}
+				artifacts = runArtifacts{}
+				preserveRunArtifacts = false
+				runErr = nil
+			} else {
+				finalFacts = &facts
+			}
+		} else {
+			finalFacts = &facts
+		}
+	}
 	preserveRunArtifacts = preserveRunArtifacts && resumeOwnsRunArtifacts(cfg.resumePath, cfg.outDir)
-	if err := writeRun(cfg.outDir, session, artifacts, preserveRunArtifacts); err != nil {
+	checkpoint, err := buildRunCheckpoint(ctx, cfg, session, repository, finalFacts, artifacts)
+	if err != nil {
+		return err
+	}
+	if err := writeRun(cfg.outDir, checkpoint, artifacts, preserveRunArtifacts); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "investigation state: %s, sequence: %d\n", session.State, session.Sequence)

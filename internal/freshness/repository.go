@@ -203,7 +203,7 @@ func fingerprintDirtyFile(root *os.Root, entry statusEntry) (DirtyFile, error) {
 		file.ContentSHA256 = fmt.Sprintf("%x", hash.Sum(nil))
 	case info.Mode()&os.ModeSymlink != 0:
 		file.Kind = FileSymlink
-		target, err := root.Readlink(filepath.FromSlash(entry.path))
+		target, err := os.Readlink(filepath.Join(root.Name(), filepath.FromSlash(entry.path)))
 		if err != nil {
 			return DirtyFile{}, fmt.Errorf("freshness: read dirty symlink %q: %w", entry.path, err)
 		}
