@@ -206,6 +206,71 @@ func TestNewPromptFromEnvNeverRetainsConfiguredKeys(t *testing.T) {
 	}
 }
 
+func TestOrientPromptJSONMatchesRequestBody(t *testing.T) {
+	var received []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		received, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(),
+		Model:      "capture-model",
+		MaxTokens:  123,
+		Endpoint:   server.URL,
+		Auth:       authNone,
+	}
+	bundle := []byte(`{"repo_name":"fixture"}`)
+	want, err := client.OrientPromptJSON(bundle)
+	if err != nil {
+		t.Fatalf("OrientPromptJSON() error = %v", err)
+	}
+	if _, err := client.Orient(context.Background(), bundle); err != nil {
+		t.Fatalf("Orient() error = %v", err)
+	}
+	if string(received) != string(want) {
+		t.Fatalf("provider body differs from preview\nprovider: %s\npreview:  %s", received, want)
+	}
+}
+
+func TestFlowExplainPromptJSONMatchesRequestBody(t *testing.T) {
+	var received []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		received, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(),
+		Model:      "capture-model",
+		MaxTokens:  123,
+		Endpoint:   server.URL,
+		Auth:       authNone,
+	}
+	want, err := client.FlowExplainPromptJSON("user", "system")
+	if err != nil {
+		t.Fatalf("FlowExplainPromptJSON() error = %v", err)
+	}
+	if _, err := client.FlowExplain(context.Background(), "user", "system"); err != nil {
+		t.Fatalf("FlowExplain() error = %v", err)
+	}
+	if string(received) != string(want) {
+		t.Fatalf("provider body differs from preview\nprovider: %s\npreview:  %s", received, want)
+	}
+}
+
 func TestNewFromEnvRejectsInvalidConfig(t *testing.T) {
 	tests := []struct {
 		name    string

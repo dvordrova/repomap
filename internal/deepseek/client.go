@@ -43,6 +43,10 @@ const (
 	legacyEnvAuth      = "DEEPSEEK_AUTH"
 )
 
+// OrientationPromptVersionJSON identifies the semantic orientation prompt and
+// request contract used by Orient and OrientPromptJSON.
+const OrientationPromptVersionJSON = "orientation-json-v1"
+
 type Client struct {
 	HTTPClient *http.Client
 	APIKey     string
@@ -283,17 +287,17 @@ Facts bundle JSON:
 
 func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
 	reqPayload := c.buildRequest(bundleJSON)
-	return json.MarshalIndent(reqPayload, "", "  ")
+	return json.Marshal(reqPayload)
 }
 
 func (c *Client) FlowExplainPromptJSON(userContent, systemContent string) ([]byte, error) {
 	reqPayload := c.flowExplainRequest(userContent, systemContent, true)
-	return json.MarshalIndent(reqPayload, "", "  ")
+	return json.Marshal(reqPayload)
 }
 
 func (c *Client) flowExplainPromptText(userContent, systemContent string) ([]byte, error) {
 	reqPayload := c.flowExplainRequest(userContent, systemContent, false)
-	return json.MarshalIndent(reqPayload, "", "  ")
+	return json.Marshal(reqPayload)
 }
 
 func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode bool) chatRequest {
@@ -343,9 +347,15 @@ func (c *Client) CheckJSONCompatibility(ctx context.Context) error {
 }
 
 func (c *Client) flowExplain(ctx context.Context, userContent, systemContent string, jsonMode, validateJSON bool) ([]byte, error) {
-	reqPayload := c.flowExplainRequest(userContent, systemContent, jsonMode)
-
-	body, err := json.Marshal(reqPayload)
+	var (
+		body []byte
+		err  error
+	)
+	if jsonMode {
+		body, err = c.FlowExplainPromptJSON(userContent, systemContent)
+	} else {
+		body, err = c.flowExplainPromptText(userContent, systemContent)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("marshal flow explain request: %w", err)
 	}
@@ -375,9 +385,7 @@ func (c *Client) flowExplain(ctx context.Context, userContent, systemContent str
 }
 
 func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) {
-	reqPayload := c.buildRequest(bundleJSON)
-
-	body, err := json.Marshal(reqPayload)
+	body, err := c.OrientPromptJSON(bundleJSON)
 	if err != nil {
 		return nil, fmt.Errorf("marshal llm request: %w", err)
 	}
