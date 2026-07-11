@@ -6,12 +6,20 @@ if [ "$#" -ne 2 ]; then
     exit 2
 fi
 
-for command in awk dd jq mktemp od rm shasum tail tr wc; do
+for command in awk dd jq mktemp od rm tail tr wc; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "missing required command: $command" >&2
         exit 2
     fi
 done
+if command -v shasum >/dev/null 2>&1; then
+    SHA256_COMMAND=shasum
+elif command -v sha256sum >/dev/null 2>&1; then
+    SHA256_COMMAND=sha256sum
+else
+    echo "missing required command: shasum or sha256sum" >&2
+    exit 2
+fi
 
 ORIENTATION_REQUEST="$1"
 SOURCE_REQUEST="$2"
@@ -75,7 +83,11 @@ file_bytes() {
 }
 
 file_sha256() {
-    shasum -a 256 "$1" | awk '{print $1}'
+    if [ "$SHA256_COMMAND" = shasum ]; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        sha256sum "$1" | awk '{print $1}'
+    fi
 }
 
 jq -n \
