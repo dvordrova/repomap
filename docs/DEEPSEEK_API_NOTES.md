@@ -91,10 +91,97 @@ Must NEVER be written to disk or debug artifacts.
 }
 ```
 
+## Focused symbol investigation
+
+Symbol investigation is a separate bounded request. It does not send the raw
+evidence graph, file tree, package edge list, repository contents, environment,
+or local working directory.
+
+The local pipeline is:
+
+1. gopls fuzzy candidates (`possible`)
+2. one unique case-sensitive exact symbol resolution (`static`)
+3. direct incoming/outgoing call hierarchy edges (`static`)
+4. bounded `symbol_bundle.json` with evidence IDs and `allowed_paths`
+5. DeepSeek request with a compact JSON or `KEY: VALUE` interpretation contract
+6. tolerant local parsing with explicit repair warnings
+7. deterministic reconstruction and strict validation of the normalized report
+
+Generate and inspect the exact request without an API key:
+
+```bash
+go run ./cmd/symbol-playground \
+  --repo ../etcd \
+  --symbol kvServer.Put \
+  --out-dir tmp/symbol-examples/etcd-put
+```
+
+This writes:
+
+- `evidence_graph.json` — full local analyzer output; never sent
+- `symbol_bundle.json` — bounded facts sent to the model
+- `deepseek_request.redacted.json` — exact request body; no Authorization header
+
+Add `--deepseek` to make the API call. Use `--format tagged` (the default) or
+`--format json` as a control format. Raw output is always saved before parsing. The parser accepts
+common weak-model drift such as fenced JSON, trailing commas, scalar list items,
+and the tagged line format. Invalid evidence and paths are dropped with warnings;
+only an unreadable response is fatal.
+
+Both symbol prompts ask the model only for:
+
+- a summary and likely responsibility, both explicitly treated as inference
+- evidence IDs for those interpretations and for the reading order
+- unknowns, concrete next queries, and warnings
+
+The model does not copy target, caller, callee, path, or structural-role fields.
+Those are reconstructed from the local bundle. The normalized report still
+enforces:
+
+- every substantive statement cites an existing `evidence_id`
+- static-only summary/responsibility inference confidence to be capped at 0.75
+- static call edges to never be presented as observed runtime execution
+- caller/callee identity to match the cited call fact
+- every referenced file to appear in `allowed_paths` and in cited evidence
+- file recommendations to use validated structural roles instead of semantic prose
+- `tests_to_read` to contain only evidence-backed `*_test.go` files
+- runtime paths/hypotheses to be omitted at depth one; missing runtime evidence belongs in unknowns and next queries
+
+The JSON wire contract is intentionally smaller than `internal/symbol.Report`:
+
+```json
+{
+  "summary": {"statement":"...","evidence_ids":["resolution-001"],"confidence":0.7},
+  "responsibility": {"statement":"...","evidence_ids":["call-out-001"],"confidence":0.6},
+  "read_evidence_ids": ["resolution-001", "call-out-001"],
+  "test_evidence_ids": [],
+  "unknowns": [],
+  "next_queries": [],
+  "warnings": []
+}
+```
+
+The tagged contract expresses the same information as repeated `KEY: VALUE`
+lines. `symbol_evaluation.json` scores observable contract adherence out of 100;
+it deliberately does not pretend to score semantic truth. Run and compare real
+prompt versions with:
+
+```bash
+./scripts/symbol_prompt_experiment.sh baseline ../etcd kvServer.Put json
+./scripts/symbol_prompt_experiment.sh tagged ../etcd kvServer.Put tagged
+./scripts/symbol_prompt_compare.sh \
+  tmp/prompt-experiments/baseline-json \
+  tmp/prompt-experiments/tagged-tagged
+```
+
+Stable bundle/response fixtures and an in-memory explainer live in
+`internal/deepseektest`; they let higher layers test without calling DeepSeek.
+
 ## Error handling
 
 - Non-2xx HTTP response: return error with status code and response body (redacted).
-- Invalid JSON in response content: return error with raw content, save to debug artifact if `--dump-llm`.
+- Orientation responses still require JSON. Focused symbol responses are parsed
+  tolerantly and fail only when neither a JSON object nor tagged report can be recovered.
 - `DEEPSEEK_API_KEY` not required for `--snapshot-only` or `--llm-bundle-only`.
 
 ## Retry behavior

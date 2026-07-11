@@ -30,9 +30,22 @@ type Client struct {
 }
 
 func NewFromEnv() (*Client, error) {
+	return newFromEnv(true)
+}
+
+// NewPromptFromEnv builds request configuration without requiring an API key.
+// It is intended for offline prompt inspection only.
+func NewPromptFromEnv() (*Client, error) {
+	return newFromEnv(false)
+}
+
+func newFromEnv(requireAPIKey bool) (*Client, error) {
 	key := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
-	if key == "" {
+	if requireAPIKey && key == "" {
 		return nil, fmt.Errorf("DEEPSEEK_API_KEY is required unless --snapshot-only is used")
+	}
+	if !requireAPIKey {
+		key = ""
 	}
 	model := strings.TrimSpace(os.Getenv("DEEPSEEK_MODEL"))
 	if model == "" {
@@ -67,11 +80,11 @@ type jsonFormat struct {
 }
 
 type chatRequest struct {
-	Model          string       `json:"model"`
+	Model          string        `json:"model"`
 	Messages       []chatMessage `json:"messages"`
-	Temperature    float64      `json:"temperature"`
-	MaxTokens      int          `json:"max_tokens"`
-	ResponseFormat *jsonFormat  `json:"response_format,omitempty"`
+	Temperature    float64       `json:"temperature"`
+	MaxTokens      int           `json:"max_tokens"`
+	ResponseFormat *jsonFormat   `json:"response_format,omitempty"`
 }
 
 type chatMessage struct {
@@ -172,30 +185,37 @@ func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
 }
 
 func (c *Client) FlowExplainPromptJSON(userContent, systemContent string) ([]byte, error) {
-	reqPayload := chatRequest{
-		Model: c.Model,
-		Messages: []chatMessage{
-			{Role: "system", Content: systemContent},
-			{Role: "user", Content: userContent},
-		},
-		Temperature:    0.1,
-		MaxTokens:      c.MaxTokens,
-		ResponseFormat: &jsonFormat{Type: "json_object"},
-	}
+	reqPayload := c.flowExplainRequest(userContent, systemContent, true)
 	return json.MarshalIndent(reqPayload, "", "  ")
 }
 
-func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
-	reqPayload := chatRequest{
+func (c *Client) flowExplainPromptText(userContent, systemContent string) ([]byte, error) {
+	reqPayload := c.flowExplainRequest(userContent, systemContent, false)
+	return json.MarshalIndent(reqPayload, "", "  ")
+}
+
+func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode bool) chatRequest {
+	request := chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
 			{Role: "system", Content: systemContent},
 			{Role: "user", Content: userContent},
 		},
-		Temperature:    0.1,
-		MaxTokens:      c.MaxTokens,
-		ResponseFormat: &jsonFormat{Type: "json_object"},
+		Temperature: 0.1,
+		MaxTokens:   c.MaxTokens,
 	}
+	if jsonMode {
+		request.ResponseFormat = &jsonFormat{Type: "json_object"}
+	}
+	return request
+}
+
+func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
+	return c.flowExplain(ctx, userContent, systemContent, true, true)
+}
+
+func (c *Client) flowExplain(ctx context.Context, userContent, systemContent string, jsonMode, validateJSON bool) ([]byte, error) {
+	reqPayload := c.flowExplainRequest(userContent, systemContent, jsonMode)
 
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
@@ -213,7 +233,7 @@ func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent str
 			}
 		}
 
-		result, shouldRetry, err := doOrient(ctx, c.HTTPClient, c.Endpoint, c.APIKey, body)
+		result, shouldRetry, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, body, validateJSON)
 		if err == nil {
 			return result, nil
 		}
@@ -259,6 +279,10 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 }
 
 func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey string, body []byte) ([]byte, bool, error) {
+	return doChat(ctx, httpClient, endpoint, apiKey, body, true)
+}
+
+func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey string, body []byte, validateJSON bool) ([]byte, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, false, fmt.Errorf("build deepseek request: %w", err)
@@ -295,9 +319,11 @@ func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey str
 		return nil, false, fmt.Errorf("deepseek response content is empty")
 	}
 
-	var validate json.RawMessage
-	if err := json.Unmarshal([]byte(content), &validate); err != nil {
-		return nil, false, fmt.Errorf("deepseek response content is not valid JSON:\n%s", content)
+	if validateJSON {
+		var validate json.RawMessage
+		if err := json.Unmarshal([]byte(content), &validate); err != nil {
+			return nil, false, fmt.Errorf("deepseek response content is not valid JSON:\n%s", content)
+		}
 	}
 
 	return []byte(content), false, nil
