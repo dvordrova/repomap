@@ -28,6 +28,13 @@ build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/repomap ./cmd/repomap
 
+CANVAS_FIXTURE ?= internal/report/testdata/canvas/restic-backup-v2.json
+CANVAS_PORT ?= 0
+
+.PHONY: canvas-preview
+canvas-preview: ## Serve a saved architecture canvas fixture without analysis or provider access
+	go run ./cmd/canvas-preview --fixture "$(CANVAS_FIXTURE)" --port "$(CANVAS_PORT)"
+
 .PHONY: elkjs-asset-check elkjs-asset-refresh
 elkjs-asset-check: ## Verify the pinned vendored ELK.js browser asset (offline)
 	@printf '%s  %s\n' '20dd2114d683ce758b3ce19bcc56e28a504a617b0d280f760407c37314631d0e' 'internal/report/assets/elkjs/elk.bundled.js' | shasum -a 256 -c -
