@@ -4,6 +4,10 @@ repomap helps understand unfamiliar local Go repositories by extracting
 deterministic local facts and optionally asking DeepSeek to interpret them
 as structured orientation reports.
 
+Product and research decisions that intentionally remain unresolved are tracked
+in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). In particular, DeepSeek is the current
+model integration, not a settled requirement for every installation.
+
 ## Pipeline
 
 ### 1. Deterministic local extraction
@@ -68,14 +72,59 @@ Confidence must be explicit, warnings for low confidence.
 - repomap gathers focused files/tests/docs for that flow
 - DeepSeek explains only that flow
 
+## Experimental local evidence layer
+
+The production pipeline above remains unchanged. New analyzers are developed
+behind a language-neutral evidence graph before they are connected to it:
+
+- every relation has a `certainty` (`possible`, `static`, `observed`, ...)
+- every relation cites `provenance` (provider, version, operation, location)
+- build/runtime conditions are explicit `scenarios`
+- language-specific adapters implement the same `analyzer.Provider` port and
+  emit the same graph
+
+The first adapter is an isolated Go/gopls playground. Fuzzy workspace-symbol
+matches are `possible`; direct call-hierarchy edges are `static`. Static means
+"supported by analysis under this build configuration", not "observed at
+runtime". The playground writes JSON for machines and Markdown for human
+inspection:
+
+```sh
+go run ./cmd/gopls-playground \
+  --repo ../etcd \
+  --query kvServer.Put \
+  --out tmp/evidence-examples/etcd.json \
+  --summary-out tmp/evidence-examples/etcd.md
+```
+
+Run `./scripts/gopls_examples.sh --fetch` to produce the same artifacts for
+etcd, k6, Prometheus, NATS Server, and golangci-lint. Fetched clones and
+generated artifacts stay under `tmp/` and are not part of the LLM bundle.
+
+The first focused vertical slice resolves one exact symbol, expands only its
+direct static callers/callees, and produces a bounded DeepSeek request:
+
+```bash
+./scripts/symbol_check.sh ../etcd kvServer.Put
+```
+
+The raw local evidence graph is retained for debugging but is never sent.
+DeepSeek receives only `symbol_bundle.json`; every report claim must cite its
+evidence IDs, and the response is rejected if it invents paths, evidence,
+caller/callee identities, observed runtime behavior, or test files.
+
 ## Non-goals for now
 
 - no AST parsing yet
-- no LSP/gopls yet
+- no gopls integration in the production pipeline yet (isolated playground only)
+- no long-lived LSP client yet; the playground uses the experimental gopls CLI
 - no embeddings yet
 - no diagrams/UI yet
 - no automatic huge repo upload
 - no autonomous code modification
+
+These are present scope boundaries, not permanent answers to the questions in
+[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 
 ## Good vs bad output
 
