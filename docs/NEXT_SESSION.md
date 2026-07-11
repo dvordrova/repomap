@@ -23,14 +23,12 @@ contract is in [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
 If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. let one engineer run the new one-call browser orientation baseline on a known
-   repository; record useful directions, omissions, unsupported claims, and
-   whether the output is worth a second step;
-2. extend the deterministic source-question seeder only as needed to unlock one
-   honest linked target in NATS Server, then capture its small M3 task;
-3. do the same for golangci-lint without inventing source behavior from names;
-4. compare direction usefulness, grounding, omissions, request size, and latency
-   separately from JSON/contract adherence.
+1. capture the already-unlocked golangci-lint `runCommand.runAnalysis` journey
+   without inventing source behavior from names;
+2. replay all five repository tasks and audit every M3 acceptance dimension;
+3. once M3 is proven complete, start M4 freshness for facts, claims, and sessions;
+4. keep the one-call browser friend test available, but do not let it replace the
+   ordered milestone gates.
 
 Do not restart Qwen prompt tuning. Keep the staged 1.5B regression runnable, but
 the default product path uses the configured OpenAI-compatible provider.
@@ -62,8 +60,8 @@ the default product path uses the configured OpenAI-compatible provider.
 - exact-symbol evidence, bounded source cards, source assessment, related test
   references, and a pure resumable investigation reducer as isolated connected
   slices;
-- versioned, hash-verified offline quality tasks for etcd, Grafana k6, and
-  Prometheus;
+- versioned, hash-verified offline quality tasks for etcd, Grafana k6,
+  Prometheus, and NATS Server;
 - staged Qwen 1.5B protocol verification retained as non-critical regression
   tooling.
 
@@ -80,14 +78,19 @@ the default product path uses the configured OpenAI-compatible provider.
 - `internal/deepseek` still owns OpenAI-compatible transport plus concrete
   prompts; runtime configuration is provider-neutral, but orientation lacks a
   consumer-owned model interface.
-- M3 has three of five tasks; NATS Server and golangci-lint remain, so the full
-  cross-repository target is not established.
+- M3 has four of five tasks; only golangci-lint remains, so the full
+  cross-repository target is not established yet.
 - Prometheus is captured at revision
   `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
   `deepseek-v4-flash` orientation proposes a TSDB write direction containing
   `model/labels/labels_common.go`, and the clean source response grounds how
   `Labels.IsValid` uses the result of `Validate`. This is a model-proposed
   cross-stage link, not runtime proof of ingestion.
+- NATS Server is captured at revision
+  `1be499156d9bc757ea08bd148608b622e38b7514`: the clean orientation links a
+  client-message direction to `server/client.go`, and the clean source response
+  grounds four `case`-selected calls in `client.processInboundMsg`. The static
+  branch and related test reference do not prove runtime selection or coverage.
 
 ## Read in this order
 
