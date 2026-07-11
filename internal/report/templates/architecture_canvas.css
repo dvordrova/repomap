@@ -1,3 +1,23 @@
+.rm-architecture-canvas-card {
+ overflow: hidden;
+ padding: 1rem;
+}
+
+.rm-architecture-canvas-heading {
+ margin: 0 0 .85rem;
+}
+
+.rm-architecture-canvas-heading h2 {
+ font-size: 1.05rem;
+ margin: 0;
+}
+
+.rm-architecture-canvas-heading p {
+ color: var(--rm-dim);
+ font-size: .75rem;
+ margin: .2rem 0 0;
+}
+
 .rm-arch {
  --rm-arch-ink: #152033;
  --rm-arch-muted: #64748b;

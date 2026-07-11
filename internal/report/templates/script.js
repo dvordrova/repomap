@@ -2,6 +2,7 @@
   'use strict';
 
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
+  var architectureCanvasView = null;
 
   var LABELS = {
     purpose: 'Project purpose · model orientation',
@@ -905,11 +906,23 @@
 
     overviewHTML.appendChild(renderPurposeCard());
 
-    var systemMap = renderSystemMapCard(DATA.high_level_map);
-    if (systemMap) overviewHTML.appendChild(systemMap);
+    var architectureCanvasHost = null;
+    if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
+      var architectureCard = el('section', 'rm-card rm-architecture-canvas-card');
+      var architectureHeading = el('div', 'rm-architecture-canvas-heading');
+      architectureHeading.appendChild(txt('h2', '', 'Architecture & flows'));
+      architectureHeading.appendChild(txt('p', '', 'Select a component or one saved flow, then challenge each step through exact evidence.'));
+      architectureCard.appendChild(architectureHeading);
+      architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
+      architectureCard.appendChild(architectureCanvasHost);
+      overviewHTML.appendChild(architectureCard);
+    } else {
+      var systemMap = renderSystemMapCard(DATA.high_level_map);
+      if (systemMap) overviewHTML.appendChild(systemMap);
 
-    var directions = candidateDirections();
-    overviewHTML.appendChild(renderDirectionsCard(directions, DATA.flows));
+      var directions = candidateDirections();
+      overviewHTML.appendChild(renderDirectionsCard(directions, DATA.flows));
+    }
 
     var startHere = renderStartHereCard(DATA.first_files_to_open);
     if (startHere) overviewHTML.appendChild(startHere);
@@ -922,6 +935,18 @@
 
     overview.innerHTML = '';
     overview.appendChild(overviewHTML);
+
+    if (architectureCanvasView) {
+      architectureCanvasView.destroy();
+      architectureCanvasView = null;
+    }
+    if (architectureCanvasHost) {
+      architectureCanvasView = window.RepomapArchitectureCanvas.mount(
+        architectureCanvasHost,
+        DATA.architecture_canvas,
+        {}
+      );
+    }
 
     var flowsContainer = document.getElementById('rm-flows-container');
     flowsContainer.innerHTML = '';

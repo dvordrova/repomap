@@ -17,6 +17,12 @@ var templateHTML string
 //go:embed templates/style.css
 var styleCSS string
 
+//go:embed templates/architecture_canvas.css
+var architectureCanvasCSS string
+
+//go:embed templates/architecture_canvas.js
+var architectureCanvasJS string
+
 //go:embed templates/script.js
 var scriptJS string
 
@@ -35,11 +41,21 @@ func WriteReportJSON(data *ReportData, path string) error {
 }
 
 func WriteReportHTML(data *ReportData, path string) error {
-	html, err := buildHTML(data)
+	html, err := RenderHTML(data)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, html, 0o644)
+}
+
+// RenderHTML renders report data with repomap's embedded trusted template and
+// assets. Preview and report servers use it without executing a saved HTML
+// artifact.
+func RenderHTML(data *ReportData) ([]byte, error) {
+	if data == nil {
+		return nil, fmt.Errorf("report: data is required")
+	}
+	return buildHTML(data)
 }
 
 func buildHTML(data *ReportData) ([]byte, error) {
@@ -55,10 +71,14 @@ func buildHTML(data *ReportData) ([]byte, error) {
 
 	var buf bytes.Buffer
 	err = reportTmpl.Execute(&buf, map[string]any{
-		"Title":    title,
-		"CSS":      template.CSS(styleCSS),
-		"DataJSON": template.JS(dataJSON),
-		"JS":       template.JS(scriptJS),
+		"Title":                 title,
+		"CSS":                   template.CSS(styleCSS),
+		"HasArchitectureCanvas": data.ArchitectureCanvas != nil,
+		"ArchitectureCanvasCSS": template.CSS(architectureCanvasCSS),
+		"ELKJS":                 template.JS(elkJSBundledJS),
+		"ArchitectureCanvasJS":  template.JS(architectureCanvasJS),
+		"DataJSON":              template.JS(dataJSON),
+		"JS":                    template.JS(scriptJS),
 	})
 	if err != nil {
 		return nil, err

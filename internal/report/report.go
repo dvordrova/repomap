@@ -20,6 +20,7 @@ type ReportData struct {
 	FeedbackPath               string               `json:"feedback_path,omitempty"`
 	Warnings                   []string             `json:"warnings,omitempty"`
 	Run                        *RunInfo             `json:"run,omitempty"`
+	ArchitectureCanvas         *ArchitectureCanvas  `json:"architecture_canvas,omitempty"`
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
