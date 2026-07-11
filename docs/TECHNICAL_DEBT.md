@@ -49,8 +49,12 @@ Local baselines on an Intel i7-9750H MacBook Pro:
 A compact static-facts prompt reduced Qwen 0.5B input from 5,512 to 634 tokens.
 The tagged attempt completed in 18.85 seconds but misunderstood `KEY: VALUE`,
 generated Markdown, hit the 320-token limit, and scored 40/100. A subsequent
-JSON-Schema experiment produced structured fields but was truncated at the same
-limit; its end-to-end rerun was interrupted and remains unfinished.
+JSON-Schema experiment with a 523-token input completed without truncation in
+142.58 seconds and scored 45/100. The schema guaranteed the outer shape, but the
+model copied an instruction as both interpretations and invented evidence IDs;
+local normalization discarded or repaired those claims. Constrained decoding is
+therefore reliable enough for contract testing but too slow and semantically weak
+for this repository task on the 0.5B model.
 
 The same Qwen 0.5B model succeeds on genuinely small requests:
 
@@ -86,21 +90,18 @@ vacuous unknowns, malformed next queries, and claims that merely restate symbol
 identity. Contract score and semantic-usefulness score should be reported
 separately.
 
-### TD-005: Provider experiments are not replayable offline
+### TD-005: Experiment artifacts lack explicit contract versions
 
-**Evidence:** `symbol-playground` can call a provider and score the response, but
-cannot parse and evaluate an already captured raw response. Direct Ollama calls
-therefore required manual inspection.
+**Evidence:** `cmd/symbol-evaluate` now normalizes and scores a captured response
+without another model call, and `scripts/ollama_symbol_experiment.sh` records the
+native Ollama request, envelope, raw response, timing, normalized report, parser
+warnings, and evaluation. The artifacts do not yet record stable prompt, schema,
+parser, or evaluator version identifiers.
 
-**Done when:** a saved response can be normalized and evaluated without another
-model call. Experiment metadata records provider, model, prompt/evaluator version,
-input/output tokens, latency, finish reason, and parse warnings. Artifacts must not
-contain credentials or authorization headers.
-
-**Work in progress:** uncommitted `cmd/symbol-evaluate/` and
-`scripts/ollama_*` files implement most of this path. Unit tests for the evaluator
-command passed before the latest script changes. The compact JSON experiment must
-be rerun and the complete diff reviewed before these files are committed.
+**Done when:** experiment metadata identifies provider plus stable prompt, schema,
+parser, and evaluator versions, so results remain comparable after any of those
+contracts change. Artifacts must continue to exclude credentials and
+authorization headers.
 
 ### TD-006: Investigation orchestration is still scenario-specific
 
