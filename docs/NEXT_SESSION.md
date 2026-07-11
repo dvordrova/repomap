@@ -23,9 +23,11 @@ contract is in [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
 If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. capture the already-unlocked golangci-lint `runCommand.runAnalysis` journey
-   without inventing source behavior from names;
-2. replay all five repository tasks and audit every M3 acceptance dimension;
+1. run the remaining company-style `REPOMAP_LLM_*` compatibility calibration
+   with `deepseek-v4-flash`, as requested, through doctor, preview, and one
+   bounded repository orientation;
+2. evaluate that output separately for usefulness, grounding, omissions,
+   contract adherence, bytes, and latency, then audit M3 completion;
 3. once M3 is proven complete, start M4 freshness for facts, claims, and sessions;
 4. keep the one-call browser friend test available, but do not let it replace the
    ordered milestone gates.
@@ -61,7 +63,7 @@ the default product path uses the configured OpenAI-compatible provider.
   references, and a pure resumable investigation reducer as isolated connected
   slices;
 - versioned, hash-verified offline quality tasks for etcd, Grafana k6,
-  Prometheus, and NATS Server;
+  Prometheus, NATS Server, and golangci-lint;
 - staged Qwen 1.5B protocol verification retained as non-critical regression
   tooling.
 
@@ -78,8 +80,8 @@ the default product path uses the configured OpenAI-compatible provider.
 - `internal/deepseek` still owns OpenAI-compatible transport plus concrete
   prompts; runtime configuration is provider-neutral, but orientation lacks a
   consumer-owned model interface.
-- M3 has four of five tasks; only golangci-lint remains, so the full
-  cross-repository target is not established yet.
+- M3 has all five repository tasks; the remaining gate is a company-style
+  generic-provider calibration using the requested DeepSeek reference model.
 - Prometheus is captured at revision
   `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
   `deepseek-v4-flash` orientation proposes a TSDB write direction containing
@@ -91,6 +93,11 @@ the default product path uses the configured OpenAI-compatible provider.
   client-message direction to `server/client.go`, and the clean source response
   grounds four `case`-selected calls in `client.processInboundMsg`. The static
   branch and related test reference do not prove runtime selection or coverage.
+- golangci-lint is captured at revision
+  `9b5e24cba6e9964465bc892ab9377fae5a60cb97`: the clean orientation links its
+  CLI lint-run direction to `pkg/commands/run.go`, and the clean source response
+  grounds three checked results plus one direct returned call in
+  `runCommand.runAnalysis`. Callee behavior and test coverage remain unknown.
 
 ## Read in this order
 
