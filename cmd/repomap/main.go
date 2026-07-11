@@ -219,6 +219,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 
 	if dDir != "" && !*previewRequest {
 		runDir := filepath.Join(dDir, runID)
+		if !*offline {
+			if err := synthesizeArchitectureForRun(context.Background(), runDir, repo, deps.stderr); err != nil {
+				fmt.Fprintf(deps.stderr, "warning: %v; using deterministic architecture fallback\n", err)
+			}
+		}
 		if err := report.Generate(runDir); err != nil {
 			return fmt.Errorf("generate browser report: %w", err)
 		}
@@ -312,6 +317,9 @@ func runOrient(args []string) error {
 
 	if dDir != "" && !*snapshotOnly && !*llmBundleOnly && !*llmRequestOnly {
 		runDir := filepath.Join(dDir, runID)
+		if err := synthesizeArchitectureForRun(context.Background(), runDir, *repo, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v; using deterministic architecture fallback\n", err)
+		}
 		if err := report.Generate(runDir); err != nil {
 			return fmt.Errorf("generate report: %w", err)
 		}
