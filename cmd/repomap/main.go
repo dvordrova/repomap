@@ -183,7 +183,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			case orient.ProgressModelRequest:
 				fmt.Fprintf(deps.stderr, "repomap: asking %s with %d-byte request\n", event.Model, event.RequestBytes)
 			case orient.ProgressOrientationDone:
-				fmt.Fprintf(deps.stderr, "repomap: validated %d candidate direction(s)\n", event.CandidateCount)
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: validated %d candidate direction(s) in %d ms\n",
+					event.CandidateCount,
+					event.LatencyMillis,
+				)
 			}
 		}
 	}

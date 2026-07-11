@@ -130,6 +130,14 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	}
 
 	var dw *debugdump.Writer
+	runMeta := debugdump.RunMeta{
+		RunID:         runID,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		RepoName:      s.RepoName,
+		RepoPath:      opts.RepoPath,
+		Command:       "orient",
+		LLMBundleOnly: opts.LLMBundleOnly,
+	}
 	if opts.DebugDir != "" {
 		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
 		if err != nil {
@@ -139,14 +147,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			dw = nil
 		}
 		if dw != nil {
-			if err := dw.WriteMetadata(debugdump.RunMeta{
-				RunID:         runID,
-				CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-				RepoName:      s.RepoName,
-				RepoPath:      opts.RepoPath,
-				Command:       "orient",
-				LLMBundleOnly: opts.LLMBundleOnly,
-			}); err != nil && opts.DumpLLM {
+			if err := dw.WriteMetadata(runMeta); err != nil && opts.DumpLLM {
 				return nil, fmt.Errorf("write required debug metadata: %w", err)
 			}
 			if err := dw.WriteSnapshot(snapshotJSON); err != nil && opts.DumpLLM {
@@ -188,15 +189,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			)
 		}
 		if dw != nil {
-			if err := dw.WriteMetadata(debugdump.RunMeta{
-				RunID:     runID,
-				CreatedAt: time.Now().UTC().Format(time.RFC3339),
-				RepoName:  s.RepoName,
-				RepoPath:  opts.RepoPath,
-				Command:   "orient",
-				Model:     client.Model,
-				Endpoint:  client.Endpoint,
-			}); err != nil && opts.DumpLLM {
+			runMeta.Model = client.Model
+			runMeta.Endpoint = client.Endpoint
+			runMeta.PromptVersion = deepseek.OrientationPromptVersionJSON
+			if err := dw.WriteMetadata(runMeta); err != nil && opts.DumpLLM {
 				return nil, fmt.Errorf("write required provider metadata: %w", err)
 			}
 		}
@@ -218,7 +214,15 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RequestBytes: len(requestJSON),
 		})
 
+		requestStarted := time.Now()
 		raw, err := client.Orient(ctx, modelBundleJSON)
+		providerLatency := time.Since(requestStarted).Milliseconds()
+		runMeta.ProviderLatencyMillis = &providerLatency
+		if dw != nil {
+			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && opts.DumpLLM {
+				return nil, fmt.Errorf("write provider latency metadata: %w", metadataErr)
+			}
+		}
 		if err != nil {
 			if dw != nil {
 				dw.WriteError(err)
@@ -258,6 +262,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RepoName:       s.RepoName,
 			Model:          client.Model,
 			CandidateCount: len(or.CandidateFlows),
+			LatencyMillis:  providerLatency,
 		})
 
 		out, _ := json.MarshalIndent(or, "", "  ")
