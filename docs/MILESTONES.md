@@ -160,6 +160,26 @@ step contains one `maps_error` question and has a direct `TestQueryRange` native
 test. This is not yet the third baseline: raw DeepSeek responses, test-evidence
 capture, expectations, and artifact hashes are still required.
 
+The NATS and golangci-lint preflights exposed a deterministic context-selection
+failure before any model call. NATS spent 56 of 60 paths on tests, while
+golangci-lint spent most paths on auxiliary main packages and documentation and
+omitted `pkg/commands/run.go`. The selector now boosts production files in
+packages imported directly by user-facing root/cmd/primary/CLI entrypoints,
+reserves bounded source/test/doc diversity, and leaves six slots to global
+score. At the 60-path product limit it retains the existing etcd `key.go`, k6
+`metrics.go`, and Prometheus `query.go` bridges while adding NATS
+`server/client.go`/`server/parser.go` and golangci-lint `pkg/commands/run.go`.
+Only real documentation formats enter `known_docs`, and every model-visible
+document, source signal, entrypoint file, and orientation-candidate file is
+filtered to `allowed_paths` after selection. All previewed requests still use
+`deepseek-v4-flash`.
+
+Exact preflight of NATS `client.processInboundMsg` and golangci-lint
+`runCommand.runAnalysis` now reaches the selected source path but stops before
+network use because the source-question seeder produces no bounded question.
+That is the same grounded orchestration gap tracked in TD-006; a prompt must not
+hide it.
+
 M3 remains active until equivalent small tasks for Prometheus, NATS Server, and
 golangci-lint pass the same offline workflow. Two passing captures establish the
 workflow on etcd and k6, not yet cross-repository product quality.

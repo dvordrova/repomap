@@ -55,6 +55,23 @@ if command -v jq &>/dev/null; then
         echo "OK: bundle open_files present"
     fi
 
+	if jq -e '
+		.allowed_paths as $allowed
+		| [
+			.known_docs[]?,
+			.source_signals[]?.path,
+			.go.entrypoints[]?.open_files[]?,
+			.go.orientation_candidates[]?.open_files[]?
+		] as $visible
+		| [$visible[] as $path | select(($allowed | index($path)) == null) | $path]
+		| length == 0
+	' tmp/etcd-llm-bundle.json > /dev/null; then
+		echo "OK: every model-visible file path is allowed"
+	else
+		echo "FAIL: bundle exposes a file path outside allowed_paths"
+		FAIL=1
+	fi
+
     if [ $FAIL -ne 0 ]; then
         echo "FAIL: validation errors above"
         exit 1

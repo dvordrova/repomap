@@ -89,6 +89,22 @@ SOURCE_MODEL_CONTEXT="$OUTPUT_DIR/source_model_context.json"
 extract_context "$ORIENTATION_REQUEST" $'Facts bundle JSON:\n' "$ORIENTATION_MODEL_CONTEXT"
 extract_context "$SOURCE_REQUEST" $'SOURCE ASSESSMENT BUNDLE:\n' "$SOURCE_MODEL_CONTEXT"
 
+if ! jq -e '
+    .allowed_paths as $allowed
+    | [
+        .known_docs[]?,
+        .source_signals[]?.path,
+        .go.entrypoints[]?.open_files[]?,
+        .go.orientation_candidates[]?.open_files[]?
+    ] as $visible
+    | [$visible[] as $path | select(($allowed | index($path)) == null) | $path]
+    | length == 0
+' "$ORIENTATION_MODEL_CONTEXT" >/dev/null; then
+    echo "quality preflight rejected an incoherent orientation bundle" >&2
+    echo "a model-visible file path is absent from allowed_paths" >&2
+    exit 1
+fi
+
 jq -S '{
     version: 1,
     repo_name: .repo_name,
