@@ -1,23 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set +x
 
-cd "$(dirname "$0")/.."
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+if [ -z "${REPOMAP_LLM_ENDPOINT+x}${REPOMAP_LLM_MODEL+x}${REPOMAP_LLM_API_KEY+x}${REPOMAP_LLM_AUTH+x}${REPOMAP_LLM_MAX_TOKENS+x}${REPOMAP_LLM_TIMEOUT+x}${DEEPSEEK_API_KEY:-}" ] &&
+    [ "${DEEPSEEK_AUTH:-bearer}" != "none" ] && [ -f .env ]; then
+    exec "$REPO_ROOT/scripts/with_local_deepseek_key.sh" "$REPO_ROOT/scripts/deepseek_check.sh" "$@"
+fi
 
 ETCD_REPO="${1:-../etcd}"
 
+unset REPOMAP_CHECK_AUTH REPOMAP_CHECK_HAS_KEY
 if [ -n "${REPOMAP_LLM_ENDPOINT+x}${REPOMAP_LLM_MODEL+x}${REPOMAP_LLM_API_KEY+x}${REPOMAP_LLM_AUTH+x}${REPOMAP_LLM_MAX_TOKENS+x}${REPOMAP_LLM_TIMEOUT+x}" ]; then
-    AUTH="${REPOMAP_LLM_AUTH:-bearer}"
-    API_KEY="${REPOMAP_LLM_API_KEY:-}"
+    REPOMAP_CHECK_AUTH="${REPOMAP_LLM_AUTH:-bearer}"
+    REPOMAP_CHECK_HAS_KEY=false
+    if [ -n "${REPOMAP_LLM_API_KEY:-}" ]; then
+        REPOMAP_CHECK_HAS_KEY=true
+    fi
 else
-    AUTH="${DEEPSEEK_AUTH:-bearer}"
-    API_KEY="${DEEPSEEK_API_KEY:-}"
+    REPOMAP_CHECK_AUTH="${DEEPSEEK_AUTH:-bearer}"
+    REPOMAP_CHECK_HAS_KEY=false
+    if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+        REPOMAP_CHECK_HAS_KEY=true
+    fi
 fi
-if [ "$AUTH" != "none" ] && [ -z "$API_KEY" ]; then
+if [ "$REPOMAP_CHECK_AUTH" != "none" ] && [ "$REPOMAP_CHECK_HAS_KEY" != true ]; then
     echo "Skipping deepseek_check: bearer auth is configured but no REPOMAP_LLM_API_KEY or DEEPSEEK_API_KEY is set"
     exit 0
 fi
+unset REPOMAP_CHECK_AUTH REPOMAP_CHECK_HAS_KEY
 
-if [ ! -d "$ETCD_REPO" ] || [ ! -d "$ETCD_REPO/.git" ]; then
+if ! git -C "$ETCD_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Skipping deepseek_check: $ETCD_REPO is not a git repo"
     echo "  Usage: $0 [path-to-etcd]"
     exit 0
