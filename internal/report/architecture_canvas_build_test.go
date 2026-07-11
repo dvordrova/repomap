@@ -128,6 +128,39 @@ func TestReadRunDirProjectsSavedFlowProofIntoArchitectureCanvas(t *testing.T) {
 	}
 }
 
+func TestReadRunDirProjectsArchitectureLandscapeWithoutFlowProof(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writeArchitectureBuildFixture(t, runDir, "snapshot.json", []byte(`{"repo_name":"fixture"}`))
+	writeArchitectureBuildFixture(t, runDir, "llm_bundle.json", []byte(`{
+		"go": {
+			"module_summaries": [{"module_path":"example.com/project","module_dir":"."}],
+			"important_edges": [{"from":"example.com/project/cmd","to":"example.com/project/internal/repo"}]
+		}
+	}`))
+	writeArchitectureBuildFixture(t, runDir, "orientation_report.json", []byte(`{
+		"project_guess":"saved fixture",
+		"candidate_flows":[{
+			"name":"Server startup",
+			"trigger":"process starts",
+			"likely_entrypoint":"cmd/main.go",
+			"likely_files":["cmd/main.go"]
+		}]
+	}`))
+
+	data, err := ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureCanvas == nil {
+		t.Fatalf("architecture landscape missing without FlowProof; warnings = %#v", data.Warnings)
+	}
+	if len(data.ArchitectureCanvas.Components) == 0 || len(data.ArchitectureCanvas.Flows) != 0 {
+		t.Fatalf("architecture canvas = %#v, want landscape with no flow overlay", data.ArchitectureCanvas)
+	}
+}
+
 func writeArchitectureBuildFixture(t *testing.T, dir, name string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
@@ -193,6 +226,30 @@ func TestBuildArchitectureCanvasInputUsesExactFlowBindingsAndPackageWitnesses(t 
 	}
 	if got := bindings["call-save"].MemberID.Kind; got != componentmap.MemberFile {
 		t.Fatalf("callsite member kind = %q, want containing file without declaration inference", got)
+	}
+}
+
+func TestBuildArchitectureCanvasInputAllowsRepositoryLandscapeWithoutFlowProof(t *testing.T) {
+	t.Parallel()
+
+	input, err := BuildArchitectureCanvasInput(&ReportData{RepositoryGraph: &RepositoryGraph{
+		Modules: []ModuleInfo{{Path: "example.com/project"}},
+		PackageEdges: []EdgeInfo{{
+			From: "example.com/project/cmd", To: "example.com/project/internal/repo",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Flows) != 0 || len(input.CandidateBundle.Flows) != 0 {
+		t.Fatalf("flows = %#v / %#v, want no invented flow", input.Flows, input.CandidateBundle.Flows)
+	}
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canvas.Components) == 0 || len(canvas.StructuralFacts) != 1 || len(canvas.Flows) != 0 {
+		t.Fatalf("canvas = %#v, want structural landscape without flow overlay", canvas)
 	}
 }
 

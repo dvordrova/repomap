@@ -409,16 +409,6 @@ func parseLLMBundle(path string, data *ReportData) string {
 }
 
 func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) string {
-	hasProof := false
-	for _, direction := range data.CandidateDirections {
-		if direction.LocalProof != nil {
-			hasProof = true
-			break
-		}
-	}
-	if !hasProof {
-		return ""
-	}
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas: %v", err)
