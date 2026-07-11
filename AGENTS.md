@@ -3,8 +3,9 @@
 ## What repomap is
 
 `repomap` is a tiny local-first repository orientation CLI for large unfamiliar codebases.
-It produces a compact local snapshot of a git repository and optionally asks DeepSeek for
-a structured orientation report.
+It produces a compact local snapshot of a git repository and optionally asks an explicitly
+configured OpenAI-compatible model for a structured orientation report. DeepSeek is the
+reference provider and compatibility default.
 
 Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline design.
 
@@ -13,14 +14,14 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 1. **Local deterministic snapshot** — `git ls-files`, README, file tree, language hints
 2. **Go facts** — `go list -json ./...` per discovered module, packages/edges/entrypoints
 3. **Compact LLM bundle** — bounded subset (module summaries, entrypoints with open_files, important edges)
-4. **Optional DeepSeek orientation** — sends only the compact bundle, not full repo contents
+4. **Optional model orientation** — sends only the compact bundle, not full repo contents
 5. **Debug artifacts** — written under `--debug-dir` when requested
 
 ## Design rules
 
-- DeepSeek must **never** receive full repo contents, raw `file_tree`, or raw `internal_edges`.
+- A model provider must **never** receive full repo contents, raw `file_tree`, or raw `internal_edges`.
 - Do **not** add LSP, gopls, AST parsing, embeddings, diagrams, or third-party dependencies unless explicitly requested.
-- DeepSeek must only interpret a compact bounded facts bundle produced by local deterministic extraction.
+- A model must only interpret a compact bounded facts bundle produced by local deterministic extraction.
 
 ## Guiding documents
 

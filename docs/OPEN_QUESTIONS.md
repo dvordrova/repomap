@@ -30,14 +30,18 @@ an API-description specification.
 ### Current constraint
 
 DeepSeek is the current implementation and calibration target, not a fact that
-the core product should depend on. New core types should describe model input,
+the core product should depend on. Runtime endpoint/model/bearer-or-none auth/
+timeout configuration is now provider-neutral and was exercised against Ollama.
+Prompt capability negotiation, non-compatible transports, and consumer-owned
+model interfaces remain open. New core types should describe model input,
 output, and evidence requirements rather than DeepSeek request fields.
 
 ### Evidence needed for a decision
 
 - A fixed HTTP contract test shared by provider adapters.
-- At least one successful non-DeepSeek or local-server experiment using the same
-  bounded bundle and evaluator.
+- One company-hosted compatibility/calibration run using the bounded bundle and
+  the same evaluator; the prior Ollama run proves transport compatibility but
+  not acceptable repository-analysis quality.
 - A comparison of output quality, latency, token use, and failure behavior.
 
 ## 2. Vendored code and embedded dependencies

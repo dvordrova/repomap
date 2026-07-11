@@ -1,26 +1,21 @@
 # Reproducible debug run
 
-How to capture a complete, reproducible debug run for DeepSeek orientation.
+How to capture a complete, reproducible orientation run for the configured
+OpenAI-compatible provider.
 
-## Capture the compact LLM bundle only (no API key)
+## Inspect the compact LLM bundle only (no API key)
 
 ```bash
-repomap orient --repo ../etcd --llm-bundle-only --debug-dir .repomap-runs
-# or
-./scripts/capture_etcd_bundle.sh ../etcd
+repomap orient --repo ../etcd --llm-bundle-only > /tmp/etcd-llm-bundle.json
 ```
 
-Writes under `.repomap-runs/<run-id>/`:
-- `metadata.json`
-- `snapshot.json`
-- `llm_bundle.json`
+This mode prints one artifact and deliberately does not create a debug run.
+Use `--preview-request` to inspect the complete provider body without sending it.
 
-## Capture a full DeepSeek run (requires API key)
+## Capture a full provider run (requires configured auth)
 
 ```bash
 repomap orient --repo ../etcd --debug-dir .repomap-runs --dump-llm
-# or
-./scripts/capture_deepseek_run.sh ../etcd
 ```
 
 Writes under `.repomap-runs/<run-id>/`:
@@ -36,7 +31,11 @@ Writes under `.repomap-runs/<run-id>/`:
 
 ```bash
 ./scripts/debug_last_run.sh
+./scripts/debug_last_run.sh .repomap-runs
 ```
+
+With no argument the script inspects the platform user-cache directory used by
+the normal CLI. Pass an explicit directory for the reproducible layout above.
 
 ## Debug run directory structure
 

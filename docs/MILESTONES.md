@@ -11,11 +11,17 @@ one bounded, evidence-backed path through symbols, source, and tests. It keeps
 navigation hypotheses, source-supported claims, test support, runtime
 observations, and unknowns distinct.
 
-DeepSeek through its OpenAI-compatible API is the default interpretation and
-product-quality target. Existing Qwen 1.5B experiments remain useful research,
-but local-model work is not a completion gate for the current milestones. A
-future `--really-dumb-model` profile may select alternate implementations of the
-same typed capabilities without changing their inputs or outputs.
+DeepSeek through its OpenAI-compatible API is the reference interpretation and
+product-quality target. The main CLI can also use one explicitly configured
+OpenAI-compatible company endpoint; generic and legacy configuration namespaces
+are never mixed. Existing Qwen 1.5B experiments remain useful research, but
+local-model work is not a completion gate for the current milestones. A future
+`--really-dumb-model` profile may select alternate implementations of the same
+typed capabilities without changing their inputs or outputs.
+
+[ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) is an acceptance track across this order,
+not a competing roadmap: current exploration is calibrated in M3 and becomes
+progressive in M5, feature work is M6, and onboarding is M7.
 
 ## Status
 
@@ -127,6 +133,11 @@ M3 remains active until equivalent small tasks for k6, Prometheus, NATS Server,
 and golangci-lint pass the same offline workflow. One passing etcd capture proves
 the replay machinery, not cross-repository product quality.
 
+The external-company slice adds one compatibility/calibration run through
+`doctor`, request preview, and current repository exploration. Its model output
+must be evaluated with the same separate dimensions; a successful HTTP call or
+valid JSON is not a quality result.
+
 ## M4 — Fresh local memory
 
 Persist repository facts, derived claims, and investigation sessions separately.
@@ -163,7 +174,8 @@ MCP, or an editor plugin. A small consumer-owned provider seam and the current
 language-neutral evidence contracts remain; speculative frameworks do not.
 
 Model-dependent capabilities are composed at the application boundary. The
-default profile wires DeepSeek implementations. A later dumb-model profile may
+reference profile wires the current DeepSeek-named implementations through an
+explicit OpenAI-compatible endpoint. A later dumb-model profile may
 use multiple smaller prompts, deterministic reducers, or skip unsupported
 capabilities, but it must return the same validated capability output. Do not
 put model-name conditionals inside evidence, investigation, or presentation

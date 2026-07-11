@@ -2,158 +2,93 @@
 
 Last updated: 2026-07-10.
 
-## Current direction
+## Product direction
 
-repomap is evolving from a one-shot repository report into a local Go evidence
-and context engine for progressive investigation. The local index should retain
-repository facts, derived claims, and investigation sessions separately. A
-bounded context assembler selects the next small evidence slice for a human,
-weak/local model, browser UI, or external coding agent.
+repomap is a trustable, inspectable Go repository investigation CLI for an
+engineer using an OpenAI-compatible company model. It is not another general
+coding agent. It builds bounded local facts, offers runtime/event-oriented
+directions, and then follows one explicit evidence branch through symbols,
+source, tests, and unknowns.
 
-The canonical execution order is [MILESTONES.md](MILESTONES.md). DeepSeek through
-its OpenAI-compatible API is the default interpretation and product-quality
-target. Existing Qwen 1.5B work remains a useful prototype, but no new local
-model work is on the critical path. Later, `--really-dumb-model` may select
-alternate implementations of the same typed capability contracts.
+The company-engineer acceptance track has three goals:
 
-If the user starts with “what do we do next?”, recommend this order:
+1. calibrate onboarding output on a project the engineer already knows;
+2. explore a genuinely unfamiliar Go project progressively;
+3. use a real pre-change commit and ticket to produce a bounded `ChangeBrief`.
 
-1. add the second M3 task for Grafana k6 using the committed etcd task as the
-   contract example;
-2. add equivalent small tasks for Prometheus, NATS Server, and golangci-lint,
-   keeping repository availability optional;
-3. compare direction usefulness, grounding, omissions, request size, and
-   latency separately from JSON/contract adherence. Dumb-model implementations
-   remain deferred.
+These are policies over one investigation engine, not three prompt pipelines.
+The canonical implementation order remains [MILESTONES.md](MILESTONES.md): M3
+quality is active, feature work is M6, and onboarding is M7. The exact acceptance
+contract is in [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
-Read these first:
+If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. [CORE_IDEA.md](CORE_IDEA.md) — current pipeline and constraints;
-2. [MILESTONES.md](MILESTONES.md) — ordered product outcomes and completion gates;
-3. [SYSTEM_MAP.md](SYSTEM_MAP.md) — current/planned modules and challenge cards;
-4. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow proposal;
-5. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated implementation gaps;
-6. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product/research decisions;
-7. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current provider contract.
+1. let one company engineer run `doctor`, inspect `--preview-request`, and try
+   current exploration on a known repository; record compatibility, useful
+   directions, omissions, unsupported claims, and whether the output is worth a
+   second step;
+2. add the second M3 replay task for Grafana k6 using the committed etcd task as
+   the contract example;
+3. add equivalent small tasks for Prometheus, NATS Server, and golangci-lint;
+4. compare direction usefulness, grounding, omissions, request size, and latency
+   separately from JSON/contract adherence.
 
-## What works
+Do not restart Qwen prompt tuning. Keep the staged 1.5B regression runnable, but
+the default product path uses the configured OpenAI-compatible provider.
 
-- deterministic repository snapshot, Go facts, source signals, and bounded LLM
-  bundle;
-- orientation and flow reports with tolerant response parsing;
-- language-neutral evidence graph with certainty, provenance, and scenarios;
-- isolated gopls analyzer and example runs for large Go repositories;
-- exact-symbol bundle with bounded callers/callees and locally rebuilt structure;
-- bounded lexical source cards with containment, size, credential, hash, and
-  line-addressability checks;
-- DeepSeek source-assessment v2 with predicate-specific lexical support,
-  conservative locally reconstructed claims, explicit unknowns, replay fixture,
-  and raw-response retention on parse failure;
-- gopls test-reference collection with provider/version/provenance/build scenario;
-  references remain navigation evidence and are not called test-supported;
-- pure investigation reducer plus an explicit capability runner; the real etcd
-  path reaches `assessing_source` locally and `waiting_user` with DeepSeek,
-  while stale action IDs, revision changes, redirects, cancellation, and failure
-  are table-tested;
-- bounded orientation handoff that pins the selected candidate flow and exact
-  report hash while requiring a user-confirmed symbol; saved sessions use a
-  canonical repository root and can be passively inspected, explicitly
-  continued, finished, redirected, or invalidated after a revision change;
-- versioned local symbol evidence index with defensive put/query,
-  deterministic persistence/reload, and path-based invalidation;
-- JSON and tagged symbol prompts, tolerant normalization, evaluator, fixtures,
-  and replayable HTTP integration tests;
-- prompt experiment scripts and etcd `kvServer.Put` calibration artifacts under
-  ignored `tmp/` directories.
-- replayable `local-symbol-v2` Ollama protocol with deterministic name signals,
-  dynamic schemas, constrained role/action decisions, and offline artifact
-  verification.
-- versioned, hash-verified offline quality tasks plus a concrete etcd
-  orientation-to-`kvServer.Put` baseline; normal checks replay saved artifacts
-  without an API key or network call.
+## What works now
 
-## Recent local-provider experiment
+- deterministic tracked-file survey, bounded tracked README, Go facts, source
+  signals, and compact LLM bundle;
+- repository-confined reads through `os.OpenRoot`, including protection against
+  README/source/go.mod symlink escape;
+- `go list -e` using the engineer's normal Go environment, so internal proxies
+  work and missing packages can still yield partial facts/warnings;
+- atomic `REPOMAP_LLM_*` configuration with bearer or explicit no-auth, timeout,
+  DeepSeek compatibility aliases, and no implicit repository `.env` loading;
+- `repomap doctor llm [--check]`, where `--check` is exactly one small synthetic
+  JSON request with no repository content and no retries;
+- `--llm-bundle-only` and `--preview-request` inspection without an API key or
+  model call;
+- bounded orientation preserving the full known response shape, with structured
+  path validation and credential gates on outbound/retained content;
+- opt-in top-N focused flow expansion; flow output is flexibly parsed,
+  normalized to known fields, allowlist-validated, and rejected when empty or
+  unsupported;
+- debug artifacts in the OS user cache by default, including model, endpoint,
+  and the attempted request even when the provider fails;
+- exact-symbol evidence, bounded source cards, source assessment, related test
+  references, and a pure resumable investigation reducer as isolated connected
+  slices;
+- versioned, hash-verified offline quality tasks with one concrete etcd baseline;
+- staged Qwen 1.5B protocol verification retained as non-critical regression
+  tooling.
 
-Ollama 0.30.10 was tested through its OpenAI-compatible endpoint on an Intel
-MacBook Pro. Ollama correctly used CPU-only inference. The full 21 KB symbol
-request was too slow for useful local interaction, and sub-billion-parameter
-models produced weak or invalid explanations. Exact measurements and resulting
-debt are recorded in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+## Honest current boundary
 
-Ollama setup was explicitly verified:
+- The main CLI shows ranked directions but cannot yet choose one by name and
+  hand it into the resumable reducer.
+- `--flows 1` expands the highest-ranked direction, not a user-selected one.
+- `--offline` means no model call; it is not a hard network sandbox for Go tools.
+- Public `onboarding` and natural-language `feature` commands do not exist.
+- Test references are navigation evidence until bounded test source/assertions
+  are read.
+- Static Go/gopls facts are build-scenario evidence, not runtime truth.
+- `internal/deepseek` still owns OpenAI-compatible transport plus concrete
+  prompts; runtime configuration is provider-neutral, but orientation lacks a
+  consumer-owned model interface.
+- M3 has only the etcd task; cross-repository quality is not established.
 
-- CLI and server version `0.30.10`;
-- one normal `Ollama.app -> ollama serve` process tree;
-- `/api/version` and `/api/tags` reachable at `localhost:11434`;
-- no downloads, deletes, sudo, profile changes, or duplicate servers;
-- x86 macOS correctly uses CPU-only inference.
+## Read in this order
 
-Installed models include Qwen2.5-Coder 0.5B, 1.5B, and 3B Q4 plus SmolLM2 135M
-F16. A short Qwen 0.5B plain-text smoke test succeeded, and a 47-token Go review
-request returned valid JSON matching a runtime JSON Schema in 8.16 seconds warm.
-This proves local structured inference works for small tasks; it does not
-establish repository-analysis quality.
-
-The compact repository experiment is now replayable. A 634-token tagged prompt
-ran in 18.85 seconds but produced malformed verbose output and scored 40/100. A
-523-token runtime-JSON-Schema prompt completed in 142.58 seconds and scored
-45/100: its shape was valid, but its interpretations copied instructions and
-invented evidence IDs. Details and completion criteria are in
-[TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
-
-Qwen2.5-Coder 1.5B ran the same 523-token compact JSON-Schema request in 22.64
-seconds at 18.71 output tokens/second and scored 60/100. It is fast enough to
-iterate with, but hallucinated `exampleKey`/`exampleValue` and attached valid yet
-irrelevant evidence IDs. This exposed another evaluator blind spot rather than
-establishing acceptable semantic quality.
-
-The follow-up `local-symbol-v2` protocol removed model prose entirely. It
-preclassifies high-confidence name signals locally, ranks deterministic evidence
-above ambiguous model hints, constrains role choices by available capabilities,
-and asks the model to choose an executable action. Three consecutive
-`kvServer.Put` runs were identical at 3.98–4.08 seconds with two model calls,
-380 input tokens, 63 output tokens, 9/9 protocol checks, and a locally rendered
-100/100 contract report. Additional `kvServer.DeleteRange` and `WAL.Save` runs
-also passed all protocol checks. The staged protocol's `read_target` action has
-now been executed by the default DeepSeek path. This does not make local-model
-source assessment solved; it gives future dumb-model work a stable source-card
-and assessment-cube contract to target.
-
-Do not conclude that local inference is generally solved. The staged result proves
-that 1.5B is useful for constrained selection and planning; behavioral claims
-still require the selected source/test/runtime evidence.
-
-## Relevant prior art
-
-- OpenCode performs iterative `grep/read/LSP` tool calls and compacts long
-  sessions; its LLM remains the main planner.
-- Aider's repo map is the closest context-selection baseline: graph ranking plus
-  an active token budget, commonly around 1K tokens.
-- Sourcegraph/SCIP is the closest precise persistent-index baseline.
-- Cursor-style content hashing demonstrates incremental invalidation, though its
-  semantic/cloud design is not the initial repomap direction.
-
-Do not compete by inventing another general coding agent. A plausible product
-boundary is a Go-specific local evidence/context service usable through its own
-browser and later through MCP/custom tools by OpenCode or other agents.
-
-## Architecture after the local-index discussion
-
-The intended layers are:
-
-```text
-Go collectors (git/go list/gopls/source/tests)
-  -> local fact index
-  -> adaptive context assembly
-  -> investigation reducer and claim ledger
-  -> browser / DeepSeek / Ollama / future MCP tools
-```
-
-Index progressively: repository survey first, symbol graph second, focused
-source/tests on demand, runtime observations only for a concrete investigation.
-Do not eagerly compute every function or send the whole index to a model. Use
-depth together with beam width, node/edge/source/token budgets, and expand one
-high-value frontier branch when evidence is insufficient.
+1. [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) — external acceptance contract;
+2. [MILESTONES.md](MILESTONES.md) — canonical order and completion gates;
+3. [CORE_IDEA.md](CORE_IDEA.md) — current bounded pipeline;
+4. [SYSTEM_MAP.md](SYSTEM_MAP.md) — modules and independently challengeable seams;
+5. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow/reducer;
+6. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated gaps and local-model measurements;
+7. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product decisions;
+8. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current transport/prompt contract.
 
 ## Verification
 
@@ -168,17 +103,14 @@ high-value frontier branch when evidence is insufficient.
 ./scripts/quality_check.sh
 ```
 
+The detailed Ollama 0.5B/1.5B/3B timings, failures, and staged-protocol results
+are preserved in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md). The useful conclusion is
+small: 1.5B can select constrained evidence/actions, but source-grounded
+behavioral claims still require the same source/test/runtime cubes.
+
 ## Workspace caution
 
-The current worktree contains pre-existing, uncommitted rewrites under
-`docs/agent-room/` and an untracked `opencode.json`. They were intentionally
-excluded from the focused commit stack. Do not stage, restore, or overwrite them
-without deciding their intended fate.
-
-The replay evaluator and Ollama experiment scripts are committed project tooling;
-their generated artifacts remain under ignored `tmp/` directories.
-
-The first `internal/index` slice is implemented but its repository metadata is
-still supplied by the caller. Before treating it as an automatic incremental
-cache, wire revision, dirty-file content, analyzer version, and build context
-into its freshness policy; see TD-008 in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+Pre-existing uncommitted rewrites under `docs/agent-room/` and untracked
+`opencode.json` belong to the user. Do not stage, restore, or overwrite them.
+Generated artifacts remain under ignored local/cache directories and must not be
+committed.
