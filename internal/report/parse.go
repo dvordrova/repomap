@@ -358,7 +358,7 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 		return nil, fmt.Errorf("read flows from %s: %w", absDir, err)
 	}
 	parseWarnings = append(parseWarnings, flowWarnings...)
-	if w := projectSavedArchitectureCanvas(data); w != "" {
+	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
 
@@ -408,7 +408,7 @@ func parseLLMBundle(path string, data *ReportData) string {
 	return ""
 }
 
-func projectSavedArchitectureCanvas(data *ReportData) string {
+func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) string {
 	hasProof := false
 	for _, direction := range data.CandidateDirections {
 		if direction.LocalProof != nil {
@@ -423,12 +423,23 @@ func projectSavedArchitectureCanvas(data *ReportData) string {
 	if err != nil {
 		return fmt.Sprintf("architecture canvas: %v", err)
 	}
+	warning := ""
+	if saved, readErr := os.ReadFile(synthesisPath); readErr == nil {
+		replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
+		if replayErr != nil {
+			warning = fmt.Sprintf("architecture canvas synthesis: %v; using deterministic fallback", replayErr)
+		} else {
+			input = replayed
+		}
+	} else if !os.IsNotExist(readErr) {
+		warning = fmt.Sprintf("architecture canvas synthesis: %v; using deterministic fallback", readErr)
+	}
 	canvas, err := ProjectArchitectureCanvas(input)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas projection: %v", err)
 	}
 	data.ArchitectureCanvas = &canvas
-	return ""
+	return warning
 }
 
 func parseRunMetadata(path string, data *ReportData) string {

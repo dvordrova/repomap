@@ -3,6 +3,7 @@ package report
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path"
 	"sort"
@@ -15,6 +16,10 @@ import (
 )
 
 const architectureBuildContractVersion = "architecture-candidates-v1"
+
+// ArchitectureSynthesisFile is the optional, replayable conceptual synthesis
+// record stored beside other run artifacts.
+const ArchitectureSynthesisFile = "architecture_synthesis.json"
 
 // BuildArchitectureCanvasInput derives the exact local input for the v2
 // architecture canvas from saved report facts. It intentionally chooses the
@@ -69,6 +74,31 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 		Landscape:       landscape,
 		Flows:           append([]ArchitectureFlowInput(nil), builder.flows...),
 	}, nil
+}
+
+// ReplayArchitectureSynthesis replaces only conceptual naming and membership
+// with a locally validated saved response. Candidate facts, relations,
+// bindings, FlowProof, and layout remain outside model authority.
+func ReplayArchitectureSynthesis(
+	input ArchitectureCanvasInput,
+	saved []byte,
+) (ArchitectureCanvasInput, error) {
+	var header struct {
+		RepositoryRevision string `json:"repository_revision"`
+	}
+	if err := json.Unmarshal(saved, &header); err != nil {
+		return input, fmt.Errorf("architecture canvas synthesis: decode header: %w", err)
+	}
+	landscape, err := componentmap.ReplaySynthesis(
+		input.CandidateBundle,
+		header.RepositoryRevision,
+		saved,
+	)
+	if err != nil {
+		return input, fmt.Errorf("architecture canvas synthesis: %w", err)
+	}
+	input.Landscape = landscape
+	return input, nil
 }
 
 type architectureCandidateBuilder struct {

@@ -4,12 +4,69 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowproof"
 )
+
+func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *testing.T) {
+	t.Parallel()
+
+	input, err := BuildArchitectureCanvasInput(&ReportData{CandidateDirections: []CandidateDirection{{
+		ID: "backup", Name: "Backup",
+		LocalProof: &flowproof.Session{Version: flowproof.SessionVersion, Proof: flowproof.Proof{
+			Version: flowproof.Version, ID: "backup", Archetype: flowproof.ArchetypeCLI,
+			Anchors: []flowproof.Anchor{{ID: "unknown", Kind: flowproof.AnchorOperation, Label: "unknown"}},
+		}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberID := input.CandidateBundle.Candidates[0].ID
+	response, err := json.Marshal(componentmap.Proposal{
+		Version: componentmap.ContractVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Data protection",
+			Components: []componentmap.ProposedComponent{{
+				Name: "Backup execution", MemberIDs: []componentmap.MemberID{memberID},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := componentmap.RecordSynthesisResponse(
+		input.CandidateBundle,
+		"revision-test",
+		"openai-compatible/bearer",
+		"test-model",
+		12*time.Millisecond,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplayArchitectureSynthesis(input, saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Landscape.Fallback || len(replayed.Landscape.Subsystems) != 1 ||
+		replayed.Landscape.Subsystems[0].Components[0].Name != "Backup execution" {
+		t.Fatalf("replayed landscape = %#v", replayed.Landscape)
+	}
+	if len(replayed.CandidateBundle.AnchorBindings) != len(input.CandidateBundle.AnchorBindings) ||
+		len(replayed.Flows) != len(input.Flows) {
+		t.Fatal("conceptual replay changed exact proof inputs")
+	}
+}
 
 func TestReadRunDirProjectsSavedFlowProofIntoArchitectureCanvas(t *testing.T) {
 	t.Parallel()
@@ -50,6 +107,24 @@ func TestReadRunDirProjectsSavedFlowProofIntoArchitectureCanvas(t *testing.T) {
 	if !data.ArchitectureCanvas.Fallback || len(data.ArchitectureCanvas.Flows) != 1 ||
 		data.ArchitectureCanvas.Flows[0].ID != "backup" {
 		t.Fatalf("architecture canvas = %#v", data.ArchitectureCanvas)
+	}
+
+	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, []byte(`{"broken"`))
+	data, err = ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureCanvas == nil || !data.ArchitectureCanvas.Fallback {
+		t.Fatalf("invalid saved synthesis removed deterministic canvas: %#v", data.ArchitectureCanvas)
+	}
+	foundFallbackWarning := false
+	for _, warning := range data.Warnings {
+		if strings.Contains(warning, "using deterministic fallback") {
+			foundFallbackWarning = true
+		}
+	}
+	if !foundFallbackWarning {
+		t.Fatalf("warnings = %#v, want invalid synthesis fallback warning", data.Warnings)
 	}
 }
 
