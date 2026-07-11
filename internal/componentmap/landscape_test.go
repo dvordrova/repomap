@@ -156,6 +156,143 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 	}
 }
 
+func TestDeterministicDoesNotReportProviderFailure(t *testing.T) {
+	t.Parallel()
+
+	result, err := Deterministic(landscapeTestBundle(), FallbackModelDisabled)
+	if err != nil {
+		t.Fatalf("Deterministic() error = %v", err)
+	}
+	if !result.Fallback || result.FallbackReason != FallbackModelDisabled {
+		t.Fatalf("fallback = %v (%q), want explicit model-disabled result", result.Fallback, result.FallbackReason)
+	}
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %#v, intentionally disabled model is not provider failure", result.Diagnostics)
+	}
+}
+
+func TestDeterministicSupportsPathOnlyFactsAndNoStructuralRelations(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.Relations = nil
+	bundle.Candidates[0].Facts[0].Location = &evidence.Location{Path: "cmd"}
+	result, err := Deterministic(bundle, FallbackProviderUnconfigured)
+	if err != nil {
+		t.Fatalf("Deterministic() error = %v", err)
+	}
+	if result.Relations != nil {
+		t.Fatalf("relations = %#v, want nil to preserve the saved contract", result.Relations)
+	}
+}
+
+func TestApplyBoundsAndValidatesProposedMemberIDs(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	tests := []struct {
+		name       string
+		components []ProposedComponent
+		memberIDs  []MemberID
+		diagnostic string
+	}{
+		{
+			name:       "too many references",
+			memberIDs:  make([]MemberID, maxCandidates+1),
+			diagnostic: "proposal.invalid_members",
+		},
+		{
+			name:       "malformed opaque id",
+			memberIDs:  []MemberID{{Kind: MemberFile, Value: "bad\nmember"}},
+			diagnostic: "proposal.invalid_member_id",
+		},
+		{
+			name:       "too many components",
+			components: make([]ProposedComponent, maxComponents+1),
+			diagnostic: "proposal.invalid_component_count",
+		},
+	}
+	for index := range tests[0].memberIDs {
+		tests[0].memberIDs[index] = MemberID{Kind: MemberFile, Value: "unknown"}
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			components := test.components
+			if components == nil {
+				components = []ProposedComponent{{Name: "Invalid", MemberIDs: test.memberIDs}}
+			}
+			result, err := Apply(bundle, Proposal{
+				Version: ContractVersion,
+				Subsystems: []ProposedSubsystem{{
+					Name:       "Invalid",
+					Components: components,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("Apply() error = %v", err)
+			}
+			if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, test.diagnostic) {
+				t.Fatalf("result = %#v, want bounded fallback diagnostic %q", result, test.diagnostic)
+			}
+			for _, diagnostic := range result.Diagnostics {
+				if diagnostic.Member != nil {
+					t.Fatalf("malformed or oversized proposal leaked member into diagnostics: %#v", diagnostic)
+				}
+			}
+		})
+	}
+}
+
+func TestBundleRequiresWitnessedFlowParticipation(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.Candidates[2].Participations[0].Evidence.Kind = FactRepositoryPath
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "flow-participation fact") {
+		t.Fatalf("Validate() error = %v, want missing participation witness", err)
+	}
+
+	bundle = landscapeTestBundle()
+	bundle.Candidates[2].Participations[0].Evidence.Certainty = evidence.CertaintyHypothesis
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "not locally grounded") {
+		t.Fatalf("Validate() error = %v, want tentative participation rejection", err)
+	}
+}
+
+func TestLandscapePreservesTypedStructuralRelations(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	result, err := Deterministic(bundle, FallbackProviderUnconfigured)
+	if err != nil {
+		t.Fatalf("Deterministic() error = %v", err)
+	}
+	if !reflect.DeepEqual(result.Relations, bundle.Relations) {
+		t.Fatalf("relations changed:\nresult=%#v\nbundle=%#v", result.Relations, bundle.Relations)
+	}
+	result.Relations[0].To = result.Relations[0].From
+	if err := result.Validate(bundle); err == nil || !strings.Contains(err.Error(), "changed local structural relations") {
+		t.Fatalf("Validate(mutated relation) error = %v", err)
+	}
+}
+
+func TestBundleRejectsConflictingScenarioDefinitions(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	conflict := bundle.Relations[0]
+	conflict.ID = "repo-imports-cmd"
+	conflict.From, conflict.To = conflict.To, conflict.From
+	conflict.Scenarios = []ScenarioContext{{
+		ID: "go-default", Name: "Different build",
+		Build: evidence.BuildContext{GOOS: "linux", GOARCH: "amd64"},
+	}}
+	bundle.Relations = append(bundle.Relations, conflict)
+	if err := bundle.Validate(); err == nil || !strings.Contains(err.Error(), "conflicting definitions") {
+		t.Fatalf("Validate() error = %v, want scenario identity conflict", err)
+	}
+}
+
 func TestApplyPreservesCandidatesOmittedByProposal(t *testing.T) {
 	t.Parallel()
 
@@ -213,6 +350,7 @@ func TestFallbackIsDeterministicAcrossCandidateOrder(t *testing.T) {
 
 func landscapeTestBundle() CandidateBundle {
 	packageID := testMemberID(MemberPackage, "repo")
+	commandPackageID := testMemberID(MemberPackage, "cmd")
 	entrypointID := testMemberID(MemberEntrypoint, "backup-command")
 	flowID := FlowID("backup")
 	return CandidateBundle{
@@ -223,22 +361,55 @@ func landscapeTestBundle() CandidateBundle {
 		}},
 		Candidates: []Candidate{
 			{
+				ID: commandPackageID, Name: "command package",
+				Facts: []LocalFact{testLocalFact(FactDeclaration, "github.com/example/cmd", "cmd/main.go", 1)},
+			},
+			{
 				ID: packageID, Name: "repository package",
 				Facts: []LocalFact{testLocalFact(FactDeclaration, "github.com/example/repository", "repository.go", 1)},
 			},
 			{
-				ID: testMemberID(MemberFile, "repo-file"), Name: "repository.go", ParentID: &packageID, FlowIDs: []FlowID{flowID},
-				Facts: []LocalFact{testLocalFact(FactRepositoryPath, "repository.go", "repository.go", 1)},
+				ID: testMemberID(MemberFile, "repo-file"), Name: "repository.go", ParentID: &packageID,
+				Participations: []FlowParticipation{testFlowParticipation(flowID, "repository.go", 1)},
+				Facts:          []LocalFact{testLocalFact(FactRepositoryPath, "repository.go", "repository.go", 1)},
 			},
 			{
-				ID: entrypointID, Name: "backup command", FlowIDs: []FlowID{flowID},
-				Facts: []LocalFact{testLocalFact(FactDeclaration, "runBackup", "cmd/backup.go", 20)},
+				ID: entrypointID, Name: "backup command", ParentID: &commandPackageID,
+				Participations: []FlowParticipation{testFlowParticipation(flowID, "cmd/backup.go", 20)},
+				Facts:          []LocalFact{testLocalFact(FactDeclaration, "runBackup", "cmd/backup.go", 20)},
 			},
 			{
-				ID: testMemberID(MemberFlow, "backup-flow"), Name: "backup", FlowIDs: []FlowID{flowID},
-				Facts: []LocalFact{testLocalFact(FactFlowParticipation, "backup", "cmd/backup.go", 20)},
+				ID: testMemberID(MemberFlow, "backup-flow"), Name: "backup",
+				Participations: []FlowParticipation{testFlowParticipation(flowID, "cmd/backup.go", 20)},
+				Facts:          []LocalFact{testLocalFact(FactFlowParticipation, "backup", "cmd/backup.go", 20)},
 			},
 		},
+		Relations: []LocalRelation{{
+			ID: "cmd-imports-repo", From: commandPackageID, To: packageID,
+			Kind: StructuralRelationPackageImport, Certainty: evidence.CertaintyStatic,
+			Provenance: []evidence.Provenance{{
+				Provider: "go_list", Version: "fixture-v1", Operation: "list_package_imports",
+			}},
+			Scenarios: []ScenarioContext{{
+				ID: "go-default", Name: "Default Go build",
+				Build: evidence.BuildContext{GOOS: "darwin", GOARCH: "amd64"},
+			}},
+		}},
+		AnchorBindings: []FlowAnchorBinding{{
+			FlowID: flowID, AnchorID: "run-backup", MemberID: entrypointID,
+			Location:  &evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+			Certainty: evidence.CertaintyStatic,
+			Provenance: []evidence.Provenance{{
+				Provider: "fixture", Version: "v1", Operation: "bind_flow_anchor",
+			}},
+		}},
+	}
+}
+
+func testFlowParticipation(flowID FlowID, path string, line int) FlowParticipation {
+	return FlowParticipation{
+		FlowID:   flowID,
+		Evidence: testLocalFact(FactFlowParticipation, string(flowID), path, line),
 	}
 }
 

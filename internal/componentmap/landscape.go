@@ -15,18 +15,24 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion = 1
+	ContractVersion = 2
 
-	maxCandidates          = 512
-	maxFlows               = 64
-	maxFactsPerCandidate   = 16
-	maxFlowIDsPerCandidate = 16
-	maxSubsystems          = 16
-	maxComponents          = 32
-	maxNameBytes           = 256
-	maxDescriptionBytes    = 1_024
-	maxOpaqueIDBytes       = 128
-	maxFactValueBytes      = 2_048
+	maxCandidates        = 512
+	maxFlows             = 64
+	maxRelations         = 1_024
+	maxAnchorBindings    = 2_048
+	maxFactsPerCandidate = 16
+	maxFlowsPerCandidate = 16
+	maxSubsystems        = 16
+	maxComponents        = 32
+	maxProvenanceItems   = 8
+	maxScenarioContexts  = 8
+	maxNameBytes         = 256
+	maxDescriptionBytes  = 1_024
+	maxOpaqueIDBytes     = 128
+	maxFactValueBytes    = 2_048
+	maxPathBytes         = 4_096
+	maxProvenanceBytes   = 1_024
 )
 
 // MemberKind gives an opaque ID enough local type information to prevent a
@@ -95,14 +101,21 @@ type LocalFact struct {
 	Provenance []evidence.Provenance `json:"provenance"`
 }
 
-// Candidate is one exact, locally known landscape member. ParentID and FlowIDs
-// are bounded grouping inputs, not inferred architectural edges.
+// FlowParticipation ties a candidate to an exact saved flow through a local
+// fact. A bare flow ID is deliberately insufficient for highlighting.
+type FlowParticipation struct {
+	FlowID   FlowID    `json:"flow_id"`
+	Evidence LocalFact `json:"evidence"`
+}
+
+// Candidate is one exact, locally known landscape member. ParentID and
+// Participations are bounded grouping inputs, not inferred architectural edges.
 type Candidate struct {
-	ID       MemberID    `json:"id"`
-	Name     string      `json:"name"`
-	ParentID *MemberID   `json:"parent_id,omitempty"`
-	FlowIDs  []FlowID    `json:"flow_ids,omitempty"`
-	Facts    []LocalFact `json:"facts"`
+	ID             MemberID            `json:"id"`
+	Name           string              `json:"name"`
+	ParentID       *MemberID           `json:"parent_id,omitempty"`
+	Participations []FlowParticipation `json:"flow_participations,omitempty"`
+	Facts          []LocalFact         `json:"facts"`
 }
 
 // Flow records the exact local flow identity used by candidate participation.
@@ -112,12 +125,58 @@ type Flow struct {
 	Facts []LocalFact `json:"facts"`
 }
 
+// StructuralRelationKind is intentionally smaller than the runtime relation
+// vocabulary. Flow transitions remain owned by FlowProof.
+type StructuralRelationKind string
+
+const StructuralRelationPackageImport StructuralRelationKind = "package_import"
+
+func (kind StructuralRelationKind) valid() bool {
+	return kind == StructuralRelationPackageImport
+}
+
+// ScenarioContext is the non-secret build context retained with a local
+// structural witness. Environment values are intentionally excluded.
+type ScenarioContext struct {
+	ID    string                `json:"id"`
+	Name  string                `json:"name"`
+	Build evidence.BuildContext `json:"build,omitempty"`
+}
+
+// LocalRelation is one component-specific structural witness between exact
+// local members. Conceptual synthesis receives it but cannot modify it.
+type LocalRelation struct {
+	ID         string                 `json:"id"`
+	From       MemberID               `json:"from"`
+	To         MemberID               `json:"to"`
+	Kind       StructuralRelationKind `json:"kind"`
+	Location   *evidence.Location     `json:"location,omitempty"`
+	Certainty  evidence.Certainty     `json:"certainty"`
+	Provenance []evidence.Provenance  `json:"provenance"`
+	Scenarios  []ScenarioContext      `json:"scenarios,omitempty"`
+}
+
+// FlowAnchorBinding is the exact typed join from a saved FlowProof anchor to
+// one local landscape member. Presentation must not replace it with path
+// coincidence.
+type FlowAnchorBinding struct {
+	FlowID     FlowID                `json:"flow_id"`
+	AnchorID   string                `json:"anchor_id"`
+	MemberID   MemberID              `json:"member_id"`
+	Location   *evidence.Location    `json:"location,omitempty"`
+	Certainty  evidence.Certainty    `json:"certainty"`
+	Provenance []evidence.Provenance `json:"provenance"`
+	Scenarios  []ScenarioContext     `json:"scenarios,omitempty"`
+}
+
 // CandidateBundle is the bounded, versioned input to conceptual synthesis.
 // It contains no coordinates and gives a proposal no authority over evidence.
 type CandidateBundle struct {
-	Version    int         `json:"version"`
-	Candidates []Candidate `json:"candidates"`
-	Flows      []Flow      `json:"flows,omitempty"`
+	Version        int                 `json:"version"`
+	Candidates     []Candidate         `json:"candidates"`
+	Flows          []Flow              `json:"flows,omitempty"`
+	Relations      []LocalRelation     `json:"relations,omitempty"`
+	AnchorBindings []FlowAnchorBinding `json:"flow_anchor_bindings,omitempty"`
 }
 
 // Proposal contains the complete provider authority: wording, membership, and
@@ -165,15 +224,25 @@ type Diagnostic struct {
 	Member  *MemberID `json:"member,omitempty"`
 }
 
+type FallbackReason string
+
+const (
+	FallbackProposalInvalid      FallbackReason = "proposal_invalid_or_empty"
+	FallbackModelDisabled        FallbackReason = "model_disabled"
+	FallbackProviderUnconfigured FallbackReason = "provider_not_configured"
+)
+
 // Landscape is the locally validated conceptual membership result. Fallback
 // is explicit so presentation never mistakes deterministic grouping for a
 // provider-authored architecture claim.
 type Landscape struct {
-	Version        int          `json:"version"`
-	Subsystems     []Subsystem  `json:"subsystems"`
-	Diagnostics    []Diagnostic `json:"diagnostics,omitempty"`
-	Fallback       bool         `json:"fallback"`
-	FallbackReason string       `json:"fallback_reason,omitempty"`
+	Version        int                 `json:"version"`
+	Subsystems     []Subsystem         `json:"subsystems"`
+	Relations      []LocalRelation     `json:"relations,omitempty"`
+	AnchorBindings []FlowAnchorBinding `json:"flow_anchor_bindings,omitempty"`
+	Diagnostics    []Diagnostic        `json:"diagnostics,omitempty"`
+	Fallback       bool                `json:"fallback"`
+	FallbackReason FallbackReason      `json:"fallback_reason,omitempty"`
 }
 
 // Apply validates a proposal against exact local candidates. Unknown IDs are
@@ -189,8 +258,26 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		landscape = deterministicFallback(bundle)
 		landscape.Diagnostics = diagnostics
 		landscape.Fallback = true
-		landscape.FallbackReason = "proposal_invalid_or_empty"
+		landscape.FallbackReason = FallbackProposalInvalid
 	}
+	if err := landscape.Validate(bundle); err != nil {
+		return Landscape{}, err
+	}
+	return landscape, nil
+}
+
+// Deterministic builds a usable landscape without treating an intentionally
+// absent provider as malformed provider output.
+func Deterministic(bundle CandidateBundle, reason FallbackReason) (Landscape, error) {
+	if err := bundle.Validate(); err != nil {
+		return Landscape{}, err
+	}
+	if reason != FallbackModelDisabled && reason != FallbackProviderUnconfigured {
+		return Landscape{}, fmt.Errorf("componentmap: invalid deterministic fallback reason %q", reason)
+	}
+	landscape := deterministicFallback(bundle)
+	landscape.Fallback = true
+	landscape.FallbackReason = reason
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
 	}
@@ -209,6 +296,12 @@ func (bundle CandidateBundle) Validate() error {
 	}
 	if len(bundle.Flows) > maxFlows {
 		return fmt.Errorf("componentmap: candidate bundle exceeds %d flows", maxFlows)
+	}
+	if len(bundle.Relations) > maxRelations {
+		return fmt.Errorf("componentmap: candidate bundle exceeds %d structural relations", maxRelations)
+	}
+	if len(bundle.AnchorBindings) > maxAnchorBindings {
+		return fmt.Errorf("componentmap: candidate bundle exceeds %d flow-anchor bindings", maxAnchorBindings)
 	}
 
 	flowIDs := make(map[FlowID]struct{}, len(bundle.Flows))
@@ -241,17 +334,57 @@ func (bundle CandidateBundle) Validate() error {
 				return fmt.Errorf("componentmap: member %q has unknown parent", candidate.ID.key())
 			}
 		}
-		for _, flowID := range candidate.FlowIDs {
-			if _, exists := flowIDs[flowID]; !exists {
-				return fmt.Errorf("componentmap: member %q references unknown flow %q", candidate.ID.key(), flowID)
+		for _, participation := range candidate.Participations {
+			if _, exists := flowIDs[participation.FlowID]; !exists {
+				return fmt.Errorf("componentmap: member %q references unknown flow %q", candidate.ID.key(), participation.FlowID)
 			}
 		}
-		if candidate.ID.Kind == MemberFlow && len(candidate.FlowIDs) != 1 {
+		if candidate.ID.Kind == MemberFlow && len(candidate.Participations) != 1 {
 			return fmt.Errorf("componentmap: flow member %q must reference exactly one flow", candidate.ID.key())
 		}
 	}
 	if err := validateParentCycles(bundle.Candidates, members); err != nil {
 		return err
+	}
+	relationIDs := make(map[string]struct{}, len(bundle.Relations))
+	relationWitnesses := make(map[string]struct{}, len(bundle.Relations))
+	scenarioDefinitions := make(map[string]ScenarioContext)
+	for index, relation := range bundle.Relations {
+		if err := validateLocalRelation(relation, members); err != nil {
+			return fmt.Errorf("componentmap: relations[%d]: %w", index, err)
+		}
+		if _, duplicate := relationIDs[relation.ID]; duplicate {
+			return fmt.Errorf("componentmap: duplicate structural relation id %q", relation.ID)
+		}
+		relationIDs[relation.ID] = struct{}{}
+		witnessKey := relation.From.key() + "\x00" + relation.To.key() + "\x00" + string(relation.Kind)
+		if _, duplicate := relationWitnesses[witnessKey]; duplicate {
+			return fmt.Errorf("componentmap: duplicate structural relation witness")
+		}
+		relationWitnesses[witnessKey] = struct{}{}
+		for _, scenario := range relation.Scenarios {
+			if previous, exists := scenarioDefinitions[scenario.ID]; exists && !reflect.DeepEqual(previous, scenario) {
+				return fmt.Errorf("componentmap: scenario %q has conflicting definitions", scenario.ID)
+			}
+			scenarioDefinitions[scenario.ID] = scenario
+		}
+	}
+	anchorBindings := make(map[string]struct{}, len(bundle.AnchorBindings))
+	for index, binding := range bundle.AnchorBindings {
+		if err := validateFlowAnchorBinding(binding, members, flowIDs); err != nil {
+			return fmt.Errorf("componentmap: flow_anchor_bindings[%d]: %w", index, err)
+		}
+		key := string(binding.FlowID) + "\x00" + binding.AnchorID
+		if _, duplicate := anchorBindings[key]; duplicate {
+			return fmt.Errorf("componentmap: duplicate binding for flow anchor")
+		}
+		anchorBindings[key] = struct{}{}
+		for _, scenario := range binding.Scenarios {
+			if previous, exists := scenarioDefinitions[scenario.ID]; exists && !reflect.DeepEqual(previous, scenario) {
+				return fmt.Errorf("componentmap: scenario %q has conflicting definitions", scenario.ID)
+			}
+			scenarioDefinitions[scenario.ID] = scenario
+		}
 	}
 	return nil
 }
@@ -264,6 +397,25 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	}
 	if landscape.Version != ContractVersion {
 		return fmt.Errorf("componentmap: unsupported landscape version %d", landscape.Version)
+	}
+	if landscape.Fallback && landscape.FallbackReason != FallbackProposalInvalid &&
+		landscape.FallbackReason != FallbackModelDisabled &&
+		landscape.FallbackReason != FallbackProviderUnconfigured {
+		return fmt.Errorf("componentmap: fallback landscape has unsupported or missing reason")
+	}
+	if !landscape.Fallback && landscape.FallbackReason != "" {
+		return fmt.Errorf("componentmap: non-fallback landscape carries a fallback reason")
+	}
+	if !reflect.DeepEqual(landscape.Relations, bundle.Relations) {
+		return fmt.Errorf("componentmap: landscape changed local structural relations")
+	}
+	if !reflect.DeepEqual(landscape.AnchorBindings, bundle.AnchorBindings) {
+		return fmt.Errorf("componentmap: landscape changed local flow-anchor bindings")
+	}
+	for index, diagnostic := range landscape.Diagnostics {
+		if err := validateDiagnostic(diagnostic); err != nil {
+			return fmt.Errorf("componentmap: diagnostics[%d]: %w", index, err)
+		}
 	}
 	if len(landscape.Subsystems) == 0 || len(landscape.Subsystems) > maxSubsystems {
 		return fmt.Errorf("componentmap: landscape subsystem count is out of bounds")
@@ -348,10 +500,41 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.invalid_subsystem_count", "proposal has no subsystems or exceeds the subsystem limit")
 		return Landscape{}, diagnostics, false
 	}
+	memberReferenceCount := 0
+	componentReferenceCount := 0
+	for _, subsystem := range proposal.Subsystems {
+		for _, component := range subsystem.Components {
+			componentReferenceCount++
+			if componentReferenceCount > maxComponents {
+				invalid("proposal.invalid_component_count", "proposal exceeds the component limit")
+				return Landscape{}, diagnostics, false
+			}
+			if len(component.MemberIDs) > maxCandidates {
+				invalid("proposal.invalid_members", "proposal membership exceeds the candidate limit")
+				return Landscape{}, diagnostics, false
+			}
+			memberReferenceCount += len(component.MemberIDs)
+			if memberReferenceCount > maxCandidates {
+				invalid("proposal.invalid_members", "proposal membership exceeds the candidate limit")
+				return Landscape{}, diagnostics, false
+			}
+			for _, memberID := range component.MemberIDs {
+				if validateMemberID(memberID) != nil {
+					invalid("proposal.invalid_member_id", "proposal contains a malformed member id")
+					return Landscape{}, diagnostics, false
+				}
+			}
+		}
+	}
 
 	known := candidateIndex(bundle)
 	seenMembers := make(map[MemberID]struct{})
-	landscape := Landscape{Version: ContractVersion, Subsystems: make([]Subsystem, 0, len(proposal.Subsystems))}
+	landscape := Landscape{
+		Version:        ContractVersion,
+		Subsystems:     make([]Subsystem, 0, len(proposal.Subsystems)),
+		Relations:      cloneLocalRelations(bundle.Relations),
+		AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+	}
 	componentCount := 0
 	for _, proposedSubsystem := range proposal.Subsystems {
 		name := strings.TrimSpace(proposedSubsystem.Name)
@@ -509,7 +692,10 @@ func deterministicFallback(bundle CandidateBundle) Landscape {
 			Description: "Deterministic local " + category + " landscape.", Components: components,
 		})
 	}
-	return Landscape{Version: ContractVersion, Subsystems: subsystems}
+	return Landscape{
+		Version: ContractVersion, Subsystems: subsystems,
+		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+	}
 }
 
 func fallbackBasis(candidate Candidate, known map[MemberID]Candidate, flowNames map[FlowID]string) (string, string, string) {
@@ -530,8 +716,11 @@ func fallbackBasis(candidate Candidate, known map[MemberID]Candidate, flowNames 
 		category := string(root.ID.Kind)
 		return category + ":" + root.ID.key(), category, root.Name
 	}
-	if len(candidate.FlowIDs) > 0 {
-		flowIDs := append([]FlowID(nil), candidate.FlowIDs...)
+	if len(candidate.Participations) > 0 {
+		flowIDs := make([]FlowID, len(candidate.Participations))
+		for index, participation := range candidate.Participations {
+			flowIDs[index] = participation.FlowID
+		}
 		sort.Slice(flowIDs, func(i, j int) bool { return flowIDs[i] < flowIDs[j] })
 		flowID := flowIDs[0]
 		name := flowNames[flowID]
@@ -612,18 +801,32 @@ func validateCandidate(candidate Candidate) error {
 			return fmt.Errorf("facts[%d]: %w", index, err)
 		}
 	}
-	if len(candidate.FlowIDs) > maxFlowIDsPerCandidate {
-		return fmt.Errorf("candidate flow id count exceeds %d", maxFlowIDsPerCandidate)
+	if len(candidate.Participations) > maxFlowsPerCandidate {
+		return fmt.Errorf("candidate flow participation count exceeds %d", maxFlowsPerCandidate)
 	}
-	seenFlows := make(map[FlowID]struct{}, len(candidate.FlowIDs))
-	for _, flowID := range candidate.FlowIDs {
-		if err := validateOpaqueText("flow id", string(flowID), maxOpaqueIDBytes); err != nil {
+	seenFlows := make(map[FlowID]struct{}, len(candidate.Participations))
+	for index, participation := range candidate.Participations {
+		if err := validateOpaqueText("flow id", string(participation.FlowID), maxOpaqueIDBytes); err != nil {
 			return err
 		}
-		if _, exists := seenFlows[flowID]; exists {
-			return fmt.Errorf("candidate repeats flow id %q", flowID)
+		if _, exists := seenFlows[participation.FlowID]; exists {
+			return fmt.Errorf("candidate repeats flow id %q", participation.FlowID)
 		}
-		seenFlows[flowID] = struct{}{}
+		seenFlows[participation.FlowID] = struct{}{}
+		if participation.Evidence.Kind != FactFlowParticipation {
+			return fmt.Errorf("flow participation[%d] is not backed by a flow-participation fact", index)
+		}
+		if participation.Evidence.Value != string(participation.FlowID) {
+			return fmt.Errorf("flow participation[%d] evidence does not identify its typed flow", index)
+		}
+		if err := validateFact(participation.Evidence); err != nil {
+			return fmt.Errorf("flow participation[%d]: %w", index, err)
+		}
+		if participation.Evidence.Certainty != evidence.CertaintyStatic &&
+			participation.Evidence.Certainty != evidence.CertaintyObserved &&
+			participation.Evidence.Certainty != evidence.CertaintyVerified {
+			return fmt.Errorf("flow participation[%d] is not locally grounded", index)
+		}
 	}
 	return nil
 }
@@ -656,16 +859,226 @@ func validateFact(fact LocalFact) error {
 	if !fact.Certainty.Valid() {
 		return fmt.Errorf("invalid fact certainty %q", fact.Certainty)
 	}
-	if len(fact.Provenance) == 0 {
-		return fmt.Errorf("fact has no provenance")
+	if len(fact.Provenance) == 0 || len(fact.Provenance) > maxProvenanceItems {
+		return fmt.Errorf("fact provenance count is out of bounds")
 	}
 	for index, provenance := range fact.Provenance {
-		if strings.TrimSpace(provenance.Provider) == "" || strings.TrimSpace(provenance.Operation) == "" {
-			return fmt.Errorf("fact provenance[%d] is incomplete", index)
+		if err := validateProvenance(provenance); err != nil {
+			return fmt.Errorf("fact provenance[%d]: %w", index, err)
 		}
 	}
-	if fact.Location != nil && strings.TrimSpace(fact.Location.Path) == "" {
-		return fmt.Errorf("fact location has no path")
+	if fact.Location != nil {
+		if err := validateLocation(*fact.Location); err != nil {
+			return fmt.Errorf("fact location: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateLocalRelation(relation LocalRelation, known map[MemberID]Candidate) error {
+	if err := validateOpaqueText("relation id", relation.ID, maxOpaqueIDBytes); err != nil {
+		return err
+	}
+	if err := validateMemberID(relation.From); err != nil {
+		return fmt.Errorf("source member: %w", err)
+	}
+	if err := validateMemberID(relation.To); err != nil {
+		return fmt.Errorf("target member: %w", err)
+	}
+	if relation.From == relation.To {
+		return fmt.Errorf("structural relation is self-referential")
+	}
+	if _, exists := known[relation.From]; !exists {
+		return fmt.Errorf("structural relation has unknown source member")
+	}
+	if _, exists := known[relation.To]; !exists {
+		return fmt.Errorf("structural relation has unknown target member")
+	}
+	if !relation.Kind.valid() {
+		return fmt.Errorf("invalid structural relation kind %q", relation.Kind)
+	}
+	if relation.Kind == StructuralRelationPackageImport &&
+		(relation.From.Kind != MemberPackage || relation.To.Kind != MemberPackage) {
+		return fmt.Errorf("package-import relation endpoints must be package members")
+	}
+	if relation.Certainty != evidence.CertaintyStatic &&
+		relation.Certainty != evidence.CertaintyObserved &&
+		relation.Certainty != evidence.CertaintyVerified {
+		return fmt.Errorf("structural relation certainty %q is not locally grounded", relation.Certainty)
+	}
+	if len(relation.Provenance) == 0 || len(relation.Provenance) > maxProvenanceItems {
+		return fmt.Errorf("structural relation provenance count is out of bounds")
+	}
+	for index, provenance := range relation.Provenance {
+		if err := validateProvenance(provenance); err != nil {
+			return fmt.Errorf("provenance[%d]: %w", index, err)
+		}
+	}
+	if relation.Location != nil {
+		if err := validateLocation(*relation.Location); err != nil {
+			return fmt.Errorf("location: %w", err)
+		}
+	}
+	if len(relation.Scenarios) == 0 || len(relation.Scenarios) > maxScenarioContexts {
+		return fmt.Errorf("structural relation scenario count is out of bounds")
+	}
+	seenScenarios := make(map[string]struct{}, len(relation.Scenarios))
+	for index, scenario := range relation.Scenarios {
+		if err := validateScenarioContext(scenario); err != nil {
+			return fmt.Errorf("scenarios[%d]: %w", index, err)
+		}
+		if _, duplicate := seenScenarios[scenario.ID]; duplicate {
+			return fmt.Errorf("duplicate scenario %q", scenario.ID)
+		}
+		seenScenarios[scenario.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateFlowAnchorBinding(
+	binding FlowAnchorBinding,
+	known map[MemberID]Candidate,
+	flowIDs map[FlowID]struct{},
+) error {
+	if err := validateOpaqueText("flow id", string(binding.FlowID), maxOpaqueIDBytes); err != nil {
+		return err
+	}
+	if _, exists := flowIDs[binding.FlowID]; !exists {
+		return fmt.Errorf("binding references unknown flow")
+	}
+	if err := validateOpaqueText("anchor id", binding.AnchorID, maxOpaqueIDBytes); err != nil {
+		return err
+	}
+	if err := validateMemberID(binding.MemberID); err != nil {
+		return fmt.Errorf("member: %w", err)
+	}
+	candidate, exists := known[binding.MemberID]
+	if !exists {
+		return fmt.Errorf("binding references unknown member")
+	}
+	if !candidateParticipatesIn(candidate, binding.FlowID) {
+		return fmt.Errorf("bound member has no witnessed participation in the flow")
+	}
+	if binding.Certainty != evidence.CertaintyStatic &&
+		binding.Certainty != evidence.CertaintyObserved &&
+		binding.Certainty != evidence.CertaintyVerified {
+		return fmt.Errorf("binding certainty %q is not locally grounded", binding.Certainty)
+	}
+	if len(binding.Provenance) == 0 || len(binding.Provenance) > maxProvenanceItems {
+		return fmt.Errorf("binding provenance count is out of bounds")
+	}
+	for index, provenance := range binding.Provenance {
+		if err := validateProvenance(provenance); err != nil {
+			return fmt.Errorf("provenance[%d]: %w", index, err)
+		}
+	}
+	if binding.Location != nil {
+		if err := validateLocation(*binding.Location); err != nil {
+			return fmt.Errorf("location: %w", err)
+		}
+	}
+	if len(binding.Scenarios) > maxScenarioContexts {
+		return fmt.Errorf("binding scenario count exceeds %d", maxScenarioContexts)
+	}
+	for index, scenario := range binding.Scenarios {
+		if err := validateScenarioContext(scenario); err != nil {
+			return fmt.Errorf("scenarios[%d]: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func candidateParticipatesIn(candidate Candidate, flowID FlowID) bool {
+	for _, participation := range candidate.Participations {
+		if participation.FlowID == flowID {
+			return true
+		}
+	}
+	return false
+}
+
+func validateProvenance(provenance evidence.Provenance) error {
+	if err := validateDisplayText("provider", provenance.Provider, maxProvenanceBytes, true); err != nil {
+		return err
+	}
+	if err := validateDisplayText("version", provenance.Version, maxProvenanceBytes, false); err != nil {
+		return err
+	}
+	if err := validateDisplayText("operation", provenance.Operation, maxProvenanceBytes, true); err != nil {
+		return err
+	}
+	if err := validateDisplayText("detail", provenance.Detail, maxProvenanceBytes, false); err != nil {
+		return err
+	}
+	if provenance.Location != nil {
+		if err := validateLocation(*provenance.Location); err != nil {
+			return fmt.Errorf("location: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateScenarioContext(scenario ScenarioContext) error {
+	if err := validateOpaqueText("scenario id", scenario.ID, maxOpaqueIDBytes); err != nil {
+		return err
+	}
+	if err := validateDisplayText("scenario name", scenario.Name, maxNameBytes, true); err != nil {
+		return err
+	}
+	if scenario.Build.GOOS != "" {
+		if err := validateOpaqueText("scenario GOOS", scenario.Build.GOOS, maxOpaqueIDBytes); err != nil {
+			return err
+		}
+	}
+	if scenario.Build.GOARCH != "" {
+		if err := validateOpaqueText("scenario GOARCH", scenario.Build.GOARCH, maxOpaqueIDBytes); err != nil {
+			return err
+		}
+	}
+	if len(scenario.Build.BuildTags) > 32 {
+		return fmt.Errorf("scenario has too many build tags")
+	}
+	for _, tag := range scenario.Build.BuildTags {
+		if err := validateOpaqueText("build tag", tag, maxOpaqueIDBytes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateLocation(location evidence.Location) error {
+	if err := validateDisplayText("path", location.Path, maxPathBytes, true); err != nil {
+		return err
+	}
+	if location.Line < 0 || location.Column < 0 || location.EndLine < 0 || location.EndColumn < 0 {
+		return fmt.Errorf("source coordinates are invalid")
+	}
+	if location.Line == 0 {
+		if location.Column != 0 || location.EndLine != 0 || location.EndColumn != 0 {
+			return fmt.Errorf("path-only evidence cannot carry partial coordinates")
+		}
+		return nil
+	}
+	if location.EndLine > 0 && location.EndLine < location.Line {
+		return fmt.Errorf("source range ends before it starts")
+	}
+	if location.EndLine == 0 && location.EndColumn != 0 {
+		return fmt.Errorf("source range has an end column without an end line")
+	}
+	return nil
+}
+
+func validateDiagnostic(diagnostic Diagnostic) error {
+	if err := validateOpaqueText("diagnostic code", diagnostic.Code, maxOpaqueIDBytes); err != nil {
+		return err
+	}
+	if err := validateDisplayText("diagnostic message", diagnostic.Message, maxDescriptionBytes, true); err != nil {
+		return err
+	}
+	if diagnostic.Member != nil {
+		if err := validateMemberID(*diagnostic.Member); err != nil {
+			return fmt.Errorf("diagnostic member: %w", err)
+		}
 	}
 	return nil
 }
@@ -695,6 +1108,11 @@ func validateDisplayText(field, value string, limit int, required bool) error {
 	}
 	if required && value == "" {
 		return fmt.Errorf("%s is empty", field)
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return fmt.Errorf("%s contains control characters", field)
+		}
 	}
 	return nil
 }
@@ -728,21 +1146,92 @@ func cloneCandidate(candidate Candidate) Candidate {
 		parentID := *candidate.ParentID
 		cloned.ParentID = &parentID
 	}
-	cloned.FlowIDs = append([]FlowID(nil), candidate.FlowIDs...)
+	if len(candidate.Participations) > 0 {
+		cloned.Participations = make([]FlowParticipation, len(candidate.Participations))
+		for index, participation := range candidate.Participations {
+			cloned.Participations[index] = FlowParticipation{
+				FlowID:   participation.FlowID,
+				Evidence: cloneLocalFact(participation.Evidence),
+			}
+		}
+	}
 	cloned.Facts = make([]LocalFact, len(candidate.Facts))
 	for index, fact := range candidate.Facts {
-		cloned.Facts[index] = fact
-		if fact.Location != nil {
-			location := *fact.Location
-			cloned.Facts[index].Location = &location
+		cloned.Facts[index] = cloneLocalFact(fact)
+	}
+	return cloned
+}
+
+func cloneLocalFact(fact LocalFact) LocalFact {
+	cloned := fact
+	if fact.Location != nil {
+		location := *fact.Location
+		cloned.Location = &location
+	}
+	cloned.Provenance = append([]evidence.Provenance(nil), fact.Provenance...)
+	for index, provenance := range cloned.Provenance {
+		if provenance.Location == nil {
+			continue
 		}
-		cloned.Facts[index].Provenance = append([]evidence.Provenance(nil), fact.Provenance...)
-		for provenanceIndex, provenance := range cloned.Facts[index].Provenance {
+		location := *provenance.Location
+		cloned.Provenance[index].Location = &location
+	}
+	return cloned
+}
+
+func cloneLocalRelations(relations []LocalRelation) []LocalRelation {
+	if relations == nil {
+		return nil
+	}
+	cloned := make([]LocalRelation, len(relations))
+	for index, relation := range relations {
+		cloned[index] = relation
+		if relation.Location != nil {
+			location := *relation.Location
+			cloned[index].Location = &location
+		}
+		cloned[index].Provenance = append([]evidence.Provenance(nil), relation.Provenance...)
+		for provenanceIndex, provenance := range cloned[index].Provenance {
 			if provenance.Location == nil {
 				continue
 			}
 			location := *provenance.Location
-			cloned.Facts[index].Provenance[provenanceIndex].Location = &location
+			cloned[index].Provenance[provenanceIndex].Location = &location
+		}
+		cloned[index].Scenarios = append([]ScenarioContext(nil), relation.Scenarios...)
+		for scenarioIndex := range cloned[index].Scenarios {
+			cloned[index].Scenarios[scenarioIndex].Build.BuildTags = append(
+				[]string(nil), relation.Scenarios[scenarioIndex].Build.BuildTags...,
+			)
+		}
+	}
+	return cloned
+}
+
+func cloneFlowAnchorBindings(bindings []FlowAnchorBinding) []FlowAnchorBinding {
+	if bindings == nil {
+		return nil
+	}
+	cloned := make([]FlowAnchorBinding, len(bindings))
+	for index, binding := range bindings {
+		cloned[index] = binding
+		if binding.Location != nil {
+			location := *binding.Location
+			cloned[index].Location = &location
+		}
+		cloned[index].Provenance = append([]evidence.Provenance(nil), binding.Provenance...)
+		for provenanceIndex, provenance := range cloned[index].Provenance {
+			if provenance.Location == nil {
+				continue
+			}
+			location := *provenance.Location
+			cloned[index].Provenance[provenanceIndex].Location = &location
+		}
+		cloned[index].Scenarios = append([]ScenarioContext(nil), binding.Scenarios...)
+		for scenarioIndex := range cloned[index].Scenarios {
+			cloned[index].Scenarios[scenarioIndex].Build.BuildTags = append(
+				[]string(nil), binding.Scenarios[scenarioIndex].Build.BuildTags...,
+			)
 		}
 	}
 	return cloned
