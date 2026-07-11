@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
@@ -49,13 +50,22 @@ type flowEdge struct {
 }
 
 type CandidateFlow struct {
-	Name             string   `json:"name"`
-	Trigger          string   `json:"trigger"`
-	LikelyEntrypoint string   `json:"likely_entrypoint"`
-	LikelyFiles      []string `json:"likely_files"`
-	WhyInteresting   string   `json:"why_interesting"`
-	Evidence         []string `json:"evidence"`
-	Confidence       float64  `json:"confidence"`
+	Name              string             `json:"name"`
+	Trigger           string             `json:"trigger"`
+	LikelyEntrypoint  string             `json:"likely_entrypoint"`
+	LikelyFiles       []string           `json:"likely_files"`
+	WhyInteresting    string             `json:"why_interesting"`
+	Evidence          []string           `json:"evidence"`
+	Confidence        float64            `json:"confidence"`
+	LocalVerification *FlowVerification  `json:"local_verification,omitempty"`
+	LocalProof        *flowproof.Session `json:"local_proof,omitempty"`
+}
+
+type FlowVerification struct {
+	Status        string   `json:"status"`
+	ConfidenceCap float64  `json:"confidence_cap"`
+	Verified      []string `json:"verified,omitempty"`
+	Missing       []string `json:"missing,omitempty"`
 }
 
 var ignoredTerms = map[string]bool{
