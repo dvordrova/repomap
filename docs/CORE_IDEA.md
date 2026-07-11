@@ -13,6 +13,9 @@ The proposed shared investigation workflow is documented in
 gaps and experiment follow-ups are tracked in
 [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
 
+For a current/planned module map and independently runnable challenge points,
+read [SYSTEM_MAP.md](SYSTEM_MAP.md).
+
 ## Pipeline
 
 ### 1. Deterministic local extraction
