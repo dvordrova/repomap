@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -24,6 +27,52 @@ type architectureSynthesisOutcome struct {
 	InputBytes     int
 	LatencyMillis  int64
 	FallbackReason componentmap.FallbackReason
+}
+
+func synthesizeArchitectureForRun(
+	ctx context.Context,
+	runDir string,
+	repositoryPath string,
+	stderr io.Writer,
+) error {
+	state, err := freshness.CaptureRepository(ctx, repositoryPath)
+	if err != nil {
+		return fmt.Errorf("architecture synthesis: capture repository revision: %w", err)
+	}
+	revision, err := state.Digest()
+	if err != nil {
+		return fmt.Errorf("architecture synthesis: repository revision: %w", err)
+	}
+	client, err := deepseek.NewFromEnv()
+	if err != nil {
+		return fmt.Errorf("architecture synthesis: provider configuration: %w", err)
+	}
+	outcome, err := prepareArchitectureSynthesis(
+		ctx,
+		runDir,
+		revision,
+		"openai-compatible/"+client.Auth,
+		client.Model,
+		client,
+	)
+	if err != nil {
+		return err
+	}
+	cacheLabel := ""
+	if outcome.Cached {
+		cacheLabel = ", cached"
+	}
+	fmt.Fprintf(
+		stderr,
+		"repomap: architecture synthesis %d-byte prompt in %d ms%s\n",
+		outcome.InputBytes,
+		outcome.LatencyMillis,
+		cacheLabel,
+	)
+	if outcome.FallbackReason != "" {
+		fmt.Fprintf(stderr, "warning: architecture synthesis used %s fallback\n", outcome.FallbackReason)
+	}
+	return nil
 }
 
 func prepareArchitectureSynthesis(
