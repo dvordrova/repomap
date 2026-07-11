@@ -4,7 +4,9 @@
 # Build
 repomap
 *.exe
+*.test
 .bin/
+/internal.zip
 
 # Editor
 .idea/
@@ -19,3 +21,4 @@ repomap
 # Repomap artifacts
 tmp/
 .repomap-runs/
+/etcd
