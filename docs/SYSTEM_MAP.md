@@ -9,6 +9,34 @@ questions remain in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), demonstrated debt in
 [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md), and the investigation state machine in
 [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md).
 
+Execution order belongs to [MILESTONES.md](MILESTONES.md). Source-grounded symbol
+understanding is complete; the active milestone is the shared investigation
+loop. Modules and challenge cards below are supporting seams, not competing
+roadmaps.
+
+## Capability cubes
+
+A cube is a typed capability, not a provider wrapper. It has one validated input,
+one validated output, replayable fixtures, and no presentation or orchestration
+state inside it. Cubes are named after outcomes such as `read source`, `assess
+source`, or `find tests`, never after DeepSeek, Ollama, gopls, or a future UI.
+
+| Capability | Input | Output | Current implementation |
+| --- | --- | --- | --- |
+| survey repository | repository request | deterministic snapshot and Go facts | `snapshot`, `gofacts`, `sourcesignals` |
+| resolve symbol | exact symbol request | bounded `symbol.Bundle` | Go/gopls adapter plus local builder |
+| read target source | resolved target | bounded line-addressable source card | local Go source collector |
+| assess source | source assessment bundle | normalized claims, unknowns, action | `sourceexplain.Service` with DeepSeek assessor |
+| find related tests | source report and structural facts | bounded test-reference evidence | gopls reference adapter plus local reducer |
+| present investigation | saved validated state | CLI/browser/editor view | current reports; shared presentation API planned |
+
+The application composition root selects implementations. The default profile
+uses DeepSeek for interpretation capabilities. A future
+`--really-dumb-model` profile can select alternate implementations that split a
+request into smaller calls and use stronger local reducers, while returning the
+same capability output. There is no generic cube registry and no provider-name
+branching inside domain packages.
+
 ## Status legend
 
 | Mark | Meaning |
@@ -32,6 +60,7 @@ questions remain in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), demonstrated debt in
 | Provider experiments | DeepSeek produces useful symbol orientation; tiny Ollama models prove local structured execution but not comparable semantic quality | prompt/Ollama experiment scripts and ignored artifacts |
 | Staged weak-model planning | Qwen 1.5B can reliably select prioritized evidence, a cautious role, and an executable next action when prose is rendered locally | `local-symbol-v2` staged experiment and verifier |
 | Local persistence slice | one symbol neighborhood can be stored, reloaded, replaced, and invalidated by referenced file | `internal/index` |
+| Source-grounded symbol slice | one exact symbol can be read through a bounded lexical card, conservatively assessed by DeepSeek, and connected to provenance-preserving test references | `sourcecard`, `sourceexplain`, `testevidence`, source replay scripts |
 
 These milestones are capabilities, not a claim that they already form one
 cohesive product workflow.
@@ -347,8 +376,9 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C9 — Adaptive context assembly
 
-- State: isolated prototype for name-level symbol evidence; index integration and
-  source evidence remain planned.
+- State: isolated name-level prototype; its `read_target` output now has a
+  working default source-card/assessment capability, while index integration
+  remains planned.
 - Question: can goal-aware selection produce a smaller and more useful request
   than fixed depth/limits?
 - Current experiment: deterministic name preclassification, provenance-aware
@@ -363,7 +393,7 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C10 — Investigation reducer
 
-- State: planned.
+- State: active M2 slice.
 - Question: can explore/symbol/ticket/bug reuse one state transition model?
 - First experiment: pure table test for `goal -> resolve -> evidence -> unsupported
   claim -> request source -> reassess -> stop`.
@@ -374,11 +404,13 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C11 — Source and runtime truth
 
-- State: planned.
+- State: bounded source-supported claims and test-reference navigation work;
+  test-body support and runtime observation remain planned.
 - Question: what evidence is required before promoting “likely validates” into a
   source-, test-, or runtime-supported claim?
-- First experiment: for one chosen symbol only, collect bounded signature,
-  documentation, branches/calls/returns, and related test locations.
+- Current experiment: `kvServer.Put` collects a bounded lexical source window,
+  reconstructs claims only for recognized written shapes, and finds related
+  `_test.go` references without claiming what those tests assert.
 - Pass signal: claims cite source/test evidence IDs; names and static calls alone
   remain navigation hypotheses.
 - Challenge independently: use a deliberately misleading function name and test

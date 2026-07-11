@@ -232,6 +232,55 @@ Precompute a small, versioned catalog for the Go packages most often encountered
 in the example repositories. Measure whether it reduces tokens and latency
 without hiding repository-specific wrappers or control flow.
 
+## 7. Architectural pattern signals
+
+### Reference note: `alexandergrom/go-patterns`
+
+[`alexandergrom/go-patterns`](https://github.com/alexandergrom/go-patterns) is
+useful as a small vocabulary of recognizable code shapes, not as a dependency
+or a source of current Go architecture. It is an educational, class-oriented
+catalog with no module or releases, and its last recorded changes are from 2021.
+
+For repomap's own implementation, the useful ideas are deliberately narrower
+than the named patterns:
+
+- adapters fit gopls, model APIs, and future presentation boundaries, but should
+  remain small consumer-owned interfaces rather than a plugin registry;
+- the CLI/application service can act as a facade over capability cubes without
+  becoming another domain abstraction;
+- strategy is justified only after a second real implementation exists, such as
+  a future dumb-model implementation of the same typed assessment capability;
+- investigation state and commands should remain data plus a pure reducer, not
+  mutable objects with `Execute` methods.
+
+For analysing other applications, treat patterns as **candidate architecture
+signals**, never semantic truth. Useful static shapes include wrappers,
+middleware chains, subscriber notification loops, recursive composites,
+constructor-selected implementations, and visitor-style double dispatch. Some
+names are structurally ambiguous: adapter, decorator, and proxy may all look
+like a wrapper that delegates; strategy and state may both look like an
+interface field with interchangeable implementations. Control flow, source,
+tests, or runtime evidence is needed before assigning intent.
+
+A future optional output can therefore look like:
+
+```text
+kind: wrapper | policy | state_transition | middleware_chain | pubsub | tree | factory
+status: candidate
+evidence_ids: [...]
+confidence: ...
+```
+
+This is a later `architecture_signal` facet, not a new subsystem and not part of
+M1. Do not add detectors until source/test-grounded symbol investigation works
+and the signals can be evaluated on etcd, k6, Prometheus, NATS Server, and
+golangci-lint fixtures.
+
+Do not copy the catalog's singleton/global state, fatal exits in library code,
+OO-heavy builders, `interface{}` iterators, broad interfaces that force no-op
+methods, or observer/chain examples without cancellation, synchronization,
+backpressure, and explicit unhandled/error results.
+
 ## Development checklist
 
 Until these questions are resolved, review material changes against this list:
@@ -242,5 +291,7 @@ Until these questions are resolved, review material changes against this list:
 - Does this analyze the whole repository when an on-demand expansion would work?
 - Does this ask a model to restate stable library knowledge without examining
   the repository-specific integration?
+- Does this label a familiar code shape as a named design pattern without
+  evidence for the author's intent or its runtime role?
 - Does this preserve provenance, build scenario, prompt version, provider/model,
   and evaluator version so an experiment can be reproduced?

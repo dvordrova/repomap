@@ -153,16 +153,19 @@ paths instead of policies over the same evidence loop.
 described in [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md), without changing
 its current evidence guarantees.
 
-### TD-007: Source-supported function understanding is missing
+### TD-007: Test references do not establish test support
 
-**Evidence:** current symbol explanations are based on identity and depth-one
-static calls. A claim such as “validates a request” is still an inference from
-names until source or tests corroborate it.
+**Evidence:** the M1 `find_tests` capability produces bounded gopls locations
+with static provenance and build scenario, but deliberately marks them only as
+`test_reference`. It does not read the test body or determine what is asserted.
 
-**Done when:** a selected Go symbol can produce bounded source evidence for its
-signature, documentation, body-level calls/conditions/returns, referenced local
-types, and relevant test locations. Source-supported claims must cite those
-evidence IDs; the system must not parse every function eagerly.
+**Consequence:** related tests are useful navigation, but no behavioral claim may
+be promoted to `test_supported` from a reference location alone.
+
+**Done when:** an investigation can select one reference, collect bounded test
+source, identify the relevant test/case and assertion with cited evidence IDs,
+and either promote a matching claim or preserve an explicit contradiction or
+unknown. This must remain lazy rather than parsing every test eagerly.
 
 ### TD-008: Local index freshness metadata is not collected automatically
 
