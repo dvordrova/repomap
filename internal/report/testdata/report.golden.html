@@ -60,6 +60,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-direction-hint { color: var(--rm-dim); font-size: .82rem; margin: -.25rem 0 1rem; }
 .rm-candidate-direction { cursor: default; }
 .rm-candidate-direction:hover { box-shadow: none; }
+.rm-candidate-direction.rm-candidate-direction--clickable { cursor: pointer; }
+.rm-candidate-direction.rm-candidate-direction--clickable:hover,
+.rm-candidate-direction.rm-candidate-direction--clickable:focus { box-shadow: 0 2px 8px rgba(0,0,0,.12); outline: 2px solid transparent; }
 .rm-candidate-direction .rm-evidence { margin-left: auto; }
 .rm-direction-field { border-top: 1px solid var(--rm-border); padding-top: .5rem; margin-top: .5rem; }
 .rm-direction-label { color: var(--rm-dim); font-size: .68rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin-bottom: .15rem; }
@@ -68,6 +71,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-direction-evidence { border-top: 1px solid var(--rm-border); margin-top: .6rem; padding-top: .5rem; }
 .rm-direction-evidence-item { color: var(--rm-dim); font-size: .75rem; line-height: 1.4; margin-top: .25rem; padding-left: .8rem; position: relative; }
 .rm-direction-evidence-item::before { content: '•'; left: 0; position: absolute; }
+.rm-direction-action { color: var(--rm-accent); font-size: .78rem; font-weight: 600; margin-top: .75rem; }
+.rm-run-facts { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 .25rem; }
+.rm-run-fact { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 6px; display: flex; gap: .35rem; padding: .35rem .55rem; font-size: .72rem; }
+.rm-run-fact-label { color: var(--rm-dim); }
+.rm-run-fact-value { color: var(--rm-fg); font-weight: 600; }
 
 /* Start Here accent */
 .rm-ov-flow.rm-ov-flow--recommended { border-left: 3px solid var(--rm-accent); }
@@ -173,8 +181,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 <body>
   <header>
     <h1 id="rm-repo-name"></h1>
-    <p id="rm-project-guess"></p>
     <div class="rm-artifacts" id="rm-artifacts-dir"></div>
+    <div class="rm-artifacts" id="rm-feedback-path"></div>
   </header>
   <div class="rm-container">
     <nav class="rm-tabs" id="rm-tabs"></nav>
@@ -182,20 +190,31 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     <div id="rm-flows-container"></div>
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
-  <script type="application/json" id="rm-report-data">{"format_version":3,"repo_name":"testrepo","project_guess":"test project","candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":5,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script>(function () {
   'use strict';
 
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
 
   var LABELS = {
-    candidateFlows: 'Flows',
+    purpose: 'Project purpose · model orientation',
+    systemMap: 'System map · model orientation',
+    startFiles: 'Start here',
+    terms: 'Important terms',
+    questions: 'Questions for a teammate',
+    model: 'Model',
+    localContext: 'Compact local context',
+    externalRequest: 'Provider request bodies',
+    providerRequests: 'Provider requests',
+    providerLatency: 'Orientation latency',
+    directionsFound: 'Directions',
+    candidateFlows: 'Expanded directions',
     candidateDirections: 'Directions to explore',
-    directionHint: 'Choose one of these grounded starting points for a deeper explanation.',
+    directionHint: 'Choose one model-suggested direction. A compact local evidence neighborhood is ready for each without another model call.',
     trigger: 'Trigger',
     likelyEntrypoint: 'Likely entrypoint',
     likelyFiles: 'Likely files',
-    orientationEvidence: 'Why this is grounded',
+    orientationEvidence: 'Why the model suggested this',
     filesToRead: 'Read order — open these files in sequence',
     testsToRead: 'Tests',
     executionChain: 'Execution chain',
@@ -206,9 +225,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     retrievalDetails: 'Retrieval details',
     noFlows: 'No candidate directions were produced.',
     startHere: 'Start here',
+    suggestedStart: 'Suggested start',
     quickStart: 'Quick start',
-    noAIExplanation: 'No AI explanation — rerun with DEEPSEEK_API_KEY.',
     errorUnavailable: 'Analysis unavailable',
+    localEvidence: 'Local evidence',
+    openLocalEvidence: 'Explore focused local evidence →',
+    localEvidenceIntro: 'Files for this model-suggested direction were selected locally from repository facts. No second model call was made; use them and the import edges as a grounded starting point, not as runtime proof.',
+    localEvidenceLegacyIntro: 'This saved artifact contains a focused local evidence neighborhood. No completed model expansion is present; use these files and import edges as a starting point, not as runtime proof.',
     evidenceFiles: 'Evidence files',
     showAll: 'Show all ({count})',
     showMore: 'Show {count} more',
@@ -228,10 +251,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function evidenceLabel(c) {
     var v = Math.max(0, c || 0);
-    if (v <= 0) return 'Evidence: not estimated';
-    if (v >= 0.7) return 'Evidence: strong';
-    if (v >= 0.4) return 'Evidence: medium';
-    return 'Evidence: weak';
+    if (v <= 0) return 'Model confidence: not estimated';
+    if (v >= 0.7) return 'Model confidence: high';
+    if (v >= 0.4) return 'Model confidence: medium';
+    return 'Model confidence: low';
   }
 
   function chainCircleClass(c) {
@@ -258,6 +281,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var e = el(tag, cls);
     e.textContent = text || '';
     return e;
+  }
+
+  function formatBytes(value) {
+    if (!value || value < 0) return '';
+    if (value < 1024) return value + ' B';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KiB';
+    return (value / (1024 * 1024)).toFixed(1) + ' MiB';
   }
 
   // ── Components ──────────────────────────────────────────────────
@@ -304,6 +334,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var h3 = txt('h3', '', flow.name || flow.id);
     header.appendChild(h3);
     if (isRecommended) header.appendChild(renderPill(LABELS.startHere));
+    if (flow.evidence_only) header.appendChild(renderPill(LABELS.localEvidence));
     card.appendChild(header);
 
     if (flow.summary) {
@@ -312,8 +343,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }
 
     var preview = el('div', 'rm-ov-flow-preview');
-    if (flow.files_to_read_in_order && flow.files_to_read_in_order.length > 0) {
-      flow.files_to_read_in_order.slice(0, 3).forEach(function (fi) {
+    var previewFiles = flow.files_to_read_in_order;
+    if ((!previewFiles || previewFiles.length === 0) && flow.bundle_files) {
+      previewFiles = flow.bundle_files;
+    }
+    if (previewFiles && previewFiles.length > 0) {
+      previewFiles.slice(0, 3).forEach(function (fi) {
         var p = txt('div', 'rm-ov-flow-file', fi.path);
         preview.appendChild(p);
       });
@@ -321,7 +356,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     card.appendChild(preview);
 
     var footer = el('div', 'rm-ov-flow-footer');
-    footer.appendChild(renderEvidenceBadge(flow.confidence));
+    if (!flow.evidence_only) footer.appendChild(renderEvidenceBadge(flow.confidence));
     if (flow.warnings && flow.warnings.length > 0) {
       footer.appendChild(txt('span', 'rm-ov-flow-stat', flow.warnings.length + ' warnings'));
     }
@@ -355,11 +390,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     return row;
   }
 
-  function renderCandidateDirectionCard(direction) {
+  function flowByID(id) {
+    if (!id || !DATA.flows) return null;
+    for (var i = 0; i < DATA.flows.length; i++) {
+      if (DATA.flows[i].id === id) return DATA.flows[i];
+    }
+    return null;
+  }
+
+  function renderCandidateDirectionCard(direction, isSuggestedStart) {
     var card = el('div', 'rm-ov-flow rm-candidate-direction');
 
     var header = el('div', 'rm-ov-flow-header');
     header.appendChild(txt('h3', '', direction.name || direction.id));
+    if (isSuggestedStart) header.appendChild(renderPill(LABELS.suggestedStart));
     header.appendChild(renderEvidenceBadge(direction.confidence));
     card.appendChild(header);
 
@@ -389,6 +433,195 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         evidence.appendChild(txt('div', 'rm-direction-evidence-item', statement));
       });
       card.appendChild(evidence);
+    }
+
+    var focused = flowByID(direction.id);
+    if (focused) {
+      card.classList.add('rm-candidate-direction--clickable');
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.appendChild(txt('div', 'rm-direction-action', LABELS.openLocalEvidence));
+      var openFocused = function () { showTab('rm-flow-' + focused.id); };
+      card.onclick = openFocused;
+      card.onkeydown = function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openFocused();
+        }
+      };
+    }
+
+    return card;
+  }
+
+  function appendOrientationEvidence(container, evidence) {
+    if (!evidence || evidence.length === 0) return;
+
+    var evidenceBlock = el('div', 'rm-direction-evidence');
+    evidenceBlock.appendChild(txt('div', 'rm-direction-label', LABELS.orientationEvidence));
+    evidence.forEach(function (statement) {
+      evidenceBlock.appendChild(txt('div', 'rm-direction-evidence-item', statement));
+    });
+    container.appendChild(evidenceBlock);
+  }
+
+  function renderPurposeCard() {
+    var card = el('div', 'rm-card');
+    var header = el('div', 'rm-flow-header');
+    header.appendChild(txt('h2', '', LABELS.purpose));
+    if (DATA.project_guess) {
+      header.appendChild(renderEvidenceBadge(DATA.orientation_confidence));
+    }
+    card.appendChild(header);
+    card.appendChild(txt(
+      'div',
+      DATA.project_guess ? 'rm-summary' : 'rm-placeholder',
+      DATA.project_guess || 'No project purpose was produced.'
+    ));
+
+    if (DATA.run) {
+      var facts = el('div', 'rm-run-facts');
+      var addFact = function (label, value) {
+        if (!value) return;
+        var fact = el('div', 'rm-run-fact');
+        fact.appendChild(txt('span', 'rm-run-fact-label', label));
+        fact.appendChild(txt('span', 'rm-run-fact-value', value));
+        facts.appendChild(fact);
+      };
+      addFact(LABELS.model, DATA.run.model);
+      addFact(LABELS.localContext, formatBytes(DATA.run.compact_context_bytes));
+      addFact(LABELS.externalRequest, formatBytes(DATA.run.external_request_bytes));
+      if (DATA.run.provider_request_count) {
+        addFact(LABELS.providerRequests, String(DATA.run.provider_request_count));
+      }
+      if (DATA.run.provider_latency_ms !== undefined && DATA.run.provider_latency_ms !== null) {
+        addFact(LABELS.providerLatency, DATA.run.provider_latency_ms + ' ms');
+      }
+      if (DATA.run.candidate_direction_count) {
+        addFact(LABELS.directionsFound, String(DATA.run.candidate_direction_count));
+      }
+      if (facts.children.length > 0) card.appendChild(facts);
+    }
+
+    var warnings = renderWarnings(DATA.warnings);
+    if (warnings) card.appendChild(warnings);
+    return card;
+  }
+
+  function renderSystemMapCard(items) {
+    if (!items || items.length === 0) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.systemMap));
+    var grid = el('div', 'rm-overview-flows');
+    items.forEach(function (item) {
+      var subsystem = el('div', 'rm-ov-flow rm-candidate-direction');
+      subsystem.appendChild(txt('h3', '', item.name));
+      if (item.why_it_matters) {
+        subsystem.appendChild(txt('div', 'rm-summary-line', item.why_it_matters));
+      }
+      appendOrientationEvidence(subsystem, item.evidence);
+      grid.appendChild(subsystem);
+    });
+    card.appendChild(grid);
+    return card;
+  }
+
+  function renderStartHereCard(files) {
+    if (!files || files.length === 0) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.startFiles));
+    var list = el('div', 'rm-read-order');
+    files.forEach(function (file, index) {
+      list.appendChild(renderReadOrderItem(file, index + 1, file.priority || index + 1));
+    });
+    card.appendChild(list);
+    return card;
+  }
+
+  function renderTermsCard(words) {
+    if (!words || words.length === 0) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.terms));
+    var grid = el('div', 'rm-overview-flows');
+    words.forEach(function (word) {
+      var term = el('div', 'rm-ov-flow rm-candidate-direction');
+      term.appendChild(txt('h3', '', word.word));
+      if (word.guess) {
+        term.appendChild(txt('div', 'rm-summary-line', word.guess));
+      }
+      appendOrientationEvidence(term, word.evidence);
+      grid.appendChild(term);
+    });
+    card.appendChild(grid);
+    return card;
+  }
+
+  function renderQuestionsCard(questions, unverifiedPaths) {
+    var hasQuestions = questions && questions.length > 0;
+    var hasUnverified = unverifiedPaths && unverifiedPaths.length > 0;
+    if (!hasQuestions && !hasUnverified) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.questions));
+    if (hasQuestions) {
+      var list = el('ul', 'rm-file-list');
+      questions.forEach(function (question) {
+        list.appendChild(txt('li', '', question));
+      });
+      card.appendChild(list);
+    }
+    var unverified = renderUnverifiedPaths(unverifiedPaths);
+    if (unverified) card.appendChild(unverified);
+    return card;
+  }
+
+  function renderDirectionsCard(directions, flows) {
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.candidateDirections));
+    if (directions.length === 0) {
+      card.appendChild(renderPlaceholder(LABELS.noFlows));
+    } else {
+      card.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
+      var directionsGrid = el('div', 'rm-overview-flows');
+      var highestConfidence = Math.max.apply(null, directions.map(function (direction) {
+        return direction.confidence || 0;
+      }));
+      directions.forEach(function (direction) {
+        directionsGrid.appendChild(renderCandidateDirectionCard(
+          direction,
+          (direction.confidence || 0) === highestConfidence
+        ));
+      });
+      card.appendChild(directionsGrid);
+    }
+
+    var expandedFlows = flows.filter(function (flow) { return !flow.evidence_only; });
+    if (expandedFlows.length > 0) {
+      card.appendChild(txt('div', 'rm-section-title', LABELS.candidateFlows));
+      var flowsGrid = el('div', 'rm-overview-flows');
+      expandedFlows.forEach(function (flow) {
+        var isRecommended = DATA.recommended_flow && flow.id === DATA.recommended_flow;
+        flowsGrid.appendChild(renderFlowCard(flow, isRecommended));
+      });
+      card.appendChild(flowsGrid);
+
+      var quickStart = el('div', 'rm-quick-start');
+      quickStart.appendChild(txt('div', 'rm-section-title', LABELS.quickStart));
+      expandedFlows.forEach(function (flow) {
+        if (!flow.files_to_read_in_order || flow.files_to_read_in_order.length === 0) return;
+
+        var item = el('div', 'rm-quick-start-item');
+        var flowLink = el('span', 'rm-quick-start-flow');
+        flowLink.textContent = flow.name || flow.id;
+        flowLink.onclick = function () { showTab('rm-flow-' + flow.id); };
+        item.appendChild(flowLink);
+        item.appendChild(txt('span', '', '→ ' + flow.files_to_read_in_order[0].path));
+        quickStart.appendChild(item);
+      });
+      card.appendChild(quickStart);
     }
 
     return card;
@@ -708,9 +941,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
     var header = el('div', 'rm-flow-header');
     header.appendChild(txt('h2', '', flow.name || flow.id));
-    if (!flow.error) {
+    if (!flow.error && !flow.evidence_only) {
       header.appendChild(renderEvidenceBadge(flow.confidence));
     }
+    if (flow.evidence_only) header.appendChild(renderPill(LABELS.localEvidence));
     page.appendChild(header);
 
     if (flow.error) {
@@ -736,6 +970,33 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       }
 
       page.appendChild(renderCollapsedError(flow.error));
+      return page;
+    }
+
+    if (flow.evidence_only) {
+      page.appendChild(txt(
+        'div',
+        'rm-summary',
+        flow.flow_status === 'local_only' ? LABELS.localEvidenceIntro : LABELS.localEvidenceLegacyIntro
+      ));
+
+      if (flow.bundle_files && flow.bundle_files.length > 0) {
+        page.appendChild(renderReadOrder(flow.bundle_files, 5));
+      }
+
+      var localTests = renderFileList('Tests selected locally', (flow.bundle_tests || []).slice(0, 8));
+      if (localTests) page.appendChild(localTests);
+
+      var localDocs = renderFileList('Docs selected locally', (flow.bundle_docs || []).slice(0, 8));
+      if (localDocs) page.appendChild(localDocs);
+
+      var localPackages = renderStringList('Packages in this focused neighborhood', (flow.bundle_packages || []).slice(0, 12));
+      if (localPackages) page.appendChild(localPackages);
+
+      var localEdges = renderEdgeList('Related import edges', (flow.bundle_edges || []).slice(0, 12));
+      if (localEdges) page.appendChild(localEdges);
+
+      if (flow.bundle_summary) page.appendChild(renderBundleStats(flow.bundle_summary));
       return page;
     }
 
@@ -794,9 +1055,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function render() {
     DATA.flows = DATA.flows || [];
     document.getElementById('rm-repo-name').textContent = DATA.repo_name || 'unknown';
-    document.getElementById('rm-project-guess').textContent = DATA.project_guess || '';
     if (DATA.artifacts_dir) {
       document.getElementById('rm-artifacts-dir').textContent = 'Artifacts: ' + DATA.artifacts_dir;
+    }
+    if (DATA.feedback_path) {
+      document.getElementById('rm-feedback-path').textContent = 'Feedback notes: ' + DATA.feedback_path;
     }
 
     var tabs = document.getElementById('rm-tabs');
@@ -811,6 +1074,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (f.error) {
         tab.classList.add('rm-tab--error');
         tab.textContent = f.name || f.id;
+      } else if (f.evidence_only) {
+        tab.textContent = (f.name || f.id) + ' · local evidence';
       } else {
         var parts = [f.name || f.id];
         if (f.warnings && f.warnings.length > 0) {
@@ -831,55 +1096,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var overview = document.getElementById('rm-overview');
     var overviewHTML = el('div');
 
+    overviewHTML.appendChild(renderPurposeCard());
+
+    var systemMap = renderSystemMapCard(DATA.high_level_map);
+    if (systemMap) overviewHTML.appendChild(systemMap);
+
     var directions = candidateDirections();
-    if (!DATA.flows || DATA.flows.length === 0) {
-      if (directions.length === 0) {
-        overviewHTML.appendChild(txt('div', 'rm-card', LABELS.noFlows));
-      } else {
-        var directionsCard = el('div', 'rm-card');
-        directionsCard.appendChild(txt('h2', '', LABELS.candidateDirections));
-        directionsCard.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
-        var directionsGrid = el('div', 'rm-overview-flows');
-        directions.forEach(function (direction) {
-          directionsGrid.appendChild(renderCandidateDirectionCard(direction));
-        });
-        directionsCard.appendChild(directionsGrid);
-        overviewHTML.appendChild(directionsCard);
-      }
-    } else {
-      var card = el('div', 'rm-card');
-      card.appendChild(txt('h2', '', LABELS.candidateFlows));
-      var grid = el('div', 'rm-overview-flows');
+    overviewHTML.appendChild(renderDirectionsCard(directions, DATA.flows));
 
-      DATA.flows.forEach(function (f) {
-        var isRecommended = DATA.recommended_flow && f.id === DATA.recommended_flow;
-        grid.appendChild(renderFlowCard(f, isRecommended));
-      });
+    var startHere = renderStartHereCard(DATA.first_files_to_open);
+    if (startHere) overviewHTML.appendChild(startHere);
 
-      card.appendChild(grid);
-      overviewHTML.appendChild(card);
+    var terms = renderTermsCard(DATA.important_domain_words);
+    if (terms) overviewHTML.appendChild(terms);
 
-      if (DATA.flows.length > 0) {
-        var qs = el('div', 'rm-quick-start');
-        qs.appendChild(txt('div', 'rm-section-title', LABELS.quickStart));
-        DATA.flows.forEach(function (f) {
-          if (f.files_to_read_in_order && f.files_to_read_in_order.length > 0) {
-            var item = el('div', 'rm-quick-start-item');
-            var flowLink = el('span', 'rm-quick-start-flow');
-            flowLink.textContent = f.name || f.id;
-            flowLink.onclick = function () { showTab('rm-flow-' + f.id); };
-            item.appendChild(flowLink);
-            item.appendChild(txt('span', '', '→ ' + f.files_to_read_in_order[0].path));
-            qs.appendChild(item);
-          }
-        });
-        overviewHTML.appendChild(qs);
-      }
-    }
-
-    if (DATA.warnings && DATA.warnings.length > 0) {
-      overviewHTML.appendChild(renderWarnings(DATA.warnings));
-    }
+    var questions = renderQuestionsCard(DATA.questions_for_human, DATA.unverified_paths);
+    if (questions) overviewHTML.appendChild(questions);
 
     overview.innerHTML = '';
     overview.appendChild(overviewHTML);

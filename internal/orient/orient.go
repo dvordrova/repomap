@@ -8,37 +8,40 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
 type Options struct {
-	RepoPath             string
-	SnapshotOnly         bool
-	LLMBundleOnly        bool
-	LLMRequestOnly       bool
-	OutputJSON           bool
-	Offline              bool
-	FlowCount            int
-	FlowBundlesOnly      bool
-	MaxReadmeBytes       int
-	MaxReadmeLLMBytes    int
-	MaxTreeLines         int
-	MaxInterestingFiles  int
-	MaxGoPkgs            int
-	MaxGoEdges           int
-	MaxLLMEntrypoints    int
-	MaxLLMModules        int
-	MaxLLMFiles          int
-	MaxLLMEdges          int
-	MaxLLMSignals        int
-	MaxLLMSignalsPerFile int
-	DebugDir             string
-	RunID                string
-	DumpLLM              bool
-	DumpRedacted         bool
-	ExplainFlows         int
-	Progress             func(ProgressEvent)
+	RepoPath               string
+	SnapshotOnly           bool
+	LLMBundleOnly          bool
+	LLMRequestOnly         bool
+	OutputJSON             bool
+	Offline                bool
+	FlowCount              int
+	FlowBundlesOnly        bool
+	MaxReadmeBytes         int
+	MaxReadmeLLMBytes      int
+	MaxTreeLines           int
+	MaxInterestingFiles    int
+	MaxGoPkgs              int
+	MaxGoEdges             int
+	MaxLLMEntrypoints      int
+	MaxLLMModules          int
+	MaxLLMFiles            int
+	MaxLocalDirectionFiles int
+	MaxLLMEdges            int
+	MaxLLMSignals          int
+	MaxLLMSignalsPerFile   int
+	DebugDir               string
+	RunID                  string
+	DumpLLM                bool
+	DumpRedacted           bool
+	RequireArtifacts       bool
+	ExplainFlows           int
+	Progress               func(ProgressEvent)
 }
 
 type combinedReport struct {
@@ -49,11 +52,15 @@ type combinedReport struct {
 }
 
 func Run(ctx context.Context, opts Options) ([]byte, error) {
+	requireArtifacts := opts.DumpLLM || opts.RequireArtifacts
 	if opts.DumpLLM && opts.Offline {
 		return nil, fmt.Errorf("--dump-llm cannot be used with offline mode; use request preview instead")
 	}
 	if opts.DumpLLM && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
 		return nil, fmt.Errorf("--dump-llm requires a debug directory")
+	}
+	if opts.RequireArtifacts && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
+		return nil, fmt.Errorf("required browser artifacts need a debug directory")
 	}
 
 	emitProgress(opts, ProgressEvent{
@@ -131,29 +138,30 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	var dw *debugdump.Writer
 	runMeta := debugdump.RunMeta{
-		RunID:         runID,
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		RepoName:      s.RepoName,
-		RepoPath:      opts.RepoPath,
-		Command:       "orient",
-		LLMBundleOnly: opts.LLMBundleOnly,
+		RunID:               runID,
+		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
+		RepoName:            s.RepoName,
+		RepoPath:            opts.RepoPath,
+		Command:             "orient",
+		CompactContextBytes: len(modelBundleJSON),
+		LLMBundleOnly:       opts.LLMBundleOnly,
 	}
 	if opts.DebugDir != "" {
 		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
 		if err != nil {
-			if opts.DumpLLM {
+			if requireArtifacts {
 				return nil, fmt.Errorf("create required debug writer: %w", err)
 			}
 			dw = nil
 		}
 		if dw != nil {
-			if err := dw.WriteMetadata(runMeta); err != nil && opts.DumpLLM {
+			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug metadata: %w", err)
 			}
-			if err := dw.WriteSnapshot(snapshotJSON); err != nil && opts.DumpLLM {
+			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug snapshot: %w", err)
 			}
-			if err := dw.WriteLLMBundle(append(modelBundleJSON, '\n')); err != nil && opts.DumpLLM {
+			if err := dw.WriteLLMBundle(append(modelBundleJSON, '\n')); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required model bundle: %w", err)
 			}
 		}
@@ -173,7 +181,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	if opts.Offline {
 		report.Warnings = append(report.Warnings, "offline mode: skipping all LLM calls")
-		flows := buildFlowBundlesFromSnapshot(s, flowCount, dw, opts)
+		flows, err := buildFlowBundlesFromSnapshot(s, flowCount, dw, opts)
+		if err != nil {
+			return nil, err
+		}
 		report.ExplainedFlows = flows
 		report.Warnings = append(report.Warnings, fmt.Sprintf("run %s to get LLM orientation", "repomap "+opts.RepoPath))
 	} else {
@@ -192,7 +203,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			runMeta.Model = client.Model
 			runMeta.Endpoint = client.Endpoint
 			runMeta.PromptVersion = deepseek.OrientationPromptVersionJSON
-			if err := dw.WriteMetadata(runMeta); err != nil && opts.DumpLLM {
+			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required provider metadata: %w", err)
 			}
 		}
@@ -201,6 +212,8 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		runMeta.ExternalRequestBytes = len(requestJSON)
+		runMeta.ProviderRequestCount = 1
 		if opts.DumpLLM && dw != nil {
 			if err := dw.WriteLLMRequest(requestJSON); err != nil {
 				return nil, fmt.Errorf("write required llm request before provider call: %w", err)
@@ -219,7 +232,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		providerLatency := time.Since(requestStarted).Milliseconds()
 		runMeta.ProviderLatencyMillis = &providerLatency
 		if dw != nil {
-			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && opts.DumpLLM {
+			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 				return nil, fmt.Errorf("write provider latency metadata: %w", metadataErr)
 			}
 		}
@@ -259,6 +272,12 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, err
 		}
 		report.Orientation = &or
+		runMeta.CandidateDirectionCount = len(or.CandidateFlows)
+		if dw != nil {
+			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+				return nil, fmt.Errorf("write orientation metadata: %w", metadataErr)
+			}
+		}
 		emitProgress(opts, ProgressEvent{
 			Stage:          ProgressOrientationDone,
 			RepoName:       s.RepoName,
@@ -269,14 +288,41 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 		out, _ := json.MarshalIndent(or, "", "  ")
 		if dw != nil {
-			if err := dw.WriteOrientationReport(out); err != nil && opts.DumpLLM {
+			if err := dw.WriteOrientationReport(out); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required orientation report: %w", err)
 			}
 		}
 
 		cfs := selectTopFlows(or.CandidateFlows, flowCount)
+		expandedIDs := make(map[string]struct{}, len(cfs))
+		for _, candidate := range cfs {
+			expandedIDs[flowexplain.GenerateFlowID(candidate.Name)] = struct{}{}
+		}
+		if err := writeLocalFlowBundles(
+			ctx,
+			or.CandidateFlows,
+			expandedIDs,
+			s.FilteredFiles,
+			s.GoFacts,
+			dw,
+			opts,
+		); err != nil {
+			return nil, err
+		}
 		for _, cf := range cfs {
 			ef := explainOneFlow(ctx, client, cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts, !opts.Offline && !opts.FlowBundlesOnly)
+			if ef.ProviderRequestBytes > 0 {
+				runMeta.ExternalRequestBytes += ef.ProviderRequestBytes
+				runMeta.ProviderRequestCount++
+				if dw != nil {
+					if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+						return nil, fmt.Errorf("write flow metadata: %w", metadataErr)
+					}
+				}
+			}
+			if ef.ArtifactError != "" {
+				return nil, fmt.Errorf("persist flow %q: %s", cf.Name, ef.ArtifactError)
+			}
 			report.ExplainedFlows = append(report.ExplainedFlows, ef)
 		}
 	}

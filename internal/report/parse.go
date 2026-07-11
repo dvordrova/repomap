@@ -17,10 +17,39 @@ type snapshotJSON struct {
 	RepoName string `json:"repo_name"`
 }
 
+type runMetadataJSON struct {
+	CreatedAt               string `json:"created_at"`
+	Model                   string `json:"model"`
+	PromptVersion           string `json:"prompt_version"`
+	CompactContextBytes     int    `json:"compact_context_bytes"`
+	ExternalRequestBytes    int    `json:"external_request_bytes"`
+	ProviderRequestCount    int    `json:"provider_request_count"`
+	CandidateDirectionCount int    `json:"candidate_direction_count"`
+	ProviderLatencyMillis   *int64 `json:"provider_latency_ms"`
+}
+
 type orientationReportJSON struct {
-	ProjectGuess   string                     `json:"project_guess"`
-	CandidateFlows []orientationCandidateJSON `json:"candidate_flows"`
-	Warnings       []string                   `json:"warnings"`
+	ProjectGuess         string                      `json:"project_guess"`
+	Confidence           float64                     `json:"confidence"`
+	HighLevelMap         []orientationMapItemJSON    `json:"high_level_map"`
+	FirstFilesToOpen     flexFileItems               `json:"first_files_to_open"`
+	CandidateFlows       []orientationCandidateJSON  `json:"candidate_flows"`
+	ImportantDomainWords []orientationDomainWordJSON `json:"important_domain_words"`
+	QuestionsForHuman    []string                    `json:"questions_for_human"`
+	UnverifiedPaths      flexPathItems               `json:"unverified_paths"`
+	Warnings             []string                    `json:"warnings"`
+}
+
+type orientationMapItemJSON struct {
+	Name         string   `json:"name"`
+	Evidence     []string `json:"evidence"`
+	WhyItMatters string   `json:"why_it_matters"`
+}
+
+type orientationDomainWordJSON struct {
+	Word     string   `json:"word"`
+	Guess    string   `json:"guess"`
+	Evidence []string `json:"evidence"`
 }
 
 type orientationCandidateJSON struct {
@@ -43,6 +72,11 @@ type flowReportJSON struct {
 	UnverifiedPaths    flexPathItems        `json:"unverified_paths"`
 	Unknowns           flexStringsOrObjects `json:"unknowns"`
 	Warnings           flexStringsOrObjects `json:"warnings"`
+}
+
+type flowStatusJSON struct {
+	Version int    `json:"version"`
+	Mode    string `json:"mode"`
 }
 
 type chainStepJSON struct {
@@ -297,6 +331,9 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if w := parseSnapshot(filepath.Join(absDir, "snapshot.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
+		parseWarnings = append(parseWarnings, w)
+	}
 	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
@@ -323,6 +360,31 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	return data, nil
 }
 
+func parseRunMetadata(path string, data *ReportData) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		return fmt.Sprintf("metadata: %v", err)
+	}
+	var metadata runMetadataJSON
+	if err := json.Unmarshal(b, &metadata); err != nil {
+		return fmt.Sprintf("metadata unmarshal: %v", err)
+	}
+	data.Run = &RunInfo{
+		CreatedAt:               metadata.CreatedAt,
+		Model:                   metadata.Model,
+		PromptVersion:           metadata.PromptVersion,
+		CompactContextBytes:     metadata.CompactContextBytes,
+		ExternalRequestBytes:    metadata.ExternalRequestBytes,
+		ProviderRequestCount:    metadata.ProviderRequestCount,
+		CandidateDirectionCount: metadata.CandidateDirectionCount,
+		ProviderLatencyMillis:   metadata.ProviderLatencyMillis,
+	}
+	return ""
+}
+
 func parseSnapshot(path string, data *ReportData) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -346,6 +408,21 @@ func parseOrientationReport(path string, data *ReportData) string {
 		return fmt.Sprintf("orientation unmarshal: %v", err)
 	}
 	data.ProjectGuess = or.ProjectGuess
+	data.OrientationConfidence = or.Confidence
+	for _, item := range or.HighLevelMap {
+		data.HighLevelMap = append(data.HighLevelMap, Subsystem{
+			Name:         item.Name,
+			Evidence:     append([]string{}, item.Evidence...),
+			WhyItMatters: item.WhyItMatters,
+		})
+	}
+	for _, file := range or.FirstFilesToOpen {
+		data.FirstFilesToOpen = append(data.FirstFilesToOpen, FileItem{
+			Path:     file.Path,
+			Reason:   file.Reason,
+			Priority: file.Priority,
+		})
+	}
 	for _, cf := range or.CandidateFlows {
 		data.CandidateFlows = append(data.CandidateFlows, cf.Name)
 		data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
@@ -357,6 +434,20 @@ func parseOrientationReport(path string, data *ReportData) string {
 			WhyInteresting:   cf.WhyInteresting,
 			Evidence:         append([]string{}, cf.Evidence...),
 			Confidence:       cf.Confidence,
+		})
+	}
+	for _, word := range or.ImportantDomainWords {
+		data.ImportantDomainWords = append(data.ImportantDomainWords, DomainWord{
+			Word:     word.Word,
+			Guess:    word.Guess,
+			Evidence: append([]string{}, word.Evidence...),
+		})
+	}
+	data.QuestionsForHuman = append(data.QuestionsForHuman, or.QuestionsForHuman...)
+	for _, item := range or.UnverifiedPaths {
+		data.OrientationUnverifiedPaths = append(data.OrientationUnverifiedPaths, PathItem{
+			Path:   item.Path,
+			Reason: item.Reason,
 		})
 	}
 	data.Warnings = append(data.Warnings, or.Warnings...)
@@ -383,6 +474,9 @@ func parseFlows(flowsDir string, data *ReportData) ([]string, error) {
 		if w := parseFlowBundle(filepath.Join(flowDir, "flow_bundle.json"), &fd); w != "" {
 			warnings = append(warnings, fmt.Sprintf("flow %s: %s", fd.ID, w))
 		}
+		if w := parseFlowStatus(filepath.Join(flowDir, "flow_status.json"), &fd); w != "" {
+			warnings = append(warnings, fmt.Sprintf("flow %s: %s", fd.ID, w))
+		}
 		if w := parseFlowReport(filepath.Join(flowDir, "flow_report.json"), &fd); w != "" {
 			warnings = append(warnings, fmt.Sprintf("flow %s: %s", fd.ID, w))
 		}
@@ -390,6 +484,30 @@ func parseFlows(flowsDir string, data *ReportData) ([]string, error) {
 		data.Flows = append(data.Flows, fd)
 	}
 	return warnings, nil
+}
+
+func parseFlowStatus(path string, fd *FlowData) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		return fmt.Sprintf("status: %v", err)
+	}
+	var status flowStatusJSON
+	if err := json.Unmarshal(b, &status); err != nil {
+		return fmt.Sprintf("status unmarshal: %v", err)
+	}
+	if status.Version != 1 {
+		return fmt.Sprintf("unsupported flow status version %d", status.Version)
+	}
+	switch status.Mode {
+	case "local_only", "expansion_requested", "succeeded", "failed":
+		fd.FlowStatus = status.Mode
+		return ""
+	default:
+		return fmt.Sprintf("unsupported flow status mode %q", status.Mode)
+	}
 }
 
 func parseFlowBundle(path string, fd *FlowData) string {
@@ -432,11 +550,37 @@ func parseFlowBundle(path string, fd *FlowData) string {
 func parseFlowReport(path string, fd *FlowData) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) && fd.Name != "" {
+			switch fd.FlowStatus {
+			case "local_only":
+				fd.EvidenceOnly = true
+				return ""
+			case "expansion_requested":
+				fd.Error = "flow expansion was requested but no completed report was saved"
+				return fd.Error
+			case "succeeded":
+				fd.Error = "flow status is succeeded but the report is missing"
+				return fd.Error
+			case "failed":
+				fd.Error = "flow explanation failed; see error.txt in the run artifacts"
+				return fd.Error
+			}
+			if _, modelErr := os.Stat(filepath.Join(filepath.Dir(path), "error.txt")); modelErr == nil {
+				fd.Error = "flow explanation failed; see error.txt in the run artifacts"
+				return fd.Error
+			}
+			fd.Error = "flow report is missing and no explicit flow status was saved"
+			return fd.Error
+		}
 		fd.Error = fmt.Sprintf("cannot read flow report: %v", err)
 		return fd.Error
 	}
 	if len(b) == 0 {
 		fd.Error = "flow report is empty"
+		return fd.Error
+	}
+	if fd.FlowStatus == "local_only" || fd.FlowStatus == "failed" || fd.FlowStatus == "expansion_requested" {
+		fd.Error = fmt.Sprintf("flow status %q conflicts with a saved report", fd.FlowStatus)
 		return fd.Error
 	}
 	var fr flowReportJSON

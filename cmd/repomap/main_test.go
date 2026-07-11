@@ -179,8 +179,33 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read report.json: %v", err)
 	}
-	if !bytes.Contains(reportJSON, []byte("Process startup")) {
-		t.Fatalf("report.json does not retain candidate direction: %s", reportJSON)
+	for _, want := range [][]byte{
+		[]byte("Process startup"),
+		[]byte(`"high_level_map"`),
+		[]byte("it owns process startup"),
+		[]byte(`"first_files_to_open"`),
+		[]byte("Which behavior should we inspect next?"),
+		[]byte(`"compact_context_bytes"`),
+		[]byte(`"external_request_bytes"`),
+		[]byte(`"evidence_only": true`),
+	} {
+		if !bytes.Contains(reportJSON, want) {
+			t.Fatalf("report.json does not retain %q: %s", want, reportJSON)
+		}
+	}
+	reportHTML, err := os.ReadFile(openedReport)
+	if err != nil {
+		t.Fatalf("read report HTML: %v", err)
+	}
+	for _, want := range [][]byte{
+		[]byte("Explore focused local evidence"),
+		[]byte("No second model call was made"),
+		[]byte("Compact local context"),
+		[]byte("Provider request bodies"),
+	} {
+		if !bytes.Contains(reportHTML, want) {
+			t.Fatalf("report HTML does not contain %q", want)
+		}
 	}
 }
 
