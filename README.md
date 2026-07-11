@@ -67,6 +67,7 @@ make run-json ETCD_REPO=../etcd     # JSON output
 ## Project docs
 
 - [docs/CORE_IDEA.md](docs/CORE_IDEA.md) — project vision and pipeline design
+- [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — unresolved product and research decisions
 - [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) — API integration rules
 - [docs/GOLDEN_DEBUG_RUN.md](docs/GOLDEN_DEBUG_RUN.md) — reproducible debugging
 - [AGENTS.md](AGENTS.md) — agent instructions
