@@ -1,0 +1,5044 @@
+{
+  "format_version": 11,
+  "repo_name": "soft-serve",
+  "project_guess": "Evidence-backed architecture and daemon lifecycle",
+  "orientation_confidence": 0,
+  "candidate_flows": [
+    "Serve daemon lifecycle"
+  ],
+  "flows": null,
+  "artifacts_dir": "",
+  "architecture_canvas": {
+    "version": 1,
+    "landscape_version": 2,
+    "flowproof_version": 2,
+    "fallback": false,
+    "subsystems": [
+      {
+        "id": "subsystem-eaef4ab0f4a8c6d80d7a80fb3b3318690f381eb8f6703c9b67fa57223322c268",
+        "name": "Command and process lifecycle",
+        "description": "Cobra dispatch, command hooks, and the serve handler own process-level startup and shutdown.",
+        "component_ids": [
+          "component-e2e62d4879514fbfc0822c61b21069ae758aa86d3ec3460a1faca89375dc2f4d",
+          "component-cecfdf69b825657bb6661117947c0281312b5b51ee1d54349f46f352fc964366",
+          "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e"
+        ]
+      },
+      {
+        "id": "subsystem-7a550c7b0ac94c16cbc1cf902801be38828969e4372c93d3ed58edd8b8024542",
+        "name": "Runtime front doors",
+        "description": "Independent network-facing servers started under one daemon lifecycle.",
+        "component_ids": [
+          "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+          "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+          "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+          "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6"
+        ]
+      },
+      {
+        "id": "subsystem-a8b66dd87245848728bde420c1defd822e115af29354ae2f586895bfb756ede6",
+        "name": "Scheduling and configuration",
+        "description": "Runtime policy and background job scheduling used by the daemon.",
+        "component_ids": [
+          "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+          "component-639b55f9a36f28181eb9635f77c237be0cee0ba687acc9c4bc406b3a94fc86ad"
+        ]
+      },
+      {
+        "id": "subsystem-08d086e679604d04a320c29da823534a1c46a66ab6fb61e0cf3a53f25ab81613",
+        "name": "Application state",
+        "description": "Backend services and database state initialized before listeners start.",
+        "component_ids": [
+          "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d"
+        ]
+      }
+    ],
+    "components": [
+      {
+        "id": "component-e2e62d4879514fbfc0822c61b21069ae758aa86d3ec3460a1faca89375dc2f4d",
+        "subsystem_id": "subsystem-eaef4ab0f4a8c6d80d7a80fb3b3318690f381eb8f6703c9b67fa57223322c268",
+        "name": "CLI shell",
+        "description": "Loads configuration and dispatches the selected command.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/cmd/soft"
+            },
+            "name": "soft CLI",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/main.go",
+                    "line": 138
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/main.go",
+                        "line": 138
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "soft CLI",
+                "location": {
+                  "path": "cmd/soft/main.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "cmd/soft/main.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-cecfdf69b825657bb6661117947c0281312b5b51ee1d54349f46f352fc964366",
+        "subsystem_id": "subsystem-eaef4ab0f4a8c6d80d7a80fb3b3318690f381eb8f6703c9b67fa57223322c268",
+        "name": "Backend context hooks",
+        "description": "Opens shared state before the handler and closes the database afterward.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/cmd"
+            },
+            "name": "command lifecycle hooks",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 31
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/serve.go",
+                        "line": 31
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "command lifecycle hooks",
+                "location": {
+                  "path": "cmd/cmd.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "cmd/cmd.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "subsystem_id": "subsystem-eaef4ab0f4a8c6d80d7a80fb3b3318690f381eb8f6703c9b67fa57223322c268",
+        "name": "Serve lifecycle coordinator",
+        "description": "Constructs services, waits for a stop event, and coordinates graceful shutdown.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+            },
+            "name": "serve command",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 33
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/serve.go",
+                        "line": 33
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "serve command",
+                "location": {
+                  "path": "cmd/soft/serve/serve.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "cmd/soft/serve/serve.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+        "subsystem_id": "subsystem-7a550c7b0ac94c16cbc1cf902801be38828969e4372c93d3ed58edd8b8024542",
+        "name": "SSH server",
+        "description": "Serves Git and interactive SSH sessions.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+            },
+            "name": "SSH server",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 72
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 72
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "SSH server",
+                "location": {
+                  "path": "pkg/ssh/ssh.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/ssh/ssh.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+        "subsystem_id": "subsystem-7a550c7b0ac94c16cbc1cf902801be38828969e4372c93d3ed58edd8b8024542",
+        "name": "Git daemon",
+        "description": "Serves the native Git protocol over TCP.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+            },
+            "name": "Git daemon",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 77
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 77
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "Git daemon",
+                "location": {
+                  "path": "pkg/daemon/daemon.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/daemon/daemon.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+        "subsystem_id": "subsystem-7a550c7b0ac94c16cbc1cf902801be38828969e4372c93d3ed58edd8b8024542",
+        "name": "HTTP server",
+        "description": "Serves HTTP, Git smart HTTP, LFS, and health routes.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/web"
+            },
+            "name": "HTTP server",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 82
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 82
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "HTTP server",
+                "location": {
+                  "path": "pkg/web/http.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/web/http.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6",
+        "subsystem_id": "subsystem-7a550c7b0ac94c16cbc1cf902801be38828969e4372c93d3ed58edd8b8024542",
+        "name": "Stats endpoint",
+        "description": "Serves the Prometheus metrics endpoint.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+            },
+            "name": "stats server",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 87
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 87
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "stats server",
+                "location": {
+                  "path": "pkg/stats/stats.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/stats/stats.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+        "subsystem_id": "subsystem-a8b66dd87245848728bde420c1defd822e115af29354ae2f586895bfb756ede6",
+        "name": "Scheduler and jobs",
+        "description": "Registers configured jobs and starts the cron scheduler.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+            },
+            "name": "cron scheduler",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 60
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 60
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "cron scheduler",
+                "location": {
+                  "path": "pkg/cron/cron.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/cron/cron.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/jobs"
+            },
+            "name": "scheduled jobs",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 61
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 61
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "scheduled jobs",
+                "location": {
+                  "path": "pkg/jobs/jobs.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/jobs/jobs.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-639b55f9a36f28181eb9635f77c237be0cee0ba687acc9c4bc406b3a94fc86ad",
+        "subsystem_id": "subsystem-a8b66dd87245848728bde420c1defd822e115af29354ae2f586895bfb756ede6",
+        "name": "Configuration",
+        "description": "Controls endpoint enablement, addresses, storage, and shutdown behavior.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/config"
+            },
+            "name": "configuration",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 35
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/serve.go",
+                        "line": 35
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "configuration",
+                "location": {
+                  "path": "pkg/config/config.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/config/config.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      },
+      {
+        "id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+        "subsystem_id": "subsystem-08d086e679604d04a320c29da823534a1c46a66ab6fb61e0cf3a53f25ab81613",
+        "name": "Backend and database",
+        "description": "Provides domain operations, persistent state, and schema migration.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/backend"
+            },
+            "name": "backend",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 48
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 48
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "backend",
+                "location": {
+                  "path": "pkg/backend/backend.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/backend/backend.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/db"
+            },
+            "name": "database",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 49
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/server.go",
+                        "line": 49
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "database",
+                "location": {
+                  "path": "pkg/db/db.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/db/db.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/charmbracelet/soft-serve/pkg/db/migrate"
+            },
+            "name": "database migrations",
+            "flow_participations": [
+              {
+                "flow_id": "soft-serve-daemon",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "soft-serve-daemon",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 69
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "fixture_source_audit",
+                      "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                      "operation": "bind_flow_participation",
+                      "location": {
+                        "path": "cmd/soft/serve/serve.go",
+                        "line": 69
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "database migrations",
+                "location": {
+                  "path": "pkg/db/migrate/migrate.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "fixture_source_audit",
+                    "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                    "operation": "collect_package_declaration",
+                    "location": {
+                      "path": "pkg/db/migrate/migrate.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "soft-serve-daemon"
+        ]
+      }
+    ],
+    "structural_facts": [
+      {
+        "id": "import-cli-serve",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/main.go",
+          "line": 15
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/main.go",
+              "line": 15
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-hooks-db",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/db"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/cmd.go",
+          "line": 12
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/cmd.go",
+              "line": 12
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-backend",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/backend"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 16
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 16
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-config",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/config"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 17
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 17
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-cron",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 14
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 14
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-daemon",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 15
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 15
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-hooks",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 15
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 15
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-ssh",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 18
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 18
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-stats",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 19
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 19
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "import-serve-web",
+        "from": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/charmbracelet/soft-serve/pkg/web"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 20
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_imports",
+            "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+            "operation": "resolve_package_import",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 20
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "soft-serve-go-default",
+            "name": "soft-serve default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      }
+    ],
+    "structural_edges": [
+      {
+        "id": "structural-edge-095d52f3af717e50f9fdee340eed3b404b267dfc8a4eb3eb52d06e4a3fe9306d",
+        "from_component_id": "component-cecfdf69b825657bb6661117947c0281312b5b51ee1d54349f46f352fc964366",
+        "to_component_id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+        "witness": {
+          "id": "import-hooks-db",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/db"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/cmd.go",
+            "line": 12
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/cmd.go",
+                "line": 12
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-1abf723599060a53e33f87555cd2620cc5ab638aacb224b2b24a9c6ee7a23fc9",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-cecfdf69b825657bb6661117947c0281312b5b51ee1d54349f46f352fc964366",
+        "witness": {
+          "id": "import-serve-hooks",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/serve.go",
+            "line": 15
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 15
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-1f49641b03b749271c191a8c2931d23ceffc8f0f546155c63b2eb9a5de93237d",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-639b55f9a36f28181eb9635f77c237be0cee0ba687acc9c4bc406b3a94fc86ad",
+        "witness": {
+          "id": "import-serve-config",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/config"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/serve.go",
+            "line": 17
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 17
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-5847f374dba31bb3420d69881e15ee7f93bb087e4b957a0d5e34b1e9293eda8c",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+        "witness": {
+          "id": "import-serve-web",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/web"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 20
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 20
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-5cd6567592247aaf9d89f756de9344dd0071473308c30667140722196ac9dfba",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+        "witness": {
+          "id": "import-serve-backend",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/backend"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/serve.go",
+            "line": 16
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 16
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-636976063b37945793d044b1ff785a3b4ee1bba06f39c9bc3c6f575ae52022cf",
+        "from_component_id": "component-e2e62d4879514fbfc0822c61b21069ae758aa86d3ec3460a1faca89375dc2f4d",
+        "to_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "witness": {
+          "id": "import-cli-serve",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/main.go",
+            "line": 15
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/main.go",
+                "line": 15
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-837262b1801e19888a28848d93c284f1b45a597e1f46279ed561fb9a45d70504",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+        "witness": {
+          "id": "import-serve-daemon",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 15
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 15
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-a02b3d54c711f34b878d0dc4a040419c1d196163549ba6d1e7eb064cb6de45fd",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+        "witness": {
+          "id": "import-serve-cron",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 14
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 14
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-e08e46ca10aa080822860fb6a3a71d08cfd744a5a497d9e3437c6a57dceb0e26",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+        "witness": {
+          "id": "import-serve-ssh",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 18
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 18
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-efe149c82e87ee0c37f91052bdf5f76e0eed802899e7927f16c8ad087f673c2f",
+        "from_component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+        "to_component_id": "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6",
+        "witness": {
+          "id": "import-serve-stats",
+          "from": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 19
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_imports",
+              "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+              "operation": "resolve_package_import",
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 19
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "soft-serve-go-default",
+              "name": "soft-serve default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "flows": [
+      {
+        "id": "soft-serve-daemon",
+        "name": "Serve daemon lifecycle",
+        "trigger": "soft serve",
+        "scope": "one serve command invocation under the default Go build",
+        "mental_model": "Initialize shared state, construct endpoints, run independent service tasks, react to a server result or signal, then shut every service down under a timeout.",
+        "goal": "start Soft Serve network endpoints and stop them gracefully after a server result or process signal",
+        "command": "serve",
+        "steps": [
+          {
+            "id": "close-database",
+            "kind": "method",
+            "label": "DB.Close",
+            "location": {
+              "path": "pkg/db/db.go",
+              "line": 42
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "close-database",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/db"
+              },
+              "location": {
+                "path": "pkg/db/db.go",
+                "line": 42
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/db/db.go",
+                    "line": 42
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "close-db-hook",
+            "kind": "function",
+            "label": "cmd.CloseDBContext",
+            "location": {
+              "path": "cmd/cmd.go",
+              "line": 45
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-cecfdf69b825657bb6661117947c0281312b5b51ee1d54349f46f352fc964366",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "close-db-hook",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd"
+              },
+              "location": {
+                "path": "cmd/cmd.go",
+                "line": 45
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/cmd.go",
+                    "line": 45
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "cron-start",
+            "kind": "method",
+            "label": "Scheduler.Start",
+            "location": {
+              "path": "pkg/cron/cron.go",
+              "line": 48
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-cron-task",
+            "component_id": "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "cron-start",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+              },
+              "location": {
+                "path": "pkg/cron/cron.go",
+                "line": 48
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/cron/cron.go",
+                    "line": 48
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "cron-stop",
+            "kind": "operation",
+            "label": "stop cron scheduler",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 188
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+            "component_id": "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "cron-stop",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 188
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 188
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "deferred-cancel",
+            "kind": "operation",
+            "label": "deferred shutdown context cancel",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 130
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "deferred-cancel",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 130
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 130
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "execute-root",
+            "kind": "callsite",
+            "label": "rootCmd.ExecuteContext",
+            "location": {
+              "path": "cmd/soft/main.go",
+              "line": 138
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-e2e62d4879514fbfc0822c61b21069ae758aa86d3ec3460a1faca89375dc2f4d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "execute-root",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft"
+              },
+              "location": {
+                "path": "cmd/soft/main.go",
+                "line": 138
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/main.go",
+                    "line": 138
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "git-listen",
+            "kind": "method",
+            "label": "GitDaemon.ListenAndServe",
+            "location": {
+              "path": "pkg/daemon/daemon.go",
+              "line": 78
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-git-task",
+            "component_id": "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "git-listen",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+              },
+              "location": {
+                "path": "pkg/daemon/daemon.go",
+                "line": 78
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/daemon/daemon.go",
+                    "line": 78
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "git-shutdown",
+            "kind": "method",
+            "label": "GitDaemon.Shutdown",
+            "location": {
+              "path": "pkg/daemon/daemon.go",
+              "line": 347
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+            "component_id": "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "git-shutdown",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+              },
+              "location": {
+                "path": "pkg/daemon/daemon.go",
+                "line": 347
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/daemon/daemon.go",
+                    "line": 347
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "handler-return",
+            "kind": "operation",
+            "label": "return from serve handler",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 135
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "handler-return",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 135
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 135
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "http-listen",
+            "kind": "method",
+            "label": "HTTPServer.ListenAndServe",
+            "location": {
+              "path": "pkg/web/http.go",
+              "line": 52
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-http-task",
+            "component_id": "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "http-listen",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/web"
+              },
+              "location": {
+                "path": "pkg/web/http.go",
+                "line": 52
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/web/http.go",
+                    "line": 52
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "http-shutdown",
+            "kind": "method",
+            "label": "HTTPServer.Shutdown",
+            "location": {
+              "path": "pkg/web/http.go",
+              "line": 60
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+            "component_id": "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "http-shutdown",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/web"
+              },
+              "location": {
+                "path": "pkg/web/http.go",
+                "line": 60
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/web/http.go",
+                    "line": 60
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "init-backend-hook",
+            "kind": "function",
+            "label": "cmd.InitBackendContext",
+            "location": {
+              "path": "cmd/cmd.go",
+              "line": 20
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-cecfdf69b825657bb6661117947c0281312b5b51ee1d54349f46f352fc964366",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "init-backend-hook",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd"
+              },
+              "location": {
+                "path": "cmd/cmd.go",
+                "line": 20
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/cmd.go",
+                    "line": 20
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "load-config",
+            "kind": "function",
+            "label": "config.DefaultConfig",
+            "location": {
+              "path": "pkg/config/config.go",
+              "line": 348
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-639b55f9a36f28181eb9635f77c237be0cee0ba687acc9c4bc406b3a94fc86ad",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "load-config",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/config"
+              },
+              "location": {
+                "path": "pkg/config/config.go",
+                "line": 348
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/config/config.go",
+                    "line": 348
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "main",
+            "kind": "function",
+            "label": "main",
+            "location": {
+              "path": "cmd/soft/main.go",
+              "line": 100
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-e2e62d4879514fbfc0822c61b21069ae758aa86d3ec3460a1faca89375dc2f4d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "main",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft"
+              },
+              "location": {
+                "path": "cmd/soft/main.go",
+                "line": 100
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/main.go",
+                    "line": 100
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "migrate-database",
+            "kind": "function",
+            "label": "migrate.Migrate",
+            "location": {
+              "path": "pkg/db/migrate/migrate.go",
+              "line": 63
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "migrate-database",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/db/migrate"
+              },
+              "location": {
+                "path": "pkg/db/migrate/migrate.go",
+                "line": 63
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/db/migrate/migrate.go",
+                    "line": 63
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "new-backend",
+            "kind": "function",
+            "label": "backend.New",
+            "location": {
+              "path": "pkg/backend/backend.go",
+              "line": 26
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "new-backend",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/backend"
+              },
+              "location": {
+                "path": "pkg/backend/backend.go",
+                "line": 26
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/backend/backend.go",
+                    "line": 26
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "new-server",
+            "kind": "function",
+            "label": "serve.NewServer",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 45
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "new-server",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 45
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 45
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "open-database",
+            "kind": "function",
+            "label": "db.Open",
+            "location": {
+              "path": "pkg/db/db.go",
+              "line": 23
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-798bd436bccda581047f7217dc6912df384a0054d3992f4638d5bfb28073419d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "open-database",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/db"
+              },
+              "location": {
+                "path": "pkg/db/db.go",
+                "line": 23
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/db/db.go",
+                    "line": 23
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "outer-server-task",
+            "kind": "task",
+            "label": "server Start result task",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 105
+            },
+            "branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "outer-server-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 105
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 105
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "register-serve",
+            "kind": "operation",
+            "label": "register serve command",
+            "location": {
+              "path": "cmd/soft/main.go",
+              "line": 75
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-e2e62d4879514fbfc0822c61b21069ae758aa86d3ec3460a1faca89375dc2f4d",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "register-serve",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft"
+              },
+              "location": {
+                "path": "cmd/soft/main.go",
+                "line": 75
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/main.go",
+                    "line": 75
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "serve-command",
+            "kind": "command",
+            "label": "serve command",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 27
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "serve-command",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 27
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 27
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "serve-handler",
+            "kind": "function",
+            "label": "serve Command.RunE",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 33
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "serve-handler",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 33
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 33
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "server-shutdown",
+            "kind": "method",
+            "label": "Server.Shutdown",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 170
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "server-shutdown",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 170
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 170
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "server-start",
+            "kind": "method",
+            "label": "Server.Start",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 115
+            },
+            "branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "server-start",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 115
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 115
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-context",
+            "kind": "operation",
+            "label": "five-second shutdown context",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 129
+            },
+            "branch_id": "flow:soft-serve-daemon:shared",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-context",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 129
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 129
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-cron-task",
+            "kind": "task",
+            "label": "stop cron jobs",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 184
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+            "component_id": "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-cron-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 188
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 188
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-git-task",
+            "kind": "task",
+            "label": "shut down Git daemon",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 172
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+            "component_id": "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-git-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 173
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 173
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-http-task",
+            "kind": "task",
+            "label": "shut down HTTP server",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 175
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+            "component_id": "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-http-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/web"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 176
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 176
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-ssh-task",
+            "kind": "task",
+            "label": "shut down SSH server",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 178
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+            "component_id": "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-ssh-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 179
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 179
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-stats-task",
+            "kind": "task",
+            "label": "shut down stats server",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 181
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+            "component_id": "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-stats-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 182
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 182
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shutdown-wait",
+            "kind": "operation",
+            "label": "wait for shutdown tasks",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 192
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "shutdown-wait",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 192
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 192
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "ssh-listen",
+            "kind": "method",
+            "label": "SSHServer.ListenAndServe",
+            "location": {
+              "path": "pkg/ssh/ssh.go",
+              "line": 133
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-ssh-task",
+            "component_id": "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "ssh-listen",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+              },
+              "location": {
+                "path": "pkg/ssh/ssh.go",
+                "line": 133
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/ssh/ssh.go",
+                    "line": 133
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "ssh-shutdown",
+            "kind": "method",
+            "label": "SSHServer.Shutdown",
+            "location": {
+              "path": "pkg/ssh/ssh.go",
+              "line": 148
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+            "component_id": "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "ssh-shutdown",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+              },
+              "location": {
+                "path": "pkg/ssh/ssh.go",
+                "line": 148
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/ssh/ssh.go",
+                    "line": 148
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-cron-task",
+            "kind": "task",
+            "label": "cron start task",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 162
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-cron-task",
+            "component_id": "component-b2ecafdaf417d8da39bff67c3eb84640bd8721f8bc0be5a2b7ecee8f096b2e23",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "start-cron-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/cron"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 163
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 163
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-git-task",
+            "kind": "task",
+            "label": "Git daemon listener task",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 131
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-git-task",
+            "component_id": "component-bffd0f0aca5eedd70543aac75c5652c3ae7dc0c6c48afb2e2226af8d851f344a",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "start-git-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/daemon"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 133
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 133
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-http-task",
+            "kind": "task",
+            "label": "HTTP listener task",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 142
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-http-task",
+            "component_id": "component-d1df0801739df88e16239994af242f69f0e01cd4ecdcee1c96d2569bc2d16c86",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "start-http-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/web"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 144
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 144
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-ssh-task",
+            "kind": "task",
+            "label": "SSH listener task",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 120
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-ssh-task",
+            "component_id": "component-06a1b5aed99c977180f8082d28eb17a3d3c5aecd7d4dfc3e647d3764c05a7fb3",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "start-ssh-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/ssh"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 122
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 122
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-stats-task",
+            "kind": "task",
+            "label": "stats listener task",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 153
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-stats-task",
+            "component_id": "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "start-stats-task",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 155
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 155
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-wait",
+            "kind": "operation",
+            "label": "wait for started service tasks",
+            "location": {
+              "path": "cmd/soft/serve/server.go",
+              "line": 166
+            },
+            "branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "start-wait",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/server.go",
+                "line": 166
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/server.go",
+                    "line": 166
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "stats-listen",
+            "kind": "method",
+            "label": "StatsServer.ListenAndServe",
+            "location": {
+              "path": "pkg/stats/stats.go",
+              "line": 39
+            },
+            "branch_id": "flow:soft-serve-daemon:task:start-stats-task",
+            "component_id": "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "stats-listen",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+              },
+              "location": {
+                "path": "pkg/stats/stats.go",
+                "line": 39
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/stats/stats.go",
+                    "line": 39
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "stats-shutdown",
+            "kind": "method",
+            "label": "StatsServer.Shutdown",
+            "location": {
+              "path": "pkg/stats/stats.go",
+              "line": 44
+            },
+            "branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+            "component_id": "component-6071cc9fb24cb6547df4aa9ccd8505f584a34ab882a0a36bcdb99d9a5816e6d6",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "stats-shutdown",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/pkg/stats"
+              },
+              "location": {
+                "path": "pkg/stats/stats.go",
+                "line": 44
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "pkg/stats/stats.go",
+                    "line": 44
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "wait-server-event",
+            "kind": "operation",
+            "label": "wait for server result or signal",
+            "location": {
+              "path": "cmd/soft/serve/serve.go",
+              "line": 111
+            },
+            "branch_id": "flow:soft-serve-daemon:main",
+            "component_id": "component-7152e4dd06e3b8b0b6431aec1bb28a774051bcd1bacbbb4aa0645012b7774d4e",
+            "binding": {
+              "flow_id": "soft-serve-daemon",
+              "anchor_id": "wait-server-event",
+              "member_id": {
+                "kind": "package",
+                "value": "github.com/charmbracelet/soft-serve/cmd/soft/serve"
+              },
+              "location": {
+                "path": "cmd/soft/serve/serve.go",
+                "line": 111
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "fixture_source_audit",
+                  "version": "16c8e08b7f1bb83ac267be438251fe523aa37dc6",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/soft/serve/serve.go",
+                    "line": 111
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "soft-serve-go-default",
+                  "name": "soft-serve default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "branches": [
+          {
+            "id": "flow:soft-serve-daemon:main",
+            "kind": "main",
+            "root_anchor_ids": [
+              "close-db-hook",
+              "execute-root",
+              "handler-return",
+              "main",
+              "new-server",
+              "register-serve",
+              "serve-command",
+              "serve-handler",
+              "server-shutdown",
+              "wait-server-event"
+            ],
+            "anchor_ids": [
+              "close-database",
+              "close-db-hook",
+              "deferred-cancel",
+              "execute-root",
+              "handler-return",
+              "init-backend-hook",
+              "load-config",
+              "main",
+              "migrate-database",
+              "new-backend",
+              "new-server",
+              "open-database",
+              "register-serve",
+              "serve-command",
+              "serve-handler",
+              "server-shutdown",
+              "shutdown-wait",
+              "wait-server-event"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:outer-server-task",
+            "kind": "task",
+            "root_anchor_id": "outer-server-task",
+            "root_anchor_ids": [
+              "outer-server-task"
+            ],
+            "anchor_ids": [
+              "outer-server-task",
+              "server-start",
+              "start-wait"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+            "kind": "task",
+            "root_anchor_id": "shutdown-cron-task",
+            "root_anchor_ids": [
+              "shutdown-cron-task"
+            ],
+            "anchor_ids": [
+              "cron-stop",
+              "shutdown-cron-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:shutdown-git-task",
+            "kind": "task",
+            "root_anchor_id": "shutdown-git-task",
+            "root_anchor_ids": [
+              "shutdown-git-task"
+            ],
+            "anchor_ids": [
+              "git-shutdown",
+              "shutdown-git-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:shutdown-http-task",
+            "kind": "task",
+            "root_anchor_id": "shutdown-http-task",
+            "root_anchor_ids": [
+              "shutdown-http-task"
+            ],
+            "anchor_ids": [
+              "http-shutdown",
+              "shutdown-http-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+            "kind": "task",
+            "root_anchor_id": "shutdown-ssh-task",
+            "root_anchor_ids": [
+              "shutdown-ssh-task"
+            ],
+            "anchor_ids": [
+              "shutdown-ssh-task",
+              "ssh-shutdown"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+            "kind": "task",
+            "root_anchor_id": "shutdown-stats-task",
+            "root_anchor_ids": [
+              "shutdown-stats-task"
+            ],
+            "anchor_ids": [
+              "shutdown-stats-task",
+              "stats-shutdown"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:start-cron-task",
+            "kind": "task",
+            "root_anchor_id": "start-cron-task",
+            "root_anchor_ids": [
+              "start-cron-task"
+            ],
+            "anchor_ids": [
+              "cron-start",
+              "start-cron-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:start-git-task",
+            "kind": "task",
+            "root_anchor_id": "start-git-task",
+            "root_anchor_ids": [
+              "start-git-task"
+            ],
+            "anchor_ids": [
+              "git-listen",
+              "start-git-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:start-http-task",
+            "kind": "task",
+            "root_anchor_id": "start-http-task",
+            "root_anchor_ids": [
+              "start-http-task"
+            ],
+            "anchor_ids": [
+              "http-listen",
+              "start-http-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:start-ssh-task",
+            "kind": "task",
+            "root_anchor_id": "start-ssh-task",
+            "root_anchor_ids": [
+              "start-ssh-task"
+            ],
+            "anchor_ids": [
+              "ssh-listen",
+              "start-ssh-task"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:task:start-stats-task",
+            "kind": "task",
+            "root_anchor_id": "start-stats-task",
+            "root_anchor_ids": [
+              "start-stats-task"
+            ],
+            "anchor_ids": [
+              "start-stats-task",
+              "stats-listen"
+            ]
+          },
+          {
+            "id": "flow:soft-serve-daemon:shared",
+            "kind": "shared",
+            "anchor_ids": [
+              "shutdown-context"
+            ]
+          }
+        ],
+        "slots": [
+          {
+            "kind": "trigger",
+            "status": "verified",
+            "summary": "serve command registration",
+            "evidence_ids": [
+              "register-serve",
+              "serve-command"
+            ]
+          },
+          {
+            "kind": "entrypoint",
+            "status": "verified",
+            "summary": "process main function",
+            "evidence_ids": [
+              "main"
+            ]
+          },
+          {
+            "kind": "dispatch",
+            "status": "verified",
+            "summary": "Cobra registration and dispatch",
+            "evidence_ids": [
+              "register-command",
+              "dispatch-serve"
+            ]
+          },
+          {
+            "kind": "application_callable",
+            "status": "verified",
+            "summary": "serve RunE callback",
+            "evidence_ids": [
+              "serve-handler"
+            ]
+          },
+          {
+            "kind": "core_operation",
+            "status": "partial",
+            "summary": "server construction and graceful shutdown are located",
+            "evidence_ids": [
+              "new-server",
+              "server-shutdown"
+            ],
+            "missing": "the runtime-enabled endpoint set and successful startup outcome are not observed"
+          },
+          {
+            "kind": "io_boundary",
+            "status": "partial",
+            "summary": "network ListenAndServe callsites resolve to four endpoint implementations",
+            "evidence_ids": [
+              "run-ssh",
+              "run-git",
+              "run-http",
+              "run-stats"
+            ],
+            "missing": "actual listener binding and runtime endpoint enablement are not observed"
+          },
+          {
+            "kind": "concurrency",
+            "status": "partial",
+            "summary": "outer server task, per-service tasks, cancellation, and both errgroup joins remain distinct",
+            "evidence_ids": [
+              "outer-server-task",
+              "start-ssh-task",
+              "start-git-task",
+              "start-http-task",
+              "start-stats-task",
+              "start-cron-task",
+              "shutdown-git-task",
+              "shutdown-http-task",
+              "shutdown-ssh-task",
+              "shutdown-stats-task",
+              "shutdown-cron-task",
+              "wait-server-event"
+            ],
+            "missing": "the outer server task is not explicitly joined after Shutdown and runtime scheduling is not observed"
+          },
+          {
+            "kind": "termination",
+            "status": "partial",
+            "summary": "handler return and database post-run hook are located",
+            "evidence_ids": [
+              "handler-return",
+              "close-db-hook"
+            ],
+            "missing": "CLI process termination and outer server task completion are not proven"
+          }
+        ],
+        "transition_ids": [
+          "call-server-shutdown",
+          "call-shutdown-wait",
+          "call-start-wait",
+          "callback-post-run",
+          "callback-pre-run",
+          "callback-serve-handler",
+          "cancel-shutdown-context",
+          "close-database-after-handler",
+          "construct-backend-before-handler",
+          "construct-server",
+          "construct-shutdown-context",
+          "dispatch-serve",
+          "execute-root-command",
+          "join-shutdown-cron",
+          "join-shutdown-git",
+          "join-shutdown-http",
+          "join-shutdown-ssh",
+          "join-shutdown-stats",
+          "join-start-cron",
+          "join-start-git",
+          "join-start-http",
+          "join-start-ssh",
+          "join-start-stats",
+          "load-serve-config",
+          "migrate-before-start",
+          "open-database-before-handler",
+          "register-command",
+          "return-serve-handler",
+          "run-cron",
+          "run-git",
+          "run-http",
+          "run-server-start",
+          "run-shutdown-cron",
+          "run-shutdown-git",
+          "run-shutdown-http",
+          "run-shutdown-ssh",
+          "run-shutdown-stats",
+          "run-ssh",
+          "run-stats",
+          "schedule-context-cancel",
+          "shutdown-git-uses-context",
+          "shutdown-http-uses-context",
+          "shutdown-ssh-uses-context",
+          "shutdown-stats-uses-context",
+          "start-cron",
+          "start-git",
+          "start-http",
+          "start-outer-server-task",
+          "start-shutdown-cron",
+          "start-shutdown-git",
+          "start-shutdown-http",
+          "start-shutdown-ssh",
+          "start-shutdown-stats",
+          "start-ssh",
+          "start-stats"
+        ]
+      }
+    ],
+    "flow_edges": [
+      {
+        "id": "call-server-shutdown",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "server-shutdown",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 131
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-shutdown-wait",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-shutdown",
+        "to": "shutdown-wait",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 192
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-start-wait",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-start",
+        "to": "start-wait",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 166
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "cross_branch": false
+      },
+      {
+        "id": "callback-post-run",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-command",
+        "to": "close-db-hook",
+        "relation": "callback",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 32
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "callback-pre-run",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-command",
+        "to": "init-backend-hook",
+        "relation": "callback",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 31
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "callback-serve-handler",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-command",
+        "to": "serve-handler",
+        "relation": "callback",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 33
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "cancel-shutdown-context",
+        "flow_id": "soft-serve-daemon",
+        "from": "deferred-cancel",
+        "to": "shutdown-context",
+        "relation": "cancels",
+        "resolution": "static",
+        "invocation": "deferred",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 130
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:shared",
+        "cross_branch": true
+      },
+      {
+        "id": "close-database-after-handler",
+        "flow_id": "soft-serve-daemon",
+        "from": "close-db-hook",
+        "to": "close-database",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/cmd.go",
+          "line": 49
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "construct-backend-before-handler",
+        "flow_id": "soft-serve-daemon",
+        "from": "init-backend-hook",
+        "to": "new-backend",
+        "relation": "constructs",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/cmd.go",
+          "line": 36
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "construct-server",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "new-server",
+        "relation": "constructs",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 73
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "construct-shutdown-context",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "shutdown-context",
+        "relation": "constructs",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 129
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:shared",
+        "cross_branch": true
+      },
+      {
+        "id": "dispatch-serve",
+        "flow_id": "soft-serve-daemon",
+        "from": "execute-root",
+        "to": "serve-command",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/main.go",
+          "line": 138
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "execute-root-command",
+        "flow_id": "soft-serve-daemon",
+        "from": "main",
+        "to": "execute-root",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/main.go",
+          "line": 138
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "join-shutdown-cron",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-wait",
+        "to": "shutdown-cron-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 192
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-shutdown-git",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-wait",
+        "to": "shutdown-git-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 192
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-shutdown-http",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-wait",
+        "to": "shutdown-http-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 192
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-shutdown-ssh",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-wait",
+        "to": "shutdown-ssh-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 192
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-shutdown-stats",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-wait",
+        "to": "shutdown-stats-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 192
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-start-cron",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-wait",
+        "to": "start-cron-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 166
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-cron-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-start-git",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-wait",
+        "to": "start-git-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "s.Config.Git.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 130
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 166
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-git-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-start-http",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-wait",
+        "to": "start-http-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "s.Config.HTTP.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 141
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 166
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-http-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-start-ssh",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-wait",
+        "to": "start-ssh-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "s.Config.SSH.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 119
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 166
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-ssh-task",
+        "cross_branch": true
+      },
+      {
+        "id": "join-start-stats",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-wait",
+        "to": "start-stats-task",
+        "relation": "joins",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "s.Config.Stats.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 152
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 166
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-stats-task",
+        "cross_branch": true
+      },
+      {
+        "id": "load-serve-config",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "load-config",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 35
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "migrate-before-start",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "migrate-database",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 69
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "open-database-before-handler",
+        "flow_id": "soft-serve-daemon",
+        "from": "init-backend-hook",
+        "to": "open-database",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/cmd.go",
+          "line": 28
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "register-command",
+        "flow_id": "soft-serve-daemon",
+        "from": "register-serve",
+        "to": "serve-command",
+        "relation": "registers_command",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/main.go",
+          "line": 75
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "return-serve-handler",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "handler-return",
+        "relation": "returns",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 135
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "run-cron",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-cron-task",
+        "to": "cron-start",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 163
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:start-cron-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-cron-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-git",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-git-task",
+        "to": "git-listen",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.Git.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 130
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 133
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:start-git-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-git-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-http",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-http-task",
+        "to": "http-listen",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.HTTP.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 141
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 144
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:start-http-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-http-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-server-start",
+        "flow_id": "soft-serve-daemon",
+        "from": "outer-server-task",
+        "to": "server-start",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 106
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-shutdown-cron",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-cron-task",
+        "to": "cron-stop",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 188
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-shutdown-git",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-git-task",
+        "to": "git-shutdown",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 173
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-shutdown-http",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-http-task",
+        "to": "http-shutdown",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 176
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-shutdown-ssh",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-ssh-task",
+        "to": "ssh-shutdown",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 179
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-shutdown-stats",
+        "flow_id": "soft-serve-daemon",
+        "from": "shutdown-stats-task",
+        "to": "stats-shutdown",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 182
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-ssh",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-ssh-task",
+        "to": "ssh-listen",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.SSH.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 119
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 122
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:start-ssh-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-ssh-task",
+        "cross_branch": false
+      },
+      {
+        "id": "run-stats",
+        "flow_id": "soft-serve-daemon",
+        "from": "start-stats-task",
+        "to": "stats-listen",
+        "relation": "callback",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.Stats.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 152
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 155
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:start-stats-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-stats-task",
+        "cross_branch": false
+      },
+      {
+        "id": "schedule-context-cancel",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "deferred-cancel",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "deferred",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 130
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:main",
+        "cross_branch": false
+      },
+      {
+        "id": "shutdown-git-uses-context",
+        "flow_id": "soft-serve-daemon",
+        "from": "git-shutdown",
+        "to": "shutdown-context",
+        "relation": "uses_cancellation",
+        "resolution": "static",
+        "invocation": "unknown",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 173
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+        "to_branch_id": "flow:soft-serve-daemon:shared",
+        "cross_branch": true
+      },
+      {
+        "id": "shutdown-http-uses-context",
+        "flow_id": "soft-serve-daemon",
+        "from": "http-shutdown",
+        "to": "shutdown-context",
+        "relation": "uses_cancellation",
+        "resolution": "static",
+        "invocation": "unknown",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 176
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+        "to_branch_id": "flow:soft-serve-daemon:shared",
+        "cross_branch": true
+      },
+      {
+        "id": "shutdown-ssh-uses-context",
+        "flow_id": "soft-serve-daemon",
+        "from": "ssh-shutdown",
+        "to": "shutdown-context",
+        "relation": "uses_cancellation",
+        "resolution": "static",
+        "invocation": "unknown",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 179
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+        "to_branch_id": "flow:soft-serve-daemon:shared",
+        "cross_branch": true
+      },
+      {
+        "id": "shutdown-stats-uses-context",
+        "flow_id": "soft-serve-daemon",
+        "from": "stats-shutdown",
+        "to": "shutdown-context",
+        "relation": "uses_cancellation",
+        "resolution": "static",
+        "invocation": "unknown",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 182
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+        "to_branch_id": "flow:soft-serve-daemon:shared",
+        "cross_branch": true
+      },
+      {
+        "id": "start-cron",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-start",
+        "to": "start-cron-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 162
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-cron-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-git",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-start",
+        "to": "start-git-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.Git.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 130
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 131
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-git-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-http",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-start",
+        "to": "start-http-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.HTTP.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 141
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 142
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-http-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-outer-server-task",
+        "flow_id": "soft-serve-daemon",
+        "from": "serve-handler",
+        "to": "outer-server-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/serve.go",
+          "line": 105
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-shutdown-cron",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-shutdown",
+        "to": "shutdown-cron-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 184
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-cron-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-shutdown-git",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-shutdown",
+        "to": "shutdown-git-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 172
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-git-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-shutdown-http",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-shutdown",
+        "to": "shutdown-http-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 175
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-http-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-shutdown-ssh",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-shutdown",
+        "to": "shutdown-ssh-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 178
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-ssh-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-shutdown-stats",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-shutdown",
+        "to": "shutdown-stats-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 181
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:main",
+        "to_branch_id": "flow:soft-serve-daemon:task:shutdown-stats-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-ssh",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-start",
+        "to": "start-ssh-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.SSH.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 119
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 120
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-ssh-task",
+        "cross_branch": true
+      },
+      {
+        "id": "start-stats",
+        "flow_id": "soft-serve-daemon",
+        "from": "server-start",
+        "to": "start-stats-task",
+        "relation": "starts_goroutine",
+        "resolution": "static",
+        "invocation": "goroutine",
+        "condition": {
+          "expression": "s.Config.Stats.Enabled",
+          "location": {
+            "path": "cmd/soft/serve/server.go",
+            "line": 152
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/soft/serve/server.go",
+          "line": 153
+        },
+        "provider": "fixture_source_audit",
+        "from_branch_id": "flow:soft-serve-daemon:task:outer-server-task",
+        "to_branch_id": "flow:soft-serve-daemon:task:start-stats-task",
+        "cross_branch": true
+      }
+    ],
+    "frontiers": [
+      {
+        "id": "frontier-4ac3d2eafd23384677b39cca7f69bd6a8bf872efdc1bae179f4463c978560565",
+        "flow_id": "soft-serve-daemon",
+        "kind": "proof_slot",
+        "slot": "concurrency",
+        "reason": "the outer server task is not explicitly joined after Shutdown and runtime scheduling is not observed"
+      },
+      {
+        "id": "frontier-97e11e817ddad9105e86818d9fed500c3713edb050b79ab313ebc8d6feb78e89",
+        "flow_id": "soft-serve-daemon",
+        "kind": "proof_slot",
+        "slot": "core_operation",
+        "reason": "the runtime-enabled endpoint set and successful startup outcome are not observed"
+      },
+      {
+        "id": "frontier-b5cc281283499177388da3532f9db3e8f681046d6d879e8892da77320a086cbf",
+        "flow_id": "soft-serve-daemon",
+        "kind": "proof_slot",
+        "slot": "termination",
+        "reason": "CLI process termination and outer server task completion are not proven"
+      },
+      {
+        "id": "frontier-dba8e56450a3b4e29ce4ac6a94aff38c2ea1cdfe120b66e2e304069132eb4f81",
+        "flow_id": "soft-serve-daemon",
+        "kind": "proof_slot",
+        "slot": "io_boundary",
+        "reason": "actual listener binding and runtime endpoint enablement are not observed"
+      }
+    ],
+    "diagnostics": [
+      {
+        "id": "diagnostic-59e7b725f73b9e325b3a19ec54dce0edd6c473ea936380b02275fcbfbb5ddb0e",
+        "source": "flowproof",
+        "severity": "warning",
+        "code": "flowproof.warning",
+        "message": "SSH, Git, HTTP, and Stats task registration is conditional on exact Config.Enabled predicates; the fixture does not choose a runtime configuration.",
+        "flow_id": "soft-serve-daemon"
+      },
+      {
+        "id": "diagnostic-a3ae8837b5896fbc5690d20a7f02daf447f3be5b2ea0990373b3fd3204a8cde0",
+        "source": "flowproof",
+        "severity": "warning",
+        "code": "flowproof.warning",
+        "message": "Server.Shutdown joins its own shutdown tasks, but the serve handler does not explicitly join the outer s.Start task before returning.",
+        "flow_id": "soft-serve-daemon"
+      },
+      {
+        "id": "diagnostic-b61d52c5b42284f6434142d9a120655fcbc5d99c0ff4e40dfb9bfb257795505d",
+        "source": "flowproof",
+        "severity": "warning",
+        "code": "flowproof.warning",
+        "message": "The select at cmd/soft/serve/serve.go:111 waits for a server result or signal; it is not represented as a join edge.",
+        "flow_id": "soft-serve-daemon"
+      }
+    ]
+  },
+  "flow_count": 0
+}
