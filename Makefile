@@ -28,6 +28,23 @@ build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/repomap ./cmd/repomap
 
+.PHONY: elkjs-asset-check elkjs-asset-refresh
+elkjs-asset-check: ## Verify the pinned vendored ELK.js browser asset (offline)
+	@printf '%s  %s\n' '20dd2114d683ce758b3ce19bcc56e28a504a617b0d280f760407c37314631d0e' 'internal/report/assets/elkjs/elk.bundled.js' | shasum -a 256 -c -
+	@printf '%s  %s\n' '89591d4578fb1ebd91501312a3d25f021bd865a2e436641c1cf7b1bc7e3c1617' 'internal/report/assets/elkjs/LICENSE.md' | shasum -a 256 -c -
+
+elkjs-asset-refresh: ## Refresh pinned ELK.js from the verified npm tarball (no npm required)
+	@set -euo pipefail; \
+		tmp_dir="$$(mktemp -d)"; \
+		trap 'rm -rf "$$tmp_dir"' EXIT; \
+		curl -fsSL 'https://registry.npmjs.org/elkjs/-/elkjs-0.11.1.tgz' -o "$$tmp_dir/elkjs.tgz"; \
+		printf '%s  %s\n' '83973e243b44842353717427ee8ea1880d688ebe79634d4017e3cc30f3214a4a' "$$tmp_dir/elkjs.tgz" | shasum -a 256 -c -; \
+		tar -xzf "$$tmp_dir/elkjs.tgz" -C "$$tmp_dir" package/lib/elk.bundled.js package/LICENSE.md; \
+		mkdir -p 'internal/report/assets/elkjs'; \
+		install -m 0644 "$$tmp_dir/package/lib/elk.bundled.js" 'internal/report/assets/elkjs/elk.bundled.js'; \
+		install -m 0644 "$$tmp_dir/package/LICENSE.md" 'internal/report/assets/elkjs/LICENSE.md'
+	@$(MAKE) --no-print-directory elkjs-asset-check
+
 clean: ## Remove project-local build, tmp, and debug artifacts
 	./scripts/clean.sh
 
