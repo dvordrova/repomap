@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/sourceexplain"
 )
 
 type committedBaseline struct {
@@ -22,6 +24,11 @@ var committedBaselines = []committedBaseline{
 		name:     "k6 metrics orientation and drilldown",
 		taskPath: "testdata/k6-metrics-v1/task.json",
 		taskID:   "k6-metrics-orientation-drilldown-v1",
+	},
+	{
+		name:     "prometheus labels orientation and drilldown",
+		taskPath: "testdata/prometheus-labels-v1/task.json",
+		taskID:   "prometheus-labels-orientation-drilldown-v1",
 	},
 }
 
@@ -236,6 +243,86 @@ func TestK6MetricsBaselineReplay(t *testing.T) {
 	const (
 		orientationRequestSHA = "9b24367e89e20e644d15e2c6e559bb450459590f3ddf8c17d838e86a5313c4e2"
 		sourceRequestSHA      = "e07df08d66f82c02f41b53bce6ddb83e9af21b573c2417cc40206b41fe59b122"
+	)
+	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||
+		loaded.Task.Captures.Source.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Source.ProviderRequestSHA256 != sourceRequestSHA {
+		t.Fatalf("request capture metadata = %#v", loaded.Task.Captures)
+	}
+}
+
+func TestPrometheusLabelsBaselineReplay(t *testing.T) {
+	t.Parallel()
+
+	loaded, err := Load("testdata/prometheus-labels-v1/task.json")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.Passed || result.Version != EvaluationVersion {
+		t.Fatalf("baseline result = %#v", result)
+	}
+	if loaded.Task.Captures.Orientation.PromptVersion != "orientation-json-v2" ||
+		loaded.Task.Captures.Source.PromptVersion != "source-assessment-json-v3" {
+		t.Fatalf("capture prompt versions = %#v", loaded.Task.Captures)
+	}
+	if len(result.DirectionCoverage.Checks) != 1 ||
+		!result.DirectionCoverage.Checks[0].Covered ||
+		result.DirectionCoverage.Checks[0].SelectedCandidate != "TSDB Write Path (Ingestion to WAL)" {
+		t.Fatalf("direction coverage = %#v", result.DirectionCoverage)
+	}
+	grounding := result.Grounding
+	if !grounding.Valid || grounding.AllowedPathCount != 60 ||
+		grounding.ReferencedPathCount != 10 || grounding.UnscoredProseEvidenceCount != 35 ||
+		len(grounding.InvalidReferences) != 0 {
+		t.Fatalf("grounding = %#v", grounding)
+	}
+	if !result.ImportantEvidence.Complete || len(result.ImportantEvidence.Checks) != 4 {
+		t.Fatalf("important evidence = %#v", result.ImportantEvidence)
+	}
+	drilldown := result.SemanticDrilldown
+	if !drilldown.Complete || !drilldown.OrientationLink.Linked ||
+		len(drilldown.OrientationLink.DirectionIDs) != 1 ||
+		drilldown.OrientationLink.DirectionIDs[0] != "tsdb-write-path" ||
+		len(drilldown.Predicates) != 1 || !drilldown.Predicates[0].Found ||
+		len(drilldown.Tests) != 1 || !drilldown.Tests[0].ContextCompatible {
+		t.Fatalf("drilldown = %#v", drilldown)
+	}
+	orientationContract := result.ContractAdherence.OrientationResponse
+	if !orientationContract.Valid || !orientationContract.Measured || !orientationContract.Clean {
+		t.Fatalf("orientation contract = %#v", orientationContract)
+	}
+	sourceContract := result.ContractAdherence.SourceResponse
+	if !sourceContract.Valid || !sourceContract.Clean || sourceContract.Evaluation == nil ||
+		sourceContract.Evaluation.Version != sourceexplain.EvaluationVersion ||
+		sourceContract.Evaluation.Score != 100 || sourceContract.Evaluation.MaxScore != 100 {
+		t.Fatalf("source contract = %#v", sourceContract)
+	}
+	observations := result.BytesAndLatency
+	if observations.Orientation.ReplayInputBytes != 2128 ||
+		observations.Orientation.ResponseBytes != 9085 ||
+		observations.Orientation.ModelContextBytes != 33882 ||
+		observations.Orientation.ProviderRequestBytes == nil ||
+		*observations.Orientation.ProviderRequestBytes != 39979 ||
+		observations.Orientation.LatencyMillis == nil ||
+		*observations.Orientation.LatencyMillis != 27247 ||
+		observations.Source.ReplayInputBytes != 3730 ||
+		observations.Source.ResponseBytes != 415 ||
+		observations.Source.ModelContextBytes != 2610 ||
+		observations.Source.ProviderRequestBytes == nil ||
+		*observations.Source.ProviderRequestBytes != 6228 ||
+		observations.Source.LatencyMillis == nil ||
+		*observations.Source.LatencyMillis != 9216 ||
+		observations.TestEvidenceBytes != 4029 {
+		t.Fatalf("bytes and latency = %#v", observations)
+	}
+	const (
+		orientationRequestSHA = "390d18a06d7db673c1fd5cad69431e085de20ec6db8e219e9414be93a933e3f3"
+		sourceRequestSHA      = "368b7ce7a2773ec1504837f9d7330d7c55ed8e40e09447c16ea670297208023b"
 	)
 	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
 		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||

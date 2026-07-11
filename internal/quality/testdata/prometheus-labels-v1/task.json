@@ -1,0 +1,116 @@
+{
+  "version": 2,
+  "id": "prometheus-labels-orientation-drilldown-v1",
+  "repository": {
+    "name": "prometheus",
+    "revision": "af77de9a5fd8b5391eb65ad770a454c9e84346c2",
+    "scenario": {
+      "orientation": "default local Go environment with go list -e and no explicit build tags",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "go_version": "go1.26.4",
+      "gopls_version": "v0.23.0",
+      "build_tags": []
+    }
+  },
+  "goal": "I know Prometheus only at a high level. Show useful runtime directions, then help inspect whether and how label validation may participate in the model-proposed TSDB ingestion path and find a relevant test reference.",
+  "captures": {
+    "orientation": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "orientation-json-v2",
+      "response_form": "provider_content",
+      "captured_at": "2026-07-10T15:29:20Z",
+      "model_context_sha256": "75cfa95b9cf27a9f3cecf0def6251ca4940c8b91843135b3d07451cb4fcd3603",
+      "model_context_bytes": 33882,
+      "provider_request_sha256": "390d18a06d7db673c1fd5cad69431e085de20ec6db8e219e9414be93a933e3f3",
+      "provider_request_bytes": 39979,
+      "latency_ms": 27247
+    },
+    "source": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "source-assessment-json-v3",
+      "response_form": "provider_content",
+      "captured_at": "2026-07-10T15:30:21Z",
+      "model_context_sha256": "af27c1d668e3584973403bd4fd20de3694fded3a8b876f8de53df0e587e3265d",
+      "model_context_bytes": 2610,
+      "provider_request_sha256": "368b7ce7a2773ec1504837f9d7330d7c55ed8e40e09447c16ea670297208023b",
+      "provider_request_bytes": 6228,
+      "latency_ms": 9216
+    }
+  },
+  "artifacts": {
+    "orientation_context": {
+      "path": "orientation_context.json",
+      "sha256": "3f54dc51678032bb43a81593283117fe1105d58bf38f8746c979bac9c8fb84c8"
+    },
+    "orientation_response": {
+      "path": "orientation_response.json",
+      "sha256": "ed6865776cc33c4b1526d31c010d6aff455fac03d795c88937cedc1a2055e0bc"
+    },
+    "source_bundle": {
+      "path": "source_bundle.json",
+      "sha256": "5cfaa791825b6654260711ef3449181fbb774205c7f0d1d223eb5dfa9cc3315c"
+    },
+    "source_response": {
+      "path": "source_response.json",
+      "sha256": "2ef4a9d123c37b4991c3c5ddbfc9259e5bc9a9cccbee8561bc66bf267776cf08"
+    },
+    "test_evidence": {
+      "path": "test_evidence.json",
+      "sha256": "b051a69b1290fa107071dd609bdfc979455e506ce1998bed5e13a5daf6721e99"
+    }
+  },
+  "expected": {
+    "directions": [
+      {
+        "id": "tsdb-write-path",
+        "aliases": [
+          "tsdb write path",
+          "ingestion to wal"
+        ],
+        "important_paths": [
+          "cmd/prometheus/main.go",
+          "tsdb/head_wal.go",
+          "model/labels/labels_common.go",
+          "model/histogram/histogram.go"
+        ]
+      }
+    ],
+    "drilldown": {
+      "symbol": "Labels.IsValid",
+      "path": "model/labels/labels_common.go",
+      "source_predicates": [
+        "validates_input"
+      ],
+      "test_reference_paths": [
+        "model/labels/labels_test.go"
+      ]
+    },
+    "forbidden_overclaims": [
+      {
+        "id": "labels-validation-proves-ingestion",
+        "scope": "orientation",
+        "contains_all": [
+          "Labels.IsValid proves",
+          "ingestion"
+        ]
+      },
+      {
+        "id": "runtime-observed-without-runtime-evidence",
+        "scope": "drilldown",
+        "contains_all": [
+          "observed at runtime"
+        ]
+      },
+      {
+        "id": "test-reference-proves-coverage",
+        "scope": "drilldown",
+        "contains_all": [
+          "test references prove coverage"
+        ]
+      }
+    ]
+  }
+}
