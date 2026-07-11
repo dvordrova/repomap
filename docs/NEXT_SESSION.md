@@ -17,20 +17,19 @@ The company-engineer acceptance track has three goals:
 3. use a real pre-change commit and ticket to produce a bounded `ChangeBrief`.
 
 These are policies over one investigation engine, not three prompt pipelines.
-The canonical implementation order remains [MILESTONES.md](MILESTONES.md): M3
-quality is active, feature work is M6, and onboarding is M7. The exact acceptance
+The canonical implementation order remains [MILESTONES.md](MILESTONES.md): M4
+fresh local memory is active, feature work is M6, and onboarding is M7. The exact acceptance
 contract is in [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
 If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. run the remaining company-style `REPOMAP_LLM_*` compatibility calibration
-   with `deepseek-v4-flash`, as requested, through doctor, preview, and one
-   bounded repository orientation;
-2. evaluate that output separately for usefulness, grounding, omissions,
-   contract adherence, bytes, and latency, then audit M3 completion;
-3. once M3 is proven complete, start M4 freshness for facts, claims, and sessions;
-4. keep the one-call browser friend test available, but do not let it replace the
-   ordered milestone gates.
+1. inventory the existing `internal/index` record and every producer/consumer;
+2. define a minimal freshness key covering repository identity, revision, dirty
+   content, analyzer/build context, prompt, and evaluator versions;
+3. prove one stale-record rejection and one unchanged-record reuse with a small
+   local fixture before storing more application state;
+4. keep the six M3 replay tasks and Qwen 1.5B structured regression green while
+   changing persistence contracts.
 
 Do not restart Qwen prompt tuning. Keep the staged 1.5B regression runnable, but
 the default product path uses the configured OpenAI-compatible provider.
@@ -64,6 +63,8 @@ the default product path uses the configured OpenAI-compatible provider.
   slices;
 - versioned, hash-verified offline quality tasks for etcd, Grafana k6,
   Prometheus, NATS Server, and golangci-lint;
+- a separate generic `REPOMAP_LLM_*` DeepSeek calibration task covering doctor,
+  exact preview metadata, and the same offline quality dimensions;
 - staged Qwen 1.5B protocol verification retained as non-critical regression
   tooling.
 
@@ -80,8 +81,12 @@ the default product path uses the configured OpenAI-compatible provider.
 - `internal/deepseek` still owns OpenAI-compatible transport plus concrete
   prompts; runtime configuration is provider-neutral, but orientation lacks a
   consumer-owned model interface.
-- M3 has all five repository tasks; the remaining gate is a company-style
-  generic-provider calibration using the requested DeepSeek reference model.
+- M3 is complete. The generic calibration proves the configuration/transport
+  path only; an actual company-hosted model quality run still needs that
+  engineer's endpoint and remains an open research question.
+- M4 has not yet proven freshness: the existing index persists a symbol bundle,
+  but its invalidation key does not cover all required repository/tool/prompt
+  inputs.
 - Prometheus is captured at revision
   `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
   `deepseek-v4-flash` orientation proposes a TSDB write direction containing

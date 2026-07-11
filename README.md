@@ -148,6 +148,8 @@ remaining onboarding/feature implementation.
 ./scripts/smoke.sh
 ./scripts/etcd_check.sh ../etcd
 ./scripts/quality_check.sh
+# Calibrate the atomic generic namespace against the DeepSeek reference:
+./scripts/with_deepseek_generic_config.sh go run ./cmd/repomap doctor llm --check
 # Before a new live baseline, after choosing a linked source-capable symbol:
 ./scripts/quality_preflight.sh LABEL PATH_TO_REPO EXACT_SYMBOL
 ```

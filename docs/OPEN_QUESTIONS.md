@@ -32,9 +32,13 @@ an API-description specification.
 DeepSeek is the current implementation and calibration target, not a fact that
 the core product should depend on. Runtime endpoint/model/bearer-or-none auth/
 timeout configuration is now provider-neutral and was exercised against Ollama.
-Prompt capability negotiation, non-compatible transports, and consumer-owned
-model interfaces remain open. New core types should describe model input,
-output, and evidence requirements rather than DeepSeek request fields.
+The atomic generic namespace was also exercised end-to-end against the DeepSeek
+reference endpoint with doctor, exact preview, and the same saved quality
+evaluator. That proves the generic configuration/transport path, but not output
+quality on a company-hosted model. Prompt capability negotiation,
+non-compatible transports, and consumer-owned model interfaces remain open. New
+core types should describe model input, output, and evidence requirements rather
+than DeepSeek request fields.
 
 ### Evidence needed for a decision
 

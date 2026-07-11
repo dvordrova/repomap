@@ -202,16 +202,19 @@ These are zero-tolerance conditions for all three scenarios:
 ## Current boundary
 
 The secure provider configuration, doctor, request preview, bounded orientation,
-source-grounded exact-symbol path, investigation reducer, and etcd offline quality
-replay exist. Public `onboarding` and natural-language `feature` commands do not
-yet exist, and the investigation reducer is not yet the sole main-CLI workflow.
+source-grounded exact-symbol path, investigation reducer, all five repository
+quality tasks, and one generic-namespace DeepSeek calibration replay exist.
+Public `onboarding` and natural-language `feature` commands do not yet exist,
+and the investigation reducer is not yet the sole main-CLI workflow.
 The trial is complete only after those profiles are wired and replayable; this
 document must not be read as a claim that all three commands already work.
 
 ## Milestone mapping
 
-1. Finish M3 with the same replayable quality dimensions on k6, Prometheus,
-   NATS Server, and golangci-lint; include one company-model compatibility run.
+1. M3 is complete with the same replayable quality dimensions on all five
+   repositories plus the requested `deepseek-v4-flash` run through the atomic
+   generic provider namespace. This proves compatibility of that path, not
+   quality on an arbitrary company-hosted model.
 2. Use M4/M5 to retain a session, let the engineer choose a named direction,
    and follow it progressively instead of auto-expanding a ranking.
 3. Use M6 for the held-out feature `ChangeBrief`; ticket text changes ranking
