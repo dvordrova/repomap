@@ -12,8 +12,8 @@ func TestBuiltin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog.Seeds) != 11 {
-		t.Fatalf("seed count = %d, want 11", len(catalog.Seeds))
+	if len(catalog.Seeds) != 12 {
+		t.Fatalf("seed count = %d, want 12", len(catalog.Seeds))
 	}
 	if catalog.Seeds[0].ID != "gin-router-group-handle" {
 		t.Fatalf("first sorted seed = %q", catalog.Seeds[0].ID)

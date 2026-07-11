@@ -26,6 +26,7 @@ const (
 	EffectHTTPRouteRegistration EffectKind = "http_route_registration"
 	EffectHTTPServerStart       EffectKind = "http_server_start"
 	EffectHTTPHandlerAssignment EffectKind = "http_handler_assignment"
+	EffectAsyncTaskStart        EffectKind = "async_task_start"
 )
 
 type Operation string

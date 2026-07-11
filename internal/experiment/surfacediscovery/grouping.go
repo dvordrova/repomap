@@ -79,9 +79,13 @@ func BuildGroupingBundle(result Result) GroupingBundle {
 			frontiers = append(frontiers, frontier.Kind+": "+frontier.Detail)
 		}
 		sort.Strings(frontiers)
+		path := trigger.Identity.Path.Text
+		if path == "" {
+			path = trigger.Identity.Name
+		}
 		bundle.Triggers = append(bundle.Triggers, GroupingTrigger{
 			ID: trigger.ID, Kind: trigger.Kind, Method: trigger.Identity.Method,
-			Path: trigger.Identity.Path.Text, Framework: trigger.Framework,
+			Path: path, Framework: trigger.Framework,
 			Handler: trigger.Handler.Text, Registration: trigger.RegistrationSite,
 			Status: trigger.Status, Frontiers: frontiers,
 		})

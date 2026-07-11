@@ -43,6 +43,9 @@ type analyzer struct {
 	assignments  map[string]Value
 	summaryByID  map[string]SemanticSummary
 	fileDigests  map[string]SourceDigest
+	functionByID map[string]*ssa.Function
+	loopCache    map[*ssa.Function][]loopDescriptor
+	loopSeen     map[string]bool
 }
 
 type environment map[ssa.Value]Value
@@ -76,14 +79,17 @@ func Analyze(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	a := &analyzer{
-		opts:        opts,
-		catalog:     builtin,
-		root:        root,
-		active:      map[*ssa.Function]bool{},
-		assignments: map[string]Value{},
-		summaryByID: map[string]SemanticSummary{},
-		fileDigests: map[string]SourceDigest{},
-		callTargets: map[ssa.CallInstruction][]*ssa.Function{},
+		opts:         opts,
+		catalog:      builtin,
+		root:         root,
+		active:       map[*ssa.Function]bool{},
+		assignments:  map[string]Value{},
+		summaryByID:  map[string]SemanticSummary{},
+		fileDigests:  map[string]SourceDigest{},
+		callTargets:  map[ssa.CallInstruction][]*ssa.Function{},
+		functionByID: map[string]*ssa.Function{},
+		loopCache:    map[*ssa.Function][]loopDescriptor{},
+		loopSeen:     map[string]bool{},
 	}
 	if err := a.load(); err != nil {
 		return Result{}, err
@@ -150,6 +156,8 @@ func (a *analyzer) prepare() {
 		if function == nil || function.Blocks == nil {
 			continue
 		}
+		a.functionByID[a.functionID(function)] = function
+		a.functionByID[cleanFunctionID(a.functionID(function))] = function
 		for _, block := range function.Blocks {
 			for _, instruction := range block.Instrs {
 				call, ok := instruction.(ssa.CallInstruction)
@@ -313,7 +321,13 @@ func (a *analyzer) recordCall(
 			location:   location,
 		})
 	case catalog.EffectHTTPRouteRegistration:
+		loopSignal, inLoop := a.registrationLoop(call, seed)
+		if inLoop {
+			a.addLoopSignal(loopSignal)
+		}
 		a.recordRoute(seed, values, location, chain, entrypoint, ambiguous)
+	case catalog.EffectAsyncTaskStart:
+		a.recordAsyncTask(seed, values, location, chain, entrypoint, ambiguous)
 	}
 	a.recordSummary(seed, values, chain, target)
 }
@@ -766,12 +780,12 @@ func (a *analyzer) finish(latency time.Duration) {
 		a.result.Summaries = append(a.result.Summaries, summary)
 	}
 	repository := Repository{Root: a.root, ModulePath: a.modulePath}
-	a.result.Catalog.Version = 1
+	a.result.Catalog.Version = TriggerCatalogVersion
 	a.result.Catalog.AnalyzerVersion = AnalyzerVersion
 	a.result.Catalog.CatalogVersion = CatalogVersion
 	a.result.Catalog.Repository = repository
 	a.result.Catalog.Scenario = a.scenario
-	a.result.Coverage.Version = 1
+	a.result.Coverage.Version = CoverageVersion
 	a.result.Coverage.Repository = repository
 	a.result.Coverage.Scenario = a.scenario
 	a.result.Coverage.ConfiguredSeedsMatched = append([]string{}, a.matchedSeeds...)
@@ -779,7 +793,7 @@ func (a *analyzer) finish(latency time.Duration) {
 	a.result.Coverage.DispatchRootsFound = len(a.starts)
 	a.result.Coverage.ColdLatencyMillis = latency.Milliseconds()
 	a.result.Coverage.BuildConstraints = append([]string{}, a.opts.BuildTags...)
-	a.result.Coverage.ScopeStatement = "route registrations found through configured terminal seeds and bounded wrapper propagation under the recorded build scenario, subject to listed frontiers"
+	a.result.Coverage.ScopeStatement = "runtime registrations and starts found through configured terminal seeds and bounded wrapper propagation under the recorded build scenario, subject to listed frontiers"
 	for _, trigger := range a.result.Catalog.Triggers {
 		if len(trigger.WrapperChain) == 0 {
 			a.result.Coverage.DirectTriggers++
@@ -789,7 +803,13 @@ func (a *analyzer) finish(latency time.Duration) {
 		if !trigger.Handler.Known {
 			a.result.Coverage.UnresolvedHandlers++
 		}
-		if trigger.Resolution != "exact" {
+		switch trigger.Kind {
+		case "worker":
+			a.result.Coverage.Workers++
+		case "async_task":
+			a.result.Coverage.AsyncTasks++
+		}
+		if trigger.Kind == "http_route" && trigger.Resolution != "exact" {
 			a.result.Coverage.PossibleRegistrations++
 		}
 	}

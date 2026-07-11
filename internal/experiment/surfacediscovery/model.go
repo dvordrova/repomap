@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	AnalyzerVersion = "surface-ssa-v1"
-	CatalogVersion  = 1
+	AnalyzerVersion       = "surface-ssa-v2"
+	TriggerCatalogVersion = 2
+	CoverageVersion       = 2
+	CatalogVersion        = 1
 )
 
 type Options struct {
@@ -82,6 +84,7 @@ type TriggerRecord struct {
 type Identity struct {
 	Method string `json:"method,omitempty"`
 	Path   Value  `json:"path"`
+	Name   string `json:"name,omitempty"`
 }
 
 type Value struct {
@@ -149,28 +152,40 @@ type SourceDigest struct {
 }
 
 type SurfaceCoverage struct {
-	Version                int        `json:"version"`
-	Repository             Repository `json:"repository"`
-	Scenario               Scenario   `json:"scenario"`
-	EntrypointsConsidered  []Symbol   `json:"entrypoints_considered"`
-	DispatchRootsFound     int        `json:"dispatch_roots_found"`
-	ConfiguredSeedsMatched []string   `json:"configured_seeds_matched"`
-	PackagesInspected      int        `json:"packages_inspected"`
-	FunctionsInspected     int        `json:"functions_inspected"`
-	DirectTriggers         int        `json:"direct_triggers"`
-	WrapperDerivedTriggers int        `json:"wrapper_derived_triggers"`
-	UnresolvedHandlers     int        `json:"unresolved_handlers"`
-	PossibleRegistrations  int        `json:"possible_registrations"`
-	DynamicFrontiers       []Frontier `json:"dynamic_frontiers"`
-	UnsupportedDispatch    []Frontier `json:"unsupported_dispatch_mechanisms"`
-	BuildConstraints       []string   `json:"build_constraints"`
-	FilesSkipped           []string   `json:"files_skipped"`
-	PackagesSkipped        []string   `json:"packages_skipped"`
-	BudgetsReached         []string   `json:"budgets_reached"`
-	ColdLatencyMillis      int64      `json:"cold_latency_ms"`
-	WarmLatencyMillis      *int64     `json:"warm_latency_ms,omitempty"`
-	CacheReuse             bool       `json:"cache_reuse"`
-	ScopeStatement         string     `json:"scope_statement"`
+	Version                int          `json:"version"`
+	Repository             Repository   `json:"repository"`
+	Scenario               Scenario     `json:"scenario"`
+	EntrypointsConsidered  []Symbol     `json:"entrypoints_considered"`
+	DispatchRootsFound     int          `json:"dispatch_roots_found"`
+	ConfiguredSeedsMatched []string     `json:"configured_seeds_matched"`
+	PackagesInspected      int          `json:"packages_inspected"`
+	FunctionsInspected     int          `json:"functions_inspected"`
+	DirectTriggers         int          `json:"direct_triggers"`
+	WrapperDerivedTriggers int          `json:"wrapper_derived_triggers"`
+	UnresolvedHandlers     int          `json:"unresolved_handlers"`
+	PossibleRegistrations  int          `json:"possible_registrations"`
+	Workers                int          `json:"workers"`
+	AsyncTasks             int          `json:"async_tasks"`
+	LoopSignals            []LoopSignal `json:"loop_signals"`
+	DynamicFrontiers       []Frontier   `json:"dynamic_frontiers"`
+	UnsupportedDispatch    []Frontier   `json:"unsupported_dispatch_mechanisms"`
+	BuildConstraints       []string     `json:"build_constraints"`
+	FilesSkipped           []string     `json:"files_skipped"`
+	PackagesSkipped        []string     `json:"packages_skipped"`
+	BudgetsReached         []string     `json:"budgets_reached"`
+	ColdLatencyMillis      int64        `json:"cold_latency_ms"`
+	WarmLatencyMillis      *int64       `json:"warm_latency_ms,omitempty"`
+	CacheReuse             bool         `json:"cache_reuse"`
+	ScopeStatement         string       `json:"scope_statement"`
+}
+
+type LoopSignal struct {
+	Kind         string   `json:"kind"`
+	FunctionID   string   `json:"function_id"`
+	Location     Location `json:"location"`
+	TerminalSeed string   `json:"terminal_seed,omitempty"`
+	Detail       string   `json:"detail"`
+	Certainty    string   `json:"certainty"`
 }
 
 type Result struct {
@@ -213,6 +228,9 @@ func (r *Result) normalize() {
 	if r.Coverage.DynamicFrontiers == nil {
 		r.Coverage.DynamicFrontiers = []Frontier{}
 	}
+	if r.Coverage.LoopSignals == nil {
+		r.Coverage.LoopSignals = []LoopSignal{}
+	}
 	if r.Coverage.UnsupportedDispatch == nil {
 		r.Coverage.UnsupportedDispatch = []Frontier{}
 	}
@@ -233,6 +251,17 @@ func (r *Result) normalize() {
 	})
 	sort.Strings(r.Coverage.ConfiguredSeedsMatched)
 	r.Coverage.ConfiguredSeedsMatched = compactStrings(r.Coverage.ConfiguredSeedsMatched)
+	sort.Slice(r.Coverage.LoopSignals, func(i, j int) bool {
+		left := r.Coverage.LoopSignals[i]
+		right := r.Coverage.LoopSignals[j]
+		if left.FunctionID != right.FunctionID {
+			return left.FunctionID < right.FunctionID
+		}
+		if locationKey(left.Location) != locationKey(right.Location) {
+			return locationKey(left.Location) < locationKey(right.Location)
+		}
+		return left.Kind < right.Kind
+	})
 	sort.Slice(r.Summaries, func(i, j int) bool {
 		return r.Summaries[i].FunctionID < r.Summaries[j].FunctionID
 	})
@@ -243,6 +272,9 @@ func stableTriggerID(record TriggerRecord) string {
 		"trigger-v1", record.Kind, record.Identity.Method, record.Identity.Path.Text,
 		record.Dispatcher.Text, record.RegistrationSite.Path,
 		strconv.Itoa(record.RegistrationSite.Line), record.Handler.Text, record.FinalSeed,
+	}
+	if record.Identity.Name != "" {
+		parts = append(parts, record.Identity.Name)
 	}
 	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return "trigger-" + hex.EncodeToString(digest[:12])

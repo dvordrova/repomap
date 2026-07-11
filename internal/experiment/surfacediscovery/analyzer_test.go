@@ -123,6 +123,9 @@ func TestAnalyzeDynamicAndNegativeControls(t *testing.T) {
 		if trigger.Status != "dynamic_unknown" || len(trigger.DynamicFrontier) < 2 {
 			t.Fatalf("dynamic trigger = %#v", trigger)
 		}
+		if !hasLoopSignal(result.Coverage.LoopSignals, "registration_loop") {
+			t.Fatalf("loop signals = %#v", result.Coverage.LoopSignals)
+		}
 	})
 	t.Run("negative controls", func(t *testing.T) {
 		result := analyzeFixture(t, "negative")
@@ -130,6 +133,35 @@ func TestAnalyzeDynamicAndNegativeControls(t *testing.T) {
 			t.Fatalf("triggers = %#v, want none", result.Catalog.Triggers)
 		}
 	})
+}
+
+func TestAnalyzeWorkerRequiresTerminalStartAndLoopEvidence(t *testing.T) {
+	result := analyzeFixture(t, "workers")
+	if len(result.Catalog.Triggers) != 2 {
+		t.Fatalf("trigger count = %d, want worker and finite async task", len(result.Catalog.Triggers))
+	}
+	var worker, finite *TriggerRecord
+	for index := range result.Catalog.Triggers {
+		trigger := &result.Catalog.Triggers[index]
+		switch trigger.Kind {
+		case "worker":
+			worker = trigger
+		case "async_task":
+			finite = trigger
+		}
+	}
+	if worker == nil || worker.Status != "confirmed_worker_registration" ||
+		!strings.Contains(worker.Handler.Text, "runWorker") {
+		t.Fatalf("worker = %#v", worker)
+	}
+	if finite == nil || finite.Status != "confirmed_async_task_start" ||
+		!strings.Contains(finite.Handler.Text, "oneShot") {
+		t.Fatalf("finite task = %#v", finite)
+	}
+	if result.Coverage.Workers != 1 || result.Coverage.AsyncTasks != 1 ||
+		!hasLoopSignal(result.Coverage.LoopSignals, "channel_receive_loop") {
+		t.Fatalf("coverage = %#v", result.Coverage)
+	}
 }
 
 func TestAnalyzeRecursiveWrapperStops(t *testing.T) {
@@ -208,6 +240,15 @@ func wrapperIDs(wrappers []Wrapper) string {
 func hasFrontier(frontiers []Frontier, kind string) bool {
 	for _, frontier := range frontiers {
 		if frontier.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLoopSignal(signals []LoopSignal, kind string) bool {
+	for _, signal := range signals {
+		if signal.Kind == kind {
 			return true
 		}
 	}
