@@ -59,11 +59,11 @@ Ollama setup was explicitly verified:
 - no downloads, deletes, sudo, profile changes, or duplicate servers;
 - x86 macOS correctly uses CPU-only inference.
 
-Installed models include Qwen2.5-Coder 0.5B Q4, SmolLM2 135M F16, and
-Qwen2.5-Coder 3B Q4. A short Qwen 0.5B plain-text smoke test succeeded, and a
-47-token Go review request returned valid JSON matching a runtime JSON Schema in
-8.16 seconds warm. This proves local structured inference works for small tasks;
-it does not establish repository-analysis quality.
+Installed models include Qwen2.5-Coder 0.5B, 1.5B, and 3B Q4 plus SmolLM2 135M
+F16. A short Qwen 0.5B plain-text smoke test succeeded, and a 47-token Go review
+request returned valid JSON matching a runtime JSON Schema in 8.16 seconds warm.
+This proves local structured inference works for small tasks; it does not
+establish repository-analysis quality.
 
 The compact repository experiment is now replayable. A 634-token tagged prompt
 ran in 18.85 seconds but produced malformed verbose output and scored 40/100. A
@@ -71,6 +71,12 @@ ran in 18.85 seconds but produced malformed verbose output and scored 40/100. A
 45/100: its shape was valid, but its interpretations copied instructions and
 invented evidence IDs. Details and completion criteria are in
 [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+
+Qwen2.5-Coder 1.5B ran the same 523-token compact JSON-Schema request in 22.64
+seconds at 18.71 output tokens/second and scored 60/100. It is fast enough to
+iterate with, but hallucinated `exampleKey`/`exampleValue` and attached valid yet
+irrelevant evidence IDs. This exposed another evaluator blind spot rather than
+establishing acceptable semantic quality.
 
 Do not conclude that local inference is generally unsuitable. The next fair test
 requires adaptive evidence selection from a local index, a compact prompt, a

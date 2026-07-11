@@ -56,6 +56,14 @@ local normalization discarded or repaired those claims. Constrained decoding is
 therefore reliable enough for contract testing but too slow and semantically weak
 for this repository task on the 0.5B model.
 
+The same 523-token JSON-Schema experiment on Qwen2.5-Coder 1.5B completed in
+22.64 seconds (18.71 output tokens/second) and scored 60/100. It followed the
+schema, used only known evidence IDs, and proposed a grounded reading order, but
+invented concrete `exampleKey`/`exampleValue` request values and cited valid but
+semantically irrelevant call edges for its claims. The model is fast enough for
+iteration on this machine; the result is not yet trustworthy repository
+understanding.
+
 The same Qwen 0.5B model succeeds on genuinely small requests:
 
 | Smoke test | Context | Time | Outcome |
@@ -80,14 +88,17 @@ output to a shape that completes within budget, and is measured again with Qwen
 **Evidence:** the Qwen 0.5B response followed most tags but copied the placeholder
 responsibility, cited a non-test target as `TEST`, claimed there were no unknowns,
 and repeated an instruction as `NEXT_QUERY`. The current structural rubric would
-still assign a relatively high score.
+still assign a relatively high score. Qwen 1.5B then scored 60/100 while inventing
+concrete request values: its evidence IDs existed, but did not support the claims
+that cited them.
 
 **Consequence:** prompt experiments can appear successful while producing little
 useful repository understanding.
 
 **Done when:** fixtures cover prompt/template echo, invalid test evidence, empty or
 vacuous unknowns, malformed next queries, and claims that merely restate symbol
-identity. Contract score and semantic-usefulness score should be reported
+identity. They must also cover novel concrete literals and valid-but-irrelevant
+citations. Contract score and semantic-usefulness score should be reported
 separately.
 
 ### TD-005: Experiment artifacts lack explicit contract versions
