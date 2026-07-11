@@ -240,11 +240,19 @@ instead of duplicating prompt-version literals in shell.
 
 ## Source assessment
 
-Source prompt v4 receives one bounded lexical source bundle. For a question
+Source prompt v5 receives one bounded lexical source bundle. For a question
 whose call result is used on a separate line, `shown` must cite both the exact
 call anchor and the candidate result-use line. The response stays compact:
 question ID, verdict, source evidence IDs, explicit unknowns, and one allowed
 next action.
+
+Three syntax-only predicates avoid inventing semantics when a callee name is
+uninformative: `checks_call_result`, `returns_call_result`, and
+`calls_from_branch`. The first requires the immediate guard/comparison proof,
+the second requires the call itself to be the direct return expression, and the
+third requires both a locally visible branch line and a complete standalone call
+statement. These observations do not establish callee behavior, runtime
+reachability, or which branch executes.
 
 Local parsing remains tolerant without trusting the model to manufacture proof.
 If the model cites the anchor but omits an immediate guard or returned nil

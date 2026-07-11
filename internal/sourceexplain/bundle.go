@@ -34,6 +34,9 @@ const (
 	PredicateFillsResponse      Predicate = "fills_response"
 	PredicatePersistsState      Predicate = "persists_state"
 	PredicatePerformsIO         Predicate = "performs_io"
+	PredicateChecksCallResult   Predicate = "checks_call_result"
+	PredicateReturnsCallResult  Predicate = "returns_call_result"
+	PredicateCallsFromBranch    Predicate = "calls_from_branch"
 )
 
 type Operation string
@@ -100,22 +103,31 @@ func Build(structural symbol.Bundle, card sourcecard.Card) (Bundle, error) {
 		if !ok || anchorLine.Truncated {
 			continue
 		}
-		predicate, ok := classifyCall(structural.Target.Entity.Name, call.Callee.Name)
-		if !ok {
+		question := Question{
+			ID:                     "question-" + call.EvidenceID,
+			AnchorEvidenceID:       call.EvidenceID,
+			AnchorSourceEvidenceID: anchorLine.EvidenceID,
+			CalleeName:             call.Callee.Name,
+		}
+		predicate, classifiedByName := classifyCall(structural.Target.Entity.Name, call.Callee.Name)
+		if classifiedByName {
+			question.Predicate = predicate
+			question.CandidateSourceEvidenceIDs = candidateSourceIDs(
+				predicate,
+				call.Callsite.Line,
+				call.Callee.Name,
+				lineByNumber,
+			)
+		} else {
+			question, ok = syntaxGroundedQuestion(question, card.Lines)
+			if !ok {
+				continue
+			}
+		}
+		if len(question.CandidateSourceEvidenceIDs) == 0 {
 			continue
 		}
-		candidateIDs := candidateSourceIDs(predicate, call.Callsite.Line, call.Callee.Name, lineByNumber)
-		if len(candidateIDs) == 0 {
-			continue
-		}
-		questions = append(questions, Question{
-			ID:                         "question-" + call.EvidenceID,
-			Predicate:                  predicate,
-			AnchorEvidenceID:           call.EvidenceID,
-			AnchorSourceEvidenceID:     anchorLine.EvidenceID,
-			CalleeName:                 call.Callee.Name,
-			CandidateSourceEvidenceIDs: candidateIDs,
-		})
+		questions = append(questions, question)
 	}
 	sort.Slice(questions, func(i, j int) bool {
 		left := lineByEvidenceID(card.Lines, questions[i].AnchorSourceEvidenceID)
@@ -372,6 +384,28 @@ func classifyCall(targetName, calleeName string) (Predicate, bool) {
 	}
 }
 
+func syntaxGroundedQuestion(question Question, lines []sourcecard.Line) (Question, bool) {
+	question.Predicate = PredicateChecksCallResult
+	if proofIDs, _, proven := validationProofSourceIDs(question, lines); proven {
+		question.CandidateSourceEvidenceIDs = proofIDs
+		return question, true
+	}
+
+	question.Predicate = PredicateReturnsCallResult
+	if proofIDs, proven := directReturnProofSourceIDs(question, lines); proven {
+		question.CandidateSourceEvidenceIDs = proofIDs
+		return question, true
+	}
+
+	question.Predicate = PredicateCallsFromBranch
+	if proofIDs, _, proven := branchCallProofSourceIDs(question, lines); proven {
+		question.CandidateSourceEvidenceIDs = proofIDs
+		return question, true
+	}
+
+	return Question{}, false
+}
+
 func candidateSourceIDs(
 	predicate Predicate,
 	anchorLine int,
@@ -452,7 +486,10 @@ func (p Predicate) valid() bool {
 		PredicateMapsError,
 		PredicateFillsResponse,
 		PredicatePersistsState,
-		PredicatePerformsIO:
+		PredicatePerformsIO,
+		PredicateChecksCallResult,
+		PredicateReturnsCallResult,
+		PredicateCallsFromBranch:
 		return true
 	default:
 		return false
