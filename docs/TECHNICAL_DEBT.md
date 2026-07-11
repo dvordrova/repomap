@@ -259,6 +259,42 @@ the main CLI/browser state. The selected direction must affect ranking and be
 bound to repository identity and revision; model prose alone must never become
 the selected symbol.
 
+### TD-010: Name-seeded source questions mix hypotheses with observations
+
+**Evidence:** `classifyCall` currently seeds semantic-looking question labels
+such as `validates_input` from a callee name. The Prometheus `Labels.IsValid`
+capture can locally prove that the value assigned from `Validate` is returned in
+a nil comparison, but it still cannot prove what `Validate` does internally.
+The reconstructed claim text preserves that unknown; the predicate label alone
+does not.
+
+**Consequence:** a consumer that reads only `Claim.Predicate` may overstate a
+syntax-grounded call-result observation as callee behavior. Quality fixtures and
+UI copy must describe this as a validation-shaped/name-seeded question until a
+callee or test source step adds stronger evidence.
+
+**Done when:** the contract separates the seeded semantic hypothesis from the
+locally proven syntax observation (for example `returned_nil_comparison` or
+`guarded_call_result`), and a later evidence cube explicitly promotes or rejects
+the semantic hypothesis without breaking historical replay fixtures.
+
+### TD-011: Investigation sessions do not retain parser diagnostics
+
+**Evidence:** `sourceexplain.Explanation` contains the normalized report, parser
+warnings, and contract evaluation, but `investigation.Runner` emits only the
+report in `EventSourceAssessed`; `Session` persists only that report. A response
+reduced to `ambiguous` remains safe, but a resumed CLI/browser cannot explain
+which model drift caused the downgrade or show its reduced contract score.
+
+**Consequence:** raw/debug artifacts can diagnose the original run, while the
+durable investigation state cannot present the same trust signal. Future safe
+local repairs would be especially misleading if their provenance disappeared at
+this boundary.
+
+**Done when:** the assessed-source event/session stores a compact validated
+envelope containing report, warning codes, and parser/evaluator/prompt versions;
+resume tests prove those diagnostics survive without storing raw provider text.
+
 ## Maintenance rules
 
 - Add an item only when there is concrete evidence or a demonstrated gap.

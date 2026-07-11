@@ -144,7 +144,7 @@ allowlist-checked.
 
 Evaluator v3 additionally requires the drill-down source path to occur in the
 selected orientation candidate. This prevents two independently useful but
-unrelated artifacts from passing as one journey. Both existing tasks satisfy
+unrelated artifacts from passing as one journey. All three current tasks satisfy
 the stronger relation. `scripts/quality_preflight.sh` checks its necessary
 precondition before any model call—the symbol path must occur in the bounded
 orientation context—and records the clean revision, toolchain, exact model
@@ -152,13 +152,27 @@ contexts, requests, hashes, and prompt versions.
 The quality loader also rejects obvious credentials in a manifest or hashed
 artifact without copying the detected value into its error.
 
-The Prometheus preflight at revision
-`af77de9a5fd8b5391eb65ad770a454c9e84346c2` selected `QueryRange` in
-`cmd/promtool/query.go`: unlike `Engine.NewInstantQuery`, that source path is
-actually present in the current 60-path orientation context. The bounded source
-step contains one `maps_error` question and has a direct `TestQueryRange` native
-test. This is not yet the third baseline: raw DeepSeek responses, test-evidence
-capture, expectations, and artifact hashes are still required.
+The third task replays a current Prometheus capture from revision
+`af77de9a5fd8b5391eb65ad770a454c9e84346c2`. The orientation selects
+the model-proposed `TSDB Write Path (Ingestion to WAL)` and links it to
+`Labels.IsValid` in
+`model/labels/labels_common.go`; the drill-down retains one locally grounded
+call-result observation under the name-seeded `validates_input` question and a
+compatible reference in
+`model/labels/labels_test.go`. Both raw `deepseek-v4-flash` wire contracts are
+clean; 35 mixed evidence-prose items remain explicitly unscored.
+The orientation request was 39,979 bytes and took 27,247 ms; the source request
+was 6,228 bytes and took 9,216 ms.
+
+This capture exposed a source-context bug before it became a fixture. The old
+fixed `anchor + 2 lines` candidate window omitted `return err == nil` after a
+multiline callback, so a correct-looking model verdict could not be grounded.
+The source cube now tokenizes only a bounded lexical window and selects the
+unique call anchor plus immediate returned nil comparison. An incomplete model
+citation becomes ambiguous with an explicit score-reducing warning. Captured
+prompt v3 asks the model to cite both lines; the committed response does so
+without repair. Current prompt v4 also names returned nil comparisons explicitly
+in its predicate rule.
 
 The NATS and golangci-lint preflights exposed a deterministic context-selection
 failure before any model call. NATS spent 56 of 60 paths on tests, while
@@ -180,9 +194,9 @@ network use because the source-question seeder produces no bounded question.
 That is the same grounded orchestration gap tracked in TD-006; a prompt must not
 hide it.
 
-M3 remains active until equivalent small tasks for Prometheus, NATS Server, and
-golangci-lint pass the same offline workflow. Two passing captures establish the
-workflow on etcd and k6, not yet cross-repository product quality.
+M3 remains active until equivalent small tasks for NATS Server and golangci-lint
+pass the same offline workflow. Three passing captures establish the workflow on
+etcd, k6, and Prometheus, but not yet the complete five-repository target.
 
 The external-company slice adds one compatibility/calibration run through
 `doctor`, request preview, and current repository exploration. Its model output

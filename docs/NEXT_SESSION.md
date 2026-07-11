@@ -26,9 +26,9 @@ If the user starts with “так, а че мы там дальше делаем
 1. let one engineer run the new one-call browser orientation baseline on a known
    repository; record useful directions, omissions, unsupported claims, and
    whether the output is worth a second step;
-2. capture the third M3 replay task for Prometheus from the prepared linked
-   `QueryRange` target using `deepseek-v4-flash`;
-3. add equivalent small tasks for NATS Server and golangci-lint;
+2. extend the deterministic source-question seeder only as needed to unlock one
+   honest linked target in NATS Server, then capture its small M3 task;
+3. do the same for golangci-lint without inventing source behavior from names;
 4. compare direction usefulness, grounding, omissions, request size, and latency
    separately from JSON/contract adherence.
 
@@ -62,7 +62,8 @@ the default product path uses the configured OpenAI-compatible provider.
 - exact-symbol evidence, bounded source cards, source assessment, related test
   references, and a pure resumable investigation reducer as isolated connected
   slices;
-- versioned, hash-verified offline quality tasks for etcd and Grafana k6;
+- versioned, hash-verified offline quality tasks for etcd, Grafana k6, and
+  Prometheus;
 - staged Qwen 1.5B protocol verification retained as non-critical regression
   tooling.
 
@@ -79,11 +80,14 @@ the default product path uses the configured OpenAI-compatible provider.
 - `internal/deepseek` still owns OpenAI-compatible transport plus concrete
   prompts; runtime configuration is provider-neutral, but orientation lacks a
   consumer-owned model interface.
-- M3 has two of five tasks; Prometheus, NATS Server, and golangci-lint remain, so
-  cross-repository quality is not established.
-- Prometheus is preflighted, not captured: `QueryRange` is linked to the bounded
-  orientation context, its source request is ready, and `TestQueryRange` passes;
-  a live DeepSeek key is still needed for the two raw provider responses.
+- M3 has three of five tasks; NATS Server and golangci-lint remain, so the full
+  cross-repository target is not established.
+- Prometheus is captured at revision
+  `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
+  `deepseek-v4-flash` orientation proposes a TSDB write direction containing
+  `model/labels/labels_common.go`, and the clean source response grounds how
+  `Labels.IsValid` uses the result of `Validate`. This is a model-proposed
+  cross-stage link, not runtime proof of ingestion.
 
 ## Read in this order
 
@@ -107,7 +111,6 @@ the default product path uses the configured OpenAI-compatible provider.
 ./scripts/investigation_check.sh ../etcd kvServer.Put
 ./scripts/investigation_handoff_check.sh ../etcd kvServer.Put
 ./scripts/quality_check.sh
-./scripts/quality_preflight.sh prometheus-query-range tmp/example-repos/prometheus QueryRange
 ```
 
 The detailed Ollama 0.5B/1.5B/3B timings, failures, and staged-protocol results
