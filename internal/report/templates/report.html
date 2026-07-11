@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>repomap — {{.Title}}</title>
+  <style>{{.CSS}}</style>
+</head>
+<body>
+  <header>
+    <h1 id="rm-repo-name"></h1>
+    <p id="rm-project-guess"></p>
+    <div class="rm-artifacts" id="rm-artifacts-dir"></div>
+  </header>
+  <div class="rm-container">
+    <nav class="rm-tabs" id="rm-tabs"></nav>
+    <section id="rm-overview" class="rm-tab-content rm-active"></section>
+    <div id="rm-flows-container"></div>
+  </div>
+  <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
+  <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>
+  <script>{{.JS}}</script>
+</body>
+</html>
