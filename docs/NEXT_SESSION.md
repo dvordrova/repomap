@@ -12,13 +12,12 @@ weak/local model, browser UI, or external coding agent.
 
 If the user starts with “what do we do next?”, recommend this order:
 
-1. finish or intentionally discard the uncommitted Ollama experiment WIP;
-2. implement the smallest `internal/index` vertical slice for existing symbol
+1. implement the smallest `internal/index` vertical slice for existing symbol
    evidence: put, query target neighborhood, persist/reload, invalidate one file;
-3. add goal-personalized graph ranking and pack selected evidence into a roughly
+2. add goal-personalized graph ranking and pack selected evidence into a roughly
    1K-token budget;
-4. rerun the compact context against Qwen 0.5B and 3B;
-5. then connect the index to the investigation reducer and source evidence.
+3. rerun the compact context against Qwen 3B;
+4. then connect the index to the investigation reducer and source evidence.
 
 Read these first:
 
@@ -63,10 +62,12 @@ Qwen2.5-Coder 3B Q4. A short Qwen 0.5B plain-text smoke test succeeded, and a
 8.16 seconds warm. This proves local structured inference works for small tasks;
 it does not establish repository-analysis quality.
 
-The compact repository experiment is unfinished. A 634-token tagged prompt ran
-in 18.85 seconds but produced malformed verbose output and scored 40/100. Runtime
-JSON Schema improved shape, but the first 320-token run was truncated. Details
-and completion criteria are in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+The compact repository experiment is now replayable. A 634-token tagged prompt
+ran in 18.85 seconds but produced malformed verbose output and scored 40/100. A
+523-token runtime-JSON-Schema prompt completed in 142.58 seconds and scored
+45/100: its shape was valid, but its interpretations copied instructions and
+invented evidence IDs. Details and completion criteria are in
+[TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
 
 Do not conclude that local inference is generally unsuitable. The next fair test
 requires adaptive evidence selection from a local index, a compact prompt, a
@@ -119,16 +120,5 @@ The current worktree contains pre-existing, uncommitted rewrites under
 excluded from the focused commit stack. Do not stage, restore, or overwrite them
 without deciding their intended fate.
 
-It also contains uncommitted experiment work created during the Ollama session:
-
-```text
-cmd/symbol-evaluate/
-scripts/ollama_compact_symbol_prompt.jq
-scripts/ollama_compact_symbol_prompt_json.jq
-scripts/ollama_symbol_experiment.sh
-```
-
-`cmd/symbol-evaluate` had passing unit tests. The shell script's latest JSON
-Schema path has not completed a successful end-to-end compact symbol run after
-the final edits. Review and verify these files before committing; do not confuse
-them with the preserved user-owned `agent-room` changes.
+The replay evaluator and Ollama experiment scripts are committed project tooling;
+their generated artifacts remain under ignored `tmp/` directories.
