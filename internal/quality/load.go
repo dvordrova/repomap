@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
@@ -43,6 +45,9 @@ func Load(manifestPath string) (LoadedTask, error) {
 	}
 	manifestJSON, err := readBoundedFile(resolvedManifest, maxManifestBytes, "manifest")
 	if err != nil {
+		return LoadedTask{}, err
+	}
+	if err := rejectCredentials("manifest", manifestJSON); err != nil {
 		return LoadedTask{}, err
 	}
 	var task Task
@@ -157,7 +162,18 @@ func loadArtifact(baseDir, name string, ref ArtifactRef, limit int64) ([]byte, e
 			ref.SHA256,
 		)
 	}
+	if err := rejectCredentials("artifact "+name, data); err != nil {
+		return nil, err
+	}
 	return data, nil
+}
+
+func rejectCredentials(label string, data []byte) error {
+	kind, found := secretscan.Detect(string(data))
+	if !found {
+		return nil
+	}
+	return fmt.Errorf("quality: %s contains an obvious %s", label, kind)
 }
 
 func resolveContainedArtifact(baseDir, relativePath string) (string, error) {

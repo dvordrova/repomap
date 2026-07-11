@@ -133,6 +133,48 @@ func TestLoadRejectsOversizedArtifact(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsCredentialsWithoutEchoingThem(t *testing.T) {
+	t.Parallel()
+
+	credential := "sk-" + strings.Repeat("x", 24)
+	tests := []struct {
+		name  string
+		build func(*testing.T) string
+	}{
+		{
+			name: "manifest",
+			build: func(t *testing.T) string {
+				fixture := newLoadFixture(t, validArtifactContents())
+				fixture.task.Goal = "investigate token " + credential
+				fixture.writeManifest(t)
+				return fixture.manifestPath
+			},
+		},
+		{
+			name: "hashed artifact",
+			build: func(t *testing.T) string {
+				contents := validArtifactContents()
+				contents.sourceResponse = []byte(fmt.Sprintf(`{"token":"%s"}`, credential))
+				return newLoadFixture(t, contents).manifestPath
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			manifestPath := test.build(t)
+			_, err := Load(manifestPath)
+			if err == nil || !strings.Contains(err.Error(), "secret key") {
+				t.Fatalf("Load() error = %v, want secret-key rejection", err)
+			}
+			if strings.Contains(err.Error(), credential) {
+				t.Fatal("Load() error echoed the credential")
+			}
+		})
+	}
+}
+
 func TestLoadKeepsCaptureSizesIndependentFromReplayArtifacts(t *testing.T) {
 	t.Parallel()
 
