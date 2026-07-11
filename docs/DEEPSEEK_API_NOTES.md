@@ -42,6 +42,18 @@ For repository development commands, use the narrow wrapper explicitly:
 `scripts/deepseek_check.sh` applies the same wrapper automatically when no
 provider environment is already active.
 
+To calibrate the generic OpenAI-compatible namespace against the same DeepSeek
+reference endpoint/model without exposing the ignored local key, use:
+
+```bash
+./scripts/with_deepseek_generic_config.sh \
+  go run ./cmd/repomap doctor llm --check
+```
+
+The wrapper refuses to overwrite any existing `REPOMAP_LLM_*` configuration,
+maps only the local DeepSeek key into the generic namespace, and unsets all
+legacy variables before executing the command.
+
 ## Endpoint
 
 ```

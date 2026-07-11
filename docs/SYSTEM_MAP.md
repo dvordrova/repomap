@@ -10,9 +10,9 @@ questions remain in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), demonstrated debt in
 [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md).
 
 Execution order belongs to [MILESTONES.md](MILESTONES.md). Source-grounded symbol
-understanding and the shared investigation loop are complete; the active
-milestone is the five-repository quality suite. Modules and challenge cards
-below are supporting seams, not competing roadmaps.
+understanding, the shared investigation loop, and the cross-repository quality
+suite are complete; the active milestone is fresh local memory. Modules and
+challenge cards below are supporting seams, not competing roadmaps.
 
 [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) applies one external acceptance lens to
 that order: exploration spans M3/M5, the feature `ChangeBrief` is M6, and
@@ -238,6 +238,7 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 | Prometheus quality fixture | works | raw orientation proposes a TSDB direction plus `Labels.IsValid` source/test drill-down | static path and references do not prove runtime ingestion or test coverage |
 | NATS quality fixture | works | raw orientation links the client message direction to four `processInboundMsg` branch-call observations | branch selection, callee behavior, and the referenced test body remain unverified |
 | golangci-lint quality fixture | works | raw orientation links the CLI lint run to checked-call and direct-return observations in `runAnalysis` | callee behavior and the referenced manager test body remain unverified |
+| generic-provider calibration fixture | works | `REPOMAP_LLM_*` DeepSeek reference run through doctor, preview, orientation, source, and the same evaluator | proves the generic transport/config path, not arbitrary company-model quality |
 
 ### Presentation and artifacts
 
@@ -281,7 +282,7 @@ This table separates real modularity from intended modularity.
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone; orientation uses user-facing entrypoint dependencies, bounded kind diversity, and one coherent allowlist | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
-| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | all five repository baselines exist; company-style provider calibration remains |
+| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | all five repository baselines plus generic-provider calibration exist |
 | Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
 
 The next work should improve one red cell at a time and preserve a runnable
@@ -484,8 +485,8 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C13 — Cross-repository product quality
 
-- State: all five repository baselines work; the company-style generic-provider
-  calibration remains before M3 can close.
+- State: complete; all five repository baselines plus the generic-provider
+  DeepSeek reference calibration replay offline.
 - Question: does the same product journey select useful directions and support a
   grounded drill-down across materially different large Go repositories?
 - Run the committed baseline without network access:
@@ -514,6 +515,11 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   and direct-return observations plus one compatible test-reference path are
   present. Both raw contracts are clean. The orientation request was 45,001
   bytes / 22,691 ms and the source request was 7,984 bytes / 8,748 ms.
+- Generic-provider signal: `REPOMAP_LLM_*` passed doctor and exact preview, then
+  produced three NATS directions, 16 grounded paths, a linked
+  `client.processInboundMsg` drill-down, and clean raw contracts under the same
+  evaluator. The orientation request was 28,355 bytes / 24,851 ms and the source
+  request was 7,495 bytes / 5,100 ms.
 - Evaluator v3 rejects a drill-down path that is absent from every selected
   orientation candidate. The Prometheus capture satisfies that relation without
   editing the provider response: DeepSeek placed

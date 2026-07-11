@@ -40,6 +40,11 @@ var committedBaselines = []committedBaseline{
 		taskPath: "testdata/golangci-run-analysis-v1/task.json",
 		taskID:   "golangci-run-analysis-orientation-drilldown-v1",
 	},
+	{
+		name:     "generic provider DeepSeek NATS calibration",
+		taskPath: "testdata/generic-deepseek-nats-v1/task.json",
+		taskID:   "generic-deepseek-nats-orientation-drilldown-v1",
+	},
 }
 
 func TestCommittedBaselineSuiteMembership(t *testing.T) {
@@ -504,6 +509,87 @@ func TestGolangCIRunAnalysisBaselineReplay(t *testing.T) {
 	const (
 		orientationRequestSHA = "153ba093398faba731c628453d7940c222016b1217fbc7236c2ee03ed1de05e7"
 		sourceRequestSHA      = "1819533d229989695287768f4ef119b7067e9ca7a00d3d569dc019663b531ce4"
+	)
+	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||
+		loaded.Task.Captures.Source.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Source.ProviderRequestSHA256 != sourceRequestSHA {
+		t.Fatalf("request capture metadata = %#v", loaded.Task.Captures)
+	}
+}
+
+func TestGenericDeepSeekNATSCalibrationReplay(t *testing.T) {
+	t.Parallel()
+
+	loaded, err := Load("testdata/generic-deepseek-nats-v1/task.json")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.Passed || result.Version != EvaluationVersion {
+		t.Fatalf("calibration result = %#v", result)
+	}
+	const provider = "openai-compatible-deepseek-reference"
+	if loaded.Task.Captures.Orientation.Provider != provider ||
+		loaded.Task.Captures.Source.Provider != provider ||
+		loaded.Task.Captures.Orientation.Model != "deepseek-v4-flash" ||
+		loaded.Task.Captures.Orientation.PromptVersion != "orientation-json-v3" ||
+		loaded.Task.Captures.Source.PromptVersion != "source-assessment-json-v5" {
+		t.Fatalf("capture identity = %#v", loaded.Task.Captures)
+	}
+	if len(result.DirectionCoverage.Checks) != 3 ||
+		len(result.DirectionCoverage.Missing) != 0 ||
+		len(result.DirectionCoverage.Ambiguous) != 0 {
+		t.Fatalf("direction coverage = %#v", result.DirectionCoverage)
+	}
+	grounding := result.Grounding
+	if !grounding.Valid || grounding.AllowedPathCount != 60 ||
+		grounding.ReferencedPathCount != 16 || grounding.UnscoredProseEvidenceCount != 29 ||
+		len(grounding.InvalidReferences) != 0 {
+		t.Fatalf("grounding = %#v", grounding)
+	}
+	if !result.ImportantEvidence.Complete || len(result.ImportantEvidence.Checks) != 11 {
+		t.Fatalf("important evidence = %#v", result.ImportantEvidence)
+	}
+	drilldown := result.SemanticDrilldown
+	if !drilldown.Complete || !drilldown.OrientationLink.Linked ||
+		len(drilldown.OrientationLink.DirectionIDs) != 1 ||
+		drilldown.OrientationLink.DirectionIDs[0] != "client-tcp-connection" ||
+		len(drilldown.Predicates) != 1 || !drilldown.Predicates[0].Found ||
+		len(drilldown.Tests) != 1 || !drilldown.Tests[0].ContextCompatible {
+		t.Fatalf("drilldown = %#v", drilldown)
+	}
+	if !result.ContractAdherence.OrientationResponse.Clean ||
+		!result.ContractAdherence.SourceResponse.Clean ||
+		result.ContractAdherence.SourceResponse.Evaluation == nil ||
+		result.ContractAdherence.SourceResponse.Evaluation.Score != 100 ||
+		result.ContractAdherence.SourceResponse.Evaluation.MaxScore != 100 {
+		t.Fatalf("contract adherence = %#v", result.ContractAdherence)
+	}
+	observations := result.BytesAndLatency
+	if observations.Orientation.ReplayInputBytes != 1774 ||
+		observations.Orientation.ResponseBytes != 7462 ||
+		observations.Orientation.ModelContextBytes != 22688 ||
+		observations.Orientation.ProviderRequestBytes == nil ||
+		*observations.Orientation.ProviderRequestBytes != 28355 ||
+		observations.Orientation.LatencyMillis == nil ||
+		*observations.Orientation.LatencyMillis != 24851 ||
+		observations.Source.ReplayInputBytes != 4518 ||
+		observations.Source.ResponseBytes != 852 ||
+		observations.Source.ModelContextBytes != 3223 ||
+		observations.Source.ProviderRequestBytes == nil ||
+		*observations.Source.ProviderRequestBytes != 7495 ||
+		observations.Source.LatencyMillis == nil ||
+		*observations.Source.LatencyMillis != 5100 ||
+		observations.TestEvidenceBytes != 3643 {
+		t.Fatalf("bytes and latency = %#v", observations)
+	}
+	const (
+		orientationRequestSHA = "71364e45124debc79684afff309822da7340103c11b18785a09351ba6595c85e"
+		sourceRequestSHA      = "a67b1b91366aae8896e6a5f27a733d464e43417bdebe2cf229476ff1434f48c1"
 	)
 	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
 		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||

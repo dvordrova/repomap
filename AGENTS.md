@@ -54,6 +54,7 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/smoke.sh           # temp git repo, snapshot+bundle, no network/API key
 ./scripts/etcd_check.sh      # validate against etcd clone (skip if absent)
 ./scripts/deepseek_check.sh  # full DeepSeek call (skip without key)
+./scripts/with_deepseek_generic_config.sh # map local key into REPOMAP_LLM_* reference config
 ./scripts/source_artifacts_check.sh # bounded source card/bundle, no model call
 ./scripts/source_check.sh    # replay fixed DeepSeek source response, no network
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment

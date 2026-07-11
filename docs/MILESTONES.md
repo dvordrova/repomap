@@ -29,8 +29,8 @@ progressive in M5, feature work is M6, and onboarding is M7.
 | --- | --- | --- |
 | M1. Source-grounded symbol | **complete** | one selected symbol is explained from exact source evidence and connected to relevant tests |
 | M2. Investigation loop | **complete** | repository, flow, symbol, source, tests, claims, unknowns, and next actions use one resumable state machine |
-| M3. Quality suite | **active** | the same golden tasks expose orientation and drill-down regressions on five large Go repositories |
-| M4. Fresh local memory | planned | saved facts, claims, and sessions survive restart and invalidate safely when the repository changes |
+| M3. Quality suite | **complete** | the same golden tasks expose orientation and drill-down regressions on five large Go repositories |
+| M4. Fresh local memory | **active** | saved facts, claims, and sessions survive restart and invalidate safely when the repository changes |
 | M5. Browser journey | planned | `./repomap` opens a progressive map, shows analysis/API progress, and opens evidence in the editor |
 | M6. Ticket playbook | planned | a real ticket produces a bounded change surface, risks, tests, unknowns, and a useful first edit location |
 | M7. Shared playbooks | planned | bug, onboarding, and impact analysis reuse the same evidence loop |
@@ -238,20 +238,31 @@ evidence only. Both raw contracts are clean and source scores 100/100. The
 orientation request was 45,001 bytes / 22,691 ms; the source request was 7,984
 bytes / 8,748 ms.
 
-The five-repository golden matrix now passes offline. M3 remains active only for
-the company-style `REPOMAP_LLM_*` compatibility/calibration run below; that run
-must still be judged by the same separate quality dimensions.
+The five-repository golden matrix now passes offline. The requested
+company-style `REPOMAP_LLM_*` compatibility/calibration run is recorded below
+and is judged by the same separate quality dimensions.
 
-The external-company slice adds one compatibility/calibration run through
-`doctor`, request preview, and current repository exploration. Its model output
-must be evaluated with the same separate dimensions; a successful HTTP call or
-valid JSON is not a quality result.
+Completed on 2026-07-10. A sixth task calibrates the atomic generic provider
+namespace against the requested `deepseek-v4-flash` reference endpoint/model.
+The run passed `doctor --check`, exact request preview, NATS orientation, linked
+source assessment, and test-reference collection. Offline replay covers three
+directions, 16 grounded structured paths, 11 important-path checks, one linked
+branch-call predicate, one compatible test path, clean raw contracts, and a
+100/100 source contract. The orientation request was 28,355 bytes / 24,851 ms;
+the source request was 7,495 bytes / 5,100 ms. This proves the generic
+configuration and OpenAI-compatible transport path against the reference model;
+it does not prove quality on an arbitrary company-hosted model, which remains an
+explicit research question.
 
 ## M4 — Fresh local memory
 
 Persist repository facts, derived claims, and investigation sessions separately.
 Freshness includes repository identity, HEAD, dirty-file content, Go/gopls and
 collector versions, build context, prompt version, and evaluator version.
+
+M4 is now active. Its first slice must inventory the existing `internal/index`
+contract and prove one safe stale-record rejection before broadening stored
+state or wiring persistence into the browser.
 
 ## M5 — Browser journey
 
