@@ -330,6 +330,63 @@ func TestParseOrientationRepairsSafeDriftWithWarnings(t *testing.T) {
 	}
 }
 
+func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "metrics service",
+		Confidence:   0.8,
+		HighLevelMap: []orientationMapItem{{
+			Name: "configuration",
+			Evidence: []string{
+				"main.go imports config",
+				"config/config.go and config/reload.go handle configuration",
+			},
+			WhyItMatters: "controls runtime behavior",
+		}},
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:             "configuration reload",
+			Trigger:          "SIGHUP",
+			LikelyEntrypoint: "config package (not in allowed_paths)",
+			LikelyFiles:      []string{"cmd/server/main.go", "config/reload.go"},
+			WhyInteresting:   "runtime reconfiguration",
+			Evidence: []string{
+				"main.go starts the reload loop",
+				"config/reload.go handles reloads",
+			},
+			Confidence: 0.7,
+		}},
+		ImportantDomainWords: []orientationDomainWord{{
+			Word:     "reload",
+			Guess:    "configuration reload",
+			Evidence: []string{"main.go", "config/reload.go"},
+		}},
+	}
+	allowed := []string{"cmd/server/main.go", "config/config.go", "config/reload.go"}
+
+	normalizeOrientationGrounding(&report, allowed, nil)
+
+	if got := report.CandidateFlows[0].LikelyEntrypoint; got != "cmd/server/main.go" {
+		t.Fatalf("likely_entrypoint = %q, want allowed fallback", got)
+	}
+	if len(report.HighLevelMap[0].Evidence) != 1 || len(report.CandidateFlows[0].Evidence) != 1 ||
+		len(report.ImportantDomainWords[0].Evidence) != 1 {
+		t.Fatalf("normalized evidence = high:%q flow:%q domain:%q",
+			report.HighLevelMap[0].Evidence,
+			report.CandidateFlows[0].Evidence,
+			report.ImportantDomainWords[0].Evidence,
+		)
+	}
+	warnings := strings.Join(report.Warnings, "\n")
+	if !strings.Contains(warnings, "dropped ungrounded path-like evidence") ||
+		!strings.Contains(warnings, "replaced ungrounded") {
+		t.Fatalf("warnings = %q, want drop and replacement warnings", report.Warnings)
+	}
+	if err := validateOrientation(report, allowed, nil); err != nil {
+		t.Fatalf("normalized orientation should validate: %v", err)
+	}
+}
+
 func TestK6QualityOrientationMatchesProductContract(t *testing.T) {
 	t.Parallel()
 

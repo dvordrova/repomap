@@ -165,6 +165,93 @@ func jsonArrayUsesStrings(data json.RawMessage) bool {
 	return json.Unmarshal(data, &values) == nil && len(values) > 0
 }
 
+// normalizeOrientationGrounding tolerates prose drift without weakening the
+// structured navigation contract. Evidence statements with ungrounded
+// path-like mentions are discarded, while an ungrounded likely_entrypoint can
+// fall back to the flow's first allowed likely_file. Structured file lists are
+// left untouched and remain fail-closed in validateOrientation.
+func normalizeOrientationGrounding(
+	report *orientationPart,
+	allowedPaths []string,
+	allowedEntrypoints []string,
+) {
+	allowed := make(map[string]struct{}, len(allowedPaths))
+	for _, filePath := range allowedPaths {
+		allowed[filePath] = struct{}{}
+	}
+	entrypoints := make(map[string]struct{}, len(allowedEntrypoints))
+	for _, entrypoint := range allowedEntrypoints {
+		entrypoint = strings.TrimSpace(entrypoint)
+		if entrypoint != "" && entrypoint != "." {
+			entrypoints[entrypoint] = struct{}{}
+		}
+	}
+
+	filterEvidence := func(field string, evidence []string) []string {
+		filtered := make([]string, 0, len(evidence))
+		for index, statement := range evidence {
+			grounded := true
+			for _, filePath := range evidencePathMentions(statement) {
+				if !validRepoRelativePath(filePath) {
+					grounded = false
+					break
+				}
+				if _, ok := allowed[filePath]; !ok {
+					grounded = false
+					break
+				}
+			}
+			if grounded {
+				filtered = append(filtered, statement)
+				continue
+			}
+			report.Warnings = append(
+				report.Warnings,
+				fmt.Sprintf("parser dropped ungrounded path-like evidence from %s[%d]", field, index),
+			)
+		}
+		return filtered
+	}
+
+	for index := range report.HighLevelMap {
+		report.HighLevelMap[index].Evidence = filterEvidence(
+			fmt.Sprintf("high_level_map[%d].evidence", index),
+			report.HighLevelMap[index].Evidence,
+		)
+	}
+	for index := range report.ImportantDomainWords {
+		report.ImportantDomainWords[index].Evidence = filterEvidence(
+			fmt.Sprintf("important_domain_words[%d].evidence", index),
+			report.ImportantDomainWords[index].Evidence,
+		)
+	}
+	for index := range report.CandidateFlows {
+		flow := &report.CandidateFlows[index]
+		flow.Evidence = filterEvidence(
+			fmt.Sprintf("candidate_flows[%d].evidence", index),
+			flow.Evidence,
+		)
+
+		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
+		_, isAllowedPath := allowed[entrypoint]
+		_, isAllowedPackage := entrypoints[entrypoint]
+		if isAllowedPath || isAllowedPackage {
+			continue
+		}
+		for _, likelyFile := range flow.LikelyFiles {
+			if _, ok := allowed[likelyFile]; !ok {
+				continue
+			}
+			flow.LikelyEntrypoint = likelyFile
+			report.Warnings = append(
+				report.Warnings,
+				fmt.Sprintf("parser replaced ungrounded candidate_flows[%d].likely_entrypoint with an allowed likely_file", index),
+			)
+			break
+		}
+	}
+}
+
 func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoints []string) error {
 	if strings.TrimSpace(report.ProjectGuess) == "" {
 		return fmt.Errorf("orientation: project_guess is required")
