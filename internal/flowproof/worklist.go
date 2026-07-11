@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidence"
 )
 
-const SessionVersion = 1
+const SessionVersion = 2
 
 type TaskKind string
 
@@ -92,18 +92,19 @@ type Stats struct {
 type StopReason string
 
 const (
-	StopComplete      StopReason = "complete"
-	StopMaxTasks      StopReason = "max_tasks"
-	StopMaxDepth      StopReason = "max_depth"
-	StopMaxSymbols    StopReason = "max_symbols"
-	StopMaxFiles      StopReason = "max_files"
-	StopMaxLLMCalls   StopReason = "max_llm_calls"
-	StopMaxWallTime   StopReason = "max_wall_time"
-	StopDuplicateTask StopReason = "duplicate_task"
-	StopNoProgress    StopReason = "no_progress"
-	StopNoTask        StopReason = "no_task"
-	StopCanceled      StopReason = "canceled"
-	StopExecutorError StopReason = "executor_error"
+	StopComplete           StopReason = "complete"
+	StopMaxTasks           StopReason = "max_tasks"
+	StopMaxDepth           StopReason = "max_depth"
+	StopMaxSymbols         StopReason = "max_symbols"
+	StopMaxFiles           StopReason = "max_files"
+	StopMaxLLMCalls        StopReason = "max_llm_calls"
+	StopMaxWallTime        StopReason = "max_wall_time"
+	StopDuplicateTask      StopReason = "duplicate_task"
+	StopNoProgress         StopReason = "no_progress"
+	StopNoTask             StopReason = "no_task"
+	StopCanceled           StopReason = "canceled"
+	StopExecutorError      StopReason = "executor_error"
+	StopUnsupportedVersion StopReason = "unsupported_version"
 )
 
 type Stop struct {
@@ -142,6 +143,13 @@ type Result struct {
 
 func Start(proof Proof, budget Budget, scenarioID, collectorVersion string) Session {
 	session := Session{Version: SessionVersion, Proof: proof, Budget: budget}
+	if proof.Version != Version {
+		session.Stop = &Stop{
+			Reason:  StopUnsupportedVersion,
+			Message: fmt.Sprintf("unsupported proof version %d; need %d", proof.Version, Version),
+		}
+		return session
+	}
 	refreshCoreVerdicts(&session.Proof)
 	if session.Proof.Satisfied() {
 		session.Stop = &Stop{Reason: StopComplete, Message: "all required proof slots are satisfied"}
@@ -228,6 +236,12 @@ func (s Session) Next() (Task, bool) {
 }
 
 func (s *Session) Apply(result Result) error {
+	if s.Version != SessionVersion || s.Proof.Version != Version {
+		return fmt.Errorf(
+			"flowproof: unsupported session/proof version %d/%d; need %d/%d",
+			s.Version, s.Proof.Version, SessionVersion, Version,
+		)
+	}
 	if s.Stop != nil {
 		return fmt.Errorf("flowproof: session already stopped: %s", s.Stop.Reason)
 	}
@@ -348,9 +362,14 @@ func (s *Session) applyTransitionUpdates(updates []TransitionUpdate) int {
 func refreshCoreVerdicts(proof *Proof) int {
 	changes := refreshArchitecturalRoleVerdicts(proof)
 	concurrency, ok := proof.Slot(SlotConcurrency)
-	if !ok || concurrency.Status == SlotNotApplicable &&
-		slotSatisfied(proof.Archetype, concurrency) {
+	if !ok {
 		return changes
+	}
+	if concurrency.Status == SlotNotApplicable && slotSatisfied(proof.Archetype, concurrency) {
+		if !hasConcurrentStart(*proof) {
+			return changes
+		}
+		appendProofWarning(proof, "concurrent lifecycle absence contradicts concrete task-start facts")
 	}
 
 	evidenceIDs, complete, guarded := concreteConcurrentLifecycle(*proof)
@@ -514,6 +533,15 @@ func concurrentStartEvidence(proof Proof) []string {
 	return ids
 }
 
+func appendProofWarning(proof *Proof, warning string) {
+	for _, existing := range proof.Warnings {
+		if existing == warning {
+			return
+		}
+	}
+	proof.Warnings = append(proof.Warnings, warning)
+}
+
 func budgetStop(budget Budget, stats Stats) *Stop {
 	switch {
 	case stats.TasksCompleted >= budget.MaxTasks:
@@ -543,6 +571,16 @@ type Executor interface {
 func Run(ctx context.Context, repoPath string, session *Session, executor Executor) error {
 	if session == nil {
 		return fmt.Errorf("flowproof: nil session")
+	}
+	if session.Version != SessionVersion || session.Proof.Version != Version {
+		session.Stop = &Stop{
+			Reason: StopUnsupportedVersion,
+			Message: fmt.Sprintf(
+				"unsupported session/proof version %d/%d; need %d/%d",
+				session.Version, session.Proof.Version, SessionVersion, Version,
+			),
+		}
+		return nil
 	}
 	if executor == nil {
 		session.Stop = &Stop{Reason: StopNoTask, Message: "no proof task executor is configured"}

@@ -30,16 +30,32 @@ type CLICall struct {
 	TargetLine int
 }
 
+// ConcurrentLifecyclePresence is a normalized bounded fact about the selected
+// handler scope. Adapters report presence; the proof core decides whether that
+// fact makes an optional slot not applicable.
+type ConcurrentLifecyclePresence string
+
+const (
+	ConcurrentLifecycleUnknown ConcurrentLifecyclePresence = ""
+	ConcurrentLifecyclePresent ConcurrentLifecyclePresence = "present"
+	ConcurrentLifecycleAbsent  ConcurrentLifecyclePresence = "absent"
+)
+
+type ConcurrentLifecycleFact struct {
+	Presence   ConcurrentLifecyclePresence
+	Provenance []evidence.Provenance
+}
+
 type CLISeed struct {
-	FlowID             string
-	Goal               string
-	Command            string
-	Framework          string
-	CollectorVersion   string
-	ScenarioID         string
-	Steps              []CLIStep
-	Calls              []CLICall
-	NotApplicableSlots map[SlotKind]ApplicabilityReason
+	FlowID              string
+	Goal                string
+	Command             string
+	Framework           string
+	CollectorVersion    string
+	ScenarioID          string
+	Steps               []CLIStep
+	Calls               []CLICall
+	ConcurrentLifecycle ConcurrentLifecycleFact
 }
 
 // BuildCLI creates the initial proof from bounded command-framework evidence.
@@ -127,7 +143,7 @@ func BuildCLI(seed CLISeed) Proof {
 	}
 
 	fillCLISlots(&proof, seed, stepAnchors, callTransitionIDs)
-	applyExplicitApplicability(&proof, seed.NotApplicableSlots)
+	applyConcurrentLifecyclePresence(&proof, seed.ConcurrentLifecycle)
 	refreshCoreVerdicts(&proof)
 	return proof
 }
@@ -227,36 +243,43 @@ func setSlot(proof *Proof, kind SlotKind, status SlotStatus, summary string, evi
 		proof.Slots[index].Status = status
 		proof.Slots[index].Summary = summary
 		proof.Slots[index].EvidenceIDs = append([]string{}, evidenceIDs...)
+		proof.Slots[index].Provenance = nil
 		proof.Slots[index].Missing = missing
 		proof.Slots[index].ApplicabilityReason = ""
 		return
 	}
 }
 
-func applyExplicitApplicability(proof *Proof, notApplicable map[SlotKind]ApplicabilityReason) {
-	for _, kind := range cliSlotOrder {
-		reason, ok := notApplicable[kind]
-		if !ok {
+func applyConcurrentLifecyclePresence(proof *Proof, fact ConcurrentLifecycleFact) {
+	if fact.Presence == ConcurrentLifecycleUnknown || fact.Presence == ConcurrentLifecyclePresent {
+		return
+	}
+	if fact.Presence != ConcurrentLifecycleAbsent {
+		proof.Warnings = append(proof.Warnings, fmt.Sprintf(
+			"invalid concurrent lifecycle presence %q", fact.Presence,
+		))
+		return
+	}
+	if !validApplicabilityProvenance(fact.Provenance) {
+		proof.Warnings = append(proof.Warnings, "concurrent lifecycle absence has no valid provenance")
+		return
+	}
+	if hasConcurrentStart(*proof) {
+		appendProofWarning(proof, "concurrent lifecycle absence contradicts concrete task-start facts")
+		return
+	}
+	for index := range proof.Slots {
+		if proof.Slots[index].Kind != SlotConcurrency {
 			continue
 		}
-		if !slotMayBeNotApplicable(proof.Archetype, kind) || !validApplicabilityReason(reason) {
-			proof.Warnings = append(proof.Warnings, fmt.Sprintf(
-				"slot %s has invalid not-applicable policy reason %q", kind, reason,
-			))
-			continue
+		proof.Slots[index] = Slot{
+			Kind:                SlotConcurrency,
+			Status:              SlotNotApplicable,
+			Summary:             "not applicable to the selected flow scope",
+			Provenance:          append([]evidence.Provenance(nil), fact.Provenance...),
+			ApplicabilityReason: ApplicabilityNoConcurrentLifecycleInScope,
 		}
-		for index := range proof.Slots {
-			if proof.Slots[index].Kind != kind {
-				continue
-			}
-			proof.Slots[index] = Slot{
-				Kind:                kind,
-				Status:              SlotNotApplicable,
-				Summary:             "not applicable to the selected flow scope",
-				ApplicabilityReason: reason,
-			}
-			break
-		}
+		return
 	}
 }
 

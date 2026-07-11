@@ -50,19 +50,15 @@ func Attach(ctx context.Context, repoPath string, flows []flowexplain.CandidateF
 
 func seedForFlow(flow flowexplain.CandidateFlow, trace gofacts.CommandTrace) flowproof.CLISeed {
 	seed := flowproof.CLISeed{
-		FlowID:           flowexplain.GenerateFlowID(flow.Name),
-		Goal:             flow.Name,
-		Command:          trace.Command,
-		Framework:        trace.Framework,
-		CollectorVersion: flowproof.CLICollectorVersion,
-		ScenarioID:       "go-default:" + trace.EntrypointPackage,
-		Steps:            make([]flowproof.CLIStep, 0, len(trace.Steps)),
-		Calls:            make([]flowproof.CLICall, 0, len(trace.HandlerCalls)),
-	}
-	if trace.Concurrency == gofacts.ConcurrencyAbsentFromHandlerScope {
-		seed.NotApplicableSlots = map[flowproof.SlotKind]flowproof.ApplicabilityReason{
-			flowproof.SlotConcurrency: flowproof.ApplicabilityNoConcurrentLifecycleInScope,
-		}
+		FlowID:              flowexplain.GenerateFlowID(flow.Name),
+		Goal:                flow.Name,
+		Command:             trace.Command,
+		Framework:           trace.Framework,
+		CollectorVersion:    flowproof.CLICollectorVersion,
+		ScenarioID:          "go-default:" + trace.EntrypointPackage,
+		Steps:               make([]flowproof.CLIStep, 0, len(trace.Steps)),
+		Calls:               make([]flowproof.CLICall, 0, len(trace.HandlerCalls)),
+		ConcurrentLifecycle: concurrentLifecycleFact(trace.Concurrency),
 	}
 	for _, step := range trace.Steps {
 		seed.Steps = append(seed.Steps, flowproof.CLIStep{
@@ -78,6 +74,24 @@ func seedForFlow(flow flowexplain.CandidateFlow, trace gofacts.CommandTrace) flo
 		})
 	}
 	return seed
+}
+
+func concurrentLifecycleFact(scope gofacts.ConcurrencyScope) flowproof.ConcurrentLifecycleFact {
+	fact := flowproof.ConcurrentLifecycleFact{
+		Provenance: []evidence.Provenance{{
+			Provider: "go_syntax", Version: flowproof.CLICollectorVersion,
+			Operation: "inspect_handler_concurrency", Detail: string(scope),
+		}},
+	}
+	switch scope {
+	case gofacts.ConcurrencyPresentInHandler:
+		fact.Presence = flowproof.ConcurrentLifecyclePresent
+	case gofacts.ConcurrencyAbsentFromHandlerScope:
+		fact.Presence = flowproof.ConcurrentLifecycleAbsent
+	default:
+		fact.Presence = flowproof.ConcurrentLifecycleUnknown
+	}
+	return fact
 }
 
 func cloneCondition(condition *evidence.Condition) *evidence.Condition {
