@@ -120,6 +120,14 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 }
 ```
 
+Orientation parsing separates recoverable prose drift from structured
+navigation. A free-form evidence item that contains an invalid or unprovided
+path-like mention is dropped with a warning. If `likely_entrypoint` is neither
+an allowed file nor a provided entrypoint package, it may be replaced with that
+flow's first already-allowed `likely_file`, again with a warning.
+`first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
+invented values: invalid or unallowed structured paths still fail validation.
+
 ## Focused symbol investigation
 
 Symbol investigation is a separate bounded request. It does not send the raw

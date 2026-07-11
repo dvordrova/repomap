@@ -76,7 +76,11 @@ Must NOT include:
 The configured provider receives only the compact facts bundle and returns a
 JSON orientation report. Structured verified paths are normalized against the
 bundle allowlist, and path-like mentions inside evidence prose cannot name an
-unprovided file. Other prose remains an explicit model interpretation.
+unprovided file. If a provider abbreviates or invents a path inside free-form
+evidence, that evidence item is removed with a parser warning instead of losing
+the whole report. An ungrounded `likely_entrypoint` may fall back to the flow's
+first already-allowed `likely_file`; structured file lists remain fail-closed.
+Other prose remains an explicit model interpretation.
 
 The report proposes **candidate runtime/event flows**, not folder summaries.
 Every candidate flow must cite evidence from the bundle.

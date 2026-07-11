@@ -250,7 +250,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
 		}
 
-		if err := validateOrientation(or, bundle.AllowedPaths, orientationEntrypoints(bundle)); err != nil {
+		allowedEntrypoints := orientationEntrypoints(bundle)
+		normalizeOrientationGrounding(&or, bundle.AllowedPaths, allowedEntrypoints)
+		if err := validateOrientation(or, bundle.AllowedPaths, allowedEntrypoints); err != nil {
 			if dw != nil {
 				dw.WriteError(err)
 			}
