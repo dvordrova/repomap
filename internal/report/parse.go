@@ -11,10 +11,21 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 )
 
 type snapshotJSON struct {
 	RepoName string `json:"repo_name"`
+}
+
+type llmBundleJSON struct {
+	Go struct {
+		ModuleSummaries []struct {
+			ModulePath string `json:"module_path"`
+			ModuleDir  string `json:"module_dir"`
+		} `json:"module_summaries"`
+		ImportantEdges []EdgeInfo `json:"important_edges"`
+	} `json:"go"`
 }
 
 type runMetadataJSON struct {
@@ -53,13 +64,14 @@ type orientationDomainWordJSON struct {
 }
 
 type orientationCandidateJSON struct {
-	Name             string   `json:"name"`
-	Trigger          string   `json:"trigger"`
-	LikelyEntrypoint string   `json:"likely_entrypoint"`
-	LikelyFiles      []string `json:"likely_files"`
-	WhyInteresting   string   `json:"why_interesting"`
-	Evidence         []string `json:"evidence"`
-	Confidence       float64  `json:"confidence"`
+	Name             string             `json:"name"`
+	Trigger          string             `json:"trigger"`
+	LikelyEntrypoint string             `json:"likely_entrypoint"`
+	LikelyFiles      []string           `json:"likely_files"`
+	WhyInteresting   string             `json:"why_interesting"`
+	Evidence         []string           `json:"evidence"`
+	Confidence       float64            `json:"confidence"`
+	LocalProof       *flowproof.Session `json:"local_proof"`
 }
 
 type flowReportJSON struct {
@@ -337,12 +349,18 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	if w := parseLLMBundle(filepath.Join(absDir, "llm_bundle.json"), data); w != "" {
+		parseWarnings = append(parseWarnings, w)
+	}
 
 	flowWarnings, err := parseFlows(filepath.Join(absDir, "flows"), data)
 	if err != nil {
 		return nil, fmt.Errorf("read flows from %s: %w", absDir, err)
 	}
 	parseWarnings = append(parseWarnings, flowWarnings...)
+	if w := projectSavedArchitectureCanvas(data); w != "" {
+		parseWarnings = append(parseWarnings, w)
+	}
 
 	enrich(data)
 
@@ -358,6 +376,59 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 
 	data.Warnings = append(data.Warnings, parseWarnings...)
 	return data, nil
+}
+
+func parseLLMBundle(path string, data *ReportData) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		return fmt.Sprintf("llm bundle: %v", err)
+	}
+	var bundle llmBundleJSON
+	if err := json.Unmarshal(b, &bundle); err != nil {
+		return fmt.Sprintf("llm bundle unmarshal: %v", err)
+	}
+	if len(bundle.Go.ModuleSummaries) == 0 && len(bundle.Go.ImportantEdges) == 0 {
+		return ""
+	}
+	graph := &RepositoryGraph{PackageEdges: append([]EdgeInfo(nil), bundle.Go.ImportantEdges...)}
+	for _, module := range bundle.Go.ModuleSummaries {
+		if module.ModulePath == "" {
+			continue
+		}
+		dir := filepath.ToSlash(filepath.Clean(module.ModuleDir))
+		if dir == "." {
+			dir = ""
+		}
+		graph.Modules = append(graph.Modules, ModuleInfo{Path: module.ModulePath, Dir: dir})
+	}
+	data.RepositoryGraph = graph
+	return ""
+}
+
+func projectSavedArchitectureCanvas(data *ReportData) string {
+	hasProof := false
+	for _, direction := range data.CandidateDirections {
+		if direction.LocalProof != nil {
+			hasProof = true
+			break
+		}
+	}
+	if !hasProof {
+		return ""
+	}
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		return fmt.Sprintf("architecture canvas: %v", err)
+	}
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		return fmt.Sprintf("architecture canvas projection: %v", err)
+	}
+	data.ArchitectureCanvas = &canvas
+	return ""
 }
 
 func parseRunMetadata(path string, data *ReportData) string {
@@ -434,6 +505,7 @@ func parseOrientationReport(path string, data *ReportData) string {
 			WhyInteresting:   cf.WhyInteresting,
 			Evidence:         append([]string{}, cf.Evidence...),
 			Confidence:       cf.Confidence,
+			LocalProof:       cf.LocalProof,
 		})
 	}
 	for _, word := range or.ImportantDomainWords {
