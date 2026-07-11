@@ -20,8 +20,9 @@ local-model work is not a completion gate for the current milestones. A future
 typed capabilities without changing their inputs or outputs.
 
 [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) is an acceptance track across this order,
-not a competing roadmap: current exploration is calibrated in M3 and becomes
-progressive in M5, feature work is M6, and onboarding is M7.
+not a competing roadmap: M3 calibrated quality, M4 made one investigation
+durable, M5 is now the handoff-ready onboarding trial, and feature work remains
+M6.
 
 ## Status
 
@@ -30,10 +31,10 @@ progressive in M5, feature work is M6, and onboarding is M7.
 | M1. Source-grounded symbol | **complete** | one selected symbol is explained from exact source evidence and connected to relevant tests |
 | M2. Investigation loop | **complete** | repository, flow, symbol, source, tests, claims, unknowns, and next actions use one resumable state machine |
 | M3. Quality suite | **complete** | the same golden tasks expose orientation and drill-down regressions on five large Go repositories |
-| M4. Fresh local memory | **active** | saved facts, claims, and sessions survive restart and invalidate safely when the repository changes |
-| M5. Browser journey | planned | `./repomap` opens a progressive map, shows analysis/API progress, and opens evidence in the editor |
+| M4. Fresh local memory | **complete** | saved facts, claims, and sessions survive restart and invalidate safely when repository/tool/prompt inputs change |
+| M5. Friend onboarding trial | **active** | a company engineer runs one command on a known Go project, evaluates its map, and chooses one direction for a first drill-down |
 | M6. Ticket playbook | planned | a real ticket produces a bounded change surface, risks, tests, unknowns, and a useful first edit location |
-| M7. Shared playbooks | planned | bug, onboarding, and impact analysis reuse the same evidence loop |
+| M7. Shared follow-on playbooks | planned | bug and impact analysis reuse the same evidence loop after onboarding and ticket work |
 
 ## M1 — Source-grounded symbol
 
@@ -260,23 +261,50 @@ Persist repository facts, derived claims, and investigation sessions separately.
 Freshness includes repository identity, HEAD, dirty-file content, Go/gopls and
 collector versions, build context, prompt version, and evaluator version.
 
-M4 is now active. Its first slice must inventory the existing `internal/index`
-contract and prove one safe stale-record rejection before broadening stored
-state or wiring persistence into the browser.
+Completed on 2026-07-10. `freshness.RepositoryState` stabilizes two consecutive
+observations of the canonical repository identity, HEAD, non-ignored dirty
+contents, and ignored Go build inputs without reading unrelated ignored secrets.
+`FactContext` additionally pins Go/gopls, collector schema, build context,
+GOFLAGS/GOWORK/CGO, and analyzer/collector options. `ClaimContext` pins the fact
+document, provider/model provenance, prompt, parser, and evaluator versions.
 
-## M5 — Browser journey
+`internal/index` v2 now rejects a schema-valid snapshot before exposing any
+symbol when its current fact context differs. The investigation path writes
+content-addressed `facts/` and `claims/` documents plus a small session
+checkpoint, verifies hashes through a confined filesystem root, and reconciles
+repository, fact, and claim changes through separate reducer events. Repository
+or analyzer changes re-resolve the symbol; prompt/evaluator changes retain local
+source facts and return to `assess_source`.
 
-Open the current repository by default, show deterministic analysis progress and
-the exact bounded data sent externally, reveal one investigation branch at a
-time, retain alternative directions, and open a selected source location in the
-editor. The browser consumes saved application state; it does not own analysis.
+The completed proof includes unit coverage for same-HEAD/different-dirty bytes,
+tool/options and prompt/evaluator changes, tampered and symlinked artifacts,
+atomic concurrent index saves, and strict restart. The etcd handoff resumes from
+a copied memory directory, while a live `deepseek-v4-flash` run retained the
+exact same fact and claim hashes after a second no-network resume. The current
+session slice conservatively drops all focused facts for any repository-content
+change; dependency-selective reuse is a measured future optimization, not part
+of M4.
+
+## M5 — Friend onboarding trial
+
+Make the existing browser journey handoff-ready for one engineer evaluating a
+Go project they already know. The friend gets a binary plus a short setup,
+configures either the DeepSeek reference or one OpenAI-compatible company
+endpoint, runs one command in the repository, and sees deterministic progress,
+the exact bounded external payload, a useful system overview, entrypoints,
+subsystems, and alternative directions. They can choose one named direction and
+reach a first evidence-backed drill-down without knowing an exact gopls symbol.
+The browser consumes saved application state; it does not own analysis.
 
 An early friend-test baseline now covers the first half of this contract:
-`./repomap` targets the current directory, reports compact-context and exact
-request bytes, makes one `deepseek-v4-flash` orientation call, retains every
-validated direction, and opens a static HTML report. M5 remains planned because
-direction selection, progressive evidence steps, session-backed browser state,
-and editor opening are not wired.
+`./repomap` already targets the current directory, reports compact-context and
+exact request bytes, makes one `deepseek-v4-flash` orientation call, retains
+every validated direction, and opens a static HTML report. M5 is complete when
+that baseline has one obvious onboarding entrypoint, named direction selection,
+one session-backed drill-down, a no-secret/no-repository-write handoff check,
+and a compact feedback artifact that records what the knowledgeable engineer
+found correct, missing, or misleading. Editor opening is useful but does not
+block the first friend handoff if every cited file remains directly navigable.
 
 ## M6 — Ticket playbook
 
@@ -285,12 +313,12 @@ affected flows, relevant tests, risks, unknowns, and the first useful source
 location. The ticket is an initial goal and ranking policy, not a separate prompt
 pipeline.
 
-## M7 — Shared playbooks
+## M7 — Shared follow-on playbooks
 
-Add bug, onboarding, and impact-analysis policies over the same evidence,
-claims, actions, budgets, and stopping rules. Language and editor integrations
-remain replaceable adapters; Go stays the implementation and quality target
-until the Go journey is complete.
+Add bug and impact-analysis policies over the same evidence, claims, actions,
+budgets, and stopping rules after the onboarding and ticket trials. Language
+and editor integrations remain replaceable adapters; Go stays the
+implementation and quality target until the Go journey is complete.
 
 ## Focus guard
 

@@ -164,15 +164,25 @@ to choose where to go deeper. Candidate question groups are:
   operational hazards?
 - What remains unknown, and which files or experiments would answer it?
 
+### Decision for the first trial
+
+M5 starts with one knowledgeable friend on a Go project they already know. The
+first handoff is one command and one browser entrypoint: overview, standard
+questions, retained alternative directions, then one user-selected first
+drill-down. It records a compact feedback artifact with what was correct,
+missing, or misleading. This calibrates trust before optimizing for time-to-
+change or adding organization-specific prompt packs.
+
 ### What is open
 
 - Which questions belong in every onboarding report versus optional prompt packs?
-- Should the output be one report, an interactive curriculum, or a saved trail
-  of progressively verified investigations?
+- After the first overview plus one saved drill-down, should the longer-term
+  output become an interactive curriculum or remain a user-directed trail?
 - How should a team add organization-specific questions without forking core
   prompts?
-- What outcome measures onboarding quality: time to first correct change, ability
-  to explain one flow, fewer reviewer corrections, or something else?
+- Which second-stage measure best follows the initial correction/missing/
+  misleading feedback: time to first correct change, ability to explain one
+  flow, or fewer reviewer corrections?
 
 ## 5. Progressive exploration like a human reader
 

@@ -18,18 +18,20 @@ The company-engineer acceptance track has three goals:
 
 These are policies over one investigation engine, not three prompt pipelines.
 The canonical implementation order remains [MILESTONES.md](MILESTONES.md): M4
-fresh local memory is active, feature work is M6, and onboarding is M7. The exact acceptance
-contract is in [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
+fresh local memory is complete, the friend onboarding trial is active in M5,
+and feature work remains M6. The exact acceptance contract is in
+[ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
 If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. inventory the existing `internal/index` record and every producer/consumer;
-2. define a minimal freshness key covering repository identity, revision, dirty
-   content, analyzer/build context, prompt, and evaluator versions;
-3. prove one stale-record rejection and one unchanged-record reuse with a small
-   local fixture before storing more application state;
-4. keep the six M3 replay tasks and Qwen 1.5B structured regression green while
-   changing persistence contracts.
+1. treat the next outcome as a five-minute **Friend Onboarding Trial**, not as
+   an abstract browser refactor;
+2. audit the current `./repomap` report from the perspective of an engineer who
+   knows the target project and must judge what is correct, missing, or wrong;
+3. connect one named orientation direction to a first bounded drill-down without
+   asking the friend to know an exact gopls symbol;
+4. package build/config/doctor/run/feedback into a short handoff while keeping
+   the six M3 tasks and Qwen 1.5B structured regression green.
 
 Do not restart Qwen prompt tuning. Keep the staged 1.5B regression runnable, but
 the default product path uses the configured OpenAI-compatible provider.
@@ -67,6 +69,11 @@ the default product path uses the configured OpenAI-compatible provider.
   exact preview metadata, and the same offline quality dimensions;
 - staged Qwen 1.5B protocol verification retained as non-critical regression
   tooling.
+- stable repository/fact/claim freshness with separate content-addressed
+  investigation facts, model claims, and session checkpoints;
+- unchanged etcd investigations resume without a second model call; repository,
+  tool/options, and prompt/evaluator changes invalidate only the applicable
+  layer.
 
 ## Honest current boundary
 
@@ -84,9 +91,13 @@ the default product path uses the configured OpenAI-compatible provider.
 - M3 is complete. The generic calibration proves the configuration/transport
   path only; an actual company-hosted model quality run still needs that
   engineer's endpoint and remains an open research question.
-- M4 has not yet proven freshness: the existing index persists a symbol bundle,
-  but its invalidation key does not cover all required repository/tool/prompt
-  inputs.
+- M4 is complete for the current exact-symbol investigation slice. Repository
+  changes conservatively reset all focused facts rather than selectively
+  retaining unrelated neighborhoods; optimize this only after friend-trial
+  latency or repetition demonstrates a product problem.
+- The next product blocker is the read-only gap between a named browser
+  direction and an exact evidence-backed drill-down. The friend should not have
+  to leave the browser and invent a gopls symbol name.
 - Prometheus is captured at revision
   `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
   `deepseek-v4-flash` orientation proposes a TSDB write direction containing

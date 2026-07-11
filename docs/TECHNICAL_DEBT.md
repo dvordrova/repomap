@@ -219,25 +219,28 @@ source, identify the relevant test/case and assertion with cited evidence IDs,
 and either promote a matching claim or preserve an explicit contradiction or
 unknown. This must remain lazy rather than parsing every test eagerly.
 
-### TD-008: Local index freshness metadata is not collected automatically
+### Resolved TD-008: Local memory now has mandatory freshness context
 
-**Evidence:** `internal/index` persists bounded symbol neighborhoods and can
-invalidate every neighborhood that references a changed path. Its repository and
-revision metadata are currently supplied by the caller, and no production path
-yet records dirty-file content, Go/gopls versions, or build context.
+Resolved on 2026-07-10. `freshness.RepositoryState` records a stabilized
+canonical identity, HEAD, non-ignored dirty-content hashes, and ignored Go build
+inputs while excluding unrelated ignored files such as `.env`. `FactContext`
+adds Go/gopls and collector versions, GOOS/GOARCH/tags, GOFLAGS/GOWORK/CGO, and
+the normalized analyzer/collector options. `ClaimContext` binds claims to an
+exact fact document plus provider/model, prompt, parser, and evaluator versions.
 
-The investigation playground now stores a canonical repository root and a
-coarse `HEAD`/`HEAD-dirty` freshness marker. That is sufficient to make a clean
-commit change explicit during M2 resume, but two different dirty working-tree
-contents still share the same marker and therefore do not resolve this debt.
+`internal/index` v2 requires a current `FactContext` on load and returns a typed
+stale error before decoding stored symbols. The production investigation resume
+path requires current repository/fact/claim contexts through `memory.Load` and
+reduces repository, fact, or claim changes before returning an executable
+action. Same-HEAD/different-dirty-content, tool/options changes, prompt changes,
+tampering, and symlinked artifacts have direct tests.
 
-**Consequence:** the storage mechanism is usable and testable, but treating a
-loaded snapshot as fresh without an explicit caller policy could serve stale
-static evidence.
-
-**Done when:** the symbol collection path derives a stable repository identity,
-HEAD plus dirty-file content hashes, analyzer versions, and build context; load
-either rejects incompatible snapshots or invalidates only affected records.
+**Residual optimization:** the current investigation session safely discards
+all focused facts after any repository-content change, even when the changed
+path is unrelated. `internal/index` still has path-level invalidation, but that
+selective policy is not wired into session memory. Measure repetition and
+latency in the friend onboarding trial before adding dependency-aware reuse;
+this is an efficiency limitation, not a stale-evidence hole.
 
 ### TD-009: Candidate directions do not yet route to symbols
 
