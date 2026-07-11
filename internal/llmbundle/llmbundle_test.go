@@ -306,6 +306,46 @@ func TestFileIndexPrefersEntrypointDependencySourceOverTests(t *testing.T) {
 	}
 }
 
+func TestFileIndexMarksSecondHopEntrypointDependencySources(t *testing.T) {
+	facts := &gofacts.Facts{
+		Modules: []gofacts.ModuleFact{
+			{ModulePath: "example.com/project", ModuleDir: "."},
+		},
+		EntrypointPackages: []gofacts.Entrypoint{
+			{
+				ModulePath: "example.com/project",
+				ImportPath: "example.com/project/cmd/app",
+				PackageDir: "cmd/app",
+				GoFiles:    []string{"main.go"},
+			},
+		},
+		InternalEdges: []gofacts.Edge{
+			{From: "example.com/project/cmd/app", To: "example.com/project/pkg/runtime"},
+			{From: "example.com/project/pkg/runtime", To: "example.com/project/pkg/engine"},
+		},
+	}
+	fileList := []string{
+		"cmd/app/main.go",
+		"pkg/runtime/client.go",
+		"pkg/engine/engine.go",
+		"pkg/engine/engine_test.go",
+	}
+	entries := buildFileIndex(fileList, facts, nil, nil)
+	for _, entry := range entries {
+		hasSecondHop := containsString(entry.Signals, "entrypoint-second-hop")
+		switch entry.Path {
+		case "pkg/engine/engine.go":
+			if !hasSecondHop {
+				t.Fatalf("second-hop source signals = %v", entry.Signals)
+			}
+		case "pkg/engine/engine_test.go":
+			if hasSecondHop {
+				t.Fatalf("second-hop test signals = %v", entry.Signals)
+			}
+		}
+	}
+}
+
 func TestFileIndexRetainsPackageNamedSourceAmongEqualDependencyFiles(t *testing.T) {
 	facts := &gofacts.Facts{
 		Modules: []gofacts.ModuleFact{
@@ -548,10 +588,12 @@ func TestScoreFileUsesComponentTokenBoundaries(t *testing.T) {
 		empty,
 		empty,
 		empty,
+		empty,
 	)
 	leaseScore, leaseSignals, _ := scoreFile(
 		"server/lease/lessor.go",
 		"source",
+		empty,
 		empty,
 		empty,
 		empty,

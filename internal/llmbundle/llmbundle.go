@@ -216,9 +216,11 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 
 	entrypointPaths := make(map[string]struct{})
 	entrypointDependencyDirs := make(map[string]struct{})
+	entrypointSecondHopDirs := make(map[string]struct{})
 	if facts != nil {
 		selectedEntrypoints := selectOrientationEntrypoints(facts.EntrypointPackages)
 		entrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
+		entrypointDependencies := make(map[string]struct{})
 		for _, ep := range selectedEntrypoints {
 			entrypointImports[ep.ImportPath] = struct{}{}
 			for _, gf := range ep.GoFiles {
@@ -241,8 +243,19 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 			if _, ok := entrypointImports[edge.From]; !ok {
 				continue
 			}
+			entrypointDependencies[edge.To] = struct{}{}
 			if dir, ok := repositoryDirForImport(edge.To, facts.Modules); ok {
 				entrypointDependencyDirs[dir] = struct{}{}
+			}
+		}
+		for _, edge := range facts.InternalEdges {
+			if _, ok := entrypointDependencies[edge.From]; !ok {
+				continue
+			}
+			if dir, ok := repositoryDirForImport(edge.To, facts.Modules); ok {
+				if _, isDirect := entrypointDependencyDirs[dir]; !isDirect {
+					entrypointSecondHopDirs[dir] = struct{}{}
+				}
 			}
 		}
 	}
@@ -260,6 +273,7 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 			kind,
 			entrypointPaths,
 			entrypointDependencyDirs,
+			entrypointSecondHopDirs,
 			knownDocSet,
 		)
 
@@ -472,6 +486,7 @@ func scoreFile(
 	kind string,
 	entrypointPaths map[string]struct{},
 	entrypointDependencyDirs map[string]struct{},
+	entrypointSecondHopDirs map[string]struct{},
 	knownDocSet map[string]struct{},
 ) (int, []string, []string) {
 	score := 0
@@ -489,8 +504,11 @@ func scoreFile(
 		addSignal("entrypoint", 100, "entrypoint source file")
 	}
 	if kind == "source" {
-		if _, ok := entrypointDependencyDirs[path.Dir(filePath)]; ok {
+		directory := path.Dir(filePath)
+		if _, ok := entrypointDependencyDirs[directory]; ok {
 			addSignal("entrypoint-dependency", 80, "package imported directly by an entrypoint")
+		} else if _, ok := entrypointSecondHopDirs[directory]; ok {
+			addSignal("entrypoint-second-hop", 50, "package imported by a direct entrypoint dependency")
 		}
 		if isDirectoryNamedSource(filePath) {
 			addSignal("directory-anchor", 20, "source file named after its directory")

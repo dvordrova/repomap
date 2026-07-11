@@ -220,6 +220,12 @@ directories such as `pkg/commands/internal/migrate/versionone` into
 `unverified_paths`. Orientation prompt v3 now requires an exact membership
 check for every verified file field and states that directory/import/package
 paths are never files. This keeps the strict local path validator unchanged.
+The next response obeyed the file shape but named the real
+`pkg/lint/linter/linter.go`, which the entrypoint-only ranking had omitted even
+though `pkg/commands/run.go` imports it. A lower-priority, source-only
+`entrypoint-second-hop` signal now admits bounded files from exactly that next
+import layer while direct entrypoint dependencies retain higher priority. The
+latest preflight contains both the linked target and that linter anchor.
 
 M3 remains active until an equivalent small task for golangci-lint passes the
 same offline workflow. Four passing captures establish the workflow on etcd,
