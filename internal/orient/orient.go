@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,8 +12,8 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/llmbundle"
-	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 type Options struct {
@@ -44,10 +42,10 @@ type Options struct {
 }
 
 type combinedReport struct {
-	RepoName       string                `json:"repo_name"`
-	Orientation    *orientationPart      `json:"orientation,omitempty"`
-	ExplainedFlows []explainedFlow       `json:"explained_flows"`
-	Warnings       []string              `json:"warnings,omitempty"`
+	RepoName       string           `json:"repo_name"`
+	Orientation    *orientationPart `json:"orientation,omitempty"`
+	ExplainedFlows []explainedFlow  `json:"explained_flows"`
+	Warnings       []string         `json:"warnings,omitempty"`
 }
 
 type orientationPart struct {
@@ -56,9 +54,9 @@ type orientationPart struct {
 }
 
 type explainedFlow struct {
-	FlowSeed           flowexplain.FlowSeed `json:"flow_seed"`
-	FlowBundleSummary  flowBundleSummary    `json:"flow_bundle_summary"`
-	FlowReport         json.RawMessage      `json:"flow_report,omitempty"`
+	FlowSeed          flowexplain.FlowSeed `json:"flow_seed"`
+	FlowBundleSummary flowBundleSummary    `json:"flow_bundle_summary"`
+	FlowReport        json.RawMessage      `json:"flow_report,omitempty"`
 }
 
 type flowBundleSummary struct {
@@ -119,6 +117,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		MaxEntrypoints: opts.MaxLLMEntrypoints,
 		MaxFiles:       opts.MaxLLMFiles,
 		MaxEdges:       opts.MaxLLMEdges,
+		RepoPath:       opts.RepoPath,
 	})
 	bundleJSON, _ := json.MarshalIndent(bundle, "", "  ")
 
@@ -137,11 +136,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		dw, _ = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
 		if dw != nil {
 			dw.WriteMetadata(debugdump.RunMeta{
-				RunID:        runID,
-				CreatedAt:    time.Now().UTC().Format(time.RFC3339),
-				RepoName:     s.RepoName,
-				RepoPath:     opts.RepoPath,
-				Command:      "orient",
+				RunID:         runID,
+				CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+				RepoName:      s.RepoName,
+				RepoPath:      opts.RepoPath,
+				Command:       "orient",
 				LLMBundleOnly: opts.LLMBundleOnly,
 			})
 			dw.WriteSnapshot(snapshotJSON)
@@ -158,7 +157,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		flowCount = opts.ExplainFlows
 	}
 	if flowCount <= 0 {
-		flowCount = 4
+		flowCount = 20
 	}
 
 	if opts.Offline {
@@ -218,32 +217,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, err
 		}
 		out = append(out, '\n')
-		if dw != nil {
-			writeRunReport(dw, runDir(dw), opts.DebugDir, runID)
-		}
 		return out, nil
 	}
 
 	text := formatHumanReadable(report, opts.DebugDir, runID)
-	if dw != nil {
-		writeRunReport(dw, runDir(dw), opts.DebugDir, runID)
-	}
 	return []byte(text), nil
-}
-
-func writeRunReport(dw *debugdump.Writer, runDirAbs, debugDir, runID string) {
-	rd, err := report.ReadRunDir(runDirAbs)
-	if err != nil {
-		return
-	}
-	report.WriteReportJSON(rd, filepath.Join(runDirAbs, "report.json"))
-	report.WriteReportHTML(rd, filepath.Join(runDirAbs, "report.html"))
-	fmt.Fprintf(os.Stderr, "Report: %s/%s/report.html\n", debugDir, runID)
-}
-
-func runDir(dw *debugdump.Writer) string {
-	// reflection hack — but simpler: we just need to reconstruct the absolute path
-	return dw.RunDir()
 }
 
 type orientResponse struct {
@@ -308,6 +286,23 @@ func explainOneFlow(ctx context.Context, client *deepseek.Client, cf flowexplain
 		SelectedDocs:     docs,
 		SelectedPackages: selectedPkgs,
 		RelatedEdges:     relatedEdges,
+	}
+
+	// Add source signals for selected flow files
+	if opts.RepoPath != "" {
+		var flowFilePaths []string
+		for _, f := range files {
+			flowFilePaths = append(flowFilePaths, f.Path)
+		}
+		for _, f := range tests {
+			flowFilePaths = append(flowFilePaths, f.Path)
+		}
+		if len(flowFilePaths) > 0 {
+			flowSignals := sourcesignals.ScanSelectedFiles(flowFilePaths, opts.RepoPath, 30)
+			if len(flowSignals) > 0 {
+				fb.SourceSignals = flowSignals
+			}
+		}
 	}
 
 	bundleJSON, _ := json.MarshalIndent(fb, "", "  ")
@@ -457,7 +452,28 @@ func callDeepSeekForFlow(ctx context.Context, client *deepseek.Client, fb flowex
 	bundleJSON, _ := json.MarshalIndent(fb, "", "  ")
 
 	systemPrompt := "You are a senior Go engineer explaining one runtime/event flow in a large unfamiliar Go repository. Use only the provided focused flow bundle. Distinguish evidence from guesses. Return valid json only."
-	userPrompt := fmt.Sprintf(`Explain the flow "%s" using only the provided facts bundle. Return json with summary, files_to_read_in_order, tests_to_read, unknowns, and warnings.
+
+	userPrompt := fmt.Sprintf(`Explain the flow "%s" using only the provided facts bundle. Return json with summary, files_to_read_in_order, tests_to_read, likely_chain, unknowns, and warnings.
+
+Critical JSON shape rules:
+- files_to_read_in_order MUST be an array of objects, never strings
+- tests_to_read MUST be an array of objects, never strings
+- unverified_paths MUST be an array of objects, never strings
+- likely_chain[].evidence_files MUST be an array of repo-relative path strings
+
+Each object in files_to_read_in_order/tests_to_read:
+  {"path":"relative/file.go","reason":"why to read it","priority":1}
+
+Each object in unverified_paths:
+  {"path":"relative/file.go","reason":"why it might not exist"}
+
+Bad example — NEVER do this:
+  "files_to_read_in_order": ["a.go"]
+  "tests_to_read": ["a_test.go"]
+
+Good example — ALWAYS do this:
+  "files_to_read_in_order": [{"path":"a.go","reason":"entrypoint","priority":1}]
+  "tests_to_read": [{"path":"a_test.go","reason":"covers the handler"}]
 
 Focused flow bundle:
 %s`, fb.FlowSeed.Name, string(bundleJSON))
