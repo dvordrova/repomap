@@ -46,7 +46,7 @@
       "operation": "call",
       "symbol": {"package": "net/http", "name": "ListenAndServe", "min_args": 2},
       "effect": {"kind": "http_server_start", "transport": "http", "framework": "net/http"},
-      "projections": {"address": {"source": "argument", "index": 0}, "dispatcher": {"source": "argument", "index": 1}},
+      "projections": {"address": {"source": "argument", "index": 0}, "dispatcher": {"source": "argument", "index": 1, "default": "net/http.DefaultServeMux"}},
       "scenario": {},
       "reference": "net/http ListenAndServe",
       "fixture_coverage": ["direct"]
@@ -56,7 +56,7 @@
       "operation": "call",
       "symbol": {"package": "net/http", "name": "ListenAndServeTLS", "min_args": 4},
       "effect": {"kind": "http_server_start", "transport": "https", "framework": "net/http"},
-      "projections": {"address": {"source": "argument", "index": 0}, "dispatcher": {"source": "argument", "index": 3}},
+      "projections": {"address": {"source": "argument", "index": 0}, "dispatcher": {"source": "argument", "index": 3, "default": "net/http.DefaultServeMux"}},
       "scenario": {},
       "reference": "net/http ListenAndServeTLS",
       "fixture_coverage": ["catalog_validation"]

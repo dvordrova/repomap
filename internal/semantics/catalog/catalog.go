@@ -74,9 +74,10 @@ type Effect struct {
 }
 
 type Projection struct {
-	Source ProjectionSource `json:"source"`
-	Index  *int             `json:"index,omitempty"`
-	Value  string           `json:"value,omitempty"`
+	Source  ProjectionSource `json:"source"`
+	Index   *int             `json:"index,omitempty"`
+	Value   string           `json:"value,omitempty"`
+	Default string           `json:"default,omitempty"`
 }
 
 type Scenario struct {
