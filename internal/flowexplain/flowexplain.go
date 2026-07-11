@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 type FlowSeed struct {
@@ -21,15 +22,16 @@ type FlowSeed struct {
 }
 
 type FlowBundle struct {
-	FlowSeed         FlowSeed     `json:"flow_seed"`
-	QueryTerms       []string     `json:"query_terms"`
-	AliasTerms       []string     `json:"alias_terms"`
-	SelectedFiles    []scoredFile `json:"selected_files"`
-	SelectedTests    []scoredFile `json:"selected_tests"`
-	SelectedDocs     []scoredFile `json:"selected_docs"`
-	SelectedPackages []string     `json:"selected_packages"`
-	RelatedEdges     []flowEdge   `json:"related_edges"`
-	Warnings         []string     `json:"warnings,omitempty"`
+	FlowSeed         FlowSeed               `json:"flow_seed"`
+	QueryTerms       []string               `json:"query_terms"`
+	AliasTerms       []string               `json:"alias_terms"`
+	SelectedFiles    []scoredFile           `json:"selected_files"`
+	SelectedTests    []scoredFile           `json:"selected_tests"`
+	SelectedDocs     []scoredFile           `json:"selected_docs"`
+	SelectedPackages []string               `json:"selected_packages"`
+	RelatedEdges     []flowEdge             `json:"related_edges"`
+	SourceSignals    []sourcesignals.Signal `json:"source_signals,omitempty"`
+	Warnings         []string               `json:"warnings,omitempty"`
 }
 
 type scoredFile struct {

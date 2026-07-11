@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -9,12 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/envfile"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
 func main() {
-	loadDotEnv()
+	_ = envfile.Load(".env")
 
 	// Handle --help and --version at top level
 	if len(os.Args) >= 2 {
@@ -73,6 +74,14 @@ func main() {
 	}
 }
 
+func linkLatest(debugDir, runDir string) {
+	latest := filepath.Join(debugDir, "latest")
+	os.Remove(latest)
+	if err := os.Symlink(filepath.Base(runDir), latest); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not create latest symlink: %v\n", err)
+	}
+}
+
 func runDefault(repo string, extraArgs []string) error {
 	fs := flag.NewFlagSet("repomap", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -94,29 +103,45 @@ func runDefault(repo string, extraArgs []string) error {
 		dDir = ""
 	}
 
+	var runID string
+	if dDir != "" {
+		runID = debugdump.GenerateRunID(filepath.Base(filepath.Clean(repo)))
+	}
+
 	opts := orient.Options{
-		RepoPath:        repo,
-		OutputJSON:      *jsonOut,
-		Offline:         *offline,
-		FlowCount:       *flows,
-		DebugDir:        dDir,
-		DumpLLM:         *dumpLLM,
-		DumpRedacted:    true,
-		MaxLLMFiles:     150,
-		MaxLLMEdges:     120,
-		MaxLLMModules:   20,
-		MaxLLMEntrypoints: 20,
-		MaxReadmeBytes:   20000,
-		MaxReadmeLLMBytes: 6000,
-		MaxTreeLines:      400,
-		MaxInterestingFiles: 200,
-		MaxGoPkgs:        300,
-		MaxGoEdges:       500,
+		RepoPath:            repo,
+		OutputJSON:          *jsonOut,
+		Offline:             *offline,
+		FlowCount:           *flows,
+		RunID:               runID,
+		DebugDir:            dDir,
+		DumpLLM:             *dumpLLM,
+		DumpRedacted:        true,
+		MaxLLMFiles:         300,
+		MaxLLMEdges:         300,
+		MaxLLMModules:       40,
+		MaxLLMEntrypoints:   40,
+		MaxReadmeBytes:      40000,
+		MaxReadmeLLMBytes:   12000,
+		MaxTreeLines:        800,
+		MaxInterestingFiles: 400,
+		MaxGoPkgs:           600,
+		MaxGoEdges:          1000,
 	}
 
 	output, err := orient.Run(context.Background(), opts)
 	if err != nil {
 		return err
+	}
+
+	if dDir != "" {
+		runDir := filepath.Join(dDir, runID)
+		if err := report.Generate(runDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: report generation failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Report: %s/report.html\n", runDir)
+			linkLatest(dDir, runDir)
+		}
 	}
 
 	if *out != "" {
@@ -153,31 +178,48 @@ func runOrient(args []string) error {
 		return fmt.Errorf("--repo is required")
 	}
 
+	dDir := *debugDir
+	var runID string
+	if dDir != "" {
+		runID = debugdump.GenerateRunID(filepath.Base(filepath.Clean(*repo)))
+	}
+
 	opts := orient.Options{
-		RepoPath:        *repo,
-		SnapshotOnly:    *snapshotOnly,
-		LLMBundleOnly:   *llmBundleOnly,
-		OutputJSON:      true,
-		FlowCount:       *explainFlows,
-		FlowBundlesOnly: *flowBundlesOnly,
-		DebugDir:        *debugDir,
-		DumpLLM:         *dumpLLM,
-		DumpRedacted:    true,
-		MaxLLMFiles:     *maxLLMFiles,
-		MaxLLMEdges:     120,
-		MaxLLMModules:   20,
-		MaxLLMEntrypoints: 20,
-		MaxReadmeBytes:   20000,
-		MaxReadmeLLMBytes: 6000,
-		MaxTreeLines:      400,
-		MaxInterestingFiles: 200,
-		MaxGoPkgs:        300,
-		MaxGoEdges:       500,
+		RepoPath:            *repo,
+		SnapshotOnly:        *snapshotOnly,
+		LLMBundleOnly:       *llmBundleOnly,
+		OutputJSON:          true,
+		FlowCount:           *explainFlows,
+		FlowBundlesOnly:     *flowBundlesOnly,
+		RunID:               runID,
+		DebugDir:            dDir,
+		DumpLLM:             *dumpLLM,
+		DumpRedacted:        true,
+		MaxLLMFiles:         *maxLLMFiles,
+		MaxLLMEdges:         500,
+		MaxLLMModules:       40,
+		MaxLLMEntrypoints:   40,
+		MaxReadmeBytes:      40000,
+		MaxReadmeLLMBytes:   12000,
+		MaxTreeLines:        800,
+		MaxInterestingFiles: 400,
+		MaxGoPkgs:           600,
+		MaxGoEdges:          1000,
 	}
 
 	output, err := orient.Run(context.Background(), opts)
 	if err != nil {
 		return err
+	}
+
+	if dDir != "" {
+		runDir := filepath.Join(dDir, runID)
+		if err := report.Generate(runDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: report generation failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Report: %s/report.html\n", runDir)
+			linkLatest(dDir, runDir)
+		}
 	}
 
 	if *out != "" {
@@ -198,20 +240,10 @@ func runRenderReport(runDir string) error {
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
-	data, err := report.ReadRunDir(absDir)
-	if err != nil {
-		return fmt.Errorf("read run dir: %w", err)
+	if err := report.Generate(absDir); err != nil {
+		return err
 	}
-
-	reportPath := runDir + "/report.json"
-	if err := report.WriteReportJSON(data, reportPath); err != nil {
-		return fmt.Errorf("write report.json: %w", err)
-	}
-	htmlPath := runDir + "/report.html"
-	if err := report.WriteReportHTML(data, htmlPath); err != nil {
-		return fmt.Errorf("write report.html: %w", err)
-	}
-	fmt.Printf("Report: %s\n", htmlPath)
+	fmt.Printf("Report: %s/report.html\n", absDir)
 	return nil
 }
 
@@ -235,34 +267,4 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --offline\n")
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --flows 2 --json | jq .\n")
 	fmt.Fprintf(os.Stderr, "  repomap --help\n")
-}
-
-func loadDotEnv() {
-	f, err := os.Open(".env")
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		before, after, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		key := strings.TrimSpace(before)
-		val := strings.TrimSpace(after)
-		val = strings.Trim(val, `"'`)
-		if key == "" {
-			continue
-		}
-		if _, exists := os.LookupEnv(key); exists {
-			continue
-		}
-		os.Setenv(key, val)
-	}
 }

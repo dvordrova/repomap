@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
 SMOKE_DIR="tmp/smoke-repo"
 
@@ -17,7 +18,7 @@ echo 'package main'    > cmd/app/main.go
 echo 'import "os"'    >> cmd/app/main.go
 echo 'func main() { os.Exit(0) }' >> cmd/app/main.go
 git add -A
-cd "$(dirname "$0")/.."
+cd "$REPO_ROOT"
 
 echo ""
 echo "=== snapshot-only ==="
@@ -44,6 +45,26 @@ if command -v jq &>/dev/null; then
     fi
 else
     echo "(jq not found; skipping JSON validation)"
+fi
+
+echo ""
+echo "=== offline report generation ==="
+SMOKE_RUNS="tmp/.repomap-runs-smoke"
+rm -rf "$SMOKE_RUNS"
+go run ./cmd/repomap "$SMOKE_DIR" --offline --debug-dir "$SMOKE_RUNS" > /dev/null 2>/dev/stderr
+REPORT_HTML=$(ls -1 "$SMOKE_RUNS"/*/report.html 2>/dev/null | head -1)
+if [ -n "$REPORT_HTML" ] && [ -s "$REPORT_HTML" ]; then
+    echo "OK: report.html generated"
+else
+    echo "FAIL: report.html not found or empty"
+    exit 1
+fi
+REPORT_JSON=$(echo "$REPORT_HTML" | sed 's/\.html$/.json/')
+if [ -n "$REPORT_JSON" ] && [ -s "$REPORT_JSON" ]; then
+    echo "OK: report.json generated"
+else
+    echo "FAIL: report.json not found or empty"
+    exit 1
 fi
 
 echo ""

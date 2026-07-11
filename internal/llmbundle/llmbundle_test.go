@@ -204,7 +204,7 @@ func TestFileIndexIncludesEntrypointOpenFiles(t *testing.T) {
 		"go.mod",
 		"README.md",
 	}
-	files := buildFileIndex(fileList, facts, nil)
+	files := buildFileIndex(fileList, facts, nil, nil)
 
 	paths := make(map[string]bool)
 	for _, e := range files {
@@ -230,7 +230,7 @@ func TestFileIndexEntrypointsGetHighScore(t *testing.T) {
 	}
 	fileList := []string{"server/main.go", "README.md"}
 
-	files := buildFileIndex(fileList, facts, nil)
+	files := buildFileIndex(fileList, facts, nil, nil)
 
 	for _, e := range files {
 		if e.Path == "server/main.go" {
@@ -288,7 +288,7 @@ func TestFileIndexIncludesDocs(t *testing.T) {
 	fileList := []string{"docs/architecture.md", "docs/workflow.md", "cmd/app/main.go", "README.md"}
 	knownDocs := []string{"docs/architecture.md"}
 
-	files := buildFileIndex(fileList, &gofacts.Facts{}, knownDocs)
+	files := buildFileIndex(fileList, &gofacts.Facts{}, knownDocs, nil)
 
 	found := false
 	for _, e := range files {

@@ -7,18 +7,20 @@ import (
 
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 type Bundle struct {
-	RepoName               string                 `json:"repo_name"`
-	ReadmeExcerpt          string                 `json:"readme_excerpt"`
-	TopLevelDirectoryStats map[string]int         `json:"top_level_directory_stats"`
-	LanguageHints          []snapshot.LanguageHint `json:"language_hints"`
-	Go                     goSection              `json:"go"`
-	KnownDocs              []string               `json:"known_docs"`
-	CandidateFileIndex     []fileIndexEntry       `json:"candidate_file_index"`
-	AllowedPaths           []string               `json:"allowed_paths"`
-	Warnings               []string               `json:"warnings,omitempty"`
+	RepoName               string                    `json:"repo_name"`
+	ReadmeExcerpt          string                    `json:"readme_excerpt"`
+	TopLevelDirectoryStats map[string]int            `json:"top_level_directory_stats"`
+	LanguageHints          []snapshot.LanguageHint   `json:"language_hints"`
+	Go                     goSection                 `json:"go"`
+	KnownDocs              []string                  `json:"known_docs"`
+	CandidateFileIndex     []fileIndexEntry          `json:"candidate_file_index"`
+	AllowedPaths           []string                  `json:"allowed_paths"`
+	SourceSignals          []sourcesignals.Signal    `json:"source_signals,omitempty"`
+	Warnings               []string                  `json:"warnings,omitempty"`
 }
 
 type fileIndexEntry struct {
@@ -57,11 +59,14 @@ type entrypointCompact struct {
 }
 
 type Options struct {
-	MaxReadmeBytes int
-	MaxModules     int
-	MaxEntrypoints int
-	MaxFiles       int
-	MaxEdges       int
+	MaxReadmeBytes   int
+	MaxModules       int
+	MaxEntrypoints   int
+	MaxFiles         int
+	MaxEdges         int
+	MaxSignalTotal   int
+	MaxSignalPerFile int
+	RepoPath         string
 }
 
 func defaults(opts Options) Options {
@@ -79,6 +84,12 @@ func defaults(opts Options) Options {
 	}
 	if opts.MaxEdges <= 0 {
 		opts.MaxEdges = 120
+	}
+	if opts.MaxSignalTotal <= 0 {
+		opts.MaxSignalTotal = 200
+	}
+	if opts.MaxSignalPerFile <= 0 {
+		opts.MaxSignalPerFile = 5
 	}
 	return opts
 }
@@ -158,7 +169,18 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			ImportantEdges:        edges,
 		}
 
-		fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs)
+		var fileSignals []sourcesignals.Signal
+		if opts.RepoPath != "" {
+			fileSignals = sourcesignals.ScanFiles(fileList, opts.RepoPath, sourcesignals.ScanOptions{
+				MaxPerFile: opts.MaxSignalPerFile,
+				MaxTotal:   opts.MaxSignalTotal,
+			})
+			if len(fileSignals) > 0 {
+				b.SourceSignals = fileSignals
+			}
+		}
+
+		fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
 		if len(fileIndex) > opts.MaxFiles {
 			b.Warnings = append(b.Warnings, "truncated candidate_file_index")
 			fileIndex = fileIndex[:opts.MaxFiles]
@@ -171,9 +193,11 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 	return b
 }
 
-func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string) []fileIndexEntry {
+func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string, fileSignals []sourcesignals.Signal) []fileIndexEntry {
 	seen := make(map[string]struct{})
 	var entries []fileIndexEntry
+
+	signalMap := sourcesignals.BuildFileSignalMap(fileSignals)
 
 	entrypointPaths := make(map[string]struct{})
 	if facts != nil {
@@ -202,6 +226,15 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string)
 		seen[f] = struct{}{}
 		kind := detectFileKind(f)
 		score, signals, reasons := scoreFile(f, kind, entrypointPaths, knownDocSet)
+
+		// Enrich with source signal categories
+		if fileSignalsForFile, ok := signalMap[f]; ok {
+			for _, sig := range fileSignalsForFile {
+				signals = append(signals, "src:"+sig.Category)
+				reasons = append(reasons, sig.Reason)
+				score += sig.Weight / 2
+			}
+		}
 
 		if score <= 0 {
 			continue
