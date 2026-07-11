@@ -5,15 +5,30 @@ import "fmt"
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
-	RepoName       string   `json:"repo_name"`
-	ProjectGuess   string   `json:"project_guess"`
-	CandidateFlows []string `json:"candidate_flows"`
-	Flows          []FlowData `json:"flows"`
-	ArtifactsDir   string   `json:"artifacts_dir"`
-	Warnings       []string `json:"warnings,omitempty"`
+	RepoName            string               `json:"repo_name"`
+	ProjectGuess        string               `json:"project_guess"`
+	CandidateFlows      []string             `json:"candidate_flows"`
+	CandidateDirections []CandidateDirection `json:"candidate_directions,omitempty"`
+	Flows               []FlowData           `json:"flows"`
+	ArtifactsDir        string               `json:"artifacts_dir"`
+	Warnings            []string             `json:"warnings,omitempty"`
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// CandidateDirection is the orientation-stage view of a flow that can be
+// explored further. CandidateFlows remains in ReportData as a names-only
+// compatibility view for existing report.json consumers.
+type CandidateDirection struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Trigger          string   `json:"trigger"`
+	LikelyEntrypoint string   `json:"likely_entrypoint"`
+	LikelyFiles      []string `json:"likely_files"`
+	WhyInteresting   string   `json:"why_interesting"`
+	Evidence         []string `json:"evidence"`
+	Confidence       float64  `json:"confidence"`
 }
 
 type FlowData struct {
@@ -30,7 +45,7 @@ type FlowData struct {
 	BundleSummary   BundleStats `json:"bundle_summary"`
 	Error           string      `json:"error,omitempty"`
 
-	ConfidenceLabel string `json:"confidence_label,omitempty"`
+	ConfidenceLabel  string `json:"confidence_label,omitempty"`
 	BundleStatsLabel string `json:"bundle_stats_label,omitempty"`
 
 	BundleFiles    []FileItem `json:"bundle_files,omitempty"`
@@ -115,7 +130,7 @@ func findBestFlow(flows []FlowData) string {
 }
 
 func enrich(data *ReportData) {
-	data.FormatVersion = 2
+	data.FormatVersion = 3
 	data.FlowCount = len(data.Flows)
 	for i := range data.Flows {
 		data.Flows[i].ConfidenceLabel = confidenceLabel(data.Flows[i].Confidence)

@@ -57,6 +57,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-ov-flow-footer { display: flex; gap: .75rem; align-items: center; margin-top: .5rem; }
 .rm-ov-flow-stat { font-size: .7rem; color: var(--rm-dim); }
 .rm-ov-flow .rm-meta { font-size: .75rem; color: var(--rm-dim); margin-top: .35rem; }
+.rm-direction-hint { color: var(--rm-dim); font-size: .82rem; margin: -.25rem 0 1rem; }
+.rm-candidate-direction { cursor: default; }
+.rm-candidate-direction:hover { box-shadow: none; }
+.rm-candidate-direction .rm-evidence { margin-left: auto; }
+.rm-direction-field { border-top: 1px solid var(--rm-border); padding-top: .5rem; margin-top: .5rem; }
+.rm-direction-label { color: var(--rm-dim); font-size: .68rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin-bottom: .15rem; }
+.rm-direction-value { font-size: .78rem; }
+.rm-direction-code { color: var(--rm-code); font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .72rem; overflow-wrap: anywhere; padding: .08rem 0; }
+.rm-direction-evidence { border-top: 1px solid var(--rm-border); margin-top: .6rem; padding-top: .5rem; }
+.rm-direction-evidence-item { color: var(--rm-dim); font-size: .75rem; line-height: 1.4; margin-top: .25rem; padding-left: .8rem; position: relative; }
+.rm-direction-evidence-item::before { content: '•'; left: 0; position: absolute; }
 
 /* Start Here accent */
 .rm-ov-flow.rm-ov-flow--recommended { border-left: 3px solid var(--rm-accent); }
@@ -171,7 +182,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     <div id="rm-flows-container"></div>
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
-  <script type="application/json" id="rm-report-data">{"format_version":2,"repo_name":"testrepo","project_guess":"test project","candidate_flows":["flow-a"],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":3,"repo_name":"testrepo","project_guess":"test project","candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"recommended_flow":"flow-a","flow_count":1}</script>
   <script>(function () {
   'use strict';
 
@@ -179,6 +190,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   var LABELS = {
     candidateFlows: 'Flows',
+    candidateDirections: 'Directions to explore',
+    directionHint: 'Choose one of these grounded starting points for a deeper explanation.',
+    trigger: 'Trigger',
+    likelyEntrypoint: 'Likely entrypoint',
+    likelyFiles: 'Likely files',
+    orientationEvidence: 'Why this is grounded',
     filesToRead: 'Read order — open these files in sequence',
     testsToRead: 'Tests',
     executionChain: 'Execution chain',
@@ -187,7 +204,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     unknowns: 'Unknowns',
     warnings: 'Warnings',
     retrievalDetails: 'Retrieval details',
-    noFlows: 'No flows identified.',
+    noFlows: 'No candidate directions were produced.',
     startHere: 'Start here',
     quickStart: 'Quick start',
     noAIExplanation: 'No AI explanation — rerun with DEEPSEEK_API_KEY.',
@@ -314,6 +331,66 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     card.appendChild(footer);
 
     card.onclick = function () { showTab('rm-flow-' + flow.id); };
+    return card;
+  }
+
+  function candidateDirections() {
+    if (DATA.candidate_directions && DATA.candidate_directions.length > 0) {
+      return DATA.candidate_directions;
+    }
+    if (!DATA.candidate_flows) return [];
+    return DATA.candidate_flows.map(function (candidate, index) {
+      if (typeof candidate === 'string') {
+        return { id: 'candidate-' + index, name: candidate };
+      }
+      return candidate;
+    });
+  }
+
+  function renderDirectionField(label, value, code) {
+    if (!value) return null;
+    var row = el('div', 'rm-direction-field');
+    row.appendChild(txt('div', 'rm-direction-label', label));
+    row.appendChild(txt('div', code ? 'rm-direction-code' : 'rm-direction-value', value));
+    return row;
+  }
+
+  function renderCandidateDirectionCard(direction) {
+    var card = el('div', 'rm-ov-flow rm-candidate-direction');
+
+    var header = el('div', 'rm-ov-flow-header');
+    header.appendChild(txt('h3', '', direction.name || direction.id));
+    header.appendChild(renderEvidenceBadge(direction.confidence));
+    card.appendChild(header);
+
+    if (direction.why_interesting) {
+      card.appendChild(txt('div', 'rm-summary-line', direction.why_interesting));
+    }
+
+    var trigger = renderDirectionField(LABELS.trigger, direction.trigger, false);
+    if (trigger) card.appendChild(trigger);
+
+    var entrypoint = renderDirectionField(LABELS.likelyEntrypoint, direction.likely_entrypoint, true);
+    if (entrypoint) card.appendChild(entrypoint);
+
+    if (direction.likely_files && direction.likely_files.length > 0) {
+      var files = el('div', 'rm-direction-field');
+      files.appendChild(txt('div', 'rm-direction-label', LABELS.likelyFiles));
+      direction.likely_files.forEach(function (path) {
+        files.appendChild(txt('div', 'rm-direction-code', path));
+      });
+      card.appendChild(files);
+    }
+
+    if (direction.evidence && direction.evidence.length > 0) {
+      var evidence = el('div', 'rm-direction-evidence');
+      evidence.appendChild(txt('div', 'rm-direction-label', LABELS.orientationEvidence));
+      direction.evidence.forEach(function (statement) {
+        evidence.appendChild(txt('div', 'rm-direction-evidence-item', statement));
+      });
+      card.appendChild(evidence);
+    }
+
     return card;
   }
 
@@ -715,6 +792,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   // ── Main render ─────────────────────────────────────────────────
 
   function render() {
+    DATA.flows = DATA.flows || [];
     document.getElementById('rm-repo-name').textContent = DATA.repo_name || 'unknown';
     document.getElementById('rm-project-guess').textContent = DATA.project_guess || '';
     if (DATA.artifacts_dir) {
@@ -753,8 +831,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var overview = document.getElementById('rm-overview');
     var overviewHTML = el('div');
 
+    var directions = candidateDirections();
     if (!DATA.flows || DATA.flows.length === 0) {
-      overviewHTML.appendChild(txt('div', 'rm-card', LABELS.noFlows));
+      if (directions.length === 0) {
+        overviewHTML.appendChild(txt('div', 'rm-card', LABELS.noFlows));
+      } else {
+        var directionsCard = el('div', 'rm-card');
+        directionsCard.appendChild(txt('h2', '', LABELS.candidateDirections));
+        directionsCard.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
+        var directionsGrid = el('div', 'rm-overview-flows');
+        directions.forEach(function (direction) {
+          directionsGrid.appendChild(renderCandidateDirectionCard(direction));
+        });
+        directionsCard.appendChild(directionsGrid);
+        overviewHTML.appendChild(directionsCard);
+      }
     } else {
       var card = el('div', 'rm-card');
       card.appendChild(txt('h2', '', LABELS.candidateFlows));

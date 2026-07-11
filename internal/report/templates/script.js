@@ -5,6 +5,12 @@
 
   var LABELS = {
     candidateFlows: 'Flows',
+    candidateDirections: 'Directions to explore',
+    directionHint: 'Choose one of these grounded starting points for a deeper explanation.',
+    trigger: 'Trigger',
+    likelyEntrypoint: 'Likely entrypoint',
+    likelyFiles: 'Likely files',
+    orientationEvidence: 'Why this is grounded',
     filesToRead: 'Read order — open these files in sequence',
     testsToRead: 'Tests',
     executionChain: 'Execution chain',
@@ -13,7 +19,7 @@
     unknowns: 'Unknowns',
     warnings: 'Warnings',
     retrievalDetails: 'Retrieval details',
-    noFlows: 'No flows identified.',
+    noFlows: 'No candidate directions were produced.',
     startHere: 'Start here',
     quickStart: 'Quick start',
     noAIExplanation: 'No AI explanation — rerun with DEEPSEEK_API_KEY.',
@@ -140,6 +146,66 @@
     card.appendChild(footer);
 
     card.onclick = function () { showTab('rm-flow-' + flow.id); };
+    return card;
+  }
+
+  function candidateDirections() {
+    if (DATA.candidate_directions && DATA.candidate_directions.length > 0) {
+      return DATA.candidate_directions;
+    }
+    if (!DATA.candidate_flows) return [];
+    return DATA.candidate_flows.map(function (candidate, index) {
+      if (typeof candidate === 'string') {
+        return { id: 'candidate-' + index, name: candidate };
+      }
+      return candidate;
+    });
+  }
+
+  function renderDirectionField(label, value, code) {
+    if (!value) return null;
+    var row = el('div', 'rm-direction-field');
+    row.appendChild(txt('div', 'rm-direction-label', label));
+    row.appendChild(txt('div', code ? 'rm-direction-code' : 'rm-direction-value', value));
+    return row;
+  }
+
+  function renderCandidateDirectionCard(direction) {
+    var card = el('div', 'rm-ov-flow rm-candidate-direction');
+
+    var header = el('div', 'rm-ov-flow-header');
+    header.appendChild(txt('h3', '', direction.name || direction.id));
+    header.appendChild(renderEvidenceBadge(direction.confidence));
+    card.appendChild(header);
+
+    if (direction.why_interesting) {
+      card.appendChild(txt('div', 'rm-summary-line', direction.why_interesting));
+    }
+
+    var trigger = renderDirectionField(LABELS.trigger, direction.trigger, false);
+    if (trigger) card.appendChild(trigger);
+
+    var entrypoint = renderDirectionField(LABELS.likelyEntrypoint, direction.likely_entrypoint, true);
+    if (entrypoint) card.appendChild(entrypoint);
+
+    if (direction.likely_files && direction.likely_files.length > 0) {
+      var files = el('div', 'rm-direction-field');
+      files.appendChild(txt('div', 'rm-direction-label', LABELS.likelyFiles));
+      direction.likely_files.forEach(function (path) {
+        files.appendChild(txt('div', 'rm-direction-code', path));
+      });
+      card.appendChild(files);
+    }
+
+    if (direction.evidence && direction.evidence.length > 0) {
+      var evidence = el('div', 'rm-direction-evidence');
+      evidence.appendChild(txt('div', 'rm-direction-label', LABELS.orientationEvidence));
+      direction.evidence.forEach(function (statement) {
+        evidence.appendChild(txt('div', 'rm-direction-evidence-item', statement));
+      });
+      card.appendChild(evidence);
+    }
+
     return card;
   }
 
@@ -541,6 +607,7 @@
   // ── Main render ─────────────────────────────────────────────────
 
   function render() {
+    DATA.flows = DATA.flows || [];
     document.getElementById('rm-repo-name').textContent = DATA.repo_name || 'unknown';
     document.getElementById('rm-project-guess').textContent = DATA.project_guess || '';
     if (DATA.artifacts_dir) {
@@ -579,8 +646,21 @@
     var overview = document.getElementById('rm-overview');
     var overviewHTML = el('div');
 
+    var directions = candidateDirections();
     if (!DATA.flows || DATA.flows.length === 0) {
-      overviewHTML.appendChild(txt('div', 'rm-card', LABELS.noFlows));
+      if (directions.length === 0) {
+        overviewHTML.appendChild(txt('div', 'rm-card', LABELS.noFlows));
+      } else {
+        var directionsCard = el('div', 'rm-card');
+        directionsCard.appendChild(txt('h2', '', LABELS.candidateDirections));
+        directionsCard.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
+        var directionsGrid = el('div', 'rm-overview-flows');
+        directions.forEach(function (direction) {
+          directionsGrid.appendChild(renderCandidateDirectionCard(direction));
+        });
+        directionsCard.appendChild(directionsGrid);
+        overviewHTML.appendChild(directionsCard);
+      }
     } else {
       var card = el('div', 'rm-card');
       card.appendChild(txt('h2', '', LABELS.candidateFlows));

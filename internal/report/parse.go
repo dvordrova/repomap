@@ -24,7 +24,13 @@ type orientationReportJSON struct {
 }
 
 type orientationCandidateJSON struct {
-	Name string `json:"name"`
+	Name             string   `json:"name"`
+	Trigger          string   `json:"trigger"`
+	LikelyEntrypoint string   `json:"likely_entrypoint"`
+	LikelyFiles      []string `json:"likely_files"`
+	WhyInteresting   string   `json:"why_interesting"`
+	Evidence         []string `json:"evidence"`
+	Confidence       float64  `json:"confidence"`
 }
 
 type flowReportJSON struct {
@@ -342,6 +348,16 @@ func parseOrientationReport(path string, data *ReportData) string {
 	data.ProjectGuess = or.ProjectGuess
 	for _, cf := range or.CandidateFlows {
 		data.CandidateFlows = append(data.CandidateFlows, cf.Name)
+		data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
+			ID:               flowexplain.GenerateFlowID(cf.Name),
+			Name:             cf.Name,
+			Trigger:          cf.Trigger,
+			LikelyEntrypoint: cf.LikelyEntrypoint,
+			LikelyFiles:      append([]string{}, cf.LikelyFiles...),
+			WhyInteresting:   cf.WhyInteresting,
+			Evidence:         append([]string{}, cf.Evidence...),
+			Confidence:       cf.Confidence,
+		})
 	}
 	data.Warnings = append(data.Warnings, or.Warnings...)
 	return ""
