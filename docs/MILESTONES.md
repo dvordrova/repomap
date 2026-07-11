@@ -214,6 +214,13 @@ Both raw `deepseek-v4-flash` contracts are clean and the source response scores
 100/100 without repair. The orientation request was 27,644 bytes / 21,877 ms;
 the source request was 7,495 bytes / 6,995 ms.
 
+The first golangci-lint live orientation was rejected because it copied package
+directories such as `pkg/commands/internal/migrate/versionone` into
+`likely_files` and emitted trailing-slash package paths under
+`unverified_paths`. Orientation prompt v3 now requires an exact membership
+check for every verified file field and states that directory/import/package
+paths are never files. This keeps the strict local path validator unchanged.
+
 M3 remains active until an equivalent small task for golangci-lint passes the
 same offline workflow. Four passing captures establish the workflow on etcd,
 k6, Prometheus, and NATS Server, but not yet the complete five-repository target.

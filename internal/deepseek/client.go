@@ -45,7 +45,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v2"
+const OrientationPromptVersionJSON = "orientation-json-v3"
 
 type Client struct {
 	HTTPClient *http.Client
@@ -218,7 +218,7 @@ func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 				Role: "user",
 				Content: `Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
-You may only reference file paths listed in allowed_paths. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. If you think another file probably exists but it is not in allowed_paths, put it in unverified_paths instead of any evidence, entrypoint, first_files_to_open, or likely_files field.
+Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those fields, even when an import edge names them. Do not guess a filename from a package path. unverified_paths is only for a suspected file path that is absent from allowed_paths, never for a directory, package, or trailing-slash path.
 
 Produce a json orientation report with this exact shape:
 {
