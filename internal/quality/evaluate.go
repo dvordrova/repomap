@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	EvaluationVersion                    = 1
+	EvaluationVersion                    = 2
 	orientationContractUnmeasuredWarning = "orientation.contract_unmeasured"
 )
 
@@ -31,9 +31,10 @@ type Result struct {
 }
 
 type DirectionCoverage struct {
-	Complete bool             `json:"complete"`
-	Checks   []DirectionCheck `json:"checks"`
-	Missing  []string         `json:"missing"`
+	Complete  bool             `json:"complete"`
+	Checks    []DirectionCheck `json:"checks"`
+	Missing   []string         `json:"missing"`
+	Ambiguous []string         `json:"ambiguous"`
 }
 
 type DirectionCheck struct {
@@ -215,7 +216,10 @@ func Evaluate(loaded LoadedTask) (Result, error) {
 
 	context, contextCheck := decodeOrientationContext(loaded.OrientationContext)
 	result.ContractAdherence.OrientationContext = contextCheck
-	response, responseCheck := decodeOrientationResponse(loaded.OrientationResponse)
+	response, responseCheck := decodeOrientationResponse(
+		loaded.OrientationResponse,
+		loaded.Task.Captures.Orientation.ResponseForm,
+	)
 	result.ContractAdherence.OrientationResponse = responseCheck
 
 	result.DirectionCoverage, result.ImportantEvidence = evaluateDirections(
@@ -295,7 +299,7 @@ func decodeOrientationContext(data []byte) (OrientationGroundingContext, Contrac
 	return context, check
 }
 
-func decodeOrientationResponse(data []byte) (orientationResponse, ContractCheck) {
+func decodeOrientationResponse(data []byte, responseForm ResponseForm) (orientationResponse, ContractCheck) {
 	check := emptyContractCheck()
 	var response orientationResponse
 	// Product orientation uses json.Unmarshal: unknown legacy/provider fields
@@ -310,8 +314,60 @@ func decodeOrientationResponse(data []byte) (orientationResponse, ContractCheck)
 		return response, check
 	}
 	check.Valid = true
-	check.WarningCodes = []string{orientationContractUnmeasuredWarning}
+	if responseForm == ResponseFormNormalizedReport {
+		check.WarningCodes = []string{orientationContractUnmeasuredWarning}
+		return response, check
+	}
+
+	check.Measured = true
+	if err := validateRawOrientationShape(data); err != nil {
+		check.Error = err.Error()
+		return response, check
+	}
+	var strict orientationResponse
+	if err := decodeStrictJSON(data, &strict); err != nil {
+		check.Error = fmt.Sprintf("quality: raw orientation response contract drift: %v", err)
+		return response, check
+	}
+	check.Clean = true
 	return response, check
+}
+
+func validateRawOrientationShape(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("quality: decode raw orientation fields: %w", err)
+	}
+	arrayFields := map[string]bool{
+		"high_level_map":         true,
+		"first_files_to_open":    true,
+		"candidate_flows":        true,
+		"important_domain_words": true,
+		"questions_for_human":    true,
+		"unverified_paths":       true,
+		"warnings":               true,
+	}
+	for _, field := range []string{
+		"project_guess",
+		"confidence",
+		"high_level_map",
+		"first_files_to_open",
+		"candidate_flows",
+		"important_domain_words",
+		"questions_for_human",
+		"unverified_paths",
+		"warnings",
+	} {
+		raw, exists := fields[field]
+		trimmed := strings.TrimSpace(string(raw))
+		if !exists || trimmed == "" || trimmed == "null" {
+			return fmt.Errorf("quality: raw orientation required field %q is missing or null", field)
+		}
+		if arrayFields[field] && !strings.HasPrefix(trimmed, "[") {
+			return fmt.Errorf("quality: raw orientation required field %q is not an array", field)
+		}
+	}
+	return nil
 }
 
 func validateOrientationResponse(response orientationResponse) error {
@@ -491,6 +547,8 @@ func evaluateDirections(
 		coverage.Checks = append(coverage.Checks, check)
 		if !check.Covered {
 			coverage.Missing = append(coverage.Missing, direction.ID)
+		} else if len(check.CandidateNames) > 1 {
+			coverage.Ambiguous = append(coverage.Ambiguous, direction.ID)
 		}
 
 		for _, path := range direction.ImportantPaths {
@@ -505,7 +563,7 @@ func evaluateDirections(
 			}
 		}
 	}
-	coverage.Complete = len(coverage.Missing) == 0
+	coverage.Complete = len(coverage.Missing) == 0 && len(coverage.Ambiguous) == 0
 	important.Complete = len(important.Missing) == 0
 	return coverage, important
 }
@@ -612,10 +670,16 @@ func evaluateGrounding(
 }
 
 func looksLikeStructuredEvidencePath(value string) bool {
-	if !validRelativePath(value) || len(strings.Fields(value)) != 1 {
+	if !validRelativePath(value) || len(strings.Fields(value)) != 1 || strings.ContainsAny(value, "*?[]") {
 		return false
 	}
-	return strings.Contains(value, "/") || filepath.Ext(value) != ""
+	switch strings.ToLower(filepath.Ext(value)) {
+	case ".go", ".md", ".yaml", ".yml", ".json", ".toml", ".proto",
+		".mod", ".sum", ".sh", ".c", ".h", ".rs", ".py", ".js", ".ts":
+		return true
+	default:
+		return false
+	}
 }
 
 func evaluateDrilldown(
@@ -817,7 +881,11 @@ func cloneInt64(value *int64) *int64 {
 }
 
 func emptyDirectionCoverage() DirectionCoverage {
-	return DirectionCoverage{Checks: []DirectionCheck{}, Missing: []string{}}
+	return DirectionCoverage{
+		Checks:    []DirectionCheck{},
+		Missing:   []string{},
+		Ambiguous: []string{},
+	}
 }
 
 func emptyImportantEvidence() ImportantEvidenceResult {
@@ -846,12 +914,13 @@ func emptyContractCheck() ContractCheck {
 }
 
 func (c ContractAdherence) clean() bool {
-	orientationAccepted := c.OrientationResponse.Decoded &&
+	legacyOrientationAccepted := c.OrientationResponse.Decoded &&
 		c.OrientationResponse.Valid &&
 		!c.OrientationResponse.Measured &&
 		!c.OrientationResponse.Clean &&
 		len(c.OrientationResponse.WarningCodes) == 1 &&
 		c.OrientationResponse.WarningCodes[0] == orientationContractUnmeasuredWarning
+	orientationAccepted := measuredClean(c.OrientationResponse) || legacyOrientationAccepted
 	return measuredClean(c.OrientationContext) &&
 		orientationAccepted &&
 		measuredClean(c.SourceBundle) &&

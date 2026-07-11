@@ -42,8 +42,7 @@ func TestRunEvaluatesCommittedEtcdTaskOffline(t *testing.T) {
 		result.BytesAndLatency.Orientation.ProviderRequestBytes != nil ||
 		result.BytesAndLatency.Source.ReplayInputBytes != 3536 ||
 		result.BytesAndLatency.Source.ModelContextBytes != 3001 ||
-		result.BytesAndLatency.Source.ProviderRequestBytes == nil ||
-		*result.BytesAndLatency.Source.ProviderRequestBytes != 6601 {
+		result.BytesAndLatency.Source.ProviderRequestBytes != nil {
 		t.Fatalf("capture observations = %#v", result.BytesAndLatency)
 	}
 }

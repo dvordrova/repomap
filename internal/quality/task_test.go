@@ -46,6 +46,20 @@ func TestTaskValidate(t *testing.T) {
 			wantError: "yyyy-mm-dd",
 		},
 		{
+			name: "unknown response form",
+			mutate: func(task *Task) {
+				task.Captures.Orientation.ResponseForm = "parsed-ish"
+			},
+			wantError: "response_form",
+		},
+		{
+			name: "normalized source response is unsupported",
+			mutate: func(task *Task) {
+				task.Captures.Source.ResponseForm = ResponseFormNormalizedReport
+			},
+			wantError: "source response_form",
+		},
+		{
 			name: "negative latency",
 			mutate: func(task *Task) {
 				negative := -1 * latency
@@ -194,6 +208,7 @@ func validTask() Task {
 				Provider:           "deepseek",
 				Model:              "unknown",
 				PromptVersion:      "legacy-orientation-unversioned",
+				ResponseForm:       ResponseFormNormalizedReport,
 				CapturedAt:         "2026-05-24T15:11:40Z",
 				ModelContextSHA256: strings.Repeat("1", 64),
 				ModelContextBytes:  167957,
@@ -202,6 +217,7 @@ func validTask() Task {
 				Provider:              "deepseek",
 				Model:                 "deepseek-v4-flash",
 				PromptVersion:         "source-assessment-json-v2",
+				ResponseForm:          ResponseFormProviderContent,
 				CapturedAt:            "2026-07-10",
 				ModelContextSHA256:    strings.Repeat("2", 64),
 				ModelContextBytes:     3001,
