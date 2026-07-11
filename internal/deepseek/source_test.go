@@ -37,6 +37,7 @@ func TestSourcePromptContainsGroundingContract(t *testing.T) {
 		"question's candidate_source_evidence_ids",
 		"anchor_source_evidence_id",
 		"cite both the call anchor and that result-use line",
+		"returned nil comparison using the call result",
 		"lexical window",
 		"Always include both",
 		"one next_action_id",
