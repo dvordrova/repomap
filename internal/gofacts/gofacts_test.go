@@ -241,7 +241,7 @@ func TestBuildEntrypoints(t *testing.T) {
 		{ImportPath: "example.com/lib", Dir: "/repo/lib", Name: "lib", GoFiles: []string{"lib.go"}, Module: &goListModule{Path: "example.com"}},
 		{ImportPath: "example.com/internal/util", Dir: "/repo/internal/util", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "example.com"}},
 	}
-	eps := buildEntrypoints(pkgs, "/repo", "/repo", ".", "example.com")
+	eps := buildEntrypointCandidates(pkgs, "/repo", "/repo", ".", "example.com")
 
 	if len(eps) != 2 {
 		t.Fatalf("entrypoints = %d, want 2", len(eps))
@@ -270,7 +270,7 @@ func TestBuildEntrypointsSubModule(t *testing.T) {
 	pkgs := []goListPackage{
 		{ImportPath: "go.etcd.io/etcd/etcdctl/v3/ctlv3/command", Dir: "/repo/etcdctl/ctlv3/command", Name: "main", GoFiles: []string{"command.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/etcdctl/v3"}},
 	}
-	eps := buildEntrypoints(pkgs, "/repo", "/repo/etcdctl", "etcdctl", "go.etcd.io/etcd/etcdctl/v3")
+	eps := buildEntrypointCandidates(pkgs, "/repo", "/repo/etcdctl", "etcdctl", "go.etcd.io/etcd/etcdctl/v3")
 
 	if len(eps) != 1 {
 		t.Fatalf("entrypoints = %d, want 1", len(eps))
@@ -293,7 +293,7 @@ func TestBuildEntrypointsRootModule(t *testing.T) {
 	pkgs := []goListPackage{
 		{ImportPath: "go.etcd.io/etcd/v3/contrib/raftexample", Dir: "/repo/contrib/raftexample", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/v3"}},
 	}
-	eps := buildEntrypoints(pkgs, "/repo", "/repo", ".", "go.etcd.io/etcd/v3")
+	eps := buildEntrypointCandidates(pkgs, "/repo", "/repo", ".", "go.etcd.io/etcd/v3")
 
 	if len(eps) != 1 {
 		t.Fatalf("entrypoints = %d, want 1", len(eps))
@@ -310,7 +310,7 @@ func TestBuildEntrypointsServerModule(t *testing.T) {
 	pkgs := []goListPackage{
 		{ImportPath: "go.etcd.io/etcd/server/v3", Dir: "/repo/server", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/server/v3"}},
 	}
-	eps := buildEntrypoints(pkgs, "/repo", "/repo/server", "server", "go.etcd.io/etcd/server/v3")
+	eps := buildEntrypointCandidates(pkgs, "/repo", "/repo/server", "server", "go.etcd.io/etcd/server/v3")
 
 	if len(eps) != 1 {
 		t.Fatalf("entrypoints = %d, want 1", len(eps))
@@ -330,7 +330,7 @@ func TestBuildEntrypointsNoModule(t *testing.T) {
 	pkgs := []goListPackage{
 		{ImportPath: "main", Dir: "/repo", Name: "main", GoFiles: []string{"main.go"}, Module: nil},
 	}
-	eps := buildEntrypoints(pkgs, "/repo", "/repo", ".", "")
+	eps := buildEntrypointCandidates(pkgs, "/repo", "/repo", ".", "")
 	if len(eps) != 1 {
 		t.Fatalf("entrypoints = %d, want 1", len(eps))
 	}

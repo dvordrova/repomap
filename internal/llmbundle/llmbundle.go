@@ -37,6 +37,7 @@ type goSection struct {
 	PackagesCount         int                            `json:"packages_count"`
 	ModuleSummaries       []moduleSummaryCompact         `json:"module_summaries"`
 	Entrypoints           []entrypointCompact            `json:"entrypoints"`
+	CommandTraces         []gofacts.CommandTrace         `json:"command_traces,omitempty"`
 	OrientationCandidates []gofacts.OrientationCandidate `json:"orientation_candidates"`
 	ImportantEdges        []gofacts.Edge                 `json:"important_edges"`
 }
@@ -52,10 +53,11 @@ type moduleSummaryCompact struct {
 }
 
 type entrypointCompact struct {
-	Kind       string   `json:"kind"`
-	ImportPath string   `json:"import_path"`
-	PackageDir string   `json:"package_dir"`
-	OpenFiles  []string `json:"open_files"`
+	Kind       string                     `json:"kind"`
+	ImportPath string                     `json:"import_path"`
+	PackageDir string                     `json:"package_dir"`
+	Anchors    []gofacts.EntrypointAnchor `json:"anchors,omitempty"`
+	OpenFiles  []string                   `json:"open_files"`
 }
 
 type Options struct {
@@ -130,18 +132,33 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		eps := make([]entrypointCompact, 0, len(selectedEntrypoints))
 		for _, ep := range selectedEntrypoints {
 			selectedEntrypointImports[ep.ImportPath] = struct{}{}
-			openFiles := make([]string, 0, len(ep.GoFiles))
-			for _, gf := range ep.GoFiles {
-				if ep.PackageDir == "." || ep.PackageDir == "" {
-					openFiles = append(openFiles, gf)
-				} else {
-					openFiles = append(openFiles, ep.PackageDir+"/"+gf)
+			openFiles := make([]string, 0, len(ep.Anchors)+len(ep.GoFiles))
+			seenOpenFiles := make(map[string]struct{}, cap(openFiles))
+			for _, anchor := range ep.Anchors {
+				if _, seen := seenOpenFiles[anchor.Path]; seen {
+					continue
 				}
+				seenOpenFiles[anchor.Path] = struct{}{}
+				openFiles = append(openFiles, anchor.Path)
+			}
+			for _, gf := range ep.GoFiles {
+				var openFile string
+				if ep.PackageDir == "." || ep.PackageDir == "" {
+					openFile = filepath.ToSlash(gf)
+				} else {
+					openFile = filepath.ToSlash(ep.PackageDir) + "/" + filepath.ToSlash(gf)
+				}
+				if _, seen := seenOpenFiles[openFile]; seen {
+					continue
+				}
+				seenOpenFiles[openFile] = struct{}{}
+				openFiles = append(openFiles, openFile)
 			}
 			eps = append(eps, entrypointCompact{
 				Kind:       ep.Kind,
 				ImportPath: ep.ImportPath,
 				PackageDir: ep.PackageDir,
+				Anchors:    append([]gofacts.EntrypointAnchor(nil), ep.Anchors...),
 				OpenFiles:  openFiles,
 			})
 		}
@@ -172,6 +189,7 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			PackagesCount:         f.PackagesCount,
 			ModuleSummaries:       modSummaries,
 			Entrypoints:           eps,
+			CommandTraces:         selectCommandTraces(f.CommandTraces, b.ReadmeExcerpt, 8),
 			OrientationCandidates: candidates,
 			ImportantEdges:        edges,
 		}
@@ -199,6 +217,7 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
 		b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
 		b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)
+		b.Go.CommandTraces = filterCommandTraces(b.Go.CommandTraces, allowedSet)
 		b.Go.OrientationCandidates = filterOrientationCandidates(
 			b.Go.OrientationCandidates,
 			allowedSet,
@@ -215,24 +234,49 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 	signalMap := sourcesignals.BuildFileSignalMap(fileSignals)
 
 	entrypointPaths := make(map[string]struct{})
+	commandTracePaths := make(map[string]struct{})
 	entrypointDependencyDirs := make(map[string]struct{})
 	entrypointSecondHopDirs := make(map[string]struct{})
 	if facts != nil {
+		for _, trace := range facts.CommandTraces {
+			for _, step := range trace.Steps {
+				commandTracePaths[step.TargetLocation.Path] = struct{}{}
+				if step.CallsiteLocation != nil {
+					commandTracePaths[step.CallsiteLocation.Path] = struct{}{}
+				}
+			}
+			for _, call := range trace.HandlerCalls {
+				if call.TargetPath != "" {
+					commandTracePaths[call.TargetPath] = struct{}{}
+				}
+			}
+		}
 		selectedEntrypoints := selectOrientationEntrypoints(facts.EntrypointPackages)
 		entrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
+		verifiedEntrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
 		entrypointDependencies := make(map[string]struct{})
 		for _, ep := range selectedEntrypoints {
 			entrypointImports[ep.ImportPath] = struct{}{}
-			for _, gf := range ep.GoFiles {
-				p := gf
-				if ep.PackageDir != "." && ep.PackageDir != "" {
-					p = ep.PackageDir + "/" + gf
+			if len(ep.Anchors) > 0 {
+				verifiedEntrypointImports[ep.ImportPath] = struct{}{}
+				for _, anchor := range ep.Anchors {
+					entrypointPaths[anchor.Path] = struct{}{}
 				}
-				entrypointPaths[p] = struct{}{}
+			} else {
+				for _, gf := range ep.GoFiles {
+					p := filepath.ToSlash(gf)
+					if ep.PackageDir != "." && ep.PackageDir != "" {
+						p = filepath.ToSlash(ep.PackageDir) + "/" + filepath.ToSlash(gf)
+					}
+					entrypointPaths[p] = struct{}{}
+				}
 			}
 		}
 		for _, oc := range facts.OrientationCandidates {
 			if _, ok := entrypointImports[oc.EntrypointPackage]; !ok {
+				continue
+			}
+			if _, verified := verifiedEntrypointImports[oc.EntrypointPackage]; verified {
 				continue
 			}
 			for _, of := range oc.OpenFiles {
@@ -276,6 +320,11 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 			entrypointSecondHopDirs,
 			knownDocSet,
 		)
+		if _, ok := commandTracePaths[f]; ok {
+			score += 90
+			signals = append(signals, "command-trace")
+			reasons = append(reasons, "exact declaration in a bounded CLI dispatch trace")
+		}
 
 		// Enrich with source signal categories
 		if fileSignalsForFile, ok := signalMap[f]; ok {
@@ -674,6 +723,103 @@ func filterEntrypoints(entrypoints []entrypointCompact, allowed map[string]struc
 		result = append(result, entrypoint)
 	}
 	return result
+}
+
+func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int) []gofacts.CommandTrace {
+	if limit <= 0 || len(traces) == 0 {
+		return nil
+	}
+	type rankedTrace struct {
+		trace    gofacts.CommandTrace
+		score    int
+		position int
+	}
+	lowerReadme := strings.ToLower(readme)
+	ranked := make([]rankedTrace, 0, len(traces))
+	for position, trace := range traces {
+		score := 0
+		command := strings.ToLower(strings.TrimSpace(trace.Command))
+		if command != "" && containsWord(lowerReadme, command) {
+			score += 100
+		}
+		if trace.Complete {
+			score += 10
+		}
+		ranked = append(ranked, rankedTrace{trace: trace, score: score, position: position})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		return ranked[i].position < ranked[j].position
+	})
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	selected := make([]gofacts.CommandTrace, len(ranked))
+	for index := range ranked {
+		selected[index] = ranked[index].trace
+	}
+	return selected
+}
+
+func containsWord(text, word string) bool {
+	for offset := 0; offset < len(text); {
+		index := strings.Index(text[offset:], word)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		end := start + len(word)
+		if (start == 0 || !isWordByte(text[start-1])) && (end == len(text) || !isWordByte(text[end])) {
+			return true
+		}
+		offset = start + 1
+	}
+	return false
+}
+
+func isWordByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9' || value == '_'
+}
+
+func filterCommandTraces(traces []gofacts.CommandTrace, allowed map[string]struct{}) []gofacts.CommandTrace {
+	filtered := make([]gofacts.CommandTrace, 0, len(traces))
+	for _, trace := range traces {
+		steps := make([]gofacts.CommandTraceStep, 0, len(trace.Steps))
+		for _, step := range trace.Steps {
+			if _, ok := allowed[step.TargetLocation.Path]; !ok {
+				continue
+			}
+			if step.CallsiteLocation != nil {
+				if _, ok := allowed[step.CallsiteLocation.Path]; !ok {
+					continue
+				}
+			}
+			steps = append(steps, step)
+		}
+		if len(steps) != len(trace.Steps) {
+			continue
+		}
+		calls := make([]gofacts.CommandTraceCall, 0, len(trace.HandlerCalls))
+		for _, call := range trace.HandlerCalls {
+			if _, ok := allowed[call.Path]; !ok {
+				continue
+			}
+			if call.TargetPath != "" {
+				if _, ok := allowed[call.TargetPath]; !ok {
+					call.TargetPath = ""
+					call.TargetLine = 0
+					call.Resolved = false
+				}
+			}
+			calls = append(calls, call)
+		}
+		trace.Steps = steps
+		trace.HandlerCalls = calls
+		filtered = append(filtered, trace)
+	}
+	return filtered
 }
 
 func filterOrientationCandidates(

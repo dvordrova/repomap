@@ -21,6 +21,7 @@ type Facts struct {
 	Modules               []ModuleFact           `json:"modules"`
 	PackagesCount         int                    `json:"packages_count"`
 	EntrypointPackages    []Entrypoint           `json:"entrypoint_packages"`
+	CommandTraces         []CommandTrace         `json:"command_traces,omitempty"`
 	ModuleSummaries       []ModuleSummary        `json:"module_summaries"`
 	OrientationCandidates []OrientationCandidate `json:"orientation_candidates"`
 	InternalEdges         []Edge                 `json:"internal_edges"`
@@ -56,14 +57,32 @@ type OrientationCandidate struct {
 }
 
 type Entrypoint struct {
-	ModulePath        string   `json:"module_path"`
-	ImportPath        string   `json:"import_path"`
-	Dir               string   `json:"dir"`
-	PackageDir        string   `json:"package_dir"`
-	ModuleRelativeDir string   `json:"module_relative_dir"`
-	ModuleDir         string   `json:"module_dir"`
-	Kind              string   `json:"kind"`
-	GoFiles           []string `json:"go_files"`
+	ModulePath        string             `json:"module_path"`
+	ImportPath        string             `json:"import_path"`
+	Dir               string             `json:"dir"`
+	PackageDir        string             `json:"package_dir"`
+	ModuleRelativeDir string             `json:"module_relative_dir"`
+	ModuleDir         string             `json:"module_dir"`
+	Kind              string             `json:"kind"`
+	GoFiles           []string           `json:"go_files"`
+	Anchors           []EntrypointAnchor `json:"anchors,omitempty"`
+}
+
+type EntrypointAnchorKind string
+
+const (
+	EntrypointAnchorVersion                      = 1
+	EntrypointAnchorGoMain  EntrypointAnchorKind = "go_main_function"
+)
+
+// EntrypointAnchor is a deterministic source declaration selected under the
+// active Go build configuration. Path is repository-relative and Line points
+// at the declaration name.
+type EntrypointAnchor struct {
+	Version int                  `json:"version"`
+	Kind    EntrypointAnchorKind `json:"kind"`
+	Path    string               `json:"path"`
+	Line    int                  `json:"line"`
 }
 
 type Edge struct {
@@ -96,9 +115,10 @@ type goListError struct {
 }
 
 type modulePkgMeta struct {
-	moduleDir  string
-	modulePath string
-	pkgs       []goListPackage
+	moduleDir        string
+	modulePath       string
+	pkgs             []goListPackage
+	entrypointsCount int
 }
 
 func DiscoverGoModules(fileList []string, repoPath string) []string {
@@ -158,6 +178,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 
 	var allPkgs []goListPackage
 	var allEntrypoints []Entrypoint
+	var allCommandTraces []CommandTrace
 	var topWarnings []string
 	modules := make([]ModuleFact, 0, len(moduleDirs))
 	totalPkgs := 0
@@ -210,8 +231,23 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		totalPkgs += len(pkgs)
 		allPkgs = append(allPkgs, pkgs...)
 
-		modEntrypoints := buildEntrypoints(pkgs, resolvedRepoPath, absDir, modRelDir, modulePath)
+		entrypointCandidates := buildEntrypointCandidates(pkgs, resolvedRepoPath, absDir, modRelDir, modulePath)
+		modEntrypoints, entrypointWarnings := resolveMainEntrypoints(repoReader, entrypointCandidates)
+		if len(entrypointWarnings) > 0 {
+			modWarnings = append(modWarnings, entrypointWarnings...)
+			for _, warning := range entrypointWarnings {
+				topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
+			}
+		}
 		allEntrypoints = append(allEntrypoints, modEntrypoints...)
+		commandTraces, commandTraceWarnings := buildCommandTraces(repoReader, modEntrypoints)
+		allCommandTraces = append(allCommandTraces, commandTraces...)
+		if len(commandTraceWarnings) > 0 {
+			modWarnings = append(modWarnings, commandTraceWarnings...)
+			for _, warning := range commandTraceWarnings {
+				topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
+			}
+		}
 
 		modules = append(modules, ModuleFact{
 			ModulePath:         modulePath,
@@ -222,9 +258,10 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		})
 
 		modMetas = append(modMetas, modulePkgMeta{
-			moduleDir:  modRelDir,
-			modulePath: modulePath,
-			pkgs:       pkgs,
+			moduleDir:        modRelDir,
+			modulePath:       modulePath,
+			pkgs:             pkgs,
+			entrypointsCount: len(modEntrypoints),
 		})
 	}
 
@@ -244,6 +281,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		Modules:               modules,
 		PackagesCount:         totalPkgs,
 		EntrypointPackages:    allEntrypoints,
+		CommandTraces:         allCommandTraces,
 		ModuleSummaries:       moduleSummaries,
 		OrientationCandidates: orientationCandidates,
 		InternalEdges:         edges,
@@ -378,7 +416,7 @@ func buildKnownSet(pkgs []goListPackage) map[string]struct{} {
 	return known
 }
 
-func buildEntrypoints(pkgs []goListPackage, repoRoot string, moduleRoot string, modRelDir string, modulePath string) []Entrypoint {
+func buildEntrypointCandidates(pkgs []goListPackage, repoRoot string, moduleRoot string, modRelDir string, modulePath string) []Entrypoint {
 	eps := make([]Entrypoint, 0)
 	for _, p := range pkgs {
 		if p.Name != "main" || p.Error != nil {
@@ -582,18 +620,11 @@ func buildModuleSummaries(modMetas []modulePkgMeta, known map[string]struct{}) [
 			modExtImports = modExtImports[:10]
 		}
 
-		entrypointsCount := 0
-		for _, p := range mm.pkgs {
-			if p.Name == "main" && p.Error == nil {
-				entrypointsCount++
-			}
-		}
-
 		summaries = append(summaries, ModuleSummary{
 			ModulePath:              mm.modulePath,
 			ModuleDir:               mm.moduleDir,
 			PackagesCount:           len(mm.pkgs),
-			EntrypointsCount:        entrypointsCount,
+			EntrypointsCount:        mm.entrypointsCount,
 			RoleGuess:               guessModuleRole(mm.moduleDir),
 			TopImportedInternalPkgs: topInternal,
 			TopExternalImports:      modExtImports,
@@ -610,13 +641,27 @@ func buildOrientationCandidates(entrypoints []Entrypoint) []OrientationCandidate
 		kind := ep.Kind
 		priority := priorityForKind(kind)
 
-		openFiles := make([]string, 0, len(ep.GoFiles))
-		for _, gf := range ep.GoFiles {
-			if ep.PackageDir == "." || ep.PackageDir == "" {
-				openFiles = append(openFiles, gf)
-			} else {
-				openFiles = append(openFiles, ep.PackageDir+"/"+gf)
+		openFiles := make([]string, 0, len(ep.Anchors)+len(ep.GoFiles))
+		seenOpenFiles := make(map[string]struct{}, cap(openFiles))
+		for _, anchor := range ep.Anchors {
+			if _, seen := seenOpenFiles[anchor.Path]; seen {
+				continue
 			}
+			seenOpenFiles[anchor.Path] = struct{}{}
+			openFiles = append(openFiles, anchor.Path)
+		}
+		for _, gf := range ep.GoFiles {
+			var openFile string
+			if ep.PackageDir == "." || ep.PackageDir == "" {
+				openFile = filepath.ToSlash(gf)
+			} else {
+				openFile = filepath.ToSlash(ep.PackageDir) + "/" + filepath.ToSlash(gf)
+			}
+			if _, seen := seenOpenFiles[openFile]; seen {
+				continue
+			}
+			seenOpenFiles[openFile] = struct{}{}
+			openFiles = append(openFiles, openFile)
 		}
 
 		why := whyForKind(kind)

@@ -44,17 +44,75 @@ const (
 	EntityMethod     EntityKind = "method"
 	EntityType       EntityKind = "type"
 	EntityInterface  EntityKind = "interface"
+	EntityField      EntityKind = "field"
+	EntityVariable   EntityKind = "variable"
+	EntityConstant   EntityKind = "constant"
 	EntityTest       EntityKind = "test"
 	EntityEntrypoint EntityKind = "entrypoint"
+	EntityReference  EntityKind = "reference"
+)
+
+// SourceScope says whether an analyzer-resolved entity belongs to the
+// repository or only to its surrounding toolchain. External entities may omit
+// source locations so absolute dependency and toolchain paths do not leak into
+// a repository evidence graph.
+type SourceScope string
+
+const (
+	SourceScopeRepository       SourceScope = "repository"
+	SourceScopeStandardLibrary  SourceScope = "stdlib"
+	SourceScopeDependency       SourceScope = "dependency"
+	SourceScopeOutsideWorkspace SourceScope = "outside_workspace"
 )
 
 type RelationKind string
 
 const (
-	RelationMatchesQuery RelationKind = "matches_query"
-	RelationResolvesTo   RelationKind = "resolves_to"
-	RelationCalls        RelationKind = "calls"
-	RelationImplements   RelationKind = "implements"
+	RelationMatchesQuery     RelationKind = "matches_query"
+	RelationResolvesTo       RelationKind = "resolves_to"
+	RelationCalls            RelationKind = "calls"
+	RelationRegisters        RelationKind = "registers_command"
+	RelationDispatches       RelationKind = "dispatches"
+	RelationCallback         RelationKind = "callback"
+	RelationConstructs       RelationKind = "constructs"
+	RelationStartsGoroutine  RelationKind = "starts_goroutine"
+	RelationCancels          RelationKind = "cancels"
+	RelationUsesCancellation RelationKind = "uses_cancellation"
+	RelationJoins            RelationKind = "joins"
+	RelationReturns          RelationKind = "returns"
+	RelationReads            RelationKind = "reads"
+	RelationWrites           RelationKind = "writes"
+	RelationImplements       RelationKind = "implements"
+	RelationReferences       RelationKind = "references"
+)
+
+// ResolutionKind records how a relation target was selected. It is
+// intentionally orthogonal to Certainty: a statically selected interface
+// method can still be only possible at runtime, while an observed target may
+// have been resolved without source types.
+type ResolutionKind string
+
+const (
+	ResolutionUnknown         ResolutionKind = "unknown"
+	ResolutionStatic          ResolutionKind = "static"
+	ResolutionTypeInferred    ResolutionKind = "type_inferred"
+	ResolutionFrameworkRule   ResolutionKind = "framework_rule"
+	ResolutionRuntimeObserved ResolutionKind = "runtime_observed"
+	ResolutionModelSuggested  ResolutionKind = "model_suggested"
+	ResolutionUnresolved      ResolutionKind = "unresolved"
+)
+
+// InvocationMode says how control reaches a relation target. Relation.Kind
+// still carries the semantic verb (calls, registers, constructs, ...).
+type InvocationMode string
+
+const (
+	InvocationUnknown     InvocationMode = "unknown"
+	InvocationSynchronous InvocationMode = "synchronous"
+	InvocationAwait       InvocationMode = "await"
+	InvocationGoroutine   InvocationMode = "goroutine"
+	InvocationCallback    InvocationMode = "callback"
+	InvocationDeferred    InvocationMode = "deferred"
 )
 
 type Location struct {
@@ -63,6 +121,14 @@ type Location struct {
 	Column    int    `json:"column,omitempty"`
 	EndLine   int    `json:"end_line,omitempty"`
 	EndColumn int    `json:"end_column,omitempty"`
+}
+
+// Condition preserves a source branch predicate without claiming that it is
+// true for the selected runtime scenario. It is intentionally syntax evidence,
+// not a general path-condition solver.
+type Condition struct {
+	Expression string   `json:"expression,omitempty"`
+	Location   Location `json:"location"`
 }
 
 type BuildContext struct {
@@ -132,20 +198,23 @@ func (s LocationSet) Validate() error {
 }
 
 type Entity struct {
-	ID       string     `json:"id"`
-	Kind     EntityKind `json:"kind"`
-	Name     string     `json:"name"`
-	Language string     `json:"language,omitempty"`
-	Location *Location  `json:"location,omitempty"`
+	ID       string      `json:"id"`
+	Kind     EntityKind  `json:"kind"`
+	Name     string      `json:"name"`
+	Language string      `json:"language,omitempty"`
+	Scope    SourceScope `json:"scope,omitempty"`
+	Location *Location   `json:"location,omitempty"`
 }
 
 type Relation struct {
-	From       string       `json:"from"`
-	To         string       `json:"to"`
-	Kind       RelationKind `json:"kind"`
-	Certainty  Certainty    `json:"certainty"`
-	Provenance []Provenance `json:"provenance"`
-	Scenarios  []string     `json:"scenarios,omitempty"`
+	From       string         `json:"from"`
+	To         string         `json:"to"`
+	Kind       RelationKind   `json:"kind"`
+	Resolution ResolutionKind `json:"resolution,omitempty"`
+	Invocation InvocationMode `json:"invocation,omitempty"`
+	Certainty  Certainty      `json:"certainty"`
+	Provenance []Provenance   `json:"provenance"`
+	Scenarios  []string       `json:"scenarios,omitempty"`
 }
 
 type Graph struct {
@@ -196,6 +265,8 @@ func (g *Graph) AddRelation(relation Relation) {
 		if existing.From == relation.From &&
 			existing.To == relation.To &&
 			existing.Kind == relation.Kind &&
+			existing.Resolution == relation.Resolution &&
+			existing.Invocation == relation.Invocation &&
 			existing.Certainty == relation.Certainty {
 			existing.Provenance = appendUniqueProvenance(existing.Provenance, relation.Provenance...)
 			existing.Scenarios = appendUniqueStrings(existing.Scenarios, relation.Scenarios...)
@@ -234,6 +305,12 @@ func (g *Graph) Sort() {
 		}
 		if left.Kind != right.Kind {
 			return left.Kind < right.Kind
+		}
+		if left.Resolution != right.Resolution {
+			return left.Resolution < right.Resolution
+		}
+		if left.Invocation != right.Invocation {
+			return left.Invocation < right.Invocation
 		}
 		return left.Certainty < right.Certainty
 	})
