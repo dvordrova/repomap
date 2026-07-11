@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	TaskVersion                        = 1
+	TaskVersion                        = 2
 	OrientationGroundingContextVersion = 1
 )
 
@@ -68,13 +68,23 @@ type Captures struct {
 	Source      StageCapture `json:"source"`
 }
 
+type ResponseForm string
+
+const (
+	ResponseFormProviderContent  ResponseForm = "provider_content"
+	ResponseFormNormalizedReport ResponseForm = "normalized_report"
+)
+
 // StageCapture distinguishes the semantic model context from its provider
-// request envelope. Either may differ from the smaller replay artifact. A nil
-// provider request or latency means the legacy capture did not retain it.
+// request envelope and records whether the replay contains the provider JSON
+// field set before parsing or a post-parser legacy report. Fixtures may
+// normalize JSON whitespace. A nil provider request or latency means the
+// capture did not retain it.
 type StageCapture struct {
-	Provider      string `json:"provider"`
-	Model         string `json:"model"`
-	PromptVersion string `json:"prompt_version"`
+	Provider      string       `json:"provider"`
+	Model         string       `json:"model"`
+	PromptVersion string       `json:"prompt_version"`
+	ResponseForm  ResponseForm `json:"response_form"`
 	// CapturedAt is RFC3339 when the exact time was retained, or YYYY-MM-DD
 	// when a legacy fixture recorded only day precision.
 	CapturedAt            string  `json:"captured_at"`
@@ -219,6 +229,9 @@ func (c Captures) validate() error {
 	if err := c.Source.validate("source"); err != nil {
 		return err
 	}
+	if c.Source.ResponseForm != ResponseFormProviderContent {
+		return fmt.Errorf("quality: source response_form must be %q", ResponseFormProviderContent)
+	}
 	return nil
 }
 
@@ -235,6 +248,14 @@ func (c StageCapture) validate(stage string) error {
 		if err := requiredText(item.name, item.value, maxMetadataBytes); err != nil {
 			return err
 		}
+	}
+	if c.ResponseForm != ResponseFormProviderContent && c.ResponseForm != ResponseFormNormalizedReport {
+		return fmt.Errorf(
+			"quality: %s response_form must be %q or %q",
+			stage,
+			ResponseFormProviderContent,
+			ResponseFormNormalizedReport,
+		)
 	}
 	if !validCapturedAt(c.CapturedAt) {
 		return fmt.Errorf("quality: %s captured_at must be rfc3339 or yyyy-mm-dd", stage)

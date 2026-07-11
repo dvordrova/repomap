@@ -222,6 +222,94 @@ func TestEvaluateToleratesUnknownOrientationFieldsLikeProductDecoder(t *testing.
 	}
 }
 
+func TestEvaluateMeasuresRawOrientationContract(t *testing.T) {
+	t.Parallel()
+
+	loaded := evaluationFixture(t)
+	loaded.Task.Captures.Orientation.ResponseForm = ResponseFormProviderContent
+
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	contract := result.ContractAdherence.OrientationResponse
+	if !contract.Decoded || !contract.Valid || !contract.Measured || !contract.Clean || !result.Passed {
+		t.Fatalf("raw orientation result = %#v", result)
+	}
+}
+
+func TestEvaluateFlagsRawOrientationContractDrift(t *testing.T) {
+	t.Parallel()
+
+	loaded := evaluationFixture(t)
+	loaded.Task.Captures.Orientation.ResponseForm = ResponseFormProviderContent
+	var response map[string]any
+	if err := json.Unmarshal(loaded.OrientationResponse, &response); err != nil {
+		t.Fatal(err)
+	}
+	response["provider_extra"] = "ignored by the product parser"
+	loaded.OrientationResponse = marshalFixture(t, response)
+
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	contract := result.ContractAdherence.OrientationResponse
+	if !contract.Decoded || !contract.Valid || !contract.Measured || contract.Clean || result.Passed ||
+		!strings.Contains(contract.Error, "contract drift") {
+		t.Fatalf("raw orientation result = %#v", result)
+	}
+}
+
+func TestEvaluateFlagsIncompleteRawOrientationShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+		want   string
+	}{
+		{
+			name: "missing field",
+			mutate: func(response map[string]any) {
+				delete(response, "warnings")
+			},
+			want: `required field "warnings"`,
+		},
+		{
+			name: "null array",
+			mutate: func(response map[string]any) {
+				response["questions_for_human"] = nil
+			},
+			want: `required field "questions_for_human"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			loaded := evaluationFixture(t)
+			loaded.Task.Captures.Orientation.ResponseForm = ResponseFormProviderContent
+			var response map[string]any
+			if err := json.Unmarshal(loaded.OrientationResponse, &response); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(response)
+			loaded.OrientationResponse = marshalFixture(t, response)
+
+			result, err := Evaluate(loaded)
+			if err != nil {
+				t.Fatalf("Evaluate() error = %v", err)
+			}
+			contract := result.ContractAdherence.OrientationResponse
+			if !contract.Valid || !contract.Measured || contract.Clean || result.Passed ||
+				!strings.Contains(contract.Error, test.want) {
+				t.Fatalf("raw orientation result = %#v", result)
+			}
+		})
+	}
+}
+
 func TestEvaluateCountsUniqueStructuredPathsAndUnscoredProse(t *testing.T) {
 	t.Parallel()
 
@@ -244,6 +332,26 @@ func TestEvaluateCountsUniqueStructuredPathsAndUnscoredProse(t *testing.T) {
 	if result.Grounding.ReferencedPathCount != 2 ||
 		result.Grounding.UnscoredProseEvidenceCount != 1 ||
 		!result.Grounding.Valid {
+		t.Fatalf("grounding = %#v", result.Grounding)
+	}
+}
+
+func TestEvaluateTreatsWildcardEvidenceAsUnscoredProse(t *testing.T) {
+	t.Parallel()
+
+	loaded := evaluationFixture(t)
+	response := decodeOrientationFixture(t, loaded.OrientationResponse)
+	response.HighLevelMap[0].Evidence = append(
+		response.HighLevelMap[0].Evidence,
+		"internal/runtime/*",
+	)
+	loaded.OrientationResponse = marshalFixture(t, response)
+
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.Grounding.Valid || result.Grounding.UnscoredProseEvidenceCount != 1 {
 		t.Fatalf("grounding = %#v", result.Grounding)
 	}
 }
@@ -499,8 +607,10 @@ func TestEvaluateDoesNotUnionDirectionEvidenceAcrossCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
-	if !result.DirectionCoverage.Complete || result.ImportantEvidence.Complete ||
-		len(result.ImportantEvidence.Missing) != 1 || result.Passed {
+	if result.DirectionCoverage.Complete ||
+		!contains(result.DirectionCoverage.Ambiguous, "write-request") ||
+		result.ImportantEvidence.Complete || len(result.ImportantEvidence.Missing) != 1 ||
+		result.Passed {
 		t.Fatalf("direction evidence = coverage:%#v important:%#v", result.DirectionCoverage, result.ImportantEvidence)
 	}
 }
@@ -577,6 +687,7 @@ func evaluationFixture(t *testing.T) LoadedTask {
 					Provider:           "fixture",
 					Model:              "fixture-model",
 					PromptVersion:      "orientation-v1",
+					ResponseForm:       ResponseFormNormalizedReport,
 					CapturedAt:         "2026-07-10T10:00:00Z",
 					ModelContextSHA256: strings.Repeat("b", 64),
 					ModelContextBytes:  4096,
@@ -586,6 +697,7 @@ func evaluationFixture(t *testing.T) LoadedTask {
 					Provider:              "fixture",
 					Model:                 "fixture-model",
 					PromptVersion:         "source-v1",
+					ResponseForm:          ResponseFormProviderContent,
 					CapturedAt:            "2026-07-10T10:00:01Z",
 					ModelContextSHA256:    strings.Repeat("c", 64),
 					ModelContextBytes:     3001,

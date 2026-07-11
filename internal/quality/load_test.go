@@ -48,13 +48,15 @@ func TestLoadEtcdPutFixture(t *testing.T) {
 	if len(loaded.OrientationContext) == 0 ||
 		len(loaded.SourceBundle) != 3536 ||
 		sourceCapture.ModelContextBytes != 3001 ||
-		sourceCapture.ProviderRequestBytes == nil ||
-		*sourceCapture.ProviderRequestBytes != 6601 {
+		sourceCapture.ProviderRequestBytes != nil {
 		t.Fatalf("loaded replay/capture sizes = context:%d source:%d capture:%#v",
 			len(loaded.OrientationContext), len(loaded.SourceBundle), sourceCapture)
 	}
 	if loaded.Task.Captures.Orientation.ProviderRequestBytes != nil {
 		t.Fatalf("legacy orientation provider request bytes = %v, want unknown", loaded.Task.Captures.Orientation.ProviderRequestBytes)
+	}
+	if sourceCapture.ProviderRequestSHA256 != nil {
+		t.Fatalf("legacy source provider request sha256 = %v, want unknown", sourceCapture.ProviderRequestSHA256)
 	}
 }
 

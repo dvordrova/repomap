@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "id": "etcd-put-orientation-drilldown-v1",
   "repository": {
     "name": "etcd",
@@ -19,6 +19,7 @@
       "provider": "deepseek",
       "model": "unknown",
       "prompt_version": "legacy-orientation-unversioned",
+      "response_form": "normalized_report",
       "captured_at": "2026-05-24T09:49:22Z",
       "model_context_sha256": "1715fc520da02b67367f72d789db334c2b307f7f4ac9d5e3f969fe3fe17fd5ed",
       "model_context_bytes": 108668,
@@ -30,11 +31,12 @@
       "provider": "deepseek",
       "model": "deepseek-v4-flash",
       "prompt_version": "source-assessment-json-v2",
+      "response_form": "provider_content",
       "captured_at": "2026-07-10",
       "model_context_sha256": "997a3804cc71818f4c0e2db640d6ae6a5427934230a531ea2263257452219985",
       "model_context_bytes": 3001,
-      "provider_request_sha256": "6bf5dab4cb4c257a3b0906817ced5551ae7560020edbe2718bf780ed18c80638",
-      "provider_request_bytes": 6601,
+      "provider_request_sha256": null,
+      "provider_request_bytes": null,
       "latency_ms": null
     }
   },
