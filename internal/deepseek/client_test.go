@@ -676,6 +676,8 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		"high_level_map",
 		"important_domain_words",
 		"questions_for_human",
+		"never shorten cmd/server/main.go to main.go",
+		"each evidence item atomic",
 	}
 
 	for _, field := range expected {
