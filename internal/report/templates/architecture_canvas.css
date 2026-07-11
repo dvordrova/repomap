@@ -425,6 +425,7 @@
 }
 
 .rm-arch__edge--structural:hover .rm-arch__edge-visible,
+.rm-arch__edge--structural:focus-visible .rm-arch__edge-visible,
 .rm-arch__edge--structural.is-selected .rm-arch__edge-visible {
  stroke: #64748b;
  stroke-dasharray: none;
@@ -465,6 +466,7 @@
 }
 
 .rm-arch__edge--flow:hover .rm-arch__edge-visible,
+.rm-arch__edge--flow:focus-visible .rm-arch__edge-visible,
 .rm-arch__edge--flow.is-selected .rm-arch__edge-visible {
  filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.42));
  stroke-width: 4;

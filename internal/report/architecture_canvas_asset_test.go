@@ -59,6 +59,17 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "flow navigation and evidence remain keyboard reachable",
+			asset: js,
+			tokens: []string{
+				`component: "", step: "", edge: ""`,
+				`"Participating flows"`,
+				`"Target declaration"`,
+				`role: "button", tabindex: "0"`,
+				`event.key !== "Enter" && event.key !== " "`,
+			},
+		},
+		{
 			name:  "same component transitions bypass ELK self loops",
 			asset: js,
 			tokens: []string{

@@ -225,7 +225,7 @@ function branchClass(kind) {
     const button = element("button", "rm-arch__flow-button", flow.name || flow.id);
     button.type = "button";
     this.listen(button, "click", () => {
-     this.setSelection({ flow: text(flow.id), step: "", edge: "" }, true);
+     this.setSelection({ flow: text(flow.id), component: "", step: "", edge: "" }, true);
     });
     this.flowButtons.set(text(flow.id), button);
     flowNav.appendChild(button);
@@ -561,6 +561,7 @@ function branchClass(kind) {
     const group = this.interactiveSVGPath(
      route,
      "rm-arch__edge rm-arch__edge--structural",
+     "Structural relation " + text((edge.witness || {}).kind || edge.id),
      () => this.setSelection({ edge: text(edge.id), step: "" }, true)
     );
     this.structuralSVG.appendChild(group);
@@ -815,6 +816,7 @@ function branchClass(kind) {
     const group = this.interactiveSVGPath(
      route,
      className,
+     "Flow transition " + text(edge.relation || edge.id) + " from " + text(edge.from) + " to " + text(edge.to),
      () => this.setSelection({ flow: text(edge.flow_id), edge: text(edge.id), step: "" }, true)
     );
     group.hidden = true;
@@ -846,11 +848,17 @@ function branchClass(kind) {
    return marker;
   }
 
-  interactiveSVGPath(route, className, handler) {
-   const group = svgElement("g", { class: className });
+  interactiveSVGPath(route, className, label, handler) {
+   const group = svgElement("g", { class: className, role: "button", tabindex: "0", "aria-label": label });
    group.appendChild(svgElement("path", { class: "rm-arch__edge-hit", d: route }));
    group.appendChild(svgElement("path", { class: "rm-arch__edge-visible", d: route }));
    this.listen(group, "click", (event) => {
+    event.stopPropagation();
+    handler();
+   });
+   this.listen(group, "keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
     event.stopPropagation();
     handler();
    });
@@ -1092,6 +1100,20 @@ function branchClass(kind) {
     array(member.facts).forEach((fact) => this.appendFact(card, fact));
     members.appendChild(card);
    });
+
+   const relatedFlowIDs = array(component.participating_flow_ids).filter((flowID) => this.flowByID.has(text(flowID)));
+   if (relatedFlowIDs.length > 0) {
+    const relatedFlows = this.inspectorSection("Participating flows");
+    relatedFlowIDs.forEach((flowID) => {
+     const flow = this.flowByID.get(text(flowID));
+     const button = element("button", "rm-arch__edge-jump", flow.name || flow.id);
+     button.type = "button";
+     this.listen(button, "click", () => this.setSelection({
+      flow: text(flow.id), component: text(component.id), step: "", edge: "",
+     }, true));
+     relatedFlows.appendChild(button);
+    });
+   }
    this.appendDiagnostics(this.inspectorSection("Diagnostics"), "");
   }
 
@@ -1163,6 +1185,10 @@ function branchClass(kind) {
    this.appendKeyValue(this.inspector, "To branch", edge.to_branch_id || "unassigned");
    this.appendKeyValue(this.inspector, "Cross branch", edge.cross_branch ? "yes" : "no");
    this.appendLocation(this.inspector, edge.evidence, "Callsite evidence");
+   const source = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.from));
+   const target = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.to));
+   if (source) this.appendLocation(this.inspector, source.location, "Source declaration");
+   if (target) this.appendLocation(this.inspector, target.location, "Target declaration");
    if (edge.condition) {
     const condition = this.inspectorSection("Source condition");
     condition.appendChild(element("code", "rm-arch__condition", edge.condition.expression || "condition recorded"));
