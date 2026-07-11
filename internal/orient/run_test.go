@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/deepseek"
 )
 
 func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
@@ -82,8 +83,12 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.Model != "company-test-model" || metadata.Endpoint != server.URL {
-		t.Fatalf("metadata model/endpoint = %q / %q", metadata.Model, metadata.Endpoint)
+	if metadata.Model != "company-test-model" || metadata.Endpoint != server.URL ||
+		metadata.PromptVersion != deepseek.OrientationPromptVersionJSON {
+		t.Fatalf("metadata model/endpoint/prompt = %q / %q / %q", metadata.Model, metadata.Endpoint, metadata.PromptVersion)
+	}
+	if metadata.ProviderLatencyMillis == nil || *metadata.ProviderLatencyMillis < 0 {
+		t.Fatalf("metadata provider latency = %v", metadata.ProviderLatencyMillis)
 	}
 }
 

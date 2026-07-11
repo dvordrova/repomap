@@ -21,6 +21,7 @@ type ProgressEvent struct {
 	BundleBytes    int
 	RequestBytes   int
 	CandidateCount int
+	LatencyMillis  int64
 }
 
 func emitProgress(opts Options, event ProgressEvent) {

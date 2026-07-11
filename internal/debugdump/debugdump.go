@@ -13,15 +13,17 @@ import (
 )
 
 type RunMeta struct {
-	RunID         string `json:"run_id"`
-	CreatedAt     string `json:"created_at"`
-	RepoName      string `json:"repo_name"`
-	RepoPath      string `json:"repo_path"`
-	Command       string `json:"command"`
-	Model         string `json:"model"`
-	Endpoint      string `json:"endpoint"`
-	SnapshotOnly  bool   `json:"snapshot_only"`
-	LLMBundleOnly bool   `json:"llm_bundle_only"`
+	RunID                 string `json:"run_id"`
+	CreatedAt             string `json:"created_at"`
+	RepoName              string `json:"repo_name"`
+	RepoPath              string `json:"repo_path"`
+	Command               string `json:"command"`
+	Model                 string `json:"model"`
+	Endpoint              string `json:"endpoint"`
+	PromptVersion         string `json:"prompt_version,omitempty"`
+	ProviderLatencyMillis *int64 `json:"provider_latency_ms,omitempty"`
+	SnapshotOnly          bool   `json:"snapshot_only"`
+	LLMBundleOnly         bool   `json:"llm_bundle_only"`
 }
 
 type Writer struct {

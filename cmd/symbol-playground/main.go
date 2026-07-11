@@ -97,16 +97,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	type experimentMetadata struct {
-		PromptVersion       string `json:"prompt_version"`
-		SourcePromptVersion string `json:"source_prompt_version,omitempty"`
-		ResponseFormat      string `json:"response_format"`
-		Model               string `json:"model"`
-		BundleBytes         int    `json:"bundle_bytes"`
-		RequestBytes        int    `json:"request_bytes"`
-		SourceBundleBytes   int    `json:"source_bundle_bytes,omitempty"`
-		SourceRequestBytes  int    `json:"source_request_bytes,omitempty"`
-	}
 	metadata := experimentMetadata{
 		PromptVersion:  promptVersion,
 		ResponseFormat: *responseFormat,
@@ -138,15 +128,13 @@ func run() error {
 			artifact{name: "deepseek_source_request.redacted.json", data: sourceWorkflow.promptJSON},
 		)
 	}
-	experimentJSON, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal prompt experiment metadata: %w", err)
-	}
-	artifacts = append(artifacts, artifact{name: "prompt_experiment.json", data: experimentJSON})
 	for _, artifact := range artifacts {
 		if err := writeArtifact(*outDir, artifact.name, artifact.data); err != nil {
 			return err
 		}
+	}
+	if err := writeExperimentMetadata(*outDir, metadata); err != nil {
+		return err
 	}
 
 	fmt.Fprintf(os.Stderr, "resolved %s at %s:%d\n",
@@ -184,7 +172,12 @@ func run() error {
 	}
 	if *callSource {
 		explainer := sourceexplain.NewService(client)
+		sourceStarted := time.Now()
 		explanation, err := runSourceExplanation(ctx, explainer, sourceWorkflow.bundle, *outDir)
+		metadata.recordSourceTiming(sourceStarted, time.Now())
+		if metadataErr := writeExperimentMetadata(*outDir, metadata); metadataErr != nil {
+			return metadataErr
+		}
 		if err != nil {
 			return err
 		}
@@ -227,6 +220,36 @@ type preparedSource struct {
 type artifact struct {
 	name string
 	data []byte
+}
+
+type experimentMetadata struct {
+	PromptVersion       string `json:"prompt_version"`
+	SourcePromptVersion string `json:"source_prompt_version,omitempty"`
+	ResponseFormat      string `json:"response_format"`
+	Model               string `json:"model"`
+	BundleBytes         int    `json:"bundle_bytes"`
+	RequestBytes        int    `json:"request_bytes"`
+	SourceBundleBytes   int    `json:"source_bundle_bytes,omitempty"`
+	SourceRequestBytes  int    `json:"source_request_bytes,omitempty"`
+	SourceCapturedAt    string `json:"source_captured_at,omitempty"`
+	SourceLatencyMillis *int64 `json:"source_latency_ms,omitempty"`
+}
+
+func writeExperimentMetadata(outDir string, metadata experimentMetadata) error {
+	experimentJSON, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal prompt experiment metadata: %w", err)
+	}
+	return writeArtifact(outDir, "prompt_experiment.json", experimentJSON)
+}
+
+func (m *experimentMetadata) recordSourceTiming(started, finished time.Time) {
+	latency := finished.Sub(started).Milliseconds()
+	if latency < 0 {
+		latency = 0
+	}
+	m.SourceCapturedAt = started.UTC().Format(time.RFC3339)
+	m.SourceLatencyMillis = &latency
 }
 
 type sourceExplainer interface {

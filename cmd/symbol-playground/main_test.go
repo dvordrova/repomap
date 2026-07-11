@@ -6,12 +6,29 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 )
 
 type failingSourceExplainer struct {
 	raw []byte
+}
+
+func TestExperimentMetadataRecordsSourceTiming(t *testing.T) {
+	t.Parallel()
+
+	started := time.Date(2026, time.July, 10, 12, 34, 56, 0, time.FixedZone("offset", 4*60*60))
+	finished := started.Add(1250 * time.Millisecond)
+	var metadata experimentMetadata
+	metadata.recordSourceTiming(started, finished)
+
+	if metadata.SourceCapturedAt != "2026-07-10T08:34:56Z" {
+		t.Fatalf("source captured at = %q", metadata.SourceCapturedAt)
+	}
+	if metadata.SourceLatencyMillis == nil || *metadata.SourceLatencyMillis != 1250 {
+		t.Fatalf("source latency = %v", metadata.SourceLatencyMillis)
+	}
 }
 
 func (f failingSourceExplainer) Explain(context.Context, sourceexplain.Bundle) (sourceexplain.Explanation, error) {
