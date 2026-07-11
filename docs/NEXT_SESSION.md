@@ -4,10 +4,21 @@ Last updated: 2026-07-10.
 
 ## Current direction
 
-repomap is evolving from a one-shot repository report into a progressive,
-evidence-guided investigation tool. The next architectural slice is a shared
-investigation state machine and source-supported understanding of one selected
-Go symbol.
+repomap is evolving from a one-shot repository report into a local Go evidence
+and context engine for progressive investigation. The local index should retain
+repository facts, derived claims, and investigation sessions separately. A
+bounded context assembler selects the next small evidence slice for a human,
+weak/local model, browser UI, or external coding agent.
+
+If the user starts with “what do we do next?”, recommend this order:
+
+1. finish or intentionally discard the uncommitted Ollama experiment WIP;
+2. implement the smallest `internal/index` vertical slice for existing symbol
+   evidence: put, query target neighborhood, persist/reload, invalidate one file;
+3. add goal-personalized graph ranking and pack selected evidence into a roughly
+   1K-token budget;
+4. rerun the compact context against Qwen 0.5B and 3B;
+5. then connect the index to the investigation reducer and source evidence.
 
 Read these first:
 
@@ -38,18 +49,60 @@ request was too slow for useful local interaction, and sub-billion-parameter
 models produced weak or invalid explanations. Exact measurements and resulting
 debt are recorded in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
 
+Ollama setup was explicitly verified:
+
+- CLI and server version `0.30.10`;
+- one normal `Ollama.app -> ollama serve` process tree;
+- `/api/version` and `/api/tags` reachable at `localhost:11434`;
+- no downloads, deletes, sudo, profile changes, or duplicate servers;
+- x86 macOS correctly uses CPU-only inference.
+
+Installed models include Qwen2.5-Coder 0.5B Q4, SmolLM2 135M F16, and
+Qwen2.5-Coder 3B Q4. A short Qwen 0.5B plain-text smoke test succeeded, and a
+47-token Go review request returned valid JSON matching a runtime JSON Schema in
+8.16 seconds warm. This proves local structured inference works for small tasks;
+it does not establish repository-analysis quality.
+
+The compact repository experiment is unfinished. A 634-token tagged prompt ran
+in 18.85 seconds but produced malformed verbose output and scored 40/100. Runtime
+JSON Schema improved shape, but the first 320-token run was truncated. Details
+and completion criteria are in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+
 Do not conclude that local inference is generally unsuitable. The next fair test
-requires a compact 1,000–2,000-token local prompt profile and a quantized model.
+requires adaptive evidence selection from a local index, a compact prompt, a
+bounded schema, and separate contract versus semantic-usefulness evaluation.
 
-## Recommended next implementation
+## Relevant prior art
 
-1. Add the minimal records and pure reducer in `internal/investigation`.
-2. Express the existing symbol workflow as reducer events/actions without
-   changing provider or evidence behavior.
-3. Add a Go source-evidence playground for the selected target only.
-4. Reassess one important claim using source evidence.
-5. Add stored-response replay and semantic-usefulness evaluator fixtures.
-6. Repeat DeepSeek versus local-provider calibration on the compact profile.
+- OpenCode performs iterative `grep/read/LSP` tool calls and compacts long
+  sessions; its LLM remains the main planner.
+- Aider's repo map is the closest context-selection baseline: graph ranking plus
+  an active token budget, commonly around 1K tokens.
+- Sourcegraph/SCIP is the closest precise persistent-index baseline.
+- Cursor-style content hashing demonstrates incremental invalidation, though its
+  semantic/cloud design is not the initial repomap direction.
+
+Do not compete by inventing another general coding agent. A plausible product
+boundary is a Go-specific local evidence/context service usable through its own
+browser and later through MCP/custom tools by OpenCode or other agents.
+
+## Architecture after the local-index discussion
+
+The intended layers are:
+
+```text
+Go collectors (git/go list/gopls/source/tests)
+  -> local fact index
+  -> adaptive context assembly
+  -> investigation reducer and claim ledger
+  -> browser / DeepSeek / Ollama / future MCP tools
+```
+
+Index progressively: repository survey first, symbol graph second, focused
+source/tests on demand, runtime observations only for a concrete investigation.
+Do not eagerly compute every function or send the whole index to a model. Use
+depth together with beam width, node/edge/source/token budgets, and expand one
+high-value frontier branch when evidence is insufficient.
 
 ## Verification
 
@@ -65,3 +118,17 @@ The current worktree contains pre-existing, uncommitted rewrites under
 `docs/agent-room/` and an untracked `opencode.json`. They were intentionally
 excluded from the focused commit stack. Do not stage, restore, or overwrite them
 without deciding their intended fate.
+
+It also contains uncommitted experiment work created during the Ollama session:
+
+```text
+cmd/symbol-evaluate/
+scripts/ollama_compact_symbol_prompt.jq
+scripts/ollama_compact_symbol_prompt_json.jq
+scripts/ollama_symbol_experiment.sh
+```
+
+`cmd/symbol-evaluate` had passing unit tests. The shell script's latest JSON
+Schema path has not completed a successful end-to-end compact symbol run after
+the final edits. Review and verify these files before committing; do not confuse
+them with the preserved user-owned `agent-room` changes.

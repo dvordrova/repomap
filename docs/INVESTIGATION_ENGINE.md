@@ -43,6 +43,83 @@ type Session struct {
 These are domain records, not LLM response shapes. Every claim references stored
 evidence; every action explains which question or uncertainty it should reduce.
 
+## Local index and repository memory
+
+The local index should be the center of the system; an LLM is one consumer of a
+selected evidence slice. Keep three stores logically separate:
+
+1. **Fact index** — deterministic files, modules, packages, symbols, relations,
+   tests, docs, scenarios, certainty, and provenance.
+2. **Claim index** — model- or rule-derived interpretations keyed by their
+   evidence, model, prompt version, and evaluator version.
+3. **Session index** — the user's goal, path through the repository, verified and
+   rejected claims, unknowns, frontier, and next actions.
+
+Index progressively rather than computing every function relationship eagerly:
+
+```text
+tier 0: git inventory, modules, docs, entrypoints, source signals
+tier 1: symbols, imports, interfaces, selected references and call edges
+tier 2: source facts and tests for the current focus
+tier 3: named test/runtime observations for a concrete investigation
+```
+
+Freshness must include repository content, dirty files, Go/gopls versions, build
+context, and index schema. Changing one file invalidates dependent evidence and
+claims, not the whole repository.
+
+The first persistence format may be versioned JSON shards under ignored local
+storage. Do not add a database until real index size and query patterns justify
+one.
+
+## Adaptive context assembly
+
+Do not send the complete index or conversation. Build each model request from:
+
+```text
+goal
+short ancestor/repository capsule
+current focus evidence
+verified claims and concrete unknowns
+allowed next actions
+output contract
+```
+
+Use lossless reduction first: canonical entity IDs, shared scenario/provenance
+headers, deduplication, and evidence IDs instead of repeated paths. Lossy
+summaries are allowed only when they retain links to underlying evidence and can
+be expanded or invalidated.
+
+Graph depth alone is not a sufficient budget because one hub may have hundreds
+of edges. Context policy should combine:
+
+```go
+type ExpansionBudget struct {
+	MaxDepth       int
+	BeamWidth      int
+	MaxEntities    int
+	MaxRelations   int
+	MaxSourceBytes int
+	MaxModelTokens int
+}
+```
+
+Rank frontier nodes by goal relevance, uncertainty reduction, architecture
+boundary, state/I/O behavior, test availability, and evidence for an important
+claim. Penalize generated/external code, duplicates, and expansion cost. If a
+compact request leaves an important claim unsupported, expand one branch and
+try another bounded round instead of falling back immediately to the whole repo.
+
+Prior art to reuse rather than recreate:
+
+- Aider's graph-ranked repository map and active token budget;
+- OpenCode's iterative tool/LSP loop and session compaction;
+- Sourcegraph/SCIP's precise persistent navigation index;
+- content-hash-based incremental indexing used by code search products.
+
+repomap's intended specialization is Go-aware evidence selection for weak/local
+models and human investigation, not a new universal parser or coding agent.
+
 ## Actions
 
 Initial action vocabulary:
