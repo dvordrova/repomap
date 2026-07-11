@@ -109,6 +109,9 @@ func TestEtcdPutBaselineReplay(t *testing.T) {
 	}
 
 	drilldown := result.SemanticDrilldown
+	if !drilldown.OrientationLink.Linked {
+		t.Fatalf("orientation to drilldown link = %#v", drilldown.OrientationLink)
+	}
 	if len(drilldown.Predicates) != len(loaded.Task.Expected.Drilldown.SourcePredicates) {
 		t.Fatalf(
 			"predicate checks = %d, want %d",
@@ -178,7 +181,7 @@ func TestK6MetricsBaselineReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
-	if !result.Passed || result.Version != 2 {
+	if !result.Passed || result.Version != EvaluationVersion {
 		t.Fatalf("baseline result = %#v", result)
 	}
 	if len(result.DirectionCoverage.Checks) != 3 ||
@@ -201,7 +204,7 @@ func TestK6MetricsBaselineReplay(t *testing.T) {
 		t.Fatalf("important evidence = %#v", result.ImportantEvidence)
 	}
 	drilldown := result.SemanticDrilldown
-	if !drilldown.Complete || len(drilldown.Predicates) != 1 ||
+	if !drilldown.Complete || !drilldown.OrientationLink.Linked || len(drilldown.Predicates) != 1 ||
 		!drilldown.Predicates[0].Found || len(drilldown.Tests) != 1 ||
 		!drilldown.Tests[0].ContextCompatible {
 		t.Fatalf("drilldown = %#v", drilldown)

@@ -59,6 +59,7 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
 ./scripts/investigation_check.sh # replay M2 reducer path (local or DeepSeek)
 ./scripts/quality_check.sh   # replay committed quality task, no network/API key
+./scripts/quality_preflight.sh # verify a linked orientation/symbol target, no network
 ./scripts/debug_last_run.sh  # inspect last debug run
 ./scripts/clean.sh           # remove tmp/.repomap-runs/.bin
 ```

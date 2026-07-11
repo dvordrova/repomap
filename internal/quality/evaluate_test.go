@@ -37,6 +37,12 @@ func TestEvaluateReportsIndependentQualitySlices(t *testing.T) {
 	if !result.SemanticDrilldown.TestTarget.Matched || !result.SemanticDrilldown.TargetsAgree {
 		t.Fatalf("drilldown target agreement = %#v", result.SemanticDrilldown)
 	}
+	link := result.SemanticDrilldown.OrientationLink
+	if !link.Linked || link.Path != "server/handler.go" ||
+		len(link.DirectionIDs) != 1 || link.DirectionIDs[0] != "write-request" ||
+		len(link.CandidateNames) != 1 || link.CandidateNames[0] != "Write request" {
+		t.Fatalf("orientation to drilldown link = %#v", link)
+	}
 	if !result.ForbiddenTripwires.Clear {
 		t.Fatalf("forbidden tripwires = %#v", result.ForbiddenTripwires)
 	}
@@ -79,6 +85,30 @@ func TestEvaluateReportsIndependentQualitySlices(t *testing.T) {
 	if result.BytesAndLatency.Orientation.LatencyMillis == nil ||
 		*result.BytesAndLatency.Orientation.LatencyMillis != 125 {
 		t.Fatalf("orientation latency = %#v", result.BytesAndLatency.Orientation.LatencyMillis)
+	}
+}
+
+func TestEvaluateRequiresOrientationToDrilldownLink(t *testing.T) {
+	t.Parallel()
+
+	loaded := evaluationFixture(t)
+	loaded.Task.Expected.Directions[0].ImportantPaths = []string{"server/store.go"}
+	response := decodeOrientationFixture(t, loaded.OrientationResponse)
+	response.CandidateFlows[0].LikelyEntrypoint = "server/store.go"
+	response.CandidateFlows[0].LikelyFiles = []string{"server/store.go"}
+	response.CandidateFlows[0].Evidence = []string{"server/store.go"}
+	loaded.OrientationResponse = marshalFixture(t, response)
+
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.DirectionCoverage.Complete || !result.ImportantEvidence.Complete {
+		t.Fatalf("orientation should pass independently: coverage=%#v evidence=%#v", result.DirectionCoverage, result.ImportantEvidence)
+	}
+	if result.SemanticDrilldown.OrientationLink.Linked ||
+		result.SemanticDrilldown.Complete || result.Passed {
+		t.Fatalf("unlinked drilldown = %#v", result.SemanticDrilldown)
 	}
 }
 

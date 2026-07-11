@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	EvaluationVersion                    = 2
+	EvaluationVersion                    = 3
 	orientationContractUnmeasuredWarning = "orientation.contract_unmeasured"
 )
 
@@ -72,16 +72,24 @@ type ImportantEvidenceCheck struct {
 }
 
 type SemanticDrilldownResult struct {
-	Complete          bool             `json:"complete"`
-	Symbol            IdentityCheck    `json:"symbol"`
-	Path              IdentityCheck    `json:"path"`
-	TestTarget        IdentityCheck    `json:"test_evidence_target"`
-	TargetsAgree      bool             `json:"source_and_test_targets_agree"`
-	Predicates        []PredicateCheck `json:"predicates"`
-	MissingPredicates []string         `json:"missing_predicates"`
-	Tests             []PathCheck      `json:"tests"`
-	MissingTests      []string         `json:"missing_tests"`
-	IncompatibleTests []string         `json:"incompatible_tests"`
+	Complete          bool                     `json:"complete"`
+	OrientationLink   OrientationDrilldownLink `json:"orientation_to_drilldown"`
+	Symbol            IdentityCheck            `json:"symbol"`
+	Path              IdentityCheck            `json:"path"`
+	TestTarget        IdentityCheck            `json:"test_evidence_target"`
+	TargetsAgree      bool                     `json:"source_and_test_targets_agree"`
+	Predicates        []PredicateCheck         `json:"predicates"`
+	MissingPredicates []string                 `json:"missing_predicates"`
+	Tests             []PathCheck              `json:"tests"`
+	MissingTests      []string                 `json:"missing_tests"`
+	IncompatibleTests []string                 `json:"incompatible_tests"`
+}
+
+type OrientationDrilldownLink struct {
+	Path           string   `json:"path"`
+	Linked         bool     `json:"linked"`
+	DirectionIDs   []string `json:"direction_ids"`
+	CandidateNames []string `json:"candidate_names"`
 }
 
 type IdentityCheck struct {
@@ -258,6 +266,11 @@ func Evaluate(loaded LoadedTask) (Result, error) {
 	result.ContractAdherence.TestEvidence = testCheck
 	result.SemanticDrilldown = evaluateDrilldown(
 		loaded.Task.Expected.Drilldown,
+		evaluateOrientationDrilldownLink(
+			loaded.Task.Expected.Drilldown.Path,
+			result.DirectionCoverage,
+			response.CandidateFlows,
+		),
 		sourceBundle,
 		sourceBundleCheck.Valid,
 		sourceResult,
@@ -604,6 +617,45 @@ func countExpectedPaths(expected []string, found map[string]struct{}) int {
 	return count
 }
 
+func evaluateOrientationDrilldownLink(
+	drilldownPath string,
+	coverage DirectionCoverage,
+	candidates []flowexplain.CandidateFlow,
+) OrientationDrilldownLink {
+	result := OrientationDrilldownLink{
+		Path:           drilldownPath,
+		DirectionIDs:   []string{},
+		CandidateNames: []string{},
+	}
+	linkedDirections := make(map[string]struct{})
+	linkedCandidates := make(map[string]struct{})
+	for _, check := range coverage.Checks {
+		if !check.Covered || check.SelectedCandidate == "" {
+			continue
+		}
+		for _, candidate := range candidates {
+			if candidate.Name != check.SelectedCandidate {
+				continue
+			}
+			if _, linked := candidateEvidencePaths(candidate)[drilldownPath]; !linked {
+				continue
+			}
+			linkedDirections[check.DirectionID] = struct{}{}
+			linkedCandidates[candidate.Name] = struct{}{}
+		}
+	}
+	for directionID := range linkedDirections {
+		result.DirectionIDs = append(result.DirectionIDs, directionID)
+	}
+	for candidateName := range linkedCandidates {
+		result.CandidateNames = append(result.CandidateNames, candidateName)
+	}
+	sort.Strings(result.DirectionIDs)
+	sort.Strings(result.CandidateNames)
+	result.Linked = len(result.DirectionIDs) > 0
+	return result
+}
+
 func evaluateGrounding(
 	wantRepo string,
 	context OrientationGroundingContext,
@@ -684,6 +736,7 @@ func looksLikeStructuredEvidencePath(value string) bool {
 
 func evaluateDrilldown(
 	expected DrilldownExpectation,
+	orientationLink OrientationDrilldownLink,
 	bundle sourceexplain.Bundle,
 	bundleValid bool,
 	parsed sourceexplain.ParseResult,
@@ -693,6 +746,7 @@ func evaluateDrilldown(
 	scenario BuildScenario,
 ) SemanticDrilldownResult {
 	result := emptySemanticDrilldown(expected)
+	result.OrientationLink = orientationLink
 	if bundleValid {
 		result.Symbol.Observed = bundle.Target.Name
 		result.Symbol.Matched = bundle.Target.Name == expected.Symbol
@@ -742,7 +796,8 @@ func evaluateDrilldown(
 			result.IncompatibleTests = append(result.IncompatibleTests, path)
 		}
 	}
-	result.Complete = result.Symbol.Matched &&
+	result.Complete = result.OrientationLink.Linked &&
+		result.Symbol.Matched &&
 		result.Path.Matched &&
 		result.TestTarget.Matched &&
 		result.TargetsAgree &&
@@ -894,6 +949,11 @@ func emptyImportantEvidence() ImportantEvidenceResult {
 
 func emptySemanticDrilldown(expected DrilldownExpectation) SemanticDrilldownResult {
 	return SemanticDrilldownResult{
+		OrientationLink: OrientationDrilldownLink{
+			Path:           expected.Path,
+			DirectionIDs:   []string{},
+			CandidateNames: []string{},
+		},
 		Symbol:            IdentityCheck{Expected: expected.Symbol},
 		Path:              IdentityCheck{Expected: expected.Path},
 		TestTarget:        IdentityCheck{Expected: expected.Symbol},

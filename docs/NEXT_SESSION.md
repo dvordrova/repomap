@@ -23,12 +23,11 @@ contract is in [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
 
 If the user starts with “так, а че мы там дальше делаем?”, recommend:
 
-1. let one company engineer run `doctor`, inspect `--preview-request`, and try
-   current exploration on a known repository; record compatibility, useful
-   directions, omissions, unsupported claims, and whether the output is worth a
-   second step;
-2. add the third M3 replay task for Prometheus using the committed etcd and k6
-   tasks as contract examples;
+1. let one engineer run the new one-call browser orientation baseline on a known
+   repository; record useful directions, omissions, unsupported claims, and
+   whether the output is worth a second step;
+2. capture the third M3 replay task for Prometheus from the prepared linked
+   `QueryRange` target using `deepseek-v4-flash`;
 3. add equivalent small tasks for NATS Server and golangci-lint;
 4. compare direction usefulness, grounding, omissions, request size, and latency
    separately from JSON/contract adherence.
@@ -52,6 +51,9 @@ the default product path uses the configured OpenAI-compatible provider.
   model call;
 - bounded orientation preserving the full known response shape, with structured
   path validation and credential gates on outbound/retained content;
+- `./repomap` targets the current directory, reports bounded context/request
+  bytes, makes one orientation call, and opens all validated directions in a
+  static browser report;
 - opt-in top-N focused flow expansion; flow output is flexibly parsed,
   normalized to known fields, allowlist-validated, and rejected when empty or
   unsupported;
@@ -79,6 +81,9 @@ the default product path uses the configured OpenAI-compatible provider.
   consumer-owned model interface.
 - M3 has two of five tasks; Prometheus, NATS Server, and golangci-lint remain, so
   cross-repository quality is not established.
+- Prometheus is preflighted, not captured: `QueryRange` is linked to the bounded
+  orientation context, its source request is ready, and `TestQueryRange` passes;
+  a live DeepSeek key is still needed for the two raw provider responses.
 
 ## Read in this order
 
@@ -102,6 +107,7 @@ the default product path uses the configured OpenAI-compatible provider.
 ./scripts/investigation_check.sh ../etcd kvServer.Put
 ./scripts/investigation_handoff_check.sh ../etcd kvServer.Put
 ./scripts/quality_check.sh
+./scripts/quality_preflight.sh prometheus-query-range tmp/example-repos/prometheus QueryRange
 ```
 
 The detailed Ollama 0.5B/1.5B/3B timings, failures, and staged-protocol results
