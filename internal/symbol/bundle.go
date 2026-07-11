@@ -12,6 +12,11 @@ import (
 
 const BundleVersion = 1
 
+const (
+	staticEvidenceWarning = "the bundle contains static analysis only; it does not prove which calls execute at runtime"
+	fuzzyCandidateWarning = "fuzzy candidates are possible matches; only target is the unique exact resolution"
+)
+
 type Options struct {
 	MaxCandidates        int
 	MaxIncomingCalls     int
@@ -56,7 +61,7 @@ type CallFact struct {
 // and may contain local or sensitive information.
 type Scenario struct {
 	ID    string                `json:"id"`
-	Name  string                `json:"name"`
+	Name  string                `json:"name,omitempty"`
 	Build evidence.BuildContext `json:"build"`
 }
 
@@ -91,18 +96,15 @@ func Build(graph evidence.Graph, opts Options) (Bundle, error) {
 		RepoName:  filepath.Base(filepath.Clean(graph.RepoPath)),
 		Query:     graph.Query,
 		Target:    factFromRelation("resolution-001", target, resolution, opts.MaxProvenancePerFact),
-		Warnings:  append([]string{}, graph.Warnings...),
+		Warnings:  []string{},
 		Truncated: make(map[string]int),
 	}
-	bundle.Warnings = append(bundle.Warnings,
-		"the bundle contains static analysis only; it does not prove which calls execute at runtime",
-		"fuzzy candidates are possible matches; only target is the unique exact resolution",
-	)
+	bundle.Warnings = append(bundle.Warnings, staticEvidenceWarning, fuzzyCandidateWarning)
 
 	for _, scenario := range graph.Scenarios {
 		bundle.Scenarios = append(bundle.Scenarios, Scenario{
 			ID:    scenario.ID,
-			Name:  scenario.Name,
+			Name:  "",
 			Build: scenario.Build,
 		})
 	}
@@ -135,6 +137,9 @@ func Build(graph evidence.Graph, opts Options) (Bundle, error) {
 		}
 	}
 	bundle.AllowedPaths = collectAllowedPaths(bundle)
+	if err := bundle.Validate(); err != nil {
+		return Bundle{}, err
+	}
 	return bundle, nil
 }
 
@@ -238,7 +243,21 @@ func limitProvenance(provenance []evidence.Provenance, limit int) []evidence.Pro
 	if len(provenance) > limit {
 		provenance = provenance[:limit]
 	}
-	return append([]evidence.Provenance{}, provenance...)
+	result := make([]evidence.Provenance, 0, len(provenance))
+	for _, item := range provenance {
+		var location *evidence.Location
+		if item.Location != nil {
+			copy := *item.Location
+			location = &copy
+		}
+		result = append(result, evidence.Provenance{
+			Provider:  item.Provider,
+			Version:   item.Version,
+			Operation: item.Operation,
+			Location:  location,
+		})
+	}
+	return result
 }
 
 func sortRelations(relations []evidence.Relation) {

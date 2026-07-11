@@ -12,7 +12,8 @@
       "location": {"path": "server/key.go", "line": 90, "column": 20}
     },
     "certainty": "static",
-    "provenance": []
+    "provenance": [{"provider":"fixture","version":"v1","operation":"workspace_symbol"}],
+    "scenarios": ["fixture-build"]
   },
   "candidates": [],
   "incoming_calls": [
@@ -34,7 +35,8 @@
       },
       "callsite": {"path": "server/handler.go", "line": 51, "column": 10},
       "certainty": "static",
-      "provenance": []
+      "provenance": [{"provider":"fixture","version":"v1","operation":"call_hierarchy"}],
+      "scenarios": ["fixture-build"]
     }
   ],
   "outgoing_calls": [
@@ -56,10 +58,20 @@
       },
       "callsite": {"path": "server/key.go", "line": 94, "column": 9},
       "certainty": "static",
-      "provenance": []
+      "provenance": [{"provider":"fixture","version":"v1","operation":"call_hierarchy"}],
+      "scenarios": ["fixture-build"]
     }
   ],
-  "scenarios": [],
+  "scenarios": [
+    {
+      "id": "fixture-build",
+      "name": "",
+      "build": {"goos":"linux","goarch":"amd64"}
+    }
+  ],
   "allowed_paths": ["server/handler.go", "server/key.go", "server/txn.go"],
-  "warnings": ["static analysis only"]
+  "warnings": [
+    "the bundle contains static analysis only; it does not prove which calls execute at runtime",
+    "fuzzy candidates are possible matches; only target is the unique exact resolution"
+  ]
 }

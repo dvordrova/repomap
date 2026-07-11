@@ -16,6 +16,9 @@ func TestServiceUsesFixedExplainerFixture(t *testing.T) {
 	if err := json.Unmarshal(deepseektest.SymbolBundleJSON, &bundle); err != nil {
 		t.Fatalf("unmarshal fixture bundle: %v", err)
 	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatalf("fixture bundle Validate() error = %v", err)
+	}
 	explainer := deepseektest.NewExplainer()
 	result, err := symbol.NewService(explainer).Explain(context.Background(), bundle)
 	if err != nil {
@@ -30,5 +33,22 @@ func TestServiceUsesFixedExplainerFixture(t *testing.T) {
 	requests := explainer.Requests()
 	if len(requests) != 1 || !json.Valid(requests[0]) {
 		t.Fatalf("requests = %d, want one valid JSON bundle", len(requests))
+	}
+}
+
+func TestServiceRejectsInvalidBundleBeforeProviderCall(t *testing.T) {
+	t.Parallel()
+
+	var bundle symbol.Bundle
+	if err := json.Unmarshal(deepseektest.SymbolBundleJSON, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	bundle.Warnings = append(bundle.Warnings, "raw analyzer warning at /private/repo")
+	explainer := deepseektest.NewExplainer()
+	if _, err := symbol.NewService(explainer).Explain(context.Background(), bundle); err == nil {
+		t.Fatal("Explain() accepted invalid provider bundle")
+	}
+	if requests := explainer.Requests(); len(requests) != 0 {
+		t.Fatalf("provider requests = %d, want 0", len(requests))
 	}
 }

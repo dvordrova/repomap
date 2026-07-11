@@ -30,6 +30,9 @@ func (s *Service) Explain(ctx context.Context, bundle Bundle) (Explanation, erro
 	if s == nil || s.explainer == nil {
 		return Explanation{}, fmt.Errorf("symbol: explainer is required")
 	}
+	if err := bundle.Validate(); err != nil {
+		return Explanation{}, fmt.Errorf("symbol: invalid bundle: %w", err)
+	}
 	bundleJSON, err := json.Marshal(bundle)
 	if err != nil {
 		return Explanation{}, fmt.Errorf("symbol: marshal bundle: %w", err)
