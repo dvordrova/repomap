@@ -10,9 +10,9 @@ questions remain in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), demonstrated debt in
 [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md).
 
 Execution order belongs to [MILESTONES.md](MILESTONES.md). Source-grounded symbol
-understanding is complete; the active milestone is the shared investigation
-loop. Modules and challenge cards below are supporting seams, not competing
-roadmaps.
+understanding and the shared investigation loop are complete; the active
+milestone is the five-repository quality suite. Modules and challenge cards
+below are supporting seams, not competing roadmaps.
 
 ## Capability cubes
 
@@ -28,6 +28,7 @@ source`, or `find tests`, never after DeepSeek, Ollama, gopls, or a future UI.
 | read target source | resolved target | bounded line-addressable source card | local Go source collector |
 | assess source | source assessment bundle | normalized claims, unknowns, action | `sourceexplain.Service` with DeepSeek assessor |
 | find related tests | source report and structural facts | bounded test-reference evidence | gopls reference adapter plus local reducer |
+| evaluate saved journey | versioned task plus hash-verified artifacts | independent quality dimensions | offline `quality.Load` and `quality.Evaluate` |
 | present investigation | saved validated state | CLI/browser/editor view | playground prints pending action/choices; browser/editor adapters planned |
 
 The application composition root selects implementations. The default profile
@@ -117,6 +118,12 @@ flowchart LR
         Session --> Playground["CLI progress + choices"]
     end
 
+    subgraph Quality["Current offline quality replay"]
+        Task["versioned quality task"] --> Replay["hash-verified evaluator"]
+        Artifacts["saved orientation/source/test artifacts"] --> Replay
+        Replay --> Dimensions["directions / grounding / drill-down / contracts"]
+    end
+
     subgraph Next["Later evidence memory"]
         FactIndex["fact index"] --> Context["adaptive context assembly"]
         Context --> Investigation
@@ -129,6 +136,8 @@ flowchart LR
     User --> SymbolCLI
     Flow --> Handoff
     SymbolBundle --> Investigation
+    Report -. "saved" .-> Artifacts
+    Normalize -. "saved" .-> Artifacts
     Snapshot -. "not wired" .-> FactIndex
     Index -. "first stored slice" .-> FactIndex
     Normalize -. "future claim events" .-> Investigation
@@ -152,6 +161,7 @@ selection, playbooks, or another orchestration surface are added.
 | `cmd/symbol-playground` | isolated | exact-symbol experiment and optional DeepSeek call | provider neutrality or persistence |
 | `cmd/symbol-evaluate` | isolated | replaying and scoring a saved model response | making network calls |
 | `cmd/investigation-playground` | isolated | start/handoff/resume wiring, capability execution, saved artifacts | reducer rules or provider registry |
+| `cmd/quality-evaluate` | works | loading one versioned task, writing its replay result, and returning pass/fail | model or repository calls |
 
 `internal/orient` imports the concrete DeepSeek client. This is a known temporary
 boundary: replacing the provider currently requires touching orchestration.
@@ -209,6 +219,14 @@ valid. Do not add a database before measurements require it.
 single method it needs. The orientation workflow does not have an equivalent seam
 yet. Ollama is currently experiment tooling, not a production provider package.
 
+### Product-quality replay
+
+| Module | State | Owns | Boundary |
+| --- | --- | --- | --- |
+| `internal/quality` task/loader | works | strict task metadata, safe artifact containment, byte bounds, exact hashes | no model, collector, or repository access |
+| `internal/quality` evaluator | works | directions, grounding, important evidence, drill-down, overclaim tripwires, contract/size observations | no aggregate semantic score and no free-form prose grading |
+| etcd quality fixture | works | one reproducible orientation-to-`kvServer.Put` baseline | one historical capture is not a five-repository benchmark |
+
 ### Presentation and artifacts
 
 | Module | State | Owns | Boundary |
@@ -230,6 +248,8 @@ These are the useful boundaries to inspect before changing implementation:
 | `symbol.Bundle` | `symbol.Build` | model prompt, parser validator, current index | bounded exact-symbol evidence |
 | `symbol.Report` | tolerant parser | user-facing symbol workflow | interpretation plus locally rebuilt structure |
 | `symbol.Evaluation` | evaluator | prompt experiments | contract quality, not semantic truth |
+| `quality.Task` | fixture author | offline quality loader/evaluator | strict manifest plus exact artifact identity |
+| `quality.Result` | offline evaluator | checks, CI, human comparison | separate dimensions; top-level pass is conjunction, not a numeric score |
 | index JSON snapshot | `index.Save` | `index.Load` | versioned local cache; freshness policy incomplete |
 
 Changing an artifact shape should be treated as a contract change: update its
@@ -248,6 +268,7 @@ This table separates real modularity from intended modularity.
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
+| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | only the etcd task exists; four repository baselines remain |
 | Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
 
 The next work should improve one red cell at a time and preserve a runnable
@@ -449,6 +470,26 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Pass signal: a presentation adapter can be replaced without changing evidence,
   context selection, or reducer tests.
 
+### C13 — Cross-repository product quality
+
+- State: etcd baseline works; k6, Prometheus, NATS Server, and golangci-lint are
+  still missing.
+- Question: does the same product journey select useful directions and support a
+  grounded drill-down across materially different large Go repositories?
+- Run the committed baseline without network access:
+  `./scripts/quality_check.sh`.
+- Current etcd signal: five directions covered, 21 unique structured paths
+  grounded, four `kvServer.Put` predicates present, two useful test-reference
+  paths found, and the source contract at 100/100 with zero parser warnings.
+- Explicitly unscored: 17 free-form orientation evidence strings and all claims
+  about what referenced tests assert. The historical normalized orientation
+  artifact also cannot measure the original provider-response contract.
+- Pass signal: every repository has a versioned, revision-pinned, hash-verified
+  task; failures identify a dimension instead of hiding behind one score; normal
+  verification makes no API or repository call.
+- Challenge independently: mutate one saved response, expectation, or artifact
+  hash and inspect the resulting slice before refreshing any live model output.
+
 ## Dependency rules
 
 Keep these rules while the system evolves:
@@ -476,12 +517,13 @@ Keep these rules while the system evolves:
 
 If there is only an hour, challenge one row rather than the whole product:
 
-1. **Does local evidence point to the right place?** C1, C3, or C5.
-2. **Does the model add value over the evidence?** C6 and C7.
-3. **Can context be made smaller without becoming misleading?** C8 and C9.
-4. **Can all product modes share one engine?** C10.
-5. **Can claims be made trustworthy?** C11.
-6. **Can another surface consume it cleanly?** C12.
+1. **Does the connected journey survive another repository?** C13.
+2. **Does local evidence point to the right place?** C1, C3, or C5.
+3. **Does the model add value over the evidence?** C6 and C7.
+4. **Can context be made smaller without becoming misleading?** C8 and C9.
+5. **Can all product modes share one engine?** C10.
+6. **Can claims be made trustworthy?** C11.
+7. **Can another surface consume it cleanly?** C12.
 
 Record a demonstrated failure in `TECHNICAL_DEBT.md`; record an unresolved
 product decision in `OPEN_QUESTIONS.md`; update this map only when a module or

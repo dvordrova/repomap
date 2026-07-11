@@ -18,12 +18,11 @@ alternate implementations of the same typed capability contracts.
 
 If the user starts with “what do we do next?”, recommend this order:
 
-1. define the smallest M3 golden-task manifest and replay result format;
-2. calibrate one orientation and one symbol drill-down task on etcd without
-   making a new live API call part of normal tests;
-3. add equivalent small tasks for k6, Prometheus, NATS Server, and
-   golangci-lint, keeping repository availability optional;
-4. compare direction usefulness, grounding, omissions, request size, and
+1. add the second M3 task for Grafana k6 using the committed etcd task as the
+   contract example;
+2. add equivalent small tasks for Prometheus, NATS Server, and golangci-lint,
+   keeping repository availability optional;
+3. compare direction usefulness, grounding, omissions, request size, and
    latency separately from JSON/contract adherence. Dumb-model implementations
    remain deferred.
 
@@ -69,6 +68,9 @@ Read these first:
 - replayable `local-symbol-v2` Ollama protocol with deterministic name signals,
   dynamic schemas, constrained role/action decisions, and offline artifact
   verification.
+- versioned, hash-verified offline quality tasks plus a concrete etcd
+  orientation-to-`kvServer.Put` baseline; normal checks replay saved artifacts
+  without an API key or network call.
 
 ## Recent local-provider experiment
 
@@ -163,6 +165,7 @@ high-value frontier branch when evidence is insufficient.
 ./scripts/source_check.sh
 ./scripts/investigation_check.sh ../etcd kvServer.Put
 ./scripts/investigation_handoff_check.sh ../etcd kvServer.Put
+./scripts/quality_check.sh
 ```
 
 ## Workspace caution
