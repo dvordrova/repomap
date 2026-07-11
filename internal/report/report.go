@@ -32,6 +32,17 @@ type FlowData struct {
 
 	ConfidenceLabel string `json:"confidence_label,omitempty"`
 	BundleStatsLabel string `json:"bundle_stats_label,omitempty"`
+
+	BundleFiles    []FileItem `json:"bundle_files,omitempty"`
+	BundleTests    []FileItem `json:"bundle_tests,omitempty"`
+	BundleDocs     []FileItem `json:"bundle_docs,omitempty"`
+	BundlePackages []string   `json:"bundle_packages,omitempty"`
+	BundleEdges    []EdgeInfo `json:"bundle_edges,omitempty"`
+}
+
+type EdgeInfo struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type ChainStep struct {
@@ -64,16 +75,18 @@ type BundleStats struct {
 func confidenceLabel(c float64) string {
 	switch {
 	case c >= 0.7:
-		return "High"
+		return "strong"
 	case c >= 0.4:
-		return "Medium"
+		return "medium"
+	case c > 0:
+		return "weak"
 	default:
-		return "Low"
+		return ""
 	}
 }
 
 func bundleStatsLabel(bs BundleStats) string {
-	return fmt.Sprintf("%d source files / %d tests / %d docs", bs.SelectedFilesCount, bs.SelectedTestsCount, bs.SelectedDocsCount)
+	return fmt.Sprintf("%d source, %d test, %d doc", bs.SelectedFilesCount, bs.SelectedTestsCount, bs.SelectedDocsCount)
 }
 
 func findBestFlow(flows []FlowData) string {

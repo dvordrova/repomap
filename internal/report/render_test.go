@@ -25,8 +25,8 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 			Name:             "Test Flow",
 			Summary:          "does something interesting",
 			Confidence:       0.75,
-			ConfidenceLabel:  "High",
-			BundleStatsLabel: "5 source files / 2 tests / 1 docs",
+			ConfidenceLabel:  "strong",
+			BundleStatsLabel: "5 source, 2 test, 1 doc",
 			LikelyChain: []ChainStep{{
 				Step:          1,
 				Name:          "start",

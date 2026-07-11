@@ -1,11 +1,14 @@
 package report
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/flowexplain"
 )
@@ -25,23 +28,54 @@ type orientationCandidateJSON struct {
 }
 
 type flowReportJSON struct {
-	Summary            string             `json:"summary"`
-	Confidence         float64            `json:"confidence"`
-	FlowName           string             `json:"flow_name"`
-	LikelyChain        []chainStepJSON    `json:"likely_chain"`
-	FilesToReadInOrder []fileItemJSON     `json:"files_to_read_in_order"`
-	TestsToRead        []fileItemJSON     `json:"tests_to_read"`
-	UnverifiedPaths    []pathItemJSON     `json:"unverified_paths"`
-	Unknowns           []string           `json:"unknowns"`
-	Warnings           []string           `json:"warnings"`
+	Summary            string               `json:"summary"`
+	Confidence         float64              `json:"confidence"`
+	FlowName           string               `json:"flow_name"`
+	LikelyChain        flexChainSteps       `json:"likely_chain"`
+	FilesToReadInOrder flexFileItems        `json:"files_to_read_in_order"`
+	TestsToRead        flexFileItems        `json:"tests_to_read"`
+	UnverifiedPaths    flexPathItems        `json:"unverified_paths"`
+	Unknowns           flexStringsOrObjects `json:"unknowns"`
+	Warnings           flexStringsOrObjects `json:"warnings"`
 }
 
 type chainStepJSON struct {
-	Step          int      `json:"step"`
-	Name          string   `json:"name"`
-	WhatHappens   string   `json:"what_happens"`
-	EvidenceFiles []string `json:"evidence_files"`
-	Confidence    float64  `json:"confidence"`
+	Step          flexInt     `json:"step"`
+	Name          string      `json:"name"`
+	WhatHappens   string      `json:"what_happens"`
+	Description   string      `json:"description"`
+	Reason        string      `json:"reason"`
+	Role          string      `json:"role"`
+	File          string      `json:"file"`
+	Function      string      `json:"function"`
+	EvidenceFiles flexStrings `json:"evidence_files"`
+	Confidence    float64     `json:"confidence"`
+}
+
+// flexInt accepts int, "1", "Step 1", or missing values.
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	var i int
+	if err := json.Unmarshal(b, &i); err == nil {
+		*f = flexInt(i)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("step: must be int or string: %s", string(b))
+	}
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "Step ")
+	s = strings.TrimPrefix(s, "step ")
+	s = strings.TrimSpace(s)
+	parsed, err := strconv.Atoi(s)
+	if err != nil {
+		*f = 0
+		return nil
+	}
+	*f = flexInt(parsed)
+	return nil
 }
 
 type fileItemJSON struct {
@@ -53,6 +87,197 @@ type fileItemJSON struct {
 type pathItemJSON struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+}
+
+// flexFileItems accepts both []object and []string for files_to_read_in_order / tests_to_read.
+type flexFileItems []fileItemJSON
+
+func (f *flexFileItems) UnmarshalJSON(b []byte) error {
+	var objs []fileItemJSON
+	if err := json.Unmarshal(b, &objs); err == nil {
+		*f = objs
+		return nil
+	}
+	var strs []string
+	if err := json.Unmarshal(b, &strs); err != nil {
+		return fmt.Errorf("must be array of objects or strings: %s", string(b))
+	}
+	result := make([]fileItemJSON, len(strs))
+	for i, s := range strs {
+		result[i] = fileItemJSON{Path: s, Reason: "", Priority: i + 1}
+	}
+	*f = result
+	return nil
+}
+
+// flexPathItems accepts both []object and []string for unverified_paths.
+type flexPathItems []pathItemJSON
+
+func (f *flexPathItems) UnmarshalJSON(b []byte) error {
+	var objs []pathItemJSON
+	if err := json.Unmarshal(b, &objs); err == nil {
+		*f = objs
+		return nil
+	}
+	var strs []string
+	if err := json.Unmarshal(b, &strs); err != nil {
+		return fmt.Errorf("must be array of objects or strings: %s", string(b))
+	}
+	result := make([]pathItemJSON, len(strs))
+	for i, s := range strs {
+		result[i] = pathItemJSON{Path: s, Reason: ""}
+	}
+	*f = result
+	return nil
+}
+
+// flexChainSteps accepts []chainStepJSON directly, or an object with a "steps" array.
+type flexChainSteps []chainStepJSON
+
+func (f *flexChainSteps) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*f = nil
+		return nil
+	}
+
+	// Try direct array first
+	var steps []chainStepJSON
+	if err := json.Unmarshal(b, &steps); err == nil {
+		*f = steps
+		return nil
+	}
+
+	// Try object with "steps" field
+	var obj struct {
+		Steps []chainStepJSON `json:"steps"`
+	}
+	if err := json.Unmarshal(b, &obj); err == nil && len(obj.Steps) > 0 {
+		*f = obj.Steps
+		return nil
+	}
+
+	return fmt.Errorf("flexChainSteps: must be array of chain steps or object with steps field: %s", string(b))
+}
+
+// flexStringsOrObjects accepts []string, []object (with text/description/reason/question/uncertainty/warning/message fields),
+// or object/map (grouped unknowns), or a bare string. Normalizes to a flat []string.
+type flexStringsOrObjects []string
+
+func (f *flexStringsOrObjects) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*f = nil
+		return nil
+	}
+
+	// Try bare string first
+	var singleStr string
+	if err := json.Unmarshal(b, &singleStr); err == nil && strings.TrimSpace(singleStr) != "" {
+		*f = []string{strings.TrimSpace(singleStr)}
+		return nil
+	}
+
+	// Try []string first
+	var strs []string
+	if err := json.Unmarshal(b, &strs); err == nil {
+		*f = strs
+		return nil
+	}
+
+	// Try []object — extract first meaningful text-like field
+	var objs []map[string]json.RawMessage
+	if err := json.Unmarshal(b, &objs); err == nil {
+		result := make([]string, 0, len(objs))
+		for _, obj := range objs {
+			result = append(result, extractFlexString(obj))
+		}
+		*f = result
+		return nil
+	}
+
+	// Try object/map (grouped form)
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err == nil {
+		var result []string
+		for k, v := range m {
+			var subObjs []map[string]json.RawMessage
+			if json.Unmarshal(v, &subObjs) == nil {
+				for _, obj := range subObjs {
+					s := extractFlexString(obj)
+					if s != "" {
+						result = append(result, k+": "+s)
+					}
+				}
+				continue
+			}
+			var subStrs []string
+			if json.Unmarshal(v, &subStrs) == nil {
+				for _, s := range subStrs {
+					result = append(result, k+": "+s)
+				}
+				continue
+			}
+			var singleStr string
+			if json.Unmarshal(v, &singleStr) == nil && singleStr != "" {
+				result = append(result, k+": "+singleStr)
+			}
+		}
+		sort.Strings(result)
+		*f = result
+		return nil
+	}
+
+	return fmt.Errorf("flexStringsOrObjects: must be array of strings, array of objects, or object/map: %s", string(b))
+}
+
+var flexStringFields = []string{"text", "uncertainty", "warning", "question", "message", "description", "reason", "path"}
+
+func extractFlexString(obj map[string]json.RawMessage) string {
+	// First look for single-word descriptive fields
+	pairs := make([]string, 0, 2)
+	for _, field := range flexStringFields {
+		if raw, ok := obj[field]; ok {
+			var s string
+			if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
+				pairs = append(pairs, strings.TrimSpace(s))
+			}
+		}
+	}
+	if len(pairs) == 0 {
+		// Fallback: use the first field
+		for _, raw := range obj {
+			var s string
+			if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+		return ""
+	}
+	return strings.Join(pairs, " — ")
+}
+
+// flexStrings accepts both []string and []object (with "path" field) for evidence_files.
+type flexStrings []string
+
+func (f *flexStrings) UnmarshalJSON(b []byte) error {
+	var strs []string
+	if err := json.Unmarshal(b, &strs); err == nil {
+		*f = strs
+		return nil
+	}
+	var objs []struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(b, &objs); err != nil {
+		return fmt.Errorf("must be array of strings or objects with path field: %s", string(b))
+	}
+	result := make([]string, len(objs))
+	for i, o := range objs {
+		result[i] = o.Path
+	}
+	*f = result
+	return nil
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
@@ -168,6 +393,23 @@ func parseFlowBundle(path string, fd *FlowData) string {
 	if fb.FlowSeed.Name != "" {
 		fd.Name = fb.FlowSeed.Name
 	}
+	fd.BundleFiles = make([]FileItem, 0, len(fb.SelectedFiles))
+	for _, sf := range fb.SelectedFiles {
+		fd.BundleFiles = append(fd.BundleFiles, FileItem{Path: sf.Path, Reason: strings.Join(sf.Reasons, ", ")})
+	}
+	fd.BundleTests = make([]FileItem, 0, len(fb.SelectedTests))
+	for _, st := range fb.SelectedTests {
+		fd.BundleTests = append(fd.BundleTests, FileItem{Path: st.Path, Reason: strings.Join(st.Reasons, ", ")})
+	}
+	fd.BundleDocs = make([]FileItem, 0, len(fb.SelectedDocs))
+	for _, sd := range fb.SelectedDocs {
+		fd.BundleDocs = append(fd.BundleDocs, FileItem{Path: sd.Path, Reason: strings.Join(sd.Reasons, ", ")})
+	}
+	fd.BundlePackages = fb.SelectedPackages
+	fd.BundleEdges = make([]EdgeInfo, 0, len(fb.RelatedEdges))
+	for _, e := range fb.RelatedEdges {
+		fd.BundleEdges = append(fd.BundleEdges, EdgeInfo{From: e.From, To: e.To})
+	}
 	return ""
 }
 
@@ -186,27 +428,78 @@ func parseFlowReport(path string, fd *FlowData) string {
 		fd.Error = fmt.Sprintf("invalid flow report JSON: %v", err)
 		return fd.Error
 	}
+
+	bundlePaths := buildBundlePathSet(fd)
+
 	for _, fi := range fr.FilesToReadInOrder {
 		fd.FilesToRead = append(fd.FilesToRead, FileItem{
 			Path:     fi.Path,
 			Reason:   fi.Reason,
 			Priority: fi.Priority,
 		})
+		if fi.Path != "" && !bundlePaths[fi.Path] {
+			fd.Warnings = append(fd.Warnings, fmt.Sprintf("unverified path in files_to_read_in_order: %s", fi.Path))
+		}
 	}
 	for _, ti := range fr.TestsToRead {
 		fd.TestsToRead = append(fd.TestsToRead, FileItem{
 			Path:   ti.Path,
 			Reason: ti.Reason,
 		})
+		if ti.Path != "" && !bundlePaths[ti.Path] {
+			fd.Warnings = append(fd.Warnings, fmt.Sprintf("unverified path in tests_to_read: %s", ti.Path))
+		}
 	}
-	for _, cs := range fr.LikelyChain {
+	for i, cs := range fr.LikelyChain {
+		stepNum := int(cs.Step)
+		if stepNum <= 0 {
+			stepNum = i + 1
+		}
+
+		whatHappens := cs.WhatHappens
+		if whatHappens == "" {
+			whatHappens = cs.Description
+		}
+		if whatHappens == "" {
+			whatHappens = cs.Reason
+		}
+		if whatHappens == "" && cs.Role != "" {
+			if cs.Function != "" {
+				whatHappens = cs.Role + ": " + cs.Function
+			} else {
+				whatHappens = cs.Role
+			}
+		}
+
+		name := cs.Name
+		if name == "" && cs.Role != "" {
+			name = cs.Role
+		}
+		if name == "" && cs.Function != "" {
+			name = cs.Function
+		}
+		if name == "" && cs.Description != "" {
+			name = firstSentence(cs.Description)
+		}
+
+		// Fold File into evidence_files if not already present
+		evidenceFiles := cs.EvidenceFiles
+		if len(evidenceFiles) == 0 && cs.File != "" {
+			evidenceFiles = []string{cs.File}
+		}
+
 		fd.LikelyChain = append(fd.LikelyChain, ChainStep{
-			Step:          cs.Step,
-			Name:          cs.Name,
-			WhatHappens:   cs.WhatHappens,
-			EvidenceFiles: cs.EvidenceFiles,
+			Step:          stepNum,
+			Name:          name,
+			WhatHappens:   whatHappens,
+			EvidenceFiles: evidenceFiles,
 			Confidence:    cs.Confidence,
 		})
+		for _, ef := range evidenceFiles {
+			if ef != "" && !bundlePaths[ef] {
+				fd.Warnings = append(fd.Warnings, fmt.Sprintf("unverified path in likely_chain evidence: %s", ef))
+			}
+		}
 	}
 	for _, up := range fr.UnverifiedPaths {
 		fd.UnverifiedPaths = append(fd.UnverifiedPaths, PathItem{
@@ -220,6 +513,46 @@ func parseFlowReport(path string, fd *FlowData) string {
 	fd.Summary = fr.Summary
 	fd.Confidence = fr.Confidence
 	fd.Unknowns = fr.Unknowns
-	fd.Warnings = fr.Warnings
+	for _, w := range fr.Warnings {
+		fd.Warnings = append(fd.Warnings, w)
+	}
 	return ""
+}
+
+func buildBundlePathSet(fd *FlowData) map[string]bool {
+	paths := make(map[string]bool)
+	for _, fi := range fd.BundleFiles {
+		if fi.Path != "" {
+			paths[fi.Path] = true
+		}
+	}
+	for _, fi := range fd.BundleTests {
+		if fi.Path != "" {
+			paths[fi.Path] = true
+		}
+	}
+	for _, fi := range fd.BundleDocs {
+		if fi.Path != "" {
+			paths[fi.Path] = true
+		}
+	}
+	return paths
+}
+
+func firstSentence(s string) string {
+	s = strings.TrimSpace(s)
+	// Split on ". " that is followed by a capital letter or number
+	for i := 0; i < len(s); i++ {
+		if s[i] == '.' {
+			if i+1 < len(s) && s[i+1] == ' ' {
+				if i+2 < len(s) && (s[i+2] >= 'A' && s[i+2] <= 'Z' || s[i+2] >= '1' && s[i+2] <= '9') {
+					return s[:i+1]
+				}
+			}
+		}
+	}
+	if len(s) > 80 {
+		s = s[:80]
+	}
+	return s
 }
