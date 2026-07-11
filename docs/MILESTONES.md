@@ -144,7 +144,7 @@ allowlist-checked.
 
 Evaluator v3 additionally requires the drill-down source path to occur in the
 selected orientation candidate. This prevents two independently useful but
-unrelated artifacts from passing as one journey. All four current tasks satisfy
+unrelated artifacts from passing as one journey. All five current tasks satisfy
 the stronger relation. `scripts/quality_preflight.sh` checks its necessary
 precondition before any model call—the symbol path must occur in the bounded
 orientation context—and records the clean revision, toolchain, exact model
@@ -193,7 +193,7 @@ Exact prompt-only runs for NATS `client.processInboundMsg` and golangci-lint
 syntax-only questions without using callee names as behavior. NATS exposes four
 locally visible case-branch calls; golangci-lint exposes three immediately
 checked call results and one direct returned call. The NATS capture is now
-committed; golangci-lint still requires a live capture and quality task.
+committed, and the golangci-lint capture now closes the five-repository matrix.
 
 The first NATS live orientation was correctly rejected because the model placed
 the real but unprovided `server/server.go` in a structured `likely_files` list,
@@ -227,9 +227,20 @@ though `pkg/commands/run.go` imports it. A lower-priority, source-only
 import layer while direct entrypoint dependencies retain higher priority. The
 latest preflight contains both the linked target and that linter anchor.
 
-M3 remains active until an equivalent small task for golangci-lint passes the
-same offline workflow. Four passing captures establish the workflow on etcd,
-k6, Prometheus, and NATS Server, but not yet the complete five-repository target.
+The fifth task replays golangci-lint revision
+`9b5e24cba6e9964465bc892ab9377fae5a60cb97`. Three useful directions cover the
+CLI lint run, configuration migration, and internal caching. The CLI direction
+links `pkg/commands/run.go` to `runCommand.runAnalysis`; three
+`checks_call_result` observations cite the call and immediate error guard, and
+one `returns_call_result` observation cites the direct `runner.Run` return. One
+compatible `pkg/lint/lintersdb/manager_test.go` reference remains navigation
+evidence only. Both raw contracts are clean and source scores 100/100. The
+orientation request was 45,001 bytes / 22,691 ms; the source request was 7,984
+bytes / 8,748 ms.
+
+The five-repository golden matrix now passes offline. M3 remains active only for
+the company-style `REPOMAP_LLM_*` compatibility/calibration run below; that run
+must still be judged by the same separate quality dimensions.
 
 The external-company slice adds one compatibility/calibration run through
 `doctor`, request preview, and current repository exploration. Its model output
