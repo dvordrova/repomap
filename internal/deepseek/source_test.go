@@ -36,6 +36,7 @@ func TestSourcePromptContainsGroundingContract(t *testing.T) {
 	for _, fragment := range []string{
 		"question's candidate_source_evidence_ids",
 		"anchor_source_evidence_id",
+		"cite both the call anchor and that result-use line",
 		"lexical window",
 		"Always include both",
 		"one next_action_id",

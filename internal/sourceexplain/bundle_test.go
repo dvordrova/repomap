@@ -31,7 +31,7 @@ func TestBuildSeedsBoundedQuestionsAndActions(t *testing.T) {
 			t.Fatalf("questions[%d].predicate = %q, want %q", index, bundle.Questions[index].Predicate, want)
 		}
 	}
-	if got := bundle.Questions[0].CandidateSourceEvidenceIDs; !equalStrings(got, []string{"source-91", "source-92", "source-93"}) {
+	if got := bundle.Questions[0].CandidateSourceEvidenceIDs; !equalStrings(got, []string{"source-91"}) {
 		t.Fatalf("validation candidates = %#v", got)
 	}
 	if got := bundle.Questions[2].CandidateSourceEvidenceIDs; !equalStrings(got, []string{"source-96", "source-97"}) {
@@ -42,6 +42,156 @@ func TestBuildSeedsBoundedQuestionsAndActions(t *testing.T) {
 	}
 	if bundle.Source.Complete || bundle.Source.FileSHA256 == "" || bundle.Source.Window != sourceCardFixture().Window {
 		t.Fatalf("source = %#v", bundle.Source)
+	}
+}
+
+func TestBuildFindsMinimalMultilineValidationProof(t *testing.T) {
+	t.Parallel()
+
+	structural, card := labelsIsValidFixture()
+	bundle, err := Build(structural, card)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if len(bundle.Questions) != 1 {
+		t.Fatalf("questions = %#v", bundle.Questions)
+	}
+	want := []string{"source-119", "source-132"}
+	if got := bundle.Questions[0].CandidateSourceEvidenceIDs; !equalStrings(got, want) {
+		t.Fatalf("validation candidates = %#v, want %#v", got, want)
+	}
+}
+
+func TestBuildFindsCompactValidationProofShapes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*sourcecard.Card)
+		want   []string
+	}{
+		{
+			name: "direct condition",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\tif ls.Validate() {")
+			},
+			want: []string{"source-119"},
+		},
+		{
+			name: "separate condition",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\terr := ls.Validate()")
+				setSourceLine(card, 120, "\tif err != nil {")
+			},
+			want: []string{"source-119", "source-120"},
+		},
+		{
+			name: "same line return",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\terr := ls.Validate(); return err == nil")
+			},
+			want: []string{"source-119"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			structural, card := labelsIsValidFixture()
+			test.mutate(&card)
+			card.Window.IncludedBytes = includedBytes(card.Lines)
+			bundle, err := Build(structural, card)
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if got := bundle.Questions[0].CandidateSourceEvidenceIDs; !equalStrings(got, test.want) {
+				t.Fatalf("validation candidates = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestBuildDoesNotGuessNonImmediateValidationProof(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*sourcecard.Card)
+	}{
+		{
+			name: "result reassigned",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 132, "\terr = nil")
+			},
+		},
+		{
+			name: "other result returned",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 132, "\treturn other == nil")
+			},
+		},
+		{
+			name: "intervening statement",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 132, "\tfmt.Println(err)")
+			},
+		},
+		{
+			name: "discarded call in if initializer",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\tif ls.Validate(); ready {")
+			},
+		},
+		{
+			name: "unrelated assignment before call",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\terr := other(); ls.Validate()")
+			},
+		},
+		{
+			name: "multiple right hand sides",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\terr, other := otherCall(), ls.Validate()")
+			},
+		},
+		{
+			name: "transformed call result",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 119, "\terr := !ls.Validate()")
+			},
+		},
+		{
+			name: "split nil comparison",
+			mutate: func(card *sourcecard.Card) {
+				setSourceLine(card, 132, "\treturn err ==")
+				setSourceLine(card, 133, "\t\tnil")
+			},
+		},
+		{
+			name: "truncated call",
+			mutate: func(card *sourcecard.Card) {
+				for index := range card.Lines {
+					if card.Lines[index].Line == 131 {
+						card.Lines[index].Truncated = true
+					}
+				}
+				card.Window.Truncated = true
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			structural, card := labelsIsValidFixture()
+			test.mutate(&card)
+			card.Window.IncludedBytes = includedBytes(card.Lines)
+			bundle, err := Build(structural, card)
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if got := bundle.Questions[0].CandidateSourceEvidenceIDs; !equalStrings(got, []string{"source-119"}) {
+				t.Fatalf("validation candidates = %#v", got)
+			}
+		})
 	}
 }
 
@@ -305,6 +455,102 @@ func sourceCardFixture() sourcecard.Card {
 		},
 		Lines:    lines,
 		Warnings: []sourcecard.Warning{},
+	}
+}
+
+func labelsIsValidFixture() (symbol.Bundle, sourcecard.Card) {
+	target := evidence.Entity{
+		ID:   "labels-is-valid",
+		Kind: evidence.EntityMethod,
+		Name: "Labels.IsValid",
+		Location: &evidence.Location{
+			Path:   "model/labels/labels_common.go",
+			Line:   118,
+			Column: 18,
+		},
+	}
+	structural := symbol.Bundle{
+		Version:  symbol.BundleVersion,
+		RepoName: "prometheus",
+		Query:    target.Name,
+		Target: symbol.Fact{
+			EvidenceID: "resolution-001",
+			Entity:     target,
+			Certainty:  evidence.CertaintyStatic,
+		},
+		OutgoingCalls: []symbol.CallFact{{
+			EvidenceID: "call-out-001",
+			Caller:     target,
+			Callee: evidence.Entity{
+				ID:       "labels-validate",
+				Kind:     evidence.EntityMethod,
+				Name:     "Validate",
+				Location: &evidence.Location{Path: "model/labels/labels.go", Line: 400},
+			},
+			Callsite:  &evidence.Location{Path: target.Location.Path, Line: 119, Column: 12},
+			Certainty: evidence.CertaintyStatic,
+		}},
+		AllowedPaths: []string{target.Location.Path},
+		Truncated:    map[string]int{},
+	}
+	texts := []string{
+		"func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {",
+		"\terr := ls.Validate(func(l Label) error {",
+		"\t\tif l.Name == model.MetricNameLabel {",
+		"\t\t\t// If the default validation scheme has been overridden with legacy mode,",
+		"\t\t\t// use the legacy validation checker.",
+		"\t\t\tif !validationScheme.IsValidMetricName(l.Value) {",
+		"\t\t\t\treturn strconv.ErrSyntax",
+		"\t\t\t}",
+		"\t\t}",
+		"\t\tif !validationScheme.IsValidLabelName(l.Name) {",
+		"\t\t\treturn strconv.ErrSyntax",
+		"\t\t}",
+		"\t\treturn nil",
+		"\t})",
+		"\treturn err == nil",
+		"}",
+	}
+	lines := make([]sourcecard.Line, 0, len(texts))
+	for index, text := range texts {
+		line := 118 + index
+		lines = append(lines, sourcecard.Line{
+			EvidenceID: "source-" + strconv.Itoa(line),
+			Line:       line,
+			Text:       text,
+		})
+	}
+	card := sourcecard.Card{
+		Version:    sourcecard.Version,
+		Language:   "go",
+		RepoName:   "prometheus",
+		FileSHA256: strings.Repeat("b", 64),
+		Target: sourcecard.Target{
+			EvidenceID: "resolution-001",
+			EntityID:   target.ID,
+			Name:       target.Name,
+			Kind:       target.Kind,
+			Path:       target.Location.Path,
+			Line:       target.Location.Line,
+			Column:     target.Location.Column,
+		},
+		Window: sourcecard.Window{
+			StartLine:     118,
+			EndLine:       133,
+			IncludedBytes: includedBytes(lines),
+			StopReason:    sourcecard.StopNextTopLevelFunc,
+		},
+		Lines: lines,
+	}
+	return structural, card
+}
+
+func setSourceLine(card *sourcecard.Card, line int, text string) {
+	for index := range card.Lines {
+		if card.Lines[index].Line == line {
+			card.Lines[index].Text = text
+			return
+		}
 	}
 }
 
