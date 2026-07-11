@@ -144,7 +144,7 @@ allowlist-checked.
 
 Evaluator v3 additionally requires the drill-down source path to occur in the
 selected orientation candidate. This prevents two independently useful but
-unrelated artifacts from passing as one journey. All three current tasks satisfy
+unrelated artifacts from passing as one journey. All four current tasks satisfy
 the stronger relation. `scripts/quality_preflight.sh` checks its necessary
 precondition before any model call—the symbol path must occur in the bounded
 orientation context—and records the clean revision, toolchain, exact model
@@ -171,8 +171,8 @@ The source cube now tokenizes only a bounded lexical window and selects the
 unique call anchor plus immediate returned nil comparison. An incomplete model
 citation becomes ambiguous with an explicit score-reducing warning. Captured
 prompt v3 asks the model to cite both lines; the committed response does so
-without repair. Current prompt v4 also names returned nil comparisons explicitly
-in its predicate rule.
+without repair. Current prompt v5 also defines the syntax-only checked-result,
+direct-return, and branch-call predicates explicitly.
 
 The NATS and golangci-lint preflights exposed a deterministic context-selection
 failure before any model call. NATS spent 56 of 60 paths on tests, while
@@ -192,8 +192,8 @@ Exact prompt-only runs for NATS `client.processInboundMsg` and golangci-lint
 `runCommand.runAnalysis` now reach the selected source path and seed bounded
 syntax-only questions without using callee names as behavior. NATS exposes four
 locally visible case-branch calls; golangci-lint exposes three immediately
-checked call results and one direct returned call. Live captures and committed
-quality tasks are still required before either repository counts toward M3.
+checked call results and one direct returned call. The NATS capture is now
+committed; golangci-lint still requires a live capture and quality task.
 
 The first NATS live orientation was correctly rejected because the model placed
 the real but unprovided `server/server.go` in a structured `likely_files` list,
@@ -203,9 +203,20 @@ boost to a source file named after its directory. The next NATS preflight keeps
 `server/server.go`, `server/client.go`, and `server/parser.go` inside the same
 60-path bound; no NATS-specific path is hard-coded.
 
-M3 remains active until equivalent small tasks for NATS Server and golangci-lint
-pass the same offline workflow. Three passing captures establish the workflow on
-etcd, k6, and Prometheus, but not yet the complete five-repository target.
+The fourth task replays NATS Server revision
+`1be499156d9bc757ea08bd148608b622e38b7514`. Three useful directions cover
+server startup, client message publishing, and JetStream storage. The client
+direction links `server/client.go` to `client.processInboundMsg`; four
+`calls_from_branch` claims cite each exact `case` and call pair, while runtime
+branch selection and callee behavior remain unknown. One compatible
+`server/jetstream_cluster_2_test.go` reference remains navigation evidence only.
+Both raw `deepseek-v4-flash` contracts are clean and the source response scores
+100/100 without repair. The orientation request was 27,644 bytes / 21,877 ms;
+the source request was 7,495 bytes / 6,995 ms.
+
+M3 remains active until an equivalent small task for golangci-lint passes the
+same offline workflow. Four passing captures establish the workflow on etcd,
+k6, Prometheus, and NATS Server, but not yet the complete five-repository target.
 
 The external-company slice adds one compatibility/calibration run through
 `doctor`, request preview, and current repository exploration. Its model output

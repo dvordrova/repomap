@@ -30,6 +30,11 @@ var committedBaselines = []committedBaseline{
 		taskPath: "testdata/prometheus-labels-v1/task.json",
 		taskID:   "prometheus-labels-orientation-drilldown-v1",
 	},
+	{
+		name:     "nats inbound message orientation and drilldown",
+		taskPath: "testdata/nats-process-inbound-v1/task.json",
+		taskID:   "nats-process-inbound-orientation-drilldown-v1",
+	},
 }
 
 func TestCommittedBaselineSuiteMembership(t *testing.T) {
@@ -323,6 +328,91 @@ func TestPrometheusLabelsBaselineReplay(t *testing.T) {
 	const (
 		orientationRequestSHA = "390d18a06d7db673c1fd5cad69431e085de20ec6db8e219e9414be93a933e3f3"
 		sourceRequestSHA      = "368b7ce7a2773ec1504837f9d7330d7c55ed8e40e09447c16ea670297208023b"
+	)
+	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||
+		loaded.Task.Captures.Source.ProviderRequestSHA256 == nil ||
+		*loaded.Task.Captures.Source.ProviderRequestSHA256 != sourceRequestSHA {
+		t.Fatalf("request capture metadata = %#v", loaded.Task.Captures)
+	}
+}
+
+func TestNATSProcessInboundBaselineReplay(t *testing.T) {
+	t.Parallel()
+
+	loaded, err := Load("testdata/nats-process-inbound-v1/task.json")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := Evaluate(loaded)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.Passed || result.Version != EvaluationVersion {
+		t.Fatalf("baseline result = %#v", result)
+	}
+	if loaded.Task.Captures.Orientation.PromptVersion != "orientation-json-v2" ||
+		loaded.Task.Captures.Source.PromptVersion != "source-assessment-json-v5" {
+		t.Fatalf("capture prompt versions = %#v", loaded.Task.Captures)
+	}
+	if len(result.DirectionCoverage.Checks) != 3 ||
+		len(result.DirectionCoverage.Missing) != 0 ||
+		len(result.DirectionCoverage.Ambiguous) != 0 {
+		t.Fatalf("direction coverage = %#v", result.DirectionCoverage)
+	}
+	for _, check := range result.DirectionCoverage.Checks {
+		if !check.Covered || len(check.CandidateNames) != 1 || check.SelectedCandidate == "" {
+			t.Errorf("direction %q association = %#v", check.DirectionID, check)
+		}
+	}
+	grounding := result.Grounding
+	if !grounding.Valid || grounding.AllowedPathCount != 60 ||
+		grounding.ReferencedPathCount != 23 || grounding.UnscoredProseEvidenceCount != 15 ||
+		len(grounding.InvalidReferences) != 0 {
+		t.Fatalf("grounding = %#v", grounding)
+	}
+	if !result.ImportantEvidence.Complete || len(result.ImportantEvidence.Checks) != 9 {
+		t.Fatalf("important evidence = %#v", result.ImportantEvidence)
+	}
+	drilldown := result.SemanticDrilldown
+	if !drilldown.Complete || !drilldown.OrientationLink.Linked ||
+		len(drilldown.OrientationLink.DirectionIDs) != 1 ||
+		drilldown.OrientationLink.DirectionIDs[0] != "client-message-publish" ||
+		len(drilldown.Predicates) != 1 || !drilldown.Predicates[0].Found ||
+		len(drilldown.Tests) != 1 || !drilldown.Tests[0].ContextCompatible {
+		t.Fatalf("drilldown = %#v", drilldown)
+	}
+	orientationContract := result.ContractAdherence.OrientationResponse
+	if !orientationContract.Valid || !orientationContract.Measured || !orientationContract.Clean {
+		t.Fatalf("orientation contract = %#v", orientationContract)
+	}
+	sourceContract := result.ContractAdherence.SourceResponse
+	if !sourceContract.Valid || !sourceContract.Clean || sourceContract.Evaluation == nil ||
+		sourceContract.Evaluation.Version != sourceexplain.EvaluationVersion ||
+		sourceContract.Evaluation.Score != 100 || sourceContract.Evaluation.MaxScore != 100 {
+		t.Fatalf("source contract = %#v", sourceContract)
+	}
+	observations := result.BytesAndLatency
+	if observations.Orientation.ReplayInputBytes != 1773 ||
+		observations.Orientation.ResponseBytes != 9502 ||
+		observations.Orientation.ModelContextBytes != 22379 ||
+		observations.Orientation.ProviderRequestBytes == nil ||
+		*observations.Orientation.ProviderRequestBytes != 27644 ||
+		observations.Orientation.LatencyMillis == nil ||
+		*observations.Orientation.LatencyMillis != 21877 ||
+		observations.Source.ReplayInputBytes != 4518 ||
+		observations.Source.ResponseBytes != 852 ||
+		observations.Source.ModelContextBytes != 3223 ||
+		observations.Source.ProviderRequestBytes == nil ||
+		*observations.Source.ProviderRequestBytes != 7495 ||
+		observations.Source.LatencyMillis == nil ||
+		*observations.Source.LatencyMillis != 6995 ||
+		observations.TestEvidenceBytes != 3643 {
+		t.Fatalf("bytes and latency = %#v", observations)
+	}
+	const (
+		orientationRequestSHA = "3b041d746a2b8b39fc11559da1b6799def826bad5a9ff61fd268245c01d063c2"
+		sourceRequestSHA      = "a67b1b91366aae8896e6a5f27a733d464e43417bdebe2cf229476ff1434f48c1"
 	)
 	if loaded.Task.Captures.Orientation.ProviderRequestSHA256 == nil ||
 		*loaded.Task.Captures.Orientation.ProviderRequestSHA256 != orientationRequestSHA ||

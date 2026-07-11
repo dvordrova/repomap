@@ -501,7 +501,10 @@ func validPredicate(predicate sourceexplain.Predicate) bool {
 		sourceexplain.PredicateMapsError,
 		sourceexplain.PredicateFillsResponse,
 		sourceexplain.PredicatePersistsState,
-		sourceexplain.PredicatePerformsIO:
+		sourceexplain.PredicatePerformsIO,
+		sourceexplain.PredicateChecksCallResult,
+		sourceexplain.PredicateReturnsCallResult,
+		sourceexplain.PredicateCallsFromBranch:
 		return true
 	default:
 		return false

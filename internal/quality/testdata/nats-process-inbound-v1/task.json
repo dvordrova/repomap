@@ -1,0 +1,146 @@
+{
+  "version": 2,
+  "id": "nats-process-inbound-orientation-drilldown-v1",
+  "repository": {
+    "name": "nats-server",
+    "revision": "1be499156d9bc757ea08bd148608b622e38b7514",
+    "scenario": {
+      "orientation": "default local Go environment with go list -e and no explicit build tags",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "go_version": "go1.26.4",
+      "gopls_version": "v0.23.0",
+      "build_tags": []
+    }
+  },
+  "goal": "I know NATS only at a high level. Show useful runtime directions, then inspect how client.processInboundMsg dispatches one inbound message across connection kinds and find a related test reference.",
+  "captures": {
+    "orientation": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "orientation-json-v2",
+      "response_form": "provider_content",
+      "captured_at": "2026-07-10T16:24:11Z",
+      "model_context_sha256": "137f1e985b5c173a0dfefc2fa334bfe0ee1e3a711841e6d7f906a724c79bfde4",
+      "model_context_bytes": 22379,
+      "provider_request_sha256": "3b041d746a2b8b39fc11559da1b6799def826bad5a9ff61fd268245c01d063c2",
+      "provider_request_bytes": 27644,
+      "latency_ms": 21877
+    },
+    "source": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "source-assessment-json-v5",
+      "response_form": "provider_content",
+      "captured_at": "2026-07-10T16:24:58Z",
+      "model_context_sha256": "c4cea94d85d0aba4b794c78b978225aca1f4edb9b68621467340aceb1849fa7e",
+      "model_context_bytes": 3223,
+      "provider_request_sha256": "a67b1b91366aae8896e6a5f27a733d464e43417bdebe2cf229476ff1434f48c1",
+      "provider_request_bytes": 7495,
+      "latency_ms": 6995
+    }
+  },
+  "artifacts": {
+    "orientation_context": {
+      "path": "orientation_context.json",
+      "sha256": "ebd534a99145d95d015ca87dfab732f20158683da4ae46807926f3d98ccd1d17"
+    },
+    "orientation_response": {
+      "path": "orientation_response.json",
+      "sha256": "2fc3495558085dd912b3f39df0fbe12aa330bb1602216d761a030c1e5dd59ee5"
+    },
+    "source_bundle": {
+      "path": "source_bundle.json",
+      "sha256": "083c141bebfd09a5070e431771a6b5a16bcf22fd68741998c49a734c106db4e0"
+    },
+    "source_response": {
+      "path": "source_response.json",
+      "sha256": "08c1b3a9439ac01d0867c6cca54feaf0bf6b5d5841cf48d7f70fcd25abaa7ba6"
+    },
+    "test_evidence": {
+      "path": "test_evidence.json",
+      "sha256": "4c439b5b0d1046871d641a2f98adc1d488d5e029ee3f81246cddb57927b6bc11"
+    }
+  },
+  "expected": {
+    "directions": [
+      {
+        "id": "server-startup",
+        "aliases": [
+          "server startup flow",
+          "server startup"
+        ],
+        "important_paths": [
+          "main.go",
+          "server/server.go",
+          "server/opts.go"
+        ]
+      },
+      {
+        "id": "client-message-publish",
+        "aliases": [
+          "client connection and message publish flow",
+          "client connection and message publish"
+        ],
+        "important_paths": [
+          "server/client.go",
+          "server/parser.go",
+          "server/accounts.go"
+        ]
+      },
+      {
+        "id": "jetstream-publish-store",
+        "aliases": [
+          "jetstream publish and store flow",
+          "jetstream publish and store"
+        ],
+        "important_paths": [
+          "server/jetstream_api.go",
+          "server/jetstream.go",
+          "server/filestore.go"
+        ]
+      }
+    ],
+    "drilldown": {
+      "symbol": "client.processInboundMsg",
+      "path": "server/client.go",
+      "source_predicates": [
+        "calls_from_branch"
+      ],
+      "test_reference_paths": [
+        "server/jetstream_cluster_2_test.go"
+      ]
+    },
+    "forbidden_overclaims": [
+      {
+        "id": "client-file-proves-runtime-publish",
+        "scope": "orientation",
+        "contains_all": [
+          "server/client.go proves",
+          "runtime publish"
+        ]
+      },
+      {
+        "id": "runtime-observed-without-runtime-evidence",
+        "scope": "drilldown",
+        "contains_all": [
+          "observed at runtime"
+        ]
+      },
+      {
+        "id": "branch-selection-proven",
+        "scope": "drilldown",
+        "contains_all": [
+          "branch selection is verified"
+        ]
+      },
+      {
+        "id": "test-reference-proves-coverage",
+        "scope": "drilldown",
+        "contains_all": [
+          "test references prove coverage"
+        ]
+      }
+    ]
+  }
+}

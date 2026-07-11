@@ -163,6 +163,26 @@ func TestTaskValidateAcceptsCaptureDatePrecisions(t *testing.T) {
 	}
 }
 
+func TestTaskValidateAcceptsSyntaxGroundedSourcePredicates(t *testing.T) {
+	t.Parallel()
+
+	predicates := []sourceexplain.Predicate{
+		sourceexplain.PredicateChecksCallResult,
+		sourceexplain.PredicateReturnsCallResult,
+		sourceexplain.PredicateCallsFromBranch,
+	}
+	for _, predicate := range predicates {
+		t.Run(string(predicate), func(t *testing.T) {
+			t.Parallel()
+			task := validTask()
+			task.Expected.Drilldown.SourcePredicates = []sourceexplain.Predicate{predicate}
+			if err := task.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestOrientationGroundingContextValidateAllowsLargeSortedPathSet(t *testing.T) {
 	t.Parallel()
 

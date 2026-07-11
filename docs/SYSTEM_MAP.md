@@ -236,6 +236,7 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 | etcd quality fixture | works | one reproducible orientation-to-`kvServer.Put` baseline | historical normalized orientation contract remains unmeasured |
 | k6 quality fixture | works | current raw orientation plus `Client.Metrics` source/test drill-down | latency was not captured; one test reference is not test support |
 | Prometheus quality fixture | works | raw orientation proposes a TSDB direction plus `Labels.IsValid` source/test drill-down | static path and references do not prove runtime ingestion or test coverage |
+| NATS quality fixture | works | raw orientation links the client message direction to four `processInboundMsg` branch-call observations | branch selection, callee behavior, and the referenced test body remain unverified |
 
 ### Presentation and artifacts
 
@@ -279,7 +280,7 @@ This table separates real modularity from intended modularity.
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone; orientation uses user-facing entrypoint dependencies, bounded kind diversity, and one coherent allowlist | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
-| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | etcd, k6, and Prometheus exist; two repository baselines remain |
+| Quality replay | `quality.Task -> quality.Result` | yes, fully offline | etcd, k6, Prometheus, and NATS exist; the golangci-lint baseline remains |
 | Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
 
 The next work should improve one red cell at a time and preserve a runnable
@@ -482,8 +483,8 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C13 — Cross-repository product quality
 
-- State: etcd, k6, and Prometheus baselines work; NATS Server and golangci-lint
-  are still missing.
+- State: etcd, k6, Prometheus, and NATS Server baselines work; golangci-lint is
+  still missing.
 - Question: does the same product journey select useful directions and support a
   grounded drill-down across materially different large Go repositories?
 - Run the committed baseline without network access:
@@ -502,6 +503,11 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   clean; mixed orientation evidence prose remains unscored. The orientation
   request was 39,979 bytes / 27,247 ms and the source request was 6,228 bytes /
   9,216 ms.
+- Current NATS signal: three directions cover nine important paths and the
+  client-message direction links to `client.processInboundMsg`; four locally
+  grounded `calls_from_branch` claims and one compatible test-reference path are
+  present. Both raw contracts are clean. The orientation request was 27,644
+  bytes / 21,877 ms and the source request was 7,495 bytes / 6,995 ms.
 - Evaluator v3 rejects a drill-down path that is absent from every selected
   orientation candidate. The Prometheus capture satisfies that relation without
   editing the provider response: DeepSeek placed
