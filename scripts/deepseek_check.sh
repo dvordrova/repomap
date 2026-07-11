@@ -5,8 +5,15 @@ cd "$(dirname "$0")/.."
 
 ETCD_REPO="${1:-../etcd}"
 
-if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
-    echo "Skipping deepseek_check: DEEPSEEK_API_KEY is not set"
+if [ -n "${REPOMAP_LLM_ENDPOINT+x}${REPOMAP_LLM_MODEL+x}${REPOMAP_LLM_API_KEY+x}${REPOMAP_LLM_AUTH+x}${REPOMAP_LLM_MAX_TOKENS+x}${REPOMAP_LLM_TIMEOUT+x}" ]; then
+    AUTH="${REPOMAP_LLM_AUTH:-bearer}"
+    API_KEY="${REPOMAP_LLM_API_KEY:-}"
+else
+    AUTH="${DEEPSEEK_AUTH:-bearer}"
+    API_KEY="${DEEPSEEK_API_KEY:-}"
+fi
+if [ "$AUTH" != "none" ] && [ -z "$API_KEY" ]; then
+    echo "Skipping deepseek_check: bearer auth is configured but no REPOMAP_LLM_API_KEY or DEEPSEEK_API_KEY is set"
     exit 0
 fi
 
@@ -18,7 +25,7 @@ fi
 
 mkdir -p tmp .repomap-runs
 
-echo "=== deepseek orient ($ETCD_REPO) ==="
+echo "=== configured LLM orient ($ETCD_REPO) ==="
 set +e
 go run ./cmd/repomap orient --repo "$ETCD_REPO" --debug-dir .repomap-runs --dump-llm > tmp/deepseek-orientation.json 2>tmp/deepseek-stderr.txt
 EXIT_CODE=$?
@@ -42,14 +49,14 @@ if command -v jq &>/dev/null; then
     echo "--- Validating with jq ---"
     FAIL=0
 
-    if jq -e '.candidate_flows' tmp/deepseek-orientation.json > /dev/null; then
+    if jq -e '.orientation.candidate_flows | length > 0' tmp/deepseek-orientation.json > /dev/null; then
         echo "OK: candidate_flows present"
     else
         echo "FAIL: candidate_flows missing"
         FAIL=1
     fi
 
-    if jq -e '.first_files_to_open' tmp/deepseek-orientation.json > /dev/null; then
+    if jq -e '.orientation.first_files_to_open' tmp/deepseek-orientation.json > /dev/null; then
         echo "OK: first_files_to_open present"
     else
         echo "FAIL: first_files_to_open missing"

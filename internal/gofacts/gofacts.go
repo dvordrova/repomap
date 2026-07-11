@@ -11,7 +11,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/reporead"
 )
+
+const maxGoModBytes = 1024 * 1024
 
 type Facts struct {
 	Modules               []ModuleFact           `json:"modules"`
@@ -33,13 +37,13 @@ type ModuleFact struct {
 }
 
 type ModuleSummary struct {
-	ModulePath               string      `json:"module_path"`
-	ModuleDir                string      `json:"module_dir"`
-	PackagesCount            int         `json:"packages_count"`
-	EntrypointsCount         int         `json:"entrypoints_count"`
-	RoleGuess                string      `json:"role_guess"`
-	TopImportedInternalPkgs  []string    `json:"top_imported_internal_packages"`
-	TopExternalImports       []ExtImport `json:"top_external_imports"`
+	ModulePath              string      `json:"module_path"`
+	ModuleDir               string      `json:"module_dir"`
+	PackagesCount           int         `json:"packages_count"`
+	EntrypointsCount        int         `json:"entrypoints_count"`
+	RoleGuess               string      `json:"role_guess"`
+	TopImportedInternalPkgs []string    `json:"top_imported_internal_packages"`
+	TopExternalImports      []ExtImport `json:"top_external_imports"`
 }
 
 type OrientationCandidate struct {
@@ -146,6 +150,11 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	if len(moduleDirs) == 0 {
 		return &Facts{}, nil
 	}
+	repoReader, err := reporead.New(resolvedRepoPath)
+	if err != nil {
+		return nil, fmt.Errorf("prepare bounded go.mod reads: %w", err)
+	}
+	defer repoReader.Close()
 
 	var allPkgs []goListPackage
 	var allEntrypoints []Entrypoint
@@ -156,6 +165,17 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	modMetas := make([]modulePkgMeta, 0, len(moduleDirs))
 
 	for _, modRelDir := range moduleDirs {
+		if err := verifyModuleGoMod(repoReader, modRelDir); err != nil {
+			warning := fmt.Sprintf("unsafe go.mod; skipping go list: %v", err)
+			topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
+			modules = append(modules, ModuleFact{
+				ModulePath: modRelDir,
+				ModuleDir:  modRelDir,
+				Warnings:   []string{warning},
+			})
+			continue
+		}
+
 		absDir := resolvedRepoPath
 		if modRelDir != "." {
 			absDir = filepath.Join(resolvedRepoPath, modRelDir)
@@ -232,8 +252,24 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	}, nil
 }
 
+func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) error {
+	goModPath := "go.mod"
+	if moduleDir != "." {
+		goModPath = filepath.Join(moduleDir, goModPath)
+	}
+
+	content, err := reader.ReadFile(goModPath, maxGoModBytes)
+	if err != nil {
+		return fmt.Errorf("verify %q: %w", goModPath, err)
+	}
+	if content.Truncated {
+		return fmt.Errorf("verify %q: file exceeds %d-byte limit", goModPath, maxGoModBytes)
+	}
+	return nil
+}
+
 func runGoList(ctx context.Context, repoDir string) ([]goListPackage, []string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
+	cmd := exec.CommandContext(ctx, "go", "list", "-e", "-json", "./...")
 	cmd.Dir = repoDir
 
 	var stdout, stderr bytes.Buffer

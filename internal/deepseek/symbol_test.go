@@ -80,6 +80,7 @@ func TestSymbolPromptRejectsInvalidBundleJSON(t *testing.T) {
 }
 
 func TestNewPromptFromEnvDoesNotRetainAPIKey(t *testing.T) {
+	clearLLMConfigEnv(t)
 	t.Setenv("DEEPSEEK_API_KEY", "must-not-be-retained")
 	t.Setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 	t.Setenv("DEEPSEEK_MAX_TOKENS", "6000")

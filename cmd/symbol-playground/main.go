@@ -14,7 +14,6 @@ import (
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
 	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/envfile"
 	"github.com/dvordrova/repomap/internal/sourcecard"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
@@ -22,7 +21,6 @@ import (
 )
 
 func main() {
-	_ = envfile.Load(".env")
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

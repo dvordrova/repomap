@@ -9,16 +9,38 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
 	defaultMaxTokens = 6000
+	defaultTimeout   = 60 * time.Second
+
+	authBearer = "bearer"
+	authNone   = "none"
+
+	envEndpoint  = "REPOMAP_LLM_ENDPOINT"
+	envModel     = "REPOMAP_LLM_MODEL"
+	envAPIKey    = "REPOMAP_LLM_API_KEY"
+	envMaxTokens = "REPOMAP_LLM_MAX_TOKENS"
+	envTimeout   = "REPOMAP_LLM_TIMEOUT"
+	envAuth      = "REPOMAP_LLM_AUTH"
+
+	legacyEnvEndpoint  = "DEEPSEEK_ENDPOINT"
+	legacyEnvModel     = "DEEPSEEK_MODEL"
+	legacyEnvAPIKey    = "DEEPSEEK_API_KEY"
+	legacyEnvMaxTokens = "DEEPSEEK_MAX_TOKENS"
+	legacyEnvTimeout   = "DEEPSEEK_TIMEOUT"
+	legacyEnvAuth      = "DEEPSEEK_AUTH"
 )
 
 type Client struct {
@@ -27,6 +49,7 @@ type Client struct {
 	Model      string
 	MaxTokens  int
 	Endpoint   string
+	Auth       string
 }
 
 func NewFromEnv() (*Client, error) {
@@ -40,39 +63,114 @@ func NewPromptFromEnv() (*Client, error) {
 }
 
 func newFromEnv(requireAPIKey bool) (*Client, error) {
-	key := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
-	if requireAPIKey && key == "" {
-		return nil, fmt.Errorf("DEEPSEEK_API_KEY is required unless --snapshot-only is used")
+	useGenericConfig := anyEnvSet(
+		envEndpoint,
+		envModel,
+		envAPIKey,
+		envMaxTokens,
+		envTimeout,
+		envAuth,
+	)
+	value := func(primary, legacy string) string {
+		if useGenericConfig {
+			return strings.TrimSpace(os.Getenv(primary))
+		}
+		return strings.TrimSpace(os.Getenv(legacy))
 	}
-	if !requireAPIKey {
-		key = ""
+
+	auth := value(envAuth, legacyEnvAuth)
+	if auth == "" {
+		auth = authBearer
 	}
-	model := strings.TrimSpace(os.Getenv("DEEPSEEK_MODEL"))
+	if auth != authBearer && auth != authNone {
+		return nil, fmt.Errorf("%s must be %q or %q", envAuth, authBearer, authNone)
+	}
+
+	model := value(envModel, legacyEnvModel)
 	if model == "" {
 		model = defaultModel
 	}
+
 	maxTokens := defaultMaxTokens
-	if s := strings.TrimSpace(os.Getenv("DEEPSEEK_MAX_TOKENS")); s != "" {
+	if s := value(envMaxTokens, legacyEnvMaxTokens); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil {
-			return nil, fmt.Errorf("DEEPSEEK_MAX_TOKENS must be an integer: %w", err)
+			return nil, fmt.Errorf("%s must be an integer: %w", envMaxTokens, err)
 		}
 		if n <= 0 {
-			return nil, fmt.Errorf("DEEPSEEK_MAX_TOKENS must be positive")
+			return nil, fmt.Errorf("%s must be positive", envMaxTokens)
 		}
 		maxTokens = n
 	}
-	endpoint := strings.TrimSpace(os.Getenv("DEEPSEEK_ENDPOINT"))
+
+	timeout := defaultTimeout
+	if s := value(envTimeout, legacyEnvTimeout); s != "" {
+		parsed, err := time.ParseDuration(s)
+		if err != nil {
+			return nil, fmt.Errorf("%s must be a duration: %w", envTimeout, err)
+		}
+		if parsed <= 0 {
+			return nil, fmt.Errorf("%s must be positive", envTimeout)
+		}
+		timeout = parsed
+	}
+
+	endpoint := value(envEndpoint, legacyEnvEndpoint)
 	if endpoint == "" {
+		if useGenericConfig {
+			return nil, fmt.Errorf("%s is required when using REPOMAP_LLM_* configuration", envEndpoint)
+		}
+		if auth == authNone {
+			return nil, fmt.Errorf("%s is required when unauthenticated mode is enabled", legacyEnvEndpoint)
+		}
 		endpoint = defaultEndpoint
 	}
+	if err := validateEndpoint(endpoint); err != nil {
+		return nil, fmt.Errorf("%s is invalid: %w", envEndpoint, err)
+	}
+
+	key := value(envAPIKey, legacyEnvAPIKey)
+	if requireAPIKey && auth == authBearer && key == "" {
+		return nil, fmt.Errorf("%s is required when %s=%s", envAPIKey, envAuth, authBearer)
+	}
+	if !requireAPIKey || auth == authNone {
+		key = ""
+	}
+
 	return &Client{
-		HTTPClient: &http.Client{Timeout: 60 * time.Second},
+		HTTPClient: &http.Client{Timeout: timeout},
 		APIKey:     key,
 		Model:      model,
 		MaxTokens:  maxTokens,
 		Endpoint:   endpoint,
+		Auth:       auth,
 	}, nil
+}
+
+func anyEnvSet(names ...string) bool {
+	for _, name := range names {
+		if _, ok := os.LookupEnv(name); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func validateEndpoint(endpoint string) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https")
+	}
+	if parsed.Host == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("host is required")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("userinfo is not allowed")
+	}
+	return nil
 }
 
 type jsonFormat struct {
@@ -99,6 +197,10 @@ type chatResponse struct {
 }
 
 const maxRetries = 3
+
+const maxProviderErrorBytes = 8 * 1024
+
+const maxProviderResponseBytes = 16 * 1024 * 1024
 
 func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 	return chatRequest{
@@ -214,6 +316,32 @@ func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent str
 	return c.flowExplain(ctx, userContent, systemContent, true, true)
 }
 
+// CheckJSONCompatibility makes exactly one small synthetic request. It is used
+// by the CLI doctor and deliberately does not inherit normal retry behavior.
+func (c *Client) CheckJSONCompatibility(ctx context.Context) error {
+	reqPayload := c.flowExplainRequest(
+		`Return exactly one JSON object: {"status":"ok"}`,
+		"This is a provider compatibility check. Return valid JSON only.",
+		true,
+	)
+	reqPayload.MaxTokens = 64
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		return fmt.Errorf("marshal llm compatibility request: %w", err)
+	}
+	raw, _, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+	if err != nil {
+		return err
+	}
+	var response struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil || response.Status != "ok" {
+		return fmt.Errorf("llm provider returned JSON but not the expected status")
+	}
+	return nil
+}
+
 func (c *Client) flowExplain(ctx context.Context, userContent, systemContent string, jsonMode, validateJSON bool) ([]byte, error) {
 	reqPayload := c.flowExplainRequest(userContent, systemContent, jsonMode)
 
@@ -233,7 +361,7 @@ func (c *Client) flowExplain(ctx context.Context, userContent, systemContent str
 			}
 		}
 
-		result, shouldRetry, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, body, validateJSON)
+		result, shouldRetry, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, validateJSON)
 		if err == nil {
 			return result, nil
 		}
@@ -251,7 +379,7 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal deepseek request: %w", err)
+		return nil, fmt.Errorf("marshal llm request: %w", err)
 	}
 
 	var lastErr error
@@ -265,7 +393,7 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 			}
 		}
 
-		result, shouldRetry, err := doOrient(ctx, c.HTTPClient, c.Endpoint, c.APIKey, body)
+		result, shouldRetry, err := doOrient(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body)
 		if err == nil {
 			return result, nil
 		}
@@ -278,55 +406,90 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 	return nil, fmt.Errorf("retries exhausted (%d attempts): %w", maxRetries+1, lastErr)
 }
 
-func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey string, body []byte) ([]byte, bool, error) {
-	return doChat(ctx, httpClient, endpoint, apiKey, body, true)
+func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) ([]byte, bool, error) {
+	return doChat(ctx, httpClient, endpoint, apiKey, auth, body, true)
 }
 
-func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey string, body []byte, validateJSON bool) ([]byte, bool, error) {
+func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) ([]byte, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, false, fmt.Errorf("build deepseek request: %w", err)
+		return nil, false, fmt.Errorf("build llm request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	switch auth {
+	case "", authBearer:
+		if apiKey == "" {
+			return nil, false, fmt.Errorf("llm bearer authentication requires an API key")
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	case authNone:
+		// Explicit no-auth endpoints must not receive even an empty Authorization header.
+	default:
+		return nil, false, fmt.Errorf("unsupported llm authentication mode %q", auth)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		retry := isRetryableNetworkError(err)
-		return nil, retry, fmt.Errorf("deepseek request failed: %w", err)
+		return nil, retry, fmt.Errorf("llm request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return nil, false, fmt.Errorf("read deepseek response: %w", err)
+		return nil, false, fmt.Errorf("read llm response: %w", err)
+	}
+	if len(respBody) > maxProviderResponseBytes {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, isRetryableHTTP(resp.StatusCode), fmt.Errorf(
+				"llm request failed with status %d: %s...[truncated]",
+				resp.StatusCode,
+				safeProviderErrorText(respBody[:maxProviderErrorBytes]),
+			)
+		}
+		return nil, false, fmt.Errorf("llm response exceeds %d bytes", maxProviderResponseBytes)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		retry := isRetryableHTTP(resp.StatusCode)
-		return nil, retry, fmt.Errorf("deepseek request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return nil, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
 	}
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, false, fmt.Errorf("parse deepseek response envelope: %w", err)
+		return nil, false, fmt.Errorf("parse llm response envelope: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, false, fmt.Errorf("deepseek response contains no choices")
+		return nil, false, fmt.Errorf("llm response contains no choices")
 	}
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 	if content == "" {
-		return nil, false, fmt.Errorf("deepseek response content is empty")
+		return nil, false, fmt.Errorf("llm response content is empty")
 	}
 
 	if validateJSON {
 		var validate json.RawMessage
 		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			return nil, false, fmt.Errorf("deepseek response content is not valid JSON:\n%s", content)
+			return nil, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
 		}
 	}
 
 	return []byte(content), false, nil
+}
+
+func safeProviderErrorText(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if kind, found := secretscan.Detect(text); found {
+		return fmt.Sprintf("[redacted: %s detected in provider response]", kind)
+	}
+	if len(text) <= maxProviderErrorBytes {
+		return text
+	}
+	cut := maxProviderErrorBytes
+	for cut > 0 && !utf8.ValidString(text[:cut]) {
+		cut--
+	}
+	return text[:cut] + "...[truncated]"
 }
 
 func isRetryableHTTP(status int) bool {

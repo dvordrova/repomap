@@ -2,6 +2,7 @@ package debugdump
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +106,23 @@ func TestWriteFileUsesTempThenRename(t *testing.T) {
 	}
 	if tmpExists {
 		t.Fatal("tmp file should not exist after rename")
+	}
+}
+
+func TestWriteDirErrorRedactsPlainTextCredential(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "run", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.WriteDirError("flows/startup", fmt.Errorf("provider echoed Bearer company-secret-token-value"))
+
+	content, err := os.ReadFile(filepath.Join(dir, "run", "flows", "startup", "error.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "company-secret-token-value") || !strings.Contains(string(content), "[redacted:") {
+		t.Fatalf("error artifact was not safely redacted: %q", content)
 	}
 }
 

@@ -1,9 +1,55 @@
 package gofacts
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLoadSkipsModuleWhoseGoModEscapesRepository(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	outside := filepath.Join(parent, "outside")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "go.mod"), []byte("module example.com/outside\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../outside/go.mod", filepath.Join(repo, "go.mod")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	facts, err := Load(context.Background(), repo, []string{"go.mod", "main.go"}, 10, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.PackagesCount != 0 {
+		t.Fatalf("packages count = %d, want 0; unsafe module was analyzed", facts.PackagesCount)
+	}
+	if len(facts.Modules) != 1 {
+		t.Fatalf("modules = %d, want 1", len(facts.Modules))
+	}
+	if len(facts.Modules[0].Warnings) != 1 {
+		t.Fatalf("module warnings = %q, want one", facts.Modules[0].Warnings)
+	}
+	if warning := facts.Modules[0].Warnings[0]; !strings.Contains(warning, "unsafe go.mod") || !strings.Contains(warning, "skipping go list") {
+		t.Fatalf("module warning = %q, want unsafe go.mod skip warning", warning)
+	}
+	if len(facts.Warnings) != 1 || !strings.Contains(facts.Warnings[0], "module .: unsafe go.mod") {
+		t.Fatalf("top-level warnings = %q, want unsafe root-module warning", facts.Warnings)
+	}
+}
 
 func TestNormalizePackagePaths(t *testing.T) {
 	cases := []struct {
@@ -358,11 +404,11 @@ func TestOpenFilesGeneration(t *testing.T) {
 	}
 
 	wantFiles := map[string]string{
-		"go.etcd.io/etcd/server/v3":           "server/main.go",
-		"go.etcd.io/etcd/etcdctl/v3":          "etcdctl/main.go",
-		"go.etcd.io/etcd/etcdutl/v3":          "etcdutl/main.go",
+		"go.etcd.io/etcd/server/v3":              "server/main.go",
+		"go.etcd.io/etcd/etcdctl/v3":             "etcdctl/main.go",
+		"go.etcd.io/etcd/etcdutl/v3":             "etcdutl/main.go",
 		"go.etcd.io/etcd/v3/contrib/raftexample": "contrib/raftexample/main.go",
-		"go.etcd.io/etcd/v3/tools/benchmark":    "tools/benchmark/main.go",
+		"go.etcd.io/etcd/v3/tools/benchmark":     "tools/benchmark/main.go",
 	}
 
 	for _, c := range candidates {
