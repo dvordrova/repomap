@@ -45,7 +45,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v1"
+const OrientationPromptVersionJSON = "orientation-json-v2"
 
 type Client struct {
 	HTTPClient *http.Client
@@ -218,7 +218,7 @@ func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 				Role: "user",
 				Content: `Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
-You may only reference file paths listed in allowed_paths. If you think another file probably exists but it is not in allowed_paths, put it in unverified_paths instead of first_files_to_open or likely_files.
+You may only reference file paths listed in allowed_paths. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. If you think another file probably exists but it is not in allowed_paths, put it in unverified_paths instead of any evidence, entrypoint, first_files_to_open, or likely_files field.
 
 Produce a json orientation report with this exact shape:
 {
@@ -241,7 +241,7 @@ Produce a json orientation report with this exact shape:
     {
       "name": "runtime or event flow name",
       "trigger": "what starts this flow",
-      "likely_entrypoint": "package or repo-relative file",
+      "likely_entrypoint": "exact full path from allowed_paths, preferably one of likely_files",
       "likely_files": ["all must be from allowed_paths"],
       "why_interesting": "why this flow matters",
       "evidence": ["facts from the bundle supporting this flow"],
@@ -272,6 +272,7 @@ Produce a json orientation report with this exact shape:
 Important rules:
 - Candidate flows must be runtime/event-oriented (e.g. "gRPC Put request", "server startup", "watch stream", "raft write path", "lease lifecycle"), not folder-oriented (do not say "server module" or "pkg folder").
 - Every candidate flow must include evidence from the bundle.
+- Keep each evidence item atomic: use either one exact full allowed_paths value or a non-path fact copied from the bundle. Never embed an abbreviated filename or path in prose.
 - Distinguish facts from guesses. If confidence is low, say so in warnings.
 - Use only the provided facts bundle. Do not imagine files you cannot see.
 
