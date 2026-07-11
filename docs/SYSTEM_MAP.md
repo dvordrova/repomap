@@ -395,12 +395,19 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 - State: active M2 slice.
 - Question: can explore/symbol/ticket/bug reuse one state transition model?
-- First experiment: pure table test for `goal -> resolve -> evidence -> unsupported
-  claim -> request source -> reassess -> stop`.
+- Current experiment: pure table tests plus `cmd/investigation-playground` run
+  `goal -> resolve symbol -> read source -> assess source -> find tests -> wait`
+  over the exact M1 cube outputs. The reducer owns no context, filesystem,
+  analyzer, model client, or presentation call.
+- Run locally: `./scripts/investigation_check.sh ../etcd kvServer.Put`.
+- Run the DeepSeek branch: `./scripts/investigation_check.sh ../etcd kvServer.Put tmp/investigation-check deepseek`.
 - Pass signal: collectors and model clients appear only as requested actions or
   delivered events, not inside the reducer.
-- Challenge independently: feed contradiction, cancellation, budget exhaustion,
-  repository change, and user redirection events.
+- Still required to finish M2: hand one orientation-selected flow/symbol into
+  this session and define the presentation response for `read_callee` or
+  `inspect_test_references` instead of silently expanding it.
+- Challenge independently: feed contradiction, stale action completion,
+  cancellation, budget exhaustion, repository change, and user redirection.
 
 ### C11 — Source and runtime truth
 

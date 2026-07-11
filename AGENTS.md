@@ -56,6 +56,7 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/source_artifacts_check.sh # bounded source card/bundle, no model call
 ./scripts/source_check.sh    # replay fixed DeepSeek source response, no network
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
+./scripts/investigation_check.sh # replay M2 reducer path (local or DeepSeek)
 ./scripts/debug_last_run.sh  # inspect last debug run
 ./scripts/clean.sh           # remove tmp/.repomap-runs/.bin
 ```

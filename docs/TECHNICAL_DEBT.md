@@ -142,16 +142,18 @@ authorization headers.
 
 ### TD-006: Investigation orchestration is still scenario-specific
 
-**Evidence:** repository orientation and symbol investigation exist, but there is
-no persisted goal/focus/question/claim/action session shared by explore, ticket,
-bug, onboarding, and impact-analysis modes.
+**Evidence:** the first symbol/source/test-reference path now runs through a
+versioned, replayable investigation session and pure reducer. Repository
+orientation still produces its own report and cannot hand a selected flow or
+symbol into that session; ticket, bug, onboarding, and impact policies are not
+wired either.
 
 **Consequence:** new product modes risk becoming separate prompts and orchestration
 paths instead of policies over the same evidence loop.
 
-**Done when:** the first symbol workflow runs through the reducer and action model
-described in [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md), without changing
-its current evidence guarantees.
+**Done when:** repository orientation hands one selected flow or symbol into the
+same reducer/action model, and a saved session can resume without weakening the
+current evidence guarantees. Other playbooks may remain unimplemented.
 
 ### TD-007: Test references do not establish test support
 
