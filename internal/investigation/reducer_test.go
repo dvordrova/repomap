@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/deepseektest"
@@ -150,6 +151,77 @@ func TestReduceRepositoryChangeAndRedirectInvalidateDerivedResults(t *testing.T)
 	assertPending(t, session, ActionResolveSymbol, 4)
 	if session.Focus.Symbol != "kvServer.DeleteRange" || session.Next[0].ResolveSymbol.Query != "kvServer.DeleteRange" {
 		t.Fatalf("redirected session = %#v", session)
+	}
+}
+
+func TestReduceFactContextChangeInvalidatesFactsButPreservesGoal(t *testing.T) {
+	t.Parallel()
+
+	session := advanceToAssessing(t)
+	originalGoal := session.Goal
+	originalRevision := session.Repository.Revision
+	oldActionID := session.Next[0].ID
+
+	session = reduceFixture(t, session, Event{
+		Kind:    EventFactContextChanged,
+		Message: "gopls version changed",
+	})
+
+	assertPending(t, session, ActionResolveSymbol, 4)
+	if session.Goal != originalGoal || session.Repository.Revision != originalRevision {
+		t.Fatalf("fact-context reset changed goal or repository: %#v", session)
+	}
+	if session.Symbol != nil || session.Source != nil || session.Assessment != nil || session.SourceReport != nil || session.Tests != nil ||
+		session.Focus.EvidenceID != "" {
+		t.Fatalf("fact-context reset retained derived evidence: %#v", session)
+	}
+	if !strings.Contains(session.Next[0].Reason, "gopls version changed") {
+		t.Fatalf("reset reason = %q", session.Next[0].Reason)
+	}
+	if _, _, err := Reduce(session, Event{Kind: EventActionFailed, ActionID: oldActionID, Message: "late result"}); err == nil {
+		t.Fatal("late action from stale fact context was accepted")
+	}
+}
+
+func TestReduceClaimContextChangeKeepsFactsAndReassessesSource(t *testing.T) {
+	t.Parallel()
+
+	session := advanceToFindingTests(t)
+	originalSymbol := cloneFixture(t, *session.Symbol)
+	originalSource := cloneFixture(t, *session.Source)
+	originalAssessment := cloneFixture(t, *session.Assessment)
+
+	session = reduceFixture(t, session, Event{
+		Kind:    EventClaimContextChanged,
+		Message: "source prompt version changed",
+	})
+
+	assertPending(t, session, ActionAssessSource, 5)
+	if !reflect.DeepEqual(*session.Symbol, originalSymbol) ||
+		!reflect.DeepEqual(*session.Source, originalSource) ||
+		!reflect.DeepEqual(*session.Assessment, originalAssessment) {
+		t.Fatalf("claim-context reset discarded deterministic facts: %#v", session)
+	}
+	if session.SourceReport != nil || session.Tests != nil {
+		t.Fatalf("claim-context reset retained derived claims: %#v", session)
+	}
+	if !strings.Contains(session.Next[0].Reason, "source prompt version changed") {
+		t.Fatalf("reassessment reason = %q", session.Next[0].Reason)
+	}
+}
+
+func TestReduceContextChangesRequireReasonAndApplicableEvidence(t *testing.T) {
+	t.Parallel()
+
+	session := startFixture(t)
+	for _, event := range []Event{
+		{Kind: EventFactContextChanged},
+		{Kind: EventClaimContextChanged},
+		{Kind: EventClaimContextChanged, Message: "prompt changed"},
+	} {
+		if _, _, err := Reduce(session, event); err == nil {
+			t.Fatalf("Reduce(%s) error = nil", event.Kind)
+		}
 	}
 }
 

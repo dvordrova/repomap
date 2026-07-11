@@ -19,6 +19,8 @@ const (
 	EventSourceAssessed      EventKind = "source_assessed"
 	EventTestReferencesFound EventKind = "test_references_found"
 	EventRepositoryChanged   EventKind = "repository_changed"
+	EventFactContextChanged  EventKind = "fact_context_changed"
+	EventClaimContextChanged EventKind = "claim_context_changed"
 	EventRedirected          EventKind = "redirected"
 	EventCanceled            EventKind = "canceled"
 	EventBudgetExhausted     EventKind = "budget_exhausted"
@@ -83,6 +85,10 @@ func (e Event) validateShape() error {
 	case EventRepositoryChanged:
 		if payloads != 0 || e.ActionID != "" || strings.TrimSpace(e.Revision) == "" {
 			return fmt.Errorf("investigation: repository-changed event has invalid payload")
+		}
+	case EventFactContextChanged, EventClaimContextChanged:
+		if payloads != 0 || e.ActionID != "" || strings.TrimSpace(e.Message) == "" {
+			return fmt.Errorf("investigation: %s event has invalid payload", e.Kind)
 		}
 	case EventRedirected:
 		if e.Redirect == nil || payloads != 1 || e.ActionID != "" {
