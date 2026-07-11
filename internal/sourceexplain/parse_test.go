@@ -122,6 +122,149 @@ func TestParseReportAcceptsExplicitMultilineValidationEvidenceCleanly(t *testing
 	}
 }
 
+func TestParseReportBuildsSyntaxGroundedCheckedAndReturnedClaims(t *testing.T) {
+	t.Parallel()
+
+	structural, card := sourceShapeFixture(
+		"runCommand.runAnalysis",
+		[]string{
+			"func (c *runCommand) runAnalysis(ctx context.Context) ([]*result.Issue, error) {",
+			"\tlintersToRun, err := c.dbManager.GetOptimizedLinters()",
+			"\tif err != nil {",
+			"\t\treturn nil, err",
+			"\t}",
+			"\treturn c.runner.Run(ctx, lintersToRun)",
+			"}",
+		},
+		[]sourceShapeCall{
+			{id: "call-out-linters", callee: "GetOptimizedLinters", lineOffset: 1},
+			{id: "call-out-run", callee: "Run", lineOffset: 5},
+		},
+	)
+	bundle, err := Build(structural, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := `{
+  "assessments": [
+    {
+      "question_id": "question-call-out-linters",
+      "verdict": "shown",
+      "source_evidence_ids": ["source-91", "source-92"]
+    },
+    {
+      "question_id": "question-call-out-run",
+      "verdict": "shown",
+      "source_evidence_ids": ["source-95"]
+    }
+  ],
+  "unknowns": [
+    {"kind":"test_coverage","anchor_evidence_id":"resolution-001"},
+    {"kind":"runtime_reachability","anchor_evidence_id":"resolution-001"}
+  ],
+  "next_action_id": "action-find-tests"
+}`
+	result, err := ParseReport(bundle, []byte(response))
+	if err != nil {
+		t.Fatalf("ParseReport() error = %v", err)
+	}
+	if len(result.Warnings) != 0 || len(result.Report.Claims) != 2 {
+		t.Fatalf("result = %#v", result)
+	}
+	statements := []string{
+		result.Report.Claims[0].Statement,
+		result.Report.Claims[1].Statement,
+	}
+	for _, fragment := range []string{
+		"uses the result of calling GetOptimizedLinters in a conditional guard",
+		"directly returns value(s) from Run",
+	} {
+		if !containsFragment(statements, fragment) {
+			t.Fatalf("claims = %#v, missing %q", result.Report.Claims, fragment)
+		}
+	}
+	if evaluation := Evaluate(result); evaluation.Score != 100 {
+		t.Fatalf("evaluation = %#v", evaluation)
+	}
+}
+
+func TestParseReportRequiresBranchAndCallEvidenceForBranchClaim(t *testing.T) {
+	t.Parallel()
+
+	structural, card := sourceShapeFixture(
+		"client.processInboundMsg",
+		[]string{
+			"func (c *client) processInboundMsg(msg []byte) {",
+			"\tswitch c.kind {",
+			"\tcase CLIENT:",
+			"\t\tc.processInboundClientMsg(msg)",
+			"\t}",
+			"}",
+		},
+		[]sourceShapeCall{{id: "call-out-client", callee: "processInboundClientMsg", lineOffset: 3}},
+	)
+	bundle, err := Build(structural, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		evidence   string
+		verdict    Verdict
+		claimCount int
+		warn       bool
+	}{
+		{
+			name:       "complete branch proof",
+			evidence:   `["source-92", "source-93"]`,
+			verdict:    VerdictShown,
+			claimCount: 1,
+		},
+		{
+			name:       "call anchor only",
+			evidence:   `["source-93"]`,
+			verdict:    VerdictAmbiguous,
+			claimCount: 0,
+			warn:       true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			response := `{
+  "assessments": [{
+    "question_id": "question-call-out-client",
+    "verdict": "shown",
+    "source_evidence_ids": ` + test.evidence + `
+  }],
+  "unknowns": [
+    {"kind":"test_coverage","anchor_evidence_id":"resolution-001"},
+    {"kind":"runtime_reachability","anchor_evidence_id":"resolution-001"}
+  ],
+  "next_action_id": "action-find-tests"
+}`
+			result, err := ParseReport(bundle, []byte(response))
+			if err != nil {
+				t.Fatalf("ParseReport() error = %v", err)
+			}
+			unexpectedVerdict := result.Report.Assessments[0].Verdict != test.verdict
+			unexpectedClaimCount := len(result.Report.Claims) != test.claimCount
+			if unexpectedVerdict || unexpectedClaimCount {
+				t.Fatalf("result = %#v", result)
+			}
+			hasExpectedClaim := test.claimCount == 1 &&
+				strings.Contains(result.Report.Claims[0].Statement, "locally visible case branch")
+			if test.claimCount == 1 && !hasExpectedClaim {
+				t.Fatalf("claim = %#v", result.Report.Claims[0])
+			}
+			if hasParseWarning(result.Warnings, "assessment.shown_without_predicate_support") != test.warn {
+				t.Fatalf("warnings = %#v", result.Warnings)
+			}
+		})
+	}
+}
+
 func TestParseReportDropsValidButIrrelevantEvidence(t *testing.T) {
 	t.Parallel()
 

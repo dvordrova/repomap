@@ -188,11 +188,12 @@ document, source signal, entrypoint file, and orientation-candidate file is
 filtered to `allowed_paths` after selection. All previewed requests still use
 `deepseek-v4-flash`.
 
-Exact preflight of NATS `client.processInboundMsg` and golangci-lint
-`runCommand.runAnalysis` now reaches the selected source path but stops before
-network use because the source-question seeder produces no bounded question.
-That is the same grounded orchestration gap tracked in TD-006; a prompt must not
-hide it.
+Exact prompt-only runs for NATS `client.processInboundMsg` and golangci-lint
+`runCommand.runAnalysis` now reach the selected source path and seed bounded
+syntax-only questions without using callee names as behavior. NATS exposes four
+locally visible case-branch calls; golangci-lint exposes three immediately
+checked call results and one direct returned call. Live captures and committed
+quality tasks are still required before either repository counts toward M3.
 
 M3 remains active until equivalent small tasks for NATS Server and golangci-lint
 pass the same offline workflow. Three passing captures establish the workflow on

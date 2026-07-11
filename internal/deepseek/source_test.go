@@ -16,6 +16,9 @@ import (
 
 func TestSourcePromptContainsGroundingContract(t *testing.T) {
 	t.Parallel()
+	if SourcePromptVersionJSON != "source-assessment-json-v5" {
+		t.Fatalf("SourcePromptVersionJSON = %q", SourcePromptVersionJSON)
+	}
 
 	client := &Client{Model: "deepseek-v4-flash", MaxTokens: 1000}
 	requestJSON, err := client.SourcePromptJSON(sourceBundleJSON(t))
@@ -38,6 +41,10 @@ func TestSourcePromptContainsGroundingContract(t *testing.T) {
 		"anchor_source_evidence_id",
 		"cite both the call anchor and that result-use line",
 		"returned nil comparison using the call result",
+		"checks_call_result",
+		"returns_call_result",
+		"calls_from_branch",
+		"branch line and call anchor",
 		"lexical window",
 		"Always include both",
 		"one next_action_id",

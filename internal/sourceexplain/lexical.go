@@ -23,6 +23,13 @@ const (
 	validationReturnedNilComparison validationUse = "returned_nil_comparison"
 )
 
+type branchUse string
+
+const (
+	branchCase        branchUse = "case_branch"
+	branchConditional branchUse = "conditional_branch"
+)
+
 // supportedClaimStatement conservatively recognizes a few common Go source
 // shapes. It deliberately does not infer callee behavior from a callee name.
 func supportedClaimStatement(bundle Bundle, question Question, evidenceIDs []string) (string, bool) {
@@ -48,6 +55,48 @@ func supportedClaimStatement(bundle Bundle, question Question, evidenceIDs []str
 		return fmt.Sprintf(
 			"The source uses the result of calling %s in a conditional guard inside %s; the callee's behavior remains unverified.",
 			question.CalleeName,
+			bundle.Target.Name,
+		), true
+	case PredicateChecksCallResult:
+		proofIDs, use, proven := validationProofSourceIDs(question, bundle.Source.Lines)
+		if !proven || !containsAllStrings(evidenceIDs, proofIDs) {
+			return "", false
+		}
+		if use == validationReturnedNilComparison {
+			return fmt.Sprintf(
+				"The source compares a value assigned from calling %s with nil in a direct return inside %s; the callee's behavior remains unverified.",
+				question.CalleeName,
+				bundle.Target.Name,
+			), true
+		}
+		return fmt.Sprintf(
+			"The source uses the result of calling %s in a conditional guard inside %s; the callee's behavior remains unverified.",
+			question.CalleeName,
+			bundle.Target.Name,
+		), true
+	case PredicateReturnsCallResult:
+		proofIDs, proven := directReturnProofSourceIDs(question, bundle.Source.Lines)
+		if !proven || !containsAllStrings(evidenceIDs, proofIDs) {
+			return "", false
+		}
+		return fmt.Sprintf(
+			"The source directly returns value(s) from %s inside %s; the callee's behavior remains unverified.",
+			question.CalleeName,
+			bundle.Target.Name,
+		), true
+	case PredicateCallsFromBranch:
+		proofIDs, use, proven := branchCallProofSourceIDs(question, bundle.Source.Lines)
+		if !proven || !containsAllStrings(evidenceIDs, proofIDs) {
+			return "", false
+		}
+		branchDescription := "conditional branch"
+		if use == branchCase {
+			branchDescription = "case branch"
+		}
+		return fmt.Sprintf(
+			"The source calls %s from a locally visible %s inside %s; runtime branch selection and callee behavior remain unverified.",
+			question.CalleeName,
+			branchDescription,
 			bundle.Target.Name,
 		), true
 	case PredicateDelegatesOperation:
@@ -97,6 +146,128 @@ func supportedClaimStatement(bundle Bundle, question Question, evidenceIDs []str
 	default:
 		return "", false
 	}
+}
+
+func directReturnProofSourceIDs(question Question, lines []sourcecard.Line) ([]string, bool) {
+	anchor, tokens, callIndex, closingIndex, ok := anchoredCallTokens(question, lines)
+	if !ok {
+		return nil, false
+	}
+	start, ok := callExpressionStart(tokens, callIndex)
+	if !ok || start != 1 || tokens[0].token != token.RETURN {
+		return nil, false
+	}
+	if closingIndex+1 >= len(tokens) || tokens[closingIndex+1].token != token.SEMICOLON {
+		return nil, false
+	}
+	return []string{anchor.EvidenceID}, true
+}
+
+func branchCallProofSourceIDs(
+	question Question,
+	lines []sourcecard.Line,
+) ([]string, branchUse, bool) {
+	anchor, tokens, callIndex, closingIndex, ok := anchoredCallTokens(question, lines)
+	if !ok {
+		return nil, "", false
+	}
+	start, ok := callExpressionStart(tokens, callIndex)
+	isCompleteStatement := closingIndex+1 < len(tokens) &&
+		tokens[closingIndex+1].token == token.SEMICOLON
+	if !ok || start != 0 || !isCompleteStatement {
+		return nil, "", false
+	}
+	branch, use, ok := nearestVisibleBranch(anchor, lines)
+	if !ok || branch.Truncated {
+		return nil, "", false
+	}
+	return []string{branch.EvidenceID, anchor.EvidenceID}, use, true
+}
+
+func anchoredCallTokens(
+	question Question,
+	lines []sourcecard.Line,
+) (sourcecard.Line, []scannedToken, int, int, bool) {
+	anchor, ok := sourceLineByID(lines, question.AnchorSourceEvidenceID)
+	if !ok || anchor.Truncated || !mentionsCall(anchor.Text, question.CalleeName) {
+		return sourcecard.Line{}, nil, 0, 0, false
+	}
+	segment, _, ok := validationSourceSegment(anchor, lines)
+	if !ok {
+		return sourcecard.Line{}, nil, 0, 0, false
+	}
+	tokens, ok := scanValidationTokens(segment, anchor.Line)
+	if !ok {
+		return sourcecard.Line{}, nil, 0, 0, false
+	}
+	callIndex, closingIndex, ok := uniqueCallBounds(tokens, anchor.Line, question.CalleeName)
+	if !ok {
+		return sourcecard.Line{}, nil, 0, 0, false
+	}
+	return anchor, tokens, callIndex, closingIndex, true
+}
+
+func nearestVisibleBranch(
+	anchor sourcecard.Line,
+	lines []sourcecard.Line,
+) (sourcecard.Line, branchUse, bool) {
+	anchorIndent := leadingIndentWidth(anchor.Text)
+	if anchorIndent == 0 {
+		return sourcecard.Line{}, "", false
+	}
+	for index := len(lines) - 1; index >= 0; index-- {
+		line := lines[index]
+		if line.Line >= anchor.Line || strings.TrimSpace(line.Text) == "" {
+			continue
+		}
+		if leadingIndentWidth(line.Text) >= anchorIndent {
+			continue
+		}
+		use, ok := branchLineUse(line.Text)
+		if !ok {
+			return sourcecard.Line{}, "", false
+		}
+		return line, use, true
+	}
+	return sourcecard.Line{}, "", false
+}
+
+func branchLineUse(line string) (branchUse, bool) {
+	tokens, ok := scanValidationTokens(line+"\n", 1)
+	if !ok || len(tokens) == 0 {
+		return "", false
+	}
+	last := tokens[len(tokens)-1].token
+	if (tokens[0].token == token.CASE || tokens[0].token == token.DEFAULT) && last == token.COLON {
+		return branchCase, true
+	}
+	if last != token.LBRACE {
+		return "", false
+	}
+	if tokens[0].token == token.IF {
+		return branchConditional, true
+	}
+	for _, item := range tokens {
+		if item.token == token.ELSE {
+			return branchConditional, true
+		}
+	}
+	return "", false
+}
+
+func leadingIndentWidth(line string) int {
+	width := 0
+	for _, character := range line {
+		switch character {
+		case ' ':
+			width++
+		case '\t':
+			width += 8 - width%8
+		default:
+			return width
+		}
+	}
+	return width
 }
 
 func validationProofSourceIDs(

@@ -187,12 +187,13 @@ launch, result collection, and teardown. Within the retained window the current
 name-based question seeder emitted only `maps_error`; DeepSeek correctly marked
 it ambiguous, leaving no source-supported claim.
 
-The same boundary now blocks two otherwise linked M3 preflights before a model
-call: NATS `client.processInboundMsg` and golangci-lint
-`runCommand.runAnalysis` are present in their 60-path orientation bundles and
-resolve exactly, but neither produces a bounded source question. This confirms
-that the gap belongs to the source-selection/question cube rather than to model
-quality or orientation ranking.
+The same boundary originally blocked two otherwise linked M3 preflights before
+a model call: NATS `client.processInboundMsg` and golangci-lint
+`runCommand.runAnalysis` were present in their 60-path orientation bundles and
+resolved exactly, but neither produced a bounded source question. Syntax-only
+questions now cover the small visible shapes in those two symbols. The remaining
+debt is the large-method continuation represented by `Scheduler.Run`, not those
+two short functions.
 
 **Consequence:** blindly selecting a central long method can produce excellent
 navigation but a weak semantic step. Increasing every prompt globally would
@@ -267,6 +268,12 @@ capture can locally prove that the value assigned from `Validate` is returned in
 a nil comparison, but it still cannot prove what `Validate` does internally.
 The reconstructed claim text preserves that unknown; the predicate label alone
 does not.
+
+This is partially paid down for calls that have no recognized name hint. They
+now receive syntax-only predicates (`checks_call_result`,
+`returns_call_result`, or `calls_from_branch`) only after the bounded scanner
+proves the corresponding local shape. Historical name-seeded predicates remain
+unchanged, so the semantic-hypothesis/observation split is not yet complete.
 
 **Consequence:** a consumer that reads only `Claim.Predicate` may overstate a
 syntax-grounded call-result observation as callee behavior. Quality fixtures and

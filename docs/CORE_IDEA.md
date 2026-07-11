@@ -159,6 +159,14 @@ than being allowed to manufacture or inherit the missing proof. Related
 provenance; they are not `test_supported` until their bounded test source is
 assessed.
 
+When a callee name offers no semantic hint, the same bounded scanner can seed
+three syntax-only questions: an immediately checked call result, a direct return
+of a call, or a standalone call under a locally visible `case`/`if`/`else`
+branch. Those predicates deliberately say nothing about callee behavior. Their
+locally reconstructed claims require the complete minimal proof (for example,
+both the branch line and call anchor), and runtime branch selection remains an
+explicit unknown.
+
 ## Non-goals for now
 
 - no AST parsing yet
