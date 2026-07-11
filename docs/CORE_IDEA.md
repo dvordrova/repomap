@@ -8,6 +8,11 @@ Product and research decisions that intentionally remain unresolved are tracked
 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). In particular, DeepSeek is the current
 model integration, not a settled requirement for every installation.
 
+The proposed shared investigation workflow is documented in
+[INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md). Demonstrated implementation
+gaps and experiment follow-ups are tracked in
+[TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+
 ## Pipeline
 
 ### 1. Deterministic local extraction
