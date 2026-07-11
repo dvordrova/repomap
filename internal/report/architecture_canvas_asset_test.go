@@ -70,6 +70,15 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "landscape without proof stays explicit",
+			asset: js,
+			tokens: []string{
+				`const hasFlows = this.flows.length > 0`,
+				`"No compatible saved FlowProof is available for this run.`,
+				`The landscape remains useful, but no runtime sequence is implied.`,
+			},
+		},
+		{
 			name:  "same component transitions bypass ELK self loops",
 			asset: js,
 			tokens: []string{

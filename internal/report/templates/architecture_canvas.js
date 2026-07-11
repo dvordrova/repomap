@@ -1074,9 +1074,22 @@ function branchClass(kind) {
   }
 
   inspectLandscape() {
-   this.inspectorHeading("Architecture", "How to read this map", "Select a component or choose one saved flow.");
+   const hasFlows = this.flows.length > 0;
+   this.inspectorHeading(
+    "Architecture",
+    "How to read this map",
+    hasFlows ? "Select a component or choose one saved flow." : "Select a component to inspect its exact local members."
+   );
    const note = this.inspectorSection("Evidence semantics");
    note.appendChild(element("p", "rm-arch__copy", "Subsystem and component names are conceptual orientation. Quiet lines are witnessed structural relations, not runtime execution."));
+   if (!hasFlows) {
+    const flowState = this.inspectorSection("Flow overlays");
+    flowState.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning",
+     "No compatible saved FlowProof is available for this run. The landscape remains useful, but no runtime sequence is implied."
+    ));
+   }
    if (this.data.fallback) {
     const fallback = this.inspectorSection("Fallback state");
     fallback.appendChild(element("p", "rm-arch__notice is-warning", text(this.data.fallback_reason) || "The provider-independent landscape fallback was used."));
