@@ -57,6 +57,7 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/source_check.sh    # replay fixed DeepSeek source response, no network
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
 ./scripts/investigation_check.sh # replay M2 reducer path (local or DeepSeek)
+./scripts/quality_check.sh   # replay committed quality task, no network/API key
 ./scripts/debug_last_run.sh  # inspect last debug run
 ./scripts/clean.sh           # remove tmp/.repomap-runs/.bin
 ```
@@ -70,3 +71,5 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 - Debug dumps must never contain Authorization headers
 - Invalid DeepSeek JSON must return a clear error
 - Non-2xx DeepSeek responses must include status and response body in the error
+- Committed quality tasks must replay without an API key or network call
+- Quality artifacts must be manifest-relative, bounded, and verified by SHA-256

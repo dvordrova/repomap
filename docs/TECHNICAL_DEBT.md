@@ -135,6 +135,16 @@ parser, or evaluator version identifiers.
 reducer, evaluator, model, Ollama, options, and bundle-hash metadata. The older
 monolithic path still lacks equivalent versioning.
 
+The M3 quality task/result pair now records provider, model, prompt version,
+capture precision, model-context bytes/hash, nullable provider-request
+bytes/hash, artifact hashes, repository revision/scenario, and evaluator
+version. Applying it to the historical etcd orientation capture exposed
+genuinely missing model, prompt-version, request, and latency metadata; the
+fixture records those values as `unknown`/`null` instead of inventing them. It
+also keeps the 3,536-byte source replay DTO distinct from the 3,001-byte model
+context and 6,601-byte provider request. This closes the quality-suite path but
+not the older experiment paths described above.
+
 **Done when:** experiment metadata identifies provider plus stable prompt, schema,
 parser, and evaluator versions, so results remain comparable after any of those
 contracts change. Artifacts must continue to exclude credentials and

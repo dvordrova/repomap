@@ -113,6 +113,20 @@ forbidden overclaims, and size/latency observations. Saved model responses are
 evaluated without another API call; live DeepSeek runs refresh baselines but are
 not required by `./scripts/check.sh`.
 
+The first etcd task is now replayable offline. It combines the saved orientation
+response, the `kvServer.Put` source assessment, and sanitized gopls test-reference
+evidence behind exact artifact hashes. The evaluator reports five independent
+direction checks, 21 grounded structured paths, four source predicates, two
+useful test paths, contract adherence, bytes, and unknown legacy latencies. It
+does not turn these dimensions into a single semantic score, and it leaves 17
+free-form evidence strings explicitly unscored. The historical normalized
+orientation report is valid for semantic replay but cannot prove adherence to
+the original model-output contract, so that check remains `not measured`.
+
+M3 remains active until equivalent small tasks for k6, Prometheus, NATS Server,
+and golangci-lint pass the same offline workflow. One passing etcd capture proves
+the replay machinery, not cross-repository product quality.
+
 ## M4 — Fresh local memory
 
 Persist repository facts, derived claims, and investigation sessions separately.
