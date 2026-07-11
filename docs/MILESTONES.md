@@ -22,8 +22,8 @@ same typed capabilities without changing their inputs or outputs.
 | Milestone | Status | User-visible outcome |
 | --- | --- | --- |
 | M1. Source-grounded symbol | **complete** | one selected symbol is explained from exact source evidence and connected to relevant tests |
-| M2. Investigation loop | **active** | repository, flow, symbol, source, tests, claims, unknowns, and next actions use one resumable state machine |
-| M3. Quality suite | planned | the same golden tasks expose orientation and drill-down regressions on five large Go repositories |
+| M2. Investigation loop | **complete** | repository, flow, symbol, source, tests, claims, unknowns, and next actions use one resumable state machine |
+| M3. Quality suite | **active** | the same golden tasks expose orientation and drill-down regressions on five large Go repositories |
 | M4. Fresh local memory | planned | saved facts, claims, and sessions survive restart and invalidate safely when the repository changes |
 | M5. Browser journey | planned | `./repomap` opens a progressive map, shows analysis/API progress, and opens evidence in the editor |
 | M6. Ticket playbook | planned | a real ticket produces a bounded change surface, risks, tests, unknowns, and a useful first edit location |
@@ -87,10 +87,18 @@ data-only state/events/actions. It composes the existing symbol, source-card,
 source-assessment, and test-reference cubes; it does not rewrite them or add a
 generic plugin registry.
 
-Current progress: that exact path reaches `waiting_user` through the pure
-reducer and explicit runner, and lifecycle/stale-result transitions are tested.
-M2 remains active until orientation can hand a chosen focus into the same
-session and the user-choice boundary is wired rather than only represented.
+Completed on 2026-07-10. An orientation report can hand a selected candidate
+flow plus a user-confirmed exact symbol into the same session without promoting
+entrypoint prose to a symbol fact. The session pins the exact report hash,
+canonical repository root, and accepted revision. Passive resume, explicit
+continue, finish, same-revision symbol redirect, and repository-change
+invalidation are wired at the CLI boundary; the reducer remains pure and owns no
+collector, context, filesystem, model client, or presentation call.
+
+Replay coverage includes unit fixtures for every handoff/resume choice and a
+local etcd run through `./scripts/investigation_handoff_check.sh`. Selecting and
+reading a bounded test body remains M3/M7 work; M2 only promises that the shared
+loop reaches an explicit user choice without silently expanding it.
 
 ## M3 — Quality suite
 
@@ -98,6 +106,12 @@ Maintain small golden tasks for etcd, Grafana k6, Prometheus, NATS Server, and
 golangci-lint. Measure useful direction selection, grounded citations, omitted
 important evidence, context size, latency, and semantic usefulness separately
 from JSON/contract adherence.
+
+Start with a versioned task manifest and replay evaluator. Each task must name a
+user goal, repository revision/scenario, expected useful directions or symbols,
+forbidden overclaims, and size/latency observations. Saved model responses are
+evaluated without another API call; live DeepSeek runs refresh baselines but are
+not required by `./scripts/check.sh`.
 
 ## M4 — Fresh local memory
 

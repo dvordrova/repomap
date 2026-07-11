@@ -18,12 +18,14 @@ alternate implementations of the same typed capability contracts.
 
 If the user starts with “what do we do next?”, recommend this order:
 
-1. implement the M2 investigation state/event/action types and a pure reducer;
-2. replay the completed `kvServer.Put` symbol -> source -> claims -> test
-   references path through reducer-requested capability actions;
-3. persist and resume that state only after the reducer transitions are stable;
-4. then let repository orientation hand one chosen flow/symbol into the same
-   reducer. Dumb-model implementations remain deferred.
+1. define the smallest M3 golden-task manifest and replay result format;
+2. calibrate one orientation and one symbol drill-down task on etcd without
+   making a new live API call part of normal tests;
+3. add equivalent small tasks for k6, Prometheus, NATS Server, and
+   golangci-lint, keeping repository availability optional;
+4. compare direction usefulness, grounding, omissions, request size, and
+   latency separately from JSON/contract adherence. Dumb-model implementations
+   remain deferred.
 
 Read these first:
 
@@ -54,6 +56,10 @@ Read these first:
   path reaches `assessing_source` locally and `waiting_user` with DeepSeek,
   while stale action IDs, revision changes, redirects, cancellation, and failure
   are table-tested;
+- bounded orientation handoff that pins the selected candidate flow and exact
+  report hash while requiring a user-confirmed symbol; saved sessions use a
+  canonical repository root and can be passively inspected, explicitly
+  continued, finished, redirected, or invalidated after a revision change;
 - versioned local symbol evidence index with defensive put/query,
   deterministic persistence/reload, and path-based invalidation;
 - JSON and tagged symbol prompts, tolerant normalization, evaluator, fixtures,
@@ -156,6 +162,7 @@ high-value frontier branch when evidence is insufficient.
 ./scripts/source_artifacts_check.sh ../etcd kvServer.Put
 ./scripts/source_check.sh
 ./scripts/investigation_check.sh ../etcd kvServer.Put
+./scripts/investigation_handoff_check.sh ../etcd kvServer.Put
 ```
 
 ## Workspace caution

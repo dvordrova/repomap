@@ -28,7 +28,7 @@ source`, or `find tests`, never after DeepSeek, Ollama, gopls, or a future UI.
 | read target source | resolved target | bounded line-addressable source card | local Go source collector |
 | assess source | source assessment bundle | normalized claims, unknowns, action | `sourceexplain.Service` with DeepSeek assessor |
 | find related tests | source report and structural facts | bounded test-reference evidence | gopls reference adapter plus local reducer |
-| present investigation | saved validated state | CLI/browser/editor view | current reports; shared presentation API planned |
+| present investigation | saved validated state | CLI/browser/editor view | playground prints pending action/choices; browser/editor adapters planned |
 
 The application composition root selects implementations. The default profile
 uses DeepSeek for interpretation capabilities. A future
@@ -61,6 +61,7 @@ branching inside domain packages.
 | Staged weak-model planning | Qwen 1.5B can reliably select prioritized evidence, a cautious role, and an executable next action when prose is rendered locally | `local-symbol-v2` staged experiment and verifier |
 | Local persistence slice | one symbol neighborhood can be stored, reloaded, replaced, and invalidated by referenced file | `internal/index` |
 | Source-grounded symbol slice | one exact symbol can be read through a bounded lexical card, conservatively assessed by DeepSeek, and connected to provenance-preserving test references | `sourcecard`, `sourceexplain`, `testevidence`, source replay scripts |
+| Shared investigation loop | an orientation-selected candidate flow and exact symbol can traverse the same pure reducer, stop at a user choice, and resume safely | `investigation`, orientation handoff, investigation playground/scripts |
 
 These milestones are capabilities, not a claim that they already form one
 cohesive product workflow.
@@ -72,8 +73,8 @@ not separate products.
 
 | User goal | First focus | Desired result | State |
 | --- | --- | --- | --- |
-| Explore a repository | repository | navigable components, entrypoints, and flows | orientation works; progressive exploration planned |
-| Understand a symbol | exact symbol | evidence-backed responsibility, files, tests, unknowns | isolated vertical slice works |
+| Explore a repository | repository | navigable components, entrypoints, and flows | orientation plus one explicit flow-to-symbol handoff works |
+| Understand a symbol | exact symbol | evidence-backed responsibility, files, tests, unknowns | resumable CLI vertical slice works |
 | Work on a ticket | issue text | change surface, analogs, risks, test plan | planned playbook |
 | Diagnose a bug | symptom/test/log | reproduction or discriminating next experiment | planned playbook |
 | Onboard | repository + standard questions | evidence-backed learning path | planned playbook |
@@ -110,9 +111,15 @@ flowchart LR
         SymbolService -.-> Model
     end
 
-    subgraph Next["Target shared investigation pipeline"]
+    subgraph Shared["Current shared investigation slice"]
+        Handoff["bounded flow handoff"] --> Investigation["pure investigation reducer"]
+        Investigation --> Session["saved validated session"]
+        Session --> Playground["CLI progress + choices"]
+    end
+
+    subgraph Next["Later evidence memory"]
         FactIndex["fact index"] --> Context["adaptive context assembly"]
-        Context --> Investigation["investigation reducer + policy"]
+        Context --> Investigation
         Investigation --> ClaimIndex["claim ledger"]
         Investigation --> SessionIndex["session memory"]
         Investigation --> Views["browser / CLI / MCP / editor"]
@@ -120,16 +127,18 @@ flowchart LR
 
     User --> CLI
     User --> SymbolCLI
+    Flow --> Handoff
+    SymbolBundle --> Investigation
     Snapshot -. "not wired" .-> FactIndex
     Index -. "first stored slice" .-> FactIndex
-    Normalize -. "future events" .-> Investigation
+    Normalize -. "future claim events" .-> Investigation
 ```
 
-There are currently two real pipelines. The orientation path is user-facing but
-provider-bound. The symbol path has stronger evidence contracts and better
-experimentation tools but remains isolated. The next architectural milestone is
-to connect them through local facts and bounded context selection, not to add a
-third orchestration path.
+The user-facing orientation command is still provider-bound, but its saved JSON
+can now cross a deliberately small handoff into the stronger symbol evidence
+path. That integration currently lives in `investigation-playground`, not the
+main CLI or browser. M3 measures this connected slice before broader context
+selection, playbooks, or another orchestration surface are added.
 
 ## Modules that exist
 
@@ -142,6 +151,7 @@ third orchestration path.
 | `cmd/gopls-playground` | isolated | direct analyzer experiments and human graph summaries | product orchestration |
 | `cmd/symbol-playground` | isolated | exact-symbol experiment and optional DeepSeek call | provider neutrality or persistence |
 | `cmd/symbol-evaluate` | isolated | replaying and scoring a saved model response | making network calls |
+| `cmd/investigation-playground` | isolated | start/handoff/resume wiring, capability execution, saved artifacts | reducer rules or provider registry |
 
 `internal/orient` imports the concrete DeepSeek client. This is a known temporary
 boundary: replacing the provider currently requires touching orchestration.
@@ -237,8 +247,8 @@ This table separates real modularity from intended modularity.
 | Response syntax | tolerant JSON/tagged parser | mostly | provider capability negotiation is absent |
 | Persistence | concrete in-memory + versioned JSON `index` | implementation can be challenged alone | stored record is coupled to `symbol.Bundle` |
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone | no shared goal-aware budget/selection trace |
-| Workflow | concrete `orient.Run` | no | explore, symbol, and future ticket/bug have no shared reducer |
-| Presentation | saved artifacts consumed by `report` | partly | no stable investigation-state read/action API yet |
+| Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
+| Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
 
 The next work should improve one red cell at a time and preserve a runnable
 fixture at the boundary. A dynamic plug-in registry would not make these seams
@@ -250,9 +260,8 @@ more modular by itself.
 | --- | --- | --- | --- |
 | repository freshness | derive repo identity, HEAD, dirty hashes, Go/gopls/build context | reject or selectively invalidate one stale index record | ranking or interpretation |
 | context assembly | select a goal-relevant evidence slice under node/edge/source/token budgets | beat fixed symbol bundle on size without losing cited evidence | model calls or session transitions |
-| investigation | pure reducer for goal/focus/questions/evidence/claims/actions | run current symbol flow through table-tested state transitions | collector implementation details |
 | claim ledger | separate facts from inferred/source/test/runtime-supported claims | invalidate one claim when supporting evidence changes | raw model response storage |
-| session memory | persist user path, frontier, unknowns, accepted/rejected claims | resume one symbol investigation at the same focus | repository fact duplication |
+| session catalog | discover and retain multiple investigation sessions | reopen one named session without passing its JSON path | repository fact duplication |
 | provider-neutral model adapter | endpoint/model/auth/timeout/output capability | run one fixture through DeepSeek and Ollama with the same consumer contract | prompt-specific domain state |
 | presentation API | read progress/state and request allowed actions | open one recommended file from a symbol result | analyzer/LSP protocol |
 
@@ -393,7 +402,7 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C10 — Investigation reducer
 
-- State: active M2 slice.
+- State: M2 slice complete; quality calibration is active in M3.
 - Question: can explore/symbol/ticket/bug reuse one state transition model?
 - Current experiment: pure table tests plus `cmd/investigation-playground` run
   `goal -> resolve symbol -> read source -> assess source -> find tests -> wait`
@@ -401,11 +410,18 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   analyzer, model client, or presentation call.
 - Run locally: `./scripts/investigation_check.sh ../etcd kvServer.Put`.
 - Run the DeepSeek branch: `./scripts/investigation_check.sh ../etcd kvServer.Put tmp/investigation-check deepseek`.
+- Run orientation handoff plus passive resume:
+  `./scripts/investigation_handoff_check.sh ../etcd kvServer.Put`.
+- `--resume SESSION` only validates, checks freshness, writes, and presents the
+  pending action. Capability execution requires `--continue`; a pending
+  `assess_source` additionally requires `--deepseek`. Waiting sessions accept
+  either `--finish` or an exact new `--symbol` redirect.
 - Pass signal: collectors and model clients appear only as requested actions or
   delivered events, not inside the reducer.
-- Still required to finish M2: hand one orientation-selected flow/symbol into
-  this session and define the presentation response for `read_callee` or
-  `inspect_test_references` instead of silently expanding it.
+- Current boundary: orientation flow identity is candidate provenance, never an
+  inferred symbol; the user supplies the exact symbol. `read_callee` becomes an
+  explicit same-revision symbol redirect, while bounded test-body inspection is
+  deferred and remains visibly unexecuted.
 - Challenge independently: feed contradiction, stale action completion,
   cancellation, budget exhaustion, repository change, and user redirection.
 
@@ -425,7 +441,7 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C12 — Presentation boundary
 
-- State: planned.
+- State: isolated CLI proof; browser/editor surfaces planned.
 - Question: can the browser, CLI, MCP, and editor open the same investigation
   state without owning analysis logic?
 - First experiment: render a saved session and request “open this file” as an
