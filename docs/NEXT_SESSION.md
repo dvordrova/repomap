@@ -12,12 +12,13 @@ weak/local model, browser UI, or external coding agent.
 
 If the user starts with “what do we do next?”, recommend this order:
 
-1. connect the existing symbol collector to `internal/index` and choose a stable
-   repository revision/freshness key;
-2. add goal-personalized graph ranking and pack selected evidence into a roughly
-   1K-token budget;
-3. rerun the compact context against Qwen 3B;
-4. then connect the index to the investigation reducer and source evidence.
+1. execute the staged protocol's `read_target` action into a bounded,
+   line-addressable source evidence card;
+2. connect symbol collection and staged context selection to `internal/index`,
+   including a stable repository revision/freshness key;
+3. split contract scoring from high-precision usefulness diagnostics for the
+   remaining prose-based model path;
+4. then run the same source-evidence protocol against Qwen 1.5B and 3B.
 
 Read these first:
 
@@ -42,6 +43,9 @@ Read these first:
   and replayable HTTP integration tests;
 - prompt experiment scripts and etcd `kvServer.Put` calibration artifacts under
   ignored `tmp/` directories.
+- replayable `local-symbol-v2` Ollama protocol with deterministic name signals,
+  dynamic schemas, constrained role/action decisions, and offline artifact
+  verification.
 
 ## Recent local-provider experiment
 
@@ -78,9 +82,19 @@ iterate with, but hallucinated `exampleKey`/`exampleValue` and attached valid ye
 irrelevant evidence IDs. This exposed another evaluator blind spot rather than
 establishing acceptable semantic quality.
 
-Do not conclude that local inference is generally unsuitable. The next fair test
-requires adaptive evidence selection from a local index, a compact prompt, a
-bounded schema, and separate contract versus semantic-usefulness evaluation.
+The follow-up `local-symbol-v2` protocol removed model prose entirely. It
+preclassifies high-confidence name signals locally, ranks deterministic evidence
+above ambiguous model hints, constrains role choices by available capabilities,
+and asks the model to choose an executable action. Three consecutive
+`kvServer.Put` runs were identical at 3.98–4.08 seconds with two model calls,
+380 input tokens, 63 output tokens, 9/9 protocol checks, and a locally rendered
+100/100 contract report. Additional `kvServer.DeleteRange` and `WAL.Save` runs
+also passed all protocol checks. The next action was correctly `read_target`; source
+truth is therefore the next stage, not a solved problem.
+
+Do not conclude that local inference is generally solved. The staged result proves
+that 1.5B is useful for constrained selection and planning; behavioral claims
+still require the selected source/test/runtime evidence.
 
 ## Relevant prior art
 

@@ -64,6 +64,25 @@ semantically irrelevant call edges for its claims. The model is fast enough for
 iteration on this machine; the result is not yet trustworthy repository
 understanding.
 
+`local-symbol-v2` then replaced the monolithic prose request with deterministic
+name preclassification plus two constrained model decisions: choose a role over
+prioritized evidence, then choose an executable next action. Qwen 1.5B has no
+free-text output fields in this protocol. Three consecutive `kvServer.Put` runs
+were identical:
+
+| Target | Model calls | Input/output tokens | Time | Protocol checks |
+| --- | ---: | ---: | ---: | ---: |
+| `kvServer.Put` | 2 | 380 / 63 | 3.98–4.08 s | 9/9 |
+| `kvServer.DeleteRange` | 2 | 387 / 63 | 5.83 s | 9/9 |
+| `WAL.Save` | 3 | 579 / 118 | 8.12 s | 8/8 |
+
+All runs had zero parser warnings and the locally rendered report scored 100/100
+on the existing contract evaluator. Put/DeleteRange selected validation, error
+translation, and delegation evidence; WAL selected `sync`, `saveEntry`, and
+`saveState`. Each result conservatively chose `read_target` because source
+behavior was still absent. These scores validate the staged protocol and reducer,
+not semantic truth about the source.
+
 The same Qwen 0.5B model succeeds on genuinely small requests:
 
 | Smoke test | Context | Time | Outcome |
@@ -78,10 +97,9 @@ for provider/contract validation, not proof of useful repository understanding.
 The machine is an x86 Intel Mac. Ollama correctly uses CPU-only inference on
 this platform; the Radeon Pro 560X is not used by the macOS Ollama runtime.
 
-**Done when:** a local profile selects a bounded subset of evidence, targets
-roughly 500–1,500 input tokens, uses runtime JSON Schema where supported, limits
-output to a shape that completes within budget, and is measured again with Qwen
-0.5B and 3B. The full remote bundle remains available.
+**Done when:** the staged profile is fed by indexed context rather than a saved
+bundle, executes its chosen `read_target` action into bounded source evidence,
+and is measured against Qwen 3B. The full remote bundle remains available.
 
 ### TD-004: Prompt evaluator overestimates semantically useless responses
 
@@ -94,6 +112,10 @@ that cited them.
 
 **Consequence:** prompt experiments can appear successful while producing little
 useful repository understanding.
+
+The staged protocol avoids this failure mode by eliminating model prose and
+scoring constrained decisions separately. It does not repair the generic prose
+evaluator, which is still used by DeepSeek and monolithic experiments.
 
 **Done when:** fixtures cover prompt/template echo, invalid test evidence, empty or
 vacuous unknowns, malformed next queries, and claims that merely restate symbol
@@ -108,6 +130,10 @@ without another model call, and `scripts/ollama_symbol_experiment.sh` records th
 native Ollama request, envelope, raw response, timing, normalized report, parser
 warnings, and evaluation. The artifacts do not yet record stable prompt, schema,
 parser, or evaluator version identifiers.
+
+`ollama_symbol_staged_experiment.sh` does record protocol, prompt, schema,
+reducer, evaluator, model, Ollama, options, and bundle-hash metadata. The older
+monolithic path still lacks equivalent versioning.
 
 **Done when:** experiment metadata identifies provider plus stable prompt, schema,
 parser, and evaluator versions, so results remain comparable after any of those

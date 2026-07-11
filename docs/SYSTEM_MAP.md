@@ -30,6 +30,7 @@ questions remain in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), demonstrated debt in
 | Exact-symbol slice | one target can be resolved and expanded to bounded direct callers/callees while the raw graph stays local | `symbol.Bundle`, symbol playground |
 | Weak-model contract | malformed JSON/tagged output can be normalized, warned, locally grounded, and replay-scored | symbol parser/evaluator/fixtures |
 | Provider experiments | DeepSeek produces useful symbol orientation; tiny Ollama models prove local structured execution but not comparable semantic quality | prompt/Ollama experiment scripts and ignored artifacts |
+| Staged weak-model planning | Qwen 1.5B can reliably select prioritized evidence, a cautious role, and an executable next action when prose is rendered locally | `local-symbol-v2` staged experiment and verifier |
 | Local persistence slice | one symbol neighborhood can be stored, reloaded, replaced, and invalidated by referenced file | `internal/index` |
 
 These milestones are capabilities, not a claim that they already form one
@@ -318,6 +319,10 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   same evidence?
 - DeepSeek run: `./scripts/symbol_prompt_experiment.sh LABEL ../etcd kvServer.Put json`.
 - Ollama run: `./scripts/ollama_symbol_experiment.sh MODEL BUNDLE OUTPUT_DIR`.
+- Staged 1.5B run:
+  `./scripts/ollama_symbol_staged_experiment.sh MODEL BUNDLE OUTPUT_DIR`.
+- Verify a saved staged run without another model call:
+  `./scripts/ollama_staged_check.sh OUTPUT_DIR`.
 - Compare two DeepSeek prompt experiments with
   `./scripts/symbol_prompt_compare.sh LEFT_DIR RIGHT_DIR`.
 - Cross-provider comparison currently uses each directory's
@@ -342,15 +347,19 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C9 — Adaptive context assembly
 
-- State: planned.
+- State: isolated prototype for name-level symbol evidence; index integration and
+  source evidence remain planned.
 - Question: can goal-aware selection produce a smaller and more useful request
   than fixed depth/limits?
-- First experiment: consume saved index records, emit only a selected bundle and
-  a machine-readable selection trace; do not call a model.
+- Current experiment: deterministic name preclassification, provenance-aware
+  ranking, dynamic role/action schemas, and a machine-readable selection trace.
+- Next experiment: consume saved index records and execute `read_target` into a
+  bounded source evidence card.
 - Compare: bytes/tokens, retained evidence for the goal, omitted frontier, and
   result quality under the same saved model response workflow.
-- Pass signal: roughly 500–1,500 input tokens on `kvServer.Put`, with every claim
-  still able to cite retained evidence.
+- Pass signal: name-level planning stays below roughly 800 total input tokens
+  with no model prose; the later source stage may use 500–1,500 tokens while
+  keeping every claim linked to retained evidence.
 
 ### C10 — Investigation reducer
 
