@@ -5,6 +5,13 @@ symbol, ticket, bug, onboarding, and impact analysis differ in their starting
 focus, ranking policy, allowed actions, and stopping condition; they should not
 be implemented as unrelated prompt pipelines.
 
+M2 now implements the first shared slice in `internal/investigation`. It stores
+the exact validated symbol/source/assessment/test cube outputs, requests effects
+as typed actions, and accepts results as typed events. `internal/orient` can
+hand over one candidate flow by ID and report hash, but the user must still
+provide the exact symbol. The generic ledgers and playbook policy described
+below remain the direction for later milestones, not types that already exist.
+
 ## State loop
 
 ```text
@@ -23,7 +30,7 @@ Repository changes, budget exhaustion, cancellation, contradiction, and user
 redirection are explicit events. A completed investigation retains its evidence,
 claims, unknowns, and chosen path so later exploration does not start over.
 
-## Core session data
+## Conceptual session data
 
 ```go
 type Session struct {
@@ -40,8 +47,11 @@ type Session struct {
 }
 ```
 
-These are domain records, not LLM response shapes. Every claim references stored
-evidence; every action explains which question or uncertainty it should reduce.
+These are conceptual domain records, not the current Go struct and not an LLM
+response shape. The implemented first slice deliberately keeps concrete
+validated cube outputs until a second playbook proves which generic claim and
+question fields are actually shared. Every future claim must still reference
+stored evidence; every action explains which uncertainty it should reduce.
 
 ## Local index and repository memory
 
@@ -190,15 +200,14 @@ stop criteria. It does not own a separate evidence model.
 
 ## Minimal Go architecture
 
-Start with one small `internal/investigation` package:
+The current `internal/investigation` package is intentionally small:
 
 ```text
 session.go   domain records
 event.go     facts delivered to the state machine
 action.go    requested side effects
 reducer.go   pure state transitions
-policy.go    ranking, budget, and stop conditions
-claim.go     support assessment
+runner.go    explicit capability execution boundary
 ```
 
 The central operation should be a pure, table-testable reducer:
@@ -207,8 +216,8 @@ The central operation should be a pure, table-testable reducer:
 func Reduce(session Session, event Event) (Session, []Action, error)
 ```
 
-Action runners consume small interfaces defined by the investigation package.
-Existing concrete packages remain adapters:
+The concrete runner composes the already narrow analyzer, assessment, and
+reference-finder seams. Existing concrete packages remain adapters:
 
 ```text
 snapshot/gofacts/sourcesignals -> repository indexing
@@ -221,21 +230,21 @@ orient                        -> current workflow to migrate incrementally
 ```
 
 Do not introduce a DI framework, collector registry, or interface per package
-before the first current symbol flow is running through this model.
+unless a second real implementation forces one.
 
-## First vertical slice
+## Completed first vertical slice
 
 ```text
 goal: understand kvServer.Put
   -> resolve symbol
   -> collect depth-one graph
-  -> synthesize initial claims
-  -> detect unsupported “validates request” claim
   -> request bounded source evidence
-  -> reassess claim
-  -> rank server.Put and relevant tests as next actions
+  -> assess predicate-specific source claims and explicit unknowns
+  -> find provenance-preserving test references
   -> stop or wait for user
 ```
 
-This slice should preserve current bundle limits and validators. Ticket and bug
-playbooks come after the loop is proven with the existing symbol workflow.
+This path is replayed for `kvServer.Put`. Orientation handoff, canonical
+repository identity, passive resume, explicit continuation, finish, redirect,
+and revision invalidation are covered without embedding I/O in the reducer.
+Ticket and bug playbooks come only after M3 measures the existing workflow.

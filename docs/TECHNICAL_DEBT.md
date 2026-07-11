@@ -140,21 +140,6 @@ parser, and evaluator versions, so results remain comparable after any of those
 contracts change. Artifacts must continue to exclude credentials and
 authorization headers.
 
-### TD-006: Investigation orchestration is still scenario-specific
-
-**Evidence:** the first symbol/source/test-reference path now runs through a
-versioned, replayable investigation session and pure reducer. Repository
-orientation still produces its own report and cannot hand a selected flow or
-symbol into that session; ticket, bug, onboarding, and impact policies are not
-wired either.
-
-**Consequence:** new product modes risk becoming separate prompts and orchestration
-paths instead of policies over the same evidence loop.
-
-**Done when:** repository orientation hands one selected flow or symbol into the
-same reducer/action model, and a saved session can resume without weakening the
-current evidence guarantees. Other playbooks may remain unimplemented.
-
 ### TD-007: Test references do not establish test support
 
 **Evidence:** the M1 `find_tests` capability produces bounded gopls locations
@@ -175,6 +160,11 @@ unknown. This must remain lazy rather than parsing every test eagerly.
 invalidate every neighborhood that references a changed path. Its repository and
 revision metadata are currently supplied by the caller, and no production path
 yet records dirty-file content, Go/gopls versions, or build context.
+
+The investigation playground now stores a canonical repository root and a
+coarse `HEAD`/`HEAD-dirty` freshness marker. That is sufficient to make a clean
+commit change explicit during M2 resume, but two different dirty working-tree
+contents still share the same marker and therefore do not resolve this debt.
 
 **Consequence:** the storage mechanism is usable and testable, but treating a
 loaded snapshot as fresh without an explicit caller policy could serve stale
