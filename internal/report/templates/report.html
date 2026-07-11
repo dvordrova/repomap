@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>repomap — {{.Title}}</title>
   <style>{{.CSS}}</style>
+{{if .HasArchitectureCanvas}}  <style id="rm-architecture-canvas-css">{{.ArchitectureCanvasCSS}}</style>
+{{end}}
 </head>
 <body>
   <header>
@@ -19,6 +21,9 @@
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
   <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>
+{{if .HasArchitectureCanvas}}  <script id="rm-elkjs">{{.ELKJS}}</script>
+  <script id="rm-architecture-canvas-js">{{.ArchitectureCanvasJS}}</script>
+{{end}}
   <script>{{.JS}}</script>
 </body>
 </html>
