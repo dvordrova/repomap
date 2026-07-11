@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Build
+repomap
+*.exe
+.bin/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+
+# Repomap artifacts
+tmp/
+.repomap-runs/

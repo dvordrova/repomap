@@ -2,54 +2,79 @@
 
 `repomap` is a tiny local-first repository orientation CLI for large unfamiliar codebases.
 
-It creates a compact local snapshot of a git repository, then (optionally) asks DeepSeek for a structured orientation report with likely entrypoints, first files to inspect, and candidate flows.
+Point it at any local git repo and get:
 
-This is step 1 only: orientation before deeper flow analysis.
+- A project-level orientation (what is this repo?)
+- Candidate runtime/event flows (gRPC Put, raft write path, watch stream, lease lifecycle)
+- Step-by-step flow walkthroughs with files to read in order, tests to consult, and unknowns flagged
 
-## What it does
+```bash
+repomap ../etcd
+```
 
-- Works on a **local** git repository only
-- Uses `git -C <repo> ls-files` for repository inventory
-- Builds a snapshot including:
-  - repo name
-  - truncated README
-  - small file tree
-  - top-level directory stats
-  - language hints
-  - interesting files
-  - Go hints (`go.mod`, module name, `cmd/**` entrypoints, important Go filenames)
-- Skips secret/binary/noisy paths (`.env`, keys/certs, `.git`, `.github`, `vendor`, `node_modules`, `dist`, `build`, `coverage`, images, archives, binaries)
+That's the whole MVP.
 
-## Build
+## Quick start
 
 ```bash
 go build ./cmd/repomap
+
+# Online (needs DeepSeek API key)
+export DEEPSEEK_API_KEY=sk-...
+repomap ../etcd
+
+# Offline (no API key — local facts and flow bundles only)
+repomap ../etcd --offline
+
+# JSON output for scripts
+repomap ../etcd --json | jq '.explained_flows[0].flow_report.summary'
+
+# Limit explained flows
+repomap ../etcd --flows 2
 ```
 
-## Usage
+Output goes to stdout (human-readable) or `--json` (machine). Debug artifacts land in `.repomap-runs/`.
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--json` | false | Print combined JSON report instead of text |
+| `--offline` | false | Skip DeepSeek calls, build local bundles only |
+| `--flows N` | 4 | Number of candidate flows to explain |
+| `--no-debug` | false | Disable writing debug artifacts |
+| `--debug-dir <dir>` | `.repomap-runs` | Directory for debug artifacts |
+| `--dump-llm` | false | Dump LLM request/response to debug dir |
+
+## How it works
+
+1. **Local facts** — `git ls-files`, README, Go packages/edges/entrypoints from `go list`
+2. **Compact LLM bundle** — bounded subset sent to DeepSeek (not the full repo)
+3. **Orientation** — DeepSeek returns `candidate_flows`, `high_level_map`, `first_files_to_open`
+4. **Flow explanation** — each candidate flow gets a focused bundle and a step-by-step walkthrough
+5. **Validation** — all file paths in the output are checked against real git tracked files
+
+## Development
 
 ```bash
-repomap orient --repo /path/to/local/git/repo
+make check                    # go test + go vet
+make smoke                   # smoke test (no network, no API key)
+make run ETCD_REPO=../etcd   # full pipeline
+make run-offline ETCD_REPO=../etcd  # offline mode
+make run-json ETCD_REPO=../etcd     # JSON output
 ```
 
-Flags:
+## Project docs
 
-- `--snapshot-only` print local snapshot JSON only (no API call)
-- `--out <file>` write output JSON to a file
-- `--max-readme-bytes` (default `20000`)
-- `--max-tree-lines` (default `400`)
-- `--max-interesting-files` (default `200`)
+- [docs/CORE_IDEA.md](docs/CORE_IDEA.md) — project vision and pipeline design
+- [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) — API integration rules
+- [docs/GOLDEN_DEBUG_RUN.md](docs/GOLDEN_DEBUG_RUN.md) — reproducible debugging
+- [AGENTS.md](AGENTS.md) — agent instructions
 
-Environment:
-
-- `DEEPSEEK_API_KEY` (required unless `--snapshot-only`)
-- `DEEPSEEK_MODEL` (optional, default `deepseek-chat`)
-
-## Run on a local etcd clone
+## Advanced (legacy compatibility)
 
 ```bash
-git clone https://github.com/etcd-io/etcd.git
-export DEEPSEEK_API_KEY=...
-go run ./cmd/repomap orient --repo ../etcd --snapshot-only
-go run ./cmd/repomap orient --repo ../etcd | jq .
+repomap orient --repo ../etcd --snapshot-only    # local snapshot JSON
+repomap orient --repo ../etcd --llm-bundle-only   # compact LLM bundle
+repomap orient --repo ../etcd --explain-flows 4   # low-level flow control
 ```

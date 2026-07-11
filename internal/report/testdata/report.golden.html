@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>repomap — testrepo — test project</title>
+  <style>:root { --rm-bg: #fff; --rm-fg: #1a1a1a; --rm-card: #f5f5f5; --rm-border: #e0e0e0; --rm-accent: #2563eb; --rm-dim: #666; --rm-code: #d63384; --rm-good: #16a34a; --rm-warn: #ca8a04; --rm-bad: #dc2626; --rm-info: #0ea5e9; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 0; background: var(--rm-bg); color: var(--rm-fg); line-height: 1.5; font-size: 14px; }
+header { background: linear-gradient(135deg, #1e293b, #334155); color: #fff; padding: 2rem; }
+header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+header p { margin: 0; opacity: .8; font-size: .9rem; }
+.rm-artifacts { font-size: .8rem; opacity: .6; margin-top: .5rem; font-family: monospace; }
+.rm-container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+
+/* Tabs */
+.rm-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--rm-border); margin-bottom: 1.5rem; flex-wrap: wrap; }
+.rm-tab { padding: .6rem 1.2rem; cursor: pointer; background: none; border: none; font-size: .9rem; color: var(--rm-dim); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: .15s; }
+.rm-tab:hover { color: var(--rm-fg); }
+.rm-tab.rm-active { color: var(--rm-accent); border-bottom-color: var(--rm-accent); font-weight: 600; }
+.rm-tab.rm-tab--error { color: var(--rm-bad); }
+
+.rm-tab-content { display: none; }
+.rm-tab-content.rm-active { display: block; }
+
+/* Confidence badges */
+.rm-confidence { display: inline-block; padding: .15rem .6rem; border-radius: 12px; font-size: .8rem; font-weight: 600; }
+.rm-conf-hi { background: #dcfce7; color: var(--rm-good); }
+.rm-conf-md { background: #fef9c3; color: var(--rm-warn); }
+.rm-conf-lo { background: #fecaca; color: var(--rm-bad); }
+
+/* Cards */
+.rm-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+
+/* Section titles */
+.rm-section-title { font-size: .85rem; font-weight: 600; color: var(--rm-dim); text-transform: uppercase; letter-spacing: .05em; margin: 1.5rem 0 .5rem; }
+
+/* Overview flow cards */
+.rm-overview-flows { display: flex; flex-wrap: wrap; gap: .75rem; }
+.rm-ov-flow { background: var(--rm-bg); border: 1px solid var(--rm-border); border-radius: 8px; padding: 1rem; flex: 1; min-width: 200px; cursor: pointer; transition: box-shadow .15s; }
+.rm-ov-flow:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.rm-ov-flow h3 { margin: 0 0 .25rem; font-size: .95rem; }
+.rm-ov-flow .rm-meta { font-size: .8rem; color: var(--rm-dim); margin-top: .5rem; }
+.rm-ov-flow .rm-summary-line { font-size: .8rem; color: var(--rm-dim); margin-top: .35rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Start Here accent */
+.rm-ov-flow.rm-ov-flow--recommended { border-left: 3px solid var(--rm-accent); }
+.rm-pill { display: inline-block; padding: .1rem .5rem; border-radius: 10px; font-size: .7rem; font-weight: 600; margin-left: .35rem; }
+.rm-pill--accent { background: #dbeafe; color: var(--rm-accent); }
+.rm-pill--error { background: #fecaca; color: var(--rm-bad); }
+
+/* Waterfall timeline */
+.rm-chain { position: relative; padding-left: 1.5rem; margin: 1rem 0; }
+.rm-chain::before { content: ''; position: absolute; left: .6rem; top: .4rem; bottom: .4rem; width: 2px; background: var(--rm-border); }
+.rm-chain-step { position: relative; margin-bottom: 1.5rem; }
+.rm-chain-step:last-child { margin-bottom: 0; }
+.rm-chain-circle { position: absolute; left: -1.5rem; top: .15rem; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: #1e293b; color: #fff; display: flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: 700; z-index: 1; }
+.rm-chain-circle.rm-chain-circle--hi { background: var(--rm-good); }
+.rm-chain-circle.rm-chain-circle--md { background: var(--rm-warn); }
+.rm-chain-circle.rm-chain-circle--lo { background: var(--rm-bad); }
+.rm-chain-body { background: var(--rm-bg); border: 1px solid var(--rm-border); border-radius: 6px; padding: .75rem 1rem; }
+.rm-chain-name { font-weight: 600; font-size: .85rem; margin-bottom: .25rem; }
+.rm-chain-desc { font-size: .8rem; color: var(--rm-dim); margin-bottom: .35rem; }
+.rm-chain-meta { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .75rem; }
+.rm-chain-files { font-size: .75rem; color: var(--rm-dim); margin-top: .35rem; }
+.rm-chain-file { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .75rem; color: var(--rm-code); display: block; }
+.rm-chain-warning { font-size: .75rem; color: var(--rm-warn); margin-top: .25rem; }
+
+/* Read Order */
+.rm-read-order { counter-reset: rm-file; }
+.rm-read-order-item { padding: .6rem 0; border-bottom: 1px solid var(--rm-border); display: flex; gap: .75rem; align-items: flex-start; }
+.rm-read-order-item:last-child { border-bottom: none; }
+.rm-read-order-num { flex-shrink: 0; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--rm-accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; margin-top: .1rem; }
+.rm-read-order-num--p2 { background: var(--rm-dim); }
+.rm-read-order-num--p3 { background: var(--rm-border); color: var(--rm-dim); }
+.rm-read-order-body { flex: 1; }
+.rm-read-order-path { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .85rem; color: var(--rm-code); font-weight: 600; }
+.rm-read-order-reason { font-size: .8rem; color: var(--rm-dim); margin-top: .15rem; }
+
+/* File lists (tests, etc.) */
+.rm-file-list { list-style: none; padding: 0; margin: .5rem 0; }
+.rm-file-list li { padding: .35rem 0; border-bottom: 1px solid var(--rm-border); font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .85rem; color: var(--rm-code); }
+
+/* Tags */
+.rm-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
+.rm-tag { background: var(--rm-border); padding: .15rem .5rem; border-radius: 6px; font-size: .8rem; }
+
+/* Stats */
+.rm-stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: .5rem 0; font-size: .85rem; }
+.rm-stat { display: flex; align-items: center; gap: .25rem; }
+.rm-stat-val { font-weight: 700; }
+
+/* Boxes */
+.rm-error-box { background: #fecaca; border: 1px solid var(--rm-bad); color: var(--rm-bad); border-radius: 6px; padding: .75rem; margin: .5rem 0; }
+.rm-warn-box { background: #fef9c3; border: 1px solid var(--rm-warn); border-radius: 6px; padding: .75rem; margin: .5rem 0; }
+.rm-info-box { background: #e0f2fe; border: 1px solid var(--rm-info); border-radius: 6px; padding: .75rem; margin: .5rem 0; }
+
+/* Collapsible */
+.rm-collapsible { margin: .5rem 0; }
+.rm-collapsible-toggle { background: none; border: 1px solid var(--rm-border); border-radius: 6px; padding: .5rem .75rem; cursor: pointer; font-size: .8rem; color: var(--rm-dim); width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+.rm-collapsible-toggle:hover { background: var(--rm-card); }
+.rm-collapsible-toggle::after { content: '▸'; font-size: .7rem; transition: transform .15s; }
+.rm-collapsible.rm-collapsible--open .rm-collapsible-toggle::after { transform: rotate(90deg); }
+.rm-collapsible-body { display: none; padding: .75rem 0 0; }
+.rm-collapsible.rm-collapsible--open .rm-collapsible-body { display: block; }
+
+/* Summary */
+.rm-summary { font-size: .9rem; margin: .5rem 0 .75rem; color: var(--rm-dim); line-height: 1.6; max-height: 4.8em; overflow: hidden; }
+.rm-summary.rm-summary--expanded { max-height: none; }
+
+/* Flow header */
+.rm-flow-header { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.rm-flow-header h2 { margin: 0; font-size: 1.1rem; }
+
+/* Quick Start */
+.rm-quick-start { margin-top: 1rem; }
+.rm-quick-start-item { padding: .35rem 0; font-size: .85rem; display: flex; gap: .5rem; }
+.rm-quick-start-flow { color: var(--rm-accent); cursor: pointer; }
+.rm-quick-start-flow:hover { text-decoration: underline; }
+
+/* Error flow card in overview */
+.rm-ov-flow.rm-ov-flow--error { opacity: .7; }
+
+/* Placeholder for missing AI */
+.rm-placeholder { background: var(--rm-card); border: 1px dashed var(--rm-border); border-radius: 6px; padding: .75rem; font-size: .85rem; color: var(--rm-dim); margin: .5rem 0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="rm-repo-name"></h1>
+    <p id="rm-project-guess"></p>
+    <div class="rm-artifacts" id="rm-artifacts-dir"></div>
+  </header>
+  <div class="rm-container">
+    <nav class="rm-tabs" id="rm-tabs"></nav>
+    <section id="rm-overview" class="rm-tab-content rm-active"></section>
+    <div id="rm-flows-container"></div>
+  </div>
+  <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
+  <script type="application/json" id="rm-report-data">{"format_version":2,"repo_name":"testrepo","project_guess":"test project","candidate_flows":["flow-a"],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"High","bundle_stats_label":"5 source files / 2 tests / 1 docs"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"recommended_flow":"flow-a","flow_count":1}</script>
+  <script>(function () {
+  'use strict';
+
+  var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
+
+  var LABELS = {
+    overviewTitle: 'Flows',
+    candidateFlows: 'Candidate Flows',
+    filesToRead: 'Read Order — Open these files in sequence',
+    testsToRead: 'Tests',
+    executionChain: 'Execution Chain',
+    knownUnknowns: 'Known Unknowns',
+    unverified: 'Unverified Paths',
+    unknowns: 'Unknowns',
+    warnings: 'Warnings',
+    bundleStats: 'Technical Details',
+    confidence: 'Confidence',
+    noFlows: 'No flows identified.',
+    collapsedDefault: 'Show details',
+    collapsedOpen: 'Hide details',
+    startHere: 'Start Here',
+    quickStart: 'Quick Start',
+    noAIExplanation: 'No AI explanation available — rerun with DEEPSEEK_API_KEY.',
+    errorUnavailable: 'Analysis unavailable',
+    evidenceFiles: 'Evidence files',
+  };
+
+  function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function confClass(c) {
+    var v = Math.max(0, Math.min(1, c || 0));
+    return v > 0.7 ? 'rm-conf-hi' : v > 0.4 ? 'rm-conf-md' : 'rm-conf-lo';
+  }
+
+  function confLabel(c) {
+    var v = Math.max(0, Math.min(1, c || 0));
+    var label = v >= 0.7 ? 'High' : v >= 0.4 ? 'Medium' : 'Low';
+    return label + ' ' + Math.round(v * 100) + '%';
+  }
+
+  function chainCircleClass(c) {
+    var v = Math.max(0, Math.min(1, c || 0));
+    return v >= 0.7 ? 'rm-chain-circle--hi' : v >= 0.4 ? 'rm-chain-circle--md' : 'rm-chain-circle--lo';
+  }
+
+  // ── DOM builders ───────────────────────────────────────────────
+
+  function el(tag, cls, attrs) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    return e;
+  }
+
+  function txt(tag, cls, text) {
+    var e = el(tag, cls);
+    e.textContent = text || '';
+    return e;
+  }
+
+  // ── Components ──────────────────────────────────────────────────
+
+  function renderConfidenceBadge(confidence) {
+    var badge = el('span', 'rm-confidence ' + confClass(confidence));
+    badge.textContent = confLabel(confidence);
+    return badge;
+  }
+
+  function renderPill(text, kind) {
+    var pill = el('span', 'rm-pill rm-pill--' + (kind || 'accent'));
+    pill.textContent = text;
+    return pill;
+  }
+
+  function renderFlowCard(flow, isRecommended) {
+    var card = el('div', 'rm-ov-flow');
+    if (isRecommended) card.classList.add('rm-ov-flow--recommended');
+
+    if (flow.error) {
+      card.classList.add('rm-ov-flow--error');
+      var header = el('div');
+      var h3 = txt('h3', '', flow.name || flow.id);
+      header.appendChild(h3);
+      header.appendChild(renderPill(LABELS.errorUnavailable, 'error'));
+      card.appendChild(header);
+      card.onclick = function () { showTab('rm-flow-' + flow.id); };
+      return card;
+    }
+
+    var header = el('div');
+    var h3 = txt('h3', '', flow.name || flow.id);
+    header.appendChild(h3);
+    if (isRecommended) {
+      header.appendChild(renderPill(LABELS.startHere));
+    }
+    header.appendChild(renderConfidenceBadge(flow.confidence));
+
+    card.appendChild(header);
+
+    if (flow.summary) {
+      var truncated = flow.summary.length > 120 ? flow.summary.slice(0, 120) + '...' : flow.summary;
+      var sum = txt('div', 'rm-summary-line', truncated);
+      card.appendChild(sum);
+    }
+
+    if (flow.bundle_stats_label) {
+      var meta = txt('div', 'rm-meta', flow.bundle_stats_label);
+      card.appendChild(meta);
+    }
+
+    card.onclick = function () { showTab('rm-flow-' + flow.id); };
+    return card;
+  }
+
+  function renderChainSteps(chain) {
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', LABELS.executionChain));
+
+    var container = el('div', 'rm-chain');
+
+    chain.forEach(function (s) {
+      var step = el('div', 'rm-chain-step');
+
+      var circle = el('div', 'rm-chain-circle ' + chainCircleClass(s.confidence));
+      circle.textContent = s.step;
+      step.appendChild(circle);
+
+      var body = el('div', 'rm-chain-body');
+
+      var nameRow = el('div', 'rm-chain-name');
+      var nameTxt = esc(s.name);
+      nameRow.appendChild(document.createTextNode('Step ' + s.step + ': ' + nameTxt));
+      body.appendChild(nameRow);
+
+      if (s.what_happens) {
+        body.appendChild(txt('div', 'rm-chain-desc', s.what_happens));
+      }
+
+      var meta = el('div', 'rm-chain-meta');
+      meta.appendChild(renderConfidenceBadge(s.confidence));
+
+      // per-step warnings would come from flow-level warnings -- not implemented yet
+      body.appendChild(meta);
+
+      if (s.evidence_files && s.evidence_files.length > 0) {
+        var filesDiv = el('div', 'rm-chain-files');
+        filesDiv.appendChild(txt('div', '', LABELS.evidenceFiles + ':'));
+        s.evidence_files.forEach(function (f) {
+          filesDiv.appendChild(txt('span', 'rm-chain-file', f));
+        });
+        body.appendChild(filesDiv);
+      }
+
+      step.appendChild(body);
+      container.appendChild(step);
+    });
+
+    section.appendChild(container);
+    return section;
+  }
+
+  function renderReadOrder(files) {
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', LABELS.filesToRead));
+
+    var ol = el('div', 'rm-read-order');
+    files.forEach(function (fi, i) {
+      var item = el('div', 'rm-read-order-item');
+
+      var num = el('div', 'rm-read-order-num');
+      if (fi.priority >= 3) num.classList.add('rm-read-order-num--p3');
+      else if (fi.priority >= 2) num.classList.add('rm-read-order-num--p2');
+      num.textContent = i + 1;
+      item.appendChild(num);
+
+      var body = el('div', 'rm-read-order-body');
+      body.appendChild(txt('div', 'rm-read-order-path', fi.path));
+      if (fi.reason) {
+        body.appendChild(txt('div', 'rm-read-order-reason', fi.reason));
+      }
+      item.appendChild(body);
+
+      ol.appendChild(item);
+    });
+    section.appendChild(ol);
+    return section;
+  }
+
+  function renderFileList(title, files) {
+    if (!files || !files.length) return null;
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', title + ' (' + files.length + ')'));
+
+    var ul = el('ul', 'rm-file-list');
+    files.forEach(function (f) {
+      var li = el('li');
+      li.textContent = f.path;
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    return section;
+  }
+
+  function renderUnknowns(unknowns) {
+    if (!unknowns || !unknowns.length) return null;
+
+    var box = el('div', 'rm-info-box');
+    var title = el('strong');
+    title.textContent = LABELS.knownUnknowns + ':';
+    box.appendChild(title);
+    unknowns.forEach(function (u) {
+      var p = txt('div', '', '• ' + u);
+      p.style.cssText = 'margin-top:.25rem;font-size:.85rem;';
+      box.appendChild(p);
+    });
+    return box;
+  }
+
+  function renderWarnings(warnings) {
+    if (!warnings || !warnings.length) return null;
+
+    var box = el('div', 'rm-warn-box');
+    var title = el('strong');
+    title.textContent = LABELS.warnings + ': ';
+    box.appendChild(title);
+    box.appendChild(document.createTextNode(warnings.join('; ')));
+    return box;
+  }
+
+  function renderBundleStats(stats) {
+    var container = el('div', 'rm-collapsible');
+
+    var toggle = el('button', 'rm-collapsible-toggle');
+    toggle.textContent = LABELS.collapsedDefault;
+    toggle.onclick = function () {
+      container.classList.toggle('rm-collapsible--open');
+      toggle.textContent = container.classList.contains('rm-collapsible--open')
+        ? LABELS.collapsedOpen : LABELS.collapsedDefault;
+    };
+    container.appendChild(toggle);
+
+    var body = el('div', 'rm-collapsible-body');
+    var list = [
+      'Source files selected:   ' + stats.selected_files_count,
+      'Test files selected:     ' + stats.selected_tests_count,
+      'Docs selected:           ' + stats.selected_docs_count,
+      'Packages selected:       ' + stats.selected_packages_count,
+      'Related import edges:    ' + stats.related_edges_count,
+    ];
+    list.forEach(function (line) {
+      var div = txt('div', '', line);
+      div.style.cssText = 'font-size:.85rem;padding:.15rem 0;font-family:monospace;';
+      body.appendChild(div);
+    });
+    container.appendChild(body);
+    return container;
+  }
+
+  function renderErrorBox(error) {
+    var box = el('div', 'rm-error-box');
+    box.textContent = error;
+    return box;
+  }
+
+  function renderPlaceholder(text) {
+    return txt('div', 'rm-placeholder', text);
+  }
+
+  function renderFlowPage(flow) {
+    var page = el('div');
+
+    // Header
+    var header = el('div', 'rm-flow-header');
+    header.appendChild(txt('h2', '', flow.name || flow.id));
+    header.appendChild(renderConfidenceBadge(flow.confidence));
+    page.appendChild(header);
+
+    // Error state
+    if (flow.error) {
+      page.appendChild(renderErrorBox(flow.error));
+      if (flow.bundle_summary) {
+        page.appendChild(renderBundleStats(flow.bundle_summary));
+      }
+      return page;
+    }
+
+    // Summary
+    if (flow.summary) {
+      var summary = txt('div', 'rm-summary', flow.summary);
+      page.appendChild(summary);
+    }
+
+    // Chain (waterfall timeline)
+    if (flow.likely_chain && flow.likely_chain.length > 0) {
+      page.appendChild(renderChainSteps(flow.likely_chain));
+    }
+
+    // Known Unknowns
+    var unknownsSection = renderUnknowns(flow.unknowns);
+    if (unknownsSection) page.appendChild(unknownsSection);
+
+    // Read Order -- the most important section
+    if (flow.files_to_read_in_order && flow.files_to_read_in_order.length > 0) {
+      page.appendChild(renderReadOrder(flow.files_to_read_in_order));
+    } else if (!flow.error) {
+      // If the flow has no error but also no AI analysis, show placeholder
+      if (!flow.summary && !flow.likely_chain) {
+        page.appendChild(renderPlaceholder(LABELS.noAIExplanation));
+      }
+    }
+
+    // Tests
+    var testsSection = renderFileList(LABELS.testsToRead, flow.tests_to_read);
+    if (testsSection) page.appendChild(testsSection);
+
+    // Warnings
+    var warningsSection = renderWarnings(flow.warnings);
+    if (warningsSection) page.appendChild(warningsSection);
+
+    // Unverified paths
+    if (flow.unverified_paths && flow.unverified_paths.length > 0) {
+      var uvDiv = el('div');
+      uvDiv.appendChild(txt('div', 'rm-section-title', LABELS.unverified));
+      var tags = el('div', 'rm-tags');
+      flow.unverified_paths.forEach(function (up) {
+        var tag = el('span', 'rm-tag');
+        tag.textContent = up.path;
+        if (up.reason) tag.title = up.reason;
+        tags.appendChild(tag);
+      });
+      uvDiv.appendChild(tags);
+      page.appendChild(uvDiv);
+    }
+
+    // Technical Details (collapsed)
+    if (flow.bundle_summary) {
+      page.appendChild(renderBundleStats(flow.bundle_summary));
+    }
+
+    return page;
+  }
+
+  // ── Tab management ──────────────────────────────────────────────
+
+  function showTab(id) {
+    document.querySelectorAll('.rm-tab, .rm-tab-content').forEach(function (e) {
+      e.classList.remove('rm-active');
+    });
+    var content = document.getElementById(id);
+    if (content) content.classList.add('rm-active');
+    var tab = document.querySelector('.rm-tab[data-tab="' + id + '"]');
+    if (tab) tab.classList.add('rm-active');
+  }
+
+  // ── Main render ─────────────────────────────────────────────────
+
+  function render() {
+    // Header
+    document.getElementById('rm-repo-name').textContent = DATA.repo_name || 'unknown';
+    document.getElementById('rm-project-guess').textContent = DATA.project_guess || '';
+    if (DATA.artifacts_dir) {
+      document.getElementById('rm-artifacts-dir').textContent = 'Artifacts: ' + DATA.artifacts_dir;
+    }
+
+    // Tabs
+    var tabs = document.getElementById('rm-tabs');
+    var overviewTab = el('button', 'rm-tab rm-active');
+    overviewTab.textContent = 'Overview';
+    overviewTab.setAttribute('data-tab', 'rm-overview');
+    overviewTab.onclick = function () { showTab('rm-overview'); };
+    tabs.appendChild(overviewTab);
+
+    DATA.flows.forEach(function (f) {
+      var tab = el('button', 'rm-tab');
+      if (f.error) tab.classList.add('rm-tab--error');
+      tab.textContent = f.error ? ('⚠ ' + (f.name || f.id)) : (f.name || f.id);
+      tab.setAttribute('data-tab', 'rm-flow-' + f.id);
+      tab.onclick = function () { showTab('rm-flow-' + f.id); };
+      tabs.appendChild(tab);
+    });
+
+    // Overview
+    var overview = document.getElementById('rm-overview');
+    var overviewHTML = el('div');
+
+    if (!DATA.flows || DATA.flows.length === 0) {
+      overviewHTML.appendChild(txt('div', 'rm-card', LABELS.noFlows));
+    } else {
+      var card = el('div', 'rm-card');
+      card.appendChild(txt('h2', '', LABELS.candidateFlows));
+      var grid = el('div', 'rm-overview-flows');
+
+      DATA.flows.forEach(function (f) {
+        var isRecommended = DATA.recommended_flow && f.id === DATA.recommended_flow;
+        grid.appendChild(renderFlowCard(f, isRecommended));
+      });
+
+      card.appendChild(grid);
+      overviewHTML.appendChild(card);
+
+      // Quick Start
+      if (DATA.flows.length > 0) {
+        var qs = el('div', 'rm-quick-start');
+        qs.appendChild(txt('div', 'rm-section-title', LABELS.quickStart));
+        DATA.flows.forEach(function (f) {
+          if (f.files_to_read_in_order && f.files_to_read_in_order.length > 0) {
+            var item = el('div', 'rm-quick-start-item');
+            var flowLink = el('span', 'rm-quick-start-flow');
+            flowLink.textContent = f.name || f.id;
+            flowLink.onclick = function () { showTab('rm-flow-' + f.id); };
+            item.appendChild(flowLink);
+            item.appendChild(txt('span', '', '→ ' + f.files_to_read_in_order[0].path));
+            qs.appendChild(item);
+          }
+        });
+        overviewHTML.appendChild(qs);
+      }
+    }
+
+    // Global warnings
+    if (DATA.warnings && DATA.warnings.length > 0) {
+      overviewHTML.appendChild(renderWarnings(DATA.warnings));
+    }
+
+    overview.innerHTML = '';
+    overview.appendChild(overviewHTML);
+
+    // Flow pages
+    var flowsContainer = document.getElementById('rm-flows-container');
+    flowsContainer.innerHTML = '';
+    DATA.flows.forEach(function (f) {
+      var page = el('div', 'rm-tab-content');
+      page.id = 'rm-flow-' + f.id;
+      page.appendChild(renderFlowPage(f));
+      flowsContainer.appendChild(page);
+    });
+  }
+
+  window.addEventListener('DOMContentLoaded', render);
+})();
+</script>
+</body>
+</html>

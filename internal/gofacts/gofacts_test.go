@@ -1,0 +1,473 @@
+package gofacts
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestNormalizePackagePaths(t *testing.T) {
+	cases := []struct {
+		name           string
+		repoRoot       string
+		moduleRoot     string
+		pkgDir         string
+		wantModuleDir  string
+		wantModRelDir  string
+		wantPackageDir string
+	}{
+		{
+			name:           "server module root package",
+			repoRoot:       "/tmp/etcd",
+			moduleRoot:     "/tmp/etcd/server",
+			pkgDir:         "/tmp/etcd/server",
+			wantModuleDir:  "server",
+			wantModRelDir:  ".",
+			wantPackageDir: "server",
+		},
+		{
+			name:           "etcdctl nested package",
+			repoRoot:       "/tmp/etcd",
+			moduleRoot:     "/tmp/etcd/etcdctl",
+			pkgDir:         "/tmp/etcd/etcdctl/ctlv3/command",
+			wantModuleDir:  "etcdctl",
+			wantModRelDir:  "ctlv3/command",
+			wantPackageDir: "etcdctl/ctlv3/command",
+		},
+		{
+			name:           "root module contrib example",
+			repoRoot:       "/tmp/etcd",
+			moduleRoot:     "/tmp/etcd",
+			pkgDir:         "/tmp/etcd/contrib/raftexample",
+			wantModuleDir:  ".",
+			wantModRelDir:  "contrib/raftexample",
+			wantPackageDir: "contrib/raftexample",
+		},
+		{
+			name:           "root module tools benchmark",
+			repoRoot:       "/tmp/etcd",
+			moduleRoot:     "/tmp/etcd",
+			pkgDir:         "/tmp/etcd/tools/benchmark",
+			wantModuleDir:  ".",
+			wantModRelDir:  "tools/benchmark",
+			wantPackageDir: "tools/benchmark",
+		},
+		{
+			name:           "root module root package",
+			repoRoot:       "/tmp/etcd",
+			moduleRoot:     "/tmp/etcd",
+			pkgDir:         "/tmp/etcd",
+			wantModuleDir:  ".",
+			wantModRelDir:  ".",
+			wantPackageDir: ".",
+		},
+		{
+			name:           "etcdutl module root",
+			repoRoot:       "/tmp/etcd",
+			moduleRoot:     "/tmp/etcd/etcdutl",
+			pkgDir:         "/tmp/etcd/etcdutl",
+			wantModuleDir:  "etcdutl",
+			wantModRelDir:  ".",
+			wantPackageDir: "etcdutl",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			md, mrd, pd, err := normalizePackagePaths(tc.repoRoot, tc.moduleRoot, tc.pkgDir)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if md != tc.wantModuleDir {
+				t.Errorf("module_dir = %q, want %q", md, tc.wantModuleDir)
+			}
+			if mrd != tc.wantModRelDir {
+				t.Errorf("module_relative_dir = %q, want %q", mrd, tc.wantModRelDir)
+			}
+			if pd != tc.wantPackageDir {
+				t.Errorf("package_dir = %q, want %q", pd, tc.wantPackageDir)
+			}
+		})
+	}
+}
+
+func TestNormalizePackagePathsOutsideRepo(t *testing.T) {
+	_, _, _, err := normalizePackagePaths("/tmp/etcd", "/tmp/etcd", "/var/log")
+	if err == nil {
+		t.Fatal("expected error for package outside repo")
+	}
+}
+
+func TestDiscoverGoModules(t *testing.T) {
+	fileList := []string{
+		"go.mod",
+		"cmd/app/main.go",
+		"internal/pkg/go.mod",
+		"internal/pkg/foo.go",
+		"tools/helper/go.mod",
+		"tools/helper/main.go",
+		"README.md",
+	}
+	mods := DiscoverGoModules(fileList, "/fake/repo")
+	if len(mods) != 3 {
+		t.Fatalf("got %d modules, want 3: %v", len(mods), mods)
+	}
+	if mods[0] != "." {
+		t.Fatalf("first module = %q, want %q", mods[0], ".")
+	}
+	if mods[1] != "internal/pkg" {
+		t.Fatalf("second module = %q, want %q", mods[1], "internal/pkg")
+	}
+	if mods[2] != "tools/helper" {
+		t.Fatalf("third module = %q, want %q", mods[2], "tools/helper")
+	}
+}
+
+func TestDiscoverGoModulesNoFiles(t *testing.T) {
+	mods := DiscoverGoModules(nil, "/fake/repo")
+	if len(mods) != 0 {
+		t.Fatalf("got %d modules, want 0: %v", len(mods), mods)
+	}
+}
+
+func TestParseGoListOutput(t *testing.T) {
+	input := `{"ImportPath": "example.com/foo", "Dir": "/foo", "Name": "foo", "GoFiles": ["foo.go"], "Imports": ["fmt", "example.com/bar"], "Module": {"Path": "example.com"}}
+{"ImportPath": "example.com/bar", "Dir": "/bar", "Name": "bar", "GoFiles": ["bar.go"], "Imports": ["strings"]}
+`
+	pkgs, warnings, err := parseGoListOutput(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 2 {
+		t.Fatalf("got %d packages, want 2", len(pkgs))
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("got %d warnings, want 0", len(warnings))
+	}
+	if pkgs[0].ImportPath != "example.com/foo" {
+		t.Fatalf("first package = %q", pkgs[0].ImportPath)
+	}
+	if pkgs[1].Name != "bar" {
+		t.Fatalf("second package Name = %q", pkgs[1].Name)
+	}
+}
+
+func TestParseGoListOutputWithError(t *testing.T) {
+	input := `{"ImportPath": "example.com/broken", "Name": "broken", "Error": {"Err": "build error"}}
+{"ImportPath": "example.com/ok", "Dir": "/ok", "Name": "ok", "GoFiles": ["ok.go"], "Module": {"Path": "example.com"}}
+`
+	pkgs, warnings, err := parseGoListOutput(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("got %d packages, want 1", len(pkgs))
+	}
+	if pkgs[0].ImportPath != "example.com/ok" {
+		t.Fatalf("got package %q, want example.com/ok", pkgs[0].ImportPath)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("got %d warnings, want 1", len(warnings))
+	}
+}
+
+func TestExtractModulePath(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "example.com/lib", Module: &goListModule{Path: "example.com"}},
+		{ImportPath: "example.com/cmd", Module: &goListModule{Path: "example.com"}},
+	}
+	if got := extractModulePath(pkgs); got != "example.com" {
+		t.Fatalf("module path = %q, want %q", got, "example.com")
+	}
+}
+
+func TestExtractModulePathEmpty(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "stdlib", Module: nil},
+	}
+	if got := extractModulePath(pkgs); got != "" {
+		t.Fatalf("module path = %q, want empty", got)
+	}
+}
+
+func TestBuildEntrypoints(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "example.com/cmd/app", Dir: "/repo/cmd/app", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "example.com"}},
+		{ImportPath: "example.com/lib", Dir: "/repo/lib", Name: "lib", GoFiles: []string{"lib.go"}, Module: &goListModule{Path: "example.com"}},
+		{ImportPath: "example.com/internal/util", Dir: "/repo/internal/util", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "example.com"}},
+	}
+	eps := buildEntrypoints(pkgs, "/repo", "/repo", ".", "example.com")
+
+	if len(eps) != 2 {
+		t.Fatalf("entrypoints = %d, want 2", len(eps))
+	}
+	if eps[0].ModulePath != "example.com" {
+		t.Fatalf("module path = %q", eps[0].ModulePath)
+	}
+	if eps[0].ImportPath != "example.com/cmd/app" {
+		t.Fatalf("import path = %q", eps[0].ImportPath)
+	}
+	if eps[0].Dir != "cmd/app" {
+		t.Fatalf("dir = %q, want cmd/app", eps[0].Dir)
+	}
+	if eps[0].PackageDir != "cmd/app" {
+		t.Fatalf("package_dir = %q, want cmd/app", eps[0].PackageDir)
+	}
+	if eps[0].ModuleRelativeDir != "cmd/app" {
+		t.Fatalf("module_relative_dir = %q, want cmd/app", eps[0].ModuleRelativeDir)
+	}
+	if eps[0].ModuleDir != "." {
+		t.Fatalf("module_dir = %q, want .", eps[0].ModuleDir)
+	}
+}
+
+func TestBuildEntrypointsSubModule(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "go.etcd.io/etcd/etcdctl/v3/ctlv3/command", Dir: "/repo/etcdctl/ctlv3/command", Name: "main", GoFiles: []string{"command.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/etcdctl/v3"}},
+	}
+	eps := buildEntrypoints(pkgs, "/repo", "/repo/etcdctl", "etcdctl", "go.etcd.io/etcd/etcdctl/v3")
+
+	if len(eps) != 1 {
+		t.Fatalf("entrypoints = %d, want 1", len(eps))
+	}
+	if eps[0].ModulePath != "go.etcd.io/etcd/etcdctl/v3" {
+		t.Fatalf("module path = %q", eps[0].ModulePath)
+	}
+	if eps[0].PackageDir != "etcdctl/ctlv3/command" {
+		t.Fatalf("package_dir = %q, want etcdctl/ctlv3/command", eps[0].PackageDir)
+	}
+	if eps[0].ModuleRelativeDir != "ctlv3/command" {
+		t.Fatalf("module_relative_dir = %q, want ctlv3/command", eps[0].ModuleRelativeDir)
+	}
+	if eps[0].ModuleDir != "etcdctl" {
+		t.Fatalf("module_dir = %q, want etcdctl", eps[0].ModuleDir)
+	}
+}
+
+func TestBuildEntrypointsRootModule(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "go.etcd.io/etcd/v3/contrib/raftexample", Dir: "/repo/contrib/raftexample", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/v3"}},
+	}
+	eps := buildEntrypoints(pkgs, "/repo", "/repo", ".", "go.etcd.io/etcd/v3")
+
+	if len(eps) != 1 {
+		t.Fatalf("entrypoints = %d, want 1", len(eps))
+	}
+	if eps[0].PackageDir != "contrib/raftexample" {
+		t.Fatalf("package_dir = %q, want contrib/raftexample", eps[0].PackageDir)
+	}
+	if eps[0].ModuleRelativeDir != "contrib/raftexample" {
+		t.Fatalf("module_relative_dir = %q, want contrib/raftexample", eps[0].ModuleRelativeDir)
+	}
+}
+
+func TestBuildEntrypointsServerModule(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "go.etcd.io/etcd/server/v3", Dir: "/repo/server", Name: "main", GoFiles: []string{"main.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/server/v3"}},
+	}
+	eps := buildEntrypoints(pkgs, "/repo", "/repo/server", "server", "go.etcd.io/etcd/server/v3")
+
+	if len(eps) != 1 {
+		t.Fatalf("entrypoints = %d, want 1", len(eps))
+	}
+	if eps[0].PackageDir != "server" {
+		t.Fatalf("package_dir = %q, want server", eps[0].PackageDir)
+	}
+	if eps[0].ModuleRelativeDir != "." {
+		t.Fatalf("module_relative_dir = %q, want .", eps[0].ModuleRelativeDir)
+	}
+	if eps[0].ModuleDir != "server" {
+		t.Fatalf("module_dir = %q, want server", eps[0].ModuleDir)
+	}
+}
+
+func TestBuildEntrypointsNoModule(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "main", Dir: "/repo", Name: "main", GoFiles: []string{"main.go"}, Module: nil},
+	}
+	eps := buildEntrypoints(pkgs, "/repo", "/repo", ".", "")
+	if len(eps) != 1 {
+		t.Fatalf("entrypoints = %d, want 1", len(eps))
+	}
+	if eps[0].ModulePath != "" {
+		t.Fatalf("module path = %q, want empty", eps[0].ModulePath)
+	}
+	if eps[0].PackageDir != "." {
+		t.Fatalf("package_dir = %q, want .", eps[0].PackageDir)
+	}
+}
+
+func TestClassifyEntrypoint(t *testing.T) {
+	cases := []struct {
+		importPath string
+		packageDir string
+		moduleDir  string
+		want       string
+	}{
+		{"go.etcd.io/etcd/server/v3", "server", "server", "primary_binary"},
+		{"go.etcd.io/etcd/etcdctl/v3", "etcdctl", "etcdctl", "cli"},
+		{"go.etcd.io/etcd/etcdutl/v3", "etcdutl", "etcdutl", "tool"},
+		{"go.etcd.io/etcd/v3/tools/benchmark", "tools/benchmark", ".", "tool"},
+		{"go.etcd.io/etcd/v3/contrib/raftexample", "contrib/raftexample", ".", "example"},
+		{"go.etcd.io/etcd/v3/tests/functional", "tests/functional", ".", "test_binary"},
+		{"example.com/unknown/module", "unknown/module", "unknown", "unknown"},
+		{"go.etcd.io/etcd/v3/tools/benchmark", "tools/benchmark", "tools/mod", "tool"},
+	}
+	for _, tc := range cases {
+		got := classifyEntrypoint(tc.importPath, tc.packageDir, tc.moduleDir)
+		if got != tc.want {
+			t.Errorf("classifyEntrypoint(%q, %q, %q) = %q, want %q", tc.importPath, tc.packageDir, tc.moduleDir, got, tc.want)
+		}
+	}
+}
+
+func TestGuessModuleRole(t *testing.T) {
+	cases := []struct {
+		moduleDir string
+		want      string
+	}{
+		{"server", "server_runtime"},
+		{"api", "api_definitions"},
+		{"tests", "tests"},
+		{"tools/mod", "tools"},
+		{"pkg", "shared_library"},
+		{".", "repository_root"},
+		{"clientv3", "client_library"},
+		{"etcdctl", "unknown"},
+		{"mystery", "unknown"},
+	}
+	for _, tc := range cases {
+		got := guessModuleRole(tc.moduleDir)
+		if got != tc.want {
+			t.Errorf("guessModuleRole(%q) = %q, want %q", tc.moduleDir, got, tc.want)
+		}
+	}
+}
+
+func TestOpenFilesGeneration(t *testing.T) {
+	eps := []Entrypoint{
+		{ImportPath: "go.etcd.io/etcd/server/v3", PackageDir: "server", GoFiles: []string{"main.go"}, Kind: "primary_binary"},
+		{ImportPath: "go.etcd.io/etcd/etcdctl/v3", PackageDir: "etcdctl", GoFiles: []string{"main.go"}, Kind: "cli"},
+		{ImportPath: "go.etcd.io/etcd/etcdutl/v3", PackageDir: "etcdutl", GoFiles: []string{"main.go"}, Kind: "tool"},
+		{ImportPath: "go.etcd.io/etcd/v3/contrib/raftexample", PackageDir: "contrib/raftexample", GoFiles: []string{"main.go"}, Kind: "example"},
+		{ImportPath: "go.etcd.io/etcd/v3/tools/benchmark", PackageDir: "tools/benchmark", GoFiles: []string{"main.go"}, Kind: "tool"},
+	}
+	candidates := buildOrientationCandidates(eps)
+
+	if len(candidates) != 5 {
+		t.Fatalf("candidates = %d, want 5", len(candidates))
+	}
+
+	wantFiles := map[string]string{
+		"go.etcd.io/etcd/server/v3":           "server/main.go",
+		"go.etcd.io/etcd/etcdctl/v3":          "etcdctl/main.go",
+		"go.etcd.io/etcd/etcdutl/v3":          "etcdutl/main.go",
+		"go.etcd.io/etcd/v3/contrib/raftexample": "contrib/raftexample/main.go",
+		"go.etcd.io/etcd/v3/tools/benchmark":    "tools/benchmark/main.go",
+	}
+
+	for _, c := range candidates {
+		want, ok := wantFiles[c.Name]
+		if !ok {
+			t.Fatalf("unexpected candidate: %s", c.Name)
+		}
+		if len(c.OpenFiles) != 1 || c.OpenFiles[0] != want {
+			t.Errorf("candidate %s: open_files = %v, want [%s]", c.Name, c.OpenFiles, want)
+		}
+	}
+}
+
+func TestPriorityForKind(t *testing.T) {
+	if priorityForKind("primary_binary") <= priorityForKind("cli") {
+		t.Fatal("primary_binary should have higher priority than cli")
+	}
+	if priorityForKind("cli") <= priorityForKind("tool") {
+		t.Fatal("cli should have higher priority than tool")
+	}
+	if priorityForKind("tool") <= priorityForKind("example") {
+		t.Fatal("tool should have higher priority than example")
+	}
+	if priorityForKind("example") <= priorityForKind("test_binary") {
+		t.Fatal("example should have higher priority than test_binary")
+	}
+	if priorityForKind("test_binary") <= priorityForKind("unknown") {
+		t.Fatal("test_binary should have higher priority than unknown")
+	}
+}
+
+func TestBuildInternalEdges(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "example.com/cmd/app", Name: "main", Imports: []string{"example.com/lib"}},
+		{ImportPath: "example.com/lib", Name: "lib", Imports: []string{"fmt"}},
+		{ImportPath: "example.com/util", Name: "util", Imports: []string{"example.com/lib"}},
+	}
+	known := buildKnownSet(pkgs)
+	edges := buildInternalEdges(pkgs, known)
+
+	if len(edges) != 2 {
+		t.Fatalf("internal edges = %d, want 2: %+v", len(edges), edges)
+	}
+
+	edgeMap := make(map[string]struct{})
+	for _, e := range edges {
+		edgeMap[e.From+">"+e.To] = struct{}{}
+	}
+
+	if _, ok := edgeMap["example.com/cmd/app>example.com/lib"]; !ok {
+		t.Fatalf("missing edge cmd/app -> lib")
+	}
+	if _, ok := edgeMap["example.com/util>example.com/lib"]; !ok {
+		t.Fatalf("missing edge util -> lib")
+	}
+}
+
+func TestBuildInternalEdgesNone(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "example.com/a", Name: "a", Imports: []string{"strings", "os"}},
+		{ImportPath: "example.com/b", Name: "b", Imports: []string{"fmt"}},
+	}
+	known := buildKnownSet(pkgs)
+	edges := buildInternalEdges(pkgs, known)
+	if len(edges) != 0 {
+		t.Fatalf("internal edges = %d, want 0", len(edges))
+	}
+}
+
+func TestBuildExternalImports(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "example.com/a", Name: "a", Imports: []string{"fmt", "os", "example.com/b"}},
+		{ImportPath: "example.com/b", Name: "b", Imports: []string{"fmt", "io"}},
+		{ImportPath: "example.com/c", Name: "c", Imports: []string{"fmt"}},
+	}
+	known := buildKnownSet(pkgs)
+	ext := buildExternalImports(pkgs, known)
+
+	for _, x := range ext {
+		if x.ImportPath == "example.com/b" {
+			t.Fatalf("external imports should not contain internal package example.com/b")
+		}
+	}
+
+	if len(ext) != 3 {
+		t.Fatalf("external imports = %d, want 3: %+v", len(ext), ext)
+	}
+
+	if ext[0].ImportPath != "fmt" || ext[0].UsedByCount != 3 {
+		t.Fatalf("top external import should be fmt with count 3, got: %+v", ext[0])
+	}
+}
+
+func TestBuildExternalImportsDedup(t *testing.T) {
+	pkgs := []goListPackage{
+		{ImportPath: "example.com/a", Name: "a", Imports: []string{"fmt", "fmt"}},
+		{ImportPath: "example.com/b", Name: "b", Imports: []string{"fmt"}},
+	}
+	known := buildKnownSet(pkgs)
+	ext := buildExternalImports(pkgs, known)
+
+	if len(ext) != 1 {
+		t.Fatalf("external imports = %d, want 1", len(ext))
+	}
+	if ext[0].UsedByCount != 2 {
+		t.Fatalf("fmt used_by_count = %d, want 2", ext[0].UsedByCount)
+	}
+}

@@ -1,0 +1,156 @@
+package debugdump
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+)
+
+type RunMeta struct {
+	RunID          string    `json:"run_id"`
+	CreatedAt      string    `json:"created_at"`
+	RepoName       string    `json:"repo_name"`
+	RepoPath       string    `json:"repo_path"`
+	Command        string    `json:"command"`
+	Model          string    `json:"model"`
+	Endpoint       string    `json:"endpoint"`
+	SnapshotOnly   bool      `json:"snapshot_only"`
+	LLMBundleOnly  bool      `json:"llm_bundle_only"`
+}
+
+type Writer struct {
+	BaseDir  string
+	RunID    string
+	Redacted bool
+	runDir   string
+}
+
+func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
+	if baseDir == "" {
+		return nil, fmt.Errorf("debug dir is empty")
+	}
+	runDir := filepath.Join(baseDir, runID)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create debug run dir: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "debug artifacts: %s\n", runDir)
+	return &Writer{BaseDir: baseDir, RunID: runID, Redacted: redacted, runDir: runDir}, nil
+}
+
+func (w *Writer) WriteFile(name string, data []byte) error {
+	path := filepath.Join(w.runDir, name)
+	if w.Redacted {
+		data = redactJSON(data)
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", name, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("rename %s: %w", name, err)
+	}
+	return nil
+}
+
+func (w *Writer) WriteMetadata(meta RunMeta) error {
+	data, _ := json.MarshalIndent(meta, "", "  ")
+	return w.WriteFile("metadata.json", append(data, '\n'))
+}
+
+func (w *Writer) WriteSnapshot(snapshotJSON []byte) error {
+	return w.WriteFile("snapshot.json", snapshotJSON)
+}
+
+func (w *Writer) WriteLLMBundle(bundleJSON []byte) error {
+	return w.WriteFile("llm_bundle.json", bundleJSON)
+}
+
+func (w *Writer) WriteLLMRequest(requestJSON []byte) error {
+	return w.WriteFile("llm_request.redacted.json", requestJSON)
+}
+
+func (w *Writer) WriteLLMResponse(responseJSON []byte) error {
+	return w.WriteFile("llm_response.raw.json", responseJSON)
+}
+
+func (w *Writer) WriteOrientationReport(reportJSON []byte) error {
+	return w.WriteFile("orientation_report.json", reportJSON)
+}
+
+func (w *Writer) WriteOrientationValidation(validationJSON []byte) error {
+	return w.WriteFile("orientation_validation.json", validationJSON)
+}
+
+func (w *Writer) WriteDirFile(subdir, name string, data []byte) error {
+	dir := filepath.Join(w.runDir, subdir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, name)
+	if w.Redacted {
+		data = redactJSON(data)
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return fmt.Errorf("write %s/%s: %w", subdir, name, err)
+	}
+	return os.Rename(tmpPath, path)
+}
+
+func (w *Writer) WriteDirError(subdir string, err error) {
+	dir := filepath.Join(w.runDir, subdir)
+	os.MkdirAll(dir, 0o700)
+	data := []byte(fmt.Sprintf("error: %v\n", err))
+	os.WriteFile(filepath.Join(dir, "error.txt"), data, 0o600)
+}
+
+func (w *Writer) RunDir() string {
+	return w.runDir
+}
+
+func (w *Writer) WriteError(err error) {
+	data := []byte(fmt.Sprintf("error: %v\n", err))
+	_ = w.WriteFile("error.txt", data)
+}
+
+var sensitiveKeyPattern = regexp.MustCompile(
+	`(?i)"(` + strings.Join([]string{
+		`api_key`,
+		`apikey`,
+		`api-key`,
+		`authorization`,
+		`bearer`,
+		`token`,
+		`secret`,
+		`password`,
+		`passwd`,
+		`private_key`,
+		`private-key`,
+		`access_key`,
+		`access-key`,
+		`refresh_token`,
+		`refresh-token`,
+	}, "|") + `)"\s*:\s*"[^"]*"`,
+)
+
+func redactJSON(data []byte) []byte {
+	return sensitiveKeyPattern.ReplaceAll(data, []byte(`"$1": "[redacted]"`))
+}
+
+func GenerateRunID(repoName string) string {
+	ts := time.Now().UTC().Format("20060102-150405")
+	return fmt.Sprintf("%s-%s", ts, sanitize(repoName))
+}
+
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, s)
+}

@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/gitfiles"
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
 type Options struct {
@@ -19,6 +21,8 @@ type Options struct {
 	MaxReadmeBytes      int
 	MaxTreeLines        int
 	MaxInterestingFiles int
+	MaxGoPkgs           int
+	MaxGoEdges          int
 }
 
 type Snapshot struct {
@@ -29,9 +33,11 @@ type Snapshot struct {
 	LanguageHints      []LanguageHint `json:"detected_language_hints"`
 	InterestingFiles   []string       `json:"interesting_files"`
 	Go                 GoHints        `json:"go_hints"`
+	GoFacts            *gofacts.Facts `json:"go_facts,omitempty"`
 	FilesConsidered    int            `json:"files_considered"`
 	FilesSkipped       int            `json:"files_skipped"`
 	SkippedPathSamples []string       `json:"skipped_path_samples"`
+	FilteredFiles      []string       `json:"-"`
 }
 
 type LanguageHint struct {
@@ -91,8 +97,12 @@ var skipFileExt = map[string]struct{}{
 	".class": {},
 }
 
-var goImportantWords = []string{
-	"server", "handler", "grpc", "raft", "mvcc", "wal", "lease", "watch", "storage", "backend",
+var interestingWords = []string{
+	"server", "handler", "grpc", "http", "cli", "cobra",
+	"storage", "store", "db", "database", "repository", "repo", "migration",
+	"consumer", "producer", "kafka", "queue", "pubsub", "event",
+	"config", "env", "flag", "viper",
+	"worker", "scheduler", "cron", "job",
 }
 
 func Build(opts Options) (Snapshot, error) {
@@ -104,6 +114,12 @@ func Build(opts Options) (Snapshot, error) {
 	}
 	if opts.MaxInterestingFiles <= 0 {
 		opts.MaxInterestingFiles = 200
+	}
+	if opts.MaxGoPkgs <= 0 {
+		opts.MaxGoPkgs = 300
+	}
+	if opts.MaxGoEdges <= 0 {
+		opts.MaxGoEdges = 500
 	}
 
 	files, err := gitfiles.List(opts.RepoPath)
@@ -134,10 +150,23 @@ func Build(opts Options) (Snapshot, error) {
 		FilesConsidered:    len(filtered),
 		FilesSkipped:       len(files) - len(filtered),
 		SkippedPathSamples: skippedSamples,
+		FilteredFiles:      filtered,
 	}
 
 	s.Go = goHints(opts.RepoPath, filtered)
 	s.Readme = readReadme(opts.RepoPath, opts.MaxReadmeBytes)
+
+	if s.Go.GoModExists || hasGoFiles(filtered) {
+		facts, err := gofacts.Load(context.Background(), opts.RepoPath, filtered, opts.MaxGoPkgs, opts.MaxGoEdges)
+		if err != nil {
+			s.GoFacts = &gofacts.Facts{
+				Warnings: []string{fmt.Sprintf("go facts load failed: %v", err)},
+			}
+		} else {
+			s.GoFacts = facts
+		}
+	}
+
 	return s, nil
 }
 
@@ -252,7 +281,7 @@ func findInterestingFiles(files []string, max int) []string {
 
 	out := make([]string, 0, max)
 	priorityNames := []string{
-		"README.md", "go.mod", "go.sum", "Makefile", "Dockerfile", ".gitignore",
+		"README.md", "go.mod", "Makefile", "Dockerfile", ".gitignore",
 	}
 
 	for _, p := range files {
@@ -274,9 +303,9 @@ func findInterestingFiles(files []string, max int) []string {
 
 	for _, p := range files {
 		l := strings.ToLower(filepath.Base(p))
-		for _, w := range goImportantWords {
+		for _, w := range interestingWords {
 			if strings.Contains(l, w) {
-				out = add(out, p)
+				out = add(out, preferProtoFile(p, files))
 				break
 			}
 		}
@@ -306,7 +335,7 @@ func goHints(repoPath string, files []string) GoHints {
 			entrySet[f] = struct{}{}
 		}
 		base := strings.ToLower(filepath.Base(f))
-		for _, w := range goImportantWords {
+		for _, w := range interestingWords {
 			if strings.Contains(base, w) {
 				important = append(important, f)
 				break
@@ -384,4 +413,26 @@ func sortedSet(set map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func hasGoFiles(files []string) bool {
+	for _, f := range files {
+		if strings.HasSuffix(strings.ToLower(f), ".go") {
+			return true
+		}
+	}
+	return false
+}
+
+func preferProtoFile(path string, files []string) string {
+	if !strings.HasSuffix(path, ".pb.go") {
+		return path
+	}
+	proto := path[:len(path)-6] + ".proto"
+	for _, f := range files {
+		if f == proto {
+			return proto
+		}
+	}
+	return path
 }
