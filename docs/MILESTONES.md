@@ -164,6 +164,13 @@ the exact bounded data sent externally, reveal one investigation branch at a
 time, retain alternative directions, and open a selected source location in the
 editor. The browser consumes saved application state; it does not own analysis.
 
+An early friend-test baseline now covers the first half of this contract:
+`./repomap` targets the current directory, reports compact-context and exact
+request bytes, makes one `deepseek-v4-flash` orientation call, retains every
+validated direction, and opens a static HTML report. M5 remains planned because
+direction selection, progressive evidence steps, session-backed browser state,
+and editor opening are not wired.
+
 ## M6 — Ticket playbook
 
 Use a real etcd or k6 ticket to identify a change surface, analogous code,

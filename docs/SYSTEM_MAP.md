@@ -240,9 +240,10 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 
 | Module | State | Owns | Boundary |
 | --- | --- | --- | --- |
-| `internal/report` | works | HTML/text rendering from saved artifacts | no collection or model calls |
+| `internal/report` | works | HTML/text rendering from saved artifacts, including orientation-only direction cards | no collection or model calls; candidate cards are not actions yet |
 | `internal/debugdump` | works | redacted, replayable run artifacts | never credentials or Authorization headers |
-| browser UI | planned | progress, navigation, investigation choices | should consume application state, not collectors directly |
+| browser report baseline | works | `./repomap` progress, one orientation call, retained directions, automatic static-report opening | no direction selection or session actions |
+| progressive browser UI | planned | navigation and investigation choices | should consume application state, not collectors directly |
 | MCP/editor adapter | planned | expose focused actions to external agents/editors | should be another adapter, not the core |
 
 ## Durable artifact contracts

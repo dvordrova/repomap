@@ -223,6 +223,27 @@ static evidence.
 HEAD plus dirty-file content hashes, analyzer versions, and build context; load
 either rejects incompatible snapshots or invalidates only affected records.
 
+### TD-009: Candidate directions do not yet route to symbols
+
+**Evidence:** the default `./repomap` pass now retains and displays every
+validated orientation direction, but the cards are read-only. The isolated
+handoff records a selected flow as provenance while `investigation.Runner`
+still requires a separately supplied exact symbol; it does not consume the
+selected flow when choosing evidence. Flow IDs are derived name slugs, and the
+main CLI exposes neither named selection nor deterministic symbol candidates.
+
+**Consequence:** the orientation baseline is useful for choosing where a human
+wants to investigate, but clicking or auto-expanding a model-proposed
+entrypoint would falsely promote a navigation hypothesis into a symbol fact.
+The complete journey still needs a manual bridge.
+
+**Done when:** one shared application step maps a user-selected direction's
+verified files to a bounded deterministic set of exact analyzer symbols, asks
+the user to confirm one, and enters the existing investigation reducer through
+the main CLI/browser state. The selected direction must affect ranking and be
+bound to repository identity and revision; model prose alone must never become
+the selected symbol.
+
 ## Maintenance rules
 
 - Add an item only when there is concrete evidence or a demonstrated gap.

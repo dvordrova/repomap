@@ -21,8 +21,24 @@ Build the current CLI:
 go build -o ./repomap ./cmd/repomap
 ```
 
-Configure a full OpenAI-compatible `chat/completions` endpoint. repomap never
-loads a repository-controlled `.env` file.
+The first friend calibration uses the current reference model,
+`deepseek-v4-flash`. No endpoint or model override is needed:
+
+```bash
+export DEEPSEEK_API_KEY=...
+./repomap doctor llm --check
+./repomap /path/to/a/known/go/repository
+```
+
+This performs one bounded orientation call, prints compact-context and exact
+request byte counts, writes the retained artifacts outside the analysed
+repository, and opens the HTML report. Use `--no-open` to keep the same run in
+the terminal only. Running `./repomap` without a repository argument analyses
+the current directory.
+
+For a later company-model calibration, configure a full OpenAI-compatible
+`chat/completions` endpoint. repomap never loads a repository-controlled `.env`
+file.
 
 ```bash
 export REPOMAP_LLM_ENDPOINT=https://llm.company.example/v1/chat/completions
@@ -62,17 +78,20 @@ wc -c /tmp/repomap-request.json
 The preview file is the exact provider body, so the engineer can review both its
 contents and byte size before authorizing the first repository call.
 
-The normal first call performs one bounded orientation request and stops at
-candidate directions. `--flows N` additionally expands the top N directions.
+The normal first call performs one bounded orientation request, presents all
+validated candidate directions in the browser report, and stops there.
+`--flows N` additionally expands the top N directions.
 
 ```bash
 ./repomap /path/to/repo
 ./repomap /path/to/repo --flows 1
 ```
 
-Today `--flows 1` expands the highest-ranked direction. Named direction choice
-and the resumable investigation handoff still live outside the main CLI, so the
-current command is an exploration preview rather than the completed journey.
+Today `--flows 1` expands the highest-ranked direction. The displayed direction
+cards are not yet actions: named direction choice, deterministic symbol
+candidates, and the resumable investigation handoff still live outside the main
+CLI. The current friend pass is therefore an orientation baseline, not a claim
+that the complete progressive journey is wired.
 
 Debug artifacts default to the user cache rather than the analysed repository.
 Use `--no-debug` to retain nothing or `--debug-dir` to choose an explicit trusted

@@ -23,7 +23,22 @@ unavailable.
 
 ## Configure a model
 
-Use a full OpenAI-compatible `chat/completions` URL:
+For the current DeepSeek reference path, only the key is required. The default
+model is `deepseek-v4-flash`:
+
+```bash
+export DEEPSEEK_API_KEY=...
+./repomap doctor llm --check
+./repomap /path/to/repo
+```
+
+The normal human run shows local-context and outbound-request byte counts,
+writes a report under the OS user cache, and opens that report in the browser.
+Run `./repomap` with no repository argument to analyse the current directory;
+use `--no-open` when the browser handoff is not wanted.
+
+For a company or other compatible model, use a full OpenAI-compatible
+`chat/completions` URL:
 
 ```bash
 export REPOMAP_LLM_ENDPOINT=https://llm.company.example/v1/chat/completions
@@ -75,9 +90,10 @@ remote use.
 ## Explore a repository
 
 The default performs one orientation request, preserves validated candidate
-directions, and stops without expanding all of them:
+directions in the browser report, and stops without expanding all of them:
 
 ```bash
+./repomap
 ./repomap ../etcd
 ```
 
