@@ -1,12 +1,15 @@
 package surfacediscovery
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"go/constant"
 	"go/token"
 	"go/types"
+	"go/version"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -108,6 +111,9 @@ func Analyze(opts Options) (Result, error) {
 }
 
 func (a *analyzer) load() error {
+	if err := checkSurfaceGoVersion(a.root); err != nil {
+		return err
+	}
 	buildFlags := []string{}
 	if len(a.opts.BuildTags) > 0 {
 		buildFlags = append(buildFlags, "-tags="+strings.Join(a.opts.BuildTags, ","))
@@ -125,8 +131,8 @@ func (a *analyzer) load() error {
 	if err != nil {
 		return fmt.Errorf("surface discovery: load packages: %w", err)
 	}
-	if packages.PrintErrors(loaded) > 0 {
-		return fmt.Errorf("surface discovery: package loading failed")
+	if err := surfacePackageLoadError(loaded); err != nil {
+		return err
 	}
 	if len(loaded) == 0 {
 		return fmt.Errorf("surface discovery: no build-selected Go packages")
@@ -148,6 +154,65 @@ func (a *analyzer) load() error {
 		Tags:   append([]string{}, a.opts.BuildTags...),
 	}
 	return nil
+}
+
+func checkSurfaceGoVersion(root string) error {
+	file, err := os.Open(filepath.Join(root, "go.mod"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("surface discovery: read go.mod: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(io.LimitReader(file, 1024*1024))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 || fields[0] != "go" {
+			continue
+		}
+		required := "go" + fields[1]
+		running := runtime.Version()
+		if version.IsValid(required) && version.IsValid(running) && version.Compare(running, required) < 0 {
+			return fmt.Errorf(
+				"surface discovery: target module requires %s but repomap runtime is %s",
+				required,
+				running,
+			)
+		}
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("surface discovery: read go.mod: %w", err)
+	}
+	return nil
+}
+
+func surfacePackageLoadError(loaded []*packages.Package) error {
+	errorCount := 0
+	firstMessage := ""
+	packages.Visit(loaded, func(pkg *packages.Package) bool {
+		for _, packageError := range pkg.Errors {
+			errorCount++
+			message := strings.Join(strings.Fields(packageError.Error()), " ")
+			if firstMessage == "" || message < firstMessage {
+				firstMessage = message
+			}
+		}
+		return true
+	}, nil)
+	if errorCount == 0 {
+		return nil
+	}
+	if firstMessage == "" {
+		firstMessage = "details unavailable"
+	}
+	return fmt.Errorf(
+		"surface discovery: package loading failed with %d error(s); first: %s",
+		errorCount,
+		firstMessage,
+	)
 }
 
 func (a *analyzer) prepare() {
