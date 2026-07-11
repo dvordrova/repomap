@@ -143,6 +143,59 @@ func TestEnsureArchitectureSynthesisDoesNotRetryCorruptSavedRecord(t *testing.T)
 	}
 }
 
+func TestPrepareArchitectureSynthesisSupportsLandscapeWithoutFlowProof(t *testing.T) {
+	t.Parallel()
+
+	runDir := filepath.Join(t.TempDir(), "run")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureSynthesisFixture(t, runDir, "snapshot.json", `{"repo_name":"fixture"}`)
+	writeArchitectureSynthesisFixture(t, runDir, "orientation_report.json", `{"project_guess":"fixture"}`)
+	writeArchitectureSynthesisFixture(t, runDir, "llm_bundle.json", `{
+		"go": {
+			"module_summaries": [{"module_path":"example.com/project","module_dir":"."}],
+			"important_edges": [{"from":"example.com/project/cmd","to":"example.com/project/internal/repo"}]
+		}
+	}`)
+
+	data, err := report.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := report.BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, input.CandidateBundle)}
+	outcome, err := prepareArchitectureSynthesis(
+		context.Background(), runDir, "revision-landscape-only",
+		"openai-compatible/bearer", "test-model", provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || outcome.InputBytes == 0 {
+		t.Fatalf("provider calls/outcome = %d / %#v, want one bounded synthesis", provider.calls, outcome)
+	}
+
+	replayed, err := report.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.ArchitectureCanvas == nil || replayed.ArchitectureCanvas.Fallback ||
+		len(replayed.ArchitectureCanvas.Components) == 0 || len(replayed.ArchitectureCanvas.Flows) != 0 {
+		t.Fatalf("replayed canvas = %#v, want synthesized landscape without invented flows", replayed.ArchitectureCanvas)
+	}
+}
+
+func writeArchitectureSynthesisFixture(t *testing.T, dir, name, contents string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func architectureSynthesisTestBundle() componentmap.CandidateBundle {
 	memberID := componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-runtime"}
 	return componentmap.CandidateBundle{

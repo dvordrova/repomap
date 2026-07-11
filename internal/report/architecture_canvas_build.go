@@ -22,9 +22,11 @@ const architectureBuildContractVersion = "architecture-candidates-v1"
 const ArchitectureSynthesisFile = "architecture_synthesis.json"
 
 // BuildArchitectureCanvasInput derives the exact local input for the v2
-// architecture canvas from saved report facts. It intentionally chooses the
-// deterministic landscape; conceptual synthesis may replace only that
-// membership result later, using the returned candidate bundle.
+// architecture canvas from saved report facts. A repository landscape does
+// not require a proven flow; saved FlowProof sessions add optional overlays.
+// It intentionally chooses the deterministic landscape; conceptual synthesis
+// may replace only that membership result later, using the returned candidate
+// bundle.
 func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, error) {
 	if data == nil {
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: report data is nil")
@@ -52,10 +54,6 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 		seenFlows[flowID] = struct{}{}
 		builder.addFlow(direction)
 	}
-	if len(builder.flows) == 0 {
-		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: no saved flowproof sessions")
-	}
-
 	bundle := builder.bundle()
 	if err := bundle.Validate(); err != nil {
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: candidate bundle: %w", err)
