@@ -105,8 +105,8 @@ func TestEnrich(t *testing.T) {
 	}
 	enrich(data)
 
-	if data.FormatVersion != 2 {
-		t.Errorf("format version = %d, want 2", data.FormatVersion)
+	if data.FormatVersion != 3 {
+		t.Errorf("format version = %d, want 3", data.FormatVersion)
 	}
 	if data.FlowCount != 2 {
 		t.Errorf("flow count = %d, want 2", data.FlowCount)
@@ -129,7 +129,19 @@ func TestReadRunDir_Integration(t *testing.T) {
 	dir := t.TempDir()
 
 	writeTestFile(t, dir, "snapshot.json", `{"repo_name":"etcd","readme":"..."}`)
-	writeTestFile(t, dir, "orientation_report.json", `{"project_guess":"KV store","candidate_flows":[{"name":"gRPC Put"}],"warnings":["w1"]}`)
+	writeTestFile(t, dir, "orientation_report.json", `{
+		"project_guess":"KV store",
+		"candidate_flows":[{
+			"name":"gRPC Put",
+			"trigger":"a client sends Put",
+			"likely_entrypoint":"server/put.go",
+			"likely_files":["server/put.go","storage/kv.go"],
+			"why_interesting":"shows the write path",
+			"evidence":["server/put.go handles Put"],
+			"confidence":0.82
+		}],
+		"warnings":["w1"]
+	}`)
 
 	flowDir := filepath.Join(dir, "flows", "grpc-put")
 	mkdirAll(t, flowDir)
@@ -176,6 +188,22 @@ func TestReadRunDir_Integration(t *testing.T) {
 	}
 	if len(data.CandidateFlows) != 1 || data.CandidateFlows[0] != "gRPC Put" {
 		t.Errorf("candidate_flows = %v", data.CandidateFlows)
+	}
+	if len(data.CandidateDirections) != 1 {
+		t.Fatalf("candidate directions = %d, want 1", len(data.CandidateDirections))
+	}
+	direction := data.CandidateDirections[0]
+	if direction.ID != "grpc-put" || direction.Name != "gRPC Put" || direction.Trigger != "a client sends Put" {
+		t.Errorf("candidate direction identity = %+v", direction)
+	}
+	if direction.LikelyEntrypoint != "server/put.go" || direction.WhyInteresting != "shows the write path" || direction.Confidence != 0.82 {
+		t.Errorf("candidate direction details = %+v", direction)
+	}
+	if len(direction.LikelyFiles) != 2 || direction.LikelyFiles[1] != "storage/kv.go" {
+		t.Errorf("candidate direction likely files = %v", direction.LikelyFiles)
+	}
+	if len(direction.Evidence) != 1 || direction.Evidence[0] != "server/put.go handles Put" {
+		t.Errorf("candidate direction evidence = %v", direction.Evidence)
 	}
 	if len(data.Flows) != 1 {
 		t.Fatalf("expected 1 flow, got %d", len(data.Flows))
@@ -250,8 +278,8 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if data.FlowCount != 1 {
 		t.Errorf("flow count = %d, want 1", data.FlowCount)
 	}
-	if data.FormatVersion != 2 {
-		t.Errorf("format version = %d, want 2", data.FormatVersion)
+	if data.FormatVersion != 3 {
+		t.Errorf("format version = %d, want 3", data.FormatVersion)
 	}
 	if len(data.Warnings) < 1 || data.Warnings[0] != "w1" {
 		t.Errorf("top-level warnings = %v", data.Warnings)
@@ -426,13 +454,13 @@ func TestWriteReportJSON_RoundTrip(t *testing.T) {
 
 func TestJSONRoundTrip(t *testing.T) {
 	data := ReportData{
-		RepoName:     "test",
+		RepoName:      "test",
 		FormatVersion: 2,
 		Flows: []FlowData{{
-			ID:         "f1",
-			Confidence: 0.5,
-			FilesToRead: []FileItem{{Path: "x.go", Reason: "test", Priority: 1}},
-			ConfidenceLabel: "medium",
+			ID:               "f1",
+			Confidence:       0.5,
+			FilesToRead:      []FileItem{{Path: "x.go", Reason: "test", Priority: 1}},
+			ConfidenceLabel:  "medium",
 			BundleStatsLabel: "1 source, 0 test, 0 doc",
 		}},
 		RecommendedFlow: "f1",

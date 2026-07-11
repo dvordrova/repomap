@@ -51,6 +51,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-ov-flow-footer { display: flex; gap: .75rem; align-items: center; margin-top: .5rem; }
 .rm-ov-flow-stat { font-size: .7rem; color: var(--rm-dim); }
 .rm-ov-flow .rm-meta { font-size: .75rem; color: var(--rm-dim); margin-top: .35rem; }
+.rm-direction-hint { color: var(--rm-dim); font-size: .82rem; margin: -.25rem 0 1rem; }
+.rm-candidate-direction { cursor: default; }
+.rm-candidate-direction:hover { box-shadow: none; }
+.rm-candidate-direction .rm-evidence { margin-left: auto; }
+.rm-direction-field { border-top: 1px solid var(--rm-border); padding-top: .5rem; margin-top: .5rem; }
+.rm-direction-label { color: var(--rm-dim); font-size: .68rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin-bottom: .15rem; }
+.rm-direction-value { font-size: .78rem; }
+.rm-direction-code { color: var(--rm-code); font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .72rem; overflow-wrap: anywhere; padding: .08rem 0; }
+.rm-direction-evidence { border-top: 1px solid var(--rm-border); margin-top: .6rem; padding-top: .5rem; }
+.rm-direction-evidence-item { color: var(--rm-dim); font-size: .75rem; line-height: 1.4; margin-top: .25rem; padding-left: .8rem; position: relative; }
+.rm-direction-evidence-item::before { content: '•'; left: 0; position: absolute; }
 
 /* Start Here accent */
 .rm-ov-flow.rm-ov-flow--recommended { border-left: 3px solid var(--rm-accent); }

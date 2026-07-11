@@ -12,14 +12,24 @@ var update = flag.Bool("update", false, "update golden files")
 
 func TestWriteReportHTML_Golden(t *testing.T) {
 	data := ReportData{
-		FormatVersion:    2,
-		RepoName:         "testrepo",
-		ProjectGuess:     "test project",
-		CandidateFlows:   []string{"flow-a"},
-		RecommendedFlow:  "flow-a",
-		FlowCount:        1,
-		ArtifactsDir:     "/tmp/test-run",
-		Warnings:         []string{"global warning 1"},
+		FormatVersion:  3,
+		RepoName:       "testrepo",
+		ProjectGuess:   "test project",
+		CandidateFlows: []string{"flow-a"},
+		CandidateDirections: []CandidateDirection{{
+			ID:               "flow-a",
+			Name:             "Test Flow",
+			Trigger:          "a request arrives",
+			LikelyEntrypoint: "main.go",
+			LikelyFiles:      []string{"main.go", "server/server.go"},
+			WhyInteresting:   "shows the primary request path",
+			Evidence:         []string{"main.go wires the server"},
+			Confidence:       0.75,
+		}},
+		RecommendedFlow: "flow-a",
+		FlowCount:       1,
+		ArtifactsDir:    "/tmp/test-run",
+		Warnings:        []string{"global warning 1"},
 		Flows: []FlowData{{
 			ID:               "flow-a",
 			Name:             "Test Flow",
@@ -111,6 +121,53 @@ func TestWriteReportHTML_WritesFile(t *testing.T) {
 	}
 	if bytes.Contains(b, []byte("S:")) {
 		t.Error("report.html contains single-letter abbreviation S:")
+	}
+}
+
+func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T) {
+	data := ReportData{
+		FormatVersion: 3,
+		RepoName:      "orientation-only",
+		CandidateFlows: []string{
+			"HTTP request",
+		},
+		CandidateDirections: []CandidateDirection{{
+			ID:               "http-request",
+			Name:             "HTTP request",
+			Trigger:          "GET /metrics",
+			LikelyEntrypoint: "api/server.go",
+			LikelyFiles:      []string{"api/server.go", "metrics/registry.go"},
+			WhyInteresting:   "connects the public API to metric collection",
+			Evidence:         []string{"api/server.go registers the route"},
+			Confidence:       0.8,
+		}},
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.html")
+	if err := WriteReportHTML(&data, path); err != nil {
+		t.Fatalf("WriteReportHTML: %v", err)
+	}
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read report.html: %v", err)
+	}
+	for _, want := range [][]byte{
+		[]byte("candidate_directions"),
+		[]byte("HTTP request"),
+		[]byte("GET /metrics"),
+		[]byte("api/server.go"),
+		[]byte("connects the public API to metric collection"),
+		[]byte("api/server.go registers the route"),
+		[]byte("Directions to explore"),
+	} {
+		if !bytes.Contains(b, want) {
+			t.Errorf("report.html does not contain %q", want)
+		}
+	}
+	if bytes.Contains(b, []byte("No flows identified")) {
+		t.Error("orientation-only report contains the misleading old empty-state text")
 	}
 }
 
