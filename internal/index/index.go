@@ -13,16 +13,45 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/symbol"
 )
 
-const Version = 1
+const Version = 2
 
-var ErrNotFound = errors.New("index: target not found")
+var (
+	ErrNotFound = errors.New("index: target not found")
+	ErrStale    = errors.New("index: stale snapshot")
+)
 
 type Metadata struct {
-	Repository string `json:"repository"`
-	Revision   string `json:"revision,omitempty"`
+	Facts freshness.FactContext `json:"facts"`
+}
+
+func (m Metadata) Validate() error {
+	if err := m.Facts.Validate(); err != nil {
+		return fmt.Errorf("facts: %w", err)
+	}
+	return nil
+}
+
+type StaleError struct {
+	Differences []freshness.Difference
+}
+
+func (e StaleError) Error() string {
+	if len(e.Differences) == 0 {
+		return ErrStale.Error()
+	}
+	differences := make([]string, 0, len(e.Differences))
+	for _, difference := range e.Differences {
+		differences = append(differences, difference.String())
+	}
+	return fmt.Sprintf("%s: %s", ErrStale, strings.Join(differences, "; "))
+}
+
+func (e StaleError) Unwrap() error {
+	return ErrStale
 }
 
 type Index struct {
@@ -42,16 +71,19 @@ type snapshot struct {
 	Symbols  []json.RawMessage `json:"symbols"`
 }
 
-func New(metadata Metadata) *Index {
+func New(metadata Metadata) (*Index, error) {
+	if err := metadata.Validate(); err != nil {
+		return nil, fmt.Errorf("index: invalid metadata: %w", err)
+	}
 	return &Index{
-		metadata: metadata,
+		metadata: cloneMetadata(metadata),
 		records:  make(map[string]record),
 		byPath:   make(map[string]map[string]struct{}),
-	}
+	}, nil
 }
 
 func (i *Index) Metadata() Metadata {
-	return i.metadata
+	return cloneMetadata(i.metadata)
 }
 
 func (i *Index) Len() int {
@@ -144,17 +176,13 @@ func (i *Index) Save(path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("index: create snapshot directory: %w", err)
 	}
-	temporaryPath := path + ".tmp"
-	if err := os.WriteFile(temporaryPath, data, 0o600); err != nil {
-		return fmt.Errorf("index: write snapshot: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("index: replace snapshot: %w", err)
-	}
-	return nil
+	return writeAtomic(path, data)
 }
 
-func Load(path string) (*Index, error) {
+func Load(path string, current Metadata) (*Index, error) {
+	if err := current.Validate(); err != nil {
+		return nil, fmt.Errorf("index: invalid current metadata: %w", err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("index: read snapshot: %w", err)
@@ -166,12 +194,22 @@ func Load(path string) (*Index, error) {
 	if persisted.Version != Version {
 		return nil, fmt.Errorf("index: unsupported snapshot version %d", persisted.Version)
 	}
+	if err := persisted.Metadata.Validate(); err != nil {
+		return nil, fmt.Errorf("index: invalid saved metadata: %w", err)
+	}
+	differences := freshness.CompareFactContext(persisted.Metadata.Facts, current.Facts)
+	if len(differences) > 0 {
+		return nil, &StaleError{Differences: append([]freshness.Difference(nil), differences...)}
+	}
 
-	result := New(persisted.Metadata)
+	result, err := New(persisted.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	seen := make(map[string]struct{}, len(persisted.Symbols))
 	for position, raw := range persisted.Symbols {
 		var bundle symbol.Bundle
-		if err := json.Unmarshal(raw, &bundle); err != nil {
+		if err := decodeJSON(raw, &bundle); err != nil {
 			return nil, fmt.Errorf("index: decode symbol %d: %w", position, err)
 		}
 		targetID := bundle.Target.Entity.ID
@@ -239,6 +277,51 @@ func (i *Index) removePaths(targetID string, paths []string) {
 			delete(i.byPath, path)
 		}
 	}
+}
+
+func cloneMetadata(metadata Metadata) Metadata {
+	if metadata.Facts.Repository.Dirty != nil {
+		metadata.Facts.Repository.Dirty = append(
+			make([]freshness.DirtyFile, 0, len(metadata.Facts.Repository.Dirty)),
+			metadata.Facts.Repository.Dirty...,
+		)
+	}
+	if metadata.Facts.Build.BuildTags != nil {
+		metadata.Facts.Build.BuildTags = append(
+			make([]string, 0, len(metadata.Facts.Build.BuildTags)),
+			metadata.Facts.Build.BuildTags...,
+		)
+	}
+	return metadata
+}
+
+func writeAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	temporary, err := os.CreateTemp(dir, ".repomap-index-*")
+	if err != nil {
+		return fmt.Errorf("index: create temporary snapshot: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return fmt.Errorf("index: protect temporary snapshot: %w", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return fmt.Errorf("index: write snapshot: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return fmt.Errorf("index: sync snapshot: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("index: close snapshot: %w", err)
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return fmt.Errorf("index: replace snapshot: %w", err)
+	}
+	return nil
 }
 
 func decodeJSON(data []byte, target any) error {

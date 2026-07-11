@@ -66,6 +66,10 @@ type callEdge struct {
 
 const activeBuildScenarioID = "gopls-active-build"
 
+// CollectorVersion identifies the adapter semantics used to turn gopls CLI
+// output into evidence. Bump it when parsing or evidence construction changes.
+const CollectorVersion = 1
+
 var _ analysis.Provider = (*Analyzer)(nil)
 
 func New(opts Options) *Analyzer {
