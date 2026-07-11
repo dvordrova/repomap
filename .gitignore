@@ -21,4 +21,5 @@ repomap
 # Repomap artifacts
 tmp/
 .repomap-runs/
+.repomap/
 /etcd

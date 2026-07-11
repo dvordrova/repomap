@@ -127,6 +127,21 @@ signature, documentation, body-level calls/conditions/returns, referenced local
 types, and relevant test locations. Source-supported claims must cite those
 evidence IDs; the system must not parse every function eagerly.
 
+### TD-008: Local index freshness metadata is not collected automatically
+
+**Evidence:** `internal/index` persists bounded symbol neighborhoods and can
+invalidate every neighborhood that references a changed path. Its repository and
+revision metadata are currently supplied by the caller, and no production path
+yet records dirty-file content, Go/gopls versions, or build context.
+
+**Consequence:** the storage mechanism is usable and testable, but treating a
+loaded snapshot as fresh without an explicit caller policy could serve stale
+static evidence.
+
+**Done when:** the symbol collection path derives a stable repository identity,
+HEAD plus dirty-file content hashes, analyzer versions, and build context; load
+either rejects incompatible snapshots or invalidates only affected records.
+
 ## Maintenance rules
 
 - Add an item only when there is concrete evidence or a demonstrated gap.
