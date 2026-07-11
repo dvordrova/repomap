@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "seeds": [
+    {
+      "id": "net-http-servemux-handle",
+      "operation": "call",
+      "symbol": {"package": "net/http", "receiver": "*ServeMux", "name": "Handle", "min_args": 2},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "net/http"},
+      "projections": {"path": {"source": "argument", "index": 0}, "handler": {"source": "argument", "index": 1}, "dispatcher": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "net/http ServeMux.Handle",
+      "fixture_coverage": ["direct", "multiple_wrappers", "dynamic"]
+    },
+    {
+      "id": "net-http-servemux-handlefunc",
+      "operation": "call",
+      "symbol": {"package": "net/http", "receiver": "*ServeMux", "name": "HandleFunc", "min_args": 2},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "net/http"},
+      "projections": {"path": {"source": "argument", "index": 0}, "handler": {"source": "argument", "index": 1}, "dispatcher": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "net/http ServeMux.HandleFunc",
+      "fixture_coverage": ["direct", "one_wrapper", "cross_package"]
+    },
+    {
+      "id": "net-http-default-handle",
+      "operation": "call",
+      "symbol": {"package": "net/http", "name": "Handle", "min_args": 2},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "net/http"},
+      "projections": {"path": {"source": "argument", "index": 0}, "handler": {"source": "argument", "index": 1}, "dispatcher": {"source": "constant", "value": "net/http.DefaultServeMux"}},
+      "scenario": {},
+      "reference": "net/http Handle",
+      "fixture_coverage": ["default_mux"]
+    },
+    {
+      "id": "net-http-default-handlefunc",
+      "operation": "call",
+      "symbol": {"package": "net/http", "name": "HandleFunc", "min_args": 2},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "net/http"},
+      "projections": {"path": {"source": "argument", "index": 0}, "handler": {"source": "argument", "index": 1}, "dispatcher": {"source": "constant", "value": "net/http.DefaultServeMux"}},
+      "scenario": {},
+      "reference": "net/http HandleFunc",
+      "fixture_coverage": ["default_mux"]
+    },
+    {
+      "id": "net-http-listen-and-serve",
+      "operation": "call",
+      "symbol": {"package": "net/http", "name": "ListenAndServe", "min_args": 2},
+      "effect": {"kind": "http_server_start", "transport": "http", "framework": "net/http"},
+      "projections": {"address": {"source": "argument", "index": 0}, "dispatcher": {"source": "argument", "index": 1}},
+      "scenario": {},
+      "reference": "net/http ListenAndServe",
+      "fixture_coverage": ["direct"]
+    },
+    {
+      "id": "net-http-listen-and-serve-tls",
+      "operation": "call",
+      "symbol": {"package": "net/http", "name": "ListenAndServeTLS", "min_args": 4},
+      "effect": {"kind": "http_server_start", "transport": "https", "framework": "net/http"},
+      "projections": {"address": {"source": "argument", "index": 0}, "dispatcher": {"source": "argument", "index": 3}},
+      "scenario": {},
+      "reference": "net/http ListenAndServeTLS",
+      "fixture_coverage": ["catalog_validation"]
+    },
+    {
+      "id": "net-http-server-serve",
+      "operation": "call",
+      "symbol": {"package": "net/http", "receiver": "*Server", "name": "Serve", "min_args": 1},
+      "effect": {"kind": "http_server_start", "transport": "http", "framework": "net/http"},
+      "projections": {"server": {"source": "receiver"}, "listener": {"source": "argument", "index": 0}},
+      "scenario": {},
+      "reference": "net/http Server.Serve",
+      "fixture_coverage": ["catalog_validation"]
+    },
+    {
+      "id": "net-http-server-listen-and-serve",
+      "operation": "call",
+      "symbol": {"package": "net/http", "receiver": "*Server", "name": "ListenAndServe", "min_args": 0},
+      "effect": {"kind": "http_server_start", "transport": "http", "framework": "net/http"},
+      "projections": {"server": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "net/http Server.ListenAndServe",
+      "fixture_coverage": ["catalog_validation"]
+    },
+    {
+      "id": "net-http-server-listen-and-serve-tls",
+      "operation": "call",
+      "symbol": {"package": "net/http", "receiver": "*Server", "name": "ListenAndServeTLS", "min_args": 2},
+      "effect": {"kind": "http_server_start", "transport": "https", "framework": "net/http"},
+      "projections": {"server": {"source": "receiver"}, "certificate": {"source": "argument", "index": 0}, "key": {"source": "argument", "index": 1}},
+      "scenario": {},
+      "reference": "net/http Server.ListenAndServeTLS",
+      "fixture_coverage": ["catalog_validation"]
+    },
+    {
+      "id": "net-http-server-handler-field",
+      "operation": "field_store",
+      "symbol": {"package": "net/http", "receiver": "*Server", "name": "Handler"},
+      "effect": {"kind": "http_handler_assignment", "transport": "http", "framework": "net/http"},
+      "projections": {"server": {"source": "receiver"}, "dispatcher": {"source": "argument", "index": 0}},
+      "scenario": {},
+      "reference": "net/http Server.Handler field assignment",
+      "fixture_coverage": ["value_projection"]
+    }
+  ]
+}
