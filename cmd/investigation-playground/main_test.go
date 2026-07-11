@@ -11,9 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/deepseektest"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/investigation"
+	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/sourcecard"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
@@ -114,10 +117,10 @@ func TestPrepareResumedSessionAppliesOnlyExplicitSafeChoices(t *testing.T) {
 	}
 	waiting := waitingSessionFixture(t, repoPath, revision, origin)
 	sessionPath := filepath.Join(t.TempDir(), "investigation_session.json")
-	writeSessionFixture(t, sessionPath, waiting)
+	baseConfig := writeNativeSessionFixture(t, sessionPath, waiting)
 
 	t.Run("no choice preserves pending question", func(t *testing.T) {
-		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), config{resumePath: sessionPath})
+		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), baseConfig)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,17 +130,18 @@ func TestPrepareResumedSessionAppliesOnlyExplicitSafeChoices(t *testing.T) {
 	})
 
 	t.Run("continue rejects presentation action", func(t *testing.T) {
-		_, _, _, err := prepareSession(context.Background(), config{
-			resumePath:  sessionPath,
-			continueRun: true,
-		})
+		cfg := baseConfig
+		cfg.continueRun = true
+		_, _, _, err := prepareSession(context.Background(), cfg)
 		if err == nil || !strings.Contains(err.Error(), "cannot execute pending action") {
 			t.Fatalf("error = %v", err)
 		}
 	})
 
 	t.Run("finish", func(t *testing.T) {
-		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), config{resumePath: sessionPath, finish: true})
+		cfg := baseConfig
+		cfg.finish = true
+		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -148,10 +152,9 @@ func TestPrepareResumedSessionAppliesOnlyExplicitSafeChoices(t *testing.T) {
 	})
 
 	t.Run("redirect", func(t *testing.T) {
-		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), config{
-			resumePath:  sessionPath,
-			symbolQuery: "kvServer.DeleteRange",
-		})
+		cfg := baseConfig
+		cfg.symbolQuery = "kvServer.DeleteRange"
+		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,21 +169,17 @@ func TestPrepareResumedSessionContinuesOnlyExecutableCapability(t *testing.T) {
 	repoPath, revision := newGitRepository(t)
 	assessing := assessingSessionFixture(t, repoPath, revision, nil)
 	sessionPath := filepath.Join(t.TempDir(), "investigation_session.json")
-	writeSessionFixture(t, sessionPath, assessing)
+	baseConfig := writeNativeSessionFixture(t, sessionPath, assessing)
 
-	_, _, _, err := prepareSession(context.Background(), config{
-		resumePath:  sessionPath,
-		continueRun: true,
-	})
+	cfg := baseConfig
+	cfg.continueRun = true
+	_, _, _, err := prepareSession(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "requires --deepseek") {
 		t.Fatalf("error = %v", err)
 	}
 
-	got, stopped, preserveArtifacts, err := prepareSession(context.Background(), config{
-		resumePath:   sessionPath,
-		continueRun:  true,
-		callDeepSeek: true,
-	})
+	cfg.callDeepSeek = true
+	got, stopped, preserveArtifacts, err := prepareSession(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,18 +201,127 @@ func TestPrepareResumedSessionMakesRepositoryChangeVisibleBeforeChoice(t *testin
 	}
 	waiting := waitingSessionFixture(t, repoPath, revision, origin)
 	sessionPath := filepath.Join(t.TempDir(), "investigation_session.json")
-	writeSessionFixture(t, sessionPath, waiting)
+	baseConfig := writeNativeSessionFixture(t, sessionPath, waiting)
 	writeTestFile(t, filepath.Join(repoPath, "main.go"), []byte("package fixture\n\n// changed\n"))
 
-	got, stopped, preserveArtifacts, err := prepareSession(context.Background(), config{
-		resumePath: sessionPath,
-		finish:     true,
-	})
+	baseConfig.finish = true
+	got, stopped, preserveArtifacts, err := prepareSession(context.Background(), baseConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !stopped || preserveArtifacts || got.State != investigation.StateResolvingSymbol || got.Repository.Revision == revision ||
 		got.Origin != nil || got.Symbol != nil || got.Source != nil || got.SourceReport != nil {
+		t.Fatalf("stopped = %v, preserve = %v, session = %#v", stopped, preserveArtifacts, got)
+	}
+}
+
+func TestPrepareResumedSessionDetectsDifferentDirtyContentAtSameHead(t *testing.T) {
+	repoPath, _ := newGitRepository(t)
+	writeTestFile(t, filepath.Join(repoPath, "main.go"), []byte("package fixture\n\nconst state = 1\n"))
+	revision, err := repositoryRevision(context.Background(), repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := waitingSessionFixture(t, repoPath, revision, nil)
+	sessionPath := filepath.Join(t.TempDir(), "investigation_session.json")
+	baseConfig := writeNativeSessionFixture(t, sessionPath, waiting)
+
+	writeTestFile(t, filepath.Join(repoPath, "main.go"), []byte("package fixture\n\nconst state = 2\n"))
+	currentRevision, err := repositoryRevision(context.Background(), repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if currentRevision == revision {
+		t.Fatal("different dirty contents produced the same repository revision")
+	}
+
+	got, stopped, preserveArtifacts, err := prepareSession(context.Background(), baseConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stopped || preserveArtifacts || got.State != investigation.StateResolvingSymbol || got.Repository.Revision != currentRevision ||
+		got.Symbol != nil || got.Source != nil || got.SourceReport != nil {
+		t.Fatalf("stopped = %v, preserve = %v, session = %#v", stopped, preserveArtifacts, got)
+	}
+}
+
+func TestPrepareNativeSessionInvalidatesFactAndClaimContextsSeparately(t *testing.T) {
+	repoPath, revision := newGitRepository(t)
+	waiting := waitingSessionFixture(t, repoPath, revision, nil)
+
+	t.Run("analyzer options", func(t *testing.T) {
+		sessionPath := filepath.Join(t.TempDir(), memory.SessionFileName)
+		cfg := writeNativeSessionFixture(t, sessionPath, waiting)
+		cfg.maxCandidates = 99
+
+		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stopped || preserveArtifacts || got.State != investigation.StateResolvingSymbol || got.Symbol != nil || got.Source != nil ||
+			!strings.Contains(got.Next[0].Reason, string(freshness.ReasonAnalysisInputs)) {
+			t.Fatalf("stopped = %v, preserve = %v, session = %#v", stopped, preserveArtifacts, got)
+		}
+	})
+
+	t.Run("source prompt", func(t *testing.T) {
+		sessionPath := filepath.Join(t.TempDir(), memory.SessionFileName)
+		checkpoint, cfg := memoryInputFixture(t, waiting)
+		cfg.resumePath = sessionPath
+		checkpoint.Claims.PromptVersion = "source-assessment-json-old"
+		if _, err := memory.Save(filepath.Dir(sessionPath), checkpoint); err != nil {
+			t.Fatal(err)
+		}
+
+		got, stopped, preserveArtifacts, err := prepareSession(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stopped || preserveArtifacts || got.State != investigation.StateAssessingSource || got.Symbol == nil || got.Source == nil ||
+			got.Assessment == nil || got.SourceReport != nil || !strings.Contains(got.Next[0].Reason, string(freshness.ReasonPromptVersion)) {
+			t.Fatalf("stopped = %v, preserve = %v, session = %#v", stopped, preserveArtifacts, got)
+		}
+	})
+}
+
+func TestPrepareNativeSessionDoesNotFallbackAfterIntegrityFailure(t *testing.T) {
+	repoPath, revision := newGitRepository(t)
+	waiting := waitingSessionFixture(t, repoPath, revision, nil)
+	sessionPath := filepath.Join(t.TempDir(), memory.SessionFileName)
+	cfg := writeNativeSessionFixture(t, sessionPath, waiting)
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header struct {
+		FactsRef struct {
+			Path string `json:"path"`
+		} `json:"facts_ref"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		t.Fatal(err)
+	}
+	factPath := filepath.Join(filepath.Dir(sessionPath), filepath.FromSlash(header.FactsRef.Path))
+	if err := os.WriteFile(factPath, []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := prepareSession(context.Background(), cfg); err == nil || !strings.Contains(err.Error(), "content hash mismatch") {
+		t.Fatalf("prepareSession() error = %v", err)
+	}
+}
+
+func TestPrepareLegacySessionWithFactsFailsClosed(t *testing.T) {
+	repoPath, revision := newGitRepository(t)
+	assessing := assessingSessionFixture(t, repoPath, revision, nil)
+	sessionPath := filepath.Join(t.TempDir(), memory.SessionFileName)
+	writeSessionFixture(t, sessionPath, assessing)
+
+	got, stopped, preserveArtifacts, err := prepareSession(context.Background(), config{resumePath: sessionPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stopped || preserveArtifacts || got.State != investigation.StateResolvingSymbol || got.Symbol != nil ||
+		!strings.Contains(got.Next[0].Reason, "legacy session") {
 		t.Fatalf("stopped = %v, preserve = %v, session = %#v", stopped, preserveArtifacts, got)
 	}
 }
@@ -225,20 +333,30 @@ func TestWriteRunRemovesOnlyStaleGeneratedArtifacts(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(dir, "keep-me.txt"), []byte("user file"))
 
-	if err := writeRun(dir, investigation.Session{Version: investigation.SessionVersion}, runArtifacts{}, false); err != nil {
+	repoPath, revision := newGitRepository(t)
+	session, _, err := investigation.Reduce(investigation.Session{}, investigation.Event{
+		Kind: investigation.EventStarted,
+		Start: &investigation.StartInput{
+			Goal:       investigation.Goal{Text: "understand fixture.Run"},
+			Repository: investigation.Repository{Path: repoPath, Revision: revision},
+			Focus:      investigation.Focus{Kind: investigation.FocusSymbol, Symbol: "fixture.Run"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, _ := memoryInputFixture(t, session)
+	if err := writeRun(dir, checkpoint, runArtifacts{}, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range allGeneratedArtifactNames() {
 		_, err := os.Stat(filepath.Join(dir, name))
-		if name == "investigation_session.json" {
-			if err != nil {
-				t.Fatalf("current session artifact: %v", err)
-			}
-			continue
-		}
 		if !os.IsNotExist(err) {
 			t.Fatalf("stale artifact %s still exists or stat failed: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, memory.SessionFileName)); err != nil {
+		t.Fatalf("current session artifact: %v", err)
 	}
 	if data, err := os.ReadFile(filepath.Join(dir, "keep-me.txt")); err != nil || string(data) != "user file" {
 		t.Fatalf("unrelated file changed: data=%q err=%v", data, err)
@@ -259,10 +377,12 @@ func TestWriteRunPreservesPriorRunArtifactsForSameEvidenceLineage(t *testing.T) 
 		sourceModel:         "fixture-model",
 		sourcePromptVersion: "source-fixture-v1",
 	}
-	if err := writeRun(dir, session, artifacts, false); err != nil {
+	checkpoint, _ := memoryInputFixture(t, session)
+	checkpoint.Claims.PromptVersion = "source-fixture-v1"
+	if err := writeRun(dir, checkpoint, artifacts, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeRun(dir, session, runArtifacts{}, true); err != nil {
+	if err := writeRun(dir, checkpoint, runArtifacts{}, true); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string][]byte{
@@ -301,7 +421,9 @@ func TestWriteRunDoesNotReuseArtifactsAcrossEvidenceLineages(t *testing.T) {
 	dir := t.TempDir()
 	repoPath, revision := newGitRepository(t)
 	session := waitingSessionFixture(t, repoPath, revision, nil)
-	if err := writeRun(dir, session, runArtifacts{
+	checkpoint, _ := memoryInputFixture(t, session)
+	checkpoint.Claims.PromptVersion = "source-fixture-v1"
+	if err := writeRun(dir, checkpoint, runArtifacts{
 		graphJSON:           []byte(`{"graph":"a"}`),
 		rawSource:           []byte(`{"response":"a"}`),
 		evaluationJSON:      []byte(`{"score":100}`),
@@ -314,7 +436,9 @@ func TestWriteRunDoesNotReuseArtifactsAcrossEvidenceLineages(t *testing.T) {
 		t.Fatal(err)
 	}
 	session.Goal.Text = "a different investigation lineage"
-	if err := writeRun(dir, session, runArtifacts{}, true); err != nil {
+	checkpoint, _ = memoryInputFixture(t, session)
+	checkpoint.Claims.PromptVersion = "source-fixture-v1"
+	if err := writeRun(dir, checkpoint, runArtifacts{}, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range append(append([]string{}, runArtifactNames...), runArtifactManifestName) {
@@ -339,10 +463,13 @@ func TestWriteRunDoesNotReuseAcceptedModelOutcomeForPendingSession(t *testing.T)
 		sourceModel:         "fixture-model",
 		sourcePromptVersion: "source-fixture-v1",
 	}
-	if err := writeRun(dir, accepted, artifacts, false); err != nil {
+	acceptedCheckpoint, _ := memoryInputFixture(t, accepted)
+	acceptedCheckpoint.Claims.PromptVersion = "source-fixture-v1"
+	if err := writeRun(dir, acceptedCheckpoint, artifacts, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeRun(dir, pending, runArtifacts{}, true); err != nil {
+	pendingCheckpoint, _ := memoryInputFixture(t, pending)
+	if err := writeRun(dir, pendingCheckpoint, runArtifacts{}, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "evidence_graph.json")); err != nil {
@@ -517,11 +644,15 @@ func newGitRepository(t *testing.T) (string, string) {
 	writeTestFile(t, filepath.Join(dir, "main.go"), []byte("package fixture\n"))
 	gitTestCommand(t, dir, "add", "main.go")
 	gitTestCommand(t, dir, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "fixture")
-	revision, err := repositoryRevision(context.Background(), dir)
+	repository, err := freshness.CaptureRepository(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dir, revision
+	revision, err := repository.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repository.Identity, revision
 }
 
 func gitTestCommand(t *testing.T, dir string, args ...string) {
@@ -539,6 +670,59 @@ func writeSessionFixture(t *testing.T, path string, session investigation.Sessio
 		t.Fatal(err)
 	}
 	writeTestFile(t, path, data)
+}
+
+func writeNativeSessionFixture(t *testing.T, path string, session investigation.Session) config {
+	t.Helper()
+	checkpoint, cfg := memoryInputFixture(t, session)
+	cfg.resumePath = path
+	written, err := memory.Save(filepath.Dir(path), checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written != path {
+		t.Fatalf("memory.Save() path = %q, want %q", written, path)
+	}
+	return cfg
+}
+
+func memoryInputFixture(t *testing.T, session investigation.Session) (memory.Input, config) {
+	t.Helper()
+	binDir := t.TempDir()
+	goBinary := filepath.Join(binDir, "fake-go")
+	goplsBinary := filepath.Join(binDir, "fake-gopls")
+	writeTestFile(t, goBinary, []byte("#!/bin/sh\nset -eu\nprintf '%s\\n' '{\"GOVERSION\":\"go1.24.fixture\",\"GOOS\":\"linux\",\"GOARCH\":\"amd64\",\"GOFLAGS\":\"\",\"GOWORK\":\"off\",\"CGO_ENABLED\":\"1\"}'\n"))
+	writeTestFile(t, goplsBinary, []byte("#!/bin/sh\nset -eu\nprintf '%s\\n' 'golang.org/x/tools/gopls v0.fixture'\n"))
+	if err := os.Chmod(goBinary, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(goplsBinary, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{goBinary: goBinary, goplsBinary: goplsBinary}
+	repository, err := freshness.CaptureRepository(context.Background(), session.Repository.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := memory.Input{Session: session, Repository: repository}
+	if session.Symbol != nil || session.Source != nil || session.Assessment != nil || session.Tests != nil {
+		facts, err := captureInvestigationFactContext(context.Background(), cfg, repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input.Facts = &facts
+	}
+	if session.SourceReport != nil {
+		input.Claims = &freshness.ClaimContext{
+			Version:          freshness.ClaimContextVersion,
+			Provider:         "openai-compatible",
+			Model:            "fixture-model",
+			PromptVersion:    deepseek.SourcePromptVersionJSON,
+			ParserVersion:    sourceexplain.ParserVersion,
+			EvaluatorVersion: sourceexplain.EvaluationVersion,
+		}
+	}
+	return input, cfg
 }
 
 func writeTestFile(t *testing.T, path string, data []byte) {
