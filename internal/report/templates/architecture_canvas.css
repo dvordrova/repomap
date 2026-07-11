@@ -348,6 +348,19 @@
  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.18);
 }
 
+.rm-arch__step.is-overflow {
+ background: #ffffff;
+ border-color: #cbd5e1;
+ color: #475569;
+ font-size: 0.56rem;
+ justify-content: center;
+ padding: 2px 5px;
+}
+
+.rm-arch__step.is-overflow .rm-arch__step-dot {
+ display: none;
+}
+
 .rm-arch__step-dot {
  background: currentColor;
  border-radius: 50%;
@@ -401,6 +414,11 @@
 .rm-arch__edge--flow .rm-arch__edge-visible {
  stroke: var(--rm-arch-blue);
  stroke-width: 2.5;
+}
+
+.rm-arch__edge--flow.is-local .rm-arch__edge-visible {
+ opacity: 0.68;
+ stroke-width: 1.7;
 }
 
 .rm-arch__edge--flow.is-task .rm-arch__edge-visible {

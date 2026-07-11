@@ -59,6 +59,27 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "same component transitions bypass ELK self loops",
+			asset: js,
+			tokens: []string{
+				"if (!fromOwner || !toOwner || fromOwner === toOwner) return;",
+				"localFlowLanes()",
+				"localFlowRoute(edge, lane)",
+				`isLocal ? "is-local"`,
+			},
+		},
+		{
+			name:  "bounded chips preserve branch and lifecycle semantics",
+			asset: js,
+			tokens: []string{
+				`const BRANCH_PRIORITY = ["main", "task", "shared"]`,
+				`const SEMANTIC_PRIORITY = ["is-join", "is-start", "is-callback", "is-cancel", "is-frontier", "is-call"]`,
+				"selectVisibleItems(flow, items)",
+				"flowItemStableKey(item)",
+				"overflowGeometry(owner)",
+			},
+		},
+		{
 			name:  "flow and inspector styles",
 			asset: css,
 			tokens: []string{
@@ -68,6 +89,8 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				".rm-arch__step.is-join",
 				".rm-arch__step.is-shared",
 				".rm-arch__step.is-frontier",
+				".rm-arch__step.is-overflow",
+				".rm-arch__edge--flow.is-local",
 				".rm-arch__inspector",
 			},
 		},

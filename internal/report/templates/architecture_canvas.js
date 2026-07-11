@@ -9,7 +9,9 @@
  const CHIP_GAP = 7;
  const CHIP_COLUMNS = 2;
  const MAX_VISIBLE_CHIPS = 4;
- const COMPONENT_HEIGHT = COMPONENT_HEADER_HEIGHT + 16 + 2 * (CHIP_HEIGHT + CHIP_GAP);
+ const COMPONENT_HEIGHT = COMPONENT_HEADER_HEIGHT + 38 + 2 * (CHIP_HEIGHT + CHIP_GAP);
+ const BRANCH_PRIORITY = ["main", "task", "shared"];
+ const SEMANTIC_PRIORITY = ["is-join", "is-start", "is-callback", "is-cancel", "is-frontier", "is-call"];
  const GROUP_PADDING = 26;
  const GROUP_HEADER = 50;
  const UNASSIGNED_ID = "__repomap_unassigned__";
@@ -158,6 +160,7 @@ function branchClass(kind) {
    this.nodePositions = new Map();
    this.groupPositions = new Map();
    this.edgeRoutes = new Map();
+   this.stepGeometry = new Map();
    this.componentElements = new Map();
    this.stepElements = new Map();
    this.frontierElements = new Map();
@@ -347,7 +350,7 @@ function branchClass(kind) {
    this.flowEdges.forEach((edge) => {
     const fromOwner = this.flowStepOwner(edge.flow_id, edge.from);
     const toOwner = this.flowStepOwner(edge.flow_id, edge.to);
-    if (!fromOwner || !toOwner) return;
+    if (!fromOwner || !toOwner || fromOwner === toOwner) return;
     const id = layoutFlowEdgeID(edge.flow_id, edge.id);
     edges.push({
      id: id,
@@ -607,22 +610,65 @@ function branchClass(kind) {
      });
 
     buckets.forEach((items, owner) => {
-     const visibleCount = items.length > MAX_VISIBLE_CHIPS ? MAX_VISIBLE_CHIPS - 1 : items.length;
-     items.slice(0, visibleCount).forEach((item, index) => {
+     const visible = this.selectVisibleItems(flow, items);
+     visible.forEach((item, index) => {
       if (item.kind === "step") this.renderStepChip(flow, item.value, owner, index);
       else this.renderFrontierChip(flowID, item.value, index);
      });
-     if (items.length > MAX_VISIBLE_CHIPS) {
-      this.renderOverflowChip(flowID, owner, MAX_VISIBLE_CHIPS - 1, items.length - visibleCount);
+     if (items.length > visible.length) {
+      this.renderOverflowChip(flowID, owner, items.length - visible.length);
      }
     });
    });
+  }
+
+  selectVisibleItems(flow, items) {
+   const ranked = items.slice().sort((a, b) => this.compareFlowItems(flow, a, b));
+   const selected = [];
+   BRANCH_PRIORITY.forEach((branch) => {
+    const item = ranked.find((candidate) =>
+     this.flowItemBranch(flow, candidate) === branch && selected.indexOf(candidate) < 0
+    );
+    if (item && selected.length < MAX_VISIBLE_CHIPS) selected.push(item);
+   });
+   ranked.forEach((item) => {
+    if (selected.length < MAX_VISIBLE_CHIPS && selected.indexOf(item) < 0) selected.push(item);
+   });
+   return selected;
+  }
+
+  flowItemBranch(flow, item) {
+   return item.kind === "frontier" ? "unassigned" : this.stepBranchKind(flow, item.value);
+  }
+
+  compareFlowItems(flow, a, b) {
+   const rank = (item) => {
+    const semantics = item.kind === "frontier" ? ["is-frontier"] : this.stepSemantics(flow.id, item.value.id);
+    let best = SEMANTIC_PRIORITY.length;
+    semantics.forEach((kind) => {
+     const index = SEMANTIC_PRIORITY.indexOf(kind);
+     if (index >= 0) best = Math.min(best, index);
+    });
+    return best;
+   };
+   const difference = rank(a) - rank(b);
+   if (difference !== 0) return difference;
+   const left = this.flowItemStableKey(a);
+   const right = this.flowItemStableKey(b);
+   return left < right ? -1 : left > right ? 1 : 0;
+  }
+
+  flowItemStableKey(item) {
+   const value = item.value || {};
+   const location = value.location || value.evidence || {};
+   return text(location.path) + "\u0000" + String(Number(location.line || 0)).padStart(10, "0") + "\u0000" + text(value.id);
   }
 
   renderStepChip(flow, step, owner, index) {
    const flowID = text(flow.id);
    const geometry = this.flowStepGeometry(owner, index);
    if (!geometry) return;
+   this.stepGeometry.set(flowStepKey(flowID, step.id), geometry);
    const kind = this.stepBranchKind(flow, step);
    const button = this.canvasChip(
     flowID,
@@ -648,8 +694,8 @@ function branchClass(kind) {
    this.frontierElements.set(selectionKey(flowID, frontier.id), button);
   }
 
-  renderOverflowChip(flowID, owner, index, hiddenCount) {
-   const geometry = this.flowStepGeometry(owner, index);
+  renderOverflowChip(flowID, owner, hiddenCount) {
+   const geometry = this.overflowGeometry(owner);
    if (!geometry) return;
    const button = this.canvasChip(flowID, geometry, "rm-arch__step is-overflow", "+" + hiddenCount + " more");
    this.listen(button, "click", (event) => {
@@ -689,22 +735,80 @@ function branchClass(kind) {
    };
   }
 
+  overflowGeometry(owner) {
+   const position = this.nodePositions.get(owner);
+   if (!position) return null;
+   return {
+    x: position.x + position.width - 76,
+    y: position.y + 48,
+    width: 64,
+    height: 20,
+   };
+  }
+
+  localFlowLanes() {
+   const local = [];
+   this.flowEdges.forEach((edge) => {
+    const owner = this.flowStepOwner(edge.flow_id, edge.from);
+    if (owner && owner === this.flowStepOwner(edge.flow_id, edge.to)) local.push({ edge: edge, owner: owner });
+   });
+   local.sort((a, b) => {
+    const left = text(a.edge.flow_id) + "\u0000" + a.owner + "\u0000" + text(a.edge.id);
+    const right = text(b.edge.flow_id) + "\u0000" + b.owner + "\u0000" + text(b.edge.id);
+    return left < right ? -1 : left > right ? 1 : 0;
+   });
+   const counts = new Map();
+   const lanes = new Map();
+   local.forEach((item) => {
+    const bucket = text(item.edge.flow_id) + "\u0000" + item.owner;
+    const lane = counts.get(bucket) || 0;
+    counts.set(bucket, lane + 1);
+    lanes.set(selectionKey(item.edge.flow_id, item.edge.id), lane);
+   });
+   return lanes;
+  }
+
+  localFlowRoute(edge, lane) {
+   const owner = this.flowStepOwner(edge.flow_id, edge.from);
+   const position = this.nodePositions.get(owner);
+   if (!position) return "";
+   const from = this.stepGeometry.get(flowStepKey(edge.flow_id, edge.from));
+   const to = this.stepGeometry.get(flowStepKey(edge.flow_id, edge.to));
+   const band = Math.floor(lane / 4) % 4;
+   const railY = position.y + position.height - 7 - (lane % 4) * 4;
+   const fromX = from ? from.x + from.width / 2 : position.x + 18 + band * 8;
+   const fromY = from ? from.y + from.height : railY;
+   const toX = to ? to.x + to.width / 2 : position.x + position.width - 18 - band * 8;
+   const toY = to ? to.y + to.height : railY;
+   if (fromX === toX && fromY === toY) {
+    const loopX = Math.min(position.x + position.width - 6, fromX + 14 + band * 4);
+    return "M" + fromX + " " + fromY + " L" + loopX + " " + fromY + " L" + loopX + " " + railY + " L" + fromX + " " + railY;
+   }
+   return "M" + fromX + " " + fromY + " L" + fromX + " " + railY + " L" + toX + " " + railY + " L" + toX + " " + toY;
+  }
+
   renderFlowEdges() {
    const defs = svgElement("defs");
    defs.appendChild(this.arrowMarker("rm-arch-arrow", "#2563eb"));
    defs.appendChild(this.arrowMarker("rm-arch-arrow-cancel", "#dc2626"));
    defs.appendChild(this.arrowMarker("rm-arch-arrow-join", "#7c3aed"));
    this.flowSVG.appendChild(defs);
+   const localLanes = this.localFlowLanes();
 
    this.flowEdges.forEach((edge) => {
     const key = selectionKey(edge.flow_id, edge.id);
-    const route = this.edgeRoutes.get(layoutFlowEdgeID(edge.flow_id, edge.id));
+    const fromOwner = this.flowStepOwner(edge.flow_id, edge.from);
+    const isLocal = fromOwner && fromOwner === this.flowStepOwner(edge.flow_id, edge.to);
+    const route = isLocal
+     ? this.localFlowRoute(edge, localLanes.get(key) || 0)
+     : this.edgeRoutes.get(layoutFlowEdgeID(edge.flow_id, edge.id));
     if (!route) return;
     const semantic = semanticClass(edge.relation, edge.invocation);
     const className = [
      "rm-arch__edge",
      "rm-arch__edge--flow",
      semantic,
+     isLocal ? "is-local" : "",
      edge.cross_branch ? "is-cross-branch" : "",
      edge.from_branch_id === edge.to_branch_id ? branchClass(this.branchKind(edge.flow_id, edge.from_branch_id)) : "",
     ].filter(Boolean).join(" ");
