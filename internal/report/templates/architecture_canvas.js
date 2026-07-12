@@ -65,11 +65,35 @@
   return label;
  }
 
-function branchClass(kind) {
- if (kind === "task") return "is-task";
- if (kind === "main") return "is-main";
- if (kind === "shared") return "is-shared";
- return "is-unassigned";
+ function branchClass(kind) {
+  if (kind === "task") return "is-task";
+  if (kind === "main") return "is-main";
+  if (kind === "shared") return "is-shared";
+  return "is-unassigned";
+ }
+
+ function branchLabel(kind) {
+  const labels = {
+   main: "Main path",
+   task: "Background task",
+   shared: "Shared lifecycle context",
+   unassigned: "Unassigned evidence",
+  };
+  return labels[text(kind)] || "Unassigned evidence";
+ }
+
+ function proofAreaLabel(kind) {
+  const labels = {
+   trigger: "Trigger",
+   entrypoint: "Entrypoint",
+   dispatch: "Dispatch",
+   application_callable: "Application callable",
+   core_operation: "Core operation",
+   io_boundary: "I/O boundary",
+   concurrency: "Concurrency",
+   termination: "Termination",
+  };
+  return labels[text(kind)] || text(kind).replace(/_/g, " ") || "Unknown proof area";
  }
 
  function semanticClass(relation, invocation) {
@@ -84,9 +108,15 @@ function branchClass(kind) {
  function relationLabel(relation) {
   const value = text(relation);
   const labels = {
+   calls: "calls",
+   callback: "invokes callback",
+   constructs: "constructs",
+   registers: "registers",
    registers_command: "registers",
    starts_goroutine: "starts task",
-   uses_cancellation: "uses cancel",
+   uses_cancellation: "uses cancellation context",
+   cancels: "invokes cancellation",
+   joins: "waits for task",
    waits_for: "waits for",
   };
   return labels[value] || value.replace(/_/g, " ") || "continues";
@@ -888,22 +918,53 @@ function branchClass(kind) {
   }
 
   primaryFlowSteps(flow) {
-   const numbered = array(flow.steps)
-    .map((step) => {
-     const match = text(step.id).match(/^step-(\d+)-/);
-     return match ? { step: step, order: Number(match[1]) } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.order - b.order)
-    .map((item) => item.step);
-   if (numbered.length > 0) return numbered.slice(0, 8);
+   const stepByID = new Map(array(flow.steps).map((step) => [text(step.id), step]));
+   const candidateIDs = [];
+   const seen = new Set();
+   ["entrypoint", "dispatch", "application_callable"].forEach((kind) => {
+    const slot = array(flow.slots).find((item) => text(item.kind) === kind);
+    array(slot && slot.evidence_ids).forEach((id) => {
+     id = text(id);
+     if (!stepByID.has(id) || seen.has(id)) return;
+     seen.add(id);
+     candidateIDs.push(id);
+    });
+   });
 
-   const main = array(flow.branches).find((branch) => text(branch.kind) === "main");
-   const roots = array(main && main.root_anchor_ids)
-    .map((id) => this.flowStepsByKey.get(flowStepKey(flow.id, id)))
-    .filter(Boolean);
-   if (roots.length > 0) return roots.slice(0, 8);
-   return array(flow.steps).slice(0, 6);
+   if (candidateIDs.length === 0) {
+    array(flow.steps).forEach((step) => {
+     if (text(step.kind) !== "entrypoint" && !/^step-\d+-/.test(text(step.id))) return;
+     const id = text(step.id);
+     if (seen.has(id)) return;
+     seen.add(id);
+     candidateIDs.push(id);
+    });
+   }
+
+   const candidateSet = new Set(candidateIDs);
+   const edges = this.focusedFlowEdges(flow.id).filter((edge) =>
+    candidateSet.has(text(edge.from)) && candidateSet.has(text(edge.to))
+   );
+   const incoming = new Set(edges.map((edge) => text(edge.to)));
+   let current = candidateIDs.find((id) => text((stepByID.get(id) || {}).kind) === "entrypoint" && !incoming.has(id));
+   if (!current) current = candidateIDs.find((id) => !incoming.has(id)) || candidateIDs[0];
+
+   const ordered = [];
+   const used = new Set();
+   while (current && !used.has(current)) {
+    used.add(current);
+    ordered.push(stepByID.get(current));
+    const nextEdges = edges
+     .filter((edge) => text(edge.from) === current && !used.has(text(edge.to)))
+     .sort((a, b) => text(a.id).localeCompare(text(b.id)));
+    current = nextEdges.length === 1 ? text(nextEdges[0].to) : "";
+   }
+
+   return {
+    items: ordered.slice(0, 8),
+    total: ordered.length,
+    disconnected: candidateIDs.length - ordered.length,
+   };
   }
 
   focusedStepButton(flow, step, className, sequence) {
@@ -947,11 +1008,11 @@ function branchClass(kind) {
   }
 
   focusedOperationEdges(flow, primary) {
-   if (primary.length === 0) return [];
+   if (primary.length === 0) return { items: [], total: 0 };
    const source = primary[primary.length - 1];
    const primaryIDs = new Set(primary.map((step) => text(step.id)));
    const seenTargets = new Set();
-   return this.focusedFlowEdges(flow.id)
+   const items = this.focusedFlowEdges(flow.id)
     .filter((edge) => text(edge.from) === text(source.id) && !primaryIDs.has(text(edge.to)))
     .map((edge) => ({ edge: edge, target: this.flowStepsByKey.get(flowStepKey(flow.id, edge.to)) }))
     .filter((item) => item.target)
@@ -979,8 +1040,8 @@ function branchClass(kind) {
      if (seenTargets.has(id)) return false;
      seenTargets.add(id);
      return true;
-    })
-    .slice(0, 8);
+    });
+   return { items: items.slice(0, 8), total: items.length };
   }
 
   focusedHandoffEdges(flow, primary) {
@@ -988,7 +1049,7 @@ function branchClass(kind) {
    primary.forEach((step, index) => {
     if (index > 0) primaryPairs.add(text(primary[index - 1].id) + "\u0000" + text(step.id));
    });
-   return this.focusedFlowEdges(flow.id)
+   const items = this.focusedFlowEdges(flow.id)
     .filter((edge) => {
      if (primaryPairs.has(text(edge.from) + "\u0000" + text(edge.to))) return false;
      const semantic = semanticClass(edge.relation, edge.invocation);
@@ -998,8 +1059,98 @@ function branchClass(kind) {
     .filter((edge) =>
      this.flowStepsByKey.has(flowStepKey(flow.id, edge.from)) &&
      this.flowStepsByKey.has(flowStepKey(flow.id, edge.to))
-    )
-    .slice(0, 6);
+    );
+   return { items: items.slice(0, 6), total: items.length };
+  }
+
+  focusedProofSummary(flow) {
+   const slots = array(flow.slots);
+   const counts = { verified: 0, partial: 0, missing: 0, not_applicable: 0, unknown: 0 };
+   slots.forEach((slot) => {
+    const status = text(slot.status) || "unknown";
+    if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status]++;
+    else counts.unknown++;
+   });
+   const firstGap = slots.find((slot) => {
+    const status = text(slot.status);
+    return status === "missing" || status === "partial" || !status;
+   });
+   const status = counts.missing > 0 ? "missing" : counts.partial > 0 || counts.unknown > 0 ? "partial" : "grounded";
+   return {
+    total: slots.length,
+    grounded: counts.verified,
+    counts: counts,
+    status: status,
+    firstGap: firstGap,
+   };
+  }
+
+  focusedEvidenceDisclosure(flow) {
+   const details = element("details", "rm-arch__focus-evidence");
+   const summary = element("summary", "rm-arch__focus-evidence-summary");
+   summary.appendChild(element("strong", null, "Inspect full evidence"));
+   summary.appendChild(element("span", null, array(flow.steps).length + " anchors · " + array(flow.slots).length + " proof areas"));
+   details.appendChild(summary);
+   const body = element("div", "rm-arch__focus-evidence-body");
+   this.appendFlowEvidence(body, flow);
+   details.appendChild(body);
+   return details;
+  }
+
+  appendFlowEvidence(parent, flow) {
+   const section = (title) => {
+    const node = element("section", "rm-arch__inspector-section");
+    node.appendChild(element("h4", "rm-arch__inspector-section-title", title));
+    parent.appendChild(node);
+    return node;
+   };
+   if (flow.trigger) this.appendKeyValue(parent, "Starts when", flow.trigger);
+   if (flow.scope) this.appendKeyValue(parent, "Scope", flow.scope);
+   if (flow.command) this.appendKeyValue(parent, "Command", flow.command);
+
+   const branches = section("Branches");
+   array(flow.branches).forEach((branch) => {
+    const row = element("div", "rm-arch__branch-row " + branchClass(branch.kind));
+    row.appendChild(element("strong", null, branchLabel(branch.kind)));
+    row.appendChild(element("span", null, array(branch.anchor_ids).length + " exact anchors"));
+    if (branch.root_anchor_id) {
+     const root = this.flowStepsByKey.get(flowStepKey(flow.id, branch.root_anchor_id));
+     row.appendChild(element("code", null, root && (root.label || root.qualified_name) || "task root"));
+    }
+    branches.appendChild(row);
+   });
+
+   const steps = section("Exact steps");
+   array(flow.steps).forEach((step) => steps.appendChild(this.stepJumpButton(flow, step)));
+
+   const slots = section("Proof slots");
+   array(flow.slots).forEach((slot) => {
+    const card = element("article", "rm-arch__slot is-" + (text(slot.status) || "unknown"));
+    const header = element("div", "rm-arch__slot-header");
+    header.appendChild(element("strong", null, proofAreaLabel(slot.kind)));
+    header.appendChild(element("span", "rm-arch__badge", text(slot.status).replace(/_/g, " ")));
+    card.appendChild(header);
+    if (slot.summary) card.appendChild(element("p", "rm-arch__copy", slot.summary));
+    if (slot.missing) card.appendChild(element("p", "rm-arch__notice is-warning", slot.missing));
+    if (slot.applicability_reason) this.appendKeyValue(card, "Applicability", slot.applicability_reason);
+    this.appendProvenance(card, slot.provenance);
+    slots.appendChild(card);
+   });
+
+   const frontiers = section("Unresolved frontiers");
+   const flowFrontiers = this.frontiers.filter((frontier) => text(frontier.flow_id) === text(flow.id));
+   if (flowFrontiers.length === 0) {
+    frontiers.appendChild(element("p", "rm-arch__empty", "No explicit frontier was saved for this flow."));
+   } else {
+    flowFrontiers.forEach((frontier) => {
+     const row = element("div", "rm-arch__frontier-row");
+     row.appendChild(element("strong", null, frontier.kind || frontier.id));
+     row.appendChild(element("span", null, frontier.reason));
+     this.appendLocation(row, frontier.evidence, "Known evidence");
+     frontiers.appendChild(row);
+    });
+   }
+   this.appendDiagnostics(section("Diagnostics"), text(flow.id));
   }
 
   renderFocusedFlow(flow) {
@@ -1008,18 +1159,40 @@ function branchClass(kind) {
    this.focusFlowID = flowID;
    this.flowFocus.replaceChildren();
 
-   const primary = this.primaryFlowSteps(flow);
+   const primaryProjection = this.primaryFlowSteps(flow);
+   const primary = primaryProjection.items;
    const flowEdges = this.focusedFlowEdges(flowID);
+   const operations = this.focusedOperationEdges(flow, primary);
+   const handoffs = this.focusedHandoffEdges(flow, primary);
+   const proof = this.focusedProofSummary(flow);
+   const evidenceDisclosure = this.focusedEvidenceDisclosure(flow);
    const header = element("header", "rm-arch__focus-header");
    const heading = element("div", "rm-arch__focus-heading");
-   heading.appendChild(element("span", "rm-arch__focus-kicker", "Verified execution trace"));
+   heading.appendChild(element("span", "rm-arch__focus-kicker", "Evidence-backed command trace"));
    heading.appendChild(element("h3", null, flow.name || flow.id));
    heading.appendChild(element("p", null, flow.trigger || flow.mental_model || flow.goal || "Saved exact flow evidence"));
+   const proofNode = element("div", "rm-arch__focus-proof is-" + proof.status);
+   proofNode.appendChild(element("strong", null, proof.grounded + "/" + proof.total + " proof areas grounded"));
+   const proofCopy = [];
+   if (proof.firstGap) {
+    proofCopy.push(proofAreaLabel(proof.firstGap.kind) + " " + (text(proof.firstGap.status) || "unknown"));
+    if (proof.firstGap.missing) proofCopy.push(text(proof.firstGap.missing));
+   }
+   proofCopy.push("Static evidence; execution was not observed");
+   proofNode.appendChild(element("span", null, proofCopy.join(" · ")));
+   const proofAction = element("button", "rm-arch__focus-proof-action", "Inspect full evidence");
+   proofAction.type = "button";
+   this.listen(proofAction, "click", () => {
+    evidenceDisclosure.open = true;
+    evidenceDisclosure.scrollIntoView({ behavior: "smooth", block: "nearest" });
+   });
+   proofNode.appendChild(proofAction);
+   heading.appendChild(proofNode);
    header.appendChild(heading);
    const stats = element("div", "rm-arch__focus-stats");
    stats.appendChild(element("strong", null, array(flow.steps).length + " exact anchors"));
-   stats.appendChild(element("span", null, flowEdges.length + " verified transitions"));
-   stats.appendChild(element("span", null, array(flow.branches).length + " execution lanes"));
+   stats.appendChild(element("span", null, flowEdges.length + " evidenced transitions"));
+   stats.appendChild(element("span", null, array(flow.branches).length + " trace lanes"));
    header.appendChild(stats);
    this.flowFocus.appendChild(header);
 
@@ -1027,7 +1200,14 @@ function branchClass(kind) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
     sectionHeader.appendChild(element("h4", null, "Command path"));
-    sectionHeader.appendChild(element("p", null, "The bounded entry and dispatch chain, in saved order."));
+    const pathNotes = ["Entrypoint, registration, and callback roles linked by explicit static transitions; runtime order is not inferred."];
+    if (primaryProjection.total > primary.length) {
+     pathNotes.push("Showing " + primary.length + " of " + primaryProjection.total + " connected anchors.");
+    }
+    if (primaryProjection.disconnected > 0) {
+     pathNotes.push(primaryProjection.disconnected + " role anchor" + (primaryProjection.disconnected === 1 ? " is" : "s are") + " not linked by the dispatch chain.");
+    }
+    sectionHeader.appendChild(element("p", null, pathNotes.join(" ")));
     section.appendChild(sectionHeader);
     const path = element("div", "rm-arch__focus-path");
     primary.forEach((step, index) => {
@@ -1044,15 +1224,18 @@ function branchClass(kind) {
     this.flowFocus.appendChild(section);
    }
 
-   const operations = this.focusedOperationEdges(flow, primary);
-   if (operations.length > 0) {
+   if (operations.items.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
     sectionHeader.appendChild(element("h4", null, "Key operations"));
-    sectionHeader.appendChild(element("p", null, "Important exact calls leaving the application entry function; this is a fan-out, not implied runtime order."));
+    let operationsCopy = "Important exact calls leaving the application callable; this is fan-out evidence, not runtime order.";
+    if (operations.total > operations.items.length) {
+     operationsCopy += " Showing " + operations.items.length + " of " + operations.total + ".";
+    }
+    sectionHeader.appendChild(element("p", null, operationsCopy));
     section.appendChild(sectionHeader);
     const grid = element("div", "rm-arch__focus-operations");
-    operations.forEach((item) => {
+    operations.items.forEach((item) => {
      const card = element("article", "rm-arch__focus-operation " + semanticClass(item.edge.relation, item.edge.invocation));
      card.appendChild(this.focusedTransitionButton(flow, item.edge, "is-operation"));
      card.appendChild(this.focusedStepButton(flow, item.target, branchClass(this.stepBranchKind(flow, item.target)), ""));
@@ -1062,15 +1245,18 @@ function branchClass(kind) {
     this.flowFocus.appendChild(section);
    }
 
-   const handoffs = this.focusedHandoffEdges(flow, primary);
-   if (handoffs.length > 0) {
+   if (handoffs.items.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
     sectionHeader.appendChild(element("h4", null, "Concurrency and lifecycle"));
-    sectionHeader.appendChild(element("p", null, "Task, callback, cancellation, and join relationships shown separately from the main path."));
+    let handoffCopy = "Typed task, callback, cancellation, and join relations shown separately from the dispatch chain.";
+    if (handoffs.total > handoffs.items.length) {
+     handoffCopy += " Showing " + handoffs.items.length + " of " + handoffs.total + ".";
+    }
+    sectionHeader.appendChild(element("p", null, handoffCopy));
     section.appendChild(sectionHeader);
     const rows = element("div", "rm-arch__focus-handoffs");
-    handoffs.forEach((edge) => {
+    handoffs.items.forEach((edge) => {
      const source = this.flowStepsByKey.get(flowStepKey(flow.id, edge.from));
      const target = this.flowStepsByKey.get(flowStepKey(flow.id, edge.to));
      const row = element("div", "rm-arch__focus-handoff " + semanticClass(edge.relation, edge.invocation));
@@ -1083,10 +1269,7 @@ function branchClass(kind) {
     this.flowFocus.appendChild(section);
    }
 
-   const footer = element("footer", "rm-arch__focus-footer");
-   footer.appendChild(element("strong", null, "Bounded overview"));
-   footer.appendChild(element("span", null, "Select the flow tab again or clear a selection to inspect every exact anchor and proof slot below."));
-   this.flowFocus.appendChild(footer);
+   this.flowFocus.appendChild(evidenceDisclosure);
   }
 
   syncFocusedSelection() {
@@ -1254,7 +1437,7 @@ function branchClass(kind) {
   }
 
   hasInspectorSelection(selection) {
-   return Boolean(selection && (selection.flow || selection.component || selection.step || selection.edge));
+   return Boolean(selection && (selection.component || selection.step || selection.edge));
   }
 
   validateSelection(selection) {
@@ -1376,6 +1559,7 @@ function branchClass(kind) {
    this.root.classList.toggle("has-detail-inspector", visible);
    this.inspector.hidden = !visible;
    this.inspector.replaceChildren();
+   if (!visible) return;
    if (this.selection.step && this.selection.flow) {
     const step = this.flowStepsByKey.get(flowStepKey(this.selection.flow, this.selection.step));
     if (step) return this.inspectStep(this.flowByID.get(this.selection.flow), step);
@@ -1390,11 +1574,6 @@ function branchClass(kind) {
     const component = this.componentByID.get(this.selection.component);
     if (component) return this.inspectComponent(component);
    }
-   if (this.selection.flow) {
-    const flow = this.flowByID.get(this.selection.flow);
-    if (flow) return this.inspectFlow(flow);
-   }
-   this.inspectLandscape();
   }
 
   inspectorHeading(kind, title, subtitle) {
@@ -1465,40 +1644,7 @@ function branchClass(kind) {
 
   inspectFlow(flow) {
    this.inspectorHeading("Saved flow", flow.name || flow.id, flow.mental_model || flow.goal);
-   if (flow.trigger) this.appendKeyValue(this.inspector, "Starts when", flow.trigger);
-   if (flow.scope) this.appendKeyValue(this.inspector, "Scope", flow.scope);
-   if (flow.command) this.appendKeyValue(this.inspector, "Command", flow.command);
-
-   const branches = this.inspectorSection("Branches");
-   array(flow.branches).forEach((branch) => {
-    const row = element("div", "rm-arch__branch-row " + branchClass(branch.kind));
-    row.appendChild(element("strong", null, branch.kind || "unassigned"));
-    row.appendChild(element("span", null, array(branch.anchor_ids).length + " steps"));
-    if (branch.root_anchor_id) {
-     const root = this.flowStepsByKey.get(flowStepKey(flow.id, branch.root_anchor_id));
-     row.appendChild(element("code", null, root && (root.label || root.qualified_name) || "task root"));
-    }
-    branches.appendChild(row);
-   });
-
-   const steps = this.inspectorSection("Exact steps");
-   array(flow.steps).forEach((step) => steps.appendChild(this.stepJumpButton(flow, step)));
-
-   const slots = this.inspectorSection("Proof slots");
-   array(flow.slots).forEach((slot) => {
-    const card = element("article", "rm-arch__slot is-" + (text(slot.status) || "unknown"));
-    const header = element("div", "rm-arch__slot-header");
-    header.appendChild(element("strong", null, slot.kind));
-    header.appendChild(element("span", "rm-arch__badge", slot.status));
-    card.appendChild(header);
-    if (slot.summary) card.appendChild(element("p", "rm-arch__copy", slot.summary));
-    if (slot.missing) card.appendChild(element("p", "rm-arch__notice is-warning", slot.missing));
-    if (slot.applicability_reason) this.appendKeyValue(card, "Applicability", slot.applicability_reason);
-    this.appendProvenance(card, slot.provenance);
-    slots.appendChild(card);
-   });
-   this.appendFlowFrontiers(flow.id);
-   this.appendDiagnostics(this.inspectorSection("Diagnostics"), text(flow.id));
+   this.appendFlowEvidence(this.inspector, flow);
   }
 
   inspectStep(flow, step) {
@@ -1568,28 +1714,12 @@ function branchClass(kind) {
    this.inspector.appendChild(element("p", "rm-arch__notice", "Structural evidence does not imply runtime order or execution."));
   }
 
-  appendFlowFrontiers(flowID) {
-   const frontiers = this.frontiers.filter((frontier) => text(frontier.flow_id) === text(flowID));
-   const section = this.inspectorSection("Unresolved frontiers");
-   if (frontiers.length === 0) {
-    section.appendChild(element("p", "rm-arch__empty", "No explicit frontier was saved for this flow."));
-    return;
-   }
-   frontiers.forEach((frontier) => {
-    const row = element("div", "rm-arch__frontier-row");
-    row.appendChild(element("strong", null, frontier.kind || frontier.id));
-    row.appendChild(element("span", null, frontier.reason));
-    this.appendLocation(row, frontier.evidence, "Known evidence");
-    section.appendChild(row);
-   });
-  }
-
   stepJumpButton(flow, step) {
    const button = element("button", "rm-arch__edge-jump");
    button.type = "button";
    const branch = this.flowBranch(flow.id, step.branch_id);
    button.appendChild(element("strong", null, step.label || step.id));
-   button.appendChild(element("span", null, branch ? branch.kind + " branch" : "unassigned branch"));
+   button.appendChild(element("span", null, branchLabel(branch && branch.kind)));
    this.listen(button, "click", () => this.setSelection({
     flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
    }, true));
