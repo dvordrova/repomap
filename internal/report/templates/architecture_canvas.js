@@ -59,6 +59,28 @@
   return Math.min(high, Math.max(low, value));
  }
 
+ function landscapeLayoutMode(projection) {
+  if (!projection || !projection.primaryRegion) return "board";
+  if (projection.primaryRegion.groupIDs.length === projection.groups.length) return "graph";
+  return "hybrid";
+ }
+
+ function boardProfileForWidth(value) {
+  const width = Math.max(320, Number(value || 1200));
+  if (width >= 1160) return { columns: 4, groupWidth: 300 };
+  if (width >= 960) return { columns: 3, groupWidth: 320 };
+  if (width >= 720) return { columns: 2, groupWidth: 340 };
+  return { columns: 1, groupWidth: Math.min(340, width - 40) };
+ }
+
+ function shortestColumnIndex(heights, preference) {
+  let column = preference[0];
+  preference.forEach((candidate) => {
+   if (heights[candidate] < heights[column]) column = candidate;
+  });
+  return column;
+ }
+
  function memberLabel(memberID) {
   if (!memberID) return "unknown member";
   if (typeof memberID === "string") return memberID;
@@ -463,17 +485,11 @@
    }
 
    chooseLandscapeLayoutMode(projection) {
-    if (!projection.primaryRegion) return "board";
-   if (projection.primaryRegion.groupIDs.length === projection.groups.length) return "graph";
-   return "hybrid";
+    return landscapeLayoutMode(projection);
    }
 
    boardProfile() {
-    const width = Math.max(320, Number(this.viewport && this.viewport.clientWidth || 1200));
-    if (width >= 1160) return { columns: 4, groupWidth: 300 };
-    if (width >= 960) return { columns: 3, groupWidth: 320 };
-    if (width >= 720) return { columns: 2, groupWidth: 340 };
-    return { columns: 1, groupWidth: Math.min(340, width - 40) };
+    return boardProfileForWidth(this.viewport && this.viewport.clientWidth);
    }
 
    numericPriority(value) {
@@ -614,10 +630,7 @@
     const preference = this.centeredColumnOrder(profile.columns);
     groups.forEach((group) => {
      const metrics = this.groupMetrics(group, profile.groupWidth, 1);
-     let column = preference[0];
-     preference.forEach((candidate) => {
-      if (heights[candidate] < heights[column]) column = candidate;
-     });
+     const column = shortestColumnIndex(heights, preference);
      const x = LANDSCAPE_MARGIN + column * (profile.groupWidth + LANDSCAPE_GROUP_GAP);
      const y = heights[column];
      this.placeLandscapeGroup(group, metrics, x, y, projection);
@@ -2157,5 +2170,12 @@
  });
  }
 
- global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });
+  global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });
+  if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
+   Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
+    landscapeLayoutMode: landscapeLayoutMode,
+    boardProfileForWidth: boardProfileForWidth,
+    shortestColumnIndex: shortestColumnIndex,
+   });
+  }
 })(window);
