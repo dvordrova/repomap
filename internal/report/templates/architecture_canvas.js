@@ -180,7 +180,9 @@
    this.options = options && typeof options === "object" ? options : {};
    this.destroyed = false;
    this.layoutStarted = false;
-   this.layoutResult = null;
+    this.layoutResult = null;
+    this.landscapeProjection = null;
+    this.landscapeLayoutMode = "graph";
    this.events = new AbortController();
    this.view = { x: 0, y: 0, scale: 1 };
    this.drag = null;
@@ -341,25 +343,108 @@
    return this.ready;
   }
 
-  layoutOnce() {
-   const ELKConstructor = global.ELK;
+   layoutOnce() {
+    const ELKConstructor = global.ELK;
    if (typeof ELKConstructor !== "function") {
     return Promise.reject(new Error("Architecture renderer is unavailable."));
    }
-   const elk = new ELKConstructor();
-   return elk.layout(this.buildELKGraph()).then((layout) => this.normalizeELKLayout(layout));
-  }
+    this.landscapeProjection = this.projectLandscapeGraph();
+    this.landscapeLayoutMode = this.chooseLandscapeLayoutMode(this.landscapeProjection);
+    this.root.dataset.layoutMode = this.landscapeLayoutMode;
+    const elk = new ELKConstructor();
+    return elk.layout(this.buildELKGraph()).then((layout) => this.normalizeELKLayout(layout));
+   }
 
-  maxUnassignedItems() {
-   let maximum = 0;
-   this.flows.forEach((flow) => {
-    const flowID = text(flow.id);
-    const steps = array(flow.steps).filter((step) => !step.component_id).length;
-    const frontiers = this.frontiers.filter((frontier) => text(frontier.flow_id) === flowID).length;
-    maximum = Math.max(maximum, steps + frontiers);
-   });
-   return Math.min(MAX_VISIBLE_CHIPS, maximum);
-  }
+   projectLandscapeGraph() {
+    const componentIDsInSubsystems = new Set();
+    const componentOwner = new Map();
+    const groups = [];
+    this.subsystems.forEach((subsystem) => {
+     const id = text(subsystem.id);
+     const componentIDs = array(subsystem.component_ids)
+      .map(text)
+      .filter((componentID) => this.componentByID.has(componentID));
+     if (componentIDs.length === 0) return;
+     componentIDs.forEach((componentID) => {
+      componentIDsInSubsystems.add(componentID);
+      componentOwner.set(componentID, id);
+     });
+     groups.push({ id: id, subsystem: subsystem, componentIDs: componentIDs });
+    });
+
+    const ungrouped = this.components
+     .map((component) => text(component.id))
+     .filter((id) => !componentIDsInSubsystems.has(id));
+    if (ungrouped.length > 0) {
+     ungrouped.forEach((componentID) => componentOwner.set(componentID, "__ungrouped__"));
+     groups.push({ id: "__ungrouped__", subsystem: null, componentIDs: ungrouped });
+    }
+
+    const adjacency = new Map(groups.map((group) => [group.id, new Set()]));
+    const pairKeys = new Set();
+    const edges = [];
+    this.structuralEdges.forEach((edge) => {
+     const fromComponentID = text(edge.from_component_id);
+     const toComponentID = text(edge.to_component_id);
+     const fromGroupID = componentOwner.get(fromComponentID);
+     const toGroupID = componentOwner.get(toComponentID);
+     if (!fromGroupID || !toGroupID || fromGroupID === toGroupID) return;
+     const pairKey = fromGroupID + "\u0000" + toGroupID;
+     if (pairKeys.has(pairKey)) return;
+     pairKeys.add(pairKey);
+     edges.push({
+      id: pairKey,
+      from: fromGroupID,
+      to: toGroupID,
+     });
+     adjacency.get(fromGroupID).add(toGroupID);
+     adjacency.get(toGroupID).add(fromGroupID);
+    });
+
+    const unseen = new Set(groups.map((group) => group.id));
+    const regions = [];
+    while (unseen.size > 0) {
+     const start = Array.from(unseen).sort()[0];
+     const queue = [start];
+     const groupIDs = [];
+     unseen.delete(start);
+     while (queue.length > 0) {
+      const current = queue.shift();
+      groupIDs.push(current);
+      Array.from(adjacency.get(current) || []).sort().forEach((next) => {
+       if (!unseen.has(next)) return;
+       unseen.delete(next);
+       queue.push(next);
+      });
+     }
+     const groupSet = new Set(groupIDs);
+     regions.push({
+      groupIDs: groupIDs.sort(),
+      edgeCount: edges.filter((edge) => groupSet.has(edge.from) && groupSet.has(edge.to)).length,
+     });
+    }
+    regions.sort((left, right) =>
+     right.groupIDs.length - left.groupIDs.length ||
+     right.edgeCount - left.edgeCount ||
+     left.groupIDs[0].localeCompare(right.groupIDs[0])
+    );
+    const primaryRegion = regions.find((region) =>
+     region.groupIDs.length >= 3 && region.edgeCount >= region.groupIDs.length - 1
+    ) || null;
+    return {
+     groups: groups,
+     edges: edges,
+     adjacency: adjacency,
+     regions: regions,
+     primaryRegion: primaryRegion,
+    };
+   }
+
+   chooseLandscapeLayoutMode(projection) {
+    if (!projection.primaryRegion) return "board";
+    if (projection.primaryRegion.groupIDs.length === projection.groups.length) return "graph";
+    return "hybrid";
+   }
 
   buildELKGraph() {
 
@@ -382,35 +467,13 @@
     children.push(this.elkSubsystemNode("__ungrouped__", ungrouped));
    }
 
-   const unassignedCount = this.maxUnassignedItems();
-   if (unassignedCount > 0) {
-    children.push({
-     id: UNASSIGNED_ID,
-     width: COMPONENT_WIDTH,
-     height: COMPONENT_HEIGHT,
-     layoutOptions: { "elk.nodeLabels.placement": "INSIDE V_TOP H_LEFT" },
-    });
-   }
-
-   const edges = [];
+    const edges = [];
    this.structuralEdges.forEach((edge) => {
     const from = text(edge.from_component_id);
     const to = text(edge.to_component_id);
     if (!this.componentByID.has(from) || !this.componentByID.has(to) || from === to) return;
     const id = layoutStructuralEdgeID(edge.id);
     edges.push({ id: id, sources: [layoutComponentID(from)], targets: [layoutComponentID(to)] });
-   });
-
-   this.flowEdges.forEach((edge) => {
-    const fromOwner = this.flowStepOwner(edge.flow_id, edge.from);
-    const toOwner = this.flowStepOwner(edge.flow_id, edge.to);
-    if (!fromOwner || !toOwner || fromOwner === toOwner) return;
-    const id = layoutFlowEdgeID(edge.flow_id, edge.id);
-    edges.push({
-     id: id,
-     sources: [fromOwner === UNASSIGNED_ID ? UNASSIGNED_ID : layoutComponentID(fromOwner)],
-     targets: [toOwner === UNASSIGNED_ID ? UNASSIGNED_ID : layoutComponentID(toOwner)],
-    });
    });
 
    return {
