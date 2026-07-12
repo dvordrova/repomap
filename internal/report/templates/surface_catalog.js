@@ -23,6 +23,13 @@
   possible_worker_loop: "Possible worker",
   confirmed_worker_registration: "Worker registration",
  };
+ const GROUPS = [
+  { value: "application", label: "Application" },
+  { value: "tooling", label: "Tooling" },
+  { value: "tests_helpers", label: "Tests/helpers" },
+  { value: "unassigned", label: "Unassigned" },
+  { value: "dynamic_unresolved", label: "Dynamic/unresolved" },
+ ];
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -158,7 +165,8 @@
    this.host = host;
    this.data = object(data);
    this.coverage = object(this.data.coverage || this.data.surface_coverage);
-   this.options = object(options);
+    this.options = object(options);
+    this.architectureSurfaces = new Map(array(this.options.architectureSurfaces).map((surface) => [text(surface.id), surface]));
    this.triggers = array(this.data.triggers).map((trigger) => object(trigger));
    this.kindFilter = "all";
    this.evidenceFilter = "all";
@@ -184,7 +192,7 @@
    const heading = element("div", "rm-surface__heading");
    const headingCopy = element("div", "rm-surface__heading-copy");
    const titleLine = element("div", "rm-surface__title-line");
-   const title = element("h2", "rm-surface__title", "Discovered surfaces");
+    const title = element("h2", "rm-surface__title", "All surfaces");
    title.id = "rm-surface-title";
    titleLine.appendChild(title);
    titleLine.appendChild(element("span", "rm-surface__source", "Local static analysis"));
@@ -193,7 +201,7 @@
     element(
      "p",
      "rm-surface__intro",
-     "Repository-wide registrations and starts found across build-selected executables, including helper tooling. This catalog is independent of selected FlowProofs; execution was not observed."
+      "Complete repository-wide catalog of registrations and starts across build-selected executables. Application, tooling, tests/helpers, unassigned, and dynamic evidence stay distinct; execution was not observed."
     )
    );
    heading.appendChild(headingCopy);
@@ -336,7 +344,7 @@
     return;
    }
    if (matches.length === 0) {
-    const empty = this.emptyState("No discovered surfaces match these filters.");
+     const empty = this.emptyState("No surfaces match these filters.");
     const reset = element("button", "rm-surface__reset", "Reset filters");
     reset.type = "button";
     this.listen(reset, "click", () => {
@@ -348,23 +356,35 @@
     });
     empty.appendChild(reset);
     this.list.appendChild(empty);
-    this.liveStatus.textContent = "No discovered surfaces match these filters.";
+     this.liveStatus.textContent = "No surfaces match these filters.";
     this.moreButton.hidden = true;
     return;
    }
 
    const visible = this.expanded ? matches : matches.slice(0, PAGE_SIZE);
-   visible.forEach((trigger) => {
-    const index = this.triggers.indexOf(trigger);
-    const card = this.renderTrigger(trigger, index);
-    if (selectedID && triggerID(trigger, index) === selectedID) card.open = true;
-    this.list.appendChild(card);
-   });
+    GROUPS.forEach((group) => {
+     const grouped = visible.filter((trigger) => {
+      const association = object(this.architectureSurfaces.get(triggerID(trigger, this.triggers.indexOf(trigger))));
+      return text(association.category || "unassigned") === group.value;
+     });
+     if (grouped.length === 0) return;
+     const section = element("section", "rm-surface__group");
+     const heading = element("h3", "rm-surface__group-title", group.label);
+     heading.appendChild(element("span", "rm-surface__group-count", grouped.length));
+     section.appendChild(heading);
+     grouped.forEach((trigger) => {
+      const index = this.triggers.indexOf(trigger);
+      const card = this.renderTrigger(trigger, index);
+      if (selectedID && triggerID(trigger, index) === selectedID) card.open = true;
+      section.appendChild(card);
+     });
+     this.list.appendChild(section);
+    });
    const hiddenCount = matches.length - PAGE_SIZE;
    this.moreButton.hidden = hiddenCount <= 0;
    this.moreButton.textContent = this.expanded ? "Show less" : "Show " + hiddenCount + " more";
    this.moreButton.setAttribute("aria-expanded", this.expanded ? "true" : "false");
-   this.liveStatus.textContent = "Showing " + visible.length + " of " + matches.length + " discovered surfaces.";
+    this.liveStatus.textContent = "Showing " + visible.length + " of " + matches.length + " surfaces.";
   }
 
   emptyState(message) {
@@ -379,6 +399,7 @@
   renderTrigger(trigger, index) {
    const card = element("details", "rm-surface__item");
    const id = triggerID(trigger, index);
+    const association = object(this.architectureSurfaces.get(id));
    card.dataset.surfaceId = id;
    const summary = element("summary", "rm-surface__item-summary");
    const identityBlock = element("span", "rm-surface__identity");
@@ -393,7 +414,7 @@
     callback.title = handler;
      identityBlock.appendChild(callback);
     }
-    const owner = executableOwner(trigger);
+     const owner = association.owning_executable || executableOwner(trigger);
     if (owner) {
      const ownership = element("span", "rm-surface__owner", "Executable · " + owner);
      ownership.title = owner;
@@ -423,7 +444,37 @@
    appendText(facts, "Terminal seed", trigger.final_seed);
    appendText(facts, "Build scenario", trigger.scenario_id || this.data.scenario_id);
    if (trigger.provisional_id) appendText(facts, "Identity", "Provisional; unresolved values may change it");
-   body.appendChild(facts);
+    body.appendChild(facts);
+
+    const progression = element("section", "rm-surface__progression");
+    progression.appendChild(element("h4", "", "Architecture progression"));
+    if (association.owning_component_id && typeof this.options.openComponent === "function") {
+     const component = element("button", "rm-surface__action", "Open owning component");
+     component.type = "button";
+     this.listen(component, "click", () => this.options.openComponent(association.owning_component_id));
+     progression.appendChild(component);
+    } else {
+     progression.appendChild(element("p", "rm-surface__caveat", "Unassigned surface — no unique exact component owner was found."));
+    }
+    if (association.related_saved_trace_id && typeof this.options.openTrace === "function") {
+     const trace = element("button", "rm-surface__action is-primary", "Open saved trace");
+     trace.type = "button";
+     this.listen(trace, "click", () => this.options.openTrace(association.related_saved_trace_id));
+     progression.appendChild(trace);
+    } else {
+     progression.appendChild(element(
+      "p",
+      "rm-surface__unavailable",
+      "Trace unavailable: " + (association.trace_unavailable_reason || "bounded surface seed is unavailable")
+     ));
+    }
+    if (typeof this.options.openSurface === "function") {
+     const inspect = element("button", "rm-surface__action", "View in Architecture");
+     inspect.type = "button";
+     this.listen(inspect, "click", () => this.options.openSurface(id));
+     progression.appendChild(inspect);
+    }
+    body.appendChild(progression);
 
    const locations = element("div", "rm-surface__locations");
    this.appendLocation(locations, "Registration", trigger.registration_site);

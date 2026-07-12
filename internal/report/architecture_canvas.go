@@ -49,6 +49,7 @@ type ArchitectureCanvas struct {
 	BehaviorAnchors        []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
 	Subsystems             []ArchitectureSubsystem               `json:"subsystems"`
 	Components             []ArchitectureComponent               `json:"components"`
+	Surfaces               []ArchitectureSurface                 `json:"surfaces,omitempty"`
 	StructuralFacts        []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
 	StructuralEdges        []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
 	Flows                  []ArchitectureFlow                    `json:"flows,omitempty"`
@@ -67,15 +68,38 @@ type ArchitectureSubsystem struct {
 }
 
 type ArchitectureComponent struct {
-	ID                   componentmap.ComponentID   `json:"id"`
-	SubsystemID          componentmap.SubsystemID   `json:"subsystem_id"`
-	Name                 string                     `json:"name"`
-	Description          string                     `json:"description,omitempty"`
-	Members              []componentmap.Candidate   `json:"members"`
-	ParticipatingFlowIDs []componentmap.FlowID      `json:"participating_flow_ids,omitempty"`
-	AnchorIDs            []string                   `json:"anchor_ids,omitempty"`
-	Hypothesis           bool                       `json:"hypothesis,omitempty"`
-	SourceIDs            []componentmap.ComponentID `json:"source_component_ids,omitempty"`
+	ID                        componentmap.ComponentID   `json:"id"`
+	SubsystemID               componentmap.SubsystemID   `json:"subsystem_id"`
+	Name                      string                     `json:"name"`
+	Description               string                     `json:"description,omitempty"`
+	Members                   []componentmap.Candidate   `json:"members"`
+	ParticipatingFlowIDs      []componentmap.FlowID      `json:"participating_flow_ids,omitempty"`
+	OwnedSurfaceIDs           []string                   `json:"owned_surface_ids,omitempty"`
+	ParticipatingSurfaceIDs   []string                   `json:"participating_surface_ids,omitempty"`
+	SuggestedInvestigationIDs []string                   `json:"suggested_investigation_ids,omitempty"`
+	AnchorIDs                 []string                   `json:"anchor_ids,omitempty"`
+	Hypothesis                bool                       `json:"hypothesis,omitempty"`
+	SourceIDs                 []componentmap.ComponentID `json:"source_component_ids,omitempty"`
+}
+
+// ArchitectureSurface is a presentation join over an existing deterministic
+// surface or a saved trace's exact start evidence. It does not introduce a new
+// analyzer surface kind or claim that static evidence executed at runtime.
+type ArchitectureSurface struct {
+	ID                        string                     `json:"id"`
+	Name                      string                     `json:"name"`
+	Source                    string                     `json:"source"`
+	Kind                      string                     `json:"kind,omitempty"`
+	Category                  string                     `json:"category"`
+	OwningExecutable          string                     `json:"owning_executable,omitempty"`
+	OwningComponentID         componentmap.ComponentID   `json:"owning_component_id,omitempty"`
+	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
+	RelatedTraceID            componentmap.FlowID        `json:"related_saved_trace_id,omitempty"`
+	Status                    string                     `json:"status,omitempty"`
+	Certainty                 string                     `json:"certainty,omitempty"`
+	Resolution                string                     `json:"resolution,omitempty"`
+	Evidence                  []SurfaceLocation          `json:"evidence,omitempty"`
+	TraceUnavailableReason    string                     `json:"trace_unavailable_reason,omitempty"`
 }
 
 type ArchitectureStructuralEdge struct {
@@ -86,17 +110,25 @@ type ArchitectureStructuralEdge struct {
 }
 
 type ArchitectureFlow struct {
-	ID            componentmap.FlowID      `json:"id"`
-	Name          string                   `json:"name"`
-	Trigger       string                   `json:"trigger,omitempty"`
-	Scope         string                   `json:"scope,omitempty"`
-	MentalModel   string                   `json:"mental_model,omitempty"`
-	Goal          string                   `json:"goal,omitempty"`
-	Command       string                   `json:"command,omitempty"`
-	Steps         []ArchitectureFlowStep   `json:"steps"`
-	Branches      []ArchitectureFlowBranch `json:"branches"`
-	Slots         []flowproof.Slot         `json:"slots"`
-	TransitionIDs []string                 `json:"transition_ids"`
+	ID                        componentmap.FlowID        `json:"id"`
+	Name                      string                     `json:"name"`
+	Trigger                   string                     `json:"trigger,omitempty"`
+	Scope                     string                     `json:"scope,omitempty"`
+	MentalModel               string                     `json:"mental_model,omitempty"`
+	Goal                      string                     `json:"goal,omitempty"`
+	Command                   string                     `json:"command,omitempty"`
+	Steps                     []ArchitectureFlowStep     `json:"steps"`
+	Branches                  []ArchitectureFlowBranch   `json:"branches"`
+	Slots                     []flowproof.Slot           `json:"slots"`
+	TransitionIDs             []string                   `json:"transition_ids"`
+	Status                    string                     `json:"status,omitempty"`
+	EvidenceBasis             string                     `json:"evidence_basis,omitempty"`
+	WhyInspect                string                     `json:"why_inspect,omitempty"`
+	GroundedAreas             int                        `json:"grounded_areas,omitempty"`
+	TotalAreas                int                        `json:"total_areas,omitempty"`
+	FrontierSummary           string                     `json:"frontier_summary,omitempty"`
+	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
+	StartSurfaceID            string                     `json:"start_surface_id,omitempty"`
 }
 
 type ArchitectureFlowStep struct {

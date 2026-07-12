@@ -62,6 +62,8 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
 	}
+	linkArchitectureProductObjects(data)
+	refreshProductCounts(data)
 	return buildHTML(data)
 }
 
