@@ -15,12 +15,17 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion = 2
+	ContractVersion       = 4
+	ProposalVersion       = 4
+	legacyProposalVersion = 3
 
 	maxCandidates        = 512
 	maxFlows             = 64
 	maxRelations         = 1_024
 	maxAnchorBindings    = 2_048
+	maxBehaviorAnchors   = 256
+	maxAnchorMembers     = 16
+	maxLimitations       = 8
 	maxFactsPerCandidate = 16
 	maxFlowsPerCandidate = 16
 	maxSubsystems        = 16
@@ -70,6 +75,90 @@ func (id MemberID) key() string {
 
 // FlowID is an exact ID from a saved local flow contract.
 type FlowID string
+
+// RepositoryArchetype is a bounded, locally assessed repository shape. It is
+// context for synthesis, not a model-authored architecture claim.
+type RepositoryArchetype string
+
+const (
+	ArchetypeApplication           RepositoryArchetype = "application"
+	ArchetypeModularPlatformServer RepositoryArchetype = "modular_platform_server"
+	ArchetypeLibraryFramework      RepositoryArchetype = "library_framework"
+	ArchetypeCLITool               RepositoryArchetype = "cli_tool"
+	ArchetypeDaemonWorkerSystem    RepositoryArchetype = "daemon_worker_system"
+	ArchetypeMonorepoMixed         RepositoryArchetype = "monorepo_mixed"
+)
+
+func (archetype RepositoryArchetype) valid() bool {
+	switch archetype {
+	case ArchetypeApplication, ArchetypeModularPlatformServer, ArchetypeLibraryFramework,
+		ArchetypeCLITool, ArchetypeDaemonWorkerSystem, ArchetypeMonorepoMixed:
+		return true
+	default:
+		return false
+	}
+}
+
+// GroundingMode states how much of the primary architecture is supported by
+// exact behavioral evidence.
+type GroundingMode string
+
+const (
+	GroundingBehavior GroundingMode = "behavior_grounded"
+	GroundingMixed    GroundingMode = "mixed"
+	GroundingPackages GroundingMode = "package_landscape"
+)
+
+func (mode GroundingMode) valid() bool {
+	return mode == GroundingBehavior || mode == GroundingMixed || mode == GroundingPackages
+}
+
+type BehaviorAnchorKind string
+
+const (
+	AnchorProcessEntry        BehaviorAnchorKind = "process_entry"
+	AnchorCommandDispatch     BehaviorAnchorKind = "command_dispatch"
+	AnchorConfigIngress       BehaviorAnchorKind = "config_ingress"
+	AnchorConfigAdapter       BehaviorAnchorKind = "config_adapter"
+	AnchorConfigApply         BehaviorAnchorKind = "config_apply"
+	AnchorRegistryWrite       BehaviorAnchorKind = "registry_write"
+	AnchorRegistryLookup      BehaviorAnchorKind = "registry_lookup"
+	AnchorLifecycleInterface  BehaviorAnchorKind = "lifecycle_interface"
+	AnchorLifecycleStart      BehaviorAnchorKind = "lifecycle_start"
+	AnchorAdminControlPlane   BehaviorAnchorKind = "admin_control_plane"
+	AnchorRequestDispatchRoot BehaviorAnchorKind = "request_dispatch_root"
+	AnchorApplicationData     BehaviorAnchorKind = "application_data_plane"
+	AnchorSecurityBoundary    BehaviorAnchorKind = "tls_or_security_boundary"
+	AnchorExtensionFamily     BehaviorAnchorKind = "extension_family"
+	AnchorUnresolvedFrontier  BehaviorAnchorKind = "unresolved_frontier"
+)
+
+func (kind BehaviorAnchorKind) valid() bool {
+	switch kind {
+	case AnchorProcessEntry, AnchorCommandDispatch, AnchorConfigIngress, AnchorConfigAdapter,
+		AnchorConfigApply, AnchorRegistryWrite, AnchorRegistryLookup, AnchorLifecycleInterface,
+		AnchorLifecycleStart, AnchorAdminControlPlane, AnchorRequestDispatchRoot,
+		AnchorApplicationData, AnchorSecurityBoundary, AnchorExtensionFamily,
+		AnchorUnresolvedFrontier:
+		return true
+	default:
+		return false
+	}
+}
+
+// BehaviorAnchor is exact local architecture evidence. The provider may group
+// or name anchors by ID but cannot create or alter them.
+type BehaviorAnchor struct {
+	ID          string              `json:"id"`
+	Kind        BehaviorAnchorKind  `json:"kind"`
+	Label       string              `json:"label"`
+	Location    evidence.Location   `json:"location"`
+	Scenario    ScenarioContext     `json:"scenario"`
+	Producer    evidence.Provenance `json:"producer"`
+	Certainty   evidence.Certainty  `json:"certainty"`
+	MemberIDs   []MemberID          `json:"member_ids"`
+	Limitations []string            `json:"limitations"`
+}
 
 // FactKind is a small vocabulary for locally extracted candidate facts. Facts
 // remain evidence; they are not component relations or temporal ordering.
@@ -129,10 +218,13 @@ type Flow struct {
 // vocabulary. Flow transitions remain owned by FlowProof.
 type StructuralRelationKind string
 
-const StructuralRelationPackageImport StructuralRelationKind = "package_import"
+const (
+	StructuralRelationPackageImport   StructuralRelationKind = "package_import"
+	StructuralRelationBehaviorHandoff StructuralRelationKind = "behavior_handoff"
+)
 
 func (kind StructuralRelationKind) valid() bool {
-	return kind == StructuralRelationPackageImport
+	return kind == StructuralRelationPackageImport || kind == StructuralRelationBehaviorHandoff
 }
 
 // ScenarioContext is the non-secret build context retained with a local
@@ -172,11 +264,14 @@ type FlowAnchorBinding struct {
 // CandidateBundle is the bounded, versioned input to conceptual synthesis.
 // It contains no coordinates and gives a proposal no authority over evidence.
 type CandidateBundle struct {
-	Version        int                 `json:"version"`
-	Candidates     []Candidate         `json:"candidates"`
-	Flows          []Flow              `json:"flows,omitempty"`
-	Relations      []LocalRelation     `json:"relations,omitempty"`
-	AnchorBindings []FlowAnchorBinding `json:"flow_anchor_bindings,omitempty"`
+	Version             int                 `json:"version"`
+	RepositoryArchetype RepositoryArchetype `json:"repository_archetype"`
+	GroundingMode       GroundingMode       `json:"grounding_mode"`
+	BehaviorAnchors     []BehaviorAnchor    `json:"behavior_anchors,omitempty"`
+	Candidates          []Candidate         `json:"candidates"`
+	Flows               []Flow              `json:"flows,omitempty"`
+	Relations           []LocalRelation     `json:"relations,omitempty"`
+	AnchorBindings      []FlowAnchorBinding `json:"flow_anchor_bindings,omitempty"`
 }
 
 // Proposal contains the complete provider authority: wording, membership, and
@@ -190,12 +285,16 @@ type ProposedSubsystem struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description,omitempty"`
 	Components  []ProposedComponent `json:"components"`
+	sourceIDs   []SubsystemID
 }
 
 type ProposedComponent struct {
 	Name        string     `json:"name"`
 	Description string     `json:"description,omitempty"`
 	MemberIDs   []MemberID `json:"member_ids"`
+	AnchorIDs   []string   `json:"anchor_ids,omitempty"`
+	Hypothesis  bool       `json:"hypothesis,omitempty"`
+	sourceIDs   []ComponentID
 }
 
 type ComponentID string
@@ -205,10 +304,13 @@ type SubsystemID string
 // Component contains exact candidates reconstructed from the local bundle.
 // Its ID is independent of proposal wording and ordering.
 type Component struct {
-	ID          ComponentID `json:"id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	Members     []Candidate `json:"members"`
+	ID          ComponentID   `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description,omitempty"`
+	Members     []Candidate   `json:"members"`
+	AnchorIDs   []string      `json:"anchor_ids,omitempty"`
+	Hypothesis  bool          `json:"hypothesis,omitempty"`
+	SourceIDs   []ComponentID `json:"source_component_ids,omitempty"`
 }
 
 type SubsystemCategory string
@@ -223,50 +325,112 @@ type Subsystem struct {
 	Description string            `json:"description,omitempty"`
 	Category    SubsystemCategory `json:"category,omitempty"`
 	Components  []Component       `json:"components"`
+	SourceIDs   []SubsystemID     `json:"source_subsystem_ids,omitempty"`
 }
 
 type Diagnostic struct {
-	Code    string    `json:"code"`
-	Message string    `json:"message"`
-	Member  *MemberID `json:"member,omitempty"`
+	Code     string          `json:"code"`
+	Severity FindingSeverity `json:"severity"`
+	Message  string          `json:"message"`
+	Member   *MemberID       `json:"member,omitempty"`
+}
+
+type FindingSeverity string
+
+const (
+	FindingFatal       FindingSeverity = "fatal"
+	FindingRecoverable FindingSeverity = "recoverable"
+	FindingAdvisory    FindingSeverity = "advisory"
+)
+
+type ValidationOutcome string
+
+const (
+	ValidationAccepted           ValidationOutcome = "accepted"
+	ValidationAcceptedNormalized ValidationOutcome = "accepted_with_normalization"
+	ValidationRejected           ValidationOutcome = "rejected"
+)
+
+type ArchitectureSource string
+
+const (
+	SourceValidatedModel  ArchitectureSource = "validated_model"
+	SourceNormalizedModel ArchitectureSource = "normalized_model"
+	SourceLocalAnchors    ArchitectureSource = "local_anchors"
+	SourcePackageFallback ArchitectureSource = "package_fallback"
+)
+
+type NormalizationOperation struct {
+	Code               string        `json:"code"`
+	Message            string        `json:"message"`
+	SourceSubsystemIDs []SubsystemID `json:"source_subsystem_ids,omitempty"`
+	SourceComponentIDs []ComponentID `json:"source_component_ids,omitempty"`
 }
 
 type FallbackReason string
 
 const (
-	FallbackProposalInvalid      FallbackReason = "proposal_invalid_or_empty"
-	FallbackModelDisabled        FallbackReason = "model_disabled"
-	FallbackProviderUnconfigured FallbackReason = "provider_not_configured"
+	FallbackProposalInvalid       FallbackReason = "proposal_invalid_or_empty"
+	FallbackRejectedMalformed     FallbackReason = "rejected_malformed_schema"
+	FallbackRejectedUnknownMember FallbackReason = "rejected_unknown_member_id"
+	FallbackRejectedUnknownAnchor FallbackReason = "rejected_unknown_anchor_id"
+	FallbackRejectedOwnership     FallbackReason = "rejected_conflicting_membership"
+	FallbackRejectedUngrounded    FallbackReason = "rejected_ungrounded_components"
+	FallbackAnchorFirst           FallbackReason = "anchor_first_fallback"
+	FallbackInsufficientAnchors   FallbackReason = "insufficient_behavior_anchors"
+	FallbackPackageLandscape      FallbackReason = "package_landscape_fallback"
+	FallbackModelDisabled         FallbackReason = "model_disabled"
+	FallbackProviderUnconfigured  FallbackReason = "provider_not_configured"
 )
 
 // Landscape is the locally validated conceptual membership result. Fallback
 // is explicit so presentation never mistakes deterministic grouping for a
 // provider-authored architecture claim.
 type Landscape struct {
-	Version        int                 `json:"version"`
-	Subsystems     []Subsystem         `json:"subsystems"`
-	Relations      []LocalRelation     `json:"relations,omitempty"`
-	AnchorBindings []FlowAnchorBinding `json:"flow_anchor_bindings,omitempty"`
-	Diagnostics    []Diagnostic        `json:"diagnostics,omitempty"`
-	Fallback       bool                `json:"fallback"`
-	FallbackReason FallbackReason      `json:"fallback_reason,omitempty"`
+	Version                int                      `json:"version"`
+	Subsystems             []Subsystem              `json:"subsystems"`
+	Relations              []LocalRelation          `json:"relations,omitempty"`
+	AnchorBindings         []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
+	Diagnostics            []Diagnostic             `json:"diagnostics,omitempty"`
+	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
+	Source                 ArchitectureSource       `json:"architecture_source"`
+	Level                  int                      `json:"architecture_level"`
+	Normalizations         []NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256 string                   `json:"original_proposal_sha256,omitempty"`
+	Fallback               bool                     `json:"fallback"`
+	FallbackReason         FallbackReason           `json:"fallback_reason,omitempty"`
 }
 
-// Apply validates a proposal against exact local candidates. Unknown IDs are
-// dropped with diagnostics. Structurally invalid or unusable proposals produce
-// a deterministic fallback instead of a partially invented landscape.
+// Apply validates a proposal against exact local candidates. Evidence-integrity
+// failures reject the proposal; recoverable hierarchy shape is normalized
+// locally before the deterministic fallback ladder is considered.
 func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 	if err := bundle.Validate(); err != nil {
 		return Landscape{}, err
 	}
 
-	landscape, diagnostics, usable := applyProposal(bundle, proposal)
+	normalized, operations, shapeDiagnostics := normalizeProposalShape(proposal)
+	landscape, diagnostics, usable := applyProposal(bundle, normalized)
+	diagnostics = append(shapeDiagnostics, diagnostics...)
 	if !usable {
 		landscape = deterministicFallback(bundle)
 		landscape.Diagnostics = diagnostics
+		landscape.ValidationOutcome = ValidationRejected
+		landscape.FallbackReason = fallbackReasonForDiagnostics(diagnostics, len(bundle.BehaviorAnchors) > 0)
 		landscape.Fallback = true
-		landscape.FallbackReason = FallbackProposalInvalid
+	} else if len(operations) > 0 {
+		landscape.ValidationOutcome = ValidationAcceptedNormalized
+		landscape.Source = SourceNormalizedModel
+		landscape.Level = 2
+		landscape.Normalizations = operations
+		landscape.Diagnostics = diagnostics
+	} else {
+		landscape.ValidationOutcome = ValidationAccepted
+		landscape.Source = SourceValidatedModel
+		landscape.Level = 1
+		landscape.Diagnostics = diagnostics
 	}
+	landscape.OriginalProposalSHA256 = proposalSHA256(proposal)
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
 	}
@@ -279,12 +443,14 @@ func Deterministic(bundle CandidateBundle, reason FallbackReason) (Landscape, er
 	if err := bundle.Validate(); err != nil {
 		return Landscape{}, err
 	}
-	if reason != FallbackModelDisabled && reason != FallbackProviderUnconfigured {
+	if reason != FallbackModelDisabled && reason != FallbackProviderUnconfigured &&
+		reason != FallbackAnchorFirst && reason != FallbackInsufficientAnchors && reason != FallbackPackageLandscape {
 		return Landscape{}, fmt.Errorf("componentmap: invalid deterministic fallback reason %q", reason)
 	}
 	landscape := deterministicFallback(bundle)
 	landscape.Fallback = true
 	landscape.FallbackReason = reason
+	landscape.ValidationOutcome = ValidationAccepted
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
 	}
@@ -309,6 +475,18 @@ func (bundle CandidateBundle) Validate() error {
 	}
 	if len(bundle.AnchorBindings) > maxAnchorBindings {
 		return fmt.Errorf("componentmap: candidate bundle exceeds %d flow-anchor bindings", maxAnchorBindings)
+	}
+	if !bundle.RepositoryArchetype.valid() {
+		return fmt.Errorf("componentmap: invalid repository archetype %q", bundle.RepositoryArchetype)
+	}
+	if !bundle.GroundingMode.valid() {
+		return fmt.Errorf("componentmap: invalid grounding mode %q", bundle.GroundingMode)
+	}
+	if len(bundle.BehaviorAnchors) > maxBehaviorAnchors {
+		return fmt.Errorf("componentmap: candidate bundle exceeds %d behavior anchors", maxBehaviorAnchors)
+	}
+	if bundle.GroundingMode != GroundingPackages && len(bundle.BehaviorAnchors) == 0 {
+		return fmt.Errorf("componentmap: grounded architecture has no behavior anchors")
 	}
 
 	flowIDs := make(map[FlowID]struct{}, len(bundle.Flows))
@@ -349,6 +527,16 @@ func (bundle CandidateBundle) Validate() error {
 		if candidate.ID.Kind == MemberFlow && len(candidate.Participations) != 1 {
 			return fmt.Errorf("componentmap: flow member %q must reference exactly one flow", candidate.ID.key())
 		}
+	}
+	anchorIDs := make(map[string]struct{}, len(bundle.BehaviorAnchors))
+	for index, anchor := range bundle.BehaviorAnchors {
+		if err := validateBehaviorAnchor(anchor, members); err != nil {
+			return fmt.Errorf("componentmap: behavior_anchors[%d]: %w", index, err)
+		}
+		if _, duplicate := anchorIDs[anchor.ID]; duplicate {
+			return fmt.Errorf("componentmap: duplicate behavior anchor id %q", anchor.ID)
+		}
+		anchorIDs[anchor.ID] = struct{}{}
 	}
 	if err := validateParentCycles(bundle.Candidates, members); err != nil {
 		return err
@@ -405,13 +593,32 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	if landscape.Version != ContractVersion {
 		return fmt.Errorf("componentmap: unsupported landscape version %d", landscape.Version)
 	}
-	if landscape.Fallback && landscape.FallbackReason != FallbackProposalInvalid &&
-		landscape.FallbackReason != FallbackModelDisabled &&
-		landscape.FallbackReason != FallbackProviderUnconfigured {
+	if landscape.Fallback && !validFallbackReason(landscape.FallbackReason) {
 		return fmt.Errorf("componentmap: fallback landscape has unsupported or missing reason")
 	}
 	if !landscape.Fallback && landscape.FallbackReason != "" {
 		return fmt.Errorf("componentmap: non-fallback landscape carries a fallback reason")
+	}
+	if !validValidationOutcome(landscape.ValidationOutcome) {
+		return fmt.Errorf("componentmap: invalid validation outcome %q", landscape.ValidationOutcome)
+	}
+	if !validArchitectureSource(landscape.Source) || landscape.Level < 1 || landscape.Level > 4 {
+		return fmt.Errorf("componentmap: invalid architecture source or level")
+	}
+	if landscape.Source == SourceValidatedModel && (landscape.Level != 1 || landscape.Fallback || len(landscape.Normalizations) != 0) {
+		return fmt.Errorf("componentmap: validated model source has inconsistent state")
+	}
+	if landscape.Source == SourceNormalizedModel && (landscape.Level != 2 || landscape.Fallback || len(landscape.Normalizations) == 0) {
+		return fmt.Errorf("componentmap: normalized model source has inconsistent state")
+	}
+	if landscape.Source == SourceLocalAnchors && landscape.Level != 3 {
+		return fmt.Errorf("componentmap: local-anchor source has inconsistent level")
+	}
+	if landscape.Source == SourcePackageFallback && landscape.Level != 4 {
+		return fmt.Errorf("componentmap: package source has inconsistent level")
+	}
+	if landscape.OriginalProposalSHA256 != "" && len(landscape.OriginalProposalSHA256) != 64 {
+		return fmt.Errorf("componentmap: original proposal digest is malformed")
 	}
 	if !reflect.DeepEqual(landscape.Relations, bundle.Relations) {
 		return fmt.Errorf("componentmap: landscape changed local structural relations")
@@ -424,11 +631,20 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 			return fmt.Errorf("componentmap: diagnostics[%d]: %w", index, err)
 		}
 	}
+	for index, operation := range landscape.Normalizations {
+		if err := validateNormalizationOperation(operation); err != nil {
+			return fmt.Errorf("componentmap: normalization_operations[%d]: %w", index, err)
+		}
+	}
 	if len(landscape.Subsystems) == 0 || len(landscape.Subsystems) > maxSubsystems {
 		return fmt.Errorf("componentmap: landscape subsystem count is out of bounds")
 	}
 
 	known := candidateIndex(bundle)
+	knownAnchors := make(map[string]struct{}, len(bundle.BehaviorAnchors))
+	for _, anchor := range bundle.BehaviorAnchors {
+		knownAnchors[anchor.ID] = struct{}{}
+	}
 	seenMembers := make(map[MemberID]struct{}, len(bundle.Candidates))
 	seenComponents := make(map[ComponentID]struct{})
 	componentCount := 0
@@ -456,6 +672,23 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 			}
 			if len(component.Members) == 0 {
 				return fmt.Errorf("componentmap: subsystem[%d].components[%d] has no members", subsystemIndex, componentIndex)
+			}
+			if len(component.AnchorIDs) > maxAnchorMembers {
+				return fmt.Errorf("componentmap: component has too many behavior anchors")
+			}
+			seenAnchorIDs := make(map[string]struct{}, len(component.AnchorIDs))
+			for _, anchorID := range component.AnchorIDs {
+				if _, exists := knownAnchors[anchorID]; !exists {
+					return fmt.Errorf("componentmap: component references unknown behavior anchor %q", anchorID)
+				}
+				if _, duplicate := seenAnchorIDs[anchorID]; duplicate {
+					return fmt.Errorf("componentmap: component repeats behavior anchor %q", anchorID)
+				}
+				seenAnchorIDs[anchorID] = struct{}{}
+			}
+			if bundle.GroundingMode != GroundingPackages && subsystem.Category != SubsystemCategoryDiagnostic &&
+				len(component.AnchorIDs) == 0 && !component.Hypothesis {
+				return fmt.Errorf("componentmap: grounded component lacks an anchor or explicit hypothesis")
 			}
 			memberIDs := make([]MemberID, 0, len(component.Members))
 			for _, member := range component.Members {
@@ -500,9 +733,9 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diagnostic, bool) {
 	diagnostics := make([]Diagnostic, 0)
 	invalid := func(code, message string) {
-		diagnostics = append(diagnostics, Diagnostic{Code: code, Message: message})
+		diagnostics = append(diagnostics, newDiagnostic(code, message))
 	}
-	if proposal.Version != ContractVersion {
+	if proposal.Version != ProposalVersion && proposal.Version != legacyProposalVersion {
 		invalid("proposal.unsupported_version", "proposal version is missing or unsupported")
 		return Landscape{}, diagnostics, false
 	}
@@ -533,21 +766,12 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		}
 	}
 	proposedSubsystems := proposal.Subsystems
-	if len(proposedSubsystems) >= maxSubsystems {
-		proposedSubsystems = proposedSubsystems[:maxSubsystems-1]
-		diagnostics = append(diagnostics, Diagnostic{
-			Code:    "proposal.excess_subsystems_dropped",
-			Message: "kept the first bounded conceptual subsystems and reserved room for local remainder evidence",
-		})
-	}
-	if proposedComponentCount >= maxComponents {
-		diagnostics = append(diagnostics, Diagnostic{
-			Code:    "proposal.excess_components_dropped",
-			Message: "kept the first bounded conceptual components and reserved room for local remainder evidence",
-		})
-	}
 
 	known := candidateIndex(bundle)
+	knownAnchors := make(map[string]struct{}, len(bundle.BehaviorAnchors))
+	for _, anchor := range bundle.BehaviorAnchors {
+		knownAnchors[anchor.ID] = struct{}{}
+	}
 	seenMembers := make(map[MemberID]struct{})
 	landscape := Landscape{
 		Version:        ContractVersion,
@@ -587,44 +811,52 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			for _, memberID := range proposedComponent.MemberIDs {
 				candidate, exists := known[memberID]
 				if !exists {
-					id := memberID
-					diagnostics = append(diagnostics, Diagnostic{
-						Code: "proposal.unknown_member_dropped", Message: "dropped a member id absent from the local candidate bundle", Member: &id,
-					})
-					continue
+					invalid("proposal.unknown_member_id", "proposal references a member id absent from the local candidate bundle")
+					return Landscape{}, diagnostics, false
 				}
 				if _, exists := seenMembers[memberID]; exists {
-					diagnostics = append(diagnostics, Diagnostic{
-						Code:    "proposal.duplicate_membership_dropped",
-						Message: "kept the first conceptual placement for a repeated local member",
-					})
-					continue
+					invalid("proposal.conflicting_membership", "proposal assigns one exact member to more than one component")
+					return Landscape{}, diagnostics, false
 				}
 				seenMembers[memberID] = struct{}{}
 				members = append(members, cloneCandidate(candidate))
 			}
 			if len(members) == 0 {
-				diagnostics = append(diagnostics, Diagnostic{
-					Code:    "proposal.empty_membership_dropped",
-					Message: "dropped a proposed component after no unique known member survived",
-				})
-				componentCount--
-				continue
+				invalid("proposal.invalid_component", "proposal component has no usable exact members")
+				return Landscape{}, diagnostics, false
+			}
+			anchorIDs := make([]string, 0, len(proposedComponent.AnchorIDs))
+			seenAnchorIDs := make(map[string]struct{}, len(proposedComponent.AnchorIDs))
+			for _, anchorID := range proposedComponent.AnchorIDs {
+				if _, exists := knownAnchors[anchorID]; !exists {
+					invalid("proposal.unknown_anchor_id", "proposal references an anchor id absent from the local grounding bundle")
+					return Landscape{}, diagnostics, false
+				}
+				if _, duplicate := seenAnchorIDs[anchorID]; duplicate {
+					continue
+				}
+				seenAnchorIDs[anchorID] = struct{}{}
+				anchorIDs = append(anchorIDs, anchorID)
+			}
+			sort.Strings(anchorIDs)
+			if bundle.GroundingMode != GroundingPackages && len(anchorIDs) == 0 && !proposedComponent.Hypothesis {
+				invalid("proposal.ungrounded_primary_component", "a primary component lacks a supplied behavior anchor or explicit hypothesis")
+				return Landscape{}, diagnostics, false
 			}
 			sortCandidates(members)
 			componentCount++
 			subsystem.Components = append(subsystem.Components, Component{
-				ID: componentID(candidateIDs(members)), Name: componentName, Description: componentDescription, Members: members,
+				ID: componentID(candidateIDs(members)), Name: componentName, Description: componentDescription,
+				Members: members, AnchorIDs: anchorIDs, Hypothesis: proposedComponent.Hypothesis,
+				SourceIDs: append([]ComponentID(nil), proposedComponent.sourceIDs...),
 			})
 		}
 		if len(subsystem.Components) == 0 {
-			diagnostics = append(diagnostics, Diagnostic{
-				Code:    "proposal.empty_subsystem_dropped",
-				Message: "dropped a proposed subsystem after no usable component survived",
-			})
-			continue
+			invalid("proposal.invalid_subsystem", "proposal subsystem has no usable nested components")
+			return Landscape{}, diagnostics, false
 		}
 		subsystem.ID = subsystemID(componentIDs(subsystem.Components))
+		subsystem.SourceIDs = append([]SubsystemID(nil), proposedSubsystem.sourceIDs...)
 		landscape.Subsystems = append(landscape.Subsystems, subsystem)
 	}
 	if len(landscape.Subsystems) == 0 {
@@ -657,10 +889,10 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			Category:    SubsystemCategoryDiagnostic,
 			Components:  []Component{remainder},
 		})
-		diagnostics = append(diagnostics, Diagnostic{
-			Code:    "proposal.omitted_members_preserved",
-			Message: "conceptual synthesis omitted local candidates; they remain visible in a deterministic remainder",
-		})
+		diagnostics = append(diagnostics, newDiagnostic(
+			"proposal.omitted_members_preserved",
+			"conceptual synthesis omitted local candidates; they remain visible in a deterministic remainder",
+		))
 	}
 	landscape.Diagnostics = diagnostics
 	return landscape, diagnostics, true
@@ -675,6 +907,13 @@ type fallbackGroup struct {
 }
 
 func deterministicFallback(bundle CandidateBundle) Landscape {
+	if useAnchorFirstFallback(bundle) {
+		return anchorFirstFallback(bundle)
+	}
+	return packageLandscapeFallback(bundle)
+}
+
+func packageLandscapeFallback(bundle CandidateBundle) Landscape {
 	known := candidateIndex(bundle)
 	flowNames := make(map[FlowID]string, len(bundle.Flows))
 	for _, flow := range bundle.Flows {
@@ -703,13 +942,17 @@ func deterministicFallback(bundle CandidateBundle) Landscape {
 		groups = append(groups, *group)
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].key < groups[j].key })
-	if len(groups) > maxComponents {
-		kept := append([]fallbackGroup(nil), groups[:maxComponents-1]...)
+	groupLimit := maxComponents
+	if bundle.GroundingMode != GroundingPackages {
+		groupLimit = 8
+	}
+	if len(groups) > groupLimit {
+		kept := append([]fallbackGroup(nil), groups[:groupLimit-1]...)
 		remainder := fallbackGroup{
-			key: "zz:other", category: "repository", name: "Other repository members",
-			description: "Deterministic bounded remainder of exact local candidates.",
+			key: "zz:other", category: "diagnostic", name: "Other repository members",
+			description: "Deterministic bounded remainder kept outside the primary architecture.",
 		}
-		for _, group := range groups[maxComponents-1:] {
+		for _, group := range groups[groupLimit-1:] {
 			remainder.members = append(remainder.members, group.members...)
 		}
 		sortCandidates(remainder.members)
@@ -718,8 +961,12 @@ func deterministicFallback(bundle CandidateBundle) Landscape {
 
 	byCategory := make(map[string][]Component)
 	for _, group := range groups {
+		id := componentID(candidateIDs(group.members))
 		byCategory[group.category] = append(byCategory[group.category], Component{
-			ID: componentID(candidateIDs(group.members)), Name: group.name, Description: group.description, Members: group.members,
+			ID: id, Name: group.name, Description: group.description,
+			Members: group.members, AnchorIDs: behaviorAnchorsForMembers(bundle.BehaviorAnchors, group.members),
+			Hypothesis: bundle.GroundingMode != GroundingPackages && len(behaviorAnchorsForMembers(bundle.BehaviorAnchors, group.members)) == 0,
+			SourceIDs:  []ComponentID{id},
 		})
 	}
 	categories := make([]string, 0, len(byCategory))
@@ -733,14 +980,179 @@ func deterministicFallback(bundle CandidateBundle) Landscape {
 		components := byCategory[category]
 		sort.Slice(components, func(i, j int) bool { return components[i].ID < components[j].ID })
 		name := fallbackSubsystemName(category)
+		subsystemCategory := SubsystemCategory("")
+		if category == "diagnostic" {
+			subsystemCategory = SubsystemCategoryDiagnostic
+		}
+		id := subsystemID(componentIDs(components))
 		subsystems = append(subsystems, Subsystem{
-			ID: subsystemID(componentIDs(components)), Name: name,
-			Description: "Deterministic local " + category + " landscape.", Components: components,
+			ID: id, Name: name,
+			Description: "Deterministic local " + category + " landscape.",
+			Category:    subsystemCategory, Components: components, SourceIDs: []SubsystemID{id},
 		})
 	}
 	return Landscape{
 		Version: ContractVersion, Subsystems: subsystems,
 		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+		Source: SourcePackageFallback, Level: 4,
+	}
+}
+
+type anchorFallbackGroup struct {
+	name        string
+	description string
+	kinds       []BehaviorAnchorKind
+}
+
+func anchorFirstFallback(bundle CandidateBundle) Landscape {
+	groups := []anchorFallbackGroup{
+		{name: "Entry and dispatch", description: "Process entry and command dispatch anchors.", kinds: []BehaviorAnchorKind{AnchorProcessEntry, AnchorCommandDispatch}},
+		{name: "Configuration", description: "Configuration ingress, adaptation, and application anchors.", kinds: []BehaviorAnchorKind{AnchorConfigIngress, AnchorConfigAdapter, AnchorConfigApply}},
+		{name: "Runtime and extensions", description: "Registry, extension, and lifecycle anchors.", kinds: []BehaviorAnchorKind{AnchorRegistryWrite, AnchorRegistryLookup, AnchorExtensionFamily, AnchorLifecycleInterface, AnchorLifecycleStart}},
+		{name: "Control plane", description: "Administrative control-plane anchors.", kinds: []BehaviorAnchorKind{AnchorAdminControlPlane}},
+		{name: "Request and data plane", description: "Request dispatch and application data-plane anchors.", kinds: []BehaviorAnchorKind{AnchorRequestDispatchRoot, AnchorApplicationData}},
+		{name: "Security", description: "TLS and security-boundary anchors.", kinds: []BehaviorAnchorKind{AnchorSecurityBoundary}},
+	}
+	known := candidateIndex(bundle)
+	anchorsByKind := make(map[BehaviorAnchorKind][]BehaviorAnchor)
+	for _, anchor := range bundle.BehaviorAnchors {
+		anchorsByKind[anchor.Kind] = append(anchorsByKind[anchor.Kind], anchor)
+	}
+	for kind := range anchorsByKind {
+		sort.Slice(anchorsByKind[kind], func(i, j int) bool { return anchorsByKind[kind][i].ID < anchorsByKind[kind][j].ID })
+	}
+
+	owned := make(map[MemberID]struct{}, len(bundle.Candidates))
+	subsystems := make([]Subsystem, 0, len(groups)+1)
+	for _, group := range groups {
+		components := make([]Component, 0, len(group.kinds))
+		for _, kind := range group.kinds {
+			anchors := anchorsByKind[kind]
+			if len(anchors) == 0 {
+				continue
+			}
+			memberSet := make(map[MemberID]struct{})
+			anchorIDs := make([]string, 0, len(anchors))
+			for _, anchor := range anchors {
+				anchorIDs = append(anchorIDs, anchor.ID)
+				for _, memberID := range anchor.MemberIDs {
+					addAnchorFallbackMember(memberID, known, owned, memberSet)
+				}
+			}
+			members := candidatesFromIDSet(memberSet, known)
+			if len(members) == 0 {
+				continue
+			}
+			id := componentID(candidateIDs(members))
+			components = append(components, Component{
+				ID: id, Name: anchorFallbackComponentName(kind),
+				Description: "Deterministic grouping from exact " + string(kind) + " anchors.",
+				Members:     members, AnchorIDs: anchorIDs, SourceIDs: []ComponentID{id},
+			})
+		}
+		if len(components) == 0 {
+			continue
+		}
+		id := subsystemID(componentIDs(components))
+		subsystems = append(subsystems, Subsystem{
+			ID: id, Name: group.name, Description: group.description,
+			Components: components, SourceIDs: []SubsystemID{id},
+		})
+	}
+
+	remainder := make([]Candidate, 0)
+	for _, candidate := range bundle.Candidates {
+		if _, exists := owned[candidate.ID]; !exists {
+			remainder = append(remainder, cloneCandidate(candidate))
+		}
+	}
+	if len(remainder) > 0 {
+		sortCandidates(remainder)
+		componentID := componentID(candidateIDs(remainder))
+		component := Component{
+			ID: componentID, Name: "Supporting repository evidence",
+			Description: "Exact local members not assigned by the bounded anchor-kind mapping.",
+			Members:     remainder, Hypothesis: true, SourceIDs: []ComponentID{componentID},
+		}
+		subsystemID := subsystemID([]ComponentID{componentID})
+		subsystems = append(subsystems, Subsystem{
+			ID: subsystemID, Name: "Supporting evidence",
+			Description: "Package, file, symbol, and flow evidence retained outside the primary architecture.",
+			Category:    SubsystemCategoryDiagnostic, Components: []Component{component},
+			SourceIDs: []SubsystemID{subsystemID},
+		})
+	}
+	return Landscape{
+		Version: ContractVersion, Subsystems: subsystems,
+		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+		Source: SourceLocalAnchors, Level: 3,
+	}
+}
+
+func addAnchorFallbackMember(
+	memberID MemberID,
+	known map[MemberID]Candidate,
+	owned map[MemberID]struct{},
+	selected map[MemberID]struct{},
+) {
+	currentID := memberID
+	for {
+		candidate, exists := known[currentID]
+		if !exists {
+			return
+		}
+		if _, alreadyOwned := owned[currentID]; !alreadyOwned {
+			owned[currentID] = struct{}{}
+			selected[currentID] = struct{}{}
+		}
+		if candidate.ParentID == nil {
+			return
+		}
+		currentID = *candidate.ParentID
+	}
+}
+
+func candidatesFromIDSet(ids map[MemberID]struct{}, known map[MemberID]Candidate) []Candidate {
+	result := make([]Candidate, 0, len(ids))
+	for id := range ids {
+		result = append(result, cloneCandidate(known[id]))
+	}
+	sortCandidates(result)
+	return result
+}
+
+func anchorFallbackComponentName(kind BehaviorAnchorKind) string {
+	switch kind {
+	case AnchorProcessEntry:
+		return "Process entry"
+	case AnchorCommandDispatch:
+		return "Command dispatch"
+	case AnchorConfigIngress:
+		return "Configuration ingress"
+	case AnchorConfigAdapter:
+		return "Configuration adapters"
+	case AnchorConfigApply:
+		return "Configuration application"
+	case AnchorRegistryWrite:
+		return "Extension registration"
+	case AnchorRegistryLookup:
+		return "Extension lookup"
+	case AnchorExtensionFamily:
+		return "Extension families"
+	case AnchorLifecycleInterface:
+		return "Lifecycle contracts"
+	case AnchorLifecycleStart:
+		return "Lifecycle startup"
+	case AnchorAdminControlPlane:
+		return "Administrative control plane"
+	case AnchorRequestDispatchRoot:
+		return "Request dispatch"
+	case AnchorApplicationData:
+		return "Application data plane"
+	case AnchorSecurityBoundary:
+		return "TLS and security boundary"
+	default:
+		return "Unresolved frontier"
 	}
 }
 
@@ -791,6 +1203,8 @@ func fallbackSubsystemName(category string) string {
 		return "Files"
 	case "symbol":
 		return "Symbols"
+	case "diagnostic":
+		return "Supporting evidence"
 	default:
 		return "Repository"
 	}
@@ -919,6 +1333,71 @@ func validateFact(fact LocalFact) error {
 		}
 	}
 	return nil
+}
+
+func validateBehaviorAnchor(anchor BehaviorAnchor, known map[MemberID]Candidate) error {
+	if err := validateOpaqueText("behavior anchor id", anchor.ID, maxOpaqueIDBytes); err != nil {
+		return err
+	}
+	if !anchor.Kind.valid() {
+		return fmt.Errorf("invalid behavior anchor kind %q", anchor.Kind)
+	}
+	if err := validateDisplayText("behavior anchor label", anchor.Label, maxNameBytes, true); err != nil {
+		return err
+	}
+	if err := validateLocation(anchor.Location); err != nil || anchor.Location.Line == 0 {
+		return fmt.Errorf("behavior anchor location must be exact")
+	}
+	if err := validateScenarioContext(anchor.Scenario); err != nil {
+		return fmt.Errorf("scenario: %w", err)
+	}
+	if err := validateProvenance(anchor.Producer); err != nil {
+		return fmt.Errorf("producer: %w", err)
+	}
+	if anchor.Certainty != evidence.CertaintyStatic && anchor.Certainty != evidence.CertaintyObserved &&
+		anchor.Certainty != evidence.CertaintyVerified {
+		return fmt.Errorf("behavior anchor certainty %q is not locally grounded", anchor.Certainty)
+	}
+	if len(anchor.MemberIDs) == 0 || len(anchor.MemberIDs) > maxAnchorMembers {
+		return fmt.Errorf("behavior anchor member count is out of bounds")
+	}
+	seenMembers := make(map[MemberID]struct{}, len(anchor.MemberIDs))
+	for _, memberID := range anchor.MemberIDs {
+		if _, exists := known[memberID]; !exists {
+			return fmt.Errorf("behavior anchor references unknown member")
+		}
+		if _, duplicate := seenMembers[memberID]; duplicate {
+			return fmt.Errorf("behavior anchor repeats a member")
+		}
+		seenMembers[memberID] = struct{}{}
+	}
+	if len(anchor.Limitations) == 0 || len(anchor.Limitations) > maxLimitations {
+		return fmt.Errorf("behavior anchor limitation count is out of bounds")
+	}
+	for _, limitation := range anchor.Limitations {
+		if err := validateDisplayText("behavior anchor limitation", limitation, maxDescriptionBytes, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func behaviorAnchorsForMembers(anchors []BehaviorAnchor, members []Candidate) []string {
+	memberSet := make(map[MemberID]struct{}, len(members))
+	for _, member := range members {
+		memberSet[member.ID] = struct{}{}
+	}
+	result := make([]string, 0)
+	for _, anchor := range anchors {
+		for _, memberID := range anchor.MemberIDs {
+			if _, exists := memberSet[memberID]; exists {
+				result = append(result, anchor.ID)
+				break
+			}
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 func validateLocalRelation(relation LocalRelation, known map[MemberID]Candidate) error {
@@ -1120,6 +1599,9 @@ func validateDiagnostic(diagnostic Diagnostic) error {
 	}
 	if err := validateDisplayText("diagnostic message", diagnostic.Message, maxDescriptionBytes, true); err != nil {
 		return err
+	}
+	if diagnostic.Severity != FindingFatal && diagnostic.Severity != FindingRecoverable && diagnostic.Severity != FindingAdvisory {
+		return fmt.Errorf("invalid diagnostic severity %q", diagnostic.Severity)
 	}
 	if diagnostic.Member != nil {
 		if err := validateMemberID(*diagnostic.Member); err != nil {

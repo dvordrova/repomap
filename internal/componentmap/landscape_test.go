@@ -1,6 +1,7 @@
 package componentmap
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -67,11 +68,10 @@ func TestApplyKeepsComponentIdentityAcrossRenameAndReorder(t *testing.T) {
 	}
 }
 
-func TestApplyDropsUnknownMemberWithoutChangingLocalEvidence(t *testing.T) {
+func TestApplyRejectsUnknownMemberWithoutChangingLocalEvidence(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
-	wanted := bundle.Candidates[1]
 	result, err := Apply(bundle, Proposal{
 		Version: ContractVersion,
 		Subsystems: []ProposedSubsystem{{
@@ -79,7 +79,7 @@ func TestApplyDropsUnknownMemberWithoutChangingLocalEvidence(t *testing.T) {
 			Components: []ProposedComponent{{
 				Name: "Repository",
 				MemberIDs: []MemberID{
-					wanted.ID,
+					bundle.Candidates[1].ID,
 					testMemberID(MemberFile, "invented-by-provider"),
 				},
 			}},
@@ -88,15 +88,11 @@ func TestApplyDropsUnknownMemberWithoutChangingLocalEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if result.Fallback {
-		t.Fatal("Apply() used fallback for a component with one surviving exact member")
+	if !result.Fallback || result.ValidationOutcome != ValidationRejected || result.FallbackReason != FallbackRejectedUnknownMember {
+		t.Fatalf("result = %#v, want fatal unknown-member rejection", result)
 	}
-	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.unknown_member_dropped") {
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.unknown_member_id") {
 		t.Fatalf("diagnostics = %#v, want unknown member diagnostic", result.Diagnostics)
-	}
-	got := result.Subsystems[0].Components[0].Members
-	if len(got) != 1 || !reflect.DeepEqual(got[0], wanted) {
-		t.Fatalf("accepted members = %#v, want unchanged candidate %#v", got, wanted)
 	}
 }
 
@@ -131,7 +127,7 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Apply() error = %v", err)
 			}
-			if !result.Fallback || result.FallbackReason != "proposal_invalid_or_empty" {
+			if !result.Fallback || result.FallbackReason != FallbackRejectedMalformed {
 				t.Fatalf("fallback = %v (%q), want explicit invalid proposal fallback", result.Fallback, result.FallbackReason)
 			}
 			if !hasLandscapeDiagnostic(result.Diagnostics, test.diagnostic) {
@@ -144,7 +140,7 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 	}
 }
 
-func TestApplyKeepsFirstDuplicateMembershipAndPreservesRemainder(t *testing.T) {
+func TestApplyRejectsConflictingMembership(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -162,15 +158,11 @@ func TestApplyKeepsFirstDuplicateMembershipAndPreservesRemainder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if result.Fallback {
-		t.Fatalf("duplicate placement caused fallback: %#v", result.Diagnostics)
+	if !result.Fallback || result.FallbackReason != FallbackRejectedOwnership || result.ValidationOutcome != ValidationRejected {
+		t.Fatalf("duplicate placement result = %#v", result)
 	}
-	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_membership_dropped") ||
-		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.empty_membership_dropped") {
-		t.Fatalf("diagnostics = %#v, want duplicate and empty-component repairs", result.Diagnostics)
-	}
-	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
-		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.conflicting_membership") {
+		t.Fatalf("diagnostics = %#v, want conflicting ownership", result.Diagnostics)
 	}
 }
 
@@ -260,12 +252,19 @@ func TestApplyBoundsExcessComponentsAndPreservesRemainder(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
-	packageID := testMemberID(MemberPackage, "repo")
+	bundle.Candidates = nil
+	bundle.Relations = nil
+	bundle.AnchorBindings = nil
 	components := make([]ProposedComponent, maxComponents+1)
 	for index := range components {
+		id := testMemberID(MemberFile, fmt.Sprintf("member-%02d", index))
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: id, Name: fmt.Sprintf("member-%02d.go", index),
+			Facts: []LocalFact{testLocalFact(FactRepositoryPath, fmt.Sprintf("member-%02d.go", index), fmt.Sprintf("member-%02d.go", index), 1)},
+		})
 		components[index] = ProposedComponent{
-			Name:      "Repeated placement",
-			MemberIDs: []MemberID{packageID},
+			Name:      fmt.Sprintf("Responsibility %02d", index),
+			MemberIDs: []MemberID{id},
 		}
 	}
 	result, err := Apply(bundle, Proposal{
@@ -281,7 +280,10 @@ func TestApplyBoundsExcessComponentsAndPreservesRemainder(t *testing.T) {
 	if result.Fallback {
 		t.Fatalf("excess components caused fallback: %#v", result.Diagnostics)
 	}
-	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.excess_components_dropped") {
+	if result.ValidationOutcome != ValidationAcceptedNormalized || result.Source != SourceNormalizedModel {
+		t.Fatalf("validation outcome = %q source = %q", result.ValidationOutcome, result.Source)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.normalized_components_per_subsystem") {
 		t.Fatalf("diagnostics = %#v, want bounded component repair", result.Diagnostics)
 	}
 	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
@@ -400,7 +402,7 @@ func landscapeTestBundle() CandidateBundle {
 	entrypointID := testMemberID(MemberEntrypoint, "backup-command")
 	flowID := FlowID("backup")
 	return CandidateBundle{
-		Version: ContractVersion,
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
 		Flows: []Flow{{
 			ID: flowID, Name: "Backup",
 			Facts: []LocalFact{testLocalFact(FactDeclaration, "saved flowproof v2", "cmd/backup.go", 20)},

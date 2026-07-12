@@ -3,11 +3,113 @@ package componentmap
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/evidence"
 )
+
+func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
+	t.Parallel()
+
+	bundle, response := caddyArchitectureReplayFixture(t)
+	result, err := RecordSynthesisResponse(
+		bundle, "caddy-saved-run", "openai-compatible/bearer", "deepseek-v4-flash", 0, response,
+	)
+	if err != nil {
+		t.Fatalf("RecordSynthesisResponse() error = %v", err)
+	}
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome == ValidationRejected {
+		t.Fatalf("saved Caddy response selected fallback: %#v", result.Landscape)
+	}
+	if result.Landscape.Source != SourceValidatedModel || len(result.Landscape.Subsystems) != 6 {
+		t.Fatalf("source/subsystems = %q/%d", result.Landscape.Source, len(result.Landscape.Subsystems))
+	}
+	componentCount := 0
+	for _, subsystem := range result.Landscape.Subsystems {
+		componentCount += len(subsystem.Components)
+		for _, component := range subsystem.Components {
+			if !component.Hypothesis && len(component.AnchorIDs) == 0 {
+				t.Fatalf("component %q has no supplied anchor", component.Name)
+			}
+		}
+	}
+	if componentCount != 12 {
+		t.Fatalf("nested components = %d, want 12", componentCount)
+	}
+	wantSubsystems := []string{"Core", "Config", "Admin", "HTTP", "Security", "Entry"}
+	for index, want := range wantSubsystems {
+		if result.Landscape.Subsystems[index].Name != want {
+			t.Fatalf("subsystem[%d] = %q, want %q", index, result.Landscape.Subsystems[index].Name, want)
+		}
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesis(bundle, "caddy-saved-run", saved)
+	if err != nil {
+		t.Fatalf("ReplaySynthesis() error = %v", err)
+	}
+	if !reflect.DeepEqual(replayed, result.Landscape) {
+		t.Fatal("saved Caddy response did not replay deterministically")
+	}
+	legacyRecord, err := json.Marshal(map[string]any{
+		"version": 1, "repository_revision": "caddy-saved-run", "cache_key": "legacy", "request_sha256": strings.Repeat("a", 64),
+		"call": map[string]any{
+			"metadata": map[string]any{
+				"prompt_version": "architecture-grounding-v3", "profile": "openai-compatible/bearer",
+				"model": "deepseek-v4-flash", "input_bytes": 119270, "latency_ms": 12009,
+				"validation_warnings": []map[string]string{{"code": "proposal.excess_primary_pillars", "message": "grounded architecture exceeds eight primary pillars"}},
+				"fallback_reason":     "proposal_invalid_or_empty",
+			},
+			"response_state": "captured", "response_bytes": len(response), "response": response,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyReplayed, err := ReplayLegacyCapturedSynthesis(bundle, legacyRecord)
+	if err != nil {
+		t.Fatalf("ReplayLegacyCapturedSynthesis() error = %v", err)
+	}
+	if legacyReplayed.Fallback || len(legacyReplayed.Subsystems) != 6 {
+		t.Fatalf("legacy captured response replay = %#v", legacyReplayed)
+	}
+}
+
+func TestRejectedCaddyProposalUsesAnchorFirstFallback(t *testing.T) {
+	t.Parallel()
+
+	bundle, response := caddyArchitectureReplayFixture(t)
+	var proposal Proposal
+	if err := json.Unmarshal(response, &proposal); err != nil {
+		t.Fatal(err)
+	}
+	proposal.Subsystems[0].Components[0].AnchorIDs = []string{"anchor-invented"}
+	response, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "caddy-saved-run", "test", "test", 0, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.Source != SourceLocalAnchors || result.Landscape.Level != 3 ||
+		result.Landscape.FallbackReason != FallbackRejectedUnknownAnchor {
+		t.Fatalf("fallback ladder result = %#v", result.Landscape)
+	}
+	for _, subsystem := range result.Landscape.Subsystems {
+		if subsystem.Name == "Packages" || subsystem.Name == "Files" || subsystem.Name == "Symbols" {
+			t.Fatalf("anchor-first fallback exposed raw kind group %q", subsystem.Name)
+		}
+	}
+}
 
 func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	t.Parallel()
@@ -221,13 +323,13 @@ func TestInvalidSynthesisOutputFallsBackAndReplays(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RecordSynthesisResponse() error = %v", err)
 			}
-			if !result.Landscape.Fallback || result.Landscape.FallbackReason != FallbackProposalInvalid {
+			if !result.Landscape.Fallback || result.Landscape.FallbackReason != FallbackRejectedMalformed {
 				t.Fatalf("fallback = %v (%q), want invalid proposal fallback", result.Landscape.Fallback, result.Landscape.FallbackReason)
 			}
 			if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, test.diagnostic) {
 				t.Fatalf("diagnostics = %#v, want %q", result.Landscape.Diagnostics, test.diagnostic)
 			}
-			if result.Record.Call.ResponseState != test.state || result.Record.Call.Metadata.FallbackReason != FallbackProposalInvalid {
+			if result.Record.Call.ResponseState != test.state || result.Record.Call.Metadata.FallbackReason != FallbackRejectedMalformed {
 				t.Fatalf("saved call = %#v", result.Record.Call)
 			}
 			if test.state == ResponseOversize && (len(result.Record.Call.Response) != 0 || result.Record.Call.ResponseBytes != len(test.response)) {
@@ -264,6 +366,59 @@ func TestUnknownSynthesisResponseFieldsAreIgnoredWithWarning(t *testing.T) {
 	}
 	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "response.unknown_fields_ignored") {
 		t.Fatalf("diagnostics = %#v, want unknown-field warning", result.Landscape.Diagnostics)
+	}
+}
+
+func TestGroundedSynthesisRequiresSuppliedAnchorOrExplicitHypothesis(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.GroundingMode = GroundingMixed
+	bundle.BehaviorAnchors = []BehaviorAnchor{{
+		ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
+		Location: evidence.Location{Path: "cmd/main.go", Line: 10, Column: 1},
+		Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+		Producer: evidence.Provenance{
+			Provider: "test", Version: "v1", Operation: "fixture",
+			Location: &evidence.Location{Path: "cmd/main.go", Line: 10, Column: 1},
+		},
+		Certainty:   evidence.CertaintyStatic,
+		MemberIDs:   []MemberID{bundle.Candidates[0].ID},
+		Limitations: []string{"Static test evidence; execution is not observed."},
+	}}
+
+	proposal := Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Runtime",
+			Components: []ProposedComponent{{
+				Name: "Process", MemberIDs: []MemberID{bundle.Candidates[0].ID},
+			}},
+		}},
+	}
+	raw, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.ungrounded_primary_component") {
+		t.Fatalf("ungrounded proposal = %#v", result.Landscape)
+	}
+
+	proposal.Subsystems[0].Components[0].AnchorIDs = []string{"process"}
+	raw, err = json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Landscape.Fallback || !reflect.DeepEqual(result.Landscape.Subsystems[0].Components[0].AnchorIDs, []string{"process"}) {
+		t.Fatalf("grounded proposal = %#v", result.Landscape)
 	}
 }
 
@@ -359,4 +514,79 @@ func validSynthesisProposalJSON(t *testing.T, bundle CandidateBundle) []byte {
 		t.Fatalf("json.Marshal(proposal) error = %v", err)
 	}
 	return encoded
+}
+
+func caddyArchitectureReplayFixture(t *testing.T) (CandidateBundle, []byte) {
+	t.Helper()
+
+	response, err := os.ReadFile("testdata/caddy_architecture_proposal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proposal Proposal
+	if err := json.Unmarshal(response, &proposal); err != nil {
+		t.Fatal(err)
+	}
+	anchorKinds := map[string]BehaviorAnchorKind{
+		"anchor-13712c6ead2b942f11dcffac": AnchorRegistryLookup,
+		"anchor-15a7795600d479a868920444": AnchorAdminControlPlane,
+		"anchor-19ecb1abd8774376a314e8c5": AnchorProcessEntry,
+		"anchor-1cb683cf6bdf9da982a3a2cb": AnchorCommandDispatch,
+		"anchor-1cbc8e5d96c6a3d4ee8cfc55": AnchorConfigApply,
+		"anchor-472447da3f3b81394c5d1b51": AnchorRequestDispatchRoot,
+		"anchor-5b79058ae0786d830a6cd1d5": AnchorExtensionFamily,
+		"anchor-a020c474f76db85ae85d9357": AnchorConfigIngress,
+		"anchor-b95e592bce5b179ca6607eca": AnchorLifecycleInterface,
+		"anchor-c068a8bd8b4edb1b113b3b4a": AnchorLifecycleStart,
+		"anchor-e55d283d2f5bd2fd480082ec": AnchorConfigAdapter,
+		"anchor-e97c73cefeeab8629977e8e2": AnchorRegistryWrite,
+		"anchor-fa09229b7ce874a630de6544": AnchorSecurityBoundary,
+	}
+	candidates := make(map[MemberID]Candidate)
+	anchorMembers := make(map[string]map[MemberID]struct{})
+	for _, subsystem := range proposal.Subsystems {
+		for _, component := range subsystem.Components {
+			for index, memberID := range component.MemberIDs {
+				if _, exists := candidates[memberID]; !exists {
+					path := fmt.Sprintf("fixture/%s/%02d.go", subsystem.Name, index+1)
+					candidates[memberID] = Candidate{
+						ID: memberID, Name: memberID.Value,
+						Facts: []LocalFact{testLocalFact(FactDeclaration, memberID.Value, path, 1)},
+					}
+				}
+				for _, anchorID := range component.AnchorIDs {
+					if anchorMembers[anchorID] == nil {
+						anchorMembers[anchorID] = make(map[MemberID]struct{})
+					}
+					anchorMembers[anchorID][memberID] = struct{}{}
+				}
+			}
+		}
+	}
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeModularPlatformServer, GroundingMode: GroundingMixed,
+	}
+	for _, candidate := range candidates {
+		bundle.Candidates = append(bundle.Candidates, candidate)
+	}
+	sortCandidates(bundle.Candidates)
+	for anchorID, kind := range anchorKinds {
+		memberIDs := make([]MemberID, 0, len(anchorMembers[anchorID]))
+		for memberID := range anchorMembers[anchorID] {
+			memberIDs = append(memberIDs, memberID)
+		}
+		sort.Slice(memberIDs, func(i, j int) bool { return memberIDs[i].key() < memberIDs[j].key() })
+		location := evidence.Location{Path: "fixture/anchors.go", Line: len(bundle.BehaviorAnchors) + 1, Column: 1}
+		bundle.BehaviorAnchors = append(bundle.BehaviorAnchors, BehaviorAnchor{
+			ID: anchorID, Kind: kind, Label: string(kind), Location: location,
+			Scenario: ScenarioContext{ID: "go:fixture", Name: "saved Caddy replay"},
+			Producer: evidence.Provenance{
+				Provider: "saved_caddy_run", Version: "20260712-184001", Operation: "replay_architecture_anchor", Location: &location,
+			},
+			Certainty: evidence.CertaintyStatic, MemberIDs: memberIDs,
+			Limitations: []string{"Saved deterministic fixture evidence; runtime execution is not implied."},
+		})
+	}
+	sort.Slice(bundle.BehaviorAnchors, func(i, j int) bool { return bundle.BehaviorAnchors[i].ID < bundle.BehaviorAnchors[j].ID })
+	return bundle, response
 }

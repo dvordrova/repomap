@@ -77,7 +77,7 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 }
 
-func TestEnsureArchitectureSynthesisRejectsInvalidOutputWithoutProductFallback(t *testing.T) {
+func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutput(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
@@ -90,22 +90,22 @@ func TestEnsureArchitectureSynthesisRejectsInvalidOutputWithoutProductFallback(t
 		context.Background(), bundle, runDir, "revision-invalid",
 		"openai-compatible/bearer", "test-model", provider,
 	)
-	if err == nil ||
-		!strings.Contains(err.Error(), "unusable") ||
-		!strings.Contains(err.Error(), "response.no_json") {
-		t.Fatalf("error = %v, want unusable response with local diagnostic code", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if outcome.FallbackReason != componentmap.FallbackProposalInvalid || provider.calls != 1 {
+	if outcome.FallbackReason != componentmap.FallbackRejectedMalformed || provider.calls != 1 {
 		t.Fatalf("outcome = %#v, calls = %d", outcome, provider.calls)
 	}
-	if _, err := os.Stat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("invalid provider output created an architecture artifact: %v", err)
-	}
-	cacheDir := filepath.Join(filepath.Dir(runDir), architectureSynthesisCacheDirectory)
-	if entries, err := os.ReadDir(cacheDir); err == nil && len(entries) != 0 {
-		t.Fatalf("invalid provider output created cache entries: %#v", entries)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+	saved, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisFile))
+	if err != nil {
 		t.Fatal(err)
+	}
+	landscape, err := componentmap.ReplaySynthesis(bundle, "revision-invalid", saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !landscape.Fallback || landscape.FallbackReason != componentmap.FallbackRejectedMalformed {
+		t.Fatalf("fallback landscape = %#v", landscape)
 	}
 }
 
@@ -215,7 +215,9 @@ func writeArchitectureSynthesisFixture(t *testing.T, dir, name, contents string)
 func architectureSynthesisTestBundle() componentmap.CandidateBundle {
 	memberID := componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-runtime"}
 	return componentmap.CandidateBundle{
-		Version: componentmap.ContractVersion,
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeApplication,
+		GroundingMode:       componentmap.GroundingPackages,
 		Candidates: []componentmap.Candidate{{
 			ID: memberID, Name: "local runtime",
 			Facts: []componentmap.LocalFact{{
