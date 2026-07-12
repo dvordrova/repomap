@@ -56,6 +56,32 @@ type Client struct {
 	Auth       string
 }
 
+type EffectiveConfig struct {
+	Endpoint  string
+	Model     string
+	AuthMode  string
+	Timeout   time.Duration
+	MaxTokens int
+}
+
+func (c *Client) EffectiveConfig() EffectiveConfig {
+	auth := c.Auth
+	if auth == "" {
+		auth = authBearer
+	}
+	var timeout time.Duration
+	if c.HTTPClient != nil {
+		timeout = c.HTTPClient.Timeout
+	}
+	return EffectiveConfig{
+		Endpoint:  c.Endpoint,
+		Model:     c.Model,
+		AuthMode:  auth,
+		Timeout:   timeout,
+		MaxTokens: c.MaxTokens,
+	}
+}
+
 func NewFromEnv() (*Client, error) {
 	return newFromEnv(true)
 }

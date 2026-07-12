@@ -37,6 +37,49 @@ func TestNewWriterCreatesDir(t *testing.T) {
 	}
 }
 
+func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(RunMeta{
+		RunID:         "failed-request",
+		Model:         "company-model",
+		Endpoint:      "https://llm.example.test/v1/chat/completions",
+		AuthMode:      "bearer",
+		TimeoutMillis: 45000,
+		MaxTokens:     6000,
+		EffectiveOptions: EffectiveOptions{
+			FlowCount:        3,
+			DiscoverSurfaces: true,
+			NoOpen:           true,
+			DebugEnabled:     true,
+		},
+		RequestAttempts: []RequestAttempt{{
+			Stage: "orientation", State: "failed", RequestBytes: 1234, ProviderCallCount: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		`"auth_mode":"bearer"`,
+		`"timeout_ms":45000`,
+		`"stage":"orientation"`,
+		`"state":"failed"`,
+		`"flows":3`,
+		`"no_open":true`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("metadata %s does not contain %s", text, want)
+		}
+	}
+	for _, forbidden := range []string{"api_key", "Authorization", "Bearer ", "password"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("metadata contains forbidden credential material %q: %s", forbidden, text)
+		}
+	}
+}
+
 func TestRedactionStripsSensitiveFields(t *testing.T) {
 	input := []byte(`{
   "model": "deepseek-v4-flash",
