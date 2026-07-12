@@ -372,6 +372,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		attachLocalFlowProofs(ctx, opts.RepoPath, &or, bundle)
 		reconcileResolvedUnknownPaths(&or)
 		applyOrientationConfidenceGate(&or, bundle)
+		for index := range or.CandidateFlows {
+			flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
+		}
 		if err := validateOrientation(or, bundle.AllowedPaths, allowedEntrypoints); err != nil {
 			attempt.State = "response_validation_failed"
 			if dw != nil {
@@ -388,6 +391,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		report.Orientation = &or
 		runMeta.CandidateDirectionCount = len(or.CandidateFlows)
+		acceptedFlows := acceptedCandidateFlows(or.CandidateFlows)
+		runMeta.AcceptedDirectionCount = len(acceptedFlows)
+		runMeta.RejectedDirectionCount = len(or.CandidateFlows) - len(acceptedFlows)
 		if dw != nil {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 				return nil, fmt.Errorf("write orientation metadata: %w", metadataErr)
@@ -397,7 +403,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			Stage:          ProgressOrientationDone,
 			RepoName:       s.RepoName,
 			Model:          client.Model,
-			CandidateCount: len(or.CandidateFlows),
+			CandidateCount: len(acceptedFlows),
 			LatencyMillis:  providerLatency,
 		})
 
@@ -408,14 +414,14 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 
-		cfs := selectTopFlows(or.CandidateFlows, flowCount)
+		cfs := selectTopFlows(acceptedFlows, flowCount)
 		expandedIDs := make(map[string]struct{}, len(cfs))
 		for _, candidate := range cfs {
 			expandedIDs[flowexplain.GenerateFlowID(candidate.Name)] = struct{}{}
 		}
 		if err := writeLocalFlowBundles(
 			ctx,
-			or.CandidateFlows,
+			acceptedFlows,
 			expandedIDs,
 			s.FilteredFiles,
 			s.GoFacts,
@@ -478,6 +484,16 @@ func writeOrientationFailureArtifacts(
 		_ = dw.WriteOrientationValidation(append(validation, '\n'))
 	}
 	dw.WriteError(err)
+}
+
+func acceptedCandidateFlows(flows []flowexplain.CandidateFlow) []flowexplain.CandidateFlow {
+	accepted := make([]flowexplain.CandidateFlow, 0, len(flows))
+	for _, flow := range flows {
+		if flow.Disposition == flowexplain.DirectionAccepted {
+			accepted = append(accepted, flow)
+		}
+	}
+	return accepted
 }
 
 func formatSurfaceDiscoveryWarning(err error) string {

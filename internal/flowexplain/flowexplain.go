@@ -51,8 +51,11 @@ type flowEdge struct {
 }
 
 const (
-	FlowTypeRequest     = "request"
-	FlowTypeOperational = "operational"
+	FlowTypeRequest                = "request"
+	FlowTypeOperational            = "operational"
+	DirectionAccepted              = "accepted"
+	DirectionRejected              = "rejected"
+	minAcceptedDirectionConfidence = 0.4
 )
 
 type CandidateFlow struct {
@@ -66,6 +69,24 @@ type CandidateFlow struct {
 	Confidence        float64            `json:"confidence"`
 	LocalVerification *FlowVerification  `json:"local_verification,omitempty"`
 	LocalProof        *flowproof.Session `json:"local_proof,omitempty"`
+	Disposition       string             `json:"disposition,omitempty"`
+	DispositionReason string             `json:"disposition_reason,omitempty"`
+}
+
+// ClassifyCandidateFlow applies the local acceptance policy after grounding
+// and confidence gates. Provider prose cannot decide this disposition.
+func ClassifyCandidateFlow(flow *CandidateFlow) {
+	if flow == nil {
+		return
+	}
+	verified := flow.LocalVerification != nil && len(flow.LocalVerification.Verified) > 0
+	if flow.LocalProof != nil || flow.Confidence >= minAcceptedDirectionConfidence || verified {
+		flow.Disposition = DirectionAccepted
+		flow.DispositionReason = ""
+		return
+	}
+	flow.Disposition = DirectionRejected
+	flow.DispositionReason = "low confidence and no exact local verification"
 }
 
 type FlowVerification struct {

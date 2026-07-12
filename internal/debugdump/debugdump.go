@@ -25,6 +25,8 @@ type RunMeta struct {
 	ExternalRequestBytes    int              `json:"external_request_bytes,omitempty"`
 	ProviderRequestCount    int              `json:"provider_request_count,omitempty"`
 	CandidateDirectionCount int              `json:"candidate_direction_count,omitempty"`
+	AcceptedDirectionCount  int              `json:"accepted_direction_count,omitempty"`
+	RejectedDirectionCount  int              `json:"rejected_direction_count,omitempty"`
 	ProviderLatencyMillis   *int64           `json:"provider_latency_ms,omitempty"`
 	SurfaceDiscoveryRan     bool             `json:"surface_discovery_ran,omitempty"`
 	SurfaceDiscoveryCount   int              `json:"surface_discovery_count,omitempty"`
