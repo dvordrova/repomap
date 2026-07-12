@@ -244,6 +244,36 @@ func TestAssessInputsDoesNotCallAnalyzedChangeUnrelated(t *testing.T) {
 	}
 }
 
+func TestAssessInputsScopesChangesAcrossCommits(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	writeFile(t, filepath.Join(repo, "notes.txt"), "initial\n")
+	gitCommand(t, repo, "add", "notes.txt")
+	gitCommand(t, repo, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "notes")
+	initial := capture(t, repo)
+	inputs, err := CaptureInputs(context.Background(), initial, []string{"main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, filepath.Join(repo, "notes.txt"), "unrelated commit\n")
+	gitCommand(t, repo, "add", "notes.txt")
+	gitCommand(t, repo, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "unrelated")
+	result := AssessInputs(context.Background(), initial, capture(t, repo), inputs)
+	if result.State != FreshnessUnrelatedChanges || result.AnalyzedChanges {
+		t.Fatalf("unrelated commit result = %#v", result)
+	}
+
+	writeFile(t, filepath.Join(repo, "main.go"), "package fixture\n\nconst committed = true\n")
+	gitCommand(t, repo, "add", "main.go")
+	gitCommand(t, repo, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "analyzed")
+	result = AssessInputs(context.Background(), initial, capture(t, repo), inputs)
+	if result.State != FreshnessPartiallyStale || !result.AnalyzedChanges || !result.UnrelatedChanges {
+		t.Fatalf("analyzed commit result = %#v", result)
+	}
+}
+
 func TestContextValidationRejectsNonCanonicalInputs(t *testing.T) {
 	t.Parallel()
 

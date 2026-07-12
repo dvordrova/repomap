@@ -314,10 +314,13 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	var reportPath string
 	if artifactRun {
 		if !*offline {
+			architectureStarted := time.Now()
+			fmt.Fprintln(deps.stderr, "repomap: synthesizing bounded architecture grouping")
 			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr); err != nil {
-				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable\n", err)
+				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable (after %d ms)\n", err, time.Since(architectureStarted).Milliseconds())
 			}
 		}
+		reconciliationStarted := time.Now()
 		reportData, err := report.ReadRunDir(runDir)
 		if err != nil {
 			return fmt.Errorf("read captured report inputs: %w", err)
@@ -332,12 +335,16 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if err != nil {
 			return fmt.Errorf("confirm browser report authority: %w", err)
 		}
+		fmt.Fprintf(deps.stderr, "repomap: reconciled %d captured input(s) in %d ms\n",
+			len(report.CapturedInputPaths(reportData)), time.Since(reconciliationStarted).Milliseconds())
 		if authority.Freshness().State != freshness.FreshnessFresh {
 			fmt.Fprintf(deps.stderr, "repomap: snapshot freshness: %s\n", authority.Freshness().State)
 		}
+		reportStarted := time.Now()
 		if err := report.GenerateAuthorized(runDir, authority); err != nil {
 			return fmt.Errorf("generate authorized browser report: %w", err)
 		}
+		fmt.Fprintf(deps.stderr, "repomap: generated authorized report in %d ms\n", time.Since(reportStarted).Milliseconds())
 		reportPath = filepath.Join(runDir, "report.html")
 		fmt.Fprintf(deps.stderr, "Report: %s\n", reportPath)
 		linkLatest(dDir, runDir, deps.stderr)
@@ -364,6 +371,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			LocationResolver:    localAnalyzer,
 			ExactSymbolAnalyzer: localAnalyzer,
 			ReferenceFinder:     localAnalyzer,
+			Logf: func(format string, args ...any) {
+				fmt.Fprintf(deps.stderr, "repomap: "+format+"\n", args...)
+			},
 			OnReady: func(url string) error {
 				fmt.Fprintf(deps.stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
 				if !*noOpen && deps.openReport != nil {
@@ -413,6 +423,9 @@ func runServe(args []string) error {
 		LocationResolver:    localAnalyzer,
 		ExactSymbolAnalyzer: localAnalyzer,
 		ReferenceFinder:     localAnalyzer,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "repomap: "+format+"\n", args...)
+		},
 		OnReady: func(url string) error {
 			fmt.Fprintf(os.Stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
 			if !*noOpen {

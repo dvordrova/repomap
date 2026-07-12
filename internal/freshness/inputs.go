@@ -1,6 +1,7 @@
 package freshness
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -25,6 +26,9 @@ func CaptureInputs(ctx context.Context, state RepositoryState, paths []string) (
 	dirty := make(map[string]DirtyFile, len(state.Dirty))
 	for _, file := range state.Dirty {
 		dirty[file.Path] = file
+		if file.FromPath != "" {
+			dirty[file.FromPath] = DirtyFile{Status: "deleted", Path: file.FromPath, Kind: FileMissing}
+		}
 	}
 	unique := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
@@ -85,7 +89,12 @@ func AssessInputs(
 		result.Diagnostics = []string{"repository identity changed"}
 		return result
 	}
-	currentInputs, err := CaptureInputs(ctx, current, capturedInputPaths(inputs))
+	capturedDigest, capturedErr := captured.Digest()
+	currentDigest, currentErr := current.Digest()
+	if capturedErr == nil && currentErr == nil && capturedDigest == currentDigest {
+		return result
+	}
+	currentInputs, committedUnrelated, err := inputsChangedSinceCapture(ctx, captured, current, inputs)
 	if err != nil {
 		result.State = FreshnessUnavailable
 		result.Diagnostics = []string{"captured input comparison was unavailable"}
@@ -109,12 +118,93 @@ func AssessInputs(
 	if len(result.AffectedPaths) > 0 {
 		result.State = FreshnessPartiallyStale
 		result.AnalyzedChanges = true
-		result.UnrelatedChanges = hasUnrelatedChanges(differences, result.AffectedPaths) || len(result.AffectedSubmodules) > 0
+		result.UnrelatedChanges = committedUnrelated || hasUnrelatedChanges(differences, result.AffectedPaths) || len(result.AffectedSubmodules) > 0
 	} else if globalChanged {
 		result.State = FreshnessUnrelatedChanges
 		result.UnrelatedChanges = true
 	}
 	return result
+}
+
+func inputsChangedSinceCapture(
+	ctx context.Context,
+	captured RepositoryState,
+	current RepositoryState,
+	inputs []CapturedInput,
+) ([]CapturedInput, bool, error) {
+	changed := make(map[string]struct{})
+	unrelated := false
+	for _, difference := range CompareRepository(captured, current) {
+		if difference.Reason != ReasonRepositoryDirty {
+			continue
+		}
+		for _, path := range difference.Paths {
+			changed[path] = struct{}{}
+		}
+	}
+	if captured.Head != current.Head {
+		paths, err := changedPathsAcrossCommits(ctx, captured, current)
+		if err != nil {
+			return nil, false, err
+		}
+		inputPaths := make(map[string]struct{}, len(inputs))
+		for _, input := range inputs {
+			inputPaths[input.Path] = struct{}{}
+		}
+		for _, path := range paths {
+			if _, analyzed := inputPaths[path]; analyzed {
+				changed[path] = struct{}{}
+			} else {
+				unrelated = true
+			}
+		}
+	}
+	toCapture := make([]string, 0, len(changed))
+	inputByPath := make(map[string]CapturedInput, len(inputs))
+	for _, input := range inputs {
+		inputByPath[input.Path] = input
+		if _, ok := changed[input.Path]; ok {
+			toCapture = append(toCapture, input.Path)
+		}
+	}
+	updated, err := CaptureInputs(ctx, current, toCapture)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, input := range updated {
+		inputByPath[input.Path] = input
+	}
+	result := make([]CapturedInput, 0, len(inputs))
+	for _, input := range inputs {
+		result = append(result, inputByPath[input.Path])
+	}
+	return result, unrelated, nil
+}
+
+func changedPathsAcrossCommits(
+	ctx context.Context,
+	captured RepositoryState,
+	current RepositoryState,
+) ([]string, error) {
+	args := []string{"diff", "--name-only", "-z", "--no-renames", captured.Head, current.Head}
+	output, err := gitOutput(ctx, current.Identity, args...)
+	if err != nil {
+		return nil, err
+	}
+	var result []string
+	for len(output) > 0 {
+		end := bytes.IndexByte(output, 0)
+		if end < 0 {
+			return nil, fmt.Errorf("freshness: unterminated changed-input path")
+		}
+		path, err := normalizeGitPath(string(output[:end]))
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, path)
+		output = output[end+1:]
+	}
+	return result, nil
 }
 
 func hasUnrelatedChanges(differences []Difference, affectedPaths []string) bool {

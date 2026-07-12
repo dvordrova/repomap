@@ -370,7 +370,10 @@ func TestRunDefaultPreservesReportWhenCapturedInputsBecomeStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := initial
-	changed.Head = strings.Repeat("f", 40)
+	changed.Dirty = []freshness.DirtyFile{{
+		Status: "modified", Path: "main.go", Kind: freshness.FileRegular,
+		ContentSHA256: strings.Repeat("f", 64),
+	}}
 	captures := []freshness.RepositoryState{initial, changed}
 	captureCount := 0
 	debugDir := t.TempDir()
