@@ -198,6 +198,21 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				".rm-arch__inspector",
 			},
 		},
+		{
+			name:  "restrained Landscape hierarchy uses data-backed categories",
+			asset: js + css,
+			tokens: []string{
+				"semanticCategory(record, fallback)",
+				"rm-arch__group-header",
+				"rm-arch__group-count",
+				"rm-arch__component-description",
+				"rm-arch__component-meta",
+				".rm-arch__group.is-primary",
+				".rm-arch__group.is-external",
+				".rm-arch__group.is-support",
+				".rm-arch__group.is-diagnostic",
+			},
+		},
 	}
 
 	for _, test := range tests {
