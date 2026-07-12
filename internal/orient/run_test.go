@@ -50,7 +50,7 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		OutputJSON:          true,
 		RunID:               runID,
 		DebugDir:            debugDir,
-		DumpLLM:             true,
+		RequireArtifacts:    true,
 		DumpRedacted:        true,
 		MaxReadmeBytes:      1024,
 		MaxReadmeLLMBytes:   512,
@@ -62,6 +62,14 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		MaxLLMModules:       10,
 		MaxLLMFiles:         50,
 		MaxLLMEdges:         50,
+		EffectiveOptions: debugdump.EffectiveOptions{
+			FlowCount:        2,
+			DiscoverSurfaces: true,
+			OutputJSON:       true,
+			NoOpen:           true,
+			Port:             59769,
+			DebugEnabled:     true,
+		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "status 400") {
 		t.Fatalf("Run() error = %v", err)
@@ -100,6 +108,32 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	}
 	if metadata.ProviderLatencyMillis == nil || *metadata.ProviderLatencyMillis < 0 {
 		t.Fatalf("metadata provider latency = %v", metadata.ProviderLatencyMillis)
+	}
+	if metadata.AuthMode != "none" || metadata.TimeoutMillis != 5000 || metadata.MaxTokens != 128 {
+		t.Fatalf(
+			"metadata auth/timeout/tokens = %q / %d / %d",
+			metadata.AuthMode,
+			metadata.TimeoutMillis,
+			metadata.MaxTokens,
+		)
+	}
+	if metadata.EffectiveOptions.FlowCount != 2 || !metadata.EffectiveOptions.DiscoverSurfaces ||
+		metadata.EffectiveOptions.DumpLLM || !metadata.EffectiveOptions.OutputJSON ||
+		!metadata.EffectiveOptions.NoOpen || metadata.EffectiveOptions.Port != 59769 ||
+		!metadata.EffectiveOptions.DebugEnabled {
+		t.Fatalf("metadata effective options = %#v", metadata.EffectiveOptions)
+	}
+	if len(metadata.RequestAttempts) != 1 {
+		t.Fatalf("metadata request attempts = %#v, want one", metadata.RequestAttempts)
+	}
+	attempt := metadata.RequestAttempts[0]
+	if attempt.Stage != "orientation" || attempt.State != "failed" ||
+		attempt.RequestBytes != metadata.ExternalRequestBytes || attempt.ProviderCallCount != 1 ||
+		attempt.LatencyMillis == nil {
+		t.Fatalf("metadata request attempt = %#v", attempt)
+	}
+	if strings.Contains(string(metadataBytes), "Authorization") || strings.Contains(string(metadataBytes), "REPOMAP_LLM_API_KEY") {
+		t.Fatalf("metadata contains secret-bearing configuration names: %s", metadataBytes)
 	}
 }
 

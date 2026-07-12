@@ -250,6 +250,18 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		MaxInterestingFiles:    400,
 		MaxGoPkgs:              600,
 		MaxGoEdges:             1000,
+		EffectiveOptions: debugdump.EffectiveOptions{
+			Offline:          *offline,
+			FlowCount:        *flows,
+			DiscoverSurfaces: *discoverSurfaces && artifactRun,
+			DumpLLM:          *dumpLLM,
+			OutputJSON:       *jsonOut,
+			PreviewRequest:   *previewRequest,
+			NoOpen:           *noOpen,
+			NoServe:          *noServe,
+			Port:             *port,
+			DebugEnabled:     dDir != "",
+		},
 	}
 	showProgress := !*jsonOut && *out == "" && !*previewRequest
 	if showProgress {
@@ -292,6 +304,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 
 	output, err := orient.Run(ctx, opts)
 	if err != nil {
+		if artifactRun {
+			return fmt.Errorf("%w\nrequest diagnostics: %s", err, filepath.Join(runDir, "metadata.json"))
+		}
 		return err
 	}
 

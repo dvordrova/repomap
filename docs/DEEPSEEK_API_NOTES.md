@@ -68,6 +68,24 @@ requires an explicit endpoint in both generic and legacy modes.
 
 Must NEVER be written to disk or debug artifacts.
 
+## Failure diagnostics
+
+Normal artifact-backed runs persist safe effective invocation data in
+`metadata.json` before the orientation request is sent. This includes the
+parsed CLI options, endpoint, model, auth mode (`bearer` or `none`), timeout,
+token budget, request stage, serialized request size, state, and latency. It
+never includes the API key, raw environment, request headers, or
+`Authorization` value. On a failed default run the CLI prints the exact
+`metadata.json` path so another developer can verify which non-secret settings
+were actually applied.
+
+With `--dump-llm`, `llm_request.redacted.json` remains the inspectable request
+body written before network access. Without that flag, a provider failure now
+writes the same redacted request body automatically, while `error.txt` retains
+the bounded safe provider error. Request-attempt metadata is written before
+network access, so a failed or canceled request does not look as though no
+request was prepared.
+
 ## Model
 
 DeepSeek-mode default: `deepseek-v4-flash`.

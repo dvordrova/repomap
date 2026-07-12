@@ -46,6 +46,7 @@ type Options struct {
 	DiscoverSurfaces       bool
 	ExplainFlows           int
 	Progress               func(ProgressEvent)
+	EffectiveOptions       debugdump.EffectiveOptions
 }
 
 type combinedReport struct {
@@ -156,6 +157,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		Command:             "orient",
 		CompactContextBytes: len(modelBundleJSON),
 		LLMBundleOnly:       opts.LLMBundleOnly,
+		EffectiveOptions:    opts.EffectiveOptions,
 	}
 	if opts.DebugDir != "" {
 		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
@@ -237,6 +239,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		client, err := deepseek.NewFromEnv()
 		if err != nil {
 			if dw != nil {
+				runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
+					Stage: "configuration", State: "failed",
+				})
+				_ = dw.WriteMetadata(runMeta)
 				dw.WriteError(err)
 			}
 			return nil, fmt.Errorf(
@@ -245,9 +251,13 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				opts.RepoPath,
 			)
 		}
+		config := client.EffectiveConfig()
 		if dw != nil {
-			runMeta.Model = client.Model
-			runMeta.Endpoint = client.Endpoint
+			runMeta.Model = config.Model
+			runMeta.Endpoint = config.Endpoint
+			runMeta.AuthMode = config.AuthMode
+			runMeta.TimeoutMillis = config.Timeout.Milliseconds()
+			runMeta.MaxTokens = config.MaxTokens
 			runMeta.PromptVersion = deepseek.OrientationPromptVersionJSON
 			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required provider metadata: %w", err)
@@ -256,10 +266,25 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
 		if err != nil {
+			if dw != nil {
+				runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
+					Stage: "orientation", State: "request_build_failed",
+				})
+				_ = dw.WriteMetadata(runMeta)
+				dw.WriteError(err)
+			}
 			return nil, err
 		}
 		runMeta.ExternalRequestBytes = len(requestJSON)
 		runMeta.ProviderRequestCount = 1
+		runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
+			Stage: "orientation", State: "prepared", RequestBytes: len(requestJSON), ProviderCallCount: 1,
+		})
+		if dw != nil {
+			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+				return nil, fmt.Errorf("write request attempt metadata: %w", metadataErr)
+			}
+		}
 		if opts.DumpLLM && dw != nil {
 			if err := dw.WriteLLMRequest(requestJSON); err != nil {
 				return nil, fmt.Errorf("write required llm request before provider call: %w", err)
@@ -277,6 +302,13 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		raw, err := client.Orient(ctx, modelBundleJSON)
 		providerLatency := time.Since(requestStarted).Milliseconds()
 		runMeta.ProviderLatencyMillis = &providerLatency
+		attempt := &runMeta.RequestAttempts[len(runMeta.RequestAttempts)-1]
+		attempt.LatencyMillis = &providerLatency
+		if err != nil {
+			attempt.State = "failed"
+		} else {
+			attempt.State = "succeeded"
+		}
 		if dw != nil {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 				return nil, fmt.Errorf("write provider latency metadata: %w", metadataErr)
@@ -284,6 +316,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if err != nil {
 			if dw != nil {
+				if !opts.DumpLLM {
+					_ = dw.WriteLLMRequest(requestJSON)
+				}
 				dw.WriteError(err)
 			}
 			return nil, err
