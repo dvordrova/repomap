@@ -351,6 +351,10 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	report := orientationPart{
 		ProjectGuess: "metrics service",
 		Confidence:   0.8,
+		FirstFilesToOpen: []fileToOpen{
+			{Path: "cmd/server/main.go", Reason: "entrypoint"},
+			{Path: "internal/deepseek/deepseek.go", Reason: "invented provider path"},
+		},
 		HighLevelMap: []orientationMapItem{{
 			Name: "configuration",
 			Evidence: []string{
@@ -384,6 +388,9 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	if got := report.CandidateFlows[0].LikelyEntrypoint; got != "cmd/server/main.go" {
 		t.Fatalf("likely_entrypoint = %q, want allowed fallback", got)
 	}
+	if len(report.FirstFilesToOpen) != 1 || report.FirstFilesToOpen[0].Path != "cmd/server/main.go" {
+		t.Fatalf("first files = %#v, want only grounded path", report.FirstFilesToOpen)
+	}
 	if len(report.HighLevelMap[0].Evidence) != 1 || len(report.CandidateFlows[0].Evidence) != 1 ||
 		len(report.ImportantDomainWords[0].Evidence) != 1 {
 		t.Fatalf("normalized evidence = high:%q flow:%q domain:%q",
@@ -394,8 +401,9 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	}
 	warnings := strings.Join(report.Warnings, "\n")
 	if !strings.Contains(warnings, "dropped ungrounded path-like evidence") ||
-		!strings.Contains(warnings, "replaced ungrounded") {
-		t.Fatalf("warnings = %q, want drop and replacement warnings", report.Warnings)
+		!strings.Contains(warnings, "replaced ungrounded") ||
+		!strings.Contains(warnings, `dropped first_files_to_open[1] outside allowed_paths: "internal/deepseek/deepseek.go"`) {
+		t.Fatalf("warnings = %q, want evidence, entrypoint, and first-file warnings", report.Warnings)
 	}
 	if err := validateOrientation(report, allowed, nil); err != nil {
 		t.Fatalf("normalized orientation should validate: %v", err)

@@ -181,7 +181,9 @@ path-like mention is dropped with a warning. If `likely_entrypoint` is neither
 an allowed file nor a provided entrypoint package, it may be replaced with that
 flow's first already-allowed `likely_file`, again with a warning.
 `first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
-invented values: invalid or unallowed structured paths still fail validation.
+invented values. Invalid or unallowed items are removed with an explicit parser
+warning; the remaining structured paths still validate fail-closed. A response
+with no grounded candidate flow remains fatal.
 Orientation prompt v6 retains the atomic-evidence and closed-`allowed_paths`
 rules introduced in v3, explicitly rejects directory, package, import, and
 trailing-slash values in structured file fields, and adds the bounded component
