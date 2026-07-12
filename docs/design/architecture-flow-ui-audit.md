@@ -18,7 +18,7 @@ saved evidence has been inspected.
 | AF-09 | Surface inventory highlights two `buildTargets` workers from release tooling. | Keep tooling ownership visible; classify the channel consumer as a worker and the finite producer as an async task. | Analyzer classification for task 2; frontend prioritization for ownership prominence. | Both records correctly point to `helpers/build-release-binaries`. Task 1 has a `channel_receive_loop`; task 2 only has a finite `control_flow_loop`, but `recordAsyncTask` promotes any loop to worker. | Promote only persistent/event-driven loop kinds to worker; preserve executable ownership and explain repository-wide scope. | `internal/experiment/surfacediscovery/async.go`; analyzer fixtures; surface UI copy. | One channel consumer + one finite producer yields 1 worker and 1 non-worker async task. | Confirmed analyzer defect; fix pending. | Primary-application versus tooling grouping can be added later without deleting valid evidence. |
 | AF-10 | Landscape default Fit renders the 14 components at scale ~0.36 with large unused margins. Baseline: 1206×720 viewport, 2370×1840 ELK surface, visible group bounds only y=158…1580. | Fit uses visible landscape bounds and reasonable padding. | Rendering / layout bounds. | `fit()` uses the full ELK root rectangle, including empty top/bottom space; visible group bounds would fit near scale 0.47. No component fact is wrong. | Add deterministic visible-landscape bounds for Fit; keep layout and graph library unchanged. | `internal/report/templates/architecture_canvas.js`; asset/Playwright geometry checks. | Initial and restored Landscape fit visible group bounds inside the viewport without using hidden flow nodes. | Confirmed; fix pending. | ELK compaction itself is out of scope. |
 | AF-11 | A malformed/legacy proof that omits a required slot can lose that omission during architecture projection. | Missing required slots remain explicit frontiers/diagnostics. | Report projection / DTO completeness. | `validateArchitectureProof` validates only supplied slots. The current Restic proofs include all eight slots, so this does not explain the screenshots. | Add required-slot diagnostics/frontiers only if implemented independently with focused report tests. | `internal/report/architecture_canvas.go`; projection tests. | Missing required slot produces an `invalid_slot` diagnostic and `proof_slot` frontier. | Deferred; not a blocker for current saved run. | Strict evidence-closed `Proof.Satisfied` belongs to a future FlowProof version. |
-| AF-12 | The current 32-component Restic Landscape forms a narrow 2610×4436 vertical spine, starts at the minimum 0.18 scale, and leaves most of a wide viewport unused. | Sparse and mixed Landscapes use a deterministic board or hybrid composition; a meaningful connected core may retain graph-aware placement. Initial view stays readable and Fit remains explicit. | Frontend Landscape projection, layout strategy, and presentation styling. | The saved report has 11 valid subsystem groups, 39 distinct structural component pairs, and 9 structural connected components sized 24 + eight singletons. Membership and parent references are valid. The frontend nevertheless sends every compound group, hidden structural/flow edge, and a hidden unassigned node through one root layered ELK layout; each subsystem also uses a one-column `DOWN` layout. Current browser bounds are 2610×4436, with UI alone 320×1536. | Classify structural connectivity in the frontend; graph-layout only a meaningful core, deterministically pack sparse/disconnected groups, exclude hidden-only nodes and flow overlays from Landscape geometry, and separate readable initial focus from Fit. Do not change saved facts or the selected-flow projection. | `internal/report/templates/architecture_canvas.js`; `architecture_canvas.css`; browser/asset tests. | Sparse board, connected graph, and mixed hybrid fixtures; Playwright at 1600×1000, 1440×900, and 1280×800. | Classification confirmed; frontend fix pending. | Component importance/category is absent in this run, so connectivity, group size, and stable IDs are the allowed ordering proxies. |
+| AF-12 | The current 32-component Restic Landscape forms a narrow 2610×4436 vertical spine, starts at the minimum 0.18 scale, and leaves most of a wide viewport unused. | Sparse and mixed Landscapes use a deterministic board or hybrid composition; a meaningful connected core may retain graph-aware placement. Initial view stays readable and Fit remains explicit. | Frontend Landscape projection, layout strategy, and presentation styling. | The saved report has 11 valid subsystem groups, 39 distinct structural component pairs, and 9 structural connected components sized 24 + eight singletons. Membership and parent references are valid. The frontend nevertheless sends every compound group, hidden structural/flow edge, and a hidden unassigned node through one root layered ELK layout; each subsystem also uses a one-column `DOWN` layout. Current browser bounds are 2610×4436, with UI alone 320×1536. | Classify structural connectivity in the frontend; graph-layout only a meaningful core, deterministically pack sparse/disconnected groups, exclude hidden-only nodes and flow overlays from Landscape geometry, and separate readable initial focus from Fit. Do not change saved facts or the selected-flow projection. | `internal/report/templates/architecture_canvas.js`; `architecture_canvas.css`; browser/asset tests. | Sparse board, connected graph, and mixed hybrid fixtures; Playwright at 1600×1000, 1440×900, and 1280×800. | Fixed and verified. | Component importance/category is absent in this run, so connectivity, group size, and stable IDs are the allowed ordering proxies. |
 
 ## Baseline artifacts
 
@@ -37,4 +37,33 @@ stale-DOM, or backend-dimension defect. It is caused first by applying one
 compound layered graph strategy to the mixed projection, laying every group's
 children downward, and allowing hidden-only nodes and overlays to constrain the
 same layout. Browser captures at 1600×1000, 1440×900, and 1280×800 are saved as
-`landscape-before-*.png` in the ignored Playwright artifact directory.
+`landscape-before-*.png` in the ignored audit artifact directory.
+
+## AF-12 outcome
+
+The frontend classifies a projection as `graph` when one meaningful group
+region contains every group, `hybrid` when that region has disconnected peers,
+and `board` when no region has at least three groups and enough distinct edges
+to connect them. A graph or hybrid core is first offered to flat group-level
+ELK; a narrow or excessively wide result is rejected rather than shown as a
+spine. The fallback orders the primary region by deterministic graph breadth,
+then packs groups into centered shortest columns. Remaining regions follow the
+core without changing membership or inventing edges.
+
+For run `20260712-071842-restic`, the final mode is `hybrid-board`. Bounds fell
+from 2610×4436 to 1352×1756. At 1600×1000 the initial scale rose from 0.18 to
+0.887; explicit Fit is 0.391. At 1440×900 initial/Fit are 0.887/0.348, and at
+1280×800 they are 0.881/0.306. Initial group bounds use about 95.4% of the
+Landscape viewport width at all three sizes. All 11 groups and 32 components
+remain present; browser checks found zero group overlaps and zero child/group
+containment failures.
+
+The current report has no component importance or semantic category field, so
+its cards remain neutral rather than receiving guessed colors. The restrained
+blue, teal, violet, and amber accents activate only for explicit primary,
+boundary, supporting, or unresolved category values; selection remains blue.
+Structural witnesses are quiet neutral lines and brighten only on interaction.
+The selected-flow projection remains separate and unchanged.
+
+Before/after screenshots are stored under ignored
+`tmp/architecture-flow-audit/landscape-{before,after}-*.png`.
