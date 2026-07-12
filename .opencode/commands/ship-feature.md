@@ -9,10 +9,15 @@ Decision file or task:
 $ARGUMENTS
 
 Default decision file:
-docs/agent-room/050-decision.md
+docs/agent-room/CURRENT.md
 
 If $ARGUMENTS is empty, use:
-docs/agent-room/050-decision.md
+docs/agent-room/CURRENT.md
+
+`CURRENT.md` is a pointer. Read it, then read the referenced numbered decision.
+Do not select the numerically latest decision automatically. If $ARGUMENTS names a
+different decision, use it only when the repository owner explicitly approves changing
+the active scope and update `CURRENT.md` as part of that governance change.
 
 ## Core project rules
 
@@ -59,6 +64,8 @@ Do not start editing until you have a concrete plan.
 ## Implementation rules
 
 Implement only the accepted decision.
+
+Verify that the accepted decision is the one referenced by `docs/agent-room/CURRENT.md`.
 
 Do not follow conflicting ideas from older review files unless they are included in the decision file.
 

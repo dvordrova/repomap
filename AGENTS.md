@@ -2,11 +2,9 @@
 
 ## What repomap is
 
-`repomap` is a tiny local-first repository orientation CLI for large unfamiliar codebases.
-It produces a compact local snapshot of a git repository and optionally asks an explicitly
-configured OpenAI-compatible model for a structured orientation report. DeepSeek is the
-reference provider and compatibility default. The active product outcome is a five-minute
-friend onboarding trial on a known Go project, not a broader agent framework.
+`repomap` is a local-first, evidence-backed repository orientation tool. It produces an
+architecture landscape, discovered runtime surfaces, model-assisted conceptual grouping,
+and bounded saved flow traces. DeepSeek is the reference provider and compatibility default.
 
 Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline design.
 
@@ -22,19 +20,31 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ## Design rules
 
 - A model provider must **never** receive full repo contents, raw `file_tree`, or raw `internal_edges`.
-- The existing gopls adapter is confined to exact-symbol investigation. Do **not** move it
-  into the default repository survey or add another LSP/AST/embedding/diagram/dependency
-  layer unless explicitly requested.
+- Do not add a new analysis or presentation layer unless it is explicitly requested by the
+  repository owner or included in the currently approved decision.
 - A model must only interpret a compact bounded facts bundle produced by local deterministic extraction.
 
 ## Guiding documents
 
 - Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) before changing architecture.
+- Read [docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md) and its referenced
+  decision before implementing feature-specific scope.
 - Read [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) before changing DeepSeek client.
 - Do not invent ad-hoc DeepSeek request shapes; follow docs/DEEPSEEK_API_NOTES.md.
 - Reusable developer entrypoints belong in `Makefile`. Keep a script only when
   it contains a substantive multi-step check or is also a standalone CI entrypoint;
   expose that script through a Make target.
+
+## Decision workflow
+
+- Durable repository rules live in `AGENTS.md`.
+- Feature-specific approved scope lives in numbered decision documents under
+  `docs/agent-room/`.
+- `docs/agent-room/CURRENT.md` points to the active implementation decision.
+- Historical decisions are preserved and are not silently rewritten or invalidated.
+- Explicit repository-owner approval is required to change the active decision.
+- Implementation agents must not silently expand scope or select the numerically latest
+  decision.
 
 ## Development rules
 
