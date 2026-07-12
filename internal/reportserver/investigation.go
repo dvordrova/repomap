@@ -229,7 +229,7 @@ func (h *handler) serveTargetTestReferences(w http.ResponseWriter, r *http.Reque
 	}
 	if err := memory.SaveRoot(loaded.root, memory.Input{
 		Session:    session,
-		Repository: after,
+		Repository: loaded.run.Manifest.RepositoryState,
 		Facts:      &loaded.facts,
 	}); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not save the investigation"})
@@ -312,7 +312,8 @@ func (h *handler) loadBrowserInvestigation(ctx context.Context, runID string) (l
 	if err != nil {
 		return fail(err)
 	}
-	record, err := memory.LoadRoot(root, memory.Current{Repository: repository, Facts: &facts})
+	facts.Repository = run.Manifest.RepositoryState
+	record, err := memory.LoadRoot(root, memory.Current{Repository: run.Manifest.RepositoryState, Facts: &facts})
 	if err != nil {
 		return fail(err)
 	}
@@ -411,10 +412,8 @@ func verifyInvestigationBinding(run runRecord, record memory.Record) error {
 	if run.Manifest == nil || run.Report == nil || record.Facts == nil || record.Claims != nil || len(record.Changes) != 0 {
 		return errInvestigationBinding
 	}
-	digest, err := record.Repository.Digest()
-	if err != nil || digest != run.Manifest.RepositoryStateSHA256 ||
-		len(freshness.CompareRepository(record.Repository, run.Manifest.RepositoryState)) != 0 ||
-		len(freshness.CompareRepository(record.Facts.Repository, run.Manifest.RepositoryState)) != 0 {
+	if run.Manifest.VerifyRepositoryState(record.Repository) != nil ||
+		run.Manifest.VerifyRepositoryState(record.Facts.Repository) != nil {
 		return errInvestigationBinding
 	}
 	session := record.Session
