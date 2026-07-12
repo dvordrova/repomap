@@ -21,6 +21,9 @@
  const MAX_WHEEL_DELTA = 120;
  const INITIAL_MIN_SCALE = 0.72;
  const INITIAL_MAX_SCALE = 1;
+ const FIT_MIN_SCALE = 0.65;
+ const FOCUS_MIN_SCALE = 0.88;
+ const FOCUS_MAX_SCALE = 1.05;
  const LANDSCAPE_COMPONENT_HEIGHT = 108;
  const LANDSCAPE_COMPONENT_GAP = 16;
  const LANDSCAPE_GROUP_GAP = 32;
@@ -124,6 +127,30 @@
   }
   candidates.sort((left, right) => left.y - right.y || left.column - right.column);
   return candidates[0];
+ }
+
+ function scaleToBounds(bounds, viewport, padding) {
+  if (!bounds || !viewport) return 1;
+  return Math.min(
+   (viewport.width - padding * 2) / Math.max(1, bounds.width),
+   (viewport.height - padding * 2) / Math.max(1, bounds.height)
+  );
+ }
+
+ function centeredTransform(bounds, viewport, scale) {
+  return {
+   x: (viewport.width - bounds.width * scale) / 2 - bounds.x * scale,
+   y: (viewport.height - bounds.height * scale) / 2 - bounds.y * scale,
+   scale: scale,
+  };
+ }
+
+ function readableFitScale(bounds, viewport, padding) {
+  return clamp(scaleToBounds(bounds, viewport, padding), FIT_MIN_SCALE, 1.35);
+ }
+
+ function componentFocusScale(bounds, viewport, padding) {
+  return clamp(scaleToBounds(bounds, viewport, padding), FOCUS_MIN_SCALE, FOCUS_MAX_SCALE);
  }
 
  function memberLabel(memberID) {
@@ -374,7 +401,7 @@
      controls.appendChild(this.diagnosticButton);
     }
     this.zoomOutButton = this.controlButton("−", "Zoom out", () => this.zoomBy(0.82));
-     this.fitButton = this.controlButton("Fit", "Fit entire architecture", () => this.fit());
+      this.fitButton = this.controlButton("Fit", "Fit architecture at readable scale", () => this.fit());
    this.zoomInButton = this.controlButton("+", "Zoom in", () => this.zoomBy(1.22));
    controls.append(this.zoomOutButton, this.fitButton, this.zoomInButton);
    toolbar.appendChild(controls);
@@ -383,9 +410,10 @@
    const workspace = element("div", "rm-arch__workspace");
     this.viewport = element("div", "rm-arch__viewport");
     this.loading = element("div", "rm-arch__loading", "Laying out the saved architecture…");
-    this.flowFocus = element("div", "rm-arch__flow-focus");
-    this.flowFocus.hidden = true;
-    this.viewport.append(this.loading, this.flowFocus);
+     this.flowFocus = element("div", "rm-arch__flow-focus");
+     this.flowFocus.hidden = true;
+     this.viewportHint = element("div", "rm-arch__viewport-hint", "Drag to explore the architecture");
+     this.viewport.append(this.loading, this.flowFocus, this.viewportHint);
    workspace.appendChild(this.viewport);
 
    this.inspector = element("aside", "rm-arch__inspector");
@@ -431,10 +459,13 @@
    this.ready = this.layoutOnce()
     .then((layout) => {
      if (this.destroyed) return;
-     this.layoutResult = layout;
-     this.renderPersistentScene();
-     this.renderSelection();
-      requestAnimationFrame(() => this.focusInitialLandscape());
+      this.layoutResult = layout;
+      this.renderPersistentScene();
+      this.renderSelection();
+       requestAnimationFrame(() => {
+        if (this.selection.component && !this.selection.flow) this.focusComponent(this.selection.component, false);
+        else this.focusInitialLandscape();
+       });
     })
     .catch((error) => {
      if (this.destroyed) return;
@@ -912,7 +943,7 @@
     });
    }
 
-  renderPersistentScene() {
+   renderPersistentScene() {
    this.loading.remove();
    this.surface = element("div", "rm-arch__surface");
    this.surface.style.width = this.layoutResult.width + "px";
@@ -926,7 +957,11 @@
    this.nodeLayer = element("div", "rm-arch__nodes");
    this.stepLayer = element("div", "rm-arch__steps");
    this.surface.append(this.groupLayer, this.nodeLayer, this.stepLayer);
-   this.viewport.appendChild(this.surface);
+    this.viewport.appendChild(this.surface);
+    if (this.landscapeProjection) {
+     this.viewportHint.textContent = "Drag to explore · " + this.landscapeProjection.groups.length +
+      " architecture groups · Fit keeps labels readable";
+    }
 
    this.renderGroups();
    this.renderComponents();
@@ -1816,33 +1851,38 @@
    }
 
    primaryLandscapeBounds() {
-    if (!this.primaryGroupIDs || this.primaryGroupIDs.size === 0) return this.landscapeBounds();
-    const positions = Array.from(this.primaryGroupIDs)
-     .map((id) => this.groupPositions.get(id))
-     .filter(Boolean);
-    if (positions.length === 0) return this.landscapeBounds();
-    const minX = Math.min.apply(null, positions.map((position) => position.x));
-    const minY = Math.min.apply(null, positions.map((position) => position.y));
-    const maxX = Math.max.apply(null, positions.map((position) => position.x + position.width));
-    const maxY = Math.max.apply(null, positions.map((position) => position.y + position.height));
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-   }
+     const groupIDs = this.initialGroupIDs && this.initialGroupIDs.size > 0
+      ? this.initialGroupIDs
+      : this.primaryGroupIDs;
+     if (!groupIDs || groupIDs.size === 0) return this.landscapeBounds();
+     const positions = Array.from(groupIDs)
+      .map((id) => this.groupPositions.get(id))
+      .filter(Boolean);
+     return this.boundsForPositions(positions) || this.landscapeBounds();
+    }
 
    focusInitialLandscape() {
     if (!this.surface || !this.layoutResult) return;
     const bounds = this.primaryLandscapeBounds() || this.landscapeBounds();
     const rect = this.viewport.getBoundingClientRect();
     if (!bounds || rect.width < 10 || rect.height < 10) return;
-    const padding = 28;
-    const scale = clamp(
-     (rect.width - padding * 2) / Math.max(1, bounds.width),
+     const padding = 28;
+     const scale = clamp(
+      (rect.width - padding * 2) / Math.max(1, bounds.width),
      INITIAL_MIN_SCALE,
-     INITIAL_MAX_SCALE
-    );
-    this.view.scale = scale;
-    this.view.x = (rect.width - bounds.width * scale) / 2 - bounds.x * scale;
-    this.view.y = padding - bounds.y * scale;
-    this.applyView();
+      INITIAL_MAX_SCALE
+     );
+     this.view = centeredTransform(bounds, { width: rect.width, height: rect.height }, scale);
+     this.applyView();
+    }
+
+   boundsForPositions(positions) {
+    if (!positions || positions.length === 0) return null;
+    const minX = Math.min.apply(null, positions.map((position) => position.x));
+    const minY = Math.min.apply(null, positions.map((position) => position.y));
+    const maxX = Math.max.apply(null, positions.map((position) => position.x + position.width));
+    const maxY = Math.max.apply(null, positions.map((position) => position.y + position.height));
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
    }
 
   landscapeBounds() {
@@ -1854,12 +1894,45 @@
     });
    }
    if (positions.length === 0) return null;
-   const minX = Math.min.apply(null, positions.map((position) => position.x));
-   const minY = Math.min.apply(null, positions.map((position) => position.y));
-   const maxX = Math.max.apply(null, positions.map((position) => position.x + position.width));
-   const maxY = Math.max.apply(null, positions.map((position) => position.y + position.height));
-   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-  }
+    return this.boundsForPositions(positions);
+   }
+
+   componentContextBounds(componentID) {
+    const component = this.componentByID.get(text(componentID));
+    if (!component) return null;
+    const selectedGroupID = text(component.subsystem_id);
+    const neighborGroupIDs = new Set();
+    this.structuralEdges.forEach((edge) => {
+     let neighborID = "";
+     if (text(edge.from_component_id) === text(componentID)) neighborID = text(edge.to_component_id);
+     else if (text(edge.to_component_id) === text(componentID)) neighborID = text(edge.from_component_id);
+     if (!neighborID || this.diagnosticComponentIDs.has(neighborID)) return;
+     const neighbor = this.componentByID.get(neighborID);
+     const groupID = text(neighbor && neighbor.subsystem_id);
+     if (groupID && groupID !== selectedGroupID && this.groupPositions.has(groupID)) neighborGroupIDs.add(groupID);
+    });
+    const groupIDs = [selectedGroupID].concat(Array.from(neighborGroupIDs).sort().slice(0, 3));
+    const positions = groupIDs.map((id) => this.groupPositions.get(id)).filter(Boolean);
+    return this.boundsForPositions(positions) || this.nodePositions.get(text(componentID)) || null;
+   }
+
+   focusComponent(componentID, animate) {
+    if (!this.surface || this.selection.flow || this.diagnosticComponentIDs.has(text(componentID))) return;
+    const target = this.nodePositions.get(text(componentID));
+    if (!target) return;
+    const context = this.componentContextBounds(componentID) || target;
+    const rect = this.viewport.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    const scale = componentFocusScale(context, { width: rect.width, height: rect.height }, 56);
+    const centerX = target.x + target.width / 2;
+    const centerY = target.y + target.height / 2;
+    this.view = {
+     x: rect.width / 2 - centerX * scale,
+     y: rect.height / 2 - centerY * scale,
+     scale: scale,
+    };
+    this.applyView(animate !== false);
+   }
 
   selectedFlowBounds() {
    const flowID = this.selection.flow;
@@ -1892,32 +1965,34 @@
    const rect = this.viewport.getBoundingClientRect();
    if (rect.width < 10 || rect.height < 10) return;
    const padding = 28;
-   const scale = clamp(
-    Math.min(
-     (rect.width - padding * 2) / bounds.width,
-     (rect.height - padding * 2) / bounds.height
-    ),
-    MIN_SCALE,
-    1.35
-   );
-   this.view.scale = scale;
-   this.view.x = (rect.width - bounds.width * scale) / 2 - bounds.x * scale;
-   this.view.y = (rect.height - bounds.height * scale) / 2 - bounds.y * scale;
-   this.applyView();
-  }
+    const viewport = { width: rect.width, height: rect.height };
+    const scale = readableFitScale(bounds, viewport, padding);
+    this.view = centeredTransform(bounds, viewport, scale);
+    this.applyView();
+   }
 
-  applyView() {
-   if (!this.surface) return;
+   applyView(animate) {
+    if (!this.surface) return;
+    if (animate) {
+     this.surface.classList.add("is-focusing");
+     global.setTimeout(() => {
+      if (this.surface) this.surface.classList.remove("is-focusing");
+     }, 220);
+    }
    this.surface.style.transform = "translate(" + this.view.x + "px," + this.view.y + "px) scale(" + this.view.scale + ")";
    this.root.style.setProperty("--rm-arch-scale", this.view.scale);
   }
 
    setSelection(patch, writeHash) {
-    const next = Object.assign({}, this.selection, patch || {});
-    this.selection = this.validateSelection(next);
-    if (writeHash) this.writeHash();
-    this.renderSelection();
-   }
+     const previousComponent = this.selection.component;
+     const next = Object.assign({}, this.selection, patch || {});
+     this.selection = this.validateSelection(next);
+     if (writeHash) this.writeHash();
+     this.renderSelection();
+     if (!this.selection.flow && this.selection.component && this.selection.component !== previousComponent) {
+      requestAnimationFrame(() => this.focusComponent(this.selection.component, true));
+     }
+    }
 
   hasInspectorSelection(selection) {
    return Boolean(selection && (selection.component || selection.step || selection.edge));
@@ -2331,6 +2406,9 @@
      childGridShape: childGridShape,
      shortestCompatiblePlacement: shortestCompatiblePlacement,
      diagnosticSubsystemIDs: diagnosticSubsystemIDs,
+     readableFitScale: readableFitScale,
+     componentFocusScale: componentFocusScale,
+     centeredTransform: centeredTransform,
    });
   }
 })(window);
