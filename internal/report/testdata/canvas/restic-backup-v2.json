@@ -1,5 +1,5 @@
 {
-  "format_version": 12,
+  "format_version": 14,
   "repo_name": "restic",
   "project_guess": "Evidence-backed architecture and Backup lifecycle",
   "orientation_confidence": 0,
@@ -9,10 +9,17 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 1,
-    "landscape_version": 2,
+    "version": 3,
+    "landscape_version": 4,
     "flowproof_version": 2,
     "fallback": false,
+    "validation_outcome": "accepted",
+    "architecture_source": "validated_model",
+    "architecture_level": 1,
+    "repository_archetype": "daemon_worker_system",
+    "grounding_mode": "mixed",
+    "title": "Architecture hypotheses and grounded behavior",
+    "subtitle": "Some areas remain package-derived",
     "subsystems": [
       {
         "id": "subsystem-af9f1d6ea45276de50c2c2b475b1b9962069ca361e3f758dd6b07a6cafeeaa7f",

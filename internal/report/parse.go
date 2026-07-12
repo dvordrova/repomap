@@ -42,6 +42,8 @@ type runMetadataJSON struct {
 	ExternalRequestBytes    int      `json:"external_request_bytes"`
 	ProviderRequestCount    int      `json:"provider_request_count"`
 	CandidateDirectionCount int      `json:"candidate_direction_count"`
+	AcceptedDirectionCount  int      `json:"accepted_direction_count"`
+	RejectedDirectionCount  int      `json:"rejected_direction_count"`
 	ProviderLatencyMillis   *int64   `json:"provider_latency_ms"`
 	SurfaceDiscoveryRan     bool     `json:"surface_discovery_ran"`
 	SurfaceDiscoveryCount   int      `json:"surface_discovery_count"`
@@ -85,6 +87,8 @@ type orientationCandidateJSON struct {
 	Confidence        float64                       `json:"confidence"`
 	LocalVerification *flowexplain.FlowVerification `json:"local_verification"`
 	LocalProof        *flowproof.Session            `json:"local_proof"`
+	Disposition       string                        `json:"disposition"`
+	DispositionReason string                        `json:"disposition_reason"`
 }
 
 type flowReportJSON struct {
@@ -381,6 +385,11 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	var surfaceWarnings []string
 	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
 	parseWarnings = append(parseWarnings, surfaceWarnings...)
+	data.ArchitectureGrounding, warning = parseArchitectureGrounding(absDir)
+	if warning != "" {
+		parseWarnings = append(parseWarnings, warning)
+	}
+	ensureArchitectureGrounding(data)
 
 	flowWarnings, err := parseFlows(filepath.Join(absDir, "flows"), data)
 	if err != nil {
@@ -559,6 +568,14 @@ func collectOpenablePaths(data *ReportData) {
 		}
 	}
 	collectDiscoveredSurfacePaths(data.DiscoveredSurfaces, add)
+	if data.ArchitectureGrounding != nil {
+		for _, anchor := range data.ArchitectureGrounding.BehaviorAnchors {
+			add(anchor.Location.Path)
+			for _, member := range anchor.AssociatedMembers {
+				add(member.Location.Path)
+			}
+		}
+	}
 	data.OpenablePaths = data.OpenablePaths[:0]
 	for path := range paths {
 		data.OpenablePaths = append(data.OpenablePaths, path)
@@ -586,6 +603,8 @@ func parseRunMetadata(path string, data *ReportData) string {
 		ExternalRequestBytes:    metadata.ExternalRequestBytes,
 		ProviderRequestCount:    metadata.ProviderRequestCount,
 		CandidateDirectionCount: metadata.CandidateDirectionCount,
+		AcceptedDirectionCount:  metadata.AcceptedDirectionCount,
+		RejectedDirectionCount:  metadata.RejectedDirectionCount,
 		ProviderLatencyMillis:   metadata.ProviderLatencyMillis,
 		SurfaceDiscoveryRan:     metadata.SurfaceDiscoveryRan,
 		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
@@ -636,6 +655,13 @@ func parseOrientationReport(path string, data *ReportData) string {
 		})
 	}
 	for _, cf := range or.CandidateFlows {
+		classified := flowexplain.CandidateFlow{
+			Confidence: cf.Confidence, LocalVerification: cf.LocalVerification, LocalProof: cf.LocalProof,
+			Disposition: cf.Disposition, DispositionReason: cf.DispositionReason,
+		}
+		if classified.Disposition == "" {
+			flowexplain.ClassifyCandidateFlow(&classified)
+		}
 		data.CandidateFlows = append(data.CandidateFlows, cf.Name)
 		data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
 			ID:                flowexplain.GenerateFlowID(cf.Name),
@@ -649,6 +675,8 @@ func parseOrientationReport(path string, data *ReportData) string {
 			Confidence:        cf.Confidence,
 			LocalVerification: cf.LocalVerification,
 			LocalProof:        cf.LocalProof,
+			Disposition:       classified.Disposition,
+			DispositionReason: classified.DispositionReason,
 		})
 	}
 	for _, word := range or.ImportantDomainWords {

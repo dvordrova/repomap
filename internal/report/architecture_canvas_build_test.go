@@ -355,6 +355,101 @@ func TestBuildArchitectureCanvasInputAllowsRepositoryLandscapeWithoutFlowProof(t
 	}
 }
 
+func TestBuildArchitectureCanvasInputPrioritizesGroundedBehavior(t *testing.T) {
+	t.Parallel()
+
+	scenario := architectureGroundingScenario{ID: "go:test", GOOS: "darwin", GOARCH: "arm64"}
+	producer := evidence.Provenance{Provider: "go_ssa", Version: "test", Operation: "fixture"}
+	data := &ReportData{
+		RepositoryGraph: &RepositoryGraph{
+			Modules:      []ModuleInfo{{Path: "example.com/project"}},
+			PackageEdges: []EdgeInfo{{From: "example.com/project/cmd", To: "example.com/project/internal/config"}},
+		},
+		ArchitectureGrounding: &ArchitectureGrounding{
+			Version:             ArchitectureGroundingVersion,
+			RepositoryArchetype: ArchitectureArchetype{Selected: componentmap.ArchetypeApplication},
+			GroundingMode:       componentmap.GroundingMixed,
+			BehaviorAnchors: []ArchitectureBehaviorAnchor{
+				architectureGroundingTestAnchor("process", componentmap.AnchorProcessEntry, "cmd/main.go", 10, "example.com/project/cmd.main", scenario, producer),
+				architectureGroundingTestAnchor("config", componentmap.AnchorConfigApply, "internal/config/config.go", 20, "example.com/project/internal/config.Apply", scenario, producer),
+			},
+			Relationships: []ArchitectureBehaviorHandoff{{
+				ID: "process-config", From: "process", To: "config", Kind: "bounded_direct_call",
+				Location:  evidence.Location{Path: "cmd/main.go", Line: 12, Column: 2},
+				Certainty: evidence.CertaintyStatic, Producer: producer,
+			}},
+		},
+	}
+
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.CandidateBundle.RepositoryArchetype != componentmap.ArchetypeApplication ||
+		input.CandidateBundle.GroundingMode != componentmap.GroundingMixed ||
+		len(input.CandidateBundle.BehaviorAnchors) != 2 {
+		t.Fatalf("grounded bundle = %#v", input.CandidateBundle)
+	}
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canvas.Title != "Evidence-backed architecture skeleton" || len(canvas.StructuralFacts) != 2 || len(canvas.StructuralEdges) != 1 {
+		t.Fatalf("canvas grounding/edges = %q / %#v / %#v", canvas.Title, canvas.StructuralFacts, canvas.StructuralEdges)
+	}
+	if canvas.StructuralEdges[0].Witness.Kind != componentmap.StructuralRelationBehaviorHandoff {
+		t.Fatalf("primary edge = %#v", canvas.StructuralEdges[0])
+	}
+}
+
+func TestCompactArchitectureGroundingRelationshipsAggregatesRegistrationWitnesses(t *testing.T) {
+	t.Parallel()
+
+	grounding := &ArchitectureGrounding{
+		BehaviorAnchors: []ArchitectureBehaviorAnchor{
+			{ID: "registry", Kind: componentmap.AnchorRegistryWrite},
+			{ID: "extensions", Kind: componentmap.AnchorExtensionFamily},
+		},
+	}
+	for index := range 134 {
+		grounding.Relationships = append(grounding.Relationships, ArchitectureBehaviorHandoff{
+			ID: fmt.Sprintf("witness-%03d", index), From: "registry", To: "extensions",
+			Kind: "bounded_direct_call", Location: evidence.Location{
+				Path: fmt.Sprintf("modules/family-%02d/register.go", index%17), Line: index + 1, Column: 1,
+			},
+			Certainty: evidence.CertaintyStatic,
+		})
+	}
+	compacted := compactArchitectureGroundingRelationships(grounding)
+	if len(compacted) != 1 {
+		t.Fatalf("compacted relationships = %d, want 1", len(compacted))
+	}
+	relation := compacted[0]
+	if relation.Kind != "registers_extension_family" || relation.EvidenceKind != "bounded_direct_call" ||
+		relation.WitnessCount != 134 || len(relation.WitnessIDs) != 134 || relation.PackageCount != 17 ||
+		len(relation.RepresentativeLocations) != 8 {
+		t.Fatalf("aggregated relationship = %#v", relation)
+	}
+}
+
+func architectureGroundingTestAnchor(
+	id string,
+	kind componentmap.BehaviorAnchorKind,
+	path string,
+	line int,
+	symbol string,
+	scenario architectureGroundingScenario,
+	producer evidence.Provenance,
+) ArchitectureBehaviorAnchor {
+	location := evidence.Location{Path: path, Line: line, Column: 1}
+	return ArchitectureBehaviorAnchor{
+		ID: id, Kind: kind, Label: symbol, Location: location, Scenario: scenario,
+		Producer: producer, Certainty: evidence.CertaintyStatic,
+		AssociatedMembers: []ArchitectureAnchorMember{{ID: symbol, Package: symbol, Name: symbol, Location: location}},
+		Limitations:       []string{"Static fixture evidence; runtime execution is not observed."},
+	}
+}
+
 func TestBuildArchitectureCanvasInputLeavesUnsupportedOwnershipAsFrontier(t *testing.T) {
 	t.Parallel()
 

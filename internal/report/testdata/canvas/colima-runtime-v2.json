@@ -1,5 +1,5 @@
 {
-  "format_version": 12,
+  "format_version": 14,
   "repo_name": "colima",
   "project_guess": "Provider-free architecture and start/runtime selection",
   "orientation_confidence": 0,
@@ -9,10 +9,17 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 1,
-    "landscape_version": 2,
+    "version": 3,
+    "landscape_version": 4,
     "flowproof_version": 2,
     "fallback": false,
+    "validation_outcome": "accepted",
+    "architecture_source": "validated_model",
+    "architecture_level": 1,
+    "repository_archetype": "application",
+    "grounding_mode": "mixed",
+    "title": "Architecture hypotheses and grounded behavior",
+    "subtitle": "Some areas remain package-derived",
     "subsystems": [
       {
         "id": "subsystem-306a58b6071e0d04be2b322fb6c9e5170f082b28ade8fbb76d4a40efbb8bf208",

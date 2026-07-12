@@ -38,6 +38,16 @@
   return value == null ? "" : String(value);
  }
 
+ function architectureSourceLabel(value) {
+  switch (text(value)) {
+   case "validated_model": return "validated model";
+   case "normalized_model": return "normalized model";
+   case "local_anchors": return "local anchors";
+   case "package_fallback": return "package fallback";
+   default: return "unspecified";
+  }
+ }
+
  function element(tag, className, content) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -301,7 +311,8 @@
    this.frontiers = array(this.data.frontiers);
    this.diagnostics = array(this.data.diagnostics);
 
-   this.componentByID = new Map();
+    this.componentByID = new Map();
+    this.anchorByID = new Map();
    this.subsystemByID = new Map();
    this.structuralEdgeByID = new Map();
    this.flowByID = new Map();
@@ -329,6 +340,9 @@
   }
 
   indexData() {
+    array(this.data.behavior_anchors).forEach((anchor) => {
+     if (anchor && anchor.id) this.anchorByID.set(text(anchor.id), anchor);
+    });
    this.subsystems.forEach((subsystem) => {
     if (subsystem && subsystem.id) this.subsystemByID.set(text(subsystem.id), subsystem);
    });
@@ -369,7 +383,7 @@
 
    const toolbar = element("div", "rm-arch__toolbar");
    const flowNav = element("nav", "rm-arch__flows");
-   this.landscapeButton = element("button", "rm-arch__flow-button is-active", "Landscape");
+    this.landscapeButton = element("button", "rm-arch__flow-button is-active", this.data.title || "Landscape");
    this.landscapeButton.type = "button";
    this.listen(this.landscapeButton, "click", () => {
     this.setSelection({ flow: "", component: "", step: "", edge: "" }, true);
@@ -2159,8 +2173,11 @@
     "How to read this map",
     hasFlows ? "Select a component or choose one saved flow." : "Select a component to inspect its exact local members."
    );
-   const note = this.inspectorSection("Evidence semantics");
-   note.appendChild(element("p", "rm-arch__copy", "Subsystem and component names are conceptual orientation. Quiet lines are witnessed structural relations, not runtime execution."));
+    const note = this.inspectorSection("Evidence semantics");
+    note.appendChild(element("p", "rm-arch__copy", "Subsystem and component names are conceptual orientation. Quiet lines are witnessed structural relations, not runtime execution."));
+    this.appendKeyValue(note, "Architecture source", architectureSourceLabel(this.data.architecture_source));
+    this.appendKeyValue(note, "Grounding mode", text(this.data.grounding_mode).replaceAll("_", " "));
+    this.appendKeyValue(note, "Architecture anchors", String(array(this.data.behavior_anchors).length));
    if (!hasFlows) {
     const flowState = this.inspectorSection("Flow overlays");
     flowState.appendChild(element(
@@ -2181,7 +2198,7 @@
    if (array(component.members).length === 0) {
     members.appendChild(element("p", "rm-arch__empty", "No exact members were retained."));
    }
-   array(component.members).forEach((member) => {
+    array(component.members).forEach((member) => {
     const card = element("article", "rm-arch__evidence-card");
     card.appendChild(element("strong", "rm-arch__evidence-title", member.name || memberLabel(member.id)));
     card.appendChild(element("code", "rm-arch__member-id", memberLabel(member.id)));
@@ -2201,6 +2218,24 @@
      }, true));
      relatedFlows.appendChild(button);
     });
+    }
+
+    const anchorIDs = array(component.anchor_ids);
+    if (anchorIDs.length > 0) {
+     const anchors = this.inspectorSection("Exact architecture anchors");
+     anchorIDs.forEach((anchorID) => {
+      const anchor = this.anchorByID.get(text(anchorID));
+      const card = element("article", "rm-arch__evidence-card");
+      card.appendChild(element("strong", "rm-arch__evidence-title", anchor ? (anchor.label || anchor.kind) : anchorID));
+      card.appendChild(element("code", "rm-arch__member-id", text(anchorID)));
+      if (anchor) {
+       this.appendKeyValue(card, "Kind", anchor.kind);
+       this.appendKeyValue(card, "Certainty", anchor.certainty);
+       this.appendLocation(card, anchor.location, "Anchor evidence");
+       this.appendProvenance(card, anchor.producer ? [anchor.producer] : []);
+      }
+      anchors.appendChild(card);
+     });
    }
    this.appendDiagnostics(this.inspectorSection("Diagnostics"), "");
   }

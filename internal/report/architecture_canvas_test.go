@@ -194,6 +194,25 @@ func TestProjectArchitectureCanvasUsesLandscapeSubsystemsAndFlowLabels(t *testin
 	}
 }
 
+func TestProjectArchitectureCanvasLabelsPackageFallbackHonestly(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureBundle()
+	landscape, err := componentmap.Deterministic(bundle, componentmap.FallbackInsufficientAnchors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{CandidateBundle: bundle, Landscape: landscape})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canvas.ArchitectureSource != componentmap.SourcePackageFallback || canvas.ArchitectureLevel != 4 ||
+		canvas.Title != "Package landscape" ||
+		canvas.Subtitle != "Behavioral grounding was insufficient or the architecture proposal was rejected" {
+		t.Fatalf("package fallback presentation = %#v", canvas)
+	}
+}
+
 func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testing.T) {
 	t.Parallel()
 
@@ -209,7 +228,7 @@ func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testin
 	}
 }
 
-func TestProjectArchitectureCanvasPromotesExactStructuralWitness(t *testing.T) {
+func TestProjectArchitectureCanvasKeepsPackageImportAsSupportingFact(t *testing.T) {
 	t.Parallel()
 
 	input, landscape := architectureCanvasInput(t, architectureResticProof(), nil)
@@ -217,21 +236,15 @@ func TestProjectArchitectureCanvasPromotesExactStructuralWitness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(canvas.StructuralFacts) != 1 || len(canvas.StructuralEdges) != 1 {
+	if len(canvas.StructuralFacts) != 1 || len(canvas.StructuralEdges) != 0 {
 		t.Fatalf("facts=%#v edges=%#v", canvas.StructuralFacts, canvas.StructuralEdges)
 	}
 	relation := landscape.Relations[0]
 	fact := canvas.StructuralFacts[0]
-	edge := canvas.StructuralEdges[0]
 	if fact.ID != relation.ID || fact.From != relation.From || fact.To != relation.To ||
 		fact.Location == nil || fact.Location.Line != 12 || !reflect.DeepEqual(fact.Provenance, relation.Provenance) ||
 		!reflect.DeepEqual(fact.Scenarios, relation.Scenarios) {
 		t.Fatalf("structural fact lost witness data: %#v", fact)
-	}
-	if edge.Witness.ID != relation.ID || edge.Witness.From != relation.From || edge.Witness.To != relation.To ||
-		edge.FromComponentID == "" || edge.ToComponentID == "" || edge.FromComponentID == edge.ToComponentID ||
-		!reflect.DeepEqual(edge.Witness.Provenance, relation.Provenance) || !reflect.DeepEqual(edge.Witness.Scenarios, relation.Scenarios) {
-		t.Fatalf("promoted edge = %#v", edge)
 	}
 }
 
@@ -294,7 +307,9 @@ func architectureBundle() componentmap.CandidateBundle {
 	cmd := architectureMember(componentmap.MemberPackage, "cmd")
 	archiver := architectureMember(componentmap.MemberPackage, "archiver")
 	return componentmap.CandidateBundle{
-		Version: componentmap.ContractVersion,
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeApplication,
+		GroundingMode:       componentmap.GroundingPackages,
 		Flows: []componentmap.Flow{{
 			ID: "backup", Name: "Backup",
 			Facts: []componentmap.LocalFact{architectureFact(componentmap.FactDeclaration, "flowproof-v2", "cmd/restic/cmd_backup.go", 500)},
