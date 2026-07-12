@@ -3,6 +3,7 @@ package gofacts
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,12 +14,14 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/reporead"
+	"golang.org/x/mod/modfile"
 )
 
 const maxGoModBytes = 1024 * 1024
 
 type Facts struct {
 	Modules               []ModuleFact           `json:"modules"`
+	Packages              []PackageFact          `json:"packages"`
 	PackagesCount         int                    `json:"packages_count"`
 	EntrypointPackages    []Entrypoint           `json:"entrypoint_packages"`
 	CommandTraces         []CommandTrace         `json:"command_traces,omitempty"`
@@ -30,11 +33,35 @@ type Facts struct {
 }
 
 type ModuleFact struct {
-	ModulePath         string       `json:"module_path"`
-	ModuleDir          string       `json:"module_dir"`
-	PackagesCount      int          `json:"packages_count"`
-	EntrypointPackages []Entrypoint `json:"entrypoint_packages"`
-	Warnings           []string     `json:"warnings,omitempty"`
+	ID                 string         `json:"id"`
+	ModulePath         string         `json:"module_path"`
+	ModuleDir          string         `json:"module_dir"`
+	GoMod              string         `json:"go_mod,omitempty"`
+	Main               bool           `json:"main"`
+	DisplayName        string         `json:"display_name"`
+	Replacement        *ModuleSource  `json:"replacement,omitempty"`
+	Replacements       []ModuleSource `json:"replacements,omitempty"`
+	PackagesCount      int            `json:"packages_count"`
+	EntrypointPackages []Entrypoint   `json:"entrypoint_packages"`
+	Warnings           []string       `json:"warnings,omitempty"`
+}
+
+type ModuleSource struct {
+	Path  string `json:"path"`
+	Dir   string `json:"dir,omitempty"`
+	GoMod string `json:"go_mod,omitempty"`
+	Local bool   `json:"local"`
+}
+
+type PackageFact struct {
+	CanonicalPath     string `json:"canonical_package_path"`
+	Name              string `json:"name"`
+	ModuleID          string `json:"owning_module_id"`
+	ModulePath        string `json:"module_path"`
+	PackageDir        string `json:"package_directory"`
+	ModuleRelativeDir string `json:"module_relative_path"`
+	DisplayPath       string `json:"display_path"`
+	Locality          string `json:"locality"`
 }
 
 type ModuleSummary struct {
@@ -109,7 +136,11 @@ type goListPackage struct {
 }
 
 type goListModule struct {
-	Path string
+	Path    string
+	Dir     string
+	GoMod   string
+	Main    bool
+	Replace *goListModule
 }
 
 type goListError struct {
@@ -179,6 +210,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	defer repoReader.Close()
 
 	var allPkgs []goListPackage
+	var packageFacts []PackageFact
 	var allEntrypoints []Entrypoint
 	var allCommandTraces []CommandTrace
 	var topWarnings []string
@@ -204,20 +236,28 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 			absDir = filepath.Join(resolvedRepoPath, modRelDir)
 		}
 
+		moduleInfo, err := runGoModule(ctx, absDir)
+		if err != nil {
+			topWarnings = append(topWarnings, fmt.Sprintf("module %s: go list module failed: %v", modRelDir, err))
+			modules = append(modules, ModuleFact{
+				ID: moduleFactID(modRelDir, modRelDir), ModulePath: modRelDir, ModuleDir: modRelDir,
+				DisplayName: moduleDisplayName(modRelDir, modRelDir),
+				Warnings:    []string{fmt.Sprintf("go list module failed: %v", err)},
+			})
+			continue
+		}
+		modulePath := moduleInfo.Path
+		moduleID := moduleFactID(modulePath, modRelDir)
 		pkgs, modWarnings, err := runGoList(ctx, absDir)
 		if err != nil {
 			topWarnings = append(topWarnings, fmt.Sprintf("module %s: go list failed: %v", modRelDir, err))
 			modules = append(modules, ModuleFact{
-				ModulePath: modRelDir,
-				ModuleDir:  modRelDir,
-				Warnings:   []string{fmt.Sprintf("go list failed: %v", err)},
+				ID: moduleID, ModulePath: modulePath,
+				ModuleDir:   modRelDir,
+				DisplayName: moduleDisplayName(modulePath, modRelDir), Main: moduleInfo.Main,
+				Warnings: []string{fmt.Sprintf("go list failed: %v", err)},
 			})
 			continue
-		}
-
-		modulePath := extractModulePath(pkgs)
-		if modulePath == "" {
-			modulePath = modRelDir
 		}
 
 		remaining := maxPkgs - totalPkgs
@@ -232,6 +272,21 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 
 		totalPkgs += len(pkgs)
 		allPkgs = append(allPkgs, pkgs...)
+		for _, pkg := range pkgs {
+			_, moduleRelativeDir, packageDir, normalizeErr := normalizePackagePaths(resolvedRepoPath, absDir, pkg.Dir)
+			if normalizeErr != nil || pkg.ImportPath == "" {
+				continue
+			}
+			displayPath := filepath.ToSlash(moduleRelativeDir)
+			if displayPath == "." || displayPath == "" {
+				displayPath = pkg.Name
+			}
+			packageFacts = append(packageFacts, PackageFact{
+				CanonicalPath: pkg.ImportPath, Name: pkg.Name, ModuleID: moduleID, ModulePath: modulePath,
+				PackageDir: filepath.ToSlash(packageDir), ModuleRelativeDir: filepath.ToSlash(moduleRelativeDir),
+				DisplayPath: displayPath, Locality: "local",
+			})
+		}
 
 		entrypointCandidates := buildEntrypointCandidates(pkgs, resolvedRepoPath, absDir, modRelDir, modulePath)
 		modEntrypoints, entrypointWarnings := resolveMainEntrypoints(repoReader, entrypointCandidates)
@@ -252,8 +307,14 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		}
 
 		modules = append(modules, ModuleFact{
+			ID:                 moduleID,
 			ModulePath:         modulePath,
 			ModuleDir:          modRelDir,
+			GoMod:              repositoryRelativeMetadataPath(resolvedRepoPath, moduleInfo.GoMod),
+			Main:               moduleInfo.Main,
+			DisplayName:        moduleDisplayName(modulePath, modRelDir),
+			Replacement:        moduleSource(resolvedRepoPath, moduleInfo.Replace),
+			Replacements:       readModuleReplacements(repoReader, resolvedRepoPath, modRelDir),
 			PackagesCount:      len(pkgs),
 			EntrypointPackages: modEntrypoints,
 			Warnings:           modWarnings,
@@ -276,11 +337,13 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	}
 
 	extImports := buildExternalImports(allPkgs, known)
+	sort.Slice(packageFacts, func(i, j int) bool { return packageFacts[i].PackageDir < packageFacts[j].PackageDir })
 	moduleSummaries := buildModuleSummaries(modMetas, known)
 	orientationCandidates := buildOrientationCandidates(allEntrypoints)
 
 	return &Facts{
 		Modules:               modules,
+		Packages:              packageFacts,
 		PackagesCount:         totalPkgs,
 		EntrypointPackages:    allEntrypoints,
 		CommandTraces:         allCommandTraces,
@@ -290,6 +353,93 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		ExternalImportsTop:    extImports,
 		Warnings:              topWarnings,
 	}, nil
+}
+
+func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string) []ModuleSource {
+	goModPath := "go.mod"
+	if moduleDir != "." {
+		goModPath = filepath.ToSlash(filepath.Join(moduleDir, goModPath))
+	}
+	content, err := reader.ReadFile(goModPath, maxGoModBytes)
+	if err != nil || content.Truncated {
+		return nil
+	}
+	parsed, err := modfile.Parse(goModPath, content.Bytes, nil)
+	if err != nil {
+		return nil
+	}
+	result := make([]ModuleSource, 0, len(parsed.Replace))
+	moduleRoot := repoRoot
+	if moduleDir != "." {
+		moduleRoot = filepath.Join(repoRoot, filepath.FromSlash(moduleDir))
+	}
+	for _, replacement := range parsed.Replace {
+		source := ModuleSource{Path: replacement.Old.Path}
+		if replacement.New.Version == "" && replacement.New.Path != "" {
+			target := replacement.New.Path
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(moduleRoot, filepath.FromSlash(target))
+			}
+			if relative := repositoryRelativeMetadataPath(repoRoot, target); relative != "" {
+				source.Dir = relative
+				source.GoMod = filepath.ToSlash(filepath.Join(relative, "go.mod"))
+				source.Local = true
+			}
+		}
+		result = append(result, source)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
+	return result
+}
+
+func runGoModule(ctx context.Context, repoDir string) (goListModule, error) {
+	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	output, err := cmd.Output()
+	if err != nil {
+		return goListModule{}, fmt.Errorf("go list -m: %w", err)
+	}
+	var module goListModule
+	if err := json.Unmarshal(output, &module); err != nil {
+		return goListModule{}, fmt.Errorf("decode go list module: %w", err)
+	}
+	if module.Path == "" {
+		return goListModule{}, fmt.Errorf("go list module has no declared path")
+	}
+	return module, nil
+}
+
+func moduleFactID(modulePath, moduleDir string) string {
+	digest := sha256.Sum256([]byte(modulePath + "\x00" + filepath.ToSlash(moduleDir)))
+	return fmt.Sprintf("module-%x", digest[:12])
+}
+
+func moduleDisplayName(_ string, moduleDir string) string {
+	if moduleDir != "" && moduleDir != "." {
+		return filepath.ToSlash(moduleDir)
+	}
+	return "."
+}
+
+func repositoryRelativeMetadataPath(repoRoot, value string) string {
+	if value == "" {
+		return ""
+	}
+	relative, err := filepath.Rel(repoRoot, value)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return filepath.ToSlash(relative)
+}
+
+func moduleSource(repoRoot string, module *goListModule) *ModuleSource {
+	if module == nil {
+		return nil
+	}
+	dir := repositoryRelativeMetadataPath(repoRoot, module.Dir)
+	goMod := repositoryRelativeMetadataPath(repoRoot, module.GoMod)
+	return &ModuleSource{Path: module.Path, Dir: dir, GoMod: goMod, Local: dir != ""}
 }
 
 func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) error {
@@ -311,6 +461,7 @@ func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) error {
 func runGoList(ctx context.Context, repoDir string) ([]goListPackage, []string, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-e", "-json", "./...")
 	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -337,7 +488,6 @@ func parseGoListOutput(r io.Reader) ([]goListPackage, []string, error) {
 		}
 		if pkg.Error != nil {
 			warnings = append(warnings, fmt.Sprintf("package %s: %s", pkg.ImportPath, pkg.Error.Err))
-			continue
 		}
 		pkgs = append(pkgs, pkg)
 	}
@@ -374,7 +524,7 @@ func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir strin
 	if packageDir == "" {
 		packageDir = "."
 	}
-	if strings.HasPrefix(packageDir, "..") {
+	if packageDir == ".." || strings.HasPrefix(packageDir, ".."+string(filepath.Separator)) {
 		return "", "", "", fmt.Errorf("package dir %q is outside repo root %q", pkgDir, repoRoot)
 	}
 
@@ -403,7 +553,7 @@ func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir strin
 	if moduleRelativeDir == "" {
 		moduleRelativeDir = "."
 	}
-	if strings.HasPrefix(moduleRelativeDir, "..") {
+	if moduleRelativeDir == ".." || strings.HasPrefix(moduleRelativeDir, ".."+string(filepath.Separator)) {
 		return "", "", "", fmt.Errorf("package dir %q is outside module root %q", pkgDir, moduleRoot)
 	}
 
