@@ -488,6 +488,14 @@ func repositoryPackageForFile(graph *RepositoryGraph, filePath string) string {
 	if dir == "." {
 		dir = ""
 	}
+	if len(graph.Packages) > 0 {
+		for _, pkg := range graph.Packages {
+			if pkg.Dir == dir {
+				return pkg.CanonicalPath
+			}
+		}
+		return ""
+	}
 	var best *ModuleInfo
 	for index := range graph.Modules {
 		module := &graph.Modules[index]
