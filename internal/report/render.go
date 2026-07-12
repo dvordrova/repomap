@@ -41,7 +41,14 @@ func init() {
 }
 
 func WriteReportJSON(data *ReportData, path string) error {
-	b, err := json.MarshalIndent(data, "", "  ")
+	if data == nil {
+		return fmt.Errorf("report: data is required")
+	}
+	persisted := *data
+	// SourceIDs are issued by the local report server after manifest
+	// verification. They are session navigation IDs, not persistent evidence.
+	persisted.SourceIDs = nil
+	b, err := json.MarshalIndent(&persisted, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -62,8 +69,6 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
 	}
-	linkArchitectureProductObjects(data)
-	refreshProductCounts(data)
 	return buildHTML(data)
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
@@ -27,16 +29,12 @@ import (
 )
 
 const (
-	maxArtifactBytes = 32 * 1024 * 1024
-	capabilityBytes  = 32
+	maxArtifactBytes   = 32 * 1024 * 1024
+	maxSourceHashBytes = 8 * 1024 * 1024
+	capabilityBytes    = 32
 )
 
-var (
-	errRunViewOnly      = errors.New("report run has no verified local authority")
-	errPathUnauthorized = errors.New("path is not authorized by this report")
-)
-
-type OpenFileFunc func(ctx context.Context, absolutePath string, line int) error
+type OpenFileFunc func(ctx context.Context, absolutePath string, line, column int) error
 
 type Options struct {
 	RunsDir             string
@@ -64,9 +62,16 @@ type RunSummary struct {
 
 type runRecord struct {
 	RunSummary
-	RepoPath string
-	Manifest *report.RunManifest
-	Report   *report.ReportData
+	RepoPath           string
+	Manifest           *report.RunManifest
+	Report             *report.ReportData
+	Sources            map[string]sourceTarget
+	ArtifactsSignature string
+}
+
+type runIndex struct {
+	runs []runRecord
+	byID map[string]runRecord
 }
 
 type handler struct {
@@ -78,6 +83,9 @@ type handler struct {
 	analysis     *symbolAnalysis
 	captureRepo  CaptureRepositoryFunc
 	logf         func(string, ...any)
+	runsMu       sync.RWMutex
+	reloadMu     sync.Mutex
+	runIndex     *runIndex
 }
 
 type metadata struct {
@@ -87,9 +95,15 @@ type metadata struct {
 }
 
 type openRequest struct {
-	RunID string `json:"run_id"`
-	Path  string `json:"path"`
-	Line  int    `json:"line,omitempty"`
+	RunID    string `json:"run_id"`
+	SourceID string `json:"source_id"`
+	Line     int    `json:"line,omitempty"`
+	Column   int    `json:"column,omitempty"`
+}
+
+type sourceTarget struct {
+	relativePath   string
+	capturedSHA256 string
 }
 
 func Serve(ctx context.Context, opts Options) error {
@@ -174,7 +188,10 @@ func NewHandler(opts Options) (http.Handler, error) {
 	}
 	openFile := opts.OpenFile
 	if openFile == nil {
-		openFile = OpenInVSCode
+		openFile, err = NewVSCodeLauncher(opts.Logf)
+		if err != nil {
+			openFile = unavailableEditorLauncher(err)
+		}
 	}
 	capability := strings.TrimSpace(opts.Capability)
 	if capability == "" {
@@ -204,15 +221,14 @@ func NewHandler(opts Options) (http.Handler, error) {
 		captureRepo:  captureRepo,
 		logf:         opts.Logf,
 	}
+	if err := h.reloadRuns(); err != nil {
+		return nil, fmt.Errorf("report server: list runs: %w", err)
+	}
 	if opts.InitialRunID != "" {
 		if !validRunID(opts.InitialRunID) {
 			return nil, fmt.Errorf("report server: invalid initial run id")
 		}
-		runs, err := h.loadRuns()
-		if err != nil {
-			return nil, fmt.Errorf("report server: list runs: %w", err)
-		}
-		if !containsRun(runs, opts.InitialRunID) {
+		if _, findErr := h.findRunCached(opts.InitialRunID); findErr != nil {
 			return nil, fmt.Errorf("report server: initial run not found: %s", opts.InitialRunID)
 		}
 	}
@@ -230,11 +246,8 @@ func NewHandler(opts Options) (http.Handler, error) {
 }
 
 func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
-	runs, err := h.loadRuns()
-	if err != nil {
-		http.Error(w, "could not list reports", http.StatusInternalServerError)
-		return
-	}
+	_ = h.reloadRuns()
+	runs := h.runsSnapshot()
 	runID := h.initialRunID
 	if !containsRun(runs, runID) {
 		if len(runs) == 0 {
@@ -247,11 +260,8 @@ func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) serveRuns(w http.ResponseWriter, _ *http.Request) {
-	runs, err := h.loadRuns()
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not list reports"})
-		return
-	}
+	_ = h.reloadRuns()
+	runs := h.runsSnapshot()
 	summaries := make([]RunSummary, 0, len(runs))
 	for _, run := range runs {
 		summaries = append(summaries, run.RunSummary)
@@ -266,7 +276,11 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	run, err := h.findRun(runID)
+	if err := h.reloadRuns(); err != nil {
+		http.Error(w, "could not refresh saved reports", http.StatusInternalServerError)
+		return
+	}
+	run, err := h.findRunCached(runID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -275,6 +289,8 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "saved report cannot be served without verified local authority", http.StatusConflict)
 		return
 	}
+	reportData := *run.Report
+	run.Report = &reportData
 	h.refreshRunFreshness(r.Context(), &run)
 	renderStarted := time.Now()
 	rendered, err := report.RenderHTML(run.Report)
@@ -299,6 +315,7 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	if r.Header.Get("X-Repomap-Action") != "open-file" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing repomap action header"})
 		return
@@ -309,71 +326,196 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid open-file request"})
 		return
 	}
-	if request.Line < 0 || request.Line > 10_000_000 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid line number"})
+	if request.Line < 0 || request.Line > 10_000_000 || request.Column < 0 || request.Column > 10_000_000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid source location"})
 		return
 	}
-	run, err := h.findAuthorizedRun(request.RunID, request.Path)
+	resolveRunStarted := time.Now()
+	run, err := h.findRun(request.RunID)
+	resolveRunMS := time.Since(resolveRunStarted).Milliseconds()
 	if err != nil {
-		switch {
-		case errors.Is(err, errRunViewOnly):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only; regenerate it to enable editor actions"})
-		case errors.Is(err, errPathUnauthorized):
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "file is not authorized by this report"})
-		default:
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
-		}
+		h.logSourceOpen(request.RunID, request.SourceID, "run_not_found", resolveRunMS, 0, 0, 0, started)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
 		return
 	}
-	absolutePath, err := resolveRepoFile(run.RepoPath, request.Path)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	authorizeStarted := time.Now()
+	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) {
+		h.logSourceOpen(run.ID, request.SourceID, "view_only", resolveRunMS, time.Since(authorizeStarted).Milliseconds(), 0, 0, started)
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only; regenerate it to enable editor actions"})
 		return
 	}
+	target, ok := run.Sources[strings.TrimSpace(request.SourceID)]
+	authorizeMS := time.Since(authorizeStarted).Milliseconds()
+	if !ok || request.SourceID == "" {
+		h.logSourceOpen(run.ID, request.SourceID, "source_unauthorized", resolveRunMS, authorizeMS, 0, 0, started)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source is not authorized by this report"})
+		return
+	}
+	resolveTargetStarted := time.Now()
+	absolutePath, resolveErr := resolveRepoFile(run.RepoPath, target.relativePath)
+	if resolveErr != nil {
+		resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
+		h.logSourceOpen(run.ID, request.SourceID, "source_unavailable", resolveRunMS, authorizeMS, resolveTargetMS, 0, started)
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
+		return
+	}
+	sourceChanged := sourceTargetChanged(absolutePath, target.capturedSHA256)
+	resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
 	select {
 	case h.openSlot <- struct{}{}:
 		defer func() { <-h.openSlot }()
 	default:
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "another editor action is still running"})
+		h.logSourceOpen(run.ID, request.SourceID, "editor_busy", resolveRunMS, authorizeMS, resolveTargetMS, 0, started)
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "another editor action is still running", "code": "editor_busy"})
 		return
 	}
-	if err := h.openFile(r.Context(), absolutePath, request.Line); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not open file in VS Code"})
+	spawnStarted := time.Now()
+	if err := h.openFile(r.Context(), absolutePath, request.Line, request.Column); err != nil {
+		status := http.StatusBadGateway
+		code := "editor_launch_failed"
+		if errors.Is(err, ErrEditorUnavailable) {
+			status = http.StatusServiceUnavailable
+			code = "editor_unavailable"
+		}
+		h.logSourceOpen(run.ID, request.SourceID, code, resolveRunMS, authorizeMS, resolveTargetMS, time.Since(spawnStarted).Milliseconds(), started)
+		writeJSON(w, status, map[string]string{"error": "could not open file in VS Code", "code": code})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "opened"})
+	spawnMS := time.Since(spawnStarted).Milliseconds()
+	writeJSON(w, http.StatusOK, map[string]any{"status": "opened", "source_changed": sourceChanged})
+	h.logSourceOpen(run.ID, request.SourceID, "opened", resolveRunMS, authorizeMS, resolveTargetMS, spawnMS, started)
 }
 
 func (h *handler) findRun(runID string) (runRecord, error) {
 	if !validRunID(runID) {
 		return runRecord{}, fmt.Errorf("invalid run id")
 	}
+	run, err := h.findRunCached(runID)
+	if err == nil && !h.runArtifactsChanged(run) {
+		return run, nil
+	}
+	if reloadErr := h.reloadRuns(); reloadErr != nil {
+		return runRecord{}, reloadErr
+	}
+	return h.findRunCached(runID)
+}
+
+func manifestSourceID(runID, reportSHA256, relativePath string) string {
+	digest := sha256.Sum256([]byte("repomap-source-v1\x00" + runID + "\x00" + reportSHA256 + "\x00" + relativePath))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func (h *handler) reloadRuns() error {
+	h.reloadMu.Lock()
+	defer h.reloadMu.Unlock()
+
 	runs, err := h.loadRuns()
 	if err != nil {
-		return runRecord{}, err
+		return err
 	}
-	for _, run := range runs {
-		if run.ID == runID {
+	byID := make(map[string]runRecord, len(runs))
+	for index := range runs {
+		run := &runs[index]
+		report.ApplyProductCoherence(run.Report)
+		if run.Manifest != nil && run.Report != nil {
+			run.Sources = make(map[string]sourceTarget, len(run.Manifest.OpenablePaths))
+			run.Report.SourceIDs = make(map[string]string, len(run.Manifest.OpenablePaths))
+			for _, relativePath := range run.Manifest.OpenablePaths {
+				sourceID := manifestSourceID(run.ID, run.Manifest.ReportSHA256, relativePath)
+				run.Sources[sourceID] = sourceTarget{
+					relativePath:   relativePath,
+					capturedSHA256: capturedSourceSHA256(*run.Manifest, relativePath),
+				}
+				run.Report.SourceIDs[relativePath] = sourceID
+			}
+		}
+		byID[run.ID] = *run
+	}
+	next := &runIndex{runs: runs, byID: byID}
+	h.runsMu.Lock()
+	h.runIndex = next
+	h.runsMu.Unlock()
+	return nil
+}
+
+func (h *handler) runsSnapshot() []runRecord {
+	h.runsMu.RLock()
+	defer h.runsMu.RUnlock()
+	if h.runIndex == nil {
+		return nil
+	}
+	return h.runIndex.runs
+}
+
+func (h *handler) findRunCached(runID string) (runRecord, error) {
+	h.runsMu.RLock()
+	defer h.runsMu.RUnlock()
+	if h.runIndex != nil {
+		if run, ok := h.runIndex.byID[runID]; ok {
 			return run, nil
 		}
 	}
 	return runRecord{}, fmt.Errorf("run not found")
 }
 
-func (h *handler) findAuthorizedRun(runID, requestedPath string) (runRecord, error) {
-	run, err := h.findRun(runID)
+func (h *handler) runArtifactsChanged(run runRecord) bool {
+	signature, err := runArtifactSignature(filepath.Join(h.runsDir, run.ID))
+	return err != nil || signature != run.ArtifactsSignature
+}
+
+func runArtifactSignature(runDir string) (string, error) {
+	parts := make([]string, 0, 2)
+	for index, name := range []string{"report.json", report.RunManifestFilename} {
+		info, err := os.Lstat(filepath.Join(runDir, name))
+		if os.IsNotExist(err) && index == 1 {
+			parts = append(parts, name+":missing")
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() {
+			return "", fmt.Errorf("run artifact is unavailable")
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d:%d", name, info.Size(), info.ModTime().UnixNano()))
+	}
+	return strings.Join(parts, "|"), nil
+}
+
+func capturedSourceSHA256(manifest report.RunManifest, relativePath string) string {
+	repositoryRelative := relativePath
+	if analysisRelative, err := filepath.Rel(manifest.RepositoryState.Identity, manifest.AnalysisRoot); err == nil && analysisRelative != "." {
+		repositoryRelative = filepath.ToSlash(filepath.Join(analysisRelative, filepath.FromSlash(relativePath)))
+	}
+	for _, input := range manifest.CapturedInputs {
+		if input.Path == repositoryRelative || input.Path == relativePath {
+			return input.ContentSHA256
+		}
+	}
+	return ""
+}
+
+func sourceTargetChanged(absolutePath, capturedSHA256 string) bool {
+	if capturedSHA256 == "" {
+		return false
+	}
+	file, err := os.Open(absolutePath)
 	if err != nil {
-		return runRecord{}, err
+		return false
 	}
-	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) {
-		return runRecord{}, errRunViewOnly
+	defer file.Close()
+	hash := sha256.New()
+	written, err := io.Copy(hash, io.LimitReader(file, maxSourceHashBytes+1))
+	if err != nil || written > maxSourceHashBytes {
+		return false
 	}
-	requestedPath = filepath.ToSlash(strings.TrimSpace(requestedPath))
-	index := sort.SearchStrings(run.Manifest.OpenablePaths, requestedPath)
-	if index >= len(run.Manifest.OpenablePaths) || run.Manifest.OpenablePaths[index] != requestedPath {
-		return runRecord{}, errPathUnauthorized
-	}
-	return run, nil
+	return fmt.Sprintf("%x", hash.Sum(nil)) != capturedSHA256
+}
+
+func (h *handler) logSourceOpen(
+	runID, sourceID, outcome string,
+	resolveRunMS, authorizeMS, resolveTargetMS, spawnMS int64,
+	started time.Time,
+) {
+	h.log("source open run=%s source=%s outcome=%s source_open.resolve_run_ms=%d source_open.authorize_ms=%d source_open.resolve_target_ms=%d source_open.spawn_ms=%d source_open.response_ms=%d",
+		runID, sourceID, outcome, resolveRunMS, authorizeMS, resolveTargetMS, spawnMS, time.Since(started).Milliseconds())
 }
 
 func (h *handler) loadRuns() ([]runRecord, error) {
@@ -391,6 +533,10 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 	var runs []runRecord
 	for _, entry := range entries {
 		if !entry.IsDir() || !validRunID(entry.Name()) {
+			continue
+		}
+		artifactSignature, signatureErr := runArtifactSignature(filepath.Join(h.runsDir, entry.Name()))
+		if signatureErr != nil {
 			continue
 		}
 		info, err := root.Lstat(path.Join(entry.Name(), "report.html"))
@@ -415,8 +561,9 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 			repoName = reportData.RepoName
 		}
 		run := runRecord{
-			RunSummary: RunSummary{ID: entry.Name(), RepoName: repoName, CreatedAt: meta.CreatedAt},
-			Report:     &reportData,
+			RunSummary:         RunSummary{ID: entry.Name(), RepoName: repoName, CreatedAt: meta.CreatedAt},
+			Report:             &reportData,
+			ArtifactsSignature: artifactSignature,
 		}
 		manifestJSON, manifestErr := readRootFile(root, path.Join(entry.Name(), report.RunManifestFilename), maxArtifactBytes)
 		if manifestErr == nil {
