@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 1
+const ArchitectureCanvasVersion = 3
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -32,19 +32,29 @@ type ArchitectureFlowInput struct {
 }
 
 type ArchitectureCanvas struct {
-	Version          int                          `json:"version"`
-	LandscapeVersion int                          `json:"landscape_version"`
-	FlowProofVersion int                          `json:"flowproof_version"`
-	Fallback         bool                         `json:"fallback"`
-	FallbackReason   componentmap.FallbackReason  `json:"fallback_reason,omitempty"`
-	Subsystems       []ArchitectureSubsystem      `json:"subsystems"`
-	Components       []ArchitectureComponent      `json:"components"`
-	StructuralFacts  []componentmap.LocalRelation `json:"structural_facts,omitempty"`
-	StructuralEdges  []ArchitectureStructuralEdge `json:"structural_edges,omitempty"`
-	Flows            []ArchitectureFlow           `json:"flows,omitempty"`
-	FlowEdges        []ArchitectureFlowEdge       `json:"flow_edges,omitempty"`
-	Frontiers        []ArchitectureFrontier       `json:"frontiers,omitempty"`
-	Diagnostics      []ArchitectureDiagnostic     `json:"diagnostics,omitempty"`
+	Version                int                                   `json:"version"`
+	LandscapeVersion       int                                   `json:"landscape_version"`
+	FlowProofVersion       int                                   `json:"flowproof_version"`
+	Fallback               bool                                  `json:"fallback"`
+	FallbackReason         componentmap.FallbackReason           `json:"fallback_reason,omitempty"`
+	ValidationOutcome      componentmap.ValidationOutcome        `json:"validation_outcome"`
+	ArchitectureSource     componentmap.ArchitectureSource       `json:"architecture_source"`
+	ArchitectureLevel      int                                   `json:"architecture_level"`
+	Normalizations         []componentmap.NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256 string                                `json:"original_proposal_sha256,omitempty"`
+	RepositoryArchetype    componentmap.RepositoryArchetype      `json:"repository_archetype"`
+	GroundingMode          componentmap.GroundingMode            `json:"grounding_mode"`
+	Title                  string                                `json:"title"`
+	Subtitle               string                                `json:"subtitle"`
+	BehaviorAnchors        []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
+	Subsystems             []ArchitectureSubsystem               `json:"subsystems"`
+	Components             []ArchitectureComponent               `json:"components"`
+	StructuralFacts        []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
+	StructuralEdges        []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
+	Flows                  []ArchitectureFlow                    `json:"flows,omitempty"`
+	FlowEdges              []ArchitectureFlowEdge                `json:"flow_edges,omitempty"`
+	Frontiers              []ArchitectureFrontier                `json:"frontiers,omitempty"`
+	Diagnostics            []ArchitectureDiagnostic              `json:"diagnostics,omitempty"`
 }
 
 type ArchitectureSubsystem struct {
@@ -53,15 +63,19 @@ type ArchitectureSubsystem struct {
 	Description  string                         `json:"description,omitempty"`
 	Category     componentmap.SubsystemCategory `json:"category,omitempty"`
 	ComponentIDs []componentmap.ComponentID     `json:"component_ids"`
+	SourceIDs    []componentmap.SubsystemID     `json:"source_subsystem_ids,omitempty"`
 }
 
 type ArchitectureComponent struct {
-	ID                   componentmap.ComponentID `json:"id"`
-	SubsystemID          componentmap.SubsystemID `json:"subsystem_id"`
-	Name                 string                   `json:"name"`
-	Description          string                   `json:"description,omitempty"`
-	Members              []componentmap.Candidate `json:"members"`
-	ParticipatingFlowIDs []componentmap.FlowID    `json:"participating_flow_ids,omitempty"`
+	ID                   componentmap.ComponentID   `json:"id"`
+	SubsystemID          componentmap.SubsystemID   `json:"subsystem_id"`
+	Name                 string                     `json:"name"`
+	Description          string                     `json:"description,omitempty"`
+	Members              []componentmap.Candidate   `json:"members"`
+	ParticipatingFlowIDs []componentmap.FlowID      `json:"participating_flow_ids,omitempty"`
+	AnchorIDs            []string                   `json:"anchor_ids,omitempty"`
+	Hypothesis           bool                       `json:"hypothesis,omitempty"`
+	SourceIDs            []componentmap.ComponentID `json:"source_component_ids,omitempty"`
 }
 
 type ArchitectureStructuralEdge struct {
@@ -173,12 +187,21 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 	}
 
 	canvas := ArchitectureCanvas{
-		Version:          ArchitectureCanvasVersion,
-		LandscapeVersion: componentmap.ContractVersion,
-		FlowProofVersion: flowproof.Version,
-		Fallback:         input.Landscape.Fallback,
-		FallbackReason:   input.Landscape.FallbackReason,
+		Version:                ArchitectureCanvasVersion,
+		LandscapeVersion:       componentmap.ContractVersion,
+		FlowProofVersion:       flowproof.Version,
+		Fallback:               input.Landscape.Fallback,
+		FallbackReason:         input.Landscape.FallbackReason,
+		ValidationOutcome:      input.Landscape.ValidationOutcome,
+		ArchitectureSource:     input.Landscape.Source,
+		ArchitectureLevel:      input.Landscape.Level,
+		Normalizations:         append([]componentmap.NormalizationOperation(nil), input.Landscape.Normalizations...),
+		OriginalProposalSHA256: input.Landscape.OriginalProposalSHA256,
+		RepositoryArchetype:    input.CandidateBundle.RepositoryArchetype,
+		GroundingMode:          input.CandidateBundle.GroundingMode,
+		BehaviorAnchors:        append([]componentmap.BehaviorAnchor(nil), input.CandidateBundle.BehaviorAnchors...),
 	}
+	canvas.Title, canvas.Subtitle = architectureGroundingWording(canvas.ArchitectureSource, canvas.GroundingMode)
 	index := projectArchitectureLandscape(input.CandidateBundle, input.Landscape, &canvas)
 	projectArchitectureStructuralFacts(input.Landscape.Relations, index.componentOwners, &canvas)
 	projectArchitectureFlows(input.Flows, index, &canvas)
@@ -220,6 +243,7 @@ func projectArchitectureLandscape(
 	for _, subsystem := range landscape.Subsystems {
 		projected := ArchitectureSubsystem{
 			ID: subsystem.ID, Name: subsystem.Name, Description: subsystem.Description, Category: subsystem.Category,
+			SourceIDs: append([]componentmap.SubsystemID(nil), subsystem.SourceIDs...),
 		}
 		for _, component := range subsystem.Components {
 			projected.ComponentIDs = append(projected.ComponentIDs, component.ID)
@@ -235,6 +259,8 @@ func projectArchitectureLandscape(
 				ID: component.ID, SubsystemID: subsystem.ID,
 				Name: component.Name, Description: component.Description, Members: members,
 				ParticipatingFlowIDs: sortedArchitectureFlowIDs(participatingFlows),
+				AnchorIDs:            append([]string(nil), component.AnchorIDs...), Hypothesis: component.Hypothesis,
+				SourceIDs: append([]componentmap.ComponentID(nil), component.SourceIDs...),
 			})
 		}
 		canvas.Subsystems = append(canvas.Subsystems, projected)
@@ -252,6 +278,9 @@ func projectArchitectureStructuralFacts(
 ) {
 	for _, relation := range relations {
 		canvas.StructuralFacts = append(canvas.StructuralFacts, relation)
+		if relation.Kind == componentmap.StructuralRelationPackageImport {
+			continue
+		}
 
 		fromOwners := uniqueArchitectureComponentIDs(owners[relation.From])
 		toOwners := uniqueArchitectureComponentIDs(owners[relation.To])
@@ -271,6 +300,23 @@ func projectArchitectureStructuralFacts(
 			ToComponentID:   toOwners[0],
 			Witness:         relation,
 		})
+	}
+}
+
+func architectureGroundingWording(source componentmap.ArchitectureSource, mode componentmap.GroundingMode) (string, string) {
+	switch source {
+	case componentmap.SourceLocalAnchors:
+		return "Evidence-backed architecture skeleton", "Built from exact local architecture anchors"
+	case componentmap.SourcePackageFallback:
+		return "Package landscape", "Behavioral grounding was insufficient or the architecture proposal was rejected"
+	}
+	switch mode {
+	case componentmap.GroundingBehavior:
+		return "Behavioral architecture", "Evidence-backed process and runtime responsibilities"
+	case componentmap.GroundingMixed:
+		return "Architecture hypotheses and grounded behavior", "Some areas remain package-derived"
+	default:
+		return "Package landscape", "Behavioral grounding was insufficient or the architecture proposal was rejected"
 	}
 }
 
@@ -918,8 +964,14 @@ func architectureLandscapeDiagnostic(diagnostic componentmap.Diagnostic) Archite
 		copy := *diagnostic.Member
 		member = &copy
 	}
+	severity := "info"
+	if diagnostic.Severity == componentmap.FindingFatal {
+		severity = "error"
+	} else if diagnostic.Severity == componentmap.FindingRecoverable {
+		severity = "warning"
+	}
 	return newArchitectureDiagnostic(
-		"landscape", "warning", diagnostic.Code, diagnostic.Message, "", member,
+		"landscape", severity, diagnostic.Code, diagnostic.Message, "", member,
 	)
 }
 

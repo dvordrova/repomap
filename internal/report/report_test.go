@@ -128,6 +128,32 @@ func TestEnrich(t *testing.T) {
 	}
 }
 
+func TestEnrichSeparatesDirectionFlowSurfaceAndAnchorCounts(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		Run: &RunInfo{SurfaceDiscoveryRan: true, SurfaceDiscoveryCount: 0},
+		CandidateDirections: []CandidateDirection{
+			{ID: "startup", Disposition: flowexplain.DirectionAccepted},
+			{ID: "admin", Disposition: flowexplain.DirectionAccepted},
+			{ID: "threshold", Disposition: flowexplain.DirectionRejected, DispositionReason: "low confidence"},
+		},
+		Flows: []FlowData{{ID: "startup"}, {ID: "admin"}, {ID: "threshold"}},
+		ArchitectureGrounding: &ArchitectureGrounding{
+			BehaviorAnchors: make([]ArchitectureBehaviorAnchor, 13),
+		},
+	}
+	enrich(data)
+	if data.Run.ProposedDirectionCount != 3 || data.Run.AcceptedDirectionCount != 2 ||
+		data.Run.RejectedDirectionCount != 1 || data.Run.SavedFlowCount != 3 ||
+		data.Run.SurfaceDiscoveryCount != 0 || data.Run.ArchitectureAnchorCount != 13 {
+		t.Fatalf("run counts = %#v", data.Run)
+	}
+	if !data.Flows[2].EvidenceOnly {
+		t.Fatal("rejected threshold direction remained eligible for a visible flow tab")
+	}
+}
+
 func TestReadRunDir_Integration(t *testing.T) {
 	dir := t.TempDir()
 

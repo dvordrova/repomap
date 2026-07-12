@@ -1,5 +1,5 @@
 {
-  "format_version": 12,
+  "format_version": 14,
   "repo_name": "soft-serve",
   "project_guess": "Evidence-backed architecture and daemon lifecycle",
   "orientation_confidence": 0,
@@ -9,10 +9,17 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 1,
-    "landscape_version": 2,
+    "version": 3,
+    "landscape_version": 4,
     "flowproof_version": 2,
     "fallback": false,
+    "validation_outcome": "accepted",
+    "architecture_source": "validated_model",
+    "architecture_level": 1,
+    "repository_archetype": "daemon_worker_system",
+    "grounding_mode": "mixed",
+    "title": "Architecture hypotheses and grounded behavior",
+    "subtitle": "Some areas remain package-derived",
     "subsystems": [
       {
         "id": "subsystem-eaef4ab0f4a8c6d80d7a80fb3b3318690f381eb8f6703c9b67fa57223322c268",

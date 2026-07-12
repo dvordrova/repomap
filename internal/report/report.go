@@ -9,7 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 )
 
-const CurrentFormatVersion = 12
+const CurrentFormatVersion = 14
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
@@ -35,6 +35,7 @@ type ReportData struct {
 	ComponentRelations         []ComponentRelation          `json:"component_relations,omitempty"`
 	ArchitectureCanvas         *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
 	ArchitectureSynthesis      *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	ArchitectureGrounding      *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
 	DiscoveredSurfaces         *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
 	evidenceLocations          []evidence.Location
 	sourceSignals              []SourceSignal
@@ -112,6 +113,11 @@ type RunInfo struct {
 	ExternalRequestBytes    int    `json:"external_request_bytes,omitempty"`
 	ProviderRequestCount    int    `json:"provider_request_count,omitempty"`
 	CandidateDirectionCount int    `json:"candidate_direction_count,omitempty"`
+	ProposedDirectionCount  int    `json:"proposed_direction_count,omitempty"`
+	AcceptedDirectionCount  int    `json:"accepted_direction_count,omitempty"`
+	RejectedDirectionCount  int    `json:"rejected_direction_count,omitempty"`
+	SavedFlowCount          int    `json:"saved_flow_count,omitempty"`
+	ArchitectureAnchorCount int    `json:"architecture_anchor_count,omitempty"`
 	ProviderLatencyMillis   *int64 `json:"provider_latency_ms,omitempty"`
 	SurfaceDiscoveryRan     bool   `json:"surface_discovery_ran,omitempty"`
 	SurfaceDiscoveryCount   int    `json:"surface_discovery_count,omitempty"`
@@ -149,6 +155,8 @@ type CandidateDirection struct {
 	Confidence        float64                       `json:"confidence"`
 	LocalVerification *flowexplain.FlowVerification `json:"local_verification,omitempty"`
 	LocalProof        *flowproof.Session            `json:"local_proof,omitempty"`
+	Disposition       string                        `json:"disposition"`
+	DispositionReason string                        `json:"disposition_reason,omitempty"`
 }
 
 type FlowData struct {
@@ -239,7 +247,7 @@ func findBestFlow(flows []FlowData) string {
 	}
 	for i := range flows {
 		f := &flows[i]
-		if f.Error != "" || f.Summary == "" {
+		if f.Error != "" || f.Summary == "" || f.EvidenceOnly {
 			continue
 		}
 		if !best.hasData || f.Confidence > best.confidence || (f.Confidence == best.confidence && len(f.FilesToRead) > best.fileCount) {
@@ -255,16 +263,38 @@ func findBestFlow(flows []FlowData) string {
 func enrich(data *ReportData) {
 	data.FormatVersion = CurrentFormatVersion
 	data.FlowCount = len(data.Flows)
+	acceptedDirections := 0
+	rejectedDirections := 0
 	flowTypes := make(map[string]string, len(data.CandidateDirections))
+	dispositions := make(map[string]string, len(data.CandidateDirections))
 	for i := range data.CandidateDirections {
+		if data.CandidateDirections[i].Disposition == flowexplain.DirectionRejected {
+			rejectedDirections++
+		} else {
+			acceptedDirections++
+		}
 		flowTypes[data.CandidateDirections[i].ID] = data.CandidateDirections[i].FlowType
+		dispositions[data.CandidateDirections[i].ID] = data.CandidateDirections[i].Disposition
 	}
 	for i := range data.Flows {
 		if data.Flows[i].FlowType == "" {
 			data.Flows[i].FlowType = flowTypes[data.Flows[i].ID]
 		}
+		if dispositions[data.Flows[i].ID] == flowexplain.DirectionRejected {
+			data.Flows[i].EvidenceOnly = true
+		}
 		data.Flows[i].ConfidenceLabel = confidenceLabel(data.Flows[i].Confidence)
 		data.Flows[i].BundleStatsLabel = bundleStatsLabel(data.Flows[i].BundleSummary)
 	}
 	data.RecommendedFlow = findBestFlow(data.Flows)
+	if data.Run != nil {
+		data.Run.ProposedDirectionCount = len(data.CandidateDirections)
+		data.Run.CandidateDirectionCount = len(data.CandidateDirections)
+		data.Run.AcceptedDirectionCount = acceptedDirections
+		data.Run.RejectedDirectionCount = rejectedDirections
+		data.Run.SavedFlowCount = len(data.Flows)
+		if data.ArchitectureGrounding != nil {
+			data.Run.ArchitectureAnchorCount = len(data.ArchitectureGrounding.BehaviorAnchors)
+		}
+	}
 }

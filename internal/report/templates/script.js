@@ -31,10 +31,13 @@
     externalRequest: 'Provider request bodies',
     providerRequests: 'Provider requests',
     providerLatency: 'Orientation latency',
-    surfaceAnalysis: 'Surface analysis',
+    surfaceAnalysis: 'Runtime surfaces',
+    architectureAnchors: 'Architecture anchors',
     architectureGrouping: 'Architecture grouping',
-    directionsFound: 'Directions',
-    candidateFlows: 'Expanded directions',
+    directionsFound: 'Accepted directions',
+    rejectedDirections: 'Rejected suggestions',
+    savedFlows: 'Saved flow analyses',
+    candidateFlows: 'Saved flow analyses',
     candidateDirections: 'Directions to explore',
     directionHint: 'Choose a direction to get a focused starting point in the repository.',
     trigger: 'Starts when',
@@ -655,6 +658,15 @@
     });
   }
 
+  function architectureSourceLabel(value) {
+    return {
+      validated_model: 'validated model',
+      normalized_model: 'normalized model',
+      local_anchors: 'local anchors',
+      package_fallback: 'package fallback'
+    }[value] || 'unspecified';
+  }
+
   function renderDirectionField(label, value, code) {
     if (!value) return null;
     var row = el('div', 'rm-direction-field');
@@ -726,11 +738,15 @@
     var directionFlowType = renderFlowTypePill(direction);
     if (directionFlowType) header.appendChild(directionFlowType);
     if (isSuggestedStart) header.appendChild(renderPill(LABELS.suggestedStart));
+    if (direction.disposition === 'rejected') header.appendChild(renderPill('Not used as a flow'));
     header.appendChild(renderEvidenceBadge(direction.confidence, direction.local_verification));
     card.appendChild(header);
 
     if (direction.why_interesting) {
       card.appendChild(linkified('div', 'rm-summary-line', direction.why_interesting));
+    }
+    if (direction.disposition === 'rejected' && direction.disposition_reason) {
+      card.appendChild(txt('div', 'rm-direction-hint', direction.disposition_reason));
     }
 
     var trigger = renderDirectionField(LABELS.trigger, direction.trigger, false);
@@ -768,7 +784,7 @@
     }
 
     var focused = flowByID(direction.id);
-    if (focused) {
+    if (focused && direction.disposition !== 'rejected') {
       card.classList.add('rm-candidate-direction--clickable');
       card.setAttribute('role', 'button');
       card.setAttribute('tabindex', '0');
@@ -831,14 +847,15 @@
       if (DATA.run.provider_latency_ms !== undefined && DATA.run.provider_latency_ms !== null) {
         addFact(LABELS.providerLatency, DATA.run.provider_latency_ms + ' ms');
       }
-      if (DATA.run.candidate_direction_count) {
-        addFact(LABELS.directionsFound, String(DATA.run.candidate_direction_count));
-      }
+      addFact(LABELS.directionsFound, String(DATA.run.accepted_direction_count || 0));
+      addFact(LABELS.rejectedDirections, String(DATA.run.rejected_direction_count || 0));
+      addFact(LABELS.savedFlows, String(DATA.run.saved_flow_count || 0));
       if (DATA.run.surface_discovery_ran) {
         var surfaceValue = formatMillis(DATA.run.surface_discovery_ms);
         surfaceValue += ' · ' + String(DATA.run.surface_discovery_count || 0) + ' found';
         addFact(LABELS.surfaceAnalysis, surfaceValue);
       }
+      addFact(LABELS.architectureAnchors, String(DATA.run.architecture_anchor_count || 0) + ' static families');
       if (DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
         var architectureValue = architectureState === 'succeeded' ? 'Ready' :
@@ -1885,21 +1902,34 @@
   function renderDirectionsCard(directions, flows) {
     var card = el('div', 'rm-card');
     card.appendChild(txt('h2', '', LABELS.candidateDirections));
-    if (directions.length === 0) {
+    var acceptedDirections = directions.filter(function (direction) { return direction.disposition !== 'rejected'; });
+    var rejectedDirections = directions.filter(function (direction) { return direction.disposition === 'rejected'; });
+    if (acceptedDirections.length === 0) {
       card.appendChild(renderPlaceholder(LABELS.noFlows));
     } else {
       card.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
       var directionsGrid = el('div', 'rm-overview-flows');
-      var highestConfidence = Math.max.apply(null, directions.map(function (direction) {
+      var highestConfidence = Math.max.apply(null, acceptedDirections.map(function (direction) {
         return direction.confidence || 0;
       }));
-      directions.forEach(function (direction) {
+      acceptedDirections.forEach(function (direction) {
         directionsGrid.appendChild(renderCandidateDirectionCard(
           direction,
           (direction.confidence || 0) === highestConfidence
         ));
       });
       card.appendChild(directionsGrid);
+    }
+
+    if (rejectedDirections.length > 0) {
+      var rejected = el('details', 'rm-details');
+      rejected.appendChild(txt('summary', '', LABELS.rejectedDirections + ' · ' + rejectedDirections.length));
+      var rejectedGrid = el('div', 'rm-overview-flows');
+      rejectedDirections.forEach(function (direction) {
+        rejectedGrid.appendChild(renderCandidateDirectionCard(direction, false));
+      });
+      rejected.appendChild(rejectedGrid);
+      card.appendChild(rejected);
     }
 
     var expandedFlows = flows.filter(function (flow) { return !flow.evidence_only; });
@@ -2559,8 +2589,13 @@
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var architectureCard = el('section', 'rm-card rm-architecture-canvas-card');
       var architectureHeading = el('div', 'rm-architecture-canvas-heading');
-      architectureHeading.appendChild(txt('h2', null, 'Architecture & flows'));
-      architectureHeading.appendChild(txt('p', null, 'Select a component or one saved flow, then challenge each step through exact evidence.'));
+      architectureHeading.appendChild(txt('h2', null, DATA.architecture_canvas.title || 'Architecture & flows'));
+      architectureHeading.appendChild(txt('p', null, DATA.architecture_canvas.subtitle || 'Select a component or one saved flow, then challenge each step through exact evidence.'));
+      architectureHeading.appendChild(txt(
+        'div',
+        'rm-direction-hint',
+        'Architecture source: ' + architectureSourceLabel(DATA.architecture_canvas.architecture_source)
+      ));
       architectureCard.appendChild(architectureHeading);
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
       architectureCard.appendChild(architectureCanvasHost);

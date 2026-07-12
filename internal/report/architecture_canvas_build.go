@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 )
 
@@ -32,8 +33,9 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: report data is nil")
 	}
 
-	builder := newArchitectureCandidateBuilder(data.RepositoryGraph)
+	builder := newArchitectureCandidateBuilder(data.RepositoryGraph, data.ArchitectureGrounding)
 	builder.addRepositoryGraph(data.RepositoryGraph)
+	builder.addArchitectureGrounding(data.ArchitectureGrounding)
 
 	directions := append([]CandidateDirection(nil), data.CandidateDirections...)
 	sort.SliceStable(directions, func(i, j int) bool {
@@ -41,7 +43,15 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 	})
 	seenFlows := make(map[componentmap.FlowID]struct{}, len(directions))
 	for _, direction := range directions {
+		if direction.Disposition == flowexplain.DirectionRejected {
+			builder.diagnostics = append(builder.diagnostics, componentmap.Diagnostic{
+				Code: "builder.rejected_direction_omitted", Severity: componentmap.FindingAdvisory,
+				Message: fmt.Sprintf("direction %q remains available in analysis details but was not accepted as a flow", direction.Name),
+			})
+			continue
+		}
 		if direction.LocalProof == nil {
+			builder.assessUngroundedDirection(direction)
 			continue
 		}
 		flowID := componentmap.FlowID(direction.ID)
@@ -93,7 +103,10 @@ func ReplayArchitectureSynthesis(
 		saved,
 	)
 	if err != nil {
-		return input, fmt.Errorf("architecture canvas synthesis: %w", err)
+		landscape, err = componentmap.ReplayLegacyCapturedSynthesis(input.CandidateBundle, saved)
+		if err != nil {
+			return input, fmt.Errorf("architecture canvas synthesis: %w", err)
+		}
 	}
 	input.Landscape = landscape
 	return input, nil
@@ -109,6 +122,11 @@ type architectureCandidateBuilder struct {
 	flows              []ArchitectureFlowInput
 	diagnostics        []componentmap.Diagnostic
 	packageEdgeMembers map[string]struct{}
+	archetype          componentmap.RepositoryArchetype
+	groundingMode      componentmap.GroundingMode
+	behaviorAnchors    []componentmap.BehaviorAnchor
+	behaviorMembers    map[string]componentmap.MemberID
+	groundedPaths      map[string]struct{}
 }
 
 type architectureCandidateRecord struct {
@@ -116,7 +134,15 @@ type architectureCandidateRecord struct {
 	participations map[componentmap.FlowID]componentmap.LocalFact
 }
 
-func newArchitectureCandidateBuilder(graph *RepositoryGraph) *architectureCandidateBuilder {
+func newArchitectureCandidateBuilder(graph *RepositoryGraph, grounding *ArchitectureGrounding) *architectureCandidateBuilder {
+	archetype := componentmap.ArchetypeApplication
+	mode := componentmap.GroundingPackages
+	if grounding != nil {
+		archetype = grounding.RepositoryArchetype.Selected
+		mode = grounding.GroundingMode
+	} else if graph == nil || len(graph.PackageEdges) == 0 {
+		archetype = componentmap.ArchetypeLibraryFramework
+	}
 	return &architectureCandidateBuilder{
 		graph:              graph,
 		knownPackages:      make(map[string]componentmap.MemberID),
@@ -124,7 +150,216 @@ func newArchitectureCandidateBuilder(graph *RepositoryGraph) *architectureCandid
 		relations:          make(map[string]componentmap.LocalRelation),
 		bindings:           make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
 		packageEdgeMembers: make(map[string]struct{}),
+		archetype:          archetype,
+		groundingMode:      mode,
+		behaviorMembers:    make(map[string]componentmap.MemberID),
+		groundedPaths:      make(map[string]struct{}),
 	}
+}
+
+func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *ArchitectureGrounding) {
+	if grounding == nil {
+		return
+	}
+	for _, anchor := range sortedArchitectureGroundingAnchors(grounding.BehaviorAnchors) {
+		b.groundedPaths[anchor.Location.Path] = struct{}{}
+		memberIDs := make([]componentmap.MemberID, 0, len(anchor.AssociatedMembers))
+		for _, member := range anchor.AssociatedMembers {
+			location := member.Location
+			b.groundedPaths[location.Path] = struct{}{}
+			fileID := architectureBuildMemberID(componentmap.MemberFile, location.Path)
+			var packageID *componentmap.MemberID
+			if packagePath := b.packageForFile(location.Path); packagePath != "" {
+				id := b.knownPackages[packagePath]
+				packageID = &id
+			}
+			b.addCandidate(componentmap.Candidate{
+				ID: fileID, Name: location.Path, ParentID: packageID,
+				Facts: []componentmap.LocalFact{architectureBuildFact(
+					componentmap.FactRepositoryPath, location.Path, evidence.CertaintyStatic,
+					&evidence.Location{Path: location.Path}, "architecture_grounding",
+					"behavior_anchor_file", "file containing a deterministic behavior-anchor member",
+				)},
+			})
+			identity := strings.Join([]string{location.Path, strconv.Itoa(location.Line), strconv.Itoa(location.Column), member.ID}, "\x00")
+			symbolID := architectureBuildMemberID(componentmap.MemberSymbol, identity)
+			parentID := fileID
+			b.addCandidate(componentmap.Candidate{
+				ID: symbolID, Name: member.ID, ParentID: &parentID,
+				Facts: []componentmap.LocalFact{architectureBuildFact(
+					componentmap.FactDeclaration, member.ID, evidence.CertaintyStatic, &location,
+					"architecture_grounding", "behavior_anchor_member",
+					"exact declaration associated with a deterministic behavior anchor",
+				)},
+			})
+			memberIDs = append(memberIDs, symbolID)
+		}
+		if len(memberIDs) == 0 {
+			continue
+		}
+		sort.Slice(memberIDs, func(i, j int) bool { return memberIDs[i].Value < memberIDs[j].Value })
+		b.behaviorMembers[anchor.ID] = memberIDs[0]
+		producer := anchor.Producer
+		producer.Location = cloneArchitectureLocation(&anchor.Location)
+		b.behaviorAnchors = append(b.behaviorAnchors, componentmap.BehaviorAnchor{
+			ID: anchor.ID, Kind: anchor.Kind, Label: anchor.Label, Location: anchor.Location,
+			Scenario: componentmap.ScenarioContext{
+				ID: anchor.Scenario.ID, Name: "Recorded Go build scenario",
+				Build: evidence.BuildContext{GOOS: anchor.Scenario.GOOS, GOARCH: anchor.Scenario.GOARCH, BuildTags: append([]string(nil), anchor.Scenario.Tags...)},
+			},
+			Producer: producer, Certainty: anchor.Certainty, MemberIDs: memberIDs,
+			Limitations: append([]string(nil), anchor.Limitations...),
+		})
+	}
+	for _, relationship := range compactArchitectureGroundingRelationships(grounding) {
+		fromID, fromExists := b.behaviorMembers[relationship.From]
+		toID, toExists := b.behaviorMembers[relationship.To]
+		if !fromExists || !toExists || fromID == toID {
+			continue
+		}
+		key := "behavior\x00" + relationship.ID
+		producer := relationship.Producer
+		producer.Location = cloneArchitectureLocation(&relationship.Location)
+		producer.Detail = fmt.Sprintf(
+			"%d exact %s witness(es) across %d package(s)",
+			max(relationship.WitnessCount, 1), relationship.EvidenceKind, max(relationship.PackageCount, 1),
+		)
+		b.relations[key] = componentmap.LocalRelation{
+			ID: relationship.ID, From: fromID, To: toID,
+			Kind:     componentmap.StructuralRelationBehaviorHandoff,
+			Location: &relationship.Location, Certainty: relationship.Certainty,
+			Provenance: []evidence.Provenance{producer},
+			Scenarios: []componentmap.ScenarioContext{{
+				ID: grounding.BehaviorAnchors[0].Scenario.ID, Name: "Recorded Go build scenario",
+				Build: evidence.BuildContext{
+					GOOS:      grounding.BehaviorAnchors[0].Scenario.GOOS,
+					GOARCH:    grounding.BehaviorAnchors[0].Scenario.GOARCH,
+					BuildTags: append([]string(nil), grounding.BehaviorAnchors[0].Scenario.Tags...),
+				},
+			}},
+		}
+	}
+}
+
+func compactArchitectureGroundingRelationships(grounding *ArchitectureGrounding) []ArchitectureBehaviorHandoff {
+	anchorKinds := make(map[string]componentmap.BehaviorAnchorKind, len(grounding.BehaviorAnchors))
+	for _, anchor := range grounding.BehaviorAnchors {
+		anchorKinds[anchor.ID] = anchor.Kind
+	}
+	byKey := make(map[string]ArchitectureBehaviorHandoff)
+	packagesByKey := make(map[string]map[string]struct{})
+	for _, relationship := range grounding.Relationships {
+		kind := relationship.Kind
+		if kind == "bounded_direct_call" || !validArchitectureRelationshipKind(kind) {
+			kind = semanticArchitectureRelationshipKind(anchorKinds[relationship.From], anchorKinds[relationship.To])
+		}
+		key := relationship.From + "\x00" + relationship.To + "\x00" + kind
+		aggregated, exists := byKey[key]
+		if !exists {
+			aggregated = relationship
+			aggregated.ID = architectureBuildStableID("behavior-handoff", relationship.From, relationship.To, kind)
+			aggregated.Kind = kind
+			aggregated.EvidenceKind = "bounded_direct_call"
+			aggregated.WitnessIDs = nil
+			aggregated.RepresentativeLocations = nil
+			aggregated.WitnessCount = 0
+			aggregated.PackageCount = 0
+			packagesByKey[key] = make(map[string]struct{})
+		}
+		witnessIDs := relationship.WitnessIDs
+		if len(witnessIDs) == 0 {
+			witnessIDs = []string{relationship.ID}
+		}
+		aggregated.WitnessIDs = append(aggregated.WitnessIDs, witnessIDs...)
+		witnessCount := relationship.WitnessCount
+		if witnessCount == 0 {
+			witnessCount = len(witnessIDs)
+		}
+		aggregated.WitnessCount += witnessCount
+		locations := relationship.RepresentativeLocations
+		if len(locations) == 0 {
+			locations = []evidence.Location{relationship.Location}
+		}
+		for _, location := range locations {
+			if len(aggregated.RepresentativeLocations) < 8 {
+				aggregated.RepresentativeLocations = append(aggregated.RepresentativeLocations, location)
+			}
+			packagesByKey[key][path.Dir(location.Path)] = struct{}{}
+		}
+		aggregated.PackageCount = max(relationship.PackageCount, len(packagesByKey[key]))
+		byKey[key] = aggregated
+	}
+	result := make([]ArchitectureBehaviorHandoff, 0, len(byKey))
+	for key, relationship := range byKey {
+		sort.Strings(relationship.WitnessIDs)
+		relationship.WitnessIDs = compactArchitectureStrings(relationship.WitnessIDs)
+		if relationship.WitnessCount < len(relationship.WitnessIDs) {
+			relationship.WitnessCount = len(relationship.WitnessIDs)
+		}
+		relationship.PackageCount = max(relationship.PackageCount, len(packagesByKey[key]))
+		result = append(result, relationship)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func semanticArchitectureRelationshipKind(from, to componentmap.BehaviorAnchorKind) string {
+	switch {
+	case from == componentmap.AnchorProcessEntry && to == componentmap.AnchorCommandDispatch:
+		return "dispatches_to"
+	case from == componentmap.AnchorRegistryWrite && to == componentmap.AnchorExtensionFamily:
+		return "registers_extension_family"
+	case architectureConfigAnchorKind(from) && architectureConfigAnchorKind(to):
+		return "loads_or_adapts_config"
+	case from == componentmap.AnchorLifecycleInterface && to == componentmap.AnchorLifecycleStart:
+		return "starts_lifecycle"
+	case to == componentmap.AnchorAdminControlPlane:
+		return "exposes_admin_control_plane"
+	case to == componentmap.AnchorRequestDispatchRoot:
+		return "dispatches_http_request"
+	case to == componentmap.AnchorSecurityBoundary:
+		return "configures_security_boundary"
+	default:
+		return "static_call_supporting_relation"
+	}
+}
+
+func architectureConfigAnchorKind(kind componentmap.BehaviorAnchorKind) bool {
+	return kind == componentmap.AnchorConfigIngress || kind == componentmap.AnchorConfigAdapter || kind == componentmap.AnchorConfigApply
+}
+
+func compactArchitectureStrings(values []string) []string {
+	result := values[:0]
+	for _, value := range values {
+		if len(result) == 0 || result[len(result)-1] != value {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func (b *architectureCandidateBuilder) assessUngroundedDirection(direction CandidateDirection) {
+	paths := append([]string{direction.LikelyEntrypoint}, direction.LikelyFiles...)
+	for _, candidatePath := range paths {
+		if _, grounded := b.groundedPaths[candidatePath]; !grounded {
+			continue
+		}
+		b.diagnostics = append(b.diagnostics, componentmap.Diagnostic{
+			Code: "builder.direction_anchor_hypothesis", Severity: componentmap.FindingAdvisory,
+			Message: fmt.Sprintf(
+				"direction %q remains a hypothesis, but at least one supplied file contains an exact behavior anchor",
+				direction.Name,
+			),
+		})
+		return
+	}
+	b.diagnostics = append(b.diagnostics, componentmap.Diagnostic{
+		Code: "builder.ungrounded_direction_omitted", Severity: componentmap.FindingAdvisory,
+		Message: fmt.Sprintf(
+			"direction %q was omitted from primary architecture because it has no selected-flow proof or matching behavior anchor",
+			direction.Name,
+		),
+	})
 }
 
 func (b *architectureCandidateBuilder) addRepositoryGraph(graph *RepositoryGraph) {
@@ -134,7 +369,7 @@ func (b *architectureCandidateBuilder) addRepositoryGraph(graph *RepositoryGraph
 	for _, edge := range graph.PackageEdges {
 		if edge.From == "" || edge.To == "" || edge.From == edge.To {
 			b.diagnostics = append(b.diagnostics, componentmap.Diagnostic{
-				Code:    "builder.invalid_package_edge",
+				Code: "builder.invalid_package_edge", Severity: componentmap.FindingAdvisory,
 				Message: "a saved package edge was omitted because its exact endpoints were empty or identical",
 			})
 			continue
@@ -458,11 +693,14 @@ func (b *architectureCandidateBuilder) bundle() componentmap.CandidateBundle {
 	sort.Slice(b.flowFacts, func(i, j int) bool { return b.flowFacts[i].ID < b.flowFacts[j].ID })
 
 	return componentmap.CandidateBundle{
-		Version:        componentmap.ContractVersion,
-		Candidates:     candidates,
-		Flows:          append([]componentmap.Flow(nil), b.flowFacts...),
-		Relations:      relations,
-		AnchorBindings: bindings,
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: b.archetype,
+		GroundingMode:       b.groundingMode,
+		BehaviorAnchors:     append([]componentmap.BehaviorAnchor(nil), b.behaviorAnchors...),
+		Candidates:          candidates,
+		Flows:               append([]componentmap.Flow(nil), b.flowFacts...),
+		Relations:           relations,
+		AnchorBindings:      bindings,
 	}
 }
 

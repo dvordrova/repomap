@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/report"
@@ -99,7 +100,7 @@ func TestResticBackupV2FixturePreservesAuditedTopology(t *testing.T) {
 	if canvas == nil {
 		t.Fatal("architecture_canvas is missing")
 	}
-	if canvas.Version != report.ArchitectureCanvasVersion || canvas.LandscapeVersion != 2 || canvas.FlowProofVersion != flowproof.Version {
+	if canvas.Version != report.ArchitectureCanvasVersion || canvas.LandscapeVersion != componentmap.ContractVersion || canvas.FlowProofVersion != flowproof.Version {
 		t.Fatalf("canvas versions = %d/%d/%d", canvas.Version, canvas.LandscapeVersion, canvas.FlowProofVersion)
 	}
 	if len(canvas.Components) != 9 || len(canvas.Subsystems) != 4 {

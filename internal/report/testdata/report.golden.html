@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <link rel="icon" href="data:,">
   <title>repomap — testrepo — test project</title>
   <style>:root { --rm-bg: #fff; --rm-fg: #1a1a1a; --rm-card: #f5f5f5; --rm-border: #e0e0e0; --rm-accent: #2563eb; --rm-dim: #666; --rm-code: #d63384; --rm-good: #16a34a; --rm-warn: #ca8a04; --rm-bad: #dc2626; --rm-info: #0ea5e9; --rm-muted: #9ca3af; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 0; background: var(--rm-bg); color: var(--rm-fg); line-height: 1.5; font-size: 14px; }
@@ -397,7 +398,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":12,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":2,"proof":{"version":2,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}}}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":14,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":2,"proof":{"version":2,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
 
 
   <script>(function () {
@@ -433,10 +434,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     externalRequest: 'Provider request bodies',
     providerRequests: 'Provider requests',
     providerLatency: 'Orientation latency',
-    surfaceAnalysis: 'Surface analysis',
+    surfaceAnalysis: 'Runtime surfaces',
+    architectureAnchors: 'Architecture anchors',
     architectureGrouping: 'Architecture grouping',
-    directionsFound: 'Directions',
-    candidateFlows: 'Expanded directions',
+    directionsFound: 'Accepted directions',
+    rejectedDirections: 'Rejected suggestions',
+    savedFlows: 'Saved flow analyses',
+    candidateFlows: 'Saved flow analyses',
     candidateDirections: 'Directions to explore',
     directionHint: 'Choose a direction to get a focused starting point in the repository.',
     trigger: 'Starts when',
@@ -1057,6 +1061,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     });
   }
 
+  function architectureSourceLabel(value) {
+    return {
+      validated_model: 'validated model',
+      normalized_model: 'normalized model',
+      local_anchors: 'local anchors',
+      package_fallback: 'package fallback'
+    }[value] || 'unspecified';
+  }
+
   function renderDirectionField(label, value, code) {
     if (!value) return null;
     var row = el('div', 'rm-direction-field');
@@ -1128,11 +1141,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var directionFlowType = renderFlowTypePill(direction);
     if (directionFlowType) header.appendChild(directionFlowType);
     if (isSuggestedStart) header.appendChild(renderPill(LABELS.suggestedStart));
+    if (direction.disposition === 'rejected') header.appendChild(renderPill('Not used as a flow'));
     header.appendChild(renderEvidenceBadge(direction.confidence, direction.local_verification));
     card.appendChild(header);
 
     if (direction.why_interesting) {
       card.appendChild(linkified('div', 'rm-summary-line', direction.why_interesting));
+    }
+    if (direction.disposition === 'rejected' && direction.disposition_reason) {
+      card.appendChild(txt('div', 'rm-direction-hint', direction.disposition_reason));
     }
 
     var trigger = renderDirectionField(LABELS.trigger, direction.trigger, false);
@@ -1170,7 +1187,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }
 
     var focused = flowByID(direction.id);
-    if (focused) {
+    if (focused && direction.disposition !== 'rejected') {
       card.classList.add('rm-candidate-direction--clickable');
       card.setAttribute('role', 'button');
       card.setAttribute('tabindex', '0');
@@ -1233,14 +1250,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (DATA.run.provider_latency_ms !== undefined && DATA.run.provider_latency_ms !== null) {
         addFact(LABELS.providerLatency, DATA.run.provider_latency_ms + ' ms');
       }
-      if (DATA.run.candidate_direction_count) {
-        addFact(LABELS.directionsFound, String(DATA.run.candidate_direction_count));
-      }
+      addFact(LABELS.directionsFound, String(DATA.run.accepted_direction_count || 0));
+      addFact(LABELS.rejectedDirections, String(DATA.run.rejected_direction_count || 0));
+      addFact(LABELS.savedFlows, String(DATA.run.saved_flow_count || 0));
       if (DATA.run.surface_discovery_ran) {
         var surfaceValue = formatMillis(DATA.run.surface_discovery_ms);
         surfaceValue += ' · ' + String(DATA.run.surface_discovery_count || 0) + ' found';
         addFact(LABELS.surfaceAnalysis, surfaceValue);
       }
+      addFact(LABELS.architectureAnchors, String(DATA.run.architecture_anchor_count || 0) + ' static families');
       if (DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
         var architectureValue = architectureState === 'succeeded' ? 'Ready' :
@@ -2287,21 +2305,34 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function renderDirectionsCard(directions, flows) {
     var card = el('div', 'rm-card');
     card.appendChild(txt('h2', '', LABELS.candidateDirections));
-    if (directions.length === 0) {
+    var acceptedDirections = directions.filter(function (direction) { return direction.disposition !== 'rejected'; });
+    var rejectedDirections = directions.filter(function (direction) { return direction.disposition === 'rejected'; });
+    if (acceptedDirections.length === 0) {
       card.appendChild(renderPlaceholder(LABELS.noFlows));
     } else {
       card.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
       var directionsGrid = el('div', 'rm-overview-flows');
-      var highestConfidence = Math.max.apply(null, directions.map(function (direction) {
+      var highestConfidence = Math.max.apply(null, acceptedDirections.map(function (direction) {
         return direction.confidence || 0;
       }));
-      directions.forEach(function (direction) {
+      acceptedDirections.forEach(function (direction) {
         directionsGrid.appendChild(renderCandidateDirectionCard(
           direction,
           (direction.confidence || 0) === highestConfidence
         ));
       });
       card.appendChild(directionsGrid);
+    }
+
+    if (rejectedDirections.length > 0) {
+      var rejected = el('details', 'rm-details');
+      rejected.appendChild(txt('summary', '', LABELS.rejectedDirections + ' · ' + rejectedDirections.length));
+      var rejectedGrid = el('div', 'rm-overview-flows');
+      rejectedDirections.forEach(function (direction) {
+        rejectedGrid.appendChild(renderCandidateDirectionCard(direction, false));
+      });
+      rejected.appendChild(rejectedGrid);
+      card.appendChild(rejected);
     }
 
     var expandedFlows = flows.filter(function (flow) { return !flow.evidence_only; });
@@ -2961,8 +2992,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var architectureCard = el('section', 'rm-card rm-architecture-canvas-card');
       var architectureHeading = el('div', 'rm-architecture-canvas-heading');
-      architectureHeading.appendChild(txt('h2', null, 'Architecture & flows'));
-      architectureHeading.appendChild(txt('p', null, 'Select a component or one saved flow, then challenge each step through exact evidence.'));
+      architectureHeading.appendChild(txt('h2', null, DATA.architecture_canvas.title || 'Architecture & flows'));
+      architectureHeading.appendChild(txt('p', null, DATA.architecture_canvas.subtitle || 'Select a component or one saved flow, then challenge each step through exact evidence.'));
+      architectureHeading.appendChild(txt(
+        'div',
+        'rm-direction-hint',
+        'Architecture source: ' + architectureSourceLabel(DATA.architecture_canvas.architecture_source)
+      ));
       architectureCard.appendChild(architectureHeading);
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
       architectureCard.appendChild(architectureCanvasHost);
