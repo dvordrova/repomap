@@ -334,35 +334,119 @@ func commandHandler(function commandSyntaxFunction, functions map[string]command
 			if !ok {
 				return true
 			}
-			handler = firstLocalCall(callback.Body, functions, function.path, function.fset)
+			handler = callbackHandlerCall(callback.Body, functions, function.path, function.fset)
 		}
 		return true
 	})
 	return command, handler
 }
 
-func firstLocalCall(body *ast.BlockStmt, functions map[string]commandSyntaxFunction, path string, fileSet *token.FileSet) commandSyntaxCall {
+func callbackHandlerCall(
+	body *ast.BlockStmt,
+	functions map[string]commandSyntaxFunction,
+	path string,
+	fileSet *token.FileSet,
+) commandSyntaxCall {
+	returnedNames := make(map[string]struct{})
+	var directReturn commandSyntaxCall
+	ast.Inspect(body, func(node ast.Node) bool {
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+		statement, ok := node.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, result := range statement.Results {
+			if identifier, ok := result.(*ast.Ident); ok {
+				returnedNames[identifier.Name] = struct{}{}
+			}
+			call, ok := result.(*ast.CallExpr)
+			if !ok || directReturn.name != "" {
+				continue
+			}
+			directReturn = localSyntaxCall(call, functions, path, fileSet)
+		}
+		return false
+	})
+	if directReturn.name != "" {
+		return directReturn
+	}
+
+	var returnedResultCall commandSyntaxCall
+	ast.Inspect(body, func(node ast.Node) bool {
+		if returnedResultCall.name != "" {
+			return false
+		}
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok || !assignmentReturnsName(assignment.Lhs, returnedNames) {
+			return true
+		}
+		for _, expression := range assignment.Rhs {
+			call, ok := expression.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			returnedResultCall = localSyntaxCall(call, functions, path, fileSet)
+			if returnedResultCall.name != "" {
+				return false
+			}
+		}
+		return true
+	})
+	if returnedResultCall.name != "" {
+		return returnedResultCall
+	}
+
 	var result commandSyntaxCall
 	ast.Inspect(body, func(node ast.Node) bool {
 		if result.name != "" {
+			return false
+		}
+		if _, nested := node.(*ast.FuncLit); nested {
 			return false
 		}
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		candidate := simpleCallName(call)
-		if _, exists := functions[candidate]; exists {
-			position := fileSet.PositionFor(call.Lparen, false)
-			result = commandSyntaxCall{
-				name:     candidate,
-				location: evidence.Location{Path: path, Line: position.Line, Column: position.Column},
-			}
-			return false
-		}
-		return true
+		result = localSyntaxCall(call, functions, path, fileSet)
+		return result.name == ""
 	})
 	return result
+}
+
+func assignmentReturnsName(expressions []ast.Expr, returnedNames map[string]struct{}) bool {
+	for _, expression := range expressions {
+		identifier, ok := expression.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		if _, returned := returnedNames[identifier.Name]; returned {
+			return true
+		}
+	}
+	return false
+}
+
+func localSyntaxCall(
+	call *ast.CallExpr,
+	functions map[string]commandSyntaxFunction,
+	path string,
+	fileSet *token.FileSet,
+) commandSyntaxCall {
+	candidate := simpleCallName(call)
+	if _, exists := functions[candidate]; !exists {
+		return commandSyntaxCall{}
+	}
+	position := fileSet.PositionFor(call.Lparen, false)
+	return commandSyntaxCall{
+		name:     candidate,
+		location: evidence.Location{Path: path, Line: position.Line, Column: position.Column},
+	}
 }
 
 func meaningfulHandlerCalls(handler commandSyntaxFunction, functions map[string]commandSyntaxFunction) []CommandTraceCall {

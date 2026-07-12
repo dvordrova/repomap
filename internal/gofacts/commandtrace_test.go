@@ -248,6 +248,79 @@ func runBackup() error { return nil }
 	)
 }
 
+func TestCobraCommandReaderSelectsDelegatedCallback(t *testing.T) {
+	t.Parallel()
+
+	const mainSource = `package main
+
+func main() { newRootCommand().ExecuteContext() }
+
+func newRootCommand() *Command {
+	cmd := &Command{}
+	cmd.AddCommand(newTestCommand())
+	return cmd
+}
+`
+
+	tests := []struct {
+		name       string
+		callback   string
+		wantSymbol string
+	}{
+		{
+			name: "direct returned call after setup helper",
+			callback: `
+			finalizeOptions()
+			return runRestore()
+`,
+			wantSymbol: "runRestore",
+		},
+		{
+			name: "assigned call result returned later",
+			callback: `
+			finalizeOptions()
+			summary, err := runCheck()
+			_ = summary
+			return err
+`,
+			wantSymbol: "runCheck",
+		},
+		{
+			name:       "direct returned call remains stable",
+			callback:   "\n\t\t\treturn runInit()\n",
+			wantSymbol: "runInit",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			commandSource := `package main
+
+func newTestCommand() *Command {
+	return &Command{
+		Use: "test",
+		RunE: func() error {` + test.callback + `		},
+	}
+}
+
+func finalizeOptions() {}
+func runRestore() error { return nil }
+func runCheck() (string, error) { return "", nil }
+func runInit() error { return nil }
+`
+			trace := buildCommandTraceFixture(t, map[string]string{
+				"main.go":    mainSource,
+				"command.go": commandSource,
+			})
+			if got := trace.Steps[len(trace.Steps)-1].Symbol; got != test.wantSymbol {
+				t.Fatalf("application callable = %q, want %q; steps = %#v", got, test.wantSymbol, trace.Steps)
+			}
+		})
+	}
+}
+
 func buildCommandTraceFixture(t *testing.T, files map[string]string) CommandTrace {
 	t.Helper()
 
