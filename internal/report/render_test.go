@@ -283,6 +283,30 @@ func TestSourceIDsAreRenderedButNeverPersisted(t *testing.T) {
 	}
 }
 
+func TestSourceOpenBrowserContractUsesOpaqueIDsAndTypedFallback(t *testing.T) {
+	t.Parallel()
+
+	script, err := os.ReadFile(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`source_id: sourceID`,
+		`Opening in VS Code…`,
+		`VS Code is not available`,
+		`Copy repository-relative path`,
+		`Copy path:line:column`,
+		`Source changed since this report was generated`,
+	} {
+		if !bytes.Contains(script, []byte(required)) {
+			t.Fatalf("source-open browser contract is missing %q", required)
+		}
+	}
+	if bytes.Contains(script, []byte(`run_id: runID, path:`)) {
+		t.Fatal("source-open browser contract still sends a raw path")
+	}
+}
+
 func TestReportDoesNotRenderStaticFactsAsRuntimeSequence(t *testing.T) {
 	// Replaceable presentation contract: this test protects the previously
 	// misleading runtime sequence claim, not the current DOM structure.
