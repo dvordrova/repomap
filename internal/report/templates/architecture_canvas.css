@@ -77,6 +77,7 @@
 
 .rm-arch__flows {
  display: flex;
+ flex: 1 1 auto;
  gap: 6px;
  min-width: 0;
  overflow-x: auto;
@@ -96,6 +97,22 @@
  min-height: 34px;
  padding: 7px 11px;
  white-space: nowrap;
+}
+
+.rm-arch__diagnostic-control {
+ background: #fffbeb;
+ border-color: #f2cf78;
+ color: #92400e;
+ max-width: 190px;
+ overflow: hidden;
+ text-overflow: ellipsis;
+}
+
+.rm-arch__diagnostic-control:hover,
+.rm-arch__diagnostic-control.is-active {
+ background: var(--rm-arch-amber-soft);
+ border-color: #d89a32;
+ color: #78350f;
 }
 
 .rm-arch__flow-button:hover,
@@ -748,6 +765,18 @@
  background: var(--rm-arch-amber);
 }
 
+.rm-arch__group.is-singleton {
+ background: transparent;
+ border: 0;
+ border-radius: 12px;
+ box-shadow: none;
+ overflow: visible;
+}
+
+.rm-arch__group.is-singleton .rm-arch__group-header {
+ display: none;
+}
+
 .rm-arch__component {
  pointer-events: none;
  position: absolute;
@@ -781,6 +810,19 @@
  -webkit-box-orient: vertical;
  -webkit-line-clamp: 2;
  line-clamp: 2;
+}
+
+.rm-arch__component-group {
+ color: #64748b;
+ display: block;
+ font-size: 0.58rem;
+ font-weight: 800;
+ letter-spacing: 0.075em;
+ line-height: 1.1;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ text-transform: uppercase;
+ white-space: nowrap;
 }
 
 .rm-arch__component-description {
@@ -822,6 +864,11 @@
 .rm-arch__component.is-selected .rm-arch__component-card {
  border-color: var(--rm-arch-blue);
  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16), 0 8px 22px rgba(37, 99, 235, 0.12);
+}
+
+.rm-arch__component-card:hover {
+ border-color: #8fa7c5;
+ box-shadow: 0 7px 19px rgba(15, 23, 42, 0.1);
 }
 
 .rm-arch.has-selected-flow .rm-arch__component.is-unrelated {
