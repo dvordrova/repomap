@@ -25,6 +25,7 @@
  const LANDSCAPE_COMPONENT_GAP = 16;
  const LANDSCAPE_GROUP_GAP = 32;
  const LANDSCAPE_MARGIN = 28;
+ const SINGLETON_GROUP_HEIGHT = 132;
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -79,6 +80,50 @@
    if (heights[candidate] < heights[column]) column = candidate;
   });
   return column;
+ }
+
+ function childGridColumns(childCount, boardColumns) {
+  if (childCount <= 1 || boardColumns <= 1) return 1;
+  if (childCount >= 7 && boardColumns >= 5) return 3;
+  return 2;
+ }
+
+ function childGridShape(childCount, boardColumns) {
+  const columns = childGridColumns(childCount, boardColumns);
+  return {
+   columns: columns,
+   span: Math.max(1, Math.min(columns, boardColumns)),
+   singleton: childCount === 1,
+  };
+ }
+
+ function diagnosticSubsystemIDs(subsystems, diagnostics) {
+  const ids = new Set();
+  array(subsystems).forEach((subsystem) => {
+   const category = text(subsystem && (subsystem.category || subsystem.classification || subsystem.role)).toLowerCase();
+   if (["unresolved", "unassigned", "partial", "diagnostic"].indexOf(category) >= 0) {
+    ids.add(text(subsystem.id));
+   }
+  });
+  const hasPreservedRemainder = array(diagnostics).some((diagnostic) =>
+   text(diagnostic && diagnostic.code) === "proposal.omitted_members_preserved"
+  );
+  if (hasPreservedRemainder && array(subsystems).length > 0) {
+   ids.add(text(subsystems[subsystems.length - 1].id));
+  }
+  return Array.from(ids).sort();
+ }
+
+ function shortestCompatiblePlacement(heights, span) {
+  const boundedSpan = Math.max(1, Math.min(span, heights.length));
+  const candidates = [];
+  for (let column = 0; column <= heights.length - boundedSpan; column++) {
+   if (boundedSpan > 1 && column % boundedSpan !== 0) continue;
+   const y = Math.max.apply(null, heights.slice(column, column + boundedSpan));
+   candidates.push({ column: column, y: y });
+  }
+  candidates.sort((left, right) => left.y - right.y || left.column - right.column);
+  return candidates[0];
  }
 
  function memberLabel(memberID) {
@@ -245,9 +290,11 @@
    this.frontierElements = new Map();
    this.structuralEdgeElements = new Map();
    this.flowEdgeElements = new Map();
-    this.flowComponentIDs = new Map();
-    this.flowButtons = new Map();
-    this.focusFlowID = "";
+     this.flowComponentIDs = new Map();
+     this.flowButtons = new Map();
+     this.focusFlowID = "";
+     this.diagnosticComponentIDs = new Set();
+     this.singletonGroupIDs = new Set();
 
    this.indexData();
    this.buildShell();
@@ -312,8 +359,21 @@
    });
    toolbar.appendChild(flowNav);
 
-   const controls = element("div", "rm-arch__controls");
-   this.zoomOutButton = this.controlButton("−", "Zoom out", () => this.zoomBy(0.82));
+    const controls = element("div", "rm-arch__controls");
+    const diagnosticComponents = this.diagnosticComponents();
+    if (diagnosticComponents.length > 0) {
+     diagnosticComponents.forEach((component) => this.diagnosticComponentIDs.add(text(component.id)));
+     this.diagnosticButton = this.controlButton(
+      "Unassigned evidence · " + diagnosticComponents.length,
+      "Inspect exact evidence outside conceptual architecture",
+      () => this.setSelection({
+       flow: "", component: text(diagnosticComponents[0].id), step: "", edge: "",
+      }, true)
+     );
+     this.diagnosticButton.classList.add("rm-arch__diagnostic-control");
+     controls.appendChild(this.diagnosticButton);
+    }
+    this.zoomOutButton = this.controlButton("−", "Zoom out", () => this.zoomBy(0.82));
      this.fitButton = this.controlButton("Fit", "Fit entire architecture", () => this.fit());
    this.zoomInButton = this.controlButton("+", "Zoom in", () => this.zoomBy(1.22));
    controls.append(this.zoomOutButton, this.fitButton, this.zoomInButton);
@@ -345,6 +405,20 @@
    this.listen(button, "click", handler);
    return button;
   }
+
+   isDiagnosticSubsystem(subsystem) {
+    const id = text(subsystem && subsystem.id);
+    return diagnosticSubsystemIDs(this.subsystems, this.diagnostics).indexOf(id) >= 0;
+   }
+
+   diagnosticComponents() {
+    const componentIDs = new Set();
+    this.subsystems.forEach((subsystem) => {
+     if (!this.isDiagnosticSubsystem(subsystem)) return;
+     array(subsystem.component_ids).forEach((id) => componentIDs.add(text(id)));
+    });
+    return this.components.filter((component) => componentIDs.has(text(component.id)));
+   }
 
   listen(target, eventName, handler, options) {
    const settings = Object.assign({}, options || {}, { signal: this.events.signal });
@@ -391,7 +465,7 @@
    projectLandscapeGraph() {
     const componentIDsInSubsystems = new Set();
     const componentOwner = new Map();
-    const groups = [];
+    const allGroups = [];
     this.subsystems.forEach((subsystem) => {
      const id = text(subsystem.id);
      const componentIDs = array(subsystem.component_ids)
@@ -402,7 +476,12 @@
       componentIDsInSubsystems.add(componentID);
       componentOwner.set(componentID, id);
      });
-     groups.push({ id: id, subsystem: subsystem, componentIDs: componentIDs });
+     allGroups.push({
+      id: id,
+      subsystem: subsystem,
+      componentIDs: componentIDs,
+      diagnostic: this.isDiagnosticSubsystem(subsystem),
+     });
     });
 
     const ungrouped = this.components
@@ -410,11 +489,16 @@
      .filter((id) => !componentIDsInSubsystems.has(id));
     if (ungrouped.length > 0) {
      ungrouped.forEach((componentID) => componentOwner.set(componentID, "__ungrouped__"));
-     groups.push({ id: "__ungrouped__", subsystem: null, componentIDs: ungrouped });
+     allGroups.push({ id: "__ungrouped__", subsystem: null, componentIDs: ungrouped, diagnostic: true });
     }
 
+    const diagnosticGroups = allGroups.filter((group) => group.diagnostic);
+    const groups = allGroups.filter((group) => !group.diagnostic);
+    const architectureGroupIDs = new Set(groups.map((group) => group.id));
+    const architectureComponentIDs = new Set();
+    groups.forEach((group) => group.componentIDs.forEach((id) => architectureComponentIDs.add(id)));
     const adjacency = new Map(groups.map((group) => [group.id, new Set()]));
-    const componentAdjacency = new Map(this.components.map((component) => [text(component.id), new Set()]));
+    const componentAdjacency = new Map(Array.from(architectureComponentIDs).map((id) => [id, new Set()]));
     const pairKeys = new Set();
     const componentPairKeys = new Set();
     const edges = [];
@@ -431,7 +515,7 @@
      }
      const fromGroupID = componentOwner.get(fromComponentID);
      const toGroupID = componentOwner.get(toComponentID);
-     if (!fromGroupID || !toGroupID || fromGroupID === toGroupID) return;
+     if (!architectureGroupIDs.has(fromGroupID) || !architectureGroupIDs.has(toGroupID) || fromGroupID === toGroupID) return;
      const pairKey = fromGroupID + "\u0000" + toGroupID;
      if (pairKeys.has(pairKey)) return;
      pairKeys.add(pairKey);
@@ -476,6 +560,7 @@
     ) || null;
     return {
      groups: groups,
+     diagnosticGroups: diagnosticGroups,
      edges: edges,
      adjacency: adjacency,
      componentAdjacency: componentAdjacency,
@@ -522,6 +607,8 @@
     const importance = this.numericPriority(rightSubsystem.importance || rightSubsystem.rank) -
      this.numericPriority(leftSubsystem.importance || leftSubsystem.rank);
     if (importance !== 0) return importance;
+    const participation = this.groupFlowParticipation(right) - this.groupFlowParticipation(left);
+    if (participation !== 0) return participation;
     const degree = (projection.adjacency.get(right.id) || new Set()).size -
      (projection.adjacency.get(left.id) || new Set()).size;
     if (degree !== 0) return degree;
@@ -529,6 +616,15 @@
      return right.componentIDs.length - left.componentIDs.length;
     }
     return left.id.localeCompare(right.id);
+   }
+
+   groupFlowParticipation(group) {
+    const flowIDs = new Set();
+    group.componentIDs.forEach((id) => {
+     const component = this.componentByID.get(id);
+     array(component && component.participating_flow_ids).forEach((flowID) => flowIDs.add(text(flowID)));
+    });
+    return flowIDs.size;
    }
 
    orderedLandscapeGroups(projection) {
@@ -570,6 +666,10 @@
     return ordered;
    }
 
+   orderedBoardGroups(projection) {
+    return projection.groups.slice().sort((left, right) => this.compareLandscapeGroups(projection, left, right));
+   }
+
    orderedGroupComponents(group, projection) {
     return group.componentIDs.slice().sort((leftID, rightID) => {
      const left = this.componentByID.get(leftID) || {};
@@ -577,6 +677,8 @@
      const importance = this.numericPriority(right.importance || right.rank) -
       this.numericPriority(left.importance || left.rank);
      if (importance !== 0) return importance;
+     const participation = array(right.participating_flow_ids).length - array(left.participating_flow_ids).length;
+     if (participation !== 0) return participation;
      const degree = (projection.componentAdjacency.get(rightID) || new Set()).size -
       (projection.componentAdjacency.get(leftID) || new Set()).size;
      if (degree !== 0) return degree;
@@ -587,16 +689,36 @@
    }
 
    groupMetrics(group, width, childColumns) {
-    const columns = Math.max(1, Math.min(childColumns || 1, group.componentIDs.length));
-    const componentWidth = (width - GROUP_PADDING * 2 - LANDSCAPE_COMPONENT_GAP * (columns - 1)) / columns;
+     const columns = Math.max(1, Math.min(childColumns || 1, group.componentIDs.length));
+     if (group.componentIDs.length === 1) {
+      return {
+       width: width,
+       height: SINGLETON_GROUP_HEIGHT,
+       columns: 1,
+       componentWidth: width,
+       singleton: true,
+      };
+     }
+     const componentWidth = (width - GROUP_PADDING * 2 - LANDSCAPE_COMPONENT_GAP * (columns - 1)) / columns;
     const rows = Math.ceil(group.componentIDs.length / columns);
     return {
      width: width,
      height: GROUP_HEADER + GROUP_PADDING + rows * LANDSCAPE_COMPONENT_HEIGHT +
       Math.max(0, rows - 1) * LANDSCAPE_COMPONENT_GAP,
-     columns: columns,
-     componentWidth: componentWidth,
-    };
+      columns: columns,
+      componentWidth: componentWidth,
+      singleton: false,
+     };
+   }
+
+   boardGroupMetrics(group, profile) {
+    const shape = childGridShape(group.componentIDs.length, profile.columns);
+    const columns = shape.columns;
+    const span = shape.span;
+    const width = span * profile.groupWidth + Math.max(0, span - 1) * LANDSCAPE_GROUP_GAP;
+    const metrics = this.groupMetrics(group, width, columns);
+    metrics.span = span;
+    return metrics;
    }
 
    placeLandscapeGroup(group, metrics, x, y, projection) {
@@ -606,7 +728,17 @@
      width: metrics.width,
      height: metrics.height,
     });
+    if (metrics.singleton) this.singletonGroupIDs.add(group.id);
     this.orderedGroupComponents(group, projection).forEach((componentID, index) => {
+     if (metrics.singleton) {
+      this.nodePositions.set(componentID, {
+       x: x,
+       y: y,
+       width: metrics.width,
+       height: metrics.height,
+      });
+      return;
+     }
      const column = index % metrics.columns;
      const row = Math.floor(index / metrics.columns);
      this.nodePositions.set(componentID, {
@@ -626,27 +758,31 @@
    }
 
    packLandscapeGroups(groups, projection, profile, startY) {
-    const heights = Array(profile.columns).fill(startY);
-    const preference = this.centeredColumnOrder(profile.columns);
-    groups.forEach((group) => {
-     const metrics = this.groupMetrics(group, profile.groupWidth, 1);
-     const column = shortestColumnIndex(heights, preference);
-     const x = LANDSCAPE_MARGIN + column * (profile.groupWidth + LANDSCAPE_GROUP_GAP);
-     const y = heights[column];
-     this.placeLandscapeGroup(group, metrics, x, y, projection);
-     heights[column] = y + metrics.height + LANDSCAPE_GROUP_GAP;
-    });
+     const heights = Array(profile.columns).fill(startY);
+     groups.forEach((group) => {
+      const metrics = this.boardGroupMetrics(group, profile);
+      const placement = shortestCompatiblePlacement(heights, metrics.span);
+      const x = LANDSCAPE_MARGIN + placement.column * (profile.groupWidth + LANDSCAPE_GROUP_GAP);
+      const y = placement.y;
+      this.placeLandscapeGroup(group, metrics, x, y, projection);
+      const nextHeight = y + metrics.height + LANDSCAPE_GROUP_GAP;
+      for (let index = placement.column; index < placement.column + metrics.span; index++) {
+       heights[index] = nextHeight;
+      }
+     });
     return heights;
    }
 
    layoutArchitectureBoard(projection) {
     this.nodePositions.clear();
-    this.groupPositions.clear();
-    this.edgeRoutes.clear();
+     this.groupPositions.clear();
+     this.edgeRoutes.clear();
+     this.singletonGroupIDs.clear();
     const profile = this.boardProfile();
-    const groups = this.orderedLandscapeGroups(projection);
+     const groups = this.orderedBoardGroups(projection);
     const heights = this.packLandscapeGroups(groups, projection, profile, LANDSCAPE_MARGIN);
-    this.primaryGroupIDs = new Set(projection.primaryRegion ? projection.primaryRegion.groupIDs : []);
+     this.primaryGroupIDs = new Set(projection.primaryRegion ? projection.primaryRegion.groupIDs : []);
+     this.initialGroupIDs = new Set(groups.slice(0, Math.min(4, groups.length)).map((group) => group.id));
     this.buildLandscapeEdgeRoutes();
     return {
      width: LANDSCAPE_MARGIN * 2 + profile.columns * profile.groupWidth +
@@ -659,8 +795,9 @@
     const primaryIDs = new Set(projection.primaryRegion ? projection.primaryRegion.groupIDs : []);
     const groups = projection.groups.filter((group) => primaryIDs.has(group.id));
     const children = groups.map((group) => {
-     const columns = group.componentIDs.length >= 4 ? 2 : 1;
-     const width = columns === 2 ? 612 : 320;
+      const columns = childGridColumns(group.componentIDs.length, 4);
+      const width = columns * COMPONENT_WIDTH + GROUP_PADDING * 2 +
+       Math.max(0, columns - 1) * LANDSCAPE_COMPONENT_GAP;
      const metrics = this.groupMetrics(group, width, columns);
      return { id: layoutSubsystemID(group.id), width: metrics.width, height: metrics.height };
     });
@@ -711,15 +848,16 @@
      this.root.dataset.layoutMode = this.landscapeLayoutMode + "-board";
      return this.layoutArchitectureBoard(projection);
     }
-    this.nodePositions.clear();
-    this.groupPositions.clear();
-    this.edgeRoutes.clear();
+     this.nodePositions.clear();
+     this.groupPositions.clear();
+     this.edgeRoutes.clear();
+     this.singletonGroupIDs.clear();
     const groupByID = new Map(projection.groups.map((group) => [group.id, group]));
     array(layout.children).forEach((node) => {
      const id = text(node.id).replace(/^subsystem:/, "");
      const group = groupByID.get(id);
      if (!group) return;
-     const columns = group.componentIDs.length >= 4 ? 2 : 1;
+      const columns = childGridColumns(group.componentIDs.length, 4);
      const metrics = this.groupMetrics(group, Number(node.width || 320), columns);
      this.placeLandscapeGroup(group, metrics, Number(node.x || 0), Number(node.y || 0), projection);
     });
@@ -727,14 +865,19 @@
     const remaining = this.orderedLandscapeGroups(projection).filter((group) => !primaryIDs.has(group.id));
     let width = Math.max(1, Number(layout.width || 1));
     let height = Math.max(1, Number(layout.height || 1));
-    if (remaining.length > 0) {
+     if (remaining.length > 0) {
      const profile = this.boardProfile();
      const heights = this.packLandscapeGroups(remaining, projection, profile, height + LANDSCAPE_GROUP_GAP);
      width = Math.max(width, LANDSCAPE_MARGIN * 2 + profile.columns * profile.groupWidth +
       Math.max(0, profile.columns - 1) * LANDSCAPE_GROUP_GAP);
-     height = Math.max.apply(null, heights) - LANDSCAPE_GROUP_GAP + LANDSCAPE_MARGIN;
-    }
-    this.primaryGroupIDs = primaryIDs;
+      height = Math.max.apply(null, heights) - LANDSCAPE_GROUP_GAP + LANDSCAPE_MARGIN;
+     }
+     if (height > width * 1.15) {
+      this.root.dataset.layoutMode = this.landscapeLayoutMode + "-board";
+      return this.layoutArchitectureBoard(projection);
+     }
+     this.primaryGroupIDs = primaryIDs;
+     this.initialGroupIDs = new Set(this.orderedLandscapeGroups(projection).slice(0, 4).map((group) => group.id));
     this.buildLandscapeEdgeRoutes();
     return {
      width: width,
@@ -809,10 +952,11 @@
 
    renderGroups() {
     this.subsystems.forEach((subsystem) => {
-    const position = this.groupPositions.get(text(subsystem.id));
-    if (!position) return;
-     const category = this.semanticCategory(subsystem, "neutral");
-     const group = element("section", "rm-arch__group is-" + category);
+     const position = this.groupPositions.get(text(subsystem.id));
+     if (!position) return;
+      const category = this.semanticCategory(subsystem, "neutral");
+      const singleton = this.singletonGroupIDs.has(text(subsystem.id));
+      const group = element("section", "rm-arch__group is-" + category + (singleton ? " is-singleton" : ""));
      group.style.left = position.x + "px";
     group.style.top = position.y + "px";
     group.style.width = position.width + "px";
@@ -847,18 +991,23 @@
   renderComponents() {
    this.components.forEach((component) => {
     const id = text(component.id);
-    const position = this.nodePositions.get(id);
-    if (!position) return;
-     const category = this.semanticCategory(component, "neutral");
-     const shell = element("article", "rm-arch__component is-" + category);
+     const position = this.nodePositions.get(id);
+     if (!position) return;
+      const subsystem = this.subsystemByID.get(text(component.subsystem_id));
+      const singleton = this.singletonGroupIDs.has(text(component.subsystem_id));
+      const category = this.semanticCategory(component, this.semanticCategory(subsystem, "neutral"));
+      const shell = element("article", "rm-arch__component is-" + category + (singleton ? " is-singleton" : ""));
     shell.style.left = position.x + "px";
     shell.style.top = position.y + "px";
     shell.style.width = position.width + "px";
     shell.style.height = position.height + "px";
 
-     const button = element("button", "rm-arch__component-card");
-     button.type = "button";
-     button.title = text(component.name || id);
+      const button = element("button", "rm-arch__component-card");
+      button.type = "button";
+      button.title = text(component.name || id);
+      if (singleton && subsystem) {
+       button.appendChild(element("span", "rm-arch__component-group", subsystem.name || subsystem.id));
+      }
      button.appendChild(element("strong", "rm-arch__component-name", component.name || id));
      if (component.description) {
       button.appendChild(element("span", "rm-arch__component-description", component.description));
@@ -1830,8 +1979,11 @@
     const flowID = this.selection.flow;
     const hasFlow = Boolean(flowID);
    this.root.classList.toggle("has-selected-flow", hasFlow);
-   this.landscapeButton.classList.toggle("is-active", !hasFlow);
-    this.flowButtons.forEach((button, id) => button.classList.toggle("is-active", id === flowID));
+    this.landscapeButton.classList.toggle("is-active", !hasFlow);
+     this.flowButtons.forEach((button, id) => button.classList.toggle("is-active", id === flowID));
+     if (this.diagnosticButton) {
+      this.diagnosticButton.classList.toggle("is-active", this.diagnosticComponentIDs.has(this.selection.component));
+     }
     this.surface.hidden = hasFlow;
     this.flowFocus.hidden = !hasFlow;
     if (hasFlow) this.renderFocusedFlow(this.flowByID.get(flowID));
@@ -2173,9 +2325,12 @@
   global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });
   if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
    Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
-    landscapeLayoutMode: landscapeLayoutMode,
-    boardProfileForWidth: boardProfileForWidth,
-    shortestColumnIndex: shortestColumnIndex,
+     landscapeLayoutMode: landscapeLayoutMode,
+     boardProfileForWidth: boardProfileForWidth,
+     shortestColumnIndex: shortestColumnIndex,
+     childGridShape: childGridShape,
+     shortestCompatiblePlacement: shortestCompatiblePlacement,
+     diagnosticSubsystemIDs: diagnosticSubsystemIDs,
    });
   }
 })(window);

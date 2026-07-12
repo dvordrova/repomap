@@ -58,6 +58,20 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "Landscape groups flatten and exclude diagnostic remainder",
+			asset: js + css,
+			tokens: []string{
+				"childGridShape(childCount, boardColumns)",
+				"shortestCompatiblePlacement(heights, span)",
+				"diagnosticSubsystemIDs(subsystems, diagnostics)",
+				"diagnosticGroups: diagnosticGroups",
+				"SINGLETON_GROUP_HEIGHT",
+				"rm-arch__diagnostic-control",
+				".rm-arch__group.is-singleton",
+				"rm-arch__component-group",
+			},
+		},
+		{
 			name:  "separate evidence layers and branch semantics",
 			asset: js,
 			tokens: []string{
