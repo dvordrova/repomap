@@ -7,6 +7,7 @@
   });
   var OPENABLE_PATH_SET = {};
   OPENABLE_PATHS.forEach(function (path) { OPENABLE_PATH_SET[path] = true; });
+  var SOURCE_IDS = DATA.source_ids || {};
   var toastTimer = null;
   var symbolLookupStates = {};
   var symbolLookupViews = {};
@@ -35,11 +36,11 @@
     architectureAnchors: 'Architecture anchors',
     snapshotFreshness: 'Analyzed-input freshness',
     architectureGrouping: 'Architecture grouping',
-    directionsFound: 'Accepted directions',
+    directionsFound: 'Suggested investigations',
     rejectedDirections: 'Rejected suggestions',
-    savedFlows: 'Saved flow analyses',
-    candidateFlows: 'Saved flow analyses',
-    candidateDirections: 'Directions to explore',
+    savedFlows: 'Saved traces',
+    candidateFlows: 'Saved traces',
+    candidateDirections: 'Suggested investigations',
     directionHint: 'Choose a direction to get a focused starting point in the repository.',
     trigger: 'Starts when',
     likelyEntrypoint: 'Likely entrypoint',
@@ -146,24 +147,69 @@
     toastTimer = window.setTimeout(function () { toast.hidden = true; }, 2600);
   }
 
-  function requestOpenFile(filePath, line) {
+  function copyText(value) {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return;
+    navigator.clipboard.writeText(value).then(function () {
+      showToast('Copied ' + value, false);
+    }).catch(function () {});
+  }
+
+  function showEditorUnavailable(filePath, line, column) {
+    var toast = document.getElementById('rm-toast');
+    if (!toast) return;
+    var location = filePath + (line ? ':' + line : '') + (column ? ':' + column : '');
+    toast.replaceChildren();
+    toast.className = 'rm-toast rm-toast--error rm-toast--fallback';
+    toast.appendChild(txt('strong', '', 'VS Code is not available'));
+    var actions = el('span', 'rm-toast-actions');
+    var relative = txt('button', '', 'Copy repository-relative path');
+    relative.type = 'button';
+    relative.onclick = function () { copyText(filePath); };
+    var exact = txt('button', '', 'Copy path:line:column');
+    exact.type = 'button';
+    exact.onclick = function () { copyText(location); };
+    actions.append(relative, exact);
+    toast.appendChild(actions);
+    toast.hidden = false;
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () { toast.hidden = true; }, 8000);
+  }
+
+  function requestOpenFile(filePath, line, column) {
     var runID = currentRunID();
-    if (!serverMode() || !runID) return;
-    fetch(serverBasePath() + '/api/open', {
+    var sourceID = SOURCE_IDS[filePath];
+    if (!serverMode() || !runID || !sourceID) return Promise.resolve();
+    var openingTimer = window.setTimeout(function () {
+      showToast('Opening in VS Code…', false);
+    }, 250);
+    return fetch(serverBasePath() + '/api/open', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Repomap-Action': 'open-file',
       },
-      body: JSON.stringify({ run_id: runID, path: filePath, line: line || 0 }),
+      body: JSON.stringify({ run_id: runID, source_id: sourceID, line: line || 0, column: column || 0 }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || 'editor action failed');
+        if (!response.ok) {
+          var error = new Error(body.error || 'editor action failed');
+          error.code = body.code || '';
+          throw error;
+        }
         return body;
       });
     }).then(function () {
-      showToast('Opened ' + filePath + (line ? ':' + line : '') + ' in VS Code', false);
+      window.clearTimeout(openingTimer);
+      var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
+      var message = 'Opened ' + filePath + (line ? ':' + line : '') + ' in VS Code';
+      if (stale) message += ' · Source changed since this report was generated';
+      showToast(message, false);
     }).catch(function (error) {
+      window.clearTimeout(openingTimer);
+      if (error.code === 'editor_unavailable') {
+        showEditorUnavailable(filePath, line || 0, column || 0);
+        return;
+      }
       showToast(error.message || 'Could not open file in VS Code', true);
     });
   }
@@ -183,7 +229,7 @@
     button.onclick = function (event) {
       event.preventDefault();
       event.stopPropagation();
-      requestOpenFile(filePath, line || 0);
+      requestOpenFile(filePath, line || 0, 0);
     };
     return button;
   }
@@ -851,9 +897,14 @@
       if (DATA.run.provider_latency_ms !== undefined && DATA.run.provider_latency_ms !== null) {
         addFact(LABELS.providerLatency, DATA.run.provider_latency_ms + ' ms');
       }
-      addFact(LABELS.directionsFound, String(DATA.run.accepted_direction_count || 0));
+      addFact(LABELS.directionsFound, String(DATA.run.suggested_investigation_count || 0));
       addFact(LABELS.rejectedDirections, String(DATA.run.rejected_direction_count || 0));
-      addFact(LABELS.savedFlows, String(DATA.run.saved_flow_count || 0));
+      addFact('Discovered surfaces', String(DATA.run.discovered_surface_count || 0));
+      addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
+      addFact('Complete traces', String(DATA.run.complete_trace_count || 0));
+      addFact('Partial traces', String(DATA.run.partial_trace_count || 0));
+      addFact('Unresolved traces', String(DATA.run.unresolved_trace_count || 0));
+      addFact('Failed trace attempts', String(DATA.run.failed_trace_attempt_count || 0));
       if (DATA.run.surface_discovery_ran) {
         var surfaceValue = formatMillis(DATA.run.surface_discovery_ms);
         surfaceValue += ' · ' + String(DATA.run.surface_discovery_count || 0) + ' found';
@@ -2536,10 +2587,10 @@
 
   // ── Tab management ──────────────────────────────────────────────
 
-  function renderGuidedFlowMenu(flows) {
+  function renderSavedTraceMenu(flows) {
     if (!flows || flows.length === 0) return null;
     var menu = el('details', 'rm-guided-flow-menu');
-    var defaultLabel = 'Guided flows (' + flows.length + ')';
+    var defaultLabel = 'Saved traces (' + flows.length + ')';
     var summary = txt('summary', 'rm-guided-flow-summary', defaultLabel);
     summary.id = 'rm-guided-flow-summary';
     summary.setAttribute('data-default-label', defaultLabel);
@@ -2583,7 +2634,7 @@
     });
     var flowSummary = document.getElementById('rm-guided-flow-summary');
     if (flowSummary) {
-      flowSummary.textContent = activeFlowLabel ? 'Guided flow · ' + activeFlowLabel : flowSummary.getAttribute('data-default-label');
+      flowSummary.textContent = activeFlowLabel ? 'Saved trace · ' + activeFlowLabel : flowSummary.getAttribute('data-default-label');
     }
   }
 
@@ -2622,8 +2673,10 @@
     overviewTab.setAttribute('aria-current', 'page');
     overviewTab.onclick = function () { showTab('rm-overview'); };
     tabs.appendChild(overviewTab);
-    var guidedFlows = renderGuidedFlowMenu(DATA.flows);
-    if (guidedFlows) tabs.appendChild(guidedFlows);
+    if (!DATA.architecture_canvas) {
+      var savedTraceMenu = renderSavedTraceMenu(DATA.flows);
+      if (savedTraceMenu) tabs.appendChild(savedTraceMenu);
+    }
 
     var overview = document.getElementById('rm-overview');
     var overviewHTML = el('div');
@@ -2637,7 +2690,7 @@
       var architectureCard = el('section', 'rm-card rm-architecture-canvas-card');
       var architectureHeading = el('div', 'rm-architecture-canvas-heading');
       architectureHeading.appendChild(txt('h2', null, DATA.architecture_canvas.title || 'Architecture & flows'));
-      architectureHeading.appendChild(txt('p', null, DATA.architecture_canvas.subtitle || 'Select a component or one saved flow, then challenge each step through exact evidence.'));
+      architectureHeading.appendChild(txt('p', null, DATA.architecture_canvas.subtitle || 'Select a component, surface, or saved trace, then challenge each step through exact evidence.'));
       architectureHeading.appendChild(txt(
         'div',
         'rm-direction-hint',
@@ -2676,11 +2729,14 @@
     if (architectureCanvasHost) {
       var architectureOptions = {};
       if (serverMode() && currentRunID()) {
-        architectureOptions.openLocation = function (filePath, line) {
+        architectureOptions.openLocation = function (filePath, line, column) {
           if (!OPENABLE_PATH_SET[filePath]) return;
-          requestOpenFile(filePath, line || 0);
+          return requestOpenFile(filePath, line || 0, column || 0);
         };
       }
+      architectureOptions.candidateDirections = directions;
+      architectureOptions.savedFlows = DATA.flows;
+      architectureOptions.stalePaths = new Set((DATA.freshness && DATA.freshness.affected_paths) || []);
       architectureCanvasView = window.RepomapArchitectureCanvas.mount(
         architectureCanvasHost,
         DATA.architecture_canvas,
@@ -2697,9 +2753,28 @@
       if (serverMode() && currentRunID()) {
         surfaceOptions.openLocation = function (location) {
           if (!location || !OPENABLE_PATH_SET[location.path]) return;
-          requestOpenFile(location.path, location.line || 0);
+          return requestOpenFile(location.path, location.line || 0, location.column || 0);
         };
       }
+      surfaceOptions.openTrace = function (flowID) {
+        if (architectureCanvasView) {
+          architectureCanvasView.openTrace(flowID);
+          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      surfaceOptions.openSurface = function (surfaceID) {
+        if (architectureCanvasView) {
+          architectureCanvasView.openSurface(surfaceID);
+          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      surfaceOptions.openComponent = function (componentID) {
+        if (architectureCanvasView) {
+          architectureCanvasView.openComponent(componentID);
+          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      surfaceOptions.architectureSurfaces = (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [];
       surfaceCatalogView = window.RepomapSurfaceCatalog.mount(
         surfaceCatalogHost,
         DATA.discovered_surfaces,
@@ -2709,7 +2784,7 @@
 
     var flowsContainer = document.getElementById('rm-flows-container');
     flowsContainer.innerHTML = '';
-    DATA.flows.forEach(function (f) {
+    if (!DATA.architecture_canvas) DATA.flows.forEach(function (f) {
       var page = el('div', 'rm-tab-content');
       page.id = 'rm-flow-' + f.id;
       page.appendChild(renderFlowPage(f));

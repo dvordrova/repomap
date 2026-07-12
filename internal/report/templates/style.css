@@ -284,8 +284,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-file-link { background: none; border: 0; border-bottom: 1px dotted currentColor; color: var(--rm-code); cursor: pointer; font: inherit; margin: 0; padding: 0; text-align: left; }
 .rm-file-link:hover, .rm-file-link:focus-visible { border-bottom-style: solid; color: var(--rm-accent); outline: none; }
 .rm-file-link::after { content: ' ↗'; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: .7em; opacity: .65; }
-.rm-toast { background: #1e293b; border-radius: 6px; bottom: 1rem; color: #fff; font-size: .78rem; left: 50%; max-width: min(90vw, 36rem); padding: .55rem .8rem; position: fixed; transform: translateX(-50%); z-index: 10; }
+.rm-toast { background: #1e293b; border-radius: 6px; bottom: 1rem; color: #fff; font-size: .78rem; left: 50%; max-width: min(90vw, 42rem); padding: .55rem .8rem; position: fixed; transform: translateX(-50%); z-index: 120; }
 .rm-toast.rm-toast--error { background: var(--rm-bad); }
+.rm-toast--fallback { display: grid; gap: .45rem; }
+.rm-toast-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.rm-toast-actions button { background: #fff; border: 0; border-radius: 5px; color: #991b1b; cursor: pointer; font: inherit; font-size: .7rem; padding: .3rem .45rem; }
 
 /* Tags */
 .rm-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }

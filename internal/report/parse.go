@@ -411,6 +411,7 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	linkArchitectureProductObjects(data)
 
 	enrich(data)
 

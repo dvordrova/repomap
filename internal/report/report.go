@@ -31,6 +31,7 @@ type ReportData struct {
 	Warnings                   []string                     `json:"warnings,omitempty"`
 	Run                        *RunInfo                     `json:"run,omitempty"`
 	OpenablePaths              []string                     `json:"openable_paths,omitempty"`
+	SourceIDs                  map[string]string            `json:"source_ids,omitempty"`
 	RepositoryGraph            *RepositoryGraph             `json:"repository_graph,omitempty"`
 	Components                 []Component                  `json:"components,omitempty"`
 	ComponentRelations         []ComponentRelation          `json:"component_relations,omitempty"`
@@ -127,22 +128,29 @@ type ComponentRelation struct {
 // this report. It intentionally excludes credentials, prompts, responses, and
 // the provider endpoint.
 type RunInfo struct {
-	CreatedAt               string `json:"created_at,omitempty"`
-	Model                   string `json:"model,omitempty"`
-	PromptVersion           string `json:"prompt_version,omitempty"`
-	CompactContextBytes     int    `json:"compact_context_bytes,omitempty"`
-	ExternalRequestBytes    int    `json:"external_request_bytes,omitempty"`
-	ProviderRequestCount    int    `json:"provider_request_count,omitempty"`
-	CandidateDirectionCount int    `json:"candidate_direction_count,omitempty"`
-	ProposedDirectionCount  int    `json:"proposed_direction_count,omitempty"`
-	AcceptedDirectionCount  int    `json:"accepted_direction_count,omitempty"`
-	RejectedDirectionCount  int    `json:"rejected_direction_count,omitempty"`
-	SavedFlowCount          int    `json:"saved_flow_count,omitempty"`
-	ArchitectureAnchorCount int    `json:"architecture_anchor_count,omitempty"`
-	ProviderLatencyMillis   *int64 `json:"provider_latency_ms,omitempty"`
-	SurfaceDiscoveryRan     bool   `json:"surface_discovery_ran,omitempty"`
-	SurfaceDiscoveryCount   int    `json:"surface_discovery_count,omitempty"`
-	SurfaceDiscoveryMillis  *int64 `json:"surface_discovery_ms,omitempty"`
+	CreatedAt                   string `json:"created_at,omitempty"`
+	Model                       string `json:"model,omitempty"`
+	PromptVersion               string `json:"prompt_version,omitempty"`
+	CompactContextBytes         int    `json:"compact_context_bytes,omitempty"`
+	ExternalRequestBytes        int    `json:"external_request_bytes,omitempty"`
+	ProviderRequestCount        int    `json:"provider_request_count,omitempty"`
+	CandidateDirectionCount     int    `json:"candidate_direction_count,omitempty"`
+	ProposedDirectionCount      int    `json:"proposed_direction_count,omitempty"`
+	AcceptedDirectionCount      int    `json:"accepted_direction_count,omitempty"`
+	RejectedDirectionCount      int    `json:"rejected_direction_count,omitempty"`
+	SavedFlowCount              int    `json:"saved_flow_count,omitempty"`
+	ArchitectureAnchorCount     int    `json:"architecture_anchor_count,omitempty"`
+	ProviderLatencyMillis       *int64 `json:"provider_latency_ms,omitempty"`
+	SurfaceDiscoveryRan         bool   `json:"surface_discovery_ran,omitempty"`
+	SurfaceDiscoveryCount       int    `json:"surface_discovery_count,omitempty"`
+	SurfaceDiscoveryMillis      *int64 `json:"surface_discovery_ms,omitempty"`
+	SuggestedInvestigationCount int    `json:"suggested_investigation_count,omitempty"`
+	DiscoveredSurfaceCount      int    `json:"discovered_surface_count,omitempty"`
+	SavedTraceCount             int    `json:"saved_trace_count,omitempty"`
+	CompleteTraceCount          int    `json:"complete_trace_count,omitempty"`
+	PartialTraceCount           int    `json:"partial_trace_count,omitempty"`
+	UnresolvedTraceCount        int    `json:"unresolved_trace_count,omitempty"`
+	FailedTraceAttemptCount     int    `json:"failed_trace_attempt_count,omitempty"`
 }
 
 // Subsystem is one grounded component from the orientation-stage system map.
@@ -316,6 +324,51 @@ func enrich(data *ReportData) {
 		data.Run.SavedFlowCount = len(data.Flows)
 		if data.ArchitectureGrounding != nil {
 			data.Run.ArchitectureAnchorCount = len(data.ArchitectureGrounding.BehaviorAnchors)
+		}
+		refreshProductCounts(data)
+	}
+}
+
+func refreshProductCounts(data *ReportData) {
+	if data == nil || data.Run == nil {
+		return
+	}
+	data.Run.SuggestedInvestigationCount = 0
+	data.Run.DiscoveredSurfaceCount = 0
+	data.Run.SavedTraceCount = 0
+	data.Run.CompleteTraceCount = 0
+	data.Run.PartialTraceCount = 0
+	data.Run.UnresolvedTraceCount = 0
+	data.Run.FailedTraceAttemptCount = 0
+	traced := make(map[string]struct{})
+	if data.ArchitectureCanvas != nil {
+		data.Run.DiscoveredSurfaceCount = len(data.ArchitectureCanvas.Surfaces)
+		data.Run.SavedTraceCount = len(data.ArchitectureCanvas.Flows)
+		for _, trace := range data.ArchitectureCanvas.Flows {
+			traced[string(trace.ID)] = struct{}{}
+			switch trace.Status {
+			case "complete":
+				data.Run.CompleteTraceCount++
+			case "partial":
+				data.Run.PartialTraceCount++
+			default:
+				data.Run.UnresolvedTraceCount++
+			}
+		}
+	} else if data.DiscoveredSurfaces != nil {
+		data.Run.DiscoveredSurfaceCount = len(data.DiscoveredSurfaces.Triggers)
+	}
+	for _, direction := range data.CandidateDirections {
+		if direction.Disposition == flowexplain.DirectionRejected {
+			continue
+		}
+		if _, saved := traced[direction.ID]; !saved {
+			data.Run.SuggestedInvestigationCount++
+		}
+	}
+	for _, flow := range data.Flows {
+		if flow.Error != "" {
+			data.Run.FailedTraceAttemptCount++
 		}
 	}
 }

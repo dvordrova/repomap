@@ -2,7 +2,7 @@
  "use strict";
 
  const SVG_NS = "http://www.w3.org/2000/svg";
- const HASH_KEYS = ["flow", "component", "step", "edge"];
+ const HASH_KEYS = ["flow", "component", "surface", "step", "edge"];
  const COMPONENT_WIDTH = 268;
  const COMPONENT_HEADER_HEIGHT = 82;
  const CHIP_HEIGHT = 27;
@@ -296,17 +296,20 @@
    this.events = new AbortController();
    this.view = { x: 0, y: 0, scale: 1 };
    this.drag = null;
-   this.selection = {
-    flow: "",
-    component: "",
-    step: "",
-    edge: "",
-   };
+    this.selection = {
+     flow: "",
+     component: "",
+     surface: "",
+     step: "",
+     edge: "",
+    };
 
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
    this.structuralEdges = array(this.data.structural_edges);
-   this.flows = array(this.data.flows);
+    this.flows = array(this.data.flows);
+    this.surfaces = array(this.data.surfaces);
+    this.candidateDirections = array(this.options.candidateDirections);
    this.flowEdges = array(this.data.flow_edges);
    this.frontiers = array(this.data.frontiers);
    this.diagnostics = array(this.data.diagnostics);
@@ -315,7 +318,9 @@
     this.anchorByID = new Map();
    this.subsystemByID = new Map();
    this.structuralEdgeByID = new Map();
-   this.flowByID = new Map();
+    this.flowByID = new Map();
+    this.surfaceByID = new Map();
+    this.directionByID = new Map();
    this.flowEdgesByKey = new Map();
    this.flowStepsByKey = new Map();
    this.flowBranchesByKey = new Map();
@@ -330,7 +335,10 @@
    this.flowEdgeElements = new Map();
      this.flowComponentIDs = new Map();
      this.flowButtons = new Map();
-     this.focusFlowID = "";
+      this.focusFlowID = "";
+      this.landscapeView = null;
+      this.landscapeComponentID = "";
+      this.returnHighlightIDs = new Set();
      this.diagnosticComponentIDs = new Set();
      this.singletonGroupIDs = new Set();
 
@@ -353,7 +361,7 @@
     if (edge && edge.id) this.structuralEdgeByID.set(text(edge.id), edge);
    });
 
-   this.flows.forEach((flow) => {
+    this.flows.forEach((flow) => {
     if (!flow || !flow.id) return;
     const flowID = text(flow.id);
     this.flowByID.set(flowID, flow);
@@ -362,6 +370,12 @@
      if (branch && branch.id) {
       this.flowBranchesByKey.set(selectionKey(flowID, branch.id), branch);
      }
+    });
+    this.surfaces.forEach((surface) => {
+     if (surface && surface.id) this.surfaceByID.set(text(surface.id), surface);
+    });
+    this.candidateDirections.forEach((direction) => {
+     if (direction && direction.id) this.directionByID.set(text(direction.id), direction);
     });
     array(flow.steps).forEach((step) => {
      if (!step || !step.id) return;
@@ -382,22 +396,42 @@
    this.root = element("section", "rm-arch");
 
    const toolbar = element("div", "rm-arch__toolbar");
-   const flowNav = element("nav", "rm-arch__flows");
-    this.landscapeButton = element("button", "rm-arch__flow-button is-active", this.data.title || "Landscape");
-   this.landscapeButton.type = "button";
-   this.listen(this.landscapeButton, "click", () => {
-    this.setSelection({ flow: "", component: "", step: "", edge: "" }, true);
-   });
-   flowNav.appendChild(this.landscapeButton);
-   this.flows.forEach((flow) => {
-    const button = element("button", "rm-arch__flow-button", flow.name || flow.id);
-    button.type = "button";
-    this.listen(button, "click", () => {
-     this.setSelection({ flow: text(flow.id), component: "", step: "", edge: "" }, true);
+    const flowNav = element("nav", "rm-arch__flows");
+     this.landscapeButton = element("button", "rm-arch__flow-button is-active", "Architecture");
+    this.landscapeButton.type = "button";
+    this.listen(this.landscapeButton, "click", () => {
+     this.backToArchitecture();
     });
-    this.flowButtons.set(text(flow.id), button);
-    flowNav.appendChild(button);
-   });
+    flowNav.appendChild(this.landscapeButton);
+    if (this.flows.length > 0) {
+     this.traceMenu = element("details", "rm-arch__trace-menu");
+     this.traceMenuSummary = element("summary", "rm-arch__flow-button", "Saved traces (" + this.flows.length + ")");
+     this.traceMenu.appendChild(this.traceMenuSummary);
+     const traceList = element("div", "rm-arch__trace-list");
+     this.flows.forEach((flow) => {
+      const button = element("button", "rm-arch__trace-option");
+      button.type = "button";
+      button.appendChild(element("strong", null, flow.name || flow.id));
+      button.appendChild(element(
+       "span",
+       null,
+       [flow.trigger || flow.command, flow.status, array(flow.participating_component_ids).length + " components"]
+        .filter(Boolean)
+        .join(" · ")
+      ));
+      if (flow.status !== "complete" && flow.frontier_summary) {
+       button.appendChild(element("small", null, "Frontier: " + flow.frontier_summary));
+      }
+      this.listen(button, "click", () => {
+       this.traceMenu.open = false;
+       this.openTrace(flow.id);
+      });
+      this.flowButtons.set(text(flow.id), button);
+      traceList.appendChild(button);
+     });
+     this.traceMenu.appendChild(traceList);
+     flowNav.appendChild(this.traceMenu);
+    }
    toolbar.appendChild(flowNav);
 
     const controls = element("div", "rm-arch__controls");
@@ -430,13 +464,22 @@
      this.viewport.append(this.loading, this.flowFocus, this.viewportHint);
    workspace.appendChild(this.viewport);
 
-   this.inspector = element("aside", "rm-arch__inspector");
-   workspace.appendChild(this.inspector);
-   this.root.appendChild(workspace);
+    this.drawerBackdrop = element("button", "rm-arch__drawer-backdrop");
+    this.drawerBackdrop.type = "button";
+    this.drawerBackdrop.setAttribute("aria-label", "Close inspector");
+    this.drawerBackdrop.hidden = true;
+    this.listen(this.drawerBackdrop, "click", () => this.closeInspector());
+    this.inspector = element("aside", "rm-arch__inspector");
+    this.inspector.setAttribute("aria-label", "Architecture inspector");
+    workspace.appendChild(this.inspector);
+    this.root.append(workspace, this.drawerBackdrop);
 
    this.host.appendChild(this.root);
    this.installViewportInteractions();
-   this.listen(global, "hashchange", () => this.restoreHash(true));
+    this.listen(global, "hashchange", () => this.restoreHash(true));
+    this.listen(global, "keydown", (event) => {
+     if (event.key === "Escape" && this.hasInspectorSelection(this.selection)) this.closeInspector();
+    });
   }
 
   controlButton(label, title, handler) {
@@ -1061,15 +1104,15 @@
      if (component.description) {
       button.appendChild(element("span", "rm-arch__component-description", component.description));
      }
-     const metadata = [
-      array(component.members).length + " exact member" + (array(component.members).length === 1 ? "" : "s"),
-      array(component.participating_flow_ids).length > 0 ? array(component.participating_flow_ids).length + " saved flow" +
-       (array(component.participating_flow_ids).length === 1 ? "" : "s") : "",
-     ].filter(Boolean).join(" · ");
+      const metadata = [
+       array(component.owned_surface_ids).length + " surface" + (array(component.owned_surface_ids).length === 1 ? "" : "s"),
+       array(component.participating_flow_ids).length + " saved trace" +
+        (array(component.participating_flow_ids).length === 1 ? "" : "s"),
+      ].filter(Boolean).join(" · ");
      button.appendChild(element("span", "rm-arch__component-meta", metadata));
     this.listen(button, "click", () => {
      const selected = this.selection.component === id && !this.selection.step && !this.selection.edge;
-     this.setSelection({ component: selected ? "" : id, step: "", edge: "" }, true);
+      this.setSelection({ component: selected ? "" : id, surface: "", step: "", edge: "" }, true);
     });
     shell.appendChild(button);
     this.nodeLayer.appendChild(shell);
@@ -1650,12 +1693,37 @@
    const operations = this.focusedOperationEdges(flow, primary);
    const handoffs = this.focusedHandoffEdges(flow, primary);
    const proof = this.focusedProofSummary(flow);
-   const evidenceDisclosure = this.focusedEvidenceDisclosure(flow);
-   const header = element("header", "rm-arch__focus-header");
-   const heading = element("div", "rm-arch__focus-heading");
-   heading.appendChild(element("span", "rm-arch__focus-kicker", "Evidence-backed command trace"));
-   heading.appendChild(element("h3", null, flow.name || flow.id));
-   heading.appendChild(element("p", null, flow.trigger || flow.mental_model || flow.goal || "Saved exact flow evidence"));
+    const evidenceDisclosure = this.focusedEvidenceDisclosure(flow);
+    const header = element("header", "rm-arch__focus-header");
+    const back = element("button", "rm-arch__focus-back", "← Back to architecture");
+    back.type = "button";
+    this.listen(back, "click", () => this.backToArchitecture());
+    header.appendChild(back);
+    const heading = element("div", "rm-arch__focus-heading");
+    heading.appendChild(element("span", "rm-arch__focus-kicker", "Saved trace"));
+    heading.appendChild(element("h3", null, flow.name || flow.id));
+    heading.appendChild(element("p", null, flow.why_inspect || flow.mental_model || flow.goal || "Inspect the exact static handoffs and current frontier."));
+    const summary = element("dl", "rm-arch__trace-summary");
+    const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
+    this.appendSummaryItem(summary, "Started from", startSurface && (startSurface.name || startSurface.id) || flow.trigger || flow.command || "Explicit investigation");
+    this.appendSummaryItem(summary, "Trace status", flow.status || "unresolved");
+    this.appendSummaryItem(summary, "Evidence basis", flow.evidence_basis || "static");
+    this.appendSummaryItem(summary, "Grounding", Number(flow.grounded_areas || proof.grounded) + "/" + Number(flow.total_areas || proof.total) + " areas grounded");
+    this.appendSummaryItem(summary, "Frontier", flow.frontier_summary || "No explicit frontier was saved");
+    const participating = element("div", "rm-arch__trace-participants");
+    participating.appendChild(element("dt", null, "Participating components"));
+    const participantValues = element("dd");
+    array(flow.participating_component_ids).forEach((componentID) => {
+     const component = this.componentByID.get(text(componentID));
+     const button = element("button", null, component && (component.name || component.id) || componentID);
+     button.type = "button";
+     this.listen(button, "click", () => this.setSelection({ component: text(componentID), surface: "", step: "", edge: "" }, true));
+     participantValues.appendChild(button);
+    });
+    if (participantValues.childElementCount === 0) participantValues.appendChild(element("span", null, "Unassigned"));
+    participating.appendChild(participantValues);
+    summary.appendChild(participating);
+    heading.appendChild(summary);
    const proofNode = element("div", "rm-arch__focus-proof is-" + proof.status);
    proofNode.appendChild(element("strong", null, proof.grounded + "/" + proof.total + " proof areas grounded"));
    const proofCopy = [];
@@ -1678,7 +1746,7 @@
    stats.appendChild(element("strong", null, array(flow.steps).length + " exact anchors"));
    stats.appendChild(element("span", null, flowEdges.length + " evidenced transitions"));
    stats.appendChild(element("span", null, array(flow.branches).length + " trace lanes"));
-   header.appendChild(stats);
+    header.appendChild(stats);
    this.flowFocus.appendChild(header);
 
    if (primary.length > 0) {
@@ -1998,29 +2066,72 @@
   }
 
    setSelection(patch, writeHash) {
-     const previousComponent = this.selection.component;
+     const previous = this.selection;
      const next = Object.assign({}, this.selection, patch || {});
      this.selection = this.validateSelection(next);
+     if (!previous.flow && this.selection.flow) {
+      this.landscapeView = Object.assign({}, this.view);
+      this.landscapeComponentID = previous.component;
+      this.returnHighlightIDs = new Set();
+     }
+     if (previous.flow && !this.selection.flow) {
+      this.returnHighlightIDs = new Set(this.flowComponentIDs.get(previous.flow) || []);
+     }
+     if (this.selection.flow && this.selection.component) {
+      this.landscapeComponentID = this.selection.component;
+     }
      if (writeHash) this.writeHash();
      this.renderSelection();
-     if (!this.selection.flow && this.selection.component && this.selection.component !== previousComponent) {
-      requestAnimationFrame(() => this.focusComponent(this.selection.component, true));
+     if (previous.flow && !this.selection.flow && this.landscapeView) {
+      this.view = Object.assign({}, this.landscapeView);
+      this.applyView(false);
      }
     }
 
+   openTrace(flowID) {
+    flowID = text(flowID);
+    if (!this.flowByID.has(flowID)) return;
+    this.setSelection({ flow: flowID, component: "", surface: "", step: "", edge: "" }, true);
+   }
+
+   openSurface(surfaceID) {
+    surfaceID = text(surfaceID);
+    if (!this.surfaceByID.has(surfaceID)) return;
+    this.setSelection({ flow: "", component: "", surface: surfaceID, step: "", edge: "" }, true);
+   }
+
+   openComponent(componentID) {
+    componentID = text(componentID);
+    if (!this.componentByID.has(componentID)) return;
+    this.setSelection({ flow: "", component: componentID, surface: "", step: "", edge: "" }, true);
+   }
+
+   backToArchitecture() {
+    const component = this.landscapeComponentID && this.componentByID.has(this.landscapeComponentID)
+     ? this.landscapeComponentID
+     : "";
+    this.setSelection({ flow: "", component: component, surface: "", step: "", edge: "" }, true);
+   }
+
+   closeInspector() {
+    this.setSelection({ component: "", surface: "", step: "", edge: "" }, true);
+   }
+
   hasInspectorSelection(selection) {
-   return Boolean(selection && (selection.component || selection.step || selection.edge));
+   return Boolean(selection && (selection.component || selection.surface || selection.step || selection.edge));
   }
 
   validateSelection(selection) {
    const next = {
-    flow: text(selection.flow),
-    component: text(selection.component),
+     flow: text(selection.flow),
+     component: text(selection.component),
+     surface: text(selection.surface),
     step: text(selection.step),
     edge: text(selection.edge),
    };
    if (next.flow && !this.flowByID.has(next.flow)) next.flow = "";
-   if (next.component && !this.componentByID.has(next.component)) next.component = "";
+    if (next.component && !this.componentByID.has(next.component)) next.component = "";
+    if (next.surface && !this.surfaceByID.has(next.surface)) next.surface = "";
 
    if (next.step) {
     if (!next.flow || !this.flowStepsByKey.has(flowStepKey(next.flow, next.step))) next.step = "";
@@ -2037,7 +2148,8 @@
    const params = new URLSearchParams(global.location.hash.replace(/^#/, ""));
    return {
     flow: params.get("flow") || "",
-    component: params.get("component") || "",
+     component: params.get("component") || "",
+     surface: params.get("surface") || "",
     step: params.get("step") || "",
     edge: params.get("edge") || "",
    };
@@ -2052,7 +2164,8 @@
    const params = new URLSearchParams(global.location.hash.replace(/^#/, ""));
    HASH_KEYS.forEach((key) => params.delete(key));
    if (this.selection.flow) params.set("flow", this.selection.flow);
-   if (this.selection.component) params.set("component", this.selection.component);
+    if (this.selection.component) params.set("component", this.selection.component);
+    if (this.selection.surface) params.set("surface", this.selection.surface);
    if (this.selection.step) params.set("step", this.selection.step);
    if (this.selection.edge) params.set("edge", this.selection.edge);
    const hash = params.toString();
@@ -2068,7 +2181,8 @@
     const flowID = this.selection.flow;
     const hasFlow = Boolean(flowID);
    this.root.classList.toggle("has-selected-flow", hasFlow);
-    this.landscapeButton.classList.toggle("is-active", !hasFlow);
+     this.landscapeButton.classList.toggle("is-active", !hasFlow);
+     this.landscapeButton.textContent = hasFlow ? "← Back to architecture" : "Architecture";
      this.flowButtons.forEach((button, id) => button.classList.toggle("is-active", id === flowID));
      if (this.diagnosticButton) {
       this.diagnosticButton.classList.toggle("is-active", this.diagnosticComponentIDs.has(this.selection.component));
@@ -2079,10 +2193,11 @@
     this.syncFocusedSelection();
 
    const relatedComponents = this.flowComponentIDs.get(flowID) || new Set();
-   this.componentElements.forEach((node, id) => {
-    node.classList.toggle("is-selected", id === this.selection.component);
+    this.componentElements.forEach((node, id) => {
+     node.classList.toggle("is-selected", id === this.selection.component);
     node.classList.toggle("is-unrelated", hasFlow && !relatedComponents.has(id));
-    node.classList.toggle("is-flow-related", hasFlow && relatedComponents.has(id));
+     node.classList.toggle("is-flow-related", hasFlow && relatedComponents.has(id));
+     node.classList.toggle("is-return-highlighted", !hasFlow && this.returnHighlightIDs.has(id));
    });
 
    this.structuralSVG.classList.remove("is-suppressed");
@@ -2133,21 +2248,31 @@
 
   renderInspector() {
    const visible = this.hasInspectorSelection(this.selection);
-   this.root.classList.toggle("has-detail-inspector", visible);
-   this.inspector.hidden = !visible;
-   this.inspector.replaceChildren();
-   if (!visible) return;
+    this.root.classList.toggle("has-detail-inspector", visible);
+    this.inspector.hidden = !visible;
+    this.drawerBackdrop.hidden = !visible;
+    this.inspector.replaceChildren();
+    if (!visible) return;
+    const close = element("button", "rm-arch__inspector-close", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close inspector");
+    this.listen(close, "click", () => this.closeInspector());
+    this.inspector.appendChild(close);
    if (this.selection.step && this.selection.flow) {
     const step = this.flowStepsByKey.get(flowStepKey(this.selection.flow, this.selection.step));
     if (step) return this.inspectStep(this.flowByID.get(this.selection.flow), step);
    }
-   if (this.selection.edge) {
+    if (this.selection.edge) {
     const flowEdge = this.selection.flow && this.flowEdgesByKey.get(selectionKey(this.selection.flow, this.selection.edge));
     if (flowEdge) return this.inspectFlowEdge(flowEdge);
     const structuralEdge = this.structuralEdgeByID.get(this.selection.edge);
-    if (structuralEdge) return this.inspectStructuralEdge(structuralEdge);
-   }
-   if (this.selection.component) {
+     if (structuralEdge) return this.inspectStructuralEdge(structuralEdge);
+    }
+    if (this.selection.surface) {
+     const surface = this.surfaceByID.get(this.selection.surface);
+     if (surface) return this.inspectSurface(surface);
+    }
+    if (this.selection.component) {
     const component = this.componentByID.get(this.selection.component);
     if (component) return this.inspectComponent(component);
    }
@@ -2171,7 +2296,7 @@
    this.inspectorHeading(
     "Architecture",
     "How to read this map",
-    hasFlows ? "Select a component or choose one saved flow." : "Select a component to inspect its exact local members."
+     hasFlows ? "Select a component, surface, or saved trace." : "Select a component to inspect its exact local members."
    );
     const note = this.inspectorSection("Evidence semantics");
     note.appendChild(element("p", "rm-arch__copy", "Subsystem and component names are conceptual orientation. Quiet lines are witnessed structural relations, not runtime execution."));
@@ -2179,7 +2304,7 @@
     this.appendKeyValue(note, "Grounding mode", text(this.data.grounding_mode).replaceAll("_", " "));
     this.appendKeyValue(note, "Architecture anchors", String(array(this.data.behavior_anchors).length));
    if (!hasFlows) {
-    const flowState = this.inspectorSection("Flow overlays");
+     const flowState = this.inspectorSection("Saved traces");
     flowState.appendChild(element(
      "p",
      "rm-arch__notice is-warning",
@@ -2192,13 +2317,58 @@
   inspectComponent(component) {
    const subsystem = this.subsystemByID.get(text(component.subsystem_id));
    this.inspectorHeading("Component", component.name || component.id, component.description);
-   if (subsystem) this.appendKeyValue(this.inspector, "Subsystem", subsystem.name || subsystem.id);
+   const purpose = this.inspectorSection("Purpose and grounding");
+   if (component.description) purpose.appendChild(element("p", "rm-arch__copy", component.description));
+   if (subsystem) this.appendKeyValue(purpose, "Subsystem", subsystem.name || subsystem.id);
+   this.appendKeyValue(purpose, "Grounding", component.hypothesis ? "Conceptual / package-derived" : "Exact local membership");
+
+   const surfaceIDs = Array.from(new Set(array(component.owned_surface_ids).concat(array(component.participating_surface_ids))));
+   const surfaces = this.inspectorSection("Surfaces");
+   if (surfaceIDs.length === 0) {
+    surfaces.appendChild(element("p", "rm-arch__empty", "No configured-catalog surface has a unique exact association with this component."));
+   }
+   surfaceIDs.forEach((surfaceID) => {
+    const surface = this.surfaceByID.get(text(surfaceID));
+    if (!surface) return;
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, surface.name || surface.id));
+    button.appendChild(element("span", null, [surface.kind, text(surface.category).replaceAll("_", "/"), surface.status].filter(Boolean).join(" · ")));
+    this.listen(button, "click", () => this.setSelection({ component: "", surface: text(surface.id), step: "", edge: "" }, true));
+    surfaces.appendChild(button);
+   });
+
+   const traces = this.inspectorSection("Saved traces");
+   const relatedFlowIDs = array(component.participating_flow_ids).filter((flowID) => this.flowByID.has(text(flowID)));
+   if (relatedFlowIDs.length === 0) traces.appendChild(element("p", "rm-arch__empty", "No bounded saved trace crosses this component."));
+   relatedFlowIDs.forEach((flowID) => {
+    const flow = this.flowByID.get(text(flowID));
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, flow.name || flow.id));
+    button.appendChild(element("span", null, [flow.status, flow.grounded_areas + "/" + flow.total_areas + " grounded"].filter(Boolean).join(" · ")));
+    this.listen(button, "click", () => this.openTrace(flow.id));
+    traces.appendChild(button);
+   });
+
+   const suggestions = this.inspectorSection("Suggested investigations");
+   const suggestionIDs = array(component.suggested_investigation_ids);
+   if (suggestionIDs.length === 0) suggestions.appendChild(element("p", "rm-arch__empty", "No untraced suggestion is attached by exact saved evidence."));
+   suggestionIDs.forEach((directionID) => {
+    const direction = this.directionByID.get(text(directionID));
+    if (!direction) return;
+    const card = element("article", "rm-arch__evidence-card");
+    card.appendChild(element("strong", "rm-arch__evidence-title", direction.name || direction.id));
+    if (direction.why_interesting) card.appendChild(element("p", "rm-arch__copy", direction.why_interesting));
+    this.appendKeyValue(card, "Status", "Suggested investigation — not a saved trace");
+    suggestions.appendChild(card);
+   });
 
    const members = this.inspectorSection("Exact members");
    if (array(component.members).length === 0) {
     members.appendChild(element("p", "rm-arch__empty", "No exact members were retained."));
    }
-    array(component.members).forEach((member) => {
+   array(component.members).forEach((member) => {
     const card = element("article", "rm-arch__evidence-card");
     card.appendChild(element("strong", "rm-arch__evidence-title", member.name || memberLabel(member.id)));
     card.appendChild(element("code", "rm-arch__member-id", memberLabel(member.id)));
@@ -2206,24 +2376,10 @@
     members.appendChild(card);
    });
 
-   const relatedFlowIDs = array(component.participating_flow_ids).filter((flowID) => this.flowByID.has(text(flowID)));
-   if (relatedFlowIDs.length > 0) {
-    const relatedFlows = this.inspectorSection("Participating flows");
-    relatedFlowIDs.forEach((flowID) => {
-     const flow = this.flowByID.get(text(flowID));
-     const button = element("button", "rm-arch__edge-jump", flow.name || flow.id);
-     button.type = "button";
-     this.listen(button, "click", () => this.setSelection({
-      flow: text(flow.id), component: text(component.id), step: "", edge: "",
-     }, true));
-     relatedFlows.appendChild(button);
-    });
-    }
-
-    const anchorIDs = array(component.anchor_ids);
-    if (anchorIDs.length > 0) {
-     const anchors = this.inspectorSection("Exact architecture anchors");
-     anchorIDs.forEach((anchorID) => {
+   const evidence = this.inspectorSection("Evidence");
+   const anchorIDs = array(component.anchor_ids);
+   if (anchorIDs.length === 0) evidence.appendChild(element("p", "rm-arch__empty", "No exact architecture anchor is attached."));
+   anchorIDs.forEach((anchorID) => {
       const anchor = this.anchorByID.get(text(anchorID));
       const card = element("article", "rm-arch__evidence-card");
       card.appendChild(element("strong", "rm-arch__evidence-title", anchor ? (anchor.label || anchor.kind) : anchorID));
@@ -2234,14 +2390,52 @@
        this.appendLocation(card, anchor.location, "Anchor evidence");
        this.appendProvenance(card, anchor.producer ? [anchor.producer] : []);
       }
-      anchors.appendChild(card);
-     });
+      evidence.appendChild(card);
+   });
+
+   const unknowns = this.inspectorSection("Unknowns");
+   if (component.hypothesis) unknowns.appendChild(element("p", "rm-arch__notice is-warning", "This component remains a conceptual or package-derived hypothesis."));
+   if (surfaceIDs.length === 0) unknowns.appendChild(element("p", "rm-arch__notice", "Zero configured-catalog surfaces is an honest bounded-analysis result, not proof that the component has no runtime surface."));
+   this.appendDiagnostics(unknowns, "");
+  }
+
+  inspectSurface(surface) {
+   this.inspectorHeading("Surface", surface.name || surface.id, "Deterministic registration/start evidence; runtime execution was not observed.");
+   const ownership = this.inspectorSection("Ownership");
+   this.appendKeyValue(ownership, "Executable", surface.owning_executable || "Unassigned");
+   this.appendKeyValue(ownership, "Catalog group", text(surface.category).replaceAll("_", "/"));
+   const owner = this.componentByID.get(text(surface.owning_component_id));
+   if (owner) {
+    const button = element("button", "rm-arch__edge-jump", owner.name || owner.id);
+    button.type = "button";
+    this.listen(button, "click", () => this.openComponent(owner.id));
+    ownership.appendChild(button);
+   } else {
+    ownership.appendChild(element("p", "rm-arch__notice is-warning", "Unassigned surface — no unique exact component owner was found."));
    }
-   this.appendDiagnostics(this.inspectorSection("Diagnostics"), "");
+
+   const progression = this.inspectorSection("Saved trace");
+   const trace = this.flowByID.get(text(surface.related_saved_trace_id));
+   if (trace) {
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, "Open saved trace"));
+    button.appendChild(element("span", null, [trace.name || trace.id, trace.status].filter(Boolean).join(" · ")));
+    this.listen(button, "click", () => this.openTrace(trace.id));
+    progression.appendChild(button);
+   } else {
+    progression.appendChild(element("p", "rm-arch__notice is-warning", "Trace unavailable: " + (surface.trace_unavailable_reason || "bounded surface seed is unavailable")));
+   }
+
+   const facts = this.inspectorSection("Evidence");
+   this.appendKeyValue(facts, "Status", surface.status);
+   this.appendKeyValue(facts, "Certainty", surface.certainty);
+   this.appendKeyValue(facts, "Resolution", surface.resolution);
+   array(surface.evidence).forEach((location) => this.appendLocation(facts, location, "Exact source"));
   }
 
   inspectFlow(flow) {
-   this.inspectorHeading("Saved flow", flow.name || flow.id, flow.mental_model || flow.goal);
+   this.inspectorHeading("Saved trace", flow.name || flow.id, flow.why_inspect || flow.mental_model || flow.goal);
    this.appendFlowEvidence(this.inspector, flow);
   }
 
@@ -2345,6 +2539,14 @@
    parent.appendChild(row);
   }
 
+  appendSummaryItem(parent, key, value) {
+   if (value == null || value === "") return;
+   const row = element("div");
+   row.appendChild(element("dt", null, key));
+   row.appendChild(element("dd", null, value));
+   parent.appendChild(row);
+  }
+
   appendLocation(parent, location, label) {
    const formatted = locationLabel(location);
    if (!formatted) return;
@@ -2354,12 +2556,15 @@
    if (typeof callback === "function") {
     const button = element("button", "rm-arch__location", formatted + " ↗");
     button.type = "button";
-    this.listen(button, "click", () => callback(text(location.path), Number(location.line || 0)));
-    row.appendChild(button);
+     this.listen(button, "click", () => callback(text(location.path), Number(location.line || 0), Number(location.column || 0)));
+     row.appendChild(button);
    } else {
     row.appendChild(element("code", "rm-arch__location-text", formatted));
    }
-   parent.appendChild(row);
+    parent.appendChild(row);
+    if (this.options.stalePaths && this.options.stalePaths.has && this.options.stalePaths.has(text(location.path))) {
+     parent.appendChild(element("p", "rm-arch__source-warning", "Source changed since this report was generated"));
+    }
   }
 
   appendProvenance(parent, provenanceItems) {
@@ -2425,11 +2630,14 @@
  function mount(host, data, options) {
   const app = new ArchitectureCanvasApp(host, data, options);
   const ready = app.start();
- return Object.freeze({
-  ready: ready,
-  fit: () => app.fit(),
-  destroy: () => app.destroy(),
- });
+  return Object.freeze({
+   ready: ready,
+   fit: () => app.fit(),
+   openTrace: (flowID) => app.openTrace(flowID),
+   openSurface: (surfaceID) => app.openSurface(surfaceID),
+   openComponent: (componentID) => app.openComponent(componentID),
+   destroy: () => app.destroy(),
+  });
  }
 
   global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });

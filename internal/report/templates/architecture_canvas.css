@@ -1,5 +1,5 @@
 .rm-architecture-canvas-card {
- overflow: hidden;
+ overflow: visible;
  padding: 1rem;
 }
 
@@ -136,6 +136,68 @@
  color: #1d4ed8;
 }
 
+.rm-arch__trace-menu {
+ flex: 0 0 auto;
+ position: relative;
+}
+
+.rm-arch__trace-menu > summary {
+ list-style: none;
+}
+
+.rm-arch__trace-menu > summary::-webkit-details-marker {
+ display: none;
+}
+
+.rm-arch__trace-menu > summary::after {
+ content: " ▾";
+}
+
+.rm-arch__trace-list {
+ background: #ffffff;
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 12px;
+ box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+ display: grid;
+ gap: 5px;
+ left: 0;
+ max-height: min(60vh, 520px);
+ min-width: min(420px, 80vw);
+ overflow: auto;
+ padding: 7px;
+ position: absolute;
+ top: calc(100% + 7px);
+ z-index: 20;
+}
+
+.rm-arch__trace-option {
+ background: #ffffff;
+ border: 1px solid transparent;
+ border-radius: 9px;
+ color: var(--rm-arch-ink);
+ cursor: pointer;
+ display: grid;
+ gap: 3px;
+ padding: 9px 10px;
+ text-align: left;
+}
+
+.rm-arch__trace-option:hover,
+.rm-arch__trace-option.is-active {
+ background: #eff6ff;
+ border-color: #bfdbfe;
+}
+
+.rm-arch__trace-option span,
+.rm-arch__trace-option small {
+ color: var(--rm-arch-muted);
+ font-size: .67rem;
+}
+
+.rm-arch__trace-option small {
+ color: #a16207;
+}
+
 .rm-arch__controls {
  align-items: center;
  display: flex;
@@ -227,6 +289,67 @@
  grid-template-columns: minmax(0, 1fr) auto;
  min-width: 0;
  padding: 24px 26px;
+}
+
+.rm-arch__focus-back {
+ background: transparent;
+ border: 0;
+ color: #bfdbfe;
+ cursor: pointer;
+ font-size: .72rem;
+ font-weight: 800;
+ grid-column: 1 / -1;
+ justify-self: start;
+ padding: 0;
+}
+
+.rm-arch__trace-summary {
+ display: grid;
+ font-size: .7rem;
+ gap: 7px 16px;
+ grid-template-columns: repeat(2, minmax(0, 1fr));
+ margin: 16px 0 0;
+}
+
+.rm-arch__trace-summary > div,
+.rm-arch__trace-participants {
+ background: rgba(15, 23, 42, .28);
+ border-radius: 8px;
+ padding: 8px 9px;
+}
+
+.rm-arch__trace-summary dt {
+ color: #93a4ba;
+ font-size: .59rem;
+ font-weight: 850;
+ letter-spacing: .05em;
+ text-transform: uppercase;
+}
+
+.rm-arch__trace-summary dd {
+ color: #f8fafc;
+ margin: 2px 0 0;
+}
+
+.rm-arch__trace-participants {
+ grid-column: 1 / -1;
+}
+
+.rm-arch__trace-participants dd {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 5px;
+}
+
+.rm-arch__trace-participants button {
+ background: #dbeafe;
+ border: 0;
+ border-radius: 999px;
+ color: #1d4ed8;
+ cursor: pointer;
+ font-size: .65rem;
+ font-weight: 750;
+ padding: 4px 7px;
 }
 
 .rm-arch__focus-kicker {
@@ -1123,13 +1246,47 @@
 
 .rm-arch__inspector {
  background: #ffffff;
- border: 1px solid var(--rm-arch-line);
- border-radius: 14px;
- max-height: min(46vh, 420px);
- min-width: 0;
+ border: 0;
+ border-left: 1px solid var(--rm-arch-line);
+ border-radius: 0;
+ bottom: 0;
+ box-shadow: -16px 0 40px rgba(15, 23, 42, .18);
+ max-height: none;
+ max-width: 42vw;
+ min-width: 440px;
  overflow: auto;
- padding: 20px;
+ padding: 28px 24px 40px;
+ position: fixed;
+ right: 0;
  scrollbar-color: #cbd5e1 transparent;
+ top: 0;
+ width: clamp(440px, 38vw, 520px);
+ z-index: 102;
+}
+
+.rm-arch__drawer-backdrop {
+ background: rgba(15, 23, 42, .14);
+ border: 0;
+ cursor: default;
+ inset: 0;
+ padding: 0;
+ position: fixed;
+ z-index: 101;
+}
+
+.rm-arch__inspector-close {
+ align-items: center;
+ background: #f1f5f9;
+ border: 0;
+ border-radius: 50%;
+ color: #475569;
+ cursor: pointer;
+ display: flex;
+ font-size: 1.2rem;
+ height: 32px;
+ justify-content: center;
+ margin-left: auto;
+ width: 32px;
 }
 
 .rm-arch__inspector-kicker {
@@ -1218,6 +1375,16 @@
  color: #be185d;
  text-decoration: underline;
  text-underline-offset: 3px;
+}
+
+.rm-arch__source-warning {
+ color: #a16207;
+ font-size: .67rem;
+ margin: 4px 0 0;
+}
+
+.rm-arch__component.is-return-highlighted .rm-arch__component-card {
+ box-shadow: 0 0 0 4px rgba(37, 99, 235, .22);
 }
 
 .rm-arch__evidence-card,
@@ -1458,7 +1625,9 @@
  }
 
  .rm-arch__inspector {
-  max-height: min(58vh, 460px);
+   max-width: none;
+   min-width: 0;
+   width: 100vw;
  }
 
  .rm-arch__flow-focus {
@@ -1471,6 +1640,14 @@
   gap: 14px;
   grid-template-columns: 1fr;
   padding: 19px;
+ }
+
+ .rm-arch__trace-summary {
+  grid-template-columns: 1fr;
+ }
+
+ .rm-arch__trace-participants {
+  grid-column: 1;
  }
 
  .rm-arch__focus-stats {

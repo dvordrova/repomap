@@ -234,6 +234,27 @@ func TestReportPreservesMissingFlowTypeWithoutRequestClaim(t *testing.T) {
 	}
 }
 
+func TestReportUsesDistinctProductVocabulary(t *testing.T) {
+	t.Parallel()
+
+	assets := string(readCanvasAsset(t, "architecture_canvas.js"))
+	mainScript, err := os.ReadFile(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets += string(mainScript)
+	for _, removed := range []string{"Guided flows", "Expanded directions", "Flow analyses", "Saved flow analyses"} {
+		if bytes.Contains([]byte(assets), []byte(removed)) {
+			t.Fatalf("visible terminology still contains %q", removed)
+		}
+	}
+	for _, required := range []string{"Architecture", "Surfaces", "Saved traces", "Suggested investigations", "Evidence"} {
+		if !bytes.Contains([]byte(assets), []byte(required)) {
+			t.Fatalf("visible terminology is missing %q", required)
+		}
+	}
+}
+
 func TestReportDoesNotRenderStaticFactsAsRuntimeSequence(t *testing.T) {
 	// Replaceable presentation contract: this test protects the previously
 	// misleading runtime sequence claim, not the current DOM structure.
@@ -434,7 +455,7 @@ func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T
 		[]byte("api/server.go"),
 		[]byte("connects the public API to metric collection"),
 		[]byte("api/server.go registers the route"),
-		[]byte("Directions to explore"),
+		[]byte("Suggested investigations"),
 	} {
 		if !bytes.Contains(b, want) {
 			t.Errorf("report.html does not contain %q", want)
