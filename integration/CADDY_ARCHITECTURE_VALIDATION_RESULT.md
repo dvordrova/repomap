@@ -67,3 +67,23 @@ nested responsibilities. Replaying the captured response must select the
 validated or locally normalized model architecture, preserve exact IDs and
 evidence, and render the six conceptual groups instead of the raw candidate-kind
 fallback.
+
+## Corrected result
+
+The saved response now replays offline as the six primary groups above with 12
+nested components. Recoverable hierarchy shape is normalized locally; unknown
+members, unknown anchors, and conflicting membership remain fatal. The replay
+retains the captured provider response and makes no additional provider call.
+
+The browser reports `Architecture source: validated model`, exposes exact
+anchor IDs and source locations in the existing inspector, and keeps omitted
+local evidence in a diagnostic shelf rather than promoting it to another
+primary pillar.
+
+Local Playwright acceptance artifacts:
+
+- before: `.opencode/playwright/decision060-caddy-offline-after.png`;
+- corrected: `caddy-architecture-and-packages-after.png`;
+- restic regression: `restic-regression-after-freshness.png`.
+
+The screenshots remain local acceptance artifacts and are not committed.

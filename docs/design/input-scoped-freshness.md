@@ -260,3 +260,36 @@ made. Historical artifacts are never rewritten in place.
 Older report graphs without exact package records remain renderable through a
 clearly legacy inferred ownership path. New reports always write exact package
 records and server-computed labels.
+
+## Implemented compatibility and limits
+
+The implemented manifest contract is version 3. Version 2 manifests continue
+to verify their saved report bytes and capabilities, but expose
+`legacy_unknown` freshness rather than treating the old global dirty digest as
+input-scoped evidence.
+
+The current captured file set includes every report-authorized evidence path,
+all build-selected local package source files returned by `go list`, relevant
+module/workspace files, and package ownership metadata. The manifest separately
+records selected revision, model-bundle hash, report contract, architecture
+contract, and input-policy version. A selected revision change is informational
+unless one of those captured inputs changed.
+
+Module discovery remains bounded to tracked module roots already visible to the
+repository snapshot. `go.work` repositories with tracked local module roots are
+supported, and each root is analyzed with `GOWORK=off` so an ambient parent
+workspace cannot silently change identity. External workspace roots and
+external replacement absolute paths are not persisted. Full recursive analysis
+of included submodules remains deferred; submodules are excluded boundaries in
+this increment.
+
+The local capture retries are bounded at the repository-capture boundary and
+return a typed mixed-snapshot error after repeated instability. A future
+optimization may retry only an affected collector rather than the bounded
+repository capture. Completed architecture-provider work is keyed by the exact
+candidate bundle and is not repeated because an unrelated worktree path changed.
+
+The browser currently offers existing authorized current-source navigation and
+marks stale source explicitly. A targeted “refresh affected analysis” action is
+deferred. Import paths are no longer converted into guessed GitHub tree URLs;
+source links are omitted until a verified repository-relative URL is available.
