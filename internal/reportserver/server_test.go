@@ -44,7 +44,7 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 		RunsDir:      runsDir,
 		InitialRunID: "20260711-200000-pebble",
 		Capability:   testCapability,
-		OpenFile: func(_ context.Context, path string, line int) error {
+		OpenFile: func(_ context.Context, path string, line, _ int) error {
 			openedPath = path
 			openedLine = line
 			return nil
@@ -131,9 +131,9 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	}
 
 	response = postOpen(t, baseURL, openRequest{
-		RunID: "20260711-200000-pebble",
-		Path:  "batch.go",
-		Line:  288,
+		RunID:    "20260711-200000-pebble",
+		SourceID: testSourceID(t, runsDir, "20260711-200000-pebble", "batch.go"),
+		Line:     288,
 	}, true)
 	response.Body.Close()
 	canonicalFilePath, err := filepath.EvalSymlinks(filePath)
@@ -142,6 +142,234 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || openedPath != canonicalFilePath || openedLine != 288 {
 		t.Fatalf("open response=%d path=%q line=%d", response.StatusCode, openedPath, openedLine)
+	}
+	if captureCalls != 1 {
+		t.Fatalf("source open performed freshness capture; calls=%d", captureCalls)
+	}
+}
+
+func TestOpenEndpointUsesStartupAuthorizationIndexAndRejectsRawPath(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-cached"
+	writeRun(t, runsDir, runID, repo, "report")
+	sourceID := testSourceID(t, runsDir, runID, "batch.go")
+	launches := 0
+	openedLine, openedColumn := 0, 0
+	var logs []string
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(_ context.Context, _ string, line, column int) error {
+			launches++
+			openedLine, openedColumn = line, column
+			return nil
+		},
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			t.Fatal("source open must not check freshness")
+			return freshness.RepositoryState{}, nil
+		},
+		Logf: func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	baseURL := server.URL + capabilityURLPrefix(testCapability)
+	response := postOpen(t, baseURL, openRequest{RunID: runID, SourceID: sourceID, Line: 3, Column: 2}, true)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || launches != 1 || openedLine != 3 || openedColumn != 2 {
+		t.Fatalf("cached open status=%d launches=%d location=%d:%d", response.StatusCode, launches, openedLine, openedColumn)
+	}
+	loadedLogs := 0
+	for _, log := range logs {
+		if strings.HasPrefix(log, "loaded ") {
+			loadedLogs++
+		}
+	}
+	if loadedLogs != 1 {
+		t.Fatalf("source open reloaded saved reports; load logs=%d logs=%v", loadedLogs, logs)
+	}
+
+	body := strings.NewReader(`{"run_id":"` + runID + `","path":"batch.go","line":3}`)
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/api/open", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", server.URL)
+	request.Header.Set("X-Repomap-Action", "open-file")
+	response, err = server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest || launches != 1 {
+		t.Fatalf("raw path status=%d launches=%d", response.StatusCode, launches)
+	}
+}
+
+func TestOpenEndpointReportsSelectedFileChangedWithoutRepositoryReconciliation(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	filePath := filepath.Join(repo, "batch.go")
+	if err := os.WriteFile(filePath, []byte("package original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-stale-source"
+	writeRun(t, runsDir, runID, repo, "report")
+	sourceID := testSourceID(t, runsDir, runID, "batch.go")
+	launches := 0
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(context.Context, string, int, int) error {
+			launches++
+			return nil
+		},
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			t.Fatal("source open must not reconcile repository freshness")
+			return freshness.RepositoryState{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filePath, []byte("package changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response := postOpen(t, server.URL+capabilityURLPrefix(testCapability), openRequest{RunID: runID, SourceID: sourceID}, true)
+	defer response.Body.Close()
+	var payload map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || payload["source_changed"] != true || launches != 1 {
+		t.Fatalf("status=%d payload=%v launches=%d", response.StatusCode, payload, launches)
+	}
+}
+
+func TestOpenEndpointRechecksSymlinksAfterHandlerStartup(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	filePath := filepath.Join(repo, "batch.go")
+	if err := os.WriteFile(filePath, []byte("package original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-replaced-source"
+	writeRun(t, runsDir, runID, repo, "report")
+	launches := 0
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(context.Context, string, int, int) error {
+			launches++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(outside, []byte("package outside\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filePath); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response := postOpen(t, server.URL+capabilityURLPrefix(testCapability), openRequest{
+		RunID: runID, SourceID: testSourceID(t, runsDir, runID, "batch.go"),
+	}, true)
+	defer response.Body.Close()
+	var payload map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusConflict || payload["code"] != "source_unavailable" || launches != 0 {
+		t.Fatalf("status=%d payload=%v launches=%d", response.StatusCode, payload, launches)
+	}
+}
+
+func TestOpenEndpointInvalidatesReplacedRunAuthority(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-replaced-run"
+	writeRun(t, runsDir, runID, repo, "first report")
+	oldSourceID := testSourceID(t, runsDir, runID, "batch.go")
+	launches := 0
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(context.Context, string, int, int) error {
+			launches++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriteRunReportName(t, runsDir, runID, "replacement-report")
+	newSourceID := testSourceID(t, runsDir, runID, "batch.go")
+	if oldSourceID == newSourceID {
+		t.Fatal("replacement report retained its old source id")
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	baseURL := server.URL + capabilityURLPrefix(testCapability)
+	response := postOpen(t, baseURL, openRequest{RunID: runID, SourceID: oldSourceID}, true)
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden || launches != 0 {
+		t.Fatalf("old source status=%d launches=%d", response.StatusCode, launches)
+	}
+	response = postOpen(t, baseURL, openRequest{RunID: runID, SourceID: newSourceID}, true)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || launches != 1 {
+		t.Fatalf("new source status=%d launches=%d", response.StatusCode, launches)
+	}
+}
+
+func TestOpenEndpointReturnsTypedEditorUnavailable(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-unavailable"
+	writeRun(t, runsDir, runID, repo, "report")
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: unavailableEditorLauncher(ErrEditorUnavailable),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response := postOpen(t, server.URL+capabilityURLPrefix(testCapability), openRequest{
+		RunID: runID, SourceID: testSourceID(t, runsDir, runID, "batch.go"),
+	}, true)
+	defer response.Body.Close()
+	var payload map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusServiceUnavailable || payload["code"] != "editor_unavailable" {
+		t.Fatalf("status=%d payload=%v", response.StatusCode, payload)
 	}
 }
 
@@ -164,7 +392,7 @@ func TestOpenEndpointResolvesPathsFromManifestAnalysisRoot(t *testing.T) {
 	handler, err := NewHandler(Options{
 		RunsDir:    runsDir,
 		Capability: testCapability,
-		OpenFile: func(_ context.Context, path string, _ int) error {
+		OpenFile: func(_ context.Context, path string, _, _ int) error {
 			openedPath = path
 			return nil
 		},
@@ -176,9 +404,9 @@ func TestOpenEndpointResolvesPathsFromManifestAnalysisRoot(t *testing.T) {
 	defer server.Close()
 
 	response := postOpen(t, server.URL+capabilityURLPrefix(testCapability), openRequest{
-		RunID: "20260711-200000-service",
-		Path:  "batch.go",
-		Line:  1,
+		RunID:    "20260711-200000-service",
+		SourceID: testSourceID(t, runsDir, "20260711-200000-service", "batch.go"),
+		Line:     1,
 	}, true)
 	response.Body.Close()
 	want, err := filepath.EvalSymlinks(filePath)
@@ -208,7 +436,7 @@ func TestOpenEndpointRejectsCrossOriginShapeAndRepositoryEscape(t *testing.T) {
 	handler, err := NewHandler(Options{
 		RunsDir:    runsDir,
 		Capability: testCapability,
-		OpenFile: func(context.Context, string, int) error {
+		OpenFile: func(context.Context, string, int, int) error {
 			openCalls++
 			return nil
 		},
@@ -221,8 +449,8 @@ func TestOpenEndpointRejectsCrossOriginShapeAndRepositoryEscape(t *testing.T) {
 
 	baseURL := server.URL + capabilityURLPrefix(testCapability)
 	response := postOpen(t, baseURL, openRequest{
-		RunID: "20260711-200000-project",
-		Path:  "../outside.go",
+		RunID:    "20260711-200000-project",
+		SourceID: "not-authorized",
 	}, true)
 	response.Body.Close()
 	if response.StatusCode != http.StatusForbidden {
@@ -230,17 +458,17 @@ func TestOpenEndpointRejectsCrossOriginShapeAndRepositoryEscape(t *testing.T) {
 	}
 
 	response = postOpen(t, baseURL, openRequest{
-		RunID: "20260711-200000-project",
-		Path:  "escape.go",
+		RunID:    "20260711-200000-project",
+		SourceID: testSourceID(t, runsDir, "20260711-200000-project", "escape.go"),
 	}, true)
 	response.Body.Close()
-	if response.StatusCode != http.StatusBadRequest {
+	if response.StatusCode != http.StatusConflict {
 		t.Fatalf("symlink escape status = %d", response.StatusCode)
 	}
 
 	response = postOpen(t, baseURL, openRequest{
-		RunID: "20260711-200000-project",
-		Path:  "missing.go",
+		RunID:    "20260711-200000-project",
+		SourceID: "not-authorized",
 	}, false)
 	response.Body.Close()
 	if response.StatusCode != http.StatusForbidden {
@@ -282,7 +510,7 @@ func TestOpenEndpointDoesNotExposeEditorCommandErrors(t *testing.T) {
 	handler, err := NewHandler(Options{
 		RunsDir:    runsDir,
 		Capability: testCapability,
-		OpenFile: func(context.Context, string, int) error {
+		OpenFile: func(context.Context, string, int, int) error {
 			return fmt.Errorf("editor output leaked /Users/example/private.sock")
 		},
 	})
@@ -293,9 +521,9 @@ func TestOpenEndpointDoesNotExposeEditorCommandErrors(t *testing.T) {
 	defer server.Close()
 
 	response := postOpen(t, server.URL+capabilityURLPrefix(testCapability), openRequest{
-		RunID: "20260711-200000-project",
-		Path:  "batch.go",
-		Line:  1,
+		RunID:    "20260711-200000-project",
+		SourceID: testSourceID(t, runsDir, "20260711-200000-project", "batch.go"),
+		Line:     1,
 	}, true)
 	defer response.Body.Close()
 	var payload map[string]string
@@ -326,7 +554,7 @@ func TestHandlerTransportRejectionMatrix(t *testing.T) {
 		RunsDir:      runsDir,
 		Capability:   testCapability,
 		ExpectedHost: expectedHost,
-		OpenFile: func(context.Context, string, int) error {
+		OpenFile: func(context.Context, string, int, int) error {
 			openCalls++
 			return nil
 		},
@@ -336,9 +564,9 @@ func TestHandlerTransportRejectionMatrix(t *testing.T) {
 	}
 
 	body, err := json.Marshal(openRequest{
-		RunID: "20260711-200000-project",
-		Path:  "batch.go",
-		Line:  1,
+		RunID:    "20260711-200000-project",
+		SourceID: testSourceID(t, runsDir, "20260711-200000-project", "batch.go"),
+		Line:     1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -574,6 +802,98 @@ func TestServeUsesRandomLoopbackPortAndStopsWithContext(t *testing.T) {
 	}
 }
 
+func TestServeShutdownDoesNotWaitForFakeEditor(t *testing.T) {
+	if os.Getenv("REPOMAP_SLOW_EDITOR_HELPER") == "1" {
+		if err := os.WriteFile(os.Getenv("REPOMAP_SLOW_EDITOR_STARTED"), []byte("started"), 0o600); err != nil {
+			os.Exit(2)
+		}
+		time.Sleep(2 * time.Second)
+		if err := os.WriteFile(os.Getenv("REPOMAP_SLOW_EDITOR_EXITED"), []byte("exited"), 0o600); err != nil {
+			os.Exit(3)
+		}
+		os.Exit(0)
+	}
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-slow-editor"
+	writeRun(t, runsDir, runID, repo, "report")
+	startedFile := filepath.Join(t.TempDir(), "started")
+	exitedFile := filepath.Join(t.TempDir(), "exited")
+	t.Setenv("REPOMAP_SLOW_EDITOR_HELPER", "1")
+	t.Setenv("REPOMAP_SLOW_EDITOR_STARTED", startedFile)
+	t.Setenv("REPOMAP_SLOW_EDITOR_EXITED", exitedFile)
+	launcher := editorLauncher(os.Args[0], []string{"-test.run=TestServeShutdownDoesNotWaitForFakeEditor", "--", "--goto"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan string, 1)
+	serveDone := make(chan error, 1)
+	go func() {
+		serveDone <- Serve(ctx, Options{
+			RunsDir: runsDir, InitialRunID: runID, Port: 0, Capability: testCapability,
+			OpenFile: launcher,
+			OnReady: func(url string) error {
+				ready <- url
+				return nil
+			},
+		})
+	}()
+	reportURL := <-ready
+	parsed, err := neturl.Parse(reportURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		response, requestErr := http.Get(reportURL)
+		if requestErr == nil {
+			response.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not become ready: %v", requestErr)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	baseURL := parsed.Scheme + "://" + parsed.Host + capabilityURLPrefix(testCapability)
+	requestStarted := time.Now()
+	response := postOpen(t, baseURL, openRequest{
+		RunID: runID, SourceID: testSourceID(t, runsDir, runID, "batch.go"), Line: 9, Column: 3,
+	}, true)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || time.Since(requestStarted) > 500*time.Millisecond {
+		t.Fatalf("source open status=%d elapsed=%v", response.StatusCode, time.Since(requestStarted))
+	}
+	waitForFile(t, startedFile, time.Second)
+	cancel()
+	select {
+	case err := <-serveDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(750 * time.Millisecond):
+		t.Fatal("server shutdown waited for fake editor")
+	}
+	waitForFile(t, exitedFile, 3*time.Second)
+}
+
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", filepath.Base(path))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func postOpen(t *testing.T, serverURL string, request openRequest, withHeader bool) *http.Response {
 	t.Helper()
 	body, err := json.Marshal(request)
@@ -598,6 +918,58 @@ func postOpen(t *testing.T, serverURL string, request openRequest, withHeader bo
 		t.Fatal(err)
 	}
 	return response
+}
+
+func testSourceID(t *testing.T, runsDir, runID, relativePath string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(runsDir, runID, reportpkg.RunManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := reportpkg.DecodeRunManifest(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manifestSourceID(runID, manifest.ReportSHA256, relativePath)
+}
+
+func rewriteRunReportName(t *testing.T, runsDir, runID, repoName string) {
+	t.Helper()
+	runDir := filepath.Join(runsDir, runID)
+	reportPath := filepath.Join(runDir, "report.json")
+	reportJSON, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data reportpkg.ReportData
+	if err := json.Unmarshal(reportJSON, &data); err != nil {
+		t.Fatal(err)
+	}
+	data.RepoName = repoName
+	reportJSON, err = json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, reportJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(runDir, reportpkg.RunManifestFilename)
+	manifestJSON, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := reportpkg.DecodeRunManifest(manifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ReportSHA256 = fmt.Sprintf("%x", sha256.Sum256(reportJSON))
+	manifestJSON, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeRun(t *testing.T, runsDir, runID, repoPath, report string) {
@@ -664,11 +1036,17 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 		t.Fatal(err)
 	}
 	inputs := make([]freshness.CapturedInput, 0, len(reportData.OpenablePaths))
-	for _, path := range reportData.OpenablePaths {
-		inputs = append(inputs, freshness.CapturedInput{
-			Version: freshness.CapturedInputVersion, ID: fmt.Sprintf("%x", sha256.Sum256([]byte("input\x00"+path))),
-			Path: path, Kind: freshness.FileMissing, Stages: []string{"report_evidence"},
-		})
+	for _, inputPath := range reportData.OpenablePaths {
+		input := freshness.CapturedInput{
+			Version: freshness.CapturedInputVersion, ID: fmt.Sprintf("%x", sha256.Sum256([]byte("input\x00"+inputPath))),
+			Path: inputPath, Kind: freshness.FileMissing, Stages: []string{"report_evidence"},
+		}
+		if data, readErr := os.ReadFile(filepath.Join(analysisRoot, filepath.FromSlash(inputPath))); readErr == nil {
+			input.Kind = freshness.FileRegular
+			input.Mode = "regular"
+			input.ContentSHA256 = fmt.Sprintf("%x", sha256.Sum256(data))
+		}
+		inputs = append(inputs, input)
 	}
 	inputsDigest, err := freshness.CapturedInputsDigest(inputs)
 	if err != nil {

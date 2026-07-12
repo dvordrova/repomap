@@ -198,9 +198,9 @@
         }
         return body;
       });
-    }).then(function () {
+    }).then(function (body) {
       window.clearTimeout(openingTimer);
-      var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
+      var stale = body.source_changed || DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
       var message = 'Opened ' + filePath + (line ? ':' + line : '') + ' in VS Code';
       if (stale) message += ' · Source changed since this report was generated';
       showToast(message, false);

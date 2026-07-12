@@ -255,6 +255,34 @@ func TestReportUsesDistinctProductVocabulary(t *testing.T) {
 	}
 }
 
+func TestSourceIDsAreRenderedButNeverPersisted(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		FormatVersion: CurrentFormatVersion,
+		RepoName:      "ephemeral-source-ids",
+		SourceIDs:     map[string]string{"main.go": "opaque-source"},
+	}
+	path := filepath.Join(t.TempDir(), "report.json")
+	if err := WriteReportJSON(data, path); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(persisted, []byte("source_ids")) || bytes.Contains(persisted, []byte("opaque-source")) {
+		t.Fatalf("persisted report contains ephemeral source ids: %s", persisted)
+	}
+	rendered, err := RenderHTML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(rendered, []byte(`"source_ids":{"main.go":"opaque-source"}`)) {
+		t.Fatal("served report is missing ephemeral source ids")
+	}
+}
+
 func TestReportDoesNotRenderStaticFactsAsRuntimeSequence(t *testing.T) {
 	// Replaceable presentation contract: this test protects the previously
 	// misleading runtime sequence claim, not the current DOM structure.

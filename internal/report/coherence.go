@@ -105,6 +105,14 @@ func linkArchitectureProductObjects(data *ReportData) {
 	}
 }
 
+// ApplyProductCoherence upgrades a loaded saved report with presentation-only
+// component/surface/trace joins. Callers must invoke it before publishing the
+// report to concurrent readers; it mutates the supplied projection.
+func ApplyProductCoherence(data *ReportData) {
+	linkArchitectureProductObjects(data)
+	refreshProductCounts(data)
+}
+
 func buildArchitectureOwnershipIndex(components []ArchitectureComponent) architectureOwnershipIndex {
 	index := architectureOwnershipIndex{
 		pathOwners:    make(map[string]map[componentmap.ComponentID]struct{}),

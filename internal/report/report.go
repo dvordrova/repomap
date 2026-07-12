@@ -15,36 +15,39 @@ const CurrentFormatVersion = 14
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
-	RepoName                   string                       `json:"repo_name"`
-	ProjectGuess               string                       `json:"project_guess"`
-	OrientationConfidence      float64                      `json:"orientation_confidence"`
-	HighLevelMap               []Subsystem                  `json:"high_level_map,omitempty"`
-	FirstFilesToOpen           []FileItem                   `json:"first_files_to_open,omitempty"`
-	CandidateFlows             []string                     `json:"candidate_flows"`
-	CandidateDirections        []CandidateDirection         `json:"candidate_directions,omitempty"`
-	ImportantDomainWords       []DomainWord                 `json:"important_domain_words,omitempty"`
-	QuestionsForHuman          []string                     `json:"questions_for_human,omitempty"`
-	OrientationUnverifiedPaths []PathItem                   `json:"unverified_paths,omitempty"`
-	Flows                      []FlowData                   `json:"flows"`
-	ArtifactsDir               string                       `json:"artifacts_dir"`
-	FeedbackPath               string                       `json:"feedback_path,omitempty"`
-	Warnings                   []string                     `json:"warnings,omitempty"`
-	Run                        *RunInfo                     `json:"run,omitempty"`
-	OpenablePaths              []string                     `json:"openable_paths,omitempty"`
-	SourceIDs                  map[string]string            `json:"source_ids,omitempty"`
-	RepositoryGraph            *RepositoryGraph             `json:"repository_graph,omitempty"`
-	Components                 []Component                  `json:"components,omitempty"`
-	ComponentRelations         []ComponentRelation          `json:"component_relations,omitempty"`
-	ArchitectureCanvas         *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
-	ArchitectureSynthesis      *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
-	ArchitectureGrounding      *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
-	DiscoveredSurfaces         *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
-	Freshness                  *freshness.FreshnessResult   `json:"freshness,omitempty"`
-	CapturedRevision           string                       `json:"captured_revision,omitempty"`
-	CapturedInputCount         int                          `json:"captured_input_count,omitempty"`
-	RepositorySubmodules       []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
-	evidenceLocations          []evidence.Location
-	sourceSignals              []SourceSignal
+	RepoName                   string               `json:"repo_name"`
+	ProjectGuess               string               `json:"project_guess"`
+	OrientationConfidence      float64              `json:"orientation_confidence"`
+	HighLevelMap               []Subsystem          `json:"high_level_map,omitempty"`
+	FirstFilesToOpen           []FileItem           `json:"first_files_to_open,omitempty"`
+	CandidateFlows             []string             `json:"candidate_flows"`
+	CandidateDirections        []CandidateDirection `json:"candidate_directions,omitempty"`
+	ImportantDomainWords       []DomainWord         `json:"important_domain_words,omitempty"`
+	QuestionsForHuman          []string             `json:"questions_for_human,omitempty"`
+	OrientationUnverifiedPaths []PathItem           `json:"unverified_paths,omitempty"`
+	Flows                      []FlowData           `json:"flows"`
+	ArtifactsDir               string               `json:"artifacts_dir"`
+	FeedbackPath               string               `json:"feedback_path,omitempty"`
+	Warnings                   []string             `json:"warnings,omitempty"`
+	Run                        *RunInfo             `json:"run,omitempty"`
+	OpenablePaths              []string             `json:"openable_paths,omitempty"`
+	// SourceIDs is an ephemeral server-rendered map from authorized
+	// repository-relative paths to opaque navigation IDs. WriteReportJSON
+	// deliberately excludes it from persisted report evidence.
+	SourceIDs             map[string]string            `json:"source_ids,omitempty"`
+	RepositoryGraph       *RepositoryGraph             `json:"repository_graph,omitempty"`
+	Components            []Component                  `json:"components,omitempty"`
+	ComponentRelations    []ComponentRelation          `json:"component_relations,omitempty"`
+	ArchitectureCanvas    *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
+	ArchitectureSynthesis *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	ArchitectureGrounding *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
+	DiscoveredSurfaces    *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	Freshness             *freshness.FreshnessResult   `json:"freshness,omitempty"`
+	CapturedRevision      string                       `json:"captured_revision,omitempty"`
+	CapturedInputCount    int                          `json:"captured_input_count,omitempty"`
+	RepositorySubmodules  []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
+	evidenceLocations     []evidence.Location
+	sourceSignals         []SourceSignal
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
