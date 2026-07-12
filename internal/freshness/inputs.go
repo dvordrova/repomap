@@ -80,6 +80,11 @@ func AssessInputs(
 	inputs []CapturedInput,
 ) FreshnessResult {
 	result := NewFreshnessResult(FreshnessFresh)
+	if captured.Identity != current.Identity {
+		result.State = FreshnessUnavailable
+		result.Diagnostics = []string{"repository identity changed"}
+		return result
+	}
 	currentInputs, err := CaptureInputs(ctx, current, capturedInputPaths(inputs))
 	if err != nil {
 		result.State = FreshnessUnavailable
@@ -99,16 +104,35 @@ func AssessInputs(
 		}
 	}
 	result.AffectedSubmodules = changedSubmodulePaths(captured.Submodules, current.Submodules)
-	globalChanged := len(CompareRepository(captured, current)) > 0 || len(result.AffectedSubmodules) > 0
+	differences := CompareRepository(captured, current)
+	globalChanged := len(differences) > 0 || len(result.AffectedSubmodules) > 0
 	if len(result.AffectedPaths) > 0 {
 		result.State = FreshnessPartiallyStale
 		result.AnalyzedChanges = true
-		result.UnrelatedChanges = globalChanged
+		result.UnrelatedChanges = hasUnrelatedChanges(differences, result.AffectedPaths) || len(result.AffectedSubmodules) > 0
 	} else if globalChanged {
 		result.State = FreshnessUnrelatedChanges
 		result.UnrelatedChanges = true
 	}
 	return result
+}
+
+func hasUnrelatedChanges(differences []Difference, affectedPaths []string) bool {
+	affected := make(map[string]struct{}, len(affectedPaths))
+	for _, path := range affectedPaths {
+		affected[path] = struct{}{}
+	}
+	for _, difference := range differences {
+		if difference.Reason != ReasonRepositoryDirty {
+			continue
+		}
+		for _, path := range difference.Paths {
+			if _, analyzed := affected[path]; !analyzed {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func capturedInputPaths(inputs []CapturedInput) []string {

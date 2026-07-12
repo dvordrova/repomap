@@ -228,6 +228,22 @@ func TestAssessInputsSeparatesUnrelatedAndAnalyzedChanges(t *testing.T) {
 	}
 }
 
+func TestAssessInputsDoesNotCallAnalyzedChangeUnrelated(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	initial := capture(t, repo)
+	inputs, err := CaptureInputs(context.Background(), initial, []string{"main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, "main.go"), "package fixture\n\nconst changed = true\n")
+	result := AssessInputs(context.Background(), initial, capture(t, repo), inputs)
+	if result.State != FreshnessPartiallyStale || !result.AnalyzedChanges || result.UnrelatedChanges {
+		t.Fatalf("analyzed-only result = %#v", result)
+	}
+}
+
 func TestContextValidationRejectsNonCanonicalInputs(t *testing.T) {
 	t.Parallel()
 
