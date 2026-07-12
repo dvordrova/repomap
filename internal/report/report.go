@@ -39,6 +39,9 @@ type ReportData struct {
 	ArchitectureGrounding      *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
 	DiscoveredSurfaces         *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
 	Freshness                  *freshness.FreshnessResult   `json:"freshness,omitempty"`
+	CapturedRevision           string                       `json:"captured_revision,omitempty"`
+	CapturedInputCount         int                          `json:"captured_input_count,omitempty"`
+	RepositorySubmodules       []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
 	evidenceLocations          []evidence.Location
 	sourceSignals              []SourceSignal
 
