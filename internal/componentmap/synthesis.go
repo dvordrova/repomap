@@ -13,13 +13,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
-	SynthesisRequestVersion = 1
-	SynthesisRecordVersion  = 1
-	SynthesisPromptVersion  = "component-landscape-v2"
+	SynthesisRequestVersion = 2
+	SynthesisRecordVersion  = 2
+	SynthesisPromptVersion  = "architecture-grounding-v4"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -51,13 +52,17 @@ type SynthesisFlow struct {
 // place for raw repository trees, report styles, layout coordinates, or model-
 // supplied relations.
 type SynthesisRequest struct {
-	Version         int                  `json:"version"`
-	ContractVersion int                  `json:"contract_version"`
-	PromptVersion   string               `json:"prompt_version"`
-	Candidates      []SynthesisCandidate `json:"candidates"`
-	Flows           []SynthesisFlow      `json:"flows,omitempty"`
-	Relations       []LocalRelation      `json:"relations,omitempty"`
-	AnchorBindings  []FlowAnchorBinding  `json:"flow_anchor_bindings,omitempty"`
+	Version             int                  `json:"version"`
+	ContractVersion     int                  `json:"contract_version"`
+	PromptVersion       string               `json:"prompt_version"`
+	RepositoryArchetype RepositoryArchetype  `json:"repository_archetype"`
+	GroundingMode       GroundingMode        `json:"grounding_mode"`
+	AllowedPaths        []string             `json:"allowed_paths"`
+	BehaviorAnchors     []BehaviorAnchor     `json:"behavior_anchors,omitempty"`
+	Flows               []SynthesisFlow      `json:"flows,omitempty"`
+	Candidates          []SynthesisCandidate `json:"candidates"`
+	Relations           []LocalRelation      `json:"supporting_relations,omitempty"`
+	AnchorBindings      []FlowAnchorBinding  `json:"flow_anchor_bindings,omitempty"`
 }
 
 // SynthesisPrompt is the provider-neutral instruction plus the exact bounded
@@ -82,13 +87,18 @@ const (
 // SynthesisMetadata is saved beside the singular provider call. Validation
 // warnings and fallback are outcomes of local Apply, never provider claims.
 type SynthesisMetadata struct {
-	PromptVersion      string         `json:"prompt_version"`
-	Profile            string         `json:"profile"`
-	Model              string         `json:"model"`
-	InputBytes         int            `json:"input_bytes"`
-	LatencyMillis      int64          `json:"latency_ms"`
-	ValidationWarnings []Diagnostic   `json:"validation_warnings,omitempty"`
-	FallbackReason     FallbackReason `json:"fallback_reason,omitempty"`
+	PromptVersion          string                   `json:"prompt_version"`
+	Profile                string                   `json:"profile"`
+	Model                  string                   `json:"model"`
+	InputBytes             int                      `json:"input_bytes"`
+	LatencyMillis          int64                    `json:"latency_ms"`
+	ValidationWarnings     []Diagnostic             `json:"validation_warnings,omitempty"`
+	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
+	ArchitectureSource     ArchitectureSource       `json:"architecture_source"`
+	ArchitectureLevel      int                      `json:"architecture_level"`
+	Normalizations         []NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256 string                   `json:"original_proposal_sha256,omitempty"`
+	FallbackReason         FallbackReason           `json:"fallback_reason,omitempty"`
 }
 
 // SynthesisCall is one already-completed provider interaction. No provider
@@ -123,13 +133,17 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	}
 
 	request := SynthesisRequest{
-		Version:         SynthesisRequestVersion,
-		ContractVersion: ContractVersion,
-		PromptVersion:   SynthesisPromptVersion,
-		Candidates:      make([]SynthesisCandidate, 0, len(bundle.Candidates)),
-		Flows:           make([]SynthesisFlow, 0, len(bundle.Flows)),
-		Relations:       cloneLocalRelations(bundle.Relations),
-		AnchorBindings:  cloneFlowAnchorBindings(bundle.AnchorBindings),
+		Version:             SynthesisRequestVersion,
+		ContractVersion:     ContractVersion,
+		PromptVersion:       SynthesisPromptVersion,
+		RepositoryArchetype: bundle.RepositoryArchetype,
+		GroundingMode:       bundle.GroundingMode,
+		AllowedPaths:        synthesisAllowedPaths(bundle),
+		BehaviorAnchors:     cloneBehaviorAnchors(bundle.BehaviorAnchors),
+		Candidates:          make([]SynthesisCandidate, 0, len(bundle.Candidates)),
+		Flows:               make([]SynthesisFlow, 0, len(bundle.Flows)),
+		Relations:           cloneLocalRelations(bundle.Relations),
+		AnchorBindings:      cloneFlowAnchorBindings(bundle.AnchorBindings),
 	}
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
@@ -150,6 +164,7 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		request.Flows = append(request.Flows, SynthesisFlow{ID: flow.ID, Facts: facts})
 	}
 	sort.Slice(request.Relations, func(i, j int) bool { return request.Relations[i].ID < request.Relations[j].ID })
+	sort.Slice(request.BehaviorAnchors, func(i, j int) bool { return request.BehaviorAnchors[i].ID < request.BehaviorAnchors[j].ID })
 	sort.Slice(request.AnchorBindings, func(i, j int) bool {
 		left := string(request.AnchorBindings[i].FlowID) + "\x00" + request.AnchorBindings[i].AnchorID + "\x00" + request.AnchorBindings[i].MemberID.key()
 		right := string(request.AnchorBindings[j].FlowID) + "\x00" + request.AnchorBindings[j].AnchorID + "\x00" + request.AnchorBindings[j].MemberID.key()
@@ -172,6 +187,45 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	return request, encoded, nil
 }
 
+func synthesisAllowedPaths(bundle CandidateBundle) []string {
+	paths := make(map[string]struct{})
+	add := func(location *evidence.Location) {
+		if location != nil && location.Path != "" {
+			paths[location.Path] = struct{}{}
+		}
+	}
+	for _, anchor := range bundle.BehaviorAnchors {
+		add(&anchor.Location)
+		add(anchor.Producer.Location)
+	}
+	for _, candidate := range bundle.Candidates {
+		for _, fact := range candidate.Facts {
+			add(fact.Location)
+			for _, provenance := range fact.Provenance {
+				add(provenance.Location)
+			}
+		}
+	}
+	for _, relation := range bundle.Relations {
+		add(relation.Location)
+		for _, provenance := range relation.Provenance {
+			add(provenance.Location)
+		}
+	}
+	for _, binding := range bundle.AnchorBindings {
+		add(binding.Location)
+		for _, provenance := range binding.Provenance {
+			add(provenance.Location)
+		}
+	}
+	result := make([]string, 0, len(paths))
+	for path := range paths {
+		result = append(result, path)
+	}
+	sort.Strings(result)
+	return result
+}
+
 // BuildSynthesisPrompt exposes the actual versioned synthesis instruction used
 // by provider adapters. The output schema is intentionally smaller than the
 // local Landscape: evidence, relations, certainty, layout, and styling remain
@@ -187,11 +241,13 @@ Use candidate IDs as opaque values. Do not rewrite them, infer new IDs, or menti
 Local facts, structural relations, flow participation, certainty, provenance, scenarios, and source locations are read-only evidence. They help grouping but must never be returned, upgraded, replaced, or converted into execution order.
 
 Return exactly one compact JSON proposal object with this shape:
-{"version":%d,"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_ids":[{"kind":"package","value":"opaque supplied value"}]}]}]}
+{"version":%d,"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_ids":[{"kind":"package","value":"opaque supplied value"}],"anchor_ids":["supplied-anchor-id"],"hypothesis":false}]}]}
 
-The only allowed proposal fields are version, subsystems, subsystem name/description/components, component name/description/member_ids, and member kind/value. Member kind must be one of package, file, symbol, entrypoint, or flow exactly as supplied. Array order is the conceptual display order. Assign each supplied candidate at most once. Never repeat a member ID across components; for a cross-cutting member choose its single best conceptual home. Omit an uncertain member rather than duplicating it because local validation retains omissions separately. Every component must contain at least one supplied member ID. Use at most 12 subsystems and 24 components.
+The only allowed proposal fields are version, subsystems, subsystem name/description/components, component name/description/member_ids/anchor_ids/hypothesis, and member kind/value. Member and anchor IDs must be copied exactly from the request. Array order is the conceptual display order. Assign each supplied candidate at most once. Never repeat a member ID across components; for a cross-cutting member choose its single best conceptual home. Omit an uncertain member rather than duplicating it because local validation retains omissions separately. Every component must contain at least one supplied member ID.
 
-Do not return edges, relations, flow definitions or transitions, fact payloads, repository paths, symbol details, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`, ContractVersion)
+Repository archetype and grounding mode are local facts. A primary pillar is one top-level subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, choose four to seven top-level primary subsystems when the supplied evidence supports that many, never more than eight. Prefer one to four nested components per subsystem and no more than eighteen in total. Every non-hypothesis nested component must cite at least one supplied behavior anchor ID. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+
+Do not return edges, relations, flow definitions or transitions, fact payloads, repository paths, symbol details, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`, ProposalVersion)
 	user := "Bounded candidate request:\n" + string(requestJSON)
 	if len(system)+len(user) > maxSynthesisPromptBytes {
 		return SynthesisPrompt{}, fmt.Errorf("componentmap: synthesis prompt exceeds the local byte limit")
@@ -277,8 +333,13 @@ func RecordSynthesisResponse(
 				PromptVersion: SynthesisPromptVersion,
 				Profile:       profile, Model: model,
 				InputBytes: synthesisPromptSize(prompt), LatencyMillis: latency.Milliseconds(),
-				ValidationWarnings: cloneDiagnostics(landscape.Diagnostics),
-				FallbackReason:     landscape.FallbackReason,
+				ValidationWarnings:     cloneDiagnostics(landscape.Diagnostics),
+				ValidationOutcome:      landscape.ValidationOutcome,
+				ArchitectureSource:     landscape.Source,
+				ArchitectureLevel:      landscape.Level,
+				Normalizations:         append([]NormalizationOperation(nil), landscape.Normalizations...),
+				OriginalProposalSHA256: landscape.OriginalProposalSHA256,
+				FallbackReason:         landscape.FallbackReason,
 			},
 			ResponseState: state, ResponseBytes: len(rawResponse), Response: response,
 		},
@@ -313,7 +374,68 @@ func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []
 	if record.Call.Metadata.FallbackReason != landscape.FallbackReason {
 		return Landscape{}, fmt.Errorf("componentmap: saved synthesis fallback reason does not replay")
 	}
+	metadata := record.Call.Metadata
+	if metadata.ValidationOutcome != landscape.ValidationOutcome || metadata.ArchitectureSource != landscape.Source ||
+		metadata.ArchitectureLevel != landscape.Level || !reflect.DeepEqual(metadata.Normalizations, landscape.Normalizations) ||
+		metadata.OriginalProposalSHA256 != landscape.OriginalProposalSHA256 {
+		return Landscape{}, fmt.Errorf("componentmap: saved synthesis validation outcome does not replay")
+	}
 	return landscape, nil
+}
+
+// ReplayLegacyCapturedSynthesis revalidates a captured v1 response against the
+// current local bundle. This is intentionally limited to the persisted
+// architecture-grounding-v3 record used by approved offline replay fixtures;
+// no old validation outcome, cache key, or warning is trusted.
+func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landscape, error) {
+	if len(saved) == 0 || len(saved) > maxSynthesisRecordBytes {
+		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis record is empty or too large")
+	}
+	var record struct {
+		Version            int    `json:"version"`
+		RepositoryRevision string `json:"repository_revision"`
+		CacheKey           string `json:"cache_key"`
+		RequestSHA256      string `json:"request_sha256"`
+		Call               *struct {
+			Metadata struct {
+				PromptVersion      string         `json:"prompt_version"`
+				Profile            string         `json:"profile"`
+				Model              string         `json:"model"`
+				InputBytes         int            `json:"input_bytes"`
+				LatencyMillis      int64          `json:"latency_ms"`
+				ValidationWarnings []Diagnostic   `json:"validation_warnings"`
+				FallbackReason     FallbackReason `json:"fallback_reason"`
+			} `json:"metadata"`
+			ResponseState ResponseState `json:"response_state"`
+			ResponseBytes int           `json:"response_bytes"`
+			Response      []byte        `json:"response"`
+		} `json:"call"`
+	}
+	if err := decodeStrictJSON(saved, &record); err != nil {
+		return Landscape{}, fmt.Errorf("componentmap: decode legacy synthesis record: %w", err)
+	}
+	if record.Version != 1 || record.Call == nil || record.Call.Metadata.PromptVersion != "architecture-grounding-v3" {
+		return Landscape{}, fmt.Errorf("componentmap: unsupported legacy synthesis record")
+	}
+	if record.Call.ResponseState != ResponseCaptured || record.Call.ResponseBytes != len(record.Call.Response) ||
+		len(record.Call.Response) == 0 || len(record.Call.Response) > maxSynthesisResponseBytes {
+		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response is not a bounded capture")
+	}
+	if synthesisResponseContainsCredential(record.Call.Response) {
+		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response violates the obvious credential policy")
+	}
+	result, err := RecordSynthesisResponse(
+		bundle,
+		record.RepositoryRevision,
+		record.Call.Metadata.Profile,
+		record.Call.Metadata.Model,
+		time.Duration(record.Call.Metadata.LatencyMillis)*time.Millisecond,
+		record.Call.Response,
+	)
+	if err != nil {
+		return Landscape{}, err
+	}
+	return result.Landscape, nil
 }
 
 func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, record SynthesisRecord) error {
@@ -371,8 +493,20 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 			return fmt.Errorf("componentmap: synthesis validation warning[%d]: %w", index, err)
 		}
 	}
-	if metadata.FallbackReason != "" && metadata.FallbackReason != FallbackProposalInvalid {
+	if metadata.FallbackReason != "" && !validFallbackReason(metadata.FallbackReason) {
 		return fmt.Errorf("componentmap: model-assisted synthesis has invalid fallback reason %q", metadata.FallbackReason)
+	}
+	if !validValidationOutcome(metadata.ValidationOutcome) || !validArchitectureSource(metadata.ArchitectureSource) ||
+		metadata.ArchitectureLevel < 1 || metadata.ArchitectureLevel > 4 {
+		return fmt.Errorf("componentmap: synthesis validation outcome metadata is invalid")
+	}
+	for index, operation := range metadata.Normalizations {
+		if err := validateNormalizationOperation(operation); err != nil {
+			return fmt.Errorf("componentmap: synthesis normalization[%d]: %w", index, err)
+		}
+	}
+	if metadata.OriginalProposalSHA256 != "" && len(metadata.OriginalProposalSHA256) != 64 {
+		return fmt.Errorf("componentmap: synthesis original proposal digest is malformed")
 	}
 	switch record.Call.ResponseState {
 	case ResponseCaptured:
@@ -398,27 +532,27 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 
 func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, response []byte) (Landscape, error) {
 	if state == ResponseOversize {
-		return synthesisResponseFallback(bundle, Diagnostic{
-			Code:    "response.too_large",
-			Message: "provider response exceeded the bounded synthesis response limit and was not retained",
-		})
+		return synthesisResponseFallback(bundle, newDiagnostic(
+			"response.too_large",
+			"provider response exceeded the bounded synthesis response limit and was not retained",
+		))
 	}
 	if state == ResponseSensitiveOmitted {
-		return synthesisResponseFallback(bundle, Diagnostic{
-			Code:    "response.sensitive_omitted",
-			Message: "provider response matched the obvious credential policy and was not retained",
-		})
+		return synthesisResponseFallback(bundle, newDiagnostic(
+			"response.sensitive_omitted",
+			"provider response matched the obvious credential policy and was not retained",
+		))
 	}
 	object, normalization, responseErr := extractProposalObject(response)
 	if responseErr != nil {
-		return synthesisResponseFallback(bundle, Diagnostic{Code: responseErr.code, Message: responseErr.message})
+		return synthesisResponseFallback(bundle, newDiagnostic(responseErr.code, responseErr.message))
 	}
 	proposal, unknownFields, err := decodeProposalJSON(object)
 	if err != nil {
-		return synthesisResponseFallback(bundle, Diagnostic{
-			Code:    "response.invalid_proposal",
-			Message: "recovered json does not satisfy the bounded proposal schema",
-		})
+		return synthesisResponseFallback(bundle, newDiagnostic(
+			"response.invalid_proposal",
+			"recovered json does not satisfy the bounded proposal schema",
+		))
 	}
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
@@ -429,10 +563,10 @@ func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, resp
 		warnings = append(warnings, *normalization)
 	}
 	if unknownFields {
-		warnings = append(warnings, Diagnostic{
-			Code:    "response.unknown_fields_ignored",
-			Message: "ignored bounded response fields outside the conceptual proposal contract",
-		})
+		warnings = append(warnings, newDiagnostic(
+			"response.unknown_fields_ignored",
+			"ignored bounded response fields outside the conceptual proposal contract",
+		))
 	}
 	if len(warnings) > 0 {
 		landscape.Diagnostics = append(warnings, landscape.Diagnostics...)
@@ -483,9 +617,8 @@ func extractProposalObject(raw []byte) ([]byte, *Diagnostic, *synthesisResponseE
 		if len(jsonObjectCandidates(trimmed, 2)) > 1 {
 			return nil, nil, &synthesisResponseError{code: "response.ambiguous_json", message: "provider response contains several json objects"}
 		}
-		return fenced[0], &Diagnostic{
-			Code: "response.fenced_json_extracted", Message: "accepted one bounded proposal object from a markdown fence",
-		}, nil
+		diagnostic := newDiagnostic("response.fenced_json_extracted", "accepted one bounded proposal object from a markdown fence")
+		return fenced[0], &diagnostic, nil
 	case 0:
 	default:
 		return nil, nil, &synthesisResponseError{code: "response.ambiguous_json", message: "provider response contains several fenced json objects"}
@@ -494,9 +627,8 @@ func extractProposalObject(raw []byte) ([]byte, *Diagnostic, *synthesisResponseE
 	embedded := jsonObjectCandidates(trimmed, 2)
 	switch len(embedded) {
 	case 1:
-		return embedded[0], &Diagnostic{
-			Code: "response.embedded_json_extracted", Message: "accepted one bounded proposal object embedded in provider prose",
-		}, nil
+		diagnostic := newDiagnostic("response.embedded_json_extracted", "accepted one bounded proposal object embedded in provider prose")
+		return embedded[0], &diagnostic, nil
 	case 0:
 		return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no recoverable json object"}
 	default:
@@ -576,7 +708,7 @@ func decodeProposedComponent(raw json.RawMessage) (ProposedComponent, bool, erro
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return ProposedComponent{}, false, fmt.Errorf("proposal component is not an object")
 	}
-	unknown := hasUnknownFields(fields, "name", "description", "member_ids")
+	unknown := hasUnknownFields(fields, "name", "description", "member_ids", "anchor_ids", "hypothesis")
 	name, err := decodeProposalString(fields, "name")
 	if err != nil {
 		return ProposedComponent{}, unknown, err
@@ -601,7 +733,30 @@ func decodeProposedComponent(raw json.RawMessage) (ProposedComponent, bool, erro
 			result.MemberIDs = append(result.MemberIDs, memberID)
 		}
 	}
+	if value, exists := fields["anchor_ids"]; exists {
+		if err := json.Unmarshal(value, &result.AnchorIDs); err != nil {
+			return ProposedComponent{}, unknown, fmt.Errorf("proposal anchor ids have invalid type")
+		}
+	}
+	if value, exists := fields["hypothesis"]; exists {
+		if err := json.Unmarshal(value, &result.Hypothesis); err != nil {
+			return ProposedComponent{}, unknown, fmt.Errorf("proposal hypothesis has invalid type")
+		}
+	}
 	return result, unknown, nil
+}
+
+func cloneBehaviorAnchors(values []BehaviorAnchor) []BehaviorAnchor {
+	if values == nil {
+		return nil
+	}
+	result := make([]BehaviorAnchor, len(values))
+	for index, value := range values {
+		result[index] = value
+		result[index].MemberIDs = append([]MemberID(nil), value.MemberIDs...)
+		result[index].Limitations = append([]string(nil), value.Limitations...)
+	}
+	return result
 }
 
 func decodeProposedMemberID(raw json.RawMessage) (MemberID, bool, error) {

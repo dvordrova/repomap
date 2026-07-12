@@ -78,7 +78,7 @@ func synthesizeArchitectureForRun(
 		cacheLabel,
 	)
 	if outcome.FallbackReason != "" {
-		return outcome, fmt.Errorf("architecture synthesis did not produce a usable conceptual map: %s", outcome.FallbackReason)
+		fmt.Fprintf(stderr, "repomap: architecture synthesis downgraded to local fallback: %s\n", outcome.FallbackReason)
 	}
 	return outcome, nil
 }
@@ -98,6 +98,17 @@ func prepareArchitectureSynthesis(
 	input, err := report.BuildArchitectureCanvasInput(data)
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: build candidates: %w", err)
+	}
+	if input.CandidateBundle.GroundingMode == componentmap.GroundingPackages {
+		packageCount := 0
+		for _, candidate := range input.CandidateBundle.Candidates {
+			if candidate.ID.Kind == componentmap.MemberPackage {
+				packageCount++
+			}
+		}
+		if packageCount < 2 {
+			return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: insufficient package evidence for a useful landscape")
+		}
 	}
 	return ensureArchitectureSynthesis(
 		ctx,
@@ -192,16 +203,6 @@ func ensureArchitectureSynthesis(
 		LatencyMillis:  result.Record.Call.Metadata.LatencyMillis,
 		FallbackReason: result.Landscape.FallbackReason,
 	}
-	if outcome.FallbackReason != "" {
-		detail := string(outcome.FallbackReason)
-		if codes := architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics); len(codes) > 0 {
-			detail += " (" + strings.Join(codes, ", ") + ")"
-		}
-		return outcome, fmt.Errorf(
-			"architecture synthesis response is unusable: %s",
-			detail,
-		)
-	}
 	saved, err := json.MarshalIndent(result.Record, "", "  ")
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: encode record: %w", err)
@@ -245,12 +246,6 @@ func replayArchitectureSynthesisOutcome(
 	landscape, err := componentmap.ReplaySynthesis(bundle, repositoryRevision, saved)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
-	}
-	if landscape.Fallback {
-		return architectureSynthesisOutcome{}, fmt.Errorf(
-			"saved architecture synthesis is unusable: %s",
-			landscape.FallbackReason,
-		)
 	}
 	var record componentmap.SynthesisRecord
 	if err := json.Unmarshal(saved, &record); err != nil {
