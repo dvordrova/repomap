@@ -6,6 +6,10 @@ var jobs <-chan string
 
 func process(string) {}
 
+type scanner struct{}
+
+func (*scanner) Scan() error { return nil }
+
 func runWorker() error {
 	for job := range jobs {
 		process(job)
@@ -14,13 +18,17 @@ func runWorker() error {
 }
 
 func oneShot() error {
-	process("once")
+	for _, item := range []string{"once", "twice"} {
+		process(item)
+	}
 	return nil
 }
 
 func registerTasks(group *errgroup.Group) {
 	group.Go(runWorker)
 	group.Go(oneShot)
+	scan := &scanner{}
+	group.Go(func() error { return scan.Scan() })
 }
 
 func main() {
