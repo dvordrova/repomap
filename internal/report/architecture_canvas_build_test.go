@@ -355,6 +355,35 @@ func TestBuildArchitectureCanvasInputAllowsRepositoryLandscapeWithoutFlowProof(t
 	}
 }
 
+func TestBuildArchitectureCanvasInputKeepsExactPackageWithoutImportEdge(t *testing.T) {
+	t.Parallel()
+
+	input, err := BuildArchitectureCanvasInput(&ReportData{RepositoryGraph: &RepositoryGraph{
+		Version: 2,
+		Modules: []ModuleInfo{{ID: "module-project", Path: "github.com/example/project/v2"}},
+		Packages: []PackageInfo{{
+			CanonicalPath: "github.com/example/project/v2/internal/server", Name: "server",
+			ModuleID: "module-project", ModulePath: "github.com/example/project/v2",
+			Dir: "internal/server", ModuleRelativeDir: "internal/server",
+			DisplayPath: "internal/server", Locality: "local",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range input.CandidateBundle.Candidates {
+		if candidate.ID.Kind != componentmap.MemberPackage {
+			continue
+		}
+		if candidate.Name != "internal/server" || len(candidate.Facts) == 0 ||
+			candidate.Facts[0].Value != "github.com/example/project/v2/internal/server" {
+			t.Fatalf("exact package candidate = %#v", candidate)
+		}
+		return
+	}
+	t.Fatal("exact package without an import edge was omitted")
+}
+
 func TestBuildArchitectureCanvasInputPrioritizesGroundedBehavior(t *testing.T) {
 	t.Parallel()
 

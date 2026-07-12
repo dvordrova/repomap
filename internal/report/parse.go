@@ -20,6 +20,15 @@ import (
 
 type snapshotJSON struct {
 	RepoName string `json:"repo_name"`
+	GoFacts  *struct {
+		Modules []struct {
+			ID          string `json:"id"`
+			ModulePath  string `json:"module_path"`
+			ModuleDir   string `json:"module_dir"`
+			DisplayName string `json:"display_name"`
+		} `json:"modules"`
+		Packages []PackageInfo `json:"packages"`
+	} `json:"go_facts"`
 }
 
 type llmBundleJSON struct {
@@ -444,7 +453,11 @@ func parseLLMBundle(path string, data *ReportData) string {
 		})
 	}
 	if len(bundle.Go.ModuleSummaries) > 0 || len(bundle.Go.ImportantEdges) > 0 {
-		graph := &RepositoryGraph{PackageEdges: bundle.Go.ImportantEdges}
+		graph := data.RepositoryGraph
+		if graph == nil {
+			graph = &RepositoryGraph{}
+		}
+		graph.PackageEdges = bundle.Go.ImportantEdges
 		for _, module := range bundle.Go.ModuleSummaries {
 			if module.ModulePath == "" {
 				continue
@@ -453,7 +466,9 @@ func parseLLMBundle(path string, data *ReportData) string {
 			if dir == "." {
 				dir = ""
 			}
-			graph.Modules = append(graph.Modules, ModuleInfo{Path: module.ModulePath, Dir: dir})
+			if !repositoryGraphHasModule(graph.Modules, module.ModulePath, dir) {
+				graph.Modules = append(graph.Modules, ModuleInfo{Path: module.ModulePath, Dir: dir})
+			}
 		}
 		data.RepositoryGraph = graph
 	}
@@ -624,7 +639,29 @@ func parseSnapshot(path string, data *ReportData) string {
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
 	}
 	data.RepoName = snap.RepoName
+	if snap.GoFacts != nil && (len(snap.GoFacts.Modules) > 0 || len(snap.GoFacts.Packages) > 0) {
+		graph := &RepositoryGraph{Version: 2, Packages: append([]PackageInfo(nil), snap.GoFacts.Packages...)}
+		for _, module := range snap.GoFacts.Modules {
+			dir := filepath.ToSlash(filepath.Clean(module.ModuleDir))
+			if dir == "." {
+				dir = ""
+			}
+			graph.Modules = append(graph.Modules, ModuleInfo{
+				ID: module.ID, Path: module.ModulePath, Dir: dir, DisplayName: module.DisplayName,
+			})
+		}
+		data.RepositoryGraph = graph
+	}
 	return ""
+}
+
+func repositoryGraphHasModule(modules []ModuleInfo, modulePath, moduleDir string) bool {
+	for _, module := range modules {
+		if module.Path == modulePath && module.Dir == moduleDir {
+			return true
+		}
+	}
+	return false
 }
 
 func parseOrientationReport(path string, data *ReportData) string {

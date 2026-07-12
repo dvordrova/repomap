@@ -11,6 +11,36 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 )
 
+func TestParseSnapshotPreservesExactPackageIdentity(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "snapshot.json")
+	writeTestFile(t, dir, "snapshot.json", `{
+		"repo_name":"project",
+		"go_facts":{
+			"modules":[{"id":"module-v2","module_path":"github.com/example/project/v2","module_dir":".","display_name":"."}],
+			"packages":[{
+				"canonical_package_path":"github.com/example/project/v2/internal/server",
+				"name":"server","owning_module_id":"module-v2","module_path":"github.com/example/project/v2",
+				"package_directory":"internal/server","module_relative_path":"internal/server",
+				"display_path":"internal/server","locality":"local"
+			}]
+		}
+	}`)
+	data := &ReportData{}
+	if warning := parseSnapshot(path, data); warning != "" {
+		t.Fatal(warning)
+	}
+	if data.RepositoryGraph == nil || data.RepositoryGraph.Version != 2 || len(data.RepositoryGraph.Packages) != 1 {
+		t.Fatalf("repository graph = %#v", data.RepositoryGraph)
+	}
+	pkg := data.RepositoryGraph.Packages[0]
+	if pkg.CanonicalPath != "github.com/example/project/v2/internal/server" || pkg.DisplayPath != "internal/server" || pkg.Locality != "local" {
+		t.Fatalf("package identity = %#v", pkg)
+	}
+}
+
 func TestConfidenceLabel(t *testing.T) {
 	tests := []struct {
 		conf float64

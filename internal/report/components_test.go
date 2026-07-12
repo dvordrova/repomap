@@ -180,6 +180,31 @@ func TestRepositoryPackageForFileUsesLongestModuleDirectory(t *testing.T) {
 	}
 }
 
+func TestRepositoryPackageForFileUsesExactPackageOwnership(t *testing.T) {
+	t.Parallel()
+
+	graph := &RepositoryGraph{
+		Version: 2,
+		Modules: []ModuleInfo{
+			{ID: "outer", Path: "example.com/foo", Dir: ""},
+			{ID: "nested", Path: "example.com/foobar/v2", Dir: "server"},
+		},
+		Packages: []PackageInfo{
+			{CanonicalPath: "example.com/foo/serverish", ModuleID: "outer", Dir: "serverish", DisplayPath: "serverish", Locality: "local"},
+			{CanonicalPath: "example.com/foobar/v2/internal/worker", ModuleID: "nested", Dir: "server/internal/worker", DisplayPath: "internal/worker", Locality: "local"},
+		},
+	}
+	if got := repositoryPackageForFile(graph, "server/internal/worker/work.go"); got != "example.com/foobar/v2/internal/worker" {
+		t.Fatalf("nested package = %q", got)
+	}
+	if got := repositoryPackageForFile(graph, "serverish/file.go"); got != "example.com/foo/serverish" {
+		t.Fatalf("prefix-collision package = %q", got)
+	}
+	if got := repositoryPackageForFile(graph, "server/unowned/file.go"); got != "" {
+		t.Fatalf("unowned package = %q", got)
+	}
+}
+
 func TestBuildComponentsAddsSymbolAnchorsOnlyFromSemanticallyRelatedSavedDirection(t *testing.T) {
 	t.Parallel()
 

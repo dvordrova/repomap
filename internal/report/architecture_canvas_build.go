@@ -378,11 +378,17 @@ func (b *architectureCandidateBuilder) addRepositoryGraph(graph *RepositoryGraph
 		b.packageEdgeMembers[edge.To] = struct{}{}
 	}
 
-	packagePaths := make([]string, 0, len(b.packageEdgeMembers))
+	packagePaths := make([]string, 0, len(b.packageEdgeMembers)+len(graph.Packages))
 	for packagePath := range b.packageEdgeMembers {
 		packagePaths = append(packagePaths, packagePath)
 	}
+	for _, pkg := range graph.Packages {
+		if pkg.CanonicalPath != "" {
+			packagePaths = append(packagePaths, pkg.CanonicalPath)
+		}
+	}
 	sort.Strings(packagePaths)
+	packagePaths = compactArchitectureStrings(packagePaths)
 	for _, packagePath := range packagePaths {
 		b.addPackageCandidate(packagePath)
 	}
@@ -423,9 +429,18 @@ func (b *architectureCandidateBuilder) addPackageCandidate(packagePath string) c
 	}
 	id := architectureBuildMemberID(componentmap.MemberPackage, packagePath)
 	b.knownPackages[packagePath] = id
+	name := packagePath
+	if b.graph != nil {
+		for _, pkg := range b.graph.Packages {
+			if pkg.CanonicalPath == packagePath && pkg.DisplayPath != "" {
+				name = pkg.DisplayPath
+				break
+			}
+		}
+	}
 	b.addCandidate(componentmap.Candidate{
 		ID:   id,
-		Name: packagePath,
+		Name: name,
 		Facts: []componentmap.LocalFact{architectureBuildFact(
 			componentmap.FactDeclaration,
 			packagePath,
@@ -621,6 +636,14 @@ func (b *architectureCandidateBuilder) packageForFile(filePath string) string {
 	dir := path.Dir(filePath)
 	if dir == "." {
 		dir = ""
+	}
+	if len(b.graph.Packages) > 0 {
+		for _, pkg := range b.graph.Packages {
+			if pkg.Dir == dir {
+				return pkg.CanonicalPath
+			}
+		}
+		return ""
 	}
 	var best *ModuleInfo
 	for index := range b.graph.Modules {
