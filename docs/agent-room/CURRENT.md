@@ -1,7 +1,7 @@
 # Current approved implementation decision
 
 Decision:
-    060-architecture-grounding.md
+    070-component-surface-trace-editor-navigation.md
 
 Status:
     Approved
@@ -11,5 +11,6 @@ Approved by:
 
 Notes:
     This changes the active implementation scope.
-    It does not delete, rewrite, or invalidate historical decision 050.
-    Operational Flow Discovery remains part of the existing product.
+    It does not delete, rewrite, or invalidate historical decisions 050 or 060.
+    Behavior-grounded architecture and Operational Flow Discovery remain part
+    of the existing product.
