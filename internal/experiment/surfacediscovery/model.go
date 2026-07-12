@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	AnalyzerVersion       = "surface-ssa-v2"
-	TriggerCatalogVersion = 2
-	CoverageVersion       = 2
-	CatalogVersion        = 1
+	AnalyzerVersion              = "surface-ssa-v3"
+	TriggerCatalogVersion        = 2
+	CoverageVersion              = 2
+	CatalogVersion               = 1
+	ArchitectureGroundingVersion = 2
 )
 
 type Options struct {
@@ -95,10 +96,11 @@ type Value struct {
 }
 
 type Symbol struct {
-	ID       string   `json:"id"`
-	Package  string   `json:"package"`
-	Name     string   `json:"name"`
-	Location Location `json:"location"`
+	ID            string   `json:"id"`
+	EquivalentIDs []string `json:"equivalent_ids,omitempty"`
+	Package       string   `json:"package"`
+	Name          string   `json:"name"`
+	Location      Location `json:"location"`
 }
 
 type Wrapper struct {
@@ -189,9 +191,52 @@ type LoopSignal struct {
 }
 
 type Result struct {
-	Catalog   TriggerCatalog    `json:"trigger_catalog"`
-	Coverage  SurfaceCoverage   `json:"surface_coverage"`
-	Summaries []SemanticSummary `json:"semantic_summaries"`
+	Catalog   TriggerCatalog        `json:"trigger_catalog"`
+	Coverage  SurfaceCoverage       `json:"surface_coverage"`
+	Summaries []SemanticSummary     `json:"semantic_summaries"`
+	Grounding ArchitectureGrounding `json:"architecture_grounding"`
+}
+
+type ArchitectureGrounding struct {
+	Version             int                    `json:"version"`
+	RepositoryArchetype ArchetypeAssessment    `json:"repository_archetype"`
+	GroundingMode       string                 `json:"grounding_mode"`
+	Anchors             []BehaviorAnchor       `json:"behavior_anchors"`
+	Relationships       []BehaviorRelationship `json:"relationships"`
+}
+
+type ArchetypeAssessment struct {
+	Selected     string   `json:"selected"`
+	Evidence     []string `json:"evidence"`
+	Alternatives []string `json:"alternatives"`
+}
+
+type BehaviorAnchor struct {
+	ID                string     `json:"id"`
+	Kind              string     `json:"kind"`
+	Label             string     `json:"label"`
+	Location          Location   `json:"location"`
+	Scenario          Scenario   `json:"scenario"`
+	Producer          Provenance `json:"producer"`
+	Certainty         string     `json:"certainty"`
+	AssociatedMembers []Symbol   `json:"associated_members"`
+	Limitations       []string   `json:"limitations"`
+}
+
+type BehaviorRelationship struct {
+	ID                      string     `json:"id"`
+	From                    string     `json:"from_anchor_id"`
+	To                      string     `json:"to_anchor_id"`
+	Kind                    string     `json:"kind"`
+	EvidenceKind            string     `json:"evidence_kind"`
+	Location                Location   `json:"location"`
+	RepresentativeLocations []Location `json:"representative_locations"`
+	WitnessIDs              []string   `json:"witness_ids"`
+	WitnessCount            int        `json:"witness_count"`
+	PackageCount            int        `json:"package_count"`
+	Certainty               string     `json:"certainty"`
+	Producer                Provenance `json:"producer"`
+	witnessPackages         map[string]struct{}
 }
 
 func (r *Result) normalize() {
@@ -246,6 +291,12 @@ func (r *Result) normalize() {
 	if r.Coverage.BudgetsReached == nil {
 		r.Coverage.BudgetsReached = []string{}
 	}
+	if r.Grounding.Anchors == nil {
+		r.Grounding.Anchors = []BehaviorAnchor{}
+	}
+	if r.Grounding.Relationships == nil {
+		r.Grounding.Relationships = []BehaviorRelationship{}
+	}
 	sort.Slice(r.Catalog.Triggers, func(i, j int) bool {
 		return r.Catalog.Triggers[i].ID < r.Catalog.Triggers[j].ID
 	})
@@ -264,6 +315,12 @@ func (r *Result) normalize() {
 	})
 	sort.Slice(r.Summaries, func(i, j int) bool {
 		return r.Summaries[i].FunctionID < r.Summaries[j].FunctionID
+	})
+	sort.Slice(r.Grounding.Anchors, func(i, j int) bool {
+		return r.Grounding.Anchors[i].ID < r.Grounding.Anchors[j].ID
+	})
+	sort.Slice(r.Grounding.Relationships, func(i, j int) bool {
+		return r.Grounding.Relationships[i].ID < r.Grounding.Relationships[j].ID
 	})
 }
 
