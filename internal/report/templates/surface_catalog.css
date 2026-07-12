@@ -216,6 +216,7 @@
 
 .rm-surface__primary,
 .rm-surface__handler,
+.rm-surface__owner,
 .rm-surface__registration {
  min-width: 0;
  overflow: hidden;
@@ -229,9 +230,16 @@
 }
 
 .rm-surface__handler,
+.rm-surface__owner,
 .rm-surface__registration {
  color: var(--rm-surface-muted);
  font-size: .72rem;
+}
+
+.rm-surface__owner {
+ color: #526176;
+ font-size: .68rem;
+ font-weight: 700;
 }
 
 .rm-surface__semantics {
