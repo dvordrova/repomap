@@ -39,6 +39,7 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 
 	var openedPath string
 	var openedLine int
+	captureCalls := 0
 	handler, err := NewHandler(Options{
 		RunsDir:      runsDir,
 		InitialRunID: "20260711-200000-pebble",
@@ -47,6 +48,12 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 			openedPath = path
 			openedLine = line
 			return nil
+		},
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			captureCalls++
+			return freshness.RepositoryState{
+				Version: freshness.RepositoryStateVersion, Identity: filepath.Clean(repo), Head: strings.Repeat("0", 40),
+			}, nil
 		},
 	})
 	if err != nil {
@@ -81,6 +88,9 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	if len(list.Runs) != 3 || list.Runs[0].ID != "20260711-210000-legacy" {
 		t.Fatalf("runs = %#v", list.Runs)
 	}
+	if captureCalls != 0 {
+		t.Fatalf("run listing performed %d live freshness captures", captureCalls)
+	}
 
 	response, err = server.Client().Get(baseURL + "/runs/20260711-200000-pebble/report.html")
 	if err != nil {
@@ -93,6 +103,9 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || !bytes.Contains(report, []byte(`id="rm-report-data"`)) {
 		t.Fatalf("trusted report response = %d body=%q", response.StatusCode, report)
+	}
+	if captureCalls != 1 {
+		t.Fatalf("report request performed %d live freshness captures, want 1", captureCalls)
 	}
 	if bytes.Contains(report, []byte(unverifiedHTML)) {
 		t.Fatal("server executed the saved report HTML instead of rendering verified report data")

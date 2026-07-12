@@ -51,6 +51,7 @@ type Options struct {
 	CaptureRepository   CaptureRepositoryFunc
 	CaptureFactContext  CaptureFactContextFunc
 	AnalysisTimeout     time.Duration
+	Logf                func(string, ...any)
 	OnReady             func(url string) error
 }
 
@@ -75,6 +76,8 @@ type handler struct {
 	openFile     OpenFileFunc
 	openSlot     chan struct{}
 	analysis     *symbolAnalysis
+	captureRepo  CaptureRepositoryFunc
+	logf         func(string, ...any)
 }
 
 type metadata struct {
@@ -90,6 +93,7 @@ type openRequest struct {
 }
 
 func Serve(ctx context.Context, opts Options) error {
+	started := time.Now()
 	if ctx == nil {
 		return fmt.Errorf("report server: context is required")
 	}
@@ -115,6 +119,9 @@ func Serve(ctx context.Context, opts Options) error {
 	if err != nil {
 		_ = listener.Close()
 		return err
+	}
+	if opts.Logf != nil {
+		opts.Logf("report server ready in %d ms", time.Since(started).Milliseconds())
 	}
 
 	urlPrefix := capabilityURLPrefix(opts.Capability)
@@ -183,6 +190,10 @@ func NewHandler(opts Options) (http.Handler, error) {
 		return nil, fmt.Errorf("report server: invalid expected host")
 	}
 	urlPrefix := capabilityURLPrefix(capability)
+	captureRepo := opts.CaptureRepository
+	if captureRepo == nil {
+		captureRepo = freshness.CaptureRepository
+	}
 	h := &handler{
 		runsDir:      runsDir,
 		initialRunID: opts.InitialRunID,
@@ -190,6 +201,8 @@ func NewHandler(opts Options) (http.Handler, error) {
 		openFile:     openFile,
 		openSlot:     make(chan struct{}, 1),
 		analysis:     newSymbolAnalysis(opts),
+		captureRepo:  captureRepo,
+		logf:         opts.Logf,
 	}
 	if opts.InitialRunID != "" {
 		if !validRunID(opts.InitialRunID) {
@@ -247,6 +260,7 @@ func (h *handler) serveRuns(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	runID := r.PathValue("runID")
 	if !validRunID(runID) {
 		http.NotFound(w, r)
@@ -261,6 +275,8 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "saved report cannot be served without verified local authority", http.StatusConflict)
 		return
 	}
+	h.refreshRunFreshness(r.Context(), &run)
+	renderStarted := time.Now()
 	rendered, err := report.RenderHTML(run.Report)
 	if err != nil {
 		http.Error(w, "could not render report", http.StatusInternalServerError)
@@ -273,6 +289,13 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, "report.html", time.Time{}, bytes.NewReader(rendered))
+	h.log("served report %s: load+freshness=%d ms render=%d ms total=%d ms bytes=%d",
+		runID,
+		renderStarted.Sub(started).Milliseconds(),
+		time.Since(renderStarted).Milliseconds(),
+		time.Since(started).Milliseconds(),
+		len(rendered),
+	)
 }
 
 func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
@@ -354,6 +377,7 @@ func (h *handler) findAuthorizedRun(runID, requestedPath string) (runRecord, err
 }
 
 func (h *handler) loadRuns() ([]runRecord, error) {
+	started := time.Now()
 	entries, err := os.ReadDir(h.runsDir)
 	if err != nil {
 		return nil, err
@@ -406,12 +430,6 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 					if manifest.Version < report.CurrentRunManifestVersion {
 						legacy := freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
 						run.Report.Freshness = &legacy
-					} else if h.analysis != nil && h.analysis.capture != nil {
-						current, captureErr := h.analysis.capture(context.Background(), manifest.RepositoryState.Identity)
-						if captureErr == nil {
-							currentFreshness := manifest.CurrentFreshness(current)
-							run.Report.Freshness = &currentFreshness
-						}
 					}
 				}
 			}
@@ -419,7 +437,39 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 		runs = append(runs, run)
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].ID > runs[j].ID })
+	h.log("loaded %d saved report(s) in %d ms", len(runs), time.Since(started).Milliseconds())
 	return runs, nil
+}
+
+func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
+	if run == nil || run.Manifest == nil || run.Report == nil || run.Manifest.Version < report.CurrentRunManifestVersion ||
+		h.captureRepo == nil {
+		return
+	}
+	started := time.Now()
+	current, err := h.captureRepo(ctx, run.Manifest.RepositoryState.Identity)
+	if err != nil {
+		result := freshness.NewFreshnessResult(freshness.FreshnessUnavailable)
+		result.Diagnostics = []string{"current analyzed-input freshness could not be checked"}
+		run.Report.Freshness = &result
+		h.log("report %s freshness unavailable after %d ms", run.ID, time.Since(started).Milliseconds())
+		return
+	}
+	result := run.Manifest.CurrentFreshness(current)
+	run.Report.Freshness = &result
+	h.log("report %s freshness=%s in %d ms affected_inputs=%d affected_submodules=%d",
+		run.ID,
+		result.State,
+		time.Since(started).Milliseconds(),
+		len(result.AffectedInputIDs),
+		len(result.AffectedSubmodules),
+	)
+}
+
+func (h *handler) log(format string, args ...any) {
+	if h.logf != nil {
+		h.logf(format, args...)
+	}
 }
 
 func readRootFile(root *os.Root, name string, maxBytes int64) ([]byte, error) {
