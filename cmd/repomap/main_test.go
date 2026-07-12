@@ -447,6 +447,51 @@ func TestRunDefaultStrictSnapshotRejectsChangedAnalyzedInput(t *testing.T) {
 	}
 }
 
+func TestRunDefaultAllowsDirtyExcludedSubmodule(t *testing.T) {
+	clearLLMEnv(t)
+	submoduleSource := t.TempDir()
+	writeFile(t, filepath.Join(submoduleSource, "module.go"), "package platform\n\nconst Value = 1\n")
+	runGit(t, submoduleSource, "init", "--quiet")
+	runGit(t, submoduleSource, "add", "module.go")
+	commitTestRepository(t, submoduleSource)
+
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/root\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+	runGit(t, repo, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", submoduleSource, "internal/platform")
+	runGit(t, repo, "add", ".gitmodules", "internal/platform")
+	commitTestRepository(t, repo)
+	writeFile(t, filepath.Join(repo, "internal", "platform", "module.go"), "package platform\n\nconst Value = 2\n")
+
+	debugDir := t.TempDir()
+	if err := runDefaultWithDeps(repo, []string{"--offline", "--no-open", "--no-serve", "--debug-dir", debugDir}, defaultRunDeps{
+		stdout: io.Discard, stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	entries, err := os.ReadDir(debugDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runDir string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			runDir = filepath.Join(debugDir, entry.Name())
+		}
+	}
+	manifest, err := report.ReadRunManifest(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Freshness.State != freshness.FreshnessFresh || len(manifest.RepositoryState.Submodules) != 1 ||
+		!manifest.RepositoryState.Submodules[0].WorktreeModified {
+		t.Fatalf("dirty excluded submodule manifest = %#v", manifest)
+	}
+}
+
 func TestRunDefaultPreservesSubdirectoryAnalysisRoot(t *testing.T) {
 	clearLLMEnv(t)
 	repository := t.TempDir()

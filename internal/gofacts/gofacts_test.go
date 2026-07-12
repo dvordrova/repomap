@@ -101,6 +101,7 @@ func TestLoadAssignsNestedPackagesToExactOwningModule(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string]string{
+		"go.work":                        "go 1.24\n\nuse (\n\t.\n\t./server\n)\n",
 		"go.mod":                         "module example.com/foo\n\ngo 1.24\n",
 		"root.go":                        "package foo\n",
 		"server/go.mod":                  "module example.com/foobar/v2\n\ngo 1.24\n",
@@ -169,6 +170,19 @@ func TestLoadRecordsOnlyAuthorizedLocalReplacementDirectories(t *testing.T) {
 	if len(root.Replacements) != 2 || !root.Replacements[0].Local || root.Replacements[0].Dir != "dep" ||
 		root.Replacements[1].Local || root.Replacements[1].Dir != "" {
 		t.Fatalf("replacement provenance = %#v", root.Replacements)
+	}
+}
+
+func TestDiscoverGoModulesDoesNotEnterExcludedSubmoduleGitlink(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/root\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dirs := DiscoverGoModules([]string{"go.mod", "deps/platform"}, repo)
+	if len(dirs) != 1 || dirs[0] != "." {
+		t.Fatalf("discovered modules = %#v", dirs)
 	}
 }
 
