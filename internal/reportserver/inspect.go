@@ -198,14 +198,15 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "repository changed during analysis; regenerate the report"})
 		return
 	}
-	record := memory.Record{Session: session, Repository: after, Facts: &facts}
+	facts.Repository = run.Manifest.RepositoryState
+	record := memory.Record{Session: session, Repository: run.Manifest.RepositoryState, Facts: &facts}
 	if err := verifyInvestigationBinding(run, record); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "investigation no longer matches this report"})
 		return
 	}
 	if err := memory.SaveRoot(storeRoot, memory.Input{
 		Session:    session,
-		Repository: after,
+		Repository: run.Manifest.RepositoryState,
 		Facts:      &facts,
 	}); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not save the investigation"})
