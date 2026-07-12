@@ -11,13 +11,16 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/dvordrova/repomap/internal/evidence"
 )
 
 const (
-	RepositoryStateVersion = 1
+	RepositoryStateVersion = 2
+	CapturedInputVersion   = 1
+	FreshnessResultVersion = 1
 	FactContextVersion     = 1
 	ClaimContextVersion    = 1
 )
@@ -40,14 +43,76 @@ type DirtyFile struct {
 }
 
 type RepositoryState struct {
-	Version  int         `json:"version"`
-	Identity string      `json:"identity"`
-	Head     string      `json:"head"`
-	Dirty    []DirtyFile `json:"dirty"`
+	Version    int              `json:"version"`
+	Identity   string           `json:"identity"`
+	Head       string           `json:"head"`
+	Dirty      []DirtyFile      `json:"dirty"`
+	Submodules []SubmoduleState `json:"submodules,omitempty"`
+}
+
+type SubmoduleAvailability string
+
+const (
+	SubmoduleClean       SubmoduleAvailability = "clean"
+	SubmoduleUnavailable SubmoduleAvailability = "unavailable"
+)
+
+type SubmoduleState struct {
+	Path               string                `json:"path"`
+	IncludedInAnalysis bool                  `json:"included_in_analysis"`
+	RecordedGitlink    string                `json:"recorded_gitlink,omitempty"`
+	CurrentHead        string                `json:"current_head,omitempty"`
+	GitlinkChanged     bool                  `json:"gitlink_changed,omitempty"`
+	WorktreeModified   bool                  `json:"worktree_modified,omitempty"`
+	WorktreeUntracked  bool                  `json:"worktree_untracked,omitempty"`
+	Availability       SubmoduleAvailability `json:"availability"`
+}
+
+type CapturedInput struct {
+	Version        int      `json:"version"`
+	ID             string   `json:"id"`
+	Path           string   `json:"path"`
+	Kind           FileKind `json:"kind"`
+	Mode           string   `json:"mode,omitempty"`
+	ContentSHA256  string   `json:"content_sha256,omitempty"`
+	OwningModuleID string   `json:"owning_module_id,omitempty"`
+	OwningPackage  string   `json:"owning_package,omitempty"`
+	Stages         []string `json:"stages"`
+}
+
+type FreshnessState string
+
+const (
+	FreshnessFresh            FreshnessState = "fresh"
+	FreshnessUnrelatedChanges FreshnessState = "unrelated_changes"
+	FreshnessPartiallyStale   FreshnessState = "partially_stale"
+	FreshnessMixedSnapshot    FreshnessState = "mixed_snapshot"
+	FreshnessUnavailable      FreshnessState = "unavailable"
+	FreshnessLegacyUnknown    FreshnessState = "legacy_unknown"
+)
+
+type FreshnessResult struct {
+	Version            int            `json:"version"`
+	State              FreshnessState `json:"state"`
+	AffectedInputIDs   []string       `json:"affected_input_ids,omitempty"`
+	AffectedPaths      []string       `json:"affected_paths,omitempty"`
+	AffectedSubmodules []string       `json:"affected_submodules,omitempty"`
+	AnalyzedChanges    bool           `json:"analyzed_changes"`
+	UnrelatedChanges   bool           `json:"unrelated_changes"`
+	ComparedAt         string         `json:"compared_at"`
+	Diagnostics        []string       `json:"diagnostics,omitempty"`
+}
+
+type MixedSnapshotError struct {
+	Attempts int
+}
+
+func (err *MixedSnapshotError) Error() string {
+	return fmt.Sprintf("freshness: mixed snapshot after %d bounded repository captures", err.Attempts)
 }
 
 func (s RepositoryState) Validate() error {
-	if s.Version != RepositoryStateVersion {
+	if s.Version != 1 && s.Version != RepositoryStateVersion {
 		return fmt.Errorf("freshness: unsupported repository-state version %d", s.Version)
 	}
 	if !filepath.IsAbs(s.Identity) || filepath.Clean(s.Identity) != s.Identity {
@@ -67,6 +132,19 @@ func (s RepositoryState) Validate() error {
 		}
 		previous = key
 	}
+	previous = ""
+	if s.Version == 1 && len(s.Submodules) > 0 {
+		return fmt.Errorf("freshness: repository-state v1 cannot contain submodules")
+	}
+	for index, submodule := range s.Submodules {
+		if err := submodule.validate(); err != nil {
+			return fmt.Errorf("freshness: submodule %d: %w", index, err)
+		}
+		if previous != "" && submodule.Path <= previous {
+			return fmt.Errorf("freshness: submodules must be uniquely sorted")
+		}
+		previous = submodule.Path
+	}
 	return nil
 }
 
@@ -76,11 +154,101 @@ func (s RepositoryState) Digest() (string, error) {
 	}
 	canonical := s
 	canonical.Dirty = append([]DirtyFile{}, s.Dirty...)
+	canonical.Submodules = append([]SubmoduleState{}, s.Submodules...)
 	data, err := json.Marshal(canonical)
 	if err != nil {
 		return "", fmt.Errorf("freshness: encode repository state: %w", err)
 	}
 	return sha256Hex(data), nil
+}
+
+func (s SubmoduleState) validate() error {
+	if err := validateRelativePath(s.Path); err != nil {
+		return err
+	}
+	if s.RecordedGitlink != "" && !validHexDigest(s.RecordedGitlink, 40, 64) {
+		return fmt.Errorf("recorded gitlink is malformed")
+	}
+	if s.CurrentHead != "" && !validHexDigest(s.CurrentHead, 40, 64) {
+		return fmt.Errorf("current submodule HEAD is malformed")
+	}
+	if s.Availability != SubmoduleClean && s.Availability != SubmoduleUnavailable {
+		return fmt.Errorf("invalid submodule availability %q", s.Availability)
+	}
+	return nil
+}
+
+func (input CapturedInput) Validate() error {
+	if input.Version != CapturedInputVersion || !validHexDigest(input.ID, 64) {
+		return fmt.Errorf("freshness: captured input version or id is invalid")
+	}
+	if err := validateRelativePath(input.Path); err != nil {
+		return err
+	}
+	if input.Kind != FileRegular && input.Kind != FileSymlink && input.Kind != FileMissing {
+		return fmt.Errorf("freshness: captured input kind %q is unsupported", input.Kind)
+	}
+	if input.Kind != FileMissing && !validHexDigest(input.ContentSHA256, 64) {
+		return fmt.Errorf("freshness: captured input content SHA-256 is required")
+	}
+	if input.Kind == FileMissing && input.ContentSHA256 != "" {
+		return fmt.Errorf("freshness: missing captured input has content")
+	}
+	previous := ""
+	for _, stage := range input.Stages {
+		if !validLabel(stage) || (previous != "" && stage <= previous) {
+			return fmt.Errorf("freshness: captured input stages must be uniquely sorted")
+		}
+		previous = stage
+	}
+	if len(input.Stages) == 0 {
+		return fmt.Errorf("freshness: captured input has no consuming stage")
+	}
+	return nil
+}
+
+func CapturedInputsDigest(inputs []CapturedInput) (string, error) {
+	canonical := append([]CapturedInput(nil), inputs...)
+	sort.Slice(canonical, func(i, j int) bool { return canonical[i].Path < canonical[j].Path })
+	previous := ""
+	for index := range canonical {
+		if err := canonical[index].Validate(); err != nil {
+			return "", fmt.Errorf("freshness: captured input %d: %w", index, err)
+		}
+		if previous != "" && canonical[index].Path <= previous {
+			return "", fmt.Errorf("freshness: captured inputs must be uniquely sorted")
+		}
+		previous = canonical[index].Path
+		canonical[index].Stages = append([]string(nil), canonical[index].Stages...)
+	}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return "", fmt.Errorf("freshness: encode captured inputs: %w", err)
+	}
+	return sha256Hex(encoded), nil
+}
+
+func NewFreshnessResult(state FreshnessState) FreshnessResult {
+	return FreshnessResult{
+		Version: FreshnessResultVersion, State: state,
+		ComparedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func (result FreshnessResult) Validate() error {
+	if result.Version != FreshnessResultVersion {
+		return fmt.Errorf("freshness: unsupported result version %d", result.Version)
+	}
+	switch result.State {
+	case FreshnessFresh, FreshnessUnrelatedChanges, FreshnessPartiallyStale,
+		FreshnessMixedSnapshot, FreshnessUnavailable, FreshnessLegacyUnknown:
+	default:
+		return fmt.Errorf("freshness: invalid result state %q", result.State)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, result.ComparedAt); err != nil {
+		return fmt.Errorf("freshness: invalid comparison timestamp")
+	}
+	return nil
 }
 
 func (f DirtyFile) validate() error {

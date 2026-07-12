@@ -100,6 +100,67 @@ func TestCaptureRepositoryHashesIgnoredBuildInputsButNotIgnoredSecrets(t *testin
 	assertReason(t, CompareRepository(second, third), ReasonRepositoryDirty, "generated.go")
 }
 
+func TestCaptureRepositoryTreatsExcludedSubmoduleDirtAsInformational(t *testing.T) {
+	root, submodule := repositoryWithSubmodule(t)
+	clean := capture(t, root)
+	if len(clean.Submodules) != 1 || clean.Submodules[0].Path != "deps/platform" ||
+		clean.Submodules[0].Availability != SubmoduleClean || clean.Submodules[0].IncludedInAnalysis {
+		t.Fatalf("clean submodule = %#v", clean.Submodules)
+	}
+
+	writeFile(t, filepath.Join(submodule, "module.go"), "package platform\n\nconst Value = 2\n")
+	modified := capture(t, root)
+	if !modified.Submodules[0].WorktreeModified || len(modified.Dirty) != 0 {
+		t.Fatalf("modified excluded submodule = %#v / dirty=%#v", modified.Submodules, modified.Dirty)
+	}
+
+	writeFile(t, filepath.Join(submodule, "scratch.txt"), "untracked\n")
+	untracked := capture(t, root)
+	if !untracked.Submodules[0].WorktreeUntracked {
+		t.Fatalf("untracked excluded submodule = %#v", untracked.Submodules)
+	}
+
+	writeFile(t, filepath.Join(submodule, ".gitignore"), ".env\n")
+	writeFile(t, filepath.Join(submodule, ".env"), "SECRET=must-not-be-read\n")
+	ignored := capture(t, root)
+	if len(ignored.Submodules) != 1 || ignored.Submodules[0].Path != "deps/platform" {
+		t.Fatalf("ignored submodule secret leaked into state: %#v", ignored)
+	}
+}
+
+func TestCaptureRepositoryRecordsExcludedSubmoduleHeadMismatch(t *testing.T) {
+	root, submodule := repositoryWithSubmodule(t)
+	writeFile(t, filepath.Join(submodule, "module.go"), "package platform\n\nconst Value = 3\n")
+	gitCommand(t, submodule, "add", "module.go")
+	gitCommand(t, submodule, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "advance")
+
+	state := capture(t, root)
+	if len(state.Submodules) != 1 || !state.Submodules[0].GitlinkChanged ||
+		state.Submodules[0].CurrentHead == state.Submodules[0].RecordedGitlink {
+		t.Fatalf("submodule HEAD mismatch = %#v", state.Submodules)
+	}
+}
+
+func TestCaptureRepositoryDoesNotRecurseIntoDirtyNestedExcludedSubmodule(t *testing.T) {
+	nestedSource := newRepository(t)
+	outerSource := newRepository(t)
+	gitCommand(t, outerSource, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", nestedSource, "nested/tool")
+	gitCommand(t, outerSource, "add", ".gitmodules", "nested/tool")
+	gitCommand(t, outerSource, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "nested submodule")
+
+	root := newRepository(t)
+	gitCommand(t, root, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", outerSource, "deps/platform")
+	gitCommand(t, root, "add", ".gitmodules", "deps/platform")
+	gitCommand(t, root, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "outer submodule")
+	gitCommand(t, filepath.Join(root, "deps", "platform"), "-c", "protocol.file.allow=always", "submodule", "update", "--init", "--quiet")
+	writeFile(t, filepath.Join(root, "deps", "platform", "nested", "tool", "main.go"), "package fixture\n\nconst nested = true\n")
+
+	state := capture(t, root)
+	if len(state.Submodules) != 1 || state.Submodules[0].Path != "deps/platform" || !state.Submodules[0].WorktreeModified {
+		t.Fatalf("root recursively exposed nested submodule state: %#v", state.Submodules)
+	}
+}
+
 func TestFactAndClaimContextsDigestAndExplainDifferences(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +201,31 @@ func TestFactAndClaimContextsDigestAndExplainDifferences(t *testing.T) {
 	claimDifferences := CompareClaimContext(claim, changedClaim)
 	assertReason(t, claimDifferences, ReasonPromptVersion, "")
 	assertReason(t, claimDifferences, ReasonEvaluatorVersion, "")
+}
+
+func TestAssessInputsSeparatesUnrelatedAndAnalyzedChanges(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	initial := capture(t, repo)
+	inputs, err := CaptureInputs(context.Background(), initial, []string{"main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, "notes.txt"), "unrelated\n")
+	unrelated := capture(t, repo)
+	result := AssessInputs(context.Background(), initial, unrelated, inputs)
+	if result.State != FreshnessUnrelatedChanges || result.AnalyzedChanges || !result.UnrelatedChanges {
+		t.Fatalf("unrelated result = %#v", result)
+	}
+
+	writeFile(t, filepath.Join(repo, "main.go"), "package fixture\n\nconst changed = true\n")
+	stale := capture(t, repo)
+	result = AssessInputs(context.Background(), initial, stale, inputs)
+	if result.State != FreshnessPartiallyStale || !result.AnalyzedChanges ||
+		!reflect.DeepEqual(result.AffectedPaths, []string{"main.go"}) {
+		t.Fatalf("stale result = %#v", result)
+	}
 }
 
 func TestContextValidationRejectsNonCanonicalInputs(t *testing.T) {
@@ -223,6 +309,20 @@ func newRepository(t *testing.T) string {
 	gitCommand(t, dir, "add", "main.go")
 	gitCommand(t, dir, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "fixture")
 	return dir
+}
+
+func repositoryWithSubmodule(t *testing.T) (string, string) {
+	t.Helper()
+	source := newRepository(t)
+	writeFile(t, filepath.Join(source, "module.go"), "package platform\n\nconst Value = 1\n")
+	gitCommand(t, source, "add", "module.go")
+	gitCommand(t, source, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "module")
+
+	root := newRepository(t)
+	gitCommand(t, root, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", source, "deps/platform")
+	gitCommand(t, root, "add", ".gitmodules", "deps/platform")
+	gitCommand(t, root, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "submodule")
+	return root, filepath.Join(root, "deps", "platform")
 }
 
 func capture(t *testing.T, repo string) RepositoryState {
