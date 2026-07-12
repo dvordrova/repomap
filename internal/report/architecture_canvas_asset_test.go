@@ -34,6 +34,18 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "Landscape classifies graph board and hybrid projections",
+			asset: js,
+			tokens: []string{
+				"projectLandscapeGraph()",
+				"chooseLandscapeLayoutMode(projection)",
+				`return "board"`,
+				`return "graph"`,
+				`return "hybrid"`,
+				"primaryRegion",
+			},
+		},
+		{
 			name:  "separate evidence layers and branch semantics",
 			asset: js,
 			tokens: []string{
@@ -109,7 +121,6 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			asset: js,
 			tokens: []string{
 				"representedPairs",
-				"if (!fromOwner || !toOwner || fromOwner === toOwner) return;",
 				"localFlowLanes()",
 				"localFlowRoute(edge, lane)",
 				"crossFlowRoute(edge)",
