@@ -30,7 +30,6 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"layoutOnce()",
 				`"elk.algorithm": "layered"`,
 				`"elk.edgeRouting": "ORTHOGONAL"`,
-				`"elk.hierarchyHandling": "INCLUDE_CHILDREN"`,
 			},
 		},
 		{
@@ -43,6 +42,19 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				`return "graph"`,
 				`return "hybrid"`,
 				"primaryRegion",
+			},
+		},
+		{
+			name:  "balanced Landscape packing stays deterministic",
+			asset: js,
+			tokens: []string{
+				"layoutArchitectureBoard(projection)",
+				"orderedLandscapeGroups(projection)",
+				"orderedGroupComponents(group, projection)",
+				"packLandscapeGroups(groups, projection, profile, startY)",
+				"centeredColumnOrder(columns)",
+				"graphLayoutIsReadable(layout)",
+				"buildLandscapeEdgeRoutes()",
 			},
 		},
 		{
