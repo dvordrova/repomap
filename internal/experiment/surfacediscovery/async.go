@@ -30,20 +30,17 @@ func (a *analyzer) recordAsyncTask(
 	}}
 	if callbackFunction := a.functionByID[cleanFunctionID(callback.Text)]; callbackFunction != nil {
 		loops := a.loops(callbackFunction)
-		if len(loops) > 0 {
-			kind = "worker"
-			status = "possible_worker_loop"
-			for _, loop := range loops {
-				signal := loop.signal
-				signal.TerminalSeed = seed.ID
-				a.addLoopSignal(signal)
-				evidence = append(evidence, Evidence{
-					ID: "loop:" + locationKey(signal.Location), Kind: signal.Kind,
-					Location: signal.Location, Detail: signal.Detail,
-				})
-				if signal.Kind == "channel_receive_loop" || signal.Kind == "select_event_loop" {
-					status = "confirmed_worker_registration"
-				}
+		for _, loop := range loops {
+			signal := loop.signal
+			signal.TerminalSeed = seed.ID
+			a.addLoopSignal(signal)
+			evidence = append(evidence, Evidence{
+				ID: "loop:" + locationKey(signal.Location), Kind: signal.Kind,
+				Location: signal.Location, Detail: signal.Detail,
+			})
+			if signal.Kind == "channel_receive_loop" || signal.Kind == "select_event_loop" {
+				kind = "worker"
+				status = "confirmed_worker_registration"
 			}
 		}
 	}

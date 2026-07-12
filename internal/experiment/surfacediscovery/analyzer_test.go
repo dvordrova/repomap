@@ -137,17 +137,19 @@ func TestAnalyzeDynamicAndNegativeControls(t *testing.T) {
 
 func TestAnalyzeWorkerRequiresTerminalStartAndLoopEvidence(t *testing.T) {
 	result := analyzeFixture(t, "workers")
-	if len(result.Catalog.Triggers) != 2 {
-		t.Fatalf("trigger count = %d, want worker and finite async task", len(result.Catalog.Triggers))
+	if len(result.Catalog.Triggers) != 3 {
+		t.Fatalf("trigger count = %d, want worker and two finite async tasks", len(result.Catalog.Triggers))
 	}
-	var worker, finite *TriggerRecord
+	var worker, finite, scannerTask *TriggerRecord
 	for index := range result.Catalog.Triggers {
 		trigger := &result.Catalog.Triggers[index]
-		switch trigger.Kind {
-		case "worker":
+		switch {
+		case trigger.Kind == "worker":
 			worker = trigger
-		case "async_task":
+		case trigger.Kind == "async_task" && strings.Contains(trigger.Handler.Text, "oneShot"):
 			finite = trigger
+		case trigger.Kind == "async_task" && strings.Contains(trigger.Handler.Text, "registerTasks$"):
+			scannerTask = trigger
 		}
 	}
 	if worker == nil || worker.Status != "confirmed_worker_registration" ||
@@ -158,8 +160,12 @@ func TestAnalyzeWorkerRequiresTerminalStartAndLoopEvidence(t *testing.T) {
 		!strings.Contains(finite.Handler.Text, "oneShot") {
 		t.Fatalf("finite task = %#v", finite)
 	}
-	if result.Coverage.Workers != 1 || result.Coverage.AsyncTasks != 1 ||
-		!hasLoopSignal(result.Coverage.LoopSignals, "channel_receive_loop") {
+	if scannerTask == nil || scannerTask.Status != "confirmed_async_task_start" {
+		t.Fatalf("captured method task = %#v; triggers = %#v", scannerTask, result.Catalog.Triggers)
+	}
+	if result.Coverage.Workers != 1 || result.Coverage.AsyncTasks != 2 ||
+		!hasLoopSignal(result.Coverage.LoopSignals, "channel_receive_loop") ||
+		!hasLoopSignal(result.Coverage.LoopSignals, "control_flow_loop") {
 		t.Fatalf("coverage = %#v", result.Coverage)
 	}
 	seenEvidence := map[string]struct{}{}
