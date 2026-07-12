@@ -307,7 +307,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			attempt.State = "failed"
 		} else {
-			attempt.State = "succeeded"
+			attempt.State = "response_received"
 		}
 		if dw != nil {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
@@ -316,16 +316,15 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if err != nil {
 			if dw != nil {
-				if !opts.DumpLLM {
-					_ = dw.WriteLLMRequest(requestJSON)
-				}
-				dw.WriteError(err)
+				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "provider_request_failed", err)
 			}
 			return nil, err
 		}
 		if err := validateProviderOutputForStorage("orientation", raw); err != nil {
+			attempt.State = "response_rejected"
 			if dw != nil {
-				dw.WriteError(err)
+				_ = dw.WriteMetadata(runMeta)
+				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "response_rejected", err)
 			}
 			return nil, err
 		}
@@ -338,8 +337,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 		or, err := parseOrientation(raw)
 		if err != nil {
+			attempt.State = "response_parse_failed"
 			if dw != nil {
-				dw.WriteError(fmt.Errorf("invalid orientation JSON: %s", string(raw)))
+				_ = dw.WriteMetadata(runMeta)
+				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, raw, "response_parse_failed", err)
 			}
 			return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
 		}
@@ -365,10 +366,18 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		reconcileResolvedUnknownPaths(&or)
 		applyOrientationConfidenceGate(&or, bundle)
 		if err := validateOrientation(or, bundle.AllowedPaths, allowedEntrypoints); err != nil {
+			attempt.State = "response_validation_failed"
 			if dw != nil {
-				dw.WriteError(err)
+				_ = dw.WriteMetadata(runMeta)
+				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, raw, "response_validation_failed", err)
 			}
 			return nil, err
+		}
+		attempt.State = "succeeded"
+		if dw != nil {
+			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+				return nil, fmt.Errorf("write successful request metadata: %w", metadataErr)
+			}
 		}
 		report.Orientation = &or
 		runMeta.CandidateDirectionCount = len(or.CandidateFlows)
@@ -437,6 +446,31 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	text := formatHumanReadable(report, opts.DebugDir, runID)
 	return []byte(text), nil
+}
+
+func writeOrientationFailureArtifacts(
+	dw *debugdump.Writer,
+	dumped bool,
+	requestJSON []byte,
+	safeResponse []byte,
+	stage string,
+	err error,
+) {
+	if !dumped && len(requestJSON) > 0 {
+		_ = dw.WriteLLMRequest(requestJSON)
+	}
+	if !dumped && len(safeResponse) > 0 {
+		_ = dw.WriteLLMResponse(safeResponse)
+	}
+	validation, marshalErr := json.MarshalIndent(map[string]string{
+		"status": "failed",
+		"stage":  stage,
+		"error":  err.Error(),
+	}, "", "  ")
+	if marshalErr == nil {
+		_ = dw.WriteOrientationValidation(append(validation, '\n'))
+	}
+	dw.WriteError(err)
 }
 
 func formatSurfaceDiscoveryWarning(err error) string {
