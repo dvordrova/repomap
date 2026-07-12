@@ -387,6 +387,9 @@ func CapturedInputPaths(data *ReportData) []string {
 			}
 			paths = append(paths, path.Join(dir, "go.mod"), path.Join(dir, "go.sum"))
 		}
+		for _, pkg := range data.RepositoryGraph.Packages {
+			paths = append(paths, pkg.Files...)
+		}
 	}
 	sort.Strings(paths)
 	compacted := paths[:0]

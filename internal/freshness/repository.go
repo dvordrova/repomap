@@ -285,6 +285,7 @@ func fingerprintDirtyFile(root *os.Root, entry statusEntry) (DirtyFile, error) {
 	switch {
 	case info.Mode().IsRegular():
 		file.Kind = FileRegular
+		file.Mode = fmt.Sprintf("%04o", info.Mode().Perm())
 		handle, err := root.Open(filepath.FromSlash(entry.path))
 		if err != nil {
 			return DirtyFile{}, fmt.Errorf("freshness: open dirty path %q: %w", entry.path, err)
@@ -301,6 +302,7 @@ func fingerprintDirtyFile(root *os.Root, entry statusEntry) (DirtyFile, error) {
 		file.ContentSHA256 = fmt.Sprintf("%x", hash.Sum(nil))
 	case info.Mode()&os.ModeSymlink != 0:
 		file.Kind = FileSymlink
+		file.Mode = "120000"
 		target, err := os.Readlink(filepath.Join(root.Name(), filepath.FromSlash(entry.path)))
 		if err != nil {
 			return DirtyFile{}, fmt.Errorf("freshness: read dirty symlink %q: %w", entry.path, err)
