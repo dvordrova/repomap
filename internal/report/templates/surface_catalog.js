@@ -6,7 +6,7 @@
   { value: "all", label: "All" },
   { value: "http_route", label: "HTTP" },
   { value: "worker", label: "Workers" },
-  { value: "async_task", label: "Async tasks" },
+  { value: "async_task", label: "Non-worker tasks" },
  ];
  const EVIDENCE_FILTERS = [
   { value: "all", label: "All evidence" },
@@ -69,6 +69,13 @@
   let label = text(item.path);
   if (Number(item.line) > 0) label += ":" + Number(item.line);
   return label;
+ }
+
+ function executableOwner(trigger) {
+  const entrypoint = object(object(trigger).process_entrypoint);
+  const path = text(object(entrypoint.location).path);
+  if (path.indexOf("/") >= 0) return path.slice(0, path.lastIndexOf("/"));
+  return text(entrypoint.package || entrypoint.name);
  }
 
  function sentenceLabel(value) {
@@ -186,7 +193,7 @@
     element(
      "p",
      "rm-surface__intro",
-     "Registrations and starts found across build-selected repository executables. Execution was not observed."
+     "Repository-wide registrations and starts found across build-selected executables, including helper tooling. This catalog is independent of selected FlowProofs; execution was not observed."
     )
    );
    heading.appendChild(headingCopy);
@@ -249,7 +256,7 @@
      value: firstNumber([this.data.worker_count, coverage.workers], countByKind(this.triggers, "worker")),
     },
     {
-     label: "async tasks",
+      label: "non-worker async tasks",
      value: firstNumber(
       [this.data.async_task_count, coverage.async_tasks],
       countByKind(this.triggers, "async_task")
@@ -381,11 +388,17 @@
    identityBlock.appendChild(primary);
 
    const handler = valueText(trigger.handler);
-   if (handler && handler !== primaryText) {
+    if (handler && handler !== primaryText) {
     const callback = element("span", "rm-surface__handler", handler);
     callback.title = handler;
-    identityBlock.appendChild(callback);
-   }
+     identityBlock.appendChild(callback);
+    }
+    const owner = executableOwner(trigger);
+    if (owner) {
+     const ownership = element("span", "rm-surface__owner", "Executable · " + owner);
+     ownership.title = owner;
+     identityBlock.appendChild(ownership);
+    }
    summary.appendChild(identityBlock);
    const registration = locationLabel(trigger.registration_site);
    summary.appendChild(
@@ -558,7 +571,7 @@
     element(
      "p",
      "rm-surface__caveat",
-     "Static registration evidence does not prove callback execution, middleware order, branch choice, or process lifetime."
+      "Static registration evidence does not prove callback execution, middleware order, branch choice, or process lifetime. Worker and non-worker async-task counts are exclusive catalog classifications and are independent of selected FlowProof coverage."
     )
    );
 
@@ -570,7 +583,7 @@
   appendText(facts, "Direct registrations", coverage.direct_count);
   appendText(facts, "Wrapper-derived", coverage.wrapper_count);
   appendText(facts, "Workers", coverage.worker_count);
-  appendText(facts, "Async tasks", coverage.async_task_count);
+  appendText(facts, "Non-worker async tasks", coverage.async_task_count);
   if (coverage.truncated === true) appendText(facts, "Projection bound", "Reached; additional triggers were not embedded");
   appendText(facts, "Packages inspected", coverage.packages_inspected);
   appendText(facts, "Functions inspected", coverage.functions_inspected);
