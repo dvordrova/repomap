@@ -170,12 +170,14 @@
 
   function renderFileReference(filePath, cls, line, label) {
     var text = label || filePath;
+    var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
     if (!serverMode() || !OPENABLE_PATH_SET[filePath]) {
-      return txt('span', cls, text);
+      var reference = txt('span', cls + (stale ? ' rm-file-link--stale' : ''), text);
+      if (stale) reference.title = 'This source changed after the report was generated.';
+      return reference;
     }
     var button = txt('button', cls + ' rm-file-link', text);
     button.type = 'button';
-    var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
     button.title = stale ? 'This source changed after the report was generated. Open current source.' : 'Open current source in VS Code';
     if (stale) button.classList.add('rm-file-link--stale');
     button.onclick = function (event) {
@@ -1740,6 +1742,9 @@
           links.appendChild(renderFileReference(ref.path, 'rm-component-file', ref.line, ref.label));
         });
         row.appendChild(links);
+        if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(group.path) >= 0) {
+          row.appendChild(txt('div', 'rm-component-anchor-context', 'This source changed after the report was generated.'));
+        }
         if (group.grounding) {
           row.appendChild(txt('span', 'rm-component-anchor-grounding', componentAnchorGroundingLabel(group.grounding)));
         }
@@ -2123,6 +2128,9 @@
     pathRow.appendChild(renderFileReference(fi.path, 'rm-read-order-path', 0, fi.path));
     if (fi.kind) pathRow.appendChild(renderKindBadge(fi.kind));
     body.appendChild(pathRow);
+    if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(fi.path) >= 0) {
+      body.appendChild(txt('div', 'rm-read-order-reason', 'This source changed after the report was generated.'));
+    }
     if (fi.reason) {
       var reason = linkified('div', 'rm-read-order-reason', humanizeReason(fi.reason));
       reason.title = fi.reason;
@@ -2144,6 +2152,9 @@
       var li = el('li', 'rm-file-list-item');
       var pathSpan = renderFileReference(f.path, 'rm-file-path', 0, f.path);
       li.appendChild(pathSpan);
+      if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(f.path) >= 0) {
+        li.appendChild(txt('span', 'rm-file-reason', 'This source changed after the report was generated.'));
+      }
       if (f.reason) {
         var reason = linkified('span', 'rm-file-reason', humanizeReason(f.reason));
         reason.title = f.reason;
@@ -2164,6 +2175,9 @@
     var renderItem = function (file) {
       var li = el('li', 'rm-file-list-item');
       li.appendChild(renderFileReference(file.path, 'rm-file-path', 0, file.path));
+      if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(file.path) >= 0) {
+        li.appendChild(txt('span', 'rm-file-reason', 'This source changed after the report was generated.'));
+      }
       if (file.reason) {
         var reason = linkified('span', 'rm-file-reason', humanizeReason(file.reason));
         reason.title = file.reason;
