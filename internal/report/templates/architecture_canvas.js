@@ -19,6 +19,8 @@
  const MAX_SCALE = 2.4;
  const WHEEL_ZOOM_SENSITIVITY = 0.0015;
  const MAX_WHEEL_DELTA = 120;
+ const INITIAL_MIN_SCALE = 0.72;
+ const INITIAL_MAX_SCALE = 1;
  const LANDSCAPE_COMPONENT_HEIGHT = 108;
  const LANDSCAPE_COMPONENT_GAP = 16;
  const LANDSCAPE_GROUP_GAP = 32;
@@ -290,7 +292,7 @@
 
    const controls = element("div", "rm-arch__controls");
    this.zoomOutButton = this.controlButton("−", "Zoom out", () => this.zoomBy(0.82));
-    this.fitButton = this.controlButton("Fit", "Fit landscape in view", () => this.fit());
+     this.fitButton = this.controlButton("Fit", "Fit entire architecture", () => this.fit());
    this.zoomInButton = this.controlButton("+", "Zoom in", () => this.zoomBy(1.22));
    controls.append(this.zoomOutButton, this.fitButton, this.zoomInButton);
    toolbar.appendChild(controls);
@@ -336,7 +338,7 @@
      this.layoutResult = layout;
      this.renderPersistentScene();
      this.renderSelection();
-     requestAnimationFrame(() => this.fit());
+      requestAnimationFrame(() => this.focusInitialLandscape());
     })
     .catch((error) => {
      if (this.destroyed) return;
@@ -1640,7 +1642,7 @@
    this.applyView();
   }
 
-  fit() {
+   fit() {
    if (!this.surface || !this.layoutResult) return;
    const bounds = this.selectedFlowBounds() || this.landscapeBounds() || {
      x: 0,
@@ -1648,8 +1650,38 @@
      width: this.layoutResult.width,
     height: this.layoutResult.height,
    };
-   this.fitBounds(bounds);
-  }
+    this.fitBounds(bounds);
+   }
+
+   primaryLandscapeBounds() {
+    if (!this.primaryGroupIDs || this.primaryGroupIDs.size === 0) return this.landscapeBounds();
+    const positions = Array.from(this.primaryGroupIDs)
+     .map((id) => this.groupPositions.get(id))
+     .filter(Boolean);
+    if (positions.length === 0) return this.landscapeBounds();
+    const minX = Math.min.apply(null, positions.map((position) => position.x));
+    const minY = Math.min.apply(null, positions.map((position) => position.y));
+    const maxX = Math.max.apply(null, positions.map((position) => position.x + position.width));
+    const maxY = Math.max.apply(null, positions.map((position) => position.y + position.height));
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+   }
+
+   focusInitialLandscape() {
+    if (!this.surface || !this.layoutResult) return;
+    const bounds = this.primaryLandscapeBounds() || this.landscapeBounds();
+    const rect = this.viewport.getBoundingClientRect();
+    if (!bounds || rect.width < 10 || rect.height < 10) return;
+    const padding = 28;
+    const scale = clamp(
+     (rect.width - padding * 2) / Math.max(1, bounds.width),
+     INITIAL_MIN_SCALE,
+     INITIAL_MAX_SCALE
+    );
+    this.view.scale = scale;
+    this.view.x = (rect.width - bounds.width * scale) / 2 - bounds.x * scale;
+    this.view.y = padding - bounds.y * scale;
+    this.applyView();
+   }
 
   landscapeBounds() {
    if (this.selection.flow) return null;
@@ -1718,16 +1750,12 @@
    this.root.style.setProperty("--rm-arch-scale", this.view.scale);
   }
 
-  setSelection(patch, writeHash) {
-   const previousFlow = this.selection.flow;
-   const next = Object.assign({}, this.selection, patch || {});
-   this.selection = this.validateSelection(next);
-   if (writeHash) this.writeHash();
-   this.renderSelection();
-   if (this.surface && previousFlow !== this.selection.flow && !this.selection.flow) {
-    requestAnimationFrame(() => this.fit());
+   setSelection(patch, writeHash) {
+    const next = Object.assign({}, this.selection, patch || {});
+    this.selection = this.validateSelection(next);
+    if (writeHash) this.writeHash();
+    this.renderSelection();
    }
-  }
 
   hasInspectorSelection(selection) {
    return Boolean(selection && (selection.component || selection.step || selection.edge));

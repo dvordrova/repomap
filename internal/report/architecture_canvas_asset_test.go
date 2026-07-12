@@ -101,11 +101,22 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"selectedFlowBounds()",
 				"landscapeBounds()",
 				"this.fitBounds(bounds)",
-				`"Fit landscape in view"`,
+				`"Fit entire architecture"`,
 				"condition (expression omitted)",
 				"Architecture renderer is unavailable.",
 				`this.appendKeyValue(parent, "Starts when"`,
 				`root && (root.label || root.qualified_name) || "task root"`,
+			},
+		},
+		{
+			name:  "initial Landscape view stays readable and survives flow visits",
+			asset: js,
+			tokens: []string{
+				"INITIAL_MIN_SCALE",
+				"INITIAL_MAX_SCALE",
+				"focusInitialLandscape()",
+				"primaryLandscapeBounds()",
+				"padding - bounds.y * scale",
 			},
 		},
 		{
