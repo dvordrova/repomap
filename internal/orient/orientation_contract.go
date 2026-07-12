@@ -183,8 +183,8 @@ func jsonArrayUsesStrings(data json.RawMessage) bool {
 }
 
 // normalizeOrientationGrounding tolerates provider drift without weakening the
-// structured navigation contract. Ungrounded prose and likely_files entries
-// are dropped, while remaining exact paths can repair an entrypoint or seed.
+// structured navigation contract. Ungrounded prose and navigation entries are
+// dropped, while remaining exact paths can repair an entrypoint or seed.
 func normalizeOrientationGrounding(
 	report *orientationPart,
 	allowedPaths []string,
@@ -236,6 +236,28 @@ func normalizeOrientationGrounding(
 		}
 		return filtered
 	}
+
+	normalizedFirstFiles := make([]fileToOpen, 0, len(report.FirstFilesToOpen))
+	seenFirstFiles := make(map[string]struct{}, len(report.FirstFilesToOpen))
+	for index, item := range report.FirstFilesToOpen {
+		candidate := strings.TrimSpace(item.Path)
+		_, grounded := allowed[candidate]
+		if !validRepoRelativePath(candidate) || !grounded {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser dropped first_files_to_open[%d] outside allowed_paths: %q",
+				index,
+				candidate,
+			))
+			continue
+		}
+		if _, duplicate := seenFirstFiles[candidate]; duplicate {
+			continue
+		}
+		seenFirstFiles[candidate] = struct{}{}
+		item.Path = candidate
+		normalizedFirstFiles = append(normalizedFirstFiles, item)
+	}
+	report.FirstFilesToOpen = normalizedFirstFiles
 
 	for index := range report.HighLevelMap {
 		report.HighLevelMap[index].Evidence = filterEvidence(
