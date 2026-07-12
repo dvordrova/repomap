@@ -98,6 +98,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		return snapshotJSON, nil
 	}
+	orientationSignals := collectOrientationSignals(s, opts)
+	operationalWarnings := discoverOperationalCandidates(&s, orientationSignals)
+	snapshotJSON, _ = s.JSON()
 
 	bundleStarted := time.Now()
 	bundle := llmbundle.Build(s, s.FilteredFiles, llmbundle.Options{
@@ -109,7 +112,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		MaxSignalTotal:   opts.MaxLLMSignals,
 		MaxSignalPerFile: opts.MaxLLMSignalsPerFile,
 		RepoPath:         opts.RepoPath,
+		SourceSignals:    orientationSignals,
 	})
+	bundle.Warnings = append(bundle.Warnings, operationalWarnings...)
 	bundleJSON, _ := json.MarshalIndent(bundle, "", "  ")
 	modelBundleJSON, err := json.Marshal(bundle)
 	if err != nil {
@@ -181,6 +186,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	}
 	report := combinedReport{
 		RepoName: s.RepoName,
+		Warnings: append([]string(nil), operationalWarnings...),
 	}
 	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
 		surfaceStarted := time.Now()
@@ -344,6 +350,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 			return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
 		}
+		mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
 
 		allowedEntrypoints := orientationEntrypoints(bundle)
 		signalLocations := make([]evidence.Location, 0, len(bundle.SourceSignals))

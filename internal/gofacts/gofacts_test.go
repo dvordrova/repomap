@@ -440,6 +440,17 @@ func TestPriorityForKind(t *testing.T) {
 	}
 }
 
+func TestSignalFlowKindUsesOperationalDefaults(t *testing.T) {
+	t.Parallel()
+
+	if priority := priorityForKind("signal_flow"); priority != 2 {
+		t.Fatalf("priority = %d, want 2", priority)
+	}
+	if why := whyForKind("signal_flow"); why != "operational flow discovered from source signals" {
+		t.Fatalf("why = %q", why)
+	}
+}
+
 func TestBuildInternalEdges(t *testing.T) {
 	pkgs := []goListPackage{
 		{ImportPath: "example.com/cmd/app", Name: "main", Imports: []string{"example.com/lib"}},

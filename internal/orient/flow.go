@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
@@ -60,13 +61,7 @@ func buildFlowBundlesFromSnapshot(s snapshot.Snapshot, n int, dw *debugdump.Writ
 		if oc.Kind == "unknown" && len(flows) > 0 {
 			continue
 		}
-
-		cf := flowexplain.CandidateFlow{
-			Name:             oc.Name,
-			LikelyEntrypoint: oc.EntrypointPackage,
-			LikelyFiles:      oc.OpenFiles,
-			Confidence:       float64(oc.Priority) / 5.0,
-		}
+		cf := offlineCandidateFlow(oc)
 		ef := explainOneFlow(context.Background(), nil, cf, s.FilteredFiles, s.GoFacts, maxFiles, dw, opts, false)
 		if ef.ArtifactError != "" {
 			return nil, fmt.Errorf("persist local direction %q: %s", cf.Name, ef.ArtifactError)
@@ -74,6 +69,23 @@ func buildFlowBundlesFromSnapshot(s snapshot.Snapshot, n int, dw *debugdump.Writ
 		flows = append(flows, ef)
 	}
 	return flows, nil
+}
+
+func offlineCandidateFlow(candidate gofacts.OrientationCandidate) flowexplain.CandidateFlow {
+	flow := flowexplain.CandidateFlow{
+		Name:             candidate.Name,
+		FlowType:         flowexplain.FlowTypeRequest,
+		LikelyEntrypoint: candidate.EntrypointPackage,
+		LikelyFiles:      candidate.OpenFiles,
+		WhyInteresting:   candidate.Why,
+		Confidence:       float64(candidate.Priority) / 5.0,
+	}
+	if candidate.Kind == gofacts.OrientationKindSignalFlow {
+		flow.Name += " (offline hint)"
+		flow.FlowType = flowexplain.FlowTypeOperational
+		flow.Confidence = min(flow.Confidence, 0.3)
+	}
+	return flow
 }
 
 // writeLocalFlowBundles persists a deterministic focused bundle for every
@@ -142,7 +154,8 @@ func writeFlowArtifactStatus(dw *debugdump.Writer, flowID, mode string, required
 }
 
 func explainOneFlow(ctx context.Context, client *deepseek.Client, cf flowexplain.CandidateFlow, trackedFiles []string, facts interface{}, maxFiles int, dw *debugdump.Writer, opts Options, callModel bool) explainedFlow {
-	fid := flowexplain.GenerateFlowID(cf.Name)
+	identityName := strings.TrimSuffix(cf.Name, " (offline hint)")
+	fid := flowexplain.GenerateFlowID(identityName)
 	valid, unverified := flowexplain.ValidateSeedFiles(cf.LikelyFiles, trackedFiles)
 	queryTerms, aliasTerms := flowexplain.ExtractTerms(cf.Name, cf.Trigger, cf.LikelyEntrypoint, cf.Evidence)
 
@@ -155,6 +168,7 @@ func explainOneFlow(ctx context.Context, client *deepseek.Client, cf flowexplain
 	seed := flowexplain.FlowSeed{
 		ID:               fid,
 		Name:             cf.Name,
+		FlowType:         cf.FlowType,
 		Trigger:          cf.Trigger,
 		LikelyEntrypoint: cf.LikelyEntrypoint,
 		ValidSeedFiles:   valid,

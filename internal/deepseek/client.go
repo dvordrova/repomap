@@ -45,7 +45,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v8"
+const OrientationPromptVersionJSON = "orientation-json-v9"
 
 type Client struct {
 	HTTPClient *http.Client
@@ -280,6 +280,7 @@ Produce a json orientation report with this exact shape:
   "candidate_flows": [
     {
       "name": "runtime or event flow name",
+      "flow_type": "request | operational",
       "trigger": "what starts this flow",
       "likely_entrypoint": "exact full path from allowed_paths, preferably one of likely_files",
       "likely_files": ["all must be from allowed_paths"],
@@ -311,6 +312,8 @@ Produce a json orientation report with this exact shape:
 
 Important rules:
 - Candidate flows must be runtime/event-oriented (e.g. "CLI command dispatch", "HTTP request handling", "server startup", "plugin loading", "background job execution"), not folder-oriented (do not say "server module" or "pkg folder").
+- Set flow_type to "request" for user/request-driven work and "operational" for background, maintenance, threshold, consensus, or durability work. Prefer the strongest grounded evidence regardless of flow type.
+- An operational candidate must cite source_signal evidence. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
 - Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
 - Every candidate flow must include evidence from the bundle.
 - go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.

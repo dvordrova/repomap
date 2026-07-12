@@ -34,6 +34,10 @@ func applyOrientationConfidenceGate(report *orientationPart, bundle llmbundle.Bu
 		flow := &report.CandidateFlows[index]
 		verification := &flowexplain.FlowVerification{Status: "verified", ConfidenceCap: 1}
 		proofComplete := localProofComplete(flow.LocalProof)
+		if flow.FlowType == flowexplain.FlowTypeOperational && !proofComplete {
+			verification.Missing = append(verification.Missing, "observed operational execution")
+			verification.ConfidenceCap = minConfidence(verification.ConfidenceCap, 0.3)
+		}
 
 		if _, ok := anchorPaths[flow.LikelyEntrypoint]; ok {
 			verification.Verified = append(verification.Verified, "exact entrypoint declaration")

@@ -149,6 +149,31 @@ func TestApplyOrientationConfidenceGateRejectsModelOnlyCLIDispatch(t *testing.T)
 	}
 }
 
+func TestApplyOrientationConfidenceGateCapsUnprovedOperationalFlow(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "service",
+		Confidence:   0.8,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:       "Lease expiry background loop",
+			FlowType:   flowexplain.FlowTypeOperational,
+			Confidence: 0.8,
+		}},
+	}
+
+	applyOrientationConfidenceGate(&report, llmbundle.Bundle{})
+
+	flow := report.CandidateFlows[0]
+	if flow.Confidence != 0.3 {
+		t.Fatalf("flow confidence = %.2f, want 0.30", flow.Confidence)
+	}
+	if flow.LocalVerification == nil ||
+		!containsVerification(flow.LocalVerification.Missing, "observed operational execution") {
+		t.Fatalf("local verification = %#v", flow.LocalVerification)
+	}
+}
+
 func containsVerification(values []string, fragment string) bool {
 	for _, value := range values {
 		if len(value) >= len(fragment) && value[:len(fragment)] == fragment {

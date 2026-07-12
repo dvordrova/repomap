@@ -237,6 +237,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-pill { display: inline-block; padding: .1rem .45rem; border-radius: 10px; font-size: .65rem; font-weight: 600; margin-left: .25rem; }
 .rm-pill--accent { background: #dbeafe; color: var(--rm-accent); }
 .rm-pill--error { background: #fecaca; color: var(--rm-bad); }
+.rm-pill--request { background: #e0f2fe; color: #075985; }
+.rm-pill--operational { background: #fef3c7; color: #92400e; }
 
 /* Waterfall timeline */
 .rm-chain { position: relative; padding-left: 1.5rem; margin: 1rem 0; }

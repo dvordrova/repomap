@@ -48,6 +48,13 @@ if command -v jq &>/dev/null; then
         FAIL=1
     fi
 
+    if jq -e '.go.orientation_candidates | any(.kind == "signal_flow")' tmp/etcd-llm-bundle.json > /dev/null; then
+        echo "OK: bundle has operational signal_flow candidate"
+    else
+        echo "FAIL: bundle has no operational signal_flow candidate"
+        FAIL=1
+    fi
+
     if jq -re '.go.orientation_candidates[]?.open_files[]?' tmp/etcd-snapshot.json 2>/dev/null | grep -q 'server/main.go'; then
         echo "OK: snapshot contains server/main.go"
     fi

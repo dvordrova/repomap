@@ -56,6 +56,8 @@ type OrientationCandidate struct {
 	Priority          int      `json:"priority"`
 }
 
+const OrientationKindSignalFlow = "signal_flow"
+
 type Entrypoint struct {
 	ModulePath        string             `json:"module_path"`
 	ImportPath        string             `json:"import_path"`
@@ -697,6 +699,8 @@ func priorityForKind(kind string) int {
 		return 3
 	case "example":
 		return 2
+	case OrientationKindSignalFlow:
+		return 2
 	case "test_binary":
 		return 1
 	default:
@@ -716,6 +720,8 @@ func whyForKind(kind string) string {
 		return "example code; good for understanding usage patterns"
 	case "test_binary":
 		return "test binary; useful for understanding expected behaviour"
+	case OrientationKindSignalFlow:
+		return "operational flow discovered from source signals"
 	default:
 		return "entrypoint of unknown role"
 	}

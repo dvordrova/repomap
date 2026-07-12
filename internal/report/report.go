@@ -140,6 +140,7 @@ type DomainWord struct {
 type CandidateDirection struct {
 	ID                string                        `json:"id"`
 	Name              string                        `json:"name"`
+	FlowType          string                        `json:"flow_type,omitempty"`
 	Trigger           string                        `json:"trigger"`
 	LikelyEntrypoint  string                        `json:"likely_entrypoint"`
 	LikelyFiles       []string                      `json:"likely_files"`
@@ -153,6 +154,7 @@ type CandidateDirection struct {
 type FlowData struct {
 	ID              string      `json:"id"`
 	Name            string      `json:"name"`
+	FlowType        string      `json:"flow_type,omitempty"`
 	Summary         string      `json:"summary"`
 	Confidence      float64     `json:"confidence"`
 	LikelyChain     []ChainStep `json:"likely_chain"`
@@ -253,7 +255,14 @@ func findBestFlow(flows []FlowData) string {
 func enrich(data *ReportData) {
 	data.FormatVersion = CurrentFormatVersion
 	data.FlowCount = len(data.Flows)
+	flowTypes := make(map[string]string, len(data.CandidateDirections))
+	for i := range data.CandidateDirections {
+		flowTypes[data.CandidateDirections[i].ID] = data.CandidateDirections[i].FlowType
+	}
 	for i := range data.Flows {
+		if data.Flows[i].FlowType == "" {
+			data.Flows[i].FlowType = flowTypes[data.Flows[i].ID]
+		}
 		data.Flows[i].ConfidenceLabel = confidenceLabel(data.Flows[i].Confidence)
 		data.Flows[i].BundleStatsLabel = bundleStatsLabel(data.Flows[i].BundleSummary)
 	}

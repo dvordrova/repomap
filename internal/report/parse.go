@@ -76,6 +76,7 @@ type orientationDomainWordJSON struct {
 
 type orientationCandidateJSON struct {
 	Name              string                        `json:"name"`
+	FlowType          string                        `json:"flow_type"`
 	Trigger           string                        `json:"trigger"`
 	LikelyEntrypoint  string                        `json:"likely_entrypoint"`
 	LikelyFiles       []string                      `json:"likely_files"`
@@ -639,6 +640,7 @@ func parseOrientationReport(path string, data *ReportData) string {
 		data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
 			ID:                flowexplain.GenerateFlowID(cf.Name),
 			Name:              cf.Name,
+			FlowType:          cf.FlowType,
 			Trigger:           cf.Trigger,
 			LikelyEntrypoint:  cf.LikelyEntrypoint,
 			LikelyFiles:       append([]string{}, cf.LikelyFiles...),
@@ -740,6 +742,7 @@ func parseFlowBundle(path string, fd *FlowData) string {
 	if fb.FlowSeed.Name != "" {
 		fd.Name = fb.FlowSeed.Name
 	}
+	fd.FlowType = fb.FlowSeed.FlowType
 	fd.BundleFiles = make([]FileItem, 0, len(fb.SelectedFiles))
 	for _, sf := range fb.SelectedFiles {
 		fd.BundleFiles = append(fd.BundleFiles, FileItem{Path: sf.Path, Reason: strings.Join(sf.Reasons, ", ")})
