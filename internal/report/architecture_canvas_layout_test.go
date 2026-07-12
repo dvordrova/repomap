@@ -51,6 +51,18 @@ process.stdout.write(JSON.stringify({
     api.diagnosticSubsystemIDs([{ id: "a", category: "diagnostic" }, { id: "b" }], []),
     api.diagnosticSubsystemIDs([{ id: "a" }, { id: "b" }], [{ code: "proposal.omitted_members_preserved" }]),
   ],
+  fitScales: [
+    api.readableFitScale({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 28),
+    api.readableFitScale({ x: 0, y: 0, width: 500, height: 300 }, { width: 1204, height: 718 }, 28),
+  ],
+  focusScales: [
+    api.componentFocusScale({ x: 0, y: 0, width: 1300, height: 1000 }, { width: 1204, height: 718 }, 56),
+    api.componentFocusScale({ x: 0, y: 0, width: 300, height: 132 }, { width: 1204, height: 718 }, 56),
+  ],
+  transforms: [
+    api.centeredTransform({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 0.65),
+    api.centeredTransform({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 0.65),
+  ],
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "layout-test.js")
@@ -69,6 +81,13 @@ process.stdout.write(JSON.stringify({
 		Singleton    []bool     `json:"singleton"`
 		Placements   []int      `json:"placements"`
 		Diagnostics  [][]string `json:"diagnostics"`
+		FitScales    []float64  `json:"fitScales"`
+		FocusScales  []float64  `json:"focusScales"`
+		Transforms   []struct {
+			X     float64 `json:"x"`
+			Y     float64 `json:"y"`
+			Scale float64 `json:"scale"`
+		} `json:"transforms"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("decode Landscape layout contract: %v\n%s", err, output)
@@ -93,5 +112,14 @@ process.stdout.write(JSON.stringify({
 	}
 	if want := [][]string{{"a"}, {"b"}}; !reflect.DeepEqual(result.Diagnostics, want) {
 		t.Errorf("diagnostic subsystem ids = %v, want %v", result.Diagnostics, want)
+	}
+	if want := []float64{0.65, 1.35}; !reflect.DeepEqual(result.FitScales, want) {
+		t.Errorf("readable Fit scales = %v, want %v", result.FitScales, want)
+	}
+	if want := []float64{0.88, 1.05}; !reflect.DeepEqual(result.FocusScales, want) {
+		t.Errorf("component focus scales = %v, want %v", result.FocusScales, want)
+	}
+	if len(result.Transforms) != 2 || result.Transforms[0] != result.Transforms[1] {
+		t.Errorf("repeated centered transforms differ: %v", result.Transforms)
 	}
 }
