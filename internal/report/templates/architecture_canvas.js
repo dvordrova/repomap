@@ -17,6 +17,8 @@
  const UNASSIGNED_ID = "__repomap_unassigned__";
  const MIN_SCALE = 0.18;
  const MAX_SCALE = 2.4;
+ const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+ const MAX_WHEEL_DELTA = 120;
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -1322,7 +1324,12 @@
    this.listen(this.viewport, "wheel", (event) => {
     if (!this.surface || this.selection.flow) return;
     event.preventDefault();
-    const factor = event.deltaY > 0 ? 0.88 : 1.14;
+    let delta = event.deltaY;
+    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 16;
+    else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= this.viewport.clientHeight;
+    delta = clamp(delta, -MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
+    if (Math.abs(delta) < 0.01) return;
+    const factor = Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY);
     this.zoomBy(factor);
    }, { passive: false });
 
