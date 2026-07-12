@@ -479,6 +479,25 @@
     return Number.isFinite(number) ? number : 0;
    }
 
+   semanticCategory(record, fallback) {
+    const value = text(record && (record.category || record.classification || record.role)).toLowerCase();
+    if (["application", "primary", "main"].indexOf(value) >= 0) return "primary";
+    if (["external", "integration", "boundary"].indexOf(value) >= 0) return "external";
+    if (["analysis", "tooling", "support"].indexOf(value) >= 0) return "support";
+    if (["unresolved", "unassigned", "partial", "diagnostic"].indexOf(value) >= 0) return "diagnostic";
+    return fallback || "neutral";
+   }
+
+   semanticCategoryLabel(category) {
+    const labels = {
+     primary: "Primary",
+     external: "Boundary",
+     support: "Supporting",
+     diagnostic: "Unresolved",
+    };
+    return labels[category] || "";
+   }
+
    compareLandscapeGroups(projection, left, right) {
     const leftSubsystem = left.subsystem || {};
     const rightSubsystem = right.subsystem || {};
@@ -773,28 +792,39 @@
    return svg;
   }
 
-  renderGroups() {
-   this.subsystems.forEach((subsystem) => {
+   renderGroups() {
+    this.subsystems.forEach((subsystem) => {
     const position = this.groupPositions.get(text(subsystem.id));
     if (!position) return;
-    const group = element("section", "rm-arch__group");
-    group.style.left = position.x + "px";
+     const category = this.semanticCategory(subsystem, "neutral");
+     const group = element("section", "rm-arch__group is-" + category);
+     group.style.left = position.x + "px";
     group.style.top = position.y + "px";
     group.style.width = position.width + "px";
     group.style.height = position.height + "px";
-    const title = element("h3", "rm-arch__group-title", subsystem.name || subsystem.id);
-    group.appendChild(title);
-    this.groupLayer.appendChild(group);
+     group.title = text(subsystem.description || subsystem.name || subsystem.id);
+     const header = element("div", "rm-arch__group-header");
+     header.appendChild(element("span", "rm-arch__category-marker"));
+     header.appendChild(element("h3", "rm-arch__group-title", subsystem.name || subsystem.id));
+     const categoryLabel = this.semanticCategoryLabel(category);
+     if (categoryLabel) header.appendChild(element("span", "rm-arch__group-category", categoryLabel));
+     header.appendChild(element("span", "rm-arch__group-count", array(subsystem.component_ids).length + " components"));
+     group.appendChild(header);
+     this.groupLayer.appendChild(group);
    });
 
    const ungrouped = this.groupPositions.get("__ungrouped__");
    if (ungrouped) {
-    const group = element("section", "rm-arch__group is-ungrouped");
+     const group = element("section", "rm-arch__group is-ungrouped is-diagnostic");
     group.style.left = ungrouped.x + "px";
     group.style.top = ungrouped.y + "px";
     group.style.width = ungrouped.width + "px";
     group.style.height = ungrouped.height + "px";
-    group.appendChild(element("h3", "rm-arch__group-title", "Unassigned subsystem"));
+     const header = element("div", "rm-arch__group-header");
+     header.appendChild(element("span", "rm-arch__category-marker"));
+     header.appendChild(element("h3", "rm-arch__group-title", "Unassigned subsystem"));
+     header.appendChild(element("span", "rm-arch__group-category", "Unresolved"));
+     group.appendChild(header);
     this.groupLayer.appendChild(group);
    }
   }
@@ -804,15 +834,26 @@
     const id = text(component.id);
     const position = this.nodePositions.get(id);
     if (!position) return;
-    const shell = element("article", "rm-arch__component");
+     const category = this.semanticCategory(component, "neutral");
+     const shell = element("article", "rm-arch__component is-" + category);
     shell.style.left = position.x + "px";
     shell.style.top = position.y + "px";
     shell.style.width = position.width + "px";
     shell.style.height = position.height + "px";
 
-    const button = element("button", "rm-arch__component-card");
-    button.type = "button";
-    button.appendChild(element("strong", "rm-arch__component-name", component.name || id));
+     const button = element("button", "rm-arch__component-card");
+     button.type = "button";
+     button.title = text(component.name || id);
+     button.appendChild(element("strong", "rm-arch__component-name", component.name || id));
+     if (component.description) {
+      button.appendChild(element("span", "rm-arch__component-description", component.description));
+     }
+     const metadata = [
+      array(component.members).length + " exact member" + (array(component.members).length === 1 ? "" : "s"),
+      array(component.participating_flow_ids).length > 0 ? array(component.participating_flow_ids).length + " saved flow" +
+       (array(component.participating_flow_ids).length === 1 ? "" : "s") : "",
+     ].filter(Boolean).join(" · ");
+     button.appendChild(element("span", "rm-arch__component-meta", metadata));
     this.listen(button, "click", () => {
      const selected = this.selection.component === id && !this.selection.step && !this.selection.edge;
      this.setSelection({ component: selected ? "" : id, step: "", edge: "" }, true);
@@ -852,7 +893,7 @@
      "Structural relation " + text((edge.witness || {}).kind || edge.id),
      () => this.setSelection({ edge: text(edge.id), step: "" }, true)
     );
-    setSVGVisible(group, false);
+     setSVGVisible(group, true);
     this.structuralSVG.appendChild(group);
     this.structuralEdgeElements.set(text(edge.id), group);
    });
@@ -1789,8 +1830,10 @@
      edge &&
      (text(edge.from_component_id) === this.selection.component || text(edge.to_component_id) === this.selection.component)
     );
-    setSVGVisible(group, selectedEdge || incident);
-    group.classList.toggle("is-selected", selectedEdge);
+     setSVGVisible(group, !hasFlow);
+     group.classList.toggle("is-selected", selectedEdge);
+     group.classList.toggle("is-highlighted", incident);
+     group.classList.toggle("is-muted", Boolean(this.selection.component || this.selection.edge) && !selectedEdge && !incident);
    });
    this.flowEdgeElements.forEach((group, key) => {
     const itemFlow = key.split("\u0000", 1)[0];
