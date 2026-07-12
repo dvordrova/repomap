@@ -366,7 +366,7 @@ func TestApplyPreservesCandidatesOmittedByProposal(t *testing.T) {
 		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 	}
 	last := result.Subsystems[len(result.Subsystems)-1]
-	if last.Name != "Unassigned local evidence" || len(last.Components) != 1 {
+	if last.Name != "Unassigned local evidence" || last.Category != SubsystemCategoryDiagnostic || len(last.Components) != 1 {
 		t.Fatalf("deterministic remainder = %#v", last)
 	}
 }

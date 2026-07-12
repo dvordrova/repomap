@@ -211,11 +211,18 @@ type Component struct {
 	Members     []Candidate `json:"members"`
 }
 
+type SubsystemCategory string
+
+const (
+	SubsystemCategoryDiagnostic SubsystemCategory = "diagnostic"
+)
+
 type Subsystem struct {
-	ID          SubsystemID `json:"id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	Components  []Component `json:"components"`
+	ID          SubsystemID       `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Category    SubsystemCategory `json:"category,omitempty"`
+	Components  []Component       `json:"components"`
 }
 
 type Diagnostic struct {
@@ -426,6 +433,9 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	seenComponents := make(map[ComponentID]struct{})
 	componentCount := 0
 	for subsystemIndex, subsystem := range landscape.Subsystems {
+		if subsystem.Category != "" && subsystem.Category != SubsystemCategoryDiagnostic {
+			return fmt.Errorf("componentmap: subsystem[%d] has unsupported category %q", subsystemIndex, subsystem.Category)
+		}
 		if err := validateDisplayText("subsystem name", subsystem.Name, maxNameBytes, true); err != nil {
 			return err
 		}
@@ -644,6 +654,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			ID:          subsystemID([]ComponentID{remainder.ID}),
 			Name:        "Unassigned local evidence",
 			Description: "Local evidence intentionally preserved outside the proposed conceptual groups.",
+			Category:    SubsystemCategoryDiagnostic,
 			Components:  []Component{remainder},
 		})
 		diagnostics = append(diagnostics, Diagnostic{
