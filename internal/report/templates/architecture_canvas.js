@@ -19,6 +19,10 @@
  const MAX_SCALE = 2.4;
  const WHEEL_ZOOM_SENSITIVITY = 0.0015;
  const MAX_WHEEL_DELTA = 120;
+ const LANDSCAPE_COMPONENT_HEIGHT = 108;
+ const LANDSCAPE_COMPONENT_GAP = 16;
+ const LANDSCAPE_GROUP_GAP = 32;
+ const LANDSCAPE_MARGIN = 28;
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -351,8 +355,13 @@
     this.landscapeProjection = this.projectLandscapeGraph();
     this.landscapeLayoutMode = this.chooseLandscapeLayoutMode(this.landscapeProjection);
     this.root.dataset.layoutMode = this.landscapeLayoutMode;
+    if (this.landscapeLayoutMode === "board") {
+     return Promise.resolve(this.layoutArchitectureBoard(this.landscapeProjection));
+    }
     const elk = new ELKConstructor();
-    return elk.layout(this.buildELKGraph()).then((layout) => this.normalizeELKLayout(layout));
+    return elk.layout(this.buildGroupELKGraph(this.landscapeProjection)).then((layout) =>
+     this.composeGraphLandscape(layout, this.landscapeProjection)
+    );
    }
 
    projectLandscapeGraph() {
@@ -381,11 +390,21 @@
     }
 
     const adjacency = new Map(groups.map((group) => [group.id, new Set()]));
+    const componentAdjacency = new Map(this.components.map((component) => [text(component.id), new Set()]));
     const pairKeys = new Set();
+    const componentPairKeys = new Set();
     const edges = [];
     this.structuralEdges.forEach((edge) => {
      const fromComponentID = text(edge.from_component_id);
      const toComponentID = text(edge.to_component_id);
+     if (componentAdjacency.has(fromComponentID) && componentAdjacency.has(toComponentID) && fromComponentID !== toComponentID) {
+      const componentPairKey = fromComponentID + "\u0000" + toComponentID;
+      if (!componentPairKeys.has(componentPairKey)) {
+       componentPairKeys.add(componentPairKey);
+       componentAdjacency.get(fromComponentID).add(toComponentID);
+       componentAdjacency.get(toComponentID).add(fromComponentID);
+      }
+     }
      const fromGroupID = componentOwner.get(fromComponentID);
      const toGroupID = componentOwner.get(toComponentID);
      if (!fromGroupID || !toGroupID || fromGroupID === toGroupID) return;
@@ -435,6 +454,7 @@
      groups: groups,
      edges: edges,
      adjacency: adjacency,
+     componentAdjacency: componentAdjacency,
      regions: regions,
      primaryRegion: primaryRegion,
     };
@@ -442,79 +462,208 @@
 
    chooseLandscapeLayoutMode(projection) {
     if (!projection.primaryRegion) return "board";
-    if (projection.primaryRegion.groupIDs.length === projection.groups.length) return "graph";
-    return "hybrid";
+   if (projection.primaryRegion.groupIDs.length === projection.groups.length) return "graph";
+   return "hybrid";
    }
 
-  buildELKGraph() {
-
-   const componentIDsInSubsystems = new Set();
-   const children = [];
-   this.subsystems.forEach((subsystem) => {
-    const subsystemID = text(subsystem.id);
-    const componentIDs = array(subsystem.component_ids)
-     .map(text)
-     .filter((id) => this.componentByID.has(id));
-    if (componentIDs.length === 0) return;
-    componentIDs.forEach((id) => componentIDsInSubsystems.add(id));
-    children.push(this.elkSubsystemNode(subsystemID, componentIDs));
-   });
-
-   const ungrouped = this.components
-    .map((component) => text(component.id))
-    .filter((id) => !componentIDsInSubsystems.has(id));
-   if (ungrouped.length > 0) {
-    children.push(this.elkSubsystemNode("__ungrouped__", ungrouped));
+   boardProfile() {
+    const width = Math.max(320, Number(this.viewport && this.viewport.clientWidth || 1200));
+    if (width >= 1160) return { columns: 4, groupWidth: 300 };
+    if (width >= 960) return { columns: 3, groupWidth: 320 };
+    if (width >= 720) return { columns: 2, groupWidth: 340 };
+    return { columns: 1, groupWidth: Math.min(340, width - 40) };
    }
 
-    const edges = [];
-   this.structuralEdges.forEach((edge) => {
-    const from = text(edge.from_component_id);
-    const to = text(edge.to_component_id);
-    if (!this.componentByID.has(from) || !this.componentByID.has(to) || from === to) return;
-    const id = layoutStructuralEdgeID(edge.id);
-    edges.push({ id: id, sources: [layoutComponentID(from)], targets: [layoutComponentID(to)] });
-   });
+   numericPriority(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+   }
 
-   return {
-    id: "repomap-architecture-root",
-    layoutOptions: {
-     "elk.algorithm": "layered",
-     "elk.direction": "RIGHT",
-     "elk.edgeRouting": "ORTHOGONAL",
-     "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-     "elk.spacing.nodeNode": "44",
-     "elk.layered.spacing.nodeNodeBetweenLayers": "92",
-     "elk.spacing.edgeNode": "24",
-     "elk.spacing.edgeEdge": "14",
-     "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-     "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-     "elk.padding": "[top=28,left=28,bottom=28,right=28]",
+   compareLandscapeGroups(projection, left, right) {
+    const leftSubsystem = left.subsystem || {};
+    const rightSubsystem = right.subsystem || {};
+    const importance = this.numericPriority(rightSubsystem.importance || rightSubsystem.rank) -
+     this.numericPriority(leftSubsystem.importance || leftSubsystem.rank);
+    if (importance !== 0) return importance;
+    const degree = (projection.adjacency.get(right.id) || new Set()).size -
+     (projection.adjacency.get(left.id) || new Set()).size;
+    if (degree !== 0) return degree;
+    if (right.componentIDs.length !== left.componentIDs.length) {
+     return right.componentIDs.length - left.componentIDs.length;
+    }
+    return left.id.localeCompare(right.id);
+   }
+
+   orderedLandscapeGroups(projection) {
+    const groupByID = new Map(projection.groups.map((group) => [group.id, group]));
+    const ordered = [];
+    const seen = new Set();
+    const appendRegion = (region) => {
+     if (!region) return;
+     const remaining = new Set(region.groupIDs);
+     const candidates = region.groupIDs.map((id) => groupByID.get(id)).filter(Boolean);
+     candidates.sort((left, right) => this.compareLandscapeGroups(projection, left, right));
+     const queue = candidates.length > 0 ? [candidates[0].id] : [];
+     while (queue.length > 0) {
+      const id = queue.shift();
+      if (!remaining.has(id)) continue;
+      remaining.delete(id);
+      seen.add(id);
+      ordered.push(groupByID.get(id));
+      const neighbors = Array.from(projection.adjacency.get(id) || [])
+       .filter((neighborID) => remaining.has(neighborID))
+       .map((neighborID) => groupByID.get(neighborID))
+       .filter(Boolean)
+       .sort((left, right) => this.compareLandscapeGroups(projection, left, right));
+      neighbors.forEach((group) => queue.push(group.id));
+     }
+     Array.from(remaining).sort().forEach((id) => {
+      seen.add(id);
+      ordered.push(groupByID.get(id));
+     });
+    };
+    appendRegion(projection.primaryRegion);
+    projection.regions.forEach((region) => {
+     if (region !== projection.primaryRegion) appendRegion(region);
+    });
+    projection.groups
+     .filter((group) => !seen.has(group.id))
+     .sort((left, right) => this.compareLandscapeGroups(projection, left, right))
+     .forEach((group) => ordered.push(group));
+    return ordered;
+   }
+
+   orderedGroupComponents(group, projection) {
+    return group.componentIDs.slice().sort((leftID, rightID) => {
+     const left = this.componentByID.get(leftID) || {};
+     const right = this.componentByID.get(rightID) || {};
+     const importance = this.numericPriority(right.importance || right.rank) -
+      this.numericPriority(left.importance || left.rank);
+     if (importance !== 0) return importance;
+     const degree = (projection.componentAdjacency.get(rightID) || new Set()).size -
+      (projection.componentAdjacency.get(leftID) || new Set()).size;
+     if (degree !== 0) return degree;
+     const size = array(right.members).length - array(left.members).length;
+     if (size !== 0) return size;
+     return leftID.localeCompare(rightID);
+    });
+   }
+
+   groupMetrics(group, width, childColumns) {
+    const columns = Math.max(1, Math.min(childColumns || 1, group.componentIDs.length));
+    const componentWidth = (width - GROUP_PADDING * 2 - LANDSCAPE_COMPONENT_GAP * (columns - 1)) / columns;
+    const rows = Math.ceil(group.componentIDs.length / columns);
+    return {
+     width: width,
+     height: GROUP_HEADER + GROUP_PADDING + rows * LANDSCAPE_COMPONENT_HEIGHT +
+      Math.max(0, rows - 1) * LANDSCAPE_COMPONENT_GAP,
+     columns: columns,
+     componentWidth: componentWidth,
+    };
+   }
+
+   placeLandscapeGroup(group, metrics, x, y, projection) {
+    this.groupPositions.set(group.id, {
+     x: x,
+     y: y,
+     width: metrics.width,
+     height: metrics.height,
+    });
+    this.orderedGroupComponents(group, projection).forEach((componentID, index) => {
+     const column = index % metrics.columns;
+     const row = Math.floor(index / metrics.columns);
+     this.nodePositions.set(componentID, {
+      x: x + GROUP_PADDING + column * (metrics.componentWidth + LANDSCAPE_COMPONENT_GAP),
+      y: y + GROUP_HEADER + row * (LANDSCAPE_COMPONENT_HEIGHT + LANDSCAPE_COMPONENT_GAP),
+      width: metrics.componentWidth,
+      height: LANDSCAPE_COMPONENT_HEIGHT,
+     });
+    });
+   }
+
+   centeredColumnOrder(columns) {
+    const center = (columns - 1) / 2;
+    return Array.from({ length: columns }, (_, index) => index).sort((left, right) =>
+     Math.abs(left - center) - Math.abs(right - center) || left - right
+    );
+   }
+
+   packLandscapeGroups(groups, projection, profile, startY) {
+    const heights = Array(profile.columns).fill(startY);
+    const preference = this.centeredColumnOrder(profile.columns);
+    groups.forEach((group) => {
+     const metrics = this.groupMetrics(group, profile.groupWidth, 1);
+     let column = preference[0];
+     preference.forEach((candidate) => {
+      if (heights[candidate] < heights[column]) column = candidate;
+     });
+     const x = LANDSCAPE_MARGIN + column * (profile.groupWidth + LANDSCAPE_GROUP_GAP);
+     const y = heights[column];
+     this.placeLandscapeGroup(group, metrics, x, y, projection);
+     heights[column] = y + metrics.height + LANDSCAPE_GROUP_GAP;
+    });
+    return heights;
+   }
+
+   layoutArchitectureBoard(projection) {
+    this.nodePositions.clear();
+    this.groupPositions.clear();
+    this.edgeRoutes.clear();
+    const profile = this.boardProfile();
+    const groups = this.orderedLandscapeGroups(projection);
+    const heights = this.packLandscapeGroups(groups, projection, profile, LANDSCAPE_MARGIN);
+    this.primaryGroupIDs = new Set(projection.primaryRegion ? projection.primaryRegion.groupIDs : []);
+    this.buildLandscapeEdgeRoutes();
+    return {
+     width: LANDSCAPE_MARGIN * 2 + profile.columns * profile.groupWidth +
+      Math.max(0, profile.columns - 1) * LANDSCAPE_GROUP_GAP,
+     height: Math.max(LANDSCAPE_MARGIN * 2, Math.max.apply(null, heights) - LANDSCAPE_GROUP_GAP + LANDSCAPE_MARGIN),
+    };
+   }
+
+   buildGroupELKGraph(projection) {
+    const primaryIDs = new Set(projection.primaryRegion ? projection.primaryRegion.groupIDs : []);
+    const groups = projection.groups.filter((group) => primaryIDs.has(group.id));
+    const children = groups.map((group) => {
+     const columns = group.componentIDs.length >= 4 ? 2 : 1;
+     const width = columns === 2 ? 612 : 320;
+     const metrics = this.groupMetrics(group, width, columns);
+     return { id: layoutSubsystemID(group.id), width: metrics.width, height: metrics.height };
+    });
+    const edges = projection.edges
+     .filter((edge) => primaryIDs.has(edge.from) && primaryIDs.has(edge.to))
+     .map((edge) => ({
+      id: "group-edge:" + edge.id,
+      sources: [layoutSubsystemID(edge.from)],
+      targets: [layoutSubsystemID(edge.to)],
+     }));
+    return {
+     id: "repomap-architecture-core",
+     layoutOptions: {
+      "elk.algorithm": "layered",
+      "elk.direction": "RIGHT",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "48",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "72",
+      "elk.spacing.edgeNode": "24",
+      "elk.spacing.edgeEdge": "14",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+      "elk.padding": "[top=28,left=28,bottom=28,right=28]",
     },
     children: children,
     edges: edges,
-   };
-  }
+    };
+   }
 
-  elkSubsystemNode(subsystemID, componentIDs) {
-   return {
-    id: layoutSubsystemID(subsystemID),
-    layoutOptions: {
-     "elk.algorithm": "layered",
-     "elk.direction": "DOWN",
-     "elk.edgeRouting": "ORTHOGONAL",
-     "elk.spacing.nodeNode": "24",
-     "elk.padding": "[top=" + GROUP_HEADER + ",left=" + GROUP_PADDING + ",bottom=" + GROUP_PADDING + ",right=" + GROUP_PADDING + "]",
-    },
-    children: componentIDs.map((componentID) => {
-     return {
-      id: layoutComponentID(componentID),
-      width: COMPONENT_WIDTH,
-      height: COMPONENT_HEIGHT,
-     };
-    }),
-   };
-  }
+   graphLayoutIsReadable(layout) {
+    const width = Number(layout.width || 0);
+    const height = Number(layout.height || 0);
+    if (width <= 0 || height <= 0) return false;
+    const aspect = width / height;
+    const viewportWidth = Math.max(1, Number(this.viewport.clientWidth || 1));
+    return aspect >= 1.05 && aspect <= 2.8 && width <= viewportWidth * 1.8;
+   }
 
   flowStepOwner(flowID, stepID) {
    const step = this.flowStepsByKey.get(flowStepKey(flowID, stepID));
@@ -523,51 +672,68 @@
    return componentID && this.componentByID.has(componentID) ? componentID : UNASSIGNED_ID;
   }
 
-  normalizeELKLayout(layout) {
-   this.nodePositions.clear();
-   this.groupPositions.clear();
-   this.edgeRoutes.clear();
-
-   const walk = (node, parentX, parentY) => {
-    const x = parentX + Number(node.x || 0);
-    const y = parentY + Number(node.y || 0);
-    const id = text(node.id);
-    if (id.indexOf("component:") === 0) {
-     this.nodePositions.set(id.slice("component:".length), {
-      x: x,
-      y: y,
-      width: Number(node.width || COMPONENT_WIDTH),
-      height: Number(node.height || 100),
-     });
-    } else if (id.indexOf("subsystem:") === 0) {
-     this.groupPositions.set(id.slice("subsystem:".length), {
-      x: x,
-      y: y,
-      width: Number(node.width || 0),
-      height: Number(node.height || 0),
-     });
-    } else if (id === UNASSIGNED_ID) {
-     this.nodePositions.set(UNASSIGNED_ID, {
-      x: x,
-      y: y,
-      width: Number(node.width || COMPONENT_WIDTH),
-      height: Number(node.height || 120),
-     });
+   composeGraphLandscape(layout, projection) {
+    if (!this.graphLayoutIsReadable(layout)) {
+     this.root.dataset.layoutMode = this.landscapeLayoutMode + "-board";
+     return this.layoutArchitectureBoard(projection);
     }
-
-    array(node.edges).forEach((edge) => {
-     const route = pathFromSections(edge.sections, x, y);
-     if (route) this.edgeRoutes.set(text(edge.id), route);
+    this.nodePositions.clear();
+    this.groupPositions.clear();
+    this.edgeRoutes.clear();
+    const groupByID = new Map(projection.groups.map((group) => [group.id, group]));
+    array(layout.children).forEach((node) => {
+     const id = text(node.id).replace(/^subsystem:/, "");
+     const group = groupByID.get(id);
+     if (!group) return;
+     const columns = group.componentIDs.length >= 4 ? 2 : 1;
+     const metrics = this.groupMetrics(group, Number(node.width || 320), columns);
+     this.placeLandscapeGroup(group, metrics, Number(node.x || 0), Number(node.y || 0), projection);
     });
-    array(node.children).forEach((child) => walk(child, x, y));
-   };
-   walk(layout, 0, 0);
+    const primaryIDs = new Set(projection.primaryRegion ? projection.primaryRegion.groupIDs : []);
+    const remaining = this.orderedLandscapeGroups(projection).filter((group) => !primaryIDs.has(group.id));
+    let width = Math.max(1, Number(layout.width || 1));
+    let height = Math.max(1, Number(layout.height || 1));
+    if (remaining.length > 0) {
+     const profile = this.boardProfile();
+     const heights = this.packLandscapeGroups(remaining, projection, profile, height + LANDSCAPE_GROUP_GAP);
+     width = Math.max(width, LANDSCAPE_MARGIN * 2 + profile.columns * profile.groupWidth +
+      Math.max(0, profile.columns - 1) * LANDSCAPE_GROUP_GAP);
+     height = Math.max.apply(null, heights) - LANDSCAPE_GROUP_GAP + LANDSCAPE_MARGIN;
+    }
+    this.primaryGroupIDs = primaryIDs;
+    this.buildLandscapeEdgeRoutes();
+    return {
+     width: width,
+     height: height,
+     };
+   }
 
-   return {
-    width: Math.max(1, Number(layout.width || 1)),
-    height: Math.max(1, Number(layout.height || 1)),
-   };
-  }
+   buildLandscapeEdgeRoutes() {
+    this.structuralEdges.forEach((edge) => {
+     const from = this.nodePositions.get(text(edge.from_component_id));
+     const to = this.nodePositions.get(text(edge.to_component_id));
+     if (!from || !to || from === to) return;
+     const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+     const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+     let route = "";
+     if (Math.abs(toCenter.x - fromCenter.x) >= Math.abs(toCenter.y - fromCenter.y)) {
+      const rightward = toCenter.x >= fromCenter.x;
+      const startX = rightward ? from.x + from.width : from.x;
+      const endX = rightward ? to.x : to.x + to.width;
+      const middleX = (startX + endX) / 2;
+      route = "M" + startX + " " + fromCenter.y + " L" + middleX + " " + fromCenter.y +
+       " L" + middleX + " " + toCenter.y + " L" + endX + " " + toCenter.y;
+     } else {
+      const downward = toCenter.y >= fromCenter.y;
+      const startY = downward ? from.y + from.height : from.y;
+      const endY = downward ? to.y : to.y + to.height;
+      const middleY = (startY + endY) / 2;
+      route = "M" + fromCenter.x + " " + startY + " L" + fromCenter.x + " " + middleY +
+       " L" + toCenter.x + " " + middleY + " L" + toCenter.x + " " + endY;
+     }
+     this.edgeRoutes.set(layoutStructuralEdgeID(edge.id), route);
+    });
+   }
 
   renderPersistentScene() {
    this.loading.remove();
