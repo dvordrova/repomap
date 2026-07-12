@@ -39,6 +39,7 @@ type DirtyFile struct {
 	Path          string   `json:"path"`
 	FromPath      string   `json:"from_path,omitempty"`
 	Kind          FileKind `json:"kind"`
+	Mode          string   `json:"mode,omitempty"`
 	ContentSHA256 string   `json:"content_sha256,omitempty"`
 }
 

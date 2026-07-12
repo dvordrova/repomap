@@ -86,7 +86,8 @@ func TestLoadPreservesVersionLookingModulePathsAndPackageDisplay(t *testing.T) {
 				t.Fatalf("root package = %#v", root)
 			}
 			worker := byCanonical[modulePath+"/internal/worker"]
-			if worker.DisplayPath != "internal/worker" || worker.ModulePath != modulePath || worker.PackageDir != "internal/worker" {
+			if worker.DisplayPath != "internal/worker" || worker.ModulePath != modulePath || worker.PackageDir != "internal/worker" ||
+				len(worker.Files) != 1 || worker.Files[0] != "internal/worker/worker.go" {
 				t.Fatalf("worker package = %#v", worker)
 			}
 		})

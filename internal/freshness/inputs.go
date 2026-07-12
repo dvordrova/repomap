@@ -52,7 +52,10 @@ func CaptureInputs(ctx context.Context, state RepositoryState, paths []string) (
 		}
 		if file, exists := dirty[path]; exists {
 			input.Kind = file.Kind
-			input.Mode = string(file.Kind)
+			input.Mode = file.Mode
+			if input.Mode == "" {
+				input.Mode = string(file.Kind)
+			}
 			input.ContentSHA256 = file.ContentSHA256
 			inputs = append(inputs, input)
 			continue

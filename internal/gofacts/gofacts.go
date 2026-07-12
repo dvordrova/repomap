@@ -54,14 +54,15 @@ type ModuleSource struct {
 }
 
 type PackageFact struct {
-	CanonicalPath     string `json:"canonical_package_path"`
-	Name              string `json:"name"`
-	ModuleID          string `json:"owning_module_id"`
-	ModulePath        string `json:"module_path"`
-	PackageDir        string `json:"package_directory"`
-	ModuleRelativeDir string `json:"module_relative_path"`
-	DisplayPath       string `json:"display_path"`
-	Locality          string `json:"locality"`
+	CanonicalPath     string   `json:"canonical_package_path"`
+	Name              string   `json:"name"`
+	ModuleID          string   `json:"owning_module_id"`
+	ModulePath        string   `json:"module_path"`
+	PackageDir        string   `json:"package_directory"`
+	ModuleRelativeDir string   `json:"module_relative_path"`
+	DisplayPath       string   `json:"display_path"`
+	Locality          string   `json:"locality"`
+	Files             []string `json:"files,omitempty"`
 }
 
 type ModuleSummary struct {
@@ -130,6 +131,16 @@ type goListPackage struct {
 	Name            string
 	GoFiles         []string
 	CompiledGoFiles []string
+	CgoFiles        []string
+	CFiles          []string
+	CXXFiles        []string
+	MFiles          []string
+	HFiles          []string
+	FFiles          []string
+	SFiles          []string
+	SwigFiles       []string
+	SwigCXXFiles    []string
+	SysoFiles       []string
 	Imports         []string
 	Module          *goListModule
 	Error           *goListError
@@ -284,7 +295,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 			packageFacts = append(packageFacts, PackageFact{
 				CanonicalPath: pkg.ImportPath, Name: pkg.Name, ModuleID: moduleID, ModulePath: modulePath,
 				PackageDir: filepath.ToSlash(packageDir), ModuleRelativeDir: filepath.ToSlash(moduleRelativeDir),
-				DisplayPath: displayPath, Locality: "local",
+				DisplayPath: displayPath, Locality: "local", Files: packageInputFiles(packageDir, pkg),
 			})
 		}
 
@@ -353,6 +364,45 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		ExternalImportsTop:    extImports,
 		Warnings:              topWarnings,
 	}, nil
+}
+
+func packageInputFiles(packageDir string, pkg goListPackage) []string {
+	fileNames := make([]string, 0, len(pkg.GoFiles)+len(pkg.CgoFiles)+len(pkg.CFiles)+len(pkg.HFiles)+len(pkg.SFiles))
+	fileNames = append(fileNames, pkg.GoFiles...)
+	fileNames = append(fileNames, pkg.CgoFiles...)
+	fileNames = append(fileNames, pkg.CFiles...)
+	fileNames = append(fileNames, pkg.CXXFiles...)
+	fileNames = append(fileNames, pkg.MFiles...)
+	fileNames = append(fileNames, pkg.HFiles...)
+	fileNames = append(fileNames, pkg.FFiles...)
+	fileNames = append(fileNames, pkg.SFiles...)
+	fileNames = append(fileNames, pkg.SwigFiles...)
+	fileNames = append(fileNames, pkg.SwigCXXFiles...)
+	fileNames = append(fileNames, pkg.SysoFiles...)
+	result := make([]string, 0, len(fileNames))
+	for _, name := range fileNames {
+		name = filepath.ToSlash(filepath.Clean(name))
+		if name == "." || name == ".." || strings.HasPrefix(name, "../") || strings.Contains(name, "/") {
+			continue
+		}
+		if packageDir == "." || packageDir == "" {
+			result = append(result, name)
+		} else {
+			result = append(result, filepath.ToSlash(filepath.Join(packageDir, name)))
+		}
+	}
+	sort.Strings(result)
+	return compactStrings(result)
+}
+
+func compactStrings(values []string) []string {
+	result := values[:0]
+	for _, value := range values {
+		if len(result) == 0 || result[len(result)-1] != value {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string) []ModuleSource {

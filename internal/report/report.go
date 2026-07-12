@@ -69,14 +69,15 @@ type ModuleInfo struct {
 }
 
 type PackageInfo struct {
-	CanonicalPath     string `json:"canonical_package_path"`
-	Name              string `json:"name"`
-	ModuleID          string `json:"owning_module_id"`
-	ModulePath        string `json:"module_path"`
-	Dir               string `json:"package_directory"`
-	ModuleRelativeDir string `json:"module_relative_path"`
-	DisplayPath       string `json:"display_path"`
-	Locality          string `json:"locality"`
+	CanonicalPath     string   `json:"canonical_package_path"`
+	Name              string   `json:"name"`
+	ModuleID          string   `json:"owning_module_id"`
+	ModulePath        string   `json:"module_path"`
+	Dir               string   `json:"package_directory"`
+	ModuleRelativeDir string   `json:"module_relative_path"`
+	DisplayPath       string   `json:"display_path"`
+	Locality          string   `json:"locality"`
+	Files             []string `json:"files,omitempty"`
 }
 
 // Component is a stable structured view of one model-oriented subsystem. Its
