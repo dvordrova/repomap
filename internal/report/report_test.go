@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 )
 
 func TestConfidenceLabel(t *testing.T) {
@@ -165,6 +166,7 @@ func TestReadRunDir_Integration(t *testing.T) {
 		}],
 		"candidate_flows":[{
 			"name":"gRPC Put",
+			"flow_type":"request",
 			"trigger":"a client sends Put",
 			"likely_entrypoint":"server/put.go",
 			"likely_files":["server/put.go","storage/kv.go"],
@@ -189,7 +191,7 @@ func TestReadRunDir_Integration(t *testing.T) {
 	mkdirAll(t, flowDir)
 
 	writeTestFile(t, flowDir, "flow_bundle.json", `{
-		"flow_seed": {"name": "gRPC Put Request"},
+		"flow_seed": {"name": "gRPC Put Request", "flow_type": "request"},
 		"selected_files": [{"path":"a.go","kind":"source","score":200}],
 		"selected_tests": [{"path":"a_test.go","kind":"test","score":100}],
 		"selected_docs": [{"path":"doc.md","kind":"doc","score":50}],
@@ -264,6 +266,9 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if direction.ID != "grpc-put" || direction.Name != "gRPC Put" || direction.Trigger != "a client sends Put" {
 		t.Errorf("candidate direction identity = %+v", direction)
 	}
+	if direction.FlowType != flowexplain.FlowTypeRequest {
+		t.Errorf("candidate direction flow type = %q, want request", direction.FlowType)
+	}
 	if direction.LikelyEntrypoint != "server/put.go" || direction.WhyInteresting != "shows the write path" || direction.Confidence != 0.82 {
 		t.Errorf("candidate direction details = %+v", direction)
 	}
@@ -298,6 +303,9 @@ func TestReadRunDir_Integration(t *testing.T) {
 	}
 	if f.Name != "gRPC Put Request" {
 		t.Errorf("flow name = %q", f.Name)
+	}
+	if f.FlowType != flowexplain.FlowTypeRequest {
+		t.Errorf("flow type = %q, want request", f.FlowType)
 	}
 	if f.Summary != "handles gRPC put" {
 		t.Errorf("summary = %q", f.Summary)

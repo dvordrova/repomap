@@ -566,6 +566,13 @@
     return pill;
   }
 
+  function renderFlowTypePill(flow) {
+    var flowType = flow && flow.flow_type;
+    if (flowType !== 'request' && flowType !== 'operational') return null;
+    var label = flowType === 'operational' ? 'Operational' : 'Request';
+    return renderPill(label, flowType);
+  }
+
   function renderKindBadge(kind) {
     if (!kind) return null;
     var badge = el('span', 'rm-kind rm-kind--' + kind);
@@ -582,6 +589,8 @@
       var eh = el('div', 'rm-ov-flow-header');
       var eh3 = txt('h3', '', flow.name || flow.id);
       eh.appendChild(eh3);
+      var errorFlowType = renderFlowTypePill(flow);
+      if (errorFlowType) eh.appendChild(errorFlowType);
       eh.appendChild(renderPill(LABELS.errorUnavailable, 'error'));
       card.appendChild(eh);
       if (flow.bundle_stats_label) {
@@ -595,6 +604,8 @@
     var header = el('div', 'rm-ov-flow-header');
     var h3 = txt('h3', '', flow.name || flow.id);
     header.appendChild(h3);
+    var flowType = renderFlowTypePill(flow);
+    if (flowType) header.appendChild(flowType);
     if (isRecommended) header.appendChild(renderPill(LABELS.startHere));
     card.appendChild(header);
 
@@ -712,6 +723,8 @@
 
     var header = el('div', 'rm-ov-flow-header');
     header.appendChild(txt('h3', '', direction.name || direction.id));
+    var directionFlowType = renderFlowTypePill(direction);
+    if (directionFlowType) header.appendChild(directionFlowType);
     if (isSuggestedStart) header.appendChild(renderPill(LABELS.suggestedStart));
     header.appendChild(renderEvidenceBadge(direction.confidence, direction.local_verification));
     card.appendChild(header);
@@ -2348,6 +2361,8 @@
 
     var header = el('div', 'rm-flow-header');
     header.appendChild(txt('h2', '', flow.name || flow.id));
+    var detailFlowType = renderFlowTypePill(direction || flow);
+    if (detailFlowType) header.appendChild(detailFlowType);
     if (!flow.error && !flow.evidence_only) {
       header.appendChild(renderEvidenceBadge(flow.confidence));
     } else if (!flow.error && direction) {

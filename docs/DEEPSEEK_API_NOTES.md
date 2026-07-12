@@ -148,6 +148,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   "candidate_flows": [
     {
       "name": "runtime or event flow name",
+      "flow_type": "request | operational",
       "trigger": "what starts this flow",
       "likely_entrypoint": "exact full path from allowed_paths",
       "likely_files": ["repo-relative paths"],
@@ -174,6 +175,11 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   ]
 }
 ```
+
+Operational flows must cite bounded `source_signals` evidence. When the static
+evidence remains weak and no local proof establishes execution, confidence is
+capped at `0.3`. Request and operational flows remain one naturally ranked
+candidate list.
 
 Orientation parsing separates recoverable prose drift from structured
 navigation. A free-form evidence item that contains an invalid or unprovided

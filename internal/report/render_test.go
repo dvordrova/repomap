@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
@@ -159,6 +160,77 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 	if !bytes.Equal(html, want) {
 		t.Errorf("HTML output differs from golden file.\nRun 'go test -run TestWriteReportHTML_Golden -update' to regenerate.")
 		t.Errorf("Got %d bytes, want %d bytes", len(html), len(want))
+	}
+}
+
+func TestReportRendersRequestAndOperationalFlowTypes(t *testing.T) {
+	t.Parallel()
+
+	data := ReportData{
+		FormatVersion: CurrentFormatVersion,
+		RepoName:      "flow-types",
+		CandidateDirections: []CandidateDirection{
+			{ID: "request-flow", Name: "Request flow", FlowType: flowexplain.FlowTypeRequest},
+			{ID: "operational-flow", Name: "Operational flow", FlowType: flowexplain.FlowTypeOperational},
+		},
+		Flows: []FlowData{
+			{ID: "request-flow", Name: "Request flow", FlowType: flowexplain.FlowTypeRequest},
+			{ID: "operational-flow", Name: "Operational flow", FlowType: flowexplain.FlowTypeOperational},
+		},
+	}
+	enrich(&data)
+
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range [][]byte{
+		[]byte(`"flow_type":"request"`),
+		[]byte(`"flow_type":"operational"`),
+	} {
+		if !bytes.Contains(encoded, marker) {
+			t.Fatalf("report json is missing %s: %s", marker, encoded)
+		}
+	}
+	requestIndex := bytes.Index(encoded, []byte(`"id":"request-flow"`))
+	operationalIndex := bytes.Index(encoded, []byte(`"id":"operational-flow"`))
+	if requestIndex < 0 || operationalIndex <= requestIndex {
+		t.Fatalf("flow order changed in flat report json: %s", encoded)
+	}
+
+	html, err := RenderHTML(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range [][]byte{
+		[]byte("rm-pill--request"),
+		[]byte("rm-pill--operational"),
+		[]byte("Operational"),
+		[]byte("Request"),
+	} {
+		if !bytes.Contains(html, marker) {
+			t.Fatalf("report html is missing %q", marker)
+		}
+	}
+	if bytes.Contains(html, []byte("Operational flows")) {
+		t.Fatal("report introduced a separate operational-flow section")
+	}
+}
+
+func TestReportPreservesMissingFlowTypeWithoutRequestClaim(t *testing.T) {
+	t.Parallel()
+
+	data := ReportData{
+		RepoName: "legacy",
+		Flows:    []FlowData{{ID: "legacy-flow", Name: "Legacy flow"}},
+	}
+	enrich(&data)
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(`"flow_type"`)) {
+		t.Fatalf("legacy report gained an unsupported flow type: %s", encoded)
 	}
 }
 

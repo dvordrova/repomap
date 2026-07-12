@@ -15,6 +15,7 @@ import (
 type FlowSeed struct {
 	ID               string   `json:"id"`
 	Name             string   `json:"name"`
+	FlowType         string   `json:"flow_type,omitempty"`
 	Trigger          string   `json:"trigger"`
 	LikelyEntrypoint string   `json:"likely_entrypoint"`
 	ValidSeedFiles   []string `json:"valid_seed_files"`
@@ -49,8 +50,14 @@ type flowEdge struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+const (
+	FlowTypeRequest     = "request"
+	FlowTypeOperational = "operational"
+)
+
 type CandidateFlow struct {
 	Name              string             `json:"name"`
+	FlowType          string             `json:"flow_type,omitempty"`
 	Trigger           string             `json:"trigger"`
 	LikelyEntrypoint  string             `json:"likely_entrypoint"`
 	LikelyFiles       []string           `json:"likely_files"`

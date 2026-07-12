@@ -702,7 +702,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v8" {
+	if OrientationPromptVersionJSON != "orientation-json-v9" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{
@@ -722,6 +722,11 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 	expected := []string{
 		"project_guess",
 		"candidate_flows",
+		"flow_type",
+		`"operational"`,
+		"cite source_signal evidence",
+		"cap confidence at 0.3",
+		"strongest grounded evidence regardless of flow type",
 		"first_files_to_open",
 		"high_level_map",
 		`"role"`,

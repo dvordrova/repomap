@@ -274,6 +274,17 @@ func normalizeOrientationGrounding(
 	normalizedFlows := make([]flowexplain.CandidateFlow, 0, len(report.CandidateFlows))
 	for index := range report.CandidateFlows {
 		flow := report.CandidateFlows[index]
+		switch flow.FlowType {
+		case "", flowexplain.FlowTypeRequest:
+			flow.FlowType = flowexplain.FlowTypeRequest
+		case flowexplain.FlowTypeOperational:
+		default:
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser removed unsupported candidate_flows[%d].flow_type",
+				index,
+			))
+			flow.FlowType = ""
+		}
 		flow.Evidence = filterEvidence(
 			fmt.Sprintf("candidate_flows[%d].evidence", index),
 			flow.Evidence,

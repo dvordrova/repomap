@@ -3,6 +3,7 @@ package llmbundle
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,6 +107,38 @@ func TestBuildCompactBundle(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, `"orientation_candidates"`) {
 		t.Fatal("bundle must contain orientation_candidates")
+	}
+}
+
+func TestBuildUsesProvidedSourceSignalsWithoutRescanning(t *testing.T) {
+	t.Parallel()
+
+	provided := []sourcesignals.Signal{{
+		Path:     "internal/worker.go",
+		Line:     12,
+		Category: "background_loop",
+		Match:    "NewTicker",
+		Weight:   40,
+	}}
+	bundle := Build(
+		snapshot.Snapshot{
+			RepoName: "fixture",
+			GoFacts: &gofacts.Facts{OrientationCandidates: []gofacts.OrientationCandidate{{
+				Name:      "Background loop",
+				Kind:      gofacts.OrientationKindSignalFlow,
+				OpenFiles: []string{"internal/worker.go"},
+			}}},
+		},
+		[]string{"internal/worker.go"},
+		Options{
+			RepoPath:      filepath.Join(t.TempDir(), "missing"),
+			SourceSignals: provided,
+			MaxFiles:      10,
+		},
+	)
+
+	if len(bundle.SourceSignals) != 1 || bundle.SourceSignals[0].Path != provided[0].Path {
+		t.Fatalf("source signals = %#v, want provided bounded signal", bundle.SourceSignals)
 	}
 }
 

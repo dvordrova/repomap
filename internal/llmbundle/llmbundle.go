@@ -75,6 +75,7 @@ type Options struct {
 	MaxSignalTotal   int
 	MaxSignalPerFile int
 	RepoPath         string
+	SourceSignals    []sourcesignals.Signal
 }
 
 func defaults(opts Options) Options {
@@ -175,7 +176,8 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 
 		candidates := make([]gofacts.OrientationCandidate, 0, len(f.OrientationCandidates))
 		for _, candidate := range f.OrientationCandidates {
-			if _, ok := selectedEntrypointImports[candidate.EntrypointPackage]; ok {
+			_, selectedEntrypoint := selectedEntrypointImports[candidate.EntrypointPackage]
+			if candidate.Kind == gofacts.OrientationKindSignalFlow || selectedEntrypoint {
 				candidates = append(candidates, candidate)
 			}
 		}
@@ -205,14 +207,14 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 	// The bounded file index is language-neutral. Go facts enrich its ranking
 	// when present, but Python and other repositories still need a closed
 	// allowed_paths set for grounded orientation.
-	var fileSignals []sourcesignals.Signal
-	if opts.RepoPath != "" {
+	fileSignals := append([]sourcesignals.Signal(nil), opts.SourceSignals...)
+	if opts.SourceSignals == nil && opts.RepoPath != "" {
 		fileSignals = sourcesignals.ScanFiles(fileList, opts.RepoPath, sourcesignals.ScanOptions{
 			MaxPerFile: opts.MaxSignalPerFile,
 			MaxTotal:   opts.MaxSignalTotal,
 		})
-		b.SourceSignals = fileSignals
 	}
+	b.SourceSignals = fileSignals
 	fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
 	if len(fileIndex) > opts.MaxFiles {
 		b.Warnings = append(b.Warnings, "truncated candidate_file_index")
