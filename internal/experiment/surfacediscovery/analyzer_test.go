@@ -3,6 +3,7 @@ package surfacediscovery
 import (
 	"bytes"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -206,6 +207,94 @@ func TestAnalyzeCustomRouterStretchRemainsUnsupported(t *testing.T) {
 	result := analyzeFixture(t, "custom_router")
 	if len(result.Catalog.Triggers) != 0 {
 		t.Fatalf("custom registry was promoted without a configured terminal seed: %#v", result.Catalog.Triggers)
+	}
+}
+
+func TestAnalyzeGroundsModularServerFromEntrypointComposition(t *testing.T) {
+	result := analyzeFixture(t, "modular")
+	if result.Grounding.RepositoryArchetype.Selected != "modular_platform_server" {
+		t.Fatalf("archetype = %#v", result.Grounding.RepositoryArchetype)
+	}
+	if result.Grounding.GroundingMode != "behavior_grounded" {
+		t.Fatalf("grounding mode = %q", result.Grounding.GroundingMode)
+	}
+	if result.Coverage.FunctionsInspected <= 1 {
+		t.Fatalf("functions inspected = %d, want composition traversal beyond main", result.Coverage.FunctionsInspected)
+	}
+	kinds := make(map[string]bool)
+	for _, anchor := range result.Grounding.Anchors {
+		kinds[anchor.Kind] = true
+		if anchor.Location.Path == "" || anchor.Location.Line == 0 || len(anchor.AssociatedMembers) == 0 || len(anchor.Limitations) == 0 {
+			t.Fatalf("incomplete anchor = %#v", anchor)
+		}
+	}
+	for _, kind := range []string{
+		"process_entry", "command_dispatch", "config_ingress", "registry_write",
+		"registry_lookup", "lifecycle_start", "admin_control_plane",
+		"request_dispatch_root", "tls_or_security_boundary", "extension_family",
+	} {
+		if !kinds[kind] {
+			t.Errorf("missing behavior anchor kind %q: %#v", kind, result.Grounding.Anchors)
+		}
+	}
+	if len(result.Grounding.Relationships) == 0 {
+		t.Fatal("entrypoint composition produced no exact behavior handoffs")
+	}
+	registrationRelations := 0
+	for _, relationship := range result.Grounding.Relationships {
+		if relationship.Kind != "registers_extension_family" {
+			continue
+		}
+		registrationRelations++
+		if relationship.WitnessCount != 2 || len(relationship.WitnessIDs) != 2 {
+			t.Fatalf("aggregated registration = %#v, want two exact witnesses", relationship)
+		}
+	}
+	if registrationRelations != 1 {
+		t.Fatalf("registration relationships = %d, want one aggregate", registrationRelations)
+	}
+	for _, anchor := range result.Grounding.Anchors {
+		if anchor.Kind != "config_apply" {
+			continue
+		}
+		for _, member := range anchor.AssociatedMembers {
+			if strings.Contains(member.Location.Path, "/headers/") || member.Name == "ApplyToRequest" {
+				t.Fatalf("request mutator classified as config_apply: %#v", member)
+			}
+		}
+	}
+}
+
+func TestDeduplicateArchitectureSymbolsNormalizesReceiverWrappers(t *testing.T) {
+	t.Parallel()
+
+	location := Location{Path: "context.go", Line: 188, Column: 20}
+	symbols := []Symbol{
+		{ID: "example.(*Context).LoadModule", Package: "example", Name: "LoadModule", Location: location},
+		{ID: "example.(Context).LoadModule", Package: "example", Name: "LoadModule", Location: location},
+		{ID: "example.(*Context).LoadModule", Package: "example", Name: "LoadModule", Location: location},
+	}
+	first := deduplicateArchitectureSymbols(symbols)
+	second := deduplicateArchitectureSymbols([]Symbol{symbols[2], symbols[1], symbols[0]})
+	if len(first) != 1 || !reflect.DeepEqual(first, second) {
+		t.Fatalf("deduplicated symbols are unstable: first=%#v second=%#v", first, second)
+	}
+	if first[0].ID != "example.(*Context).LoadModule" || !reflect.DeepEqual(
+		first[0].EquivalentIDs,
+		[]string{"example.(*Context).LoadModule", "example.(Context).LoadModule"},
+	) {
+		t.Fatalf("canonical declaration = %#v", first[0])
+	}
+}
+
+func TestConfigurationPackageClassificationDoesNotUseReceiverName(t *testing.T) {
+	t.Parallel()
+
+	if !isConfigurationPackage("example/internal/config") || !isConfigurationPackage("example/caddyconfig/httpcaddyfile") {
+		t.Fatal("configuration packages were not recognized")
+	}
+	if isConfigurationPackage("example/modules/headers") || isConfigurationPackage("example/modules/request") {
+		t.Fatal("request packages were classified from unrelated Apply-style receiver names")
 	}
 }
 

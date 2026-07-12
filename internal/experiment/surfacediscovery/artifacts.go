@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	TriggerCatalogFilename  = "trigger_catalog.json"
-	SurfaceCoverageFilename = "surface_coverage.json"
-	SemanticSummaryFilename = "semantic_summaries.json"
-	SurfaceSummaryFilename  = "surface_summary.md"
+	TriggerCatalogFilename        = "trigger_catalog.json"
+	SurfaceCoverageFilename       = "surface_coverage.json"
+	SemanticSummaryFilename       = "semantic_summaries.json"
+	SurfaceSummaryFilename        = "surface_summary.md"
+	ArchitectureGroundingFilename = "architecture_grounding.json"
 )
 
 func WriteArtifacts(directory string, result Result) error {
@@ -35,6 +36,7 @@ func WriteArtifacts(directory string, result Result) error {
 		{name: TriggerCatalogFilename, value: result.Catalog},
 		{name: SurfaceCoverageFilename, value: result.Coverage},
 		{name: SemanticSummaryFilename, value: result.Summaries},
+		{name: ArchitectureGroundingFilename, value: result.Grounding},
 	}
 	for _, value := range values {
 		data, err := MarshalDeterministic(value.value)

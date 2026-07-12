@@ -27,28 +27,31 @@ import (
 )
 
 type analyzer struct {
-	opts         Options
-	catalog      catalog.Catalog
-	program      *ssa.Program
-	packages     []*ssa.Package
-	graph        *callgraph.Graph
-	allFunctions map[*ssa.Function]bool
-	relevant     map[*ssa.Function]bool
-	callTargets  map[ssa.CallInstruction][]*ssa.Function
-	root         string
-	modulePath   string
-	scenario     Scenario
-	result       Result
-	tasks        int
-	active       map[*ssa.Function]bool
-	matchedSeeds []string
-	starts       []dispatchStart
-	assignments  map[string]Value
-	summaryByID  map[string]SemanticSummary
-	fileDigests  map[string]SourceDigest
-	functionByID map[string]*ssa.Function
-	loopCache    map[*ssa.Function][]loopDescriptor
-	loopSeen     map[string]bool
+	opts                      Options
+	catalog                   catalog.Catalog
+	program                   *ssa.Program
+	packages                  []*ssa.Package
+	graph                     *callgraph.Graph
+	allFunctions              map[*ssa.Function]bool
+	relevant                  map[*ssa.Function]bool
+	callTargets               map[ssa.CallInstruction][]*ssa.Function
+	root                      string
+	modulePath                string
+	scenario                  Scenario
+	result                    Result
+	tasks                     int
+	active                    map[*ssa.Function]bool
+	matchedSeeds              []string
+	starts                    []dispatchStart
+	assignments               map[string]Value
+	summaryByID               map[string]SemanticSummary
+	fileDigests               map[string]SourceDigest
+	functionByID              map[string]*ssa.Function
+	loopCache                 map[*ssa.Function][]loopDescriptor
+	loopSeen                  map[string]bool
+	compositionVisited        map[*ssa.Function]bool
+	architectureAnchors       map[string]BehaviorAnchor
+	architectureRelationships map[string]BehaviorRelationship
 }
 
 type environment map[ssa.Value]Value
@@ -82,31 +85,43 @@ func Analyze(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	a := &analyzer{
-		opts:         opts,
-		catalog:      builtin,
-		root:         root,
-		active:       map[*ssa.Function]bool{},
-		assignments:  map[string]Value{},
-		summaryByID:  map[string]SemanticSummary{},
-		fileDigests:  map[string]SourceDigest{},
-		callTargets:  map[ssa.CallInstruction][]*ssa.Function{},
-		functionByID: map[string]*ssa.Function{},
-		loopCache:    map[*ssa.Function][]loopDescriptor{},
-		loopSeen:     map[string]bool{},
+		opts:                      opts,
+		catalog:                   builtin,
+		root:                      root,
+		active:                    map[*ssa.Function]bool{},
+		assignments:               map[string]Value{},
+		summaryByID:               map[string]SemanticSummary{},
+		fileDigests:               map[string]SourceDigest{},
+		callTargets:               map[ssa.CallInstruction][]*ssa.Function{},
+		functionByID:              map[string]*ssa.Function{},
+		loopCache:                 map[*ssa.Function][]loopDescriptor{},
+		loopSeen:                  map[string]bool{},
+		compositionVisited:        map[*ssa.Function]bool{},
+		architectureAnchors:       map[string]BehaviorAnchor{},
+		architectureRelationships: map[string]BehaviorRelationship{},
 	}
 	if err := a.load(); err != nil {
 		return Result{}, err
 	}
 	a.prepare()
+	a.recordGlobalArchitectureAnchors()
 	entrypoints := a.entrypoints()
 	for _, entrypoint := range entrypoints {
 		a.result.Coverage.EntrypointsConsidered = append(
 			a.result.Coverage.EntrypointsConsidered,
 			a.symbol(entrypoint),
 		)
-		a.walk(entrypoint, environment{}, nil, entrypoint, 0, false)
+		entryAnchorID := a.recordArchitectureAnchor(
+			"process_entry",
+			"process entry "+a.functionID(entrypoint),
+			a.location(entrypoint.Pos()),
+			a.symbol(entrypoint),
+			"Exact build-selected main declaration; process execution is not observed.",
+		)
+		a.walk(entrypoint, environment{}, nil, entrypoint, 0, false, entryAnchorID)
 	}
 	a.finish(time.Since(started))
+	a.finishArchitectureGrounding(entrypoints)
 	return a.result, nil
 }
 
@@ -298,6 +313,7 @@ func (a *analyzer) walk(
 	entrypoint *ssa.Function,
 	depth int,
 	ambiguous bool,
+	parentAnchorID string,
 ) {
 	if function == nil || function.Blocks == nil {
 		return
@@ -342,13 +358,43 @@ func (a *analyzer) walk(
 			}
 			callAmbiguous := ambiguous || len(targets) > 1
 			for _, target := range targets {
+				architectureKind := a.architectureCallKind(target)
+				nextParentAnchorID := parentAnchorID
+				if architectureKind != "" {
+					anchorID := a.recordArchitectureAnchor(
+						architectureKind,
+						architectureKind+" "+a.functionID(target),
+						a.location(call.Pos()),
+						a.symbol(target),
+						"Kind is a bounded static classification of an exact call target; runtime reachability is not observed.",
+					)
+					a.recordArchitectureRelationship(parentAnchorID, anchorID, a.location(call.Pos()))
+					nextParentAnchorID = anchorID
+					if architectureKind == "registry_write" {
+						extensionID := a.recordArchitectureAnchor(
+							"extension_family",
+							"extension registration via "+a.functionID(target),
+							a.location(call.Pos()),
+							a.symbol(target),
+							"Registration proves a modular extension boundary, not creation or lifecycle execution of every implementation.",
+						)
+						a.recordArchitectureRelationship(anchorID, extensionID, a.location(call.Pos()))
+					}
+				}
 				seed, matched := a.callSeed(target)
 				if matched {
 					a.recordCall(seed, call, target, env, chain, entrypoint, callAmbiguous)
 					continue
 				}
-				if !a.relevant[target] {
+				followComposition := a.shouldFollowComposition(target, architectureKind)
+				if !a.relevant[target] && !followComposition {
 					continue
+				}
+				if !a.relevant[target] {
+					if a.compositionVisited[target] {
+						continue
+					}
+					a.compositionVisited[target] = true
 				}
 				location := a.location(call.Pos())
 				wrapper := Wrapper{
@@ -364,6 +410,7 @@ func (a *analyzer) walk(
 					entrypoint,
 					depth+1,
 					callAmbiguous,
+					nextParentAnchorID,
 				)
 			}
 		}
@@ -824,6 +871,373 @@ func (a *analyzer) recordSummary(
 		}
 	}
 	a.summaryByID[summary.FunctionID+"\x00"+seed.ID] = summary
+}
+
+func (a *analyzer) recordGlobalArchitectureAnchors() {
+	functions := make([]*ssa.Function, 0)
+	for function := range a.allFunctions {
+		if function != nil && function.Blocks != nil && a.isRepositoryFunction(function) {
+			functions = append(functions, function)
+		}
+	}
+	sort.Slice(functions, func(i, j int) bool { return a.functionID(functions[i]) < a.functionID(functions[j]) })
+	families := make(map[string][]Symbol)
+	for _, function := range functions {
+		name := strings.ToLower(function.Name())
+		kind := a.architectureCallKind(function)
+		if function.Signature.Recv() != nil && (name == "provision" || name == "validate" || name == "cleanup") {
+			kind = "lifecycle_interface"
+		}
+		if kind != "" && kind != "command_dispatch" && kind != "registry_write" && len(families[kind]) < 32 {
+			families[kind] = append(families[kind], a.symbol(function))
+		}
+		for _, block := range function.Blocks {
+			for _, instruction := range block.Instrs {
+				call, ok := instruction.(ssa.CallInstruction)
+				if !ok {
+					continue
+				}
+				for _, target := range a.callTargets[call] {
+					if a.architectureCallKind(target) != "registry_write" {
+						continue
+					}
+					location := a.location(call.Pos())
+					registryID := a.recordArchitectureAnchor(
+						"registry_write",
+						"registry write "+a.functionID(target),
+						location,
+						a.symbol(target),
+						"Exact initialization or repository call to a registry-shaped target; later lookup and construction remain separate evidence.",
+					)
+					extensionID := a.recordArchitectureAnchor(
+						"extension_family",
+						"extension registration via "+a.functionID(target),
+						location,
+						a.symbol(target),
+						"Registration establishes an extension boundary, not execution or complete implementation coverage.",
+					)
+					a.recordArchitectureRelationship(registryID, extensionID, location)
+				}
+			}
+		}
+	}
+	kinds := make([]string, 0, len(families))
+	for kind := range families {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	for _, kind := range kinds {
+		members := deduplicateArchitectureSymbols(families[kind])
+		if len(members) > 8 {
+			members = members[:8]
+		}
+		if len(members) == 0 {
+			continue
+		}
+		a.recordArchitectureAnchorMembers(
+			kind,
+			"discovered "+kind+" family",
+			members[0].Location,
+			members,
+			"Exact build-selected declarations share a bounded architecture-shaped signature; invocation and complete family coverage are not implied.",
+		)
+	}
+}
+
+func (a *analyzer) architectureCallKind(target *ssa.Function) string {
+	if target == nil || !a.isRepositoryFunction(target) {
+		return ""
+	}
+	name := strings.ToLower(target.Name())
+	qualified := strings.ToLower(a.functionID(target))
+	configContext := isConfigurationPackage(functionPackagePath(target))
+	registryContext := strings.Contains(qualified, "registr") || strings.Contains(name, "module") ||
+		strings.Contains(name, "plugin") || strings.Contains(name, "extension")
+	switch {
+	case registryContext && strings.HasPrefix(name, "register"):
+		return "registry_write"
+	case registryContext && (strings.Contains(name, "lookup") || strings.Contains(name, "loadmodule") || strings.Contains(name, "getmodule")):
+		return "registry_lookup"
+	case configContext && (strings.Contains(name, "adapt") || strings.Contains(name, "convert")):
+		return "config_adapter"
+	case configContext && (strings.HasPrefix(name, "load") || strings.HasPrefix(name, "read") || strings.HasPrefix(name, "parse") || strings.HasPrefix(name, "decode")):
+		return "config_ingress"
+	case configContext && (strings.Contains(name, "apply") || strings.Contains(name, "provision")):
+		return "config_apply"
+	case strings.Contains(qualified, "admin") && (strings.Contains(name, "start") || strings.Contains(name, "serve") || strings.Contains(name, "route") || strings.Contains(name, "handler")):
+		return "admin_control_plane"
+	case name == "servehttp" || strings.Contains(name, "dispatchrequest"):
+		return "request_dispatch_root"
+	case strings.Contains(qualified, "tls") || strings.Contains(qualified, "pki") || strings.Contains(qualified, "certificate"):
+		return "tls_or_security_boundary"
+	case name == "start" || name == "provision" || name == "cleanup":
+		return "lifecycle_start"
+	case (strings.HasSuffix(functionPackagePath(target), "/cmd") || strings.Contains(functionPackagePath(target), "/cmd/") ||
+		strings.HasSuffix(functionPackagePath(target), "/command") || strings.Contains(functionPackagePath(target), "/command/")) &&
+		(name == "main" || name == "execute" || strings.HasPrefix(name, "run")):
+		return "command_dispatch"
+	default:
+		return ""
+	}
+}
+
+func (a *analyzer) shouldFollowComposition(target *ssa.Function, architectureKind string) bool {
+	if target == nil || target.Blocks == nil || !a.isRepositoryFunction(target) || target.Name() == "init" {
+		return false
+	}
+	return architectureKind != "request_dispatch_root" && architectureKind != "application_data_plane"
+}
+
+func (a *analyzer) recordArchitectureAnchor(
+	kind, label string,
+	location Location,
+	member Symbol,
+	limitation string,
+) string {
+	return a.recordArchitectureAnchorMembers(kind, label, location, []Symbol{member}, limitation)
+}
+
+func (a *analyzer) recordArchitectureAnchorMembers(
+	kind, label string,
+	location Location,
+	members []Symbol,
+	limitation string,
+) string {
+	if location.Path == "" || location.Line <= 0 || len(a.architectureAnchors) >= 256 {
+		return ""
+	}
+	if len(members) == 0 {
+		return ""
+	}
+	member := members[0]
+	identity := locationKey(location)
+	if kind == "registry_write" || kind == "extension_family" {
+		identity = member.ID
+	}
+	digest := sha256.Sum256([]byte(strings.Join([]string{
+		"architecture-anchor-v1", kind, identity, member.ID,
+	}, "\x00")))
+	id := "anchor-" + hex.EncodeToString(digest[:12])
+	if _, exists := a.architectureAnchors[id]; exists {
+		return id
+	}
+	a.architectureAnchors[id] = BehaviorAnchor{
+		ID: id, Kind: kind, Label: label, Location: location, Scenario: a.scenario,
+		Producer:  Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "classify_architecture_anchor"},
+		Certainty: "static", AssociatedMembers: append([]Symbol(nil), members...), Limitations: []string{limitation},
+	}
+	return id
+}
+
+func (a *analyzer) recordArchitectureRelationship(from, to string, location Location) {
+	if from == "" || to == "" || from == to {
+		return
+	}
+	kind := a.semanticArchitectureRelationshipKind(from, to)
+	digest := sha256.Sum256([]byte(strings.Join([]string{
+		"architecture-relationship-v2", from, to, kind,
+	}, "\x00")))
+	id := "handoff-" + hex.EncodeToString(digest[:12])
+	relationship, exists := a.architectureRelationships[id]
+	if !exists {
+		relationship = BehaviorRelationship{
+			ID: id, From: from, To: to, Kind: kind, EvidenceKind: "bounded_direct_call", Location: location,
+			Certainty: "static", witnessPackages: make(map[string]struct{}),
+			Producer: Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "connect_architecture_anchors"},
+		}
+	}
+	witnessDigest := sha256.Sum256([]byte(strings.Join([]string{
+		"architecture-relationship-witness-v1", from, to, locationKey(location),
+	}, "\x00")))
+	relationship.WitnessIDs = append(relationship.WitnessIDs, "witness-"+hex.EncodeToString(witnessDigest[:12]))
+	relationship.WitnessCount++
+	if len(relationship.RepresentativeLocations) < 8 {
+		relationship.RepresentativeLocations = append(relationship.RepresentativeLocations, location)
+	}
+	relationship.witnessPackages[filepath.Dir(location.Path)] = struct{}{}
+	relationship.PackageCount = len(relationship.witnessPackages)
+	a.architectureRelationships[id] = relationship
+}
+
+func (a *analyzer) semanticArchitectureRelationshipKind(from, to string) string {
+	fromAnchor, fromExists := a.architectureAnchors[from]
+	toAnchor, toExists := a.architectureAnchors[to]
+	if !fromExists || !toExists {
+		return "static_call_supporting_relation"
+	}
+	switch {
+	case fromAnchor.Kind == "process_entry" && toAnchor.Kind == "command_dispatch":
+		return "dispatches_to"
+	case fromAnchor.Kind == "registry_write" && toAnchor.Kind == "extension_family":
+		return "registers_extension_family"
+	case isConfigAnchorKind(fromAnchor.Kind) && isConfigAnchorKind(toAnchor.Kind):
+		return "loads_or_adapts_config"
+	case fromAnchor.Kind == "lifecycle_interface" && toAnchor.Kind == "lifecycle_start":
+		return "starts_lifecycle"
+	case toAnchor.Kind == "admin_control_plane":
+		return "exposes_admin_control_plane"
+	case toAnchor.Kind == "request_dispatch_root":
+		return "dispatches_http_request"
+	case toAnchor.Kind == "tls_or_security_boundary":
+		return "configures_security_boundary"
+	default:
+		return "static_call_supporting_relation"
+	}
+}
+
+func isConfigAnchorKind(kind string) bool {
+	return kind == "config_ingress" || kind == "config_adapter" || kind == "config_apply"
+}
+
+func isConfigurationPackage(packagePath string) bool {
+	segments := strings.FieldsFunc(strings.ToLower(packagePath), func(char rune) bool { return char == '/' || char == '.' })
+	for _, segment := range segments {
+		if segment == "config" || segment == "configuration" || segment == "caddyfile" || strings.HasSuffix(segment, "config") {
+			return true
+		}
+	}
+	return false
+}
+
+func deduplicateArchitectureSymbols(symbols []Symbol) []Symbol {
+	byDeclaration := make(map[string][]Symbol)
+	for _, symbol := range symbols {
+		key := strings.Join([]string{
+			symbol.Package, symbol.Name, symbol.Location.Path,
+			strconv.Itoa(symbol.Location.Line), strconv.Itoa(symbol.Location.Column),
+		}, "\x00")
+		byDeclaration[key] = append(byDeclaration[key], symbol)
+	}
+	result := make([]Symbol, 0, len(byDeclaration))
+	for _, equivalents := range byDeclaration {
+		sort.Slice(equivalents, func(i, j int) bool { return equivalents[i].ID < equivalents[j].ID })
+		canonical := equivalents[0]
+		seen := make(map[string]struct{}, len(equivalents))
+		for _, equivalent := range equivalents {
+			if _, duplicate := seen[equivalent.ID]; duplicate {
+				continue
+			}
+			seen[equivalent.ID] = struct{}{}
+			canonical.EquivalentIDs = append(canonical.EquivalentIDs, equivalent.ID)
+		}
+		result = append(result, canonical)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if locationKey(result[i].Location) != locationKey(result[j].Location) {
+			return locationKey(result[i].Location) < locationKey(result[j].Location)
+		}
+		return result[i].ID < result[j].ID
+	})
+	return result
+}
+
+func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
+	anchors := make([]BehaviorAnchor, 0, len(a.architectureAnchors))
+	kinds := make(map[string]bool)
+	for _, anchor := range a.architectureAnchors {
+		anchors = append(anchors, anchor)
+		kinds[anchor.Kind] = true
+	}
+	relationships := make([]BehaviorRelationship, 0, len(a.architectureRelationships))
+	for _, relationship := range a.architectureRelationships {
+		sort.Strings(relationship.WitnessIDs)
+		sort.Slice(relationship.RepresentativeLocations, func(i, j int) bool {
+			return locationKey(relationship.RepresentativeLocations[i]) < locationKey(relationship.RepresentativeLocations[j])
+		})
+		relationship.witnessPackages = nil
+		relationships = append(relationships, relationship)
+	}
+	anchorKindByID := make(map[string]string, len(anchors))
+	reachable := make(map[string]bool)
+	queue := make([]string, 0)
+	for _, anchor := range anchors {
+		anchorKindByID[anchor.ID] = anchor.Kind
+		if anchor.Kind == "process_entry" {
+			reachable[anchor.ID] = true
+			queue = append(queue, anchor.ID)
+		}
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, relationship := range relationships {
+			if relationship.From != current || reachable[relationship.To] {
+				continue
+			}
+			reachable[relationship.To] = true
+			queue = append(queue, relationship.To)
+		}
+	}
+	reachableKinds := make(map[string]bool)
+	for anchorID := range reachable {
+		reachableKinds[anchorKindByID[anchorID]] = true
+	}
+
+	pillars := 0
+	reachablePillars := 0
+	groups := [][]string{
+		{"command_dispatch"},
+		{"config_ingress", "config_adapter", "config_apply"},
+		{"registry_write", "registry_lookup", "extension_family"},
+		{"lifecycle_interface", "lifecycle_start"},
+		{"admin_control_plane"},
+		{"request_dispatch_root", "application_data_plane"},
+		{"tls_or_security_boundary"},
+	}
+	for _, group := range groups {
+		for _, kind := range group {
+			if kinds[kind] {
+				pillars++
+				break
+			}
+		}
+		for _, kind := range group {
+			if reachableKinds[kind] {
+				reachablePillars++
+				break
+			}
+		}
+	}
+	mode := "package_landscape"
+	if kinds["process_entry"] && reachablePillars >= 4 {
+		mode = "behavior_grounded"
+	} else if kinds["process_entry"] && pillars >= 2 {
+		mode = "mixed"
+	}
+
+	archetype := "application"
+	evidenceItems := []string{fmt.Sprintf("%d build-selected process entrypoint(s)", len(entrypoints))}
+	alternatives := []string{}
+	switch {
+	case (kinds["registry_write"] || kinds["extension_family"]) &&
+		(kinds["request_dispatch_root"] || kinds["admin_control_plane"]):
+		archetype = "modular_platform_server"
+		evidenceItems = append(evidenceItems, "exact registry/extension and server/control-plane anchors")
+		alternatives = append(alternatives, "application")
+	case a.result.Coverage.Workers > 0 || a.result.Coverage.AsyncTasks > 1:
+		archetype = "daemon_worker_system"
+		evidenceItems = append(evidenceItems, "bounded worker or asynchronous task registrations")
+		alternatives = append(alternatives, "application")
+	case kinds["command_dispatch"] && !kinds["request_dispatch_root"]:
+		archetype = "cli_tool"
+		evidenceItems = append(evidenceItems, "exact process and command-dispatch anchors")
+		alternatives = append(alternatives, "application")
+	case len(entrypoints) == 0:
+		archetype = "library_framework"
+		evidenceItems = append(evidenceItems, "no build-selected process entrypoint")
+	case len(entrypoints) > 3:
+		archetype = "monorepo_mixed"
+		evidenceItems = append(evidenceItems, "several build-selected executable entrypoints")
+		alternatives = append(alternatives, "application")
+	default:
+		alternatives = append(alternatives, "cli_tool", "daemon_worker_system")
+	}
+	a.result.Grounding = ArchitectureGrounding{
+		Version:             ArchitectureGroundingVersion,
+		RepositoryArchetype: ArchetypeAssessment{Selected: archetype, Evidence: evidenceItems, Alternatives: alternatives},
+		GroundingMode:       mode, Anchors: anchors, Relationships: relationships,
+	}
+	a.result.normalize()
 }
 
 func (a *analyzer) finish(latency time.Duration) {

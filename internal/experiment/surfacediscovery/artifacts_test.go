@@ -17,6 +17,7 @@ func TestWriteArtifacts(t *testing.T) {
 		TriggerCatalogFilename,
 		SurfaceCoverageFilename,
 		SemanticSummaryFilename,
+		ArchitectureGroundingFilename,
 		SurfaceSummaryFilename,
 	} {
 		data, err := os.ReadFile(filepath.Join(directory, name))
