@@ -51,6 +51,127 @@ func TestLoadSkipsModuleWhoseGoModEscapesRepository(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesVersionLookingModulePathsAndPackageDisplay(t *testing.T) {
+	t.Parallel()
+
+	for _, modulePath := range []string{"corp.example/platform/v0", "github.com/example/project/v2", "example.com/tool/v10"} {
+		modulePath := modulePath
+		t.Run(modulePath, func(t *testing.T) {
+			t.Parallel()
+			repo := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(repo, "internal", "worker"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module "+modulePath+"\n\ngo 1.24\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(repo, "root.go"), []byte("package platform\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(repo, "internal", "worker", "worker.go"), []byte("package worker\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			facts, err := Load(context.Background(), repo, []string{"go.mod", "root.go", "internal/worker/worker.go"}, 20, 20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(facts.Modules) != 1 || facts.Modules[0].ModulePath != modulePath {
+				t.Fatalf("module identity = %#v", facts.Modules)
+			}
+			byCanonical := make(map[string]PackageFact)
+			for _, pkg := range facts.Packages {
+				byCanonical[pkg.CanonicalPath] = pkg
+			}
+			if root := byCanonical[modulePath]; root.DisplayPath != "platform" || root.Locality != "local" {
+				t.Fatalf("root package = %#v", root)
+			}
+			worker := byCanonical[modulePath+"/internal/worker"]
+			if worker.DisplayPath != "internal/worker" || worker.ModulePath != modulePath || worker.PackageDir != "internal/worker" {
+				t.Fatalf("worker package = %#v", worker)
+			}
+		})
+	}
+}
+
+func TestLoadAssignsNestedPackagesToExactOwningModule(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "server", "internal", "worker"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"go.mod":                         "module example.com/foo\n\ngo 1.24\n",
+		"root.go":                        "package foo\n",
+		"server/go.mod":                  "module example.com/foobar/v2\n\ngo 1.24\n",
+		"server/server.go":               "package server\n",
+		"server/internal/worker/work.go": "package worker\n",
+	}
+	var fileList []string
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+	facts, err := Load(context.Background(), repo, fileList, 20, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byDir := make(map[string]PackageFact)
+	for _, pkg := range facts.Packages {
+		byDir[pkg.PackageDir] = pkg
+	}
+	worker := byDir["server/internal/worker"]
+	if worker.ModulePath != "example.com/foobar/v2" || worker.DisplayPath != "internal/worker" {
+		t.Fatalf("nested package ownership = %#v", worker)
+	}
+}
+
+func TestLoadRecordsOnlyAuthorizedLocalReplacementDirectories(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	outside := filepath.Join(parent, "outside")
+	for _, dir := range []string{filepath.Join(repo, "dep"), outside} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		"go.mod":     "module example.com/root\n\ngo 1.24\n\nreplace example.com/dep => ./dep\nreplace example.com/outside => ../outside\n",
+		"root.go":    "package root\n",
+		"dep/go.mod": "module example.com/dep\n\ngo 1.24\n",
+		"dep/dep.go": "package dep\n",
+	}
+	var fileList []string
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(repo, filepath.FromSlash(name)), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "go.mod"), []byte("module example.com/outside\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := Load(context.Background(), repo, fileList, 20, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root ModuleFact
+	for _, module := range facts.Modules {
+		if module.ModulePath == "example.com/root" {
+			root = module
+		}
+	}
+	if len(root.Replacements) != 2 || !root.Replacements[0].Local || root.Replacements[0].Dir != "dep" ||
+		root.Replacements[1].Local || root.Replacements[1].Dir != "" {
+		t.Fatalf("replacement provenance = %#v", root.Replacements)
+	}
+}
+
 func TestNormalizePackagePaths(t *testing.T) {
 	cases := []struct {
 		name           string
@@ -205,11 +326,11 @@ func TestParseGoListOutputWithError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pkgs) != 1 {
-		t.Fatalf("got %d packages, want 1", len(pkgs))
+	if len(pkgs) != 2 {
+		t.Fatalf("got %d packages, want 2", len(pkgs))
 	}
-	if pkgs[0].ImportPath != "example.com/ok" {
-		t.Fatalf("got package %q, want example.com/ok", pkgs[0].ImportPath)
+	if pkgs[0].ImportPath != "example.com/broken" || pkgs[1].ImportPath != "example.com/ok" {
+		t.Fatalf("got packages %#v", pkgs)
 	}
 	if len(warnings) != 1 {
 		t.Fatalf("got %d warnings, want 1", len(warnings))
