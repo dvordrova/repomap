@@ -33,6 +33,7 @@
     providerLatency: 'Orientation latency',
     surfaceAnalysis: 'Runtime surfaces',
     architectureAnchors: 'Architecture anchors',
+    snapshotFreshness: 'Analyzed-input freshness',
     architectureGrouping: 'Architecture grouping',
     directionsFound: 'Accepted directions',
     rejectedDirections: 'Rejected suggestions',
@@ -174,7 +175,9 @@
     }
     var button = txt('button', cls + ' rm-file-link', text);
     button.type = 'button';
-    button.title = 'Open in VS Code';
+    var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
+    button.title = stale ? 'This source changed after the report was generated. Open current source.' : 'Open current source in VS Code';
+    if (stale) button.classList.add('rm-file-link--stale');
     button.onclick = function (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -184,24 +187,23 @@
   }
 
   function githubPackageURL(pkg) {
-    var parts = (pkg || '').split('/');
-    if (parts.length < 3 || parts[0] !== 'github.com') return '';
-    var safe = parts.every(function (part) {
-      return part && /^[A-Za-z0-9_.-]+$/.test(part);
-    });
-    if (!safe) return '';
-    var base = 'https://github.com/' + encodeURIComponent(parts[1]) + '/' + encodeURIComponent(parts[2]);
-    if (parts.length === 3) return base;
-    return base + '/tree/HEAD/' + parts.slice(3).map(encodeURIComponent).join('/');
+    // Import paths are canonical identities, not verified repository URLs.
+    return '';
   }
 
   function packageDisplayName(pkg) {
+    var packages = ((DATA.repository_graph || {}).packages || []);
+    for (var packageIndex = 0; packageIndex < packages.length; packageIndex++) {
+      if (packages[packageIndex].canonical_package_path === pkg) {
+        return packages[packageIndex].display_path || packages[packageIndex].name || pkg;
+      }
+    }
     var modules = ((DATA.repository_graph || {}).modules || []).slice().sort(function (a, b) {
       return (b.path || '').length - (a.path || '').length;
     });
     for (var i = 0; i < modules.length; i++) {
       var modulePath = modules[i].path || '';
-      if (pkg === modulePath) return modulePath.split('/').pop();
+      if (pkg === modulePath) return DATA.repo_name || modules[i].display_name || modulePath;
       if (modulePath && pkg.indexOf(modulePath + '/') === 0) return pkg.slice(modulePath.length + 1);
     }
     return pkg;
@@ -855,6 +857,15 @@
         surfaceValue += ' · ' + String(DATA.run.surface_discovery_count || 0) + ' found';
         addFact(LABELS.surfaceAnalysis, surfaceValue);
       }
+      if (DATA.freshness) {
+        var freshnessValue = String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+        if ((DATA.freshness.affected_paths || []).length > 0) {
+          freshnessValue += ' · ' + DATA.freshness.affected_paths.length + ' analyzed input(s) changed';
+        } else if ((DATA.freshness.affected_submodules || []).length > 0) {
+          freshnessValue += ' · ' + DATA.freshness.affected_submodules.length + ' excluded submodule change(s)';
+        }
+        addFact(LABELS.snapshotFreshness, freshnessValue);
+      }
       addFact(LABELS.architectureAnchors, String(DATA.run.architecture_anchor_count || 0) + ' static families');
       if (DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
@@ -912,9 +923,18 @@
 
   function packageForFile(filePath) {
     var graph = DATA.repository_graph || {};
-    var modules = graph.modules || [];
     var slash = filePath.lastIndexOf('/');
     var fileDir = slash < 0 ? '' : filePath.slice(0, slash);
+    var packages = graph.packages || [];
+    if (packages.length > 0) {
+      for (var packageIndex = 0; packageIndex < packages.length; packageIndex++) {
+        if ((packages[packageIndex].package_directory || '') === fileDir) {
+          return packages[packageIndex].canonical_package_path || '';
+        }
+      }
+      return '';
+    }
+    var modules = graph.modules || [];
     var best = null;
     modules.forEach(function (module) {
       var moduleDir = module.dir || '';
@@ -2566,6 +2586,19 @@
     }
     if (DATA.feedback_path) {
       document.getElementById('rm-feedback-path').textContent = 'Feedback notes: ' + DATA.feedback_path;
+    }
+    if (DATA.captured_revision) {
+      document.getElementById('rm-snapshot-detail').textContent = 'Captured snapshot: ' + DATA.captured_revision.slice(0, 12) + ' · ' + (DATA.captured_input_count || 0) + ' analyzed inputs';
+    }
+    if (DATA.freshness) {
+      document.getElementById('rm-freshness-detail').textContent = 'Current freshness: ' + String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+    }
+    var excludedSubmodules = DATA.repository_submodules || [];
+    if (excludedSubmodules.length > 0) {
+      var dirtySubmodules = excludedSubmodules.filter(function (submodule) {
+        return submodule.gitlink_changed || submodule.worktree_modified || submodule.worktree_untracked || submodule.availability === 'unavailable';
+      });
+      document.getElementById('rm-submodule-detail').textContent = 'Excluded submodules: ' + excludedSubmodules.length + ' · changed: ' + dirtySubmodules.length + ' · analyzed: no';
     }
 
     var tabs = document.getElementById('rm-tabs');

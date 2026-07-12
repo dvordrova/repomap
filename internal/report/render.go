@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"os"
 
+	"github.com/dvordrova/repomap/internal/freshness"
+
 	_ "embed"
 )
 
@@ -124,8 +126,11 @@ func generate(runDir string, authority *RunAuthority) error {
 	}
 	data.FeedbackPath = feedbackPath
 	if authority != nil {
-		freshness := authority.freshness
-		data.Freshness = &freshness
+		freshnessResult := authority.freshness
+		data.Freshness = &freshnessResult
+		data.CapturedRevision = authority.repository.Head
+		data.CapturedInputCount = len(authority.inputs)
+		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
 	}
 
 	jsonPath := runDir + "/report.json"
