@@ -48,10 +48,11 @@ type ArchitectureCanvas struct {
 }
 
 type ArchitectureSubsystem struct {
-	ID           componentmap.SubsystemID   `json:"id"`
-	Name         string                     `json:"name"`
-	Description  string                     `json:"description,omitempty"`
-	ComponentIDs []componentmap.ComponentID `json:"component_ids"`
+	ID           componentmap.SubsystemID       `json:"id"`
+	Name         string                         `json:"name"`
+	Description  string                         `json:"description,omitempty"`
+	Category     componentmap.SubsystemCategory `json:"category,omitempty"`
+	ComponentIDs []componentmap.ComponentID     `json:"component_ids"`
 }
 
 type ArchitectureComponent struct {
@@ -218,7 +219,7 @@ func projectArchitectureLandscape(
 	}
 	for _, subsystem := range landscape.Subsystems {
 		projected := ArchitectureSubsystem{
-			ID: subsystem.ID, Name: subsystem.Name, Description: subsystem.Description,
+			ID: subsystem.ID, Name: subsystem.Name, Description: subsystem.Description, Category: subsystem.Category,
 		}
 		for _, component := range subsystem.Components {
 			projected.ComponentIDs = append(projected.ComponentIDs, component.ID)

@@ -194,6 +194,21 @@ func TestProjectArchitectureCanvasUsesLandscapeSubsystemsAndFlowLabels(t *testin
 	}
 }
 
+func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testing.T) {
+	t.Parallel()
+
+	input, landscape := architectureCanvasInput(t, architectureResticProof(), nil)
+	landscape.Subsystems[0].Category = componentmap.SubsystemCategoryDiagnostic
+	input.Landscape = landscape
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canvas.Subsystems[0].Category != componentmap.SubsystemCategoryDiagnostic {
+		t.Fatalf("subsystem category = %q, want diagnostic", canvas.Subsystems[0].Category)
+	}
+}
+
 func TestProjectArchitectureCanvasPromotesExactStructuralWitness(t *testing.T) {
 	t.Parallel()
 
