@@ -78,7 +78,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"this.fitBounds(bounds)",
 				"condition (expression omitted)",
 				"Architecture renderer is unavailable.",
-				`this.appendKeyValue(this.inspector, "Starts when"`,
+				`this.appendKeyValue(parent, "Starts when"`,
 				`root && (root.label || root.qualified_name) || "task root"`,
 			},
 		},
@@ -129,6 +129,21 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "focused flow exposes static proof limits and full evidence",
+			asset: js,
+			tokens: []string{
+				`"Evidence-backed command trace"`,
+				"evidenced transitions",
+				"trace lanes",
+				"proof areas grounded",
+				`"Static evidence; execution was not observed"`,
+				`"Inspect full evidence"`,
+				"focusedProofSummary(flow)",
+				"focusedEvidenceDisclosure(flow)",
+				"appendFlowEvidence(parent, flow)",
+			},
+		},
+		{
 			name:  "flow and inspector styles",
 			asset: css,
 			tokens: []string{
@@ -163,6 +178,16 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 	for _, forbidden := range []string{"fetch(", "XMLHttpRequest", "WebSocket"} {
 		if strings.Contains(js, forbidden) {
 			t.Errorf("architecture canvas must not initiate network or analysis work: found %q", forbidden)
+		}
+	}
+	for _, unsupportedClaim := range []string{
+		"Verified execution trace",
+		"verified transitions",
+		"execution lanes",
+		"in saved order",
+	} {
+		if strings.Contains(js, unsupportedClaim) {
+			t.Errorf("architecture canvas must not imply observed or ordered execution: found %q", unsupportedClaim)
 		}
 	}
 }
