@@ -18,6 +18,7 @@ echo 'package main'    > cmd/app/main.go
 echo 'import "os"'    >> cmd/app/main.go
 echo 'func main() { os.Exit(0) }' >> cmd/app/main.go
 git add -A
+git -c user.name='repomap smoke' -c user.email='repomap@example.invalid' commit --quiet -m 'smoke fixture'
 cd "$REPO_ROOT"
 
 echo ""
@@ -51,7 +52,7 @@ echo ""
 echo "=== offline report generation ==="
 SMOKE_RUNS="tmp/.repomap-runs-smoke"
 rm -rf "$SMOKE_RUNS"
-go run ./cmd/repomap "$SMOKE_DIR" --offline --debug-dir "$SMOKE_RUNS" > /dev/null 2>/dev/stderr
+go run ./cmd/repomap "$SMOKE_DIR" --offline --no-open --no-serve --debug-dir "$SMOKE_RUNS" > /dev/null 2>/dev/stderr
 REPORT_HTML=$(ls -1 "$SMOKE_RUNS"/*/report.html 2>/dev/null | head -1)
 if [ -n "$REPORT_HTML" ] && [ -s "$REPORT_HTML" ]; then
     echo "OK: report.html generated"
