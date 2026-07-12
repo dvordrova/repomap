@@ -123,6 +123,10 @@ func generate(runDir string, authority *RunAuthority) error {
 		return err
 	}
 	data.FeedbackPath = feedbackPath
+	if authority != nil {
+		freshness := authority.freshness
+		data.Freshness = &freshness
+	}
 
 	jsonPath := runDir + "/report.json"
 	if err := WriteReportJSON(data, jsonPath); err != nil {

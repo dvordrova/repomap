@@ -650,6 +650,17 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	inputs := make([]freshness.CapturedInput, 0, len(reportData.OpenablePaths))
+	for _, path := range reportData.OpenablePaths {
+		inputs = append(inputs, freshness.CapturedInput{
+			Version: freshness.CapturedInputVersion, ID: fmt.Sprintf("%x", sha256.Sum256([]byte("input\x00"+path))),
+			Path: path, Kind: freshness.FileMissing, Stages: []string{"report_evidence"},
+		})
+	}
+	inputsDigest, err := freshness.CapturedInputsDigest(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manifest := reportpkg.RunManifest{
 		Version:               reportpkg.CurrentRunManifestVersion,
 		RepositoryState:       state,
@@ -658,6 +669,13 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 		ReportSHA256:          fmt.Sprintf("%x", sha256.Sum256(reportJSON)),
 		ReportFormatVersion:   reportpkg.CurrentFormatVersion,
 		OpenablePaths:         append([]string(nil), reportData.OpenablePaths...),
+		CapturedInputs:        inputs,
+		CapturedInputsSHA256:  inputsDigest,
+		Freshness:             freshness.NewFreshnessResult(freshness.FreshnessFresh),
+		MaterialInputs: reportpkg.MaterialInputs{
+			SelectedRevision: state.Head, InputPolicyVersion: "captured-inputs-v1",
+			ArchitectureContract: 1, ReportContract: reportpkg.CurrentFormatVersion,
+		},
 	}
 	manifestJSON, err := json.Marshal(manifest)
 	if err != nil {

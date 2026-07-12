@@ -13,11 +13,13 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
-const architectureSynthesisCacheDirectory = ".component-synthesis"
+const (
+	architectureSynthesisCacheDirectory = ".component-synthesis"
+	architectureSynthesisRevision       = "captured-bundle-v1"
+)
 
 type componentLandscapeSynthesizer interface {
 	SynthesizeComponentLandscape(context.Context, componentmap.SynthesisPrompt) ([]byte, error)
@@ -33,17 +35,8 @@ type architectureSynthesisOutcome struct {
 func synthesizeArchitectureForRun(
 	ctx context.Context,
 	runDir string,
-	repositoryPath string,
 	stderr io.Writer,
 ) (architectureSynthesisOutcome, error) {
-	state, err := freshness.CaptureRepository(ctx, repositoryPath)
-	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: capture repository revision: %w", err)
-	}
-	revision, err := state.Digest()
-	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: repository revision: %w", err)
-	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
@@ -51,7 +44,7 @@ func synthesizeArchitectureForRun(
 	outcome, err := prepareArchitectureSynthesis(
 		ctx,
 		runDir,
-		revision,
+		architectureSynthesisRevision,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,

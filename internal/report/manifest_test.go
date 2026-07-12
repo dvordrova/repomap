@@ -100,7 +100,7 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manifest.VerifyRepositoryState(currentRepository); err == nil || !strings.Contains(err.Error(), "repository state changed") {
+	if err := manifest.VerifyRepositoryState(currentRepository); err == nil || !strings.Contains(err.Error(), "analyzed inputs are partially_stale") {
 		t.Fatalf("VerifyRepositoryState after source change error = %v", err)
 	}
 
@@ -246,6 +246,34 @@ func TestDecodeRunManifestRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestDecodeRunManifestReopensLegacyManifestWithUnknownFreshness(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	manifest.Version = 2
+	manifest.RepositoryState.Version = 1
+	manifest.CapturedInputs = nil
+	manifest.CapturedInputsSHA256 = ""
+	manifest.Freshness = freshness.FreshnessResult{}
+	manifest.MaterialInputs = MaterialInputs{}
+	digest, err := manifest.RepositoryState.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.RepositoryStateSHA256 = digest
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeRunManifest(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Version != 2 || decoded.CurrentFreshness(decoded.RepositoryState).State != freshness.FreshnessLegacyUnknown {
+		t.Fatalf("legacy manifest = %#v", decoded)
+	}
+}
+
 func validRunManifestFixture(t *testing.T) RunManifest {
 	t.Helper()
 	repository := freshness.RepositoryState{
@@ -258,6 +286,15 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 	if err != nil {
 		t.Fatal(err)
 	}
+	inputs := []freshness.CapturedInput{{
+		Version: freshness.CapturedInputVersion, ID: strings.Repeat("c", 64), Path: "batch.go",
+		Kind: freshness.FileRegular, Mode: "100644", ContentSHA256: strings.Repeat("d", 64),
+		Stages: []string{"report_evidence"},
+	}}
+	inputsDigest, err := freshness.CapturedInputsDigest(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return RunManifest{
 		Version:               CurrentRunManifestVersion,
 		RepositoryState:       repository,
@@ -266,6 +303,13 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 		ReportSHA256:          strings.Repeat("b", 64),
 		ReportFormatVersion:   CurrentFormatVersion,
 		OpenablePaths:         []string{"batch.go"},
+		CapturedInputs:        inputs,
+		CapturedInputsSHA256:  inputsDigest,
+		Freshness:             freshness.NewFreshnessResult(freshness.FreshnessFresh),
+		MaterialInputs: MaterialInputs{
+			SelectedRevision: repository.Head, InputPolicyVersion: "captured-inputs-v1",
+			ArchitectureContract: 1, ReportContract: CurrentFormatVersion,
+		},
 		Components: []ComponentAuthority{{
 			ID:             "component-batch",
 			RelatedFlowIDs: []string{"write-batch"},

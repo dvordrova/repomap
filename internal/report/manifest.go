@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -9,17 +10,19 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"unicode"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
 )
 
 const (
-	CurrentRunManifestVersion = 2
+	CurrentRunManifestVersion = 3
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -47,6 +50,18 @@ type RunManifest struct {
 	ReportFormatVersion   int                       `json:"report_format_version"`
 	OpenablePaths         []string                  `json:"openable_paths"`
 	Components            []ComponentAuthority      `json:"components,omitempty"`
+	CapturedInputs        []freshness.CapturedInput `json:"captured_inputs,omitempty"`
+	CapturedInputsSHA256  string                    `json:"captured_inputs_sha256,omitempty"`
+	Freshness             freshness.FreshnessResult `json:"freshness"`
+	MaterialInputs        MaterialInputs            `json:"material_inputs"`
+}
+
+type MaterialInputs struct {
+	SelectedRevision     string `json:"selected_revision"`
+	ModelBundleSHA256    string `json:"model_bundle_sha256,omitempty"`
+	InputPolicyVersion   string `json:"input_policy_version"`
+	ArchitectureContract int    `json:"architecture_contract"`
+	ReportContract       int    `json:"report_contract"`
 }
 
 // RunAuthority is a repository state that was captured before repository
@@ -56,7 +71,13 @@ type RunManifest struct {
 type RunAuthority struct {
 	analysisRoot string
 	repository   freshness.RepositoryState
+	inputs       []freshness.CapturedInput
+	freshness    freshness.FreshnessResult
 	confirmed    bool
+}
+
+func (authority RunAuthority) Freshness() freshness.FreshnessResult {
+	return authority.freshness
 }
 
 // ComponentAuthority names the flows and repository anchors that a component
@@ -80,7 +101,7 @@ type AnchorAuthority struct {
 // Validate checks that a manifest is bounded, canonical, and internally
 // consistent before it is used as an authority source.
 func (m RunManifest) Validate() error {
-	if m.Version != CurrentRunManifestVersion {
+	if m.Version != 2 && m.Version != CurrentRunManifestVersion {
 		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
 	}
 	if err := m.RepositoryState.Validate(); err != nil {
@@ -102,11 +123,31 @@ func (m RunManifest) Validate() error {
 	if !validManifestSHA256(m.ReportSHA256) {
 		return fmt.Errorf("report manifest: report sha256 is invalid")
 	}
-	if m.ReportFormatVersion != CurrentFormatVersion {
+	if m.ReportFormatVersion <= 0 || m.ReportFormatVersion > CurrentFormatVersion {
 		return fmt.Errorf("report manifest: unsupported report format version %d", m.ReportFormatVersion)
 	}
 	if len(m.OpenablePaths) > maxManifestOpenablePaths {
 		return fmt.Errorf("report manifest: more than %d openable paths", maxManifestOpenablePaths)
+	}
+	if m.Version >= 3 {
+		inputsDigest, err := freshness.CapturedInputsDigest(m.CapturedInputs)
+		if err != nil {
+			return fmt.Errorf("report manifest: captured inputs: %w", err)
+		}
+		if !validManifestSHA256(m.CapturedInputsSHA256) || inputsDigest != m.CapturedInputsSHA256 {
+			return fmt.Errorf("report manifest: captured inputs sha256 mismatch")
+		}
+		if err := m.Freshness.Validate(); err != nil {
+			return fmt.Errorf("report manifest: freshness: %w", err)
+		}
+		if m.MaterialInputs.SelectedRevision != m.RepositoryState.Head ||
+			!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
+			m.MaterialInputs.ArchitectureContract <= 0 || m.MaterialInputs.ReportContract != m.ReportFormatVersion {
+			return fmt.Errorf("report manifest: material inputs are invalid")
+		}
+		if m.MaterialInputs.ModelBundleSHA256 != "" && !validManifestSHA256(m.MaterialInputs.ModelBundleSHA256) {
+			return fmt.Errorf("report manifest: model bundle sha256 is invalid")
+		}
 	}
 	openable := make(map[string]struct{}, len(m.OpenablePaths))
 	previousPath := ""
@@ -229,8 +270,133 @@ func ConfirmRunAuthority(
 	return RunAuthority{
 		analysisRoot: root,
 		repository:   repository,
+		freshness:    freshness.NewFreshnessResult(freshness.FreshnessFresh),
 		confirmed:    true,
 	}, nil
+}
+
+// ConfirmRunAuthorityScoped binds report freshness to exact captured inputs.
+// Unrelated repository changes remain authorized; strict mode rejects stale or
+// unavailable analyzed inputs.
+func ConfirmRunAuthorityScoped(
+	ctx context.Context,
+	analysisRoot string,
+	initial freshness.RepositoryState,
+	current freshness.RepositoryState,
+	paths []string,
+	strict bool,
+) (RunAuthority, error) {
+	root, repositoryRoot, err := validateAuthorityRoots(analysisRoot, initial)
+	if err != nil {
+		return RunAuthority{}, err
+	}
+	repositoryPaths, err := repositoryRelativeInputPaths(repositoryRoot, root, paths)
+	if err != nil {
+		return RunAuthority{}, err
+	}
+	inputs, err := freshness.CaptureInputs(ctx, initial, repositoryPaths)
+	if err != nil {
+		return RunAuthority{}, fmt.Errorf("report manifest: capture analyzed inputs: %w", err)
+	}
+	result := freshness.AssessInputs(ctx, initial, current, inputs)
+	result.AffectedPaths = analysisRelativeAffectedPaths(repositoryRoot, root, result.AffectedPaths)
+	if strict && result.State != freshness.FreshnessFresh && result.State != freshness.FreshnessUnrelatedChanges {
+		return RunAuthority{}, fmt.Errorf("report manifest: strict snapshot is %s", result.State)
+	}
+	repository := initial
+	repository.Dirty = append([]freshness.DirtyFile(nil), initial.Dirty...)
+	repository.Submodules = append([]freshness.SubmoduleState(nil), initial.Submodules...)
+	return RunAuthority{
+		analysisRoot: root, repository: repository, inputs: inputs,
+		freshness: result, confirmed: true,
+	}, nil
+}
+
+func analysisRelativeAffectedPaths(repositoryRoot, analysisRoot string, values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		relative, err := filepath.Rel(analysisRoot, filepath.Join(repositoryRoot, filepath.FromSlash(value)))
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		result = append(result, filepath.ToSlash(relative))
+	}
+	sort.Strings(result)
+	return result
+}
+
+func validateAuthorityRoots(analysisRoot string, initial freshness.RepositoryState) (string, string, error) {
+	root, err := canonicalManifestDirectory("analysis root", analysisRoot)
+	if err != nil {
+		return "", "", err
+	}
+	repositoryRoot, err := canonicalManifestDirectory("repository identity", initial.Identity)
+	if err != nil {
+		return "", "", err
+	}
+	if repositoryRoot != initial.Identity {
+		return "", "", fmt.Errorf("report manifest: repository identity is not canonical")
+	}
+	if err := validateAnalysisRoot(repositoryRoot, root); err != nil {
+		return "", "", fmt.Errorf("report manifest: analysis root: %w", err)
+	}
+	return root, repositoryRoot, nil
+}
+
+func repositoryRelativeInputPaths(repositoryRoot, analysisRoot string, paths []string) ([]string, error) {
+	analysisRelative, err := filepath.Rel(repositoryRoot, analysisRoot)
+	if err != nil || analysisRelative == ".." || strings.HasPrefix(analysisRelative, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("report manifest: analysis root is outside repository")
+	}
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if err := validateManifestPath(path); err != nil {
+			return nil, err
+		}
+		joined := filepath.ToSlash(filepath.Clean(filepath.Join(analysisRelative, filepath.FromSlash(path))))
+		if joined == "." || joined == ".." || strings.HasPrefix(joined, "../") {
+			return nil, fmt.Errorf("report manifest: captured input path escapes repository")
+		}
+		result = append(result, joined)
+	}
+	sort.Strings(result)
+	compacted := result[:0]
+	for _, path := range result {
+		if len(compacted) == 0 || compacted[len(compacted)-1] != path {
+			compacted = append(compacted, path)
+		}
+	}
+	return compacted, nil
+}
+
+// CapturedInputPaths returns report-relative files and build metadata that
+// materially informed the saved report. It never expands into ignored or
+// untracked directories.
+func CapturedInputPaths(data *ReportData) []string {
+	if data == nil {
+		return nil
+	}
+	paths := append([]string(nil), data.OpenablePaths...)
+	paths = append(paths, "go.work", "go.work.sum")
+	if data.RepositoryGraph != nil {
+		for _, module := range data.RepositoryGraph.Modules {
+			dir := filepath.ToSlash(filepath.Clean(filepath.FromSlash(module.Dir)))
+			if dir == "." || dir == "" {
+				paths = append(paths, "go.mod", "go.sum")
+				continue
+			}
+			paths = append(paths, path.Join(dir, "go.mod"), path.Join(dir, "go.sum"))
+		}
+	}
+	sort.Strings(paths)
+	compacted := paths[:0]
+	for _, value := range paths {
+		if value == "" || (len(compacted) > 0 && compacted[len(compacted)-1] == value) {
+			continue
+		}
+		compacted = append(compacted, value)
+	}
+	return compacted
 }
 
 // ResolveAnalysisRoot returns the canonical directory against which all
@@ -299,14 +465,29 @@ func (m RunManifest) VerifyRepositoryState(current freshness.RepositoryState) er
 	if err := m.Validate(); err != nil {
 		return err
 	}
-	digest, err := current.Digest()
-	if err != nil {
-		return fmt.Errorf("report manifest: current repository state: %w", err)
+	if m.Version < 3 {
+		digest, err := current.Digest()
+		if err != nil {
+			return fmt.Errorf("report manifest: current repository state: %w", err)
+		}
+		if digest != m.RepositoryStateSHA256 {
+			return fmt.Errorf("report manifest: legacy repository state changed")
+		}
+		return nil
 	}
-	if digest != m.RepositoryStateSHA256 {
-		return fmt.Errorf("report manifest: repository state changed")
+	result := freshness.AssessInputs(context.Background(), m.RepositoryState, current, m.CapturedInputs)
+	if result.State == freshness.FreshnessPartiallyStale || result.State == freshness.FreshnessMixedSnapshot ||
+		result.State == freshness.FreshnessUnavailable {
+		return fmt.Errorf("report manifest: analyzed inputs are %s", result.State)
 	}
 	return nil
+}
+
+func (m RunManifest) CurrentFreshness(current freshness.RepositoryState) freshness.FreshnessResult {
+	if m.Version < 3 {
+		return freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
+	}
+	return freshness.AssessInputs(context.Background(), m.RepositoryState, current, m.CapturedInputs)
 }
 
 // DecodeRunManifest strictly decodes one bounded run_manifest.json payload.
@@ -379,6 +560,9 @@ func (authority RunAuthority) validate() error {
 	if err := validateAnalysisRoot(authority.repository.Identity, authority.analysisRoot); err != nil {
 		return fmt.Errorf("report manifest: analysis root: %w", err)
 	}
+	if err := authority.freshness.Validate(); err != nil {
+		return fmt.Errorf("report manifest: authorized freshness: %w", err)
+	}
 	return nil
 }
 
@@ -394,6 +578,22 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err != nil {
 		return err
 	}
+	inputs := append([]freshness.CapturedInput(nil), authority.inputs...)
+	if inputs == nil {
+		paths, err := repositoryRelativeInputPaths(authority.repository.Identity, authority.analysisRoot, data.OpenablePaths)
+		if err != nil {
+			return err
+		}
+		inputs, err = freshness.CaptureInputs(context.Background(), authority.repository, paths)
+		if err != nil {
+			return err
+		}
+	}
+	annotateCapturedInputOwnership(inputs, data, authority.repository.Identity, authority.analysisRoot)
+	inputsDigest, err := freshness.CapturedInputsDigest(inputs)
+	if err != nil {
+		return err
+	}
 	manifest := RunManifest{
 		Version:               CurrentRunManifestVersion,
 		RepositoryState:       authority.repository,
@@ -403,11 +603,66 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		ReportFormatVersion:   data.FormatVersion,
 		OpenablePaths:         append([]string(nil), data.OpenablePaths...),
 		Components:            components,
+		CapturedInputs:        inputs,
+		CapturedInputsSHA256:  inputsDigest,
+		Freshness:             authority.freshness,
+		MaterialInputs: MaterialInputs{
+			SelectedRevision: authority.repository.Head, ModelBundleSHA256: savedArtifactSHA256(runDir, "llm_bundle.json"),
+			InputPolicyVersion: "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
+			ReportContract: data.FormatVersion,
+		},
 	}
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		return err
 	}
 	return writeRunManifestAtomic(runDir, manifest)
+}
+
+func annotateCapturedInputOwnership(inputs []freshness.CapturedInput, data *ReportData, repositoryRoot, analysisRoot string) {
+	if data == nil || data.RepositoryGraph == nil {
+		return
+	}
+	for index := range inputs {
+		relative, err := filepath.Rel(analysisRoot, filepath.Join(repositoryRoot, filepath.FromSlash(inputs[index].Path)))
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		dir := path.Dir(filepath.ToSlash(relative))
+		if dir == "." {
+			dir = ""
+		}
+		for _, pkg := range data.RepositoryGraph.Packages {
+			if pkg.Dir == dir {
+				inputs[index].OwningModuleID = pkg.ModuleID
+				inputs[index].OwningPackage = pkg.CanonicalPath
+				break
+			}
+		}
+	}
+}
+
+func savedArtifactSHA256(runDir, name string) string {
+	info, err := os.Lstat(filepath.Join(runDir, name))
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxManifestReportBytes {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, name))
+	if err != nil {
+		return ""
+	}
+	return manifestSHA256(data)
+}
+
+func validManifestLabel(value string) bool {
+	if value == "" || len(value) > maxManifestIdentifierBytes {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func componentAuthority(components []Component) ([]ComponentAuthority, error) {

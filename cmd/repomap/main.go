@@ -163,6 +163,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
 	dumpLLM := fs.Bool("dump-llm", false, "dump LLM request/response to debug dir")
 	previewRequest := fs.Bool("preview-request", false, "print the exact redacted LLM request without sending it")
+	strictSnapshot := fs.Bool("strict-snapshot", false, "fail when captured analyzed inputs change before report publication")
 	out := fs.String("out", "", "write output to file instead of stdout")
 
 	if err := fs.Parse(extraArgs); err != nil {
@@ -312,18 +313,27 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 
 	var reportPath string
 	if artifactRun {
+		if !*offline {
+			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr); err != nil {
+				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable\n", err)
+			}
+		}
+		reportData, err := report.ReadRunDir(runDir)
+		if err != nil {
+			return fmt.Errorf("read captured report inputs: %w", err)
+		}
 		currentState, err := captureRepo(ctx, repo)
 		if err != nil {
-			return fmt.Errorf("capture repository state after orientation: %w", err)
+			return fmt.Errorf("capture repository state after analysis: %w", err)
 		}
-		authority, err := report.ConfirmRunAuthority(analysisRoot, initialState, currentState)
+		authority, err := report.ConfirmRunAuthorityScoped(
+			ctx, analysisRoot, initialState, currentState, report.CapturedInputPaths(reportData), *strictSnapshot,
+		)
 		if err != nil {
 			return fmt.Errorf("confirm browser report authority: %w", err)
 		}
-		if !*offline {
-			if _, err := synthesizeArchitectureForRun(ctx, runDir, repo, deps.stderr); err != nil {
-				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable\n", err)
-			}
+		if authority.Freshness().State != freshness.FreshnessFresh {
+			fmt.Fprintf(deps.stderr, "repomap: snapshot freshness: %s\n", authority.Freshness().State)
 		}
 		if err := report.GenerateAuthorized(runDir, authority); err != nil {
 			return fmt.Errorf("generate authorized browser report: %w", err)
@@ -437,6 +447,7 @@ func runOrient(args []string) error {
 	dumpLLM := fs.Bool("dump-llm", false, "dump LLM request/response")
 	explainFlows := fs.Int("explain-flows", 0, "explain top N candidate flows")
 	flowBundlesOnly := fs.Bool("flow-bundles-only", false, "build flow bundles only")
+	strictSnapshot := fs.Bool("strict-snapshot", false, "fail when captured analyzed inputs change before report publication")
 	maxLLMFiles := fs.Int("max-llm-files", 150, "max files in LLM bundle")
 
 	if err := fs.Parse(args); err != nil {
@@ -516,16 +527,22 @@ func runOrient(args []string) error {
 	}
 
 	if reportArtifacts {
+		if _, err := synthesizeArchitectureForRun(ctx, runDir, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v; architecture map will be unavailable\n", err)
+		}
+		reportData, err := report.ReadRunDir(runDir)
+		if err != nil {
+			return fmt.Errorf("read captured report inputs: %w", err)
+		}
 		currentState, err := freshness.CaptureRepository(ctx, *repo)
 		if err != nil {
-			return fmt.Errorf("capture repository state after orientation: %w", err)
+			return fmt.Errorf("capture repository state after analysis: %w", err)
 		}
-		authority, err := report.ConfirmRunAuthority(analysisRoot, initialState, currentState)
+		authority, err := report.ConfirmRunAuthorityScoped(
+			ctx, analysisRoot, initialState, currentState, report.CapturedInputPaths(reportData), *strictSnapshot,
+		)
 		if err != nil {
 			return fmt.Errorf("confirm report authority: %w", err)
-		}
-		if _, err := synthesizeArchitectureForRun(ctx, runDir, *repo, os.Stderr); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v; architecture map will be unavailable\n", err)
 		}
 		if err := report.GenerateAuthorized(runDir, authority); err != nil {
 			return fmt.Errorf("generate authorized report: %w", err)
@@ -648,6 +665,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --debug-dir DIR debug artifact directory (default user cache)\n")
 	fmt.Fprintf(os.Stderr, "  --dump-llm      dump LLM request/response in debug dir\n")
 	fmt.Fprintf(os.Stderr, "  --preview-request print exact redacted request without an API call\n")
+	fmt.Fprintf(os.Stderr, "  --strict-snapshot fail if captured analyzed inputs change during the run\n")
 	fmt.Fprintf(os.Stderr, "  --help, -h      show this help\n")
 	fmt.Fprintf(os.Stderr, "  --version       show version\n")
 	fmt.Fprintf(os.Stderr, "\nEnvironment:\n")
