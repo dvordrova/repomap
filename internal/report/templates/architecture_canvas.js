@@ -282,7 +282,7 @@
 
    const controls = element("div", "rm-arch__controls");
    this.zoomOutButton = this.controlButton("−", "Zoom out", () => this.zoomBy(0.82));
-   this.fitButton = this.controlButton("Fit", "Fit architecture in view", () => this.fit());
+    this.fitButton = this.controlButton("Fit", "Fit landscape in view", () => this.fit());
    this.zoomInButton = this.controlButton("+", "Zoom in", () => this.zoomBy(1.22));
    controls.append(this.zoomOutButton, this.fitButton, this.zoomInButton);
    toolbar.appendChild(controls);
@@ -1365,13 +1365,29 @@
 
   fit() {
    if (!this.surface || !this.layoutResult) return;
-   const bounds = this.selectedFlowBounds() || {
-    x: 0,
-    y: 0,
-    width: this.layoutResult.width,
+   const bounds = this.selectedFlowBounds() || this.landscapeBounds() || {
+     x: 0,
+     y: 0,
+     width: this.layoutResult.width,
     height: this.layoutResult.height,
    };
    this.fitBounds(bounds);
+  }
+
+  landscapeBounds() {
+   if (this.selection.flow) return null;
+   const positions = Array.from(this.groupPositions.values());
+   if (positions.length === 0) {
+    this.nodePositions.forEach((position, id) => {
+     if (id !== UNASSIGNED_ID) positions.push(position);
+    });
+   }
+   if (positions.length === 0) return null;
+   const minX = Math.min.apply(null, positions.map((position) => position.x));
+   const minY = Math.min.apply(null, positions.map((position) => position.y));
+   const maxX = Math.max.apply(null, positions.map((position) => position.x + position.width));
+   const maxY = Math.max.apply(null, positions.map((position) => position.y + position.height));
+   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
   selectedFlowBounds() {
@@ -1431,7 +1447,7 @@
    this.selection = this.validateSelection(next);
    if (writeHash) this.writeHash();
    this.renderSelection();
-    if (this.surface && previousFlow !== this.selection.flow && !this.selection.flow) {
+   if (this.surface && previousFlow !== this.selection.flow && !this.selection.flow) {
     requestAnimationFrame(() => this.fit());
    }
   }
@@ -1493,7 +1509,7 @@
     this.renderInspector();
     return;
    }
-   const flowID = this.selection.flow;
+    const flowID = this.selection.flow;
     const hasFlow = Boolean(flowID);
    this.root.classList.toggle("has-selected-flow", hasFlow);
    this.landscapeButton.classList.toggle("is-active", !hasFlow);

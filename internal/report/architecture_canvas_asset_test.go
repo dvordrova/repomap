@@ -75,7 +75,9 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			asset: js,
 			tokens: []string{
 				"selectedFlowBounds()",
+				"landscapeBounds()",
 				"this.fitBounds(bounds)",
+				`"Fit landscape in view"`,
 				"condition (expression omitted)",
 				"Architecture renderer is unavailable.",
 				`this.appendKeyValue(parent, "Starts when"`,
