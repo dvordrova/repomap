@@ -85,6 +85,17 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "wheel zoom scales with normalized input",
+			asset: js,
+			tokens: []string{
+				"WHEEL_ZOOM_SENSITIVITY",
+				"MAX_WHEEL_DELTA",
+				"WheelEvent.DOM_DELTA_LINE",
+				"WheelEvent.DOM_DELTA_PAGE",
+				"Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY)",
+			},
+		},
+		{
 			name:  "landscape without proof stays explicit",
 			asset: js,
 			tokens: []string{
