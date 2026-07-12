@@ -49,7 +49,7 @@ func CaptureRepository(ctx context.Context, path string) (RepositoryState, error
 		}
 		previous = current
 	}
-	return RepositoryState{}, fmt.Errorf("freshness: repository changed while its state was being captured")
+	return RepositoryState{}, &MixedSnapshotError{Attempts: 3}
 }
 
 func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, error) {
@@ -57,7 +57,7 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 	if err != nil {
 		return RepositoryState{}, err
 	}
-	statusOutput, err := gitOutput(ctx, root, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=no")
+	statusOutput, err := gitOutput(ctx, root, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignored=no", "--ignore-submodules=none")
 	if err != nil {
 		return RepositoryState{}, err
 	}
@@ -74,6 +74,10 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 		return RepositoryState{}, fmt.Errorf("freshness: parse ignored build inputs: %w", err)
 	}
 	entries = append(entries, ignored...)
+	gitlinks, err := captureSubmodules(ctx, root, entries)
+	if err != nil {
+		return RepositoryState{}, err
+	}
 	rootHandle, err := os.OpenRoot(root)
 	if err != nil {
 		return RepositoryState{}, fmt.Errorf("freshness: open repository root: %w", err)
@@ -82,6 +86,9 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 
 	dirty := make([]DirtyFile, 0, len(entries))
 	for _, entry := range entries {
+		if entry.submodule != "" {
+			continue
+		}
 		file, err := fingerprintDirtyFile(rootHandle, entry)
 		if err != nil {
 			return RepositoryState{}, err
@@ -90,10 +97,11 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 	}
 	sort.Slice(dirty, func(i, j int) bool { return dirtyFileKey(dirty[i]) < dirtyFileKey(dirty[j]) })
 	state := RepositoryState{
-		Version:  RepositoryStateVersion,
-		Identity: root,
-		Head:     strings.TrimSpace(string(headOutput)),
-		Dirty:    dirty,
+		Version:    RepositoryStateVersion,
+		Identity:   root,
+		Head:       strings.TrimSpace(string(headOutput)),
+		Dirty:      dirty,
+		Submodules: gitlinks,
 	}
 	if err := state.Validate(); err != nil {
 		return RepositoryState{}, err
@@ -102,9 +110,11 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 }
 
 type statusEntry struct {
-	xy       string
-	path     string
-	fromPath string
+	xy              string
+	path            string
+	fromPath        string
+	submodule       string
+	recordedGitlink string
 }
 
 func parseStatus(data []byte) ([]statusEntry, error) {
@@ -116,17 +126,50 @@ func parseStatus(data []byte) ([]statusEntry, error) {
 		}
 		record := data[:end]
 		data = data[end+1:]
-		if len(record) < 4 || record[2] != ' ' || !utf8.Valid(record[3:]) {
+		if len(record) < 3 || !utf8.Valid(record) {
 			return nil, fmt.Errorf("invalid status record")
 		}
-		entry := statusEntry{xy: string(record[:2]), path: string(record[3:])}
-		if renameOrCopy(entry.xy) {
+		var entry statusEntry
+		switch record[0] {
+		case '?':
+			if record[1] != ' ' {
+				return nil, fmt.Errorf("invalid untracked status record")
+			}
+			entry = statusEntry{xy: "??", path: string(record[2:])}
+		case '1':
+			fields := strings.SplitN(string(record), " ", 9)
+			if len(fields) != 9 {
+				return nil, fmt.Errorf("invalid ordinary status record")
+			}
+			entry = statusEntry{xy: fields[1], path: fields[8]}
+			if strings.HasPrefix(fields[2], "S") {
+				entry.submodule = fields[2]
+				entry.recordedGitlink = fields[7]
+			}
+		case '2':
+			fields := strings.SplitN(string(record), " ", 10)
+			if len(fields) != 10 {
+				return nil, fmt.Errorf("invalid rename status record")
+			}
+			entry = statusEntry{xy: fields[1], path: fields[9]}
+			if strings.HasPrefix(fields[2], "S") {
+				entry.submodule = fields[2]
+				entry.recordedGitlink = fields[7]
+			}
 			end = bytes.IndexByte(data, 0)
 			if end < 0 || !utf8.Valid(data[:end]) {
 				return nil, fmt.Errorf("invalid rename source")
 			}
 			entry.fromPath = string(data[:end])
 			data = data[end+1:]
+		case 'u':
+			fields := strings.SplitN(string(record), " ", 11)
+			if len(fields) != 11 {
+				return nil, fmt.Errorf("invalid unmerged status record")
+			}
+			entry = statusEntry{xy: fields[1], path: fields[10]}
+		default:
+			return nil, fmt.Errorf("unsupported porcelain-v2 status record")
 		}
 		entry.path, _ = normalizeGitPath(entry.path)
 		if entry.path == "" {
@@ -141,6 +184,61 @@ func parseStatus(data []byte) ([]statusEntry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+func captureSubmodules(ctx context.Context, root string, entries []statusEntry) ([]SubmoduleState, error) {
+	stageOutput, err := gitOutput(ctx, root, "ls-files", "--stage", "-z")
+	if err != nil {
+		return nil, err
+	}
+	states := make(map[string]SubmoduleState)
+	for len(stageOutput) > 0 {
+		end := bytes.IndexByte(stageOutput, 0)
+		if end < 0 {
+			return nil, fmt.Errorf("freshness: unterminated git index record")
+		}
+		record := string(stageOutput[:end])
+		stageOutput = stageOutput[end+1:]
+		metadata, path, found := strings.Cut(record, "\t")
+		fields := strings.Fields(metadata)
+		if !found || len(fields) < 2 || fields[0] != "160000" {
+			continue
+		}
+		normalized, err := normalizeGitPath(path)
+		if err != nil {
+			return nil, err
+		}
+		states[normalized] = SubmoduleState{
+			Path: normalized, RecordedGitlink: fields[1], Availability: SubmoduleUnavailable,
+		}
+	}
+	for _, entry := range entries {
+		if entry.submodule == "" {
+			continue
+		}
+		state, exists := states[entry.path]
+		if !exists {
+			state = SubmoduleState{Path: entry.path, RecordedGitlink: entry.recordedGitlink, Availability: SubmoduleUnavailable}
+		}
+		if len(entry.submodule) == 4 {
+			state.GitlinkChanged = entry.submodule[1] != '.'
+			state.WorktreeModified = entry.submodule[2] != '.'
+			state.WorktreeUntracked = entry.submodule[3] != '.'
+		}
+		states[entry.path] = state
+	}
+	result := make([]SubmoduleState, 0, len(states))
+	for path, state := range states {
+		head, err := gitOutput(ctx, filepath.Join(root, filepath.FromSlash(path)), "rev-parse", "--verify", "HEAD")
+		if err == nil {
+			state.CurrentHead = strings.TrimSpace(string(head))
+			state.Availability = SubmoduleClean
+			state.GitlinkChanged = state.GitlinkChanged || state.CurrentHead != state.RecordedGitlink
+		}
+		result = append(result, state)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
+	return result, nil
 }
 
 func parseIgnoredBuildInputs(data []byte) ([]statusEntry, error) {
@@ -289,6 +387,7 @@ func isGoBuildInput(path string) bool {
 func gitOutput(ctx context.Context, path string, args ...string) ([]byte, error) {
 	commandArgs := append([]string{"-C", path}, args...)
 	command := exec.CommandContext(ctx, "git", commandArgs...)
+	command.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("freshness: git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
