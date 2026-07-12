@@ -24,14 +24,16 @@ Use the specialized subagents:
 Create directory:
 docs/agent-room/
 
-Ask each subagent to write one review:
-- docs/agent-room/010-product-review.md
-- docs/agent-room/020-maintainability-review.md
-- docs/agent-room/030-system-architecture-review.md
-- docs/agent-room/040-go-architecture-review.md
+Treat existing numbered reviews and decisions as historical records. Do not overwrite
+them. Require $ARGUMENTS to name an unused proposed decision filename and corresponding
+unused review filenames before writing. If those filenames are absent, stop and ask for
+them.
 
-Then synthesize:
-- docs/agent-room/050-decision.md
+Ask each subagent to write its review to the explicitly supplied review filename, then
+synthesize the explicitly supplied numbered decision file with status `Proposed`.
+
+Do not select a decision by numeric order. Do not update `docs/agent-room/CURRENT.md`
+until the repository owner explicitly approves the proposed scope.
 
 The decision must include:
 - user-visible goal
