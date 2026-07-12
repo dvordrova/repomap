@@ -174,6 +174,26 @@ func TestApplyOrientationConfidenceGateCapsUnprovedOperationalFlow(t *testing.T)
 	}
 }
 
+func TestRejectedDirectionDoesNotEnterAcceptedFlowSelection(t *testing.T) {
+	t.Parallel()
+
+	flows := []flowexplain.CandidateFlow{
+		{Name: "Startup", Confidence: 0.3, LocalVerification: &flowexplain.FlowVerification{Verified: []string{"exact entrypoint"}}},
+		{Name: "Admin", Confidence: 0.6},
+		{Name: "Threshold", Confidence: 0.3},
+	}
+	for index := range flows {
+		flowexplain.ClassifyCandidateFlow(&flows[index])
+	}
+	accepted := acceptedCandidateFlows(flows)
+	if len(accepted) != 2 || accepted[0].Name != "Startup" || accepted[1].Name != "Admin" {
+		t.Fatalf("accepted directions = %#v", accepted)
+	}
+	if flows[2].Disposition != flowexplain.DirectionRejected || flows[2].DispositionReason == "" {
+		t.Fatalf("threshold disposition = %#v", flows[2])
+	}
+}
+
 func containsVerification(values []string, fragment string) bool {
 	for _, value := range values {
 		if len(value) >= len(fragment) && value[:len(fragment)] == fragment {

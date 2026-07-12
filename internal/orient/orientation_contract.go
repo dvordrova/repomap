@@ -456,6 +456,12 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 		if flow.Confidence < 0 || flow.Confidence > 1 {
 			return fmt.Errorf("orientation: candidate_flows[%d] confidence is outside [0,1]", flowIndex)
 		}
+		if flow.Disposition != "" && flow.Disposition != flowexplain.DirectionAccepted && flow.Disposition != flowexplain.DirectionRejected {
+			return fmt.Errorf("orientation: candidate_flows[%d] has no local acceptance disposition", flowIndex)
+		}
+		if flow.Disposition == flowexplain.DirectionRejected && strings.TrimSpace(flow.DispositionReason) == "" {
+			return fmt.Errorf("orientation: candidate_flows[%d] rejected without a reason", flowIndex)
+		}
 		if len(flow.LikelyFiles) == 0 {
 			return fmt.Errorf("orientation: candidate_flows[%d] has no likely_files", flowIndex)
 		}
