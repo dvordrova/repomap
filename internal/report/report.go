@@ -7,6 +7,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/freshness"
 )
 
 const CurrentFormatVersion = 14
@@ -37,6 +38,7 @@ type ReportData struct {
 	ArchitectureSynthesis      *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
 	ArchitectureGrounding      *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
 	DiscoveredSurfaces         *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	Freshness                  *freshness.FreshnessResult   `json:"freshness,omitempty"`
 	evidenceLocations          []evidence.Location
 	sourceSignals              []SourceSignal
 
@@ -48,15 +50,30 @@ type ReportData struct {
 // facts used to connect model-suggested components without asking the model to
 // invent relationships between them.
 type RepositoryGraph struct {
-	Modules      []ModuleInfo `json:"modules,omitempty"`
-	PackageEdges []EdgeInfo   `json:"package_edges,omitempty"`
+	Version      int           `json:"version,omitempty"`
+	Modules      []ModuleInfo  `json:"modules,omitempty"`
+	Packages     []PackageInfo `json:"packages,omitempty"`
+	PackageEdges []EdgeInfo    `json:"package_edges,omitempty"`
 }
 
 // ModuleInfo maps repository-relative directories to import-path roots. The
 // longest matching directory owns a file in repositories with nested modules.
 type ModuleInfo struct {
-	Path string `json:"path"`
-	Dir  string `json:"dir"`
+	ID          string `json:"id,omitempty"`
+	Path        string `json:"path"`
+	Dir         string `json:"dir"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+type PackageInfo struct {
+	CanonicalPath     string `json:"canonical_package_path"`
+	Name              string `json:"name"`
+	ModuleID          string `json:"owning_module_id"`
+	ModulePath        string `json:"module_path"`
+	Dir               string `json:"package_directory"`
+	ModuleRelativeDir string `json:"module_relative_path"`
+	DisplayPath       string `json:"display_path"`
+	Locality          string `json:"locality"`
 }
 
 // Component is a stable structured view of one model-oriented subsystem. Its

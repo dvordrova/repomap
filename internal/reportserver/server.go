@@ -21,6 +21,7 @@ import (
 	"time"
 
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/testevidence"
 )
@@ -402,6 +403,16 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 					run.Manifest = &manifest
 					run.RepoPath = analysisRoot
 					run.AnalysisAvailable = h.analysisAvailable(manifest)
+					if manifest.Version < report.CurrentRunManifestVersion {
+						legacy := freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
+						run.Report.Freshness = &legacy
+					} else if h.analysis != nil && h.analysis.capture != nil {
+						current, captureErr := h.analysis.capture(context.Background(), manifest.RepositoryState.Identity)
+						if captureErr == nil {
+							currentFreshness := manifest.CurrentFreshness(current)
+							run.Report.Freshness = &currentFreshness
+						}
+					}
 				}
 			}
 		}

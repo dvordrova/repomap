@@ -357,7 +357,7 @@ func TestRunDefaultNoOpenSuppressesBrowser(t *testing.T) {
 	}
 }
 
-func TestRunDefaultRejectsRepositoryChangeDuringOrientation(t *testing.T) {
+func TestRunDefaultPreservesReportWhenCapturedInputsBecomeStale(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/moving\n\ngo 1.24\n")
@@ -386,7 +386,7 @@ func TestRunDefaultRejectsRepositoryChangeDuringOrientation(t *testing.T) {
 			return state, nil
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "repository changed during orientation") {
+	if err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
 	if captureCount != 2 {
@@ -396,12 +396,54 @@ func TestRunDefaultRejectsRepositoryChangeDuringOrientation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || !entries[0].IsDir() {
+	var runDirectories []os.DirEntry
+	for _, entry := range entries {
+		if entry.IsDir() {
+			runDirectories = append(runDirectories, entry)
+		}
+	}
+	if len(runDirectories) != 1 {
 		t.Fatalf("debug directory entries = %#v, want one run directory", entries)
 	}
-	manifestPath := filepath.Join(debugDir, entries[0].Name(), report.RunManifestFilename)
-	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
-		t.Fatalf("authority manifest stat error = %v, want not exist", err)
+	manifestPath := filepath.Join(debugDir, runDirectories[0].Name(), report.RunManifestFilename)
+	manifest, err := report.ReadRunManifest(filepath.Dir(manifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Freshness.State != freshness.FreshnessPartiallyStale {
+		t.Fatalf("freshness = %#v", manifest.Freshness)
+	}
+}
+
+func TestRunDefaultStrictSnapshotRejectsChangedAnalyzedInput(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/moving\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+	initial, err := freshness.CaptureRepository(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := initial
+	changed.Dirty = []freshness.DirtyFile{{
+		Status: "modified", Path: "main.go", Kind: freshness.FileRegular,
+		ContentSHA256: strings.Repeat("f", 64),
+	}}
+	captures := []freshness.RepositoryState{initial, changed}
+	captureCount := 0
+	err = runDefaultWithDeps(repo, []string{"--offline", "--strict-snapshot", "--no-open", "--no-serve", "--debug-dir", t.TempDir()}, defaultRunDeps{
+		stdout: io.Discard, stderr: io.Discard,
+		captureRepo: func(context.Context, string) (freshness.RepositoryState, error) {
+			state := captures[captureCount]
+			captureCount++
+			return state, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "strict snapshot is partially_stale") {
+		t.Fatalf("strict snapshot error = %v", err)
 	}
 }
 

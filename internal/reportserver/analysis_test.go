@@ -155,7 +155,8 @@ func TestSymbolsEndpointRejectsStaleOrUnauthorizedRequestsBeforeGopls(t *testing
 			request: symbolsRequest{RunID: "20260711-220000-pebble", ComponentID: "component-batch", AnchorID: "anchor-batch", Line: 395},
 			capture: func() freshness.RepositoryState {
 				changed := state
-				changed.Head = strings.Repeat("1", 40)
+				changed.Dirty = append([]freshness.DirtyFile(nil), state.Dirty...)
+				changed.Dirty[0].ContentSHA256 = strings.Repeat("1", 64)
 				return changed
 			}(),
 			wantStatus: http.StatusConflict,
@@ -526,8 +527,21 @@ func caller() {
 		Version:  freshness.RepositoryStateVersion,
 		Identity: filepath.Clean(repo),
 		Head:     strings.Repeat("0", 40),
+		Dirty: []freshness.DirtyFile{{
+			Status: "modified", Path: "batch.go", Kind: freshness.FileRegular,
+			ContentSHA256: strings.Repeat("a", 64),
+		}},
 	}
 	digest, err := state.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := []freshness.CapturedInput{{
+		Version: freshness.CapturedInputVersion, ID: strings.Repeat("b", 64), Path: "batch.go",
+		Kind: freshness.FileRegular, Mode: "file", ContentSHA256: strings.Repeat("a", 64),
+		Stages: []string{"report_evidence"},
+	}}
+	inputsDigest, err := freshness.CapturedInputsDigest(inputs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,6 +553,13 @@ func caller() {
 		ReportSHA256:          fmt.Sprintf("%x", sha256.Sum256(reportJSON)),
 		ReportFormatVersion:   report.CurrentFormatVersion,
 		OpenablePaths:         []string{"batch.go"},
+		CapturedInputs:        inputs,
+		CapturedInputsSHA256:  inputsDigest,
+		Freshness:             freshness.NewFreshnessResult(freshness.FreshnessFresh),
+		MaterialInputs: report.MaterialInputs{
+			SelectedRevision: state.Head, InputPolicyVersion: "captured-inputs-v1",
+			ArchitectureContract: 1, ReportContract: report.CurrentFormatVersion,
+		},
 		Components: []report.ComponentAuthority{{
 			ID: "component-batch",
 			Anchors: []report.AnchorAuthority{{
