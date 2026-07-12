@@ -19,6 +19,7 @@ saved evidence has been inspected.
 | AF-10 | Landscape default Fit renders the 14 components at scale ~0.36 with large unused margins. Baseline: 1206×720 viewport, 2370×1840 ELK surface, visible group bounds only y=158…1580. | Fit uses visible landscape bounds and reasonable padding. | Rendering / layout bounds. | `fit()` uses the full ELK root rectangle, including empty top/bottom space; visible group bounds would fit near scale 0.47. No component fact is wrong. | Add deterministic visible-landscape bounds for Fit; keep layout and graph library unchanged. | `internal/report/templates/architecture_canvas.js`; asset/Playwright geometry checks. | Initial and restored Landscape fit visible group bounds inside the viewport without using hidden flow nodes. | Confirmed; fix pending. | ELK compaction itself is out of scope. |
 | AF-11 | A malformed/legacy proof that omits a required slot can lose that omission during architecture projection. | Missing required slots remain explicit frontiers/diagnostics. | Report projection / DTO completeness. | `validateArchitectureProof` validates only supplied slots. The current Restic proofs include all eight slots, so this does not explain the screenshots. | Add required-slot diagnostics/frontiers only if implemented independently with focused report tests. | `internal/report/architecture_canvas.go`; projection tests. | Missing required slot produces an `invalid_slot` diagnostic and `proof_slot` frontier. | Deferred; not a blocker for current saved run. | Strict evidence-closed `Proof.Satisfied` belongs to a future FlowProof version. |
 | AF-12 | The current 32-component Restic Landscape forms a narrow 2610×4436 vertical spine, starts at the minimum 0.18 scale, and leaves most of a wide viewport unused. | Sparse and mixed Landscapes use a deterministic board or hybrid composition; a meaningful connected core may retain graph-aware placement. Initial view stays readable and Fit remains explicit. | Frontend Landscape projection, layout strategy, and presentation styling. | The saved report has 11 valid subsystem groups, 39 distinct structural component pairs, and 9 structural connected components sized 24 + eight singletons. Membership and parent references are valid. The frontend nevertheless sends every compound group, hidden structural/flow edge, and a hidden unassigned node through one root layered ELK layout; each subsystem also uses a one-column `DOWN` layout. Current browser bounds are 2610×4436, with UI alone 320×1536. | Classify structural connectivity in the frontend; graph-layout only a meaningful core, deterministically pack sparse/disconnected groups, exclude hidden-only nodes and flow overlays from Landscape geometry, and separate readable initial focus from Fit. Do not change saved facts or the selected-flow projection. | `internal/report/templates/architecture_canvas.js`; `architecture_canvas.css`; browser/asset tests. | Sparse board, connected graph, and mixed hybrid fixtures; Playwright at 1600×1000, 1440×900, and 1280×800. | Fixed and verified. | Component importance/category is absent in this run, so connectivity, group size, and stable IDs are the allowed ordering proxies. |
+| AF-13 | The balanced board still opens on an unexplained crop; Fit falls to 0.391; selecting a component leaves it as a thumbnail; CLI Commands remains a six-card column; singleton groups duplicate one child; deterministic remainder evidence participates as an architecture group. | Internal child grids reduce tall groups; singleton projection is flat; deterministic remainder evidence remains inspectable outside primary bounds; initial, readable Fit, and component focus use separate transforms. | Frontend Landscape projection/layout/viewport, plus one missing producer classification for the deterministic remainder. | In run `20260712-071842-restic`, all 11 groups use one child column. CLI Commands is 300×804 at y=924 and defines maxY=1728, extending 432 px below the next architecture group. UI is 300×928. Four singleton wrappers each add a 50 px header and 26 px bottom gap. Aggregate visible group overhead is 836 px. The remainder group is produced deterministically by `proposal.omitted_members_preserved` but the saved subsystem has no explicit diagnostic category. Forty-one hidden flow chips and routed edges do not contribute to `landscapeBounds()`. | Add explicit diagnostic category only at deterministic remainder production/projection; otherwise fix frontend group shape, board packing, primary bounds, and interaction transforms. Do not modify component identities, memberships, structural facts, or selected-flow projection. | `internal/componentmap/landscape.go`; `internal/report/architecture_canvas.go`; Landscape JS/CSS and focused tests. | Child-grid/singleton/diagnostic/packing transform contracts plus the four-state Playwright matrix. | Classification confirmed; fix pending. | The current regenerated report has no component titled `Snapshots Command`; generic focus behavior is reproduced against `Backup Command` and must work for any saved component ID. |
 
 ## Baseline artifacts
 
@@ -67,3 +68,25 @@ The selected-flow projection remains separate and unchanged.
 
 Before/after screenshots are stored under ignored
 `tmp/architecture-flow-audit/landscape-{before,after}-*.png`.
+
+## AF-13 baseline
+
+At 1600×1000 the Landscape viewport is 1204×718 and its visible group bounds
+are x=28…1324, y=28…1728 (1296×1700). The initial transform is
+`translate(3.15px, 3.15px) scale(0.887)`: readable, but simply top-aligns the
+whole board and gives no primary-area rationale. Fit computes 0.391 from the
+full 1700 px height and produces `translate(338.96px, 17.06px)`. Clicking a
+component does not change that transform.
+
+The height contributors are concrete frontend geometry rather than malformed
+membership: CLI Commands is a one-column 804 px group and alone adds 432 px to
+the board's bottom extent; UI is a one-column 928 px group; every group pays
+76 px of header/bottom overhead; and four one-child groups render redundant
+parent and child boxes. The deterministic remainder group currently occupies a
+normal board slot and participates in graph ordering even though its producer
+diagnostic says it is evidence preserved outside conceptual synthesis. Routed
+edges are excluded from Fit, and 41 hidden legacy flow-chip nodes have no
+layout position, so neither explains the bounds.
+
+Four-state baseline captures are under ignored
+`tmp/architecture-flow-audit/current2-before-{A,B,C,D}-*.png`.
