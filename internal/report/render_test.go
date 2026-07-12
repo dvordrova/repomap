@@ -6,19 +6,48 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 )
 
 var update = flag.Bool("update", false, "update golden files")
 
 func TestWriteReportHTML_Golden(t *testing.T) {
 	latency := int64(432)
+	localProof := &flowproof.Session{
+		Version: flowproof.SessionVersion,
+		Proof: flowproof.Proof{
+			Version: flowproof.Version, ID: "flow-a", Archetype: flowproof.ArchetypeCLI, Goal: "Test Flow", Command: "serve",
+			Slots: []flowproof.Slot{
+				{Kind: flowproof.SlotTrigger, Status: flowproof.SlotVerified, Summary: "registered serve command"},
+				{Kind: flowproof.SlotEntrypoint, Status: flowproof.SlotVerified, Summary: "exact main"},
+				{Kind: flowproof.SlotTermination, Status: flowproof.SlotPartial, Missing: "shutdown path"},
+			},
+			Anchors: []flowproof.Anchor{
+				{ID: "main", Kind: flowproof.AnchorFunction, Label: "main", Location: &evidence.Location{Path: "main.go", Line: 1}},
+				{ID: "serve", Kind: flowproof.AnchorFunction, Label: "serve", Location: &evidence.Location{Path: "server/server.go", Line: 20}},
+			},
+			Transitions: []flowproof.Transition{{
+				ID: "dispatch-serve", From: "main", To: "serve", Relation: evidence.RelationCalls,
+				Resolution: evidence.ResolutionStatic, Invocation: evidence.InvocationSynchronous,
+				Certainty: evidence.CertaintyStatic, Evidence: evidence.Location{Path: "main.go", Line: 8}, Provider: "go_syntax",
+			}},
+		},
+		Budget: flowproof.DefaultBudget(),
+		Stats:  flowproof.Stats{TasksCompleted: 1, Files: []string{"main.go", "server/server.go"}, Symbols: []string{"serve"}, WallMillis: 42},
+		Stop:   &flowproof.Stop{Reason: flowproof.StopNoTask, Message: "shutdown executor is not configured"},
+	}
 	data := ReportData{
-		FormatVersion:         5,
+		FormatVersion:         CurrentFormatVersion,
 		RepoName:              "testrepo",
 		ProjectGuess:          "test project",
 		OrientationConfidence: 0.82,
 		HighLevelMap: []Subsystem{{
 			Name:         "command",
+			Role:         componentmap.RoleEntry,
 			Evidence:     []string{"main.go wires the server"},
 			WhyItMatters: "owns process startup",
 		}},
@@ -37,6 +66,13 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 			WhyInteresting:   "shows the primary request path",
 			Evidence:         []string{"main.go wires the server"},
 			Confidence:       0.75,
+			LocalVerification: &flowexplain.FlowVerification{
+				Status:        "partial",
+				ConfidenceCap: 0.75,
+				Verified:      []string{"main.go:1 exact entrypoint"},
+				Missing:       []string{"first domain-level call"},
+			},
+			LocalProof: localProof,
 		}},
 		ImportantDomainWords: []DomainWord{{
 			Word:     "worker",
@@ -103,6 +139,10 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 		t.Fatalf("buildHTML: %v", err)
 	}
 
+	// Replaceable presentation snapshot: it catches accidental loss of the
+	// self-contained report, but its markup is not a stable product contract.
+	// Intentional UI refactors should regenerate it instead of preserving DOM
+	// details solely for this test.
 	golden := filepath.Join("testdata", "report.golden.html")
 	if *update {
 		if err := os.WriteFile(golden, html, 0o644); err != nil {
@@ -119,6 +159,82 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 	if !bytes.Equal(html, want) {
 		t.Errorf("HTML output differs from golden file.\nRun 'go test -run TestWriteReportHTML_Golden -update' to regenerate.")
 		t.Errorf("Got %d bytes, want %d bytes", len(html), len(want))
+	}
+}
+
+func TestReportDoesNotRenderStaticFactsAsRuntimeSequence(t *testing.T) {
+	// Replaceable presentation contract: this test protects the previously
+	// misleading runtime sequence claim, not the current DOM structure.
+	data := ReportData{
+		RepoName: "static-proof",
+		CandidateDirections: []CandidateDirection{{
+			ID:   "backup",
+			Name: "Backup",
+			LocalProof: &flowproof.Session{
+				Proof: flowproof.Proof{
+					Slots: []flowproof.Slot{{
+						Kind:        flowproof.SlotApplicationCallable,
+						Status:      flowproof.SlotVerified,
+						EvidenceIDs: []string{"dispatch-handler"},
+					}},
+					Anchors: []flowproof.Anchor{
+						{ID: "main", Kind: flowproof.AnchorFunction, Label: "main", Location: &evidence.Location{Path: "main.go", Line: 10}},
+						{ID: "handler", Kind: flowproof.AnchorFunction, Label: "runBackup", Location: &evidence.Location{Path: "backup.go", Line: 40}},
+						{ID: "scanner-task", Kind: flowproof.AnchorTask, Label: "scanner task", Location: &evidence.Location{Path: "backup.go", Line: 60}},
+						{ID: "scan", Kind: flowproof.AnchorMethod, Label: "Scan", Location: &evidence.Location{Path: "scanner.go", Line: 20}},
+					},
+					Transitions: []flowproof.Transition{
+						{
+							ID: "dispatch-handler", From: "main", To: "handler", Relation: evidence.RelationDispatches,
+							Resolution: evidence.ResolutionFrameworkRule, Invocation: evidence.InvocationCallback,
+							Evidence: evidence.Location{Path: "main.go", Line: 25},
+						},
+						{
+							ID: "start-scanner", From: "handler", To: "scanner-task", Relation: evidence.RelationStartsGoroutine,
+							Resolution: evidence.ResolutionStatic, Invocation: evidence.InvocationGoroutine,
+							Evidence: evidence.Location{Path: "backup.go", Line: 60},
+						},
+						{
+							ID: "scan-body", From: "scanner-task", To: "scan", Relation: evidence.RelationCallback,
+							Resolution: evidence.ResolutionStatic, Invocation: evidence.InvocationGoroutine,
+							Condition: &evidence.Condition{
+								Expression: "opts.Scan",
+								Location:   evidence.Location{Path: "backup.go", Line: 59},
+							},
+							Evidence: evidence.Location{Path: "backup.go", Line: 61},
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	html, err := buildHTML(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range [][]byte{
+		[]byte("Static relation groups"),
+		[]byte("Grouped by static scope. Runtime order is not inferred."),
+		[]byte("Command setup"),
+		[]byte("Main handler branch"),
+		[]byte("Task · "),
+		[]byte("Other static relations"),
+		[]byte("→ ' + relation + ' / ' + invocation + ' →"),
+		[]byte(`"expression":"opts.Scan"`),
+	} {
+		if !bytes.Contains(html, want) {
+			t.Errorf("report HTML missing static proof presentation %q", want)
+		}
+	}
+	for _, unwanted := range [][]byte{
+		[]byte("Guided symbol path"),
+		[]byte("var sequence = []"),
+		[]byte("el('ol', 'rm-proof-path')"),
+	} {
+		if bytes.Contains(html, unwanted) {
+			t.Errorf("report HTML still presents static facts as an ordered runtime path: %q", unwanted)
+		}
 	}
 }
 
@@ -178,7 +294,7 @@ func TestWriteReportHTML_EscapesModelControlledTitle(t *testing.T) {
 
 func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T) {
 	data := ReportData{
-		FormatVersion:         5,
+		FormatVersion:         CurrentFormatVersion,
 		RepoName:              "orientation-only",
 		ProjectGuess:          "metrics service",
 		OrientationConfidence: 0.86,
@@ -228,7 +344,7 @@ func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T
 	}
 	for _, want := range [][]byte{
 		[]byte("Purpose"),
-		[]byte("System map"),
+		[]byte("Components"),
 		[]byte("Start here"),
 		[]byte("Important terms"),
 		[]byte("Questions for a teammate"),
@@ -259,7 +375,7 @@ func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T
 
 func TestWriteReportHTML_DirectionCanOpenSavedLocalEvidence(t *testing.T) {
 	data := ReportData{
-		FormatVersion: 5,
+		FormatVersion: CurrentFormatVersion,
 		RepoName:      "friend-project",
 		CandidateDirections: []CandidateDirection{{
 			ID:               "worker-run",
@@ -288,12 +404,23 @@ func TestWriteReportHTML_DirectionCanOpenSavedLocalEvidence(t *testing.T) {
 	}
 	for _, want := range [][]byte{
 		[]byte(`"evidence_only":true`),
-		[]byte("Explore focused local evidence"),
-		[]byte("No second model call was made"),
+		[]byte("Explore this direction"),
+		[]byte("Suggested files are selected from repository facts"),
+		[]byte("Suggested files to inspect"),
+		[]byte("Run details"),
 		[]byte("rm-candidate-direction--clickable"),
 	} {
 		if !bytes.Contains(html, want) {
 			t.Errorf("report HTML missing %q", want)
+		}
+	}
+	for _, unwanted := range [][]byte{
+		[]byte("· local evidence"),
+		[]byte(">Local evidence<"),
+		[]byte("No second model call was made"),
+	} {
+		if bytes.Contains(html, unwanted) {
+			t.Errorf("report HTML still contains noisy implementation label %q", unwanted)
 		}
 	}
 }
@@ -357,7 +484,7 @@ func TestGenerate(t *testing.T) {
 	if !bytes.Contains(b, []byte("generatetest")) {
 		t.Error("report.html does not contain repo name")
 	}
-	if bytes.Contains(b, []byte("F:")) || bytes.Contains(b, []byte("S:")) || bytes.Contains(b, []byte("T:")) {
+	if containsLegacySingleLetterLabel(b) {
 		t.Error("report.html contains single-letter abbreviations")
 	}
 
@@ -389,4 +516,24 @@ func TestGenerate(t *testing.T) {
 	if string(feedback) != friendNotes {
 		t.Fatalf("report regeneration overwrote feedback: %q", feedback)
 	}
+}
+
+// containsLegacySingleLetterLabel intentionally looks only for an HTML text
+// node shaped like the retired one-letter labels. Searching the complete
+// self-contained HTML for "D:" also matches harmless JavaScript identifiers
+// such as candidateID and makes this presentation test expensive to maintain.
+func containsLegacySingleLetterLabel(html []byte) bool {
+	for _, label := range [][]byte{
+		[]byte(">F:<"),
+		[]byte(">S:<"),
+		[]byte(">T:<"),
+		[]byte(">D:<"),
+		[]byte(">P:<"),
+		[]byte(">E:<"),
+	} {
+		if bytes.Contains(html, label) {
+			return true
+		}
+	}
+	return false
 }

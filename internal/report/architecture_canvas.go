@@ -778,8 +778,11 @@ func validateArchitectureTransition(transition flowproof.Transition) error {
 		return fmt.Errorf("transition provider is empty")
 	}
 	if transition.Condition != nil {
-		if strings.TrimSpace(transition.Condition.Expression) == "" {
+		if strings.TrimSpace(transition.Condition.Expression) == "" && !transition.Condition.ExpressionOmitted {
 			return fmt.Errorf("condition expression is empty")
+		}
+		if strings.TrimSpace(transition.Condition.Expression) != "" && transition.Condition.ExpressionOmitted {
+			return fmt.Errorf("condition expression cannot be present and omitted")
 		}
 		if err := validateArchitectureLocation(transition.Condition.Location, true); err != nil {
 			return fmt.Errorf("condition location: %w", err)

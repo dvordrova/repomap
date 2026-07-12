@@ -99,6 +99,40 @@ func TestExtractTermsDoesNotPromotePathStructure(t *testing.T) {
 	}
 }
 
+func TestExtractTermsDoesNotPromoteGenericEntrypointBasename(t *testing.T) {
+	query, alias := ExtractTerms(
+		"Raft leader election flow",
+		"a cluster member starts an election",
+		"server/main.go",
+		nil,
+	)
+
+	if contains(query, "main") || contains(alias, "main") {
+		t.Fatalf("generic entrypoint basename leaked into query=%v alias=%v", query, alias)
+	}
+	if !contains(query, "raft") || !contains(alias, "rafthttp") {
+		t.Fatalf("flow-specific raft terms missing: query=%v alias=%v", query, alias)
+	}
+}
+
+func TestSelectFlowFilesIncludesPythonSourcesAndTests(t *testing.T) {
+	t.Parallel()
+
+	files, tests, _, _, _ := SelectFlowFiles(
+		[]string{"src/tool/__main__.py", "src/tool/service.py", "tests/test_service.py", "pyproject.toml"},
+		[]string{"service"},
+		[]string{"src/tool/__main__.py"},
+		nil,
+		10,
+	)
+	if len(files) != 2 || files[0].Path != "src/tool/__main__.py" || files[1].Path != "src/tool/service.py" {
+		t.Fatalf("selected Python sources = %#v", files)
+	}
+	if len(tests) != 1 || tests[0].Path != "tests/test_service.py" {
+		t.Fatalf("selected Python tests = %#v", tests)
+	}
+}
+
 func TestScoreFileLayeredPrefersV3RPCOverV2(t *testing.T) {
 	v3rpcScore, _, _ := scoreFileLayered("server/etcdserver/api/v3rpc/watch.go", "source", []string{"watch", "v3rpc"}, false)
 	v2storeScore, _, _ := scoreFileLayered("server/storage/mvcc/v2store_watcher.go", "source", []string{"watch", "v2store"}, false)
@@ -149,6 +183,42 @@ func TestSelectFlowFilesProtoIsNotDoc(t *testing.T) {
 	}
 }
 
+func TestSelectFlowFilesDropsLexicalMatchesFromNonGoArtifacts(t *testing.T) {
+	tracked := []string{
+		"batch.go",
+		"commit.go",
+		"docs/js/write-throughput.js",
+		"internal/mkbench/testdata/write-throughput/run-summary.json",
+	}
+	files, tests, docs, _, _ := SelectFlowFiles(tracked, []string{"batch", "commit", "put", "write"}, []string{"batch.go"}, nil, 20)
+
+	for _, selected := range append(append(files, tests...), docs...) {
+		if strings.HasSuffix(selected.Path, ".js") || strings.HasSuffix(selected.Path, ".json") {
+			t.Fatalf("non-Go lexical match was selected: %#v", selected)
+		}
+	}
+	if !hasScoredPath(files, "batch.go") || !hasScoredPath(files, "commit.go") {
+		t.Fatalf("expected Go flow files were not retained: %#v", files)
+	}
+}
+
+func TestSelectFlowFilesKeepsExplicitNonGoSeed(t *testing.T) {
+	const config = "config/write-path.yaml"
+	files, _, _, _, _ := SelectFlowFiles([]string{config}, []string{"write"}, []string{config}, nil, 20)
+	if !hasScoredPath(files, config) {
+		t.Fatalf("explicit non-Go seed was discarded: %#v", files)
+	}
+}
+
+func hasScoredPath(files []scoredFile, path string) bool {
+	for _, file := range files {
+		if file.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSelectFlowFilesV2StorePenalized(t *testing.T) {
 	tracked := []string{"server/storage/mvcc/watchable_store.go", "server/storage/mvcc/v2store_watcher.go"}
 	terms := []string{"watch", "mvcc"}
@@ -192,6 +262,44 @@ func TestSelectFlowFilesIncludesPackages(t *testing.T) {
 	}
 	if len(edges) == 0 {
 		t.Fatal("related_edges should not be empty when packages have internal edges")
+	}
+}
+
+func TestSelectFlowFilesBuildsPackageContextFromRetainedFilesOnly(t *testing.T) {
+	facts := &gofacts.Facts{
+		EntrypointPackages: []gofacts.Entrypoint{
+			{
+				ImportPath: "example.com/server",
+				PackageDir: "server",
+				GoFiles:    []string{"main.go"},
+			},
+			{
+				ImportPath: "example.com/unrelated-tool",
+				PackageDir: "tools/unrelated",
+				GoFiles:    []string{"main.go"},
+			},
+		},
+		InternalEdges: []gofacts.Edge{
+			{From: "example.com/unrelated-tool", To: "example.com/unrelated-support"},
+		},
+	}
+
+	files, _, _, packages, edges := SelectFlowFiles(
+		[]string{"server/main.go", "tools/unrelated/main.go"},
+		[]string{"main"},
+		[]string{"server/main.go"},
+		facts,
+		1,
+	)
+
+	if len(files) != 1 || files[0].Path != "server/main.go" {
+		t.Fatalf("selected files = %#v, want only the seed", files)
+	}
+	if len(packages) != 1 || packages[0] != "example.com/server" {
+		t.Fatalf("selected packages = %v, want only retained file package", packages)
+	}
+	if len(edges) != 0 {
+		t.Fatalf("related edges = %v, want no edges from discarded candidates", edges)
 	}
 }
 

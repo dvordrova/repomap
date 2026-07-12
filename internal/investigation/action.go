@@ -12,11 +12,12 @@ import (
 type ActionKind string
 
 const (
-	ActionResolveSymbol ActionKind = "resolve_symbol"
-	ActionReadSource    ActionKind = "read_source"
-	ActionAssessSource  ActionKind = "assess_source"
-	ActionFindTests     ActionKind = "find_tests"
-	ActionAwaitUser     ActionKind = "await_user"
+	ActionResolveSymbol      ActionKind = "resolve_symbol"
+	ActionReadSource         ActionKind = "read_source"
+	ActionAssessSource       ActionKind = "assess_source"
+	ActionFindTests          ActionKind = "find_tests"
+	ActionFindTestReferences ActionKind = "find_test_references"
+	ActionAwaitUser          ActionKind = "await_user"
 )
 
 type UserChoice string
@@ -33,19 +34,21 @@ const (
 )
 
 type Action struct {
-	ID            string                `json:"id"`
-	Kind          ActionKind            `json:"kind"`
-	Reason        string                `json:"reason"`
-	ResolveSymbol *ResolveSymbolInput   `json:"resolve_symbol,omitempty"`
-	ReadSource    *ReadSourceInput      `json:"read_source,omitempty"`
-	AssessSource  *sourceexplain.Bundle `json:"assess_source,omitempty"`
-	FindTests     *FindTestsInput       `json:"find_tests,omitempty"`
-	AwaitUser     *AwaitUserInput       `json:"await_user,omitempty"`
+	ID                 string                   `json:"id"`
+	Kind               ActionKind               `json:"kind"`
+	Reason             string                   `json:"reason"`
+	ResolveSymbol      *ResolveSymbolInput      `json:"resolve_symbol,omitempty"`
+	ReadSource         *ReadSourceInput         `json:"read_source,omitempty"`
+	AssessSource       *sourceexplain.Bundle    `json:"assess_source,omitempty"`
+	FindTests          *FindTestsInput          `json:"find_tests,omitempty"`
+	FindTestReferences *FindTestReferencesInput `json:"find_test_references,omitempty"`
+	AwaitUser          *AwaitUserInput          `json:"await_user,omitempty"`
 }
 
 type ResolveSymbolInput struct {
-	RepoPath string `json:"repo_path"`
-	Query    string `json:"query"`
+	RepoPath string           `json:"repo_path"`
+	Query    string           `json:"query"`
+	Expected *evidence.Entity `json:"expected,omitempty"`
 }
 
 // ReadSourceInput is the durable investigation-owned equivalent of
@@ -61,6 +64,11 @@ type FindTestsInput struct {
 	Structural symbol.Bundle        `json:"structural"`
 	Assessment sourceexplain.Bundle `json:"assessment"`
 	Report     sourceexplain.Report `json:"report"`
+}
+
+type FindTestReferencesInput struct {
+	RepoPath   string        `json:"repo_path"`
+	Structural symbol.Bundle `json:"structural"`
 }
 
 type AwaitUserInput struct {
@@ -82,6 +90,7 @@ func (a Action) Validate() error {
 		a.ReadSource != nil,
 		a.AssessSource != nil,
 		a.FindTests != nil,
+		a.FindTestReferences != nil,
 		a.AwaitUser != nil,
 	} {
 		if present {
@@ -95,6 +104,9 @@ func (a Action) Validate() error {
 	case ActionResolveSymbol:
 		if a.ResolveSymbol == nil || strings.TrimSpace(a.ResolveSymbol.RepoPath) == "" || strings.TrimSpace(a.ResolveSymbol.Query) == "" {
 			return fmt.Errorf("investigation: resolve-symbol action is incomplete")
+		}
+		if err := validateFocusEntity(a.ResolveSymbol.Query, a.ResolveSymbol.Expected); err != nil {
+			return fmt.Errorf("investigation: resolve-symbol exact entity: %w", err)
 		}
 	case ActionReadSource:
 		if a.ReadSource == nil || strings.TrimSpace(a.ReadSource.RepoPath) == "" || a.ReadSource.TargetEvidenceID == "" ||
@@ -117,6 +129,13 @@ func (a Action) Validate() error {
 		}
 		if err := sourceexplain.ValidateReport(a.FindTests.Assessment, a.FindTests.Report); err != nil {
 			return fmt.Errorf("investigation: invalid find-tests assessment input: %w", err)
+		}
+	case ActionFindTestReferences:
+		if a.FindTestReferences == nil || strings.TrimSpace(a.FindTestReferences.RepoPath) == "" {
+			return fmt.Errorf("investigation: find-test-references action is incomplete")
+		}
+		if err := a.FindTestReferences.Structural.Validate(); err != nil {
+			return fmt.Errorf("investigation: invalid find-test-references structural input: %w", err)
 		}
 	case ActionAwaitUser:
 		if a.AwaitUser == nil || strings.TrimSpace(a.AwaitUser.Question) == "" || len(a.AwaitUser.Choices) == 0 {

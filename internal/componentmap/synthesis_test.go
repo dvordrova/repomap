@@ -57,20 +57,29 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		}
 	}
 
-	firstKey, err := SynthesisCacheKey("revision-a")
+	firstKey, err := SynthesisCacheKey("revision-a", firstBundle)
 	if err != nil {
 		t.Fatalf("SynthesisCacheKey(first) error = %v", err)
 	}
-	secondKey, err := SynthesisCacheKey("revision-a")
+	secondKey, err := SynthesisCacheKey("revision-a", secondBundle)
 	if err != nil {
 		t.Fatalf("SynthesisCacheKey(second) error = %v", err)
 	}
-	changedKey, err := SynthesisCacheKey("revision-b")
+	changedKey, err := SynthesisCacheKey("revision-b", firstBundle)
 	if err != nil {
 		t.Fatalf("SynthesisCacheKey(changed) error = %v", err)
 	}
 	if firstKey != secondKey || firstKey == changedKey {
 		t.Fatalf("cache keys = %q, %q, changed %q", firstKey, secondKey, changedKey)
+	}
+	changedBundle := landscapeTestBundle()
+	changedBundle.Candidates[0].Facts[0].Value += " changed"
+	changedRequestKey, err := SynthesisCacheKey("revision-a", changedBundle)
+	if err != nil {
+		t.Fatalf("SynthesisCacheKey(changed request) error = %v", err)
+	}
+	if changedRequestKey == firstKey {
+		t.Fatalf("cache key %q did not bind the exact synthesis request", firstKey)
 	}
 }
 

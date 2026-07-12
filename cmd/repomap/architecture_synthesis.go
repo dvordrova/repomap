@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -34,18 +35,18 @@ func synthesizeArchitectureForRun(
 	runDir string,
 	repositoryPath string,
 	stderr io.Writer,
-) error {
+) (architectureSynthesisOutcome, error) {
 	state, err := freshness.CaptureRepository(ctx, repositoryPath)
 	if err != nil {
-		return fmt.Errorf("architecture synthesis: capture repository revision: %w", err)
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: capture repository revision: %w", err)
 	}
 	revision, err := state.Digest()
 	if err != nil {
-		return fmt.Errorf("architecture synthesis: repository revision: %w", err)
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: repository revision: %w", err)
 	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
-		return fmt.Errorf("architecture synthesis: provider configuration: %w", err)
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
 	}
 	outcome, err := prepareArchitectureSynthesis(
 		ctx,
@@ -55,8 +56,15 @@ func synthesizeArchitectureForRun(
 		client.Model,
 		client,
 	)
+	status := architectureSynthesisStatus(outcome, err)
+	if statusErr := writeArchitectureSynthesisStatus(runDir, status); statusErr != nil {
+		if err != nil {
+			return outcome, errors.Join(err, statusErr)
+		}
+		return outcome, statusErr
+	}
 	if err != nil {
-		return err
+		return outcome, err
 	}
 	cacheLabel := ""
 	if outcome.Cached {
@@ -70,9 +78,9 @@ func synthesizeArchitectureForRun(
 		cacheLabel,
 	)
 	if outcome.FallbackReason != "" {
-		fmt.Fprintf(stderr, "warning: architecture synthesis used %s fallback\n", outcome.FallbackReason)
+		return outcome, fmt.Errorf("architecture synthesis did not produce a usable conceptual map: %s", outcome.FallbackReason)
 	}
-	return nil
+	return outcome, nil
 }
 
 func prepareArchitectureSynthesis(
@@ -114,7 +122,7 @@ func ensureArchitectureSynthesis(
 	if provider == nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider is required")
 	}
-	cacheKey, err := componentmap.SynthesisCacheKey(repositoryRevision)
+	cacheKey, err := componentmap.SynthesisCacheKey(repositoryRevision, bundle)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
@@ -160,11 +168,13 @@ func ensureArchitectureSynthesis(
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
+	outcome := architectureSynthesisOutcome{InputBytes: len(prompt.System) + len(prompt.User)}
 	started := time.Now()
 	raw, err := provider.SynthesizeComponentLandscape(ctx, prompt)
 	latency := time.Since(started)
+	outcome.LatencyMillis = latency.Milliseconds()
 	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider call: %w", err)
+		return outcome, fmt.Errorf("architecture synthesis: provider call: %w", err)
 	}
 	result, err := componentmap.RecordSynthesisResponse(
 		bundle,
@@ -177,6 +187,21 @@ func ensureArchitectureSynthesis(
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: validate response: %w", err)
 	}
+	outcome = architectureSynthesisOutcome{
+		InputBytes:     result.Record.Call.Metadata.InputBytes,
+		LatencyMillis:  result.Record.Call.Metadata.LatencyMillis,
+		FallbackReason: result.Landscape.FallbackReason,
+	}
+	if outcome.FallbackReason != "" {
+		detail := string(outcome.FallbackReason)
+		if codes := architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics); len(codes) > 0 {
+			detail += " (" + strings.Join(codes, ", ") + ")"
+		}
+		return outcome, fmt.Errorf(
+			"architecture synthesis response is unusable: %s",
+			detail,
+		)
+	}
 	saved, err := json.MarshalIndent(result.Record, "", "  ")
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: encode record: %w", err)
@@ -188,11 +213,28 @@ func ensureArchitectureSynthesis(
 	if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
-	return architectureSynthesisOutcome{
-		InputBytes:     result.Record.Call.Metadata.InputBytes,
-		LatencyMillis:  result.Record.Call.Metadata.LatencyMillis,
-		FallbackReason: result.Landscape.FallbackReason,
-	}, nil
+	return outcome, nil
+}
+
+func architectureSynthesisDiagnosticCodes(diagnostics []componentmap.Diagnostic) []string {
+	const maxCodes = 4
+
+	codes := make([]string, 0, min(len(diagnostics), maxCodes))
+	seen := make(map[string]struct{}, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == "" {
+			continue
+		}
+		if _, exists := seen[diagnostic.Code]; exists {
+			continue
+		}
+		seen[diagnostic.Code] = struct{}{}
+		codes = append(codes, diagnostic.Code)
+		if len(codes) == maxCodes {
+			break
+		}
+	}
+	return codes
 }
 
 func replayArchitectureSynthesisOutcome(
@@ -204,6 +246,12 @@ func replayArchitectureSynthesisOutcome(
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
+	if landscape.Fallback {
+		return architectureSynthesisOutcome{}, fmt.Errorf(
+			"saved architecture synthesis is unusable: %s",
+			landscape.FallbackReason,
+		)
+	}
 	var record componentmap.SynthesisRecord
 	if err := json.Unmarshal(saved, &record); err != nil {
 		return architectureSynthesisOutcome{}, err
@@ -213,6 +261,59 @@ func replayArchitectureSynthesisOutcome(
 		LatencyMillis:  record.Call.Metadata.LatencyMillis,
 		FallbackReason: landscape.FallbackReason,
 	}, nil
+}
+
+func architectureSynthesisStatus(
+	outcome architectureSynthesisOutcome,
+	synthesisErr error,
+) report.ArchitectureSynthesisStatus {
+	status := report.ArchitectureSynthesisStatus{
+		Version:       report.ArchitectureSynthesisStatusVersion,
+		PromptBytes:   outcome.InputBytes,
+		LatencyMillis: outcome.LatencyMillis,
+	}
+	if synthesisErr == nil {
+		if outcome.Cached {
+			status.State = report.ArchitectureSynthesisCached
+		} else {
+			status.State = report.ArchitectureSynthesisSucceeded
+			status.ProviderRequestCount = 1
+		}
+		return status
+	}
+
+	status.State = report.ArchitectureSynthesisFailed
+	if outcome.LatencyMillis > 0 {
+		status.ProviderRequestCount = 1
+	}
+	message := synthesisErr.Error()
+	switch {
+	case strings.Contains(message, "response content is empty"):
+		status.ErrorCode = "empty_response"
+	case strings.Contains(message, "unusable"), strings.Contains(message, "validate response"):
+		status.ErrorCode = "invalid_response"
+	default:
+		status.ErrorCode = "provider_error"
+	}
+	return status
+}
+
+func writeArchitectureSynthesisStatus(
+	runDir string,
+	status report.ArchitectureSynthesisStatus,
+) error {
+	if err := status.Validate(); err != nil {
+		return fmt.Errorf("architecture synthesis: status: %w", err)
+	}
+	data, err := json.MarshalIndent(status, "", "  ")
+	if err != nil {
+		return fmt.Errorf("architecture synthesis: encode status: %w", err)
+	}
+	data = append(data, '\n')
+	return writeArchitectureSynthesisRecord(
+		filepath.Join(runDir, report.ArchitectureSynthesisStatusFile),
+		data,
+	)
 }
 
 func writeArchitectureSynthesisRecord(path string, data []byte) error {

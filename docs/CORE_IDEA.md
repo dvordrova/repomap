@@ -1,10 +1,13 @@
 # repomap core idea
 
-repomap helps understand unfamiliar local Go repositories by extracting
+repomap helps understand unfamiliar local repositories by extracting
 deterministic local facts and optionally asking an OpenAI-compatible model to
-interpret them as structured orientation reports. DeepSeek remains the reference
-provider and calibration target; company-hosted compatible endpoints use the
-same bounded request contract.
+interpret them as structured orientation reports. Go currently has the deepest
+package and symbol evidence. Python repositories share the bounded tracked-file
+orientation path; Pyright remains an optional focused analyzer rather than a
+default survey dependency. DeepSeek remains the reference provider and
+calibration target; company-hosted compatible endpoints use the same bounded
+request contract.
 
 Product and research decisions that intentionally remain unresolved are tracked
 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). The concrete client package is still
@@ -25,7 +28,8 @@ The ordered product outcomes and their observable completion conditions are in
 
 ### 1. Deterministic local extraction
 
-Run without a model or API key. Go package discovery deliberately respects the
+Run without a model or API key. The tracked-file survey is language-neutral.
+When Go modules are present, Go package discovery deliberately respects the
 engineer's normal Go environment and may use a configured company proxy:
 
 - `git ls-files` for tracked file inventory
@@ -36,7 +40,11 @@ engineer's normal Go environment and may use a configured company proxy:
 - `go.mod` files per discovered module
 - `go list -json ./...` per module
 - Go package import edges (internal, external top-50)
-- entrypoint detection (Name == "main")
+- entrypoint detection (`go list` build-selected package files plus an exact
+  syntax-only top-level `func main()` anchor)
+- bounded command-framework readers over build-selected `package main` files;
+  the first reader records Cobra root construction, command registration,
+  Run/RunE callbacks, and ranked handler call sites as typed syntax evidence
 - module summaries (role guess, top internal imports, top external imports)
 - orientation candidates (ranked entrypoints with repo-relative `open_files`)
 - known docs (Documentation/, docs/, architecture .md files)
@@ -85,6 +93,26 @@ Other prose remains an explicit model interpretation.
 The report proposes **candidate runtime/event flows**, not folder summaries.
 Every candidate flow must cite evidence from the bundle.
 Confidence must be explicit, warnings for low confidence.
+Provider confidence is only a proposal: a local gate caps each candidate using
+exact entrypoint/dispatch evidence, unresolved proof slots, unverified targets,
+and bounded-retrieval warnings.
+
+### 3.5. Bounded local flow proof
+
+A selected CLI direction can now acquire a separate, replayable `FlowProof`.
+The CLI contract has eight slots: trigger, entrypoint, dispatch, application
+callable, core operation, I/O boundary, concurrency, and termination. Exact
+anchors and transitions carry independent relation, resolution, invocation,
+certainty, and `file:line` evidence fields. A complete proof scopes confidence
+for that one flow; it does not make the globally truncated repository map
+complete and it is never described as an observed runtime trace.
+
+The worklist keeps one deterministic next task. Its identity includes flow,
+slot, target, depth, build scenario, and collector version. Duplicate and
+no-progress work stops, as do explicit task/depth/symbol/file/model/wall-time
+budgets. Current Go executors load only the package enclosing an already chosen
+callsite, use type information to resolve the target, and inspect one bounded
+goroutine lifecycle. Whole-repository SSA and VTA remain outside this path.
 
 ### 4. Focused flow analysis (implemented, opt-in)
 
@@ -97,12 +125,39 @@ Confidence must be explicit, warnings for low confidence.
 - known fields are normalized, verified paths are allowlisted, and unsafe or
   incomplete reports are rejected locally.
 
-Named user choice now reaches the first saved local neighborhood. Exact-symbol
-candidate selection and the resumable orientation-to-investigation handoff are
-not yet wired into the main CLI; they remain the important integration boundary
-for the progressive product journey.
+Named user choice now reaches the first saved local neighborhood. In a served
+report, one manifest-authorized component anchor can lazily request bounded Go
+function/method candidates, confirm the selected declaration at its exact
+`file:line:column`, and read a bounded source/static-call card through the
+existing investigation runner. This local drill-down makes no provider call.
+The architecture canvas groups exact local members into conceptual components
+and subsystems. Names and grouping may be model-assisted hypotheses; membership
+is validated locally against opaque candidate IDs. Quiet witnessed structural
+relations remain separate from typed FlowProof overlays. Selecting one flow
+keeps component positions stable, dims unrelated components, and preserves
+main/task/shared branches, cancellation, joins, and unresolved frontiers.
+Selecting an exact symbol renders the same evidence distinction again: a
+compact incoming → target → outgoing static neighborhood, followed by bounded
+source and the omitted frontier.
+The accepted exact symbol and source card are checkpointed below that report
+run and resume without the short-lived candidate cache. One explicit follow-up
+can collect bounded direct `_test.go` references with local gopls only. Those
+references are navigation evidence, not proof of coverage or assertions.
 
-### 5. Durable focused investigation (implemented, isolated from the browser)
+### 4.5. Local runtime surfaces (implemented for persisted Go runs)
+
+Bounded SSA propagation can establish configured HTTP registrations, errgroup
+task starts, and loop-backed worker registrations under one recorded build
+scenario. The report projects those facts into a standalone `Discovered
+surfaces` shelf with exact registration, wrapper, callback, frontier, and loop
+evidence.
+
+This shelf is deliberately outside the architecture graph and FlowProof:
+static registration does not prove callback execution, runtime order,
+cancellation, or lifetime. Non-Go/no-debug/preview runs skip the artifact stage,
+and a discovery failure leaves orientation usable with a precise warning.
+
+### 5. Durable focused investigation (implemented)
 
 The exact-symbol investigation stores deterministic symbol/source/test facts,
 model-derived source claims, and reducer/session state separately. Repository
@@ -110,14 +165,17 @@ identity, HEAD and dirty contents, Go/gopls/collector/build inputs, and
 prompt/parser/evaluator versions are reconciled before a saved action becomes
 executable. Unchanged sessions resume without a second model call; changed
 facts re-resolve the symbol, while changed claim logic retains local source and
-returns to assessment. M5 next connects a user-selected browser direction's
-verified files to exact symbol candidates and this already-durable path rather
-than adding another persistence mechanism.
+returns to assessment. The browser uses a deliberately smaller branch of this
+same state machine: exact local symbol, bounded source, and target-only test
+references are durable without creating model claims. Model source assessment
+remains an optional later action rather than a prerequisite for saving a useful
+leaf function.
 
 ## Experimental local evidence layer
 
-The production pipeline above remains unchanged. New analyzers are developed
-behind a language-neutral evidence graph before they are connected to it:
+The surface catalog above is the first bounded analyzer projection connected to
+normal persisted Go runs. Other analyzers are still developed behind a
+language-neutral evidence graph before they are connected to the product:
 
 - every relation has a `certainty` (`possible`, `static`, `observed`, ...)
 - every relation cites `provenance` (provider, version, operation, location)
@@ -185,13 +243,16 @@ explicit unknown.
 
 ## Non-goals for now
 
-- no AST parsing yet
+- no repository-wide AST semantic analysis; the deterministic survey uses only
+  a bounded syntax-only parse to confirm top-level `func main()` declarations
 - no gopls in the default repository-wide survey; it remains a lazy focused
   investigation adapter
 - no long-lived LSP client yet; the playground uses the experimental gopls CLI
 - no embeddings yet
-- no autonomous graph/diagram UI; the current browser report is static and M5
-  adds only the first user-selected onboarding drill-down
+- no repository-wide package dependency dump; the bounded architecture canvas
+  uses locally validated conceptual membership, component-specific structural
+  witnesses, and one selected saved FlowProof overlay, then expands exact
+  evidence lazily
 - no automatic huge repo upload
 - no autonomous code modification
 

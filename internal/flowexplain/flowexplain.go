@@ -71,6 +71,7 @@ type FlowVerification struct {
 var ignoredTerms = map[string]bool{
 	"flow": true, "path": true, "lifecycle": true, "request": true,
 	"response": true, "operation": true, "server": true, "client": true,
+	"main":    true,
 	"package": true, "module": true, "repo": true, "trigger": true,
 	"likely": true, "entrypoint": true, "the": true, "and": true,
 	"for": true, "from": true, "with": true, "this": true, "that": true,
@@ -245,6 +246,9 @@ func SelectFlowFiles(trackedFiles []string, aliasTerms []string, validSeeds []st
 		clean := filepath.Clean(f)
 		isSeed := seedSet[clean]
 		kind := detectKind(f)
+		if !isSeed && !isFlowSourceKind(kind) {
+			continue
+		}
 
 		score, reasons, matched := scoreFileLayered(f, kind, aliasTerms, isSeed)
 
@@ -274,6 +278,7 @@ func SelectFlowFiles(trackedFiles []string, aliasTerms []string, validSeeds []st
 		maxFiles = 50
 	}
 
+	selectedCandidates := make([]fileCandidate, 0, maxFiles)
 	for _, c := range candidates {
 		entry := scoredFile{
 			Path:         c.path,
@@ -291,6 +296,7 @@ func SelectFlowFiles(trackedFiles []string, aliasTerms []string, validSeeds []st
 		default:
 			files = append(files, entry)
 		}
+		selectedCandidates = append(selectedCandidates, c)
 
 		if len(files)+len(tests)+len(docs) >= maxFiles {
 			break
@@ -298,7 +304,7 @@ func SelectFlowFiles(trackedFiles []string, aliasTerms []string, validSeeds []st
 	}
 
 	if facts != nil {
-		pkgs, edges = selectPackagesAndEdges(candidates, facts, aliasTerms)
+		pkgs, edges = selectPackagesAndEdges(selectedCandidates, facts, aliasTerms)
 	}
 
 	// Ensure non-nil slices for JSON serialization
@@ -319,6 +325,15 @@ func SelectFlowFiles(trackedFiles []string, aliasTerms []string, validSeeds []st
 	}
 
 	return
+}
+
+func isFlowSourceKind(kind string) bool {
+	switch kind {
+	case "source", "test", "doc", "proto", "generated":
+		return true
+	default:
+		return false
+	}
 }
 
 func scoreFileLayered(path string, kind string, aliasTerms []string, isSeed bool) (int, []string, []string) {
@@ -354,7 +369,7 @@ func scoreFileLayered(path string, kind string, aliasTerms []string, isSeed bool
 
 	// Exact basename term match: highest
 	for _, t := range aliasTerms {
-		if base == t+".go" || base == t+".proto" || base == t {
+		if strings.TrimSuffix(base, filepath.Ext(base)) == t || base == t {
 			add(100, "exact basename match '"+t+"'", t)
 			break
 		}
@@ -362,7 +377,7 @@ func scoreFileLayered(path string, kind string, aliasTerms []string, isSeed bool
 
 	// Basename contains term
 	for _, t := range aliasTerms {
-		if len(t) >= 3 && strings.Contains(base, t) {
+		if len(t) >= 3 && containsPathToken(base, t) {
 			add(70, "filename contains term '"+t+"'", t)
 			break
 		}
@@ -389,7 +404,7 @@ func scoreFileLayered(path string, kind string, aliasTerms []string, isSeed bool
 
 	// Path contains term
 	for _, t := range aliasTerms {
-		if len(t) >= 3 && strings.Contains(lower, t) {
+		if len(t) >= 3 && containsPathToken(lower, t) {
 			already := false
 			for _, m := range matched {
 				if m == t {
@@ -455,6 +470,17 @@ func scoreFileLayered(path string, kind string, aliasTerms []string, isSeed bool
 	}
 
 	return score, reasons, unique(matched)
+}
+
+func containsPathToken(value, term string) bool {
+	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) {
+		if token == term {
+			return true
+		}
+	}
+	return false
 }
 
 func selectPackagesAndEdges(candidates []fileCandidate, facts *gofacts.Facts, aliasTerms []string) ([]string, []flowEdge) {
@@ -558,7 +584,8 @@ func detectKind(path string) string {
 	lower := strings.ToLower(path)
 	base := strings.ToLower(filepath.Base(path))
 
-	if strings.HasSuffix(base, "_test.go") {
+	if strings.HasSuffix(base, "_test.go") ||
+		(strings.HasSuffix(base, ".py") && (strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py"))) {
 		return "test"
 	}
 	if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".drawio") {
@@ -570,7 +597,7 @@ func detectKind(path string) string {
 	if strings.HasSuffix(base, ".pb.go") {
 		return "generated"
 	}
-	if strings.HasSuffix(lower, ".go") {
+	if strings.HasSuffix(lower, ".go") || strings.HasSuffix(lower, ".py") || strings.HasSuffix(lower, ".pyi") {
 		return "source"
 	}
 	if strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") ||

@@ -5,14 +5,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
-func openReport(path string) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("resolve report path: %w", err)
+func openReport(location string) error {
+	target := location
+	if !strings.HasPrefix(location, "http://") && !strings.HasPrefix(location, "https://") {
+		absPath, err := filepath.Abs(location)
+		if err != nil {
+			return fmt.Errorf("resolve report path: %w", err)
+		}
+		target = absPath
 	}
-	name, args, err := reportOpenCommand(runtime.GOOS, absPath)
+	name, args, err := reportOpenCommand(runtime.GOOS, target)
 	if err != nil {
 		return err
 	}

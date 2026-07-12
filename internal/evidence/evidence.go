@@ -221,8 +221,9 @@ type Location struct {
 // true for the selected runtime scenario. It is intentionally syntax evidence,
 // not a general path-condition solver.
 type Condition struct {
-	Expression string   `json:"expression,omitempty"`
-	Location   Location `json:"location"`
+	Expression        string   `json:"expression,omitempty"`
+	ExpressionOmitted bool     `json:"expression_omitted,omitempty"`
+	Location          Location `json:"location"`
 }
 
 type BuildContext struct {

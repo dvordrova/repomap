@@ -104,7 +104,6 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
-	packageID := testMemberID(MemberPackage, "repo")
 	tests := []struct {
 		name       string
 		proposal   Proposal
@@ -121,17 +120,6 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 				Name: "Repository", Components: []ProposedComponent{{Name: "Empty"}},
 			}}},
 			diagnostic: "proposal.invalid_component",
-		},
-		{
-			name: "duplicate membership",
-			proposal: Proposal{Version: ContractVersion, Subsystems: []ProposedSubsystem{{
-				Name: "Repository",
-				Components: []ProposedComponent{
-					{Name: "First", MemberIDs: []MemberID{packageID}},
-					{Name: "Second", MemberIDs: []MemberID{packageID}},
-				},
-			}}},
-			diagnostic: "proposal.duplicate_membership",
 		},
 	}
 
@@ -153,6 +141,36 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 				t.Fatalf("fallback members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 			}
 		})
+	}
+}
+
+func TestApplyKeepsFirstDuplicateMembershipAndPreservesRemainder(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	packageID := testMemberID(MemberPackage, "repo")
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Repository",
+			Components: []ProposedComponent{
+				{Name: "First", MemberIDs: []MemberID{packageID}},
+				{Name: "Repeated", MemberIDs: []MemberID{packageID}},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback {
+		t.Fatalf("duplicate placement caused fallback: %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_membership_dropped") ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.empty_membership_dropped") {
+		t.Fatalf("diagnostics = %#v, want duplicate and empty-component repairs", result.Diagnostics)
+	}
+	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
+		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 	}
 }
 
@@ -206,11 +224,6 @@ func TestApplyBoundsAndValidatesProposedMemberIDs(t *testing.T) {
 			memberIDs:  []MemberID{{Kind: MemberFile, Value: "bad\nmember"}},
 			diagnostic: "proposal.invalid_member_id",
 		},
-		{
-			name:       "too many components",
-			components: make([]ProposedComponent, maxComponents+1),
-			diagnostic: "proposal.invalid_component_count",
-		},
 	}
 	for index := range tests[0].memberIDs {
 		tests[0].memberIDs[index] = MemberID{Kind: MemberFile, Value: "unknown"}
@@ -240,6 +253,39 @@ func TestApplyBoundsAndValidatesProposedMemberIDs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestApplyBoundsExcessComponentsAndPreservesRemainder(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	packageID := testMemberID(MemberPackage, "repo")
+	components := make([]ProposedComponent, maxComponents+1)
+	for index := range components {
+		components[index] = ProposedComponent{
+			Name:      "Repeated placement",
+			MemberIDs: []MemberID{packageID},
+		}
+	}
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name:       "Repository",
+			Components: components,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback {
+		t.Fatalf("excess components caused fallback: %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.excess_components_dropped") {
+		t.Fatalf("diagnostics = %#v, want bounded component repair", result.Diagnostics)
+	}
+	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
+		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 	}
 }
 

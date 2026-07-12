@@ -1,0 +1,682 @@
+package report
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+)
+
+const (
+	surfaceCatalogFilename        = "trigger_catalog.json"
+	surfaceCoverageFilename       = "surface_coverage.json"
+	surfaceArtifactVersion        = 2
+	surfaceSemanticCatalogVersion = 1
+	maxSurfaceArtifactBytes       = 4 * 1024 * 1024
+	maxDiscoveredSurfaceTriggers  = 256
+	maxSurfaceCoverageItems       = 128
+	maxSurfaceNestedItems         = 32
+	maxSurfaceValueCandidates     = 16
+	maxDiscoveredSurfacePathBytes = 4096
+)
+
+// DiscoveredSurfaces is the bounded presentation projection of a paired
+// trigger catalog and coverage artifact. Repository roots are intentionally
+// absent: reports only retain repository-relative evidence locations.
+type DiscoveredSurfaces struct {
+	Version                   int                 `json:"version"`
+	AnalyzerVersion           string              `json:"analyzer_version"`
+	ScenarioID                string              `json:"scenario_id"`
+	ScopeStatement            string              `json:"scope_statement"`
+	TotalCount                int                 `json:"total_count"`
+	Truncated                 bool                `json:"truncated,omitempty"`
+	HTTPRouteCount            int                 `json:"http_route_count"`
+	DirectCount               int                 `json:"direct_count"`
+	WrapperCount              int                 `json:"wrapper_count"`
+	WorkerCount               int                 `json:"worker_count"`
+	AsyncTaskCount            int                 `json:"async_task_count"`
+	DynamicFrontierCount      int                 `json:"dynamic_frontier_count"`
+	PossibleRegistrationCount int                 `json:"possible_registration_count"`
+	UnresolvedHandlerCount    int                 `json:"unresolved_handler_count"`
+	PackagesInspected         int                 `json:"packages_inspected"`
+	FunctionsInspected        int                 `json:"functions_inspected"`
+	ConfiguredSeedsMatched    []string            `json:"configured_seeds_matched"`
+	Triggers                  []DiscoveredTrigger `json:"triggers"`
+	LoopSignals               []SurfaceLoopSignal `json:"loop_signals"`
+	DynamicFrontiers          []SurfaceFrontier   `json:"dynamic_frontiers"`
+	UnsupportedDispatch       []SurfaceFrontier   `json:"unsupported_dispatch_mechanisms"`
+	BudgetsReached            []string            `json:"budgets_reached"`
+}
+
+// DiscoveredTrigger keeps the catalog's distinct semantic roles distinct.
+// In particular, middleware, wrappers, evidence, and unresolved frontiers are
+// not flattened into a handler or an invented execution chain.
+type DiscoveredTrigger struct {
+	ID                string            `json:"id"`
+	ProvisionalID     bool              `json:"provisional_id"`
+	Kind              string            `json:"kind"`
+	Identity          SurfaceIdentity   `json:"identity"`
+	Transport         string            `json:"transport"`
+	Framework         string            `json:"framework"`
+	ProcessEntrypoint SurfaceSymbol     `json:"process_entrypoint"`
+	Dispatcher        SurfaceValue      `json:"dispatcher"`
+	RegistrationSite  *SurfaceLocation  `json:"registration_site,omitempty"`
+	ServerStartSite   *SurfaceLocation  `json:"server_start_site,omitempty"`
+	Handler           SurfaceValue      `json:"handler"`
+	Middleware        []SurfaceValue    `json:"middleware"`
+	WrapperChain      []SurfaceWrapper  `json:"wrapper_chain"`
+	FinalSeed         string            `json:"final_seed"`
+	DiscoveryBasis    string            `json:"discovery_basis"`
+	Certainty         string            `json:"certainty"`
+	Resolution        string            `json:"resolution"`
+	Evidence          []SurfaceEvidence `json:"evidence"`
+	DynamicFrontier   []SurfaceFrontier `json:"dynamic_frontier"`
+	Status            string            `json:"status"`
+}
+
+type SurfaceIdentity struct {
+	Method string       `json:"method,omitempty"`
+	Path   SurfaceValue `json:"path"`
+	Name   string       `json:"name,omitempty"`
+}
+
+type SurfaceValue struct {
+	Kind       string   `json:"kind"`
+	Text       string   `json:"text,omitempty"`
+	Known      bool     `json:"known"`
+	Candidates []string `json:"candidates"`
+}
+
+type SurfaceSymbol struct {
+	ID       string           `json:"id"`
+	Package  string           `json:"package"`
+	Name     string           `json:"name"`
+	Location *SurfaceLocation `json:"location,omitempty"`
+}
+
+type SurfaceWrapper struct {
+	Symbol   SurfaceSymbol    `json:"symbol"`
+	Callsite *SurfaceLocation `json:"callsite,omitempty"`
+	Origin   string           `json:"origin"`
+}
+
+type SurfaceLocation struct {
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Column int    `json:"column,omitempty"`
+}
+
+type SurfaceEvidence struct {
+	ID       string           `json:"id"`
+	Kind     string           `json:"kind"`
+	Location *SurfaceLocation `json:"location,omitempty"`
+	Detail   string           `json:"detail"`
+}
+
+type SurfaceFrontier struct {
+	Kind     string           `json:"kind"`
+	Detail   string           `json:"detail"`
+	Location *SurfaceLocation `json:"location,omitempty"`
+}
+
+type SurfaceLoopSignal struct {
+	Kind         string           `json:"kind"`
+	FunctionID   string           `json:"function_id"`
+	Location     *SurfaceLocation `json:"location,omitempty"`
+	TerminalSeed string           `json:"terminal_seed,omitempty"`
+	Detail       string           `json:"detail"`
+	Certainty    string           `json:"certainty"`
+}
+
+type rawSurfaceCatalog struct {
+	Version         int                  `json:"version"`
+	AnalyzerVersion string               `json:"analyzer_version"`
+	CatalogVersion  int                  `json:"catalog_version"`
+	Repository      rawSurfaceRepository `json:"repository"`
+	Scenario        rawSurfaceScenario   `json:"scenario"`
+	Triggers        []rawSurfaceTrigger  `json:"triggers"`
+}
+
+type rawSurfaceCoverage struct {
+	Version                int                    `json:"version"`
+	Repository             rawSurfaceRepository   `json:"repository"`
+	Scenario               rawSurfaceScenario     `json:"scenario"`
+	DirectTriggers         int                    `json:"direct_triggers"`
+	WrapperDerivedTriggers int                    `json:"wrapper_derived_triggers"`
+	UnresolvedHandlers     int                    `json:"unresolved_handlers"`
+	PossibleRegistrations  int                    `json:"possible_registrations"`
+	Workers                int                    `json:"workers"`
+	AsyncTasks             int                    `json:"async_tasks"`
+	ConfiguredSeedsMatched []string               `json:"configured_seeds_matched"`
+	PackagesInspected      int                    `json:"packages_inspected"`
+	FunctionsInspected     int                    `json:"functions_inspected"`
+	LoopSignals            []rawSurfaceLoopSignal `json:"loop_signals"`
+	DynamicFrontiers       []rawSurfaceFrontier   `json:"dynamic_frontiers"`
+	UnsupportedDispatch    []rawSurfaceFrontier   `json:"unsupported_dispatch_mechanisms"`
+	BudgetsReached         []string               `json:"budgets_reached"`
+	ScopeStatement         string                 `json:"scope_statement"`
+}
+
+type rawSurfaceRepository struct {
+	Root       string `json:"root"`
+	ModulePath string `json:"module_path"`
+}
+
+type rawSurfaceScenario struct {
+	ID      string   `json:"id"`
+	GOOS    string   `json:"goos"`
+	GOARCH  string   `json:"goarch"`
+	Tags    []string `json:"tags"`
+	GoFlags string   `json:"go_flags"`
+}
+
+type rawSurfaceTrigger struct {
+	ID                string               `json:"id"`
+	ProvisionalID     bool                 `json:"provisional_id"`
+	Kind              string               `json:"kind"`
+	Identity          rawSurfaceIdentity   `json:"identity"`
+	Transport         string               `json:"transport"`
+	Framework         string               `json:"framework"`
+	ProcessEntrypoint rawSurfaceSymbol     `json:"process_entrypoint"`
+	Dispatcher        rawSurfaceValue      `json:"dispatcher"`
+	RegistrationSite  rawSurfaceLocation   `json:"registration_site"`
+	ServerStartSite   *rawSurfaceLocation  `json:"server_start_site"`
+	Handler           rawSurfaceValue      `json:"handler"`
+	Middleware        []rawSurfaceValue    `json:"middleware"`
+	WrapperChain      []rawSurfaceWrapper  `json:"wrapper_chain"`
+	FinalSeed         string               `json:"final_seed"`
+	DiscoveryBasis    string               `json:"discovery_basis"`
+	Certainty         string               `json:"certainty"`
+	Resolution        string               `json:"resolution"`
+	ScenarioID        string               `json:"scenario_id"`
+	Evidence          []rawSurfaceEvidence `json:"evidence"`
+	DynamicFrontier   []rawSurfaceFrontier `json:"dynamic_frontier"`
+	Status            string               `json:"status"`
+}
+
+type rawSurfaceIdentity struct {
+	Method string          `json:"method"`
+	Path   rawSurfaceValue `json:"path"`
+	Name   string          `json:"name"`
+}
+
+type rawSurfaceValue struct {
+	Kind       string   `json:"kind"`
+	Text       string   `json:"text"`
+	Known      bool     `json:"known"`
+	Candidates []string `json:"candidates"`
+}
+
+type rawSurfaceSymbol struct {
+	ID       string             `json:"id"`
+	Package  string             `json:"package"`
+	Name     string             `json:"name"`
+	Location rawSurfaceLocation `json:"location"`
+}
+
+type rawSurfaceWrapper struct {
+	Symbol   rawSurfaceSymbol   `json:"symbol"`
+	Callsite rawSurfaceLocation `json:"callsite"`
+	Origin   string             `json:"origin"`
+}
+
+type rawSurfaceLocation struct {
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
+}
+
+type rawSurfaceEvidence struct {
+	ID       string             `json:"id"`
+	Kind     string             `json:"kind"`
+	Location rawSurfaceLocation `json:"location"`
+	Detail   string             `json:"detail"`
+}
+
+type rawSurfaceFrontier struct {
+	Kind     string              `json:"kind"`
+	Detail   string              `json:"detail"`
+	Location *rawSurfaceLocation `json:"location"`
+}
+
+type rawSurfaceLoopSignal struct {
+	Kind         string             `json:"kind"`
+	FunctionID   string             `json:"function_id"`
+	Location     rawSurfaceLocation `json:"location"`
+	TerminalSeed string             `json:"terminal_seed"`
+	Detail       string             `json:"detail"`
+	Certainty    string             `json:"certainty"`
+}
+
+// parseDiscoveredSurfaces loads a complete v2 catalog/coverage pair. Missing
+// artifacts are a valid legacy-run outcome. Any present but unusable pair is
+// omitted and reported through one bounded warning.
+func parseDiscoveredSurfaces(runDir string) (*DiscoveredSurfaces, []string) {
+	catalogPath := filepath.Join(runDir, surfaceCatalogFilename)
+	coveragePath := filepath.Join(runDir, surfaceCoverageFilename)
+
+	hasCatalog, catalogWarning := surfaceArtifactExists(catalogPath, surfaceCatalogFilename)
+	hasCoverage, coverageWarning := surfaceArtifactExists(coveragePath, surfaceCoverageFilename)
+	if catalogWarning != "" {
+		return nil, []string{catalogWarning}
+	}
+	if coverageWarning != "" {
+		return nil, []string{coverageWarning}
+	}
+	if !hasCatalog && !hasCoverage {
+		return nil, nil
+	}
+	if !hasCatalog {
+		return nil, []string{"discovered surfaces: trigger_catalog.json is missing from an incomplete artifact pair"}
+	}
+	if !hasCoverage {
+		return nil, []string{"discovered surfaces: surface_coverage.json is missing from an incomplete artifact pair"}
+	}
+
+	var catalog rawSurfaceCatalog
+	if warning := readSurfaceArtifact(catalogPath, surfaceCatalogFilename, &catalog); warning != "" {
+		return nil, []string{warning}
+	}
+	var coverage rawSurfaceCoverage
+	if warning := readSurfaceArtifact(coveragePath, surfaceCoverageFilename, &coverage); warning != "" {
+		return nil, []string{warning}
+	}
+	if warning := validateSurfaceArtifactPair(catalog, coverage); warning != "" {
+		return nil, []string{warning}
+	}
+
+	return projectDiscoveredSurfaces(catalog, coverage), nil
+}
+
+func surfaceArtifactExists(path, name string) (bool, string) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, ""
+		}
+		return true, fmt.Sprintf("discovered surfaces: cannot inspect %s", name)
+	}
+	if !info.Mode().IsRegular() {
+		return true, fmt.Sprintf("discovered surfaces: %s is not a regular file", name)
+	}
+	return true, ""
+}
+
+func readSurfaceArtifact(path, name string, target any) string {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Sprintf("discovered surfaces: cannot read %s", name)
+	}
+	if info.Size() < 0 || info.Size() > maxSurfaceArtifactBytes {
+		return fmt.Sprintf(
+			"discovered surfaces: %s exceeds the %d-byte limit",
+			name,
+			maxSurfaceArtifactBytes,
+		)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Sprintf("discovered surfaces: cannot read %s", name)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxSurfaceArtifactBytes+1))
+	if err != nil {
+		return fmt.Sprintf("discovered surfaces: cannot read %s", name)
+	}
+	if len(data) > maxSurfaceArtifactBytes {
+		return fmt.Sprintf(
+			"discovered surfaces: %s exceeds the %d-byte limit",
+			name,
+			maxSurfaceArtifactBytes,
+		)
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		return fmt.Sprintf("discovered surfaces: %s contains invalid json", name)
+	}
+	return ""
+}
+
+func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceCoverage) string {
+	if catalog.Version != surfaceArtifactVersion {
+		return fmt.Sprintf(
+			"discovered surfaces: unsupported %s version %d (want %d)",
+			surfaceCatalogFilename,
+			catalog.Version,
+			surfaceArtifactVersion,
+		)
+	}
+	if coverage.Version != surfaceArtifactVersion {
+		return fmt.Sprintf(
+			"discovered surfaces: unsupported %s version %d (want %d)",
+			surfaceCoverageFilename,
+			coverage.Version,
+			surfaceArtifactVersion,
+		)
+	}
+	if catalog.CatalogVersion != surfaceSemanticCatalogVersion {
+		return fmt.Sprintf(
+			"discovered surfaces: unsupported terminal catalog version %d (want %d)",
+			catalog.CatalogVersion,
+			surfaceSemanticCatalogVersion,
+		)
+	}
+	if catalog.Repository.Root == "" || coverage.Repository.Root == "" ||
+		catalog.Repository != coverage.Repository {
+		return "discovered surfaces: catalog and coverage repository identities do not match"
+	}
+	if !surfaceScenariosMatch(catalog.Scenario, coverage.Scenario) {
+		return "discovered surfaces: catalog and coverage scenarios do not match"
+	}
+	if catalog.Scenario.ID == "" {
+		return "discovered surfaces: catalog and coverage scenario id is missing"
+	}
+
+	seenIDs := make(map[string]struct{}, len(catalog.Triggers))
+	for _, trigger := range catalog.Triggers {
+		if strings.TrimSpace(trigger.ID) == "" {
+			return "discovered surfaces: trigger id is missing"
+		}
+		if _, duplicate := seenIDs[trigger.ID]; duplicate {
+			return "discovered surfaces: trigger ids are not unique"
+		}
+		seenIDs[trigger.ID] = struct{}{}
+		if trigger.ScenarioID != catalog.Scenario.ID {
+			return "discovered surfaces: a trigger scenario does not match the catalog scenario"
+		}
+	}
+	return ""
+}
+
+func surfaceScenariosMatch(left, right rawSurfaceScenario) bool {
+	return left.ID == right.ID &&
+		left.GOOS == right.GOOS &&
+		left.GOARCH == right.GOARCH &&
+		left.GoFlags == right.GoFlags &&
+		slices.Equal(left.Tags, right.Tags)
+}
+
+func projectDiscoveredSurfaces(
+	catalog rawSurfaceCatalog,
+	coverage rawSurfaceCoverage,
+) *DiscoveredSurfaces {
+	uniqueDynamicFrontiers := uniqueRawSurfaceFrontiers(coverage.DynamicFrontiers)
+	rawTriggers := slices.Clone(catalog.Triggers)
+	sort.SliceStable(rawTriggers, func(i, j int) bool {
+		return rawTriggers[i].ID < rawTriggers[j].ID
+	})
+	totalCount := len(rawTriggers)
+	if len(rawTriggers) > maxDiscoveredSurfaceTriggers {
+		rawTriggers = rawTriggers[:maxDiscoveredSurfaceTriggers]
+	}
+
+	triggers := make([]DiscoveredTrigger, 0, len(rawTriggers))
+	for _, trigger := range rawTriggers {
+		triggers = append(triggers, projectDiscoveredTrigger(trigger))
+	}
+	httpRouteCount := 0
+	for _, trigger := range catalog.Triggers {
+		if trigger.Kind == "http_route" {
+			httpRouteCount++
+		}
+	}
+	return &DiscoveredSurfaces{
+		Version:                   catalog.Version,
+		AnalyzerVersion:           catalog.AnalyzerVersion,
+		ScenarioID:                catalog.Scenario.ID,
+		ScopeStatement:            coverage.ScopeStatement,
+		TotalCount:                totalCount,
+		Truncated:                 totalCount > len(triggers),
+		HTTPRouteCount:            httpRouteCount,
+		DirectCount:               coverage.DirectTriggers,
+		WrapperCount:              coverage.WrapperDerivedTriggers,
+		WorkerCount:               coverage.Workers,
+		AsyncTaskCount:            coverage.AsyncTasks,
+		DynamicFrontierCount:      len(uniqueDynamicFrontiers),
+		PossibleRegistrationCount: coverage.PossibleRegistrations,
+		UnresolvedHandlerCount:    coverage.UnresolvedHandlers,
+		PackagesInspected:         coverage.PackagesInspected,
+		FunctionsInspected:        coverage.FunctionsInspected,
+		ConfiguredSeedsMatched:    boundedSurfaceItems(coverage.ConfiguredSeedsMatched, maxSurfaceCoverageItems),
+		Triggers:                  triggers,
+		LoopSignals:               projectSurfaceLoopSignals(boundedSurfaceItems(coverage.LoopSignals, maxSurfaceCoverageItems)),
+		DynamicFrontiers: projectSurfaceFrontiers(boundedSurfaceItems(
+			uniqueDynamicFrontiers,
+			maxSurfaceCoverageItems,
+		)),
+		UnsupportedDispatch: projectSurfaceFrontiers(boundedSurfaceItems(
+			uniqueRawSurfaceFrontiers(coverage.UnsupportedDispatch),
+			maxSurfaceCoverageItems,
+		)),
+		BudgetsReached: boundedSurfaceItems(uniqueSurfaceStrings(coverage.BudgetsReached), maxSurfaceCoverageItems),
+	}
+}
+
+func uniqueRawSurfaceFrontiers(frontiers []rawSurfaceFrontier) []rawSurfaceFrontier {
+	seen := make(map[string]struct{}, len(frontiers))
+	result := make([]rawSurfaceFrontier, 0, len(frontiers))
+	for _, frontier := range frontiers {
+		location := ""
+		if frontier.Location != nil {
+			location = fmt.Sprintf(
+				"%s:%d:%d",
+				frontier.Location.Path,
+				frontier.Location.Line,
+				frontier.Location.Column,
+			)
+		}
+		key := frontier.Kind + "\x00" + frontier.Detail + "\x00" + location
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, frontier)
+	}
+	return result
+}
+
+func uniqueSurfaceStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
+	return DiscoveredTrigger{
+		ID:            trigger.ID,
+		ProvisionalID: trigger.ProvisionalID,
+		Kind:          trigger.Kind,
+		Identity: SurfaceIdentity{
+			Method: trigger.Identity.Method,
+			Path:   projectSurfaceValue(trigger.Identity.Path),
+			Name:   trigger.Identity.Name,
+		},
+		Transport:         trigger.Transport,
+		Framework:         trigger.Framework,
+		ProcessEntrypoint: projectSurfaceSymbol(trigger.ProcessEntrypoint),
+		Dispatcher:        projectSurfaceValue(trigger.Dispatcher),
+		RegistrationSite:  projectSurfaceLocation(trigger.RegistrationSite),
+		ServerStartSite:   projectOptionalSurfaceLocation(trigger.ServerStartSite),
+		Handler:           projectSurfaceValue(trigger.Handler),
+		Middleware:        projectSurfaceValues(boundedSurfaceItems(trigger.Middleware, maxSurfaceNestedItems)),
+		WrapperChain:      projectSurfaceWrappers(boundedSurfaceItems(trigger.WrapperChain, maxSurfaceNestedItems)),
+		FinalSeed:         trigger.FinalSeed,
+		DiscoveryBasis:    trigger.DiscoveryBasis,
+		Certainty:         trigger.Certainty,
+		Resolution:        trigger.Resolution,
+		Evidence:          projectSurfaceEvidence(boundedSurfaceItems(trigger.Evidence, maxSurfaceNestedItems)),
+		DynamicFrontier:   projectSurfaceFrontiers(boundedSurfaceItems(trigger.DynamicFrontier, maxSurfaceNestedItems)),
+		Status:            trigger.Status,
+	}
+}
+
+func projectSurfaceValue(value rawSurfaceValue) SurfaceValue {
+	return SurfaceValue{
+		Kind:       value.Kind,
+		Text:       value.Text,
+		Known:      value.Known,
+		Candidates: boundedSurfaceItems(value.Candidates, maxSurfaceValueCandidates),
+	}
+}
+
+func boundedSurfaceItems[T any](values []T, limit int) []T {
+	if len(values) > limit {
+		values = values[:limit]
+	}
+	return append([]T(nil), values...)
+}
+
+func projectSurfaceValues(values []rawSurfaceValue) []SurfaceValue {
+	result := make([]SurfaceValue, 0, len(values))
+	for _, value := range values {
+		result = append(result, projectSurfaceValue(value))
+	}
+	return result
+}
+
+func projectSurfaceSymbol(symbol rawSurfaceSymbol) SurfaceSymbol {
+	return SurfaceSymbol{
+		ID:       symbol.ID,
+		Package:  symbol.Package,
+		Name:     symbol.Name,
+		Location: projectSurfaceLocation(symbol.Location),
+	}
+}
+
+func projectSurfaceWrappers(wrappers []rawSurfaceWrapper) []SurfaceWrapper {
+	result := make([]SurfaceWrapper, 0, len(wrappers))
+	for _, wrapper := range wrappers {
+		result = append(result, SurfaceWrapper{
+			Symbol:   projectSurfaceSymbol(wrapper.Symbol),
+			Callsite: projectSurfaceLocation(wrapper.Callsite),
+			Origin:   wrapper.Origin,
+		})
+	}
+	return result
+}
+
+func projectSurfaceEvidence(evidence []rawSurfaceEvidence) []SurfaceEvidence {
+	result := make([]SurfaceEvidence, 0, len(evidence))
+	for _, item := range evidence {
+		result = append(result, SurfaceEvidence{
+			ID:       item.ID,
+			Kind:     item.Kind,
+			Location: projectSurfaceLocation(item.Location),
+			Detail:   item.Detail,
+		})
+	}
+	return result
+}
+
+func projectSurfaceFrontiers(frontiers []rawSurfaceFrontier) []SurfaceFrontier {
+	result := make([]SurfaceFrontier, 0, len(frontiers))
+	for _, frontier := range frontiers {
+		result = append(result, SurfaceFrontier{
+			Kind:     frontier.Kind,
+			Detail:   frontier.Detail,
+			Location: projectOptionalSurfaceLocation(frontier.Location),
+		})
+	}
+	return result
+}
+
+func projectSurfaceLoopSignals(signals []rawSurfaceLoopSignal) []SurfaceLoopSignal {
+	result := make([]SurfaceLoopSignal, 0, len(signals))
+	for _, signal := range signals {
+		result = append(result, SurfaceLoopSignal{
+			Kind:         signal.Kind,
+			FunctionID:   signal.FunctionID,
+			Location:     projectSurfaceLocation(signal.Location),
+			TerminalSeed: signal.TerminalSeed,
+			Detail:       signal.Detail,
+			Certainty:    signal.Certainty,
+		})
+	}
+	return result
+}
+
+func projectOptionalSurfaceLocation(location *rawSurfaceLocation) *SurfaceLocation {
+	if location == nil {
+		return nil
+	}
+	return projectSurfaceLocation(*location)
+}
+
+func projectSurfaceLocation(location rawSurfaceLocation) *SurfaceLocation {
+	if location.Line <= 0 || location.Column < 0 || !validDiscoveredSurfacePath(location.Path) {
+		return nil
+	}
+	return &SurfaceLocation{
+		Path:   location.Path,
+		Line:   location.Line,
+		Column: location.Column,
+	}
+}
+
+func validDiscoveredSurfacePath(value string) bool {
+	return len(value) <= maxDiscoveredSurfacePathBytes &&
+		value != "." &&
+		fs.ValidPath(value) &&
+		!strings.ContainsRune(value, '\\') &&
+		strings.HasSuffix(value, ".go")
+}
+
+// collectDiscoveredSurfacePaths adds every retained, exact surface evidence
+// path in deterministic order. Invalid and absolute locations have already
+// been removed by the projection boundary.
+func collectDiscoveredSurfacePaths(surfaces *DiscoveredSurfaces, add func(string)) {
+	if surfaces == nil || add == nil {
+		return
+	}
+	paths := make(map[string]struct{})
+	addLocation := func(location *SurfaceLocation) {
+		if location != nil {
+			paths[location.Path] = struct{}{}
+		}
+	}
+	for _, trigger := range surfaces.Triggers {
+		addLocation(trigger.ProcessEntrypoint.Location)
+		addLocation(trigger.RegistrationSite)
+		addLocation(trigger.ServerStartSite)
+		for _, wrapper := range trigger.WrapperChain {
+			addLocation(wrapper.Symbol.Location)
+			addLocation(wrapper.Callsite)
+		}
+		for _, item := range trigger.Evidence {
+			addLocation(item.Location)
+		}
+		for _, frontier := range trigger.DynamicFrontier {
+			addLocation(frontier.Location)
+		}
+	}
+	for _, signal := range surfaces.LoopSignals {
+		addLocation(signal.Location)
+	}
+	for _, frontier := range surfaces.DynamicFrontiers {
+		addLocation(frontier.Location)
+	}
+	for _, frontier := range surfaces.UnsupportedDispatch {
+		addLocation(frontier.Location)
+	}
+
+	ordered := make([]string, 0, len(paths))
+	for value := range paths {
+		ordered = append(ordered, value)
+	}
+	sort.Strings(ordered)
+	for _, value := range ordered {
+		add(value)
+	}
+}

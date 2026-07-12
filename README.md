@@ -1,8 +1,11 @@
 # repomap
 
-`repomap` is a local-first Go repository investigation CLI. It builds bounded,
+`repomap` is a local-first repository investigation CLI. It builds bounded,
 inspectable facts locally, asks an OpenAI-compatible model for useful directions,
 and keeps model hypotheses separate from source, test, and runtime evidence.
+Go has the deepest deterministic analysis; Python repositories can already use
+the same one-command orientation journey with a language-neutral tracked-file
+bundle.
 
 The current product path orients you in an unfamiliar repository and can expand
 selected runtime/event directions. Source-grounded symbol investigation,
@@ -21,7 +24,8 @@ go build -o ./repomap ./cmd/repomap
 repomap requires Go 1.24 or newer. Go facts use the installed toolchain, the
 target repository's build files, and the user's normal Go environment (including
 an internal `GOPROXY`). `go list -e` keeps partial facts when some packages are
-unavailable.
+unavailable. Python orientation does not require Pyright; the optional focused
+Pyright playground is documented in [PYTHON.md](PYTHON.md).
 
 ## Configure a model
 
@@ -35,9 +39,19 @@ export DEEPSEEK_API_KEY=...
 ```
 
 The normal human run shows local-context and outbound-request byte counts,
-writes a report under the OS user cache, and opens that report in the browser.
-Run `./repomap` with no repository argument to analyse the current directory;
-use `--no-open` when the browser handoff is not wanted.
+writes a report under the OS user cache, starts a loopback-only HTTP server on a
+random port, and opens that report in the browser. Run `./repomap` with no
+repository argument to analyse the current directory. The server stays up so
+file references can open in VS Code; press Ctrl-C when finished. Use `--no-open`
+to keep the browser closed, `--port` to choose a port, or `--no-serve` for a
+standalone static report.
+
+Persisted Go runs also discover a bounded set of configured HTTP
+registrations, async starts, and worker-loop registrations locally. The report
+shows them in a separate **Discovered surfaces** section; they are static
+registration evidence, not observed execution or completed flows. Use
+`--discover-surfaces=false` to disable this extra local stage while measuring
+its cost. Non-Go, `--no-debug`, and request-preview runs skip it.
 
 For a company or other compatible model, use a full OpenAI-compatible
 `chat/completions` URL:
@@ -98,6 +112,9 @@ calls:
 ```bash
 ./repomap
 ./repomap ../etcd
+
+cd /path/to/python-repository
+repomap
 ```
 
 The browser starts with the project purpose, system map, first files, important
@@ -106,6 +123,21 @@ direction opens a compact local evidence neighborhood (ranked files, tests,
 packages, and import edges) prepared without another API call. The report also
 shows compact-context bytes, the complete external request size, provider
 latency, and the model used.
+
+When served by repomap, grounded file paths are visibly clickable and open the
+corresponding repository file (including a cited line when present) through the
+`code` CLI. The header can switch between previously saved reports. To revisit
+the latest saved run without analysing the repository again:
+
+```bash
+repomap serve
+repomap serve --run 20260711-200000-pebble --port 8080
+```
+
+The editor action is local-only: the server binds to `127.0.0.1`, accepts only
+validated repository-relative regular files, and invokes `code --goto` without
+a shell. The static `report.html` remains readable when no server is running;
+editor links and saved-run selection are then hidden.
 
 Each run includes `onboarding-feedback.md` beside the report. It is never
 overwritten when the report is regenerated and gives the evaluating engineer a
@@ -124,8 +156,9 @@ Run local extraction without model calls:
 ./repomap ../etcd --offline
 ```
 
-`--offline` is a model/privacy boundary, not an air-gap switch: the Go tool may
-use the module proxy or toolchain source already configured by the engineer.
+`--offline` is a model/privacy boundary, not an air-gap switch: when analysing a
+Go repository, the Go tool may use the module proxy or toolchain source already
+configured by the engineer.
 
 Debug artifacts default to the OS user-cache directory, not the analysed
 repository. Use `--no-debug` to retain nothing or `--debug-dir` to choose a
@@ -133,7 +166,8 @@ trusted location.
 
 ## What can be trusted
 
-- tracked-file survey, Go package facts, and bounded source cards are local;
+- the tracked-file survey is local; Go package facts and explicitly requested
+  bounded source/static-analysis cards are local too;
 - structured model path fields and detectable path-like evidence mentions are
   checked against the exact context allowlist before presentation; remaining
   free-form prose is still model interpretation;
@@ -171,7 +205,7 @@ distinguishes that target from what already works and from later feature work.
 ./scripts/friend_check.sh
 ./scripts/friend_artifact_check.sh PATH_TO_RUN_DIR
 # Calibrate the atomic generic namespace against the DeepSeek reference:
-./scripts/with_deepseek_generic_config.sh go run ./cmd/repomap doctor llm --check
+make generic-deepseek-doctor
 # Before a new live baseline, after choosing a linked source-capable symbol:
 ./scripts/quality_preflight.sh LABEL PATH_TO_REPO EXACT_SYMBOL
 ```

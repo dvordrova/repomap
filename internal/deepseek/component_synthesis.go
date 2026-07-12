@@ -2,7 +2,9 @@ package deepseek
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -14,7 +16,11 @@ func (c *Client) ComponentSynthesisPromptJSON(prompt componentmap.SynthesisPromp
 	if err := validateComponentSynthesisPrompt(prompt); err != nil {
 		return nil, err
 	}
-	return c.FlowExplainPromptJSON(prompt.User, prompt.System)
+	request := c.flowExplainRequest(prompt.User, prompt.System, true)
+	if isOfficialDeepSeekEndpoint(c.Endpoint) {
+		request.Thinking = &thinkingConfig{Type: "disabled"}
+	}
+	return json.Marshal(request)
 }
 
 // SynthesizeComponentLandscape asks the provider for one bounded conceptual
@@ -54,4 +60,9 @@ func validateComponentSynthesisPrompt(prompt componentmap.SynthesisPrompt) error
 		return fmt.Errorf("llm: component synthesis user prompt is required")
 	}
 	return nil
+}
+
+func isOfficialDeepSeekEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	return err == nil && strings.EqualFold(parsed.Hostname(), "api.deepseek.com")
 }

@@ -3,9 +3,12 @@ package orient
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
@@ -308,7 +311,7 @@ func TestParseOrientationRepairsSafeDriftWithWarnings(t *testing.T) {
 	report, err := parseOrientation([]byte(`{
 		"project_guess":"service",
 		"confidence":0.7,
-		"high_level_map":[{"name":"runtime","evidence":["internal/runtime/*"],"why_it_matters":"core"}],
+		"high_level_map":[{"name":"runtime","role":"made_up","evidence":["internal/runtime/*"],"why_it_matters":"core"}],
 		"first_files_to_open":["server/main.go"],
 		"candidate_flows":[{
 			"name":"startup",
@@ -332,10 +335,13 @@ func TestParseOrientationRepairsSafeDriftWithWarnings(t *testing.T) {
 		t.Fatal(err)
 	}
 	joinedWarnings := strings.Join(report.Warnings, "\n")
-	for _, want := range []string{"first_files_to_open", "unverified_paths", "extra_provider_field", "wildcard evidence"} {
+	for _, want := range []string{"first_files_to_open", "unverified_paths", "extra_provider_field", "wildcard evidence", "high_level_map[0].role"} {
 		if !strings.Contains(joinedWarnings, want) {
 			t.Fatalf("warnings = %q, want %q", report.Warnings, want)
 		}
+	}
+	if report.HighLevelMap[0].Role != componentmap.RoleUnknown {
+		t.Fatalf("role = %q, want unknown", report.HighLevelMap[0].Role)
 	}
 }
 
@@ -373,7 +379,7 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	}
 	allowed := []string{"cmd/server/main.go", "config/config.go", "config/reload.go"}
 
-	normalizeOrientationGrounding(&report, allowed, nil)
+	normalizeOrientationGrounding(&report, allowed, nil, nil)
 
 	if got := report.CandidateFlows[0].LikelyEntrypoint; got != "cmd/server/main.go" {
 		t.Fatalf("likely_entrypoint = %q, want allowed fallback", got)
@@ -393,6 +399,96 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	}
 	if err := validateOrientation(report, allowed, nil); err != nil {
 		t.Fatalf("normalized orientation should validate: %v", err)
+	}
+}
+
+func TestNormalizeOrientationGroundingCanonicalizesVerifiedSourceLines(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "storage engine",
+		Confidence:   0.8,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:             "batch commit",
+			Trigger:          "Batch.Commit",
+			LikelyEntrypoint: "batch.go",
+			LikelyFiles:      []string{"batch.go"},
+			Evidence: []string{
+				"batch.go contains fsync call at line 395",
+				"batch.go defines DeleteRange at line 999",
+			},
+			Confidence: 0.7,
+		}},
+	}
+	normalizeOrientationGrounding(
+		&report,
+		[]string{"batch.go"},
+		nil,
+		[]evidence.Location{{Path: "batch.go", Line: 395}},
+	)
+
+	want := []string{"batch.go:395 contains fsync call", "batch.go defines DeleteRange"}
+	if got := report.CandidateFlows[0].Evidence; !slices.Equal(got, want) {
+		t.Fatalf("canonical evidence = %q, want %q", got, want)
+	}
+	if !strings.Contains(strings.Join(report.Warnings, "\n"), "removed ungrounded line claim") {
+		t.Fatalf("warnings = %q", report.Warnings)
+	}
+}
+
+func TestNormalizeOrientationGroundingDropsDirectoryFromLikelyFilesWithoutFailingRun(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "storage engine",
+		Confidence:   0.8,
+		CandidateFlows: []flowexplain.CandidateFlow{
+			{
+				Name:             "batch commit",
+				Trigger:          "Batch.Commit",
+				LikelyEntrypoint: "batch.go",
+				LikelyFiles:      []string{"batch.go", "internal/compact"},
+				Evidence:         []string{"batch.go"},
+				Confidence:       0.7,
+			},
+			{
+				Name:             "compaction",
+				Trigger:          "background scheduler",
+				LikelyEntrypoint: "internal/compact",
+				LikelyFiles:      []string{"internal/compact"},
+				Evidence:         []string{"internal/compact.go"},
+				Confidence:       0.6,
+			},
+			{
+				Name:             "ungrounded",
+				Trigger:          "unknown",
+				LikelyEntrypoint: "invented/package",
+				LikelyFiles:      []string{"invented/package"},
+				Evidence:         []string{"model guess without a file"},
+				Confidence:       0.2,
+			},
+		},
+	}
+	allowed := []string{"batch.go", "internal/compact.go"}
+	normalizeOrientationGrounding(&report, allowed, nil, nil)
+
+	if len(report.CandidateFlows) != 2 {
+		t.Fatalf("candidate flows = %#v", report.CandidateFlows)
+	}
+	if got := report.CandidateFlows[0].LikelyFiles; !slices.Equal(got, []string{"batch.go"}) {
+		t.Fatalf("batch likely files = %q", got)
+	}
+	if flow := report.CandidateFlows[1]; flow.LikelyEntrypoint != "internal/compact.go" ||
+		!slices.Equal(flow.LikelyFiles, []string{"internal/compact.go"}) {
+		t.Fatalf("recovered compaction flow = %#v", flow)
+	}
+	warnings := strings.Join(report.Warnings, "\n")
+	if !strings.Contains(warnings, "dropped ungrounded candidate_flows[0].likely_files[1]") ||
+		!strings.Contains(warnings, "dropped candidate_flows[2]") {
+		t.Fatalf("warnings = %q", report.Warnings)
+	}
+	if err := validateOrientation(report, allowed, nil); err != nil {
+		t.Fatalf("normalized report should remain usable: %v", err)
 	}
 }
 

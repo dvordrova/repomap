@@ -10,8 +10,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/evidenceref"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 type snapshotJSON struct {
@@ -19,7 +23,9 @@ type snapshotJSON struct {
 }
 
 type llmBundleJSON struct {
-	Go struct {
+	AllowedPaths  []string               `json:"allowed_paths"`
+	SourceSignals []sourcesignals.Signal `json:"source_signals"`
+	Go            struct {
 		ModuleSummaries []struct {
 			ModulePath string `json:"module_path"`
 			ModuleDir  string `json:"module_dir"`
@@ -29,14 +35,18 @@ type llmBundleJSON struct {
 }
 
 type runMetadataJSON struct {
-	CreatedAt               string `json:"created_at"`
-	Model                   string `json:"model"`
-	PromptVersion           string `json:"prompt_version"`
-	CompactContextBytes     int    `json:"compact_context_bytes"`
-	ExternalRequestBytes    int    `json:"external_request_bytes"`
-	ProviderRequestCount    int    `json:"provider_request_count"`
-	CandidateDirectionCount int    `json:"candidate_direction_count"`
-	ProviderLatencyMillis   *int64 `json:"provider_latency_ms"`
+	CreatedAt               string   `json:"created_at"`
+	Model                   string   `json:"model"`
+	PromptVersion           string   `json:"prompt_version"`
+	CompactContextBytes     int      `json:"compact_context_bytes"`
+	ExternalRequestBytes    int      `json:"external_request_bytes"`
+	ProviderRequestCount    int      `json:"provider_request_count"`
+	CandidateDirectionCount int      `json:"candidate_direction_count"`
+	ProviderLatencyMillis   *int64   `json:"provider_latency_ms"`
+	SurfaceDiscoveryRan     bool     `json:"surface_discovery_ran"`
+	SurfaceDiscoveryCount   int      `json:"surface_discovery_count"`
+	SurfaceDiscoveryMillis  *int64   `json:"surface_discovery_ms"`
+	Warnings                []string `json:"warnings"`
 }
 
 type orientationReportJSON struct {
@@ -52,9 +62,10 @@ type orientationReportJSON struct {
 }
 
 type orientationMapItemJSON struct {
-	Name         string   `json:"name"`
-	Evidence     []string `json:"evidence"`
-	WhyItMatters string   `json:"why_it_matters"`
+	Name         string            `json:"name"`
+	Role         componentmap.Role `json:"role"`
+	Evidence     []string          `json:"evidence"`
+	WhyItMatters string            `json:"why_it_matters"`
 }
 
 type orientationDomainWordJSON struct {
@@ -64,14 +75,15 @@ type orientationDomainWordJSON struct {
 }
 
 type orientationCandidateJSON struct {
-	Name             string             `json:"name"`
-	Trigger          string             `json:"trigger"`
-	LikelyEntrypoint string             `json:"likely_entrypoint"`
-	LikelyFiles      []string           `json:"likely_files"`
-	WhyInteresting   string             `json:"why_interesting"`
-	Evidence         []string           `json:"evidence"`
-	Confidence       float64            `json:"confidence"`
-	LocalProof       *flowproof.Session `json:"local_proof"`
+	Name              string                        `json:"name"`
+	Trigger           string                        `json:"trigger"`
+	LikelyEntrypoint  string                        `json:"likely_entrypoint"`
+	LikelyFiles       []string                      `json:"likely_files"`
+	WhyInteresting    string                        `json:"why_interesting"`
+	Evidence          []string                      `json:"evidence"`
+	Confidence        float64                       `json:"confidence"`
+	LocalVerification *flowexplain.FlowVerification `json:"local_verification"`
+	LocalProof        *flowproof.Session            `json:"local_proof"`
 }
 
 type flowReportJSON struct {
@@ -346,18 +358,37 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	architectureStatus, warning := readArchitectureSynthesisStatus(
+		filepath.Join(absDir, ArchitectureSynthesisStatusFile),
+	)
+	data.ArchitectureSynthesis = architectureStatus
+	if warning != "" {
+		parseWarnings = append(parseWarnings, warning)
+	}
+	if warning = architectureSynthesisUserWarning(data.ArchitectureSynthesis); warning != "" {
+		parseWarnings = append(parseWarnings, warning)
+	}
+	if data.Run != nil && data.ArchitectureSynthesis != nil {
+		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
+	}
 	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
 	if w := parseLLMBundle(filepath.Join(absDir, "llm_bundle.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	var surfaceWarnings []string
+	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
+	parseWarnings = append(parseWarnings, surfaceWarnings...)
 
 	flowWarnings, err := parseFlows(filepath.Join(absDir, "flows"), data)
 	if err != nil {
 		return nil, fmt.Errorf("read flows from %s: %w", absDir, err)
 	}
 	parseWarnings = append(parseWarnings, flowWarnings...)
+	canonicalizeReportEvidence(data)
+	collectOpenablePaths(data)
+	buildComponents(data)
 	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
@@ -390,46 +421,148 @@ func parseLLMBundle(path string, data *ReportData) string {
 	if err := json.Unmarshal(b, &bundle); err != nil {
 		return fmt.Sprintf("llm bundle unmarshal: %v", err)
 	}
-	if len(bundle.Go.ModuleSummaries) == 0 && len(bundle.Go.ImportantEdges) == 0 {
-		return ""
+	data.OpenablePaths = append(data.OpenablePaths, bundle.AllowedPaths...)
+	for _, signal := range bundle.SourceSignals {
+		location := evidence.Location{Path: signal.Path, Line: signal.Line}
+		data.evidenceLocations = append(data.evidenceLocations, location)
+		data.sourceSignals = append(data.sourceSignals, SourceSignal{
+			Path:     signal.Path,
+			Line:     signal.Line,
+			Category: signal.Category,
+			Snippet:  signal.Snippet,
+			Reason:   signal.Reason,
+		})
 	}
-	graph := &RepositoryGraph{PackageEdges: append([]EdgeInfo(nil), bundle.Go.ImportantEdges...)}
-	for _, module := range bundle.Go.ModuleSummaries {
-		if module.ModulePath == "" {
-			continue
+	if len(bundle.Go.ModuleSummaries) > 0 || len(bundle.Go.ImportantEdges) > 0 {
+		graph := &RepositoryGraph{PackageEdges: bundle.Go.ImportantEdges}
+		for _, module := range bundle.Go.ModuleSummaries {
+			if module.ModulePath == "" {
+				continue
+			}
+			dir := filepath.ToSlash(filepath.Clean(module.ModuleDir))
+			if dir == "." {
+				dir = ""
+			}
+			graph.Modules = append(graph.Modules, ModuleInfo{Path: module.ModulePath, Dir: dir})
 		}
-		dir := filepath.ToSlash(filepath.Clean(module.ModuleDir))
-		if dir == "." {
-			dir = ""
-		}
-		graph.Modules = append(graph.Modules, ModuleInfo{Path: module.ModulePath, Dir: dir})
+		data.RepositoryGraph = graph
 	}
-	data.RepositoryGraph = graph
 	return ""
 }
 
 func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) string {
+	saved, readErr := os.ReadFile(synthesisPath)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return ""
+		}
+		return fmt.Sprintf("architecture map unavailable: cannot read saved synthesis: %v", readErr)
+	}
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas: %v", err)
 	}
-	warning := ""
-	if saved, readErr := os.ReadFile(synthesisPath); readErr == nil {
-		replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
-		if replayErr != nil {
-			warning = fmt.Sprintf("architecture canvas synthesis: %v; using deterministic fallback", replayErr)
-		} else {
-			input = replayed
-		}
-	} else if !os.IsNotExist(readErr) {
-		warning = fmt.Sprintf("architecture canvas synthesis: %v; using deterministic fallback", readErr)
+	replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
+	if replayErr != nil {
+		return fmt.Sprintf("architecture map unavailable: saved grouping is invalid: %v", replayErr)
 	}
-	canvas, err := ProjectArchitectureCanvas(input)
+	canvas, err := ProjectArchitectureCanvas(replayed)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas projection: %v", err)
 	}
 	data.ArchitectureCanvas = &canvas
-	return warning
+	return ""
+}
+
+func canonicalizeReportEvidence(data *ReportData) {
+	normalize := func(field string, statements []string) []string {
+		for index, statement := range statements {
+			canonical, grounded := evidenceref.Canonicalize(statement, data.OpenablePaths, data.evidenceLocations)
+			statements[index] = canonical
+			if !grounded {
+				data.Warnings = append(data.Warnings, fmt.Sprintf("removed ungrounded line claim from %s[%d]", field, index))
+			}
+		}
+		return statements
+	}
+	for index := range data.HighLevelMap {
+		data.HighLevelMap[index].Evidence = normalize(
+			fmt.Sprintf("high_level_map[%d].evidence", index),
+			data.HighLevelMap[index].Evidence,
+		)
+	}
+	for index := range data.CandidateDirections {
+		data.CandidateDirections[index].Evidence = normalize(
+			fmt.Sprintf("candidate_directions[%d].evidence", index),
+			data.CandidateDirections[index].Evidence,
+		)
+	}
+	for index := range data.ImportantDomainWords {
+		data.ImportantDomainWords[index].Evidence = normalize(
+			fmt.Sprintf("important_domain_words[%d].evidence", index),
+			data.ImportantDomainWords[index].Evidence,
+		)
+	}
+}
+
+func collectOpenablePaths(data *ReportData) {
+	paths := make(map[string]struct{}, len(data.OpenablePaths))
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			paths[value] = struct{}{}
+		}
+	}
+	for _, path := range data.OpenablePaths {
+		add(path)
+	}
+	for _, file := range data.FirstFilesToOpen {
+		add(file.Path)
+	}
+	for _, direction := range data.CandidateDirections {
+		add(direction.LikelyEntrypoint)
+		for _, path := range direction.LikelyFiles {
+			add(path)
+		}
+		if direction.LocalProof != nil {
+			for _, anchor := range direction.LocalProof.Proof.Anchors {
+				if anchor.Location != nil {
+					add(anchor.Location.Path)
+				}
+			}
+			for _, transition := range direction.LocalProof.Proof.Transitions {
+				add(transition.Evidence.Path)
+			}
+		}
+	}
+	for _, flow := range data.Flows {
+		for _, file := range flow.FilesToRead {
+			add(file.Path)
+		}
+		for _, file := range flow.TestsToRead {
+			add(file.Path)
+		}
+		for _, file := range flow.BundleFiles {
+			add(file.Path)
+		}
+		for _, file := range flow.BundleTests {
+			add(file.Path)
+		}
+		for _, file := range flow.BundleDocs {
+			add(file.Path)
+		}
+		for _, step := range flow.LikelyChain {
+			for _, path := range step.EvidenceFiles {
+				add(path)
+			}
+		}
+	}
+	collectDiscoveredSurfacePaths(data.DiscoveredSurfaces, add)
+	data.OpenablePaths = data.OpenablePaths[:0]
+	for path := range paths {
+		data.OpenablePaths = append(data.OpenablePaths, path)
+	}
+	sort.Strings(data.OpenablePaths)
 }
 
 func parseRunMetadata(path string, data *ReportData) string {
@@ -453,7 +586,11 @@ func parseRunMetadata(path string, data *ReportData) string {
 		ProviderRequestCount:    metadata.ProviderRequestCount,
 		CandidateDirectionCount: metadata.CandidateDirectionCount,
 		ProviderLatencyMillis:   metadata.ProviderLatencyMillis,
+		SurfaceDiscoveryRan:     metadata.SurfaceDiscoveryRan,
+		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
+		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
 	}
+	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""
 }
 
@@ -482,8 +619,10 @@ func parseOrientationReport(path string, data *ReportData) string {
 	data.ProjectGuess = or.ProjectGuess
 	data.OrientationConfidence = or.Confidence
 	for _, item := range or.HighLevelMap {
+		role, _ := componentmap.Normalize(string(item.Role))
 		data.HighLevelMap = append(data.HighLevelMap, Subsystem{
 			Name:         item.Name,
+			Role:         role,
 			Evidence:     append([]string{}, item.Evidence...),
 			WhyItMatters: item.WhyItMatters,
 		})
@@ -498,15 +637,16 @@ func parseOrientationReport(path string, data *ReportData) string {
 	for _, cf := range or.CandidateFlows {
 		data.CandidateFlows = append(data.CandidateFlows, cf.Name)
 		data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
-			ID:               flowexplain.GenerateFlowID(cf.Name),
-			Name:             cf.Name,
-			Trigger:          cf.Trigger,
-			LikelyEntrypoint: cf.LikelyEntrypoint,
-			LikelyFiles:      append([]string{}, cf.LikelyFiles...),
-			WhyInteresting:   cf.WhyInteresting,
-			Evidence:         append([]string{}, cf.Evidence...),
-			Confidence:       cf.Confidence,
-			LocalProof:       cf.LocalProof,
+			ID:                flowexplain.GenerateFlowID(cf.Name),
+			Name:              cf.Name,
+			Trigger:           cf.Trigger,
+			LikelyEntrypoint:  cf.LikelyEntrypoint,
+			LikelyFiles:       append([]string{}, cf.LikelyFiles...),
+			WhyInteresting:    cf.WhyInteresting,
+			Evidence:          append([]string{}, cf.Evidence...),
+			Confidence:        cf.Confidence,
+			LocalVerification: cf.LocalVerification,
+			LocalProof:        cf.LocalProof,
 		})
 	}
 	for _, word := range or.ImportantDomainWords {

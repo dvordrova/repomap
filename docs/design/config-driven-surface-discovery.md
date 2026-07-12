@@ -1,7 +1,8 @@
 # Config-driven Go runtime-surface discovery
 
-Status: bounded experiment and incremental-integration design. This document
-does not change milestone completion claims.
+Status: bounded analyzer experiment with a production presentation projection
+for persisted Go runs. The catalog remains separate from recommendation and
+FlowProof completion claims.
 
 ## Current pipeline
 
@@ -191,11 +192,14 @@ local validation rejected a response containing an invented trigger ID. The
 deterministic fallback produced the same counts. This proves the no-invention
 contract and replay shape, not comparative model quality.
 
-Product integration stops at the intended safe bridge. An opt-in normal run
-with `--discover-surfaces` writes `trigger_catalog.json`,
+Product integration stops at the intended safe bridge. A normal persisted Go
+run writes `trigger_catalog.json`,
 `surface_coverage.json`, `semantic_summaries.json`, and `surface_summary.md`
 beside the existing report artifacts without changing candidate
-recommendations. `surfacebridge.FlowSeed` maps only grounded trigger,
+recommendations. `--discover-surfaces=false` remains an explicit opt-out while
+latency is measured. The report renders a separate bounded surface shelf;
+surface facts do not enter the architecture graph. `surfacebridge.FlowSeed`
+maps only grounded trigger,
 entrypoint, registration, handler, dispatcher, files, and evidence; it has no
 way to populate core operation, I/O, concurrency, termination, or confidence.
 The existing model-created path remains available.
@@ -203,10 +207,12 @@ The existing model-created path remains available.
 Remaining limitations are variadic handler-slice recovery beyond the exercised
 single-handler wrapper, nontrivial struct-field/return evaluation, closures with
 captured mutable state, reflection, configuration-derived identities, generic
-custom-registry inference, cache reuse, HTML surface rendering, live model
-quality comparison, and trigger-to-HTTP-`FlowProof` execution. The next smallest
-semantic seed family is Cobra `Command.AddCommand`: repomap already owns a
-deterministic Cobra trace and CLI `FlowProof`, making it the lowest-risk test of
+custom-registry inference, cache reuse, live model quality comparison, and
+trigger-to-HTTP-`FlowProof` execution. Because SSA uses the Go type checker
+compiled into repomap, a target module requiring a newer Go language version is
+currently skipped with a bounded warning before package loading. The next
+smallest semantic seed family is Cobra `Command.AddCommand`: repomap already
+owns a deterministic Cobra trace and CLI `FlowProof`, making it the lowest-risk test of
 whether the generic catalog can replace framework-specific existence logic
 without losing the current command evidence.
 

@@ -6,13 +6,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
+	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/reportserver"
 )
 
 func main() {
@@ -37,7 +43,7 @@ func main() {
 	}
 
 	// repomap <repo> [flags]
-	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "dev" {
+	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "serve" && os.Args[1] != "dev" {
 		if err := runDefault(os.Args[1], os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -55,6 +61,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "serve":
+		if err := runServe(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "doctor":
 		if err := runDoctor(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -116,17 +127,25 @@ func linkLatest(debugDir, runDir string, stderr io.Writer) {
 }
 
 func runDefault(repo string, extraArgs []string) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	return runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
-		stdout:     os.Stdout,
-		stderr:     os.Stderr,
-		openReport: openReport,
+		ctx:         ctx,
+		stdout:      os.Stdout,
+		stderr:      os.Stderr,
+		openReport:  openReport,
+		serveReport: reportserver.Serve,
+		captureRepo: freshness.CaptureRepository,
 	})
 }
 
 type defaultRunDeps struct {
-	stdout     io.Writer
-	stderr     io.Writer
-	openReport func(string) error
+	ctx         context.Context
+	stdout      io.Writer
+	stderr      io.Writer
+	openReport  func(string) error
+	serveReport func(context.Context, reportserver.Options) error
+	captureRepo func(context.Context, string) (freshness.RepositoryState, error)
 }
 
 func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) error {
@@ -136,9 +155,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	jsonOut := fs.Bool("json", false, "print combined JSON report instead of text")
 	offline := fs.Bool("offline", false, "skip model calls, build local facts/bundles only")
 	flows := fs.Int("flows", 0, "number of top candidate directions to expand after orientation")
-	discoverSurfaces := fs.Bool("discover-surfaces", false, "persist bounded Go HTTP surface discovery artifacts")
+	discoverSurfaces := fs.Bool("discover-surfaces", true, "discover bounded Go runtime surfaces for the report")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
+	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
+	port := fs.Int("port", 0, "local report server port (default: random)")
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
 	dumpLLM := fs.Bool("dump-llm", false, "dump LLM request/response to debug dir")
 	previewRequest := fs.Bool("preview-request", false, "print the exact redacted LLM request without sending it")
@@ -156,6 +177,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	if *flows < 0 {
 		return fmt.Errorf("--flows cannot be negative")
 	}
+	if *port < 0 || *port > 65535 {
+		return fmt.Errorf("--port must be between 0 and 65535")
+	}
+	absRepo, err := filepath.Abs(repo)
+	if err != nil {
+		return fmt.Errorf("resolve repository path: %w", err)
+	}
+	repo = absRepo
 
 	dDir := *debugDir
 	if *noDebug {
@@ -163,8 +192,37 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	}
 
 	var runID string
-	if dDir != "" && !*previewRequest {
+	artifactRun := dDir != "" && !*previewRequest
+	if artifactRun {
 		runID = debugdump.GenerateRunID(repoRunLabel(repo))
+	}
+
+	ctx := deps.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	captureRepo := deps.captureRepo
+	if captureRepo == nil {
+		captureRepo = freshness.CaptureRepository
+	}
+	var (
+		runDir       string
+		analysisRoot string
+		initialState freshness.RepositoryState
+	)
+	if artifactRun {
+		runDir = filepath.Join(dDir, runID)
+		if err := report.RemoveRunManifest(runDir); err != nil {
+			return fmt.Errorf("invalidate previous browser report authority: %w", err)
+		}
+		analysisRoot, err = resolveAnalysisRoot(repo)
+		if err != nil {
+			return err
+		}
+		initialState, err = captureRepo(ctx, repo)
+		if err != nil {
+			return fmt.Errorf("capture repository state before orientation: %w", err)
+		}
 	}
 
 	opts := orient.Options{
@@ -178,7 +236,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		DumpLLM:                *dumpLLM,
 		DumpRedacted:           true,
 		RequireArtifacts:       dDir != "" && !*previewRequest,
-		DiscoverSurfaces:       *discoverSurfaces,
+		DiscoverSurfaces:       *discoverSurfaces && artifactRun,
 		MaxLLMFiles:            60,
 		MaxLocalDirectionFiles: 20,
 		MaxLLMEdges:            60,
@@ -198,9 +256,27 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		opts.Progress = func(event orient.ProgressEvent) {
 			switch event.Stage {
 			case orient.ProgressSnapshotStarted:
-				fmt.Fprintf(deps.stderr, "repomap: scanning %s\n", event.RepoPath)
+				fmt.Fprintf(deps.stderr, "repomap: collecting tracked repository facts from %s\n", event.RepoPath)
+			case orient.ProgressSnapshotReady:
+				fmt.Fprintf(deps.stderr, "repomap: repository facts ready in %d ms\n", event.LatencyMillis)
 			case orient.ProgressBundleReady:
-				fmt.Fprintf(deps.stderr, "repomap: compact local context %d bytes\n", event.BundleBytes)
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: compact local context %d bytes in %d ms\n",
+					event.BundleBytes,
+					event.LatencyMillis,
+				)
+			case orient.ProgressSurfaceStarted:
+				fmt.Fprintln(deps.stderr, "repomap: discovering local Go runtime surfaces")
+			case orient.ProgressSurfaceReady:
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: discovered %d local runtime surface(s) in %d ms\n",
+					event.SurfaceCount,
+					event.LatencyMillis,
+				)
+			case orient.ProgressSurfaceFailed:
+				fmt.Fprintf(deps.stderr, "repomap: warning: %s\n", event.Warning)
 			case orient.ProgressModelRequest:
 				fmt.Fprintf(deps.stderr, "repomap: asking %s with %d-byte request\n", event.Model, event.RequestBytes)
 			case orient.ProgressOrientationDone:
@@ -214,30 +290,32 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 	}
 
-	output, err := orient.Run(context.Background(), opts)
+	output, err := orient.Run(ctx, opts)
 	if err != nil {
 		return err
 	}
 
-	if dDir != "" && !*previewRequest {
-		runDir := filepath.Join(dDir, runID)
+	var reportPath string
+	if artifactRun {
+		currentState, err := captureRepo(ctx, repo)
+		if err != nil {
+			return fmt.Errorf("capture repository state after orientation: %w", err)
+		}
+		authority, err := report.ConfirmRunAuthority(analysisRoot, initialState, currentState)
+		if err != nil {
+			return fmt.Errorf("confirm browser report authority: %w", err)
+		}
 		if !*offline {
-			if err := synthesizeArchitectureForRun(context.Background(), runDir, repo, deps.stderr); err != nil {
-				fmt.Fprintf(deps.stderr, "warning: %v; using deterministic architecture fallback\n", err)
+			if _, err := synthesizeArchitectureForRun(ctx, runDir, repo, deps.stderr); err != nil {
+				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable\n", err)
 			}
 		}
-		if err := report.Generate(runDir); err != nil {
-			return fmt.Errorf("generate browser report: %w", err)
+		if err := report.GenerateAuthorized(runDir, authority); err != nil {
+			return fmt.Errorf("generate authorized browser report: %w", err)
 		}
-		reportPath := filepath.Join(runDir, "report.html")
+		reportPath = filepath.Join(runDir, "report.html")
 		fmt.Fprintf(deps.stderr, "Report: %s\n", reportPath)
 		linkLatest(dDir, runDir, deps.stderr)
-		shouldOpen := !*noOpen && !*jsonOut && *out == "" && !*offline
-		if shouldOpen && deps.openReport != nil {
-			if err := deps.openReport(reportPath); err != nil {
-				fmt.Fprintf(deps.stderr, "warning: could not open report: %v\n", err)
-			}
-		}
 	}
 
 	if *out != "" {
@@ -250,7 +328,85 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	if !*previewRequest && (len(output) == 0 || output[len(output)-1] != '\n') {
 		fmt.Fprintln(deps.stdout)
 	}
+
+	interactiveReport := reportPath != "" && !*jsonOut && *out == ""
+	if interactiveReport && !*noServe && deps.serveReport != nil {
+		localAnalyzer := newReportAnalyzer()
+		return deps.serveReport(ctx, reportserver.Options{
+			RunsDir:             dDir,
+			InitialRunID:        runID,
+			Port:                *port,
+			LocationResolver:    localAnalyzer,
+			ExactSymbolAnalyzer: localAnalyzer,
+			ReferenceFinder:     localAnalyzer,
+			OnReady: func(url string) error {
+				fmt.Fprintf(deps.stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
+				if !*noOpen && deps.openReport != nil {
+					if err := deps.openReport(url); err != nil {
+						fmt.Fprintf(deps.stderr, "warning: could not open report: %v\n", err)
+					}
+				}
+				return nil
+			},
+		})
+	}
+	if interactiveReport && !*noOpen && deps.openReport != nil {
+		if err := deps.openReport(reportPath); err != nil {
+			fmt.Fprintf(deps.stderr, "warning: could not open report: %v\n", err)
+		}
+	}
 	return nil
+}
+
+func runServe(args []string) error {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	runsDir := fs.String("debug-dir", defaultDebugDir(), "directory containing saved report runs")
+	runID := fs.String("run", "", "saved run to open (default: latest)")
+	port := fs.Int("port", 0, "local report server port (default: random)")
+	noOpen := fs.Bool("no-open", false, "do not open the report in a browser")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("serve: unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	if *runsDir == "" {
+		return fmt.Errorf("serve: report directory is unavailable; pass --debug-dir")
+	}
+	if *port < 0 || *port > 65535 {
+		return fmt.Errorf("serve: --port must be between 0 and 65535")
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	localAnalyzer := newReportAnalyzer()
+	return reportserver.Serve(ctx, reportserver.Options{
+		RunsDir:             *runsDir,
+		InitialRunID:        *runID,
+		Port:                *port,
+		LocationResolver:    localAnalyzer,
+		ExactSymbolAnalyzer: localAnalyzer,
+		ReferenceFinder:     localAnalyzer,
+		OnReady: func(url string) error {
+			fmt.Fprintf(os.Stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
+			if !*noOpen {
+				if err := openReport(url); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not open report: %v\n", err)
+				}
+			}
+			return nil
+		},
+	})
+}
+
+func newReportAnalyzer() *goplsanalyzer.Analyzer {
+	return goplsanalyzer.New(goplsanalyzer.Options{
+		MaxSymbols:     20,
+		MaxCallers:     30,
+		MaxCallees:     30,
+		CommandTimeout: 30 * time.Second,
+	})
 }
 
 func runOrient(args []string) error {
@@ -277,11 +433,38 @@ func runOrient(args []string) error {
 	if *repo == "" {
 		return fmt.Errorf("--repo is required")
 	}
+	absRepo, err := filepath.Abs(*repo)
+	if err != nil {
+		return fmt.Errorf("resolve repository path: %w", err)
+	}
+	*repo = absRepo
 
 	dDir := *debugDir
 	var runID string
-	if dDir != "" && !*snapshotOnly && !*llmBundleOnly && !*llmRequestOnly {
+	reportArtifacts := dDir != "" && !*snapshotOnly && !*llmBundleOnly && !*llmRequestOnly
+	if reportArtifacts {
 		runID = debugdump.GenerateRunID(repoRunLabel(*repo))
+	}
+
+	ctx := context.Background()
+	var (
+		runDir       string
+		analysisRoot string
+		initialState freshness.RepositoryState
+	)
+	if reportArtifacts {
+		runDir = filepath.Join(dDir, runID)
+		if err := report.RemoveRunManifest(runDir); err != nil {
+			return fmt.Errorf("invalidate previous report authority: %w", err)
+		}
+		analysisRoot, err = resolveAnalysisRoot(*repo)
+		if err != nil {
+			return err
+		}
+		initialState, err = freshness.CaptureRepository(ctx, *repo)
+		if err != nil {
+			return fmt.Errorf("capture repository state before orientation: %w", err)
+		}
 	}
 
 	opts := orient.Options{
@@ -312,18 +495,25 @@ func runOrient(args []string) error {
 		MaxGoEdges:             1000,
 	}
 
-	output, err := orient.Run(context.Background(), opts)
+	output, err := orient.Run(ctx, opts)
 	if err != nil {
 		return err
 	}
 
-	if dDir != "" && !*snapshotOnly && !*llmBundleOnly && !*llmRequestOnly {
-		runDir := filepath.Join(dDir, runID)
-		if err := synthesizeArchitectureForRun(context.Background(), runDir, *repo, os.Stderr); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v; using deterministic architecture fallback\n", err)
+	if reportArtifacts {
+		currentState, err := freshness.CaptureRepository(ctx, *repo)
+		if err != nil {
+			return fmt.Errorf("capture repository state after orientation: %w", err)
 		}
-		if err := report.Generate(runDir); err != nil {
-			return fmt.Errorf("generate report: %w", err)
+		authority, err := report.ConfirmRunAuthority(analysisRoot, initialState, currentState)
+		if err != nil {
+			return fmt.Errorf("confirm report authority: %w", err)
+		}
+		if _, err := synthesizeArchitectureForRun(ctx, runDir, *repo, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v; architecture map will be unavailable\n", err)
+		}
+		if err := report.GenerateAuthorized(runDir, authority); err != nil {
+			return fmt.Errorf("generate authorized report: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "Report: %s/report.html\n", runDir)
 		linkLatest(dDir, runDir, os.Stderr)
@@ -386,6 +576,26 @@ func defaultDebugDir() string {
 	return filepath.Join(cacheDir, "repomap", "runs")
 }
 
+func resolveAnalysisRoot(repositoryPath string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(repositoryPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve analysis root: %w", err)
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve analysis root: %w", err)
+	}
+	root := filepath.Clean(absolute)
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("inspect analysis root: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("analysis root is not a directory: %s", root)
+	}
+	return root, nil
+}
+
 func repoRunLabel(repo string) string {
 	absPath, err := filepath.Abs(repo)
 	if err == nil {
@@ -409,14 +619,17 @@ func runRenderReport(runDir string) error {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: repomap [repo] [flags]\n")
 	fmt.Fprintf(os.Stderr, "       repomap doctor llm [--check]\n")
+	fmt.Fprintf(os.Stderr, "       repomap serve [--run RUN_ID] [--port PORT]\n")
 	fmt.Fprintf(os.Stderr, "       repomap orient --repo <repo> [flags]\n")
 	fmt.Fprintf(os.Stderr, "\nFlags:\n")
 	fmt.Fprintf(os.Stderr, "  --json          output JSON instead of text\n")
 	fmt.Fprintf(os.Stderr, "  --offline       skip model calls, local facts only\n")
 	fmt.Fprintf(os.Stderr, "  --flows N       expand top N directions after orientation (default 0)\n")
-	fmt.Fprintf(os.Stderr, "  --discover-surfaces persist bounded Go HTTP surface artifacts\n")
+	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default true)\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")
+	fmt.Fprintf(os.Stderr, "  --no-serve      generate a static report without starting the local server\n")
+	fmt.Fprintf(os.Stderr, "  --port PORT     local report server port (default random)\n")
 	fmt.Fprintf(os.Stderr, "  --debug-dir DIR debug artifact directory (default user cache)\n")
 	fmt.Fprintf(os.Stderr, "  --dump-llm      dump LLM request/response in debug dir\n")
 	fmt.Fprintf(os.Stderr, "  --preview-request print exact redacted request without an API call\n")
@@ -436,6 +649,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --offline\n")
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --preview-request > /tmp/repomap-request.json\n")
 	fmt.Fprintf(os.Stderr, "  repomap doctor llm --check\n")
+	fmt.Fprintf(os.Stderr, "  repomap serve\n")
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --flows 2 --json | jq .\n")
 	fmt.Fprintf(os.Stderr, "  repomap --help\n")
 }

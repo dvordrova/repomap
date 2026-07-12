@@ -450,6 +450,50 @@ func TestOrientInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestOrientEmptyContentIncludesSafeCompletionDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{
+				"finish_reason":"length",
+				"message":{"content":null,"reasoning_content":"private provider reasoning"}
+			}],
+			"usage":{
+				"completion_tokens":6000,
+				"completion_tokens_details":{"reasoning_tokens":6000}
+			}
+		}`)
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		HTTPClient: srv.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   srv.URL,
+		Auth:       authNone,
+	}
+	_, err := client.Orient(context.Background(), []byte(`{}`))
+	if err == nil {
+		t.Fatal("Orient() error = nil")
+	}
+	for _, want := range []string{
+		"llm response content is empty",
+		"finish_reason=length",
+		"completion_tokens=6000",
+		"reasoning_tokens=6000",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Orient() error = %q, want %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "private provider reasoning") {
+		t.Fatal("Orient() error exposed provider reasoning content")
+	}
+}
+
 func TestOrientRetryOn500(t *testing.T) {
 	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -658,7 +702,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v3" {
+	if OrientationPromptVersionJSON != "orientation-json-v8" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{
@@ -670,6 +714,9 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 	}
 
 	msgs := c.buildRequest([]byte(`{}`)).Messages
+	if strings.Contains(msgs[0].Content, "Go repository") || !strings.Contains(msgs[0].Content, "language_hints") {
+		t.Fatalf("system prompt is not language-aware: %q", msgs[0].Content)
+	}
 	body := msgs[1].Content // user message
 
 	expected := []string{
@@ -677,13 +724,16 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		"candidate_flows",
 		"first_files_to_open",
 		"high_level_map",
+		`"role"`,
+		"orientation hypothesis",
 		"important_domain_words",
 		"questions_for_human",
 		"never shorten cmd/server/main.go to main.go",
 		"each evidence item atomic",
 		"closed exact set",
 		"Directory, package, and import paths are not files",
-		"unverified_paths is only for a suspected file path",
+		"unverified_paths may contain a suspected repository-relative file or directory",
+		"go.command_traces are locally extracted bounded syntax evidence",
 	}
 
 	for _, field := range expected {

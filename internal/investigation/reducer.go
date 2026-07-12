@@ -124,7 +124,11 @@ func Reduce(session Session, event Event) (Session, []Action, error) {
 	case EventSourceAssessed:
 		next, err = acceptSourceReport(session, *event.SourceReport)
 	case EventTestReferencesFound:
-		next, err = acceptTestReferences(session, *event.Tests)
+		if session.State == StateFindingTestReferences {
+			next, err = acceptTargetTestReferences(session, *event.Tests)
+		} else {
+			next, err = acceptTestReferences(session, *event.Tests)
+		}
 	case EventFinished:
 		if session.State != StateWaitingUser {
 			err = fmt.Errorf("investigation: finish is only valid while waiting for the user")
@@ -166,6 +170,9 @@ func validateStartFields(goal Goal, repository Repository, focus Focus) error {
 	if focus.Kind != FocusSymbol || strings.TrimSpace(focus.Symbol) == "" || focus.EvidenceID != "" {
 		return fmt.Errorf("investigation: start requires one unresolved symbol focus")
 	}
+	if err := validateFocusEntity(focus.Symbol, focus.Entity); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -178,6 +185,9 @@ func acceptSymbol(session Session, bundle symbol.Bundle) (Session, error) {
 	}
 	if bundle.Query != session.Focus.Symbol || bundle.Target.Entity.Name != session.Focus.Symbol {
 		return session, fmt.Errorf("investigation: symbol result does not match focus")
+	}
+	if session.Focus.Entity != nil && !reflect.DeepEqual(bundle.Target.Entity, *session.Focus.Entity) {
+		return session, fmt.Errorf("investigation: symbol result does not match exact focus entity")
 	}
 	stored, err := cloneValue(bundle)
 	if err != nil {
@@ -205,20 +215,31 @@ func acceptSource(session Session, card sourcecard.Card) (Session, error) {
 	if err := card.Validate(); err != nil {
 		return session, fmt.Errorf("investigation: invalid source result: %w", err)
 	}
-	assessment, err := sourceexplain.Build(*session.Symbol, card)
-	if err != nil {
-		return session, fmt.Errorf("investigation: source does not match symbol result: %w", err)
-	}
 	storedCard, err := cloneValue(card)
-	if err != nil {
-		return session, err
-	}
-	storedAssessment, err := cloneValue(assessment)
 	if err != nil {
 		return session, err
 	}
 	next := session
 	next.Source = &storedCard
+	if isLocalComponentInvestigation(session) {
+		issue(&next, Action{
+			Kind:   ActionFindTestReferences,
+			Reason: "collect target-only test references without inventing source questions or model claims",
+			FindTestReferences: &FindTestReferencesInput{
+				RepoPath:   next.Repository.Path,
+				Structural: *next.Symbol,
+			},
+		}, StateFindingTestReferences)
+		return next, nil
+	}
+	assessment, err := sourceexplain.Build(*session.Symbol, card)
+	if err != nil {
+		return session, fmt.Errorf("investigation: source does not match symbol result: %w", err)
+	}
+	storedAssessment, err := cloneValue(assessment)
+	if err != nil {
+		return session, err
+	}
 	next.Assessment = &storedAssessment
 	issue(&next, Action{
 		Kind:         ActionAssessSource,
@@ -226,6 +247,44 @@ func acceptSource(session Session, card sourcecard.Card) (Session, error) {
 		AssessSource: &storedAssessment,
 	}, StateAssessingSource)
 	return next, nil
+}
+
+func acceptTargetTestReferences(session Session, tests testevidence.Bundle) (Session, error) {
+	if session.State != StateFindingTestReferences {
+		return session, fmt.Errorf("investigation: target test references are invalid in state %q", session.State)
+	}
+	if err := tests.Validate(); err != nil {
+		return session, fmt.Errorf("investigation: invalid target test-reference result: %w", err)
+	}
+	if err := validateTargetTestReferences(session, tests); err != nil {
+		return session, err
+	}
+	stored, err := cloneValue(tests)
+	if err != nil {
+		return session, err
+	}
+	next := session
+	next.Tests = &stored
+	next.State = StateCompleted
+	next.Next = nil
+	next.Stop = &Stop{Kind: StopFinished, Message: "local source and target test references collected"}
+	return next, nil
+}
+
+func validateTargetTestReferences(session Session, tests testevidence.Bundle) error {
+	if !isLocalComponentInvestigation(session) || session.Symbol == nil || session.Source == nil {
+		return fmt.Errorf("investigation: target-only test references require local component source evidence")
+	}
+	target := session.Symbol.Target
+	if target.Entity.Location == nil || tests.TargetName != target.Entity.Name || len(tests.Searches) != 1 {
+		return fmt.Errorf("investigation: target-only test references do not match focused symbol")
+	}
+	search := tests.Searches[0]
+	if search.AnchorEvidenceID != target.EvidenceID || search.SymbolName != target.Entity.Name ||
+		!reflect.DeepEqual(search.Location, *target.Entity.Location) || search.Predicate != "" || len(search.SourceEvidenceIDs) != 0 {
+		return fmt.Errorf("investigation: target-only test search is not grounded in focused symbol")
+	}
+	return nil
 }
 
 func acceptSourceReport(session Session, report sourceexplain.Report) (Session, error) {
@@ -351,6 +410,7 @@ func issueResolve(session *Session, reason string) {
 		ResolveSymbol: &ResolveSymbolInput{
 			RepoPath: session.Repository.Path,
 			Query:    session.Focus.Symbol,
+			Expected: session.Focus.Entity,
 		},
 	}, StateResolvingSymbol)
 }

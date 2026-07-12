@@ -18,37 +18,36 @@ deferred before the final canvas-v2 handoff.
 - [x] **Fixed Backup flow.** Preview-only. Production flow selection uses saved
   stable IDs and shows one selected flow at a time.
 - [x] **Temporary React Flow comparison.** Rejected. The ignored spike remains
-  only until the ELK integration lands, then it is deleted.
+  only until the ELK integration lands, then it is deleted. The spike and npm
+  artifacts have now been removed.
 
 ## Production vertical slice
 
-- [ ] Replace the stale cached FlowProof v1 input with a small checked-in v2
+- [x] Replace the stale cached FlowProof v1 input with a small checked-in v2
   restic presentation fixture.
-- [ ] Add a view-only preview entrypoint and Make target that require no
+- [x] Add a view-only preview entrypoint and Make target that require no
   manifest, repository scan, provider, gopls, or Pyright.
-- [ ] Initially support one task branch per flow. This is production-visible
-  and must render additional tasks as explicit unprojected frontiers until the
-  bounded projection supports them.
-- [ ] Use fixed initial node dimensions for ELK. Generalize only to the bounded
-  component and selected-flow node variants used by the final fixtures.
-- [ ] Keep existing report typography and colors during checkpoints A–C. Do a
-  product pass only after landscape → flow → evidence works.
-- [ ] Keyboard navigation may initially cover component/flow/edge selection
-  without arrow-key graph traversal. Document any remaining limitation at the
-  final checkpoint.
-- [ ] The first model-synthesis fixture may cover restic only. Add invalid
-  output and deterministic fallback before checkpoint D completes.
-- [ ] Validate restic continuously; add the daemon and branching/backend
-  fixtures only after evidence drill-down is complete.
+- [x] Support every bounded saved task rather than one task branch. The daemon
+  fixture renders eleven task branches plus shared state.
+- [x] Keep fixed bounded node dimensions for ELK across the final fixtures;
+  ordinary selection never relayouts the graph.
+- [x] Keep report typography during checkpoints A–C and apply the product pass
+  only to canvas hierarchy and evidence channels.
+- [x] Make component, flow, step, and edge selection keyboard-accessible.
+  Arrow-key spatial traversal remains an explicit MVP limitation.
+- [x] Cover saved synthesis, invalid output, and deterministic fallback.
+  Realistic fallback screenshot coverage is explicitly deferred.
+- [x] Validate restic, a daemon, and a branching/backend fixture after evidence
+  drill-down was complete.
 
 ## Required cleanup before completion
 
-- [ ] Delete the rejected React Flow spike and all ignored npm artifacts.
-- [ ] Remove `layoutRoleLanes`, inline `imports` labels, obsolete arrow marker,
+- [x] Delete the rejected React Flow spike and all ignored npm artifacts.
+- [x] Remove `layoutRoleLanes`, inline `imports` labels, obsolete arrow marker,
   and the old canvas-only selection closure.
-- [ ] Demote or remove the old separate flow presentation after the same proof
-  remains available from the canvas and detail ledger.
-- [ ] Remove temporary debug controls, fixed selections, and comparison-only
+- [x] Demote the old separate flow presentation to the detail ledger; primary
+  flow selection stays on the architecture canvas.
+- [x] Remove temporary debug controls, fixed selections, and comparison-only
   CSS.
-- [ ] Record final screenshots, fixture metrics, verification commands, known
+- [x] Record final screenshots, fixture metrics, verification commands, known
   limitations, and explicitly deferred items.

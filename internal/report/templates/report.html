@@ -5,14 +5,29 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>repomap — {{.Title}}</title>
   <style>{{.CSS}}</style>
-{{if .HasArchitectureCanvas}}  <style id="rm-architecture-canvas-css">{{.ArchitectureCanvasCSS}}</style>
-{{end}}
+{{if .HasArchitectureCanvas}}  <style id="rm-architecture-canvas-css">{{.ArchitectureCanvasCSS}}</style>{{end}}
+{{if .HasDiscoveredSurfaces}}  <style id="rm-surface-catalog-css">{{.SurfaceCatalogCSS}}</style>{{end}}
 </head>
 <body>
   <header>
-    <h1 id="rm-repo-name"></h1>
-    <div class="rm-artifacts" id="rm-artifacts-dir"></div>
-    <div class="rm-artifacts" id="rm-feedback-path"></div>
+    <div class="rm-header-inner">
+      <div>
+        <h1 id="rm-repo-name"></h1>
+        <p>Repository onboarding</p>
+      </div>
+      <div class="rm-header-actions">
+        <label class="rm-run-picker" id="rm-run-picker" hidden>
+          <span>Saved report</span>
+          <select id="rm-run-selector"></select>
+        </label>
+        <span class="rm-editor-hint" id="rm-editor-hint" hidden>File paths open in VS Code ↗</span>
+        <details class="rm-run-details">
+          <summary>Run details</summary>
+          <div class="rm-artifacts" id="rm-artifacts-dir"></div>
+          <div class="rm-artifacts" id="rm-feedback-path"></div>
+        </details>
+      </div>
+    </div>
   </header>
   <div class="rm-container">
     <nav class="rm-tabs" id="rm-tabs"></nav>
@@ -20,10 +35,11 @@
     <div id="rm-flows-container"></div>
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
+  <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
   <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>
 {{if .HasArchitectureCanvas}}  <script id="rm-elkjs">{{.ELKJS}}</script>
-  <script id="rm-architecture-canvas-js">{{.ArchitectureCanvasJS}}</script>
-{{end}}
+  <script id="rm-architecture-canvas-js">{{.ArchitectureCanvasJS}}</script>{{end}}
+{{if .HasDiscoveredSurfaces}}  <script id="rm-surface-catalog-js">{{.SurfaceCatalogJS}}</script>{{end}}
   <script>{{.JS}}</script>
 </body>
 </html>

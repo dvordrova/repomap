@@ -150,7 +150,7 @@ func runBackup(token string) error {
 			continue
 		}
 		redactedRegistrationFound = true
-		if call.Condition == nil || call.Condition.Expression != "" {
+		if call.Condition == nil || call.Condition.Expression != "" || !call.Condition.ExpressionOmitted {
 			t.Fatalf("literal-bearing condition leaked into compact facts: %#v", call.Condition)
 		}
 	}

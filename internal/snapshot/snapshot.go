@@ -296,7 +296,8 @@ func findInterestingFiles(files []string, max int) []string {
 
 	out := make([]string, 0, max)
 	priorityNames := []string{
-		"README.md", "go.mod", "Makefile", "Dockerfile", ".gitignore",
+		"README.md", "go.mod", "pyproject.toml", "setup.py", "setup.cfg",
+		"requirements.txt", "Makefile", "Dockerfile", ".gitignore",
 	}
 
 	for _, p := range files {

@@ -18,6 +18,7 @@ func (a *analyzer) loops(function *ssa.Function) []loopDescriptor {
 		return cached
 	}
 	result := []loopDescriptor{}
+	seen := map[string]struct{}{}
 	if function == nil || function.Blocks == nil {
 		a.loopCache[function] = result
 		return result
@@ -52,7 +53,7 @@ func (a *analyzer) loops(function *ssa.Function) []loopDescriptor {
 				kind = "channel_receive_loop"
 				detail = "control-flow loop contains a channel receive; channel ownership and runtime lifetime remain unproven"
 			}
-			result = append(result, loopDescriptor{
+			descriptor := loopDescriptor{
 				blocks: blocks,
 				signal: LoopSignal{
 					Kind:       kind,
@@ -61,7 +62,13 @@ func (a *analyzer) loops(function *ssa.Function) []loopDescriptor {
 					Detail:     detail,
 					Certainty:  "static",
 				},
-			})
+			}
+			key := descriptor.signal.Kind + "\x00" + descriptor.signal.FunctionID + "\x00" + locationKey(descriptor.signal.Location)
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, descriptor)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {

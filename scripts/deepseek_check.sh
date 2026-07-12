@@ -5,11 +5,6 @@ set +x
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-if [ -z "${REPOMAP_LLM_ENDPOINT+x}${REPOMAP_LLM_MODEL+x}${REPOMAP_LLM_API_KEY+x}${REPOMAP_LLM_AUTH+x}${REPOMAP_LLM_MAX_TOKENS+x}${REPOMAP_LLM_TIMEOUT+x}${DEEPSEEK_API_KEY:-}" ] &&
-    [ "${DEEPSEEK_AUTH:-bearer}" != "none" ] && [ -f .env ]; then
-    exec "$REPO_ROOT/scripts/with_local_deepseek_key.sh" "$REPO_ROOT/scripts/deepseek_check.sh" "$@"
-fi
-
 ETCD_REPO="${1:-../etcd}"
 
 unset REPOMAP_CHECK_AUTH REPOMAP_CHECK_HAS_KEY

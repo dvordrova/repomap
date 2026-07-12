@@ -41,6 +41,12 @@ func TestBuildCompactBundle(t *testing.T) {
 					PackageDir: "cmd/app",
 					Kind:       "unknown",
 					GoFiles:    []string{"main.go"},
+					Anchors: []gofacts.EntrypointAnchor{{
+						Version: gofacts.EntrypointAnchorVersion,
+						Kind:    gofacts.EntrypointAnchorGoMain,
+						Path:    "cmd/app/main.go",
+						Line:    7,
+					}},
 				},
 			},
 			OrientationCandidates: []gofacts.OrientationCandidate{
@@ -75,6 +81,12 @@ func TestBuildCompactBundle(t *testing.T) {
 	}
 	if bundle.Go.Entrypoints[0].OpenFiles[0] != "cmd/app/main.go" {
 		t.Fatalf("open_files[0] = %q, want cmd/app/main.go", bundle.Go.Entrypoints[0].OpenFiles[0])
+	}
+	if anchors := bundle.Go.Entrypoints[0].Anchors; len(anchors) != 1 ||
+		anchors[0].Path != "cmd/app/main.go" || anchors[0].Line != 7 ||
+		anchors[0].Kind != gofacts.EntrypointAnchorGoMain ||
+		anchors[0].Version != gofacts.EntrypointAnchorVersion {
+		t.Fatalf("entrypoint anchors = %#v, want compact func main location", anchors)
 	}
 	if len(bundle.Go.ImportantEdges) != 1 {
 		t.Fatalf("important_edges = %d, want 1", len(bundle.Go.ImportantEdges))
@@ -203,6 +215,46 @@ func TestBuildEmptyGoFacts(t *testing.T) {
 	}
 }
 
+func TestBuildPythonRepositoryWithoutGoFacts(t *testing.T) {
+	t.Parallel()
+
+	files := []string{
+		"README.md",
+		"pyproject.toml",
+		"src/tool/__main__.py",
+		"src/tool/service.py",
+		"tests/test_service.py",
+	}
+	bundle := Build(snapshot.Snapshot{
+		RepoName: "python-tool",
+		Readme:   "# Python tool",
+		LanguageHints: []snapshot.LanguageHint{
+			{Language: "Python", Count: 3},
+		},
+	}, files, Options{MaxFiles: 20})
+
+	for _, path := range files {
+		if !containsString(bundle.AllowedPaths, path) {
+			t.Fatalf("allowed_paths = %v, want %q", bundle.AllowedPaths, path)
+		}
+	}
+	if bundle.Go.ModulesCount != 0 || len(bundle.Go.Entrypoints) != 0 {
+		t.Fatalf("Go section = %#v, want empty", bundle.Go)
+	}
+	for _, entry := range bundle.CandidateFileIndex {
+		switch entry.Path {
+		case "src/tool/__main__.py":
+			if entry.Kind != "source" || !containsString(entry.Signals, "entrypoint") {
+				t.Fatalf("Python entrypoint = %#v", entry)
+			}
+		case "tests/test_service.py":
+			if entry.Kind != "test" {
+				t.Fatalf("Python test kind = %q", entry.Kind)
+			}
+		}
+	}
+}
+
 func TestFileIndexIncludesEntrypointOpenFiles(t *testing.T) {
 	facts := &gofacts.Facts{
 		EntrypointPackages: []gofacts.Entrypoint{
@@ -234,6 +286,53 @@ func TestFileIndexIncludesEntrypointOpenFiles(t *testing.T) {
 	}
 	if !paths["etcdctl/main.go"] {
 		t.Fatal("missing entrypoint open_file etcdctl/main.go")
+	}
+}
+
+func TestFileIndexMarksOnlyVerifiedMainAnchorAsEntrypoint(t *testing.T) {
+	facts := &gofacts.Facts{
+		EntrypointPackages: []gofacts.Entrypoint{{
+			ImportPath: "example.com/project/cmd/app",
+			PackageDir: "cmd/app",
+			Kind:       "unknown",
+			GoFiles:    []string{"config.go", "start.go"},
+			Anchors: []gofacts.EntrypointAnchor{{
+				Version: gofacts.EntrypointAnchorVersion,
+				Kind:    gofacts.EntrypointAnchorGoMain,
+				Path:    "cmd/app/start.go",
+				Line:    9,
+			}},
+		}},
+		OrientationCandidates: []gofacts.OrientationCandidate{{
+			EntrypointPackage: "example.com/project/cmd/app",
+			OpenFiles:         []string{"cmd/app/config.go", "cmd/app/start.go"},
+		}},
+	}
+
+	entries := buildFileIndex(
+		[]string{"cmd/app/config.go", "cmd/app/start.go"},
+		facts,
+		nil,
+		nil,
+	)
+	foundStart := false
+	foundConfig := false
+	for _, entry := range entries {
+		switch entry.Path {
+		case "cmd/app/start.go":
+			foundStart = true
+			if !containsString(entry.Signals, "entrypoint") {
+				t.Fatalf("verified main anchor signals = %v, want entrypoint", entry.Signals)
+			}
+		case "cmd/app/config.go":
+			foundConfig = true
+			if containsString(entry.Signals, "entrypoint") {
+				t.Fatalf("non-anchor package file signals = %v, must not be an entrypoint", entry.Signals)
+			}
+		}
+	}
+	if !foundStart || !foundConfig {
+		t.Fatalf("file index paths = %#v, want both package files", entries)
 	}
 }
 
@@ -524,6 +623,79 @@ func TestSelectFileIndexPinsUserFacingEntrypoint(t *testing.T) {
 	}
 }
 
+// Retrieval-regression fixture: this protects the observed onboarding outcome,
+// not the current scoring or quota implementation. Replace or remove it when
+// selection becomes package-first, as long as dominant packages still cannot
+// hide useful core anchors.
+func TestSelectFileIndexKeepsCoreAnchorsWhenOnePackageDominates(t *testing.T) {
+	entries := []fileIndexEntry{
+		{
+			Path:    "server/main.go",
+			Kind:    "source",
+			Score:   200,
+			Signals: []string{"entrypoint", "source"},
+		},
+	}
+	for i := 0; i < 20; i++ {
+		entries = append(entries, fileIndexEntry{
+			Path:  fmt.Sprintf("server/transport/%02d.go", i),
+			Kind:  "source",
+			Score: 190 - i,
+		})
+	}
+	entries = append(entries,
+		fileIndexEntry{Path: "server/etcdserver/server.go", Kind: "source", Score: 120},
+		fileIndexEntry{Path: "server/storage/wal.go", Kind: "source", Score: 110},
+	)
+
+	selected := selectFileIndex(entries, 7)
+	if !containsFileIndexPath(selected, "server/etcdserver/server.go") {
+		t.Fatalf("core package anchor was crowded out: %#v", selected)
+	}
+	if !containsFileIndexPath(selected, "server/storage/wal.go") {
+		t.Fatalf("storage package was crowded out: %#v", selected)
+	}
+
+}
+
+// Retrieval-regression fixture: this scenario may be replaced when the
+// selector becomes package-first. The durable product expectation is that a
+// bounded survey can retain a distinctive core file reached through startup
+// wiring instead of spending the whole budget on nearer sibling packages.
+func TestBuildKeepsDistinctiveCoreFileThroughStartupWiring(t *testing.T) {
+	facts := &gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{ModulePath: "example.com/project", ModuleDir: "."}},
+		EntrypointPackages: []gofacts.Entrypoint{{
+			ImportPath: "example.com/project/cmd/app",
+			PackageDir: "cmd/app",
+			Kind:       "primary_binary",
+			GoFiles:    []string{"main.go"},
+		}},
+		InternalEdges: []gofacts.Edge{
+			{From: "example.com/project/cmd/app", To: "example.com/project/bootstrap"},
+			{From: "example.com/project/bootstrap", To: "example.com/project/embed"},
+			{From: "example.com/project/embed", To: "example.com/project/core"},
+		},
+	}
+	files := []string{
+		"cmd/app/main.go",
+		"bootstrap/config.go",
+		"bootstrap/start.go",
+		"embed/config.go",
+		"embed/start.go",
+		"core/raft.go",
+	}
+
+	bundle := Build(
+		snapshot.Snapshot{RepoName: "test", GoFacts: facts},
+		files,
+		Options{MaxFiles: 3},
+	)
+	if !containsString(bundle.AllowedPaths, "core/raft.go") {
+		t.Fatalf("distinctive third-hop core file was omitted: %v", bundle.AllowedPaths)
+	}
+}
+
 func TestBundleFiltersEveryModelVisibleFilePathToAllowedPaths(t *testing.T) {
 	facts := &gofacts.Facts{
 		Modules: []gofacts.ModuleFact{{ModulePath: "example.com/project", ModuleDir: "."}},
@@ -589,10 +761,12 @@ func TestScoreFileUsesComponentTokenBoundaries(t *testing.T) {
 		empty,
 		empty,
 		empty,
+		empty,
 	)
 	leaseScore, leaseSignals, _ := scoreFile(
 		"server/lease/lessor.go",
 		"source",
+		empty,
 		empty,
 		empty,
 		empty,
@@ -604,6 +778,28 @@ func TestScoreFileUsesComponentTokenBoundaries(t *testing.T) {
 	}
 	if !containsString(leaseSignals, "lease") || leaseScore <= releaseScore {
 		t.Fatalf("lease source score/signals = %d/%v, want lease component", leaseScore, leaseSignals)
+	}
+}
+
+// Heuristic unit test: delete or replace this table with the package-first
+// selector. It only prevents generic filenames from regaining anchor weight in
+// the current transitional scorer.
+func TestPackageAnchorSourceUsesArchitectureRoles(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "server role", path: "server/etcdserver/server.go", want: true},
+		{name: "generic main", path: "server/etcdmain/main.go", want: false},
+		{name: "generic utility", path: "client/pathutil/util.go", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isPackageAnchorSource(test.path); got != test.want {
+				t.Fatalf("isPackageAnchorSource(%q) = %t, want %t", test.path, got, test.want)
+			}
+		})
 	}
 }
 

@@ -3,46 +3,102 @@ package report
 import (
 	"fmt"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 )
+
+const CurrentFormatVersion = 12
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
-	RepoName                   string               `json:"repo_name"`
-	ProjectGuess               string               `json:"project_guess"`
-	OrientationConfidence      float64              `json:"orientation_confidence"`
-	HighLevelMap               []Subsystem          `json:"high_level_map,omitempty"`
-	FirstFilesToOpen           []FileItem           `json:"first_files_to_open,omitempty"`
-	CandidateFlows             []string             `json:"candidate_flows"`
-	CandidateDirections        []CandidateDirection `json:"candidate_directions,omitempty"`
-	ImportantDomainWords       []DomainWord         `json:"important_domain_words,omitempty"`
-	QuestionsForHuman          []string             `json:"questions_for_human,omitempty"`
-	OrientationUnverifiedPaths []PathItem           `json:"unverified_paths,omitempty"`
-	Flows                      []FlowData           `json:"flows"`
-	ArtifactsDir               string               `json:"artifacts_dir"`
-	FeedbackPath               string               `json:"feedback_path,omitempty"`
-	Warnings                   []string             `json:"warnings,omitempty"`
-	Run                        *RunInfo             `json:"run,omitempty"`
-	ArchitectureCanvas         *ArchitectureCanvas  `json:"architecture_canvas,omitempty"`
-	RepositoryGraph            *RepositoryGraph     `json:"repository_graph,omitempty"`
+	RepoName                   string                       `json:"repo_name"`
+	ProjectGuess               string                       `json:"project_guess"`
+	OrientationConfidence      float64                      `json:"orientation_confidence"`
+	HighLevelMap               []Subsystem                  `json:"high_level_map,omitempty"`
+	FirstFilesToOpen           []FileItem                   `json:"first_files_to_open,omitempty"`
+	CandidateFlows             []string                     `json:"candidate_flows"`
+	CandidateDirections        []CandidateDirection         `json:"candidate_directions,omitempty"`
+	ImportantDomainWords       []DomainWord                 `json:"important_domain_words,omitempty"`
+	QuestionsForHuman          []string                     `json:"questions_for_human,omitempty"`
+	OrientationUnverifiedPaths []PathItem                   `json:"unverified_paths,omitempty"`
+	Flows                      []FlowData                   `json:"flows"`
+	ArtifactsDir               string                       `json:"artifacts_dir"`
+	FeedbackPath               string                       `json:"feedback_path,omitempty"`
+	Warnings                   []string                     `json:"warnings,omitempty"`
+	Run                        *RunInfo                     `json:"run,omitempty"`
+	OpenablePaths              []string                     `json:"openable_paths,omitempty"`
+	RepositoryGraph            *RepositoryGraph             `json:"repository_graph,omitempty"`
+	Components                 []Component                  `json:"components,omitempty"`
+	ComponentRelations         []ComponentRelation          `json:"component_relations,omitempty"`
+	ArchitectureCanvas         *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
+	ArchitectureSynthesis      *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	DiscoveredSurfaces         *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	evidenceLocations          []evidence.Location
+	sourceSignals              []SourceSignal
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
 }
 
-// RepositoryGraph is the bounded saved package projection used as exact
-// structural input for conceptual architecture. It does not imply runtime
-// execution order.
+// RepositoryGraph is a bounded deterministic projection of local repository
+// facts used to connect model-suggested components without asking the model to
+// invent relationships between them.
 type RepositoryGraph struct {
 	Modules      []ModuleInfo `json:"modules,omitempty"`
 	PackageEdges []EdgeInfo   `json:"package_edges,omitempty"`
 }
 
-// ModuleInfo maps a repository-relative directory to its Go import root.
+// ModuleInfo maps repository-relative directories to import-path roots. The
+// longest matching directory owns a file in repositories with nested modules.
 type ModuleInfo struct {
 	Path string `json:"path"`
 	Dir  string `json:"dir"`
+}
+
+// Component is a stable structured view of one model-oriented subsystem. Its
+// anchors and relations are assembled locally from allowlisted repository
+// evidence so the browser does not need to recover authority from prose.
+type Component struct {
+	ID             string             `json:"id"`
+	Name           string             `json:"name"`
+	Role           componentmap.Role  `json:"role"`
+	RoleBasis      evidence.Certainty `json:"role_basis"`
+	ModelPurpose   string             `json:"model_purpose,omitempty"`
+	AnchorGroups   []AnchorGroup      `json:"anchor_groups,omitempty"`
+	RelatedFlowIDs []string           `json:"related_flow_ids,omitempty"`
+	Packages       []string           `json:"packages,omitempty"`
+	PrimaryPackage string             `json:"primary_package,omitempty"`
+}
+
+type AnchorGroup struct {
+	ID             string              `json:"id"`
+	Path           string              `json:"path"`
+	Grounding      string              `json:"grounding"`
+	Locations      []evidence.Location `json:"locations,omitempty"`
+	ModelNotes     []string            `json:"model_notes,omitempty"`
+	LocalContext   []SourceSignal      `json:"local_context,omitempty"`
+	CanListSymbols bool                `json:"can_list_symbols"`
+}
+
+// SourceSignal is the presentation-safe subset of deterministic source
+// scanning evidence kept with an anchor.
+type SourceSignal struct {
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	Category string `json:"category,omitempty"`
+	Snippet  string `json:"snippet,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+type ComponentRelation struct {
+	From      string             `json:"from"`
+	To        string             `json:"to"`
+	Kind      string             `json:"kind"`
+	Certainty evidence.Certainty `json:"certainty"`
+	Evidence  []EdgeInfo         `json:"evidence"`
 }
 
 // RunInfo contains safe, content-free facts about the model boundary used for
@@ -57,13 +113,17 @@ type RunInfo struct {
 	ProviderRequestCount    int    `json:"provider_request_count,omitempty"`
 	CandidateDirectionCount int    `json:"candidate_direction_count,omitempty"`
 	ProviderLatencyMillis   *int64 `json:"provider_latency_ms,omitempty"`
+	SurfaceDiscoveryRan     bool   `json:"surface_discovery_ran,omitempty"`
+	SurfaceDiscoveryCount   int    `json:"surface_discovery_count,omitempty"`
+	SurfaceDiscoveryMillis  *int64 `json:"surface_discovery_ms,omitempty"`
 }
 
 // Subsystem is one grounded component from the orientation-stage system map.
 type Subsystem struct {
-	Name         string   `json:"name"`
-	Evidence     []string `json:"evidence"`
-	WhyItMatters string   `json:"why_it_matters"`
+	Name         string            `json:"name"`
+	Role         componentmap.Role `json:"role"`
+	Evidence     []string          `json:"evidence"`
+	WhyItMatters string            `json:"why_it_matters"`
 }
 
 // DomainWord records repository vocabulary that helps a new reader interpret
@@ -78,15 +138,16 @@ type DomainWord struct {
 // explored further. CandidateFlows remains in ReportData as a names-only
 // compatibility view for existing report.json consumers.
 type CandidateDirection struct {
-	ID               string             `json:"id"`
-	Name             string             `json:"name"`
-	Trigger          string             `json:"trigger"`
-	LikelyEntrypoint string             `json:"likely_entrypoint"`
-	LikelyFiles      []string           `json:"likely_files"`
-	WhyInteresting   string             `json:"why_interesting"`
-	Evidence         []string           `json:"evidence"`
-	Confidence       float64            `json:"confidence"`
-	LocalProof       *flowproof.Session `json:"local_proof,omitempty"`
+	ID                string                        `json:"id"`
+	Name              string                        `json:"name"`
+	Trigger           string                        `json:"trigger"`
+	LikelyEntrypoint  string                        `json:"likely_entrypoint"`
+	LikelyFiles       []string                      `json:"likely_files"`
+	WhyInteresting    string                        `json:"why_interesting"`
+	Evidence          []string                      `json:"evidence"`
+	Confidence        float64                       `json:"confidence"`
+	LocalVerification *flowexplain.FlowVerification `json:"local_verification,omitempty"`
+	LocalProof        *flowproof.Session            `json:"local_proof,omitempty"`
 }
 
 type FlowData struct {
@@ -190,7 +251,7 @@ func findBestFlow(flows []FlowData) string {
 }
 
 func enrich(data *ReportData) {
-	data.FormatVersion = 5
+	data.FormatVersion = CurrentFormatVersion
 	data.FlowCount = len(data.Flows)
 	for i := range data.Flows {
 		data.Flows[i].ConfidenceLabel = confidenceLabel(data.Flows[i].Confidence)

@@ -496,19 +496,15 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.unsupported_version", "proposal version is missing or unsupported")
 		return Landscape{}, diagnostics, false
 	}
-	if len(proposal.Subsystems) == 0 || len(proposal.Subsystems) > maxSubsystems {
-		invalid("proposal.invalid_subsystem_count", "proposal has no subsystems or exceeds the subsystem limit")
+	if len(proposal.Subsystems) == 0 {
+		invalid("proposal.invalid_subsystem_count", "proposal has no subsystems")
 		return Landscape{}, diagnostics, false
 	}
 	memberReferenceCount := 0
-	componentReferenceCount := 0
+	proposedComponentCount := 0
 	for _, subsystem := range proposal.Subsystems {
 		for _, component := range subsystem.Components {
-			componentReferenceCount++
-			if componentReferenceCount > maxComponents {
-				invalid("proposal.invalid_component_count", "proposal exceeds the component limit")
-				return Landscape{}, diagnostics, false
-			}
+			proposedComponentCount++
 			if len(component.MemberIDs) > maxCandidates {
 				invalid("proposal.invalid_members", "proposal membership exceeds the candidate limit")
 				return Landscape{}, diagnostics, false
@@ -526,6 +522,20 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			}
 		}
 	}
+	proposedSubsystems := proposal.Subsystems
+	if len(proposedSubsystems) >= maxSubsystems {
+		proposedSubsystems = proposedSubsystems[:maxSubsystems-1]
+		diagnostics = append(diagnostics, Diagnostic{
+			Code:    "proposal.excess_subsystems_dropped",
+			Message: "kept the first bounded conceptual subsystems and reserved room for local remainder evidence",
+		})
+	}
+	if proposedComponentCount >= maxComponents {
+		diagnostics = append(diagnostics, Diagnostic{
+			Code:    "proposal.excess_components_dropped",
+			Message: "kept the first bounded conceptual components and reserved room for local remainder evidence",
+		})
+	}
 
 	known := candidateIndex(bundle)
 	seenMembers := make(map[MemberID]struct{})
@@ -536,7 +546,11 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
 	}
 	componentCount := 0
-	for _, proposedSubsystem := range proposal.Subsystems {
+	componentBudget := maxComponents - 1
+	for _, proposedSubsystem := range proposedSubsystems {
+		if componentBudget == 0 {
+			break
+		}
 		name := strings.TrimSpace(proposedSubsystem.Name)
 		description := strings.TrimSpace(proposedSubsystem.Description)
 		if validateDisplayText("subsystem name", name, maxNameBytes, true) != nil ||
@@ -547,11 +561,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		}
 		subsystem := Subsystem{Name: name, Description: description, Components: make([]Component, 0, len(proposedSubsystem.Components))}
 		for _, proposedComponent := range proposedSubsystem.Components {
-			componentCount++
+			if componentBudget == 0 {
+				break
+			}
+			componentBudget--
 			componentName := strings.TrimSpace(proposedComponent.Name)
 			componentDescription := strings.TrimSpace(proposedComponent.Description)
-			if componentCount > maxComponents ||
-				validateDisplayText("component name", componentName, maxNameBytes, true) != nil ||
+			if validateDisplayText("component name", componentName, maxNameBytes, true) != nil ||
 				validateDisplayText("component description", componentDescription, maxDescriptionBytes, false) != nil ||
 				len(proposedComponent.MemberIDs) == 0 {
 				invalid("proposal.invalid_component", "proposal contains an empty or malformed component")
@@ -568,23 +584,42 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 					continue
 				}
 				if _, exists := seenMembers[memberID]; exists {
-					invalid("proposal.duplicate_membership", "a member appears in more than one proposed membership position")
-					return Landscape{}, diagnostics, false
+					diagnostics = append(diagnostics, Diagnostic{
+						Code:    "proposal.duplicate_membership_dropped",
+						Message: "kept the first conceptual placement for a repeated local member",
+					})
+					continue
 				}
 				seenMembers[memberID] = struct{}{}
 				members = append(members, cloneCandidate(candidate))
 			}
 			if len(members) == 0 {
-				invalid("proposal.empty_membership", "no known member survived in a proposed component")
-				return Landscape{}, diagnostics, false
+				diagnostics = append(diagnostics, Diagnostic{
+					Code:    "proposal.empty_membership_dropped",
+					Message: "dropped a proposed component after no unique known member survived",
+				})
+				componentCount--
+				continue
 			}
 			sortCandidates(members)
+			componentCount++
 			subsystem.Components = append(subsystem.Components, Component{
 				ID: componentID(candidateIDs(members)), Name: componentName, Description: componentDescription, Members: members,
 			})
 		}
+		if len(subsystem.Components) == 0 {
+			diagnostics = append(diagnostics, Diagnostic{
+				Code:    "proposal.empty_subsystem_dropped",
+				Message: "dropped a proposed subsystem after no usable component survived",
+			})
+			continue
+		}
 		subsystem.ID = subsystemID(componentIDs(subsystem.Components))
 		landscape.Subsystems = append(landscape.Subsystems, subsystem)
+	}
+	if len(landscape.Subsystems) == 0 {
+		invalid("proposal.no_usable_subsystems", "no proposed subsystem retained a unique known member")
+		return Landscape{}, diagnostics, false
 	}
 	if len(seenMembers) != len(bundle.Candidates) {
 		missing := make([]Candidate, 0, len(bundle.Candidates)-len(seenMembers))

@@ -40,6 +40,21 @@ func TestReduceClearsOrientationOriginOnRepositoryChange(t *testing.T) {
 	}
 }
 
+func TestReduceAcceptsComponentAnchorOriginWithoutFlow(t *testing.T) {
+	t.Parallel()
+
+	origin := validOrientationOrigin()
+	origin.Kind = OriginOrientationComponent
+	origin.FlowID = ""
+	origin.FlowName = ""
+	origin.ComponentID = "component-7bfa93f359a9"
+	origin.AnchorID = "anchor-1d759c749297"
+	session := startWithOrigin(t, origin)
+	if session.Origin == nil || !reflect.DeepEqual(*session.Origin, origin) {
+		t.Fatalf("component origin = %#v, want %#v", session.Origin, origin)
+	}
+}
+
 func TestReduceRejectsInvalidOrientationOrigin(t *testing.T) {
 	t.Parallel()
 

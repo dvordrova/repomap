@@ -15,7 +15,7 @@
  const GROUP_PADDING = 26;
  const GROUP_HEADER = 50;
  const UNASSIGNED_ID = "__repomap_unassigned__";
- const MIN_SCALE = 0.28;
+ const MIN_SCALE = 0.18;
  const MAX_SCALE = 2.4;
 
  function array(value) {
@@ -39,6 +39,12 @@
    node.setAttribute(key, text(attributes[key]));
   });
   return node;
+ }
+
+ function setSVGVisible(node, visible) {
+  node.style.display = visible ? "" : "none";
+  node.setAttribute("aria-hidden", visible ? "false" : "true");
+  node.setAttribute("tabindex", visible ? "0" : "-1");
  }
 
  function clamp(value, low, high) {
@@ -73,6 +79,17 @@ function branchClass(kind) {
   if (value.indexOf("start") >= 0 || invocation === "goroutine") return "is-start";
   if (value.indexOf("callback") >= 0 || invocation === "callback") return "is-callback";
   return "is-call";
+ }
+
+ function relationLabel(relation) {
+  const value = text(relation);
+  const labels = {
+   registers_command: "registers",
+   starts_goroutine: "starts task",
+   uses_cancellation: "uses cancel",
+   waits_for: "waits for",
+  };
+  return labels[value] || value.replace(/_/g, " ") || "continues";
  }
 
  function layoutComponentID(id) {
@@ -166,8 +183,9 @@ function branchClass(kind) {
    this.frontierElements = new Map();
    this.structuralEdgeElements = new Map();
    this.flowEdgeElements = new Map();
-   this.flowComponentIDs = new Map();
-   this.flowButtons = new Map();
+    this.flowComponentIDs = new Map();
+    this.flowButtons = new Map();
+    this.focusFlowID = "";
 
    this.indexData();
    this.buildShell();
@@ -241,9 +259,11 @@ function branchClass(kind) {
    this.root.appendChild(toolbar);
 
    const workspace = element("div", "rm-arch__workspace");
-   this.viewport = element("div", "rm-arch__viewport");
-   this.loading = element("div", "rm-arch__loading", "Laying out the saved architecture…");
-   this.viewport.appendChild(this.loading);
+    this.viewport = element("div", "rm-arch__viewport");
+    this.loading = element("div", "rm-arch__loading", "Laying out the saved architecture…");
+    this.flowFocus = element("div", "rm-arch__flow-focus");
+    this.flowFocus.hidden = true;
+    this.viewport.append(this.loading, this.flowFocus);
    workspace.appendChild(this.viewport);
 
    this.inspector = element("aside", "rm-arch__inspector");
@@ -258,6 +278,8 @@ function branchClass(kind) {
   controlButton(label, title, handler) {
    const button = element("button", "rm-arch__control", label);
    button.type = "button";
+   button.title = title;
+   button.setAttribute("aria-label", title);
    this.listen(button, "click", handler);
    return button;
   }
@@ -290,7 +312,7 @@ function branchClass(kind) {
   layoutOnce() {
    const ELKConstructor = global.ELK;
    if (typeof ELKConstructor !== "function") {
-    return Promise.reject(new Error("ELK.js is unavailable; showing deterministic fallback positions"));
+    return Promise.reject(new Error("Architecture renderer is unavailable."));
    }
    const elk = new ELKConstructor();
    return elk.layout(this.buildELKGraph()).then((layout) => this.normalizeELKLayout(layout));
@@ -531,7 +553,8 @@ function branchClass(kind) {
     button.type = "button";
     button.appendChild(element("strong", "rm-arch__component-name", component.name || id));
     this.listen(button, "click", () => {
-     this.setSelection({ component: id, step: "", edge: "" }, true);
+     const selected = this.selection.component === id && !this.selection.step && !this.selection.edge;
+     this.setSelection({ component: selected ? "" : id, step: "", edge: "" }, true);
     });
     shell.appendChild(button);
     this.nodeLayer.appendChild(shell);
@@ -555,7 +578,11 @@ function branchClass(kind) {
   }
 
   renderStructuralEdges() {
+   const representedPairs = new Set();
    this.structuralEdges.forEach((edge) => {
+    const pair = text(edge.from_component_id) + "\u0000" + text(edge.to_component_id);
+    if (representedPairs.has(pair)) return;
+    representedPairs.add(pair);
     const route = this.edgeRoutes.get(layoutStructuralEdgeID(edge.id));
     if (!route) return;
     const group = this.interactiveSVGPath(
@@ -564,6 +591,7 @@ function branchClass(kind) {
      "Structural relation " + text((edge.witness || {}).kind || edge.id),
      () => this.setSelection({ edge: text(edge.id), step: "" }, true)
     );
+    setSVGVisible(group, false);
     this.structuralSVG.appendChild(group);
     this.structuralEdgeElements.set(text(edge.id), group);
    });
@@ -788,6 +816,36 @@ function branchClass(kind) {
    return "M" + fromX + " " + fromY + " L" + fromX + " " + railY + " L" + toX + " " + railY + " L" + toX + " " + toY;
   }
 
+  crossFlowRoute(edge) {
+   const from = this.stepGeometry.get(flowStepKey(edge.flow_id, edge.from));
+   const to = this.stepGeometry.get(flowStepKey(edge.flow_id, edge.to));
+   if (!from || !to) return "";
+
+   const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+   const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+   const deltaX = toCenter.x - fromCenter.x;
+   const deltaY = toCenter.y - fromCenter.y;
+   if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+    const rightward = deltaX >= 0;
+    const startX = rightward ? from.x + from.width : from.x;
+    const endX = rightward ? to.x : to.x + to.width;
+    const middleX = (startX + endX) / 2;
+    return "M" + startX + " " + fromCenter.y +
+     " L" + middleX + " " + fromCenter.y +
+     " L" + middleX + " " + toCenter.y +
+     " L" + endX + " " + toCenter.y;
+   }
+
+   const downward = deltaY >= 0;
+   const startY = downward ? from.y + from.height : from.y;
+   const endY = downward ? to.y : to.y + to.height;
+   const middleY = (startY + endY) / 2;
+   return "M" + fromCenter.x + " " + startY +
+    " L" + fromCenter.x + " " + middleY +
+    " L" + toCenter.x + " " + middleY +
+    " L" + toCenter.x + " " + endY;
+  }
+
   renderFlowEdges() {
    const defs = svgElement("defs");
    defs.appendChild(this.arrowMarker("rm-arch-arrow", "#2563eb"));
@@ -801,8 +859,8 @@ function branchClass(kind) {
     const fromOwner = this.flowStepOwner(edge.flow_id, edge.from);
     const isLocal = fromOwner && fromOwner === this.flowStepOwner(edge.flow_id, edge.to);
     const route = isLocal
-     ? this.localFlowRoute(edge, localLanes.get(key) || 0)
-     : this.edgeRoutes.get(layoutFlowEdgeID(edge.flow_id, edge.id));
+      ? this.localFlowRoute(edge, localLanes.get(key) || 0)
+      : this.crossFlowRoute(edge) || this.edgeRoutes.get(layoutFlowEdgeID(edge.flow_id, edge.id));
     if (!route) return;
     const semantic = semanticClass(edge.relation, edge.invocation);
     const className = [
@@ -819,13 +877,225 @@ function branchClass(kind) {
      "Flow transition " + text(edge.relation || edge.id) + " from " + text(edge.from) + " to " + text(edge.to),
      () => this.setSelection({ flow: text(edge.flow_id), edge: text(edge.id), step: "" }, true)
     );
-    group.hidden = true;
+    setSVGVisible(group, false);
     const visible = group.querySelector(".rm-arch__edge-visible");
     if (semantic === "is-cancel") visible.setAttribute("marker-end", "url(#rm-arch-arrow-cancel)");
     else if (semantic === "is-join") visible.setAttribute("marker-end", "url(#rm-arch-arrow-join)");
     else visible.setAttribute("marker-end", "url(#rm-arch-arrow)");
     this.flowSVG.appendChild(group);
     this.flowEdgeElements.set(key, group);
+    });
+  }
+
+  primaryFlowSteps(flow) {
+   const numbered = array(flow.steps)
+    .map((step) => {
+     const match = text(step.id).match(/^step-(\d+)-/);
+     return match ? { step: step, order: Number(match[1]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.order - b.order)
+    .map((item) => item.step);
+   if (numbered.length > 0) return numbered.slice(0, 8);
+
+   const main = array(flow.branches).find((branch) => text(branch.kind) === "main");
+   const roots = array(main && main.root_anchor_ids)
+    .map((id) => this.flowStepsByKey.get(flowStepKey(flow.id, id)))
+    .filter(Boolean);
+   if (roots.length > 0) return roots.slice(0, 8);
+   return array(flow.steps).slice(0, 6);
+  }
+
+  focusedStepButton(flow, step, className, sequence) {
+   const button = element("button", "rm-arch__focus-step " + (className || ""));
+   button.type = "button";
+   button.dataset.stepId = text(step.id);
+   if (sequence) button.appendChild(element("span", "rm-arch__focus-step-number", sequence));
+   const copy = element("span", "rm-arch__focus-step-copy");
+   copy.appendChild(element("strong", null, step.label || step.id));
+   const component = this.componentByID.get(text(step.component_id));
+   copy.appendChild(element(
+    "span",
+    "rm-arch__focus-step-meta",
+    [component && (component.name || component.id), locationLabel(step.location)].filter(Boolean).join(" · ") || "Exact saved anchor"
+   ));
+   button.appendChild(copy);
+   this.listen(button, "click", () => this.setSelection({
+    flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
+   }, true));
+   return button;
+  }
+
+  focusedTransitionButton(flow, edge, className) {
+   if (!edge) return element("span", "rm-arch__focus-transition is-static", "then");
+   const button = element(
+    "button",
+    "rm-arch__focus-transition " + (className || "") + " " + semanticClass(edge.relation, edge.invocation),
+    relationLabel(edge.relation)
+   );
+   button.type = "button";
+   button.dataset.edgeId = text(edge.id);
+   button.setAttribute("aria-label", "Inspect " + text(edge.relation || "flow") + " transition");
+   this.listen(button, "click", () => this.setSelection({
+    flow: text(flow.id), edge: text(edge.id), step: "", component: "",
+   }, true));
+   return button;
+  }
+
+  focusedFlowEdges(flowID) {
+   return this.flowEdges.filter((edge) => text(edge.flow_id) === text(flowID));
+  }
+
+  focusedOperationEdges(flow, primary) {
+   if (primary.length === 0) return [];
+   const source = primary[primary.length - 1];
+   const primaryIDs = new Set(primary.map((step) => text(step.id)));
+   const seenTargets = new Set();
+   return this.focusedFlowEdges(flow.id)
+    .filter((edge) => text(edge.from) === text(source.id) && !primaryIDs.has(text(edge.to)))
+    .map((edge) => ({ edge: edge, target: this.flowStepsByKey.get(flowStepKey(flow.id, edge.to)) }))
+    .filter((item) => item.target)
+    .filter((item) => {
+     const targetComponent = text(item.target.component_id);
+     return !targetComponent || targetComponent !== text(source.component_id) ||
+      semanticClass(item.edge.relation, item.edge.invocation) !== "is-call";
+    })
+    .sort((a, b) => {
+     const rank = (item) => {
+      const targetComponent = text(item.target.component_id);
+      if (targetComponent && targetComponent !== text(source.component_id)) return 0;
+      if (!targetComponent) return 1;
+      const semantic = semanticClass(item.edge.relation, item.edge.invocation);
+      return semantic === "is-call" ? 3 : 2;
+     };
+     const difference = rank(a) - rank(b);
+     if (difference !== 0) return difference;
+     const left = Number((a.edge.evidence || {}).line || (a.target.location || {}).line || 0);
+     const right = Number((b.edge.evidence || {}).line || (b.target.location || {}).line || 0);
+     return left - right || text(a.target.id).localeCompare(text(b.target.id));
+    })
+    .filter((item) => {
+     const id = text(item.target.id);
+     if (seenTargets.has(id)) return false;
+     seenTargets.add(id);
+     return true;
+    })
+    .slice(0, 8);
+  }
+
+  focusedHandoffEdges(flow, primary) {
+   const primaryPairs = new Set();
+   primary.forEach((step, index) => {
+    if (index > 0) primaryPairs.add(text(primary[index - 1].id) + "\u0000" + text(step.id));
+   });
+   return this.focusedFlowEdges(flow.id)
+    .filter((edge) => {
+     if (primaryPairs.has(text(edge.from) + "\u0000" + text(edge.to))) return false;
+     const semantic = semanticClass(edge.relation, edge.invocation);
+     return edge.cross_branch || semantic === "is-start" || semantic === "is-cancel" ||
+      semantic === "is-join" || semantic === "is-callback";
+    })
+    .filter((edge) =>
+     this.flowStepsByKey.has(flowStepKey(flow.id, edge.from)) &&
+     this.flowStepsByKey.has(flowStepKey(flow.id, edge.to))
+    )
+    .slice(0, 6);
+  }
+
+  renderFocusedFlow(flow) {
+   const flowID = text(flow && flow.id);
+   if (!flowID || this.focusFlowID === flowID) return;
+   this.focusFlowID = flowID;
+   this.flowFocus.replaceChildren();
+
+   const primary = this.primaryFlowSteps(flow);
+   const flowEdges = this.focusedFlowEdges(flowID);
+   const header = element("header", "rm-arch__focus-header");
+   const heading = element("div", "rm-arch__focus-heading");
+   heading.appendChild(element("span", "rm-arch__focus-kicker", "Verified execution trace"));
+   heading.appendChild(element("h3", null, flow.name || flow.id));
+   heading.appendChild(element("p", null, flow.trigger || flow.mental_model || flow.goal || "Saved exact flow evidence"));
+   header.appendChild(heading);
+   const stats = element("div", "rm-arch__focus-stats");
+   stats.appendChild(element("strong", null, array(flow.steps).length + " exact anchors"));
+   stats.appendChild(element("span", null, flowEdges.length + " verified transitions"));
+   stats.appendChild(element("span", null, array(flow.branches).length + " execution lanes"));
+   header.appendChild(stats);
+   this.flowFocus.appendChild(header);
+
+   if (primary.length > 0) {
+    const section = element("section", "rm-arch__focus-section");
+    const sectionHeader = element("div", "rm-arch__focus-section-heading");
+    sectionHeader.appendChild(element("h4", null, "Command path"));
+    sectionHeader.appendChild(element("p", null, "The bounded entry and dispatch chain, in saved order."));
+    section.appendChild(sectionHeader);
+    const path = element("div", "rm-arch__focus-path");
+    primary.forEach((step, index) => {
+     if (index > 0) {
+      const previous = primary[index - 1];
+      const edge = flowEdges.find((candidate) =>
+       text(candidate.from) === text(previous.id) && text(candidate.to) === text(step.id)
+      );
+      path.appendChild(this.focusedTransitionButton(flow, edge, "is-path"));
+     }
+     path.appendChild(this.focusedStepButton(flow, step, "is-primary", String(index + 1).padStart(2, "0")));
+    });
+    section.appendChild(path);
+    this.flowFocus.appendChild(section);
+   }
+
+   const operations = this.focusedOperationEdges(flow, primary);
+   if (operations.length > 0) {
+    const section = element("section", "rm-arch__focus-section");
+    const sectionHeader = element("div", "rm-arch__focus-section-heading");
+    sectionHeader.appendChild(element("h4", null, "Key operations"));
+    sectionHeader.appendChild(element("p", null, "Important exact calls leaving the application entry function; this is a fan-out, not implied runtime order."));
+    section.appendChild(sectionHeader);
+    const grid = element("div", "rm-arch__focus-operations");
+    operations.forEach((item) => {
+     const card = element("article", "rm-arch__focus-operation " + semanticClass(item.edge.relation, item.edge.invocation));
+     card.appendChild(this.focusedTransitionButton(flow, item.edge, "is-operation"));
+     card.appendChild(this.focusedStepButton(flow, item.target, branchClass(this.stepBranchKind(flow, item.target)), ""));
+     grid.appendChild(card);
+    });
+    section.appendChild(grid);
+    this.flowFocus.appendChild(section);
+   }
+
+   const handoffs = this.focusedHandoffEdges(flow, primary);
+   if (handoffs.length > 0) {
+    const section = element("section", "rm-arch__focus-section");
+    const sectionHeader = element("div", "rm-arch__focus-section-heading");
+    sectionHeader.appendChild(element("h4", null, "Concurrency and lifecycle"));
+    sectionHeader.appendChild(element("p", null, "Task, callback, cancellation, and join relationships shown separately from the main path."));
+    section.appendChild(sectionHeader);
+    const rows = element("div", "rm-arch__focus-handoffs");
+    handoffs.forEach((edge) => {
+     const source = this.flowStepsByKey.get(flowStepKey(flow.id, edge.from));
+     const target = this.flowStepsByKey.get(flowStepKey(flow.id, edge.to));
+     const row = element("div", "rm-arch__focus-handoff " + semanticClass(edge.relation, edge.invocation));
+     row.appendChild(this.focusedStepButton(flow, source, "is-compact " + branchClass(this.stepBranchKind(flow, source)), ""));
+     row.appendChild(this.focusedTransitionButton(flow, edge, "is-handoff"));
+     row.appendChild(this.focusedStepButton(flow, target, "is-compact " + branchClass(this.stepBranchKind(flow, target)), ""));
+     rows.appendChild(row);
+    });
+    section.appendChild(rows);
+    this.flowFocus.appendChild(section);
+   }
+
+   const footer = element("footer", "rm-arch__focus-footer");
+   footer.appendChild(element("strong", null, "Bounded overview"));
+   footer.appendChild(element("span", null, "Select the flow tab again or clear a selection to inspect every exact anchor and proof slot below."));
+   this.flowFocus.appendChild(footer);
+  }
+
+  syncFocusedSelection() {
+   if (!this.flowFocus) return;
+   this.flowFocus.querySelectorAll("[data-step-id]").forEach((node) => {
+    node.classList.toggle("is-selected", node.dataset.stepId === this.selection.step);
+   });
+   this.flowFocus.querySelectorAll("[data-edge-id]").forEach((node) => {
+    node.classList.toggle("is-selected", node.dataset.edgeId === this.selection.edge);
    });
   }
 
@@ -867,14 +1137,14 @@ function branchClass(kind) {
 
   installViewportInteractions() {
    this.listen(this.viewport, "wheel", (event) => {
-    if (!this.surface) return;
+    if (!this.surface || this.selection.flow) return;
     event.preventDefault();
     const factor = event.deltaY > 0 ? 0.88 : 1.14;
     this.zoomBy(factor);
    }, { passive: false });
 
    this.listen(this.viewport, "pointerdown", (event) => {
-    if (!this.surface || event.button !== 0) return;
+    if (!this.surface || this.selection.flow || event.button !== 0) return;
     if (event.target.closest("button, .rm-arch__edge")) return;
     this.drag = { pointerID: event.pointerId, x: event.clientX, y: event.clientY, originX: this.view.x, originY: this.view.y };
     this.viewport.setPointerCapture(event.pointerId);
@@ -912,20 +1182,57 @@ function branchClass(kind) {
 
   fit() {
    if (!this.surface || !this.layoutResult) return;
+   const bounds = this.selectedFlowBounds() || {
+    x: 0,
+    y: 0,
+    width: this.layoutResult.width,
+    height: this.layoutResult.height,
+   };
+   this.fitBounds(bounds);
+  }
+
+  selectedFlowBounds() {
+   const flowID = this.selection.flow;
+   if (!flowID) return null;
+   const componentIDs = this.flowComponentIDs.get(flowID) || new Set();
+   const positions = [];
+   componentIDs.forEach((id) => {
+    const position = this.nodePositions.get(id);
+    if (position) positions.push(position);
+   });
+   const flow = this.flowByID.get(flowID);
+   const hasUnassigned = Boolean(flow) && (
+    array(flow.steps).some((step) => !step.component_id) ||
+    this.frontiers.some((frontier) => text(frontier.flow_id) === flowID)
+   );
+   if (hasUnassigned) {
+    const unassigned = this.nodePositions.get(UNASSIGNED_ID);
+    if (unassigned) positions.push(unassigned);
+   }
+   if (positions.length === 0) return null;
+   const padding = 36;
+   const minX = Math.min.apply(null, positions.map((position) => position.x)) - padding;
+   const minY = Math.min.apply(null, positions.map((position) => position.y)) - padding;
+   const maxX = Math.max.apply(null, positions.map((position) => position.x + position.width)) + padding;
+   const maxY = Math.max.apply(null, positions.map((position) => position.y + position.height)) + padding;
+   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  fitBounds(bounds) {
    const rect = this.viewport.getBoundingClientRect();
    if (rect.width < 10 || rect.height < 10) return;
    const padding = 28;
    const scale = clamp(
     Math.min(
-     (rect.width - padding * 2) / this.layoutResult.width,
-     (rect.height - padding * 2) / this.layoutResult.height
+     (rect.width - padding * 2) / bounds.width,
+     (rect.height - padding * 2) / bounds.height
     ),
     MIN_SCALE,
     1.35
    );
    this.view.scale = scale;
-   this.view.x = (rect.width - this.layoutResult.width * scale) / 2;
-   this.view.y = (rect.height - this.layoutResult.height * scale) / 2;
+   this.view.x = (rect.width - bounds.width * scale) / 2 - bounds.x * scale;
+   this.view.y = (rect.height - bounds.height * scale) / 2 - bounds.y * scale;
    this.applyView();
   }
 
@@ -936,10 +1243,18 @@ function branchClass(kind) {
   }
 
   setSelection(patch, writeHash) {
+   const previousFlow = this.selection.flow;
    const next = Object.assign({}, this.selection, patch || {});
    this.selection = this.validateSelection(next);
    if (writeHash) this.writeHash();
    this.renderSelection();
+    if (this.surface && previousFlow !== this.selection.flow && !this.selection.flow) {
+    requestAnimationFrame(() => this.fit());
+   }
+  }
+
+  hasInspectorSelection(selection) {
+   return Boolean(selection && (selection.flow || selection.component || selection.step || selection.edge));
   }
 
   validateSelection(selection) {
@@ -996,10 +1311,14 @@ function branchClass(kind) {
     return;
    }
    const flowID = this.selection.flow;
-   const hasFlow = Boolean(flowID);
+    const hasFlow = Boolean(flowID);
    this.root.classList.toggle("has-selected-flow", hasFlow);
    this.landscapeButton.classList.toggle("is-active", !hasFlow);
-   this.flowButtons.forEach((button, id) => button.classList.toggle("is-active", id === flowID));
+    this.flowButtons.forEach((button, id) => button.classList.toggle("is-active", id === flowID));
+    this.surface.hidden = hasFlow;
+    this.flowFocus.hidden = !hasFlow;
+    if (hasFlow) this.renderFocusedFlow(this.flowByID.get(flowID));
+    this.syncFocusedSelection();
 
    const relatedComponents = this.flowComponentIDs.get(flowID) || new Set();
    this.componentElements.forEach((node, id) => {
@@ -1008,7 +1327,7 @@ function branchClass(kind) {
     node.classList.toggle("is-flow-related", hasFlow && relatedComponents.has(id));
    });
 
-   this.structuralSVG.classList.toggle("is-suppressed", hasFlow);
+   this.structuralSVG.classList.remove("is-suppressed");
    this.stepElements.forEach((node, key) => {
     const itemFlow = key.split("\u0000", 1)[0];
     node.hidden = itemFlow !== flowID;
@@ -1027,17 +1346,35 @@ function branchClass(kind) {
    }
 
    this.structuralEdgeElements.forEach((group, id) => {
-    group.classList.toggle("is-selected", id === this.selection.edge && !hasFlow);
+    const edge = this.structuralEdgeByID.get(id);
+    const selectedEdge = id === this.selection.edge && !hasFlow;
+    const incident = Boolean(
+     !hasFlow &&
+     this.selection.component &&
+     edge &&
+     (text(edge.from_component_id) === this.selection.component || text(edge.to_component_id) === this.selection.component)
+    );
+    setSVGVisible(group, selectedEdge || incident);
+    group.classList.toggle("is-selected", selectedEdge);
    });
    this.flowEdgeElements.forEach((group, key) => {
     const itemFlow = key.split("\u0000", 1)[0];
-    group.hidden = itemFlow !== flowID;
+    const edge = this.flowEdgesByKey.get(key);
+    const endpointsVisible = Boolean(
+     edge &&
+     this.stepElements.has(flowStepKey(itemFlow, edge.from)) &&
+     this.stepElements.has(flowStepKey(itemFlow, edge.to))
+    );
+    setSVGVisible(group, itemFlow === flowID && endpointsVisible);
     group.classList.toggle("is-selected", key === selectionKey(flowID, this.selection.edge));
    });
    this.renderInspector();
   }
 
   renderInspector() {
+   const visible = this.hasInspectorSelection(this.selection);
+   this.root.classList.toggle("has-detail-inspector", visible);
+   this.inspector.hidden = !visible;
    this.inspector.replaceChildren();
    if (this.selection.step && this.selection.flow) {
     const step = this.flowStepsByKey.get(flowStepKey(this.selection.flow, this.selection.step));
@@ -1090,10 +1427,6 @@ function branchClass(kind) {
      "No compatible saved FlowProof is available for this run. The landscape remains useful, but no runtime sequence is implied."
     ));
    }
-   if (this.data.fallback) {
-    const fallback = this.inspectorSection("Fallback state");
-    fallback.appendChild(element("p", "rm-arch__notice is-warning", text(this.data.fallback_reason) || "The provider-independent landscape fallback was used."));
-   }
    this.appendDiagnostics(this.inspectorSection("Diagnostics"), "");
   }
 
@@ -1132,7 +1465,7 @@ function branchClass(kind) {
 
   inspectFlow(flow) {
    this.inspectorHeading("Saved flow", flow.name || flow.id, flow.mental_model || flow.goal);
-   if (flow.trigger) this.appendKeyValue(this.inspector, "Trigger", flow.trigger);
+   if (flow.trigger) this.appendKeyValue(this.inspector, "Starts when", flow.trigger);
    if (flow.scope) this.appendKeyValue(this.inspector, "Scope", flow.scope);
    if (flow.command) this.appendKeyValue(this.inspector, "Command", flow.command);
 
@@ -1141,7 +1474,10 @@ function branchClass(kind) {
     const row = element("div", "rm-arch__branch-row " + branchClass(branch.kind));
     row.appendChild(element("strong", null, branch.kind || "unassigned"));
     row.appendChild(element("span", null, array(branch.anchor_ids).length + " steps"));
-    if (branch.root_anchor_id) row.appendChild(element("code", null, branch.root_anchor_id));
+    if (branch.root_anchor_id) {
+     const root = this.flowStepsByKey.get(flowStepKey(flow.id, branch.root_anchor_id));
+     row.appendChild(element("code", null, root && (root.label || root.qualified_name) || "task root"));
+    }
     branches.appendChild(row);
    });
 
@@ -1204,7 +1540,10 @@ function branchClass(kind) {
    if (target) this.appendLocation(this.inspector, target.location, "Target declaration");
    if (edge.condition) {
     const condition = this.inspectorSection("Source condition");
-    condition.appendChild(element("code", "rm-arch__condition", edge.condition.expression || "condition recorded"));
+    const conditionText = edge.condition.expression || (
+     edge.condition.expression_omitted ? "condition (expression omitted)" : "condition recorded"
+    );
+    condition.appendChild(element("code", "rm-arch__condition", conditionText));
     this.appendLocation(condition, edge.condition.location, "Condition location");
     condition.appendChild(element("p", "rm-arch__copy", "This preserves syntax; it does not claim the branch ran."));
    }

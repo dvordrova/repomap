@@ -32,7 +32,9 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 - Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) before changing architecture.
 - Read [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) before changing DeepSeek client.
 - Do not invent ad-hoc DeepSeek request shapes; follow docs/DEEPSEEK_API_NOTES.md.
-- If a debugging command is useful, add or update a script instead of leaving a one-off shell pipeline.
+- Reusable developer entrypoints belong in `Makefile`. Keep a script only when
+  it contains a substantive multi-step check or is also a standalone CI entrypoint;
+  expose that script through a Make target.
 
 ## Development rules
 
@@ -46,8 +48,9 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
   ```
 - If a command fails, **fix the failure** or clearly explain why it cannot be fixed.
 - Never leave known broken tests.
-- Never use one-off shell pipelines when a reusable script would be better.
-- If a debugging command is useful twice, **turn it into a script** under `./scripts/`.
+- Never leave a useful one-off shell pipeline undocumented.
+- If a debugging command is useful twice, **turn it into a Make target**. Extract
+  a script under `./scripts/` only when the recipe is too substantial for Make.
 - Debug artifacts must **never** include API keys or Authorization headers.
 - Debug artifacts must **never** be committed.
 
@@ -58,7 +61,6 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ./scripts/smoke.sh           # temp git repo, snapshot+bundle, no network/API key
 ./scripts/etcd_check.sh      # validate against etcd clone (skip if absent)
 ./scripts/deepseek_check.sh  # full DeepSeek call (skip without key)
-./scripts/with_deepseek_generic_config.sh # map local key into REPOMAP_LLM_* reference config
 ./scripts/source_artifacts_check.sh # bounded source card/bundle, no model call
 ./scripts/source_check.sh    # replay fixed DeepSeek source response, no network
 ./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
@@ -88,3 +90,5 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 - Saved investigation facts, claims, and session state must remain separate and hash-verified
 - Current repository/fact/claim context must be reconciled before a saved action is executable
 - Repository freshness must hash dirty contents without reading unrelated ignored secrets
+- Interactive report actions require a versioned run manifest bound to the exact report and repository state
+- Browser clients may request local analysis only through manifest-authorized opaque IDs, never raw paths or symbols

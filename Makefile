@@ -1,12 +1,14 @@
 SHELL := /usr/bin/env bash
 
+-include .env
 export
 
 BIN_DIR  ?= .bin
 TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
+RUN_ARGS ?=
 
-.PHONY: help test vet check quality-check build clean smoke etcd-check symbol-check symbol-prompt-experiment gopls-examples gopls-examples-fetch doctor debug-last run run-json run-offline run-flows2 deepseek-check
+.PHONY: help test vet check quality-check build clean smoke etcd-check friend-check symbol-check symbol-prompt-experiment source-prompt-experiment component-study-preview component-study-live component-study-replay component-probe component-probe-frontier component-teach-preview component-teach-live component-teach-replay research-trail-replay flowproof-replay pyright-fixture gopls-examples gopls-examples-fetch doctor doctor-check generic-deepseek-doctor debug-last serve run run-json run-offline run-flows2 deepseek-check
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -71,11 +73,117 @@ smoke: ## Smoke test via reusable script (no network)
 etcd-check: ## Validate against etcd clone via reusable script
 	./scripts/etcd_check.sh $(ETCD_REPO)
 
+friend-check: ## Replay the one-request browser onboarding journey
+	./scripts/friend_check.sh
+
 symbol-check: ## Build and inspect an offline DeepSeek prompt for etcd kvServer.Put
 	./scripts/symbol_check.sh $(ETCD_REPO) kvServer.Put
 
 symbol-prompt-experiment: ## Call DeepSeek for a versioned symbol prompt (LABEL=x FORMAT=json|tagged)
 	./scripts/symbol_prompt_experiment.sh "$(LABEL)" "$(ETCD_REPO)" kvServer.Put "$(or $(FORMAT),tagged)"
+
+source-prompt-experiment: ## Call DeepSeek for a source-stage prompt (LABEL=x SYMBOL=kvServer.Put)
+	./scripts/source_prompt_experiment.sh "$(LABEL)" "$(ETCD_REPO)" "$(or $(SYMBOL),kvServer.Put)"
+
+COMPONENT_STUDY_RUN ?= $(HOME)/Library/Caches/repomap/runs/20260711-011750-soft-serve
+COMPONENT_STUDY_COMPONENT ?= SSH server
+COMPONENT_STUDY_ANCHOR ?= cmd/soft/serve/serve.go
+COMPONENT_STUDY_GOAL ?= After soft serve, how are configuration and backend initialized, which long-running services start, how do failures converge, and how is shutdown performed?
+COMPONENT_STUDY_OUT ?= $(TMP_DIR)/deeper/soft-serve-startup
+COMPONENT_STUDY_RESPONSE ?=
+COMPONENT_STUDY_RESPONSE_PROMPT ?= unknown
+
+component-study-preview: ## Build the bounded Soft Serve deeper-planner artifacts without a model call
+	go run ./cmd/componentstudy-playground --run-dir "$(COMPONENT_STUDY_RUN)" --component "$(COMPONENT_STUDY_COMPONENT)" --anchor "$(COMPONENT_STUDY_ANCHOR)" --goal "$(COMPONENT_STUDY_GOAL)" --out-dir "$(COMPONENT_STUDY_OUT)"
+
+component-study-live: ## Run one configured model call over the bounded deeper-planner bundle
+	go run ./cmd/componentstudy-playground --run-dir "$(COMPONENT_STUDY_RUN)" --component "$(COMPONENT_STUDY_COMPONENT)" --anchor "$(COMPONENT_STUDY_ANCHOR)" --goal "$(COMPONENT_STUDY_GOAL)" --out-dir "$(COMPONENT_STUDY_OUT)" --live
+
+component-study-replay: ## Replay COMPONENT_STUDY_RESPONSE through the current local planner parser
+	@test -n "$(COMPONENT_STUDY_RESPONSE)" || (echo "COMPONENT_STUDY_RESPONSE is required" >&2; exit 2)
+	go run ./cmd/componentstudy-playground --run-dir "$(COMPONENT_STUDY_RUN)" --component "$(COMPONENT_STUDY_COMPONENT)" --anchor "$(COMPONENT_STUDY_ANCHOR)" --goal "$(COMPONENT_STUDY_GOAL)" --out-dir "$(COMPONENT_STUDY_OUT)" --response-file "$(COMPONENT_STUDY_RESPONSE)" --response-prompt-version "$(COMPONENT_STUDY_RESPONSE_PROMPT)"
+
+COMPONENT_PROBE_RUN ?= $(HOME)/Library/Caches/repomap/runs/20260711-011750-soft-serve
+COMPONENT_PROBE_STUDY_BUNDLE ?= $(TMP_DIR)/deeper/soft-serve-startup-v3-replay/planner/bundle.json
+COMPONENT_PROBE_PLAN ?= $(TMP_DIR)/deeper/soft-serve-startup-v3-replay/planner/plan.json
+COMPONENT_PROBE_OUT ?= $(TMP_DIR)/deeper/soft-serve-startup-probe-round1
+COMPONENT_PROBE_PREVIOUS ?= $(COMPONENT_PROBE_OUT)/probe/bundle.json
+COMPONENT_PROBE_FRONTIER_ID ?=
+COMPONENT_PROBE_FRONTIER_OUT ?= $(TMP_DIR)/deeper/soft-serve-startup-probe-round2
+
+component-probe: ## Probe the saved Soft Serve primary question with bounded local gopls evidence
+	go run ./cmd/componentprobe-playground --run-dir "$(COMPONENT_PROBE_RUN)" --study-bundle "$(COMPONENT_PROBE_STUDY_BUNDLE)" --plan "$(COMPONENT_PROBE_PLAN)" --out-dir "$(COMPONENT_PROBE_OUT)"
+
+component-probe-frontier: ## Follow one opaque frontier ID from a saved round-1 component probe
+	@test -n "$(COMPONENT_PROBE_FRONTIER_ID)" || (echo "COMPONENT_PROBE_FRONTIER_ID is required" >&2; exit 2)
+	go run ./cmd/componentprobe-playground --run-dir "$(COMPONENT_PROBE_RUN)" --previous-probe "$(COMPONENT_PROBE_PREVIOUS)" --frontier-id "$(COMPONENT_PROBE_FRONTIER_ID)" --out-dir "$(COMPONENT_PROBE_FRONTIER_OUT)"
+
+COMPONENT_TEACH_RUN ?= $(HOME)/Library/Caches/repomap/runs/20260711-072351-pebble
+COMPONENT_TEACH_ROUND1 ?= $(TMP_DIR)/deeper/pebble-batch-commit-probe-round1/probe/bundle.json
+COMPONENT_TEACH_ROUND2 ?= $(TMP_DIR)/deeper/pebble-batch-commit-probe-round2/probe/bundle.json
+COMPONENT_TEACH_OUT ?= $(TMP_DIR)/deeper/pebble-batch-commit-teacher
+COMPONENT_TEACH_RESPONSE ?=
+COMPONENT_TEACH_RESPONSE_PROMPT ?= unknown
+
+component-teach-preview: ## Build the bounded Pebble teacher request without a model call
+	go run ./cmd/componentteach-playground --run-dir "$(COMPONENT_TEACH_RUN)" --probe-round1 "$(COMPONENT_TEACH_ROUND1)" --probe-round2 "$(COMPONENT_TEACH_ROUND2)" --out-dir "$(COMPONENT_TEACH_OUT)"
+
+component-teach-live: ## Make one configured grounded teacher call for the Pebble probe chain
+	go run ./cmd/componentteach-playground --run-dir "$(COMPONENT_TEACH_RUN)" --probe-round1 "$(COMPONENT_TEACH_ROUND1)" --probe-round2 "$(COMPONENT_TEACH_ROUND2)" --out-dir "$(COMPONENT_TEACH_OUT)" --live
+
+component-teach-replay: ## Replay COMPONENT_TEACH_RESPONSE through the current grounded parser
+	@test -n "$(COMPONENT_TEACH_RESPONSE)" || (echo "COMPONENT_TEACH_RESPONSE is required" >&2; exit 2)
+	go run ./cmd/componentteach-playground --run-dir "$(COMPONENT_TEACH_RUN)" --probe-round1 "$(COMPONENT_TEACH_ROUND1)" --probe-round2 "$(COMPONENT_TEACH_ROUND2)" --out-dir "$(COMPONENT_TEACH_OUT)" --response-file "$(COMPONENT_TEACH_RESPONSE)" --response-prompt-version "$(COMPONENT_TEACH_RESPONSE_PROMPT)"
+
+RESEARCH_TRAIL_CASE ?= $(TMP_DIR)/deeper/pebble-batch-commit-teacher/case.json
+RESEARCH_TRAIL_STUDY_BUNDLE ?= $(TMP_DIR)/deeper/pebble-batch-commit-v3-replay/planner/bundle.json
+RESEARCH_TRAIL_PLAN ?= $(TMP_DIR)/deeper/pebble-batch-commit-v3-replay/planner/plan.json
+RESEARCH_TRAIL_PLAN_DIAGNOSTICS ?= $(TMP_DIR)/deeper/pebble-batch-commit-v3-replay/planner/parse_warnings.json
+RESEARCH_TRAIL_ROUND1 ?= $(TMP_DIR)/deeper/pebble-batch-commit-probe-round1/probe/bundle.json
+RESEARCH_TRAIL_ROUND2 ?= $(TMP_DIR)/deeper/pebble-batch-commit-probe-round2/probe/bundle.json
+RESEARCH_TRAIL_TEACH_BUNDLE ?= $(TMP_DIR)/deeper/pebble-batch-commit-teacher/teacher/bundle.json
+RESEARCH_TRAIL_TEACH_INDEX ?= $(TMP_DIR)/deeper/pebble-batch-commit-teacher/teacher/index.json
+RESEARCH_TRAIL_TEACH_REPORT ?= $(TMP_DIR)/deeper/pebble-batch-commit-teacher/teacher/report.json
+RESEARCH_TRAIL_TEACH_DIAGNOSTICS ?= $(TMP_DIR)/deeper/pebble-batch-commit-teacher/teacher/parse_warnings.json
+RESEARCH_TRAIL_OUT ?= $(TMP_DIR)/deeper/pebble-batch-commit-trail
+
+research-trail-replay: ## Compose the saved Pebble planner/probe/teacher chain without model or gopls calls
+	go run ./cmd/researchtrail-playground \
+		--case "$(RESEARCH_TRAIL_CASE)" \
+		--study-bundle "$(RESEARCH_TRAIL_STUDY_BUNDLE)" \
+		--plan "$(RESEARCH_TRAIL_PLAN)" \
+		--plan-diagnostics "$(RESEARCH_TRAIL_PLAN_DIAGNOSTICS)" \
+		--probe-round1 "$(RESEARCH_TRAIL_ROUND1)" \
+		--probe-round2 "$(RESEARCH_TRAIL_ROUND2)" \
+		--teacher-bundle "$(RESEARCH_TRAIL_TEACH_BUNDLE)" \
+		--teacher-index "$(RESEARCH_TRAIL_TEACH_INDEX)" \
+		--teacher-report "$(RESEARCH_TRAIL_TEACH_REPORT)" \
+		--teacher-diagnostics "$(RESEARCH_TRAIL_TEACH_DIAGNOSTICS)" \
+		--out-dir "$(RESEARCH_TRAIL_OUT)"
+
+FLOWPROOF_RUN ?=
+FLOWPROOF_REPO ?= ../restic
+
+flowproof-replay: ## Rebuild a saved orientation's local FlowProof without a model call
+	@test -n "$(FLOWPROOF_RUN)" || (echo "FLOWPROOF_RUN is required" >&2; exit 2)
+	go run ./cmd/flowproof-playground \
+		--repo "$(FLOWPROOF_REPO)" \
+		--orientation "$(FLOWPROOF_RUN)/orientation_report.json" \
+		--bundle "$(FLOWPROOF_RUN)/llm_bundle.json"
+
+PYRIGHT_REPO ?= internal/analyzer/python/pyright/testdata/fixture
+PYRIGHT_PATH ?= app/service.py
+PYRIGHT_LINE ?= 8
+PYRIGHT_COLUMN ?= 0
+PYRIGHT_LANGSERVER ?=
+
+pyright-fixture: ## Analyze one exact symbol in the tracked Python fixture (requires Pyright)
+	@go run ./cmd/pyright-playground \
+		--repo "$(PYRIGHT_REPO)" \
+		--path "$(PYRIGHT_PATH)" \
+		--line "$(PYRIGHT_LINE)" \
+		--column "$(PYRIGHT_COLUMN)" \
+		$(if $(PYRIGHT_LANGSERVER),--pyright-langserver "$(PYRIGHT_LANGSERVER)")
 
 gopls-examples: ## Analyze available example repos with the isolated gopls playground
 	./scripts/gopls_examples.sh
@@ -85,11 +193,24 @@ gopls-examples-fetch: ## Fetch missing example repos, then generate gopls eviden
 
 # --- Primary UX targets ---
 
+serve: build ## Serve the latest saved report without a model call
+	$(BIN_DIR)/repomap serve
+
 doctor: ## Validate configured OpenAI-compatible LLM (no network request)
 	go run ./cmd/repomap doctor llm
 
+doctor-check: ## Validate configured OpenAI-compatible LLM with one small request
+	go run ./cmd/repomap doctor llm --check
+
+generic-deepseek-doctor: export REPOMAP_LLM_ENDPOINT = https://api.deepseek.com/chat/completions
+generic-deepseek-doctor: export REPOMAP_LLM_MODEL = deepseek-v4-flash
+generic-deepseek-doctor: export REPOMAP_LLM_API_KEY = $(DEEPSEEK_API_KEY)
+generic-deepseek-doctor: export REPOMAP_LLM_AUTH = bearer
+generic-deepseek-doctor: ## Calibrate generic provider config against DeepSeek
+	go run ./cmd/repomap doctor llm --check
+
 run: ## Orient ETCD_REPO with the configured OpenAI-compatible LLM
-	go run ./cmd/repomap $(ETCD_REPO)
+	go run ./cmd/repomap $(ETCD_REPO) $(RUN_ARGS)
 
 run-json: ## Run full pipeline with JSON output
 	go run ./cmd/repomap $(ETCD_REPO) --json | jq .

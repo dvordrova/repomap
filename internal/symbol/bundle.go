@@ -5,7 +5,9 @@ package symbol
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/evidence"
 )
@@ -13,9 +15,12 @@ import (
 const BundleVersion = 1
 
 const (
-	staticEvidenceWarning = "the bundle contains static analysis only; it does not prove which calls execute at runtime"
-	fuzzyCandidateWarning = "fuzzy candidates are possible matches; only target is the unique exact resolution"
+	staticEvidenceWarning    = "the bundle contains static analysis only; it does not prove which calls execute at runtime"
+	fuzzyCandidateWarning    = "fuzzy candidates are possible matches; only target is the unique exact resolution"
+	goplsExperimentalWarning = "gopls CLI adapter is experimental; evidence is scoped to the active build configuration"
 )
+
+var goplsCallBoundWarning = regexp.MustCompile(`^gopls bounded static call hierarchy: omitted [1-9][0-9]* (incoming|outgoing) calls at analyzer limit [1-9][0-9]*$`)
 
 type Options struct {
 	MaxCandidates        int
@@ -100,6 +105,7 @@ func Build(graph evidence.Graph, opts Options) (Bundle, error) {
 		Truncated: make(map[string]int),
 	}
 	bundle.Warnings = append(bundle.Warnings, staticEvidenceWarning, fuzzyCandidateWarning)
+	bundle.Warnings = append(bundle.Warnings, safeAnalyzerWarnings(graph.Warnings)...)
 
 	for _, scenario := range graph.Scenarios {
 		bundle.Scenarios = append(bundle.Scenarios, Scenario{
@@ -126,8 +132,8 @@ func Build(graph evidence.Graph, opts Options) (Bundle, error) {
 			outgoing = append(outgoing, relation)
 		}
 	}
-	sortRelations(incoming)
-	sortRelations(outgoing)
+	sortCallRelations(incoming, entities, true)
+	sortCallRelations(outgoing, entities, false)
 	bundle.IncomingCalls, bundle.Truncated["incoming_calls"] = buildCalls("call-in", incoming, entities, opts.MaxIncomingCalls, opts.MaxProvenancePerFact)
 	bundle.OutgoingCalls, bundle.Truncated["outgoing_calls"] = buildCalls("call-out", outgoing, entities, opts.MaxOutgoingCalls, opts.MaxProvenancePerFact)
 
@@ -270,6 +276,79 @@ func sortRelations(relations []evidence.Relation) {
 		}
 		return relations[i].Kind < relations[j].Kind
 	})
+}
+
+func sortCallRelations(relations []evidence.Relation, entities map[string]evidence.Entity, incoming bool) {
+	sort.SliceStable(relations, func(i, j int) bool {
+		leftID := relations[i].To
+		rightID := relations[j].To
+		if incoming {
+			leftID = relations[i].From
+			rightID = relations[j].From
+		}
+		left := entities[leftID]
+		right := entities[rightID]
+		if incoming {
+			leftTier := callPathTier(entityPath(left))
+			rightTier := callPathTier(entityPath(right))
+			if leftTier != rightTier {
+				return leftTier < rightTier
+			}
+		}
+		leftPath := entityPath(left)
+		rightPath := entityPath(right)
+		if leftPath != rightPath {
+			return leftPath < rightPath
+		}
+		if left.Name != right.Name {
+			return left.Name < right.Name
+		}
+		return leftID < rightID
+	})
+}
+
+func entityPath(entity evidence.Entity) string {
+	if entity.Location == nil {
+		return ""
+	}
+	return entity.Location.Path
+}
+
+func callPathTier(filePath string) int {
+	lower := strings.ToLower(filepath.ToSlash(filePath))
+	segments := strings.Split(lower, "/")
+	base := segments[len(segments)-1]
+	if strings.HasSuffix(base, "_test.go") {
+		return 2
+	}
+	for _, segment := range segments[:len(segments)-1] {
+		switch segment {
+		case "bench", "benchmark", "benchmarks", "test", "testdata", "tests":
+			return 2
+		}
+	}
+	return 0
+}
+
+func safeAnalyzerWarnings(warnings []string) []string {
+	var safe []string
+	seen := make(map[string]struct{})
+	for _, warning := range warnings {
+		warning = strings.TrimSpace(warning)
+		if !allowedAnalyzerWarning(warning) {
+			continue
+		}
+		if _, duplicate := seen[warning]; duplicate {
+			continue
+		}
+		seen[warning] = struct{}{}
+		safe = append(safe, warning)
+	}
+	return safe
+}
+
+func allowedAnalyzerWarning(warning string) bool {
+	return warning == goplsExperimentalWarning || goplsCallBoundWarning.MatchString(warning)
 }
 
 func collectAllowedPaths(bundle Bundle) []string {
