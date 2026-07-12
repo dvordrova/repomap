@@ -1,8 +1,10 @@
 # Surface discovery UI handoff
 
-Status: backend discovery experiment is implemented and available through an
-opt-in normal repomap run. Default enablement and report UI rendering are **not
-implemented yet**. This document is the handoff for that product/UI increment.
+Status: backend discovery is committed; bounded report projection, default Go
+artifact-run enablement, and the separate report UI are implemented and verified
+in the working tree. Commit the authorized interactive-report foundation first,
+then land this report-format v12 increment. This document records the resulting
+semantic boundary and verification rather than an open visual sketch.
 
 ## Product intent
 
@@ -28,14 +30,16 @@ The analyzer lives under:
 - `cmd/surface-discovery-playground`
 - `internal/surfacebridge`
 
-Normal repomap integration is currently opt-in:
+Normal Go artifact runs now enable discovery by default:
 
 ```bash
-go run ./cmd/repomap /path/to/repo \
-  --offline \
-  --discover-surfaces \
-  --no-open \
-  --no-serve
+repomap /path/to/repo --offline --no-open --no-serve
+```
+
+While latency is being measured, the explicit opt-out remains:
+
+```bash
+repomap /path/to/repo --discover-surfaces=false
 ```
 
 When an artifact run is enabled, `internal/orient` writes these files beside
@@ -46,13 +50,17 @@ When an artifact run is enabled, `internal/orient` writes these files beside
 - `semantic_summaries.json`
 - `surface_summary.md`
 
-The browser report does not currently read or embed them. Specifically:
+`internal/report.ReadRunDir` parses the catalog and coverage as an atomic pair
+into a bounded presentation DTO. The report conditionally embeds a standalone
+surface renderer, and every retained repository-relative Go evidence location
+joins `openable_paths` before manifest generation. Surface facts remain absent
+from conceptual components, architecture edges, model recommendations, and
+FlowProof.
 
-- `internal/report.ReadRunDir` does not parse the surface artifacts;
-- `report.ReportData` has no discovered-surface DTO;
-- `templates/script.js` has no surface renderer;
-- surface evidence paths are not yet added to `openable_paths`/run authority;
-- the `--discover-surfaces` flag currently defaults to `false`.
+Discovery is skipped for non-Go repositories and runs without a persisted
+artifact directory, including request preview and `--no-debug`. Analysis or
+persistence failure is non-fatal: the otherwise valid orientation continues and
+a bounded warning is retained in run metadata for the report.
 
 ## Discovery basis
 
@@ -300,9 +308,9 @@ The projection should keep only display/evidence fields, enforce artifact size
 and trigger-count bounds, and sort by stable trigger ID. Missing artifacts are
 not warnings for older reports.
 
-## Suggested UI
+## Implemented UI
 
-Add a separate overview card immediately after “Architecture & flows”:
+The overview contains a separate card immediately after “Architecture & flows”:
 
 ```text
 Discovered surfaces                         Local static analysis
@@ -343,37 +351,29 @@ The section must render safely with zero triggers. If analysis ran and found
 none, show “No surfaces matched the configured terminal catalog under this
 build scenario,” not “This repository has no routes or workers.”
 
-## Backend/report integration required for the UI
+## Report integration
 
-1. Parse `trigger_catalog.json` and `surface_coverage.json` in
-   `internal/report.ReadRunDir`.
-2. Add the bounded presentation DTO to `report.ReportData` and bump report
-   format version.
-3. Add these paths to `openable_paths` before run-manifest generation:
-   process entrypoint, registration, optional server start, wrapper declaration,
-   wrapper callsite, evidence locations, and loop-signal locations.
-4. Render the separate overview card in `templates/script.js` and add scoped CSS.
-5. Keep legacy reports valid when surface artifacts are missing.
-6. Add parser limits and tests for missing, malformed, unsupported-version, and
-   oversized catalogs.
-7. Update the HTML golden only after the frontend layout is intentional.
+The implemented boundary is:
 
-## Default repomap behavior requested
-
-The desired next behavior is:
-
-- ordinary Go artifact runs enable surface discovery by default;
-- non-Go repositories do not invoke the Go analyzer and continue normally;
-- `--no-debug` / request-preview modes do not fail because there is nowhere to
-  persist/render the catalog;
-- keep an explicit opt-out such as `--discover-surfaces=false` while measuring
-  latency;
-- a surface-analysis failure should be visible as a precise warning and should
-  not discard an otherwise valid orientation report unless artifacts are
-  explicitly required by a strict mode.
-
-Current code does not yet satisfy these bullets: the flag defaults off and
-`orient` currently treats an enabled discovery failure as fatal.
+1. `trigger_catalog.json` and `surface_coverage.json` are a required pair when
+   either exists. Both missing is a valid legacy outcome; a half-written pair is
+   omitted with one bounded warning.
+2. `ReportData.discovered_surfaces` is an additive version-12 projection. It
+   caps artifact bytes, trigger count, coverage lists, nested evidence, and
+   value candidates before browser serialization.
+3. Absolute/module-cache locations and non-`.go` paths are removed. Retained
+   process entrypoint, registration, server-start, wrapper declaration,
+   wrapper callsite, evidence, frontier, and loop locations join manifest
+   authority.
+4. `surface_catalog.js` and `surface_catalog.css` are standalone conditional
+   assets. They do not fetch, call a provider, or participate in graph layout.
+5. The card exposes independent kind/evidence filters, six-row progressive
+   disclosure, honest zero states, exact `file:line` editor actions, coverage
+   bounds, and `#surface=<opaque-id>` selection.
+6. Ordinary Go artifact runs enable discovery by default. Non-Go, no-debug, and
+   preview runs skip it; `--discover-surfaces=false` remains available.
+7. A discovery failure does not discard orientation. Its bounded warning is
+   persisted through metadata and rendered with the saved report.
 
 ## No-invention and wording constraints
 
@@ -424,9 +424,28 @@ End-to-end report acceptance:
 5. Confirm a legacy saved report without surface artifacts still renders.
 6. Run `./scripts/check.sh` and `./scripts/etcd_check.sh ../etcd`.
 
+Acceptance completed against a temporary git copy of the committed worker
+fixture:
+
+- ordinary `repomap --offline` discovered one worker and one finite async task
+  without an explicit discovery flag;
+- the report retained a `channel_receive_loop` separately from both triggers;
+- registration, entrypoint, wrapper declaration/callsite, async-start, and loop
+  evidence rendered as exact `file:line` actions through manifest authority;
+- the collapsed rows showed status, `Static · not observed`, and resolution
+  without duplicating the callback name;
+- the worker filter reduced the view to one row locally;
+- `--discover-surfaces=false` produced neither artifacts nor a report section;
+- an etcd target requiring Go 1.26 is skipped immediately by a repomap binary
+  built with Go 1.24, with one saved warning instead of a package-error flood;
+- the legacy/missing-pair, malformed, unsupported-version, oversized, sorting,
+  truncation, renderer-asset, and report-wiring cases are provider-free tests.
+
 ## Relevant commits
 
 - `1a7e4d5` — HTTP SSA discovery and deterministic artifacts
 - `f76ccb5` — grouping replay and `FlowSeed` bridge
 - `00ee2a3` — opt-in persistence beside report runs
 - `0bb4501` — loop signals and errgroup worker classification
+- `5c27a9f` — UI contract and semantic handoff
+- `2575096` — bounded load failures and incompatible-toolchain preflight

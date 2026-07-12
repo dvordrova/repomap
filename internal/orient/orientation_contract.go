@@ -8,6 +8,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/evidenceref"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 )
@@ -31,9 +34,10 @@ type orientationPart struct {
 }
 
 type orientationMapItem struct {
-	Name         string   `json:"name"`
-	Evidence     []string `json:"evidence"`
-	WhyItMatters string   `json:"why_it_matters"`
+	Name         string            `json:"name"`
+	Role         componentmap.Role `json:"role"`
+	Evidence     []string          `json:"evidence"`
+	WhyItMatters string            `json:"why_it_matters"`
 }
 
 type orientationDomainWord struct {
@@ -127,6 +131,19 @@ func parseOrientation(data []byte) (orientationPart, error) {
 	if orientationHasWildcardEvidence(report) {
 		report.Warnings = append(report.Warnings, "parser treated wildcard evidence as unverified prose")
 	}
+	for index := range report.HighLevelMap {
+		value := string(report.HighLevelMap[index].Role)
+		role, ok := componentmap.Normalize(value)
+		report.HighLevelMap[index].Role = role
+		if !ok {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser normalized unknown high_level_map[%d].role %q to %q",
+				index,
+				value,
+				componentmap.RoleUnknown,
+			))
+		}
+	}
 	return report, nil
 }
 
@@ -165,15 +182,14 @@ func jsonArrayUsesStrings(data json.RawMessage) bool {
 	return json.Unmarshal(data, &values) == nil && len(values) > 0
 }
 
-// normalizeOrientationGrounding tolerates prose drift without weakening the
-// structured navigation contract. Evidence statements with ungrounded
-// path-like mentions are discarded, while an ungrounded likely_entrypoint can
-// fall back to the flow's first allowed likely_file. Structured file lists are
-// left untouched and remain fail-closed in validateOrientation.
+// normalizeOrientationGrounding tolerates provider drift without weakening the
+// structured navigation contract. Ungrounded prose and likely_files entries
+// are dropped, while remaining exact paths can repair an entrypoint or seed.
 func normalizeOrientationGrounding(
 	report *orientationPart,
 	allowedPaths []string,
 	allowedEntrypoints []string,
+	signalLocations []evidence.Location,
 ) {
 	allowed := make(map[string]struct{}, len(allowedPaths))
 	for _, filePath := range allowedPaths {
@@ -190,6 +206,14 @@ func normalizeOrientationGrounding(
 	filterEvidence := func(field string, evidence []string) []string {
 		filtered := make([]string, 0, len(evidence))
 		for index, statement := range evidence {
+			var lineGrounded bool
+			statement, lineGrounded = evidenceref.Canonicalize(statement, allowedPaths, signalLocations)
+			if !lineGrounded {
+				report.Warnings = append(
+					report.Warnings,
+					fmt.Sprintf("parser removed ungrounded line claim from %s[%d]", field, index),
+				)
+			}
 			grounded := true
 			for _, filePath := range evidencePathMentions(statement) {
 				if !validRepoRelativePath(filePath) {
@@ -225,31 +249,99 @@ func normalizeOrientationGrounding(
 			report.ImportantDomainWords[index].Evidence,
 		)
 	}
+	normalizedFlows := make([]flowexplain.CandidateFlow, 0, len(report.CandidateFlows))
 	for index := range report.CandidateFlows {
-		flow := &report.CandidateFlows[index]
+		flow := report.CandidateFlows[index]
 		flow.Evidence = filterEvidence(
 			fmt.Sprintf("candidate_flows[%d].evidence", index),
 			flow.Evidence,
 		)
 
+		filteredFiles := make([]string, 0, len(flow.LikelyFiles))
+		seenFiles := make(map[string]struct{}, len(flow.LikelyFiles))
+		for fileIndex, candidate := range flow.LikelyFiles {
+			candidate = strings.TrimSpace(candidate)
+			if !validRepoRelativePath(candidate) {
+				report.Warnings = append(report.Warnings, fmt.Sprintf(
+					"parser dropped invalid candidate_flows[%d].likely_files[%d]",
+					index,
+					fileIndex,
+				))
+				continue
+			}
+			if _, ok := allowed[candidate]; !ok {
+				report.Warnings = append(report.Warnings, fmt.Sprintf(
+					"parser dropped ungrounded candidate_flows[%d].likely_files[%d]",
+					index,
+					fileIndex,
+				))
+				continue
+			}
+			if _, duplicate := seenFiles[candidate]; duplicate {
+				continue
+			}
+			seenFiles[candidate] = struct{}{}
+			filteredFiles = append(filteredFiles, candidate)
+		}
+		flow.LikelyFiles = filteredFiles
+
 		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
 		_, isAllowedPath := allowed[entrypoint]
 		_, isAllowedPackage := entrypoints[entrypoint]
-		if isAllowedPath || isAllowedPackage {
-			continue
-		}
-		for _, likelyFile := range flow.LikelyFiles {
-			if _, ok := allowed[likelyFile]; !ok {
-				continue
+		if !isAllowedPath && !isAllowedPackage {
+			flow.LikelyEntrypoint = ""
+			if len(flow.LikelyFiles) > 0 {
+				flow.LikelyEntrypoint = flow.LikelyFiles[0]
+				report.Warnings = append(
+					report.Warnings,
+					fmt.Sprintf("parser replaced ungrounded candidate_flows[%d].likely_entrypoint with an allowed likely_file", index),
+				)
 			}
-			flow.LikelyEntrypoint = likelyFile
+		}
+
+		if len(flow.LikelyFiles) == 0 {
+			if _, ok := allowed[flow.LikelyEntrypoint]; ok {
+				flow.LikelyFiles = append(flow.LikelyFiles, flow.LikelyEntrypoint)
+			}
+		}
+		if len(flow.LikelyFiles) == 0 {
+			for _, statement := range flow.Evidence {
+				for _, candidate := range evidencePathMentions(statement) {
+					if _, ok := allowed[candidate]; !ok {
+						continue
+					}
+					if _, duplicate := seenFiles[candidate]; duplicate {
+						continue
+					}
+					seenFiles[candidate] = struct{}{}
+					flow.LikelyFiles = append(flow.LikelyFiles, candidate)
+				}
+			}
+		}
+		if flow.LikelyEntrypoint == "" && len(flow.LikelyFiles) > 0 {
+			flow.LikelyEntrypoint = flow.LikelyFiles[0]
 			report.Warnings = append(
 				report.Warnings,
-				fmt.Sprintf("parser replaced ungrounded candidate_flows[%d].likely_entrypoint with an allowed likely_file", index),
+				fmt.Sprintf("parser derived candidate_flows[%d].likely_entrypoint from grounded evidence", index),
 			)
-			break
 		}
+		if len(flow.LikelyFiles) == 0 {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser dropped candidate_flows[%d] because no grounded file remained",
+				index,
+			))
+			continue
+		}
+		if len(flow.Evidence) == 0 {
+			flow.Evidence = []string{flow.LikelyFiles[0]}
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser replaced empty candidate_flows[%d].evidence with its first grounded file",
+				index,
+			))
+		}
+		normalizedFlows = append(normalizedFlows, flow)
 	}
+	report.CandidateFlows = normalizedFlows
 }
 
 func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoints []string) error {

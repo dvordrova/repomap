@@ -23,6 +23,12 @@ var architectureCanvasCSS string
 //go:embed templates/architecture_canvas.js
 var architectureCanvasJS string
 
+//go:embed templates/surface_catalog.css
+var surfaceCatalogCSS string
+
+//go:embed templates/surface_catalog.js
+var surfaceCatalogJS string
+
 //go:embed templates/script.js
 var scriptJS string
 
@@ -49,8 +55,7 @@ func WriteReportHTML(data *ReportData, path string) error {
 }
 
 // RenderHTML renders report data with repomap's embedded trusted template and
-// assets. Preview and report servers use it without executing a saved HTML
-// artifact.
+// assets. Servers should use this instead of executing a saved HTML artifact.
 func RenderHTML(data *ReportData) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
@@ -77,6 +82,9 @@ func buildHTML(data *ReportData) ([]byte, error) {
 		"ArchitectureCanvasCSS": template.CSS(architectureCanvasCSS),
 		"ELKJS":                 template.JS(elkJSBundledJS),
 		"ArchitectureCanvasJS":  template.JS(architectureCanvasJS),
+		"HasDiscoveredSurfaces": data.DiscoveredSurfaces != nil,
+		"SurfaceCatalogCSS":     template.CSS(surfaceCatalogCSS),
+		"SurfaceCatalogJS":      template.JS(surfaceCatalogJS),
 		"DataJSON":              template.JS(dataJSON),
 		"JS":                    template.JS(scriptJS),
 	})
@@ -88,6 +96,24 @@ func buildHTML(data *ReportData) ([]byte, error) {
 }
 
 func Generate(runDir string) error {
+	return generate(runDir, nil)
+}
+
+// GenerateAuthorized renders a report and binds its exact generated JSON to
+// repository authority confirmed stable across orientation.
+func GenerateAuthorized(runDir string, authority RunAuthority) error {
+	return generate(runDir, &authority)
+}
+
+func generate(runDir string, authority *RunAuthority) error {
+	if err := RemoveRunManifest(runDir); err != nil {
+		return err
+	}
+	if authority != nil {
+		if err := authority.validate(); err != nil {
+			return err
+		}
+	}
 	data, err := ReadRunDir(runDir)
 	if err != nil {
 		return err
@@ -102,10 +128,22 @@ func Generate(runDir string) error {
 	if err := WriteReportJSON(data, jsonPath); err != nil {
 		return err
 	}
+	var reportJSON []byte
+	if authority != nil {
+		reportJSON, err = os.ReadFile(jsonPath)
+		if err != nil {
+			return fmt.Errorf("read generated report json: %w", err)
+		}
+	}
 
 	htmlPath := runDir + "/report.html"
 	if err := WriteReportHTML(data, htmlPath); err != nil {
 		return err
+	}
+	if authority != nil {
+		if err := writeAuthorizedRunManifest(runDir, data, reportJSON, *authority); err != nil {
+			return err
+		}
 	}
 	return nil
 }

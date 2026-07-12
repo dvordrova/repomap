@@ -19,7 +19,7 @@ import (
 const (
 	SynthesisRequestVersion = 1
 	SynthesisRecordVersion  = 1
-	SynthesisPromptVersion  = "component-landscape-v1"
+	SynthesisPromptVersion  = "component-landscape-v2"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -101,7 +101,7 @@ type SynthesisCall struct {
 }
 
 // SynthesisRecord intentionally has one optional Call field rather than call
-// history. This structurally represents the one-call-per-revision policy.
+// history. This represents one call for one exact bounded synthesis request.
 type SynthesisRecord struct {
 	Version            int            `json:"version"`
 	RepositoryRevision string         `json:"repository_revision"`
@@ -189,7 +189,7 @@ Local facts, structural relations, flow participation, certainty, provenance, sc
 Return exactly one compact JSON proposal object with this shape:
 {"version":%d,"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_ids":[{"kind":"package","value":"opaque supplied value"}]}]}]}
 
-The only allowed proposal fields are version, subsystems, subsystem name/description/components, component name/description/member_ids, and member kind/value. Member kind must be one of package, file, symbol, entrypoint, or flow exactly as supplied. Array order is the conceptual display order. Assign each supplied candidate at most once. Prefer covering every candidate; local validation will retain omissions separately.
+The only allowed proposal fields are version, subsystems, subsystem name/description/components, component name/description/member_ids, and member kind/value. Member kind must be one of package, file, symbol, entrypoint, or flow exactly as supplied. Array order is the conceptual display order. Assign each supplied candidate at most once. Never repeat a member ID across components; for a cross-cutting member choose its single best conceptual home. Omit an uncertain member rather than duplicating it because local validation retains omissions separately. Every component must contain at least one supplied member ID. Use at most 12 subsystems and 24 components.
 
 Do not return edges, relations, flow definitions or transitions, fact payloads, repository paths, symbol details, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`, ContractVersion)
 	user := "Bounded candidate request:\n" + string(requestJSON)
@@ -199,14 +199,25 @@ Do not return edges, relations, flow definitions or transitions, fact payloads, 
 	return SynthesisPrompt{Version: SynthesisPromptVersion, System: system, User: user}, nil
 }
 
-// SynthesisCacheKey binds one conceptual synthesis to a repository revision
-// and to the local contract and prompt versions, not to provider wording.
-func SynthesisCacheKey(repositoryRevision string) (string, error) {
+// SynthesisCacheKey binds one conceptual synthesis to the exact bounded local
+// request as well as the repository revision and prompt contract.
+func SynthesisCacheKey(repositoryRevision string, bundle CandidateBundle) (string, error) {
 	if err := validateSynthesisRevision(repositoryRevision); err != nil {
 		return "", err
 	}
+	_, requestJSON, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		return "", err
+	}
 	hash := sha256.New()
-	fmt.Fprintf(hash, "componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\n", repositoryRevision, ContractVersion, SynthesisPromptVersion)
+	fmt.Fprintf(
+		hash,
+		"componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\nrequest=%s\n",
+		repositoryRevision,
+		ContractVersion,
+		SynthesisPromptVersion,
+		sha256String(requestJSON),
+	)
 	return "component-synthesis-" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
@@ -238,7 +249,7 @@ func RecordSynthesisResponse(
 	if err != nil {
 		return SynthesisResult{}, err
 	}
-	cacheKey, err := SynthesisCacheKey(repositoryRevision)
+	cacheKey, err := SynthesisCacheKey(repositoryRevision, bundle)
 	if err != nil {
 		return SynthesisResult{}, err
 	}
@@ -315,7 +326,7 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	if record.RepositoryRevision != repositoryRevision {
 		return fmt.Errorf("componentmap: synthesis record repository revision does not match")
 	}
-	expectedCacheKey, err := SynthesisCacheKey(repositoryRevision)
+	expectedCacheKey, err := SynthesisCacheKey(repositoryRevision, bundle)
 	if err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ if [[ -z "$RUN_DIR" ]]; then
 	exit 2
 fi
 
-for required in metadata.json orientation_report.json report.json report.html onboarding-feedback.md; do
+for required in metadata.json orientation_report.json report.json report.html run_manifest.json onboarding-feedback.md; do
 	if [[ ! -f "$RUN_DIR/$required" ]]; then
 		echo "missing friend artifact: $RUN_DIR/$required" >&2
 		exit 1
@@ -18,7 +18,20 @@ for required in metadata.json orientation_report.json report.json report.html on
 done
 
 jq -e '
-	.format_version >= 5
+	.version == 2
+	and .repository_state.version == 1
+	and (.repository_state.identity | type == "string" and length > 0)
+	and (.analysis_root | type == "string" and startswith("/"))
+	and (.repository_state_sha256 | test("^[0-9a-f]{64}$"))
+	and (.report_sha256 | test("^[0-9a-f]{64}$"))
+	and .report_format_version >= 8
+	and (.openable_paths | length) > 0
+	and (.components | length) > 0
+	and ([.components[].anchors[]? | select(.can_list_symbols == true)] | length) > 0
+' "$RUN_DIR/run_manifest.json" >/dev/null
+
+jq -e '
+  .format_version >= 7
 	and (.candidate_directions | length) > 0
 	and (.flows | length) == (.candidate_directions | length)
 	and .run.compact_context_bytes > 0

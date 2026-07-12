@@ -44,6 +44,33 @@ func TestComponentSynthesisPromptJSONPreservesExactChatContract(t *testing.T) {
 	}
 }
 
+func TestComponentSynthesisPromptJSONDisablesThinkingForDeepSeek(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{
+		Endpoint:  "https://api.deepseek.com/chat/completions",
+		Model:     "deepseek-v4-flash",
+		MaxTokens: 6000,
+	}
+	prompt := componentmap.SynthesisPrompt{
+		Version: componentmap.SynthesisPromptVersion,
+		System:  "system json contract",
+		User:    "bounded json request",
+	}
+
+	encoded, err := client.ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatalf("ComponentSynthesisPromptJSON() error = %v", err)
+	}
+	var request chatRequest
+	if err := json.Unmarshal(encoded, &request); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if request.Thinking == nil || request.Thinking.Type != "disabled" {
+		t.Fatalf("thinking = %#v, want disabled", request.Thinking)
+	}
+}
+
 func TestComponentSynthesisPromptRejectsInvalidContract(t *testing.T) {
 	t.Parallel()
 

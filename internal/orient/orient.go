@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
@@ -64,10 +66,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if opts.RequireArtifacts && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
 		return nil, fmt.Errorf("required browser artifacts need a debug directory")
 	}
-	if opts.DiscoverSurfaces && opts.DebugDir == "" {
-		return nil, fmt.Errorf("surface discovery requires a debug directory")
-	}
-
+	snapshotStarted := time.Now()
 	emitProgress(opts, ProgressEvent{
 		Stage:    ProgressSnapshotStarted,
 		RepoPath: opts.RepoPath,
@@ -84,6 +83,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	emitProgress(opts, ProgressEvent{
+		Stage:         ProgressSnapshotReady,
+		RepoName:      s.RepoName,
+		LatencyMillis: time.Since(snapshotStarted).Milliseconds(),
+	})
 
 	snapshotJSON, _ := s.JSON()
 
@@ -94,6 +98,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		return snapshotJSON, nil
 	}
 
+	bundleStarted := time.Now()
 	bundle := llmbundle.Build(s, s.FilteredFiles, llmbundle.Options{
 		MaxReadmeBytes:   opts.MaxReadmeLLMBytes,
 		MaxModules:       opts.MaxLLMModules,
@@ -110,9 +115,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		return nil, fmt.Errorf("marshal compact model bundle: %w", err)
 	}
 	emitProgress(opts, ProgressEvent{
-		Stage:       ProgressBundleReady,
-		RepoName:    s.RepoName,
-		BundleBytes: len(modelBundleJSON),
+		Stage:         ProgressBundleReady,
+		RepoName:      s.RepoName,
+		BundleBytes:   len(modelBundleJSON),
+		LatencyMillis: time.Since(bundleStarted).Milliseconds(),
 	})
 
 	if opts.LLMBundleOnly {
@@ -171,18 +177,44 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 	}
-	if opts.DiscoverSurfaces && dw != nil {
-		surfaceResult, err := surfacediscovery.Analyze(surfacediscovery.DefaultOptions(opts.RepoPath))
-		if err != nil {
-			return nil, fmt.Errorf("discover runtime surfaces: %w", err)
-		}
-		if err := surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult); err != nil {
-			return nil, fmt.Errorf("persist runtime surfaces: %w", err)
-		}
-	}
-
 	report := combinedReport{
 		RepoName: s.RepoName,
+	}
+	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
+		surfaceStarted := time.Now()
+		emitProgress(opts, ProgressEvent{
+			Stage:    ProgressSurfaceStarted,
+			RepoName: s.RepoName,
+		})
+		surfaceResult, surfaceErr := surfacediscovery.Analyze(surfacediscovery.DefaultOptions(opts.RepoPath))
+		if surfaceErr == nil {
+			surfaceErr = surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult)
+		}
+		surfaceLatency := time.Since(surfaceStarted).Milliseconds()
+		runMeta.SurfaceDiscoveryRan = true
+		runMeta.SurfaceDiscoveryMillis = &surfaceLatency
+		runMeta.SurfaceDiscoveryCount = len(surfaceResult.Catalog.Triggers)
+		if surfaceErr != nil {
+			warning := formatSurfaceDiscoveryWarning(surfaceErr)
+			report.Warnings = append(report.Warnings, warning)
+			runMeta.Warnings = append(runMeta.Warnings, warning)
+			emitProgress(opts, ProgressEvent{
+				Stage:         ProgressSurfaceFailed,
+				RepoName:      s.RepoName,
+				Warning:       warning,
+				LatencyMillis: surfaceLatency,
+			})
+		} else {
+			emitProgress(opts, ProgressEvent{
+				Stage:         ProgressSurfaceReady,
+				RepoName:      s.RepoName,
+				SurfaceCount:  len(surfaceResult.Catalog.Triggers),
+				LatencyMillis: surfaceLatency,
+			})
+		}
+		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
 	}
 
 	flowCount := opts.FlowCount
@@ -278,7 +310,25 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 
 		allowedEntrypoints := orientationEntrypoints(bundle)
-		normalizeOrientationGrounding(&or, bundle.AllowedPaths, allowedEntrypoints)
+		signalLocations := make([]evidence.Location, 0, len(bundle.SourceSignals))
+		for _, signal := range bundle.SourceSignals {
+			signalLocations = append(signalLocations, evidence.Location{Path: signal.Path, Line: signal.Line})
+		}
+		for _, trace := range bundle.Go.CommandTraces {
+			for _, step := range trace.Steps {
+				signalLocations = append(signalLocations, step.TargetLocation)
+				if step.CallsiteLocation != nil {
+					signalLocations = append(signalLocations, *step.CallsiteLocation)
+				}
+			}
+			for _, call := range trace.HandlerCalls {
+				signalLocations = append(signalLocations, evidence.Location{Path: call.Path, Line: call.Line})
+			}
+		}
+		normalizeOrientationGrounding(&or, bundle.AllowedPaths, allowedEntrypoints, signalLocations)
+		attachLocalFlowProofs(ctx, opts.RepoPath, &or, bundle)
+		reconcileResolvedUnknownPaths(&or)
+		applyOrientationConfidenceGate(&or, bundle)
 		if err := validateOrientation(or, bundle.AllowedPaths, allowedEntrypoints); err != nil {
 			if dw != nil {
 				dw.WriteError(err)
@@ -352,4 +402,15 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	text := formatHumanReadable(report, opts.DebugDir, runID)
 	return []byte(text), nil
+}
+
+func formatSurfaceDiscoveryWarning(err error) string {
+	const maxRunes = 500
+	message := strings.Join(strings.Fields(err.Error()), " ")
+	message = strings.TrimPrefix(message, "surface discovery: ")
+	runes := []rune(message)
+	if len(runes) > maxRunes {
+		message = string(runes[:maxRunes]) + "…"
+	}
+	return "surface discovery unavailable: " + message
 }

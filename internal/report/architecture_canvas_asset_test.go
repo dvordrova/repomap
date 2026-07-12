@@ -37,6 +37,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			name:  "separate evidence layers and branch semantics",
 			asset: js,
 			tokens: []string{
+				"setSVGVisible(group",
 				"rm-arch__edges--structural",
 				"rm-arch__edges--flow",
 				"from_branch_id",
@@ -70,6 +71,18 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "flow fit and redacted conditions remain honest",
+			asset: js,
+			tokens: []string{
+				"selectedFlowBounds()",
+				"this.fitBounds(bounds)",
+				"condition (expression omitted)",
+				"Architecture renderer is unavailable.",
+				`this.appendKeyValue(this.inspector, "Starts when"`,
+				`root && (root.label || root.qualified_name) || "task root"`,
+			},
+		},
+		{
 			name:  "landscape without proof stays explicit",
 			asset: js,
 			tokens: []string{
@@ -82,9 +95,11 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			name:  "same component transitions bypass ELK self loops",
 			asset: js,
 			tokens: []string{
+				"representedPairs",
 				"if (!fromOwner || !toOwner || fromOwner === toOwner) return;",
 				"localFlowLanes()",
 				"localFlowRoute(edge, lane)",
+				"crossFlowRoute(edge)",
 				`isLocal ? "is-local"`,
 			},
 		},
@@ -100,6 +115,20 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "focused flow separates path operations and handoffs",
+			asset: js,
+			tokens: []string{
+				"renderFocusedFlow(flow)",
+				"primaryFlowSteps(flow)",
+				"focusedOperationEdges(flow, primary)",
+				"focusedHandoffEdges(flow, primary)",
+				`"Command path"`,
+				`"Key operations"`,
+				`"Concurrency and lifecycle"`,
+				"syncFocusedSelection()",
+			},
+		},
+		{
 			name:  "flow and inspector styles",
 			asset: css,
 			tokens: []string{
@@ -111,6 +140,10 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				".rm-arch__step.is-frontier",
 				".rm-arch__step.is-overflow",
 				".rm-arch__edge--flow.is-local",
+				".rm-arch__flow-focus",
+				".rm-arch__focus-path",
+				".rm-arch__focus-operations",
+				".rm-arch__focus-handoffs",
 				".rm-arch__inspector",
 			},
 		},

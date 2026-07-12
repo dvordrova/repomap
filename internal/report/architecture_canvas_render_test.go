@@ -9,7 +9,7 @@ func TestRenderHTMLIncludesArchitectureCanvasAssetsOnlyForSavedCanvas(t *testing
 	t.Parallel()
 
 	withCanvas, err := RenderHTML(&ReportData{
-		FormatVersion: 5,
+		FormatVersion: CurrentFormatVersion,
 		RepoName:      "fixture",
 		ArchitectureCanvas: &ArchitectureCanvas{
 			Version: ArchitectureCanvasVersion,
@@ -37,7 +37,7 @@ func TestRenderHTMLIncludesArchitectureCanvasAssetsOnlyForSavedCanvas(t *testing
 		t.Fatalf("asset order must be ELK, canvas renderer, report script: elk=%d canvas=%d report=%d", elkIndex, canvasIndex, reportIndex)
 	}
 
-	withoutCanvas, err := RenderHTML(&ReportData{FormatVersion: 5, RepoName: "legacy"})
+	withoutCanvas, err := RenderHTML(&ReportData{FormatVersion: CurrentFormatVersion, RepoName: "legacy"})
 	if err != nil {
 		t.Fatal(err)
 	}

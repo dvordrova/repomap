@@ -72,8 +72,15 @@ func (b Bundle) Validate() error {
 			return fmt.Errorf("symbol: truncation field %q must be positive", key)
 		}
 	}
-	if len(b.Warnings) != 0 && !reflect.DeepEqual(b.Warnings, []string{staticEvidenceWarning, fuzzyCandidateWarning}) {
-		return fmt.Errorf("symbol: warnings contain non-contract analyzer text")
+	if len(b.Warnings) != 0 {
+		if len(b.Warnings) < 2 || b.Warnings[0] != staticEvidenceWarning || b.Warnings[1] != fuzzyCandidateWarning {
+			return fmt.Errorf("symbol: warnings are missing the static evidence contract")
+		}
+		for _, warning := range b.Warnings[2:] {
+			if !allowedAnalyzerWarning(warning) {
+				return fmt.Errorf("symbol: warnings contain non-contract analyzer text")
+			}
+		}
 	}
 
 	wantPaths := collectAllowedPaths(b)

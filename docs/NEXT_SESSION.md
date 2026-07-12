@@ -1,160 +1,150 @@
 # Current handoff
 
-Last updated: 2026-07-10.
+Last updated: 2026-07-11.
 
 ## Product direction
 
-repomap is a trustable, inspectable Go repository investigation CLI for an
-engineer using an OpenAI-compatible company model. It is not another general
-coding agent. It builds bounded local facts, offers runtime/event-oriented
-directions, and then follows one explicit evidence branch through symbols,
-source, tests, and unknowns.
+repomap is a local-first repository onboarding and investigation tool for an
+engineer using an OpenAI-compatible company model. It builds bounded local
+facts, uses a model only for bounded interpretation and conceptual grouping,
+then lets the engineer challenge flows and claims through exact saved evidence.
 
-The company-engineer acceptance track has three goals:
+The active product sequence remains:
 
-1. calibrate onboarding output on a project the engineer already knows;
-2. explore a genuinely unfamiliar Go project progressively;
-3. use a real pre-change commit and ticket to produce a bounded `ChangeBrief`.
+1. onboard on a project the engineer already knows;
+2. explore an unfamiliar repository progressively;
+3. investigate one bug, ticket, or feature from a bounded starting point.
 
-These are policies over one investigation engine, not three prompt pipelines.
-The canonical implementation order remains [MILESTONES.md](MILESTONES.md): M4
-fresh local memory is complete, the friend onboarding trial is active in M5,
-free repository exploration follows in M6, and feature work moves to M7. The
-exact acceptance contract is in
-[ENGINEER_TRIAL.md](ENGINEER_TRIAL.md).
+The browser is a visualization of that process, not a package dependency dump
+or a general coding agent.
 
-If the user starts with “так, а че мы там дальше делаем?”, recommend:
+## Current milestone
 
-1. give the current binary and five-line setup to the knowledgeable friend and
-   have them run the first **Friend Onboarding Trial** on a Go project they know;
-2. collect their `onboarding-feedback.md`: what was correct, missing,
-   misleading, and which direction/file became useful first;
-3. implement the next bounded cube, `SelectedFlow + verified files -> ranked
-   exact symbol candidates`, without promoting model prose to analyzer truth;
-4. keep the six M3 tasks and Qwen 1.5B structured regression green while wiring
-   the selected exact symbol into the existing resumable investigation.
+Architecture Canvas v2 is implemented as the primary onboarding surface.
 
-Do not restart Qwen prompt tuning. Keep the staged 1.5B regression runnable, but
-the default product path uses the configured OpenAI-compatible provider.
+- ELK.js performs one compound layout with routed structural edges.
+- Conceptual subsystem/component naming may use one revision-cached provider
+  request over opaque local candidate IDs.
+- Membership, relations, FlowProof, evidence, frontiers, and layout inputs remain
+  local.
+- Selecting one saved flow stays on the canvas and preserves main, task, shared,
+  callback, cancellation, join, condition, and frontier semantics.
+- Component, flow, step, and edge selection are hash-persisted and keyboard
+  accessible.
+- Exact saved locations open through the existing loopback report server.
+- The old role-lane renderer, inline import labels, manual graph geometry, and
+  rejected React spike have been removed.
+- A compact non-graph orientation card remains only when a saved v2 canvas is
+  unavailable.
+- A separate `Discovered surfaces · Local static analysis` shelf now renders
+  bounded HTTP/worker/async registrations below the canvas. It never promotes
+  registration evidence into a component edge or completed runtime flow.
 
-## What works now
+Provider-free preview:
 
-- deterministic tracked-file survey, bounded tracked README, Go facts, source
-  signals, and compact LLM bundle;
-- repository-confined reads through `os.OpenRoot`, including protection against
-  README/source/go.mod symlink escape;
-- `go list -e` using the engineer's normal Go environment, so internal proxies
-  work and missing packages can still yield partial facts/warnings;
-- atomic `REPOMAP_LLM_*` configuration with bearer or explicit no-auth, timeout,
-  DeepSeek compatibility aliases, and no implicit repository `.env` loading;
-- `repomap doctor llm [--check]`, where `--check` is exactly one small synthetic
-  JSON request with no repository content and no retries;
-- `--llm-bundle-only` and `--preview-request` inspection without an API key or
-  model call;
-- bounded orientation preserving the full known response shape, with structured
-  path validation and credential gates on outbound/retained content;
-- `./repomap` targets the current directory, reports bounded context/request
-  bytes, makes one orientation call, preserves the complete onboarding report,
-  and prepares a clickable bounded local evidence neighborhood for every
-  validated direction without another provider call;
-- safe run metadata (model, context/request bytes, latency, direction count)
-  appears in the report, and every run creates a non-overwriting
-  `onboarding-feedback.md`;
-- opt-in top-N focused flow expansion; flow output is flexibly parsed,
-  normalized to known fields, allowlist-validated, and rejected when empty or
-  unsupported;
-- debug artifacts in the OS user cache by default, including model, endpoint,
-  and the attempted request even when the provider fails;
-- exact-symbol evidence, bounded source cards, source assessment, related test
-  references, and a pure resumable investigation reducer as isolated connected
-  slices;
-- versioned, hash-verified offline quality tasks for etcd, Grafana k6,
-  Prometheus, NATS Server, and golangci-lint;
-- a separate generic `REPOMAP_LLM_*` DeepSeek calibration task covering doctor,
-  exact preview metadata, and the same offline quality dimensions;
-- staged Qwen 1.5B protocol verification retained as non-critical regression
-  tooling.
-- stable repository/fact/claim freshness with separate content-addressed
-  investigation facts, model claims, and session checkpoints;
-- unchanged etcd investigations resume without a second model call; repository,
-  tool/options, and prompt/evaluator changes invalidate only the applicable
-  layer.
+```bash
+make canvas-preview CANVAS_FIXTURE=internal/report/testdata/canvas/restic-backup-v2.json
+make canvas-preview CANVAS_FIXTURE=internal/report/testdata/canvas/soft-serve-daemon-v2.json
+make canvas-preview CANVAS_FIXTURE=internal/report/testdata/canvas/colima-runtime-v2.json
+```
 
-## Honest current boundary
+## Acceptance evidence
 
-- The browser can choose a named direction and inspect its saved deterministic
-  file/test/package/import neighborhood, but cannot yet choose an exact symbol
-  and hand it into the resumable reducer.
-- `--flows 1` expands the highest-ranked direction, not a user-selected one.
-- `--offline` means no model call; it is not a hard network sandbox for Go tools.
-- Public `onboarding` and natural-language `feature` commands do not exist.
-- Test references are navigation evidence until bounded test source/assertions
-  are read.
-- Static Go/gopls facts are build-scenario evidence, not runtime truth.
-- `internal/deepseek` still owns OpenAI-compatible transport plus concrete
-  prompts; runtime configuration is provider-neutral, but orientation lacks a
-  consumer-owned model interface.
-- M3 is complete. The generic calibration proves the configuration/transport
-  path only; an actual company-hosted model quality run still needs that
-  engineer's endpoint and remains an open research question.
-- M4 is complete for the current exact-symbol investigation slice. Repository
-  changes conservatively reset all focused facts rather than selectively
-  retaining unrelated neighborhoods; optimize this only after friend-trial
-  latency or repetition demonstrates a product problem.
-- The next product blocker is `SelectedFlow + verified likely files -> ranked
-  exact symbol candidates`. Search must run lazily after selection, filter gopls
-  results to verified Go files before truncation, and require exact identity
-  confirmation before entering the existing investigation reducer. The model's
-  `likely_entrypoint` must never be promoted directly to a symbol.
-- Prometheus is captured at revision
-  `af77de9a5fd8b5391eb65ad770a454c9e84346c2`: the raw
-  `deepseek-v4-flash` orientation proposes a TSDB write direction containing
-  `model/labels/labels_common.go`, and the clean source response grounds how
-  `Labels.IsValid` uses the result of `Validate`. This is a model-proposed
-  cross-stage link, not runtime proof of ingestion.
-- NATS Server is captured at revision
-  `1be499156d9bc757ea08bd148608b622e38b7514`: the clean orientation links a
-  client-message direction to `server/client.go`, and the clean source response
-  grounds four `case`-selected calls in `client.processInboundMsg`. The static
-  branch and related test reference do not prove runtime selection or coverage.
-- golangci-lint is captured at revision
-  `9b5e24cba6e9964465bc892ab9377fae5a60cb97`: the clean orientation links its
-  CLI lint-run direction to `pkg/commands/run.go`, and the clean source response
-  grounds three checked results plus one direct returned call in
-  `runCommand.runAnalysis`. Callee behavior and test coverage remain unknown.
+| Fixture | Components | Structural edges | Flow shape |
+| --- | ---: | ---: | --- |
+| restic Backup | 9 | 7 | main + scanner task + shared context |
+| Soft Serve daemon | 10 | 10 | main + shared + 11 tasks |
+| Colima runtime | 10 | 10 | synchronous main + 9 conditional dispatch edges |
+| etcd production | 6 | 40 | landscape only; no compatible saved proof |
+
+Restic does not duplicate `Scanner.Scan`, cancel does not join Wait, and Wait
+joins the scanner task. Colima alternatives remain conditional synchronous
+dispatch instead of invented goroutine branches.
+
+Screenshots from the final browser pass:
+
+- `/tmp/repomap-canvas-restic-flow-edge.png`
+- `/tmp/repomap-canvas-soft-serve-flow.png`
+- `/tmp/repomap-canvas-colima-flow.png`
+
+## Honest boundary
+
+- The three showcase fixtures begin at the final presentation projection. A
+  smaller run fixture protects raw-facts-to-canvas wiring; a realistic checked-
+  in restic raw run remains useful debt.
+- Deterministic no-model fallback is contract-tested and production-usable, but
+  does not yet have a separate realistic screenshot.
+- Restic fixture acceptance currently focuses on Backup; Init and Restore are
+  not additional selectable flows in that fixture.
+- Flow transitions that retain only a provider name cannot expose provenance or
+  scenario that was never saved.
+- Arrow-key spatial traversal is deferred; essential selection is still
+  keyboard accessible.
+- Architecture synthesis request bytes/latency live in
+  `architecture_synthesis.json`; old orientation request totals do not include
+  that later cached call.
+- Legacy manifest component IDs authorize lazy symbol investigation. v2
+  conceptual component IDs are different and must not be treated as the same
+  authority.
+- Go facts and FlowProof are static, build-scenario evidence, not absolute
+  runtime truth.
+- Python remains experimental and explicitly weaker where static resolution is
+  uncertain.
+- Surface discovery is default-on only for persisted Go artifact runs and keeps
+  `--discover-surfaces=false`. Non-Go/no-debug/preview runs skip it, failures are
+  warnings, and its configured-terminal scope is not whole-repository truth.
+- A landscape no longer depends on FlowProof. When a run has no compatible
+  proof, the canvas remains visible, shows no flow buttons, and explicitly says
+  that its structural edges do not imply runtime sequence.
+
+## What to do next
+
+Run the complete friend onboarding journey on one real known repository using
+the production command, not the preview fixture. Challenge:
+
+1. whether the conceptual map names the responsibilities the engineer expects;
+2. whether the first selected flow is useful;
+3. whether exact evidence explains each transition;
+4. whether locally discovered surfaces reveal a better entrypoint than the
+   model recommendations without pretending registration was execution;
+5. which missing flow or frontier blocks understanding first.
+
+Then improve the smallest demonstrated gap. Do not restart broad local-model
+prompt tuning, add per-click model calls, or introduce a graph database.
 
 ## Read in this order
 
-1. [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md) — external acceptance contract;
-2. [MILESTONES.md](MILESTONES.md) — canonical order and completion gates;
-3. [CORE_IDEA.md](CORE_IDEA.md) — current bounded pipeline;
-4. [SYSTEM_MAP.md](SYSTEM_MAP.md) — modules and independently challengeable seams;
-5. [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md) — shared workflow/reducer;
-6. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — demonstrated gaps and local-model measurements;
-7. [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved product decisions;
-8. [DEEPSEEK_API_NOTES.md](DEEPSEEK_API_NOTES.md) — current transport/prompt contract.
+1. [CORE_IDEA.md](CORE_IDEA.md)
+2. [MILESTONES.md](MILESTONES.md)
+3. [SYSTEM_MAP.md](SYSTEM_MAP.md)
+4. [design/architecture-canvas-v2.md](design/architecture-canvas-v2.md)
+5. [design/surface-discovery-ui-handoff.md](design/surface-discovery-ui-handoff.md)
+6. [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md)
+7. [ENGINEER_TRIAL.md](ENGINEER_TRIAL.md)
 
 ## Verification
 
 ```bash
+node --check internal/report/templates/architecture_canvas.js
+node --check internal/report/templates/surface_catalog.js
+go test ./internal/report ./cmd/canvas-preview ./internal/componentmap ./internal/deepseek ./cmd/repomap
+make surface-check
 ./scripts/check.sh
 ./scripts/etcd_check.sh ../etcd
-./scripts/symbol_check.sh ../etcd kvServer.Put
-./scripts/source_artifacts_check.sh ../etcd kvServer.Put
-./scripts/source_check.sh
-./scripts/investigation_check.sh ../etcd kvServer.Put
-./scripts/investigation_handoff_check.sh ../etcd kvServer.Put
-./scripts/quality_check.sh
 ```
 
-The detailed Ollama 0.5B/1.5B/3B timings, failures, and staged-protocol results
-are preserved in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md). The useful conclusion is
-small: 1.5B can select constrained evidence/actions, but source-grounded
-behavioral claims still require the same source/test/runtime cubes.
+No live provider request is required for normal verification.
 
 ## Workspace caution
 
-Pre-existing uncommitted rewrites under `docs/agent-room/` and untracked
-`opencode.json` belong to the user. Do not stage, restore, or overwrite them.
-Generated artifacts remain under ignored local/cache directories and must not be
-committed.
+The worktree contains other ongoing backend, Python, experiment, report-server,
+and documentation work. Stage exact files or hunks only. Do not rewrite commits
+created by the parallel backend task. Generated reports, provider artifacts, and
+debug dumps remain outside version control.
+
+The surface shelf is implemented and verified in the working tree, but its
+report integration depends on the still-uncommitted authorized interactive-
+report foundation (report format v11). Commit that foundation first; then commit
+the surface projection and UI as the coherent v11-to-v12 increment. Do not stage
+the surface files alone over the current `HEAD`, where their integration points
+would otherwise be absent or dead.

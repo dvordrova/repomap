@@ -37,6 +37,55 @@ func TestBuildSelectsExactTargetAndBoundedCalls(t *testing.T) {
 	}
 }
 
+func TestBuildRanksProductionCallersAndCarriesSafeAnalyzerBounds(t *testing.T) {
+	t.Parallel()
+
+	graph := testGraph()
+	testCaller := evidence.Entity{
+		ID:       "aaa-test-caller",
+		Kind:     evidence.EntityFunction,
+		Name:     "TestPut",
+		Location: &evidence.Location{Path: "server/key_test.go", Line: 12, Column: 6},
+	}
+	graph.AddEntity(testCaller)
+	graph.AddRelation(evidence.Relation{
+		From:      testCaller.ID,
+		To:        "target",
+		Kind:      evidence.RelationCalls,
+		Certainty: evidence.CertaintyStatic,
+		Provenance: []evidence.Provenance{{
+			Provider:  "gopls",
+			Operation: "call_hierarchy",
+			Location:  &evidence.Location{Path: "server/key_test.go", Line: 18, Column: 2},
+		}},
+		Scenarios: []string{"build"},
+	})
+	graph.Warnings = []string{
+		"gopls failed at /private/repo",
+		goplsExperimentalWarning,
+		"gopls bounded static call hierarchy: omitted 8 incoming calls at analyzer limit 10",
+	}
+	graph.Sort()
+
+	bundle, err := Build(graph, Options{MaxCandidates: 2, MaxIncomingCalls: 1, MaxOutgoingCalls: 1})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if len(bundle.IncomingCalls) != 1 || bundle.IncomingCalls[0].Caller.Name != "servePut" {
+		t.Fatalf("incoming calls = %#v, want production caller first", bundle.IncomingCalls)
+	}
+	if bundle.Truncated["incoming_calls"] != 2 {
+		t.Fatalf("truncated incoming calls = %d, want 2", bundle.Truncated["incoming_calls"])
+	}
+	if !contains(bundle.Warnings, goplsExperimentalWarning) ||
+		!contains(bundle.Warnings, "gopls bounded static call hierarchy: omitted 8 incoming calls at analyzer limit 10") {
+		t.Fatalf("warnings = %#v, want safe analyzer bounds", bundle.Warnings)
+	}
+	if contains(bundle.Warnings, "gopls failed at /private/repo") {
+		t.Fatalf("warnings leaked unsafe analyzer text: %#v", bundle.Warnings)
+	}
+}
+
 func TestBuildOmitsScenarioEnvironmentAndWorkingDirectory(t *testing.T) {
 	t.Parallel()
 

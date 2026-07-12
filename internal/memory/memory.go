@@ -99,16 +99,32 @@ func Save(dir string, input Input) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("memory: create directory: %w", err)
 	}
-	for _, child := range []string{"facts", "claims"} {
-		if err := os.MkdirAll(filepath.Join(dir, child), 0o700); err != nil {
-			return "", fmt.Errorf("memory: create %s directory: %w", child, err)
-		}
-	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", fmt.Errorf("memory: open directory: %w", err)
 	}
 	defer root.Close()
+	if err := SaveRoot(root, input); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, SessionFileName), nil
+}
+
+// SaveRoot writes one checkpoint below an already-open, caller-confined store
+// root. Every artifact name is fixed internally; no caller-controlled relative
+// path crosses this boundary.
+func SaveRoot(root *os.Root, input Input) error {
+	if root == nil {
+		return fmt.Errorf("memory: store root is required")
+	}
+	if err := validateInput(input); err != nil {
+		return err
+	}
+	for _, child := range []string{"facts", "claims"} {
+		if err := ensureRootDirectory(root, child); err != nil {
+			return err
+		}
+	}
 
 	core := cloneSessionWithoutArtifacts(input.Session)
 	document := sessionDocument{
@@ -128,12 +144,12 @@ func Save(dir string, input Input) (string, error) {
 			Tests:      input.Session.Tests,
 		})
 		if err != nil {
-			return "", fmt.Errorf("memory: encode facts: %w", err)
+			return fmt.Errorf("memory: encode facts: %w", err)
 		}
 		factPayload = encoded
 		factRef := contentReference("facts", encoded)
 		if err := writeContentFile(root, factRef, encoded); err != nil {
-			return "", err
+			return err
 		}
 		document.FactsRef = &factRef
 	}
@@ -145,10 +161,10 @@ func Save(dir string, input Input) (string, error) {
 			context.FactDigest = factDigest
 		}
 		if context.FactDigest != factDigest {
-			return "", fmt.Errorf("memory: claim fact digest does not match facts document")
+			return fmt.Errorf("memory: claim fact digest does not match facts document")
 		}
 		if err := context.Validate(); err != nil {
-			return "", fmt.Errorf("memory: invalid claim context: %w", err)
+			return fmt.Errorf("memory: invalid claim context: %w", err)
 		}
 		encoded, err := encodeDocument(claimDocument{
 			Version:      ClaimDocumentVersion,
@@ -156,36 +172,58 @@ func Save(dir string, input Input) (string, error) {
 			SourceReport: input.Session.SourceReport,
 		})
 		if err != nil {
-			return "", fmt.Errorf("memory: encode claims: %w", err)
+			return fmt.Errorf("memory: encode claims: %w", err)
 		}
 		claimRef := contentReference("claims", encoded)
 		if err := writeContentFile(root, claimRef, encoded); err != nil {
-			return "", err
+			return err
 		}
 		document.ClaimsRef = &claimRef
 	}
 
 	encoded, err := encodeDocument(document)
 	if err != nil {
-		return "", fmt.Errorf("memory: encode session: %w", err)
+		return fmt.Errorf("memory: encode session: %w", err)
 	}
-	path := filepath.Join(dir, SessionFileName)
 	if err := writeAtomic(root, SessionFileName, encoded); err != nil {
-		return "", err
+		return err
 	}
-	return path, nil
+	return nil
 }
 
 // Load verifies storage integrity and reconciles freshness before returning an
 // executable pending action. Stale facts or claims are invalidated through the
 // investigation reducer rather than exposed to the caller.
 func Load(path string, current Current) (Record, error) {
-	if err := current.Repository.Validate(); err != nil {
-		return Record{}, fmt.Errorf("memory: invalid current repository state: %w", err)
+	dir := filepath.Dir(path)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return Record{}, fmt.Errorf("memory: open session directory: %w", err)
 	}
-	record, err := loadStored(path)
+	defer root.Close()
+	record, err := loadStoredRoot(root, filepath.Base(path))
 	if err != nil {
 		return Record{}, err
+	}
+	return reconcileCurrent(record, current)
+}
+
+// LoadRoot loads the fixed latest checkpoint from an already-open,
+// caller-confined store root.
+func LoadRoot(root *os.Root, current Current) (Record, error) {
+	if root == nil {
+		return Record{}, fmt.Errorf("memory: store root is required")
+	}
+	record, err := loadStoredRoot(root, SessionFileName)
+	if err != nil {
+		return Record{}, err
+	}
+	return reconcileCurrent(record, current)
+}
+
+func reconcileCurrent(record Record, current Current) (Record, error) {
+	if err := current.Repository.Validate(); err != nil {
+		return Record{}, fmt.Errorf("memory: invalid current repository state: %w", err)
 	}
 	repositoryDifferences := freshness.CompareRepository(record.Repository, current.Repository)
 	if hasReason(repositoryDifferences, freshness.ReasonRepositoryIdentity) {
@@ -279,7 +317,11 @@ func loadStored(path string) (Record, error) {
 		return Record{}, fmt.Errorf("memory: open session directory: %w", err)
 	}
 	defer root.Close()
-	data, err := readBounded(root, filepath.Base(path), maxSessionBytes)
+	return loadStoredRoot(root, filepath.Base(path))
+}
+
+func loadStoredRoot(root *os.Root, name string) (Record, error) {
+	data, err := readBounded(root, name, maxSessionBytes)
 	if err != nil {
 		return Record{}, fmt.Errorf("memory: read session: %w", err)
 	}
@@ -295,6 +337,9 @@ func loadStored(path string) (Record, error) {
 	}
 	if err := document.RepositoryState.Validate(); err != nil {
 		return Record{}, fmt.Errorf("memory: invalid repository state: %w", err)
+	}
+	if !repositoryContainsScope(document.RepositoryState.Identity, document.Session.Repository.Path) {
+		return Record{}, fmt.Errorf("memory: session repository path is not a canonical repository scope")
 	}
 	revision, err := document.RepositoryState.Digest()
 	if err != nil {
@@ -383,7 +428,7 @@ func validateInput(input Input) error {
 	if err != nil {
 		return err
 	}
-	if input.Session.Repository.Path != input.Repository.Identity || input.Session.Repository.Revision != revision {
+	if !repositoryContainsScope(input.Repository.Identity, input.Session.Repository.Path) || input.Session.Repository.Revision != revision {
 		return fmt.Errorf("memory: session repository does not match captured state")
 	}
 	if hasFacts(input.Session) {
@@ -425,6 +470,8 @@ func cloneSessionWithoutArtifacts(session investigation.Session) investigation.S
 			result.Next[index].AssessSource = nil
 		case investigation.ActionFindTests:
 			result.Next[index].FindTests = nil
+		case investigation.ActionFindTestReferences:
+			result.Next[index].FindTestReferences = nil
 		}
 	}
 	return result
@@ -443,6 +490,10 @@ func hasEmbeddedActionArtifacts(session investigation.Session) bool {
 			}
 		case investigation.ActionFindTests:
 			if action.FindTests != nil {
+				return true
+			}
+		case investigation.ActionFindTestReferences:
+			if action.FindTestReferences != nil {
 				return true
 			}
 		}
@@ -479,6 +530,14 @@ func hydratePendingAction(session *investigation.Session) error {
 			Structural: *session.Symbol,
 			Assessment: *session.Assessment,
 			Report:     *session.SourceReport,
+		}
+	case investigation.ActionFindTestReferences:
+		if session.Symbol == nil {
+			return fmt.Errorf("memory: find-test-references action has no stored symbol fact")
+		}
+		action.FindTestReferences = &investigation.FindTestReferencesInput{
+			RepoPath:   session.Repository.Path,
+			Structural: *session.Symbol,
 		}
 	}
 	return nil
@@ -530,6 +589,27 @@ func writeContentFile(root *os.Root, ref reference, data []byte) error {
 		return fmt.Errorf("memory: inspect %q: %w", ref.Path, err)
 	}
 	return writeAtomic(root, path, data)
+}
+
+func ensureRootDirectory(root *os.Root, name string) error {
+	info, err := root.Lstat(name)
+	if os.IsNotExist(err) {
+		if err := root.Mkdir(name, 0o700); err != nil && !os.IsExist(err) {
+			return fmt.Errorf("memory: create %s directory: %w", name, err)
+		}
+		info, err = root.Lstat(name)
+	}
+	if err != nil {
+		return fmt.Errorf("memory: inspect %s directory: %w", name, err)
+	}
+	if !info.Mode().IsDir() {
+		return fmt.Errorf("memory: %s is not a directory", name)
+	}
+	child, err := root.OpenRoot(name)
+	if err != nil {
+		return fmt.Errorf("memory: open %s directory: %w", name, err)
+	}
+	return child.Close()
 }
 
 func writeAtomic(root *os.Root, path string, data []byte) error {
@@ -631,7 +711,9 @@ func decodeStrict(data []byte, target any) error {
 }
 
 func cloneRepository(state freshness.RepositoryState) freshness.RepositoryState {
-	state.Dirty = append([]freshness.DirtyFile{}, state.Dirty...)
+	if state.Dirty != nil {
+		state.Dirty = append([]freshness.DirtyFile{}, state.Dirty...)
+	}
 	return state
 }
 
@@ -664,6 +746,23 @@ func cloneDifferences(differences []freshness.Difference) []freshness.Difference
 		result[index].Paths = append([]string(nil), result[index].Paths...)
 	}
 	return result
+}
+
+func repositoryContainsScope(repositoryRoot, scope string) bool {
+	if !filepath.IsAbs(repositoryRoot) || filepath.Clean(repositoryRoot) != repositoryRoot ||
+		!filepath.IsAbs(scope) || filepath.Clean(scope) != scope {
+		return false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(repositoryRoot)
+	if err != nil {
+		return false
+	}
+	resolvedScope, err := filepath.EvalSymlinks(scope)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(resolvedRoot, resolvedScope)
+	return err == nil && filepath.IsLocal(relative)
 }
 
 func validSHA256(value string) bool {

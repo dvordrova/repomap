@@ -1,6 +1,6 @@
 # Architecture canvas v2
 
-Status: accepted design, implementation in progress.
+Status: implemented and fixture-validated; final offline verification recorded below.
 
 ## Product question
 
@@ -14,14 +14,14 @@ projects saved FlowProof evidence over the same stable component positions.
 Selecting a component, step, or edge opens the evidence for that object without
 running repository analysis or making a provider request.
 
-## Current behavior and ownership
+## Baseline behavior and ownership
 
-The current report reconstructs components in `internal/report/components.go`
+Before v2, the report reconstructed components in `internal/report/components.go`
 from model `high_level_map` prose and allowlisted paths. Direct package imports
-become component relations. `internal/report/templates/script.js` then places
-components in role lanes (`entry`, `boundary`, `domain`, and similar), draws
-straight center-to-center SVG arrows, and keeps selection in a closure-local
-numeric index. Flows remain separate tabs. FlowProof is shown as a ledger rather
+became component relations. `internal/report/templates/script.js` then placed
+components in role lanes (`entry`, `boundary`, `domain`, and similar), drew
+straight center-to-center SVG arrows, and kept selection in a closure-local
+numeric index. Flows remained separate tabs. FlowProof was shown as a ledger rather
 than a first-class canvas layer.
 
 The restic baseline demonstrates the concrete failures:
@@ -38,7 +38,7 @@ The restic baseline demonstrates the concrete failures:
 - selection has no stable URL state and the inspector is component-only;
 - without model `high_level_map`, the canvas disappears.
 
-Current owners remain deliberately separate:
+The v2 implementation keeps these owners deliberately separate:
 
 | Concern | Owner |
 | --- | --- |
@@ -220,10 +220,64 @@ and handler return does not become process termination.
 - Layout quality for very large or cyclic conceptual graphs remains a bounded
   product constraint rather than a claim of universal diagramming support.
 
-## Verification strategy
+## Verification and acceptance record
 
-Visual iteration uses a checked-in, provider-free FlowProof v2 fixture and a
-small preview server. The primary slice is restic Backup. After step/edge drill-
-down works, add one daemon fixture and one branching/plugin/backend fixture.
-Tests protect topology, layer membership, identity/hash restoration, local
-validation, and absence of invented transitions rather than pixel details.
+Visual iteration uses checked-in, provider-free FlowProof v2 fixtures and the
+`make canvas-preview` server. Tests protect topology, layer membership, bounded
+synthesis, local validation, and absence of invented transitions rather than
+pixel details. Browser acceptance covers selection, hash restoration, keyboard
+edge navigation, and exact evidence drill-down.
+
+| Fixture | Subsystems | Components | Structural edges | Flows | Relevant shape |
+| --- | ---: | ---: | ---: | ---: | --- |
+| restic Backup | 4 | 9 | 7 | 1 | main + scanner task + shared context |
+| Soft Serve daemon | 4 | 10 | 10 | 1 | main + shared + 11 task branches |
+| Colima runtime | 4 | 10 | 10 | 1 | synchronous main + 9 conditional dispatch edges |
+| etcd production run | 4 | 6 | 40 | 0 | synthesized landscape; no compatible saved proof |
+
+The Colima alternatives deliberately remain conditional synchronous dispatch
+edges rather than invented goroutine branches. Restic keeps `Scanner.Scan` only
+inside the scanner task, represents cancel and join separately, and associates
+Wait with the scanner task.
+
+Recorded browser artifacts:
+
+- `/tmp/repomap-canvas-restic-flow-edge.png`
+- `/tmp/repomap-canvas-soft-serve-flow.png`
+- `/tmp/repomap-canvas-colima-flow.png`
+
+Known product limits after the MVP:
+
+- the showcase JSON fixtures start at the final presentation projection;
+  realistic raw-run replay is covered by a smaller deterministic fixture rather
+  than a full checked-in restic run;
+- deterministic no-model behavior is contract-tested and available in the
+  production builder, but has no separate realistic fallback screenshot;
+- full transition provenance/scenario cannot be displayed when the saved
+  FlowProof transition retains only its provider name;
+- arrow-key spatial graph traversal is deferred; essential controls,
+  components, steps, and edges remain keyboard selectable;
+- architecture synthesis records request bytes and latency in
+  `architecture_synthesis.json`; the older orientation metadata counter does
+  not aggregate that later cached request.
+
+The production etcd calibration run `20260711-224359-etcd` replayed a cached
+DeepSeek `deepseek-v4-flash` synthesis record: 49,091 prompt bytes and 37,378 ms
+original latency. The model grouped only supplied package candidates; the 40
+displayed structural edges still come from local saved package witnesses. The
+run contained no command traces, so it correctly exposes no flow overlay.
+
+Final offline verification on 2026-07-11:
+
+```text
+node --check internal/report/templates/architecture_canvas.js       PASS
+go test ./internal/report ./cmd/canvas-preview
+        ./internal/componentmap ./internal/deepseek ./cmd/repomap  PASS
+./scripts/check.sh                                                  PASS
+  go test ./... + go vet ./... + six offline quality replays
+./scripts/etcd_check.sh ../etcd                                    PASS
+```
+
+No live provider request was required. The bounded synthesis transport, saved
+response replay, invalid-output fallback, and revision cache are exercised by
+deterministic tests.

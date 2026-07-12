@@ -30,12 +30,13 @@ source`, or `find tests`, never after DeepSeek, Ollama, gopls, or a future UI.
 | Capability | Input | Output | Current implementation |
 | --- | --- | --- | --- |
 | survey repository | repository request | deterministic snapshot and Go facts | `snapshot`, `gofacts`, `sourcesignals` |
+| discover runtime surfaces | Go repository + build scenario | bounded registrations, starts, loop evidence, and frontiers | `experiment/surfacediscovery` → bounded `report.DiscoveredSurfaces` |
 | resolve symbol | exact symbol request | bounded `symbol.Bundle` | Go/gopls adapter plus local builder |
 | read target source | resolved target | bounded line-addressable source card | local Go source collector |
 | assess source | source assessment bundle | normalized claims, unknowns, action | `sourceexplain.Service` with DeepSeek assessor |
 | find related tests | source report and structural facts | bounded test-reference evidence | gopls reference adapter plus local reducer |
 | evaluate saved journey | versioned task plus hash-verified artifacts | independent quality dimensions | offline `quality.Load` and `quality.Evaluate` |
-| present investigation | saved validated state | CLI/browser/editor view | playground prints pending action/choices; browser/editor adapters planned |
+| present investigation | saved report or validated session | CLI/browser/editor view | browser resumes one bounded exact local source/calls checkpoint and can add target-only test references |
 
 The application composition root selects implementations. The main CLI accepts
 an explicitly configured OpenAI-compatible endpoint; the current prompt and
@@ -86,7 +87,7 @@ not separate products.
 | Understand a symbol | exact symbol | evidence-backed responsibility, files, tests, unknowns | resumable CLI vertical slice works |
 | Work on a ticket | issue text | change surface, analogs, risks, test plan | planned playbook |
 | Diagnose a bug | symptom/test/log | reproduction or discriminating next experiment | planned playbook |
-| Onboard | repository + standard questions | evidence-backed learning path | **active**: full overview and named local drill-down work; exact symbol/source handoff is next |
+| Onboard | repository + standard questions | evidence-backed learning path | **active**: component anchor to durable exact symbol/source/test-reference checkpoint works; friend evaluation remains |
 | Assess impact | diff or symbol | affected callers, flows, tests, boundaries | planned playbook |
 
 ## Whole-system map
@@ -101,6 +102,8 @@ flowchart LR
         Snapshot --> Git["gitfiles"]
         Snapshot --> GoFacts["gofacts"]
         Snapshot --> LLMBundle["llmbundle"]
+        Snapshot -->|"persisted Go run"| Surfaces["surface discovery"]
+        Surfaces -->|"bounded local catalog"| Report
         LLMBundle -->|"focused scan"| Signals["sourcesignals"]
         Signals -->|"bounded signals"| LLMBundle
         LLMBundle -->|"orientation request"| OrientModel["configured OpenAI-compatible model"]
@@ -153,11 +156,13 @@ flowchart LR
 
 The user-facing orientation command now has provider-neutral endpoint/model/auth
 configuration, but its prompt, response mode, and orchestration still depend on
-the concrete `deepseek.Client`. Saved JSON can cross a deliberately small
-handoff into the stronger symbol evidence path. That integration currently lives
-in `investigation-playground`, not the main CLI or browser. M3 measures this
-connected slice before broader context selection, playbooks, or another
-orchestration surface are added.
+the concrete `deepseek.Client`. A served report crosses a deliberately small,
+manifest-authorized handoff into exact gopls resolution and the existing
+investigation runner without another provider call. Durable source assessment,
+claim-supported test continuation, and richer user choices still live in
+`investigation-playground`/memory. The served browser persists a smaller
+local-only branch: exact symbol, bounded source/calls, restart, and optional
+target test references, with no model claim.
 
 ## Modules that exist
 
@@ -250,10 +255,12 @@ yet. Ollama is currently experiment tooling, not a production provider package.
 
 | Module | State | Owns | Boundary |
 | --- | --- | --- | --- |
-| `internal/report` | works | full onboarding overview, safe run metrics, clickable saved direction evidence, non-overwriting feedback note | no collection or model calls; exact-symbol actions remain outside it |
+| `internal/researchtrail` | experimental, replayable | presentation-neutral component/question/evidence/claim/frontier trail plus separate local locator index | adapts validated component artifacts; no filesystem, provider, repository, or layout I/O |
+| `internal/report` | works | structured component authority plus versioned architecture/FlowProof canvas projection, onboarding overview, safe run metrics, feedback note | no collection or model calls; emits saved presentation state and run authority only |
+| `internal/reportserver` | works | capability-scoped loopback actions, manifest/freshness authorization, lazy symbol/source inspection | no provider calls and no repository-wide indexing |
 | `internal/debugdump` | works | redacted, replayable run artifacts | never credentials or Authorization headers |
-| browser report baseline | works | `./repomap` progress, one orientation call, retained overview, click-through local direction bundles, automatic static-report opening | no exact-symbol or reducer actions |
-| friend onboarding browser | **active** | known-project map, named direction choice, first drill-down | consumes saved application state, never collectors directly |
+| browser report baseline | works | `./repomap` progress, retained overview, ELK architecture canvas, one selected evidence-backed flow, automatic served report | static HTML remains view-only without the local server; conceptual synthesis is revision-cached |
+| friend onboarding browser | **active** | known-project map, component anchor, resumable exact symbol/source/static-call drill-down and local test references | knowledgeable-friend calibration remains; model assessment is optional |
 | MCP/editor adapter | planned | expose focused actions to external agents/editors | should be another adapter, not the core |
 
 ## Durable artifact contracts
@@ -272,7 +279,9 @@ These are the useful boundaries to inspect before changing implementation:
 | `quality.Result` | offline evaluator | checks, CI, human comparison | separate dimensions; top-level pass is conjunction, not a numeric score |
 | index JSON snapshot v2 | `index.Save` | `index.Load(current)` | versioned symbol cache; current fact context is mandatory |
 | fact/claim JSON documents | `memory.Save` | `memory.Load(current)` | content-addressed and hash-verified before reconciliation |
-| investigation session checkpoint | `memory.Save` | CLI now; browser next | state/actions plus relative verified refs, with no embedded facts or claims |
+| investigation session checkpoint | `memory.Save` / `memory.SaveRoot` | CLI and served browser | state/actions plus relative verified refs, with facts/claims stored separately |
+| `researchtrail.Trail` + `LocalIndex` | `researchtrail/component` adapter | replay playground, future report projection | SHA-bound learning graph; support basis in trail, `file:line` and artifact origins in separate index |
+| `run_manifest.json` | `report.Generate` | `reportserver` | exact report SHA, repository state, openable paths, and component/anchor action authority |
 
 Changing an artifact shape should be treated as a contract change: update its
 version or compatibility rules, fixtures, replay tools, and challenge commands.
@@ -283,7 +292,7 @@ This table separates real modularity from intended modularity.
 
 | Dimension | Current seam | Replace independently? | Remaining coupling |
 | --- | --- | --- | --- |
-| Language analyzer | `analyzer.Provider -> evidence.Graph` | yes, in the isolated path | only gopls adapter exists; main CLI does not consume the port |
+| Language analyzer | focused `LocationResolver` / `ExactSymbolAnalyzer -> evidence.Graph` | yes for lazy browser actions | only the Go/gopls adapter exists |
 | Symbol model | consumer-owned `symbol.Explainer` | yes in tests/services | playground still constructs DeepSeek directly |
 | Orientation model | concrete `deepseek.Client` in `orient` | runtime endpoint/model/auth/timeout only | prompt, response mode, transport type, and orchestration are joined |
 | Response syntax | tolerant JSON/tagged parser | mostly | provider capability negotiation is absent |
@@ -291,7 +300,7 @@ This table separates real modularity from intended modularity.
 | Context selection | `llmbundle` and fixed-limit `symbol.Build` | algorithms can be tested alone; orientation uses user-facing entrypoint dependencies, bounded kind diversity, and one coherent allowlist | no shared goal-aware budget/selection trace |
 | Workflow | `investigation.Reduce` plus explicit `Runner` | yes for the symbol slice | main orientation CLI and future ticket/bug policies are not migrated |
 | Quality replay | `quality.Task -> quality.Result` | yes, fully offline | all five repository baselines plus generic-provider calibration exist |
-| Presentation | saved session plus playground choices | partly | no browser/editor read/action API yet |
+| Presentation | saved report authority plus reducer/runner capabilities | yes for the local onboarding slice | one current browser checkpoint; post-report test references are not editor-authorized or semantically assessed |
 
 The next work should improve one red cell at a time and preserve a runnable
 fixture at the boundary. A dynamic plug-in registry would not make these seams
@@ -465,10 +474,11 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   no-network restart; repository/fact changes request `resolve_symbol`, claim
   changes request `assess_source`, and collectors/model clients still appear
   only as requested actions or delivered events, not inside the reducer.
-- Current boundary: orientation flow identity is candidate provenance, never an
-  inferred symbol; the user supplies the exact symbol. `read_callee` becomes an
-  explicit same-revision symbol redirect, while bounded test-body inspection is
-  deferred and remains visibly unexecuted.
+- Current boundary: orientation flow/component identity is candidate
+  provenance, never an inferred symbol; the browser makes the user choose among
+  exact file-local declarations. `read_callee` becomes an explicit
+  same-revision symbol redirect, while bounded test-body inspection is deferred
+  and remains visibly unexecuted.
 - Challenge independently: feed contradiction, stale action completion,
   cancellation, budget exhaustion, repository change, and user redirection.
 
@@ -488,15 +498,16 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 ### C12 — Friend onboarding presentation boundary
 
-- State: full static onboarding report, named direction selection, saved local
-  evidence drill-down, feedback note, and split exact-symbol session exist; the
-  direction-to-exact-symbol bridge remains active M5 work.
+- State: full onboarding report, architecture/flow canvas, saved local evidence,
+  capability-scoped exact-symbol/source/static-call drill-down, feedback note,
+  and one resumable browser checkpoint with explicit local test references
+  exist. Model assessment is not required for this local onboarding path.
 - Question: can the browser, CLI, MCP, and editor open the same investigation
   state without owning analysis logic?
-- Current experiment: let a knowledgeable friend critique the overview and one
-  saved local direction neighborhood, then measure where an exact symbol/source
-  handoff would materially improve trust. Opening a cited file is useful but
-  does not block the first trial.
+- Current experiment: let a knowledgeable friend critique the component map,
+  choose one anchor and exact symbol, then compare the returned source/static
+  neighborhood with their own project knowledge. Opening a cited file and local
+  symbol discovery require no provider call.
 - Pass signal: a presentation adapter can be replaced without changing evidence,
   context selection, or reducer tests.
 

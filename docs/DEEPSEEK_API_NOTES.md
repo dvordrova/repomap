@@ -28,31 +28,29 @@ DeepSeek defaults below are used.
 
 The application does not source `.env` files. The current repository may be
 untrusted input and its environment file may contain unrelated credentials or
-shell syntax. Export the selected variable in the launching process; local
-capture tooling may read only `DEEPSEEK_API_KEY` from repomap's own ignored
-`.env` without evaluating the file.
+shell syntax. The repomap development `Makefile` imports only repomap's own
+ignored `.env`; this does not read an analyzed repository's environment file.
 
-For repository development commands, use the narrow wrapper explicitly:
+For repository development commands, use Make targets. The ignored `.env` may
+contain `DEEPSEEK_API_KEY`:
 
 ```bash
-./scripts/with_local_deepseek_key.sh \
-  ./scripts/source_prompt_experiment.sh LABEL ../etcd kvServer.Put
+make source-prompt-experiment LABEL=trial ETCD_REPO=../etcd SYMBOL=kvServer.Put
 ```
 
-`scripts/deepseek_check.sh` applies the same wrapper automatically when no
-provider environment is already active.
+Direct script execution uses only the caller's exported environment and never
+loads `.env` implicitly.
 
 To calibrate the generic OpenAI-compatible namespace against the same DeepSeek
 reference endpoint/model without exposing the ignored local key, use:
 
 ```bash
-./scripts/with_deepseek_generic_config.sh \
-  go run ./cmd/repomap doctor llm --check
+make generic-deepseek-doctor
 ```
 
-The wrapper refuses to overwrite any existing `REPOMAP_LLM_*` configuration,
-maps only the local DeepSeek key into the generic namespace, and unsets all
-legacy variables before executing the command.
+The target maps the local DeepSeek key into the atomic `REPOMAP_LLM_*`
+namespace for this command. The application ignores legacy values whenever the
+generic namespace is active.
 
 ## Endpoint
 
@@ -82,7 +80,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   "messages": [
     {
       "role": "system",
-      "content": "You are a senior Go engineer helping orient inside a large unfamiliar Go repository. Use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only."
+      "content": "You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only."
     },
     {
       "role": "user",
@@ -101,6 +99,16 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 - Prompt must contain the word **json** (case-insensitive match is fine).
 - Prompt must include an example JSON shape so the model knows the expected schema.
 - `max_tokens` must be high enough to avoid truncation (default 6000).
+- Do not replace the configured/default budget with a small stage-specific cap.
+  The Pebble component planner returned empty content at 1600 tokens and
+  succeeded at 6000.
+- DeepSeek V4 enables thinking by default. The architecture grouping request is
+  a bounded classification task, so the official DeepSeek endpoint receives
+  `"thinking": {"type":"disabled"}` for that request only. Generic compatible
+  endpoints do not receive this DeepSeek-specific extension.
+- Empty content errors include safe `finish_reason` and token-count diagnostics
+  when the provider supplies them. Reasoning content itself is never echoed or
+  retained.
 
 ## Expected orientation report shape
 
@@ -111,6 +119,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   "high_level_map": [
     {
       "name": "component or subsystem name",
+      "role": "entry | boundary | coordination | domain | state | support | unknown",
       "evidence": ["facts or paths from bundle"],
       "why_it_matters": "..."
     }
@@ -155,15 +164,76 @@ an allowed file nor a provided entrypoint package, it may be replaced with that
 flow's first already-allowed `likely_file`, again with a warning.
 `first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
 invented values: invalid or unallowed structured paths still fail validation.
-Orientation prompt v3 asks for atomic evidence items, treats `allowed_paths` as
-a closed exact set for verified file fields, and explicitly rejects directory,
-package, import, and trailing-slash values in all structured file fields.
+Orientation prompt v6 retains the atomic-evidence and closed-`allowed_paths`
+rules introduced in v3, explicitly rejects directory, package, import, and
+trailing-slash values in structured file fields, and adds the bounded component
+role used by the landscape layout.
 `main.go` is not accepted as an abbreviation for `cmd/prometheus/main.go`, and
 an import such as `pkg/goanalysis` is not accepted as a file. Prompt v2 captures
 remain replayable historical artifacts. The Prometheus capture still contains
 mixed prose items, which quality replay leaves explicitly unscored. Its clean
 raw-contract flag means the JSON wire shape was clean, not that every semantic
 prompt instruction was obeyed.
+
+The component `role` is a bounded orientation hypothesis used only to arrange
+the browser landscape. It is normalized to `unknown` when a provider returns an
+unsupported value. Static package imports remain separate evidence and never
+upgrade a semantic role into a verified fact.
+
+## Component planning and probe handoff
+
+Component planning is a bounded question-and-selection call, not a repository
+explanation. Prompt `component-plan-json-v3` returns Plan v2. It must choose one
+`primary_question_id`, two to four questions, at most two file IDs, and at most
+three symbol IDs from the supplied bundle. IDs are opaque: repository paths,
+symbol names, certainty, and provenance are reconstructed locally and are never
+accepted from model prose.
+
+The parser is deliberately tolerant at the wire boundary. It accepts exact,
+fenced, or embedded JSON, common scalar-list drift, and ID-only objects. Unknown
+IDs and malformed optional entries are dropped with diagnostics while surviving
+selections remain usable. Old captures without `primary_question_id` replay as
+Plan v2 by selecting the first surviving question and recording the repair.
+Replay stores the current request prompt version and the source response prompt
+version separately and makes no provider call.
+
+Two empirical cases define the next boundary:
+
+- Soft Serve selected `serve.go`, `server.go`, and `NewServer` / `Start` /
+  `Shutdown`, giving a useful lifecycle frontier.
+- Pebble selected `Batch.Commit`, `commitPipeline.Commit`, and `directWrite`, but
+  exact-symbol inspection showed the direct edge is `Batch.Commit -> DB.Apply`.
+  The attractive planner story was therefore not yet connected evidence.
+
+For that reason a focused teacher must not consume a planner result directly.
+The local handoff is:
+
+```text
+Plan -> bounded exact-symbol Probe -> connected | frontier | blocked -> Teacher
+```
+
+The probe makes no model call. It collects direct static relations, bounded
+source and call-site windows, and test references for the primary question. A
+`frontier` may offer opaque IDs, but the research budget permits only one
+accepted frontier symbol and two probe rounds total. Once that budget is spent,
+Teacher receives a partial dossier and must state the unresolved link; it does
+not trigger an unbounded search. This contract is still an experiment and does
+not change the default orientation request.
+
+Focused teaching currently uses `component-teach-json-v2`. The provider sees a
+validated path-free bundle of evidence IDs, source text, named static
+relations, support bases, and opaque unresolved frontier hints. The local
+`file:line` index is a separate artifact and is never placed in the request.
+The request uses JSON mode, temperature zero, and the configured/default token
+budget without a stage-specific cap.
+
+The response parser accepts plain, fenced, or embedded JSON, singleton section
+objects, and scalar ID drift. It assigns item IDs locally and drops unknown
+evidence/frontier IDs without discarding valid siblings. It also rejects an
+unqualified closed-world claim such as "only used" or "does not call" when its
+anchors are only bounded static/navigation evidence. This produces a warning
+instead of silently presenting absence as proof. A source-supported local
+negative branch is not rejected by that guard.
 
 ## Focused symbol investigation
 

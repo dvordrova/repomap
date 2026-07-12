@@ -485,12 +485,14 @@ func enclosingIfCondition(fileSet *token.FileSet, root ast.Node, target ast.Node
 		return nil
 	}
 	expression := strings.Join(expressions, " && ")
-	if !expressionComplete || len(expression) > maxConditionBytes {
+	expressionOmitted := !expressionComplete || len(expression) > maxConditionBytes
+	if expressionOmitted {
 		expression = ""
 	}
 	return &evidence.Condition{
-		Expression: expression,
-		Location:   location,
+		Expression:        expression,
+		ExpressionOmitted: expressionOmitted,
+		Location:          location,
 	}
 }
 

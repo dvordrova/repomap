@@ -11,13 +11,14 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/sourcecard"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
 	"github.com/dvordrova/repomap/internal/testevidence"
 )
 
-const SessionVersion = 1
+const SessionVersion = 3
 
 var originSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var originIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -25,14 +26,15 @@ var originIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 type State string
 
 const (
-	StateResolvingSymbol State = "resolving_symbol"
-	StateReadingSource   State = "reading_source"
-	StateAssessingSource State = "assessing_source"
-	StateFindingTests    State = "finding_tests"
-	StateWaitingUser     State = "waiting_user"
-	StateCompleted       State = "completed"
-	StateCanceled        State = "canceled"
-	StateBlocked         State = "blocked"
+	StateResolvingSymbol       State = "resolving_symbol"
+	StateReadingSource         State = "reading_source"
+	StateAssessingSource       State = "assessing_source"
+	StateFindingTests          State = "finding_tests"
+	StateFindingTestReferences State = "finding_test_references"
+	StateWaitingUser           State = "waiting_user"
+	StateCompleted             State = "completed"
+	StateCanceled              State = "canceled"
+	StateBlocked               State = "blocked"
 )
 
 type FocusKind string
@@ -41,7 +43,10 @@ const FocusSymbol FocusKind = "symbol"
 
 type OriginKind string
 
-const OriginOrientationFlow OriginKind = "orientation_flow"
+const (
+	OriginOrientationFlow      OriginKind = "orientation_flow"
+	OriginOrientationComponent OriginKind = "orientation_component"
+)
 
 type OriginStatus string
 
@@ -66,9 +71,10 @@ type Repository struct {
 }
 
 type Focus struct {
-	Kind       FocusKind `json:"kind"`
-	Symbol     string    `json:"symbol"`
-	EvidenceID string    `json:"evidence_id,omitempty"`
+	Kind       FocusKind        `json:"kind"`
+	Symbol     string           `json:"symbol"`
+	Entity     *evidence.Entity `json:"entity,omitempty"`
+	EvidenceID string           `json:"evidence_id,omitempty"`
 }
 
 // Origin records why the initial symbol was chosen. Raw orientation prose stays
@@ -81,6 +87,8 @@ type Origin struct {
 	RepoName         string       `json:"repo_name"`
 	FlowID           string       `json:"flow_id"`
 	FlowName         string       `json:"flow_name"`
+	ComponentID      string       `json:"component_id,omitempty"`
+	AnchorID         string       `json:"anchor_id,omitempty"`
 	AcceptedRevision string       `json:"accepted_revision"`
 }
 
@@ -122,6 +130,9 @@ func (s Session) Validate() error {
 	if s.Focus.Kind != FocusSymbol || strings.TrimSpace(s.Focus.Symbol) == "" {
 		return fmt.Errorf("investigation: one symbol focus is required")
 	}
+	if err := validateFocusEntity(s.Focus.Symbol, s.Focus.Entity); err != nil {
+		return err
+	}
 	if err := validateOrigin(s.Origin, s.Repository.Revision); err != nil {
 		return err
 	}
@@ -141,14 +152,46 @@ func validateOrigin(origin *Origin, revision string) error {
 	if origin == nil {
 		return nil
 	}
-	if origin.Kind != OriginOrientationFlow || origin.Status != OriginCandidate || origin.AcceptedRevision != revision ||
+	if origin.Status != OriginCandidate || origin.AcceptedRevision != revision ||
 		!originSHA256Pattern.MatchString(origin.ReportSHA256) ||
-		!originIDPattern.MatchString(origin.FlowID) || strings.TrimSpace(origin.RepoName) == "" || strings.TrimSpace(origin.FlowName) == "" {
+		strings.TrimSpace(origin.RepoName) == "" {
 		return fmt.Errorf("investigation: invalid orientation origin")
 	}
 	if len(origin.RepoName) > 128 || len(origin.FlowID) > 128 || len(origin.FlowName) > 256 ||
+		len(origin.ComponentID) > 128 || len(origin.AnchorID) > 128 ||
 		strings.ContainsAny(origin.RepoName, "/\\") || containsControl(origin.RepoName) || containsControl(origin.FlowName) {
 		return fmt.Errorf("investigation: unsafe orientation origin text")
+	}
+	switch origin.Kind {
+	case OriginOrientationFlow:
+		if !originIDPattern.MatchString(origin.FlowID) || strings.TrimSpace(origin.FlowName) == "" || origin.ComponentID != "" || origin.AnchorID != "" {
+			return fmt.Errorf("investigation: invalid orientation flow origin")
+		}
+	case OriginOrientationComponent:
+		if !originIDPattern.MatchString(origin.ComponentID) || !originIDPattern.MatchString(origin.AnchorID) {
+			return fmt.Errorf("investigation: invalid orientation component origin")
+		}
+		if (origin.FlowID == "") != (origin.FlowName == "") || (origin.FlowID != "" && !originIDPattern.MatchString(origin.FlowID)) {
+			return fmt.Errorf("investigation: invalid optional component flow origin")
+		}
+	default:
+		return fmt.Errorf("investigation: invalid orientation origin kind")
+	}
+	return nil
+}
+
+func validateFocusEntity(symbolName string, entity *evidence.Entity) error {
+	if entity == nil {
+		return nil
+	}
+	if entity.ID == "" || entity.Name != symbolName ||
+		(entity.Kind != evidence.EntityFunction && entity.Kind != evidence.EntityMethod) ||
+		(entity.Language != "" && entity.Language != "go") || entity.Location == nil {
+		return fmt.Errorf("investigation: exact focus entity is incomplete")
+	}
+	location := entity.Location
+	if location.Path == "" || !filepath.IsLocal(filepath.FromSlash(location.Path)) || location.Line <= 0 || location.Column <= 0 {
+		return fmt.Errorf("investigation: exact focus location must be repository-relative declaration position")
 	}
 	return nil
 }
@@ -158,12 +201,19 @@ func containsControl(value string) bool {
 }
 
 func validateArtifactPrefix(s Session) error {
+	localComponent := isLocalComponentInvestigation(s)
+	if localComponent && (s.Assessment != nil || s.SourceReport != nil) {
+		return fmt.Errorf("investigation: local component investigation contains model assessment artifacts")
+	}
 	if s.Symbol != nil {
 		if err := s.Symbol.Validate(); err != nil {
 			return fmt.Errorf("investigation: invalid symbol result: %w", err)
 		}
 		if s.Symbol.Query != s.Focus.Symbol || s.Symbol.Target.Entity.Name != s.Focus.Symbol {
 			return fmt.Errorf("investigation: symbol result does not match focus")
+		}
+		if s.Focus.Entity != nil && !reflect.DeepEqual(s.Symbol.Target.Entity, *s.Focus.Entity) {
+			return fmt.Errorf("investigation: symbol result does not match exact focus entity")
 		}
 		if s.Focus.EvidenceID != s.Symbol.Target.EvidenceID {
 			return fmt.Errorf("investigation: focus evidence does not match symbol result")
@@ -190,7 +240,7 @@ func validateArtifactPrefix(s Session) error {
 		if err != nil || !reflect.DeepEqual(rebuilt, *s.Assessment) {
 			return fmt.Errorf("investigation: assessment was not built from stored symbol and source")
 		}
-	} else if s.Source != nil {
+	} else if s.Source != nil && !localComponent {
 		return fmt.Errorf("investigation: source exists without its deterministic assessment bundle")
 	}
 	if s.SourceReport != nil {
@@ -202,8 +252,8 @@ func validateArtifactPrefix(s Session) error {
 		}
 	}
 	if s.Tests != nil {
-		if s.SourceReport == nil {
-			return fmt.Errorf("investigation: test references exist without source report")
+		if s.Symbol == nil {
+			return fmt.Errorf("investigation: test references exist without symbol evidence")
 		}
 		if err := s.Tests.Validate(); err != nil {
 			return fmt.Errorf("investigation: invalid test references: %w", err)
@@ -211,8 +261,17 @@ func validateArtifactPrefix(s Session) error {
 		if s.Tests.TargetName != s.Symbol.Target.Entity.Name {
 			return fmt.Errorf("investigation: test references do not match focus")
 		}
-		if err := validateTestReferences(s, *s.Tests); err != nil {
-			return err
+		if localComponent {
+			if err := validateTargetTestReferences(s, *s.Tests); err != nil {
+				return err
+			}
+		} else {
+			if s.SourceReport == nil {
+				return fmt.Errorf("investigation: test references exist without source report")
+			}
+			if err := validateTestReferences(s, *s.Tests); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -229,11 +288,17 @@ func validateStateShape(s Session) error {
 			if s.Stop.Kind != StopFinished {
 				return fmt.Errorf("investigation: completed state has invalid stop %q", s.Stop.Kind)
 			}
-			if s.SourceReport == nil {
-				return fmt.Errorf("investigation: completed state has no assessed source result")
-			}
-			if err := validateOutcomeArtifacts(s); err != nil {
-				return err
+			if isLocalComponentInvestigation(s) {
+				if s.Source == nil || s.Tests == nil || s.Assessment != nil || s.SourceReport != nil {
+					return fmt.Errorf("investigation: completed local component state has invalid artifacts")
+				}
+			} else {
+				if s.SourceReport == nil {
+					return fmt.Errorf("investigation: completed state has no assessed source result")
+				}
+				if err := validateOutcomeArtifacts(s); err != nil {
+					return err
+				}
 			}
 		case StateCanceled:
 			if s.Stop.Kind != StopCanceled {
@@ -273,6 +338,11 @@ func validateStateShape(s Session) error {
 		if s.SourceReport == nil || s.Tests != nil || s.Next[0].Kind != ActionFindTests {
 			return fmt.Errorf("investigation: find-tests state has invalid artifacts or action")
 		}
+	case StateFindingTestReferences:
+		if !isLocalComponentInvestigation(s) || s.Source == nil || s.Assessment != nil || s.SourceReport != nil ||
+			s.Tests != nil || s.Next[0].Kind != ActionFindTestReferences {
+			return fmt.Errorf("investigation: find-test-references state has invalid artifacts or action")
+		}
 	case StateWaitingUser:
 		if s.SourceReport == nil || s.Next[0].Kind != ActionAwaitUser {
 			return fmt.Errorf("investigation: waiting state has invalid artifacts or action")
@@ -287,7 +357,8 @@ func validatePendingPayload(s Session) error {
 	action := s.Next[0]
 	switch action.Kind {
 	case ActionResolveSymbol:
-		if action.ResolveSymbol.RepoPath != s.Repository.Path || action.ResolveSymbol.Query != s.Focus.Symbol {
+		if action.ResolveSymbol.RepoPath != s.Repository.Path || action.ResolveSymbol.Query != s.Focus.Symbol ||
+			!reflect.DeepEqual(action.ResolveSymbol.Expected, s.Focus.Entity) {
 			return fmt.Errorf("investigation: resolve action does not match session focus")
 		}
 	case ActionReadSource:
@@ -307,10 +378,19 @@ func validatePendingPayload(s Session) error {
 			!reflect.DeepEqual(action.FindTests.Report, *s.SourceReport) {
 			return fmt.Errorf("investigation: find-tests action does not match stored evidence")
 		}
+	case ActionFindTestReferences:
+		if action.FindTestReferences.RepoPath != s.Repository.Path ||
+			!reflect.DeepEqual(action.FindTestReferences.Structural, *s.Symbol) {
+			return fmt.Errorf("investigation: find-test-references action does not match stored evidence")
+		}
 	case ActionAwaitUser:
 		return validateAwaitAction(s, action)
 	}
 	return nil
+}
+
+func isLocalComponentInvestigation(s Session) bool {
+	return s.Origin != nil && s.Origin.Kind == OriginOrientationComponent
 }
 
 func validateOutcomeArtifacts(s Session) error {

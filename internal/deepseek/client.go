@@ -45,7 +45,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v3"
+const OrientationPromptVersionJSON = "orientation-json-v8"
 
 type Client struct {
 	HTTPClient *http.Client
@@ -181,23 +181,36 @@ type jsonFormat struct {
 	Type string `json:"type"`
 }
 
+type thinkingConfig struct {
+	Type string `json:"type"`
+}
+
 type chatRequest struct {
-	Model          string        `json:"model"`
-	Messages       []chatMessage `json:"messages"`
-	Temperature    float64       `json:"temperature"`
-	MaxTokens      int           `json:"max_tokens"`
-	ResponseFormat *jsonFormat   `json:"response_format,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []chatMessage   `json:"messages"`
+	Temperature    float64         `json:"temperature"`
+	MaxTokens      int             `json:"max_tokens"`
+	ResponseFormat *jsonFormat     `json:"response_format,omitempty"`
+	Thinking       *thinkingConfig `json:"thinking,omitempty"`
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type chatResponse struct {
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
+		Message      chatMessage `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		CompletionTokens       int `json:"completion_tokens"`
+		CompletionTokenDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
 }
 
 const maxRetries = 3
@@ -212,13 +225,13 @@ func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 		Messages: []chatMessage{
 			{
 				Role:    "system",
-				Content: "You are a senior Go engineer helping orient inside a large unfamiliar Go repository. Use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
+				Content: "You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
 			},
 			{
 				Role: "user",
 				Content: `Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
-Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those fields, even when an import edge names them. Do not guess a filename from a package path. unverified_paths is only for a suspected file path that is absent from allowed_paths, never for a directory, package, or trailing-slash path.
+Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
 
 Produce a json orientation report with this exact shape:
 {
@@ -227,6 +240,7 @@ Produce a json orientation report with this exact shape:
   "high_level_map": [
     {
       "name": "component or subsystem name",
+      "role": "entry | boundary | coordination | domain | state | support | unknown",
       "evidence": ["facts or paths from the bundle"],
       "why_it_matters": "why this component matters for understanding the repo"
     }
@@ -270,9 +284,11 @@ Produce a json orientation report with this exact shape:
 }
 
 Important rules:
-- Candidate flows must be runtime/event-oriented (e.g. "gRPC Put request", "server startup", "watch stream", "raft write path", "lease lifecycle"), not folder-oriented (do not say "server module" or "pkg folder").
+- Candidate flows must be runtime/event-oriented (e.g. "CLI command dispatch", "HTTP request handling", "server startup", "plugin loading", "background job execution"), not folder-oriented (do not say "server module" or "pkg folder").
+- Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
 - Every candidate flow must include evidence from the bundle.
-- Keep each evidence item atomic: use either one exact full allowed_paths value or a non-path fact copied from the bundle. Never embed an abbreviated filename or path in prose.
+- go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.
+- Keep each evidence item atomic. When citing source_signals or go.command_traces, start with its exact path:line and optionally add one short fact, for example "app/service.py:42 registers the handler". Never write "path line 42", "path lines 42-43", or "at line 42". For evidence without a grounded line, use either one exact full allowed_paths value or one non-path fact copied from the bundle. Never abbreviate a path.
 - Distinguish facts from guesses. If confidence is low, say so in warnings.
 - Use only the provided facts bundle. Do not imagine files you cannot see.
 
@@ -471,8 +487,27 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 	if len(parsed.Choices) == 0 {
 		return nil, false, fmt.Errorf("llm response contains no choices")
 	}
-	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
+	choice := parsed.Choices[0]
+	content := strings.TrimSpace(choice.Message.Content)
 	if content == "" {
+		details := make([]string, 0, 4)
+		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
+			details = append(details, "finish_reason="+finishReason)
+		}
+		if parsed.Usage.CompletionTokens > 0 {
+			details = append(details, fmt.Sprintf("completion_tokens=%d", parsed.Usage.CompletionTokens))
+		}
+		if parsed.Usage.CompletionTokenDetails.ReasoningTokens > 0 {
+			details = append(details, fmt.Sprintf(
+				"reasoning_tokens=%d",
+				parsed.Usage.CompletionTokenDetails.ReasoningTokens,
+			))
+		} else if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
+			details = append(details, "reasoning_content_present")
+		}
+		if len(details) > 0 {
+			return nil, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
+		}
 		return nil, false, fmt.Errorf("llm response content is empty")
 	}
 
@@ -484,6 +519,15 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 	}
 
 	return []byte(content), false, nil
+}
+
+func knownFinishReason(reason string) string {
+	switch reason {
+	case "stop", "length", "content_filter", "tool_calls", "insufficient_system_resource":
+		return reason
+	default:
+		return ""
+	}
 }
 
 func safeProviderErrorText(body []byte) string {

@@ -135,7 +135,7 @@ func sessionNeedsFactContext(session investigation.Session) bool {
 		return false
 	}
 	switch session.Next[0].Kind {
-	case investigation.ActionResolveSymbol, investigation.ActionReadSource, investigation.ActionFindTests:
+	case investigation.ActionResolveSymbol, investigation.ActionReadSource, investigation.ActionFindTests, investigation.ActionFindTestReferences:
 		return true
 	default:
 		return false

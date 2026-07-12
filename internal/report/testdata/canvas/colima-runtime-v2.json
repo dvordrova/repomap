@@ -1,5 +1,5 @@
 {
-  "format_version": 11,
+  "format_version": 12,
   "repo_name": "colima",
   "project_guess": "Provider-free architecture and start/runtime selection",
   "orientation_confidence": 0,

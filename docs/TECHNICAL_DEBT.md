@@ -4,7 +4,7 @@ This file tracks concrete implementation debt discovered by experiments. Product
 questions belong in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md); planned investigation
 architecture belongs in [INVESTIGATION_ENGINE.md](INVESTIGATION_ENGINE.md).
 
-Last reviewed: 2026-07-10.
+Last reviewed: 2026-07-11.
 
 ## Active
 
@@ -242,28 +242,28 @@ selective policy is not wired into session memory. Measure repetition and
 latency in the friend onboarding trial before adding dependency-aware reuse;
 this is an efficiency limitation, not a stale-evidence hole.
 
-### TD-009: Candidate directions do not yet route to exact symbols
+### TD-009: Browser-selected investigation is durable but deliberately single-track
 
-**Evidence:** the default `./repomap` pass now retains every validated direction
-and each card opens a separately saved deterministic local file/test/package/
-import neighborhood without another provider call. The isolated handoff records
-a selected flow as provenance while `investigation.Runner` still requires a
-separately supplied exact symbol. The main CLI has named local selection but no
-bounded deterministic symbol-candidate step.
+**Evidence:** accepting an exact component symbol now reduces `EventSourceRead`,
+saves the real repository and scoped Go `FactContext` below the authorized run,
+and resumes after handler restart without the opaque candidate cache. A local
+source-ready branch supports leaf functions. One explicit action collects up to
+five direct `_test.go` references without a provider request.
 
-**Consequence:** the first friend can inspect a useful grounded neighborhood,
-but reaching source-supported claims still needs a manual exact symbol.
-Auto-promoting the model-proposed entrypoint would falsely turn a navigation
-hypothesis into a symbol fact.
+The MVP intentionally keeps one current checkpoint per report run. Selecting a
+new symbol replaces the current session. Returned test references remain
+non-clickable because they are not part of the immutable report manifest's
+editor-open authority, and they are labelled as navigation evidence rather than
+test support. The browser does not automatically request model assessment.
 
-**Done when:** one shared application step maps a user-selected direction's
-verified files to a bounded deterministic set of exact analyzer symbols, asks
-the user to confirm one, and enters the existing investigation reducer through
-the main CLI/browser state. Search should be lazy, filter functions/methods to
-verified non-test Go files before truncation, retain provenance, and require a
-location-matching exact analyzer resolution before entering the reducer. The
-selected direction must affect ranking and be bound to repository identity and
-revision; model prose alone must never become the selected symbol.
+**Consequence:** the friend can leave and resume one useful drill-down, but this
+is not yet a multi-investigation workspace and it cannot claim what a related
+test proves.
+
+**Revisit when:** observed onboarding use actually needs multiple retained
+investigations, or when a new signed/validated action authority can safely make
+post-report test paths clickable. Do not add back/branch/session-manager UI only
+to make the state machine look complete.
 
 ### TD-010: Name-seeded source questions mix hypotheses with observations
 
@@ -324,6 +324,234 @@ existing writer limitation more important to keep explicit.
 ancestors, creates randomized exclusive temp files in confined directories, and
 atomically renames them; adversarial tests cover the run directory, `flows/`,
 and temp-file targets.
+
+### TD-013: Repository survey selection is still file-first
+
+**Evidence:** the 60-path etcd onboarding bundle retained many files from
+`server/etcdserver/api/rafthttp` while omitting the real core
+`server/etcdserver/server.go`. The model noticed the missing role but guessed
+the nonexistent `server/etcdserver/etcdserver.go`. A bounded diversity pass,
+one decaying third import hop, a generic package-role anchor, and an explicit
+Raft component signal now retain `server/etcdserver/raft.go` and reduce
+`rafthttp` to 11 paths at the product limit. The real `server.go` is retained
+at the 150-path developer limit but is still not guaranteed at 60.
+
+**Consequence:** file-level scores can spend a bounded request on many siblings
+from one package before representing another central package. Raising another
+magic score could repair etcd while moving the same failure elsewhere.
+
+**Done when:** selection ranks a bounded set of packages using entrypoint
+distance, import structure, and explicit local signals, then chooses a small
+representative set of files per package. The five repository preflights must
+retain their current useful paths, and the etcd 60-path fixture must contain a
+real core etcdserver anchor without hard-coding that path. Current heuristic
+regression tests are explicitly replaceable when this package-first selector
+lands.
+
+### TD-014: Focused flow retrieval is lexical before it is relational
+
+**Evidence:** the captured `Raft Leader Election Flow` promoted `main` from
+`server/main.go` into a global search term, selecting unrelated `etcdctl` and
+example `main.go` files. Bare `election` and `leader` matches also mixed Raft
+leadership with etcd's user-facing concurrency Election API. Package and edge
+context was additionally computed from every positive lexical candidate rather
+than only the retained bounded files.
+
+The generic `main` term is now ignored and package/edge context is built only
+from retained files. These fixes remove demonstrated mechanical pollution but
+do not solve word-sense ambiguity.
+
+**Consequence:** a valid model direction can still produce a plausible-looking
+but semantically mixed reading list. Import edges shown beside that list are
+not yet used as the primary retrieval constraint.
+
+**Done when:** exact model seeds establish one or more package neighborhoods,
+graph reachability is the primary inclusion signal, and lexical aliases only
+rank files inside or near those neighborhoods. A fixture must distinguish Raft
+leader election from the concurrency Election API without an etcd-specific
+path blacklist.
+
+### TD-015: Candidate direction choice has no local diversity or feasibility policy
+
+**Evidence:** the orientation prompt asks the provider for runtime/event flows
+but does not constrain their count, coverage, overlap, or whether the
+implementation is inside the current repository. The visible three directions
+exist because DeepSeek returned three. Confidence and ordering are also
+provider-authored. One run proposed `Raft Leader Election Flow` even though the
+election state machine lives in the external `go.etcd.io/raft/v3` module and
+the current repository contains only the integration boundary.
+
+**Consequence:** two valid provider responses can produce materially different
+onboarding journeys, duplicate one subsystem, or invite a drill-down that the
+available repository cannot complete.
+
+**Done when:** local facts score direction feasibility and overlap, the product
+has an explicit diversity policy, and external implementation boundaries are
+visible before a direction is recommended. Keep the provider useful for naming
+and interpretation; do not turn its self-reported confidence into static
+evidence.
+
+### TD-016: Unverified model paths are not reconciled with the full tracked inventory
+
+**Evidence:** `allowed_paths` is intentionally only the compact model allowlist,
+while the local snapshot knows every tracked path. The etcd report displayed a
+nonexistent `server/etcdserver/etcdserver.go` as an unverified candidate and
+repeated it inside a warning. The parser correctly prevented that path from
+entering verified file fields, but the presentation could not distinguish a
+real locally omitted file from a fabricated path.
+
+**Consequence:** a fail-closed structured contract can still show a misleading
+warning and make a selection failure look like a repository fact.
+
+**Done when:** post-processing compares unverified paths and path-like warning
+mentions with the full tracked inventory, labels real omitted files separately,
+drops or clearly marks nonexistent guesses, and preserves a parser diagnostic
+without promoting either category into verified flow evidence.
+
+### TD-017: First-pass module discovery can spend time on tool-only modules
+
+**Evidence:** Pebble has 1,416 tracked files and `git ls-files` completes in
+0.07 seconds, but the snapshot runs `go list -e -json ./...` sequentially in
+both the root module and `internal/devtools`. On a warm cache those calls took
+2.31 and 1.11 seconds; the full snapshot took 3.99 seconds and bundle assembly
+5.31 seconds. A cold `internal/devtools` graph includes CockroachDB, `x/tools`,
+and static-analysis dependencies and can be much slower. The CLI previously
+described this entire phase only as `scanning`.
+
+The progress UI now names Go package collection explicitly and reports separate
+repository-fact and compact-context durations. This makes the delay diagnosable
+but does not remove it.
+
+**Consequence:** the first onboarding impression can be dominated by a module
+that does not participate in the product runtime. Blindly skipping nested
+modules would break real multi-module repositories such as etcd.
+
+**Done when:** the first pass classifies and prioritizes modules using local
+facts, analyzes likely runtime/user-facing modules first, and defers tool,
+example, or dev-only modules behind an explicit frontier. Cache identity must
+include module files, Go environment, and repository revision; a user can still
+request complete module coverage. Measure cold and warm Pebble runs before
+adding concurrency or persistence.
+
+### TD-018: Go 1.24 lacks a root-relative atomic rename API
+
+**Evidence:** browser checkpoints use fixed internal names below an already
+opened `os.Root`; reads, directory creation, and temporary writes remain rooted.
+Go 1.24 does not provide `(*os.Root).Rename`, so the final atomic replacement
+currently calls `os.Rename` on paths reconstructed from `root.Name()`. No
+client-supplied path or session ID reaches this operation.
+
+**Consequence:** the normal local threat model is bounded, but an adversary able
+to swap the checkpoint directory concurrently retains a narrow TOCTOU window.
+Raising the project's minimum Go version solely for this MVP would impose a
+larger compatibility cost.
+
+**Done when:** the supported Go baseline exposes a root-relative rename, or a
+small platform-safe replacement preserves atomicity without resolving the
+confined root back into ambient filesystem paths.
+
+### TD-019: Teacher evidence selection is bounded but not question-ranked
+
+**Evidence:** the Pebble `Batch.Commit` teacher bundle fit comfortably at about
+27 KiB, but 25 of its 45 evidence items were static relations. Several were
+unrelated fan-in from benchmarks, replay tooling, and tests. They survived
+because the current compactor orders evidence by kind and deterministic source
+order, not by the primary question or its onboarding/debugging/configuration
+lens.
+
+**Consequence:** the current DeepSeek case remained useful, but a larger or
+weaker model request can spend attention and byte budget on callers that do not
+reduce the selected unknown. Globally preferring "production" would also be
+wrong for a testing or performance question.
+
+**Done when:** the planner emits or the local pipeline derives one small
+research-move enum, and the teacher selector ranks evidence for that move while
+retaining a full inclusion/omission trace. Pebble lifecycle, Soft Serve startup,
+and at least one test- or configuration-first case must demonstrate that the
+same collector supports different rankings without separate engines.
+
+### TD-020: Closed-world claim rejection is still an English lexical guard
+
+**Evidence:** teacher prompt v2 explicitly forbade inferring absence from a
+bounded static caller slice, but the model still wrote "does not call" and
+"only used". The tolerant parser now drops that item while preserving eleven
+grounded siblings, but it recognizes a small English phrase set plus evidence
+scope qualifiers.
+
+**Consequence:** a paraphrase or another language can evade the guard, while an
+unusual but locally source-supported negative statement may require careful
+wording. The rule is a useful fail-soft MVP boundary, not a semantic verifier.
+
+**Done when:** normalized report items carry a locally derived claim scope and
+support basis, the contract represents bounded absence/contradiction explicitly,
+and evaluation rejects scope promotion structurally. Keep the lexical guard
+replaceable and retain its real v2 replay fixture until that contract exists.
+
+### TD-021: Flow proof cost omits compiler-internal package loading
+
+**Evidence:** the restic proof reports the six tasks, four evidence files, seven
+resolved symbols, and wall time that directly advanced its slots. The targeted
+`go/packages` call necessarily reads and type-checks additional build-selected
+files in `cmd/restic`, but those compiler-support files are not counted in the
+saved `files` statistic. A cold local replay took about 25.5 seconds; a warm
+replay took under a second.
+
+**Consequence:** the worklist is bounded and the 90-second wall-time limit is
+honest, but the file counter currently means "files admitted as proof evidence",
+not "all files read by the Go toolchain". That distinction is not yet visible
+in the report and could mislead performance work.
+
+**Done when:** resolver results separately report evidence files, packages
+loaded, build-selected syntax files, and measurable bytes/cache state without
+adding source contents to artifacts. Keep wall time as the hard MVP guard;
+avoid speculative parser optimization until those counters show a real need.
+
+### TD-022: Canvas acceptance starts after realistic raw-run projection
+
+**Evidence:** restic, Soft Serve, and Colima fixtures exercise the complete
+saved canvas and browser interaction, while the raw
+`BuildArchitectureCanvasInput -> ProjectArchitectureCanvas` path is protected
+by a smaller synthetic run fixture. The showcase fixtures do not retain the
+complete original repository facts and FlowProof session. Deterministic
+no-model fallback is contract-tested but has no realistic screenshot. The
+architecture synthesis record also owns request bytes/latency separately from
+the older orientation request counter.
+
+**Consequence:** topology and interaction regressions are well covered, but one
+production wiring regression could escape the showcase fixtures and run-detail
+request totals can be misread as including the later synthesis call.
+
+**Done when:** one bounded realistic v2 run replays from raw saved facts through
+canvas projection in a test, a no-model product artifact is inspected, and run
+details either aggregate or clearly separate orientation and architecture-
+synthesis request metrics. Do not check in a full repository dump to achieve
+this.
+
+### TD-023: Default surface discovery repeats Go package loading
+
+**Evidence:** the default persisted Go run first loads bounded package facts for
+the repository snapshot, then the isolated surface analyzer performs its own
+`go/packages`/SSA load. The tiny worker fixture found two surfaces in about 139
+ms on a warm machine. An etcd run built with repomap's Go 1.24 runtime initially
+spent about seven extra seconds and printed dependency errors because the target
+module requires Go 1.26. A root `go.mod` preflight now skips that incompatible
+SSA load immediately with one report warning; the repeated run spent about 8.9
+seconds on repository facts and 11.3 seconds total without stderr flooding.
+Compatible cold/warm cost on Pebble and Soft Serve is still unmeasured. Progress
+names the extra stage and reports its duration instead of hiding it inside
+scanning.
+
+**Consequence:** the useful local surface shelf may add noticeable duplicate
+work on a large multi-module repository. Reusing an incompatible cache or
+silently disabling analysis would be worse than the current explicit cost.
+
+**Done when:** cold and warm compatible target-repository runs separate
+package-fact and surface-discovery time, then demonstrate whether a shared
+build-scenario cache or reuse boundary is worthwhile. Also decide whether a
+released repomap binary must match the target module's Go language version or
+can delegate this analyzer to the target toolchain. Keep
+`--discover-surfaces=false` during measurement and do not merge analyzer
+contracts merely to avoid a second load.
 
 ## Maintenance rules
 

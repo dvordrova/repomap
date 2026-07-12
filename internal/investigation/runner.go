@@ -18,6 +18,7 @@ import (
 // adding one ActionKind branch rather than registering an opaque plugin.
 type Runner struct {
 	Analyzer        analysis.Provider
+	ExactAnalyzer   analysis.ExactSymbolAnalyzer
 	SourceAssessor  sourceexplain.Assessor
 	ReferenceFinder testevidence.ReferenceFinder
 	SymbolOptions   symbol.Options
@@ -50,13 +51,31 @@ func (r Runner) Execute(ctx context.Context, session Session, action Action) (Ex
 
 	switch action.Kind {
 	case ActionResolveSymbol:
-		if r.Analyzer == nil {
-			return failedExecution(action, fmt.Errorf("symbol analyzer is not configured")), nil
+		var (
+			graph evidence.Graph
+			err   error
+		)
+		if action.ResolveSymbol.Expected != nil {
+			exact := r.ExactAnalyzer
+			if exact == nil && r.Analyzer != nil {
+				exact, _ = r.Analyzer.(analysis.ExactSymbolAnalyzer)
+			}
+			if exact == nil {
+				return failedExecution(action, fmt.Errorf("exact symbol analyzer is not configured")), nil
+			}
+			graph, err = exact.AnalyzeExactSymbol(ctx, analysis.ExactSymbolRequest{
+				RepoPath: action.ResolveSymbol.RepoPath,
+				Symbol:   *action.ResolveSymbol.Expected,
+			})
+		} else {
+			if r.Analyzer == nil {
+				return failedExecution(action, fmt.Errorf("symbol analyzer is not configured")), nil
+			}
+			graph, err = r.Analyzer.Analyze(ctx, analysis.Request{
+				RepoPath: action.ResolveSymbol.RepoPath,
+				Query:    action.ResolveSymbol.Query,
+			})
 		}
-		graph, err := r.Analyzer.Analyze(ctx, analysis.Request{
-			RepoPath: action.ResolveSymbol.RepoPath,
-			Query:    action.ResolveSymbol.Query,
-		})
 		if err != nil {
 			return executionError(ctx, action, err), nil
 		}
@@ -114,6 +133,22 @@ func (r Runner) Execute(ctx context.Context, session Session, action Action) (Ex
 			action.FindTests.Structural,
 			action.FindTests.Assessment,
 			action.FindTests.Report,
+			r.TestOptions,
+		)
+		if err != nil {
+			return executionError(ctx, action, err), nil
+		}
+		return Execution{Event: Event{Kind: EventTestReferencesFound, ActionID: action.ID, Tests: &bundle}}, nil
+
+	case ActionFindTestReferences:
+		if r.ReferenceFinder == nil {
+			return failedExecution(action, fmt.Errorf("reference finder is not configured")), nil
+		}
+		bundle, err := testevidence.CollectTarget(
+			ctx,
+			r.ReferenceFinder,
+			action.FindTestReferences.RepoPath,
+			action.FindTestReferences.Structural,
 			r.TestOptions,
 		)
 		if err != nil {

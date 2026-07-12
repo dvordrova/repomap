@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,7 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	}
 }
 
-func TestReadRunDirProjectsSavedFlowProofIntoArchitectureCanvas(t *testing.T) {
+func TestReadRunDirRequiresSavedSynthesisBeforeProjectingArchitectureCanvas(t *testing.T) {
 	t.Parallel()
 
 	runDir := t.TempDir()
@@ -101,11 +102,16 @@ func TestReadRunDirProjectsSavedFlowProofIntoArchitectureCanvas(t *testing.T) {
 	if data.RepositoryGraph == nil || len(data.RepositoryGraph.PackageEdges) != 1 {
 		t.Fatalf("repository graph = %#v, want the saved package witness", data.RepositoryGraph)
 	}
-	if data.ArchitectureCanvas == nil {
-		t.Fatalf("architecture canvas missing; warnings = %#v", data.Warnings)
+	if data.ArchitectureCanvas != nil {
+		t.Fatalf("architecture canvas = %#v, want no package fallback without synthesis", data.ArchitectureCanvas)
 	}
-	if !data.ArchitectureCanvas.Fallback || len(data.ArchitectureCanvas.Flows) != 1 ||
-		data.ArchitectureCanvas.Flows[0].ID != "backup" {
+	writeArchitectureBuildSynthesis(t, runDir, data, "revision-proof")
+	data, err = ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		len(data.ArchitectureCanvas.Flows) != 1 || data.ArchitectureCanvas.Flows[0].ID != "backup" {
 		t.Fatalf("architecture canvas = %#v", data.ArchitectureCanvas)
 	}
 
@@ -114,18 +120,68 @@ func TestReadRunDirProjectsSavedFlowProofIntoArchitectureCanvas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.ArchitectureCanvas == nil || !data.ArchitectureCanvas.Fallback {
-		t.Fatalf("invalid saved synthesis removed deterministic canvas: %#v", data.ArchitectureCanvas)
+	if data.ArchitectureCanvas != nil {
+		t.Fatalf("invalid saved synthesis produced a fallback canvas: %#v", data.ArchitectureCanvas)
 	}
-	foundFallbackWarning := false
+	foundUnavailableWarning := false
 	for _, warning := range data.Warnings {
-		if strings.Contains(warning, "using deterministic fallback") {
-			foundFallbackWarning = true
+		if strings.Contains(warning, "architecture map unavailable") {
+			foundUnavailableWarning = true
 		}
 	}
-	if !foundFallbackWarning {
-		t.Fatalf("warnings = %#v, want invalid synthesis fallback warning", data.Warnings)
+	if !foundUnavailableWarning {
+		t.Fatalf("warnings = %#v, want invalid synthesis warning", data.Warnings)
 	}
+}
+
+func TestReadRunDirReportsFailedArchitectureSynthesisWithoutProductFallback(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writeArchitectureBuildFixture(t, runDir, "snapshot.json", []byte(`{"repo_name":"fixture"}`))
+	writeArchitectureBuildFixture(t, runDir, "metadata.json", []byte(`{
+		"model":"test-model",
+		"provider_request_count":1
+	}`))
+	writeArchitectureBuildFixture(t, runDir, "orientation_report.json", []byte(`{
+		"project_guess":"fixture",
+		"high_level_map":[],
+		"candidate_flows":[]
+	}`))
+	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisStatusFile, []byte(`{
+		"version":1,
+		"state":"failed",
+		"prompt_bytes":1200,
+		"latency_ms":340,
+		"provider_request_count":1,
+		"error_code":"empty_response"
+	}`))
+
+	data, err := ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureCanvas != nil {
+		t.Fatalf("architecture canvas = %#v, want no substitute graph", data.ArchitectureCanvas)
+	}
+	if data.ArchitectureSynthesis == nil || data.ArchitectureSynthesis.State != ArchitectureSynthesisFailed {
+		t.Fatalf("architecture status = %#v, want failed", data.ArchitectureSynthesis)
+	}
+	if data.Run == nil || data.Run.ProviderRequestCount != 2 {
+		t.Fatalf("run = %#v, want both orientation and architecture provider attempts", data.Run)
+	}
+	if !containsWarning(data.Warnings, "grouping request returned no content") {
+		t.Fatalf("warnings = %#v, want concise architecture failure", data.Warnings)
+	}
+}
+
+func containsWarning(warnings []string, substring string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, substring) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestReadRunDirProjectsArchitectureLandscapeWithoutFlowProof(t *testing.T) {
@@ -153,12 +209,58 @@ func TestReadRunDirProjectsArchitectureLandscapeWithoutFlowProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.ArchitectureCanvas == nil {
-		t.Fatalf("architecture landscape missing without FlowProof; warnings = %#v", data.Warnings)
+	if data.ArchitectureCanvas != nil {
+		t.Fatalf("architecture canvas = %#v, want no fallback without synthesis", data.ArchitectureCanvas)
 	}
-	if len(data.ArchitectureCanvas.Components) == 0 || len(data.ArchitectureCanvas.Flows) != 0 {
+	writeArchitectureBuildSynthesis(t, runDir, data, "revision-landscape")
+	data, err = ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		len(data.ArchitectureCanvas.Components) == 0 || len(data.ArchitectureCanvas.Flows) != 0 {
 		t.Fatalf("architecture canvas = %#v, want landscape with no flow overlay", data.ArchitectureCanvas)
 	}
+}
+
+func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportData, revision string) {
+	t.Helper()
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	components := make([]componentmap.ProposedComponent, 0, len(input.CandidateBundle.Candidates))
+	for index, candidate := range input.CandidateBundle.Candidates {
+		components = append(components, componentmap.ProposedComponent{
+			Name:      fmt.Sprintf("Component %d", index+1),
+			MemberIDs: []componentmap.MemberID{candidate.ID},
+		})
+	}
+	response, err := json.Marshal(componentmap.Proposal{
+		Version: componentmap.ContractVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Runtime", Components: components,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := componentmap.RecordSynthesisResponse(
+		input.CandidateBundle,
+		revision,
+		"test",
+		"test-model",
+		time.Millisecond,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, saved)
 }
 
 func writeArchitectureBuildFixture(t *testing.T, dir, name string, data []byte) {

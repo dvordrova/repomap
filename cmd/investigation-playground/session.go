@@ -302,7 +302,7 @@ func validateContinue(session investigation.Session, callDeepSeek bool) error {
 		return fmt.Errorf("--continue requires one pending capability action")
 	}
 	switch session.Next[0].Kind {
-	case investigation.ActionResolveSymbol, investigation.ActionReadSource, investigation.ActionFindTests:
+	case investigation.ActionResolveSymbol, investigation.ActionReadSource, investigation.ActionFindTests, investigation.ActionFindTestReferences:
 		return nil
 	case investigation.ActionAssessSource:
 		if !callDeepSeek {

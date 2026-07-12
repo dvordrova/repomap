@@ -32,6 +32,12 @@ type fileIndexEntry struct {
 	Reasons []string `json:"reasons"`
 }
 
+var packageAnchorRoles = map[string]struct{}{
+	"client": {}, "controller": {}, "engine": {}, "handler": {},
+	"manager": {}, "repository": {}, "runner": {}, "server": {},
+	"service": {}, "store": {}, "worker": {},
+}
+
 type goSection struct {
 	ModulesCount          int                            `json:"modules_count"`
 	PackagesCount         int                            `json:"packages_count"`
@@ -194,35 +200,35 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			ImportantEdges:        edges,
 		}
 
-		var fileSignals []sourcesignals.Signal
-		if opts.RepoPath != "" {
-			fileSignals = sourcesignals.ScanFiles(fileList, opts.RepoPath, sourcesignals.ScanOptions{
-				MaxPerFile: opts.MaxSignalPerFile,
-				MaxTotal:   opts.MaxSignalTotal,
-			})
-			if len(fileSignals) > 0 {
-				b.SourceSignals = fileSignals
-			}
-		}
-
-		fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
-		if len(fileIndex) > opts.MaxFiles {
-			b.Warnings = append(b.Warnings, "truncated candidate_file_index")
-			fileIndex = selectFileIndex(fileIndex, opts.MaxFiles)
-		}
-
-		b.CandidateFileIndex = fileIndex
-		b.AllowedPaths = buildAllowedPaths(fileIndex)
-		allowedSet := makePathSet(b.AllowedPaths)
-		b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
-		b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
-		b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)
-		b.Go.CommandTraces = filterCommandTraces(b.Go.CommandTraces, allowedSet)
-		b.Go.OrientationCandidates = filterOrientationCandidates(
-			b.Go.OrientationCandidates,
-			allowedSet,
-		)
 	}
+
+	// The bounded file index is language-neutral. Go facts enrich its ranking
+	// when present, but Python and other repositories still need a closed
+	// allowed_paths set for grounded orientation.
+	var fileSignals []sourcesignals.Signal
+	if opts.RepoPath != "" {
+		fileSignals = sourcesignals.ScanFiles(fileList, opts.RepoPath, sourcesignals.ScanOptions{
+			MaxPerFile: opts.MaxSignalPerFile,
+			MaxTotal:   opts.MaxSignalTotal,
+		})
+		b.SourceSignals = fileSignals
+	}
+	fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
+	if len(fileIndex) > opts.MaxFiles {
+		b.Warnings = append(b.Warnings, "truncated candidate_file_index")
+		fileIndex = selectFileIndexWithPins(fileIndex, opts.MaxFiles, selectedCommandTracePaths(b.Go.CommandTraces))
+	}
+	b.CandidateFileIndex = fileIndex
+	b.AllowedPaths = buildAllowedPaths(fileIndex)
+	allowedSet := makePathSet(b.AllowedPaths)
+	b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
+	b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
+	b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)
+	b.Go.CommandTraces = filterCommandTraces(b.Go.CommandTraces, allowedSet)
+	b.Go.OrientationCandidates = filterOrientationCandidates(
+		b.Go.OrientationCandidates,
+		allowedSet,
+	)
 
 	return b
 }
@@ -237,6 +243,7 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 	commandTracePaths := make(map[string]struct{})
 	entrypointDependencyDirs := make(map[string]struct{})
 	entrypointSecondHopDirs := make(map[string]struct{})
+	entrypointThirdHopDirs := make(map[string]struct{})
 	if facts != nil {
 		for _, trace := range facts.CommandTraces {
 			for _, step := range trace.Steps {
@@ -255,6 +262,7 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 		entrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
 		verifiedEntrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
 		entrypointDependencies := make(map[string]struct{})
+		entrypointSecondHopDependencies := make(map[string]struct{})
 		for _, ep := range selectedEntrypoints {
 			entrypointImports[ep.ImportPath] = struct{}{}
 			if len(ep.Anchors) > 0 {
@@ -296,9 +304,23 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 			if _, ok := entrypointDependencies[edge.From]; !ok {
 				continue
 			}
+			entrypointSecondHopDependencies[edge.To] = struct{}{}
 			if dir, ok := repositoryDirForImport(edge.To, facts.Modules); ok {
 				if _, isDirect := entrypointDependencyDirs[dir]; !isDirect {
 					entrypointSecondHopDirs[dir] = struct{}{}
+				}
+			}
+		}
+		for _, edge := range facts.InternalEdges {
+			if _, ok := entrypointSecondHopDependencies[edge.From]; !ok {
+				continue
+			}
+			if dir, ok := repositoryDirForImport(edge.To, facts.Modules); ok {
+				if _, isDirect := entrypointDependencyDirs[dir]; isDirect {
+					continue
+				}
+				if _, isSecondHop := entrypointSecondHopDirs[dir]; !isSecondHop {
+					entrypointThirdHopDirs[dir] = struct{}{}
 				}
 			}
 		}
@@ -318,6 +340,7 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 			entrypointPaths,
 			entrypointDependencyDirs,
 			entrypointSecondHopDirs,
+			entrypointThirdHopDirs,
 			knownDocSet,
 		)
 		if _, ok := commandTracePaths[f]; ok {
@@ -385,6 +408,10 @@ func selectOrientationEntrypoints(entrypoints []gofacts.Entrypoint) []gofacts.En
 }
 
 func selectFileIndex(entries []fileIndexEntry, maxFiles int) []fileIndexEntry {
+	return selectFileIndexWithPins(entries, maxFiles, nil)
+}
+
+func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[string]struct{}) []fileIndexEntry {
 	if len(entries) <= maxFiles {
 		return entries
 	}
@@ -404,19 +431,55 @@ func selectFileIndex(entries []fileIndexEntry, maxFiles int) []fileIndexEntry {
 	selected := make([]bool, len(entries))
 	selectedCount := 0
 	selectedByGroup := make(map[string]int)
+	selectedSourcesByDir := make(map[string]int)
+	selectEntry := func(index int) {
+		selected[index] = true
+		selectedCount++
+		group := fileIndexGroup(entries[index].Kind)
+		selectedByGroup[group]++
+		if group == "source" {
+			selectedSourcesByDir[path.Dir(entries[index].Path)]++
+		}
+	}
 	for i := range entries {
 		if selectedCount == maxFiles {
 			break
 		}
-		if !containsFileSignal(entries[i].Signals, "entrypoint") {
+		if _, ok := pinned[entries[i].Path]; !ok {
 			continue
 		}
-		selected[i] = true
-		selectedCount++
-		selectedByGroup[fileIndexGroup(entries[i].Kind)]++
+		selectEntry(i)
+	}
+	for i := range entries {
+		if selectedCount == maxFiles {
+			break
+		}
+		if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") {
+			continue
+		}
+		selectEntry(i)
 	}
 	for _, target := range targets {
 		remaining := target.count - selectedByGroup[target.group]
+		if target.group == "source" {
+			const maxInitialSourcesPerDir = 4
+			for i := range entries {
+				if remaining <= 0 || selectedCount == maxFiles {
+					break
+				}
+				if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
+					continue
+				}
+				dir := path.Dir(entries[i].Path)
+				if selectedSourcesByDir[dir] >= maxInitialSourcesPerDir {
+					continue
+				}
+				selected[i] = true
+				selectedCount++
+				remaining--
+				selectedSourcesByDir[dir]++
+			}
+		}
 		for i := range entries {
 			if remaining <= 0 || selectedCount == maxFiles {
 				break
@@ -448,6 +511,25 @@ func selectFileIndex(entries []fileIndexEntry, maxFiles int) []fileIndexEntry {
 		}
 	}
 	return result
+}
+
+func selectedCommandTracePaths(traces []gofacts.CommandTrace) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, trace := range traces {
+		for _, step := range trace.Steps {
+			paths[step.TargetLocation.Path] = struct{}{}
+			if step.CallsiteLocation != nil {
+				paths[step.CallsiteLocation.Path] = struct{}{}
+			}
+		}
+		for _, call := range trace.HandlerCalls {
+			paths[call.Path] = struct{}{}
+			if call.TargetPath != "" {
+				paths[call.TargetPath] = struct{}{}
+			}
+		}
+	}
+	return paths
 }
 
 func containsFileSignal(signals []string, target string) bool {
@@ -507,7 +589,8 @@ func detectFileKind(path string) string {
 	lower := strings.ToLower(path)
 	base := strings.ToLower(filepath.Base(path))
 
-	if strings.HasSuffix(base, "_test.go") {
+	if strings.HasSuffix(base, "_test.go") ||
+		(strings.HasSuffix(base, ".py") && (strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py"))) {
 		return "test"
 	}
 	if isDocumentationFile(path) {
@@ -524,7 +607,7 @@ func detectFileKind(path string) string {
 	if strings.HasSuffix(base, ".pb.go") {
 		return "generated"
 	}
-	if strings.HasSuffix(lower, ".go") {
+	if strings.HasSuffix(lower, ".go") || strings.HasSuffix(lower, ".py") || strings.HasSuffix(lower, ".pyi") {
 		return "source"
 	}
 	return "unknown"
@@ -536,6 +619,7 @@ func scoreFile(
 	entrypointPaths map[string]struct{},
 	entrypointDependencyDirs map[string]struct{},
 	entrypointSecondHopDirs map[string]struct{},
+	entrypointThirdHopDirs map[string]struct{},
 	knownDocSet map[string]struct{},
 ) (int, []string, []string) {
 	score := 0
@@ -553,14 +637,23 @@ func scoreFile(
 		addSignal("entrypoint", 100, "entrypoint source file")
 	}
 	if kind == "source" {
+		base := strings.ToLower(path.Base(filePath))
+		switch base {
+		case "__main__.py", "main.py", "cli.py", "app.py", "manage.py":
+			addSignal("entrypoint", 90, "conventional Python entrypoint filename")
+		}
 		directory := path.Dir(filePath)
 		if _, ok := entrypointDependencyDirs[directory]; ok {
 			addSignal("entrypoint-dependency", 80, "package imported directly by an entrypoint")
 		} else if _, ok := entrypointSecondHopDirs[directory]; ok {
 			addSignal("entrypoint-second-hop", 50, "package imported by a direct entrypoint dependency")
+		} else if _, ok := entrypointThirdHopDirs[directory]; ok {
+			addSignal("entrypoint-third-hop", 30, "package imported within three hops of an entrypoint")
 		}
 		if isDirectoryNamedSource(filePath) {
 			addSignal("directory-anchor", 20, "source file named after its directory")
+		} else if isPackageAnchorSource(filePath) {
+			addSignal("package-anchor", 50, "source file names the containing package role")
 		}
 	}
 
@@ -571,7 +664,7 @@ func scoreFile(
 		}
 	}
 
-	for _, word := range []string{"v3rpc", "lease", "mvcc", "wal", "backend", "rafthttp"} {
+	for _, word := range []string{"v3rpc", "lease", "mvcc", "wal", "backend", "rafthttp", "raft"} {
 		if hasPathToken(lower, word) {
 			addSignal(word, 65, word+" component")
 			break
@@ -608,7 +701,7 @@ func scoreFile(
 	}
 
 	if kind == "test" {
-		addSignal("test", 15, "Go test file")
+		addSignal("test", 15, "test file")
 	}
 
 	if kind == "proto" {
@@ -616,7 +709,7 @@ func scoreFile(
 	}
 
 	if kind == "source" {
-		addSignal("source", 30, "Go source file")
+		addSignal("source", 30, "source file")
 	}
 
 	if kind == "generated" {
@@ -641,6 +734,18 @@ func isDirectoryNamedSource(filePath string) bool {
 	}
 	base := strings.TrimSuffix(path.Base(filePath), path.Ext(filePath))
 	return strings.EqualFold(base, path.Base(directory))
+}
+
+func isPackageAnchorSource(filePath string) bool {
+	directory := path.Dir(filePath)
+	if directory == "." || directory == "/" {
+		return false
+	}
+	base := strings.ToLower(strings.TrimSuffix(path.Base(filePath), path.Ext(filePath)))
+	if _, ok := packageAnchorRoles[base]; !ok {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(path.Base(directory)), base)
 }
 
 func hasPathToken(value, token string) bool {
@@ -709,6 +814,18 @@ func filterSourceSignals(signals []sourcesignals.Signal, allowed map[string]stru
 func filterEntrypoints(entrypoints []entrypointCompact, allowed map[string]struct{}) []entrypointCompact {
 	result := make([]entrypointCompact, 0, len(entrypoints))
 	for _, entrypoint := range entrypoints {
+		hadAnchors := len(entrypoint.Anchors) > 0
+		anchors := make([]gofacts.EntrypointAnchor, 0, len(entrypoint.Anchors))
+		for _, anchor := range entrypoint.Anchors {
+			if _, ok := allowed[anchor.Path]; !ok {
+				continue
+			}
+			anchors = append(anchors, anchor)
+		}
+		if hadAnchors && len(anchors) == 0 {
+			continue
+		}
+
 		openFiles := make([]string, 0, len(entrypoint.OpenFiles))
 		for _, openFile := range entrypoint.OpenFiles {
 			if _, ok := allowed[openFile]; !ok {
@@ -719,6 +836,7 @@ func filterEntrypoints(entrypoints []entrypointCompact, allowed map[string]struc
 		if len(openFiles) == 0 {
 			continue
 		}
+		entrypoint.Anchors = anchors
 		entrypoint.OpenFiles = openFiles
 		result = append(result, entrypoint)
 	}

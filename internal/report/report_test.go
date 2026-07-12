@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/componentmap"
 )
 
 func TestConfidenceLabel(t *testing.T) {
@@ -105,8 +107,8 @@ func TestEnrich(t *testing.T) {
 	}
 	enrich(data)
 
-	if data.FormatVersion != 5 {
-		t.Errorf("format version = %d, want 5", data.FormatVersion)
+	if data.FormatVersion != CurrentFormatVersion {
+		t.Errorf("format version = %d, want %d", data.FormatVersion, CurrentFormatVersion)
 	}
 	if data.FlowCount != 2 {
 		t.Errorf("flow count = %d, want 2", data.FlowCount)
@@ -129,10 +131,18 @@ func TestReadRunDir_Integration(t *testing.T) {
 	dir := t.TempDir()
 
 	writeTestFile(t, dir, "snapshot.json", `{"repo_name":"etcd","readme":"..."}`)
+	writeTestFile(t, dir, "llm_bundle.json", `{
+		"allowed_paths":["server/key.go","server/shared.go","server/put.go","storage/kv.go"],
+		"source_signals":[{"path":"server/put.go","line":42}],
+		"go":{
+			"module_summaries":[{"module_path":"example.com/project","module_dir":"."}],
+			"important_edges":[{"from":"example.com/project/server","to":"example.com/project/storage"}]
+		}
+	}`)
 	writeTestFile(t, dir, "metadata.json", `{
 		"created_at":"2026-07-10T12:00:00Z",
 		"model":"deepseek-v4-flash",
-		"prompt_version":"orientation-json-v3",
+		"prompt_version":"orientation-json-v4",
 		"compact_context_bytes":12000,
 		"external_request_bytes":18000,
 		"provider_request_count":1,
@@ -144,7 +154,8 @@ func TestReadRunDir_Integration(t *testing.T) {
 		"confidence":0.88,
 		"high_level_map":[{
 			"name":"API server",
-			"evidence":["server/put.go handles Put"],
+			"role":"boundary",
+			"evidence":["server/put.go handles Put at line 42"],
 			"why_it_matters":"accepts client writes"
 		}],
 		"first_files_to_open":[{
@@ -158,7 +169,7 @@ func TestReadRunDir_Integration(t *testing.T) {
 			"likely_entrypoint":"server/put.go",
 			"likely_files":["server/put.go","storage/kv.go"],
 			"why_interesting":"shows the write path",
-			"evidence":["server/put.go handles Put"],
+			"evidence":["server/put.go handles Put at line 42"],
 			"confidence":0.82
 		}],
 		"important_domain_words":[{
@@ -225,10 +236,16 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if data.OrientationConfidence != 0.88 {
 		t.Errorf("orientation confidence = %v, want 0.88", data.OrientationConfidence)
 	}
+	if data.RepositoryGraph == nil || len(data.RepositoryGraph.Modules) != 1 ||
+		data.RepositoryGraph.Modules[0] != (ModuleInfo{Path: "example.com/project", Dir: ""}) ||
+		len(data.RepositoryGraph.PackageEdges) != 1 {
+		t.Fatalf("repository graph = %#v", data.RepositoryGraph)
+	}
 	if len(data.HighLevelMap) != 1 {
 		t.Fatalf("high-level map items = %d, want 1", len(data.HighLevelMap))
 	}
-	if item := data.HighLevelMap[0]; item.Name != "API server" || item.WhyItMatters != "accepts client writes" || len(item.Evidence) != 1 {
+	if item := data.HighLevelMap[0]; item.Name != "API server" || item.Role != componentmap.RoleBoundary ||
+		item.WhyItMatters != "accepts client writes" || len(item.Evidence) != 1 {
 		t.Errorf("high-level map item = %+v", item)
 	}
 	if len(data.FirstFilesToOpen) != 1 {
@@ -253,7 +270,7 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if len(direction.LikelyFiles) != 2 || direction.LikelyFiles[1] != "storage/kv.go" {
 		t.Errorf("candidate direction likely files = %v", direction.LikelyFiles)
 	}
-	if len(direction.Evidence) != 1 || direction.Evidence[0] != "server/put.go handles Put" {
+	if len(direction.Evidence) != 1 || direction.Evidence[0] != "server/put.go:42 handles Put" {
 		t.Errorf("candidate direction evidence = %v", direction.Evidence)
 	}
 	if len(data.ImportantDomainWords) != 1 {
@@ -344,8 +361,20 @@ func TestReadRunDir_Integration(t *testing.T) {
 	if data.FlowCount != 1 {
 		t.Errorf("flow count = %d, want 1", data.FlowCount)
 	}
-	if data.FormatVersion != 5 {
-		t.Errorf("format version = %d, want 5", data.FormatVersion)
+	if data.FormatVersion != CurrentFormatVersion {
+		t.Errorf("format version = %d, want %d", data.FormatVersion, CurrentFormatVersion)
+	}
+	for _, want := range []string{"server/key.go", "server/shared.go", "a_test.go"} {
+		found := false
+		for _, path := range data.OpenablePaths {
+			if path == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("openable paths %v do not contain %q", data.OpenablePaths, want)
+		}
 	}
 	if len(data.Warnings) < 1 || data.Warnings[0] != "w1" {
 		t.Errorf("top-level warnings = %v", data.Warnings)
@@ -581,7 +610,7 @@ func TestWriteReportJSON_RoundTrip(t *testing.T) {
 func TestJSONRoundTrip(t *testing.T) {
 	data := ReportData{
 		RepoName:              "test",
-		FormatVersion:         5,
+		FormatVersion:         CurrentFormatVersion,
 		OrientationConfidence: 0.8,
 		HighLevelMap: []Subsystem{{
 			Name:         "runtime",
@@ -1165,7 +1194,7 @@ func TestGenerate_HTMLContainsFileReason(t *testing.T) {
 	if !contains(htmlStr, "server/main.go") {
 		t.Error("report.html missing file path")
 	}
-	if contains(htmlStr, "S:") || contains(htmlStr, "T:") || contains(htmlStr, "D:") || contains(htmlStr, "P:") || contains(htmlStr, "E:") {
+	if containsLegacySingleLetterLabel(html) {
 		t.Error("report.html contains single-letter abbreviations")
 	}
 }

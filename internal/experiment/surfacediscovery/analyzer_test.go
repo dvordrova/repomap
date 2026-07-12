@@ -162,6 +162,13 @@ func TestAnalyzeWorkerRequiresTerminalStartAndLoopEvidence(t *testing.T) {
 		!hasLoopSignal(result.Coverage.LoopSignals, "channel_receive_loop") {
 		t.Fatalf("coverage = %#v", result.Coverage)
 	}
+	seenEvidence := map[string]struct{}{}
+	for _, evidence := range worker.Evidence {
+		if _, duplicate := seenEvidence[evidence.ID]; duplicate {
+			t.Fatalf("worker evidence repeats %q: %#v", evidence.ID, worker.Evidence)
+		}
+		seenEvidence[evidence.ID] = struct{}{}
+	}
 }
 
 func TestAnalyzeRecursiveWrapperStops(t *testing.T) {

@@ -3,6 +3,7 @@ package investigation
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -82,8 +83,102 @@ func TestRunnerTurnsCapabilityFailureAndCancellationIntoEvents(t *testing.T) {
 	}
 }
 
+func TestRunnerUsesLocationPinnedAnalyzerForExactFocus(t *testing.T) {
+	t.Parallel()
+
+	repo := runnerRepo(t)
+	graph := runnerGraph(repo)
+	var target evidence.Entity
+	for _, entity := range graph.Entities {
+		if entity.ID == "target" {
+			target = entity
+			break
+		}
+	}
+	exact := &fixtureExactAnalyzer{graph: graph}
+	runner := Runner{ExactAnalyzer: exact}
+	session, _, err := Reduce(Session{}, Event{
+		Kind: EventStarted,
+		Start: &StartInput{
+			Goal:       Goal{Text: "understand selected server.Work declaration"},
+			Repository: Repository{Path: repo, Revision: "fixture-revision"},
+			Focus:      Focus{Kind: FocusSymbol, Symbol: target.Name, Entity: &target},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, err := runner.Execute(context.Background(), session, session.Next[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exact.calls != 1 || execution.Event.Kind != EventSymbolResolved || execution.Event.Symbol == nil {
+		t.Fatalf("exact calls=%d event=%#v", exact.calls, execution.Event)
+	}
+}
+
+func TestRunnerCompletesComponentSourceWithTargetOnlyTestReferences(t *testing.T) {
+	t.Parallel()
+
+	structural := structuralFixture(t)
+	structural.OutgoingCalls = nil
+	revision := "revision-1"
+	target := structural.Target.Entity
+	session, _, err := Reduce(Session{}, Event{
+		Kind: EventStarted,
+		Start: &StartInput{
+			Goal:       Goal{Text: "inspect selected component symbol"},
+			Repository: Repository{Path: "/repo", Revision: revision},
+			Focus:      Focus{Kind: FocusSymbol, Symbol: target.Name, Entity: &target},
+			Origin: &Origin{
+				Kind:             OriginOrientationComponent,
+				Status:           OriginCandidate,
+				ReportSHA256:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				RepoName:         "etcd",
+				ComponentID:      "component-kv",
+				AnchorID:         "anchor-put",
+				AcceptedRevision: revision,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session = reduceFixture(t, session, Event{Kind: EventSymbolResolved, ActionID: session.Next[0].ID, Symbol: &structural})
+	card := sourceCardFixture(t)
+	session = reduceFixture(t, session, Event{Kind: EventSourceRead, ActionID: session.Next[0].ID, Source: &card})
+	if session.State != StateFindingTestReferences || session.Next[0].Kind != ActionFindTestReferences ||
+		session.Assessment != nil || session.SourceReport != nil {
+		t.Fatalf("source-ready session = %#v", session)
+	}
+
+	execution, err := (Runner{ReferenceFinder: fixtureReferenceFinder{}}).Execute(context.Background(), session, session.Next[0])
+	if err != nil || execution.DiagnosticError != nil {
+		t.Fatalf("Execute(find_test_references) = %#v, %v", execution, err)
+	}
+	session = reduceFixture(t, session, execution.Event)
+	if session.State != StateCompleted || session.Stop == nil || session.Stop.Kind != StopFinished ||
+		session.Tests == nil || len(session.Tests.Searches) != 1 || session.Tests.Searches[0].AnchorEvidenceID != session.Focus.EvidenceID ||
+		session.Assessment != nil || session.SourceReport != nil {
+		t.Fatalf("completed local checkpoint = %#v", session)
+	}
+}
+
 type fixtureAnalyzer struct {
 	graph evidence.Graph
+}
+
+type fixtureExactAnalyzer struct {
+	graph evidence.Graph
+	calls int
+}
+
+func (f *fixtureExactAnalyzer) AnalyzeExactSymbol(_ context.Context, request analysis.ExactSymbolRequest) (evidence.Graph, error) {
+	f.calls++
+	if request.Symbol.Location == nil || request.Symbol.Location.Path != "pkg/work.go" {
+		return evidence.Graph{}, fmt.Errorf("unexpected exact symbol: %#v", request.Symbol)
+	}
+	return f.graph, nil
 }
 
 func (f fixtureAnalyzer) Analyze(_ context.Context, _ analysis.Request) (evidence.Graph, error) {

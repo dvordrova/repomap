@@ -1,0 +1,321 @@
+package report
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/freshness"
+)
+
+func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T) {
+	repository := newRunManifestRepository(t)
+	initialState, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := t.TempDir()
+	writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"manifest-fixture"}`)
+	writeRunManifestMetadata(t, runDir, repository)
+	writeTestFile(t, runDir, "llm_bundle.json", `{
+		"allowed_paths":["batch.go"],
+		"source_signals":[{"path":"batch.go","line":3,"category":"request_handler","snippet":"func Commit() {}","reason":"fixture"}]
+	}`)
+	writeTestFile(t, runDir, "orientation_report.json", `{
+		"project_guess":"batch fixture",
+		"high_level_map":[{
+			"name":"Batch Operations",
+			"evidence":["batch.go:3 defines Commit"],
+			"why_it_matters":"groups writes"
+		}],
+		"candidate_flows":[{
+			"name":"Write Batch",
+			"trigger":"Commit is called",
+			"likely_entrypoint":"batch.go",
+			"likely_files":["batch.go"],
+			"why_interesting":"primary write path",
+			"evidence":["batch.go:3 defines Commit"],
+			"confidence":0.9
+		}],
+		"warnings":[]
+	}`)
+
+	currentState, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := ConfirmRunAuthority(repository, initialState, currentState)
+	if err != nil {
+		t.Fatalf("ConfirmRunAuthority: %v", err)
+	}
+	if err := GenerateAuthorized(runDir, authority); err != nil {
+		t.Fatalf("GenerateAuthorized: %v", err)
+	}
+	manifest, err := ReadRunManifest(runDir)
+	if err != nil {
+		t.Fatalf("ReadRunManifest: %v", err)
+	}
+	if manifest.Version != CurrentRunManifestVersion || manifest.ReportFormatVersion != CurrentFormatVersion {
+		t.Fatalf("manifest versions = %d/%d", manifest.Version, manifest.ReportFormatVersion)
+	}
+	if manifest.RepositoryState.Identity != repository {
+		t.Fatalf("repository identity = %q, want %q", manifest.RepositoryState.Identity, repository)
+	}
+	if manifest.AnalysisRoot != repository {
+		t.Fatalf("analysis root = %q, want %q", manifest.AnalysisRoot, repository)
+	}
+	if resolved, err := manifest.ResolveAnalysisRoot(); err != nil || resolved != repository {
+		t.Fatalf("ResolveAnalysisRoot() = %q, %v, want %q", resolved, err, repository)
+	}
+	if err := manifest.VerifyRepositoryState(manifest.RepositoryState); err != nil {
+		t.Fatalf("VerifyRepositoryState: %v", err)
+	}
+	if len(manifest.OpenablePaths) != 1 || manifest.OpenablePaths[0] != "batch.go" {
+		t.Fatalf("openable paths = %#v", manifest.OpenablePaths)
+	}
+	if len(manifest.Components) != 1 || len(manifest.Components[0].Anchors) != 1 {
+		t.Fatalf("component authority = %#v", manifest.Components)
+	}
+	component := manifest.Components[0]
+	anchor := component.Anchors[0]
+	if len(component.RelatedFlowIDs) != 1 || component.RelatedFlowIDs[0] != "write-batch" {
+		t.Fatalf("related flow ids = %#v", component.RelatedFlowIDs)
+	}
+	if anchor.Path != "batch.go" || !anchor.CanListSymbols || len(anchor.AllowedLines) != 1 || anchor.AllowedLines[0] != 3 {
+		t.Fatalf("anchor authority = %#v", anchor)
+	}
+	info, err := os.Stat(filepath.Join(runDir, RunManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("manifest permissions = %o, want 600", info.Mode().Perm())
+	}
+	writeTestFile(t, repository, "batch.go", "package fixture\n\nfunc Commit() { panic(\"changed\") }\n")
+	currentRepository, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.VerifyRepositoryState(currentRepository); err == nil || !strings.Contains(err.Error(), "repository state changed") {
+		t.Fatalf("VerifyRepositoryState after source change error = %v", err)
+	}
+
+	reportPath := filepath.Join(runDir, "report.json")
+	reportJSON, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, append(reportJSON, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRunManifest(runDir); err == nil || !strings.Contains(err.Error(), "report sha256 mismatch") {
+		t.Fatalf("ReadRunManifest after report tamper error = %v", err)
+	}
+}
+
+func TestGenerateWithoutConfirmedAuthorityLeavesRunViewOnly(t *testing.T) {
+	runDir := t.TempDir()
+	writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"legacy"}`)
+	writeTestFile(t, runDir, "metadata.json", `{"repo_path":"../relative/repository"}`)
+	writeTestFile(t, runDir, "orientation_report.json", `{"project_guess":"legacy report","candidate_flows":[],"warnings":[]}`)
+	writeTestFile(t, runDir, RunManifestFilename, `{"stale":true}`)
+
+	if err := Generate(runDir); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, RunManifestFilename)); !os.IsNotExist(err) {
+		t.Fatalf("view-only run manifest stat error = %v, want not exist", err)
+	}
+}
+
+func TestConfirmRunAuthorityRejectsRepositoryChange(t *testing.T) {
+	repository := newRunManifestRepository(t)
+	initial, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, repository, "batch.go", "package fixture\n\nfunc Commit() { panic(\"changed\") }\n")
+	current, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConfirmRunAuthority(repository, initial, current); err == nil || !strings.Contains(err.Error(), "repository changed during orientation") {
+		t.Fatalf("ConfirmRunAuthority error = %v", err)
+	}
+}
+
+func TestConfirmRunAuthorityPreservesSubdirectoryAnalysisRoot(t *testing.T) {
+	repository := newRunManifestRepository(t)
+	analysisRoot := filepath.Join(repository, "service")
+	if err := os.Mkdir(analysisRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state, err := freshness.CaptureRepository(context.Background(), analysisRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := ConfirmRunAuthority(analysisRoot, state, state)
+	if err != nil {
+		t.Fatalf("ConfirmRunAuthority: %v", err)
+	}
+	if authority.analysisRoot != analysisRoot {
+		t.Fatalf("analysis root = %q, want %q", authority.analysisRoot, analysisRoot)
+	}
+	if authority.repository.Identity != repository {
+		t.Fatalf("repository identity = %q, want %q", authority.repository.Identity, repository)
+	}
+}
+
+func TestRunManifestValidateRejectsUnsafeOrAmbiguousAuthority(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*RunManifest)
+		want   string
+	}{
+		{
+			name: "invalid openable path",
+			mutate: func(manifest *RunManifest) {
+				manifest.OpenablePaths[0] = "../secret"
+			},
+			want: "clean repository-relative slash path",
+		},
+		{
+			name: "duplicate component id",
+			mutate: func(manifest *RunManifest) {
+				duplicate := manifest.Components[0]
+				duplicate.Anchors = nil
+				manifest.Components = append(manifest.Components, duplicate)
+			},
+			want: "duplicate component id",
+		},
+		{
+			name: "duplicate anchor id",
+			mutate: func(manifest *RunManifest) {
+				manifest.OpenablePaths = append(manifest.OpenablePaths, "wal/wal.go")
+				manifest.Components = append(manifest.Components, ComponentAuthority{
+					ID: "component-wal",
+					Anchors: []AnchorAuthority{{
+						ID:             manifest.Components[0].Anchors[0].ID,
+						Path:           "wal/wal.go",
+						AllowedLines:   []int{12},
+						CanListSymbols: true,
+					}},
+				})
+			},
+			want: "duplicate anchor id",
+		},
+		{
+			name: "analysis root outside repository",
+			mutate: func(manifest *RunManifest) {
+				manifest.AnalysisRoot = "/other/repository"
+			},
+			want: "must be inside repository identity",
+		},
+		{
+			name: "repository digest mismatch",
+			mutate: func(manifest *RunManifest) {
+				manifest.RepositoryStateSHA256 = strings.Repeat("0", 64)
+			},
+			want: "repository state sha256 mismatch",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manifest := validRunManifestFixture(t)
+			test.mutate(&manifest)
+			if err := manifest.Validate(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Validate error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestDecodeRunManifestRejectsUnknownFields(t *testing.T) {
+	manifest := validRunManifestFixture(t)
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data[:len(data)-1], []byte(`,"unexpected":true}`)...)
+	if _, err := DecodeRunManifest(data); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("DecodeRunManifest error = %v", err)
+	}
+}
+
+func validRunManifestFixture(t *testing.T) RunManifest {
+	t.Helper()
+	repository := freshness.RepositoryState{
+		Version:  freshness.RepositoryStateVersion,
+		Identity: "/repo",
+		Head:     strings.Repeat("a", 40),
+		Dirty:    []freshness.DirtyFile{},
+	}
+	digest, err := repository.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return RunManifest{
+		Version:               CurrentRunManifestVersion,
+		RepositoryState:       repository,
+		AnalysisRoot:          "/repo",
+		RepositoryStateSHA256: digest,
+		ReportSHA256:          strings.Repeat("b", 64),
+		ReportFormatVersion:   CurrentFormatVersion,
+		OpenablePaths:         []string{"batch.go"},
+		Components: []ComponentAuthority{{
+			ID:             "component-batch",
+			RelatedFlowIDs: []string{"write-batch"},
+			Anchors: []AnchorAuthority{{
+				ID:             "anchor-batch",
+				Path:           "batch.go",
+				AllowedLines:   []int{3},
+				CanListSymbols: true,
+			}},
+		}},
+	}
+}
+
+func newRunManifestRepository(t *testing.T) string {
+	t.Helper()
+	repository := t.TempDir()
+	writeTestFile(t, repository, "batch.go", "package fixture\n\nfunc Commit() {}\n")
+	runManifestGit(t, repository, "init", "--quiet")
+	runManifestGit(t, repository, "add", "batch.go")
+	runManifestGit(t, repository,
+		"-c", "user.name=repomap test",
+		"-c", "user.email=repomap@example.invalid",
+		"-c", "commit.gpgsign=false",
+		"commit", "--quiet", "-m", "fixture",
+	)
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state.Identity
+}
+
+func writeRunManifestMetadata(t *testing.T, runDir, repository string) {
+	t.Helper()
+	data, err := json.Marshal(map[string]string{
+		"repo_name": "manifest-fixture",
+		"repo_path": repository,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "metadata.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runManifestGit(t *testing.T, repository string, args ...string) {
+	t.Helper()
+	commandArgs := append([]string{"-C", repository}, args...)
+	if output, err := exec.Command("git", commandArgs...).CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+	}
+}

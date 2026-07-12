@@ -16,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/sourcecard"
 	"github.com/dvordrova/repomap/internal/sourceexplain"
 	"github.com/dvordrova/repomap/internal/symbol"
+	"github.com/dvordrova/repomap/internal/testevidence"
 )
 
 func TestSaveAndLoadSeparateFactsClaimsAndSession(t *testing.T) {
@@ -79,6 +80,78 @@ func TestSaveAndLoadSeparateFactsClaimsAndSession(t *testing.T) {
 		if info.Mode().Perm() != 0o600 {
 			t.Fatalf("%s mode = %o", ref.Path, info.Mode().Perm())
 		}
+	}
+}
+
+func TestSaveAndLoadLocalCheckpointFromRepositorySubdirectory(t *testing.T) {
+	t.Parallel()
+
+	state := repositoryState(t)
+	scope := filepath.Join(state.Identity, "service")
+	if err := os.Mkdir(scope, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	revision, err := state.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var card sourcecard.Card
+	if err := json.Unmarshal(deepseektest.SourceCardJSON, &card); err != nil {
+		t.Fatal(err)
+	}
+	structural := structuralForCard(card)
+	structural.OutgoingCalls = nil
+	target := structural.Target.Entity
+	session, _, err := investigation.Reduce(investigation.Session{}, investigation.Event{
+		Kind: investigation.EventStarted,
+		Start: &investigation.StartInput{
+			Goal:       investigation.Goal{Text: "inspect selected component symbol"},
+			Repository: investigation.Repository{Path: scope, Revision: revision},
+			Focus:      investigation.Focus{Kind: investigation.FocusSymbol, Symbol: target.Name, Entity: &target},
+			Origin: &investigation.Origin{
+				Kind:             investigation.OriginOrientationComponent,
+				Status:           investigation.OriginCandidate,
+				ReportSHA256:     strings.Repeat("b", 64),
+				RepoName:         "fixture",
+				ComponentID:      "component-source",
+				AnchorID:         "anchor-target",
+				AcceptedRevision: revision,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session = reduce(t, session, investigation.Event{Kind: investigation.EventSymbolResolved, ActionID: session.Next[0].ID, Symbol: &structural})
+	session = reduce(t, session, investigation.Event{Kind: investigation.EventSourceRead, ActionID: session.Next[0].ID, Source: &card})
+	tests := testevidence.Bundle{
+		Version:    testevidence.BundleVersion,
+		TargetName: target.Name,
+		Searches: []testevidence.Search{{
+			AnchorEvidenceID:  structural.Target.EvidenceID,
+			SymbolName:        target.Name,
+			Location:          *target.Location,
+			SourceEvidenceIDs: []string{},
+		}},
+		References: []testevidence.Reference{},
+		Scenarios:  []evidence.Scenario{},
+		Warnings:   []testevidence.Warning{},
+	}
+	session = reduce(t, session, investigation.Event{Kind: investigation.EventTestReferencesFound, ActionID: session.Next[0].ID, Tests: &tests})
+	facts := factContext(state)
+	dir := t.TempDir()
+	path, err := Save(dir, Input{Session: session, Repository: state, Facts: &facts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path, Current{Repository: state, Facts: &facts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Session.Repository.Path != scope || loaded.Session.State != investigation.StateCompleted ||
+		loaded.Session.Symbol == nil || loaded.Session.Source == nil || loaded.Session.Tests == nil ||
+		loaded.Session.Assessment != nil || loaded.Session.SourceReport != nil || loaded.Claims != nil {
+		t.Fatalf("loaded local checkpoint = %#v", loaded)
 	}
 }
 

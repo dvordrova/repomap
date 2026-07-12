@@ -308,10 +308,120 @@ a 42,159-byte compact context and a 49,509-byte external request in 30,983 ms,
 stored explicit `local_only` status for every direction, and capped each
 neighborhood at 20 file/test/doc items.
 
-M5 remains active until the knowledgeable friend actually evaluates this pass
-and a selected direction can progress from its verified files to bounded exact
-symbol candidates and the existing resumable source/test investigation. Editor
-opening is useful but does not block that first external calibration.
+The first hands-on review exposed useful strengthening work before external
+handoff. The report chrome is now compact: debug paths live under `Run details`,
+direction tabs no longer repeat the internal `Local evidence` state, local
+rankings are labelled as suggested files rather than a proven read sequence,
+and raw retrieval reasons are translated for the product view. Flow retrieval
+no longer promotes a generic `main.go` basename or derives package edges from
+discarded lexical candidates. The repository survey also retains a bounded
+third-hop Raft integration file instead of allowing one nearer package to own
+the complete source budget. Remaining package-first, direction-diversity,
+external-boundary, and unverified-path work is recorded in TD-013 through
+TD-016 rather than hidden behind more etcd-specific weights.
+
+The handoff now has an optional local presentation adapter: the default command
+serves saved reports on a random loopback port, the header can switch runs, and
+grounded file references open through a validated `code --goto` action. The
+analysis artifacts and static HTML remain independent of the server, and
+`repomap serve` can reopen the latest run without another provider call.
+
+Evidence locations now cross the model boundary through a canonical local
+contract. Model variants such as `file.go line 42` and `at line 42` are checked
+against deterministic `source_signals` and persisted as `file.go:42`; an
+unverified line is removed instead of becoming an editor link. The browser only
+interprets this canonical form. The direction/location-to-symbol bridge is now
+implemented for served reports. A versioned run manifest binds the exact report
+authority to repository HEAD and dirty contents. The browser sends only
+component/anchor IDs; the loopback server checks freshness before and after
+gopls, returns at most eight callable candidates, and accepts the next action
+only through opaque server-owned IDs. The selected declaration is confirmed at
+the exact source position and enters the existing investigation runner for a
+bounded source card plus five direct static callers/callees. Discovery and
+inspection make no provider call.
+
+The architecture canvas is now the primary exploration surface rather than a
+row of passive cards. ELK lays out locally validated conceptual subsystems and
+routes quiet witnessed structural edges around node content. One selected
+FlowProof stays on that same canvas: unrelated components dim, main/task/shared
+branches remain distinct, and exact steps, transitions, conditions, joins, and
+frontiers open in the adaptive inspector. Model synthesis may name and group
+only supplied opaque member IDs; it cannot create relations or proof. The
+detailed proof ledger remains available as secondary trust/debug detail.
+Exact-symbol drill-down still uses the manifest-authorized component/anchor
+identity and starts with a compact static neighborhood before the longer
+bounded source and call lists.
+
+Persisted Go runs now add a separate `Discovered surfaces` shelf below that
+canvas. It shows bounded local HTTP registrations, async starts, worker-loop
+evidence, and analysis frontiers without turning them into model
+recommendations, component edges, or completed FlowProof. Discovery is
+default-on for this artifact path, remains explicitly disableable, skips
+non-Go/no-debug/preview runs, and degrades to a saved warning instead of
+discarding orientation.
+
+The friend run also confirmed that strict structured fields need a tolerant
+repair boundary before validation. A provider returning a package or directory
+such as `internal/compact` inside `likely_files` no longer aborts the complete
+onboarding pass: that one entry is removed with a warning, exact remaining
+files or evidence anchors repair the flow, and only a flow with no grounded
+file at all is discarded. Directories are never expanded into guessed files.
+
+The live Pebble proof followed `Batch Operations -> batch.go ->
+(*Batch).Commit:1571`, returned its five-line lexical source window, one direct
+callee (`Apply`), and five bounded callers with an explicit static-not-runtime
+warning. The selected symbol/source now persists in the run-local investigation
+store, resumes after a server restart without the candidate cache, and can find
+up to five direct `_test.go` references through an explicit local-only action.
+
+The isolated deeper-research proof now continues that same component without
+turning the default survey into an eager crawl. One component-planning call
+selects an opaque primary question and exact-symbol candidates. Two local probe
+rounds then established the bounded static path `Batch.Commit -> Apply ->
+applyInternal -> commitPipeline.Commit`, rejected `directWrite` as a disconnected
+ingest lead, and bound the accepted frontier to the exact prior artifact hash.
+A path-free 27 KiB teacher bundle produced eleven surviving grounded explanation
+items from one logical model call; every item resolves through a separate local
+`file:line` index. The tolerant parser preserved valid siblings while dropping
+one model-authored closed-world claim that exceeded bounded static evidence.
+The planner, both probe rounds, and the teacher output now also compose offline
+through a presentation-neutral, SHA-bound `researchtrail` adapter. Local
+locators remain separate from claims, so the browser can project the same trail
+without importing planner/probe/teacher schemas directly.
+
+A restic calibration exposed a more fundamental onboarding failure: a compact
+bundle could contain `cmd/restic/main.go` only as a filename, omit the backup
+command body behind package truncation, and still present provider-authored high
+confidence. The first correction is now local and replayable. A package-local
+command-framework seam has a Cobra reader that reconstructs the exact bounded
+prefix `main -> root constructor -> AddCommand constructor -> Run/RunE handler`
+and typed handler call sites. The restic bundle now contains
+`main:161 -> newRootCommand:36 -> newBackupCommand:35 -> runBackup:498`, plus
+exact call sites for repository open/index loading, scanner creation,
+`archiver.New`, and `Snapshot`. Unresolved selector targets remain explicitly
+unresolved. A deterministic post-model gate caps confidence and records
+verified/missing evidence; the browser no longer has to imply that provider
+confidence is evidence confidence.
+
+The bounded restic proof increment is now complete. `FlowProof` stores the CLI
+slot contract, exact anchors/transitions, budgets, statistics, pending work, and
+stop reason as JSON. A unique worklist resolved the live `Backup Command Flow`
+through `main:161 -> newRootCommand:36 -> newBackupCommand:35 -> runBackup:498`,
+then exact callsites for `openWithAppendLock:542`, `LoadIndex:577`,
+`NewScanner:643`, `Scan`/`errgroup.Go:652`, `archiver.New:655`, and
+`Snapshot:698`. The lifecycle cube linked `cancel:701 -> Wait:704 -> return:718`.
+All eight CLI slots completed in six local tasks over four evidence files with
+zero additional model calls. The ordinary live run used one provider request;
+the same proof replays through `cmd/flowproof-playground` without credentials.
+
+Resolution and invocation are now separate evidence axes, so a statically
+selected target is not confused with a runtime observation. Targeted
+`go/packages`/types was sufficient for this slice; repository-wide SSA, VTA,
+SQLite, and SCC processing remain deferred until an unresolved focused task
+demonstrates the need.
+M5 remains active only until the knowledgeable friend evaluates this pass on a
+project they know. Editor opening and model assessment do not block that
+external calibration.
 
 ## M6 — Free repository exploration
 

@@ -248,7 +248,11 @@ func (a *analyzer) prepare() {
 	for changed {
 		changed = false
 		for function := range a.allFunctions {
-			if function == nil || function.Blocks == nil || a.relevant[function] {
+			// The reverse closure only needs repository wrappers. Library functions
+			// remain traversable when they directly contain a configured terminal
+			// seed, but unrelated dependency and stdlib call graphs must not turn
+			// into repository discovery work.
+			if function == nil || function.Blocks == nil || a.relevant[function] || !a.isRepositoryFunction(function) {
 				continue
 			}
 			for _, block := range function.Blocks {
@@ -919,11 +923,15 @@ func (a *analyzer) valueIdentity(value ssa.Value) string {
 }
 
 func (a *analyzer) wrapperOrigin(function *ssa.Function) string {
-	path := functionPackagePath(function)
-	if a.modulePath != "" && (path == a.modulePath || strings.HasPrefix(path, a.modulePath+"/")) {
+	if a.isRepositoryFunction(function) {
 		return "repository"
 	}
 	return "library"
+}
+
+func (a *analyzer) isRepositoryFunction(function *ssa.Function) bool {
+	path := functionPackagePath(function)
+	return a.modulePath != "" && (path == a.modulePath || strings.HasPrefix(path, a.modulePath+"/"))
 }
 
 func (a *analyzer) addBudget(name string) {

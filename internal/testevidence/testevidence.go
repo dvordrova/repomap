@@ -76,17 +76,55 @@ func Collect(
 	report sourceexplain.Report,
 	opts Options,
 ) (Bundle, error) {
-	if finder == nil {
-		return Bundle{}, fmt.Errorf("test evidence: reference finder is required")
-	}
-	if strings.TrimSpace(repoPath) == "" {
-		return Bundle{}, fmt.Errorf("test evidence: repository path is required")
+	if err := validateCollector(finder, repoPath); err != nil {
+		return Bundle{}, err
 	}
 	if err := validateInputs(structural, assessment, report); err != nil {
 		return Bundle{}, err
 	}
+	return collectSearches(ctx, finder, repoPath, structural.Target.Entity.Name, buildSearches(structural, report), opts)
+}
+
+// CollectTarget finds test references for the exact structural target without
+// requiring model assessment claims. The result remains navigation evidence.
+func CollectTarget(
+	ctx context.Context,
+	finder ReferenceFinder,
+	repoPath string,
+	structural symbol.Bundle,
+	opts Options,
+) (Bundle, error) {
+	if err := validateCollector(finder, repoPath); err != nil {
+		return Bundle{}, err
+	}
+	if err := structural.Validate(); err != nil {
+		return Bundle{}, fmt.Errorf("test evidence: invalid structural target: %w", err)
+	}
+	if structural.Target.Entity.Location == nil {
+		return Bundle{}, fmt.Errorf("test evidence: structural target has no location")
+	}
+	return collectSearches(ctx, finder, repoPath, structural.Target.Entity.Name, buildTargetSearch(structural), opts)
+}
+
+func validateCollector(finder ReferenceFinder, repoPath string) error {
+	if finder == nil {
+		return fmt.Errorf("test evidence: reference finder is required")
+	}
+	if strings.TrimSpace(repoPath) == "" {
+		return fmt.Errorf("test evidence: repository path is required")
+	}
+	return nil
+}
+
+func collectSearches(
+	ctx context.Context,
+	finder ReferenceFinder,
+	repoPath string,
+	targetName string,
+	searches []Search,
+	opts Options,
+) (Bundle, error) {
 	opts = withDefaults(opts)
-	searches := buildSearches(structural, report)
 	truncatedSearches := 0
 	if len(searches) > opts.MaxSearches {
 		truncatedSearches = len(searches) - opts.MaxSearches
@@ -95,7 +133,7 @@ func Collect(
 
 	bundle := Bundle{
 		Version:    BundleVersion,
-		TargetName: structural.Target.Entity.Name,
+		TargetName: targetName,
 		Searches:   searches,
 		References: []Reference{},
 		Scenarios:  []evidence.Scenario{},
@@ -169,6 +207,16 @@ func Collect(
 		return Bundle{}, err
 	}
 	return bundle, nil
+}
+
+func buildTargetSearch(structural symbol.Bundle) []Search {
+	target := structural.Target.Entity
+	return []Search{{
+		AnchorEvidenceID:  structural.Target.EvidenceID,
+		SymbolName:        target.Name,
+		Location:          *target.Location,
+		SourceEvidenceIDs: []string{},
+	}}
 }
 
 func (b Bundle) Validate() error {
@@ -295,13 +343,7 @@ func withDefaults(opts Options) Options {
 }
 
 func buildSearches(structural symbol.Bundle, report sourceexplain.Report) []Search {
-	target := structural.Target.Entity
-	searches := []Search{{
-		AnchorEvidenceID:  structural.Target.EvidenceID,
-		SymbolName:        target.Name,
-		Location:          *target.Location,
-		SourceEvidenceIDs: []string{},
-	}}
+	searches := buildTargetSearch(structural)
 	calls := make(map[string]symbol.CallFact, len(structural.OutgoingCalls))
 	for _, call := range structural.OutgoingCalls {
 		calls[call.EvidenceID] = call
