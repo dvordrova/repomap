@@ -15,7 +15,20 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
-func Attach(ctx context.Context, repoPath string, flows []flowexplain.CandidateFlow, traces []gofacts.CommandTrace) []string {
+// Input is the explicit local proof boundary. CommandTraces must come from the
+// locally authorized deterministic snapshot, never a provider-filtered copy.
+// ProofBudget is independent from every provider context budget.
+type Input struct {
+	CommandTraces []gofacts.CommandTrace
+	ProofBudget   flowproof.Budget
+}
+
+func Attach(ctx context.Context, repoPath string, flows []flowexplain.CandidateFlow, input Input) []string {
+	traces := input.CommandTraces
+	budget := input.ProofBudget
+	if budget.MaxTasks <= 0 {
+		budget = flowproof.DefaultBudget()
+	}
 	executor := gotypes.NewExecutor()
 	usedTraces := make(map[int]struct{})
 	var warnings []string
@@ -39,7 +52,7 @@ func Attach(ctx context.Context, repoPath string, flows []flowexplain.CandidateF
 		}
 		seed := seedForFlow(*flow, trace)
 		proof := flowproof.BuildCLI(seed)
-		session := flowproof.Start(proof, flowproof.DefaultBudget(), seed.ScenarioID, seed.CollectorVersion)
+		session := flowproof.Start(proof, budget, seed.ScenarioID, seed.CollectorVersion)
 		if err := flowproof.Run(ctx, repoPath, &session, executor); err != nil {
 			warnings = append(warnings, fmt.Sprintf("local proof %q stopped: %v", flow.Name, err))
 		}

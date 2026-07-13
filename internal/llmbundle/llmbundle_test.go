@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
@@ -267,8 +268,8 @@ func TestBuildPythonRepositoryWithoutGoFacts(t *testing.T) {
 	}, files, Options{MaxFiles: 20})
 
 	for _, path := range files {
-		if !containsString(bundle.AllowedPaths, path) {
-			t.Fatalf("allowed_paths = %v, want %q", bundle.AllowedPaths, path)
+		if !containsString(bundle.ProviderAllowedPaths, path) {
+			t.Fatalf("allowed_paths = %v, want %q", bundle.ProviderAllowedPaths, path)
 		}
 	}
 	if bundle.Go.ModulesCount != 0 || len(bundle.Go.Entrypoints) != 0 {
@@ -724,8 +725,8 @@ func TestBuildKeepsDistinctiveCoreFileThroughStartupWiring(t *testing.T) {
 		files,
 		Options{MaxFiles: 3},
 	)
-	if !containsString(bundle.AllowedPaths, "core/raft.go") {
-		t.Fatalf("distinctive third-hop core file was omitted: %v", bundle.AllowedPaths)
+	if !containsString(bundle.ProviderAllowedPaths, "core/raft.go") {
+		t.Fatalf("distinctive third-hop core file was omitted: %v", bundle.ProviderAllowedPaths)
 	}
 }
 
@@ -752,7 +753,7 @@ func TestBundleFiltersEveryModelVisibleFilePathToAllowedPaths(t *testing.T) {
 	}
 
 	bundle := Build(snapshot.Snapshot{RepoName: "test", GoFacts: facts}, fileList, Options{MaxFiles: 2})
-	allowed := makePathSet(bundle.AllowedPaths)
+	allowed := makePathSet(bundle.ProviderAllowedPaths)
 	if len(bundle.KnownDocs) != 0 {
 		t.Fatalf("known docs outside selected allowlist survived: %v", bundle.KnownDocs)
 	}
@@ -858,12 +859,12 @@ func TestAllowedPathsContainsAllIndexPaths(t *testing.T) {
 	}
 	bundle := Build(s, fileList, Options{})
 
-	if len(bundle.AllowedPaths) == 0 {
+	if len(bundle.ProviderAllowedPaths) == 0 {
 		t.Fatal("allowed_paths is empty")
 	}
 
 	allowedSet := make(map[string]bool)
-	for _, p := range bundle.AllowedPaths {
+	for _, p := range bundle.ProviderAllowedPaths {
 		allowedSet[p] = true
 	}
 
@@ -871,6 +872,35 @@ func TestAllowedPathsContainsAllIndexPaths(t *testing.T) {
 		if !allowedSet[e.Path] {
 			t.Fatalf("file index path %q not in allowed_paths", e.Path)
 		}
+	}
+}
+
+func TestMaxFilesLimitsOnlyProviderVisibleEvidence(t *testing.T) {
+	trace := gofacts.CommandTrace{
+		Version:           gofacts.CommandTraceVersion,
+		Framework:         "cobra",
+		EntrypointPackage: "example.com/project/cmd/app",
+		Command:           "backup",
+		Steps: []gofacts.CommandTraceStep{
+			{Symbol: "main", Relation: "entrypoint", TargetLocation: evidence.Location{Path: "cmd/app/main.go", Line: 3}},
+			{Symbol: "newRoot", Relation: "calls", TargetLocation: evidence.Location{Path: "cmd/app/root.go", Line: 5}},
+			{Symbol: "newBackup", Relation: "registers_command", TargetLocation: evidence.Location{Path: "cmd/app/backup.go", Line: 7}},
+			{Symbol: "runBackup", Relation: "callback", TargetLocation: evidence.Location{Path: "cmd/app/run.go", Line: 9}},
+		},
+	}
+	facts := &gofacts.Facts{CommandTraces: []gofacts.CommandTrace{trace}}
+	files := []string{"cmd/app/main.go", "cmd/app/root.go", "cmd/app/backup.go", "cmd/app/run.go"}
+
+	bundle := Build(snapshot.Snapshot{RepoName: "project", GoFacts: facts}, files, Options{MaxFiles: 1})
+
+	if len(bundle.ProviderAllowedPaths) != 1 {
+		t.Fatalf("provider allowed paths = %v, want one path", bundle.ProviderAllowedPaths)
+	}
+	if len(bundle.Go.CommandTraces) != 0 {
+		t.Fatalf("provider command traces = %#v, want trace omitted when all exact paths do not fit", bundle.Go.CommandTraces)
+	}
+	if len(facts.CommandTraces) != 1 || len(facts.CommandTraces[0].Steps) != 4 {
+		t.Fatalf("local command traces were mutated by provider selection: %#v", facts.CommandTraces)
 	}
 }
 
@@ -934,7 +964,7 @@ func TestLLMBundleOnlyIncludesAllowedPaths(t *testing.T) {
 
 	bundle := Build(s, fileList, Options{})
 
-	if len(bundle.AllowedPaths) == 0 {
+	if len(bundle.ProviderAllowedPaths) == 0 {
 		t.Fatal("--llm-bundle-only must include allowed_paths")
 	}
 	if len(bundle.CandidateFileIndex) == 0 {
