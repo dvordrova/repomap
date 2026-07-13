@@ -2,6 +2,7 @@ package report
 
 import (
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ func linkArchitectureProductObjects(data *ReportData) {
 	}
 	canvas := data.ArchitectureCanvas
 	canvas.Surfaces = nil
+	canvas.Suggestions = nil
 	for index := range canvas.Components {
 		canvas.Components[index].OwnedSurfaceIDs = nil
 		canvas.Components[index].ParticipatingSurfaceIDs = nil
@@ -52,12 +54,19 @@ func linkArchitectureProductObjects(data *ReportData) {
 		canvas.Flows[index].ParticipatingComponentIDs = nil
 		canvas.Flows[index].StartSurfaceID = ""
 	}
-	owners := buildArchitectureOwnershipIndex(canvas.Components)
+	owners := buildArchitectureOwnershipIndex(*canvas)
 	flowLocations := architectureFlowLocations(*canvas)
 	flowByLocation := make(map[string]map[componentmap.FlowID]struct{})
+	flowByCommand := make(map[string]map[componentmap.FlowID]struct{})
 	for flowID, locations := range flowLocations {
 		for location := range locations {
 			addFlowSet(flowByLocation, location, flowID)
+		}
+	}
+	for _, flow := range canvas.Flows {
+		command := strings.TrimSpace(strings.ToLower(flow.Command))
+		if command != "" {
+			addFlowSet(flowByCommand, command, flow.ID)
 		}
 	}
 
@@ -74,7 +83,13 @@ func linkArchitectureProductObjects(data *ReportData) {
 	if data.DiscoveredSurfaces != nil {
 		for index := range data.DiscoveredSurfaces.Triggers {
 			trigger := &data.DiscoveredSurfaces.Triggers[index]
-			surface := architectureSurfaceFromTrigger(*trigger, owners, flowByLocation)
+			classifySurfaceExecutable(data, trigger)
+			surface := architectureSurfaceFromTrigger(*trigger, owners, flowByLocation, flowByCommand, flowLocations)
+			trigger.OwningExecutable = surface.OwningExecutable
+			trigger.OwningComponentID = surface.OwningComponentID
+			trigger.ParticipatingComponentIDs = append([]componentmap.ComponentID(nil), surface.ParticipatingComponentIDs...)
+			trigger.RelatedTraceID = surface.RelatedTraceID
+			trigger.TraceUnavailableReason = surface.TraceUnavailableReason
 			canvas.Surfaces = append(canvas.Surfaces, surface)
 			attachArchitectureSurface(canvas, componentIndex, surface)
 			if surface.RelatedTraceID != "" {
@@ -85,18 +100,8 @@ func linkArchitectureProductObjects(data *ReportData) {
 		}
 	}
 
-	for index := range canvas.Flows {
-		flow := &canvas.Flows[index]
-		if flow.StartSurfaceID != "" {
-			continue
-		}
-		surface := architectureSurfaceFromTrace(*flow)
-		flow.StartSurfaceID = surface.ID
-		canvas.Surfaces = append(canvas.Surfaces, surface)
-		attachArchitectureSurface(canvas, componentIndex, surface)
-	}
-
 	linkSuggestedInvestigations(data, owners, componentIndex)
+	refreshSurfaceCatalogCounts(data.DiscoveredSurfaces)
 	sort.Slice(canvas.Surfaces, func(i, j int) bool { return canvas.Surfaces[i].ID < canvas.Surfaces[j].ID })
 	for index := range canvas.Components {
 		sort.Strings(canvas.Components[index].OwnedSurfaceIDs)
@@ -109,17 +114,36 @@ func linkArchitectureProductObjects(data *ReportData) {
 // component/surface/trace joins. Callers must invoke it before publishing the
 // report to concurrent readers; it mutates the supplied projection.
 func ApplyProductCoherence(data *ReportData) {
+	if data != nil && data.ArchitectureCanvas == nil {
+		if input, err := BuildArchitectureCanvasInput(data); err == nil {
+			if canvas, projectErr := ProjectArchitectureCanvas(input); projectErr == nil {
+				data.ArchitectureCanvas = &canvas
+			}
+		}
+	}
 	linkArchitectureProductObjects(data)
 	refreshProductCounts(data)
 }
 
-func buildArchitectureOwnershipIndex(components []ArchitectureComponent) architectureOwnershipIndex {
+func buildArchitectureOwnershipIndex(canvas ArchitectureCanvas) architectureOwnershipIndex {
 	index := architectureOwnershipIndex{
 		pathOwners:    make(map[string]map[componentmap.ComponentID]struct{}),
 		packageOwners: make(map[string]map[componentmap.ComponentID]struct{}),
 		symbolOwners:  make(map[string]map[componentmap.ComponentID]struct{}),
 	}
-	for _, component := range components {
+	diagnosticComponents := make(map[componentmap.ComponentID]struct{})
+	for _, subsystem := range canvas.Subsystems {
+		if subsystem.Category != componentmap.SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, componentID := range subsystem.ComponentIDs {
+			diagnosticComponents[componentID] = struct{}{}
+		}
+	}
+	for _, component := range canvas.Components {
+		if _, diagnostic := diagnosticComponents[component.ID]; diagnostic {
+			continue
+		}
 		for _, member := range component.Members {
 			switch member.ID.Kind {
 			case componentmap.MemberPackage:
@@ -188,8 +212,24 @@ func populateArchitectureTraceSummary(data *ReportData, flow *ArchitectureFlow, 
 		}
 	}
 	flow.ParticipatingComponentIDs = sortedComponentIDs(participants)
+	for _, kind := range []flowproof.SlotKind{
+		flowproof.SlotIOBoundary,
+		flowproof.SlotCoreOperation,
+		flowproof.SlotTermination,
+		flowproof.SlotConcurrency,
+	} {
+		for _, slot := range flow.Slots {
+			if slot.Kind == kind && strings.TrimSpace(slot.Missing) != "" {
+				flow.FrontierSummary = slot.Missing
+				break
+			}
+		}
+		if flow.FrontierSummary != "" {
+			break
+		}
+	}
 	for _, frontier := range canvas.Frontiers {
-		if frontier.FlowID == flow.ID && strings.TrimSpace(frontier.Reason) != "" {
+		if flow.FrontierSummary == "" && frontier.FlowID == flow.ID && strings.TrimSpace(frontier.Reason) != "" {
 			flow.FrontierSummary = frontier.Reason
 			break
 		}
@@ -209,6 +249,8 @@ func architectureSurfaceFromTrigger(
 	trigger DiscoveredTrigger,
 	owners architectureOwnershipIndex,
 	flowByLocation map[string]map[componentmap.FlowID]struct{},
+	flowByCommand map[string]map[componentmap.FlowID]struct{},
+	flowLocations map[componentmap.FlowID]map[string]struct{},
 ) ArchitectureSurface {
 	participants := make(map[componentmap.ComponentID]struct{})
 	addOwners := func(values map[componentmap.ComponentID]struct{}) {
@@ -234,6 +276,22 @@ func architectureSurfaceFromTrigger(
 			related[flowID] = struct{}{}
 		}
 	}
+	if trigger.Kind == "cli_command" {
+		command := strings.TrimSpace(strings.ToLower(trigger.Identity.Name))
+		commandMatches := flowByCommand[command]
+		typedMatches := make(map[componentmap.FlowID]struct{})
+		for flowID := range commandMatches {
+			if commandSurfaceMatchesFlowExecutable(trigger, flowLocations[flowID]) {
+				typedMatches[flowID] = struct{}{}
+			}
+		}
+		related = make(map[componentmap.FlowID]struct{})
+		if len(typedMatches) == 1 {
+			for flowID := range typedMatches {
+				related[flowID] = struct{}{}
+			}
+		}
+	}
 	var relatedTrace componentmap.FlowID
 	if len(related) == 1 {
 		for id := range related {
@@ -247,7 +305,7 @@ func architectureSurfaceFromTrigger(
 		Source:                    surfaceSourceCatalog,
 		Kind:                      trigger.Kind,
 		Category:                  category,
-		OwningExecutable:          surfaceExecutable(trigger),
+		OwningExecutable:          firstNonEmpty(trigger.OwningExecutable, surfaceExecutable(trigger)),
 		OwningComponentID:         primary,
 		ParticipatingComponentIDs: sortedComponentIDs(participants),
 		RelatedTraceID:            relatedTrace,
@@ -259,35 +317,63 @@ func architectureSurfaceFromTrigger(
 	}
 }
 
-func architectureSurfaceFromTrace(flow ArchitectureFlow) ArchitectureSurface {
+func commandSurfaceMatchesFlowExecutable(trigger DiscoveredTrigger, locations map[string]struct{}) bool {
+	executable := cleanSurfacePath(trigger.OwningExecutable)
+	if executable == "" && trigger.ProcessEntrypoint.Location != nil {
+		executable = cleanSurfacePath(path.Dir(trigger.ProcessEntrypoint.Location.Path))
+	}
+	if executable == "" {
+		return false
+	}
+	for location := range locations {
+		locationPath, _, _ := strings.Cut(location, "\x00")
+		locationPath = cleanSurfacePath(locationPath)
+		if locationPath == executable || strings.HasPrefix(locationPath, executable+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func architectureSurfaceFromTrace(flow ArchitectureFlow, canvas ArchitectureCanvas) ArchitectureSurface {
 	evidence := make([]SurfaceLocation, 0, 1)
-	var primaryCandidates = make(map[componentmap.ComponentID]struct{})
-	startIDs := make(map[string]struct{})
+	primary := architectureTraceStartComponent(flow, canvas)
 	for _, kind := range []flowproof.SlotKind{flowproof.SlotTrigger, flowproof.SlotEntrypoint, flowproof.SlotDispatch} {
+		candidates := make(map[componentmap.ComponentID]struct{})
 		for _, slot := range flow.Slots {
 			if slot.Kind != kind {
 				continue
 			}
 			for _, id := range slot.EvidenceIDs {
-				startIDs[id] = struct{}{}
+				for _, step := range flow.Steps {
+					if step.ID != id {
+						continue
+					}
+					if step.ComponentID != "" {
+						candidates[step.ComponentID] = struct{}{}
+					}
+					if len(evidence) == 0 && step.Location != nil {
+						evidence = append(evidence, SurfaceLocation{Path: step.Location.Path, Line: step.Location.Line, Column: step.Location.Column})
+					}
+				}
 			}
 		}
-	}
-	for _, step := range flow.Steps {
-		if _, ok := startIDs[step.ID]; !ok && len(startIDs) > 0 {
-			continue
-		}
-		if step.ComponentID != "" {
-			primaryCandidates[step.ComponentID] = struct{}{}
-		}
-		if len(evidence) == 0 && step.Location != nil {
-			evidence = append(evidence, SurfaceLocation{Path: step.Location.Path, Line: step.Location.Line, Column: step.Location.Column})
+		if primary == "" && len(candidates) == 1 {
+			for id := range candidates {
+				primary = id
+			}
+			break
 		}
 	}
-	var primary componentmap.ComponentID
-	if len(primaryCandidates) == 1 {
-		for id := range primaryCandidates {
-			primary = id
+	if len(evidence) == 0 {
+		for _, step := range flow.Steps {
+			if step.Location != nil {
+				evidence = append(evidence, SurfaceLocation{Path: step.Location.Path, Line: step.Location.Line, Column: step.Location.Column})
+				break
+			}
+			if primary == "" && step.ComponentID != "" {
+				primary = step.ComponentID
+			}
 		}
 	}
 	executable := ""
@@ -298,19 +384,59 @@ func architectureSurfaceFromTrace(flow ArchitectureFlow) ArchitectureSurface {
 		}
 	}
 	return ArchitectureSurface{
-		ID:                        "trace-start-" + string(flow.ID),
-		Name:                      firstNonEmpty(flow.Command, flow.Trigger, flow.Name),
-		Source:                    surfaceSourceTraceStart,
-		Category:                  surfaceCategoryApplication,
-		OwningExecutable:          executable,
-		OwningComponentID:         primary,
-		ParticipatingComponentIDs: append([]componentmap.ComponentID(nil), flow.ParticipatingComponentIDs...),
-		RelatedTraceID:            flow.ID,
-		Status:                    "saved_trace_start",
-		Certainty:                 flow.EvidenceBasis,
-		Resolution:                flow.Status,
-		Evidence:                  evidence,
+		ID:                "trace-start-" + string(flow.ID),
+		Name:              firstNonEmpty(flow.Command, flow.Trigger, flow.Name),
+		Source:            surfaceSourceTraceStart,
+		Category:          surfaceCategoryApplication,
+		OwningExecutable:  executable,
+		OwningComponentID: primary,
+		ParticipatingComponentIDs: appendUniqueComponentID(
+			append([]componentmap.ComponentID(nil), flow.ParticipatingComponentIDs...),
+			primary,
+		),
+		RelatedTraceID: flow.ID,
+		Status:         "saved_trace_start",
+		Certainty:      flow.EvidenceBasis,
+		Resolution:     flow.Status,
+		Evidence:       evidence,
 	}
+}
+
+func architectureTraceStartComponent(flow ArchitectureFlow, canvas ArchitectureCanvas) componentmap.ComponentID {
+	entryAnchors := make(map[string]struct{})
+	for _, anchor := range canvas.BehaviorAnchors {
+		if anchor.Kind == componentmap.AnchorProcessEntry {
+			entryAnchors[anchor.ID] = struct{}{}
+		}
+	}
+	candidates := make(map[componentmap.ComponentID]struct{})
+	for _, component := range canvas.Components {
+		if !componentParticipatesInFlow(component, flow.ID) {
+			continue
+		}
+		for _, anchorID := range component.AnchorIDs {
+			if _, isEntry := entryAnchors[anchorID]; isEntry {
+				candidates[component.ID] = struct{}{}
+				break
+			}
+		}
+	}
+	if len(candidates) != 1 {
+		return ""
+	}
+	for componentID := range candidates {
+		return componentID
+	}
+	return ""
+}
+
+func componentParticipatesInFlow(component ArchitectureComponent, flowID componentmap.FlowID) bool {
+	for _, candidate := range component.ParticipatingFlowIDs {
+		if candidate == flowID {
+			return true
+		}
+	}
+	return false
 }
 
 func attachArchitectureSurface(canvas *ArchitectureCanvas, index map[componentmap.ComponentID]int, surface ArchitectureSurface) {
@@ -347,11 +473,54 @@ func linkSuggestedInvestigations(data *ReportData, owners architectureOwnershipI
 		}
 		matches := make(map[componentmap.ComponentID]struct{})
 		paths := append([]string{direction.LikelyEntrypoint}, direction.LikelyFiles...)
+		anchorIDs := make(map[string]struct{})
+		anchorMatches := make(map[componentmap.ComponentID]struct{})
+		var startLocation *SurfaceLocation
+		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
+			if !slices.Contains(paths, anchor.Location.Path) {
+				continue
+			}
+			anchorIDs[anchor.ID] = struct{}{}
+			if startLocation == nil && anchor.Location.Path != "" && anchor.Location.Line > 0 {
+				startLocation = &SurfaceLocation{Path: anchor.Location.Path, Line: anchor.Location.Line, Column: anchor.Location.Column}
+			}
+			for componentID, componentIndex := range index {
+				if slices.Contains(data.ArchitectureCanvas.Components[componentIndex].AnchorIDs, anchor.ID) {
+					anchorMatches[componentID] = struct{}{}
+				}
+			}
+		}
 		for _, candidatePath := range paths {
 			for id := range ownersForPath(owners.pathOwners, candidatePath) {
 				matches[id] = struct{}{}
 			}
 		}
+		if len(anchorMatches) > 0 {
+			matches = anchorMatches
+		}
+		componentIDs := sortedComponentIDs(matches)
+		orderedAnchorIDs := make([]string, 0, len(anchorIDs))
+		for anchorID := range anchorIDs {
+			orderedAnchorIDs = append(orderedAnchorIDs, anchorID)
+		}
+		sort.Strings(orderedAnchorIDs)
+		grounding := "exact_member"
+		if len(orderedAnchorIDs) > 0 {
+			grounding = "exact_anchor"
+		}
+		available := startLocation != nil
+		unavailableReason := ""
+		if !available {
+			unavailableReason = "no locally resolvable starting callable"
+		}
+		data.ArchitectureCanvas.Suggestions = append(data.ArchitectureCanvas.Suggestions, ArchitectureSuggestion{
+			ID: direction.ID, Title: direction.Name, Reason: direction.WhyInteresting,
+			EvidenceReferences: append([]string(nil), direction.Evidence...),
+			RelevantAnchorIDs:  orderedAnchorIDs, RelevantComponentIDs: componentIDs,
+			CurrentGrounding: grounding, CanStartTrace: false,
+			InvestigationAvailable: available, UnavailableReason: unavailableReason,
+			StartLocation: startLocation,
+		})
 		for componentID := range matches {
 			if componentIndex, ok := index[componentID]; ok {
 				data.ArchitectureCanvas.Components[componentIndex].SuggestedInvestigationIDs = appendUniqueString(
@@ -361,10 +530,19 @@ func linkSuggestedInvestigations(data *ReportData, owners architectureOwnershipI
 			}
 		}
 	}
+	sort.Slice(data.ArchitectureCanvas.Suggestions, func(i, j int) bool {
+		return data.ArchitectureCanvas.Suggestions[i].ID < data.ArchitectureCanvas.Suggestions[j].ID
+	})
 }
 
 func uniqueOwnerForTrigger(trigger DiscoveredTrigger, owners architectureOwnershipIndex) componentmap.ComponentID {
 	candidates := []map[componentmap.ComponentID]struct{}{}
+	if trigger.Kind == "cli_command" {
+		if trigger.Constructor.Location != nil {
+			candidates = append(candidates, ownersForPath(owners.pathOwners, trigger.Constructor.Location.Path))
+		}
+		candidates = append(candidates, owners.symbolOwners[trigger.Constructor.ID])
+	}
 	if trigger.RegistrationSite != nil {
 		candidates = append(candidates, ownersForPath(owners.pathOwners, trigger.RegistrationSite.Path))
 	}
@@ -429,33 +607,135 @@ func surfaceExecutable(trigger DiscoveredTrigger) string {
 	return firstNonEmpty(trigger.ProcessEntrypoint.ID, trigger.ProcessEntrypoint.Package, trigger.ProcessEntrypoint.Name)
 }
 
-func surfaceOwnershipCategory(trigger DiscoveredTrigger, owner componentmap.ComponentID) string {
+func surfaceOwnershipCategory(trigger DiscoveredTrigger, _ componentmap.ComponentID) string {
 	if trigger.ProvisionalID || strings.Contains(strings.ToLower(trigger.Resolution), "dynamic") ||
 		strings.Contains(strings.ToLower(trigger.Status), "unknown") {
 		return surfaceCategoryDynamic
 	}
-	location := trigger.ProcessEntrypoint.Location
-	if location != nil {
-		value := "/" + strings.ToLower(cleanSurfacePath(location.Path))
-		if strings.HasSuffix(value, "_test.go") || strings.Contains(value, "/test/") || strings.Contains(value, "/tests/") ||
-			strings.Contains(value, "/integration/") {
-			return surfaceCategoryTests
+	switch trigger.ExecutableRole {
+	case ExecutableRolePrimaryApplication:
+		return surfaceCategoryApplication
+	case ExecutableRoleSecondaryTooling:
+		return surfaceCategoryTooling
+	case ExecutableRoleTestOrHelper:
+		return surfaceCategoryTests
+	}
+	return surfaceCategoryUnassigned
+}
+
+func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
+	if trigger == nil {
+		return
+	}
+	if trigger.Producer == SurfaceProducerCobra && trigger.ProcessEntrypoint.Location != nil {
+		trigger.OwningExecutable = cleanSurfacePath(path.Dir(trigger.ProcessEntrypoint.Location.Path))
+	}
+	if trigger.OwningExecutable == "" {
+		if trigger.ProcessEntrypoint.Location != nil {
+			trigger.OwningExecutable = cleanSurfacePath(path.Dir(trigger.ProcessEntrypoint.Location.Path))
 		}
-		for _, segment := range []string{"/tools/", "/tool/", "/hack/", "/scripts/", "/build/", "/release/"} {
-			if strings.Contains(value, segment) {
-				return surfaceCategoryTooling
+		if trigger.OwningExecutable == "." || trigger.OwningExecutable == "" {
+			trigger.OwningExecutable = surfaceExecutableForPackage(data, trigger.ProcessEntrypoint.Package)
+		}
+	}
+	if trigger.ExecutableRole != "" && trigger.ExecutableRole != ExecutableRoleUnknown {
+		return
+	}
+	location := ""
+	if trigger.ProcessEntrypoint.Location != nil {
+		location = "/" + strings.ToLower(cleanSurfacePath(trigger.ProcessEntrypoint.Location.Path))
+	}
+	if strings.HasSuffix(location, "_test.go") || strings.Contains(location, "/test/") || strings.Contains(location, "/tests/") {
+		trigger.ExecutableRole = ExecutableRoleTestOrHelper
+		return
+	}
+	if strings.Contains(location, "/helpers/") {
+		if strings.Contains(location, "build") || strings.Contains(location, "release") {
+			trigger.ExecutableRole = ExecutableRoleSecondaryTooling
+		} else {
+			trigger.ExecutableRole = ExecutableRoleTestOrHelper
+		}
+		return
+	}
+	for _, segment := range []string{"/tools/", "/tool/", "/hack/", "/scripts/", "/build/", "/release/"} {
+		if strings.Contains(location, segment) {
+			trigger.ExecutableRole = ExecutableRoleSecondaryTooling
+			return
+		}
+	}
+	if matchesPrimaryProcessAnchor(data, trigger) {
+		trigger.ExecutableRole = ExecutableRolePrimaryApplication
+		return
+	}
+	if trigger.Producer == SurfaceProducerCobra {
+		if primaryCommandExecutable(data, trigger) {
+			trigger.ExecutableRole = ExecutableRolePrimaryApplication
+		} else {
+			trigger.ExecutableRole = ExecutableRoleUnknown
+		}
+		return
+	}
+	trigger.ExecutableRole = ExecutableRoleUnknown
+}
+
+func matchesPrimaryProcessAnchor(data *ReportData, trigger *DiscoveredTrigger) bool {
+	if data == nil || trigger == nil || data.ArchitectureCanvas == nil || trigger.ProcessEntrypoint.Location == nil {
+		return false
+	}
+	entrypointPath := cleanSurfacePath(trigger.ProcessEntrypoint.Location.Path)
+	for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
+		if anchor.Kind == componentmap.AnchorProcessEntry && cleanSurfacePath(anchor.Location.Path) == entrypointPath {
+			return true
+		}
+	}
+	return false
+}
+
+func primaryCommandExecutable(data *ReportData, trigger *DiscoveredTrigger) bool {
+	if data == nil || trigger == nil || trigger.ProcessEntrypoint.Package == "" {
+		return false
+	}
+	for _, trace := range data.CommandTraces {
+		if trace.EntrypointPackage != trigger.ProcessEntrypoint.Package {
+			continue
+		}
+		entrypoint, ok := commandTraceStep(trace, "entrypoint")
+		if !ok || data.ArchitectureCanvas == nil {
+			continue
+		}
+		executable := cleanSurfacePath(path.Dir(entrypoint.TargetLocation.Path))
+		for _, flow := range data.ArchitectureCanvas.Flows {
+			if !strings.EqualFold(strings.TrimSpace(flow.Command), strings.TrimSpace(trace.Command)) {
+				continue
+			}
+			for _, step := range flow.Steps {
+				if step.Location != nil && pathWithinExecutable(step.Location.Path, executable) {
+					return true
+				}
+			}
+		}
+		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
+			if anchor.Kind == componentmap.AnchorProcessEntry &&
+				cleanSurfacePath(anchor.Location.Path) == cleanSurfacePath(entrypoint.TargetLocation.Path) {
+				return true
 			}
 		}
 	}
-	if owner == "" {
-		return surfaceCategoryUnassigned
-	}
-	return surfaceCategoryApplication
+	return false
+}
+
+func pathWithinExecutable(value, executable string) bool {
+	value = cleanSurfacePath(value)
+	executable = cleanSurfacePath(executable)
+	return executable != "" && (value == executable || strings.HasPrefix(value, executable+"/"))
 }
 
 func surfaceTraceUnavailableReason(trigger DiscoveredTrigger, related componentmap.FlowID) string {
 	if related != "" {
 		return ""
+	}
+	if trigger.Kind == "cli_command" {
+		return "no saved trace was collected for this command"
 	}
 	if !trigger.Handler.Known || strings.Contains(strings.ToLower(trigger.Resolution), "dynamic") ||
 		len(trigger.DynamicFrontier) > 0 {
@@ -531,6 +811,18 @@ func sortedComponentIDs(values map[componentmap.ComponentID]struct{}) []componen
 }
 
 func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func appendUniqueComponentID(values []componentmap.ComponentID, value componentmap.ComponentID) []componentmap.ComponentID {
+	if value == "" {
+		return values
+	}
 	for _, existing := range values {
 		if existing == value {
 			return values

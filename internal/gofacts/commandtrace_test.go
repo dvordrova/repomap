@@ -3,6 +3,7 @@ package gofacts
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -196,6 +197,30 @@ func runInit() error {
 	}
 }
 
+func TestCobraCommandReaderUsesLeadingStaticCommandName(t *testing.T) {
+	t.Parallel()
+
+	trace := buildCommandTraceFixture(t, map[string]string{
+		"main.go": `package main
+func main() { newRootCommand().ExecuteContext() }
+func newRootCommand() *Command {
+	cmd := &Command{}
+	cmd.AddCommand(newListCommand())
+	return cmd
+}`,
+		"list.go": `package main
+const allowed = "blobs"
+func newListCommand() *Command {
+	return &Command{Use: "list [flags] [" + allowed + "]", RunE: func() error { return runList() }}
+}
+func runList() error { return nil }`,
+	})
+
+	if trace.Command != "list" || !trace.Complete || slices.Contains(trace.Missing, "command name") {
+		t.Fatalf("concatenated Use trace = %#v", trace)
+	}
+}
+
 func TestCobraDispatchKeepsCallsiteAndTargetLocationsSeparate(t *testing.T) {
 	t.Parallel()
 
@@ -321,7 +346,54 @@ func runInit() error { return nil }
 	}
 }
 
+func TestCobraCommandReaderBuildsCompleteResticStyleCatalog(t *testing.T) {
+	t.Parallel()
+
+	traces := buildCommandTraceFixtures(t, map[string]string{
+		"main.go": `package main
+func main() { newRootCommand().ExecuteContext() }
+func newRootCommand() *Command {
+	cmd := &Command{}
+	cmd.AddCommand(newBackupCommand(), newCheckCommand(), newInitCommand(), newRestoreCommand(), newSnapshotsCommand(), newListCommand(), newPruneCommand(), newFindCommand())
+	return cmd
+}
+func newBackupCommand() *Command { return &Command{Use: "backup", RunE: func() error { return runBackup() }} }
+func newCheckCommand() *Command { return &Command{Use: "check", RunE: func() error { return runCheck() }} }
+func newInitCommand() *Command { return &Command{Use: "init", RunE: func() error { return runInit() }} }
+func newRestoreCommand() *Command { return &Command{Use: "restore", RunE: func() error { return runRestore() }} }
+func newSnapshotsCommand() *Command { return &Command{Use: "snapshots", RunE: func() error { return runSnapshots() }} }
+func newListCommand() *Command { return &Command{Use: "list [flags] [" + allowed + "]", RunE: func() error { return runList() }} }
+func newPruneCommand() *Command { return &Command{Use: "prune", RunE: func() error { return runPrune() }} }
+func newFindCommand() *Command { return &Command{Use: "find", RunE: func() error { return runFind() }} }
+func runBackup() error { return nil }; func runCheck() error { return nil }; func runInit() error { return nil }
+func runRestore() error { return nil }; func runSnapshots() error { return nil }; func runList() error { return nil }
+func runPrune() error { return nil }; func runFind() error { return nil }`,
+	})
+
+	want := []string{"backup", "check", "find", "init", "list", "prune", "restore", "snapshots"}
+	got := make([]string, 0, len(traces))
+	for _, trace := range traces {
+		got = append(got, trace.Command)
+		if !trace.Complete {
+			t.Errorf("command %q is incomplete: %v", trace.Command, trace.Missing)
+		}
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("commands = %v, want %v", got, want)
+	}
+}
+
 func buildCommandTraceFixture(t *testing.T, files map[string]string) CommandTrace {
+	t.Helper()
+	traces := buildCommandTraceFixtures(t, files)
+	if len(traces) != 1 {
+		t.Fatalf("traces = %#v, want one", traces)
+	}
+	return traces[0]
+}
+
+func buildCommandTraceFixtures(t *testing.T, files map[string]string) []CommandTrace {
 	t.Helper()
 
 	repo := t.TempDir()
@@ -351,10 +423,7 @@ func buildCommandTraceFixture(t *testing.T, files map[string]string) CommandTrac
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v", warnings)
 	}
-	if len(traces) != 1 {
-		t.Fatalf("traces = %#v, want one", traces)
-	}
-	return traces[0]
+	return traces
 }
 
 func assertCommandTraceStepLocations(

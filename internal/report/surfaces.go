@@ -1,6 +1,7 @@
 package report
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
 const (
@@ -23,6 +28,16 @@ const (
 	maxSurfaceNestedItems         = 32
 	maxSurfaceValueCandidates     = 16
 	maxDiscoveredSurfacePathBytes = 4096
+)
+
+const (
+	SurfaceProducerGeneric = "generic_surface_scan"
+	SurfaceProducerCobra   = "deterministic_cobra"
+
+	ExecutableRolePrimaryApplication = "primary_application"
+	ExecutableRoleSecondaryTooling   = "secondary_tooling"
+	ExecutableRoleTestOrHelper       = "test_or_helper"
+	ExecutableRoleUnknown            = "unknown"
 )
 
 // DiscoveredSurfaces is the bounded presentation projection of a paired
@@ -40,6 +55,12 @@ type DiscoveredSurfaces struct {
 	WrapperCount              int                 `json:"wrapper_count"`
 	WorkerCount               int                 `json:"worker_count"`
 	AsyncTaskCount            int                 `json:"async_task_count"`
+	CLICommandCount           int                 `json:"cli_command_count"`
+	GenericSurfaceCount       int                 `json:"generic_surface_count"`
+	ApplicationCount          int                 `json:"application_count"`
+	ToolingCount              int                 `json:"tooling_count"`
+	TestHelperCount           int                 `json:"test_helper_count"`
+	UnassignedCount           int                 `json:"unassigned_count"`
 	DynamicFrontierCount      int                 `json:"dynamic_frontier_count"`
 	PossibleRegistrationCount int                 `json:"possible_registration_count"`
 	UnresolvedHandlerCount    int                 `json:"unresolved_handler_count"`
@@ -57,26 +78,43 @@ type DiscoveredSurfaces struct {
 // In particular, middleware, wrappers, evidence, and unresolved frontiers are
 // not flattened into a handler or an invented execution chain.
 type DiscoveredTrigger struct {
-	ID                string            `json:"id"`
-	ProvisionalID     bool              `json:"provisional_id"`
-	Kind              string            `json:"kind"`
-	Identity          SurfaceIdentity   `json:"identity"`
-	Transport         string            `json:"transport"`
-	Framework         string            `json:"framework"`
-	ProcessEntrypoint SurfaceSymbol     `json:"process_entrypoint"`
-	Dispatcher        SurfaceValue      `json:"dispatcher"`
-	RegistrationSite  *SurfaceLocation  `json:"registration_site,omitempty"`
-	ServerStartSite   *SurfaceLocation  `json:"server_start_site,omitempty"`
-	Handler           SurfaceValue      `json:"handler"`
-	Middleware        []SurfaceValue    `json:"middleware"`
-	WrapperChain      []SurfaceWrapper  `json:"wrapper_chain"`
-	FinalSeed         string            `json:"final_seed"`
-	DiscoveryBasis    string            `json:"discovery_basis"`
-	Certainty         string            `json:"certainty"`
-	Resolution        string            `json:"resolution"`
-	Evidence          []SurfaceEvidence `json:"evidence"`
-	DynamicFrontier   []SurfaceFrontier `json:"dynamic_frontier"`
-	Status            string            `json:"status"`
+	ID                        string                     `json:"id"`
+	ProvisionalID             bool                       `json:"provisional_id"`
+	Kind                      string                     `json:"kind"`
+	Producer                  string                     `json:"producer"`
+	Identity                  SurfaceIdentity            `json:"identity"`
+	Transport                 string                     `json:"transport"`
+	Framework                 string                     `json:"framework"`
+	ProcessEntrypoint         SurfaceSymbol              `json:"process_entrypoint"`
+	Dispatcher                SurfaceValue               `json:"dispatcher"`
+	Constructor               SurfaceSymbol              `json:"constructor,omitempty"`
+	RegistrationSite          *SurfaceLocation           `json:"registration_site,omitempty"`
+	ServerStartSite           *SurfaceLocation           `json:"server_start_site,omitempty"`
+	Handler                   SurfaceValue               `json:"handler"`
+	HandlerLocation           *SurfaceLocation           `json:"handler_location,omitempty"`
+	Middleware                []SurfaceValue             `json:"middleware"`
+	WrapperChain              []SurfaceWrapper           `json:"wrapper_chain"`
+	FinalSeed                 string                     `json:"final_seed"`
+	DiscoveryBasis            string                     `json:"discovery_basis"`
+	Certainty                 string                     `json:"certainty"`
+	Resolution                string                     `json:"resolution"`
+	Evidence                  []SurfaceEvidence          `json:"evidence"`
+	Provenance                []SurfaceProvenance        `json:"provenance,omitempty"`
+	DynamicFrontier           []SurfaceFrontier          `json:"dynamic_frontier"`
+	Status                    string                     `json:"status"`
+	OwningExecutable          string                     `json:"owning_executable,omitempty"`
+	ExecutableRole            string                     `json:"executable_role"`
+	OwningComponentID         componentmap.ComponentID   `json:"owning_component_id,omitempty"`
+	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
+	RelatedTraceID            componentmap.FlowID        `json:"related_saved_trace_id,omitempty"`
+	TraceUnavailableReason    string                     `json:"trace_unavailable_reason,omitempty"`
+}
+
+type SurfaceProvenance struct {
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+	Operation string `json:"operation"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 type SurfaceIdentity struct {
@@ -176,27 +214,35 @@ type rawSurfaceScenario struct {
 }
 
 type rawSurfaceTrigger struct {
-	ID                string               `json:"id"`
-	ProvisionalID     bool                 `json:"provisional_id"`
-	Kind              string               `json:"kind"`
-	Identity          rawSurfaceIdentity   `json:"identity"`
-	Transport         string               `json:"transport"`
-	Framework         string               `json:"framework"`
-	ProcessEntrypoint rawSurfaceSymbol     `json:"process_entrypoint"`
-	Dispatcher        rawSurfaceValue      `json:"dispatcher"`
-	RegistrationSite  rawSurfaceLocation   `json:"registration_site"`
-	ServerStartSite   *rawSurfaceLocation  `json:"server_start_site"`
-	Handler           rawSurfaceValue      `json:"handler"`
-	Middleware        []rawSurfaceValue    `json:"middleware"`
-	WrapperChain      []rawSurfaceWrapper  `json:"wrapper_chain"`
-	FinalSeed         string               `json:"final_seed"`
-	DiscoveryBasis    string               `json:"discovery_basis"`
-	Certainty         string               `json:"certainty"`
-	Resolution        string               `json:"resolution"`
-	ScenarioID        string               `json:"scenario_id"`
-	Evidence          []rawSurfaceEvidence `json:"evidence"`
-	DynamicFrontier   []rawSurfaceFrontier `json:"dynamic_frontier"`
-	Status            string               `json:"status"`
+	ID                string                 `json:"id"`
+	ProvisionalID     bool                   `json:"provisional_id"`
+	Kind              string                 `json:"kind"`
+	Identity          rawSurfaceIdentity     `json:"identity"`
+	Transport         string                 `json:"transport"`
+	Framework         string                 `json:"framework"`
+	ProcessEntrypoint rawSurfaceSymbol       `json:"process_entrypoint"`
+	Dispatcher        rawSurfaceValue        `json:"dispatcher"`
+	RegistrationSite  rawSurfaceLocation     `json:"registration_site"`
+	ServerStartSite   *rawSurfaceLocation    `json:"server_start_site"`
+	Handler           rawSurfaceValue        `json:"handler"`
+	Middleware        []rawSurfaceValue      `json:"middleware"`
+	WrapperChain      []rawSurfaceWrapper    `json:"wrapper_chain"`
+	FinalSeed         string                 `json:"final_seed"`
+	DiscoveryBasis    string                 `json:"discovery_basis"`
+	Certainty         string                 `json:"certainty"`
+	Resolution        string                 `json:"resolution"`
+	ScenarioID        string                 `json:"scenario_id"`
+	Evidence          []rawSurfaceEvidence   `json:"evidence"`
+	Provenance        []rawSurfaceProvenance `json:"provenance"`
+	DynamicFrontier   []rawSurfaceFrontier   `json:"dynamic_frontier"`
+	Status            string                 `json:"status"`
+}
+
+type rawSurfaceProvenance struct {
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+	Operation string `json:"operation"`
+	Detail    string `json:"detail"`
 }
 
 type rawSurfaceIdentity struct {
@@ -517,8 +563,226 @@ func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
 		Certainty:         trigger.Certainty,
 		Resolution:        trigger.Resolution,
 		Evidence:          projectSurfaceEvidence(boundedSurfaceItems(trigger.Evidence, maxSurfaceNestedItems)),
+		Provenance:        projectSurfaceProvenance(boundedSurfaceItems(trigger.Provenance, maxSurfaceNestedItems)),
 		DynamicFrontier:   projectSurfaceFrontiers(boundedSurfaceItems(trigger.DynamicFrontier, maxSurfaceNestedItems)),
 		Status:            trigger.Status,
+	}
+}
+
+func projectSurfaceProvenance(values []rawSurfaceProvenance) []SurfaceProvenance {
+	result := make([]SurfaceProvenance, 0, len(values))
+	for _, value := range values {
+		result = append(result, SurfaceProvenance{
+			Provider: value.Provider, Version: value.Version,
+			Operation: value.Operation, Detail: value.Detail,
+		})
+	}
+	return result
+}
+
+func mergeCommandSurfaceCatalog(data *ReportData) {
+	if data == nil {
+		return
+	}
+	if data.DiscoveredSurfaces == nil {
+		data.DiscoveredSurfaces = &DiscoveredSurfaces{
+			Version:         1,
+			AnalyzerVersion: "unified-surface-catalog-v1",
+			ScopeStatement:  "Build-selected deterministic command registrations and bounded generic registration/start analysis.",
+		}
+	}
+	catalog := data.DiscoveredSurfaces
+	seen := make(map[string]struct{}, len(catalog.Triggers)+len(data.CommandTraces))
+	for index := range catalog.Triggers {
+		trigger := &catalog.Triggers[index]
+		if trigger.Producer == "" {
+			trigger.Producer = SurfaceProducerGeneric
+		}
+		if trigger.ExecutableRole == "" {
+			trigger.ExecutableRole = ExecutableRoleUnknown
+		}
+		seen[trigger.ID] = struct{}{}
+	}
+	for _, trace := range data.CommandTraces {
+		trigger := commandTraceSurface(data, trace)
+		if trigger.ID == "" {
+			continue
+		}
+		if _, duplicate := seen[trigger.ID]; duplicate {
+			continue
+		}
+		seen[trigger.ID] = struct{}{}
+		catalog.Triggers = append(catalog.Triggers, trigger)
+	}
+	sort.Slice(catalog.Triggers, func(i, j int) bool { return catalog.Triggers[i].ID < catalog.Triggers[j].ID })
+	refreshSurfaceCatalogCounts(catalog)
+}
+
+func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) DiscoveredTrigger {
+	if trace.Framework != "cobra" || strings.TrimSpace(trace.Command) == "" {
+		return DiscoveredTrigger{}
+	}
+	entrypoint, ok := commandTraceStep(trace, "entrypoint")
+	if !ok {
+		return DiscoveredTrigger{}
+	}
+	root, _ := commandTraceStep(trace, "calls")
+	constructor, constructorOK := commandTraceStep(trace, "registers_command")
+	callback, callbackOK := commandTraceStep(trace, "callback")
+	commandName, constructorDerivedIdentity := commandSurfaceName(trace, constructor)
+	identity := strings.Fields(commandName)
+	if len(identity) == 0 {
+		return DiscoveredTrigger{}
+	}
+	command := identity[0]
+	registration := surfaceLocationFromEvidence(constructor.CallsiteLocation)
+	constructorLocation := surfaceLocationFromEvidence(&constructor.TargetLocation)
+	entrypointLocation := surfaceLocationFromEvidence(&entrypoint.TargetLocation)
+	handlerLocation := surfaceLocationFromEvidence(&callback.TargetLocation)
+	status := "confirmed_command_registration"
+	resolution := "exact"
+	if !trace.Complete || !constructorOK || !callbackOK {
+		status = "partial_command_registration"
+		resolution = "partial"
+	}
+	id := stableSurfaceID("cobra-command", trace.EntrypointPackage, command, constructor.Symbol)
+	identityKind := "command"
+	identityKnown := true
+	discoveryBasis := "build_selected_cobra_registration"
+	if constructorDerivedIdentity {
+		identityKind = "constructor_derived_command"
+		identityKnown = false
+		discoveryBasis = "build_selected_cobra_registration_constructor_derived_identity"
+	}
+	trigger := DiscoveredTrigger{
+		ID: id, Kind: "cli_command", Producer: SurfaceProducerCobra,
+		Identity: SurfaceIdentity{Name: command, Path: SurfaceValue{
+			Kind: identityKind, Text: command, Known: identityKnown, Candidates: []string{command},
+		}},
+		Transport: "cli", Framework: trace.Framework,
+		ProcessEntrypoint: SurfaceSymbol{
+			ID:      trace.EntrypointPackage + "." + entrypoint.Symbol,
+			Package: trace.EntrypointPackage, Name: entrypoint.Symbol, Location: entrypointLocation,
+		},
+		Dispatcher: SurfaceValue{Kind: "function", Text: root.Symbol, Known: root.Symbol != ""},
+		Constructor: SurfaceSymbol{
+			ID:      trace.EntrypointPackage + "." + constructor.Symbol,
+			Package: trace.EntrypointPackage, Name: constructor.Symbol, Location: constructorLocation,
+		},
+		RegistrationSite: registration,
+		Handler:          SurfaceValue{Kind: "function", Text: callback.Symbol, Known: callback.Symbol != ""},
+		HandlerLocation:  handlerLocation,
+		DiscoveryBasis:   discoveryBasis,
+		Certainty:        "static", Resolution: resolution, Status: status,
+		OwningExecutable: surfaceExecutableForPackage(data, trace.EntrypointPackage),
+		ExecutableRole:   ExecutableRoleUnknown,
+		Provenance: []SurfaceProvenance{{
+			Provider: "gofacts", Version: fmt.Sprintf("command-trace-v%d", trace.Version),
+			Operation: "build_selected_cobra_registration",
+			Detail:    "exact AddCommand registration and package-local callback syntax",
+		}},
+	}
+	for _, step := range trace.Steps {
+		if location := surfaceLocationFromEvidence(step.CallsiteLocation); location != nil {
+			trigger.Evidence = append(trigger.Evidence, SurfaceEvidence{
+				ID:   stableSurfaceID(id, step.Relation, "callsite", surfaceLocationKeyValue(location)),
+				Kind: step.Relation + "_callsite", Location: location,
+				Detail: "exact " + step.Relation + " callsite for " + step.Symbol,
+			})
+		}
+		if location := surfaceLocationFromEvidence(&step.TargetLocation); location != nil {
+			trigger.Evidence = append(trigger.Evidence, SurfaceEvidence{
+				ID:   stableSurfaceID(id, step.Relation, "target", surfaceLocationKeyValue(location)),
+				Kind: step.Relation + "_target", Location: location,
+				Detail: "exact declaration for " + step.Symbol,
+			})
+		}
+	}
+	return trigger
+}
+
+func commandSurfaceName(trace gofacts.CommandTrace, constructor gofacts.CommandTraceStep) (string, bool) {
+	if !slices.Contains(trace.Missing, "command name") || trace.Command != constructor.Symbol {
+		return trace.Command, false
+	}
+	name := strings.TrimPrefix(constructor.Symbol, "new")
+	name = strings.TrimSuffix(name, "Command")
+	if name == "" {
+		return trace.Command, true
+	}
+	return strings.ToLower(name[:1]) + name[1:], true
+}
+
+func commandTraceStep(trace gofacts.CommandTrace, relation string) (gofacts.CommandTraceStep, bool) {
+	for _, step := range trace.Steps {
+		if step.Relation == relation {
+			return step, true
+		}
+	}
+	return gofacts.CommandTraceStep{}, false
+}
+
+func surfaceLocationFromEvidence(location *evidence.Location) *SurfaceLocation {
+	if location == nil || location.Line <= 0 || !validDiscoveredSurfacePath(location.Path) {
+		return nil
+	}
+	return &SurfaceLocation{Path: location.Path, Line: location.Line, Column: location.Column}
+}
+
+func surfaceLocationKeyValue(location *SurfaceLocation) string {
+	if location == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d:%d", location.Path, location.Line, location.Column)
+}
+
+func stableSurfaceID(parts ...string) string {
+	hash := sha256.New()
+	for _, part := range parts {
+		fmt.Fprintf(hash, "%d:%s\n", len(part), part)
+	}
+	return "surface-" + fmt.Sprintf("%x", hash.Sum(nil))[:24]
+}
+
+func surfaceExecutableForPackage(data *ReportData, packagePath string) string {
+	if data != nil && data.RepositoryGraph != nil {
+		for _, pkg := range data.RepositoryGraph.Packages {
+			if pkg.CanonicalPath == packagePath {
+				return firstNonEmpty(pkg.DisplayPath, pkg.ModuleRelativeDir, pkg.Dir, packagePath)
+			}
+		}
+	}
+	return packagePath
+}
+
+func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
+	if catalog == nil {
+		return
+	}
+	catalog.TotalCount = len(catalog.Triggers)
+	catalog.CLICommandCount = 0
+	catalog.GenericSurfaceCount = 0
+	catalog.ApplicationCount = 0
+	catalog.ToolingCount = 0
+	catalog.TestHelperCount = 0
+	catalog.UnassignedCount = 0
+	for _, trigger := range catalog.Triggers {
+		switch trigger.Producer {
+		case SurfaceProducerCobra:
+			catalog.CLICommandCount++
+		default:
+			catalog.GenericSurfaceCount++
+		}
+		switch trigger.ExecutableRole {
+		case ExecutableRolePrimaryApplication:
+			catalog.ApplicationCount++
+		case ExecutableRoleSecondaryTooling:
+			catalog.ToolingCount++
+		case ExecutableRoleTestOrHelper:
+			catalog.TestHelperCount++
+		default:
+			catalog.UnassignedCount++
+		}
 	}
 }
 
@@ -648,8 +912,10 @@ func collectDiscoveredSurfacePaths(surfaces *DiscoveredSurfaces, add func(string
 	}
 	for _, trigger := range surfaces.Triggers {
 		addLocation(trigger.ProcessEntrypoint.Location)
+		addLocation(trigger.Constructor.Location)
 		addLocation(trigger.RegistrationSite)
 		addLocation(trigger.ServerStartSite)
+		addLocation(trigger.HandlerLocation)
 		for _, wrapper := range trigger.WrapperChain {
 			addLocation(wrapper.Symbol.Location)
 			addLocation(wrapper.Callsite)

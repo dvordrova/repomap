@@ -7,6 +7,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
 func TestLinkArchitectureProductObjectsUsesExactEvidenceJoins(t *testing.T) {
@@ -110,7 +111,8 @@ func TestRefreshProductCountsKeepsSuggestionsDistinctFromSavedTraces(t *testing.
 			Surfaces: []ArchitectureSurface{{ID: "one"}, {ID: "two"}},
 			Flows:    []ArchitectureFlow{{ID: "complete", Status: "complete"}, {ID: "partial", Status: "partial"}},
 		},
-		Flows: []FlowData{{ID: "failed", Error: "bounded analysis failed"}},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{ID: "one"}, {ID: "two"}}},
+		Flows:              []FlowData{{ID: "failed", Error: "bounded analysis failed"}},
 	}
 
 	refreshProductCounts(data)
@@ -119,6 +121,182 @@ func TestRefreshProductCountsKeepsSuggestionsDistinctFromSavedTraces(t *testing.
 		data.Run.CompleteTraceCount != 1 || data.Run.PartialTraceCount != 1 ||
 		data.Run.FailedTraceAttemptCount != 1 || data.Run.DiscoveredSurfaceCount != 2 {
 		t.Fatalf("counts = %#v", data.Run)
+	}
+}
+
+func TestUnifiedSurfaceCatalogCountsProducersRolesAndUntracedCommands(t *testing.T) {
+	t.Parallel()
+
+	backupComponent := componentmap.ComponentID("backup-component")
+	restoreComponent := componentmap.ComponentID("restore-component")
+	data := &ReportData{
+		Run: &RunInfo{},
+		RepositoryGraph: &RepositoryGraph{Packages: []PackageInfo{{
+			CanonicalPath: "example.com/restic/cmd/restic", DisplayPath: "cmd/restic",
+		}}},
+		CommandTraces: []gofacts.CommandTrace{
+			testCommandTrace("backup", "newBackupCommand", "cmd/restic/cmd_backup.go", 35),
+			testCommandTrace("restore", "newRestoreCommand", "cmd/restic/cmd_restore.go", 25),
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{
+			{ID: "build-task-1", Kind: "worker", Producer: SurfaceProducerGeneric, ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "helpers/build-release-binaries/main.go", Line: 10}}},
+			{ID: "build-task-2", Kind: "async_task", Producer: SurfaceProducerGeneric, ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "helpers/build-release-binaries/main.go", Line: 10}}},
+		}},
+		ArchitectureCanvas: &ArchitectureCanvas{
+			BehaviorAnchors: []componentmap.BehaviorAnchor{{
+				ID: "restic-process", Kind: componentmap.AnchorProcessEntry,
+				Location: evidence.Location{Path: "cmd/restic/main.go", Line: 10},
+			}},
+			Components: []ArchitectureComponent{
+				architecturePathComponent(backupComponent, "cmd/restic/cmd_backup.go"),
+				architecturePathComponent(restoreComponent, "cmd/restic/cmd_restore.go"),
+			},
+			Flows: []ArchitectureFlow{{
+				ID: "backup-flow", Command: "backup", Status: "partial",
+				Steps: []ArchitectureFlowStep{{ID: "backup", Location: &evidence.Location{Path: "cmd/restic/cmd_backup.go", Line: 45}}},
+			}},
+		},
+	}
+	mergeCommandSurfaceCatalog(data)
+	linkArchitectureProductObjects(data)
+	refreshProductCounts(data)
+
+	if len(data.DiscoveredSurfaces.Triggers) != 4 || len(data.ArchitectureCanvas.Surfaces) != 4 || data.Run.DiscoveredSurfaceCount != 4 {
+		t.Fatalf("catalog/canvas/headline counts = %d/%d/%d", len(data.DiscoveredSurfaces.Triggers), len(data.ArchitectureCanvas.Surfaces), data.Run.DiscoveredSurfaceCount)
+	}
+	if data.Run.ApplicationSurfaceCount != 2 || data.Run.ToolingSurfaceCount != 2 || data.Run.GenericSurfaceCount != 2 || data.Run.CLICommandSurfaceCount != 2 {
+		t.Fatalf("surface breakdown = %#v", data.Run)
+	}
+	for _, surface := range data.DiscoveredSurfaces.Triggers {
+		switch surface.Identity.Name {
+		case "backup":
+			if surface.RelatedTraceID != "backup-flow" || surface.OwningComponentID != backupComponent {
+				t.Fatalf("backup surface = %#v", surface)
+			}
+		case "restore":
+			if surface.RelatedTraceID != "" || surface.OwningComponentID != restoreComponent {
+				t.Fatalf("untraced restore surface = %#v", surface)
+			}
+		default:
+			if surface.ExecutableRole != ExecutableRoleSecondaryTooling {
+				t.Fatalf("helper surface role = %q", surface.ExecutableRole)
+			}
+		}
+	}
+}
+
+func TestCommandSurfaceTraceJoinIncludesExecutableIdentity(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		CommandTraces: []gofacts.CommandTrace{
+			testCommandTraceFor("example.com/app-a", "cmd/app-a", "serve", "newServeCommand", "cmd/app-a/serve.go", 20, 30),
+			testCommandTraceFor("example.com/app-b", "cmd/app-b", "serve", "newServeCommand", "cmd/app-b/serve.go", 20, 30),
+		},
+		ArchitectureCanvas: &ArchitectureCanvas{
+			BehaviorAnchors: []componentmap.BehaviorAnchor{{
+				ID: "app-a-process", Kind: componentmap.AnchorProcessEntry,
+				Location: evidence.Location{Path: "cmd/app-a/main.go", Line: 10},
+			}},
+			Components: []ArchitectureComponent{
+				architecturePathComponent("app-a", "cmd/app-a/serve.go"),
+				architecturePathComponent("app-b", "cmd/app-b/serve.go"),
+			},
+			Flows: []ArchitectureFlow{{
+				ID: "serve-flow", Command: "serve",
+				Steps: []ArchitectureFlowStep{{ID: "serve", Location: &evidence.Location{Path: "cmd/app-a/serve.go", Line: 30}}},
+			}},
+		},
+	}
+	mergeCommandSurfaceCatalog(data)
+	linkArchitectureProductObjects(data)
+
+	for _, surface := range data.DiscoveredSurfaces.Triggers {
+		switch surface.OwningExecutable {
+		case "cmd/app-a":
+			if surface.RelatedTraceID != "serve-flow" || surface.ExecutableRole != ExecutableRolePrimaryApplication {
+				t.Fatalf("app-a surface = %#v", surface)
+			}
+		case "cmd/app-b":
+			if surface.RelatedTraceID != "" || surface.ExecutableRole != ExecutableRoleUnknown {
+				t.Fatalf("app-b surface = %#v", surface)
+			}
+		}
+	}
+}
+
+func TestNonCobraPrimarySurfaceUsesSameRoleForCountsAndGrouping(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		Run: &RunInfo{},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "worker", Kind: "worker", Producer: SurfaceProducerGeneric,
+			ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/app/main.go", Line: 10}},
+		}}},
+		ArchitectureCanvas: &ArchitectureCanvas{
+			BehaviorAnchors: []componentmap.BehaviorAnchor{{
+				ID: "app-process", Kind: componentmap.AnchorProcessEntry,
+				Location: evidence.Location{Path: "cmd/app/main.go", Line: 10},
+			}},
+			Components: []ArchitectureComponent{architecturePathComponent("app", "cmd/app/main.go")},
+		},
+	}
+	linkArchitectureProductObjects(data)
+	refreshProductCounts(data)
+
+	trigger := data.DiscoveredSurfaces.Triggers[0]
+	surface := data.ArchitectureCanvas.Surfaces[0]
+	if trigger.ExecutableRole != ExecutableRolePrimaryApplication || surface.Category != surfaceCategoryApplication ||
+		data.Run.ApplicationSurfaceCount != 1 {
+		t.Fatalf("trigger=%#v surface=%#v counts=%#v", trigger, surface, data.Run)
+	}
+}
+
+func TestCommandSurfaceIDIgnoresRegistrationLineMovement(t *testing.T) {
+	t.Parallel()
+
+	first := commandTraceSurface(nil, testCommandTraceFor(
+		"example.com/app", "cmd/app", "serve", "newServeCommand", "cmd/app/serve.go", 20, 30,
+	))
+	second := commandTraceSurface(nil, testCommandTraceFor(
+		"example.com/app", "cmd/app", "serve", "newServeCommand", "cmd/app/serve.go", 120, 130,
+	))
+	if first.ID == "" || first.ID != second.ID {
+		t.Fatalf("surface IDs changed after line movement: %q != %q", first.ID, second.ID)
+	}
+}
+
+func TestConstructorDerivedCommandIdentityIsNotKnown(t *testing.T) {
+	t.Parallel()
+
+	trace := testCommandTraceFor(
+		"example.com/app", "cmd/app", "newRepoListCommand", "newRepoListCommand", "cmd/app/list.go", 20, 30,
+	)
+	trace.Complete = false
+	trace.Missing = []string{"command name"}
+	surface := commandTraceSurface(nil, trace)
+	if surface.Identity.Name != "repoList" || surface.Identity.Path.Known ||
+		surface.Identity.Path.Kind != "constructor_derived_command" || surface.Resolution != "partial" {
+		t.Fatalf("constructor-derived identity = %#v", surface)
+	}
+}
+
+func testCommandTrace(command, constructor, sourcePath string, line int) gofacts.CommandTrace {
+	return testCommandTraceFor(
+		"example.com/restic/cmd/restic", "cmd/restic", command, constructor, sourcePath, line, line+10,
+	)
+}
+
+func testCommandTraceFor(packagePath, executable, command, constructor, sourcePath string, line, callbackLine int) gofacts.CommandTrace {
+	return gofacts.CommandTrace{
+		Version: 2, Framework: "cobra", EntrypointPackage: packagePath, Command: command, Complete: true,
+		Steps: []gofacts.CommandTraceStep{
+			{Symbol: "main", Relation: "entrypoint", TargetLocation: evidence.Location{Path: executable + "/main.go", Line: 10}},
+			{Symbol: "newRootCommand", Relation: "calls", TargetLocation: evidence.Location{Path: executable + "/main.go", Line: 20}},
+			{Symbol: constructor, Relation: "registers_command", CallsiteLocation: &evidence.Location{Path: executable + "/main.go", Line: line}, TargetLocation: evidence.Location{Path: sourcePath, Line: line}},
+			{Symbol: "run-" + command, Relation: "callback", TargetLocation: evidence.Location{Path: sourcePath, Line: callbackLine}},
+		},
 	}
 }
 

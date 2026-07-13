@@ -45,6 +45,10 @@
 }
 .rm-surface.is-empty .rm-surface__heading { margin-bottom: .8rem; }
 .rm-surface.is-empty .rm-surface__empty { margin: 0 0 .75rem; }
+.rm-surface.is-empty .rm-surface__intro { display: none; }
+.rm-surface.is-empty {
+ padding: .75rem 1rem;
+}
 
 .rm-surface__heading-copy {
  min-width: 0;
@@ -466,6 +470,18 @@
 
 .rm-surface__empty-note {
  margin-top: .25rem !important;
+}
+
+.rm-surface.is-empty .rm-surface__empty {
+ border: 0;
+ padding: .55rem .7rem;
+ text-align: left;
+}
+
+.rm-surface.is-empty .rm-surface__coverage {
+ border-top: 0;
+ margin-top: 0;
+ padding-top: 0;
 }
 
 .rm-surface__reset {

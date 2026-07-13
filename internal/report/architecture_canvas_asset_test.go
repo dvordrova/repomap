@@ -269,7 +269,22 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"this.landscapeView",
 				"is-return-highlighted",
 				"rm-arch__drawer-backdrop",
+				"rm-arch__component-surfaces",
+				"rm-arch__surface-chip",
+				"toggleTraceMenu(open)",
+				"positionTraceMenu()",
+				"position: fixed",
+				`target.closest(".rm-arch__component-card")`,
+				"pointer-events: none",
 				"rm-arch__inspector-close",
+				"this.suggestionByID",
+				"suggestion.investigation_available",
+				`"Investigation unavailable"`,
+				`" exact anchor"`,
+				`"CLI command · "`,
+				`"Open starting source"`,
+				"rm-arch__trace-purpose",
+				"flow.why_inspect",
 			},
 		},
 		{
@@ -298,6 +313,11 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				}
 			}
 		})
+	}
+	surfaceIndex := strings.Index(js, "this.surfaces.forEach((surface) => {")
+	flowIndex := strings.Index(js, "this.flows.forEach((flow) => {")
+	if surfaceIndex < 0 || flowIndex < 0 || surfaceIndex > flowIndex {
+		t.Error("surface records must be indexed independently before saved traces")
 	}
 
 	for _, forbidden := range []string{"fetch(", "XMLHttpRequest", "WebSocket"} {

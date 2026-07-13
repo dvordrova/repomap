@@ -46,12 +46,15 @@ file references can open in VS Code; press Ctrl-C when finished. Use `--no-open`
 to keep the browser closed, `--port` to choose a port, or `--no-serve` for a
 standalone static report.
 
-Persisted Go runs also discover a bounded set of configured HTTP
-registrations, async starts, and worker-loop registrations locally. The report
-shows them in a separate **Discovered surfaces** section; they are static
-registration evidence, not observed execution or completed flows. Use
-`--discover-surfaces=false` to disable this extra local stage while measuring
-its cost. Non-Go, `--no-debug`, and request-preview runs skip it.
+Persisted Go runs normalize build-selected Cobra command registrations and a
+bounded generic scan for configured HTTP registrations, async starts, and
+worker-loop registrations into one **All surfaces** catalog. They are static
+registration/start evidence, not observed execution or completed flows. Counts
+are repository-wide and keep primary application, tooling, tests/helpers, and
+unknown executables distinct from selected FlowProof coverage. Worker and
+non-worker async-task totals are exclusive classifications. Use
+the default `repomap <repo>` command; advanced analyzer controls remain
+available in `repomap --help`.
 
 For a company or other compatible model, use a full OpenAI-compatible
 `chat/completions` URL:

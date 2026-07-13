@@ -9,6 +9,8 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 )
 
 func TestResticFixtureNavigatesComponentSurfaceTraceEvidence(t *testing.T) {
@@ -22,6 +24,14 @@ func TestResticFixtureNavigatesComponentSurfaceTraceEvidence(t *testing.T) {
 	if err := json.Unmarshal(fixture, &data); err != nil {
 		t.Fatal(err)
 	}
+	data.DiscoveredSurfaces = &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+		ID: "restic-backup-command", Kind: "cli_command", Producer: SurfaceProducerCobra,
+		Identity:          SurfaceIdentity{Name: "backup", Path: SurfaceValue{Kind: "command", Text: "backup", Known: true}},
+		Constructor:       SurfaceSymbol{Name: "newBackupCommand", Location: &SurfaceLocation{Path: "cmd/restic/cmd_backup.go", Line: 74}},
+		RegistrationSite:  &SurfaceLocation{Path: "cmd/restic/cmd_backup.go", Line: 74},
+		ProcessEntrypoint: SurfaceSymbol{Package: "cmd/restic", Name: "main", Location: &SurfaceLocation{Path: "cmd/restic/main.go", Line: 1}},
+		ExecutableRole:    ExecutableRolePrimaryApplication, Certainty: "static", Resolution: "exact", Status: "confirmed_command_registration",
+	}}}
 	ApplyProductCoherence(&data)
 	if data.ArchitectureCanvas == nil || len(data.ArchitectureCanvas.Flows) != 1 {
 		t.Fatalf("Restic canvas = %#v", data.ArchitectureCanvas)
@@ -99,6 +109,10 @@ func TestCaddyAdminAnchorsCanHaveZeroSurfacesAndSeparateSuggestion(t *testing.T)
 	if len(data.ArchitectureCanvas.Flows) != 0 {
 		t.Fatalf("Caddy suggestion became a saved trace: %v", data.ArchitectureCanvas.Flows)
 	}
+	if len(data.ArchitectureCanvas.Suggestions) != 1 || !data.ArchitectureCanvas.Suggestions[0].InvestigationAvailable ||
+		len(data.ArchitectureCanvas.Suggestions[0].RelevantAnchorIDs) != 1 {
+		t.Fatalf("Caddy typed suggestion = %#v", data.ArchitectureCanvas.Suggestions)
+	}
 	rendered, err := RenderHTML(data)
 	if err != nil {
 		t.Fatal(err)
@@ -106,10 +120,97 @@ func TestCaddyAdminAnchorsCanHaveZeroSurfacesAndSeparateSuggestion(t *testing.T)
 	for _, message := range []string{
 		"Zero configured-catalog surfaces is an honest bounded-analysis result",
 		"Suggested investigation — not a saved trace",
-		"No surfaces matched the configured terminal catalog under this build scenario.",
+		"No supported runtime registrations were cataloged.",
 	} {
 		if !strings.Contains(string(rendered), message) {
 			t.Fatalf("Caddy report is missing %q", message)
 		}
+	}
+}
+
+func TestApplyProductCoherenceBuildsLocalCanvasWhenSavedSynthesisIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		CandidateDirections: []CandidateDirection{{
+			ID: "backup", Name: "Backup", Disposition: flowexplain.DirectionAccepted,
+			LocalProof: &flowproof.Session{
+				Version: flowproof.SessionVersion,
+				Proof: flowproof.Proof{
+					Version: flowproof.Version, ID: "backup", Archetype: flowproof.ArchetypeCLI,
+					Slots: []flowproof.Slot{{Kind: flowproof.SlotTrigger, Status: flowproof.SlotVerified}},
+				},
+			},
+		}},
+	}
+	ApplyProductCoherence(data)
+	if data.ArchitectureCanvas == nil || len(data.ArchitectureCanvas.Flows) != 1 {
+		t.Fatalf("local fallback canvas = %#v", data.ArchitectureCanvas)
+	}
+}
+
+func TestSavedResticCoherence(t *testing.T) {
+	runDir := os.Getenv("REPOMAP_SAVED_RESTIC_RUN")
+	if runDir == "" {
+		t.Skip("set REPOMAP_SAVED_RESTIC_RUN to exercise the owner-provided model-backed run")
+	}
+	data, err := ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ApplyProductCoherence(data)
+	if data.ArchitectureCanvas == nil {
+		input, buildErr := BuildArchitectureCanvasInput(data)
+		t.Fatalf("saved Restic canvas is unavailable: build=%v candidates=%d flows=%d", buildErr, len(input.CandidateBundle.Candidates), len(input.Flows))
+	}
+	if len(data.ArchitectureCanvas.Flows) != 2 {
+		t.Fatalf("saved Restic traces = %d, want 2", len(data.ArchitectureCanvas.Flows))
+	}
+	if len(data.DiscoveredSurfaces.Triggers) != 30 || len(data.ArchitectureCanvas.Surfaces) != 30 || data.Run.DiscoveredSurfaceCount != 30 {
+		t.Fatalf("saved Restic catalog/canvas/headline = %d/%d/%d, want 30", len(data.DiscoveredSurfaces.Triggers), len(data.ArchitectureCanvas.Surfaces), data.Run.DiscoveredSurfaceCount)
+	}
+	if data.Run.CLICommandSurfaceCount != 28 || data.Run.GenericSurfaceCount != 2 ||
+		data.Run.ApplicationSurfaceCount != 28 || data.Run.ToolingSurfaceCount != 2 {
+		t.Fatalf("saved Restic surface breakdown = %#v", data.Run)
+	}
+	required := map[string]bool{"backup": false, "check": false, "init": false, "restore": false, "snapshots": false, "list": false, "prune": false, "find": false}
+	for _, surface := range data.DiscoveredSurfaces.Triggers {
+		if surface.Producer == SurfaceProducerCobra {
+			if _, wanted := required[surface.Identity.Name]; wanted {
+				required[surface.Identity.Name] = true
+			}
+		}
+		if strings.Contains(surface.OwningExecutable, "helpers/build-release-binaries") && surface.ExecutableRole != ExecutableRoleSecondaryTooling {
+			t.Fatalf("build-release surface role = %q", surface.ExecutableRole)
+		}
+	}
+	for command, found := range required {
+		if !found {
+			t.Errorf("saved Restic catalog is missing %q", command)
+		}
+	}
+	for _, trace := range data.ArchitectureCanvas.Flows {
+		if trace.StartSurfaceID == "" {
+			t.Errorf("saved trace %q command=%q has no deterministic command surface; first steps=%#v", trace.ID, trace.Command, trace.Steps[:min(4, len(trace.Steps))])
+		}
+	}
+	foundBackup := false
+	foundRestore := false
+	for _, component := range data.ArchitectureCanvas.Components {
+		if component.Name == "Backup Command" {
+			foundBackup = true
+			if len(component.OwnedSurfaceIDs) == 0 || len(component.ParticipatingFlowIDs) != 1 {
+				t.Fatalf("Backup Command surfaces=%v traces=%v", component.OwnedSurfaceIDs, component.ParticipatingFlowIDs)
+			}
+		}
+		if component.Name == "Restore Command" {
+			foundRestore = true
+			if len(component.OwnedSurfaceIDs) == 0 || len(component.ParticipatingFlowIDs) != 0 {
+				t.Fatalf("Restore Command surfaces=%v traces=%v", component.OwnedSurfaceIDs, component.ParticipatingFlowIDs)
+			}
+		}
+	}
+	if !foundBackup || !foundRestore {
+		t.Fatalf("saved Restic command components: backup=%t restore=%t", foundBackup, foundRestore)
 	}
 }

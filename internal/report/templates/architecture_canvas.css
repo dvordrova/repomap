@@ -141,15 +141,7 @@
  position: relative;
 }
 
-.rm-arch__trace-menu > summary {
- list-style: none;
-}
-
-.rm-arch__trace-menu > summary::-webkit-details-marker {
- display: none;
-}
-
-.rm-arch__trace-menu > summary::after {
+.rm-arch__trace-menu > .rm-arch__flow-button::after {
  content: " ▾";
 }
 
@@ -162,12 +154,12 @@
  gap: 5px;
  left: 0;
  max-height: min(60vh, 520px);
- min-width: min(420px, 80vw);
+ max-width: calc(100vw - 24px);
+ min-width: 0;
  overflow: auto;
  padding: 7px;
- position: absolute;
- top: calc(100% + 7px);
- z-index: 20;
+ position: fixed;
+ z-index: 120;
 }
 
 .rm-arch__trace-option {
@@ -196,6 +188,14 @@
 
 .rm-arch__trace-option small {
  color: #a16207;
+}
+
+.rm-arch__trace-option .rm-arch__trace-purpose {
+ color: var(--rm-arch-muted);
+ display: -webkit-box;
+ overflow: hidden;
+ -webkit-box-orient: vertical;
+ -webkit-line-clamp: 2;
 }
 
 .rm-arch__controls {
@@ -996,6 +996,46 @@
  white-space: nowrap;
 }
 
+.rm-arch__component-surfaces {
+ align-items: center;
+ display: flex;
+ gap: 4px;
+ min-width: 0;
+ overflow: hidden;
+ white-space: nowrap;
+}
+
+.rm-arch__component-surfaces-label {
+ color: #64748b;
+ flex: 0 0 auto;
+ font-size: 0.56rem;
+ font-weight: 800;
+ text-transform: uppercase;
+}
+
+.rm-arch__surface-chip {
+ background: #e0f2fe;
+ border: 1px solid #bae6fd;
+ border-radius: 999px;
+ color: #075985;
+ display: block;
+ flex: 0 1 auto;
+ font-size: 0.56rem;
+ line-height: 1.2;
+ max-width: 92px;
+ overflow: hidden;
+ padding: 2px 5px;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+
+.rm-arch__surface-chip.is-more {
+ background: #f1f5f9;
+ border-color: #e2e8f0;
+ color: #64748b;
+ flex: 0 0 auto;
+}
+
 .rm-arch__component.is-primary .rm-arch__component-card {
  border-top-color: var(--rm-arch-blue);
 }
@@ -1270,6 +1310,7 @@
  cursor: default;
  inset: 0;
  padding: 0;
+ pointer-events: none;
  position: fixed;
  z-index: 101;
 }

@@ -217,7 +217,11 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 		if !fromExists || !toExists || fromID == toID {
 			continue
 		}
-		key := "behavior\x00" + relationship.ID
+		key := "behavior\x00" + string(fromID.Kind) + "\x00" + fromID.Value + "\x00" +
+			string(toID.Kind) + "\x00" + toID.Value + "\x00" + relationship.Kind
+		if _, duplicate := b.relations[key]; duplicate {
+			continue
+		}
 		producer := relationship.Producer
 		producer.Location = cloneArchitectureLocation(&relationship.Location)
 		producer.Detail = fmt.Sprintf(

@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidenceref"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
@@ -27,7 +28,8 @@ type snapshotJSON struct {
 			ModuleDir   string `json:"module_dir"`
 			DisplayName string `json:"display_name"`
 		} `json:"modules"`
-		Packages []PackageInfo `json:"packages"`
+		Packages      []PackageInfo          `json:"packages"`
+		CommandTraces []gofacts.CommandTrace `json:"command_traces"`
 	} `json:"go_facts"`
 }
 
@@ -394,6 +396,7 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	var surfaceWarnings []string
 	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
 	parseWarnings = append(parseWarnings, surfaceWarnings...)
+	mergeCommandSurfaceCatalog(data)
 	data.ArchitectureGrounding, warning = parseArchitectureGrounding(absDir)
 	if warning != "" {
 		parseWarnings = append(parseWarnings, warning)
@@ -640,6 +643,9 @@ func parseSnapshot(path string, data *ReportData) string {
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
 	}
 	data.RepoName = snap.RepoName
+	if snap.GoFacts != nil {
+		data.CommandTraces = append([]gofacts.CommandTrace(nil), snap.GoFacts.CommandTraces...)
+	}
 	if snap.GoFacts != nil && (len(snap.GoFacts.Modules) > 0 || len(snap.GoFacts.Packages) > 0) {
 		graph := &RepositoryGraph{Version: 2, Packages: append([]PackageInfo(nil), snap.GoFacts.Packages...)}
 		for _, module := range snap.GoFacts.Modules {

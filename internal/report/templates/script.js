@@ -32,7 +32,7 @@
     externalRequest: 'Provider request bodies',
     providerRequests: 'Provider requests',
     providerLatency: 'Orientation latency',
-    surfaceAnalysis: 'Runtime surfaces',
+    surfaceAnalysis: 'Generic surface scan',
     architectureAnchors: 'Architecture anchors',
     snapshotFreshness: 'Analyzed-input freshness',
     architectureGrouping: 'Architecture grouping',
@@ -899,7 +899,13 @@
       }
       addFact(LABELS.directionsFound, String(DATA.run.suggested_investigation_count || 0));
       addFact(LABELS.rejectedDirections, String(DATA.run.rejected_direction_count || 0));
-      addFact('Discovered surfaces', String(DATA.run.discovered_surface_count || 0));
+      var surfaceTotal = String(DATA.run.discovered_surface_count || 0);
+      var surfaceBreakdown = [];
+      if (DATA.run.application_surface_count) surfaceBreakdown.push(DATA.run.application_surface_count + ' application');
+      if (DATA.run.tooling_surface_count) surfaceBreakdown.push(DATA.run.tooling_surface_count + ' tooling');
+      if (DATA.run.test_helper_surface_count) surfaceBreakdown.push(DATA.run.test_helper_surface_count + ' tests/helpers');
+      if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
+      addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
       addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
       addFact('Complete traces', String(DATA.run.complete_trace_count || 0));
       addFact('Partial traces', String(DATA.run.partial_trace_count || 0));
@@ -2319,12 +2325,20 @@
 
   function summarizeRunWarnings(warnings) {
     var primary = [];
+    var modelContext = [];
     var groundingRepairs = 0;
     var confidenceAdjustments = 0;
     var toolchain = null;
     (warnings || []).forEach(function (warning) {
       var value = String(warning || '').trim();
       if (!value) return;
+      var isModelContextWarning =
+        /(truncat|limited|not fully visible).*(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths)/i.test(value) ||
+        /(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths).*(truncat|limited|not fully visible)/i.test(value);
+      if (isModelContextWarning) {
+        modelContext.push(value);
+        return;
+      }
       if (/^(parser )?(dropped|replaced|removed) ungrounded/.test(value)) {
         groundingRepairs++;
         return;
@@ -2354,13 +2368,20 @@
     if (confidenceAdjustments > 0) {
       details.push('Local verification reduced model confidence in ' + confidenceAdjustments + ' place(s).');
     }
-    return { primary: primary, details: details };
+    return { primary: primary, modelContext: modelContext, details: details };
   }
 
   function renderRunWarnings(warnings) {
     var summarized = summarizeRunWarnings(warnings);
-    if (summarized.primary.length === 0 && summarized.details.length === 0) return null;
+    if (summarized.primary.length === 0 && summarized.modelContext.length === 0 && summarized.details.length === 0) return null;
     var container = el('div', 'rm-run-warning-stack');
+    if (summarized.modelContext.length > 0) {
+      var contextItems = [
+        'The orientation model saw a bounded selection of repository files and dependency edges, so its overview and suggestions may miss areas. Local source links, surface counts, and saved traces still use the saved local evidence available to this report.'
+      ].concat(summarized.modelContext.map(function (warning) { return 'Model-reported note: ' + warning; }));
+      var context = renderExpandableList('Model context limit', contextItems, 'rm-info-box', 1);
+      if (context) container.appendChild(context);
+    }
     var primary = renderExpandableList(LABELS.warnings, summarized.primary, 'rm-warn-box', 3);
     if (primary) container.appendChild(primary);
     if (summarized.details.length > 0) {
@@ -2775,6 +2796,7 @@
         }
       };
       surfaceOptions.architectureSurfaces = (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [];
+      surfaceOptions.architectureAnchorCount = DATA.run && DATA.run.architecture_anchor_count || 0;
       surfaceCatalogView = window.RepomapSurfaceCatalog.mount(
         surfaceCatalogHost,
         DATA.discovered_surfaces,

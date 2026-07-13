@@ -8,9 +8,10 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
-const CurrentFormatVersion = 14
+const CurrentFormatVersion = 15
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
@@ -42,6 +43,7 @@ type ReportData struct {
 	ArchitectureSynthesis *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
 	ArchitectureGrounding *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
 	DiscoveredSurfaces    *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	CommandTraces         []gofacts.CommandTrace       `json:"command_traces,omitempty"`
 	Freshness             *freshness.FreshnessResult   `json:"freshness,omitempty"`
 	CapturedRevision      string                       `json:"captured_revision,omitempty"`
 	CapturedInputCount    int                          `json:"captured_input_count,omitempty"`
@@ -147,6 +149,12 @@ type RunInfo struct {
 	SurfaceDiscoveryRan         bool   `json:"surface_discovery_ran,omitempty"`
 	SurfaceDiscoveryCount       int    `json:"surface_discovery_count,omitempty"`
 	SurfaceDiscoveryMillis      *int64 `json:"surface_discovery_ms,omitempty"`
+	CLICommandSurfaceCount      int    `json:"cli_command_surface_count,omitempty"`
+	GenericSurfaceCount         int    `json:"generic_surface_count,omitempty"`
+	ApplicationSurfaceCount     int    `json:"application_surface_count,omitempty"`
+	ToolingSurfaceCount         int    `json:"tooling_surface_count,omitempty"`
+	TestHelperSurfaceCount      int    `json:"test_helper_surface_count,omitempty"`
+	UnassignedSurfaceCount      int    `json:"unassigned_surface_count,omitempty"`
 	SuggestedInvestigationCount int    `json:"suggested_investigation_count,omitempty"`
 	DiscoveredSurfaceCount      int    `json:"discovered_surface_count,omitempty"`
 	SavedTraceCount             int    `json:"saved_trace_count,omitempty"`
@@ -343,9 +351,14 @@ func refreshProductCounts(data *ReportData) {
 	data.Run.PartialTraceCount = 0
 	data.Run.UnresolvedTraceCount = 0
 	data.Run.FailedTraceAttemptCount = 0
+	data.Run.CLICommandSurfaceCount = 0
+	data.Run.GenericSurfaceCount = 0
+	data.Run.ApplicationSurfaceCount = 0
+	data.Run.ToolingSurfaceCount = 0
+	data.Run.TestHelperSurfaceCount = 0
+	data.Run.UnassignedSurfaceCount = 0
 	traced := make(map[string]struct{})
 	if data.ArchitectureCanvas != nil {
-		data.Run.DiscoveredSurfaceCount = len(data.ArchitectureCanvas.Surfaces)
 		data.Run.SavedTraceCount = len(data.ArchitectureCanvas.Flows)
 		for _, trace := range data.ArchitectureCanvas.Flows {
 			traced[string(trace.ID)] = struct{}{}
@@ -358,8 +371,15 @@ func refreshProductCounts(data *ReportData) {
 				data.Run.UnresolvedTraceCount++
 			}
 		}
-	} else if data.DiscoveredSurfaces != nil {
+	}
+	if data.DiscoveredSurfaces != nil {
 		data.Run.DiscoveredSurfaceCount = len(data.DiscoveredSurfaces.Triggers)
+		data.Run.CLICommandSurfaceCount = data.DiscoveredSurfaces.CLICommandCount
+		data.Run.GenericSurfaceCount = data.DiscoveredSurfaces.GenericSurfaceCount
+		data.Run.ApplicationSurfaceCount = data.DiscoveredSurfaces.ApplicationCount
+		data.Run.ToolingSurfaceCount = data.DiscoveredSurfaces.ToolingCount
+		data.Run.TestHelperSurfaceCount = data.DiscoveredSurfaces.TestHelperCount
+		data.Run.UnassignedSurfaceCount = data.DiscoveredSurfaces.UnassignedCount
 	}
 	for _, direction := range data.CandidateDirections {
 		if direction.Disposition == flowexplain.DirectionRejected {

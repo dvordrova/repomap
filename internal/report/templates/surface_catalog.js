@@ -4,6 +4,7 @@
  const PAGE_SIZE = 6;
  const KIND_FILTERS = [
   { value: "all", label: "All" },
+  { value: "cli_command", label: "CLI commands" },
   { value: "http_route", label: "HTTP" },
   { value: "worker", label: "Workers" },
   { value: "async_task", label: "Non-worker tasks" },
@@ -22,6 +23,8 @@
   confirmed_async_task_start: "Async task",
   possible_worker_loop: "Possible worker",
   confirmed_worker_registration: "Worker registration",
+  confirmed_command_registration: "Confirmed command registration",
+  partial_command_registration: "Partial command registration",
  };
  const GROUPS = [
   { value: "application", label: "Application" },
@@ -79,10 +82,21 @@
  }
 
  function executableOwner(trigger) {
+  if (trigger.owning_executable) return text(trigger.owning_executable);
   const entrypoint = object(object(trigger).process_entrypoint);
   const path = text(object(entrypoint.location).path);
   if (path.indexOf("/") >= 0) return path.slice(0, path.lastIndexOf("/"));
   return text(entrypoint.package || entrypoint.name);
+ }
+
+ function surfaceGroup(trigger, association) {
+  if (evidenceClass(trigger) === "dynamic") return "dynamic_unresolved";
+  switch (text(trigger.executable_role)) {
+   case "primary_application": return "application";
+   case "secondary_tooling": return "tooling";
+   case "test_or_helper": return "tests_helpers";
+  }
+  return text(association.category || "unassigned");
  }
 
  function sentenceLabel(value) {
@@ -215,9 +229,11 @@
     const hasCatalog =
      this.data.analysis_ran !== false &&
      (Object.prototype.hasOwnProperty.call(this.data, "triggers") || this.data.version || this.data.analyzer_version);
-    const message = hasCatalog
-     ? "No surfaces matched the configured terminal catalog under this build scenario."
-     : "No surface catalog is available for this saved run.";
+     const anchorCount = Number(this.options.architectureAnchorCount || 0);
+     const message = hasCatalog
+      ? "No supported runtime registrations were cataloged." +
+       (anchorCount > 0 ? " " + anchorCount + " architecture-anchor families remain available." : "")
+      : "No surface catalog is available for this saved run.";
     this.root.appendChild(this.emptyState(message));
     this.root.appendChild(this.renderCoverage());
     this.host.appendChild(this.root);
@@ -254,8 +270,30 @@
   renderCounts() {
    const coverage = this.coverage;
    const frontierFallback = this.triggers.filter((trigger) => evidenceClass(trigger) === "dynamic").length;
-   const metrics = [
-    {
+    const metrics = [
+     {
+      label: "total",
+      value: firstNumber([this.data.total_count], this.triggers.length),
+     },
+     {
+      label: "CLI commands",
+      value: firstNumber([this.data.cli_command_count], countByKind(this.triggers, "cli_command")),
+     },
+     {
+      label: "application",
+      value: firstNumber(
+       [this.data.application_count],
+       this.triggers.filter((trigger) => trigger.executable_role === "primary_application").length
+      ),
+     },
+     {
+      label: "tooling",
+      value: firstNumber(
+       [this.data.tooling_count],
+       this.triggers.filter((trigger) => trigger.executable_role === "secondary_tooling").length
+      ),
+     },
+     {
      label: "HTTP routes",
      value: firstNumber([this.data.http_count, this.data.http_route_count], countByKind(this.triggers, "http_route")),
     },
@@ -335,9 +373,11 @@
     (Object.prototype.hasOwnProperty.call(this.data, "triggers") || this.data.version || this.data.analyzer_version);
 
    if (this.triggers.length === 0) {
-    const message = hasCatalog
-     ? "No surfaces matched the configured terminal catalog under this build scenario."
-     : "No surface catalog is available for this saved run.";
+     const anchorCount = Number(this.options.architectureAnchorCount || 0);
+     const message = hasCatalog
+      ? "No supported runtime registrations were cataloged." +
+       (anchorCount > 0 ? " " + anchorCount + " architecture-anchor families remain available." : "")
+      : "No surface catalog is available for this saved run.";
     this.list.appendChild(this.emptyState(message));
     this.liveStatus.textContent = message;
     this.moreButton.hidden = true;
@@ -365,7 +405,7 @@
     GROUPS.forEach((group) => {
      const grouped = visible.filter((trigger) => {
       const association = object(this.architectureSurfaces.get(triggerID(trigger, this.triggers.indexOf(trigger))));
-      return text(association.category || "unassigned") === group.value;
+       return surfaceGroup(trigger, association) === group.value;
      });
      if (grouped.length === 0) return;
      const section = element("section", "rm-surface__group");
@@ -391,7 +431,7 @@
    const empty = element("div", "rm-surface__empty");
    empty.appendChild(element("p", "", message));
    empty.appendChild(
-    element("p", "rm-surface__empty-note", "Configured-seed coverage is bounded; absence here does not prove runtime absence.")
+     element("p", "rm-surface__empty-note", "Architecture anchors and the supported surface catalog have different scopes; absence here does not prove runtime absence.")
    );
    return empty;
   }
@@ -399,7 +439,7 @@
   renderTrigger(trigger, index) {
    const card = element("details", "rm-surface__item");
    const id = triggerID(trigger, index);
-    const association = object(this.architectureSurfaces.get(id));
+     const association = Object.assign({}, object(trigger), object(this.architectureSurfaces.get(id)));
    card.dataset.surfaceId = id;
    const summary = element("summary", "rm-surface__item-summary");
    const identityBlock = element("span", "rm-surface__identity");
@@ -435,11 +475,14 @@
 
    const body = element("div", "rm-surface__item-body");
    const facts = element("dl", "rm-surface__details");
-   appendText(facts, "Kind", sentenceLabel(trigger.kind));
-   appendText(facts, "Framework", trigger.framework);
-   appendText(facts, "Transport", trigger.transport);
-   appendText(facts, "Handler / callback", handler);
-   appendText(facts, "Dispatcher", valueText(trigger.dispatcher));
+    appendText(facts, "Kind", sentenceLabel(trigger.kind));
+    appendText(facts, "Framework", trigger.framework);
+    appendText(facts, "Producer", sentenceLabel(trigger.producer));
+    appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
+    appendText(facts, "Transport", trigger.transport);
+    appendText(facts, "Handler / callback", handler);
+    appendText(facts, "Dispatcher", valueText(trigger.dispatcher));
+    appendText(facts, "Constructor", text(object(trigger.constructor).name));
    appendText(facts, "Discovery basis", sentenceLabel(trigger.discovery_basis));
    appendText(facts, "Terminal seed", trigger.final_seed);
    appendText(facts, "Build scenario", trigger.scenario_id || this.data.scenario_id);
@@ -477,7 +520,9 @@
     body.appendChild(progression);
 
    const locations = element("div", "rm-surface__locations");
-   this.appendLocation(locations, "Registration", trigger.registration_site);
+    this.appendLocation(locations, "Registration", trigger.registration_site);
+    this.appendLocation(locations, "Constructor", object(trigger.constructor).location);
+    this.appendLocation(locations, "Handler / callback", trigger.handler_location);
    this.appendLocation(locations, "Server start", trigger.server_start_site);
    this.appendLocation(locations, "Process entrypoint", object(trigger.process_entrypoint).location);
    if (locations.childElementCount > 0) body.appendChild(this.detailSection("Source locations", locations));
@@ -607,7 +652,7 @@
   renderCoverage() {
    const coverage = Object.keys(this.coverage).length > 0 ? this.coverage : this.data;
    const details = element("details", "rm-surface__coverage");
-   details.appendChild(element("summary", "", "Coverage and limits"));
+    details.appendChild(element("summary", "", "View coverage and limits"));
    const body = element("div", "rm-surface__coverage-body");
    body.appendChild(
     element(
