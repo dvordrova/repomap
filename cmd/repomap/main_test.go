@@ -274,7 +274,7 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 		"repomap: repository facts ready: ",
 		"repomap: compact local context ",
 		"repomap: discovering local Go runtime surfaces",
-		"repomap: discovered 0 local runtime surface(s)",
+		"repomap: discovered 1 local runtime surface(s)",
 		fmt.Sprintf("repomap: prepared %d-byte orientation request for deepseek-v4-flash", len(requestBody)),
 		"validated 1 candidate direction(s)",
 		"Report: ",
@@ -295,6 +295,7 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	}
 	for _, want := range [][]byte{
 		[]byte("Process startup"),
+		[]byte(`"process_entry_count": 1`),
 		[]byte(`"high_level_map"`),
 		[]byte("it owns process startup"),
 		[]byte(`"first_files_to_open"`),

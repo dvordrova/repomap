@@ -31,6 +31,8 @@ import (
 type analyzer struct {
 	ctx                       context.Context
 	opts                      Options
+	input                     Input
+	processEntrypoints        []processEntrypoint
 	catalog                   catalog.Catalog
 	program                   *ssa.Program
 	packages                  []*ssa.Package
@@ -78,10 +80,18 @@ type dispatchStart struct {
 }
 
 func Analyze(opts Options) (Result, error) {
-	return AnalyzeContext(context.Background(), opts)
+	return AnalyzeContextWithInput(context.Background(), opts, Input{})
 }
 
 func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
+	return AnalyzeContextWithInput(ctx, opts, Input{})
+}
+
+func AnalyzeWithInput(opts Options, input Input) (Result, error) {
+	return AnalyzeContextWithInput(context.Background(), opts, input)
+}
+
+func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Result, error) {
 	if ctx == nil {
 		return Result{}, fmt.Errorf("surface discovery: context is required")
 	}
@@ -105,6 +115,7 @@ func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("surface discovery: resolve repository: %w", err)
 	}
+	input, processEntrypoints := normalizeInput(root, input)
 	builtin, err := catalog.Builtin()
 	if err != nil {
 		return Result{}, err
@@ -112,6 +123,8 @@ func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
 	a := &analyzer{
 		ctx:                       ctx,
 		opts:                      opts,
+		input:                     input,
+		processEntrypoints:        processEntrypoints,
 		catalog:                   builtin,
 		root:                      root,
 		active:                    map[*ssa.Function]bool{},
@@ -130,18 +143,28 @@ func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
 		walkedFunctions:           map[*ssa.Function]bool{},
 		callbackReferences:        map[*ssa.Function]bool{},
 		callbackReferenceIDs:      map[string]bool{},
+		scenario: Scenario{
+			ID:   scenarioID(runtime.GOOS, runtime.GOARCH, opts.BuildTags),
+			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+			Tags: append([]string{}, opts.BuildTags...),
+		},
 	}
 	if err := a.load(); err != nil {
 		return Result{}, err
 	}
+	a.recordProcessEntrypoints()
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
-	a.prepare()
+	if a.program != nil {
+		a.prepare()
+	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
-	a.recordGlobalArchitectureAnchors()
+	if a.program != nil {
+		a.recordGlobalArchitectureAnchors()
+	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
@@ -203,25 +226,41 @@ func (a *analyzer) load() error {
 	if err != nil {
 		return fmt.Errorf("surface discovery: load packages: %w", err)
 	}
-	if err := surfacePackageLoadError(loaded); err != nil {
-		return err
-	}
 	if len(loaded) == 0 {
 		return fmt.Errorf("surface discovery: no build-selected Go packages")
 	}
+	allPackages := make(map[string]*packages.Package)
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
 		if pkg != nil && pkg.PkgPath != "" {
-			a.packageFacts[pkg.PkgPath] = pkg
+			allPackages[pkg.PkgPath] = pkg
+			if packageSafeForSSA(pkg) {
+				a.packageFacts[pkg.PkgPath] = pkg
+			}
 		}
 		return true
 	}, nil)
+	a.recordPackageLoadOutcomes(allPackages)
 	for _, pkg := range loaded {
 		if pkg.Module != nil && pkg.Module.Main {
 			a.modulePath = pkg.Module.Path
 			break
 		}
 	}
-	a.program, a.packages = ssautil.AllPackages(loaded, ssa.InstantiateGenerics)
+	safeLoaded := make([]*packages.Package, 0, len(loaded))
+	for _, pkg := range loaded {
+		if packageSafeForSSA(pkg) {
+			safeLoaded = append(safeLoaded, pkg)
+		} else if pkg != nil {
+			a.result.Coverage.PackagesSkipped = append(
+				a.result.Coverage.PackagesSkipped,
+				packageIdentity(pkg),
+			)
+		}
+	}
+	if len(safeLoaded) == 0 {
+		return nil
+	}
+	a.program, a.packages = ssautil.AllPackages(safeLoaded, ssa.InstantiateGenerics)
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
@@ -248,12 +287,6 @@ func (a *analyzer) load() error {
 	a.graph = cha.CallGraph(a.program)
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
-	}
-	a.scenario = Scenario{
-		ID:     scenarioID(runtime.GOOS, runtime.GOARCH, a.opts.BuildTags),
-		GOOS:   runtime.GOOS,
-		GOARCH: runtime.GOARCH,
-		Tags:   append([]string{}, a.opts.BuildTags...),
 	}
 	return nil
 }
@@ -296,32 +329,6 @@ func checkSurfaceGoVersion(root string) error {
 		return fmt.Errorf("surface discovery: read go.mod: %w", err)
 	}
 	return nil
-}
-
-func surfacePackageLoadError(loaded []*packages.Package) error {
-	errorCount := 0
-	firstMessage := ""
-	packages.Visit(loaded, func(pkg *packages.Package) bool {
-		for _, packageError := range pkg.Errors {
-			errorCount++
-			message := strings.Join(strings.Fields(packageError.Error()), " ")
-			if firstMessage == "" || message < firstMessage {
-				firstMessage = message
-			}
-		}
-		return true
-	}, nil)
-	if errorCount == 0 {
-		return nil
-	}
-	if firstMessage == "" {
-		firstMessage = "details unavailable"
-	}
-	return fmt.Errorf(
-		"surface discovery: package loading failed with %d error(s); first: %s",
-		errorCount,
-		firstMessage,
-	)
 }
 
 func (a *analyzer) prepare() {
@@ -2214,6 +2221,9 @@ func (a *analyzer) finish(latency time.Duration) {
 		a.recordServerStart(start)
 	}
 	a.result.Catalog.Triggers = deduplicateTriggerRecords(a.result.Catalog.Triggers)
+	for index := range a.result.Catalog.Triggers {
+		a.annotateTriggerOwnership(&a.result.Catalog.Triggers[index])
+	}
 	for _, summary := range a.summaryByID {
 		a.result.Summaries = append(a.result.Summaries, summary)
 	}
@@ -2231,14 +2241,22 @@ func (a *analyzer) finish(latency time.Duration) {
 	a.result.Coverage.DispatchRootsFound = len(a.starts)
 	a.result.Coverage.ColdLatencyMillis = latency.Milliseconds()
 	a.result.Coverage.BuildConstraints = append([]string{}, a.opts.BuildTags...)
-	a.result.Coverage.ScopeStatement = "runtime registrations and starts found through configured terminal seeds and bounded wrapper propagation under the recorded build scenario, subject to listed frontiers"
+	a.result.Coverage.ScopeStatement = "exact build-selected process entries plus runtime registrations and starts found through safe typed package closures and bounded wrapper propagation under the recorded build scenario, subject to listed diagnostics and frontiers"
 	for _, trigger := range a.result.Catalog.Triggers {
 		if len(trigger.WrapperChain) == 0 {
 			a.result.Coverage.DirectTriggers++
 		} else {
 			a.result.Coverage.WrapperDerivedTriggers++
 		}
-		if !trigger.Handler.Known {
+		if trigger.Kind == "process_entry" {
+			a.result.Coverage.ProcessEntries++
+			if trigger.Availability == AvailabilityUnavailable {
+				a.result.Coverage.UnavailableProcessEntries++
+			} else {
+				a.result.Coverage.AvailableProcessEntries++
+			}
+		}
+		if trigger.Kind != "process_entry" && !trigger.Handler.Known {
 			a.result.Coverage.UnresolvedHandlers++
 		}
 		switch trigger.Kind {

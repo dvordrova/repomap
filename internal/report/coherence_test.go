@@ -218,7 +218,7 @@ func TestCommandSurfaceTraceJoinIncludesExecutableIdentity(t *testing.T) {
 				t.Fatalf("app-a surface = %#v", surface)
 			}
 		case "cmd/app-b":
-			if surface.RelatedTraceID != "" || surface.ExecutableRole != ExecutableRoleUnknown {
+			if surface.RelatedTraceID != "" || surface.ExecutableRole != ExecutableRoleSecondaryService {
 				t.Fatalf("app-b surface = %#v", surface)
 			}
 		}

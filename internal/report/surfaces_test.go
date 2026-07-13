@@ -116,6 +116,61 @@ func TestProjectDiscoveredSurfacesCountsHTTPServerRoots(t *testing.T) {
 	}
 }
 
+func TestProjectDiscoveredSurfacesRetainsProcessEntryAndUnavailablePackage(t *testing.T) {
+	t.Parallel()
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: []rawSurfaceTrigger{{
+		ID: "process-broken", Kind: "process_entry",
+		ProcessEntrypoint: rawSurfaceSymbol{
+			ID: "example.com/app/cmd/broken.main", Package: "example.com/app/cmd/broken", Name: "main",
+			Location: rawSurfaceLocation{Path: "cmd/broken/main.go", Line: 3},
+		},
+		RegistrationSite: rawSurfaceLocation{Path: "cmd/broken/main.go", Line: 3},
+		Status:           "confirmed_process_entry", Certainty: "static", Resolution: "exact",
+		OwningExecutable: "cmd/broken", ExecutableRole: ExecutableRoleSecondaryService,
+		Availability:      SurfaceAvailabilityUnavailable,
+		UnavailableReason: "package or dependency closure is ill-typed",
+	}}}, rawSurfaceCoverage{
+		PackageDiagnosticCount: 1, UnavailablePackageCount: 1,
+		PackageDiagnostics: []rawSurfacePackageDiagnostic{{
+			ID: "diagnostic-1", Kind: "type", Message: "undefined: generatedAsset",
+			Package: "example.com/app/cmd/broken", PackageName: "main",
+			OwningExecutable: "cmd/broken", ExecutableRole: ExecutableRoleSecondaryService,
+			Availability: SurfaceAvailabilityUnavailable,
+			Location:     &rawSurfaceLocation{Path: "cmd/broken/main.go", Line: 4, Column: 2},
+		}},
+		UnavailablePackages: []rawSurfacePackageAvailability{{
+			Package: "example.com/app/cmd/broken", PackageName: "main",
+			OwningExecutable: "cmd/broken", ExecutableRole: ExecutableRoleSecondaryService,
+			Availability: SurfaceAvailabilityUnavailable, Reason: "package_errors",
+			DiagnosticIDs: []string{"diagnostic-1"},
+		}},
+	})
+
+	if projected.ProcessEntryCount != 1 || projected.UnavailableSurfaceCount != 1 ||
+		projected.PackageDiagnosticCount != 1 || projected.UnavailablePackageCount != 1 {
+		t.Fatalf("process/diagnostic counts = %#v", projected)
+	}
+	trigger := projected.Triggers[0]
+	if trigger.Kind != "process_entry" || trigger.ExecutableRole != ExecutableRoleSecondaryService ||
+		trigger.Availability != SurfaceAvailabilityUnavailable || trigger.ProcessEntrypoint.Location == nil {
+		t.Fatalf("process entry projection = %#v", trigger)
+	}
+	if len(projected.PackageDiagnostics) != 1 || projected.PackageDiagnostics[0].Location == nil ||
+		projected.PackageDiagnostics[0].Location.Path != "cmd/broken/main.go" ||
+		len(projected.UnavailablePackages) != 1 ||
+		projected.UnavailablePackages[0].OwningExecutable != "cmd/broken" {
+		t.Fatalf("package failure projection = %#v / %#v", projected.PackageDiagnostics, projected.UnavailablePackages)
+	}
+	data := &ReportData{Run: &RunInfo{}, DiscoveredSurfaces: projected}
+	refreshSurfaceCatalogCounts(projected)
+	refreshProductCounts(data)
+	if data.Run.SecondaryServiceSurfaceCount != 1 || data.Run.UnavailableSurfaceCount != 1 ||
+		data.Run.PackageDiagnosticCount != 1 || data.Run.UnavailablePackageCount != 1 {
+		t.Fatalf("run-level process/diagnostic counts = %#v", data.Run)
+	}
+}
+
 func TestProjectDiscoveredSurfacesSanitizesEmbeddedExternalLocations(t *testing.T) {
 	t.Parallel()
 
@@ -189,19 +244,19 @@ func TestParseDiscoveredSurfacesRejectsUnusablePairs(t *testing.T) {
 			name: "unsupported catalog version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCatalog(t, runDir, func(catalog *rawSurfaceCatalog) {
-					catalog.Version = 3
+					catalog.Version = 4
 				})
 			},
-			warning: "unsupported trigger_catalog.json version 3",
+			warning: "unsupported trigger_catalog.json version 4",
 		},
 		{
 			name: "unsupported coverage version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCoverage(t, runDir, func(coverage *rawSurfaceCoverage) {
-					coverage.Version = 3
+					coverage.Version = 4
 				})
 			},
-			warning: "unsupported surface_coverage.json version 3",
+			warning: "unsupported surface_coverage.json version 4",
 		},
 		{
 			name: "repository mismatch",

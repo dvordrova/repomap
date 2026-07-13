@@ -4,6 +4,7 @@
  const PAGE_SIZE = 6;
  const KIND_FILTERS = [
   { value: "all", label: "All" },
+  { value: "process_entry", label: "Process entries" },
   { value: "cli_command", label: "CLI commands" },
   { value: "http_route", label: "HTTP registrations" },
   { value: "http_route_descriptor", label: "Route descriptors" },
@@ -31,13 +32,16 @@
   confirmed_worker_registration: "Worker registration",
   confirmed_command_registration: "Confirmed command registration",
   partial_command_registration: "Partial command registration",
+  confirmed_process_entry: "Exact process entry",
  };
  const GROUPS = [
   { value: "application", label: "Application" },
+  { value: "secondary_service", label: "Secondary services" },
   { value: "tooling", label: "Tooling" },
   { value: "tests_helpers", label: "Tests/helpers" },
   { value: "unassigned", label: "Unassigned" },
   { value: "dynamic_unresolved", label: "Dynamic/unresolved" },
+  { value: "unavailable", label: "Unavailable" },
  ];
 
  function array(value) {
@@ -105,8 +109,11 @@
  }
 
 function surfaceGroup(trigger, association) {
+  if (text(trigger.availability) === "unavailable") return "unavailable";
   switch (text(trigger.executable_role)) {
    case "primary_application": return "application";
+   case "secondary_service": return "secondary_service";
+   case "tooling":
    case "secondary_tooling": return "tooling";
    case "test_or_helper": return "tests_helpers";
   }
@@ -129,7 +136,7 @@ function surfaceGroup(trigger, association) {
   return sentenceLabel(certainty);
  }
 
- function primaryLabel(trigger) {
+  function primaryLabel(trigger) {
   const identity = object(trigger.identity);
   if (trigger.kind === "http_route") {
    const method = valueText(identity.method).trim().toUpperCase() || "HTTP";
@@ -141,7 +148,10 @@ function surfaceGroup(trigger, association) {
    return "Route descriptor " + path;
   }
   if (trigger.kind === "http_route_frontier") return "Configured route inventory";
-  if (trigger.kind === "http_server") return "HTTP server start call";
+   if (trigger.kind === "http_server") return "HTTP server start call";
+   if (trigger.kind === "process_entry") {
+    return "Process entry " + (executableOwner(trigger) || compactSymbolLabel(object(trigger.process_entrypoint).id) || "main");
+   }
   return compactSymbolLabel(identity.name || trigger.name || valueText(trigger.handler)) || "Unnamed surface";
  }
 
@@ -325,10 +335,14 @@ function hasDynamicEvidence(trigger) {
       label: "total",
       value: firstNumber([this.data.total_count], this.triggers.length),
      },
-     {
-      label: "CLI commands",
+      {
+       label: "CLI commands",
       value: firstNumber([this.data.cli_command_count], countByKind(this.triggers, "cli_command")),
-     },
+      },
+      {
+       label: "process entries",
+       value: firstNumber([this.data.process_entry_count], countByKind(this.triggers, "process_entry")),
+      },
      {
       label: "application",
       value: firstNumber(
@@ -336,13 +350,27 @@ function hasDynamicEvidence(trigger) {
        this.triggers.filter((trigger) => trigger.executable_role === "primary_application").length
       ),
      },
-     {
-      label: "tooling",
+      {
+       label: "secondary services",
+       value: firstNumber(
+        [this.data.secondary_service_count],
+        this.triggers.filter((trigger) => trigger.executable_role === "secondary_service").length
+       ),
+      },
+      {
+       label: "tooling",
       value: firstNumber(
        [this.data.tooling_count],
-       this.triggers.filter((trigger) => trigger.executable_role === "secondary_tooling").length
-      ),
-     },
+        this.triggers.filter((trigger) => ["tooling", "secondary_tooling"].includes(trigger.executable_role)).length
+       ),
+      },
+      {
+       label: "unavailable",
+       value: firstNumber(
+        [this.data.unavailable_surface_count],
+        this.triggers.filter((trigger) => trigger.availability === "unavailable").length
+       ),
+      },
      {
       label: "HTTP registrations",
       value: firstNumber([this.data.http_count, this.data.http_route_count], countByKind(this.triggers, "http_route")),
@@ -533,8 +561,9 @@ function hasDynamicEvidence(trigger) {
    const serverStart = trigger.kind === "http_server";
    const descriptor = trigger.kind === "http_route_descriptor";
    const routeFrontier = trigger.kind === "http_route_frontier";
-   const registration = locationLabel(serverStart ? trigger.server_start_site : (descriptor ? trigger.descriptor_site : trigger.registration_site));
-   const locationVerb = serverStart ? "start call " : (descriptor ? "descriptor " : (routeFrontier ? "assembled " : "registered "));
+    const processEntry = trigger.kind === "process_entry";
+    const registration = locationLabel(processEntry ? object(trigger.process_entrypoint).location : (serverStart ? trigger.server_start_site : (descriptor ? trigger.descriptor_site : trigger.registration_site)));
+    const locationVerb = processEntry ? "declared " : (serverStart ? "start call " : (descriptor ? "descriptor " : (routeFrontier ? "assembled " : "registered ")));
    summary.appendChild(
     element("span", "rm-surface__registration", registration ? locationVerb + registration : "")
    );
@@ -550,7 +579,9 @@ function hasDynamicEvidence(trigger) {
    const facts = element("dl", "rm-surface__details");
     appendText(facts, "Kind", sentenceLabel(trigger.kind));
     appendText(facts, "Framework", trigger.framework);
-     appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
+      appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
+      appendText(facts, "Availability", sentenceLabel(trigger.availability));
+      appendText(facts, "Unavailable reason", trigger.unavailable_reason);
      appendText(facts, "Transport", trigger.transport);
      appendText(facts, "Handler / callback", handler);
      appendText(facts, "Constructor", text(object(trigger.constructor).name));
@@ -742,7 +773,11 @@ function hasDynamicEvidence(trigger) {
   appendText(facts, "Direct surfaces", coverage.direct_count);
   appendText(facts, "Wrapper-derived", coverage.wrapper_count);
   appendText(facts, "Workers", coverage.worker_count);
-  appendText(facts, "Non-worker async tasks", coverage.async_task_count);
+   appendText(facts, "Non-worker async tasks", coverage.async_task_count);
+   appendText(facts, "Process entries", coverage.process_entry_count == null ? coverage.process_entries : coverage.process_entry_count);
+   appendText(facts, "Unavailable process entries", coverage.unavailable_process_entries);
+   appendText(facts, "Unavailable packages", coverage.unavailable_package_count);
+   appendText(facts, "Package diagnostics", coverage.package_diagnostic_count);
   if (coverage.truncated === true) appendText(facts, "Projection bound", "Reached; additional triggers were not embedded");
   appendText(facts, "Packages inspected", coverage.packages_inspected);
   appendText(facts, "Functions inspected", coverage.functions_inspected);
@@ -781,6 +816,32 @@ function hasDynamicEvidence(trigger) {
     array(coverage.unsupported_dispatch_mechanisms)
    );
    if (frontiers.length > 0) body.appendChild(this.detailSection("Analysis frontiers", this.renderFrontiers(frontiers)));
+
+   const unavailablePackages = array(this.data.unavailable_packages || coverage.unavailable_packages);
+   if (unavailablePackages.length > 0) {
+    const list = element("ul", "rm-surface__evidence-list");
+    unavailablePackages.forEach((unavailablePackage) => {
+     const item = element("li", "rm-surface__diagnostic");
+     item.appendChild(element("strong", "", unavailablePackage.package || unavailablePackage.package_name || "Unavailable package"));
+     if (unavailablePackage.owning_executable) item.appendChild(element("span", "rm-surface__muted", " · " + unavailablePackage.owning_executable));
+     if (unavailablePackage.reason) item.appendChild(element("p", "", sentenceLabel(unavailablePackage.reason)));
+     list.appendChild(item);
+    });
+    body.appendChild(this.detailSection("Unavailable packages", list));
+   }
+
+   const packageDiagnostics = array(this.data.package_diagnostics || coverage.package_diagnostics);
+   if (packageDiagnostics.length > 0) {
+    const list = element("ul", "rm-surface__evidence-list");
+    packageDiagnostics.forEach((diagnostic) => {
+     const item = element("li", "rm-surface__diagnostic");
+     item.appendChild(element("strong", "", diagnostic.package || diagnostic.package_name || "Package diagnostic"));
+     if (diagnostic.message) item.appendChild(element("p", "", diagnostic.message));
+     this.appendLocation(item, "Diagnostic", diagnostic.location);
+     list.appendChild(item);
+    });
+    body.appendChild(this.detailSection("Package diagnostics", list));
+   }
 
    const budgets = array(coverage.budgets_reached);
    if (budgets.length > 0) {

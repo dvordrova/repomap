@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
 func TestRunPersistsOptInSurfaceArtifactsBesideReportRun(t *testing.T) {
@@ -51,6 +53,27 @@ func main() {
 		if !strings.Contains(string(data), "/health") && name == "trigger_catalog.json" {
 			t.Fatalf("catalog does not contain route: %s", data)
 		}
+		if name == "trigger_catalog.json" && (!strings.Contains(string(data), `"kind": "process_entry"`) ||
+			!strings.Contains(string(data), `"kind": "process_entry_declaration"`)) {
+			t.Fatalf("catalog does not contain the gofacts process-entry surface: %s", data)
+		}
+	}
+}
+
+func TestSurfaceDiscoveryInputPreservesExactEntrypointAnchors(t *testing.T) {
+	input := surfaceDiscoveryInput("fixture", &gofacts.Facts{EntrypointPackages: []gofacts.Entrypoint{{
+		ImportPath: "example.com/fixture/cmd/fixture", PackageDir: "cmd/fixture", Kind: "unknown",
+		Anchors: []gofacts.EntrypointAnchor{{
+			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
+			Path: "cmd/fixture/main.go", Line: 23,
+		}},
+	}}})
+	if input.RepositoryName != "fixture" || len(input.Entrypoints) != 1 ||
+		len(input.Entrypoints[0].Anchors) != 1 ||
+		input.Entrypoints[0].Anchors[0].Kind != "go_main_function" ||
+		input.Entrypoints[0].Anchors[0].Path != "cmd/fixture/main.go" ||
+		input.Entrypoints[0].Anchors[0].Line != 23 {
+		t.Fatalf("surface discovery input = %#v", input)
 	}
 }
 

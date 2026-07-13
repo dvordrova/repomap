@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v4"
-	TriggerCatalogVersion        = 2
-	CoverageVersion              = 2
+	AnalyzerVersion              = "surface-ssa-v5"
+	TriggerCatalogVersion        = 3
+	CoverageVersion              = 3
 	CatalogVersion               = 1
 	ArchitectureGroundingVersion = 2
 )
@@ -82,6 +82,10 @@ type TriggerRecord struct {
 	Provenance        []Provenance `json:"provenance"`
 	DynamicFrontier   []Frontier   `json:"dynamic_frontier"`
 	Status            string       `json:"status"`
+	OwningExecutable  string       `json:"owning_executable,omitempty"`
+	ExecutableRole    string       `json:"executable_role,omitempty"`
+	Availability      string       `json:"availability"`
+	UnavailableReason string       `json:"unavailable_reason,omitempty"`
 }
 
 type Identity struct {
@@ -157,31 +161,60 @@ type SourceDigest struct {
 }
 
 type SurfaceCoverage struct {
-	Version                int          `json:"version"`
-	Repository             Repository   `json:"repository"`
-	Scenario               Scenario     `json:"scenario"`
-	EntrypointsConsidered  []Symbol     `json:"entrypoints_considered"`
-	DispatchRootsFound     int          `json:"dispatch_roots_found"`
-	ConfiguredSeedsMatched []string     `json:"configured_seeds_matched"`
-	PackagesInspected      int          `json:"packages_inspected"`
-	FunctionsInspected     int          `json:"functions_inspected"`
-	DirectTriggers         int          `json:"direct_triggers"`
-	WrapperDerivedTriggers int          `json:"wrapper_derived_triggers"`
-	UnresolvedHandlers     int          `json:"unresolved_handlers"`
-	PossibleRegistrations  int          `json:"possible_registrations"`
-	Workers                int          `json:"workers"`
-	AsyncTasks             int          `json:"async_tasks"`
-	LoopSignals            []LoopSignal `json:"loop_signals"`
-	DynamicFrontiers       []Frontier   `json:"dynamic_frontiers"`
-	UnsupportedDispatch    []Frontier   `json:"unsupported_dispatch_mechanisms"`
-	BuildConstraints       []string     `json:"build_constraints"`
-	FilesSkipped           []string     `json:"files_skipped"`
-	PackagesSkipped        []string     `json:"packages_skipped"`
-	BudgetsReached         []string     `json:"budgets_reached"`
-	ColdLatencyMillis      int64        `json:"cold_latency_ms"`
-	WarmLatencyMillis      *int64       `json:"warm_latency_ms,omitempty"`
-	CacheReuse             bool         `json:"cache_reuse"`
-	ScopeStatement         string       `json:"scope_statement"`
+	Version                   int                   `json:"version"`
+	Repository                Repository            `json:"repository"`
+	Scenario                  Scenario              `json:"scenario"`
+	EntrypointsConsidered     []Symbol              `json:"entrypoints_considered"`
+	DispatchRootsFound        int                   `json:"dispatch_roots_found"`
+	ConfiguredSeedsMatched    []string              `json:"configured_seeds_matched"`
+	PackagesInspected         int                   `json:"packages_inspected"`
+	FunctionsInspected        int                   `json:"functions_inspected"`
+	DirectTriggers            int                   `json:"direct_triggers"`
+	WrapperDerivedTriggers    int                   `json:"wrapper_derived_triggers"`
+	UnresolvedHandlers        int                   `json:"unresolved_handlers"`
+	PossibleRegistrations     int                   `json:"possible_registrations"`
+	Workers                   int                   `json:"workers"`
+	AsyncTasks                int                   `json:"async_tasks"`
+	ProcessEntries            int                   `json:"process_entries"`
+	AvailableProcessEntries   int                   `json:"available_process_entries"`
+	UnavailableProcessEntries int                   `json:"unavailable_process_entries"`
+	PackageDiagnosticCount    int                   `json:"package_diagnostic_count"`
+	UnavailablePackageCount   int                   `json:"unavailable_package_count"`
+	PackageDiagnostics        []PackageDiagnostic   `json:"package_diagnostics"`
+	UnavailablePackages       []PackageAvailability `json:"unavailable_packages"`
+	LoopSignals               []LoopSignal          `json:"loop_signals"`
+	DynamicFrontiers          []Frontier            `json:"dynamic_frontiers"`
+	UnsupportedDispatch       []Frontier            `json:"unsupported_dispatch_mechanisms"`
+	BuildConstraints          []string              `json:"build_constraints"`
+	FilesSkipped              []string              `json:"files_skipped"`
+	PackagesSkipped           []string              `json:"packages_skipped"`
+	BudgetsReached            []string              `json:"budgets_reached"`
+	ColdLatencyMillis         int64                 `json:"cold_latency_ms"`
+	WarmLatencyMillis         *int64                `json:"warm_latency_ms,omitempty"`
+	CacheReuse                bool                  `json:"cache_reuse"`
+	ScopeStatement            string                `json:"scope_statement"`
+}
+
+type PackageDiagnostic struct {
+	ID               string    `json:"id"`
+	Kind             string    `json:"kind"`
+	Message          string    `json:"message"`
+	Package          string    `json:"package"`
+	PackageName      string    `json:"package_name,omitempty"`
+	OwningExecutable string    `json:"owning_executable,omitempty"`
+	ExecutableRole   string    `json:"executable_role,omitempty"`
+	Availability     string    `json:"availability"`
+	Location         *Location `json:"location,omitempty"`
+}
+
+type PackageAvailability struct {
+	Package          string   `json:"package"`
+	PackageName      string   `json:"package_name,omitempty"`
+	OwningExecutable string   `json:"owning_executable,omitempty"`
+	ExecutableRole   string   `json:"executable_role,omitempty"`
+	Availability     string   `json:"availability"`
+	Reason           string   `json:"reason"`
+	DiagnosticIDs    []string `json:"diagnostic_ids"`
 }
 
 type LoopSignal struct {
@@ -303,6 +336,12 @@ func (r *Result) normalize() {
 	if r.Coverage.UnsupportedDispatch == nil {
 		r.Coverage.UnsupportedDispatch = []Frontier{}
 	}
+	if r.Coverage.PackageDiagnostics == nil {
+		r.Coverage.PackageDiagnostics = []PackageDiagnostic{}
+	}
+	if r.Coverage.UnavailablePackages == nil {
+		r.Coverage.UnavailablePackages = []PackageAvailability{}
+	}
 	if r.Coverage.BuildConstraints == nil {
 		r.Coverage.BuildConstraints = []string{}
 	}
@@ -319,6 +358,22 @@ func (r *Result) normalize() {
 	r.Coverage.UnsupportedDispatch = compactFrontiers(r.Coverage.UnsupportedDispatch)
 	sort.Strings(r.Coverage.BudgetsReached)
 	r.Coverage.BudgetsReached = compactStrings(r.Coverage.BudgetsReached)
+	sort.Strings(r.Coverage.FilesSkipped)
+	r.Coverage.FilesSkipped = compactStrings(r.Coverage.FilesSkipped)
+	sort.Strings(r.Coverage.PackagesSkipped)
+	r.Coverage.PackagesSkipped = compactStrings(r.Coverage.PackagesSkipped)
+	sort.Slice(r.Coverage.PackageDiagnostics, func(i, j int) bool {
+		return r.Coverage.PackageDiagnostics[i].ID < r.Coverage.PackageDiagnostics[j].ID
+	})
+	sort.Slice(r.Coverage.UnavailablePackages, func(i, j int) bool {
+		return r.Coverage.UnavailablePackages[i].Package < r.Coverage.UnavailablePackages[j].Package
+	})
+	for index := range r.Coverage.UnavailablePackages {
+		sort.Strings(r.Coverage.UnavailablePackages[index].DiagnosticIDs)
+		r.Coverage.UnavailablePackages[index].DiagnosticIDs = compactStrings(
+			r.Coverage.UnavailablePackages[index].DiagnosticIDs,
+		)
+	}
 	if r.Grounding.Anchors == nil {
 		r.Grounding.Anchors = []BehaviorAnchor{}
 	}

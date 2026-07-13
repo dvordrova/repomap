@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
-const CurrentFormatVersion = 16
+const CurrentFormatVersion = 17
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
@@ -135,35 +135,39 @@ type ComponentRelation struct {
 // this report. It intentionally excludes credentials, prompts, responses, and
 // the provider endpoint.
 type RunInfo struct {
-	CreatedAt                   string `json:"created_at,omitempty"`
-	Model                       string `json:"model,omitempty"`
-	PromptVersion               string `json:"prompt_version,omitempty"`
-	CompactContextBytes         int    `json:"compact_context_bytes,omitempty"`
-	ExternalRequestBytes        int    `json:"external_request_bytes,omitempty"`
-	ProviderRequestCount        int    `json:"provider_request_count,omitempty"`
-	CandidateDirectionCount     int    `json:"candidate_direction_count,omitempty"`
-	ProposedDirectionCount      int    `json:"proposed_direction_count,omitempty"`
-	AcceptedDirectionCount      int    `json:"accepted_direction_count,omitempty"`
-	RejectedDirectionCount      int    `json:"rejected_direction_count,omitempty"`
-	SavedFlowCount              int    `json:"saved_flow_count,omitempty"`
-	ArchitectureAnchorCount     int    `json:"architecture_anchor_count,omitempty"`
-	ProviderLatencyMillis       *int64 `json:"provider_latency_ms,omitempty"`
-	SurfaceDiscoveryRan         bool   `json:"surface_discovery_ran,omitempty"`
-	SurfaceDiscoveryCount       int    `json:"surface_discovery_count,omitempty"`
-	SurfaceDiscoveryMillis      *int64 `json:"surface_discovery_ms,omitempty"`
-	CLICommandSurfaceCount      int    `json:"cli_command_surface_count,omitempty"`
-	GenericSurfaceCount         int    `json:"generic_surface_count,omitempty"`
-	ApplicationSurfaceCount     int    `json:"application_surface_count,omitempty"`
-	ToolingSurfaceCount         int    `json:"tooling_surface_count,omitempty"`
-	TestHelperSurfaceCount      int    `json:"test_helper_surface_count,omitempty"`
-	UnassignedSurfaceCount      int    `json:"unassigned_surface_count,omitempty"`
-	SuggestedInvestigationCount int    `json:"suggested_investigation_count,omitempty"`
-	DiscoveredSurfaceCount      int    `json:"discovered_surface_count,omitempty"`
-	SavedTraceCount             int    `json:"saved_trace_count,omitempty"`
-	CompleteTraceCount          int    `json:"complete_trace_count,omitempty"`
-	PartialTraceCount           int    `json:"partial_trace_count,omitempty"`
-	UnresolvedTraceCount        int    `json:"unresolved_trace_count,omitempty"`
-	FailedTraceAttemptCount     int    `json:"failed_trace_attempt_count,omitempty"`
+	CreatedAt                    string `json:"created_at,omitempty"`
+	Model                        string `json:"model,omitempty"`
+	PromptVersion                string `json:"prompt_version,omitempty"`
+	CompactContextBytes          int    `json:"compact_context_bytes,omitempty"`
+	ExternalRequestBytes         int    `json:"external_request_bytes,omitempty"`
+	ProviderRequestCount         int    `json:"provider_request_count,omitempty"`
+	CandidateDirectionCount      int    `json:"candidate_direction_count,omitempty"`
+	ProposedDirectionCount       int    `json:"proposed_direction_count,omitempty"`
+	AcceptedDirectionCount       int    `json:"accepted_direction_count,omitempty"`
+	RejectedDirectionCount       int    `json:"rejected_direction_count,omitempty"`
+	SavedFlowCount               int    `json:"saved_flow_count,omitempty"`
+	ArchitectureAnchorCount      int    `json:"architecture_anchor_count,omitempty"`
+	ProviderLatencyMillis        *int64 `json:"provider_latency_ms,omitempty"`
+	SurfaceDiscoveryRan          bool   `json:"surface_discovery_ran,omitempty"`
+	SurfaceDiscoveryCount        int    `json:"surface_discovery_count,omitempty"`
+	SurfaceDiscoveryMillis       *int64 `json:"surface_discovery_ms,omitempty"`
+	CLICommandSurfaceCount       int    `json:"cli_command_surface_count,omitempty"`
+	GenericSurfaceCount          int    `json:"generic_surface_count,omitempty"`
+	ApplicationSurfaceCount      int    `json:"application_surface_count,omitempty"`
+	SecondaryServiceSurfaceCount int    `json:"secondary_service_surface_count,omitempty"`
+	ToolingSurfaceCount          int    `json:"tooling_surface_count,omitempty"`
+	TestHelperSurfaceCount       int    `json:"test_helper_surface_count,omitempty"`
+	UnassignedSurfaceCount       int    `json:"unassigned_surface_count,omitempty"`
+	UnavailableSurfaceCount      int    `json:"unavailable_surface_count,omitempty"`
+	UnavailablePackageCount      int    `json:"unavailable_package_count,omitempty"`
+	PackageDiagnosticCount       int    `json:"package_diagnostic_count,omitempty"`
+	SuggestedInvestigationCount  int    `json:"suggested_investigation_count,omitempty"`
+	DiscoveredSurfaceCount       int    `json:"discovered_surface_count,omitempty"`
+	SavedTraceCount              int    `json:"saved_trace_count,omitempty"`
+	CompleteTraceCount           int    `json:"complete_trace_count,omitempty"`
+	PartialTraceCount            int    `json:"partial_trace_count,omitempty"`
+	UnresolvedTraceCount         int    `json:"unresolved_trace_count,omitempty"`
+	FailedTraceAttemptCount      int    `json:"failed_trace_attempt_count,omitempty"`
 }
 
 // Subsystem is one grounded component from the orientation-stage system map.
@@ -356,9 +360,13 @@ func refreshProductCounts(data *ReportData) {
 	data.Run.CLICommandSurfaceCount = 0
 	data.Run.GenericSurfaceCount = 0
 	data.Run.ApplicationSurfaceCount = 0
+	data.Run.SecondaryServiceSurfaceCount = 0
 	data.Run.ToolingSurfaceCount = 0
 	data.Run.TestHelperSurfaceCount = 0
 	data.Run.UnassignedSurfaceCount = 0
+	data.Run.UnavailableSurfaceCount = 0
+	data.Run.UnavailablePackageCount = 0
+	data.Run.PackageDiagnosticCount = 0
 	traced := make(map[string]struct{})
 	if data.ArchitectureCanvas != nil {
 		data.Run.SavedTraceCount = len(data.ArchitectureCanvas.Flows)
@@ -379,9 +387,13 @@ func refreshProductCounts(data *ReportData) {
 		data.Run.CLICommandSurfaceCount = data.DiscoveredSurfaces.CLICommandCount
 		data.Run.GenericSurfaceCount = data.DiscoveredSurfaces.GenericSurfaceCount
 		data.Run.ApplicationSurfaceCount = data.DiscoveredSurfaces.ApplicationCount
+		data.Run.SecondaryServiceSurfaceCount = data.DiscoveredSurfaces.SecondaryServiceCount
 		data.Run.ToolingSurfaceCount = data.DiscoveredSurfaces.ToolingCount
 		data.Run.TestHelperSurfaceCount = data.DiscoveredSurfaces.TestHelperCount
 		data.Run.UnassignedSurfaceCount = data.DiscoveredSurfaces.UnassignedCount
+		data.Run.UnavailableSurfaceCount = data.DiscoveredSurfaces.UnavailableSurfaceCount
+		data.Run.UnavailablePackageCount = data.DiscoveredSurfaces.UnavailablePackageCount
+		data.Run.PackageDiagnosticCount = data.DiscoveredSurfaces.PackageDiagnosticCount
 	}
 	for _, direction := range data.CandidateDirections {
 		if direction.Disposition == flowexplain.DirectionRejected {
