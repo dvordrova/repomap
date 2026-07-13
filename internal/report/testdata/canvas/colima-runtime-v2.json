@@ -9,7 +9,7 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 3,
+    "version": 4,
     "landscape_version": 4,
     "flowproof_version": 2,
     "fallback": false,
@@ -2623,6 +2623,7 @@
       {
         "id": "colima-start",
         "name": "Start VM and selected runtimes",
+        "archetype": "cli",
         "trigger": "User runs colima start",
         "scope": "Fresh-profile start; configured VM driver and registered runtime implementations remain alternatives",
         "mental_model": "Cobra prepares config, the app starts Lima, then provisions and starts each selected runtime. Static candidates do not prove the runtime choice.",

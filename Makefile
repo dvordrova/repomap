@@ -29,7 +29,7 @@ quality-check: ## Replay saved quality tasks without a model call
 SURFACE_REPO ?= internal/experiment/surfacediscovery/testdata/direct
 SURFACE_OUT ?= $(TMP_DIR)/surface-discovery
 
-.PHONY: surface-check surface-playground caddy-surface-check
+.PHONY: surface-check surface-playground caddy-surface-check syncthing-surface-check
 surface-check: ## Run config-driven Go surface discovery fixtures
 	go test ./internal/semantics/catalog ./internal/experiment/surfacediscovery ./internal/surfacebridge
 
@@ -38,6 +38,9 @@ surface-playground: ## Emit local surface JSON and Markdown for SURFACE_REPO
 
 caddy-surface-check: ## Compare deterministic surface discovery with a nearby Caddy checkout
 	./scripts/caddy_surface_check.sh "$(CADDY_REPO)"
+
+syncthing-surface-check: ## Validate partial package recovery and process surfaces against nearby Syncthing
+	./scripts/syncthing_surface_check.sh "$(SYNCTHING_REPO)"
 
 build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
@@ -176,6 +179,7 @@ flowproof-replay: ## Rebuild a saved orientation's local FlowProof without a mod
 
 RESTIC_REPO ?= ../restic
 CADDY_REPO ?= ../caddy
+SYNCTHING_REPO ?= ../syncthing
 
 research-budget-check: ## Measure adaptive orientation budgets on Restic and Caddy
 	./scripts/research_budget_check.sh "$(RESTIC_REPO)" "$(CADDY_REPO)"

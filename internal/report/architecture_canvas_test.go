@@ -183,7 +183,8 @@ func TestProjectArchitectureCanvasUsesLandscapeSubsystemsAndFlowLabels(t *testin
 		t.Fatalf("subsystems = %#v, want Landscape groups rather than role lanes", canvas.Subsystems)
 	}
 	flow := architectureFlow(t, canvas, "backup")
-	if flow.Name != "Backup operation" || flow.Trigger != "user runs backup" ||
+	if flow.Name != "Backup operation" || flow.Archetype != flowproof.ArchetypeCLI ||
+		flow.Trigger != "user runs backup" ||
 		flow.Scope != "one CLI handler" || flow.MentalModel != "scan then save" {
 		t.Fatalf("flow labels = %#v", flow)
 	}

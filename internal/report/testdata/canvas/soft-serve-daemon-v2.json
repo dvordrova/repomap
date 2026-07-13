@@ -9,7 +9,7 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 3,
+    "version": 4,
     "landscape_version": 4,
     "flowproof_version": 2,
     "fallback": false,
@@ -1692,6 +1692,7 @@
       {
         "id": "soft-serve-daemon",
         "name": "Serve daemon lifecycle",
+        "archetype": "cli",
         "trigger": "soft serve",
         "scope": "one serve command invocation under the default Go build",
         "mental_model": "Initialize shared state, construct endpoints, run independent service tasks, react to a server result or signal, then shut every service down under a timeout.",

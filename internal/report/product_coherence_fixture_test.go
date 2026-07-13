@@ -163,8 +163,17 @@ func TestSavedResticCoherence(t *testing.T) {
 		input, buildErr := BuildArchitectureCanvasInput(data)
 		t.Fatalf("saved Restic canvas is unavailable: build=%v candidates=%d flows=%d", buildErr, len(input.CandidateBundle.Candidates), len(input.Flows))
 	}
-	if len(data.ArchitectureCanvas.Flows) != 2 {
-		t.Fatalf("saved Restic traces = %d, want 2", len(data.ArchitectureCanvas.Flows))
+	if len(data.ArchitectureCanvas.Flows) != 4 {
+		t.Fatalf("saved Restic traces = %d, want 4", len(data.ArchitectureCanvas.Flows))
+	}
+	traceIDs := make(map[componentmap.FlowID]bool, len(data.ArchitectureCanvas.Flows))
+	for _, trace := range data.ArchitectureCanvas.Flows {
+		traceIDs[trace.ID] = true
+	}
+	for _, id := range []componentmap.FlowID{"backup-command", "check-command", "init-command", "restore-command"} {
+		if !traceIDs[id] {
+			t.Errorf("saved Restic trace is missing %q", id)
+		}
 	}
 	if len(data.DiscoveredSurfaces.Triggers) != 30 || len(data.ArchitectureCanvas.Surfaces) != 30 || data.Run.DiscoveredSurfaceCount != 30 {
 		t.Fatalf("saved Restic catalog/canvas/headline = %d/%d/%d, want 30", len(data.DiscoveredSurfaces.Triggers), len(data.ArchitectureCanvas.Surfaces), data.Run.DiscoveredSurfaceCount)
@@ -194,23 +203,21 @@ func TestSavedResticCoherence(t *testing.T) {
 			t.Errorf("saved trace %q command=%q has no deterministic command surface; first steps=%#v", trace.ID, trace.Command, trace.Steps[:min(4, len(trace.Steps))])
 		}
 	}
-	foundBackup := false
-	foundRestore := false
-	for _, component := range data.ArchitectureCanvas.Components {
-		if component.Name == "Backup Command" {
-			foundBackup = true
-			if len(component.OwnedSurfaceIDs) == 0 || len(component.ParticipatingFlowIDs) != 1 {
-				t.Fatalf("Backup Command surfaces=%v traces=%v", component.OwnedSurfaceIDs, component.ParticipatingFlowIDs)
+	for _, command := range []string{"backup", "check", "init", "restore"} {
+		mapped := false
+		for _, surface := range data.ArchitectureCanvas.Surfaces {
+			if surface.Name == command && surface.OwningComponentID != "" {
+				mapped = true
+				break
 			}
 		}
-		if component.Name == "Restore Command" {
-			foundRestore = true
-			if len(component.OwnedSurfaceIDs) == 0 || len(component.ParticipatingFlowIDs) != 0 {
-				t.Fatalf("Restore Command surfaces=%v traces=%v", component.OwnedSurfaceIDs, component.ParticipatingFlowIDs)
-			}
+		if !mapped {
+			t.Errorf("saved Restic command surface %q has no exact component mapping", command)
 		}
 	}
-	if !foundBackup || !foundRestore {
-		t.Fatalf("saved Restic command components: backup=%t restore=%t", foundBackup, foundRestore)
+	for _, trace := range data.ArchitectureCanvas.Flows {
+		if len(trace.ParticipatingComponentIDs) == 0 {
+			t.Errorf("saved Restic trace %q has no participating component", trace.ID)
+		}
 	}
 }

@@ -29,6 +29,7 @@
  const LANDSCAPE_GROUP_GAP = 32;
  const LANDSCAPE_MARGIN = 28;
  const SINGLETON_GROUP_HEIGHT = 132;
+ const LIFECYCLE_FALLBACK_LIMIT = 6;
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -212,9 +213,85 @@
   const value = text(relation).toLowerCase();
   if (value.indexOf("cancel") >= 0) return "is-cancel";
   if (value.indexOf("join") >= 0 || value === "waits_for") return "is-join";
-  if (value.indexOf("start") >= 0 || invocation === "goroutine") return "is-start";
   if (value.indexOf("callback") >= 0 || invocation === "callback") return "is-callback";
+  if (value.indexOf("start") >= 0 || invocation === "goroutine") return "is-start";
   return "is-call";
+ }
+
+ function savedTraceLabel(archetype) {
+  switch (text(archetype)) {
+   case "cli": return "Saved CLI trace";
+   case "process": return "Saved process trace";
+   default: return "Saved trace";
+  }
+ }
+
+ function lifecycleRelationHeading(edge) {
+  const relation = text(edge && edge.relation).toLowerCase();
+  const invocation = text(edge && edge.invocation).toLowerCase();
+  if (relation.indexOf("cancel") >= 0) return "Cancellation";
+  if (relation.indexOf("join") >= 0 || relation === "waits_for") return "Join";
+  if (relation.indexOf("callback") >= 0 || invocation === "callback") return "Callback";
+  if (relation.indexOf("start") >= 0 || invocation === "goroutine") return "Started by";
+  return "";
+ }
+
+ function groupLifecycleRelations(flow, edges) {
+  const lifecycle = array(edges).filter((edge) => lifecycleRelationHeading(edge));
+  const groups = [];
+  const assigned = new Set();
+  const labelOrder = ["Started by", "Callback", "Cancellation", "Join"];
+  array(flow && flow.branches)
+   .filter((branch) => text(branch.kind) === "task" && text(branch.root_anchor_id))
+   .forEach((branch) => {
+    const branchAnchors = new Set(array(branch.anchor_ids).map(text));
+    branchAnchors.add(text(branch.root_anchor_id));
+    const cancellationAnchors = new Set(branchAnchors);
+    let expanded = true;
+    while (expanded) {
+     expanded = false;
+     lifecycle.forEach((edge) => {
+      if (lifecycleRelationHeading(edge) !== "Cancellation") return;
+      const from = text(edge.from);
+      const to = text(edge.to);
+      if (!cancellationAnchors.has(from) && !cancellationAnchors.has(to)) return;
+      if (!cancellationAnchors.has(from)) {
+       cancellationAnchors.add(from);
+       expanded = true;
+      }
+      if (!cancellationAnchors.has(to)) {
+       cancellationAnchors.add(to);
+       expanded = true;
+      }
+     });
+    }
+    const relations = lifecycle.filter((edge) => {
+     const from = text(edge.from);
+     const to = text(edge.to);
+     if (branchAnchors.has(from) || branchAnchors.has(to)) return true;
+     return lifecycleRelationHeading(edge) === "Cancellation" &&
+      (cancellationAnchors.has(from) || cancellationAnchors.has(to));
+    });
+    relations.sort((a, b) => {
+     const labelDifference = labelOrder.indexOf(lifecycleRelationHeading(a)) -
+      labelOrder.indexOf(lifecycleRelationHeading(b));
+     return labelDifference || text(a.id).localeCompare(text(b.id));
+    });
+    if (relations.length === 0) return;
+    relations.forEach((edge) => assigned.add(edge));
+    groups.push({
+     branchID: text(branch.id),
+     rootAnchorID: text(branch.root_anchor_id),
+     relations: relations,
+    });
+   });
+  const ungrouped = lifecycle.filter((edge) => !assigned.has(edge));
+  return {
+   groups: groups,
+   total: lifecycle.length,
+   ungrouped: ungrouped.slice(0, LIFECYCLE_FALLBACK_LIMIT),
+   ungroupedTotal: ungrouped.length,
+  };
  }
 
  function relationLabel(relation) {
@@ -428,10 +505,9 @@
        button.setAttribute("role", "menuitem");
        button.appendChild(element("strong", null, flow.name || flow.id));
        if (flow.why_inspect) button.appendChild(element("small", "rm-arch__trace-purpose", flow.why_inspect));
-       const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
-       const origin = startSurface ?
-        (startSurface.kind === "cli_command" ? "CLI command · " + (startSurface.name || startSurface.id) : startSurface.name || startSurface.kind) :
-        (flow.command ? "CLI command · " + flow.command : flow.trigger);
+        const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
+        const originName = startSurface ? startSurface.name || startSurface.kind : flow.trigger || flow.command;
+        const origin = [savedTraceLabel(flow.archetype), originName].filter(Boolean).join(" · ");
        button.appendChild(element(
         "span",
         null,
@@ -1664,23 +1740,70 @@
    return { items: items.slice(0, 8), total: items.length };
   }
 
-  focusedHandoffEdges(flow, primary) {
-   const primaryPairs = new Set();
-   primary.forEach((step, index) => {
-    if (index > 0) primaryPairs.add(text(primary[index - 1].id) + "\u0000" + text(step.id));
-   });
-   const items = this.focusedFlowEdges(flow.id)
-    .filter((edge) => {
-     if (primaryPairs.has(text(edge.from) + "\u0000" + text(edge.to))) return false;
-     const semantic = semanticClass(edge.relation, edge.invocation);
-     return edge.cross_branch || semantic === "is-start" || semantic === "is-cancel" ||
-      semantic === "is-join" || semantic === "is-callback";
-    })
-    .filter((edge) =>
-     this.flowStepsByKey.has(flowStepKey(flow.id, edge.from)) &&
-     this.flowStepsByKey.has(flowStepKey(flow.id, edge.to))
+  focusedLifecycleGroups(flow) {
+   const edges = this.focusedFlowEdges(flow.id).filter((edge) =>
+    this.flowStepsByKey.has(flowStepKey(flow.id, edge.from)) &&
+    this.flowStepsByKey.has(flowStepKey(flow.id, edge.to))
+   );
+   return groupLifecycleRelations(flow, edges);
+  }
+
+  appendFocusedLifecycleRelation(parent, flow, edge, rootAnchorID) {
+   const row = element("div", "rm-arch__lifecycle-row " + semanticClass(edge.relation, edge.invocation));
+   row.appendChild(element("strong", "rm-arch__lifecycle-label", lifecycleRelationHeading(edge)));
+   const content = element("div", "rm-arch__lifecycle-content");
+   const endpoints = element("div", "rm-arch__lifecycle-endpoints");
+   const source = this.flowStepsByKey.get(flowStepKey(flow.id, edge.from));
+   const target = this.flowStepsByKey.get(flowStepKey(flow.id, edge.to));
+   const endpoint = (step) => {
+    if (text(step.id) === text(rootAnchorID)) {
+     return element("span", "rm-arch__lifecycle-root-reference", "This task");
+    }
+    return this.focusedStepButton(
+     flow,
+     step,
+     "is-compact " + branchClass(this.stepBranchKind(flow, step)),
+     ""
     );
-   return { items: items.slice(0, 6), total: items.length };
+   };
+   endpoints.appendChild(endpoint(source));
+   endpoints.appendChild(this.focusedTransitionButton(flow, edge, "is-handoff"));
+   endpoints.appendChild(endpoint(target));
+   content.appendChild(endpoints);
+   const metadata = element("div", "rm-arch__lifecycle-meta");
+   metadata.appendChild(element("code", null, text(edge.relation)));
+   this.appendLocation(metadata, edge.evidence, "Exact source");
+   content.appendChild(metadata);
+   row.appendChild(content);
+   parent.appendChild(row);
+  }
+
+  appendFocusedLifecycleCard(parent, flow, group, concurrency, ungroupedTotal) {
+   const card = element("article", "rm-arch__lifecycle-card");
+   const header = element("header", "rm-arch__lifecycle-card-header");
+   const root = group.rootAnchorID && this.flowStepsByKey.get(flowStepKey(flow.id, group.rootAnchorID));
+   header.appendChild(element("span", "rm-arch__lifecycle-kicker", root ? "Task branch" : "Ungrouped lifecycle evidence"));
+   if (root) {
+    header.appendChild(this.focusedStepButton(flow, root, "is-compact is-task", ""));
+   } else {
+    header.appendChild(element("strong", null, "No exact task root is available"));
+   }
+   card.appendChild(header);
+   const relations = element("div", "rm-arch__lifecycle-relations");
+   group.relations.forEach((edge) => this.appendFocusedLifecycleRelation(relations, flow, edge, group.rootAnchorID));
+   const limitation = element("div", "rm-arch__lifecycle-limitation");
+   limitation.appendChild(element("strong", null, "Limitation"));
+   const limitations = [];
+   if (concurrency && concurrency.missing) limitations.push(text(concurrency.missing));
+   if (!root && ungroupedTotal > group.relations.length) {
+    limitations.push("Showing " + group.relations.length + " of " + ungroupedTotal + " ungrouped lifecycle relations.");
+   }
+   if (!root) limitations.push("No exact task root was available, so these relations remain ungrouped.");
+   limitations.push("Static relation evidence only; execution and runtime ordering were not observed.");
+   limitation.appendChild(element("span", null, limitations.join(" ")));
+   relations.appendChild(limitation);
+   card.appendChild(relations);
+   parent.appendChild(card);
   }
 
   focusedProofSummary(flow) {
@@ -1785,39 +1908,50 @@
    const primary = primaryProjection.items;
    const flowEdges = this.focusedFlowEdges(flowID);
    const operations = this.focusedOperationEdges(flow, primary);
-   const handoffs = this.focusedHandoffEdges(flow, primary);
+   const lifecycle = this.focusedLifecycleGroups(flow);
    const proof = this.focusedProofSummary(flow);
-    const evidenceDisclosure = this.focusedEvidenceDisclosure(flow);
-    const header = element("header", "rm-arch__focus-header");
-    const back = element("button", "rm-arch__focus-back", "← Back to architecture");
-    back.type = "button";
-    this.listen(back, "click", () => this.backToArchitecture());
-    header.appendChild(back);
-    const heading = element("div", "rm-arch__focus-heading");
-    heading.appendChild(element("span", "rm-arch__focus-kicker", "Saved trace"));
-    heading.appendChild(element("h3", null, flow.name || flow.id));
-    heading.appendChild(element("p", null, flow.why_inspect || flow.mental_model || flow.goal || "Inspect the exact static handoffs and current frontier."));
-    const summary = element("dl", "rm-arch__trace-summary");
-    const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
-    this.appendSummaryItem(summary, "Started from", startSurface && (startSurface.name || startSurface.id) || flow.trigger || flow.command || "Explicit investigation");
-    this.appendSummaryItem(summary, "Trace status", flow.status || "unresolved");
-    this.appendSummaryItem(summary, "Evidence basis", flow.evidence_basis || "static");
-    this.appendSummaryItem(summary, "Grounding", Number(flow.grounded_areas || proof.grounded) + "/" + Number(flow.total_areas || proof.total) + " areas grounded");
-    this.appendSummaryItem(summary, "Frontier", flow.frontier_summary || "No explicit frontier was saved");
-    const participating = element("div", "rm-arch__trace-participants");
-    participating.appendChild(element("dt", null, "Participating components"));
-    const participantValues = element("dd");
-    array(flow.participating_component_ids).forEach((componentID) => {
-     const component = this.componentByID.get(text(componentID));
-     const button = element("button", null, component && (component.name || component.id) || componentID);
-     button.type = "button";
-     this.listen(button, "click", () => this.setSelection({ component: text(componentID), surface: "", step: "", edge: "" }, true));
-     participantValues.appendChild(button);
-    });
-    if (participantValues.childElementCount === 0) participantValues.appendChild(element("span", null, "Unassigned"));
-    participating.appendChild(participantValues);
-    summary.appendChild(participating);
-    heading.appendChild(summary);
+   const concurrency = array(flow.slots).find((slot) => text(slot.kind) === "concurrency");
+   const evidenceDisclosure = this.focusedEvidenceDisclosure(flow);
+   const header = element("header", "rm-arch__focus-header");
+   const back = element("button", "rm-arch__focus-back", "← Back to architecture");
+   back.type = "button";
+   this.listen(back, "click", () => this.backToArchitecture());
+   header.appendChild(back);
+   const heading = element("div", "rm-arch__focus-heading");
+   heading.appendChild(element("span", "rm-arch__focus-kicker", savedTraceLabel(flow.archetype)));
+   heading.appendChild(element("h3", null, flow.name || flow.id));
+   heading.appendChild(element("p", null, flow.why_inspect || flow.mental_model || flow.goal || "Inspect the exact static handoffs and current frontier."));
+   const summary = element("dl", "rm-arch__trace-summary");
+   const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
+   const trigger = flow.trigger || flow.command || startSurface && (startSurface.name || startSurface.id) || "Explicit investigation";
+   const groundedSequence = primary.length > 1 ?
+    primary.length + " exact anchors linked by explicit static transitions; runtime order is not inferred" :
+    primary.length === 1 ? "1 exact anchor; no downstream transition is established" : "No connected static sequence is established";
+   const concurrentActivities = lifecycle.groups.length > 0 ?
+    lifecycle.groups.length + " task branch" + (lifecycle.groups.length === 1 ? "" : "es") +
+     " with typed lifecycle relations grouped by task root" :
+    lifecycle.ungroupedTotal > 0 ? lifecycle.ungroupedTotal + " typed lifecycle relations without an exact task root" :
+     "No concurrent task relation is established in this bounded trace";
+   this.appendSummaryItem(summary, "Trigger", trigger);
+   this.appendSummaryItem(summary, "What the system does", flow.mental_model || flow.goal || flow.why_inspect || "Bounded behavior remains unresolved");
+   const participating = element("div", "rm-arch__trace-participants");
+   participating.appendChild(element("dt", null, "Participating components"));
+   const participantValues = element("dd");
+   array(flow.participating_component_ids).forEach((componentID) => {
+    const component = this.componentByID.get(text(componentID));
+    const button = element("button", null, component && (component.name || component.id) || componentID);
+    button.type = "button";
+    this.listen(button, "click", () => this.setSelection({ component: text(componentID), surface: "", step: "", edge: "" }, true));
+    participantValues.appendChild(button);
+   });
+   if (participantValues.childElementCount === 0) participantValues.appendChild(element("span", null, "Unassigned"));
+   participating.appendChild(participantValues);
+   summary.appendChild(participating);
+   this.appendSummaryItem(summary, "Grounded sequence", groundedSequence);
+   this.appendSummaryItem(summary, "Concurrent activities", concurrentActivities);
+   this.appendSummaryItem(summary, "Current frontier", flow.frontier_summary || flow.current_frontier || "No explicit frontier was saved");
+   this.appendSummaryItem(summary, "Evidence basis", (flow.evidence_basis || "static") + " evidence; execution was not observed");
+   heading.appendChild(summary);
    const proofNode = element("div", "rm-arch__focus-proof is-" + proof.status);
    proofNode.appendChild(element("strong", null, proof.grounded + "/" + proof.total + " proof areas grounded"));
    const proofCopy = [];
@@ -1840,14 +1974,14 @@
    stats.appendChild(element("strong", null, array(flow.steps).length + " exact anchors"));
    stats.appendChild(element("span", null, flowEdges.length + " evidenced transitions"));
    stats.appendChild(element("span", null, array(flow.branches).length + " trace lanes"));
-    header.appendChild(stats);
+   header.appendChild(stats);
    this.flowFocus.appendChild(header);
 
    if (primary.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
-    sectionHeader.appendChild(element("h4", null, "Command path"));
-    const pathNotes = ["Entrypoint, registration, and callback roles linked by explicit static transitions; runtime order is not inferred."];
+    sectionHeader.appendChild(element("h4", null, "Grounded sequence"));
+    const pathNotes = ["Exact anchors linked by explicit static transitions. Execution was not observed, and runtime order is not inferred."];
     if (primaryProjection.total > primary.length) {
      pathNotes.push("Showing " + primary.length + " of " + primaryProjection.total + " connected anchors.");
     }
@@ -1892,27 +2026,27 @@
     this.flowFocus.appendChild(section);
    }
 
-   if (handoffs.items.length > 0) {
+   if (lifecycle.groups.length > 0 || lifecycle.ungrouped.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
-    sectionHeader.appendChild(element("h4", null, "Concurrency and lifecycle"));
-    let handoffCopy = "Typed task, callback, cancellation, and join relations shown separately from the dispatch chain.";
-    if (handoffs.total > handoffs.items.length) {
-     handoffCopy += " Showing " + handoffs.items.length + " of " + handoffs.total + ".";
-    }
-    sectionHeader.appendChild(element("p", null, handoffCopy));
+    sectionHeader.appendChild(element("h4", null, "Concurrent activities"));
+    sectionHeader.appendChild(element(
+     "p",
+     null,
+     "Typed start, callback, cancellation, and join rows are grouped by task root. They are not flattened into a runtime sequence."
+    ));
     section.appendChild(sectionHeader);
-    const rows = element("div", "rm-arch__focus-handoffs");
-    handoffs.items.forEach((edge) => {
-     const source = this.flowStepsByKey.get(flowStepKey(flow.id, edge.from));
-     const target = this.flowStepsByKey.get(flowStepKey(flow.id, edge.to));
-     const row = element("div", "rm-arch__focus-handoff " + semanticClass(edge.relation, edge.invocation));
-     row.appendChild(this.focusedStepButton(flow, source, "is-compact " + branchClass(this.stepBranchKind(flow, source)), ""));
-     row.appendChild(this.focusedTransitionButton(flow, edge, "is-handoff"));
-     row.appendChild(this.focusedStepButton(flow, target, "is-compact " + branchClass(this.stepBranchKind(flow, target)), ""));
-     rows.appendChild(row);
+    const cards = element("div", "rm-arch__focus-lifecycle");
+    lifecycle.groups.forEach((group) => {
+     this.appendFocusedLifecycleCard(cards, flow, group, concurrency, 0);
     });
-    section.appendChild(rows);
+    if (lifecycle.ungrouped.length > 0) {
+     this.appendFocusedLifecycleCard(cards, flow, {
+      rootAnchorID: "",
+      relations: lifecycle.ungrouped,
+     }, concurrency, lifecycle.ungroupedTotal);
+    }
+    section.appendChild(cards);
     this.flowFocus.appendChild(section);
    }
 
@@ -2761,18 +2895,21 @@
   });
  }
 
-  global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });
-  if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
-   Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
-     landscapeLayoutMode: landscapeLayoutMode,
-     boardProfileForWidth: boardProfileForWidth,
-     shortestColumnIndex: shortestColumnIndex,
-     childGridShape: childGridShape,
-     shortestCompatiblePlacement: shortestCompatiblePlacement,
-     diagnosticSubsystemIDs: diagnosticSubsystemIDs,
-     readableFitScale: readableFitScale,
-     componentFocusScale: componentFocusScale,
-     centeredTransform: centeredTransform,
-   });
-  }
+ global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });
+ if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
+  Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
+   landscapeLayoutMode: landscapeLayoutMode,
+   boardProfileForWidth: boardProfileForWidth,
+   shortestColumnIndex: shortestColumnIndex,
+   childGridShape: childGridShape,
+   shortestCompatiblePlacement: shortestCompatiblePlacement,
+   diagnosticSubsystemIDs: diagnosticSubsystemIDs,
+   readableFitScale: readableFitScale,
+   componentFocusScale: componentFocusScale,
+   centeredTransform: centeredTransform,
+   savedTraceLabel: savedTraceLabel,
+   lifecycleRelationHeading: lifecycleRelationHeading,
+   groupLifecycleRelations: groupLifecycleRelations,
+  });
+ }
 })(window);

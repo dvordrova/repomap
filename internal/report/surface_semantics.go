@@ -61,12 +61,16 @@ func projectedSurfaceRoleAndReadiness(trigger DiscoveredTrigger, quality Surface
 			return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
 				"exact route registration can seed only a partial trace because handler or reachability evidence is incomplete"
 		}
-		return SurfaceRoleEntrySurface, SurfaceTraceUnsupported,
+		return SurfaceRoleDynamicFrontier, SurfaceTraceUnsupported,
 			"route identity is unresolved and cannot select an exact request trace seed"
 	case "http_server":
 		if quality.RegistrationStart == surfaceQualityExact {
 			return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
 				"exact server start can seed a partial operational trace; accept and dispatch order remain unresolved"
+		}
+		if quality.RegistrationStart == surfaceQualityPartial {
+			return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
+				"exact repository-local wrapper call reaches a supported server start; terminal dispatch remains unresolved"
 		}
 		return SurfaceRoleEntrySurface, SurfaceTraceUnsupported,
 			"server start location is unresolved"
@@ -124,6 +128,13 @@ func projectedRegistrationQuality(trigger DiscoveredTrigger) string {
 	}
 	if validProjectedSurfaceLocation(location) {
 		return surfaceQualityExact
+	}
+	if trigger.Kind == "http_server" {
+		for index := len(trigger.WrapperChain) - 1; index >= 0; index-- {
+			if validProjectedSurfaceLocation(trigger.WrapperChain[index].Callsite) {
+				return surfaceQualityPartial
+			}
+		}
 	}
 	return surfaceQualityUnresolved
 }

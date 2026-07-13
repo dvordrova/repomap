@@ -47,6 +47,33 @@ var fixtureResults = struct {
 	values map[string]Result
 }{values: map[string]Result{}}
 
+func TestSurfaceSemanticsSeparateDynamicRouteAndLocalServerWrapper(t *testing.T) {
+	t.Parallel()
+
+	dynamicRoute := TriggerRecord{
+		Kind: "http_route", Availability: AvailabilityAvailable,
+		RegistrationSite: Location{Path: "internal/routes.go", Line: 20},
+		Identity:         Identity{Path: Value{Kind: "unknown", Text: "runtime route"}},
+	}
+	deriveSurfaceSemantics(&dynamicRoute)
+	if dynamicRoute.SurfaceRole != SurfaceRoleDynamicFrontier ||
+		dynamicRoute.TraceReadiness != TraceReadinessUnsupported {
+		t.Fatalf("dynamic route semantics = %#v", dynamicRoute)
+	}
+
+	wrappedServer := TriggerRecord{
+		Kind: "http_server", Availability: AvailabilityAvailable,
+		ServerStartSite: &Location{Path: "/outside/stdlib/server.go", Line: 100},
+		WrapperChain:    []Wrapper{{Callsite: Location{Path: "internal/server.go", Line: 44}}},
+	}
+	deriveSurfaceSemantics(&wrappedServer)
+	if wrappedServer.SurfaceRole != SurfaceRoleEntrySurface ||
+		wrappedServer.TraceReadiness != TraceReadinessPartial ||
+		wrappedServer.Quality.RegistrationStart != SurfaceQualityPartial {
+		t.Fatalf("wrapped server semantics = %#v", wrappedServer)
+	}
+}
+
 func TestAnalyzeDirectRoute(t *testing.T) {
 	result := analyzeFixture(t, "direct")
 	trigger := onlyTriggerOfKind(t, result, "http_route")

@@ -99,6 +99,10 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 				`label: "CLI commands"`,
 				`label: "process entries"`,
 				`label: "total"`,
+				`label: "trace-ready"`,
+				`label: "partial-trace candidates"`,
+				`label: "runtime activities"`,
+				`label: "rejected/noisy"`,
 			},
 		},
 		{

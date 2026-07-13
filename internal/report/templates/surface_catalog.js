@@ -330,11 +330,20 @@ function hasDynamicEvidence(trigger) {
   renderCounts() {
    const coverage = this.coverage;
    const frontierFallback = this.triggers.filter((trigger) => evidenceClass(trigger) === "dynamic").length;
-    const metrics = [
+    const traceReady = this.triggers.filter((trigger) => text(trigger.trace_readiness) === "trace_ready").length;
+    const partialReady = this.triggers.filter((trigger) => text(trigger.trace_readiness) === "partial_trace_ready").length;
+    const runtimeActivities = this.triggers.filter((trigger) => text(trigger.surface_role) === "runtime_activity").length;
+    const dynamicFrontiers = this.triggers.filter((trigger) => text(trigger.surface_role) === "dynamic_frontier").length;
+    const rejectedNoisy = this.triggers.filter((trigger) => ["rejected", "noisy"].includes(text(trigger.surface_role))).length;
+     const metrics = [
      {
       label: "total",
       value: firstNumber([this.data.total_count], this.triggers.length),
      },
+      { label: "trace-ready", value: traceReady },
+      { label: "partial-trace candidates", value: partialReady },
+      { label: "runtime activities", value: runtimeActivities },
+      { label: "rejected/noisy", value: rejectedNoisy },
       {
        label: "CLI commands",
       value: firstNumber([this.data.cli_command_count], countByKind(this.triggers, "cli_command")),
@@ -398,12 +407,12 @@ function hasDynamicEvidence(trigger) {
       countByKind(this.triggers, "async_task")
      ),
     },
-    {
-     label: "dynamic frontiers",
-     value: firstNumber(
-      [this.data.dynamic_frontier_count],
-      array(this.data.dynamic_frontiers || coverage.dynamic_frontiers).length || frontierFallback
-     ),
+     {
+      label: "dynamic frontiers",
+      value: firstNumber(
+       [this.data.dynamic_frontier_count],
+       dynamicFrontiers || array(this.data.dynamic_frontiers || coverage.dynamic_frontiers).length || frontierFallback
+      ),
     },
    ];
    metrics.forEach((metric) => {

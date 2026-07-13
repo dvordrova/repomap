@@ -190,6 +190,7 @@ report = json.loads(reports[0].read_text())
 surfaces = report.get("discovered_surfaces") or {}
 triggers = surfaces.get("triggers") or []
 expected_counts = {
+    "process_entry": 1,
     "http_route": 10,
     "http_route_descriptor": 5,
     "http_route_frontier": 2,
@@ -202,6 +203,7 @@ actual_counts = {
 if actual_counts != expected_counts:
     raise SystemExit(f"projected Caddy surface mismatch: {actual_counts}")
 expected_projected_fields = {
+    "process_entry_count": 1,
     "http_route_count": 10,
     "http_route_descriptor_count": 5,
     "http_route_frontier_count": 2,
@@ -210,11 +212,22 @@ expected_projected_fields = {
 for field, expected in expected_projected_fields.items():
     if surfaces.get(field) != expected:
         raise SystemExit(f"projected Caddy count {field}={surfaces.get(field)!r}, expected {expected}")
-if surfaces.get("application_count") != 21 or surfaces.get("unassigned_count") != 0:
+if surfaces.get("application_count") != 22 or surfaces.get("unassigned_count") != 0:
     raise SystemExit(
         "Caddy surfaces were not attributed to the exact repository-named main executable: "
         f"application={surfaces.get('application_count')!r} unassigned={surfaces.get('unassigned_count')!r}"
     )
+quality_counts = {
+    value: sum(trigger.get("trace_readiness") == value for trigger in triggers)
+    for value in {"trace_ready", "partial_trace_ready", "unsupported", "rejected"}
+}
+if quality_counts != {
+    "trace_ready": 0,
+    "partial_trace_ready": 19,
+    "unsupported": 3,
+    "rejected": 0,
+}:
+    raise SystemExit(f"projected Caddy trace-readiness mismatch: {quality_counts}")
 html = html_reports[0].read_text()
 for text in [
     "All surfaces",
@@ -222,6 +235,8 @@ for text in [
     "Server start sites",
     "Route descriptors",
     "HTTP registrations",
+    "trace-ready",
+    "partial-trace candidates",
     "hasWrapperEvidence",
     "hasDynamicEvidence",
 ]:
