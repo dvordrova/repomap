@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
@@ -45,7 +46,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v9"
+const OrientationPromptVersionJSON = "orientation-json-v10"
 
 type Client struct {
 	HTTPClient *http.Client
@@ -299,6 +300,15 @@ Produce a json orientation report with this exact shape:
   "questions_for_human": [
     "question that helps guide the next analysis step"
   ],
+  "research_questions": [
+    {
+      "id": "short question id",
+      "purpose": "why resolving this question would improve architecture or a saved trace",
+      "question": "one concrete high-value repository question",
+      "candidate_ids": ["opaque ids copied from candidate_file_index"],
+      "evidence_categories": ["declaration, callsite, transition, source_window, test, or frontier"]
+    }
+  ],
   "unverified_paths": [
     {
       "path": "path model suspects but was not present in allowed_paths",
@@ -316,6 +326,7 @@ Important rules:
 - An operational candidate must cite source_signal evidence. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
 - Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
 - Every candidate flow must include evidence from the bundle.
+- Propose two to four research_questions only when bounded local evidence could answer them. Use only opaque candidate_file_index ids and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
 - go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.
 - Keep each evidence item atomic. When citing source_signals or go.command_traces, start with its exact path:line and optionally add one short fact, for example "app/service.py:42 registers the handler". Never write "path line 42", "path lines 42-43", or "at line 42". For evidence without a grounded line, use either one exact full allowed_paths value or one non-path fact copied from the bundle. Never abbreviate a path.
 - Distinguish facts from guesses. If confidence is low, say so in warnings.
@@ -364,6 +375,46 @@ func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode 
 
 func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
 	return c.flowExplain(ctx, userContent, systemContent, true, true)
+}
+
+// BuildResearchRequest returns the exact OpenAI-compatible request body for
+// one bounded targeted research prompt.
+func (c *Client) BuildResearchRequest(prompt modelresearch.Prompt) ([]byte, error) {
+	if prompt.Version != modelresearch.PromptVersion {
+		return nil, fmt.Errorf("unsupported model research prompt version %q", prompt.Version)
+	}
+	return c.FlowExplainPromptJSON(prompt.User, prompt.System)
+}
+
+// Research performs one semantic targeted stage. Transport retries remain
+// inside the stage and are returned as Attempts rather than extra rounds.
+func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (modelresearch.ProviderResult, error) {
+	body, err := c.BuildResearchRequest(prompt)
+	if err != nil {
+		return modelresearch.ProviderResult{}, err
+	}
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := backoffDuration(attempt)
+			select {
+			case <-ctx.Done():
+				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+		content, shouldRetry, callErr := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+		if callErr == nil {
+			return modelresearch.ProviderResult{Content: content, Attempts: attempt + 1}, nil
+		}
+		lastErr = callErr
+		if !shouldRetry {
+			return modelresearch.ProviderResult{Attempts: attempt + 1}, callErr
+		}
+	}
+	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
+		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
+	)
 }
 
 // CheckJSONCompatibility makes exactly one small synthetic request. It is used
@@ -431,9 +482,16 @@ func (c *Client) flowExplain(ctx context.Context, userContent, systemContent str
 }
 
 func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) {
+	result, err := c.OrientMeasured(ctx, bundleJSON)
+	return result.Content, err
+}
+
+// OrientMeasured performs one semantic orientation stage and reports bounded
+// transport attempts separately from semantic call accounting.
+func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelresearch.ProviderResult, error) {
 	body, err := c.OrientPromptJSON(bundleJSON)
 	if err != nil {
-		return nil, fmt.Errorf("marshal llm request: %w", err)
+		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
 	}
 
 	var lastErr error
@@ -442,22 +500,24 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 			backoff := backoffDuration(attempt)
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
 			case <-time.After(backoff):
 			}
 		}
 
 		result, shouldRetry, err := doOrient(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body)
 		if err == nil {
-			return result, nil
+			return modelresearch.ProviderResult{Content: result, Attempts: attempt + 1}, nil
 		}
 		lastErr = err
 		if !shouldRetry {
-			return nil, err
+			return modelresearch.ProviderResult{Attempts: attempt + 1}, err
 		}
 	}
 
-	return nil, fmt.Errorf("retries exhausted (%d attempts): %w", maxRetries+1, lastErr)
+	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
+		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
+	)
 }
 
 func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) ([]byte, bool, error) {

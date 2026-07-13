@@ -702,7 +702,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v9" {
+	if OrientationPromptVersionJSON != "orientation-json-v10" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{

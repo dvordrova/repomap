@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -255,6 +258,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		MaxGoPkgs:                 600,
 		MaxGoEdges:                1000,
 		ResearchPolicy:            researchPolicy,
+		RepositoryContext:         researchRepositoryContext(initialState, repo),
 		EffectiveOptions: debugdump.EffectiveOptions{
 			Offline:          *offline,
 			FlowCount:        *flows,
@@ -539,6 +543,7 @@ func runOrient(args []string) error {
 		MaxGoPkgs:                 600,
 		MaxGoEdges:                1000,
 		ResearchPolicy:            researchPolicy,
+		RepositoryContext:         researchRepositoryContext(initialState, *repo),
 	}
 
 	output, err := orient.Run(ctx, opts)
@@ -582,6 +587,23 @@ func runOrient(args []string) error {
 		fmt.Println()
 	}
 	return nil
+}
+
+func researchRepositoryContext(state freshness.RepositoryState, repo string) modelresearch.RepositoryContext {
+	identity := state.Identity
+	if identity == "" {
+		identity, _ = filepath.Abs(repo)
+	}
+	revision := state.Head
+	if revision == "" {
+		revision = "unknown"
+	}
+	dirtyJSON, _ := json.Marshal(state.Dirty)
+	digest := sha256.Sum256(dirtyJSON)
+	return modelresearch.RepositoryContext{
+		Identity: identity, Revision: revision,
+		DirtySHA256: hex.EncodeToString(digest[:]), Scenario: "go-default",
+	}
 }
 
 func runDoctor(args []string, stdout, stderr io.Writer) error {

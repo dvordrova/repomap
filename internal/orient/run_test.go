@@ -380,7 +380,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	}
 }
 
-func TestRunCountsExpandedFlowRequestBodyAndPersistsStatus(t *testing.T) {
+func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/expanded\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -410,17 +410,6 @@ func TestRunCountsExpandedFlowRequestBodyAndPersistsStatus(t *testing.T) {
   "unverified_paths":[],
   "warnings":[]
 }`
-	flowReport := `{
-  "summary":"main starts the process",
-  "confidence":0.8,
-  "flow_name":"Process startup",
-  "likely_chain":[{"step":1,"name":"start","what_happens":"main runs","evidence_files":["main.go"],"confidence":0.8}],
-  "files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1}],
-  "tests_to_read":[],
-  "unverified_paths":[],
-  "unknowns":[],
-  "warnings":[]
-}`
 	var requestSizes []int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
@@ -429,13 +418,9 @@ func TestRunCountsExpandedFlowRequestBodyAndPersistsStatus(t *testing.T) {
 			return
 		}
 		requestSizes = append(requestSizes, len(body))
-		content := orientation
-		if len(requestSizes) == 2 {
-			content = flowReport
-		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": content},
+				"message": map[string]any{"role": "assistant", "content": orientation},
 			}},
 		})
 	}))
@@ -463,8 +448,8 @@ func TestRunCountsExpandedFlowRequestBodyAndPersistsStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(requestSizes) != 2 {
-		t.Fatalf("provider request count = %d, want 2", len(requestSizes))
+	if len(requestSizes) != 1 {
+		t.Fatalf("provider request count = %d, want only orientation", len(requestSizes))
 	}
 	runDir := filepath.Join(debugDir, runID)
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
@@ -475,15 +460,15 @@ func TestRunCountsExpandedFlowRequestBodyAndPersistsStatus(t *testing.T) {
 	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	wantBytes := requestSizes[0] + requestSizes[1]
-	if metadata.ProviderRequestCount != 2 || metadata.ExternalRequestBytes != wantBytes {
-		t.Fatalf("provider metadata count/bytes = %d/%d, want 2/%d", metadata.ProviderRequestCount, metadata.ExternalRequestBytes, wantBytes)
+	wantBytes := requestSizes[0]
+	if metadata.ProviderRequestCount != 1 || metadata.ExternalRequestBytes != wantBytes {
+		t.Fatalf("provider metadata count/bytes = %d/%d, want 1/%d", metadata.ProviderRequestCount, metadata.ExternalRequestBytes, wantBytes)
 	}
 	status, err := os.ReadFile(filepath.Join(runDir, "flows", "process-startup", "flow_status.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(status), `"mode": "succeeded"`) {
+	if !strings.Contains(string(status), `"mode": "local_only"`) {
 		t.Fatalf("expanded flow status = %s", status)
 	}
 }

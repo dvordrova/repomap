@@ -13,6 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidenceref"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 var (
@@ -22,15 +23,16 @@ var (
 )
 
 type orientationPart struct {
-	ProjectGuess         string                      `json:"project_guess"`
-	Confidence           float64                     `json:"confidence"`
-	HighLevelMap         []orientationMapItem        `json:"high_level_map"`
-	FirstFilesToOpen     fileToOpenList              `json:"first_files_to_open"`
-	CandidateFlows       []flowexplain.CandidateFlow `json:"candidate_flows"`
-	ImportantDomainWords []orientationDomainWord     `json:"important_domain_words"`
-	QuestionsForHuman    []string                    `json:"questions_for_human"`
-	UnverifiedPaths      unverifiedPathList          `json:"unverified_paths"`
-	Warnings             []string                    `json:"warnings"`
+	ProjectGuess         string                           `json:"project_guess"`
+	Confidence           float64                          `json:"confidence"`
+	HighLevelMap         []orientationMapItem             `json:"high_level_map"`
+	FirstFilesToOpen     fileToOpenList                   `json:"first_files_to_open"`
+	CandidateFlows       []flowexplain.CandidateFlow      `json:"candidate_flows"`
+	ImportantDomainWords []orientationDomainWord          `json:"important_domain_words"`
+	QuestionsForHuman    []string                         `json:"questions_for_human"`
+	ResearchQuestions    []modelresearch.ProposedQuestion `json:"research_questions,omitempty"`
+	UnverifiedPaths      unverifiedPathList               `json:"unverified_paths"`
+	Warnings             []string                         `json:"warnings"`
 }
 
 type orientationMapItem struct {
@@ -115,7 +117,7 @@ func parseOrientation(data []byte) (orientationPart, error) {
 	}
 	known := map[string]struct{}{
 		"project_guess": {}, "confidence": {}, "high_level_map": {}, "first_files_to_open": {},
-		"candidate_flows": {}, "important_domain_words": {}, "questions_for_human": {},
+		"candidate_flows": {}, "important_domain_words": {}, "questions_for_human": {}, "research_questions": {},
 		"unverified_paths": {}, "warnings": {},
 	}
 	var unknown []string
