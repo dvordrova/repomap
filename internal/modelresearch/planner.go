@@ -1,6 +1,7 @@
 package modelresearch
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -52,7 +53,13 @@ type PlanResult struct {
 // PlanTargetedRounds applies a deterministic local value-of-information policy
 // and returns at most two bounded questions. Model ordering is only a hint;
 // exact retrievable evidence and user-facing impact determine selection.
-func PlanTargetedRounds(input PlanningInput) (PlanResult, error) {
+func PlanTargetedRounds(ctx context.Context, input PlanningInput) (PlanResult, error) {
+	if ctx == nil {
+		return PlanResult{}, fmt.Errorf("model research: context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return PlanResult{}, err
+	}
 	if err := input.Policy.Validate(); err != nil {
 		return PlanResult{}, err
 	}
@@ -78,6 +85,9 @@ func PlanTargetedRounds(input PlanningInput) (PlanResult, error) {
 	plans := make([]PlannedRound, 0, len(input.Questions))
 	seenQuestions := make(map[string]struct{}, len(input.Questions))
 	for index, question := range input.Questions {
+		if err := ctx.Err(); err != nil {
+			return PlanResult{}, err
+		}
 		question.Question = strings.TrimSpace(question.Question)
 		if question.ID == "" {
 			question.ID = stableID("question", question.Question)
@@ -105,10 +115,13 @@ func PlanTargetedRounds(input PlanningInput) (PlanResult, error) {
 			continue
 		}
 
-		bundle, scope, unknownCandidates := assembleEvidenceBundle(
-			reader, index+1, question, candidates, authorized, initialPaths,
+		bundle, scope, unknownCandidates, err := assembleEvidenceBundle(
+			ctx, reader, index+1, question, candidates, authorized, initialPaths,
 			input.Universe.CommandTraces, input.Policy.Targeted,
 		)
+		if err != nil {
+			return PlanResult{}, err
+		}
 		plan.Bundle = bundle
 		plan.Scope = scope
 		if unknownCandidates > 0 && len(bundle.Evidence) == 0 {
@@ -183,6 +196,7 @@ func PlanTargetedRounds(input PlanningInput) (PlanResult, error) {
 }
 
 func assembleEvidenceBundle(
+	ctx context.Context,
 	reader *reporead.Reader,
 	roundNumber int,
 	question ProposedQuestion,
@@ -191,7 +205,7 @@ func assembleEvidenceBundle(
 	initialPaths map[string]struct{},
 	traces []gofacts.CommandTrace,
 	budget StageBudget,
-) (EvidenceBundle, FocusedInvestigationScope, int) {
+) (EvidenceBundle, FocusedInvestigationScope, int, error) {
 	roundID := fmt.Sprintf("research-%d-%s", roundNumber, strings.TrimPrefix(stableID("round", question.Question), "round-"))
 	bundle := EvidenceBundle{
 		Version: ContractVersion, PolicyVersion: PolicyVersion, RoundID: roundID,
@@ -225,6 +239,9 @@ func assembleEvidenceBundle(
 	}
 
 	for _, trace := range matchingCommandTraces(question.Question, traces) {
+		if err := ctx.Err(); err != nil {
+			return EvidenceBundle{}, FocusedInvestigationScope{}, 0, err
+		}
 		for _, step := range trace.Steps {
 			addTraceLocation(selectedPaths, authorized, step.TargetLocation)
 			if step.CallsiteLocation != nil {
@@ -258,6 +275,9 @@ func assembleEvidenceBundle(
 		paths = paths[:budget.MaxFiles]
 	}
 	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return EvidenceBundle{}, FocusedInvestigationScope{}, 0, err
+		}
 		line := selectedPaths[path]
 		window, ok := readSourceWindow(reader, path, line)
 		if !ok {
@@ -310,7 +330,7 @@ func assembleEvidenceBundle(
 	scope.FocusedEvidenceIDs = sortedUnique(scope.FocusedEvidenceIDs)
 	scope.ProviderEvidenceIDs = sortedUnique(scope.ProviderEvidenceIDs)
 	scope.LocallyInspected = sortedUnique(scope.LocallyInspected)
-	return bundle, scope, unknownCandidates
+	return bundle, scope, unknownCandidates, nil
 }
 
 func exactEvidenceItem(kind EvidenceKind, symbol, relation string, location evidence.Location, statement string, initial map[string]struct{}) EvidenceItem {

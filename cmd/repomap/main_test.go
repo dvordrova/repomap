@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,10 +14,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 )
@@ -38,6 +41,109 @@ func TestPrintPromptVersions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(versions, want) {
 		t.Fatalf("prompt versions = %#v, want %#v", versions, want)
+	}
+}
+
+func TestWriteProgressShowsWaitsAndProviderMeasurements(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	for _, event := range []orient.ProgressEvent{
+		{
+			Stage: orient.ProgressProviderWaiting, Model: "fixture-model",
+			Activity: "orientation", LatencyMillis: 10_000,
+		},
+		{
+			Stage: orient.ProgressOrientationDone, ResponseBytes: 4096,
+			LatencyMillis: 12_500, InputTokens: 900, OutputTokens: 120,
+			CandidateCount: 3, Cached: true,
+		},
+		{
+			Stage: orient.ProgressResearchDone, Activity: "completed",
+			RequestBytes: 8192, ResponseBytes: 2048, LatencyMillis: 15_000,
+			InputTokens: 700, OutputTokens: 80, FindingCount: 2,
+			RejectedCount: 1, NewFactCount: 2,
+		},
+	} {
+		writeProgress(&output, event)
+	}
+
+	for _, want := range []string{
+		"orientation from fixture-model still running after 10s (Ctrl-C to cancel)",
+		"reused cached orientation response of 4096 bytes (original call: 12500 ms, 900 input / 120 output tokens)",
+		"validated 3 candidate direction(s)",
+		"targeted research completed: received 2048 bytes from a 8192-byte request",
+		"2 validated, 1 rejected, 2 new grounded fact(s)",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("progress output missing %q:\n%s", want, output.String())
+		}
+	}
+	if got := formatTokenUsage(0, 0); got != "tokens unavailable" {
+		t.Fatalf("formatTokenUsage(0, 0) = %q", got)
+	}
+}
+
+func TestRunDefaultStopsWhenOrientationIsCanceled(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/cancel\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\n\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	started := make(chan struct{}, 1)
+	releaseHandler := make(chan struct{})
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		requests.Add(1)
+		started <- struct{}{}
+		select {
+		case <-request.Context().Done():
+		case <-releaseHandler:
+		}
+	}))
+	defer server.Close()
+	defer close(releaseHandler)
+
+	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
+	t.Setenv("REPOMAP_LLM_MODEL", "fixture-model")
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	var stderr bytes.Buffer
+	err := runDefaultWithDeps(
+		repo,
+		[]string{"--debug-dir", t.TempDir(), "--discover-surfaces=false", "--no-open", "--no-serve"},
+		defaultRunDeps{ctx: ctx, stdout: io.Discard, stderr: &stderr},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runDefaultWithDeps() error = %v, want context.Canceled", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("provider requests = %d, want 1", got)
+	}
+	for _, unwanted := range []string{"targeted research failed", "synthesizing bounded architecture", "Report: "} {
+		if strings.Contains(stderr.String(), unwanted) {
+			t.Errorf("stderr contains post-cancel output %q:\n%s", unwanted, stderr.String())
+		}
+	}
+
+	var userError bytes.Buffer
+	writeDefaultRunError(&userError, err)
+	if got := userError.String(); got != "repomap: canceled\n" {
+		t.Fatalf("cancellation message = %q", got)
+	}
+	if got := defaultRunExitCode(err); got != 130 {
+		t.Fatalf("cancellation exit code = %d, want 130", got)
 	}
 }
 
@@ -165,12 +271,12 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	}
 	for _, want := range []string{
 		"repomap: collecting tracked repository facts from ",
-		"repomap: repository facts ready in ",
+		"repomap: repository facts ready: ",
 		"repomap: compact local context ",
 		"repomap: discovering local Go runtime surfaces",
 		"repomap: discovered 0 local runtime surface(s)",
-		fmt.Sprintf("repomap: asking deepseek-v4-flash with %d-byte request", len(requestBody)),
-		"repomap: validated 1 candidate direction(s)",
+		fmt.Sprintf("repomap: prepared %d-byte orientation request for deepseek-v4-flash", len(requestBody)),
+		"validated 1 candidate direction(s)",
 		"Report: ",
 	} {
 		if !strings.Contains(stderr.String(), want) {

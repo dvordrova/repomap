@@ -2,12 +2,24 @@ package surfacediscovery
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 )
+
+func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := AnalyzeContext(ctx, DefaultOptions(filepath.Join("testdata", "cli")))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("AnalyzeContext() error = %v, want context.Canceled", err)
+	}
+}
 
 var fixtureResults = struct {
 	sync.Mutex

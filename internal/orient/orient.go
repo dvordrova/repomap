@@ -3,6 +3,7 @@ package orient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -47,10 +48,12 @@ type Options struct {
 	RequireArtifacts          bool
 	DiscoverSurfaces          bool
 	ExplainFlows              int
-	Progress                  func(ProgressEvent)
-	EffectiveOptions          debugdump.EffectiveOptions
-	ResearchPolicy            modelresearch.Policy
-	RepositoryContext         modelresearch.RepositoryContext
+	// Progress callbacks may run from heartbeat goroutines. They must be
+	// concurrency-safe and return promptly.
+	Progress          func(ProgressEvent)
+	EffectiveOptions  debugdump.EffectiveOptions
+	ResearchPolicy    modelresearch.Policy
+	RepositoryContext modelresearch.RepositoryContext
 }
 
 type combinedReport struct {
@@ -98,6 +101,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	emitProgress(opts, ProgressEvent{
 		Stage:         ProgressSnapshotReady,
 		RepoName:      s.RepoName,
+		FileCount:     s.FilesConsidered,
 		LatencyMillis: time.Since(snapshotStarted).Milliseconds(),
 	})
 
@@ -134,10 +138,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		return nil, fmt.Errorf("marshal compact model bundle: %w", err)
 	}
 	emitProgress(opts, ProgressEvent{
-		Stage:         ProgressBundleReady,
-		RepoName:      s.RepoName,
-		BundleBytes:   len(modelBundleJSON),
-		LatencyMillis: time.Since(bundleStarted).Milliseconds(),
+		Stage:          ProgressBundleReady,
+		RepoName:       s.RepoName,
+		BundleBytes:    len(modelBundleJSON),
+		CandidateCount: len(bundle.CandidateFileIndex),
+		LatencyMillis:  time.Since(bundleStarted).Milliseconds(),
 	})
 
 	if opts.LLMBundleOnly {
@@ -210,9 +215,24 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			Stage:    ProgressSurfaceStarted,
 			RepoName: s.RepoName,
 		})
-		surfaceResult, surfaceErr := surfacediscovery.Analyze(surfacediscovery.DefaultOptions(opts.RepoPath))
+		stopSurfaceHeartbeat := startProgressHeartbeat(ctx, opts, ProgressEvent{
+			Stage: ProgressSurfaceWaiting, RepoName: s.RepoName, Activity: "Go runtime surface discovery",
+		})
+		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContext(
+			ctx, surfacediscovery.DefaultOptions(opts.RepoPath),
+		)
+		stopSurfaceHeartbeat()
+		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
+			return nil, surfaceErr
+		}
 		if surfaceErr == nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			surfaceErr = surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 		}
 		surfaceLatency := time.Since(surfaceStarted).Milliseconds()
 		runMeta.SurfaceDiscoveryRan = true
@@ -274,6 +294,12 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			)
 		}
 		config := client.EffectiveConfig()
+		client.OnWait = func(progress deepseek.WaitProgress) {
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressProviderWaiting, RepoName: s.RepoName, Model: client.Model,
+				Activity: progress.Stage, LatencyMillis: progress.Elapsed.Milliseconds(),
+			})
+		}
 		repository := repositoryContext(opts, modelBundleJSON)
 		researchState := modelresearch.NewState(policy, repository)
 		researchState.Coverage.LocalAuthorizedFiles = len(s.FilteredFiles)
@@ -344,7 +370,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		attempt := &runMeta.RequestAttempts[len(runMeta.RequestAttempts)-1]
 		attempt.LatencyMillis = &providerLatency
 		attempt.ProviderCallCount = call.Metrics.SemanticCalls
-		if err != nil {
+		contextErr := ctx.Err()
+		if contextErr != nil {
+			attempt.State = "canceled"
+		} else if err != nil {
 			attempt.State = "failed"
 		} else if call.Metrics.CacheHit {
 			attempt.State = "cached"
@@ -355,6 +384,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 				return nil, fmt.Errorf("write provider latency metadata: %w", metadataErr)
 			}
+		}
+		if contextErr != nil {
+			return nil, contextErr
 		}
 		if err != nil {
 			if dw != nil {
@@ -445,9 +477,23 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				return nil, fmt.Errorf("write orientation metadata: %w", metadataErr)
 			}
 		}
-		researchWarnings := runTargetedResearch(
+		emitProgress(opts, ProgressEvent{
+			Stage:          ProgressOrientationDone,
+			RepoName:       s.RepoName,
+			Model:          client.Model,
+			CandidateCount: len(acceptedFlows),
+			LatencyMillis:  providerLatency,
+			ResponseBytes:  call.Metrics.ResponseBytes,
+			InputTokens:    call.Metrics.InputTokens,
+			OutputTokens:   call.Metrics.OutputTokens,
+			Cached:         call.Metrics.CacheHit,
+		})
+		researchWarnings, researchErr := runTargetedResearch(
 			ctx, opts, client, dw, bundle, s, &or, &researchState, &runMeta,
 		)
+		if researchErr != nil {
+			return nil, researchErr
+		}
 		report.Warnings = append(report.Warnings, researchWarnings...)
 		if dw != nil && len(or.ResearchQuestions) == 0 {
 			if err := modelresearch.WriteState(dw.RunDir(), researchState); err != nil {
@@ -459,14 +505,6 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				return nil, fmt.Errorf("write targeted research metadata: %w", metadataErr)
 			}
 		}
-		emitProgress(opts, ProgressEvent{
-			Stage:          ProgressOrientationDone,
-			RepoName:       s.RepoName,
-			Model:          client.Model,
-			CandidateCount: len(acceptedFlows),
-			LatencyMillis:  providerLatency,
-		})
-
 		out, _ := json.MarshalIndent(or, "", "  ")
 		if dw != nil {
 			if err := dw.WriteOrientationReport(out); err != nil && requireArtifacts {

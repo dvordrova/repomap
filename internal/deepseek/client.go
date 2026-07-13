@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -24,7 +25,7 @@ const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
 	defaultMaxTokens = 6000
-	defaultTimeout   = 60 * time.Second
+	defaultTimeout   = 10 * time.Minute
 
 	authBearer = "bearer"
 	authNone   = "none"
@@ -55,6 +56,16 @@ type Client struct {
 	MaxTokens  int
 	Endpoint   string
 	Auth       string
+	// OnWait is called from a heartbeat goroutine during long semantic stages.
+	// Set it before starting a request; it must be concurrency-safe, return
+	// promptly, and never log prompt, response, source, or credential content.
+	OnWait       func(WaitProgress)
+	waitInterval time.Duration
+}
+
+type WaitProgress struct {
+	Stage   string
+	Elapsed time.Duration
 }
 
 type EffectiveConfig struct {
@@ -390,6 +401,8 @@ func (c *Client) BuildResearchRequest(prompt modelresearch.Prompt) ([]byte, erro
 // Research performs one semantic targeted stage. Transport retries remain
 // inside the stage and are returned as Attempts rather than extra rounds.
 func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (modelresearch.ProviderResult, error) {
+	stopWaiting := c.startWaitProgress(ctx, "targeted research")
+	defer stopWaiting()
 	body, err := c.BuildResearchRequest(prompt)
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
@@ -493,6 +506,8 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 // OrientMeasured performs one semantic orientation stage and reports bounded
 // transport attempts separately from semantic call accounting.
 func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelresearch.ProviderResult, error) {
+	stopWaiting := c.startWaitProgress(ctx, "orientation")
+	defer stopWaiting()
 	body, err := c.OrientPromptJSON(bundleJSON)
 	if err != nil {
 		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
@@ -525,6 +540,40 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
 		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
 	)
+}
+
+func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
+	if c == nil || c.OnWait == nil {
+		return func() {}
+	}
+	interval := c.waitInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	var wait sync.WaitGroup
+	wait.Add(1)
+	started := time.Now()
+	go func() {
+		defer wait.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				c.OnWait(WaitProgress{Stage: stage, Elapsed: time.Since(started)})
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() { close(done) })
+		wait.Wait()
+	}
 }
 
 func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) ([]byte, bool, error) {

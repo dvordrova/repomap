@@ -126,9 +126,9 @@ func runTargetedResearch(
 	report *orientationPart,
 	state *modelresearch.State,
 	runMeta *debugdump.RunMeta,
-) []string {
+) ([]string, error) {
 	if state == nil || report == nil || client == nil || dw == nil || len(report.ResearchQuestions) == 0 {
-		return nil
+		return nil, nil
 	}
 	candidates := make([]modelresearch.FileCandidate, 0, len(bundle.CandidateFileIndex))
 	for _, candidate := range bundle.CandidateFileIndex {
@@ -140,7 +140,11 @@ func runTargetedResearch(
 	if snapshot.GoFacts != nil {
 		traces = snapshot.GoFacts.CommandTraces
 	}
-	plan, err := modelresearch.PlanTargetedRounds(modelresearch.PlanningInput{
+	stopPlanningHeartbeat := startProgressHeartbeat(ctx, opts, ProgressEvent{
+		Stage: ProgressPlanningWaiting, RepoName: snapshot.RepoName,
+		Activity: "refining repository understanding",
+	})
+	plan, err := modelresearch.PlanTargetedRounds(ctx, modelresearch.PlanningInput{
 		RepoPath: opts.RepoPath, Questions: report.ResearchQuestions, Candidates: candidates,
 		InitialProviderPaths: bundle.ProviderAllowedPaths,
 		Universe: modelresearch.LocalRepositoryUniverse{
@@ -148,19 +152,34 @@ func runTargetedResearch(
 		},
 		Policy: state.Policy, Usage: state.Usage,
 	})
+	stopPlanningHeartbeat()
 	if err != nil {
-		return []string{fmt.Sprintf("targeted model research planning failed: %v", err)}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return []string{fmt.Sprintf("targeted model research planning failed: %v", err)}, nil
 	}
 	traceIDs := acceptedFlowIDs(report.CandidateFlows)
 	state.Theory.RelatedTraceIDs = append([]string(nil), traceIDs...)
 	warnings := make([]string, 0)
 	for _, planned := range plan.Selected {
+		if err := ctx.Err(); err != nil {
+			return warnings, err
+		}
 		planned.Bundle.KnownTraceIDs = append([]string(nil), traceIDs...)
+		emitProgress(opts, ProgressEvent{
+			Stage: ProgressResearchPrepared, RepoName: snapshot.RepoName, Model: client.Model,
+			Activity: "targeted research", FileCount: len(planned.Scope.LocallyInspected),
+			EvidenceCount: len(planned.Bundle.Evidence),
+		})
 		round, callErr := modelresearch.ExecuteRound(ctx, modelresearch.ExecuteInput{
 			Plan: planned, Policy: state.Policy, Usage: state.Usage, Repository: state.Repository,
 			RunsDir: dw.BaseDir, RunDir: dw.RunDir(),
 			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
 		})
+		if err := ctx.Err(); err != nil {
+			return warnings, err
+		}
 		modelresearch.ApplyRound(state, planned, round)
 		if artifactErr := writeResearchBundleArtifact(dw, round, planned.Bundle); artifactErr != nil {
 			warnings = append(warnings, fmt.Sprintf("persist targeted evidence bundle: %v", artifactErr))
@@ -174,9 +193,20 @@ func runTargetedResearch(
 		if callErr != nil {
 			warnings = append(warnings, fmt.Sprintf("targeted model research %q failed; local evidence was preserved: %v", round.Question, callErr))
 		}
+		emitProgress(opts, ProgressEvent{
+			Stage: ProgressResearchDone, RepoName: snapshot.RepoName, Model: client.Model,
+			Activity: string(round.Status), RequestBytes: round.RequestBytes,
+			ResponseBytes: round.ResponseBytes, FindingCount: len(round.ValidatedFindings),
+			RejectedCount: len(round.RejectedFindings), NewFactCount: round.NewGroundedFactsCount,
+			InputTokens: round.InputTokens, OutputTokens: round.OutputTokens,
+			Cached: round.Cached, LatencyMillis: round.LatencyMillis,
+		})
 	}
 	remainingSlots := state.Policy.MaxTargetedRounds - len(state.Rounds)
 	for _, skipped := range plan.Skipped {
+		if err := ctx.Err(); err != nil {
+			return warnings, err
+		}
 		if remainingSlots <= 0 {
 			break
 		}
@@ -190,7 +220,7 @@ func runTargetedResearch(
 	}
 	runMeta.ProviderRequestCount = state.Usage.SemanticCalls
 	runMeta.ExternalRequestBytes = state.Usage.RequestBytes
-	return warnings
+	return warnings, nil
 }
 
 func acceptedFlowIDs(flows []flowexplain.CandidateFlow) []string {

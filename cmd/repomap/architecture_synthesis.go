@@ -47,6 +47,14 @@ func synthesizeArchitectureForRun(
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
 	}
+	client.OnWait = func(progress deepseek.WaitProgress) {
+		fmt.Fprintf(
+			stderr,
+			"repomap: %s still running after %s (Ctrl-C to cancel)\n",
+			progress.Stage,
+			progress.Elapsed.Round(time.Second),
+		)
+	}
 	outcome, err := prepareArchitectureSynthesis(
 		ctx,
 		runDir,
@@ -55,6 +63,9 @@ func synthesizeArchitectureForRun(
 		client.Model,
 		client,
 	)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return outcome, ctxErr
+	}
 	status := architectureSynthesisStatus(outcome, err)
 	if statusErr := writeArchitectureSynthesisStatus(runDir, status); statusErr != nil {
 		if err != nil {
@@ -65,17 +76,25 @@ func synthesizeArchitectureForRun(
 	if err != nil {
 		return outcome, err
 	}
-	cacheLabel := ""
 	if outcome.Cached {
-		cacheLabel = ", cached"
+		fmt.Fprintf(
+			stderr,
+			"repomap: reused cached architecture response of %d bytes for a %d-byte request (original call: %d ms, %s)\n",
+			outcome.ResponseBytes,
+			outcome.InputBytes,
+			outcome.LatencyMillis,
+			formatTokenUsage(outcome.InputTokens, outcome.OutputTokens),
+		)
+	} else {
+		fmt.Fprintf(
+			stderr,
+			"repomap: architecture synthesis received %d bytes from a %d-byte request in %d ms (%s)\n",
+			outcome.ResponseBytes,
+			outcome.InputBytes,
+			outcome.LatencyMillis,
+			formatTokenUsage(outcome.InputTokens, outcome.OutputTokens),
+		)
 	}
-	fmt.Fprintf(
-		stderr,
-		"repomap: architecture synthesis %d-byte prompt in %d ms%s\n",
-		outcome.InputBytes,
-		outcome.LatencyMillis,
-		cacheLabel,
-	)
 	if outcome.FallbackReason != "" {
 		fmt.Fprintf(stderr, "repomap: architecture synthesis downgraded to local fallback: %s\n", outcome.FallbackReason)
 	}
@@ -218,6 +237,9 @@ func ensureArchitectureSynthesis(
 	outcome.ResponseBytes = len(raw)
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return outcome, ctxErr
+	}
 	if err != nil {
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
 		if recordErr := recordArchitectureResearch(runDir, outcome, "failed", false, policy, usage); recordErr != nil {

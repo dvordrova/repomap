@@ -748,6 +748,32 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 	}
 }
 
+func TestWaitProgressStopsCooperatively(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	updates := make(chan WaitProgress, 2)
+	client := &Client{
+		waitInterval: time.Millisecond,
+		OnWait: func(progress WaitProgress) {
+			select {
+			case updates <- progress:
+			default:
+			}
+		},
+	}
+	stop := client.startWaitProgress(ctx, "fixture stage")
+	select {
+	case update := <-updates:
+		if update.Stage != "fixture stage" || update.Elapsed <= 0 {
+			t.Fatalf("wait update = %#v", update)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for progress heartbeat")
+	}
+	stop()
+	cancel()
+}
+
 func clearLLMConfigEnv(t *testing.T) {
 	t.Helper()
 

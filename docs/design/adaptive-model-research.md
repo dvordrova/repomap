@@ -2,8 +2,9 @@
 
 This document records the provider and context pipeline observed before the
 adaptive-research implementation, the boundary failure that motivates the
-change, and the bounded target policy approved in decision 090. It describes
-the normal `repomap <repo>` product path separately from opt-in playgrounds.
+change, and the bounded target policy approved in decisions 090, 091, and 092.
+It describes the normal `repomap <repo>` product path separately from opt-in
+playgrounds.
 
 ## Observed pre-change product pipeline
 
@@ -144,21 +145,28 @@ deterministic repository facts
   -> final bounded architecture synthesis
 ```
 
-The selected policy is versioned with the implementation and is calibrated on
-saved Restic and Caddy fixtures. The intended defaults are:
+The selected policy is versioned with the implementation and calibrated on
+saved Restic and Caddy fixtures. Targets guide measurement and calibration;
+they are not shaping or rejection thresholds. Technical ceilings are
+fail-closed safety rails:
 
-| Budget | Target | Hard limit | Secondary ceiling |
+| Budget | Soft target | Technical ceiling | Secondary ceiling |
 | --- | ---: | ---: | ---: |
-| Broad orientation request | 80 KiB | 96 KiB | 250 compact file summaries |
-| One targeted request | 64 KiB | 80 KiB | 25 source windows / 160 evidence items |
-| Architecture request | 80 KiB | 96 KiB | existing exact candidate ceilings |
-| Normal-run total external requests | — | 320 KiB | four semantic calls |
+| Broad orientation request | 80 KiB | 1 MiB | 250 compact file summaries |
+| One targeted request | 64 KiB | 1 MiB | 25 source windows / 160 provider evidence items |
+| Architecture request | 160 KiB | 1 MiB | existing exact candidate ceilings |
+| Normal-run total external requests | materially below ceiling | 4 MiB | four semantic calls |
 | Targeted rounds | — | two | one question per round |
 
-The byte limit is primary. File/window counts are safety ceilings, not the
-repository-understanding budget. A stage is skipped rather than allowed to
-exceed the remaining total. Transport retries remain attempts within one
-semantic stage and are recorded separately.
+Bytes remain the primary provider boundary. File/window counts are secondary
+safety ceilings, not the repository-understanding budget. A request may exceed
+its soft target when retaining useful bounded evidence requires it, but a stage
+is skipped rather than allowed to exceed the technical or aggregate ceiling.
+Evidence omitted from a targeted provider bundle remains separately recorded as
+local evidence with `never_sent_to_provider` visibility. Architecture input is
+not reduced by repeatedly lowering an arbitrary candidate-count constant.
+Transport retries remain attempts within one semantic stage and are recorded
+separately.
 
 The former optional per-flow prose calls are not part of the normal adaptive
 allocation: targeted rounds replace their model role. Saved deterministic flow
@@ -178,16 +186,57 @@ does not trigger a differently worded semantic round. Architecture synthesis
 continues with local facts and any prior validated findings. Budget exhaustion
 persists the frontier and still finishes the report.
 
+Context cancellation is different from provider or analyzer failure. The
+normal CLI signal context reaches provider requests, targeted local planning,
+and Go surface discovery. Cancellation ends the run rather than becoming a
+warning followed by more work. The default provider timeout is ten minutes
+(still configurable through the documented environment override), and
+content-free wait heartbeats are emitted every ten seconds for long provider
+stages and surface discovery.
+
 ## Measurement baseline
 
-Pre-change saved normal runs show the orientation request below the selected
-96-KiB hard limit but only because the 60-file ceiling truncates candidate
-summaries first:
+Pre-change saved normal runs showed orientation requests below the former
+96-KiB cutoff only because the 60-file ceiling truncated candidate summaries
+first:
 
 - Caddy: 45,697 orientation request bytes; one orientation call; architecture
   commonly replayed from cache;
 - Restic: 61,322 orientation request bytes; one orientation call; one
   architecture call in the audited run.
+
+The final policy-v2 local budget check measured 250 compact file summaries for
+each repository without a provider call:
+
+- Restic: 1,344 authorized files, 186,442-byte local bundle, and 147,660-byte
+  orientation request;
+- Caddy: 612 authorized files, 169,097-byte local bundle, and 143,992-byte
+  orientation request.
+
+The final bounded product journeys measured:
+
+- Restic: 100,345-byte compact context; 117,476-byte orientation request;
+  34,587-byte and 21,271-byte targeted requests; 190,483-byte architecture
+  request; four semantic calls and 363,817 aggregate request bytes. Two local
+  runtime surfaces were discovered. The architecture provider response was
+  captured but rejected for ungrounded components, so the report correctly used
+  the local fallback rather than presenting the response as validated.
+- Caddy: 88,481-byte compact context; 103,701-byte orientation request;
+  6,449-byte and 4,278-byte targeted requests; and a 142,891-byte architecture
+  request. All model stages replayed exact caches, the architecture proposal
+  validated, and local discovery honestly retained zero runtime surfaces.
+
+These measurements justify removing the former 96-KiB architecture rejection
+threshold. They also demonstrate why a successful provider call is not an
+acceptance criterion: exact-ID and grounding validation still controls whether
+the model proposal or deterministic local fallback reaches the report.
+
+The Restic journey visibly exercised ten-second content-free heartbeats for
+surface discovery, orientation, both targeted rounds, and architecture
+synthesis. A channel-coordinated default-journey test cancels an in-flight
+orientation request and verifies that no targeted research, architecture,
+report publication, or generic failure wording follows; the default CLI reports
+`repomap: canceled` and uses exit status 130.
 
 The implementation records exact request and response bytes, tokens when the
 provider reports them, latency, retries, cache state, locally inspected files,
