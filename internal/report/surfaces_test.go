@@ -100,6 +100,42 @@ func TestProjectDiscoveredSurfacesCollapsesRepeatedCoverageNoise(t *testing.T) {
 	}
 }
 
+func TestProjectDiscoveredSurfacesCountsHTTPServerRoots(t *testing.T) {
+	t.Parallel()
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: []rawSurfaceTrigger{
+		{Kind: "http_route"},
+		{Kind: "http_server"},
+		{Kind: "http_route_descriptor"},
+		{Kind: "http_route_frontier"},
+	}}, rawSurfaceCoverage{})
+
+	if projected.HTTPRouteCount != 1 || projected.HTTPServerCount != 1 ||
+		projected.HTTPRouteDescriptorCount != 1 || projected.HTTPRouteFrontierCount != 1 {
+		t.Fatalf("HTTP counts = %#v", projected)
+	}
+}
+
+func TestProjectDiscoveredSurfacesSanitizesEmbeddedExternalLocations(t *testing.T) {
+	t.Parallel()
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: []rawSurfaceTrigger{{
+		ID: "external-value", Kind: "http_route",
+		Dispatcher: rawSurfaceValue{
+			Kind: "allocation", Text: "*echo.Echo@/Users/example/go/pkg/mod/echo.go:1:2", Known: true,
+			Candidates: []string{"*echo.Echo@/Users/example/go/pkg/mod/echo.go:1:2"},
+		},
+	}}}, rawSurfaceCoverage{})
+	encoded, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("/Users/example")) ||
+		projected.Triggers[0].Dispatcher.Text != "*echo.Echo@<external>" {
+		t.Fatalf("external location sanitization failed: %s", encoded)
+	}
+}
+
 func TestParseDiscoveredSurfacesMissingArtifacts(t *testing.T) {
 	t.Parallel()
 
@@ -242,6 +278,14 @@ func TestParseDiscoveredSurfacesSortsAndCapsStableIDs(t *testing.T) {
 			surfaces.Triggers[0].ID,
 			surfaces.Triggers[len(surfaces.Triggers)-1].ID,
 		)
+	}
+	beforeRoutes := surfaces.HTTPRouteCount
+	surfaces.Triggers = append(surfaces.Triggers, DiscoveredTrigger{
+		ID: "cobra-extra", Kind: "cli_command", Producer: SurfaceProducerCobra,
+	})
+	refreshSurfaceCatalogCounts(surfaces)
+	if surfaces.TotalCount != maxDiscoveredSurfaceTriggers+4 || surfaces.HTTPRouteCount != beforeRoutes {
+		t.Fatalf("truncated counts changed to displayed subset: %#v", surfaces)
 	}
 }
 

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "seeds": [
+    {
+      "id": "echo-v4-echo-add",
+      "operation": "call",
+      "symbol": {"package": "github.com/labstack/echo/v4", "receiver": "*Echo", "name": "Add", "min_args": 4, "variadic": true},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "echo"},
+      "projections": {"method": {"source": "argument", "index": 0}, "path": {"source": "argument", "index": 1}, "handler": {"source": "argument", "index": 2}, "dispatcher": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "Echo v4.15.4 (*Echo).Add; Echo verb helpers delegate to Add",
+      "fixture_coverage": ["echo_v4_direct_add", "echo_v4_echo_convenience_wrapper"]
+    },
+    {
+      "id": "echo-v4-group-add",
+      "operation": "call",
+      "symbol": {"package": "github.com/labstack/echo/v4", "receiver": "*Group", "name": "Add", "min_args": 4, "variadic": true},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "echo"},
+      "projections": {"method": {"source": "argument", "index": 0}, "path_prefix": {"source": "receiver_field", "field": "prefix"}, "path": {"source": "argument", "index": 1}, "handler": {"source": "argument", "index": 2}, "dispatcher": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "Echo v4.15.4 (*Group).Add; Group verb helpers delegate to Add after prefix composition",
+      "fixture_coverage": ["echo_v4_group_convenience_wrapper"]
+    }
+  ]
+}

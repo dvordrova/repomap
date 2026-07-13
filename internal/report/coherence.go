@@ -33,7 +33,16 @@ type architectureOwnershipIndex struct {
 // saved IDs, membership, package identities, and source locations. Ambiguous
 // evidence remains unassigned instead of being guessed from display names.
 func linkArchitectureProductObjects(data *ReportData) {
-	if data == nil || data.ArchitectureCanvas == nil {
+	if data == nil {
+		return
+	}
+	if data.DiscoveredSurfaces != nil {
+		for index := range data.DiscoveredSurfaces.Triggers {
+			classifySurfaceExecutable(data, &data.DiscoveredSurfaces.Triggers[index])
+		}
+		refreshSurfaceCatalogCounts(data.DiscoveredSurfaces)
+	}
+	if data.ArchitectureCanvas == nil {
 		return
 	}
 	canvas := data.ArchitectureCanvas
@@ -83,7 +92,6 @@ func linkArchitectureProductObjects(data *ReportData) {
 	if data.DiscoveredSurfaces != nil {
 		for index := range data.DiscoveredSurfaces.Triggers {
 			trigger := &data.DiscoveredSurfaces.Triggers[index]
-			classifySurfaceExecutable(data, trigger)
 			surface := architectureSurfaceFromTrigger(*trigger, owners, flowByLocation, flowByCommand, flowLocations)
 			trigger.OwningExecutable = surface.OwningExecutable
 			trigger.OwningComponentID = surface.OwningComponentID
@@ -546,6 +554,9 @@ func uniqueOwnerForTrigger(trigger DiscoveredTrigger, owners architectureOwnersh
 	if trigger.RegistrationSite != nil {
 		candidates = append(candidates, ownersForPath(owners.pathOwners, trigger.RegistrationSite.Path))
 	}
+	if trigger.DescriptorSite != nil {
+		candidates = append(candidates, ownersForPath(owners.pathOwners, trigger.DescriptorSite.Path))
+	}
 	if trigger.Handler.Known {
 		candidates = append(candidates, owners.symbolOwners[trigger.Handler.Text])
 	}
@@ -582,6 +593,7 @@ func surfaceTriggerLocations(trigger DiscoveredTrigger) []SurfaceLocation {
 		result = append(result, *location)
 	}
 	add(trigger.RegistrationSite)
+	add(trigger.DescriptorSite)
 	add(trigger.ServerStartSite)
 	add(trigger.ProcessEntrypoint.Location)
 	for _, item := range trigger.Evidence {
@@ -608,10 +620,6 @@ func surfaceExecutable(trigger DiscoveredTrigger) string {
 }
 
 func surfaceOwnershipCategory(trigger DiscoveredTrigger, _ componentmap.ComponentID) string {
-	if trigger.ProvisionalID || strings.Contains(strings.ToLower(trigger.Resolution), "dynamic") ||
-		strings.Contains(strings.ToLower(trigger.Status), "unknown") {
-		return surfaceCategoryDynamic
-	}
 	switch trigger.ExecutableRole {
 	case ExecutableRolePrimaryApplication:
 		return surfaceCategoryApplication
@@ -619,6 +627,10 @@ func surfaceOwnershipCategory(trigger DiscoveredTrigger, _ componentmap.Componen
 		return surfaceCategoryTooling
 	case ExecutableRoleTestOrHelper:
 		return surfaceCategoryTests
+	}
+	if trigger.ProvisionalID || strings.Contains(strings.ToLower(trigger.Resolution), "dynamic") ||
+		strings.Contains(strings.ToLower(trigger.Status), "unknown") {
+		return surfaceCategoryDynamic
 	}
 	return surfaceCategoryUnassigned
 }
@@ -663,7 +675,7 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 			return
 		}
 	}
-	if matchesPrimaryProcessAnchor(data, trigger) {
+	if matchesRepositoryNamedMain(data, trigger) || matchesPrimaryProcessAnchor(data, trigger) {
 		trigger.ExecutableRole = ExecutableRolePrimaryApplication
 		return
 	}
@@ -676,6 +688,16 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 		return
 	}
 	trigger.ExecutableRole = ExecutableRoleUnknown
+}
+
+func matchesRepositoryNamedMain(data *ReportData, trigger *DiscoveredTrigger) bool {
+	if data == nil || trigger == nil || trigger.ProcessEntrypoint.Name != "main" ||
+		trigger.ProcessEntrypoint.Location == nil {
+		return false
+	}
+	executable := cleanSurfacePath(path.Dir(trigger.ProcessEntrypoint.Location.Path))
+	return executable != "" && executable != "." &&
+		strings.EqualFold(path.Base(executable), strings.TrimSpace(data.RepoName))
 }
 
 func matchesPrimaryProcessAnchor(data *ReportData, trigger *DiscoveredTrigger) bool {
@@ -736,6 +758,14 @@ func surfaceTraceUnavailableReason(trigger DiscoveredTrigger, related componentm
 	}
 	if trigger.Kind == "cli_command" {
 		return "no saved trace was collected for this command"
+	}
+	switch trigger.Kind {
+	case "http_server":
+		return "static server start call does not establish a saved request trace"
+	case "http_route_descriptor":
+		return "route descriptor does not prove consumer registration or request execution"
+	case "http_route_frontier":
+		return "configuration-built route inventory remains unresolved"
 	}
 	if !trigger.Handler.Known || strings.Contains(strings.ToLower(trigger.Resolution), "dynamic") ||
 		len(trigger.DynamicFrontier) > 0 {

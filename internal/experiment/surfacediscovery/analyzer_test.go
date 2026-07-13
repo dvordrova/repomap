@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
@@ -21,6 +23,25 @@ func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestAnalyzeContextReturnsPromptlyWhenCanceledDuringAnalysis(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(10*time.Millisecond, cancel)
+	done := make(chan error, 1)
+	go func() {
+		_, err := AnalyzeContext(ctx, DefaultOptions(filepath.Join("testdata", "caddy_patterns")))
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("AnalyzeContext() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("AnalyzeContext did not return promptly after cancellation")
+	}
+}
+
 var fixtureResults = struct {
 	sync.Mutex
 	values map[string]Result
@@ -28,10 +49,7 @@ var fixtureResults = struct {
 
 func TestAnalyzeDirectRoute(t *testing.T) {
 	result := analyzeFixture(t, "direct")
-	if len(result.Catalog.Triggers) != 1 {
-		t.Fatalf("trigger count = %d, want 1", len(result.Catalog.Triggers))
-	}
-	trigger := result.Catalog.Triggers[0]
+	trigger := onlyTriggerOfKind(t, result, "http_route")
 	if trigger.Identity.Path.Text != "/health" || trigger.Handler.Text != "example.com/direct.healthHandler" {
 		t.Fatalf("trigger = %#v", trigger)
 	}
@@ -55,10 +73,7 @@ func TestAnalyzeDispatcherOwnership(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			result := analyzeFixture(t, test.fixture)
-			if len(result.Catalog.Triggers) != 1 {
-				t.Fatalf("trigger count = %d, want 1", len(result.Catalog.Triggers))
-			}
-			trigger := result.Catalog.Triggers[0]
+			trigger := onlyTriggerOfKind(t, result, "http_route")
 			if trigger.Dispatcher.Text != test.dispatcher || trigger.ServerStartSite == nil {
 				t.Fatalf("dispatcher/start = %#v/%#v", trigger.Dispatcher, trigger.ServerStartSite)
 			}
@@ -68,10 +83,7 @@ func TestAnalyzeDispatcherOwnership(t *testing.T) {
 
 func TestAnalyzeRepositoryWrappersAndValues(t *testing.T) {
 	result := analyzeFixture(t, "wrappers")
-	if len(result.Catalog.Triggers) != 1 {
-		t.Fatalf("trigger count = %d, want 1", len(result.Catalog.Triggers))
-	}
-	trigger := result.Catalog.Triggers[0]
+	trigger := onlyTriggerOfKind(t, result, "http_route")
 	if trigger.Identity.Path.Text != "/v1/runs" {
 		t.Fatalf("path = %#v, want /v1/runs", trigger.Identity.Path)
 	}
@@ -94,10 +106,7 @@ func TestAnalyzeRepositoryWrappersAndValues(t *testing.T) {
 
 func TestAnalyzeCrossPackageWrapper(t *testing.T) {
 	result := analyzeFixture(t, "cross")
-	if len(result.Catalog.Triggers) != 1 {
-		t.Fatalf("trigger count = %d, want 1", len(result.Catalog.Triggers))
-	}
-	trigger := result.Catalog.Triggers[0]
+	trigger := onlyTriggerOfKind(t, result, "http_route")
 	if trigger.Identity.Path.Text != "/cross" || !strings.Contains(wrapperIDs(trigger.WrapperChain), "example.com/cross/routes.Add") {
 		t.Fatalf("trigger = %#v", trigger)
 	}
@@ -109,7 +118,7 @@ func TestAnalyzeCrossPackageWrapper(t *testing.T) {
 func TestAnalyzeInterfaceTargets(t *testing.T) {
 	t.Run("single implementation", func(t *testing.T) {
 		result := analyzeFixture(t, "interface_single")
-		if len(result.Catalog.Triggers) != 1 || result.Catalog.Triggers[0].Resolution != "exact" {
+		if onlyTriggerOfKind(t, result, "http_route").Resolution != "exact" {
 			t.Fatalf("triggers = %#v", result.Catalog.Triggers)
 		}
 	})
@@ -118,7 +127,7 @@ func TestAnalyzeInterfaceTargets(t *testing.T) {
 		if len(result.Catalog.Triggers) < 2 {
 			t.Fatalf("trigger count = %d, want at least 2", len(result.Catalog.Triggers))
 		}
-		for _, trigger := range result.Catalog.Triggers {
+		for _, trigger := range triggersOfKind(result, "http_route") {
 			if trigger.Resolution == "exact" {
 				t.Fatalf("ambiguous interface trigger was marked exact: %#v", trigger)
 			}
@@ -129,10 +138,7 @@ func TestAnalyzeInterfaceTargets(t *testing.T) {
 func TestAnalyzeDynamicAndNegativeControls(t *testing.T) {
 	t.Run("dynamic registration", func(t *testing.T) {
 		result := analyzeFixture(t, "dynamic")
-		if len(result.Catalog.Triggers) != 1 {
-			t.Fatalf("trigger count = %d, want 1", len(result.Catalog.Triggers))
-		}
-		trigger := result.Catalog.Triggers[0]
+		trigger := onlyTriggerOfKind(t, result, "http_route")
 		if trigger.Status != "dynamic_unknown" || len(trigger.DynamicFrontier) < 2 {
 			t.Fatalf("dynamic trigger = %#v", trigger)
 		}
@@ -215,10 +221,220 @@ func TestAnalyzeGinConvenienceAndRepositoryWrapper(t *testing.T) {
 	}
 }
 
-func TestAnalyzeCustomRouterStretchRemainsUnsupported(t *testing.T) {
+func TestAnalyzeEchoDirectConvenienceAndGroupedRoutes(t *testing.T) {
+	result := analyzeFixture(t, "echo")
+	if len(result.Catalog.Triggers) != 4 {
+		t.Fatalf("trigger count = %d, want 4: %#v", len(result.Catalog.Triggers), result.Catalog.Triggers)
+	}
+	want := map[string]string{
+		"DELETE /direct":   "echo-v4-echo-add",
+		"GET /health":      "echo-v4-echo-add",
+		"POST /api/runs":   "echo-v4-group-add",
+		"POST /admin/runs": "echo-v4-group-add",
+	}
+	for _, trigger := range result.Catalog.Triggers {
+		key := trigger.Identity.Method + " " + trigger.Identity.Path.Text
+		seed, ok := want[key]
+		if !ok {
+			t.Errorf("unexpected Echo trigger %q: %#v", key, trigger)
+			continue
+		}
+		if trigger.Framework != "echo" || trigger.FinalSeed != seed || !trigger.Handler.Known {
+			t.Errorf("Echo trigger %q = %#v", key, trigger)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing Echo triggers: %v", want)
+	}
+}
+
+func TestAnalyzeExternalFrameworkConvenienceRoutesKeepRepositoryEvidence(t *testing.T) {
+	tests := []struct {
+		name          string
+		modulePath    string
+		version       string
+		application   string
+		frameworkCode string
+	}{
+		{
+			name: "Echo", modulePath: "github.com/labstack/echo/v4", version: "v4.15.4",
+			application: `package main
+import "github.com/labstack/echo/v4"
+func handler(echo.Context) error { return nil }
+func main() { e := &echo.Echo{}; e.GET("/health", handler) }
+`,
+			frameworkCode: `package echo
+import "net/http"
+type Context interface{}
+type HandlerFunc func(Context) error
+type MiddlewareFunc func(HandlerFunc) HandlerFunc
+type Route struct{}
+type Echo struct{}
+func (e *Echo) Add(method, path string, handler HandlerFunc, middleware ...MiddlewareFunc) *Route { return &Route{} }
+func (e *Echo) GET(path string, handler HandlerFunc, middleware ...MiddlewareFunc) *Route { return e.Add(http.MethodGet, path, handler, middleware...) }
+`,
+		},
+		{
+			name: "Gin", modulePath: "github.com/gin-gonic/gin", version: "v1.12.0",
+			application: `package main
+import "github.com/gin-gonic/gin"
+func handler(*gin.Context) {}
+func main() { r := &gin.RouterGroup{}; r.GET("/health", handler) }
+`,
+			frameworkCode: `package gin
+import "net/http"
+type Context struct{}
+type HandlerFunc func(*Context)
+type RouterGroup struct{}
+func (g *RouterGroup) Handle(method, path string, handlers ...HandlerFunc) { _ = method; _ = path; _ = handlers }
+func (g *RouterGroup) GET(path string, handlers ...HandlerFunc) { g.Handle(http.MethodGet, path, handlers...) }
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			first := analyzeSiblingFrameworkFixture(t, test.modulePath, test.version, test.application, test.frameworkCode)
+			second := analyzeSiblingFrameworkFixture(t, test.modulePath, test.version, test.application, test.frameworkCode)
+			firstRoute := onlyTriggerOfKind(t, first, "http_route")
+			secondRoute := onlyTriggerOfKind(t, second, "http_route")
+			if firstRoute.Identity.Path.Text != "/health" || firstRoute.Identity.Method != "GET" ||
+				!filepath.IsAbs(firstRoute.RegistrationSite.Path) || firstRoute.ID != secondRoute.ID {
+				t.Fatalf("external %s routes = %#v / %#v", test.name, firstRoute, secondRoute)
+			}
+			if len(firstRoute.WrapperChain) == 0 || firstRoute.WrapperChain[0].Callsite.Path != "main.go" {
+				t.Fatalf("external %s repository evidence = %#v", test.name, firstRoute.WrapperChain)
+			}
+		})
+	}
+}
+
+func analyzeSiblingFrameworkFixture(
+	t *testing.T,
+	modulePath, version, application, frameworkCode string,
+) Result {
+	t.Helper()
+	root := t.TempDir()
+	appDir := filepath.Join(root, "app")
+	frameworkDir := filepath.Join(root, "framework")
+	for _, directory := range []string{appDir, frameworkDir} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFixtureFile(t, filepath.Join(appDir, "go.mod"), "module example.com/externalapp\n\ngo 1.25\n\nrequire "+modulePath+" "+version+"\n\nreplace "+modulePath+" => ../framework\n")
+	writeFixtureFile(t, filepath.Join(appDir, "main.go"), application)
+	writeFixtureFile(t, filepath.Join(frameworkDir, "go.mod"), "module "+modulePath+"\n\ngo 1.25\n")
+	writeFixtureFile(t, filepath.Join(frameworkDir, "framework.go"), frameworkCode)
+	result, err := Analyze(DefaultOptions(appDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func writeFixtureFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAnalyzeCustomRouterRoutesRemainUnsupportedButServerRootIsRetained(t *testing.T) {
 	result := analyzeFixture(t, "custom_router")
-	if len(result.Catalog.Triggers) != 0 {
-		t.Fatalf("custom registry was promoted without a configured terminal seed: %#v", result.Catalog.Triggers)
+	if len(result.Catalog.Triggers) != 1 || result.Catalog.Triggers[0].Kind != "http_server" ||
+		!hasFrontier(result.Catalog.Triggers[0].DynamicFrontier, "unresolved_dispatch_inventory") {
+		t.Fatalf("custom routes were promoted or the exact server root was lost: %#v", result.Catalog.Triggers)
+	}
+}
+
+func TestAnalyzeImportReachableDetachedHTTPComposition(t *testing.T) {
+	result := analyzeFixture(t, "caddy_patterns")
+	var staticRoutes, dynamicRoutes, servers int
+	for _, trigger := range result.Catalog.Triggers {
+		if !hasFrontier(trigger.DynamicFrontier, "entrypoint_dispatch_unresolved") &&
+			!hasFrontier(trigger.DynamicFrontier, "call_target_limit") {
+			t.Errorf("callback-dispatched trigger lacks a bounded dispatch frontier: %#v", trigger)
+		}
+		switch trigger.Kind {
+		case "http_route":
+			if trigger.Identity.Path.Known {
+				staticRoutes++
+				if trigger.Resolution != "exact" || trigger.ProvisionalID {
+					t.Errorf("exact detached route was degraded by a reachability frontier: %#v", trigger)
+				}
+			} else {
+				dynamicRoutes++
+			}
+		case "http_server":
+			servers++
+			if trigger.ServerStartSite == nil || trigger.Resolution == "dynamic" || trigger.ProvisionalID {
+				t.Errorf("server root = %#v", trigger)
+			}
+		}
+	}
+	if staticRoutes != 2 || dynamicRoutes != 1 || servers != 2 {
+		t.Fatalf(
+			"surface counts = static routes %d, dynamic routes %d, servers %d; triggers=%#v",
+			staticRoutes,
+			dynamicRoutes,
+			servers,
+			result.Catalog.Triggers,
+		)
+	}
+	if !hasFrontier(result.Coverage.UnsupportedDispatch, "call_target_limit") {
+		t.Fatalf("unsupported dispatch = %#v", result.Coverage.UnsupportedDispatch)
+	}
+}
+
+func TestAnalyzeCaddyAdminRouteProviders(t *testing.T) {
+	result := analyzeFixture(t, "caddy_admin")
+	want := map[string]bool{
+		"/load":                    true,
+		"/adapt":                   true,
+		"/metrics":                 true,
+		"/pki/":                    true,
+		"/reverse_proxy/upstreams": true,
+		"/wrapped":                 false,
+		"/variable":                false,
+	}
+	providerCount := 0
+	frontierCount := 0
+	for _, trigger := range result.Catalog.Triggers {
+		if trigger.Kind == "http_route_frontier" {
+			frontierCount++
+			if !hasFrontier(trigger.DynamicFrontier, "configuration_assembled_route_inventory") {
+				t.Errorf("Caddy route assembly frontier = %#v", trigger)
+			}
+			continue
+		}
+		providerCount++
+		path := trigger.Identity.Path.Text
+		handlerKnown, expected := want[path]
+		if trigger.Kind != "http_route_descriptor" || trigger.Status != "confirmed_route_descriptor" || !expected ||
+			trigger.Framework != "caddy-admin" || !trigger.Identity.Path.Known ||
+			trigger.Handler.Known != handlerKnown || !hasFrontier(trigger.DynamicFrontier, "route_provider_dispatch_candidate") {
+			t.Errorf("Caddy provider trigger = %#v", trigger)
+		}
+		if handlerKnown && (trigger.Resolution != "exact" || trigger.ProvisionalID) {
+			t.Errorf("exact provider descriptor was degraded by provider-selection uncertainty: %#v", trigger)
+		}
+		if !handlerKnown && (trigger.Resolution != "partial" || !trigger.ProvisionalID) {
+			t.Errorf("partially resolved provider descriptor = %#v", trigger)
+		}
+		if !handlerKnown && !hasFrontier(trigger.DynamicFrontier, "dynamic_handler_identity") {
+			t.Errorf("dynamic provider handler lacks frontier: %#v", trigger)
+		}
+		if len(trigger.Evidence) < 2 {
+			t.Errorf("Caddy provider evidence = %#v", trigger.Evidence)
+		}
+		delete(want, path)
+	}
+	if providerCount != 7 || frontierCount != 1 {
+		t.Fatalf("provider/frontier counts = %d/%d; triggers=%#v", providerCount, frontierCount, result.Catalog.Triggers)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing Caddy provider paths: %v", want)
 	}
 }
 
@@ -311,8 +527,15 @@ func TestConfigurationPackageClassificationDoesNotUseReceiverName(t *testing.T) 
 }
 
 func TestAnalyzeIsDeterministic(t *testing.T) {
-	first := analyzeFixture(t, "wrappers")
-	second := analyzeFixture(t, "wrappers")
+	options := DefaultOptions(filepath.Join("testdata", "caddy_admin"))
+	first, err := Analyze(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Analyze(options)
+	if err != nil {
+		t.Fatal(err)
+	}
 	first.Coverage.ColdLatencyMillis = 0
 	second.Coverage.ColdLatencyMillis = 0
 	firstJSON, err := MarshalDeterministic(first)
@@ -325,6 +548,50 @@ func TestAnalyzeIsDeterministic(t *testing.T) {
 	}
 	if !bytes.Equal(firstJSON, secondJSON) {
 		t.Fatalf("repeated results differ\nfirst:\n%s\nsecond:\n%s", firstJSON, secondJSON)
+	}
+}
+
+func TestTriggerIdentityAndDeduplicationPreserveOwnershipAndOrder(t *testing.T) {
+	t.Parallel()
+
+	base := TriggerRecord{
+		Kind: "http_route", Identity: Identity{Path: knownValue("constant", "/health")},
+		ProcessEntrypoint: Symbol{ID: "example.com/app.main"},
+		RegistrationSite:  Location{Path: "routes.go", Line: 10, Column: 2},
+		Dispatcher:        knownValue("dispatcher", "mux"), Handler: knownValue("function", "health"),
+		FinalSeed: "seed", ScenarioID: "scenario", Resolution: "exact",
+	}
+	otherEntrypoint := base
+	otherEntrypoint.ProcessEntrypoint.ID = "example.com/tool.main"
+	otherColumn := base
+	otherColumn.RegistrationSite.Column = 3
+	if stableTriggerID(base) == stableTriggerID(otherEntrypoint) || stableTriggerID(base) == stableTriggerID(otherColumn) {
+		t.Fatal("stable trigger identity collapsed entrypoint or callsite column")
+	}
+
+	strong := base
+	strong.ID = stableTriggerID(strong)
+	strong.Evidence = []Evidence{{ID: "strong", Location: strong.RegistrationSite}}
+	weak := strong
+	weak.Resolution = "dynamic"
+	weak.ProvisionalID = true
+	weak.DynamicFrontier = []Frontier{{Kind: "entrypoint_dispatch_unresolved", Detail: "weak"}}
+	weak.Evidence = []Evidence{{ID: "weak", Location: weak.RegistrationSite}}
+	first := Result{Catalog: TriggerCatalog{Triggers: deduplicateTriggerRecords([]TriggerRecord{weak, strong})}}
+	second := Result{Catalog: TriggerCatalog{Triggers: deduplicateTriggerRecords([]TriggerRecord{strong, weak})}}
+	first.normalize()
+	second.normalize()
+	firstJSON, err := MarshalDeterministic(first.Catalog.Triggers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJSON, err := MarshalDeterministic(second.Catalog.Triggers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstJSON, secondJSON) || len(first.Catalog.Triggers) != 1 ||
+		first.Catalog.Triggers[0].Resolution != "exact" || len(first.Catalog.Triggers[0].DynamicFrontier) != 0 {
+		t.Fatalf("deduplication is order-sensitive or retained weaker authority:\n%s\n%s", firstJSON, secondJSON)
 	}
 }
 
@@ -367,4 +634,23 @@ func hasLoopSignal(signals []LoopSignal, kind string) bool {
 		}
 	}
 	return false
+}
+
+func triggersOfKind(result Result, kind string) []TriggerRecord {
+	triggers := []TriggerRecord{}
+	for _, trigger := range result.Catalog.Triggers {
+		if trigger.Kind == kind {
+			triggers = append(triggers, trigger)
+		}
+	}
+	return triggers
+}
+
+func onlyTriggerOfKind(t *testing.T, result Result, kind string) TriggerRecord {
+	t.Helper()
+	triggers := triggersOfKind(result, kind)
+	if len(triggers) != 1 {
+		t.Fatalf("%s trigger count = %d, want 1: %#v", kind, len(triggers), result.Catalog.Triggers)
+	}
+	return triggers[0]
 }

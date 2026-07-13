@@ -4,12 +4,12 @@
     {
       "id": "health-and-readiness",
       "name": "Health and readiness",
-      "trigger_ids": ["trigger-68bcf830e521d0e67d5a5532"]
+      "trigger_ids": ["trigger-bf98d16f6f737be35b919dfa"]
     }
   ],
   "recommendations": [
     {
-      "trigger_id": "trigger-68bcf830e521d0e67d5a5532",
+      "trigger_id": "trigger-bf98d16f6f737be35b919dfa",
       "name": "HTTP health check",
       "reason": "A small route connects process startup, dispatcher ownership, and a concrete handler."
     }

@@ -26,6 +26,8 @@ const (
 	EffectHTTPRouteRegistration EffectKind = "http_route_registration"
 	EffectHTTPServerStart       EffectKind = "http_server_start"
 	EffectHTTPHandlerAssignment EffectKind = "http_handler_assignment"
+	EffectHTTPRouteProvider     EffectKind = "http_route_provider"
+	EffectHTTPRouteAssembly     EffectKind = "http_route_assembly"
 	EffectAsyncTaskStart        EffectKind = "async_task_start"
 )
 
@@ -39,9 +41,11 @@ const (
 type ProjectionSource string
 
 const (
-	ProjectionArgument ProjectionSource = "argument"
-	ProjectionReceiver ProjectionSource = "receiver"
-	ProjectionConstant ProjectionSource = "constant"
+	ProjectionArgument      ProjectionSource = "argument"
+	ProjectionReceiver      ProjectionSource = "receiver"
+	ProjectionReceiverField ProjectionSource = "receiver_field"
+	ProjectionReturnField   ProjectionSource = "return_field"
+	ProjectionConstant      ProjectionSource = "constant"
 )
 
 type Catalog struct {
@@ -79,6 +83,7 @@ type Projection struct {
 	Index   *int             `json:"index,omitempty"`
 	Value   string           `json:"value,omitempty"`
 	Default string           `json:"default,omitempty"`
+	Field   string           `json:"field,omitempty"`
 }
 
 type Scenario struct {
@@ -165,6 +170,16 @@ func (s Seed) validate() error {
 	if s.Effect.Kind == "" || s.Effect.Transport == "" || s.Effect.Framework == "" {
 		return fmt.Errorf("%s: effect kind, transport, and framework are required", s.ID)
 	}
+	switch s.Effect.Kind {
+	case EffectHTTPRouteRegistration,
+		EffectHTTPServerStart,
+		EffectHTTPHandlerAssignment,
+		EffectHTTPRouteProvider,
+		EffectHTTPRouteAssembly,
+		EffectAsyncTaskStart:
+	default:
+		return fmt.Errorf("%s: unsupported effect kind %q", s.ID, s.Effect.Kind)
+	}
 	if len(s.Projections) == 0 {
 		return fmt.Errorf("%s: projections must not be empty", s.ID)
 	}
@@ -178,12 +193,34 @@ func (s Seed) validate() error {
 			if s.Symbol.Receiver == "" {
 				return fmt.Errorf("%s: projection %q uses a receiver for a package function", s.ID, name)
 			}
+		case ProjectionReceiverField:
+			if s.Symbol.Receiver == "" || strings.TrimSpace(projection.Field) == "" {
+				return fmt.Errorf("%s: projection %q needs a receiver and field", s.ID, name)
+			}
+			if s.Operation != OperationCall || s.Effect.Kind != EffectHTTPRouteRegistration {
+				return fmt.Errorf("%s: projection %q uses receiver_field outside route registration call semantics", s.ID, name)
+			}
+		case ProjectionReturnField:
+			if strings.TrimSpace(projection.Field) == "" {
+				return fmt.Errorf("%s: projection %q needs a return field", s.ID, name)
+			}
+			if s.Operation != OperationCall || s.Effect.Kind != EffectHTTPRouteProvider {
+				return fmt.Errorf("%s: projection %q uses return_field outside route provider call semantics", s.ID, name)
+			}
 		case ProjectionConstant:
 			if projection.Value == "" {
 				return fmt.Errorf("%s: projection %q needs a constant value", s.ID, name)
 			}
 		default:
 			return fmt.Errorf("%s: projection %q has unsupported source %q", s.ID, name, projection.Source)
+		}
+	}
+	if s.Effect.Kind == EffectHTTPRouteProvider {
+		for _, name := range []string{"path", "handler"} {
+			projection, ok := s.Projections[name]
+			if !ok || projection.Source != ProjectionReturnField || strings.TrimSpace(projection.Field) == "" {
+				return fmt.Errorf("%s: route provider requires %q return_field projection", s.ID, name)
+			}
 		}
 	}
 	return nil
