@@ -368,14 +368,15 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				signalLocations = append(signalLocations, evidence.Location{Path: call.Path, Line: call.Line})
 			}
 		}
-		normalizeOrientationGrounding(&or, bundle.AllowedPaths, allowedEntrypoints, signalLocations)
-		attachLocalFlowProofs(ctx, opts.RepoPath, &or, bundle)
+		normalizeOrientationGrounding(&or, bundle.ProviderAllowedPaths, allowedEntrypoints, signalLocations)
+		localProofInput := localFlowProofInput(s)
+		attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
 		reconcileResolvedUnknownPaths(&or)
 		applyOrientationConfidenceGate(&or, bundle)
 		for index := range or.CandidateFlows {
 			flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
 		}
-		if err := validateOrientation(or, bundle.AllowedPaths, allowedEntrypoints); err != nil {
+		if err := validateOrientation(or, bundle.ProviderAllowedPaths, allowedEntrypoints); err != nil {
 			attempt.State = "response_validation_failed"
 			if dw != nil {
 				_ = dw.WriteMetadata(runMeta)

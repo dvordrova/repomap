@@ -19,9 +19,12 @@ type Bundle struct {
 	Go                     goSection               `json:"go"`
 	KnownDocs              []string                `json:"known_docs"`
 	CandidateFileIndex     []fileIndexEntry        `json:"candidate_file_index"`
-	AllowedPaths           []string                `json:"allowed_paths"`
-	SourceSignals          []sourcesignals.Signal  `json:"source_signals,omitempty"`
-	Warnings               []string                `json:"warnings,omitempty"`
+	// ProviderAllowedPaths is the closed path set for this orientation request.
+	// It is not local repository authorization and must not bound local proof or
+	// later focused retrieval.
+	ProviderAllowedPaths []string               `json:"allowed_paths"`
+	SourceSignals        []sourcesignals.Signal `json:"source_signals,omitempty"`
+	Warnings             []string               `json:"warnings,omitempty"`
 }
 
 type fileIndexEntry struct {
@@ -221,8 +224,8 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		fileIndex = selectFileIndexWithPins(fileIndex, opts.MaxFiles, selectedCommandTracePaths(b.Go.CommandTraces))
 	}
 	b.CandidateFileIndex = fileIndex
-	b.AllowedPaths = buildAllowedPaths(fileIndex)
-	allowedSet := makePathSet(b.AllowedPaths)
+	b.ProviderAllowedPaths = buildAllowedPaths(fileIndex)
+	allowedSet := makePathSet(b.ProviderAllowedPaths)
 	b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
 	b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
 	b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)

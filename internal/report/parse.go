@@ -34,9 +34,9 @@ type snapshotJSON struct {
 }
 
 type llmBundleJSON struct {
-	AllowedPaths  []string               `json:"allowed_paths"`
-	SourceSignals []sourcesignals.Signal `json:"source_signals"`
-	Go            struct {
+	ProviderAllowedPaths []string               `json:"allowed_paths"`
+	SourceSignals        []sourcesignals.Signal `json:"source_signals"`
+	Go                   struct {
 		ModuleSummaries []struct {
 			ModulePath string `json:"module_path"`
 			ModuleDir  string `json:"module_dir"`
@@ -444,7 +444,7 @@ func parseLLMBundle(path string, data *ReportData) string {
 	if err := json.Unmarshal(b, &bundle); err != nil {
 		return fmt.Sprintf("llm bundle unmarshal: %v", err)
 	}
-	data.OpenablePaths = append(data.OpenablePaths, bundle.AllowedPaths...)
+	data.OpenablePaths = append(data.OpenablePaths, bundle.ProviderAllowedPaths...)
 	for _, signal := range bundle.SourceSignals {
 		location := evidence.Location{Path: signal.Path, Line: signal.Line}
 		data.evidenceLocations = append(data.evidenceLocations, location)

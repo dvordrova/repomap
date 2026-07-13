@@ -1,5 +1,5 @@
 // flowproof-playground replays local proof construction from saved orientation
-// and compact-bundle artifacts. It never calls a model provider.
+// and full local snapshot artifacts. It never calls a model provider.
 package main
 
 import (
@@ -10,13 +10,20 @@ import (
 	"os"
 
 	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 	flowproofassemble "github.com/dvordrova/repomap/internal/flowproof/assemble"
-	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
 type orientationArtifact struct {
 	CandidateFlows []flowexplain.CandidateFlow `json:"candidate_flows"`
 	Warnings       []string                    `json:"warnings,omitempty"`
+}
+
+type snapshotArtifact struct {
+	GoFacts *struct {
+		CommandTraces []gofacts.CommandTrace `json:"command_traces"`
+	} `json:"go_facts"`
 }
 
 func main() {
@@ -29,22 +36,29 @@ func main() {
 func run() error {
 	repoPath := flag.String("repo", "", "repository root used by saved artifacts")
 	orientationPath := flag.String("orientation", "", "saved orientation_report.json")
-	bundlePath := flag.String("bundle", "", "saved llm_bundle.json")
+	snapshotPath := flag.String("snapshot", "", "saved snapshot.json")
 	flag.Parse()
-	if *repoPath == "" || *orientationPath == "" || *bundlePath == "" {
-		return fmt.Errorf("--repo, --orientation, and --bundle are required")
+	if *repoPath == "" || *orientationPath == "" || *snapshotPath == "" {
+		return fmt.Errorf("--repo, --orientation, and --snapshot are required")
 	}
 
 	var orientation orientationArtifact
 	if err := readJSON(*orientationPath, &orientation); err != nil {
 		return err
 	}
-	var bundle llmbundle.Bundle
-	if err := readJSON(*bundlePath, &bundle); err != nil {
+	var snapshot snapshotArtifact
+	if err := readJSON(*snapshotPath, &snapshot); err != nil {
 		return err
 	}
+	var traces []gofacts.CommandTrace
+	if snapshot.GoFacts != nil {
+		traces = snapshot.GoFacts.CommandTraces
+	}
 	orientation.Warnings = append(orientation.Warnings,
-		flowproofassemble.Attach(context.Background(), *repoPath, orientation.CandidateFlows, bundle.Go.CommandTraces)...,
+		flowproofassemble.Attach(context.Background(), *repoPath, orientation.CandidateFlows, flowproofassemble.Input{
+			CommandTraces: traces,
+			ProofBudget:   flowproof.DefaultBudget(),
+		})...,
 	)
 	out, err := json.MarshalIndent(orientation, "", "  ")
 	if err != nil {
