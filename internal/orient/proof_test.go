@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -41,7 +43,7 @@ func TestLocalFlowProofKeepsTraceOutsideInitialProviderBundle(t *testing.T) {
 	report := orientationPart{CandidateFlows: []flowexplain.CandidateFlow{{
 		Name: "Backup command", Trigger: "CLI backup command", LikelyEntrypoint: "cmd/app/main.go",
 	}}}
-	attachLocalFlowProofs(context.Background(), t.TempDir(), &report, localFlowProofInput(snap))
+	attachLocalFlowProofs(context.Background(), t.TempDir(), &report, localFlowProofInput(snap, nil))
 
 	proof := report.CandidateFlows[0].LocalProof
 	if proof == nil {
@@ -61,5 +63,39 @@ func TestLocalFlowProofKeepsTraceOutsideInitialProviderBundle(t *testing.T) {
 		if providerPath == "pkg/z.go" {
 			t.Fatalf("test precondition failed: local target was initially provider-visible: %v", bundle.ProviderAllowedPaths)
 		}
+	}
+}
+
+func TestLocalFlowProofInputCarriesSuccessfulSurfaceResult(t *testing.T) {
+	t.Parallel()
+
+	result := &surfacediscovery.Result{Catalog: surfacediscovery.TriggerCatalog{
+		Triggers: []surfacediscovery.TriggerRecord{{
+			ID: "entry-app", Kind: "process_entry", Resolution: "exact", ScenarioID: "go-default",
+			SurfaceRole:      surfacediscovery.SurfaceRoleEntrySurface,
+			TraceReadiness:   surfacediscovery.TraceReadinessPartial,
+			Availability:     surfacediscovery.AvailabilityAvailable,
+			OwningExecutable: "cmd/app",
+			ProcessEntrypoint: surfacediscovery.Symbol{
+				ID: "example.com/project/cmd/app.main", Name: "main",
+				Package:  "example.com/project/cmd/app",
+				Location: surfacediscovery.Location{Path: "cmd/app/main.go", Line: 10},
+			},
+		}},
+	}}
+	report := orientationPart{CandidateFlows: []flowexplain.CandidateFlow{{
+		Name: "Application startup", LikelyEntrypoint: "cmd/app/main.go",
+	}}}
+	attachLocalFlowProofs(
+		context.Background(),
+		t.TempDir(),
+		&report,
+		localFlowProofInput(snapshot.Snapshot{}, result),
+	)
+
+	proof := report.CandidateFlows[0].LocalProof
+	if proof == nil || proof.Proof.Archetype != flowproof.ArchetypeProcess ||
+		proof.Proof.SeedSurfaceID != "entry-app" {
+		t.Fatalf("surface-backed local proof = %#v", proof)
 	}
 }

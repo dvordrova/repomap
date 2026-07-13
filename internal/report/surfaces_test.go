@@ -46,6 +46,15 @@ func TestParseDiscoveredSurfacesProjectsPairedV2Artifacts(t *testing.T) {
 		len(surfaces.UnsupportedDispatch) != 1 {
 		t.Fatalf("coverage evidence was flattened: %#v", surfaces)
 	}
+	if httpTrigger.SurfaceRole != SurfaceRoleEntrySurface || httpTrigger.TraceReadiness != SurfaceTraceReady ||
+		httpTrigger.TraceReadinessReason == "" || httpTrigger.Quality.Identity != surfaceQualityExact ||
+		httpTrigger.Quality.Traceability != SurfaceTraceReady {
+		t.Fatalf("projected route semantics = %#v", httpTrigger)
+	}
+	workerTrigger := surfaces.Triggers[1]
+	if workerTrigger.SurfaceRole != SurfaceRoleRuntimeActivity || workerTrigger.TraceReadiness != SurfaceTraceUnsupported {
+		t.Fatalf("projected worker semantics = %#v", workerTrigger)
+	}
 	if surfaces.UnsupportedDispatch[0].Location != nil {
 		t.Fatalf("absolute unsupported-dispatch location survived: %#v", surfaces.UnsupportedDispatch[0])
 	}
@@ -153,7 +162,9 @@ func TestProjectDiscoveredSurfacesRetainsProcessEntryAndUnavailablePackage(t *te
 	}
 	trigger := projected.Triggers[0]
 	if trigger.Kind != "process_entry" || trigger.ExecutableRole != ExecutableRoleSecondaryService ||
-		trigger.Availability != SurfaceAvailabilityUnavailable || trigger.ProcessEntrypoint.Location == nil {
+		trigger.Availability != SurfaceAvailabilityUnavailable || trigger.ProcessEntrypoint.Location == nil ||
+		trigger.SurfaceRole != SurfaceRoleRejected || trigger.TraceReadiness != SurfaceTraceRejected ||
+		trigger.Quality.Traceability != SurfaceTraceRejected {
 		t.Fatalf("process entry projection = %#v", trigger)
 	}
 	if len(projected.PackageDiagnostics) != 1 || projected.PackageDiagnostics[0].Location == nil ||
@@ -244,19 +255,19 @@ func TestParseDiscoveredSurfacesRejectsUnusablePairs(t *testing.T) {
 			name: "unsupported catalog version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCatalog(t, runDir, func(catalog *rawSurfaceCatalog) {
-					catalog.Version = 4
+					catalog.Version = 5
 				})
 			},
-			warning: "unsupported trigger_catalog.json version 4",
+			warning: "unsupported trigger_catalog.json version 5",
 		},
 		{
 			name: "unsupported coverage version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCoverage(t, runDir, func(coverage *rawSurfaceCoverage) {
-					coverage.Version = 4
+					coverage.Version = 5
 				})
 			},
-			warning: "unsupported surface_coverage.json version 4",
+			warning: "unsupported surface_coverage.json version 5",
 		},
 		{
 			name: "repository mismatch",

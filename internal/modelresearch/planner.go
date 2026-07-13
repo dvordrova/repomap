@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -22,9 +25,12 @@ import (
 const (
 	maxSourceReadBytes  = 48 << 10
 	maxSourceLineBytes  = 512
-	maxWindowLines      = 28
+	minWindowLines      = 40
+	maxWindowLines      = 80
 	requestFramingBytes = 16 << 10
 )
+
+const noCodeBearingBoundedWindow = "no_code_bearing_bounded_window"
 
 type PlanningInput struct {
 	RepoPath             string
@@ -129,6 +135,11 @@ func PlanTargetedRounds(ctx context.Context, input PlanningInput) (PlanResult, e
 			plans = append(plans, plan)
 			continue
 		}
+		if !hasCodeBearingWindow(bundle.Evidence) {
+			plan.Gate.Reason = noCodeBearingBoundedWindow
+			plans = append(plans, plan)
+			continue
+		}
 		newEvidence := 0
 		for _, item := range bundle.Evidence {
 			if _, alreadyUsed := previous[item.ID]; !alreadyUsed {
@@ -212,6 +223,7 @@ func assembleEvidenceBundle(
 		Purpose: question.Purpose, Question: question.Question,
 	}
 	selectedPaths := make(map[string]int)
+	focusLines := make(map[string]int)
 	unknownCandidates := 0
 	for _, candidateID := range sortedUnique(question.CandidateIDs) {
 		candidate, ok := candidates[candidateID]
@@ -224,6 +236,7 @@ func assembleEvidenceBundle(
 			continue
 		}
 		selectedPaths[candidate.Path] = 0
+		focusLines[candidate.Path] = candidateFocusLine(candidate)
 		bundle.Evidence = append(bundle.Evidence, EvidenceItem{
 			ID: stableID("evidence", "file\x00"+candidate.Path), Kind: EvidenceFileSummary,
 			Statement: "provider file summary selected for focused local expansion",
@@ -235,6 +248,7 @@ func assembleEvidenceBundle(
 	if len(selectedPaths) == 0 {
 		for _, candidate := range bestQuestionCandidates(question, candidates, authorized, 3) {
 			selectedPaths[candidate.Path] = 0
+			focusLines[candidate.Path] = candidateFocusLine(candidate)
 		}
 	}
 
@@ -243,9 +257,9 @@ func assembleEvidenceBundle(
 			return EvidenceBundle{}, FocusedInvestigationScope{}, 0, err
 		}
 		for _, step := range trace.Steps {
-			addTraceLocation(selectedPaths, authorized, step.TargetLocation)
+			addTraceLocation(selectedPaths, focusLines, authorized, step.TargetLocation)
 			if step.CallsiteLocation != nil {
-				addTraceLocation(selectedPaths, authorized, *step.CallsiteLocation)
+				addTraceLocation(selectedPaths, focusLines, authorized, *step.CallsiteLocation)
 			}
 			bundle.Evidence = append(bundle.Evidence, exactEvidenceItem(
 				EvidenceDeclaration, step.Symbol, step.Relation, step.TargetLocation,
@@ -254,14 +268,14 @@ func assembleEvidenceBundle(
 		}
 		for _, call := range trace.HandlerCalls {
 			location := evidence.Location{Path: call.Path, Line: call.Line}
-			addTraceLocation(selectedPaths, authorized, location)
+			addTraceLocation(selectedPaths, focusLines, authorized, location)
 			bundle.Evidence = append(bundle.Evidence, exactEvidenceItem(
 				EvidenceCallsite, call.Symbol, call.Relation, location,
 				"exact command handler callsite", initialPaths,
 			))
 			if call.Resolved && call.TargetPath != "" {
 				target := evidence.Location{Path: call.TargetPath, Line: call.TargetLine}
-				addTraceLocation(selectedPaths, authorized, target)
+				addTraceLocation(selectedPaths, focusLines, authorized, target)
 				bundle.Evidence = append(bundle.Evidence, exactEvidenceItem(
 					EvidenceTransition, call.Symbol, call.Relation, target,
 					"locally resolved command call target", initialPaths,
@@ -278,7 +292,7 @@ func assembleEvidenceBundle(
 		if err := ctx.Err(); err != nil {
 			return EvidenceBundle{}, FocusedInvestigationScope{}, 0, err
 		}
-		line := selectedPaths[path]
+		line := focusLines[path]
 		window, ok := readSourceWindow(reader, path, line)
 		if !ok {
 			continue
@@ -294,7 +308,7 @@ func assembleEvidenceBundle(
 		bundle.Evidence = append(bundle.Evidence, item)
 	}
 	localEvidence := deduplicateEvidence(bundle.Evidence)
-	providerEvidence := append([]EvidenceItem(nil), localEvidence...)
+	providerEvidence := prioritizedProviderEvidence(localEvidence)
 	if len(providerEvidence) > budget.MaxEvidenceItems {
 		providerEvidence = providerEvidence[:budget.MaxEvidenceItems]
 	}
@@ -362,19 +376,263 @@ func readSourceWindow(reader *reporead.Reader, path string, focusLine int) (Sour
 	if len(lines) == 0 {
 		return SourceWindow{}, false
 	}
-	if focusLine <= 0 || focusLine > len(lines) {
-		focusLine = 1
-	}
-	start := max(focusLine-10, 1)
-	end := min(start+maxWindowLines-1, len(lines))
-	if end-start+1 < maxWindowLines && end == len(lines) {
-		start = max(1, end-maxWindowLines+1)
+	start, end, codeBearing := sourceWindowBounds(path, content.Bytes, lines, focusLine)
+	if !codeBearing {
+		return SourceWindow{}, false
 	}
 	selected := make([]string, 0, end-start+1)
 	for _, line := range lines[start-1 : end] {
 		selected = append(selected, truncateUTF8(line, maxSourceLineBytes))
 	}
-	return SourceWindow{StartLine: start, EndLine: end, Lines: selected, Truncated: content.Truncated}, true
+	return SourceWindow{
+		StartLine: start, EndLine: end, Lines: selected,
+		CodeBearing: true, Truncated: content.Truncated,
+	}, true
+}
+
+type codeRange struct {
+	start int
+	end   int
+}
+
+func sourceWindowBounds(path string, content []byte, lines []string, focusLine int) (int, int, bool) {
+	if strings.EqualFold(filepath.Ext(path), ".go") {
+		selected, ok := goCodeRange(path, content, focusLine, len(lines))
+		if !ok {
+			return 0, 0, false
+		}
+		start, end, ok := boundedCodeRange(len(lines), focusLine, selected)
+		return start, end, ok
+	}
+
+	codeLine := genericCodeLine(lines, focusLine)
+	if codeLine == 0 {
+		return 0, 0, false
+	}
+	center := codeLine
+	if focusLine > 0 && focusLine <= len(lines) {
+		center = focusLine
+	}
+	start, end := centeredWindow(len(lines), center, maxWindowLines)
+	return start, end, codeLine >= start && codeLine <= end
+}
+
+func goCodeRange(path string, content []byte, focusLine, lineCount int) (codeRange, bool) {
+	fileSet := token.NewFileSet()
+	file, _ := parser.ParseFile(fileSet, path, content, parser.SkipObjectResolution)
+	if file == nil {
+		return codeRange{}, false
+	}
+	ranges := make([]codeRange, 0)
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch node.(type) {
+		case *ast.FuncDecl, *ast.FuncLit:
+			start := fileSet.Position(node.Pos()).Line
+			end := fileSet.Position(node.End()).Line
+			if start > 0 && end >= start {
+				ranges = append(ranges, codeRange{start: start, end: end})
+			}
+		}
+		return true
+	})
+	if len(ranges) == 0 {
+		return codeRange{}, false
+	}
+	sort.SliceStable(ranges, func(i, j int) bool {
+		if ranges[i].start != ranges[j].start {
+			return ranges[i].start < ranges[j].start
+		}
+		return ranges[i].end < ranges[j].end
+	})
+	if focusLine <= 0 || focusLine > lineCount {
+		return ranges[0], true
+	}
+	var containing []codeRange
+	for _, candidate := range ranges {
+		if candidate.start <= focusLine && focusLine <= candidate.end {
+			containing = append(containing, candidate)
+		}
+	}
+	if len(containing) > 0 {
+		sort.SliceStable(containing, func(i, j int) bool {
+			leftLength := containing[i].end - containing[i].start
+			rightLength := containing[j].end - containing[j].start
+			if leftLength != rightLength {
+				return leftLength < rightLength
+			}
+			return containing[i].start < containing[j].start
+		})
+		return containing[0], true
+	}
+	nearest := ranges[0]
+	nearestDistance := codeRangeDistance(nearest, focusLine)
+	for _, candidate := range ranges[1:] {
+		distance := codeRangeDistance(candidate, focusLine)
+		if distance < nearestDistance {
+			nearest = candidate
+			nearestDistance = distance
+		}
+	}
+	spanStart := min(nearest.start, focusLine)
+	spanEnd := max(nearest.end, focusLine)
+	if spanEnd-spanStart+1 > maxWindowLines {
+		return codeRange{}, false
+	}
+	return nearest, true
+}
+
+func codeRangeDistance(candidate codeRange, line int) int {
+	if line < candidate.start {
+		return candidate.start - line
+	}
+	if line > candidate.end {
+		return line - candidate.end
+	}
+	return 0
+}
+
+func boundedCodeRange(lineCount, focusLine int, selected codeRange) (int, int, bool) {
+	if lineCount <= 0 || selected.start <= 0 || selected.end < selected.start {
+		return 0, 0, false
+	}
+	validFocus := focusLine > 0 && focusLine <= lineCount
+	if !validFocus {
+		focusLine = selected.start
+	}
+	spanStart := selected.start
+	spanEnd := selected.end
+	if validFocus {
+		spanStart = min(spanStart, focusLine)
+		spanEnd = max(spanEnd, focusLine)
+	}
+	if spanEnd-spanStart+1 <= maxWindowLines {
+		start, end := centeredWindow(lineCount, focusLine, maxWindowLines)
+		if start > spanStart {
+			start = spanStart
+			end = min(lineCount, start+maxWindowLines-1)
+		}
+		if end < spanEnd {
+			end = spanEnd
+			start = max(1, end-maxWindowLines+1)
+		}
+		start, end = padWindow(lineCount, start, end, minWindowLines)
+		return start, end, start <= focusLine && focusLine <= end && start <= selected.end && end >= selected.start
+	}
+	if validFocus && selected.start <= focusLine && focusLine <= selected.end {
+		start, end := centeredWindow(lineCount, focusLine, maxWindowLines)
+		start = max(start, selected.start)
+		end = min(end, selected.end)
+		if end-start+1 < maxWindowLines {
+			start = max(selected.start, end-maxWindowLines+1)
+			end = min(selected.end, start+maxWindowLines-1)
+		}
+		return start, end, start <= focusLine && focusLine <= end
+	}
+	start := selected.start
+	end := min(selected.end, start+maxWindowLines-1)
+	start, end = padWindow(lineCount, start, end, minWindowLines)
+	return start, end, true
+}
+
+func centeredWindow(lineCount, center, size int) (int, int) {
+	if size <= 0 || size > lineCount {
+		size = lineCount
+	}
+	center = min(max(center, 1), lineCount)
+	start := max(1, center-size/2)
+	end := min(lineCount, start+size-1)
+	start = max(1, end-size+1)
+	return start, end
+}
+
+func padWindow(lineCount, start, end, minimum int) (int, int) {
+	if end-start+1 >= minimum || lineCount <= end-start+1 {
+		return start, end
+	}
+	missing := minimum - (end - start + 1)
+	before := min(start-1, missing/2)
+	start -= before
+	missing -= before
+	end = min(lineCount, end+missing)
+	if end-start+1 < minimum {
+		start = max(1, end-minimum+1)
+	}
+	return start, end
+}
+
+func genericCodeLine(lines []string, focusLine int) int {
+	isCode := func(line string) bool {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") ||
+			strings.HasPrefix(line, "*") || strings.HasPrefix(line, "#") {
+			return false
+		}
+		lower := strings.ToLower(line)
+		return !strings.HasPrefix(lower, "import ") && !strings.HasPrefix(lower, "from ") &&
+			!strings.HasPrefix(lower, "package ") && !strings.HasPrefix(lower, "use ")
+	}
+	if focusLine > 0 && focusLine <= len(lines) {
+		start, end := centeredWindow(len(lines), focusLine, maxWindowLines)
+		for line := start; line <= end; line++ {
+			if isCode(lines[line-1]) {
+				return line
+			}
+		}
+		return 0
+	}
+	for index, line := range lines {
+		if isCode(line) {
+			return index + 1
+		}
+	}
+	return 0
+}
+
+func hasCodeBearingWindow(items []EvidenceItem) bool {
+	for _, item := range items {
+		if item.Kind == EvidenceSource && item.Window != nil && item.Window.CodeBearing {
+			return true
+		}
+	}
+	return false
+}
+
+func prioritizedProviderEvidence(items []EvidenceItem) []EvidenceItem {
+	result := append([]EvidenceItem(nil), items...)
+	priority := func(kind EvidenceKind) int {
+		switch kind {
+		case EvidenceSource:
+			return 0
+		case EvidenceTransition:
+			return 1
+		case EvidenceCallsite:
+			return 2
+		case EvidenceDeclaration:
+			return 3
+		case EvidenceFrontier:
+			return 4
+		default:
+			return 5
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		left := priority(result[i].Kind)
+		right := priority(result[j].Kind)
+		if left != right {
+			return left < right
+		}
+		return result[i].ID < result[j].ID
+	})
+	return result
+}
+
+func candidateFocusLine(candidate FileCandidate) int {
+	for _, location := range candidate.FocusLocations {
+		if location.Path == candidate.Path && location.Line > 0 {
+			return location.Line
+		}
+	}
+	return 0
 }
 
 func matchingCommandTraces(question string, traces []gofacts.CommandTrace) []gofacts.CommandTrace {
@@ -479,7 +737,12 @@ func rankedPaths(paths map[string]int) []string {
 	return result
 }
 
-func addTraceLocation(paths map[string]int, authorized map[string]struct{}, location evidence.Location) {
+func addTraceLocation(
+	paths map[string]int,
+	focusLines map[string]int,
+	authorized map[string]struct{},
+	location evidence.Location,
+) {
 	if location.Path == "" {
 		return
 	}
@@ -488,6 +751,9 @@ func addTraceLocation(paths map[string]int, authorized map[string]struct{}, loca
 	}
 	if current, exists := paths[location.Path]; !exists || current == 0 {
 		paths[location.Path] = location.Line
+	}
+	if current, exists := focusLines[location.Path]; !exists || current == 0 {
+		focusLines[location.Path] = location.Line
 	}
 }
 

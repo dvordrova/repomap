@@ -101,6 +101,7 @@ type orientationCandidateJSON struct {
 	LocalProof        *flowproof.Session            `json:"local_proof"`
 	Disposition       string                        `json:"disposition"`
 	DispositionReason string                        `json:"disposition_reason"`
+	CandidateBasis    string                        `json:"candidate_basis"`
 }
 
 type flowReportJSON struct {
@@ -739,6 +740,7 @@ func parseOrientationReport(path string, data *ReportData) string {
 			LocalProof:        cf.LocalProof,
 			Disposition:       classified.Disposition,
 			DispositionReason: classified.DispositionReason,
+			CandidateBasis:    cf.CandidateBasis,
 		})
 	}
 	for _, word := range or.ImportantDomainWords {
@@ -833,6 +835,7 @@ func parseFlowBundle(path string, fd *FlowData) string {
 		fd.Name = fb.FlowSeed.Name
 	}
 	fd.FlowType = fb.FlowSeed.FlowType
+	fd.CandidateBasis = fb.FlowSeed.CandidateBasis
 	fd.BundleFiles = make([]FileItem, 0, len(fb.SelectedFiles))
 	for _, sf := range fb.SelectedFiles {
 		fd.BundleFiles = append(fd.BundleFiles, FileItem{Path: sf.Path, Reason: strings.Join(sf.Reasons, ", ")})

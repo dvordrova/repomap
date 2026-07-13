@@ -586,7 +586,7 @@ func (b *architectureCandidateBuilder) addFlow(direction CandidateDirection) {
 	validIdentity := session.Version == flowproof.SessionVersion &&
 		proof.Version == flowproof.Version &&
 		proof.ID == direction.ID &&
-		proof.Archetype == flowproof.ArchetypeCLI
+		(proof.Archetype == flowproof.ArchetypeCLI || proof.Archetype == flowproof.ArchetypeProcess)
 	if !validIdentity {
 		return
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
-const CurrentFormatVersion = 17
+const CurrentFormatVersion = 18
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
@@ -168,6 +168,7 @@ type RunInfo struct {
 	PartialTraceCount            int    `json:"partial_trace_count,omitempty"`
 	UnresolvedTraceCount         int    `json:"unresolved_trace_count,omitempty"`
 	FailedTraceAttemptCount      int    `json:"failed_trace_attempt_count,omitempty"`
+	EvidenceBundleCount          int    `json:"evidence_bundle_count,omitempty"`
 }
 
 // Subsystem is one grounded component from the orientation-stage system map.
@@ -203,6 +204,7 @@ type CandidateDirection struct {
 	LocalProof        *flowproof.Session            `json:"local_proof,omitempty"`
 	Disposition       string                        `json:"disposition"`
 	DispositionReason string                        `json:"disposition_reason,omitempty"`
+	CandidateBasis    string                        `json:"candidate_basis,omitempty"`
 }
 
 type FlowData struct {
@@ -221,6 +223,7 @@ type FlowData struct {
 	Error           string      `json:"error,omitempty"`
 	EvidenceOnly    bool        `json:"evidence_only,omitempty"`
 	FlowStatus      string      `json:"flow_status,omitempty"`
+	CandidateBasis  string      `json:"candidate_basis,omitempty"`
 
 	ConfidenceLabel  string `json:"confidence_label,omitempty"`
 	BundleStatsLabel string `json:"bundle_stats_label,omitempty"`
@@ -338,7 +341,7 @@ func enrich(data *ReportData) {
 		data.Run.CandidateDirectionCount = len(data.CandidateDirections)
 		data.Run.AcceptedDirectionCount = acceptedDirections
 		data.Run.RejectedDirectionCount = rejectedDirections
-		data.Run.SavedFlowCount = len(data.Flows)
+		data.Run.SavedFlowCount = savedFlowArtifactCount(data.Flows)
 		if data.ArchitectureGrounding != nil {
 			data.Run.ArchitectureAnchorCount = len(data.ArchitectureGrounding.BehaviorAnchors)
 		}
@@ -357,6 +360,7 @@ func refreshProductCounts(data *ReportData) {
 	data.Run.PartialTraceCount = 0
 	data.Run.UnresolvedTraceCount = 0
 	data.Run.FailedTraceAttemptCount = 0
+	data.Run.EvidenceBundleCount = 0
 	data.Run.CLICommandSurfaceCount = 0
 	data.Run.GenericSurfaceCount = 0
 	data.Run.ApplicationSurfaceCount = 0
@@ -369,6 +373,7 @@ func refreshProductCounts(data *ReportData) {
 	data.Run.PackageDiagnosticCount = 0
 	traced := make(map[string]struct{})
 	if data.ArchitectureCanvas != nil {
+		data.Run.SuggestedInvestigationCount = len(data.ArchitectureCanvas.Suggestions)
 		data.Run.SavedTraceCount = len(data.ArchitectureCanvas.Flows)
 		for _, trace := range data.ArchitectureCanvas.Flows {
 			traced[string(trace.ID)] = struct{}{}
@@ -395,17 +400,32 @@ func refreshProductCounts(data *ReportData) {
 		data.Run.UnavailablePackageCount = data.DiscoveredSurfaces.UnavailablePackageCount
 		data.Run.PackageDiagnosticCount = data.DiscoveredSurfaces.PackageDiagnosticCount
 	}
-	for _, direction := range data.CandidateDirections {
-		if direction.Disposition == flowexplain.DirectionRejected {
-			continue
-		}
-		if _, saved := traced[direction.ID]; !saved {
-			data.Run.SuggestedInvestigationCount++
+	if data.ArchitectureCanvas == nil {
+		for _, direction := range data.CandidateDirections {
+			if direction.Disposition == flowexplain.DirectionRejected {
+				continue
+			}
+			if _, saved := traced[direction.ID]; !saved {
+				data.Run.SuggestedInvestigationCount++
+			}
 		}
 	}
 	for _, flow := range data.Flows {
+		if flow.EvidenceOnly || flow.FlowStatus == "local_only" {
+			data.Run.EvidenceBundleCount++
+		}
 		if flow.Error != "" {
 			data.Run.FailedTraceAttemptCount++
 		}
 	}
+}
+
+func savedFlowArtifactCount(flows []FlowData) int {
+	count := 0
+	for _, flow := range flows {
+		if !flow.EvidenceOnly && flow.Error == "" && flow.FlowStatus != "local_only" {
+			count++
+		}
+	}
+	return count
 }

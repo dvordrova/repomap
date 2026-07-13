@@ -43,7 +43,8 @@ func TestReplaySavedCaddyRun(t *testing.T) {
 				t.Errorf("anchored suggestion %q = %#v", suggestion.ID, suggestion)
 			}
 		case "http-request-handling":
-			if suggestion.InvestigationAvailable || suggestion.UnavailableReason == "" {
+			if !suggestion.InvestigationAvailable || suggestion.StartLocation == nil ||
+				suggestion.CanStartTrace || suggestion.TraceUnavailableReason == "" {
 				t.Errorf("member-only HTTP suggestion = %#v", suggestion)
 			}
 		}

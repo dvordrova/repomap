@@ -70,6 +70,59 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	}
 }
 
+func TestProcessTraceQualityPersistsProjectsAndRenders(t *testing.T) {
+	t.Parallel()
+
+	proof := flowproof.BuildProcess(flowproof.ProcessSeed{
+		FlowID: "startup", Goal: "Application startup", SeedSurfaceID: "surface-main",
+		Entrypoint: flowproof.StaticSurfaceFact{
+			ID: "surface-main", Kind: "process_entry", Label: "main",
+			QualifiedName: "example.com/project/cmd/app.main",
+			Location:      evidence.Location{Path: "cmd/app/main.go", Line: 10},
+		},
+		CurrentFrontier: "downstream runtime handoff remains unresolved",
+	})
+	session := flowproof.Start(proof, flowproof.DefaultBudget(), "go-default", flowproof.SurfaceCollectorVersion)
+	data := &ReportData{
+		FormatVersion: CurrentFormatVersion, RepoName: "project",
+		CandidateDirections: []CandidateDirection{{
+			ID: "startup", Name: "Application startup", LocalProof: &session,
+		}},
+	}
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canvas.Flows) != 1 {
+		t.Fatalf("projected flows = %#v", canvas.Flows)
+	}
+	flow := canvas.Flows[0]
+	if flow.SeedSurfaceID != "surface-main" || flow.TraceQuality != flowproof.TraceQualityPartial ||
+		flow.CurrentFrontier != proof.CurrentFrontier {
+		t.Fatalf("projected process trace = %#v", flow)
+	}
+	data.ArchitectureCanvas = &canvas
+	rendered, err := RenderHTML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		`"seed_surface_id":"surface-main"`,
+		`"trace_quality":"partial"`,
+		`"current_frontier":"downstream runtime handoff remains unresolved"`,
+		"Trace quality",
+		"Current frontier",
+	} {
+		if !strings.Contains(string(rendered), marker) {
+			t.Errorf("rendered process trace is missing %q", marker)
+		}
+	}
+}
+
 func TestBuildArchitectureCanvasInputConsumesAcceptedResearchAsInterpretation(t *testing.T) {
 	t.Parallel()
 

@@ -209,6 +209,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		RepoName: s.RepoName,
 		Warnings: append([]string(nil), operationalWarnings...),
 	}
+	var successfulSurfaceResult *surfacediscovery.Result
 	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
 		surfaceStarted := time.Now()
 		emitProgress(opts, ProgressEvent{
@@ -251,6 +252,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				LatencyMillis: surfaceLatency,
 			})
 		} else {
+			successfulSurfaceResult = &surfaceResult
 			emitProgress(opts, ProgressEvent{
 				Stage:         ProgressSurfaceReady,
 				RepoName:      s.RepoName,
@@ -439,7 +441,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 		normalizeOrientationGrounding(&or, bundle.ProviderAllowedPaths, allowedEntrypoints, signalLocations)
-		localProofInput := localFlowProofInput(s)
+		localProofInput := localFlowProofInput(s, successfulSurfaceResult)
 		attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
 		reconcileResolvedUnknownPaths(&or)
 		applyOrientationConfidenceGate(&or, bundle)
@@ -491,7 +493,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			Cached:         call.Metrics.CacheHit,
 		})
 		researchWarnings, researchErr := runTargetedResearch(
-			ctx, opts, client, dw, bundle, s, &or, &researchState, &runMeta,
+			ctx, opts, client, dw, bundle, s, &or, &researchState, &runMeta, successfulSurfaceResult,
 		)
 		if researchErr != nil {
 			return nil, researchErr

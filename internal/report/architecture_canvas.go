@@ -101,6 +101,10 @@ type ArchitectureSurface struct {
 	Resolution                string                     `json:"resolution,omitempty"`
 	Evidence                  []SurfaceLocation          `json:"evidence,omitempty"`
 	TraceUnavailableReason    string                     `json:"trace_unavailable_reason,omitempty"`
+	SurfaceRole               string                     `json:"surface_role,omitempty"`
+	TraceReadiness            string                     `json:"trace_readiness,omitempty"`
+	TraceReadinessReason      string                     `json:"trace_readiness_reason,omitempty"`
+	Quality                   SurfaceQuality             `json:"quality,omitempty"`
 }
 
 // ArchitectureSuggestion binds an accepted untraced direction to exact local
@@ -116,6 +120,7 @@ type ArchitectureSuggestion struct {
 	CanStartTrace          bool                       `json:"can_start_trace"`
 	InvestigationAvailable bool                       `json:"investigation_available"`
 	UnavailableReason      string                     `json:"unavailable_reason,omitempty"`
+	TraceUnavailableReason string                     `json:"trace_unavailable_reason,omitempty"`
 	StartLocation          *SurfaceLocation           `json:"start_location,omitempty"`
 }
 
@@ -146,6 +151,9 @@ type ArchitectureFlow struct {
 	FrontierSummary           string                     `json:"frontier_summary,omitempty"`
 	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
 	StartSurfaceID            string                     `json:"start_surface_id,omitempty"`
+	SeedSurfaceID             string                     `json:"seed_surface_id,omitempty"`
+	TraceQuality              flowproof.TraceQuality     `json:"trace_quality,omitempty"`
+	CurrentFrontier           string                     `json:"current_frontier,omitempty"`
 }
 
 type ArchitectureFlowStep struct {
@@ -418,7 +426,8 @@ func projectArchitectureFlows(
 			))
 			continue
 		}
-		if input.Session.Proof.Archetype != flowproof.ArchetypeCLI {
+		if input.Session.Proof.Archetype != flowproof.ArchetypeCLI &&
+			input.Session.Proof.Archetype != flowproof.ArchetypeProcess {
 			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
 				"projection", "error", "flow.unsupported_archetype",
 				fmt.Sprintf("flow %q has unsupported archetype %q", input.ID, input.Session.Proof.Archetype), input.ID, nil,
@@ -444,7 +453,12 @@ func projectArchitectureFlow(
 	flow := ArchitectureFlow{
 		ID: input.ID, Name: name, Trigger: input.Trigger, Scope: input.Scope,
 		MentalModel: input.MentalModel, Goal: proof.Goal, Command: proof.Command,
-		Branches: branches,
+		Branches:      branches,
+		SeedSurfaceID: proof.SeedSurfaceID, TraceQuality: proof.TraceQuality,
+		CurrentFrontier: proof.CurrentFrontier,
+	}
+	if flow.TraceQuality == "" {
+		flow.TraceQuality = flowproof.AssessTraceQuality(proof)
 	}
 
 	for _, anchorID := range view.anchorOrder {

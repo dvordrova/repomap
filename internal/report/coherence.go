@@ -26,9 +26,11 @@ const (
 )
 
 type architectureOwnershipIndex struct {
-	pathOwners    map[string]map[componentmap.ComponentID]struct{}
-	packageOwners map[string]map[componentmap.ComponentID]struct{}
-	symbolOwners  map[string]map[componentmap.ComponentID]struct{}
+	pathOwners      map[string]map[componentmap.ComponentID]struct{}
+	packageOwners   map[string]map[componentmap.ComponentID]struct{}
+	symbolOwners    map[string]map[componentmap.ComponentID]struct{}
+	memberOwners    map[string]map[componentmap.ComponentID]struct{}
+	sourceLocations map[string][]SurfaceLocation
 }
 
 // linkArchitectureProductObjects derives presentation-only joins from exact
@@ -40,7 +42,9 @@ func linkArchitectureProductObjects(data *ReportData) {
 	}
 	if data.DiscoveredSurfaces != nil {
 		for index := range data.DiscoveredSurfaces.Triggers {
-			classifySurfaceExecutable(data, &data.DiscoveredSurfaces.Triggers[index])
+			trigger := &data.DiscoveredSurfaces.Triggers[index]
+			classifySurfaceExecutable(data, trigger)
+			ensureProjectedSurfaceSemantics(trigger)
 		}
 		refreshSurfaceCatalogCounts(data.DiscoveredSurfaces)
 	}
@@ -65,7 +69,7 @@ func linkArchitectureProductObjects(data *ReportData) {
 		canvas.Flows[index].ParticipatingComponentIDs = nil
 		canvas.Flows[index].StartSurfaceID = ""
 	}
-	owners := buildArchitectureOwnershipIndex(*canvas)
+	owners := buildArchitectureOwnershipIndex(*canvas, data.RepositoryGraph)
 	flowLocations := architectureFlowLocations(*canvas)
 	flowByLocation := make(map[string]map[componentmap.FlowID]struct{})
 	flowByCommand := make(map[string]map[componentmap.FlowID]struct{})
@@ -95,6 +99,13 @@ func linkArchitectureProductObjects(data *ReportData) {
 		for index := range data.DiscoveredSurfaces.Triggers {
 			trigger := &data.DiscoveredSurfaces.Triggers[index]
 			surface := architectureSurfaceFromTrigger(*trigger, owners, flowByLocation, flowByCommand, flowLocations)
+			for _, flow := range canvas.Flows {
+				if flow.SeedSurfaceID == trigger.ID {
+					surface.RelatedTraceID = flow.ID
+					surface.TraceUnavailableReason = ""
+					break
+				}
+			}
 			trigger.OwningExecutable = surface.OwningExecutable
 			trigger.OwningComponentID = surface.OwningComponentID
 			trigger.ParticipatingComponentIDs = append([]componentmap.ComponentID(nil), surface.ParticipatingComponentIDs...)
@@ -103,7 +114,8 @@ func linkArchitectureProductObjects(data *ReportData) {
 			canvas.Surfaces = append(canvas.Surfaces, surface)
 			attachArchitectureSurface(canvas, componentIndex, surface)
 			if surface.RelatedTraceID != "" {
-				if index, ok := flowIndex[surface.RelatedTraceID]; ok && canvas.Flows[index].StartSurfaceID == "" {
+				if index, ok := flowIndex[surface.RelatedTraceID]; ok &&
+					(canvas.Flows[index].StartSurfaceID == "" || canvas.Flows[index].SeedSurfaceID == surface.ID) {
 					canvas.Flows[index].StartSurfaceID = surface.ID
 				}
 			}
@@ -135,11 +147,13 @@ func ApplyProductCoherence(data *ReportData) {
 	refreshProductCounts(data)
 }
 
-func buildArchitectureOwnershipIndex(canvas ArchitectureCanvas) architectureOwnershipIndex {
+func buildArchitectureOwnershipIndex(canvas ArchitectureCanvas, graph *RepositoryGraph) architectureOwnershipIndex {
 	index := architectureOwnershipIndex{
-		pathOwners:    make(map[string]map[componentmap.ComponentID]struct{}),
-		packageOwners: make(map[string]map[componentmap.ComponentID]struct{}),
-		symbolOwners:  make(map[string]map[componentmap.ComponentID]struct{}),
+		pathOwners:      make(map[string]map[componentmap.ComponentID]struct{}),
+		packageOwners:   make(map[string]map[componentmap.ComponentID]struct{}),
+		symbolOwners:    make(map[string]map[componentmap.ComponentID]struct{}),
+		memberOwners:    make(map[string]map[componentmap.ComponentID]struct{}),
+		sourceLocations: make(map[string][]SurfaceLocation),
 	}
 	diagnosticComponents := make(map[componentmap.ComponentID]struct{})
 	for _, subsystem := range canvas.Subsystems {
@@ -155,23 +169,65 @@ func buildArchitectureOwnershipIndex(canvas ArchitectureCanvas) architectureOwne
 			continue
 		}
 		for _, member := range component.Members {
+			addComponentSet(index.memberOwners, member.ID.Value, component.ID)
 			switch member.ID.Kind {
 			case componentmap.MemberPackage:
 				addComponentSet(index.packageOwners, member.ID.Value, component.ID)
 			case componentmap.MemberSymbol, componentmap.MemberEntrypoint:
 				addComponentSet(index.symbolOwners, member.ID.Value, component.ID)
+			case componentmap.MemberFile:
+				memberPath := cleanSurfacePath(member.ID.Value)
+				addComponentSet(index.pathOwners, memberPath, component.ID)
+				addArchitectureSourceLocation(&index, member.ID.Value, SurfaceLocation{Path: memberPath})
 			}
 			for _, fact := range member.Facts {
 				if fact.Location != nil {
-					addComponentSet(index.pathOwners, cleanSurfacePath(fact.Location.Path), component.ID)
+					location := SurfaceLocation{
+						Path: cleanSurfacePath(fact.Location.Path), Line: fact.Location.Line, Column: fact.Location.Column,
+					}
+					addComponentSet(index.pathOwners, location.Path, component.ID)
+					addArchitectureSourceLocation(&index, member.ID.Value, location)
+					addArchitectureSourceLocation(&index, fact.Value, location)
+					addArchitectureSourceLocation(&index, location.Path, location)
 				}
 				if fact.Kind == componentmap.FactRepositoryPath {
-					addComponentSet(index.pathOwners, cleanSurfacePath(fact.Value), component.ID)
+					factPath := cleanSurfacePath(fact.Value)
+					addComponentSet(index.pathOwners, factPath, component.ID)
+					addArchitectureSourceLocation(&index, factPath, SurfaceLocation{Path: factPath})
+				}
+				if fact.Kind == componentmap.FactDeclaration {
+					addComponentSet(index.memberOwners, fact.Value, component.ID)
+					for _, pkg := range exactRepositoryPackages(graph, fact.Value) {
+						addComponentSet(index.packageOwners, pkg.CanonicalPath, component.ID)
+						addComponentSet(index.pathOwners, cleanSurfacePath(pkg.Dir), component.ID)
+						for _, filePath := range pkg.Files {
+							filePath = cleanSurfacePath(filePath)
+							addComponentSet(index.pathOwners, filePath, component.ID)
+							location := SurfaceLocation{Path: filePath}
+							addArchitectureSourceLocation(&index, pkg.CanonicalPath, location)
+							addArchitectureSourceLocation(&index, pkg.Dir, location)
+							addArchitectureSourceLocation(&index, filePath, location)
+							addArchitectureSourceLocation(&index, member.ID.Value, location)
+						}
+					}
 				}
 			}
 		}
 	}
 	return index
+}
+
+func exactRepositoryPackages(graph *RepositoryGraph, canonicalPath string) []PackageInfo {
+	if graph == nil || strings.TrimSpace(canonicalPath) == "" {
+		return nil
+	}
+	result := make([]PackageInfo, 0, 1)
+	for _, pkg := range graph.Packages {
+		if pkg.CanonicalPath == canonicalPath {
+			result = append(result, pkg)
+		}
+	}
+	return result
 }
 
 func architectureFlowLocations(canvas ArchitectureCanvas) map[componentmap.FlowID]map[string]struct{} {
@@ -201,6 +257,9 @@ func populateArchitectureTraceSummary(data *ReportData, flow *ArchitectureFlow, 
 		return
 	}
 	flow.EvidenceBasis = "static"
+	if flow.TraceQuality == "" {
+		flow.TraceQuality = flowproof.TraceQualityPartial
+	}
 	flow.TotalAreas = len(flow.Slots)
 	for _, slot := range flow.Slots {
 		if slot.Status == flowproof.SlotVerified || slot.Status == flowproof.SlotNotApplicable {
@@ -215,6 +274,9 @@ func populateArchitectureTraceSummary(data *ReportData, flow *ArchitectureFlow, 
 	default:
 		flow.Status = "unresolved"
 	}
+	if flow.Status == "complete" {
+		flow.TraceQuality = flowproof.TraceQualityComplete
+	}
 	participants := make(map[componentmap.ComponentID]struct{})
 	for _, step := range flow.Steps {
 		if step.ComponentID != "" {
@@ -222,20 +284,23 @@ func populateArchitectureTraceSummary(data *ReportData, flow *ArchitectureFlow, 
 		}
 	}
 	flow.ParticipatingComponentIDs = sortedComponentIDs(participants)
-	for _, kind := range []flowproof.SlotKind{
-		flowproof.SlotIOBoundary,
-		flowproof.SlotCoreOperation,
-		flowproof.SlotTermination,
-		flowproof.SlotConcurrency,
-	} {
-		for _, slot := range flow.Slots {
-			if slot.Kind == kind && strings.TrimSpace(slot.Missing) != "" {
-				flow.FrontierSummary = slot.Missing
+	flow.FrontierSummary = strings.TrimSpace(flow.CurrentFrontier)
+	if flow.FrontierSummary == "" {
+		for _, kind := range []flowproof.SlotKind{
+			flowproof.SlotIOBoundary,
+			flowproof.SlotCoreOperation,
+			flowproof.SlotTermination,
+			flowproof.SlotConcurrency,
+		} {
+			for _, slot := range flow.Slots {
+				if slot.Kind == kind && strings.TrimSpace(slot.Missing) != "" {
+					flow.FrontierSummary = slot.Missing
+					break
+				}
+			}
+			if flow.FrontierSummary != "" {
 				break
 			}
-		}
-		if flow.FrontierSummary != "" {
-			break
 		}
 	}
 	for _, frontier := range canvas.Frontiers {
@@ -324,6 +389,10 @@ func architectureSurfaceFromTrigger(
 		Resolution:                trigger.Resolution,
 		Evidence:                  evidence,
 		TraceUnavailableReason:    surfaceTraceUnavailableReason(trigger, relatedTrace),
+		SurfaceRole:               trigger.SurfaceRole,
+		TraceReadiness:            trigger.TraceReadiness,
+		TraceReadinessReason:      trigger.TraceReadinessReason,
+		Quality:                   trigger.Quality,
 	}
 }
 
@@ -481,55 +550,105 @@ func linkSuggestedInvestigations(data *ReportData, owners architectureOwnershipI
 		if _, traced := saved[direction.ID]; traced {
 			continue
 		}
-		matches := make(map[componentmap.ComponentID]struct{})
-		paths := append([]string{direction.LikelyEntrypoint}, direction.LikelyFiles...)
+		identifiers := suggestionIdentifiers(direction)
+		identifierPaths := make(map[string]struct{}, len(identifiers))
+		for _, identifier := range identifiers {
+			identifierPaths[cleanSurfacePath(identifier)] = struct{}{}
+		}
 		anchorIDs := make(map[string]struct{})
 		anchorMatches := make(map[componentmap.ComponentID]struct{})
-		var startLocation *SurfaceLocation
+		anchorLocations := make(map[string]SurfaceLocation)
 		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
-			if !slices.Contains(paths, anchor.Location.Path) {
+			if _, matched := identifierPaths[cleanSurfacePath(anchor.Location.Path)]; !matched {
 				continue
 			}
 			anchorIDs[anchor.ID] = struct{}{}
-			if startLocation == nil && anchor.Location.Path != "" && anchor.Location.Line > 0 {
-				startLocation = &SurfaceLocation{Path: anchor.Location.Path, Line: anchor.Location.Line, Column: anchor.Location.Column}
+			anchorLocations[anchor.ID] = SurfaceLocation{
+				Path: anchor.Location.Path, Line: anchor.Location.Line, Column: anchor.Location.Column,
 			}
+			ownersForAnchor := make(map[componentmap.ComponentID]struct{})
 			for componentID, componentIndex := range index {
 				if slices.Contains(data.ArchitectureCanvas.Components[componentIndex].AnchorIDs, anchor.ID) {
+					ownersForAnchor[componentID] = struct{}{}
+				}
+			}
+			if len(ownersForAnchor) == 1 {
+				for componentID := range ownersForAnchor {
 					anchorMatches[componentID] = struct{}{}
 				}
 			}
 		}
-		for _, candidatePath := range paths {
-			for id := range ownersForPath(owners.pathOwners, candidatePath) {
-				matches[id] = struct{}{}
-			}
-		}
+		matches := make(map[componentmap.ComponentID]struct{})
 		if len(anchorMatches) > 0 {
 			matches = anchorMatches
+		} else if len(anchorIDs) == 0 {
+			for _, identifier := range identifiers {
+				for componentID := range uniqueOwnersForIdentifier(owners, identifier) {
+					matches[componentID] = struct{}{}
+				}
+			}
 		}
-		componentIDs := sortedComponentIDs(matches)
 		orderedAnchorIDs := make([]string, 0, len(anchorIDs))
 		for anchorID := range anchorIDs {
 			orderedAnchorIDs = append(orderedAnchorIDs, anchorID)
 		}
 		sort.Strings(orderedAnchorIDs)
-		grounding := "exact_member"
+		var startLocation *SurfaceLocation
+		if len(orderedAnchorIDs) > 0 {
+			if location := anchorLocations[orderedAnchorIDs[0]]; validSuggestionLocation(location) {
+				startLocation = cloneSurfaceLocationValue(location)
+			}
+		}
+
+		surfaceMatches := exactSuggestionSurfaceMatches(data.DiscoveredSurfaces, direction, identifiers)
+		if len(orderedAnchorIDs) == 0 {
+			for _, match := range surfaceMatches {
+				if match.trigger.OwningComponentID != "" {
+					matches[match.trigger.OwningComponentID] = struct{}{}
+				}
+			}
+		}
+		traceable := traceableSuggestionSurfaceMatches(surfaceMatches)
+		canStartTrace := len(traceable) == 1 && !candidateBasisExcludesTrace(direction.CandidateBasis)
+		if startLocation == nil && len(traceable) == 1 {
+			startLocation = cloneSurfaceLocationValue(traceable[0].location)
+		}
+		if startLocation == nil && len(surfaceMatches) == 1 {
+			startLocation = cloneSurfaceLocationValue(surfaceMatches[0].location)
+		}
+		if startLocation == nil {
+			startLocation = exactSuggestionSource(data, owners, identifiers)
+		}
+
+		grounding := "unassigned"
 		if len(orderedAnchorIDs) > 0 {
 			grounding = "exact_anchor"
+		} else if len(matches) > 0 {
+			grounding = "exact_member"
+		} else if len(surfaceMatches) > 0 {
+			grounding = "exact_surface"
+		} else if startLocation != nil {
+			grounding = "exact_source"
 		}
-		available := startLocation != nil
+		componentIDs := sortedComponentIDs(matches)
+		available := startLocation != nil && startLocation.Path != ""
 		unavailableReason := ""
 		if !available {
-			unavailableReason = "no locally resolvable starting callable"
+			unavailableReason = "no exact local source location matched this suggestion"
+		} else {
+			data.OpenablePaths = appendUniqueString(data.OpenablePaths, startLocation.Path)
+			sort.Strings(data.OpenablePaths)
 		}
+		traceUnavailableReason := suggestionTraceUnavailableReason(
+			direction, surfaceMatches, traceable, available, canStartTrace,
+		)
 		data.ArchitectureCanvas.Suggestions = append(data.ArchitectureCanvas.Suggestions, ArchitectureSuggestion{
 			ID: direction.ID, Title: direction.Name, Reason: direction.WhyInteresting,
 			EvidenceReferences: append([]string(nil), direction.Evidence...),
 			RelevantAnchorIDs:  orderedAnchorIDs, RelevantComponentIDs: componentIDs,
-			CurrentGrounding: grounding, CanStartTrace: false,
+			CurrentGrounding: grounding, CanStartTrace: canStartTrace,
 			InvestigationAvailable: available, UnavailableReason: unavailableReason,
-			StartLocation: startLocation,
+			TraceUnavailableReason: traceUnavailableReason, StartLocation: startLocation,
 		})
 		for componentID := range matches {
 			if componentIndex, ok := index[componentID]; ok {
@@ -543,6 +662,247 @@ func linkSuggestedInvestigations(data *ReportData, owners architectureOwnershipI
 	sort.Slice(data.ArchitectureCanvas.Suggestions, func(i, j int) bool {
 		return data.ArchitectureCanvas.Suggestions[i].ID < data.ArchitectureCanvas.Suggestions[j].ID
 	})
+}
+
+type suggestionSurfaceMatch struct {
+	trigger  DiscoveredTrigger
+	location SurfaceLocation
+}
+
+func suggestionIdentifiers(direction CandidateDirection) []string {
+	values := append([]string{direction.LikelyEntrypoint}, direction.LikelyFiles...)
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func uniqueOwnersForIdentifier(owners architectureOwnershipIndex, identifier string) map[componentmap.ComponentID]struct{} {
+	result := make(map[componentmap.ComponentID]struct{})
+	add := func(values map[componentmap.ComponentID]struct{}) {
+		for componentID := range values {
+			result[componentID] = struct{}{}
+		}
+	}
+	identifier = strings.TrimSpace(identifier)
+	add(owners.packageOwners[identifier])
+	add(owners.symbolOwners[identifier])
+	add(owners.memberOwners[identifier])
+	add(ownersForPath(owners.pathOwners, identifier))
+	if len(result) != 1 {
+		return nil
+	}
+	return result
+}
+
+func exactSuggestionSurfaceMatches(
+	surfaces *DiscoveredSurfaces,
+	direction CandidateDirection,
+	identifiers []string,
+) []suggestionSurfaceMatch {
+	if surfaces == nil {
+		return nil
+	}
+	rawIDs := make(map[string]struct{}, len(identifiers)+1)
+	paths := make(map[string]struct{}, len(identifiers))
+	rawIDs[direction.ID] = struct{}{}
+	for _, identifier := range identifiers {
+		rawIDs[identifier] = struct{}{}
+		paths[cleanSurfacePath(identifier)] = struct{}{}
+	}
+	result := make([]suggestionSurfaceMatch, 0)
+	for _, trigger := range surfaces.Triggers {
+		matched := false
+		for _, identifier := range []string{
+			trigger.ID, trigger.ProcessEntrypoint.ID, trigger.ProcessEntrypoint.Package,
+		} {
+			if _, exact := rawIDs[identifier]; identifier != "" && exact {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			for _, location := range surfaceTriggerLocations(trigger) {
+				if _, exact := paths[cleanSurfacePath(location.Path)]; exact {
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			continue
+		}
+		location, ok := suggestionSurfaceLocation(trigger)
+		if !ok {
+			continue
+		}
+		result = append(result, suggestionSurfaceMatch{trigger: trigger, location: location})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].trigger.ID < result[j].trigger.ID })
+	return result
+}
+
+func suggestionSurfaceLocation(trigger DiscoveredTrigger) (SurfaceLocation, bool) {
+	var candidates []*SurfaceLocation
+	switch trigger.Kind {
+	case "process_entry":
+		candidates = append(candidates, trigger.ProcessEntrypoint.Location)
+	case "http_route_descriptor":
+		candidates = append(candidates, trigger.DescriptorSite)
+	case "http_server":
+		candidates = append(candidates, trigger.ServerStartSite)
+	default:
+		candidates = append(candidates, trigger.RegistrationSite)
+	}
+	candidates = append(candidates,
+		trigger.RegistrationSite, trigger.ServerStartSite, trigger.DescriptorSite, trigger.ProcessEntrypoint.Location,
+	)
+	for _, location := range candidates {
+		if location != nil && validSuggestionLocation(*location) {
+			return *location, true
+		}
+	}
+	return SurfaceLocation{}, false
+}
+
+func traceableSuggestionSurfaceMatches(matches []suggestionSurfaceMatch) []suggestionSurfaceMatch {
+	result := make([]suggestionSurfaceMatch, 0, len(matches))
+	for _, match := range matches {
+		ready := match.trigger.TraceReadiness == SurfaceTraceReady ||
+			match.trigger.TraceReadiness == SurfaceTracePartialReady
+		if ready && match.trigger.Availability != SurfaceAvailabilityUnavailable {
+			result = append(result, match)
+		}
+	}
+	return result
+}
+
+func candidateBasisExcludesTrace(basis string) bool {
+	return basis == flowexplain.CandidateBasisSourceSignalAggregate ||
+		basis == flowexplain.CandidateBasisRuntimeActivity
+}
+
+func suggestionTraceUnavailableReason(
+	direction CandidateDirection,
+	matches []suggestionSurfaceMatch,
+	traceable []suggestionSurfaceMatch,
+	sourceAvailable bool,
+	canStartTrace bool,
+) string {
+	if canStartTrace {
+		return ""
+	}
+	switch direction.CandidateBasis {
+	case flowexplain.CandidateBasisSourceSignalAggregate:
+		return "local source-signal aggregate does not identify a singular typed trace seed"
+	case flowexplain.CandidateBasisRuntimeActivity:
+		return "runtime activity is nested work and does not identify an independent top-level typed trace seed"
+	}
+	if len(traceable) > 1 {
+		return "multiple exact trace-ready surfaces match this suggestion; no singular typed trace seed was selected"
+	}
+	if len(matches) == 1 {
+		return firstNonEmpty(
+			matches[0].trigger.TraceReadinessReason,
+			surfaceTraceUnavailableReason(matches[0].trigger, ""),
+		)
+	}
+	if len(matches) > 1 {
+		return "matched surface evidence does not identify a singular supported typed trace seed"
+	}
+	if sourceAvailable {
+		return "exact source is available, but typed trace expansion requires a singular supported entry surface"
+	}
+	return "no exact local source location can establish a typed trace seed"
+}
+
+func exactSuggestionSource(
+	data *ReportData,
+	owners architectureOwnershipIndex,
+	identifiers []string,
+) *SurfaceLocation {
+	locations := make([]SurfaceLocation, 0)
+	openable := make(map[string]struct{}, len(data.OpenablePaths))
+	for _, filePath := range data.OpenablePaths {
+		openable[cleanSurfacePath(filePath)] = struct{}{}
+	}
+	for _, identifier := range identifiers {
+		locations = append(locations, owners.sourceLocations[identifier]...)
+		locations = append(locations, owners.sourceLocations[cleanSurfacePath(identifier)]...)
+		if _, ok := openable[cleanSurfacePath(identifier)]; ok {
+			locations = append(locations, SurfaceLocation{Path: cleanSurfacePath(identifier)})
+		}
+	}
+	locations = compactSuggestionLocations(locations)
+	if len(locations) == 0 {
+		return nil
+	}
+	return cloneSurfaceLocationValue(locations[0])
+}
+
+func compactSuggestionLocations(locations []SurfaceLocation) []SurfaceLocation {
+	seen := make(map[string]struct{}, len(locations))
+	result := make([]SurfaceLocation, 0, len(locations))
+	for _, location := range locations {
+		location.Path = cleanSurfacePath(location.Path)
+		if !validSuggestionLocation(location) {
+			continue
+		}
+		key := surfaceLocationKey(location.Path, location.Line) + "\x00" + strconv.Itoa(location.Column)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, location)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Path != result[j].Path {
+			return result[i].Path < result[j].Path
+		}
+		leftExact := result[i].Line > 0
+		rightExact := result[j].Line > 0
+		if leftExact != rightExact {
+			return leftExact
+		}
+		if result[i].Line != result[j].Line {
+			return result[i].Line < result[j].Line
+		}
+		return result[i].Column < result[j].Column
+	})
+	return result
+}
+
+func validSuggestionLocation(location SurfaceLocation) bool {
+	locationPath := cleanSurfacePath(location.Path)
+	if locationPath == "" || location.Line < 0 {
+		return false
+	}
+	return location.Line > 0 || path.Ext(locationPath) != ""
+}
+
+func cloneSurfaceLocationValue(location SurfaceLocation) *SurfaceLocation {
+	copy := location
+	copy.Path = cleanSurfacePath(copy.Path)
+	return &copy
+}
+
+func addArchitectureSourceLocation(index *architectureOwnershipIndex, key string, location SurfaceLocation) {
+	key = strings.TrimSpace(key)
+	location.Path = cleanSurfacePath(location.Path)
+	if index == nil || key == "" || location.Path == "" || location.Line < 0 {
+		return
+	}
+	index.sourceLocations[key] = append(index.sourceLocations[key], location)
 }
 
 func uniqueOwnerForTrigger(trigger DiscoveredTrigger, owners architectureOwnershipIndex) componentmap.ComponentID {
@@ -772,6 +1132,10 @@ func pathWithinExecutable(value, executable string) bool {
 func surfaceTraceUnavailableReason(trigger DiscoveredTrigger, related componentmap.FlowID) string {
 	if related != "" {
 		return ""
+	}
+	if (trigger.TraceReadiness == SurfaceTraceUnsupported || trigger.TraceReadiness == SurfaceTraceRejected) &&
+		strings.TrimSpace(trigger.TraceReadinessReason) != "" {
+		return trigger.TraceReadinessReason
 	}
 	if trigger.Kind == "cli_command" {
 		return "no saved trace was collected for this command"

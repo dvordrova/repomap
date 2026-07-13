@@ -18,17 +18,18 @@ import (
 )
 
 const (
-	surfaceCatalogFilename        = "trigger_catalog.json"
-	surfaceCoverageFilename       = "surface_coverage.json"
-	surfaceArtifactVersion        = 3
-	legacySurfaceArtifactVersion  = 2
-	surfaceSemanticCatalogVersion = 1
-	maxSurfaceArtifactBytes       = 4 * 1024 * 1024
-	maxDiscoveredSurfaceTriggers  = 256
-	maxSurfaceCoverageItems       = 128
-	maxSurfaceNestedItems         = 32
-	maxSurfaceValueCandidates     = 16
-	maxDiscoveredSurfacePathBytes = 4096
+	surfaceCatalogFilename         = "trigger_catalog.json"
+	surfaceCoverageFilename        = "surface_coverage.json"
+	surfaceArtifactVersion         = 4
+	previousSurfaceArtifactVersion = 3
+	legacySurfaceArtifactVersion   = 2
+	surfaceSemanticCatalogVersion  = 1
+	maxSurfaceArtifactBytes        = 4 * 1024 * 1024
+	maxDiscoveredSurfaceTriggers   = 256
+	maxSurfaceCoverageItems        = 128
+	maxSurfaceNestedItems          = 32
+	maxSurfaceValueCandidates      = 16
+	maxDiscoveredSurfacePathBytes  = 4096
 )
 
 const (
@@ -47,6 +48,18 @@ const (
 	SurfaceAvailabilityAvailable   = "available"
 	SurfaceAvailabilityUnavailable = "unavailable"
 	SurfaceAvailabilityUnknown     = "unknown"
+
+	SurfaceRoleEntrySurface    = "entry_surface"
+	SurfaceRoleRuntimeActivity = "runtime_activity"
+	SurfaceRoleDescriptor      = "descriptor"
+	SurfaceRoleDynamicFrontier = "dynamic_frontier"
+	SurfaceRoleRejected        = "rejected"
+	SurfaceRoleNoisy           = "noisy"
+
+	SurfaceTraceReady        = "trace_ready"
+	SurfaceTracePartialReady = "partial_trace_ready"
+	SurfaceTraceUnsupported  = "unsupported"
+	SurfaceTraceRejected     = "rejected"
 )
 
 // DiscoveredSurfaces is the bounded presentation projection of a paired
@@ -131,6 +144,19 @@ type DiscoveredTrigger struct {
 	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
 	RelatedTraceID            componentmap.FlowID        `json:"related_saved_trace_id,omitempty"`
 	TraceUnavailableReason    string                     `json:"trace_unavailable_reason,omitempty"`
+	SurfaceRole               string                     `json:"surface_role"`
+	TraceReadiness            string                     `json:"trace_readiness"`
+	TraceReadinessReason      string                     `json:"trace_readiness_reason"`
+	Quality                   SurfaceQuality             `json:"quality"`
+}
+
+type SurfaceQuality struct {
+	Identity          string `json:"identity"`
+	RegistrationStart string `json:"registration_start"`
+	HandlerCallback   string `json:"handler_callback"`
+	Reachability      string `json:"reachability"`
+	Ownership         string `json:"ownership"`
+	Traceability      string `json:"traceability"`
 }
 
 type SurfaceProvenance struct {
@@ -267,33 +293,46 @@ type rawSurfaceScenario struct {
 }
 
 type rawSurfaceTrigger struct {
-	ID                string                 `json:"id"`
-	ProvisionalID     bool                   `json:"provisional_id"`
-	Kind              string                 `json:"kind"`
-	Identity          rawSurfaceIdentity     `json:"identity"`
-	Transport         string                 `json:"transport"`
-	Framework         string                 `json:"framework"`
-	ProcessEntrypoint rawSurfaceSymbol       `json:"process_entrypoint"`
-	Dispatcher        rawSurfaceValue        `json:"dispatcher"`
-	RegistrationSite  rawSurfaceLocation     `json:"registration_site"`
-	DescriptorSite    *rawSurfaceLocation    `json:"descriptor_site"`
-	ServerStartSite   *rawSurfaceLocation    `json:"server_start_site"`
-	Handler           rawSurfaceValue        `json:"handler"`
-	Middleware        []rawSurfaceValue      `json:"middleware"`
-	WrapperChain      []rawSurfaceWrapper    `json:"wrapper_chain"`
-	FinalSeed         string                 `json:"final_seed"`
-	DiscoveryBasis    string                 `json:"discovery_basis"`
-	Certainty         string                 `json:"certainty"`
-	Resolution        string                 `json:"resolution"`
-	ScenarioID        string                 `json:"scenario_id"`
-	Evidence          []rawSurfaceEvidence   `json:"evidence"`
-	Provenance        []rawSurfaceProvenance `json:"provenance"`
-	DynamicFrontier   []rawSurfaceFrontier   `json:"dynamic_frontier"`
-	Status            string                 `json:"status"`
-	OwningExecutable  string                 `json:"owning_executable"`
-	ExecutableRole    string                 `json:"executable_role"`
-	Availability      string                 `json:"availability"`
-	UnavailableReason string                 `json:"unavailable_reason"`
+	ID                   string                 `json:"id"`
+	ProvisionalID        bool                   `json:"provisional_id"`
+	Kind                 string                 `json:"kind"`
+	Identity             rawSurfaceIdentity     `json:"identity"`
+	Transport            string                 `json:"transport"`
+	Framework            string                 `json:"framework"`
+	ProcessEntrypoint    rawSurfaceSymbol       `json:"process_entrypoint"`
+	Dispatcher           rawSurfaceValue        `json:"dispatcher"`
+	RegistrationSite     rawSurfaceLocation     `json:"registration_site"`
+	DescriptorSite       *rawSurfaceLocation    `json:"descriptor_site"`
+	ServerStartSite      *rawSurfaceLocation    `json:"server_start_site"`
+	Handler              rawSurfaceValue        `json:"handler"`
+	Middleware           []rawSurfaceValue      `json:"middleware"`
+	WrapperChain         []rawSurfaceWrapper    `json:"wrapper_chain"`
+	FinalSeed            string                 `json:"final_seed"`
+	DiscoveryBasis       string                 `json:"discovery_basis"`
+	Certainty            string                 `json:"certainty"`
+	Resolution           string                 `json:"resolution"`
+	ScenarioID           string                 `json:"scenario_id"`
+	Evidence             []rawSurfaceEvidence   `json:"evidence"`
+	Provenance           []rawSurfaceProvenance `json:"provenance"`
+	DynamicFrontier      []rawSurfaceFrontier   `json:"dynamic_frontier"`
+	Status               string                 `json:"status"`
+	OwningExecutable     string                 `json:"owning_executable"`
+	ExecutableRole       string                 `json:"executable_role"`
+	Availability         string                 `json:"availability"`
+	UnavailableReason    string                 `json:"unavailable_reason"`
+	SurfaceRole          string                 `json:"surface_role"`
+	TraceReadiness       string                 `json:"trace_readiness"`
+	TraceReadinessReason string                 `json:"trace_readiness_reason"`
+	Quality              rawSurfaceQuality      `json:"quality"`
+}
+
+type rawSurfaceQuality struct {
+	Identity          string `json:"identity"`
+	RegistrationStart string `json:"registration_start"`
+	HandlerCallback   string `json:"handler_callback"`
+	Reachability      string `json:"reachability"`
+	Ownership         string `json:"ownership"`
+	Traceability      string `json:"traceability"`
 }
 
 type rawSurfaceProvenance struct {
@@ -520,7 +559,8 @@ func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceC
 }
 
 func supportedSurfaceArtifactVersion(version int) bool {
-	return version == legacySurfaceArtifactVersion || version == surfaceArtifactVersion
+	return version == legacySurfaceArtifactVersion || version == previousSurfaceArtifactVersion ||
+		version == surfaceArtifactVersion
 }
 
 func surfaceScenariosMatch(left, right rawSurfaceScenario) bool {
@@ -679,7 +719,7 @@ func uniqueSurfaceStrings(values []string) []string {
 }
 
 func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
-	return DiscoveredTrigger{
+	projected := DiscoveredTrigger{
 		ID:            trigger.ID,
 		ProvisionalID: trigger.ProvisionalID,
 		Kind:          trigger.Kind,
@@ -688,29 +728,39 @@ func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
 			Path:   projectSurfaceValue(trigger.Identity.Path),
 			Name:   trigger.Identity.Name,
 		},
-		Transport:         trigger.Transport,
-		Framework:         trigger.Framework,
-		ProcessEntrypoint: projectSurfaceSymbol(trigger.ProcessEntrypoint),
-		Dispatcher:        projectSurfaceValue(trigger.Dispatcher),
-		RegistrationSite:  projectSurfaceLocation(trigger.RegistrationSite),
-		DescriptorSite:    projectOptionalSurfaceLocation(trigger.DescriptorSite),
-		ServerStartSite:   projectOptionalSurfaceLocation(trigger.ServerStartSite),
-		Handler:           projectSurfaceValue(trigger.Handler),
-		Middleware:        projectSurfaceValues(boundedSurfaceItems(trigger.Middleware, maxSurfaceNestedItems)),
-		WrapperChain:      projectSurfaceWrappers(boundedSurfaceItems(trigger.WrapperChain, maxSurfaceNestedItems)),
-		FinalSeed:         trigger.FinalSeed,
-		DiscoveryBasis:    trigger.DiscoveryBasis,
-		Certainty:         trigger.Certainty,
-		Resolution:        trigger.Resolution,
-		Evidence:          projectSurfaceEvidence(boundedSurfaceItems(trigger.Evidence, maxSurfaceNestedItems)),
-		Provenance:        projectSurfaceProvenance(boundedSurfaceItems(trigger.Provenance, maxSurfaceNestedItems)),
-		DynamicFrontier:   projectSurfaceFrontiers(boundedSurfaceItems(trigger.DynamicFrontier, maxSurfaceNestedItems)),
-		Status:            trigger.Status,
-		OwningExecutable:  cleanSurfacePath(trigger.OwningExecutable),
-		ExecutableRole:    normalizeSurfaceExecutableRole(trigger.ExecutableRole),
-		Availability:      normalizeSurfaceAvailability(trigger.Availability),
-		UnavailableReason: trigger.UnavailableReason,
+		Transport:            trigger.Transport,
+		Framework:            trigger.Framework,
+		ProcessEntrypoint:    projectSurfaceSymbol(trigger.ProcessEntrypoint),
+		Dispatcher:           projectSurfaceValue(trigger.Dispatcher),
+		RegistrationSite:     projectSurfaceLocation(trigger.RegistrationSite),
+		DescriptorSite:       projectOptionalSurfaceLocation(trigger.DescriptorSite),
+		ServerStartSite:      projectOptionalSurfaceLocation(trigger.ServerStartSite),
+		Handler:              projectSurfaceValue(trigger.Handler),
+		Middleware:           projectSurfaceValues(boundedSurfaceItems(trigger.Middleware, maxSurfaceNestedItems)),
+		WrapperChain:         projectSurfaceWrappers(boundedSurfaceItems(trigger.WrapperChain, maxSurfaceNestedItems)),
+		FinalSeed:            trigger.FinalSeed,
+		DiscoveryBasis:       trigger.DiscoveryBasis,
+		Certainty:            trigger.Certainty,
+		Resolution:           trigger.Resolution,
+		Evidence:             projectSurfaceEvidence(boundedSurfaceItems(trigger.Evidence, maxSurfaceNestedItems)),
+		Provenance:           projectSurfaceProvenance(boundedSurfaceItems(trigger.Provenance, maxSurfaceNestedItems)),
+		DynamicFrontier:      projectSurfaceFrontiers(boundedSurfaceItems(trigger.DynamicFrontier, maxSurfaceNestedItems)),
+		Status:               trigger.Status,
+		OwningExecutable:     cleanSurfacePath(trigger.OwningExecutable),
+		ExecutableRole:       normalizeSurfaceExecutableRole(trigger.ExecutableRole),
+		Availability:         normalizeSurfaceAvailability(trigger.Availability),
+		UnavailableReason:    trigger.UnavailableReason,
+		SurfaceRole:          trigger.SurfaceRole,
+		TraceReadiness:       trigger.TraceReadiness,
+		TraceReadinessReason: trigger.TraceReadinessReason,
+		Quality: SurfaceQuality{
+			Identity: trigger.Quality.Identity, RegistrationStart: trigger.Quality.RegistrationStart,
+			HandlerCallback: trigger.Quality.HandlerCallback, Reachability: trigger.Quality.Reachability,
+			Ownership: trigger.Quality.Ownership, Traceability: trigger.Quality.Traceability,
+		},
 	}
+	ensureProjectedSurfaceSemantics(&projected)
+	return projected
 }
 
 func normalizeSurfaceExecutableRole(role string) string {
@@ -773,6 +823,7 @@ func mergeCommandSurfaceCatalog(data *ReportData) {
 		if trigger.Availability == "" {
 			trigger.Availability = SurfaceAvailabilityAvailable
 		}
+		ensureProjectedSurfaceSemantics(trigger)
 		seen[trigger.ID] = struct{}{}
 	}
 	for _, trace := range data.CommandTraces {
@@ -871,6 +922,7 @@ func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) Discovere
 			})
 		}
 	}
+	ensureProjectedSurfaceSemantics(&trigger)
 	return trigger
 }
 

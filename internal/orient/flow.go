@@ -79,11 +79,13 @@ func offlineCandidateFlow(candidate gofacts.OrientationCandidate) flowexplain.Ca
 		LikelyFiles:      candidate.OpenFiles,
 		WhyInteresting:   candidate.Why,
 		Confidence:       float64(candidate.Priority) / 5.0,
+		CandidateBasis:   flowexplain.CandidateBasisLocalEntrypoint,
 	}
 	if candidate.Kind == gofacts.OrientationKindSignalFlow {
 		flow.Name += " (offline hint)"
 		flow.FlowType = flowexplain.FlowTypeOperational
 		flow.Confidence = min(flow.Confidence, 0.3)
+		flow.CandidateBasis = flowexplain.CandidateBasisSourceSignalAggregate
 	}
 	return flow
 }
@@ -174,6 +176,7 @@ func explainOneFlow(ctx context.Context, client *deepseek.Client, cf flowexplain
 		ValidSeedFiles:   valid,
 		UnverifiedSeeds:  unverified,
 		Evidence:         cf.Evidence,
+		CandidateBasis:   cf.CandidateBasis,
 	}
 
 	fb := flowexplain.FlowBundle{

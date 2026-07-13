@@ -115,6 +115,7 @@ func mergeOperationalCandidateFlows(
 			WhyInteresting:   candidate.Why,
 			Evidence:         evidence,
 			Confidence:       0.3,
+			CandidateBasis:   flowexplain.CandidateBasisSourceSignalAggregate,
 		})
 		existing[key] = len(report.CandidateFlows) - 1
 	}

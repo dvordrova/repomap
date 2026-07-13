@@ -410,7 +410,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":17,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":2,"proof":{"version":2,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":18,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":2,"proof":{"version":2,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
 
 
   <script>(function () {
@@ -979,7 +979,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var box = el('section', 'rm-flow-proof' + (compact ? ' rm-flow-proof--compact' : ''));
     var header = el('div', 'rm-proof-header');
     header.appendChild(txt('div', 'rm-direction-label', LABELS.verifiedFlow + ' · ' + (proof.archetype || 'flow')));
-    header.appendChild(txt('div', 'rm-proof-summary', counts.verified + '/' + (proof.slots || []).length + ' slots verified'));
+    header.appendChild(txt(
+      'div',
+      'rm-proof-summary',
+      (proof.trace_quality || 'partial') + ' trace · ' + counts.verified + '/' + (proof.slots || []).length + ' slots verified'
+    ));
     box.appendChild(header);
 
     var slots = el('div', 'rm-proof-slots');
@@ -1024,6 +1028,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       boundary.appendChild(txt('span', 'rm-proof-boundary-label', LABELS.proofStop + ': '));
       boundary.appendChild(document.createTextNode(session.stop.reason.replace(/_/g, ' ') + (session.stop.message ? ' — ' + session.stop.message : '')));
       box.appendChild(boundary);
+    }
+    if (proof.current_frontier) {
+      var frontier = el('div', 'rm-proof-boundary');
+      frontier.appendChild(txt('span', 'rm-proof-boundary-label', 'Current frontier: '));
+      frontier.appendChild(document.createTextNode(proof.current_frontier));
+      box.appendChild(frontier);
     }
     return box;
   }
@@ -1324,6 +1334,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
       addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
       addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
+      addFact('Evidence bundles', String(DATA.run.evidence_bundle_count || 0));
       addFact('Complete traces', String(DATA.run.complete_trace_count || 0));
       addFact('Partial traces', String(DATA.run.partial_trace_count || 0));
       addFact('Unresolved traces', String(DATA.run.unresolved_trace_count || 0));
@@ -2501,7 +2512,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       card.appendChild(rejected);
     }
 
-    var expandedFlows = flows.filter(function (flow) { return !flow.evidence_only; });
+    var expandedFlows = flows.filter(function (flow) {
+      return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+    });
     if (expandedFlows.length > 0) {
       card.appendChild(txt('div', 'rm-section-title', LABELS.candidateFlows));
       var flowsGrid = el('div', 'rm-overview-flows');
@@ -3182,7 +3195,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     overviewTab.onclick = function () { showTab('rm-overview'); };
     tabs.appendChild(overviewTab);
     if (!DATA.architecture_canvas) {
-      var savedTraceMenu = renderSavedTraceMenu(DATA.flows);
+      var savedTraceFlows = DATA.flows.filter(function (flow) {
+        return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+      });
+      var savedTraceMenu = renderSavedTraceMenu(savedTraceFlows);
       if (savedTraceMenu) tabs.appendChild(savedTraceMenu);
     }
 

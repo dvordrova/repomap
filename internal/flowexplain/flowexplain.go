@@ -21,6 +21,7 @@ type FlowSeed struct {
 	ValidSeedFiles   []string `json:"valid_seed_files"`
 	UnverifiedSeeds  []string `json:"unverified_seed_paths"`
 	Evidence         []string `json:"evidence"`
+	CandidateBasis   string   `json:"candidate_basis,omitempty"`
 }
 
 type FlowBundle struct {
@@ -51,11 +52,15 @@ type flowEdge struct {
 }
 
 const (
-	FlowTypeRequest                = "request"
-	FlowTypeOperational            = "operational"
-	DirectionAccepted              = "accepted"
-	DirectionRejected              = "rejected"
-	minAcceptedDirectionConfidence = 0.4
+	FlowTypeRequest                     = "request"
+	FlowTypeOperational                 = "operational"
+	DirectionAccepted                   = "accepted"
+	DirectionRejected                   = "rejected"
+	minAcceptedDirectionConfidence      = 0.4
+	CandidateBasisModelOrientation      = "model_orientation"
+	CandidateBasisLocalEntrypoint       = "local_entrypoint_candidate"
+	CandidateBasisSourceSignalAggregate = "local_source_signal_aggregate"
+	CandidateBasisRuntimeActivity       = "local_runtime_activity"
 )
 
 type CandidateFlow struct {
@@ -71,6 +76,7 @@ type CandidateFlow struct {
 	LocalProof        *flowproof.Session `json:"local_proof,omitempty"`
 	Disposition       string             `json:"disposition,omitempty"`
 	DispositionReason string             `json:"disposition_reason,omitempty"`
+	CandidateBasis    string             `json:"candidate_basis,omitempty"`
 }
 
 // ClassifyCandidateFlow applies the local acceptance policy after grounding

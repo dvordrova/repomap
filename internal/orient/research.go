@@ -5,16 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 type orientationCall struct {
@@ -126,6 +131,7 @@ func runTargetedResearch(
 	report *orientationPart,
 	state *modelresearch.State,
 	runMeta *debugdump.RunMeta,
+	surfaceResult *surfacediscovery.Result,
 ) ([]string, error) {
 	if state == nil || report == nil || client == nil || dw == nil || len(report.ResearchQuestions) == 0 {
 		return nil, nil
@@ -136,6 +142,7 @@ func runTargetedResearch(
 			ID: candidate.ID, Path: candidate.Path, Kind: candidate.Kind, Score: candidate.Score,
 		})
 	}
+	candidates = addResearchFocusLocations(candidates, report, surfaceResult, snapshot, bundle.SourceSignals)
 	var traces []gofacts.CommandTrace
 	if snapshot.GoFacts != nil {
 		traces = snapshot.GoFacts.CommandTraces
@@ -159,7 +166,7 @@ func runTargetedResearch(
 		}
 		return []string{fmt.Sprintf("targeted model research planning failed: %v", err)}, nil
 	}
-	traceIDs := acceptedFlowIDs(report.CandidateFlows)
+	traceIDs := savedFlowProofIDs(report.CandidateFlows)
 	state.Theory.RelatedTraceIDs = append([]string(nil), traceIDs...)
 	warnings := make([]string, 0)
 	for _, planned := range plan.Selected {
@@ -223,14 +230,167 @@ func runTargetedResearch(
 	return warnings, nil
 }
 
-func acceptedFlowIDs(flows []flowexplain.CandidateFlow) []string {
-	ids := make([]string, 0, len(flows))
-	for _, flow := range flows {
-		if flow.Disposition == flowexplain.DirectionAccepted {
-			ids = append(ids, flowexplain.GenerateFlowID(flow.Name))
+func addResearchFocusLocations(
+	candidates []modelresearch.FileCandidate,
+	report *orientationPart,
+	surfaceResult *surfacediscovery.Result,
+	snapshot snapshot.Snapshot,
+	signals []sourcesignals.Signal,
+) []modelresearch.FileCandidate {
+	byPath := make(map[string][]evidence.Location)
+	seen := make(map[string]struct{})
+	addGroup := func(locations []evidence.Location) {
+		sort.Slice(locations, func(i, j int) bool {
+			if locations[i].Path != locations[j].Path {
+				return locations[i].Path < locations[j].Path
+			}
+			if locations[i].Line != locations[j].Line {
+				return locations[i].Line < locations[j].Line
+			}
+			return locations[i].Column < locations[j].Column
+		})
+		for _, location := range locations {
+			if location.Path == "" || location.Line <= 0 {
+				continue
+			}
+			key := fmt.Sprintf("%s\x00%d\x00%d", location.Path, location.Line, location.Column)
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			byPath[location.Path] = append(byPath[location.Path], location)
 		}
 	}
-	return ids
+
+	if surfaceResult != nil {
+		registration := make([]evidence.Location, 0, len(surfaceResult.Catalog.Triggers))
+		starts := make([]evidence.Location, 0, len(surfaceResult.Catalog.Triggers))
+		descriptors := make([]evidence.Location, 0, len(surfaceResult.Catalog.Triggers))
+		processes := make([]evidence.Location, 0, len(surfaceResult.Catalog.Triggers))
+		for _, trigger := range surfaceResult.Catalog.Triggers {
+			registration = appendSurfaceFocusLocation(registration, trigger.RegistrationSite)
+			if trigger.ServerStartSite != nil {
+				starts = appendSurfaceFocusLocation(starts, *trigger.ServerStartSite)
+			}
+			if trigger.DescriptorSite != nil {
+				descriptors = appendSurfaceFocusLocation(descriptors, *trigger.DescriptorSite)
+			}
+			processes = appendSurfaceFocusLocation(processes, trigger.ProcessEntrypoint.Location)
+		}
+		addGroup(registration)
+		addGroup(starts)
+		addGroup(descriptors)
+		addGroup(processes)
+	}
+
+	frontiers := make([]evidence.Location, 0)
+	transitions := make([]evidence.Location, 0)
+	anchors := make([]evidence.Location, 0)
+	if report != nil {
+		for _, flow := range report.CandidateFlows {
+			if flow.LocalProof == nil {
+				continue
+			}
+			proof := flow.LocalProof.Proof
+			anchorByID := make(map[string]evidence.Location, len(proof.Anchors))
+			transitionByID := make(map[string]evidence.Location, len(proof.Transitions))
+			for _, anchor := range proof.Anchors {
+				if anchor.Location != nil {
+					anchorByID[anchor.ID] = *anchor.Location
+					anchors = append(anchors, *anchor.Location)
+				}
+			}
+			for _, transition := range proof.Transitions {
+				transitionByID[transition.ID] = transition.Evidence
+				transitions = append(transitions, transition.Evidence)
+				if transition.Resolution == evidence.ResolutionUnresolved {
+					frontiers = append(frontiers, transition.Evidence)
+				}
+			}
+			for _, slot := range proof.Slots {
+				if slot.Status != flowproof.SlotMissing && slot.Status != flowproof.SlotPartial &&
+					slot.Status != flowproof.SlotUnresolved {
+					continue
+				}
+				for _, evidenceID := range slot.EvidenceIDs {
+					if location, ok := transitionByID[evidenceID]; ok {
+						frontiers = append(frontiers, location)
+					}
+					if location, ok := anchorByID[evidenceID]; ok {
+						frontiers = append(frontiers, location)
+					}
+				}
+			}
+		}
+	}
+	addGroup(frontiers)
+	addGroup(transitions)
+	addGroup(anchors)
+
+	if surfaceResult != nil {
+		behavior := make([]evidence.Location, 0, len(surfaceResult.Grounding.Anchors))
+		for _, anchor := range surfaceResult.Grounding.Anchors {
+			behavior = appendSurfaceFocusLocation(behavior, anchor.Location)
+		}
+		addGroup(behavior)
+	}
+
+	commandCallsites := make([]evidence.Location, 0)
+	commandDeclarations := make([]evidence.Location, 0)
+	if snapshot.GoFacts != nil {
+		for _, trace := range snapshot.GoFacts.CommandTraces {
+			for _, step := range trace.Steps {
+				if step.CallsiteLocation != nil {
+					commandCallsites = append(commandCallsites, *step.CallsiteLocation)
+				}
+				commandDeclarations = append(commandDeclarations, step.TargetLocation)
+			}
+			for _, call := range trace.HandlerCalls {
+				commandCallsites = append(commandCallsites, evidence.Location{Path: call.Path, Line: call.Line})
+				if call.Resolved && call.TargetPath != "" {
+					commandDeclarations = append(commandDeclarations, evidence.Location{Path: call.TargetPath, Line: call.TargetLine})
+				}
+			}
+		}
+	}
+	addGroup(commandCallsites)
+	addGroup(commandDeclarations)
+
+	sourceLocations := make([]evidence.Location, 0, len(signals))
+	for _, signal := range signals {
+		sourceLocations = append(sourceLocations, evidence.Location{Path: signal.Path, Line: signal.Line})
+	}
+	addGroup(sourceLocations)
+
+	result := append([]modelresearch.FileCandidate(nil), candidates...)
+	for index := range result {
+		result[index].FocusLocations = append([]evidence.Location(nil), byPath[result[index].Path]...)
+	}
+	return result
+}
+
+func appendSurfaceFocusLocation(locations []evidence.Location, location surfacediscovery.Location) []evidence.Location {
+	if location.Path == "" || location.Line <= 0 {
+		return locations
+	}
+	return append(locations, evidence.Location{Path: location.Path, Line: location.Line, Column: location.Column})
+}
+
+func savedFlowProofIDs(flows []flowexplain.CandidateFlow) []string {
+	ids := make([]string, 0, len(flows))
+	for _, flow := range flows {
+		if flow.LocalProof != nil && flow.LocalProof.Proof.ID != "" {
+			ids = append(ids, flow.LocalProof.Proof.ID)
+		}
+	}
+	sort.Strings(ids)
+	result := ids[:0]
+	for _, id := range ids {
+		if len(result) == 0 || result[len(result)-1] != id {
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 func boolInt(value bool) int {

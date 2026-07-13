@@ -4,9 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/reporead"
 )
 
 type savedProvider struct {
@@ -103,6 +108,94 @@ func TestPlanTargetedRoundsSkipsRuntimeOnlyFrontier(t *testing.T) {
 	}
 	if len(result.Selected) != 0 || len(result.Skipped) != 1 || result.Skipped[0].Gate.Reason != "runtime_only_frontier" {
 		t.Fatalf("runtime-only plan = %#v", result)
+	}
+}
+
+func TestReadSourceWindowCentersExactFocusAndContainsFunctionBoundaries(t *testing.T) {
+	repo := t.TempDir()
+	var source strings.Builder
+	source.WriteString("package focused\n\n")
+	for line := 3; line < 31; line++ {
+		fmt.Fprintf(&source, "// preamble %d\n", line)
+	}
+	source.WriteString("func focused() {\n")
+	for line := 32; line < 70; line++ {
+		fmt.Fprintf(&source, "\t_ = %d\n", line)
+	}
+	source.WriteString("}\n")
+	for line := 71; line <= 120; line++ {
+		fmt.Fprintf(&source, "// trailing %d\n", line)
+	}
+	writeResearchFile(t, repo, "focused.go", source.String())
+	reader, err := reporead.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	window, ok := readSourceWindow(reader, "focused.go", 50)
+	if !ok || !window.CodeBearing {
+		t.Fatalf("focused source window = %#v, ok=%t", window, ok)
+	}
+	if window.StartLine > 31 || window.EndLine < 70 {
+		t.Fatalf("window %d-%d does not contain declaration 31-70", window.StartLine, window.EndLine)
+	}
+	if 50-window.StartLine < 20 || window.EndLine-50 < 20 {
+		t.Fatalf("exact focus line 50 is not centered in %d-%d", window.StartLine, window.EndLine)
+	}
+}
+
+func TestReadSourceWindowWithoutFocusStartsAtCodeInsteadOfLineOne(t *testing.T) {
+	repo := t.TempDir()
+	source := "package focused\n\n" + strings.Repeat("// license header\n", 70) +
+		"func run() {\n\twork()\n}\n" + strings.Repeat("// trailing context\n", 50)
+	writeResearchFile(t, repo, "focused.go", source)
+	reader, err := reporead.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	window, ok := readSourceWindow(reader, "focused.go", 0)
+	if !ok || window.StartLine == 1 || window.EndLine < 75 {
+		t.Fatalf("missing-focus source window = %#v, ok=%t", window, ok)
+	}
+}
+
+func TestPlanTargetedRoundsSkipsHeaderOnlyGoWithoutProviderCall(t *testing.T) {
+	repo := t.TempDir()
+	writeResearchFile(t, repo, "header.go", "// package header\npackage header\n\nimport \"fmt\"\n")
+	input := PlanningInput{
+		RepoPath: repo,
+		Questions: []ProposedQuestion{{
+			ID: "header", Purpose: "inspect startup", Question: "How does startup work?",
+			CandidateIDs: []string{"header-file"},
+		}},
+		Candidates: []FileCandidate{{
+			ID: "header-file", Path: "header.go", Score: 100,
+			FocusLocations: []evidence.Location{{Path: "header.go", Line: 4}},
+		}},
+		InitialProviderPaths: []string{"header.go"},
+		Universe:             LocalRepositoryUniverse{AuthorizedPaths: []string{"header.go"}},
+		Policy:               DefaultPolicy(),
+	}
+	plan, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Selected) != 0 || len(plan.Skipped) != 1 ||
+		plan.Skipped[0].Gate.Reason != noCodeBearingBoundedWindow {
+		t.Fatalf("header-only plan = %#v", plan)
+	}
+	provider := &savedProvider{response: []byte(`{"findings":[],"unresolved_frontiers":[]}`)}
+	round, err := ExecuteRound(context.Background(), ExecuteInput{
+		Plan: plan.Skipped[0], Policy: input.Policy, Provider: provider,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 0 || round.Status != RoundSkipped || round.StopReason != noCodeBearingBoundedWindow {
+		t.Fatalf("header-only execution = %#v, provider calls=%d", round, provider.calls)
 	}
 }
 

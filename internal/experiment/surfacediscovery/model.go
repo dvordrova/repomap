@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v5"
-	TriggerCatalogVersion        = 3
-	CoverageVersion              = 3
+	AnalyzerVersion              = "surface-ssa-v6"
+	TriggerCatalogVersion        = 4
+	CoverageVersion              = 4
 	CatalogVersion               = 1
 	ArchitectureGroundingVersion = 2
 )
@@ -59,33 +59,48 @@ type Scenario struct {
 }
 
 type TriggerRecord struct {
-	ID                string       `json:"id"`
-	ProvisionalID     bool         `json:"provisional_id"`
-	Kind              string       `json:"kind"`
-	Identity          Identity     `json:"identity"`
-	Transport         string       `json:"transport"`
-	Framework         string       `json:"framework"`
-	ProcessEntrypoint Symbol       `json:"process_entrypoint"`
-	Dispatcher        Value        `json:"dispatcher"`
-	RegistrationSite  Location     `json:"registration_site"`
-	DescriptorSite    *Location    `json:"descriptor_site,omitempty"`
-	ServerStartSite   *Location    `json:"server_start_site,omitempty"`
-	Handler           Value        `json:"handler"`
-	Middleware        []Value      `json:"middleware"`
-	WrapperChain      []Wrapper    `json:"wrapper_chain"`
-	FinalSeed         string       `json:"final_seed"`
-	DiscoveryBasis    string       `json:"discovery_basis"`
-	Certainty         string       `json:"certainty"`
-	Resolution        string       `json:"resolution"`
-	ScenarioID        string       `json:"scenario_id"`
-	Evidence          []Evidence   `json:"evidence"`
-	Provenance        []Provenance `json:"provenance"`
-	DynamicFrontier   []Frontier   `json:"dynamic_frontier"`
-	Status            string       `json:"status"`
-	OwningExecutable  string       `json:"owning_executable,omitempty"`
-	ExecutableRole    string       `json:"executable_role,omitempty"`
-	Availability      string       `json:"availability"`
-	UnavailableReason string       `json:"unavailable_reason,omitempty"`
+	ID                   string         `json:"id"`
+	ProvisionalID        bool           `json:"provisional_id"`
+	Kind                 string         `json:"kind"`
+	Identity             Identity       `json:"identity"`
+	Transport            string         `json:"transport"`
+	Framework            string         `json:"framework"`
+	ProcessEntrypoint    Symbol         `json:"process_entrypoint"`
+	Dispatcher           Value          `json:"dispatcher"`
+	RegistrationSite     Location       `json:"registration_site"`
+	DescriptorSite       *Location      `json:"descriptor_site,omitempty"`
+	ServerStartSite      *Location      `json:"server_start_site,omitempty"`
+	Handler              Value          `json:"handler"`
+	Middleware           []Value        `json:"middleware"`
+	WrapperChain         []Wrapper      `json:"wrapper_chain"`
+	FinalSeed            string         `json:"final_seed"`
+	DiscoveryBasis       string         `json:"discovery_basis"`
+	Certainty            string         `json:"certainty"`
+	Resolution           string         `json:"resolution"`
+	ScenarioID           string         `json:"scenario_id"`
+	Evidence             []Evidence     `json:"evidence"`
+	Provenance           []Provenance   `json:"provenance"`
+	DynamicFrontier      []Frontier     `json:"dynamic_frontier"`
+	Status               string         `json:"status"`
+	OwningExecutable     string         `json:"owning_executable,omitempty"`
+	ExecutableRole       string         `json:"executable_role,omitempty"`
+	Availability         string         `json:"availability"`
+	UnavailableReason    string         `json:"unavailable_reason,omitempty"`
+	SurfaceRole          string         `json:"surface_role"`
+	TraceReadiness       string         `json:"trace_readiness"`
+	TraceReadinessReason string         `json:"trace_readiness_reason"`
+	Quality              SurfaceQuality `json:"quality"`
+}
+
+// SurfaceQuality keeps independently derived dimensions separate so an exact
+// identity cannot silently strengthen reachability or traceability.
+type SurfaceQuality struct {
+	Identity          string `json:"identity"`
+	RegistrationStart string `json:"registration_start"`
+	HandlerCallback   string `json:"handler_callback"`
+	Reachability      string `json:"reachability"`
+	Ownership         string `json:"ownership"`
+	Traceability      string `json:"traceability"`
 }
 
 type Identity struct {

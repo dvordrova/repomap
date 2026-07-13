@@ -279,6 +279,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"rm-arch__inspector-close",
 				"this.suggestionByID",
 				"suggestion.investigation_available",
+				"suggestion.trace_unavailable_reason",
 				`"Investigation unavailable"`,
 				`" exact anchor"`,
 				`"CLI command · "`,
