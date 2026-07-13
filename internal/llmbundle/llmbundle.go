@@ -1,6 +1,9 @@
 package llmbundle
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"path"
 	"path/filepath"
 	"sort"
@@ -25,9 +28,12 @@ type Bundle struct {
 	ProviderAllowedPaths []string               `json:"allowed_paths"`
 	SourceSignals        []sourcesignals.Signal `json:"source_signals,omitempty"`
 	Warnings             []string               `json:"warnings,omitempty"`
+	PolicyVersion        string                 `json:"research_policy_version,omitempty"`
+	LocalAuthorizedFiles int                    `json:"local_authorized_file_count,omitempty"`
 }
 
 type fileIndexEntry struct {
+	ID      string   `json:"id"`
 	Path    string   `json:"path"`
 	Kind    string   `json:"kind"`
 	Signals []string `json:"signals"`
@@ -79,6 +85,8 @@ type Options struct {
 	MaxSignalPerFile int
 	RepoPath         string
 	SourceSignals    []sourcesignals.Signal
+	MaxBytes         int
+	PolicyVersion    string
 }
 
 func defaults(opts Options) Options {
@@ -108,6 +116,33 @@ func defaults(opts Options) Options {
 
 func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 	opts = defaults(opts)
+	maxBytes := opts.MaxBytes
+	opts.MaxBytes = 0
+	if maxBytes <= 0 {
+		return build(s, fileList, opts)
+	}
+
+	fit := opts
+	var candidate Bundle
+	for attempt := 0; attempt < 24; attempt++ {
+		candidate = build(s, fileList, fit)
+		encoded, err := json.Marshal(candidate)
+		if err == nil && len(encoded) <= maxBytes {
+			if fit.MaxFiles < opts.MaxFiles || fit.MaxEdges < opts.MaxEdges ||
+				fit.MaxSignalTotal < opts.MaxSignalTotal {
+				candidate.Warnings = append(candidate.Warnings, "provider bundle fitted to request-byte context budget")
+			}
+			return candidate
+		}
+		if !shrinkForByteBudget(&fit) {
+			break
+		}
+	}
+	candidate.Warnings = append(candidate.Warnings, "provider bundle exceeds configured context-byte budget")
+	return candidate
+}
+
+func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 
 	b := Bundle{
 		RepoName:               s.RepoName,
@@ -115,6 +150,8 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		TopLevelDirectoryStats: s.TopLevelStats,
 		LanguageHints:          s.LanguageHints,
 		KnownDocs:              findKnownDocs(fileList),
+		PolicyVersion:          opts.PolicyVersion,
+		LocalAuthorizedFiles:   len(fileList),
 	}
 
 	if s.GoFacts != nil {
@@ -236,6 +273,31 @@ func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 	)
 
 	return b
+}
+
+func shrinkForByteBudget(opts *Options) bool {
+	changed := false
+	shrink := func(value *int, minimum int) {
+		if *value <= minimum {
+			return
+		}
+		next := *value * 4 / 5
+		if next < minimum {
+			next = minimum
+		}
+		if next == *value {
+			next--
+		}
+		*value = next
+		changed = true
+	}
+	shrink(&opts.MaxFiles, 8)
+	shrink(&opts.MaxEdges, 16)
+	shrink(&opts.MaxSignalTotal, 12)
+	shrink(&opts.MaxEntrypoints, 8)
+	shrink(&opts.MaxModules, 8)
+	shrink(&opts.MaxReadmeBytes, 2<<10)
+	return changed
 }
 
 func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string, fileSignals []sourcesignals.Signal) []fileIndexEntry {
@@ -368,6 +430,7 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 		}
 
 		entries = append(entries, fileIndexEntry{
+			ID:      providerFileID(f),
 			Path:    f,
 			Kind:    kind,
 			Signals: signals,
@@ -384,6 +447,11 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 	})
 
 	return entries
+}
+
+func providerFileID(path string) string {
+	digest := sha256.Sum256([]byte("provider-file-v1\x00" + path))
+	return "file-" + hex.EncodeToString(digest[:8])
 }
 
 func selectOrientationEntrypoints(entrypoints []gofacts.Entrypoint) []gofacts.Entrypoint {

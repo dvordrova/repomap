@@ -904,6 +904,34 @@ func TestMaxFilesLimitsOnlyProviderVisibleEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildUsesSerializedBytesAsPrimaryProviderLimit(t *testing.T) {
+	files := make([]string, 0, 180)
+	for index := 0; index < 180; index++ {
+		files = append(files, fmt.Sprintf("internal/service/handler_%03d.go", index))
+	}
+
+	bundle := Build(snapshot.Snapshot{RepoName: "large"}, files, Options{
+		MaxFiles: 180,
+		MaxBytes: 12 << 10,
+	})
+	encoded, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > 12<<10 {
+		t.Fatalf("provider bundle bytes = %d, want at most %d", len(encoded), 12<<10)
+	}
+	if len(bundle.CandidateFileIndex) >= len(files) {
+		t.Fatalf("provider summaries = %d, want byte fitting below %d candidates", len(bundle.CandidateFileIndex), len(files))
+	}
+	if bundle.LocalAuthorizedFiles != len(files) {
+		t.Fatalf("local authorized files = %d, want %d", bundle.LocalAuthorizedFiles, len(files))
+	}
+	if len(bundle.CandidateFileIndex) == 0 || bundle.CandidateFileIndex[0].ID == "" {
+		t.Fatalf("provider candidate IDs are missing: %#v", bundle.CandidateFileIndex)
+	}
+}
+
 func TestFileIndexIncludesDocs(t *testing.T) {
 	fileList := []string{"docs/architecture.md", "docs/workflow.md", "cmd/app/main.go", "README.md"}
 	knownDocs := []string{"docs/architecture.md"}
