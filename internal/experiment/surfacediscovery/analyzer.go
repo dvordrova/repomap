@@ -2,6 +2,7 @@ package surfacediscovery
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 )
 
 type analyzer struct {
+	ctx                       context.Context
 	opts                      Options
 	catalog                   catalog.Catalog
 	program                   *ssa.Program
@@ -63,6 +65,16 @@ type dispatchStart struct {
 }
 
 func Analyze(opts Options) (Result, error) {
+	return AnalyzeContext(context.Background(), opts)
+}
+
+func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
+	if ctx == nil {
+		return Result{}, fmt.Errorf("surface discovery: context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	started := time.Now()
 	if strings.TrimSpace(opts.RepoPath) == "" {
 		return Result{}, fmt.Errorf("surface discovery: repository path is required")
@@ -85,6 +97,7 @@ func Analyze(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	a := &analyzer{
+		ctx:                       ctx,
 		opts:                      opts,
 		catalog:                   builtin,
 		root:                      root,
@@ -103,10 +116,22 @@ func Analyze(opts Options) (Result, error) {
 	if err := a.load(); err != nil {
 		return Result{}, err
 	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	a.prepare()
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	a.recordGlobalArchitectureAnchors()
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	entrypoints := a.entrypoints()
 	for _, entrypoint := range entrypoints {
+		if err := ctx.Err(); err != nil {
+			return Result{}, fmt.Errorf("surface discovery: %w", err)
+		}
 		a.result.Coverage.EntrypointsConsidered = append(
 			a.result.Coverage.EntrypointsConsidered,
 			a.symbol(entrypoint),
@@ -120,8 +145,17 @@ func Analyze(opts Options) (Result, error) {
 		)
 		a.walk(entrypoint, environment{}, nil, entrypoint, 0, false, entryAnchorID)
 	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	a.finish(time.Since(started))
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	a.finishArchitectureGrounding(entrypoints)
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	return a.result, nil
 }
 
@@ -134,7 +168,8 @@ func (a *analyzer) load() error {
 		buildFlags = append(buildFlags, "-tags="+strings.Join(a.opts.BuildTags, ","))
 	}
 	config := &packages.Config{
-		Dir: a.root,
+		Context: a.ctx,
+		Dir:     a.root,
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedImports | packages.NeedDeps | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes |
@@ -143,6 +178,9 @@ func (a *analyzer) load() error {
 		Tests:      false,
 	}
 	loaded, err := packages.Load(config, "./...")
+	if ctxErr := a.ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("surface discovery: %w", ctxErr)
+	}
 	if err != nil {
 		return fmt.Errorf("surface discovery: load packages: %w", err)
 	}
@@ -159,9 +197,33 @@ func (a *analyzer) load() error {
 		}
 	}
 	a.program, a.packages = ssautil.AllPackages(loaded, ssa.InstantiateGenerics)
-	a.program.Build()
+	if err := a.ctx.Err(); err != nil {
+		return fmt.Errorf("surface discovery: %w", err)
+	}
+	ssaPackages := a.program.AllPackages()
+	sort.Slice(ssaPackages, func(i, j int) bool {
+		return ssaPackagePath(ssaPackages[i]) < ssaPackagePath(ssaPackages[j])
+	})
+	for _, pkg := range ssaPackages {
+		if err := a.ctx.Err(); err != nil {
+			return fmt.Errorf("surface discovery: %w", err)
+		}
+		if pkg == nil {
+			continue
+		}
+		pkg.Build()
+	}
+	if err := a.ctx.Err(); err != nil {
+		return fmt.Errorf("surface discovery: %w", err)
+	}
 	a.allFunctions = ssautil.AllFunctions(a.program)
+	if err := a.ctx.Err(); err != nil {
+		return fmt.Errorf("surface discovery: %w", err)
+	}
 	a.graph = cha.CallGraph(a.program)
+	if err := a.ctx.Err(); err != nil {
+		return fmt.Errorf("surface discovery: %w", err)
+	}
 	a.scenario = Scenario{
 		ID:     scenarioID(runtime.GOOS, runtime.GOARCH, a.opts.BuildTags),
 		GOOS:   runtime.GOOS,
@@ -169,6 +231,13 @@ func (a *analyzer) load() error {
 		Tags:   append([]string{}, a.opts.BuildTags...),
 	}
 	return nil
+}
+
+func ssaPackagePath(pkg *ssa.Package) string {
+	if pkg == nil || pkg.Pkg == nil {
+		return ""
+	}
+	return pkg.Pkg.Path()
 }
 
 func checkSurfaceGoVersion(root string) error {
@@ -233,6 +302,9 @@ func surfacePackageLoadError(loaded []*packages.Package) error {
 func (a *analyzer) prepare() {
 	a.relevant = map[*ssa.Function]bool{}
 	for function := range a.allFunctions {
+		if a.ctx.Err() != nil {
+			return
+		}
 		if function == nil || function.Blocks == nil {
 			continue
 		}
@@ -261,8 +333,14 @@ func (a *analyzer) prepare() {
 
 	changed := true
 	for changed {
+		if a.ctx.Err() != nil {
+			return
+		}
 		changed = false
 		for function := range a.allFunctions {
+			if a.ctx.Err() != nil {
+				return
+			}
 			// The reverse closure only needs repository wrappers. Library functions
 			// remain traversable when they directly contain a configured terminal
 			// seed, but unrelated dependency and stdlib call graphs must not turn
@@ -315,6 +393,9 @@ func (a *analyzer) walk(
 	ambiguous bool,
 	parentAnchorID string,
 ) {
+	if err := a.ctx.Err(); err != nil {
+		return
+	}
 	if function == nil || function.Blocks == nil {
 		return
 	}
@@ -337,6 +418,9 @@ func (a *analyzer) walk(
 	a.result.Coverage.FunctionsInspected++
 
 	for _, block := range function.Blocks {
+		if err := a.ctx.Err(); err != nil {
+			return
+		}
 		for _, instruction := range block.Instrs {
 			if store, ok := instruction.(*ssa.Store); ok {
 				if seed, matched := a.fieldSeed(store); matched {
@@ -876,6 +960,9 @@ func (a *analyzer) recordSummary(
 func (a *analyzer) recordGlobalArchitectureAnchors() {
 	functions := make([]*ssa.Function, 0)
 	for function := range a.allFunctions {
+		if a.ctx.Err() != nil {
+			return
+		}
 		if function != nil && function.Blocks != nil && a.isRepositoryFunction(function) {
 			functions = append(functions, function)
 		}
@@ -883,6 +970,9 @@ func (a *analyzer) recordGlobalArchitectureAnchors() {
 	sort.Slice(functions, func(i, j int) bool { return a.functionID(functions[i]) < a.functionID(functions[j]) })
 	families := make(map[string][]Symbol)
 	for _, function := range functions {
+		if a.ctx.Err() != nil {
+			return
+		}
 		name := strings.ToLower(function.Name())
 		kind := a.architectureCallKind(function)
 		if function.Signature.Recv() != nil && (name == "provision" || name == "validate" || name == "cleanup") {
@@ -1135,11 +1225,17 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	anchors := make([]BehaviorAnchor, 0, len(a.architectureAnchors))
 	kinds := make(map[string]bool)
 	for _, anchor := range a.architectureAnchors {
+		if a.ctx.Err() != nil {
+			return
+		}
 		anchors = append(anchors, anchor)
 		kinds[anchor.Kind] = true
 	}
 	relationships := make([]BehaviorRelationship, 0, len(a.architectureRelationships))
 	for _, relationship := range a.architectureRelationships {
+		if a.ctx.Err() != nil {
+			return
+		}
 		sort.Strings(relationship.WitnessIDs)
 		sort.Slice(relationship.RepresentativeLocations, func(i, j int) bool {
 			return locationKey(relationship.RepresentativeLocations[i]) < locationKey(relationship.RepresentativeLocations[j])
@@ -1151,6 +1247,9 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	reachable := make(map[string]bool)
 	queue := make([]string, 0)
 	for _, anchor := range anchors {
+		if a.ctx.Err() != nil {
+			return
+		}
 		anchorKindByID[anchor.ID] = anchor.Kind
 		if anchor.Kind == "process_entry" {
 			reachable[anchor.ID] = true
@@ -1158,6 +1257,9 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		}
 	}
 	for len(queue) > 0 {
+		if a.ctx.Err() != nil {
+			return
+		}
 		current := queue[0]
 		queue = queue[1:]
 		for _, relationship := range relationships {
@@ -1170,6 +1272,9 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	}
 	reachableKinds := make(map[string]bool)
 	for anchorID := range reachable {
+		if a.ctx.Err() != nil {
+			return
+		}
 		reachableKinds[anchorKindByID[anchorID]] = true
 	}
 
@@ -1185,6 +1290,9 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		{"tls_or_security_boundary"},
 	}
 	for _, group := range groups {
+		if a.ctx.Err() != nil {
+			return
+		}
 		for _, kind := range group {
 			if kinds[kind] {
 				pillars++
@@ -1236,6 +1344,9 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		Version:             ArchitectureGroundingVersion,
 		RepositoryArchetype: ArchetypeAssessment{Selected: archetype, Evidence: evidenceItems, Alternatives: alternatives},
 		GroundingMode:       mode, Anchors: anchors, Relationships: relationships,
+	}
+	if a.ctx.Err() != nil {
+		return
 	}
 	a.result.normalize()
 }

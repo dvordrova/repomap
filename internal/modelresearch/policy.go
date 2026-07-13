@@ -2,10 +2,13 @@ package modelresearch
 
 import "fmt"
 
-const PolicyVersion = "adaptive-model-research-v1"
+const PolicyVersion = "adaptive-model-research-v2"
 
-// StageBudget combines a byte-oriented provider limit with secondary safety
-// ceilings. Bytes, not item counts, are the primary context boundary.
+const maxTechnicalRequestBytes = 1 << 20
+
+// StageBudget combines an observed-size calibration target, a technical
+// provider limit, and secondary safety ceilings. Exceeding the target does not
+// reject a request; exceeding MaxRequestBytes does.
 type StageBudget struct {
 	TargetRequestBytes int `json:"target_request_bytes"`
 	MaxRequestBytes    int `json:"max_request_bytes"`
@@ -31,23 +34,23 @@ func DefaultPolicy() Policy {
 		Version: PolicyVersion,
 		Orientation: StageBudget{
 			TargetRequestBytes: 80 << 10,
-			MaxRequestBytes:    96 << 10,
+			MaxRequestBytes:    maxTechnicalRequestBytes,
 			MaxFiles:           250,
 		},
 		Targeted: StageBudget{
 			TargetRequestBytes: 64 << 10,
-			MaxRequestBytes:    80 << 10,
+			MaxRequestBytes:    maxTechnicalRequestBytes,
 			MaxFiles:           25,
 			MaxEvidenceItems:   160,
 			MaxSourceWindows:   25,
 		},
 		Architecture: StageBudget{
-			TargetRequestBytes: 80 << 10,
-			MaxRequestBytes:    96 << 10,
+			TargetRequestBytes: 160 << 10,
+			MaxRequestBytes:    maxTechnicalRequestBytes,
 		},
 		MaxSemanticCalls:     4,
 		MaxTargetedRounds:    2,
-		MaxTotalRequestBytes: 320 << 10,
+		MaxTotalRequestBytes: 4 * maxTechnicalRequestBytes,
 	}
 }
 

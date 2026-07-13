@@ -30,7 +30,7 @@ func TestResticSavedResponseExpandsBeyondInitialProviderBundle(t *testing.T) {
 		},
 	}
 	policy := DefaultPolicy()
-	plan, err := PlanTargetedRounds(PlanningInput{
+	plan, err := PlanTargetedRounds(context.Background(), PlanningInput{
 		RepoPath: repo,
 		Questions: []ProposedQuestion{{
 			ID: "restic-backup", Purpose: "ground the backup architecture boundary",
@@ -80,7 +80,7 @@ func TestCaddySavedResponsePreservesZeroSurfaceHonesty(t *testing.T) {
 	writeResearchFile(t, repo, "admin.go", "package caddy\n\nfunc Admin() {}\n")
 	writeResearchFile(t, repo, "modules/caddyhttp/app.go", "package caddyhttp\n\nfunc Start() {}\n")
 	policy := DefaultPolicy()
-	plan, err := PlanTargetedRounds(PlanningInput{
+	plan, err := PlanTargetedRounds(context.Background(), PlanningInput{
 		RepoPath: repo,
 		Questions: []ProposedQuestion{
 			{ID: "config", Purpose: "configuration boundary", Question: "How does configuration enter running Caddy state?", CandidateIDs: []string{"config-file"}},

@@ -39,6 +39,8 @@ func (c *Client) SynthesizeComponentLandscapeMeasured(
 	ctx context.Context,
 	prompt componentmap.SynthesisPrompt,
 ) (modelresearch.ProviderResult, error) {
+	stopWaiting := c.startWaitProgress(ctx, "architecture synthesis")
+	defer stopWaiting()
 	body, err := c.ComponentSynthesisPromptJSON(prompt)
 	if err != nil {
 		return modelresearch.ProviderResult{}, err

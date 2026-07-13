@@ -15,6 +15,16 @@ type savedProvider struct {
 	calls    int
 }
 
+func TestPlanTargetedRoundsHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := PlanTargetedRounds(ctx, PlanningInput{Policy: DefaultPolicy()})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("PlanTargetedRounds() error = %v, want context.Canceled", err)
+	}
+}
+
 func (p *savedProvider) BuildResearchRequest(prompt Prompt) ([]byte, error) {
 	return json.Marshal(prompt)
 }
@@ -27,7 +37,7 @@ func (p *savedProvider) Research(context.Context, Prompt) (ProviderResult, error
 func TestPlanTargetedRoundsSelectsOnlyFocusedExactEvidence(t *testing.T) {
 	repo := researchFixtureRepo(t)
 	policy := DefaultPolicy()
-	result, err := PlanTargetedRounds(PlanningInput{
+	result, err := PlanTargetedRounds(context.Background(), PlanningInput{
 		RepoPath: repo,
 		Questions: []ProposedQuestion{{
 			ID: "q-backup", Purpose: "understand backup responsibility",
@@ -65,7 +75,7 @@ func TestPlanTargetedRoundsSelectsOnlyFocusedExactEvidence(t *testing.T) {
 
 func TestPlanTargetedRoundsSkipsWithoutNewExactEvidence(t *testing.T) {
 	input := basicPlanningInput(t)
-	first, err := PlanTargetedRounds(input)
+	first, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +85,7 @@ func TestPlanTargetedRoundsSkipsWithoutNewExactEvidence(t *testing.T) {
 	for _, item := range first.Selected[0].Bundle.Evidence {
 		input.PreviousEvidenceIDs = append(input.PreviousEvidenceIDs, item.ID)
 	}
-	second, err := PlanTargetedRounds(input)
+	second, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +97,7 @@ func TestPlanTargetedRoundsSkipsWithoutNewExactEvidence(t *testing.T) {
 func TestPlanTargetedRoundsSkipsRuntimeOnlyFrontier(t *testing.T) {
 	input := basicPlanningInput(t)
 	input.Questions[0].Question = "This requires runtime observation only: which production backend is chosen?"
-	result, err := PlanTargetedRounds(input)
+	result, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +109,7 @@ func TestPlanTargetedRoundsSkipsRuntimeOnlyFrontier(t *testing.T) {
 func TestFocusedScopeMarksEvidenceNeverSentToProvider(t *testing.T) {
 	input := basicPlanningInput(t)
 	input.Policy.Targeted.MaxEvidenceItems = 1
-	result, err := PlanTargetedRounds(input)
+	result, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +147,7 @@ func TestPlanTargetedRoundsHardCapsTwoRounds(t *testing.T) {
 	input.Universe.AuthorizedPaths = append(input.Universe.AuthorizedPaths,
 		"internal/config/config.go", "internal/admin/admin.go",
 	)
-	result, err := PlanTargetedRounds(input)
+	result, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +161,7 @@ func TestPlanTargetedRoundsHardCapsTwoRounds(t *testing.T) {
 
 func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 	input := basicPlanningInput(t)
-	planResult, err := PlanTargetedRounds(input)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +185,7 @@ func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 
 func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	input := basicPlanningInput(t)
-	planResult, err := PlanTargetedRounds(input)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +223,7 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 
 func TestFailedRoundPreservesGroundedLocalEvidence(t *testing.T) {
 	input := basicPlanningInput(t)
-	planResult, err := PlanTargetedRounds(input)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}

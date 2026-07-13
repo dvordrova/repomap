@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -37,8 +38,8 @@ func main() {
 
 	if len(os.Args) < 2 {
 		if err := runDefault(".", nil); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
 		}
 		return
 	}
@@ -46,8 +47,8 @@ func main() {
 	// repomap <repo> [flags]
 	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "serve" && os.Args[1] != "dev" {
 		if err := runDefault(os.Args[1], os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
 		}
 		return
 	}
@@ -55,8 +56,8 @@ func main() {
 	// repomap [flags] analyses the current directory.
 	if strings.HasPrefix(os.Args[1], "-") {
 		if err := runDefault(".", os.Args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
 		}
 		return
 	}
@@ -108,6 +109,21 @@ func main() {
 	}
 }
 
+func writeDefaultRunError(writer io.Writer, err error) {
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintln(writer, "repomap: canceled")
+		return
+	}
+	fmt.Fprintln(writer, err)
+}
+
+func defaultRunExitCode(err error) int {
+	if errors.Is(err, context.Canceled) {
+		return 130
+	}
+	return 1
+}
+
 func printPromptVersions(writer io.Writer) {
 	fmt.Fprintf(
 		writer,
@@ -124,6 +140,117 @@ func linkLatest(debugDir, runDir string, stderr io.Writer) {
 	os.Remove(latest)
 	if err := os.Symlink(filepath.Base(runDir), latest); err != nil {
 		fmt.Fprintf(stderr, "warning: could not create latest symlink: %v\n", err)
+	}
+}
+
+func formatTokenUsage(inputTokens, outputTokens int) string {
+	if inputTokens == 0 && outputTokens == 0 {
+		return "tokens unavailable"
+	}
+	return fmt.Sprintf("%d input / %d output tokens", inputTokens, outputTokens)
+}
+
+func writeProgress(writer io.Writer, event orient.ProgressEvent) {
+	switch event.Stage {
+	case orient.ProgressSnapshotStarted:
+		fmt.Fprintf(writer, "repomap: collecting tracked repository facts from %s\n", event.RepoPath)
+	case orient.ProgressSnapshotReady:
+		fmt.Fprintf(
+			writer,
+			"repomap: repository facts ready: %d tracked file(s) in %d ms\n",
+			event.FileCount,
+			event.LatencyMillis,
+		)
+	case orient.ProgressBundleReady:
+		fmt.Fprintf(
+			writer,
+			"repomap: compact local context %d bytes across %d candidate file(s) in %d ms\n",
+			event.BundleBytes,
+			event.CandidateCount,
+			event.LatencyMillis,
+		)
+	case orient.ProgressSurfaceStarted:
+		fmt.Fprintln(writer, "repomap: discovering local Go runtime surfaces")
+	case orient.ProgressSurfaceWaiting, orient.ProgressPlanningWaiting:
+		fmt.Fprintf(
+			writer,
+			"repomap: %s still running after %s (Ctrl-C to cancel)\n",
+			event.Activity,
+			(time.Duration(event.LatencyMillis) * time.Millisecond).Round(time.Second),
+		)
+	case orient.ProgressSurfaceReady:
+		fmt.Fprintf(
+			writer,
+			"repomap: discovered %d local runtime surface(s) in %d ms\n",
+			event.SurfaceCount,
+			event.LatencyMillis,
+		)
+	case orient.ProgressSurfaceFailed:
+		fmt.Fprintf(writer, "repomap: warning: %s\n", event.Warning)
+	case orient.ProgressModelRequest:
+		fmt.Fprintf(writer, "repomap: prepared %d-byte orientation request for %s\n", event.RequestBytes, event.Model)
+	case orient.ProgressProviderWaiting:
+		fmt.Fprintf(
+			writer,
+			"repomap: %s from %s still running after %s (Ctrl-C to cancel)\n",
+			event.Activity,
+			event.Model,
+			(time.Duration(event.LatencyMillis) * time.Millisecond).Round(time.Second),
+		)
+	case orient.ProgressOrientationDone:
+		if event.Cached {
+			fmt.Fprintf(
+				writer,
+				"repomap: reused cached orientation response of %d bytes (original call: %d ms, %s); validated %d candidate direction(s)\n",
+				event.ResponseBytes,
+				event.LatencyMillis,
+				formatTokenUsage(event.InputTokens, event.OutputTokens),
+				event.CandidateCount,
+			)
+			break
+		}
+		fmt.Fprintf(
+			writer,
+			"repomap: orientation received %d bytes in %d ms (%s); validated %d candidate direction(s)\n",
+			event.ResponseBytes,
+			event.LatencyMillis,
+			formatTokenUsage(event.InputTokens, event.OutputTokens),
+			event.CandidateCount,
+		)
+	case orient.ProgressResearchPrepared:
+		fmt.Fprintf(
+			writer,
+			"repomap: targeted research prepared %d evidence item(s) from %d locally inspected file(s)\n",
+			event.EvidenceCount,
+			event.FileCount,
+		)
+	case orient.ProgressResearchDone:
+		if event.Cached {
+			fmt.Fprintf(
+				writer,
+				"repomap: reused cached targeted-research response of %d bytes from an original %d-byte request (original call: %d ms, %s); %d validated, %d rejected, %d new grounded fact(s)\n",
+				event.ResponseBytes,
+				event.RequestBytes,
+				event.LatencyMillis,
+				formatTokenUsage(event.InputTokens, event.OutputTokens),
+				event.FindingCount,
+				event.RejectedCount,
+				event.NewFactCount,
+			)
+			break
+		}
+		fmt.Fprintf(
+			writer,
+			"repomap: targeted research %s: received %d bytes from a %d-byte request in %d ms (%s); %d validated, %d rejected, %d new grounded fact(s)\n",
+			event.Activity,
+			event.ResponseBytes,
+			event.RequestBytes,
+			event.LatencyMillis,
+			formatTokenUsage(event.InputTokens, event.OutputTokens),
+			event.FindingCount,
+			event.RejectedCount,
+			event.NewFactCount,
+		)
 	}
 }
 
@@ -272,39 +399,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	showProgress := !*jsonOut && *out == "" && !*previewRequest
 	if showProgress {
 		opts.Progress = func(event orient.ProgressEvent) {
-			switch event.Stage {
-			case orient.ProgressSnapshotStarted:
-				fmt.Fprintf(deps.stderr, "repomap: collecting tracked repository facts from %s\n", event.RepoPath)
-			case orient.ProgressSnapshotReady:
-				fmt.Fprintf(deps.stderr, "repomap: repository facts ready in %d ms\n", event.LatencyMillis)
-			case orient.ProgressBundleReady:
-				fmt.Fprintf(
-					deps.stderr,
-					"repomap: compact local context %d bytes in %d ms\n",
-					event.BundleBytes,
-					event.LatencyMillis,
-				)
-			case orient.ProgressSurfaceStarted:
-				fmt.Fprintln(deps.stderr, "repomap: discovering local Go runtime surfaces")
-			case orient.ProgressSurfaceReady:
-				fmt.Fprintf(
-					deps.stderr,
-					"repomap: discovered %d local runtime surface(s) in %d ms\n",
-					event.SurfaceCount,
-					event.LatencyMillis,
-				)
-			case orient.ProgressSurfaceFailed:
-				fmt.Fprintf(deps.stderr, "repomap: warning: %s\n", event.Warning)
-			case orient.ProgressModelRequest:
-				fmt.Fprintf(deps.stderr, "repomap: asking %s with %d-byte request\n", event.Model, event.RequestBytes)
-			case orient.ProgressOrientationDone:
-				fmt.Fprintf(
-					deps.stderr,
-					"repomap: validated %d candidate direction(s) in %d ms\n",
-					event.CandidateCount,
-					event.LatencyMillis,
-				)
-			}
+			writeProgress(deps.stderr, event)
 		}
 	}
 
@@ -322,6 +417,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			architectureStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: synthesizing bounded architecture grouping")
 			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr); err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
 				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable (after %d ms)\n", err, time.Since(architectureStarted).Milliseconds())
 			}
 		}
@@ -709,7 +807,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  REPOMAP_LLM_MODEL\n")
 	fmt.Fprintf(os.Stderr, "  REPOMAP_LLM_API_KEY (for bearer auth)\n")
 	fmt.Fprintf(os.Stderr, "  REPOMAP_LLM_AUTH    bearer (default) or none\n")
-	fmt.Fprintf(os.Stderr, "  REPOMAP_LLM_TIMEOUT (default 60s)\n")
+	fmt.Fprintf(os.Stderr, "  REPOMAP_LLM_TIMEOUT (default 10m)\n")
 	fmt.Fprintf(os.Stderr, "  DEEPSEEK_API_KEY    quick setup; defaults to deepseek-v4-flash\n")
 	fmt.Fprintf(os.Stderr, "  DEEPSEEK_*          compatibility configuration aliases\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")

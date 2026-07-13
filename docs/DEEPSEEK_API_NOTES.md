@@ -13,7 +13,7 @@ REPOMAP_LLM_MODEL         model name
 REPOMAP_LLM_API_KEY       required for bearer auth
 REPOMAP_LLM_AUTH          bearer (default) or none
 REPOMAP_LLM_MAX_TOKENS    positive integer (default 6000)
-REPOMAP_LLM_TIMEOUT       Go duration (default 60s)
+REPOMAP_LLM_TIMEOUT       Go duration (default 10m)
 ```
 
 Once any `REPOMAP_LLM_*` variable is present, the endpoint is required and no
@@ -78,6 +78,13 @@ never includes the API key, raw environment, request headers, or
 `Authorization` value. On a failed default run the CLI prints the exact
 `metadata.json` path so another developer can verify which non-secret settings
 were actually applied.
+
+Long orientation, targeted-research, and architecture requests emit a
+content-free progress heartbeat every ten seconds. The message contains only
+the stage, model where applicable, elapsed time, and Ctrl-C guidance; it never
+contains prompt, response, source, credential, or header material. Ctrl-C
+cancels the shared request context even though the default transport timeout is
+ten minutes.
 
 With `--dump-llm`, `llm_request.redacted.json` remains the inspectable request
 body written before network access. Without that flag, a provider failure now
