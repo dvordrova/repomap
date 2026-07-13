@@ -307,8 +307,9 @@
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
    this.structuralEdges = array(this.data.structural_edges);
-    this.flows = array(this.data.flows);
-    this.surfaces = array(this.data.surfaces);
+     this.flows = array(this.data.flows);
+     this.surfaces = array(this.data.surfaces);
+     this.suggestions = array(this.data.suggested_investigations);
     this.candidateDirections = array(this.options.candidateDirections);
    this.flowEdges = array(this.data.flow_edges);
    this.frontiers = array(this.data.frontiers);
@@ -320,7 +321,8 @@
    this.structuralEdgeByID = new Map();
     this.flowByID = new Map();
     this.surfaceByID = new Map();
-    this.directionByID = new Map();
+     this.directionByID = new Map();
+     this.suggestionByID = new Map();
    this.flowEdgesByKey = new Map();
    this.flowStepsByKey = new Map();
    this.flowBranchesByKey = new Map();
@@ -357,11 +359,20 @@
    this.components.forEach((component) => {
     if (component && component.id) this.componentByID.set(text(component.id), component);
    });
-   this.structuralEdges.forEach((edge) => {
-    if (edge && edge.id) this.structuralEdgeByID.set(text(edge.id), edge);
-   });
+    this.structuralEdges.forEach((edge) => {
+     if (edge && edge.id) this.structuralEdgeByID.set(text(edge.id), edge);
+    });
+    this.surfaces.forEach((surface) => {
+     if (surface && surface.id) this.surfaceByID.set(text(surface.id), surface);
+    });
+     this.candidateDirections.forEach((direction) => {
+      if (direction && direction.id) this.directionByID.set(text(direction.id), direction);
+     });
+     this.suggestions.forEach((suggestion) => {
+      if (suggestion && suggestion.id) this.suggestionByID.set(text(suggestion.id), suggestion);
+     });
 
-    this.flows.forEach((flow) => {
+      this.flows.forEach((flow) => {
     if (!flow || !flow.id) return;
     const flowID = text(flow.id);
     this.flowByID.set(flowID, flow);
@@ -370,12 +381,6 @@
      if (branch && branch.id) {
       this.flowBranchesByKey.set(selectionKey(flowID, branch.id), branch);
      }
-    });
-    this.surfaces.forEach((surface) => {
-     if (surface && surface.id) this.surfaceByID.set(text(surface.id), surface);
-    });
-    this.candidateDirections.forEach((direction) => {
-     if (direction && direction.id) this.directionByID.set(text(direction.id), direction);
     });
     array(flow.steps).forEach((step) => {
      if (!step || !step.id) return;
@@ -404,32 +409,47 @@
     });
     flowNav.appendChild(this.landscapeButton);
     if (this.flows.length > 0) {
-     this.traceMenu = element("details", "rm-arch__trace-menu");
-     this.traceMenuSummary = element("summary", "rm-arch__flow-button", "Saved traces (" + this.flows.length + ")");
+     this.traceMenu = element("div", "rm-arch__trace-menu");
+     this.traceMenuSummary = element("button", "rm-arch__flow-button", "Saved traces (" + this.flows.length + ")");
+     this.traceMenuSummary.type = "button";
+     this.traceMenuSummary.setAttribute("aria-haspopup", "menu");
+     this.traceMenuSummary.setAttribute("aria-expanded", "false");
      this.traceMenu.appendChild(this.traceMenuSummary);
-     const traceList = element("div", "rm-arch__trace-list");
+     this.listen(this.traceMenuSummary, "click", (event) => {
+      event.stopPropagation();
+      this.toggleTraceMenu(this.traceList.hidden);
+     });
+     this.traceList = element("div", "rm-arch__trace-list");
+     this.traceList.setAttribute("role", "menu");
+     this.traceList.hidden = true;
      this.flows.forEach((flow) => {
-      const button = element("button", "rm-arch__trace-option");
+       const button = element("button", "rm-arch__trace-option");
       button.type = "button";
-      button.appendChild(element("strong", null, flow.name || flow.id));
-      button.appendChild(element(
-       "span",
-       null,
-       [flow.trigger || flow.command, flow.status, array(flow.participating_component_ids).length + " components"]
-        .filter(Boolean)
-        .join(" · ")
-      ));
+       button.setAttribute("role", "menuitem");
+       button.appendChild(element("strong", null, flow.name || flow.id));
+       if (flow.why_inspect) button.appendChild(element("small", "rm-arch__trace-purpose", flow.why_inspect));
+       const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
+       const origin = startSurface ?
+        (startSurface.kind === "cli_command" ? "CLI command · " + (startSurface.name || startSurface.id) : startSurface.name || startSurface.kind) :
+        (flow.command ? "CLI command · " + flow.command : flow.trigger);
+       button.appendChild(element(
+        "span",
+        null,
+        [origin, flow.status]
+         .filter(Boolean)
+         .join(" · ")
+       ));
+       button.appendChild(element("span", null, array(flow.participating_component_ids).length + " components"));
       if (flow.status !== "complete" && flow.frontier_summary) {
        button.appendChild(element("small", null, "Frontier: " + flow.frontier_summary));
       }
       this.listen(button, "click", () => {
-       this.traceMenu.open = false;
+       this.toggleTraceMenu(false);
        this.openTrace(flow.id);
       });
       this.flowButtons.set(text(flow.id), button);
-      traceList.appendChild(button);
+      this.traceList.appendChild(button);
      });
-     this.traceMenu.appendChild(traceList);
      flowNav.appendChild(this.traceMenu);
     }
    toolbar.appendChild(flowNav);
@@ -452,8 +472,9 @@
       this.fitButton = this.controlButton("Fit", "Fit architecture at readable scale", () => this.fit());
    this.zoomInButton = this.controlButton("+", "Zoom in", () => this.zoomBy(1.22));
    controls.append(this.zoomOutButton, this.fitButton, this.zoomInButton);
-   toolbar.appendChild(controls);
-   this.root.appendChild(toolbar);
+    toolbar.appendChild(controls);
+    this.root.appendChild(toolbar);
+    if (this.traceList) this.root.appendChild(this.traceList);
 
    const workspace = element("div", "rm-arch__workspace");
     this.viewport = element("div", "rm-arch__viewport");
@@ -466,10 +487,9 @@
 
     this.drawerBackdrop = element("button", "rm-arch__drawer-backdrop");
     this.drawerBackdrop.type = "button";
-    this.drawerBackdrop.setAttribute("aria-label", "Close inspector");
-    this.drawerBackdrop.hidden = true;
-    this.listen(this.drawerBackdrop, "click", () => this.closeInspector());
-    this.inspector = element("aside", "rm-arch__inspector");
+     this.drawerBackdrop.setAttribute("aria-label", "Close inspector");
+     this.drawerBackdrop.hidden = true;
+     this.inspector = element("aside", "rm-arch__inspector");
     this.inspector.setAttribute("aria-label", "Architecture inspector");
     workspace.appendChild(this.inspector);
     this.root.append(workspace, this.drawerBackdrop);
@@ -478,8 +498,49 @@
    this.installViewportInteractions();
     this.listen(global, "hashchange", () => this.restoreHash(true));
     this.listen(global, "keydown", (event) => {
-     if (event.key === "Escape" && this.hasInspectorSelection(this.selection)) this.closeInspector();
+     if (event.key !== "Escape") return;
+     if (this.traceList && !this.traceList.hidden) {
+      this.toggleTraceMenu(false);
+      this.traceMenuSummary.focus();
+      return;
+     }
+     if (this.hasInspectorSelection(this.selection)) this.closeInspector();
     });
+    this.listen(global, "resize", () => {
+     if (this.traceList && !this.traceList.hidden) this.positionTraceMenu();
+    });
+    this.listen(global.document, "click", (event) => {
+     if (!this.hasInspectorSelection(this.selection)) return;
+     const target = event.target;
+     if (!target || this.inspector.contains(target)) return;
+     if (typeof target.closest === "function" && target.closest(".rm-arch__component-card")) return;
+     this.closeInspector();
+    }, { capture: true });
+    this.listen(global.document, "click", (event) => {
+     if (!this.traceList || this.traceList.hidden) return;
+     const target = event.target;
+     if (target && (this.traceMenu.contains(target) || this.traceList.contains(target))) return;
+     this.toggleTraceMenu(false);
+    });
+  }
+
+  toggleTraceMenu(open) {
+   if (!this.traceList || !this.traceMenuSummary) return;
+   this.traceList.hidden = !open;
+   this.traceMenuSummary.setAttribute("aria-expanded", open ? "true" : "false");
+   this.traceMenuSummary.classList.toggle("is-active", open);
+   if (open) requestAnimationFrame(() => this.positionTraceMenu());
+  }
+
+  positionTraceMenu() {
+   if (!this.traceList || !this.traceMenuSummary || this.traceList.hidden) return;
+   const trigger = this.traceMenuSummary.getBoundingClientRect();
+   const margin = 12;
+   const width = Math.min(420, Math.max(280, global.innerWidth - margin * 2));
+   const left = Math.min(Math.max(margin, trigger.left), Math.max(margin, global.innerWidth - width - margin));
+   this.traceList.style.left = left + "px";
+   this.traceList.style.top = Math.min(trigger.bottom + 7, global.innerHeight - margin) + "px";
+   this.traceList.style.width = width + "px";
   }
 
   controlButton(label, title, handler) {
@@ -1080,6 +1141,11 @@
    }
   }
 
+  componentSurfaces(component) {
+   const ids = Array.from(new Set(array(component && component.owned_surface_ids).map(text)));
+   return ids.map((id) => this.surfaceByID.get(id)).filter(Boolean);
+  }
+
   renderComponents() {
    this.components.forEach((component) => {
     const id = text(component.id);
@@ -1104,12 +1170,38 @@
      if (component.description) {
       button.appendChild(element("span", "rm-arch__component-description", component.description));
      }
-      const metadata = [
-       array(component.owned_surface_ids).length + " surface" + (array(component.owned_surface_ids).length === 1 ? "" : "s"),
-       array(component.participating_flow_ids).length + " saved trace" +
-        (array(component.participating_flow_ids).length === 1 ? "" : "s"),
-      ].filter(Boolean).join(" · ");
-     button.appendChild(element("span", "rm-arch__component-meta", metadata));
+      const associatedSurfaces = this.componentSurfaces(component);
+      if (associatedSurfaces.length > 0) {
+       const surfaceSummary = element("span", "rm-arch__component-surfaces");
+       surfaceSummary.appendChild(element("span", "rm-arch__component-surfaces-label", "Surfaces"));
+       associatedSurfaces.slice(0, 2).forEach((surface) => {
+        surfaceSummary.appendChild(element("span", "rm-arch__surface-chip", surface.name || surface.id));
+       });
+       if (associatedSurfaces.length > 2) {
+        surfaceSummary.appendChild(element("span", "rm-arch__surface-chip is-more", "+" + (associatedSurfaces.length - 2)));
+       }
+       button.appendChild(surfaceSummary);
+      }
+       const metadata = [];
+       if (associatedSurfaces.length > 0) {
+        const allCommands = associatedSurfaces.every((surface) => surface.kind === "cli_command");
+        metadata.push(associatedSurfaces.length + " " + (allCommands ? "command" : "surface") + (associatedSurfaces.length === 1 ? "" : "s"));
+       }
+       const participatingFlows = array(component.participating_flow_ids).map((flowID) => this.flowByID.get(text(flowID))).filter(Boolean);
+       if (participatingFlows.length === 1) {
+        metadata.push("1 " + (participatingFlows[0].status || "saved") + " trace");
+       } else if (participatingFlows.length > 1) {
+        metadata.push(participatingFlows.length + " saved traces");
+       }
+       const suggestionCount = array(component.suggested_investigation_ids).length;
+       if (suggestionCount > 0) metadata.push(suggestionCount + " suggested investigation" + (suggestionCount === 1 ? "" : "s"));
+       const anchorCount = array(component.anchor_ids).length;
+       if (anchorCount > 0) metadata.push(anchorCount + " exact anchor" + (anchorCount === 1 ? "" : "s"));
+       if (metadata.length === 0) {
+        const memberCount = array(component.members).length;
+        if (memberCount > 0) metadata.push(memberCount + " exact member" + (memberCount === 1 ? "" : "s"));
+       }
+       if (metadata.length > 0) button.appendChild(element("span", "rm-arch__component-meta", metadata.join(" · ")));
     this.listen(button, "click", () => {
      const selected = this.selection.component === id && !this.selection.step && !this.selection.edge;
       this.setSelection({ component: selected ? "" : id, surface: "", step: "", edge: "" }, true);
@@ -2325,7 +2417,7 @@
    const surfaceIDs = Array.from(new Set(array(component.owned_surface_ids).concat(array(component.participating_surface_ids))));
    const surfaces = this.inspectorSection("Surfaces");
    if (surfaceIDs.length === 0) {
-    surfaces.appendChild(element("p", "rm-arch__empty", "No configured-catalog surface has a unique exact association with this component."));
+     surfaces.appendChild(element("p", "rm-arch__empty", "No supported surface has a unique exact association with this component."));
    }
    surfaceIDs.forEach((surfaceID) => {
     const surface = this.surfaceByID.get(text(surfaceID));
@@ -2354,14 +2446,36 @@
    const suggestions = this.inspectorSection("Suggested investigations");
    const suggestionIDs = array(component.suggested_investigation_ids);
    if (suggestionIDs.length === 0) suggestions.appendChild(element("p", "rm-arch__empty", "No untraced suggestion is attached by exact saved evidence."));
-   suggestionIDs.forEach((directionID) => {
-    const direction = this.directionByID.get(text(directionID));
-    if (!direction) return;
-    const card = element("article", "rm-arch__evidence-card");
-    card.appendChild(element("strong", "rm-arch__evidence-title", direction.name || direction.id));
-    if (direction.why_interesting) card.appendChild(element("p", "rm-arch__copy", direction.why_interesting));
-    this.appendKeyValue(card, "Status", "Suggested investigation — not a saved trace");
-    suggestions.appendChild(card);
+    suggestionIDs.forEach((directionID) => {
+     const suggestion = this.suggestionByID.get(text(directionID));
+     const direction = this.directionByID.get(text(directionID));
+     if (!suggestion && !direction) return;
+     const card = element("article", "rm-arch__evidence-card");
+     card.appendChild(element("strong", "rm-arch__evidence-title", (suggestion && suggestion.title) || direction.name || direction.id));
+     const reason = suggestion && suggestion.reason || direction.why_interesting;
+     if (reason) card.appendChild(element("p", "rm-arch__copy", reason));
+     this.appendKeyValue(card, "Status", "Suggested investigation — not a saved trace");
+     if (suggestion) {
+      this.appendKeyValue(card, "Grounding", text(suggestion.current_grounding).replaceAll("_", " "));
+      this.appendKeyValue(card, "Trace start", suggestion.can_start_trace ? "Available" : "Unavailable from current local evidence");
+      if (suggestion.investigation_available && suggestion.start_location && typeof this.options.openLocation === "function") {
+       const openSource = element("button", "rm-arch__edge-jump", "Open starting source");
+       openSource.type = "button";
+       this.listen(openSource, "click", () => {
+        const location = suggestion.start_location;
+        this.options.openLocation(location.path, location.line || 0, location.column || 0);
+       });
+       card.appendChild(openSource);
+      } else {
+       const exactSourceUnavailable = suggestion.investigation_available;
+       card.appendChild(element("p", "rm-arch__notice is-warning", exactSourceUnavailable ? "Source action unavailable" : "Investigation unavailable"));
+       const unavailableReason = exactSourceUnavailable ?
+        "Open this static export through repomap <repo> to enable manifest-authorized source actions." :
+        (suggestion.unavailable_reason || "No exact source starting point was found for this suggestion.");
+       this.appendKeyValue(card, "Reason", unavailableReason);
+      }
+     }
+     suggestions.appendChild(card);
    });
 
    const members = this.inspectorSection("Exact members");

@@ -112,3 +112,75 @@ does an O(1) run lookup and source lookup, resolves the already-authorized file,
 starts the pre-resolved editor launcher without a shell, and responds after
 process start. Cache refresh is explicit and process-local; it is never a
 persistent authority source.
+
+## Implementation validation
+
+The implementation was replayed against the owner-provided, model-backed saved
+runs in the default cache. Neither replay used offline generation:
+
+- Restic `20260712-210947-restic` (`deepseek-v4-flash`, `offline: false`) had a
+  failed optional architecture-synthesis artifact but retained two accepted
+  FlowProof sessions. The server now projects the deterministic local-anchor
+  canvas from those saved facts. Exact saved-trace participation separates the
+  `cmd/restic` process entry into **CLI Commands** while unrelated helper
+  binaries remain **Tool entrypoints**. The CLI component owns the `backup` and
+  `check` start surfaces and participates in both corresponding saved traces.
+- Caddy `20260712-101953-caddy` (`deepseek-v4-flash`, `offline: false`) contains
+  a bounded `component-landscape-v2` capture. That capture is decoded, upgraded
+  only at the proposal-version boundary, and revalidated against the current
+  local candidate bundle. Current bounds retain it as normalized model output
+  rather than trusting its old cache key or validation metadata.
+
+The saved Caddy synthesis capture does not contain an Admin API component; its
+subsystems are Core, Config, CLI, HTTP Module, TLS & PKI, Events, Filesystem,
+Standard Modules, and Testing. The older orientation component list does contain
+`Admin API server`. The implementation does not invent or duplicate that
+component in the validated architecture canvas. A committed deterministic
+product fixture verifies the required zero-surface/one-suggestion Admin API
+relationship when that component exists, but the exact saved Caddy synthesis
+cannot demonstrate that browser selection without a new approved synthesis
+artifact.
+
+Playwright checks covered `1600x1000`, `1440x900`, and `1280x800`. They verified
+the fixed drawer, component replacement without stacked drawers, backdrop and
+Escape-compatible close behavior, Restic surface-to-trace navigation, trace
+status and participating components, and return to the prior architecture
+selection. Screenshots were retained as local review artifacts and are not
+committed.
+
+A follow-up browser regression found that the Saved traces picker was rendered
+inside the toolbar's clipped horizontal scroller, so its options existed in the
+accessibility tree but were not visible. The picker is now a fixed, bounded menu
+outside that clipping context. The same review found that surface and suggested-
+investigation indexes were populated inside the saved-trace loop, which made
+them unavailable when a canvas had no trace. Those indexes are now independent,
+and exact owning surface names are rendered as bounded chips directly on their
+architecture component cards.
+
+## Source-open timing result
+
+The model-backed Restic report was served with a fake `code` executable that
+recorded arguments and slept for two seconds. One browser click produced exactly
+one dispatch:
+
+```text
+--goto
+/Users/dvordrova/git/restic/cmd/restic/main.go
+```
+
+The server reported `resolve_run_ms=0`, `authorize_ms=0`,
+`resolve_target_ms=0`, `spawn_ms=2`, and `response_ms=3`. The fake editor exited
+about 2.3 seconds later, proving that editor lifetime is outside browser response
+latency. No Git, gopls, model, symbol, or whole-repository freshness work ran in
+the source-open handler. Separately, loading and freshness-checking the full
+saved Restic report measured about 0.48 seconds; that report-view cost is not on
+the source-click path.
+
+## Validation commands
+
+- `./scripts/check.sh`
+- `go test -race ./internal/reportserver`
+- model-backed Restic and Caddy replay tests with their exact cache paths
+- model-backed Restic saved-report latency test
+- `node --check` for all report JavaScript assets
+- `./scripts/etcd_check.sh ../etcd`

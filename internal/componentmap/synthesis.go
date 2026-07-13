@@ -384,9 +384,9 @@ func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []
 }
 
 // ReplayLegacyCapturedSynthesis revalidates a captured v1 response against the
-// current local bundle. This is intentionally limited to the persisted
-// architecture-grounding-v3 record used by approved offline replay fixtures;
-// no old validation outcome, cache key, or warning is trusted.
+// current local bundle. This is intentionally limited to persisted approved
+// component-landscape-v2 and architecture-grounding-v3 records; no old
+// validation outcome, cache key, or warning is trusted.
 func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landscape, error) {
 	if len(saved) == 0 || len(saved) > maxSynthesisRecordBytes {
 		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis record is empty or too large")
@@ -414,7 +414,9 @@ func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landsc
 	if err := decodeStrictJSON(saved, &record); err != nil {
 		return Landscape{}, fmt.Errorf("componentmap: decode legacy synthesis record: %w", err)
 	}
-	if record.Version != 1 || record.Call == nil || record.Call.Metadata.PromptVersion != "architecture-grounding-v3" {
+	if record.Version != 1 || record.Call == nil ||
+		(record.Call.Metadata.PromptVersion != "component-landscape-v2" &&
+			record.Call.Metadata.PromptVersion != "architecture-grounding-v3") {
 		return Landscape{}, fmt.Errorf("componentmap: unsupported legacy synthesis record")
 	}
 	if record.Call.ResponseState != ResponseCaptured || record.Call.ResponseBytes != len(record.Call.Response) ||
@@ -424,13 +426,29 @@ func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landsc
 	if synthesisResponseContainsCredential(record.Call.Response) {
 		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response violates the obvious credential policy")
 	}
+	response := record.Call.Response
+	if record.Call.Metadata.PromptVersion == "component-landscape-v2" {
+		object, _, responseErr := extractProposalObject(response)
+		if responseErr != nil {
+			return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response is invalid")
+		}
+		proposal, _, err := decodeProposalJSON(object)
+		if err != nil || proposal.Version != 2 {
+			return Landscape{}, fmt.Errorf("componentmap: legacy synthesis proposal is invalid")
+		}
+		proposal.Version = ProposalVersion
+		response, err = json.Marshal(proposal)
+		if err != nil {
+			return Landscape{}, fmt.Errorf("componentmap: encode upgraded legacy synthesis proposal: %w", err)
+		}
+	}
 	result, err := RecordSynthesisResponse(
 		bundle,
 		record.RepositoryRevision,
 		record.Call.Metadata.Profile,
 		record.Call.Metadata.Model,
 		time.Duration(record.Call.Metadata.LatencyMillis)*time.Millisecond,
-		record.Call.Response,
+		response,
 	)
 	if err != nil {
 		return Landscape{}, err

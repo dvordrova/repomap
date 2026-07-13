@@ -81,6 +81,35 @@ func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 	if legacyReplayed.Fallback || len(legacyReplayed.Subsystems) != 6 {
 		t.Fatalf("legacy captured response replay = %#v", legacyReplayed)
 	}
+	var legacyProposal map[string]any
+	if err := json.Unmarshal(response, &legacyProposal); err != nil {
+		t.Fatal(err)
+	}
+	legacyProposal["version"] = 2
+	legacyResponse, err := json.Marshal(legacyProposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyV2Record, err := json.Marshal(map[string]any{
+		"version": 1, "repository_revision": "caddy-saved-run", "cache_key": "legacy", "request_sha256": strings.Repeat("a", 64),
+		"call": map[string]any{
+			"metadata": map[string]any{
+				"prompt_version": "component-landscape-v2", "profile": "openai-compatible/bearer",
+				"model": "deepseek-v4-flash", "input_bytes": 45271, "latency_ms": 10964,
+			},
+			"response_state": "captured", "response_bytes": len(legacyResponse), "response": legacyResponse,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyV2Replayed, err := ReplayLegacyCapturedSynthesis(bundle, legacyV2Record)
+	if err != nil {
+		t.Fatalf("ReplayLegacyCapturedSynthesis(v2) error = %v", err)
+	}
+	if legacyV2Replayed.Fallback || len(legacyV2Replayed.Subsystems) != 6 {
+		t.Fatalf("legacy v2 captured response replay = %#v", legacyV2Replayed)
+	}
 }
 
 func TestRejectedCaddyProposalUsesAnchorFirstFallback(t *testing.T) {

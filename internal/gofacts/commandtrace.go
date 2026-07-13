@@ -321,12 +321,8 @@ func commandHandler(function commandSyntaxFunction, functions map[string]command
 		}
 		switch key.Name {
 		case "Use":
-			literal, ok := pair.Value.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				return true
-			}
-			value, err := strconv.Unquote(literal.Value)
-			if fields := strings.Fields(value); err == nil && len(fields) > 0 {
+			value := leadingStaticString(pair.Value)
+			if fields := strings.Fields(value); len(fields) > 0 {
 				command = fields[0]
 			}
 		case "Run", "RunE":
@@ -339,6 +335,29 @@ func commandHandler(function commandSyntaxFunction, functions map[string]command
 		return true
 	})
 	return command, handler
+}
+
+func leadingStaticString(expression ast.Expr) string {
+	switch expression := expression.(type) {
+	case *ast.BasicLit:
+		if expression.Kind != token.STRING {
+			return ""
+		}
+		value, err := strconv.Unquote(expression.Value)
+		if err != nil {
+			return ""
+		}
+		return value
+	case *ast.BinaryExpr:
+		if expression.Op != token.ADD {
+			return ""
+		}
+		return leadingStaticString(expression.X)
+	case *ast.ParenExpr:
+		return leadingStaticString(expression.X)
+	default:
+		return ""
+	}
 }
 
 func callbackHandlerCall(

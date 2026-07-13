@@ -50,6 +50,7 @@ type ArchitectureCanvas struct {
 	Subsystems             []ArchitectureSubsystem               `json:"subsystems"`
 	Components             []ArchitectureComponent               `json:"components"`
 	Surfaces               []ArchitectureSurface                 `json:"surfaces,omitempty"`
+	Suggestions            []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
 	StructuralFacts        []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
 	StructuralEdges        []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
 	Flows                  []ArchitectureFlow                    `json:"flows,omitempty"`
@@ -100,6 +101,22 @@ type ArchitectureSurface struct {
 	Resolution                string                     `json:"resolution,omitempty"`
 	Evidence                  []SurfaceLocation          `json:"evidence,omitempty"`
 	TraceUnavailableReason    string                     `json:"trace_unavailable_reason,omitempty"`
+}
+
+// ArchitectureSuggestion binds an accepted untraced direction to exact local
+// architecture IDs. It remains distinct from both surfaces and saved traces.
+type ArchitectureSuggestion struct {
+	ID                     string                     `json:"id"`
+	Title                  string                     `json:"title"`
+	Reason                 string                     `json:"reason,omitempty"`
+	EvidenceReferences     []string                   `json:"evidence_references,omitempty"`
+	RelevantAnchorIDs      []string                   `json:"relevant_architecture_anchor_ids,omitempty"`
+	RelevantComponentIDs   []componentmap.ComponentID `json:"relevant_component_ids,omitempty"`
+	CurrentGrounding       string                     `json:"current_grounding"`
+	CanStartTrace          bool                       `json:"can_start_trace"`
+	InvestigationAvailable bool                       `json:"investigation_available"`
+	UnavailableReason      string                     `json:"unavailable_reason,omitempty"`
+	StartLocation          *SurfaceLocation           `json:"start_location,omitempty"`
 }
 
 type ArchitectureStructuralEdge struct {

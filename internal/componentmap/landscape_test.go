@@ -396,6 +396,37 @@ func TestFallbackIsDeterministicAcrossCandidateOrder(t *testing.T) {
 	}
 }
 
+func TestProcessEntryFallbackSeparatesTraceBackedCLIFromTools(t *testing.T) {
+	t.Parallel()
+
+	appPackage := MemberID{Kind: MemberPackage, Value: "app-package"}
+	appFile := MemberID{Kind: MemberFile, Value: "app-file"}
+	appSymbol := MemberID{Kind: MemberSymbol, Value: "app-symbol"}
+	toolPackage := MemberID{Kind: MemberPackage, Value: "tool-package"}
+	toolFile := MemberID{Kind: MemberFile, Value: "tool-file"}
+	toolSymbol := MemberID{Kind: MemberSymbol, Value: "tool-symbol"}
+	known := map[MemberID]Candidate{
+		appPackage:  {ID: appPackage, Name: "cmd/app"},
+		appFile:     {ID: appFile, Name: "cmd/app/main.go", ParentID: &appPackage, Participations: []FlowParticipation{{FlowID: "serve"}}},
+		appSymbol:   {ID: appSymbol, Name: "cmd/app.main", ParentID: &appFile},
+		toolPackage: {ID: toolPackage, Name: "tools/release"},
+		toolFile:    {ID: toolFile, Name: "tools/release/main.go", ParentID: &toolPackage},
+		toolSymbol:  {ID: toolSymbol, Name: "tools/release.main", ParentID: &toolFile},
+	}
+	components := processEntryFallbackComponents([]BehaviorAnchor{
+		{ID: "app-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{appSymbol}},
+		{ID: "tool-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{toolSymbol}},
+	}, known, make(map[MemberID]struct{}))
+	if len(components) != 2 || components[0].Name != "CLI Commands" || components[1].Name != "Tool entrypoints" {
+		t.Fatalf("process-entry components = %#v", components)
+	}
+	for _, member := range components[0].Members {
+		if strings.HasPrefix(member.Name, "tools/") {
+			t.Fatalf("CLI Commands includes tool member %q", member.Name)
+		}
+	}
+}
+
 func landscapeTestBundle() CandidateBundle {
 	packageID := testMemberID(MemberPackage, "repo")
 	commandPackageID := testMemberID(MemberPackage, "cmd")

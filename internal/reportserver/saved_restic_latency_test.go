@@ -11,7 +11,7 @@ import (
 func TestSavedResticReportLatency(t *testing.T) {
 	runsDir := os.Getenv("REPOMAP_SAVED_RESTIC_RUNS")
 	if runsDir == "" {
-		t.Skip("set REPOMAP_SAVED_RESTIC_RUNS to exercise the owner-provided offline run")
+		t.Skip("set REPOMAP_SAVED_RESTIC_RUNS to exercise the owner-provided model-backed run")
 	}
 	const runID = "20260712-210947-restic"
 	started := time.Now()

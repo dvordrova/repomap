@@ -60,9 +60,9 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 			name:  "zero and filtered states do not claim absence",
 			asset: js,
 			tokens: []string{
-				"No surfaces matched the configured terminal catalog under this build scenario.",
+				"No supported runtime registrations were cataloged.",
 				"No surfaces match these filters.",
-				"absence here does not prove runtime absence.",
+				"different scopes; absence here does not prove runtime absence.",
 			},
 		},
 		{
@@ -78,6 +78,10 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 				`"Open saved trace"`,
 				`"Trace unavailable: "`,
 				`"View in Architecture"`,
+				`case "primary_application": return "application"`,
+				`case "secondary_tooling": return "tooling"`,
+				`label: "CLI commands"`,
+				`label: "total"`,
 			},
 		},
 		{
@@ -97,7 +101,7 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 				`this.detailSection("Wrapper chain"`,
 				`this.detailSection("Evidence"`,
 				`this.detailSection("Dynamic frontiers"`,
-				"Coverage and limits",
+				"View coverage and limits",
 				"Loop signals",
 			},
 		},

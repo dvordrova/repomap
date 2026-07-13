@@ -1,7 +1,7 @@
 # Current approved implementation decision
 
 Decision:
-    070-component-surface-trace-editor-navigation.md
+    080-unified-surface-accounting-and-navigation.md
 
 Status:
     Approved
@@ -11,6 +11,7 @@ Approved by:
 
 Notes:
     This changes the active implementation scope.
-    It does not delete, rewrite, or invalidate historical decisions 050 or 060.
+    It does not delete, rewrite, or invalidate historical decisions 050, 060,
+    or 070.
     Behavior-grounded architecture and Operational Flow Discovery remain part
     of the existing product.

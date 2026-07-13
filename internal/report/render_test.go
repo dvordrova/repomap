@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -160,6 +161,23 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 	if !bytes.Equal(html, want) {
 		t.Errorf("HTML output differs from golden file.\nRun 'go test -run TestWriteReportHTML_Golden -update' to regenerate.")
 		t.Errorf("Got %d bytes, want %d bytes", len(html), len(want))
+	}
+}
+
+func TestReportAssetsScopeBundleTruncationAsModelContext(t *testing.T) {
+	t.Parallel()
+
+	html, err := RenderHTML(&ReportData{
+		RepoName: "bounded",
+		Warnings: []string{"Important edges and candidate file index were truncated in the provided bundle."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"Model context limit", "surface counts", "isModelContextWarning"} {
+		if !strings.Contains(string(html), text) {
+			t.Fatalf("rendered report is missing scoped model-context token %q", text)
+		}
 	}
 }
 

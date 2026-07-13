@@ -146,16 +146,25 @@ references are navigation evidence, not proof of coverage or assertions.
 
 ### 4.5. Local runtime surfaces (implemented for persisted Go runs)
 
-Bounded SSA propagation can establish configured HTTP registrations, errgroup
-task starts, and loop-backed worker registrations under one recorded build
-scenario. The report projects those facts into a standalone `Discovered
-surfaces` shelf with exact registration, wrapper, callback, frontier, and loop
-evidence.
+One typed report catalog normalizes build-selected deterministic Cobra command
+registrations and bounded generic SSA discoveries such as configured HTTP
+registrations, errgroup task starts, and loop-backed worker registrations under
+one recorded build scenario. Producer-specific registration, constructor,
+callback, wrapper, frontier, and provenance evidence remains attached to each
+record. `All surfaces`, architecture ownership, and headline counts are
+projections of that same catalog; a saved trace only associates with a record
+and never creates or duplicates one.
 
 This shelf is deliberately outside the architecture graph and FlowProof:
 static registration does not prove callback execution, runtime order,
 cancellation, or lifetime. Non-Go/no-debug/preview runs skip the artifact stage,
 and a discovery failure leaves orientation usable with a precise warning.
+Its counts are repository-wide across build-selected executables, with primary
+application, secondary tooling, test/helper, and unknown roles kept distinct.
+Generic-scan latency/counts remain stage metrics rather than product totals.
+Worker and non-worker async-task totals are exclusive final classifications; a
+selected flow may therefore contain a task that this independently bounded
+catalog did not reach.
 
 ### 5. Durable focused investigation (implemented)
 

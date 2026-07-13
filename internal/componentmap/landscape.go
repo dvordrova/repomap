@@ -1031,6 +1031,10 @@ func anchorFirstFallback(bundle CandidateBundle) Landscape {
 			if len(anchors) == 0 {
 				continue
 			}
+			if kind == AnchorProcessEntry {
+				components = append(components, processEntryFallbackComponents(anchors, known, owned)...)
+				continue
+			}
 			memberSet := make(map[MemberID]struct{})
 			anchorIDs := make([]string, 0, len(anchors))
 			for _, anchor := range anchors {
@@ -1087,6 +1091,65 @@ func anchorFirstFallback(bundle CandidateBundle) Landscape {
 		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
 		Source: SourceLocalAnchors, Level: 3,
 	}
+}
+
+func processEntryFallbackComponents(
+	anchors []BehaviorAnchor,
+	known map[MemberID]Candidate,
+	owned map[MemberID]struct{},
+) []Component {
+	groups := []struct {
+		name        string
+		description string
+		traced      bool
+	}{
+		{name: "CLI Commands", description: "Process entrypoints with exact saved-trace participation.", traced: true},
+		{name: "Tool entrypoints", description: "Other exact process entrypoints without saved-trace participation."},
+	}
+	components := make([]Component, 0, len(groups))
+	for _, group := range groups {
+		memberSet := make(map[MemberID]struct{})
+		anchorIDs := make([]string, 0)
+		for _, anchor := range anchors {
+			if anchorHasFlowParticipation(anchor, known) != group.traced {
+				continue
+			}
+			anchorIDs = append(anchorIDs, anchor.ID)
+			for _, memberID := range anchor.MemberIDs {
+				addAnchorFallbackMember(memberID, known, owned, memberSet)
+			}
+		}
+		members := candidatesFromIDSet(memberSet, known)
+		if len(members) == 0 {
+			continue
+		}
+		id := componentID(candidateIDs(members))
+		components = append(components, Component{
+			ID: id, Name: group.name, Description: group.description,
+			Members: members, AnchorIDs: anchorIDs, SourceIDs: []ComponentID{id},
+		})
+	}
+	return components
+}
+
+func anchorHasFlowParticipation(anchor BehaviorAnchor, known map[MemberID]Candidate) bool {
+	for _, memberID := range anchor.MemberIDs {
+		currentID := memberID
+		for {
+			candidate, exists := known[currentID]
+			if !exists {
+				break
+			}
+			if len(candidate.Participations) > 0 {
+				return true
+			}
+			if candidate.ParentID == nil {
+				break
+			}
+			currentID = *candidate.ParentID
+		}
+	}
+	return false
 }
 
 func addAnchorFallbackMember(
