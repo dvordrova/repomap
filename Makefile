@@ -8,7 +8,7 @@ TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 RUN_ARGS ?=
 
-.PHONY: help test vet check quality-check build clean smoke etcd-check friend-check symbol-check symbol-prompt-experiment source-prompt-experiment component-study-preview component-study-live component-study-replay component-probe component-probe-frontier component-teach-preview component-teach-live component-teach-replay research-trail-replay flowproof-replay pyright-fixture gopls-examples gopls-examples-fetch doctor doctor-check generic-deepseek-doctor debug-last serve run run-json run-offline run-flows2 deepseek-check
+.PHONY: help test vet check quality-check build clean smoke etcd-check friend-check symbol-check symbol-prompt-experiment source-prompt-experiment component-study-preview component-study-live component-study-replay component-probe component-probe-frontier component-teach-preview component-teach-live component-teach-replay research-trail-replay flowproof-replay research-budget-check pyright-fixture gopls-examples gopls-examples-fetch doctor doctor-check generic-deepseek-doctor debug-last serve run run-json run-offline run-flows2 deepseek-check
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -169,7 +169,13 @@ flowproof-replay: ## Rebuild a saved orientation's local FlowProof without a mod
 	go run ./cmd/flowproof-playground \
 		--repo "$(FLOWPROOF_REPO)" \
 		--orientation "$(FLOWPROOF_RUN)/orientation_report.json" \
-		--bundle "$(FLOWPROOF_RUN)/llm_bundle.json"
+		--snapshot "$(FLOWPROOF_RUN)/snapshot.json"
+
+RESTIC_REPO ?= ../restic
+CADDY_REPO ?= ../caddy
+
+research-budget-check: ## Measure adaptive orientation budgets on Restic and Caddy
+	./scripts/research_budget_check.sh "$(RESTIC_REPO)" "$(CADDY_REPO)"
 
 PYRIGHT_REPO ?= internal/analyzer/python/pyright/testdata/fixture
 PYRIGHT_PATH ?= app/service.py

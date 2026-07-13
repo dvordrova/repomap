@@ -13,40 +13,43 @@ import (
 	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
 type Options struct {
-	RepoPath               string
-	SnapshotOnly           bool
-	LLMBundleOnly          bool
-	LLMRequestOnly         bool
-	OutputJSON             bool
-	Offline                bool
-	FlowCount              int
-	FlowBundlesOnly        bool
-	MaxReadmeBytes         int
-	MaxReadmeLLMBytes      int
-	MaxTreeLines           int
-	MaxInterestingFiles    int
-	MaxGoPkgs              int
-	MaxGoEdges             int
-	MaxLLMEntrypoints      int
-	MaxLLMModules          int
-	MaxLLMFiles            int
-	MaxLocalDirectionFiles int
-	MaxLLMEdges            int
-	MaxLLMSignals          int
-	MaxLLMSignalsPerFile   int
-	DebugDir               string
-	RunID                  string
-	DumpLLM                bool
-	DumpRedacted           bool
-	RequireArtifacts       bool
-	DiscoverSurfaces       bool
-	ExplainFlows           int
-	Progress               func(ProgressEvent)
-	EffectiveOptions       debugdump.EffectiveOptions
+	RepoPath                  string
+	SnapshotOnly              bool
+	LLMBundleOnly             bool
+	LLMRequestOnly            bool
+	OutputJSON                bool
+	Offline                   bool
+	FlowCount                 int
+	FlowBundlesOnly           bool
+	MaxReadmeBytes            int
+	MaxReadmeLLMBytes         int
+	MaxTreeLines              int
+	MaxInterestingFiles       int
+	MaxGoPkgs                 int
+	MaxGoEdges                int
+	MaxLLMEntrypoints         int
+	MaxLLMModules             int
+	MaxLLMFiles               int
+	MaxOrientationBundleBytes int
+	MaxLocalDirectionFiles    int
+	MaxLLMEdges               int
+	MaxLLMSignals             int
+	MaxLLMSignalsPerFile      int
+	DebugDir                  string
+	RunID                     string
+	DumpLLM                   bool
+	DumpRedacted              bool
+	RequireArtifacts          bool
+	DiscoverSurfaces          bool
+	ExplainFlows              int
+	Progress                  func(ProgressEvent)
+	EffectiveOptions          debugdump.EffectiveOptions
+	ResearchPolicy            modelresearch.Policy
 }
 
 type combinedReport struct {
@@ -57,6 +60,13 @@ type combinedReport struct {
 }
 
 func Run(ctx context.Context, opts Options) ([]byte, error) {
+	policy := opts.ResearchPolicy
+	if policy.Version == "" {
+		policy = modelresearch.DefaultPolicy()
+	}
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
 	requireArtifacts := opts.DumpLLM || opts.RequireArtifacts
 	if opts.DumpLLM && opts.Offline {
 		return nil, fmt.Errorf("--dump-llm cannot be used with offline mode; use request preview instead")
@@ -113,6 +123,8 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		MaxSignalPerFile: opts.MaxLLMSignalsPerFile,
 		RepoPath:         opts.RepoPath,
 		SourceSignals:    orientationSignals,
+		MaxBytes:         opts.MaxOrientationBundleBytes,
+		PolicyVersion:    policy.Version,
 	})
 	bundle.Warnings = append(bundle.Warnings, operationalWarnings...)
 	bundleJSON, _ := json.MarshalIndent(bundle, "", "  ")
@@ -144,6 +156,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
 		if err != nil {
 			return nil, err
+		}
+		if allowed, reason := policy.Allows(policy.Orientation, modelresearch.Usage{}, len(requestJSON)); !allowed {
+			return nil, fmt.Errorf("orientation request rejected by %s: %d bytes", reason, len(requestJSON))
 		}
 		return requestJSON, nil
 	}
@@ -280,6 +295,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				dw.WriteError(err)
 			}
 			return nil, err
+		}
+		if allowed, reason := policy.Allows(policy.Orientation, modelresearch.Usage{}, len(requestJSON)); !allowed {
+			return nil, fmt.Errorf("orientation request rejected by %s: %d bytes", reason, len(requestJSON))
 		}
 		runMeta.ExternalRequestBytes = len(requestJSON)
 		runMeta.ProviderRequestCount = 1
