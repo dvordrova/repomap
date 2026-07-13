@@ -85,6 +85,32 @@ func TestParseDiscoveredSurfacesProjectsPairedV2Artifacts(t *testing.T) {
 	}
 }
 
+func TestProjectedSurfaceSemanticsUseDynamicRoleAndLocalWrapperStart(t *testing.T) {
+	t.Parallel()
+
+	dynamicRoute := DiscoveredTrigger{
+		Kind: "http_route", Availability: SurfaceAvailabilityAvailable,
+		RegistrationSite: &SurfaceLocation{Path: "internal/routes.go", Line: 20},
+		Identity:         SurfaceIdentity{Path: SurfaceValue{Kind: "unknown", Text: "runtime route"}},
+	}
+	ensureProjectedSurfaceSemantics(&dynamicRoute)
+	if dynamicRoute.SurfaceRole != SurfaceRoleDynamicFrontier ||
+		dynamicRoute.TraceReadiness != SurfaceTraceUnsupported {
+		t.Fatalf("dynamic route semantics = %#v", dynamicRoute)
+	}
+
+	wrappedServer := DiscoveredTrigger{
+		Kind: "http_server", Availability: SurfaceAvailabilityAvailable,
+		WrapperChain: []SurfaceWrapper{{Callsite: &SurfaceLocation{Path: "internal/server.go", Line: 44}}},
+	}
+	ensureProjectedSurfaceSemantics(&wrappedServer)
+	if wrappedServer.SurfaceRole != SurfaceRoleEntrySurface ||
+		wrappedServer.TraceReadiness != SurfaceTracePartialReady ||
+		wrappedServer.Quality.RegistrationStart != surfaceQualityPartial {
+		t.Fatalf("wrapped server semantics = %#v", wrappedServer)
+	}
+}
+
 func TestProjectDiscoveredSurfacesCollapsesRepeatedCoverageNoise(t *testing.T) {
 	t.Parallel()
 

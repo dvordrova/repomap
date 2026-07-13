@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 3
+const ArchitectureCanvasVersion = 4
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -134,6 +134,7 @@ type ArchitectureStructuralEdge struct {
 type ArchitectureFlow struct {
 	ID                        componentmap.FlowID        `json:"id"`
 	Name                      string                     `json:"name"`
+	Archetype                 flowproof.Archetype        `json:"archetype"`
 	Trigger                   string                     `json:"trigger,omitempty"`
 	Scope                     string                     `json:"scope,omitempty"`
 	MentalModel               string                     `json:"mental_model,omitempty"`
@@ -451,7 +452,8 @@ func projectArchitectureFlow(
 	view := validateArchitectureProof(input.ID, proof, canvas)
 	branchByAnchor, branches := assignArchitectureBranches(input.ID, view, canvas)
 	flow := ArchitectureFlow{
-		ID: input.ID, Name: name, Trigger: input.Trigger, Scope: input.Scope,
+		ID: input.ID, Name: name, Archetype: proof.Archetype,
+		Trigger: input.Trigger, Scope: input.Scope,
 		MentalModel: input.MentalModel, Goal: proof.Goal, Command: proof.Command,
 		Branches:      branches,
 		SeedSurfaceID: proof.SeedSurfaceID, TraceQuality: proof.TraceQuality,

@@ -1,0 +1,148 @@
+{
+  "project_guess": "Syncthing - a continuous file synchronization program",
+  "confidence": 0.3,
+  "candidate_flows": [
+    {
+      "name": "Syncthing Daemon Startup and Continuous Sync",
+      "flow_type": "operational",
+      "trigger": "User runs `syncthing` command",
+      "likely_entrypoint": "cmd/syncthing/main.go",
+      "likely_files": [
+        "cmd/syncthing/main.go",
+        "lib/syncthing/syncthing.go",
+        "lib/model/model.go",
+        "lib/config/config.go",
+        "lib/protocol/protocol.go"
+      ],
+      "why_interesting": "This is the primary flow of the entire software: initializes configuration, starts synchronization engine, and runs continuously.",
+      "evidence": [
+        "cmd/syncthing/main.go is the main binary entrypoint",
+        "lib/syncthing/syncthing.go is a direct dependency containing service orchestration",
+        "lib/model/model.go is the core sync model"
+      ],
+      "confidence": 0.3,
+      "local_verification": {
+        "status": "partial",
+        "confidence_cap": 0.3,
+        "verified": ["exact entrypoint declaration"],
+        "missing": ["observed operational execution", "complete core-package retrieval"]
+      },
+      "disposition": "accepted"
+    },
+    {
+      "name": "REST API Request Handling",
+      "flow_type": "request",
+      "trigger": "HTTP request to syncthing's REST API (e.g., from web UI or external client)",
+      "likely_entrypoint": "cmd/syncthing/main.go",
+      "likely_files": ["cmd/syncthing/main.go", "lib/api/api.go", "lib/api/api_auth.go"],
+      "why_interesting": "The API provides the main user interaction surface and is essential for remote control.",
+      "evidence": ["cmd/syncthing/main.go registers HTTP handlers", "lib/api/api.go implements ServeHTTP and handler functions"],
+      "confidence": 0.3,
+      "local_verification": {
+        "status": "partial",
+        "confidence_cap": 0.3,
+        "verified": ["exact entrypoint declaration"],
+        "missing": ["complete core-package retrieval"]
+      },
+      "disposition": "accepted"
+    },
+    {
+      "name": "Discovery Server (stdiscosrv) Operation",
+      "flow_type": "operational",
+      "trigger": "User runs `stdiscosrv` binary",
+      "likely_entrypoint": "cmd/stdiscosrv/main.go",
+      "likely_files": ["cmd/stdiscosrv/main.go", "cmd/stdiscosrv/apisrv.go", "cmd/stdiscosrv/database.go"],
+      "why_interesting": "Global discovery service for Syncthing peers to find each other.",
+      "evidence": ["cmd/stdiscosrv/main.go is an entrypoint"],
+      "confidence": 0.3,
+      "local_verification": {
+        "status": "partial",
+        "confidence_cap": 0.3,
+        "verified": ["exact entrypoint declaration"],
+        "missing": ["observed operational execution", "complete core-package retrieval"]
+      },
+      "disposition": "accepted"
+    },
+    {
+      "name": "Relay Server (strelaysrv) Operation",
+      "flow_type": "operational",
+      "trigger": "User runs `strelaysrv` binary",
+      "likely_entrypoint": "cmd/strelaysrv/main.go",
+      "likely_files": ["cmd/strelaysrv/main.go", "cmd/strelaysrv/listener.go", "cmd/strelaysrv/pool.go", "cmd/strelaysrv/session.go"],
+      "why_interesting": "Relay server enables NAT traversal for syncthing peers.",
+      "evidence": ["cmd/strelaysrv/main.go is an entrypoint"],
+      "confidence": 0.3,
+      "local_verification": {
+        "status": "partial",
+        "confidence_cap": 0.3,
+        "verified": ["exact entrypoint declaration"],
+        "missing": ["observed operational execution", "complete core-package retrieval"]
+      },
+      "disposition": "accepted"
+    },
+    {
+      "name": "Crash Report Receiver Background Maintenance",
+      "flow_type": "operational",
+      "trigger": "User runs `stcrashreceiver` binary",
+      "likely_entrypoint": "cmd/infra/stcrashreceiver/main.go",
+      "likely_files": [
+        "cmd/infra/stcrashreceiver/main.go",
+        "cmd/infra/stcrashreceiver/diskstore.go",
+        "cmd/infra/stcrashreceiver/metrics.go",
+        "cmd/infra/stcrashreceiver/stcrashreceiver.go"
+      ],
+      "why_interesting": "Infrastructure service that receives and stores crash reports, with periodic cleanup.",
+      "evidence": ["cmd/infra/stcrashreceiver/main.go"],
+      "confidence": 0.3,
+      "local_verification": {
+        "status": "partial",
+        "confidence_cap": 0.3,
+        "verified": ["exact entrypoint declaration"],
+        "missing": ["observed operational execution", "complete core-package retrieval"]
+      },
+      "disposition": "accepted"
+    },
+    {
+      "name": "Background loop — periodic ticker created",
+      "flow_type": "operational",
+      "trigger": "local static source-signal threshold was met",
+      "likely_entrypoint": "cmd/dev/stvanity/main.go",
+      "likely_files": [
+        "cmd/dev/stvanity/main.go",
+        "cmd/infra/stcrashreceiver/diskstore.go",
+        "cmd/infra/strelaypoolsrv/stats.go",
+        "cmd/infra/stupgrades/main.go"
+      ],
+      "why_interesting": "operational flow discovered from background loop source signals across several executables",
+      "evidence": [
+        "cmd/dev/stvanity/main.go:132 source_signal periodic ticker created",
+        "cmd/infra/stcrashreceiver/diskstore.go:55 source_signal periodic ticker created"
+      ],
+      "confidence": 0.3,
+      "local_verification": {
+        "status": "partial",
+        "confidence_cap": 0.3,
+        "verified": ["exact entrypoint declaration"],
+        "missing": ["observed operational execution", "complete core-package retrieval"]
+      },
+      "disposition": "accepted",
+      "candidate_basis": "local_source_signal_aggregate"
+    }
+  ],
+  "research_questions": [
+    {
+      "id": "How does the relay client select and connect to a relay server?",
+      "purpose": "Understanding relay connection logic helps trace NAT traversal flow.",
+      "question": "What method in lib/relay/client/ is used to discover and connect to relays?",
+      "candidate_ids": ["file-fbf0a701c714e032", "file-c062789ca7f269b3", "file-8a0b128a651f01d6", "file-52fd680aef997e51"],
+      "evidence_categories": ["declaration", "callsite"]
+    },
+    {
+      "id": "How does the model handle incoming index updates from remote devices?",
+      "purpose": "Understanding index processing is key to sync correctness.",
+      "question": "In lib/model/model.go, which function processes remote index messages and updates the local database?",
+      "candidate_ids": ["file-1e91827bd47ba863", "file-8ffc04f78ce3a4ad", "file-546065fdc7d16e53"],
+      "evidence_categories": ["declaration", "transition"]
+    }
+  ]
+}

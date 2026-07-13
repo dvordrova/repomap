@@ -651,16 +651,109 @@
  min-height: 76px;
 }
 
-.rm-arch__focus-handoffs {
+.rm-arch__focus-lifecycle {
  display: grid;
- gap: 8px;
+ gap: 12px;
 }
 
-.rm-arch__focus-handoff {
+.rm-arch__lifecycle-card {
+ background: #f8fafc;
+ border: 1px solid #d7e0eb;
+ border-radius: 12px;
+ overflow: hidden;
+}
+
+.rm-arch__lifecycle-card-header {
+ align-items: center;
+ background: #eef4fb;
+ display: grid;
+ gap: 8px;
+ grid-template-columns: 110px minmax(0, 1fr);
+ padding: 10px;
+}
+
+.rm-arch__lifecycle-kicker,
+.rm-arch__lifecycle-label,
+.rm-arch__lifecycle-limitation strong {
+ color: #526176;
+ font-size: .62rem;
+ font-weight: 850;
+ letter-spacing: .04em;
+ text-transform: uppercase;
+}
+
+.rm-arch__lifecycle-relations {
+ padding: 0 10px;
+}
+
+.rm-arch__lifecycle-row {
+ align-items: start;
+ border-top: 1px solid #e2e8f0;
+ display: grid;
+ gap: 10px;
+ grid-template-columns: 90px minmax(0, 1fr);
+ padding: 10px 0;
+}
+
+.rm-arch__lifecycle-content {
+ display: grid;
+ gap: 6px;
+ min-width: 0;
+}
+
+.rm-arch__lifecycle-endpoints {
  align-items: stretch;
  display: grid;
  gap: 6px;
  grid-template-columns: minmax(0, 1fr) 108px minmax(0, 1fr);
+}
+
+.rm-arch__lifecycle-root-reference {
+ align-items: center;
+ background: #ecfeff;
+ border: 1px solid #a5f3fc;
+ border-radius: 11px;
+ color: #155e75;
+ display: flex;
+ font-size: .7rem;
+ font-weight: 800;
+ justify-content: center;
+ min-height: 58px;
+}
+
+.rm-arch__lifecycle-meta {
+ align-items: center;
+ color: #64748b;
+ display: flex;
+ flex-wrap: wrap;
+ font-size: .62rem;
+ gap: 6px 12px;
+}
+
+.rm-arch__lifecycle-meta code {
+ color: #334155;
+}
+
+.rm-arch__lifecycle-meta .rm-arch__location-row {
+ display: flex;
+ gap: 5px;
+ margin: 0;
+}
+
+.rm-arch__lifecycle-meta .rm-arch__key {
+ font-size: .62rem;
+}
+
+.rm-arch__lifecycle-limitation {
+ align-items: start;
+ border-top: 1px solid #e2e8f0;
+ color: #64748b;
+ display: grid;
+ font-size: .65rem;
+ gap: 10px;
+ grid-template-columns: 90px minmax(0, 1fr);
+ line-height: 1.45;
+ padding: 10px 0;
 }
 
 .rm-arch__focus-step.is-compact {
@@ -1752,7 +1845,10 @@
   grid-template-columns: 1fr;
  }
 
- .rm-arch__focus-handoff {
+ .rm-arch__lifecycle-card-header,
+ .rm-arch__lifecycle-row,
+ .rm-arch__lifecycle-limitation,
+ .rm-arch__lifecycle-endpoints {
   grid-template-columns: 1fr;
  }
 

@@ -202,16 +202,25 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
-			name:  "focused flow separates path operations and handoffs",
+			name:  "focused flow separates grounded sequence operations and lifecycle groups",
 			asset: js,
 			tokens: []string{
 				"renderFocusedFlow(flow)",
 				"primaryFlowSteps(flow)",
 				"focusedOperationEdges(flow, primary)",
-				"focusedHandoffEdges(flow, primary)",
-				`"Command path"`,
+				"focusedLifecycleGroups(flow)",
+				"groupLifecycleRelations(flow, edges)",
+				`"Grounded sequence"`,
 				`"Key operations"`,
-				`"Concurrency and lifecycle"`,
+				`"Concurrent activities"`,
+				`"Started by"`,
+				`"Callback"`,
+				`"Cancellation"`,
+				`"Join"`,
+				`"Limitation"`,
+				`"Exact source"`,
+				`"This task"`,
+				"They are not flattened into a runtime sequence.",
 				"syncFocusedSelection()",
 			},
 		},
@@ -220,6 +229,8 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			asset: js,
 			tokens: []string{
 				`"Saved trace"`,
+				`"Saved CLI trace"`,
+				`"Saved process trace"`,
 				"evidenced transitions",
 				"trace lanes",
 				"proof areas grounded",
@@ -245,7 +256,9 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				".rm-arch__flow-focus",
 				".rm-arch__focus-path",
 				".rm-arch__focus-operations",
-				".rm-arch__focus-handoffs",
+				".rm-arch__focus-lifecycle",
+				".rm-arch__lifecycle-card",
+				".rm-arch__lifecycle-row",
 				".rm-arch__inspector",
 			},
 		},
@@ -264,7 +277,10 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"openTrace(flowID)",
 				"backToArchitecture()",
 				`"← Back to architecture"`,
+				`"Trigger"`,
+				`"What the system does"`,
 				`"Participating components"`,
+				`"Current frontier"`,
 				`"Evidence basis"`,
 				"this.landscapeView",
 				"is-return-highlighted",
@@ -282,7 +298,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"suggestion.trace_unavailable_reason",
 				`"Investigation unavailable"`,
 				`" exact anchor"`,
-				`"CLI command · "`,
+				"savedTraceLabel(flow.archetype)",
 				`"Open starting source"`,
 				"rm-arch__trace-purpose",
 				"flow.why_inspect",
@@ -325,6 +341,26 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 		if strings.Contains(js, forbidden) {
 			t.Errorf("architecture canvas must not initiate network or analysis work: found %q", forbidden)
 		}
+	}
+	if strings.Contains(js, `"Command path"`) {
+		t.Error("focused saved traces must use the archetype-neutral Grounded sequence heading")
+	}
+	narrativeOrder := []string{
+		`this.appendSummaryItem(summary, "Trigger"`,
+		`this.appendSummaryItem(summary, "What the system does"`,
+		`participating.appendChild(element("dt", null, "Participating components"))`,
+		`this.appendSummaryItem(summary, "Grounded sequence"`,
+		`this.appendSummaryItem(summary, "Concurrent activities"`,
+		`this.appendSummaryItem(summary, "Current frontier"`,
+		`this.appendSummaryItem(summary, "Evidence basis"`,
+	}
+	lastNarrativeIndex := -1
+	for _, token := range narrativeOrder {
+		index := strings.Index(js, token)
+		if index <= lastNarrativeIndex {
+			t.Fatalf("focused trace narrative token %q is absent or out of order", token)
+		}
+		lastNarrativeIndex = index
 	}
 	for _, unsupportedClaim := range []string{
 		"Verified execution trace",

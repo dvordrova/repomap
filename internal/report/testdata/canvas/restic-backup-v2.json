@@ -9,7 +9,7 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 3,
+    "version": 4,
     "landscape_version": 4,
     "flowproof_version": 2,
     "fallback": false,
@@ -1325,6 +1325,7 @@
       {
         "id": "restic-backup",
         "name": "Backup command",
+        "archetype": "cli",
         "trigger": "restic backup \u003cpaths\u003e",
         "scope": "one CLI handler invocation",
         "mental_model": "Open repository state, scan source files concurrently, archive a snapshot, cancel the scanner, then join its task.",

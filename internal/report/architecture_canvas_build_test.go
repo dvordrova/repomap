@@ -101,7 +101,8 @@ func TestProcessTraceQualityPersistsProjectsAndRenders(t *testing.T) {
 		t.Fatalf("projected flows = %#v", canvas.Flows)
 	}
 	flow := canvas.Flows[0]
-	if flow.SeedSurfaceID != "surface-main" || flow.TraceQuality != flowproof.TraceQualityPartial ||
+	if flow.Archetype != flowproof.ArchetypeProcess || flow.SeedSurfaceID != "surface-main" ||
+		flow.TraceQuality != flowproof.TraceQualityPartial ||
 		flow.CurrentFrontier != proof.CurrentFrontier {
 		t.Fatalf("projected process trace = %#v", flow)
 	}
@@ -111,10 +112,15 @@ func TestProcessTraceQualityPersistsProjectsAndRenders(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, marker := range []string{
+		`"archetype":"process"`,
 		`"seed_surface_id":"surface-main"`,
 		`"trace_quality":"partial"`,
 		`"current_frontier":"downstream runtime handoff remains unresolved"`,
 		"Trace quality",
+		"What the system does",
+		"Grounded sequence",
+		"Concurrent activities",
+		"Evidence basis",
 		"Current frontier",
 	} {
 		if !strings.Contains(string(rendered), marker) {
