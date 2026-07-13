@@ -175,12 +175,31 @@ func TestEnrichSeparatesDirectionFlowSurfaceAndAnchorCounts(t *testing.T) {
 	}
 	enrich(data)
 	if data.Run.ProposedDirectionCount != 3 || data.Run.AcceptedDirectionCount != 2 ||
-		data.Run.RejectedDirectionCount != 1 || data.Run.SavedFlowCount != 3 ||
+		data.Run.RejectedDirectionCount != 1 || data.Run.SavedFlowCount != 2 ||
+		data.Run.EvidenceBundleCount != 1 ||
 		data.Run.SurfaceDiscoveryCount != 0 || data.Run.ArchitectureAnchorCount != 13 {
 		t.Fatalf("run counts = %#v", data.Run)
 	}
 	if !data.Flows[2].EvidenceOnly {
 		t.Fatal("rejected threshold direction remained eligible for a visible flow tab")
+	}
+}
+
+func TestEnrichDoesNotCountEvidenceBundleAsSavedFlowOrTrace(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		Run: &RunInfo{},
+		Flows: []FlowData{
+			{ID: "local", EvidenceOnly: true, FlowStatus: "local_only"},
+			{ID: "saved", FlowStatus: "succeeded", Summary: "saved explanation"},
+		},
+	}
+	enrich(data)
+
+	if data.Run.EvidenceBundleCount != 1 || data.Run.SavedFlowCount != 1 ||
+		data.Run.SavedTraceCount != 0 || data.Run.FailedTraceAttemptCount != 0 {
+		t.Fatalf("evidence/saved accounting = %#v", data.Run)
 	}
 }
 

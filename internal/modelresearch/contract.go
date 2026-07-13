@@ -63,17 +63,19 @@ type ProposedQuestion struct {
 }
 
 type FileCandidate struct {
-	ID    string `json:"id"`
-	Path  string `json:"path"`
-	Kind  string `json:"kind,omitempty"`
-	Score int    `json:"score,omitempty"`
+	ID             string              `json:"id"`
+	Path           string              `json:"path"`
+	Kind           string              `json:"kind,omitempty"`
+	Score          int                 `json:"score,omitempty"`
+	FocusLocations []evidence.Location `json:"focus_locations,omitempty"`
 }
 
 type SourceWindow struct {
-	StartLine int      `json:"start_line"`
-	EndLine   int      `json:"end_line"`
-	Lines     []string `json:"lines"`
-	Truncated bool     `json:"truncated,omitempty"`
+	StartLine   int      `json:"start_line"`
+	EndLine     int      `json:"end_line"`
+	Lines       []string `json:"lines"`
+	CodeBearing bool     `json:"code_bearing"`
+	Truncated   bool     `json:"truncated,omitempty"`
 }
 
 // EvidenceItem is exact local evidence. Interpretation fields do not live in

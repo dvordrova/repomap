@@ -80,6 +80,8 @@ func Markdown(result Result) string {
 		fmt.Fprintf(&builder, "## %s\n\n", title)
 		fmt.Fprintf(&builder, "- ID: `%s`\n", trigger.ID)
 		fmt.Fprintf(&builder, "- Status: `%s`; certainty `%s`; resolution `%s`\n", trigger.Status, trigger.Certainty, trigger.Resolution)
+		fmt.Fprintf(&builder, "- Surface role: `%s`; trace readiness `%s`\n", trigger.SurfaceRole, trigger.TraceReadiness)
+		fmt.Fprintf(&builder, "- Trace readiness reason: %s\n", trigger.TraceReadinessReason)
 		fmt.Fprintf(&builder, "- Executable: `%s`; role `%s`; availability `%s`\n", trigger.OwningExecutable, trigger.ExecutableRole, trigger.Availability)
 		if trigger.UnavailableReason != "" {
 			fmt.Fprintf(&builder, "- Unavailable reason: %s\n", trigger.UnavailableReason)

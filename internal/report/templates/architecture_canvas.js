@@ -1727,6 +1727,8 @@
    if (flow.trigger) this.appendKeyValue(parent, "Starts when", flow.trigger);
    if (flow.scope) this.appendKeyValue(parent, "Scope", flow.scope);
    if (flow.command) this.appendKeyValue(parent, "Command", flow.command);
+   if (flow.trace_quality) this.appendKeyValue(parent, "Trace quality", flow.trace_quality);
+   if (flow.current_frontier) this.appendKeyValue(parent, "Current frontier", flow.current_frontier);
 
    const branches = section("Branches");
    array(flow.branches).forEach((branch) => {
@@ -2458,6 +2460,11 @@
      if (suggestion) {
       this.appendKeyValue(card, "Grounding", text(suggestion.current_grounding).replaceAll("_", " "));
       this.appendKeyValue(card, "Trace start", suggestion.can_start_trace ? "Available" : "Unavailable from current local evidence");
+      this.appendKeyValue(card, "Source investigation", suggestion.investigation_available ? "Exact source available" : "Unavailable");
+      if (!suggestion.can_start_trace) {
+       card.appendChild(element("p", "rm-arch__notice is-warning", "Trace unavailable: " +
+        (suggestion.trace_unavailable_reason || "No singular supported typed trace seed was found.")));
+      }
       if (suggestion.investigation_available && suggestion.start_location && typeof this.options.openLocation === "function") {
        const openSource = element("button", "rm-arch__edge-jump", "Open starting source");
        openSource.type = "button";

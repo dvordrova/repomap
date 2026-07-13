@@ -570,6 +570,8 @@ function hasDynamicEvidence(trigger) {
 
    const semantics = element("dl", "rm-surface__semantics");
    semantics.appendChild(this.semantic("Status", statusLabel(trigger.status)));
+   semantics.appendChild(this.semantic("Role", sentenceLabel(trigger.surface_role)));
+   semantics.appendChild(this.semantic("Trace readiness", sentenceLabel(trigger.trace_readiness)));
    semantics.appendChild(this.semantic("Certainty", certaintyLabel(trigger.certainty)));
    semantics.appendChild(this.semantic("Resolution", sentenceLabel(trigger.resolution)));
    summary.appendChild(semantics);
@@ -582,6 +584,16 @@ function hasDynamicEvidence(trigger) {
       appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
       appendText(facts, "Availability", sentenceLabel(trigger.availability));
       appendText(facts, "Unavailable reason", trigger.unavailable_reason);
+      appendText(facts, "Trace readiness reason", trigger.trace_readiness_reason);
+      const quality = object(trigger.quality);
+      appendText(
+       facts,
+       "Quality",
+       ["identity", "registration_start", "handler_callback", "reachability", "ownership", "traceability"]
+        .map((dimension) => dimension.replace(/_/g, " ") + ": " + text(quality[dimension]))
+        .filter((dimension) => !dimension.endsWith(": "))
+        .join(" · ")
+      );
      appendText(facts, "Transport", trigger.transport);
      appendText(facts, "Handler / callback", handler);
      appendText(facts, "Constructor", text(object(trigger.constructor).name));

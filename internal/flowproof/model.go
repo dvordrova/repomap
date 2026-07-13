@@ -9,7 +9,17 @@ const Version = 2
 
 type Archetype string
 
-const ArchetypeCLI Archetype = "cli"
+const (
+	ArchetypeCLI     Archetype = "cli"
+	ArchetypeProcess Archetype = "process"
+)
+
+type TraceQuality string
+
+const (
+	TraceQualityComplete TraceQuality = "complete"
+	TraceQualityPartial  TraceQuality = "partial"
+)
 
 type SlotKind string
 
@@ -97,15 +107,18 @@ type Transition struct {
 }
 
 type Proof struct {
-	Version     int          `json:"version"`
-	ID          string       `json:"id"`
-	Archetype   Archetype    `json:"archetype"`
-	Goal        string       `json:"goal"`
-	Command     string       `json:"command,omitempty"`
-	Slots       []Slot       `json:"slots"`
-	Anchors     []Anchor     `json:"anchors"`
-	Transitions []Transition `json:"transitions"`
-	Warnings    []string     `json:"warnings,omitempty"`
+	Version         int          `json:"version"`
+	ID              string       `json:"id"`
+	Archetype       Archetype    `json:"archetype"`
+	Goal            string       `json:"goal"`
+	Command         string       `json:"command,omitempty"`
+	Slots           []Slot       `json:"slots"`
+	Anchors         []Anchor     `json:"anchors"`
+	Transitions     []Transition `json:"transitions"`
+	Warnings        []string     `json:"warnings,omitempty"`
+	SeedSurfaceID   string       `json:"seed_surface_id,omitempty"`
+	TraceQuality    TraceQuality `json:"trace_quality,omitempty"`
+	CurrentFrontier string       `json:"current_frontier,omitempty"`
 }
 
 func (p Proof) Slot(kind SlotKind) (Slot, bool) {
@@ -139,7 +152,7 @@ func (p Proof) Transition(id string) (Transition, bool) {
 // honest terminal outcome. Missing slots are unsatisfied; omission never means
 // that a collector proved non-applicability.
 func (p Proof) Satisfied() bool {
-	if p.Version != Version {
+	if p.Version != Version || !supportedArchetype(p.Archetype) {
 		return false
 	}
 	for _, kind := range cliSlotOrder {
@@ -149,6 +162,24 @@ func (p Proof) Satisfied() bool {
 		}
 	}
 	return len(cliSlotOrder) > 0
+}
+
+func supportedArchetype(archetype Archetype) bool {
+	return archetype == ArchetypeCLI || archetype == ArchetypeProcess
+}
+
+// AssessTraceQuality derives the persisted trace-level status without
+// strengthening any individual proof slot.
+func AssessTraceQuality(proof Proof) TraceQuality {
+	if proof.Satisfied() {
+		return TraceQualityComplete
+	}
+	for _, slot := range proof.Slots {
+		if slot.Status == SlotVerified || slot.Status == SlotPartial || slot.Status == SlotNotApplicable {
+			return TraceQualityPartial
+		}
+	}
+	return ""
 }
 
 func slotSatisfied(archetype Archetype, slot Slot) bool {

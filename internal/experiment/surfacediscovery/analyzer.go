@@ -2222,7 +2222,9 @@ func (a *analyzer) finish(latency time.Duration) {
 	}
 	a.result.Catalog.Triggers = deduplicateTriggerRecords(a.result.Catalog.Triggers)
 	for index := range a.result.Catalog.Triggers {
-		a.annotateTriggerOwnership(&a.result.Catalog.Triggers[index])
+		trigger := &a.result.Catalog.Triggers[index]
+		a.annotateTriggerOwnership(trigger)
+		deriveSurfaceSemantics(trigger)
 	}
 	for _, summary := range a.summaryByID {
 		a.result.Summaries = append(a.result.Summaries, summary)

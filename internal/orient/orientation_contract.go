@@ -108,6 +108,10 @@ func parseOrientation(data []byte) (orientationPart, error) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return orientationPart{}, err
 	}
+	for index := range report.CandidateFlows {
+		// Candidate basis is local policy metadata, never provider authority.
+		report.CandidateFlows[index].CandidateBasis = flowexplain.CandidateBasisModelOrientation
+	}
 
 	if jsonArrayUsesStrings(fields["first_files_to_open"]) {
 		report.Warnings = append(report.Warnings, "parser normalized string items in first_files_to_open")

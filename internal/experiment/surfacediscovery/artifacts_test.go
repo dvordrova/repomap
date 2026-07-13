@@ -32,7 +32,23 @@ func TestWriteArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(markdown), "/health") || !strings.Contains(string(markdown), "not a runtime trace") {
+	if !strings.Contains(string(markdown), "/health") || !strings.Contains(string(markdown), "not a runtime trace") ||
+		!strings.Contains(string(markdown), "trace readiness `trace_ready`") {
 		t.Fatalf("markdown = %s", markdown)
+	}
+	catalog, err := os.ReadFile(filepath.Join(directory, TriggerCatalogFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		`"surface_role": "entry_surface"`,
+		`"trace_readiness": "trace_ready"`,
+		`"trace_readiness_reason":`,
+		`"registration_start": "exact"`,
+		`"traceability": "trace_ready"`,
+	} {
+		if !strings.Contains(string(catalog), field) {
+			t.Errorf("trigger catalog does not persist %q", field)
+		}
 	}
 }

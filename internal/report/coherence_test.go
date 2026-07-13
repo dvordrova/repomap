@@ -1,6 +1,7 @@
 package report
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -92,8 +93,163 @@ func TestLinkArchitectureProductObjectsLeavesAmbiguousSurfaceUnassigned(t *testi
 	if surface.OwningComponentID != "" || surface.Category != surfaceCategoryUnassigned {
 		t.Fatalf("ambiguous surface = %#v", surface)
 	}
-	if surface.TraceUnavailableReason != "unsupported surface kind" {
+	if surface.TraceUnavailableReason != "runtime activity is nested asynchronous work and cannot independently establish a top-level trace" {
 		t.Fatalf("unavailable reason = %q", surface.TraceUnavailableReason)
+	}
+}
+
+func TestSuggestionMapsPackageDeclarationToRepositoryPackageFiles(t *testing.T) {
+	t.Parallel()
+
+	const (
+		canonical = "example.com/project/internal/service"
+		component = componentmap.ComponentID("service-component")
+	)
+	data := &ReportData{
+		RepositoryGraph: &RepositoryGraph{Packages: []PackageInfo{{
+			CanonicalPath: canonical, Dir: "internal/service",
+			Files: []string{"internal/service/service.go", "internal/service/worker.go"},
+		}}},
+		CandidateDirections: []CandidateDirection{{
+			ID: "service", Name: "Service", LikelyEntrypoint: canonical,
+		}},
+		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{{
+			ID: component,
+			Members: []componentmap.Candidate{{
+				ID: componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-package-member"},
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactDeclaration, Value: canonical, Certainty: evidence.CertaintyStatic,
+				}},
+			}},
+		}}},
+	}
+
+	linkArchitectureProductObjects(data)
+
+	if len(data.ArchitectureCanvas.Suggestions) != 1 {
+		t.Fatalf("suggestions = %#v", data.ArchitectureCanvas.Suggestions)
+	}
+	suggestion := data.ArchitectureCanvas.Suggestions[0]
+	if len(suggestion.RelevantComponentIDs) != 1 || suggestion.RelevantComponentIDs[0] != component ||
+		!suggestion.InvestigationAvailable || suggestion.StartLocation == nil ||
+		suggestion.StartLocation.Path != "internal/service/service.go" {
+		t.Fatalf("package suggestion = %#v", suggestion)
+	}
+	if suggestion.CanStartTrace || suggestion.TraceUnavailableReason == "" {
+		t.Fatalf("package source was conflated with a trace seed: %#v", suggestion)
+	}
+	if len(data.OpenablePaths) != 1 || data.OpenablePaths[0] != suggestion.StartLocation.Path {
+		t.Fatalf("package source was not authorized for opening: %v", data.OpenablePaths)
+	}
+}
+
+func TestSuggestionLeavesAmbiguousPackageDeclarationUnassigned(t *testing.T) {
+	t.Parallel()
+
+	const canonical = "example.com/project/internal/shared"
+	packageMember := func(id componentmap.ComponentID) ArchitectureComponent {
+		return ArchitectureComponent{
+			ID: id,
+			Members: []componentmap.Candidate{{
+				ID: componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-" + string(id)},
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactDeclaration, Value: canonical, Certainty: evidence.CertaintyStatic,
+				}},
+			}},
+		}
+	}
+	data := &ReportData{
+		RepositoryGraph: &RepositoryGraph{Packages: []PackageInfo{{
+			CanonicalPath: canonical, Dir: "internal/shared", Files: []string{"internal/shared/shared.go"},
+		}}},
+		CandidateDirections: []CandidateDirection{{
+			ID: "shared", Name: "Shared", LikelyFiles: []string{"internal/shared/shared.go"},
+		}},
+		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{
+			packageMember("component-a"), packageMember("component-b"),
+		}},
+	}
+
+	linkArchitectureProductObjects(data)
+
+	suggestion := data.ArchitectureCanvas.Suggestions[0]
+	if len(suggestion.RelevantComponentIDs) != 0 ||
+		len(data.ArchitectureCanvas.Components[0].SuggestedInvestigationIDs) != 0 ||
+		len(data.ArchitectureCanvas.Components[1].SuggestedInvestigationIDs) != 0 {
+		t.Fatalf("ambiguous package suggestion received ownership: %#v", suggestion)
+	}
+	if !suggestion.InvestigationAvailable || suggestion.StartLocation == nil {
+		t.Fatalf("ambiguous ownership hid exact source availability: %#v", suggestion)
+	}
+}
+
+func TestSuggestionsKeepSourceAndTypedTraceAvailabilityDistinct(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		CandidateDirections: []CandidateDirection{
+			{ID: "route", Name: "Route", LikelyFiles: []string{"server/route.go"}, CandidateBasis: flowexplain.CandidateBasisModelOrientation},
+			{ID: "aggregate", Name: "Aggregate", LikelyFiles: []string{"signals/aggregate.go"}, CandidateBasis: flowexplain.CandidateBasisSourceSignalAggregate},
+			{ID: "activity", Name: "Activity", LikelyFiles: []string{"worker/run.go"}, CandidateBasis: flowexplain.CandidateBasisRuntimeActivity},
+			{ID: "broken", Name: "Broken process", LikelyEntrypoint: "cmd/broken/main.go", CandidateBasis: flowexplain.CandidateBasisLocalEntrypoint},
+		},
+		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{
+			architecturePathComponent("route-component", "server/route.go"),
+			architecturePathComponent("aggregate-component", "signals/aggregate.go"),
+			architecturePathComponent("worker-component", "worker/run.go"),
+			architecturePathComponent("broken-component", "cmd/broken/main.go"),
+		}},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{
+			{
+				ID: "route-surface", Kind: "http_route", Identity: SurfaceIdentity{Path: SurfaceValue{Known: true, Text: "/ready"}},
+				RegistrationSite:  &SurfaceLocation{Path: "server/route.go", Line: 20},
+				ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/server/main.go", Line: 10}},
+				Handler:           SurfaceValue{Known: true, Text: "ready"}, Resolution: "exact",
+			},
+			{
+				ID: "worker-surface", Kind: "worker", RegistrationSite: &SurfaceLocation{Path: "worker/run.go", Line: 30},
+				Handler: SurfaceValue{Known: true, Text: "run"}, Resolution: "exact",
+			},
+			{
+				ID: "broken-process", Kind: "process_entry", Availability: SurfaceAvailabilityUnavailable,
+				UnavailableReason: "package failed to load under the recorded build scenario",
+				ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/broken/main.go", Line: 5}},
+				Resolution:        "exact",
+			},
+		}},
+	}
+
+	linkArchitectureProductObjects(data)
+	suggestions := make(map[string]ArchitectureSuggestion)
+	for _, suggestion := range data.ArchitectureCanvas.Suggestions {
+		suggestions[suggestion.ID] = suggestion
+	}
+	if !suggestions["route"].InvestigationAvailable || !suggestions["route"].CanStartTrace ||
+		suggestions["route"].StartLocation == nil || suggestions["route"].StartLocation.Line != 20 {
+		t.Fatalf("route suggestion = %#v", suggestions["route"])
+	}
+	for _, id := range []string{"aggregate", "activity", "broken"} {
+		suggestion := suggestions[id]
+		if !suggestion.InvestigationAvailable || suggestion.CanStartTrace || suggestion.StartLocation == nil ||
+			suggestion.TraceUnavailableReason == "" || suggestion.UnavailableReason != "" {
+			t.Errorf("source-only suggestion %q = %#v", id, suggestion)
+		}
+	}
+	if suggestions["aggregate"].TraceUnavailableReason == suggestions["activity"].TraceUnavailableReason ||
+		!strings.Contains(suggestions["broken"].TraceUnavailableReason, "package failed to load") {
+		t.Fatalf("typed trace reasons = aggregate:%q activity:%q broken:%q",
+			suggestions["aggregate"].TraceUnavailableReason,
+			suggestions["activity"].TraceUnavailableReason,
+			suggestions["broken"].TraceUnavailableReason,
+		)
+	}
+	rendered, err := RenderHTML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rendered), suggestions["aggregate"].TraceUnavailableReason) ||
+		!strings.Contains(string(rendered), "suggestion.trace_unavailable_reason") {
+		t.Fatal("rendered report omitted the suggestion trace-unavailable reason")
 	}
 }
 
@@ -108,18 +264,23 @@ func TestRefreshProductCountsKeepsSuggestionsDistinctFromSavedTraces(t *testing.
 			{ID: "rejected", Disposition: flowexplain.DirectionRejected},
 		},
 		ArchitectureCanvas: &ArchitectureCanvas{
-			Surfaces: []ArchitectureSurface{{ID: "one"}, {ID: "two"}},
-			Flows:    []ArchitectureFlow{{ID: "complete", Status: "complete"}, {ID: "partial", Status: "partial"}},
+			Surfaces:    []ArchitectureSurface{{ID: "one"}, {ID: "two"}},
+			Suggestions: []ArchitectureSuggestion{{ID: "suggested"}},
+			Flows:       []ArchitectureFlow{{ID: "complete", Status: "complete"}, {ID: "partial", Status: "partial"}},
 		},
 		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{ID: "one"}, {ID: "two"}}},
-		Flows:              []FlowData{{ID: "failed", Error: "bounded analysis failed"}},
+		Flows: []FlowData{
+			{ID: "evidence", EvidenceOnly: true, FlowStatus: "local_only"},
+			{ID: "failed", Error: "bounded analysis failed"},
+		},
 	}
 
 	refreshProductCounts(data)
 
 	if data.Run.SuggestedInvestigationCount != 1 || data.Run.SavedTraceCount != 2 ||
 		data.Run.CompleteTraceCount != 1 || data.Run.PartialTraceCount != 1 ||
-		data.Run.FailedTraceAttemptCount != 1 || data.Run.DiscoveredSurfaceCount != 2 {
+		data.Run.FailedTraceAttemptCount != 1 || data.Run.EvidenceBundleCount != 1 ||
+		data.Run.DiscoveredSurfaceCount != 2 {
 		t.Fatalf("counts = %#v", data.Run)
 	}
 }

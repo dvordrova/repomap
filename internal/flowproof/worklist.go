@@ -151,6 +151,7 @@ func Start(proof Proof, budget Budget, scenarioID, collectorVersion string) Sess
 		return session
 	}
 	refreshCoreVerdicts(&session.Proof)
+	refreshTraceState(&session.Proof)
 	if session.Proof.Satisfied() {
 		session.Stop = &Stop{Reason: StopComplete, Message: "all required proof slots are satisfied"}
 		return session
@@ -260,6 +261,7 @@ func (s *Session) Apply(result Result) error {
 	changes := s.applyNewEvidence(result.NewAnchors, result.NewTransitions)
 	changes += s.applyTransitionUpdates(result.TransitionUpdates)
 	changes += refreshCoreVerdicts(&s.Proof)
+	changes += refreshTraceState(&s.Proof)
 	if changes == 0 {
 		s.Stats.NoProgress++
 	} else {
@@ -410,6 +412,34 @@ func refreshCoreVerdicts(proof *Proof) int {
 		return changes + 1
 	}
 	return changes
+}
+
+func refreshTraceState(proof *Proof) int {
+	quality := AssessTraceQuality(*proof)
+	frontier := proof.CurrentFrontier
+	if quality == TraceQualityComplete {
+		frontier = ""
+	} else if frontier == "" {
+		for _, kind := range cliSlotOrder {
+			slot, ok := proof.Slot(kind)
+			if !ok || slot.Status == SlotVerified || slot.Status == SlotNotApplicable {
+				continue
+			}
+			frontier = strings.TrimSpace(slot.Missing)
+			if frontier == "" {
+				frontier = strings.TrimSpace(slot.Summary)
+			}
+			if frontier != "" {
+				break
+			}
+		}
+	}
+	if proof.TraceQuality == quality && proof.CurrentFrontier == frontier {
+		return 0
+	}
+	proof.TraceQuality = quality
+	proof.CurrentFrontier = frontier
+	return 1
 }
 
 func refreshArchitecturalRoleVerdicts(proof *Proof) int {

@@ -581,6 +581,7 @@ func TestWriteReportHTML_DirectionCanOpenSavedLocalEvidence(t *testing.T) {
 		[]byte("· local evidence"),
 		[]byte(">Local evidence<"),
 		[]byte("No second model call was made"),
+		[]byte("Saved traces (1)"),
 	} {
 		if bytes.Contains(html, unwanted) {
 			t.Errorf("report HTML still contains noisy implementation label %q", unwanted)

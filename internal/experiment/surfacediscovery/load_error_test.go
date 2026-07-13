@@ -40,11 +40,14 @@ func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing
 	for _, entry := range entries {
 		switch entry.ProcessEntrypoint.Package {
 		case "example.com/partial_load/cmd/partial_load":
-			if entry.ExecutableRole != ExecutableRolePrimaryApplication || entry.Availability != AvailabilityAvailable {
+			if entry.ExecutableRole != ExecutableRolePrimaryApplication || entry.Availability != AvailabilityAvailable ||
+				entry.SurfaceRole != SurfaceRoleEntrySurface || entry.TraceReadiness != TraceReadinessPartial ||
+				entry.Quality.Identity != SurfaceQualityExact {
 				t.Fatalf("healthy process entry = %#v", entry)
 			}
 		case "example.com/partial_load/cmd/broken":
 			if entry.ExecutableRole != ExecutableRoleSecondaryService || entry.Availability != AvailabilityUnavailable ||
+				entry.SurfaceRole != SurfaceRoleRejected || entry.TraceReadiness != TraceReadinessRejected ||
 				entry.ProcessEntrypoint.Location != (Location{Path: "cmd/broken/main.go", Line: 3}) ||
 				len(entry.Evidence) != 1 || entry.Evidence[0].Kind != "process_entry_declaration" {
 				t.Fatalf("broken process entry = %#v", entry)

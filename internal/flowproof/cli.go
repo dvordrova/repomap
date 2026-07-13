@@ -145,6 +145,7 @@ func BuildCLI(seed CLISeed) Proof {
 	fillCLISlots(&proof, seed, stepAnchors, callTransitionIDs)
 	applyConcurrentLifecyclePresence(&proof, seed.ConcurrentLifecycle)
 	refreshCoreVerdicts(&proof)
+	refreshTraceState(&proof)
 	return proof
 }
 

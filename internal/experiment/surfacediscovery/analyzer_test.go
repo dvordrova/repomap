@@ -59,6 +59,12 @@ func TestAnalyzeDirectRoute(t *testing.T) {
 	if trigger.ServerStartSite == nil {
 		t.Fatal("server start site is missing")
 	}
+	if trigger.SurfaceRole != SurfaceRoleEntrySurface || trigger.TraceReadiness != TraceReadinessReady ||
+		trigger.Quality.Identity != SurfaceQualityExact || trigger.Quality.RegistrationStart != SurfaceQualityExact ||
+		trigger.Quality.HandlerCallback != SurfaceQualityExact || trigger.Quality.Reachability != SurfaceQualityStatic ||
+		trigger.Quality.Traceability != TraceReadinessReady || trigger.TraceReadinessReason == "" {
+		t.Fatalf("route quality/readiness = %#v", trigger)
+	}
 }
 
 func TestAnalyzeDispatcherOwnership(t *testing.T) {
@@ -174,6 +180,10 @@ func TestAnalyzeWorkerRequiresTerminalStartAndLoopEvidence(t *testing.T) {
 	if worker == nil || worker.Status != "confirmed_worker_registration" ||
 		!strings.Contains(worker.Handler.Text, "runWorker") {
 		t.Fatalf("worker = %#v", worker)
+	}
+	if worker.SurfaceRole != SurfaceRoleRuntimeActivity || worker.TraceReadiness != TraceReadinessUnsupported ||
+		!strings.Contains(worker.TraceReadinessReason, "cannot independently") {
+		t.Fatalf("worker trace readiness = %#v", worker)
 	}
 	if finite == nil || finite.Status != "confirmed_async_task_start" ||
 		!strings.Contains(finite.Handler.Text, "oneShot") {
@@ -403,6 +413,9 @@ func TestAnalyzeCaddyAdminRouteProviders(t *testing.T) {
 	for _, trigger := range result.Catalog.Triggers {
 		if trigger.Kind == "http_route_frontier" {
 			frontierCount++
+			if trigger.SurfaceRole != SurfaceRoleDynamicFrontier || trigger.TraceReadiness != TraceReadinessUnsupported {
+				t.Errorf("route frontier semantics = %#v", trigger)
+			}
 			if !hasFrontier(trigger.DynamicFrontier, "configuration_assembled_route_inventory") {
 				t.Errorf("Caddy route assembly frontier = %#v", trigger)
 			}
@@ -415,6 +428,10 @@ func TestAnalyzeCaddyAdminRouteProviders(t *testing.T) {
 			trigger.Framework != "caddy-admin" || !trigger.Identity.Path.Known ||
 			trigger.Handler.Known != handlerKnown || !hasFrontier(trigger.DynamicFrontier, "route_provider_dispatch_candidate") {
 			t.Errorf("Caddy provider trigger = %#v", trigger)
+		}
+		if trigger.SurfaceRole != SurfaceRoleDescriptor || trigger.TraceReadiness != TraceReadinessPartial ||
+			!strings.Contains(trigger.TraceReadinessReason, "consumer registration") {
+			t.Errorf("descriptor trace readiness = %#v", trigger)
 		}
 		if handlerKnown && (trigger.Resolution != "exact" || trigger.ProvisionalID) {
 			t.Errorf("exact provider descriptor was degraded by provider-selection uncertainty: %#v", trigger)

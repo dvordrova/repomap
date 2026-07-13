@@ -564,7 +564,11 @@
     var box = el('section', 'rm-flow-proof' + (compact ? ' rm-flow-proof--compact' : ''));
     var header = el('div', 'rm-proof-header');
     header.appendChild(txt('div', 'rm-direction-label', LABELS.verifiedFlow + ' · ' + (proof.archetype || 'flow')));
-    header.appendChild(txt('div', 'rm-proof-summary', counts.verified + '/' + (proof.slots || []).length + ' slots verified'));
+    header.appendChild(txt(
+      'div',
+      'rm-proof-summary',
+      (proof.trace_quality || 'partial') + ' trace · ' + counts.verified + '/' + (proof.slots || []).length + ' slots verified'
+    ));
     box.appendChild(header);
 
     var slots = el('div', 'rm-proof-slots');
@@ -609,6 +613,12 @@
       boundary.appendChild(txt('span', 'rm-proof-boundary-label', LABELS.proofStop + ': '));
       boundary.appendChild(document.createTextNode(session.stop.reason.replace(/_/g, ' ') + (session.stop.message ? ' — ' + session.stop.message : '')));
       box.appendChild(boundary);
+    }
+    if (proof.current_frontier) {
+      var frontier = el('div', 'rm-proof-boundary');
+      frontier.appendChild(txt('span', 'rm-proof-boundary-label', 'Current frontier: '));
+      frontier.appendChild(document.createTextNode(proof.current_frontier));
+      box.appendChild(frontier);
     }
     return box;
   }
@@ -909,6 +919,7 @@
       if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
       addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
       addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
+      addFact('Evidence bundles', String(DATA.run.evidence_bundle_count || 0));
       addFact('Complete traces', String(DATA.run.complete_trace_count || 0));
       addFact('Partial traces', String(DATA.run.partial_trace_count || 0));
       addFact('Unresolved traces', String(DATA.run.unresolved_trace_count || 0));
@@ -2086,7 +2097,9 @@
       card.appendChild(rejected);
     }
 
-    var expandedFlows = flows.filter(function (flow) { return !flow.evidence_only; });
+    var expandedFlows = flows.filter(function (flow) {
+      return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+    });
     if (expandedFlows.length > 0) {
       card.appendChild(txt('div', 'rm-section-title', LABELS.candidateFlows));
       var flowsGrid = el('div', 'rm-overview-flows');
@@ -2767,7 +2780,10 @@
     overviewTab.onclick = function () { showTab('rm-overview'); };
     tabs.appendChild(overviewTab);
     if (!DATA.architecture_canvas) {
-      var savedTraceMenu = renderSavedTraceMenu(DATA.flows);
+      var savedTraceFlows = DATA.flows.filter(function (flow) {
+        return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+      });
+      var savedTraceMenu = renderSavedTraceMenu(savedTraceFlows);
       if (savedTraceMenu) tabs.appendChild(savedTraceMenu);
     }
 
