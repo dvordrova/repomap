@@ -1,0 +1,14 @@
+{
+  "findings": [
+    {
+      "id": "caddy-config-ingress",
+      "interpretation": "The supplied configuration ingress source is a control-plane responsibility; it does not itself establish a served-site route.",
+      "responsibility_name": "Configuration control plane",
+      "hypothesis_assessment": "supported",
+      "evidence_ids": ["evidence-a1a5ff8174c999c1"],
+      "explanation": "The exact bounded source supports configuration ingress only. No route or terminal surface is inferred."
+    }
+  ],
+  "unresolved_frontiers": [],
+  "summary": "Configuration ingress is grounded without inventing HTTP routes or terminal surfaces."
+}
