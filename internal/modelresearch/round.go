@@ -354,7 +354,7 @@ func statusForGate(reason string) RoundStatus {
 	}
 }
 
-func ApplyRound(state *State, bundle EvidenceBundle, round ResearchRound) {
+func ApplyRound(state *State, plan PlannedRound, round ResearchRound) {
 	if state == nil {
 		return
 	}
@@ -363,13 +363,25 @@ func ApplyRound(state *State, bundle EvidenceBundle, round ResearchRound) {
 		state.Usage.SemanticCalls++
 		state.Usage.RequestBytes += round.RequestBytes
 	}
-	state.Coverage.FocusedLocalEvidenceInspected += len(round.LocalFilesInspected)
-	for _, item := range bundle.Evidence {
-		if item.Kind == EvidenceSource {
-			state.Coverage.TargetedModelEvidenceWindows++
-		}
+	localEvidence := plan.Scope.LocalEvidence
+	if len(localEvidence) == 0 {
+		localEvidence = plan.Bundle.Evidence
+	}
+	for _, item := range localEvidence {
 		state.Theory.GroundedFacts = appendGroundedFact(state.Theory.GroundedFacts, item)
 	}
+	inspectedPaths := make(map[string]struct{})
+	windowIDs := make(map[string]struct{})
+	for _, fact := range state.Theory.GroundedFacts {
+		if fact.Location != nil {
+			inspectedPaths[fact.Location.Path] = struct{}{}
+		}
+		if fact.Kind == EvidenceSource {
+			windowIDs[fact.ID] = struct{}{}
+		}
+	}
+	state.Coverage.FocusedLocalEvidenceInspected = len(inspectedPaths)
+	state.Coverage.TargetedModelEvidenceWindows = len(windowIDs)
 	for _, finding := range round.ValidatedFindings {
 		state.Theory.AcceptedModelInterpretations = append(state.Theory.AcceptedModelInterpretations, finding)
 	}

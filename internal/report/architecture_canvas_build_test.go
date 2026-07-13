@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *testing.T) {
@@ -66,6 +67,53 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	if len(replayed.CandidateBundle.AnchorBindings) != len(input.CandidateBundle.AnchorBindings) ||
 		len(replayed.Flows) != len(input.Flows) {
 		t.Fatal("conceptual replay changed exact proof inputs")
+	}
+}
+
+func TestBuildArchitectureCanvasInputConsumesAcceptedResearchAsInterpretation(t *testing.T) {
+	t.Parallel()
+
+	location := evidence.Location{Path: "cmd/backup.go", Line: 20}
+	state := modelresearch.NewState(modelresearch.DefaultPolicy(), modelresearch.RepositoryContext{
+		Identity: "/fixture", Revision: "abc", Scenario: "go-default",
+	})
+	state.Theory.GroundedFacts = []modelresearch.EvidenceItem{{
+		ID: "evidence-backup", Kind: modelresearch.EvidenceCallsite,
+		Statement: "exact backup callsite", Location: &location, Certainty: evidence.CertaintyStatic,
+	}}
+	state.Rounds = []modelresearch.ResearchRound{{
+		Version: modelresearch.ContractVersion, ID: "research-backup", Question: "How does backup run?",
+		Status: modelresearch.RoundCompleted,
+		ValidatedFindings: []modelresearch.ValidatedFinding{{
+			ID: "finding-backup", Interpretation: "backup coordinates repository work",
+			HypothesisAssessment: "supported", EvidenceIDs: []string{"evidence-backup"},
+		}},
+	}}
+	data := &ReportData{
+		ModelResearch: &state,
+		CandidateDirections: []CandidateDirection{{
+			ID: "backup", Name: "Backup", LocalProof: &flowproof.Session{
+				Version: flowproof.SessionVersion, Proof: architectureBuildTestProof(),
+			},
+		}},
+	}
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.CandidateBundle.ResearchFindings) != 1 {
+		t.Fatalf("research findings = %#v, want one", input.CandidateBundle.ResearchFindings)
+	}
+	finding := input.CandidateBundle.ResearchFindings[0]
+	if finding.Interpretation != "backup coordinates repository work" || len(finding.MemberIDs) == 0 {
+		t.Fatalf("research finding = %#v, want interpretation bound to exact members", finding)
+	}
+	for _, candidate := range input.CandidateBundle.Candidates {
+		for _, fact := range candidate.Facts {
+			if fact.Value == finding.Interpretation {
+				t.Fatal("model interpretation was incorrectly promoted to a local fact")
+			}
+		}
 	}
 }
 

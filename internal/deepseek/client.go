@@ -233,6 +233,7 @@ type chatResponse struct {
 		Message      chatMessage `json:"message"`
 	} `json:"choices"`
 	Usage struct {
+		PromptTokens           int `json:"prompt_tokens"`
 		CompletionTokens       int `json:"completion_tokens"`
 		CompletionTokenDetails struct {
 			ReasoningTokens int `json:"reasoning_tokens"`
@@ -403,9 +404,12 @@ func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (mod
 			case <-time.After(backoff):
 			}
 		}
-		content, shouldRetry, callErr := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+		completion, shouldRetry, callErr := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
 		if callErr == nil {
-			return modelresearch.ProviderResult{Content: content, Attempts: attempt + 1}, nil
+			return modelresearch.ProviderResult{
+				Content: completion.Content, Attempts: attempt + 1,
+				InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
+			}, nil
 		}
 		lastErr = callErr
 		if !shouldRetry {
@@ -505,9 +509,12 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 			}
 		}
 
-		result, shouldRetry, err := doOrient(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body)
+		result, shouldRetry, err := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
 		if err == nil {
-			return modelresearch.ProviderResult{Content: result, Attempts: attempt + 1}, nil
+			return modelresearch.ProviderResult{
+				Content: result.Content, Attempts: attempt + 1,
+				InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+			}, nil
 		}
 		lastErr = err
 		if !shouldRetry {
@@ -525,56 +532,67 @@ func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey, au
 }
 
 func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) ([]byte, bool, error) {
+	result, retry, err := doChatMeasured(ctx, httpClient, endpoint, apiKey, auth, body, validateJSON)
+	return result.Content, retry, err
+}
+
+type chatCompletion struct {
+	Content      []byte
+	InputTokens  int
+	OutputTokens int
+}
+
+func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) (chatCompletion, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, false, fmt.Errorf("build llm request: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("build llm request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	switch auth {
 	case "", authBearer:
 		if apiKey == "" {
-			return nil, false, fmt.Errorf("llm bearer authentication requires an API key")
+			return chatCompletion{}, false, fmt.Errorf("llm bearer authentication requires an API key")
 		}
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	case authNone:
 		// Explicit no-auth endpoints must not receive even an empty Authorization header.
 	default:
-		return nil, false, fmt.Errorf("unsupported llm authentication mode %q", auth)
+		return chatCompletion{}, false, fmt.Errorf("unsupported llm authentication mode %q", auth)
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		retry := isRetryableNetworkError(err)
-		return nil, retry, fmt.Errorf("llm request failed: %w", err)
+		return chatCompletion{}, retry, fmt.Errorf("llm request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return nil, false, fmt.Errorf("read llm response: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("read llm response: %w", err)
 	}
 	if len(respBody) > maxProviderResponseBytes {
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, isRetryableHTTP(resp.StatusCode), fmt.Errorf(
+			return chatCompletion{}, isRetryableHTTP(resp.StatusCode), fmt.Errorf(
 				"llm request failed with status %d: %s...[truncated]",
 				resp.StatusCode,
 				safeProviderErrorText(respBody[:maxProviderErrorBytes]),
 			)
 		}
-		return nil, false, fmt.Errorf("llm response exceeds %d bytes", maxProviderResponseBytes)
+		return chatCompletion{}, false, fmt.Errorf("llm response exceeds %d bytes", maxProviderResponseBytes)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		retry := isRetryableHTTP(resp.StatusCode)
-		return nil, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
+		return chatCompletion{}, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
 	}
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, false, fmt.Errorf("parse llm response envelope: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("parse llm response envelope: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, false, fmt.Errorf("llm response contains no choices")
+		return chatCompletion{}, false, fmt.Errorf("llm response contains no choices")
 	}
 	choice := parsed.Choices[0]
 	content := strings.TrimSpace(choice.Message.Content)
@@ -595,19 +613,22 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 			details = append(details, "reasoning_content_present")
 		}
 		if len(details) > 0 {
-			return nil, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
+			return chatCompletion{}, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
 		}
-		return nil, false, fmt.Errorf("llm response content is empty")
+		return chatCompletion{}, false, fmt.Errorf("llm response content is empty")
 	}
 
 	if validateJSON {
 		var validate json.RawMessage
 		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			return nil, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
+			return chatCompletion{}, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
 		}
 	}
 
-	return []byte(content), false, nil
+	return chatCompletion{
+		Content: []byte(content), InputTokens: parsed.Usage.PromptTokens,
+		OutputTokens: parsed.Usage.CompletionTokens,
+	}, false, nil
 }
 
 func knownFinishReason(reason string) string {

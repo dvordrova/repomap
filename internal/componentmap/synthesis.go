@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 2
-	SynthesisRecordVersion  = 2
-	SynthesisPromptVersion  = "architecture-grounding-v4"
+	SynthesisRequestVersion = 3
+	SynthesisRecordVersion  = 3
+	SynthesisPromptVersion  = "architecture-grounding-v5"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -52,17 +52,19 @@ type SynthesisFlow struct {
 // place for raw repository trees, report styles, layout coordinates, or model-
 // supplied relations.
 type SynthesisRequest struct {
-	Version             int                  `json:"version"`
-	ContractVersion     int                  `json:"contract_version"`
-	PromptVersion       string               `json:"prompt_version"`
-	RepositoryArchetype RepositoryArchetype  `json:"repository_archetype"`
-	GroundingMode       GroundingMode        `json:"grounding_mode"`
-	AllowedPaths        []string             `json:"allowed_paths"`
-	BehaviorAnchors     []BehaviorAnchor     `json:"behavior_anchors,omitempty"`
-	Flows               []SynthesisFlow      `json:"flows,omitempty"`
-	Candidates          []SynthesisCandidate `json:"candidates"`
-	Relations           []LocalRelation      `json:"supporting_relations,omitempty"`
-	AnchorBindings      []FlowAnchorBinding  `json:"flow_anchor_bindings,omitempty"`
+	Version               int                      `json:"version"`
+	ContractVersion       int                      `json:"contract_version"`
+	PromptVersion         string                   `json:"prompt_version"`
+	RepositoryArchetype   RepositoryArchetype      `json:"repository_archetype"`
+	GroundingMode         GroundingMode            `json:"grounding_mode"`
+	AllowedPaths          []string                 `json:"allowed_paths"`
+	BehaviorAnchors       []BehaviorAnchor         `json:"behavior_anchors,omitempty"`
+	Flows                 []SynthesisFlow          `json:"flows,omitempty"`
+	Candidates            []SynthesisCandidate     `json:"candidates"`
+	Relations             []LocalRelation          `json:"supporting_relations,omitempty"`
+	AnchorBindings        []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
+	ResearchFindings      []ResearchInterpretation `json:"accepted_research_findings,omitempty"`
+	ResearchPolicyVersion string                   `json:"research_policy_version,omitempty"`
 }
 
 // SynthesisPrompt is the provider-neutral instruction plus the exact bounded
@@ -92,6 +94,8 @@ type SynthesisMetadata struct {
 	Model                  string                   `json:"model"`
 	InputBytes             int                      `json:"input_bytes"`
 	LatencyMillis          int64                    `json:"latency_ms"`
+	InputTokens            int                      `json:"input_tokens,omitempty"`
+	OutputTokens           int                      `json:"output_tokens,omitempty"`
 	ValidationWarnings     []Diagnostic             `json:"validation_warnings,omitempty"`
 	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
 	ArchitectureSource     ArchitectureSource       `json:"architecture_source"`
@@ -133,17 +137,19 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	}
 
 	request := SynthesisRequest{
-		Version:             SynthesisRequestVersion,
-		ContractVersion:     ContractVersion,
-		PromptVersion:       SynthesisPromptVersion,
-		RepositoryArchetype: bundle.RepositoryArchetype,
-		GroundingMode:       bundle.GroundingMode,
-		AllowedPaths:        synthesisAllowedPaths(bundle),
-		BehaviorAnchors:     cloneBehaviorAnchors(bundle.BehaviorAnchors),
-		Candidates:          make([]SynthesisCandidate, 0, len(bundle.Candidates)),
-		Flows:               make([]SynthesisFlow, 0, len(bundle.Flows)),
-		Relations:           cloneLocalRelations(bundle.Relations),
-		AnchorBindings:      cloneFlowAnchorBindings(bundle.AnchorBindings),
+		Version:               SynthesisRequestVersion,
+		ContractVersion:       ContractVersion,
+		PromptVersion:         SynthesisPromptVersion,
+		RepositoryArchetype:   bundle.RepositoryArchetype,
+		GroundingMode:         bundle.GroundingMode,
+		AllowedPaths:          synthesisAllowedPaths(bundle),
+		BehaviorAnchors:       cloneBehaviorAnchors(bundle.BehaviorAnchors),
+		Candidates:            make([]SynthesisCandidate, 0, len(bundle.Candidates)),
+		Flows:                 make([]SynthesisFlow, 0, len(bundle.Flows)),
+		Relations:             cloneLocalRelations(bundle.Relations),
+		AnchorBindings:        cloneFlowAnchorBindings(bundle.AnchorBindings),
+		ResearchFindings:      cloneResearchInterpretations(bundle.ResearchFindings),
+		ResearchPolicyVersion: bundle.ResearchPolicyVersion,
 	}
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
@@ -169,6 +175,9 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		left := string(request.AnchorBindings[i].FlowID) + "\x00" + request.AnchorBindings[i].AnchorID + "\x00" + request.AnchorBindings[i].MemberID.key()
 		right := string(request.AnchorBindings[j].FlowID) + "\x00" + request.AnchorBindings[j].AnchorID + "\x00" + request.AnchorBindings[j].MemberID.key()
 		return left < right
+	})
+	sort.Slice(request.ResearchFindings, func(i, j int) bool {
+		return request.ResearchFindings[i].ID < request.ResearchFindings[j].ID
 	})
 
 	encoded, err := json.Marshal(request)
@@ -239,6 +248,7 @@ func BuildSynthesisPrompt(bundle CandidateBundle) (SynthesisPrompt, error) {
 
 Use candidate IDs as opaque values. Do not rewrite them, infer new IDs, or mention members absent from the request.
 Local facts, structural relations, flow participation, certainty, provenance, scenarios, and source locations are read-only evidence. They help grouping but must never be returned, upgraded, replaced, or converted into execution order.
+accepted_research_findings are validated model interpretations bound to supplied exact member, flow, anchor, and evidence IDs. They may guide conceptual grouping and responsibility names, but they are not local facts and cannot create or strengthen evidence.
 
 Return exactly one compact JSON proposal object with this shape:
 {"version":%d,"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_ids":[{"kind":"package","value":"opaque supplied value"}],"anchor_ids":["supplied-anchor-id"],"hypothesis":false}]}]}
@@ -258,6 +268,13 @@ Do not return edges, relations, flow definitions or transitions, fact payloads, 
 // SynthesisCacheKey binds one conceptual synthesis to the exact bounded local
 // request as well as the repository revision and prompt contract.
 func SynthesisCacheKey(repositoryRevision string, bundle CandidateBundle) (string, error) {
+	return SynthesisCacheKeyForProvider(repositoryRevision, bundle, "", "")
+}
+
+// SynthesisCacheKeyForProvider additionally binds the cache to the configured
+// provider profile and model. ResearchPolicyVersion is part of the canonical
+// request whenever a normal adaptive run builds the bundle.
+func SynthesisCacheKeyForProvider(repositoryRevision string, bundle CandidateBundle, profile, model string) (string, error) {
 	if err := validateSynthesisRevision(repositoryRevision); err != nil {
 		return "", err
 	}
@@ -268,10 +285,12 @@ func SynthesisCacheKey(repositoryRevision string, bundle CandidateBundle) (strin
 	hash := sha256.New()
 	fmt.Fprintf(
 		hash,
-		"componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\nrequest=%s\n",
+		"componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\nprofile=%s\nmodel=%s\nrequest=%s\n",
 		repositoryRevision,
 		ContractVersion,
 		SynthesisPromptVersion,
+		profile,
+		model,
 		sha256String(requestJSON),
 	)
 	return "component-synthesis-" + hex.EncodeToString(hash.Sum(nil)), nil
@@ -305,7 +324,7 @@ func RecordSynthesisResponse(
 	if err != nil {
 		return SynthesisResult{}, err
 	}
-	cacheKey, err := SynthesisCacheKey(repositoryRevision, bundle)
+	cacheKey, err := SynthesisCacheKeyForProvider(repositoryRevision, bundle, profile, model)
 	if err != nil {
 		return SynthesisResult{}, err
 	}
@@ -466,13 +485,6 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	if record.RepositoryRevision != repositoryRevision {
 		return fmt.Errorf("componentmap: synthesis record repository revision does not match")
 	}
-	expectedCacheKey, err := SynthesisCacheKey(repositoryRevision, bundle)
-	if err != nil {
-		return err
-	}
-	if record.CacheKey != expectedCacheKey {
-		return fmt.Errorf("componentmap: synthesis record cache key does not match")
-	}
 	_, requestJSON, err := BuildSynthesisRequest(bundle)
 	if err != nil {
 		return err
@@ -488,6 +500,13 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 		return fmt.Errorf("componentmap: synthesis record has no represented call")
 	}
 	metadata := record.Call.Metadata
+	expectedCacheKey, err := SynthesisCacheKeyForProvider(repositoryRevision, bundle, metadata.Profile, metadata.Model)
+	if err != nil {
+		return err
+	}
+	if record.CacheKey != expectedCacheKey {
+		return fmt.Errorf("componentmap: synthesis record cache key does not match")
+	}
 	if metadata.PromptVersion != SynthesisPromptVersion {
 		return fmt.Errorf("componentmap: synthesis record prompt version does not match")
 	}
@@ -502,6 +521,9 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	}
 	if metadata.LatencyMillis < 0 {
 		return fmt.Errorf("componentmap: synthesis record latency cannot be negative")
+	}
+	if metadata.InputTokens < 0 || metadata.OutputTokens < 0 {
+		return fmt.Errorf("componentmap: synthesis record token counts cannot be negative")
 	}
 	if len(metadata.ValidationWarnings) > maxSynthesisWarnings {
 		return fmt.Errorf("componentmap: synthesis record has too many validation warnings")

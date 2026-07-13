@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 const architectureBuildContractVersion = "architecture-candidates-v1"
@@ -64,6 +65,7 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 		seenFlows[flowID] = struct{}{}
 		builder.addFlow(direction)
 	}
+	builder.addResearchFindings(data.ModelResearch)
 	bundle := builder.bundle()
 	if err := bundle.Validate(); err != nil {
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: candidate bundle: %w", err)
@@ -113,20 +115,102 @@ func ReplayArchitectureSynthesis(
 }
 
 type architectureCandidateBuilder struct {
-	graph              *RepositoryGraph
-	knownPackages      map[string]componentmap.MemberID
-	candidates         map[componentmap.MemberID]*architectureCandidateRecord
-	relations          map[string]componentmap.LocalRelation
-	bindings           map[architectureBindingKey]componentmap.FlowAnchorBinding
-	flowFacts          []componentmap.Flow
-	flows              []ArchitectureFlowInput
-	diagnostics        []componentmap.Diagnostic
-	packageEdgeMembers map[string]struct{}
-	archetype          componentmap.RepositoryArchetype
-	groundingMode      componentmap.GroundingMode
-	behaviorAnchors    []componentmap.BehaviorAnchor
-	behaviorMembers    map[string]componentmap.MemberID
-	groundedPaths      map[string]struct{}
+	graph                 *RepositoryGraph
+	knownPackages         map[string]componentmap.MemberID
+	candidates            map[componentmap.MemberID]*architectureCandidateRecord
+	relations             map[string]componentmap.LocalRelation
+	bindings              map[architectureBindingKey]componentmap.FlowAnchorBinding
+	flowFacts             []componentmap.Flow
+	flows                 []ArchitectureFlowInput
+	diagnostics           []componentmap.Diagnostic
+	packageEdgeMembers    map[string]struct{}
+	archetype             componentmap.RepositoryArchetype
+	groundingMode         componentmap.GroundingMode
+	behaviorAnchors       []componentmap.BehaviorAnchor
+	behaviorMembers       map[string]componentmap.MemberID
+	groundedPaths         map[string]struct{}
+	researchFindings      []componentmap.ResearchInterpretation
+	researchPolicyVersion string
+}
+
+func (b *architectureCandidateBuilder) addResearchFindings(state *modelresearch.State) {
+	if state == nil {
+		return
+	}
+	b.researchPolicyVersion = state.Policy.Version
+	facts := make(map[string]modelresearch.EvidenceItem, len(state.Theory.GroundedFacts))
+	for _, fact := range state.Theory.GroundedFacts {
+		facts[fact.ID] = fact
+	}
+	knownFlows := make(map[componentmap.FlowID]struct{}, len(b.flowFacts))
+	for _, flow := range b.flowFacts {
+		knownFlows[flow.ID] = struct{}{}
+	}
+	for _, round := range state.Rounds {
+		for _, finding := range round.ValidatedFindings {
+			paths := make(map[string]struct{})
+			for _, evidenceID := range finding.EvidenceIDs {
+				if fact, ok := facts[evidenceID]; ok && fact.Location != nil {
+					paths[fact.Location.Path] = struct{}{}
+				}
+			}
+			members := make([]componentmap.MemberID, 0)
+			for memberID, record := range b.candidates {
+				if memberID.Kind == componentmap.MemberPackage || memberID.Kind == componentmap.MemberFlow {
+					continue
+				}
+				if candidateTouchesPaths(record.candidate, paths) {
+					members = append(members, memberID)
+				}
+			}
+			flowIDs := make([]componentmap.FlowID, 0)
+			for _, flowID := range state.Theory.RelatedTraceIDs {
+				id := componentmap.FlowID(flowID)
+				if _, ok := knownFlows[id]; ok {
+					flowIDs = append(flowIDs, id)
+				}
+			}
+			anchorIDs := make([]string, 0)
+			for _, anchor := range b.behaviorAnchors {
+				if _, ok := paths[anchor.Location.Path]; ok {
+					anchorIDs = append(anchorIDs, anchor.ID)
+				}
+			}
+			if len(members) == 0 && len(flowIDs) == 0 && len(anchorIDs) == 0 {
+				continue
+			}
+			sort.Slice(members, func(i, j int) bool {
+				if members[i].Kind != members[j].Kind {
+					return members[i].Kind < members[j].Kind
+				}
+				return members[i].Value < members[j].Value
+			})
+			sort.Slice(flowIDs, func(i, j int) bool { return flowIDs[i] < flowIDs[j] })
+			sort.Strings(anchorIDs)
+			b.researchFindings = append(b.researchFindings, componentmap.ResearchInterpretation{
+				ID: round.ID + ":" + finding.ID, Question: round.Question,
+				Interpretation: finding.Interpretation,
+				EvidenceIDs:    append([]string(nil), finding.EvidenceIDs...),
+				MemberIDs:      members, FlowIDs: flowIDs, AnchorIDs: anchorIDs,
+			})
+		}
+	}
+}
+
+func candidateTouchesPaths(candidate componentmap.Candidate, paths map[string]struct{}) bool {
+	for _, fact := range candidate.Facts {
+		if fact.Location != nil {
+			if _, ok := paths[fact.Location.Path]; ok {
+				return true
+			}
+		}
+		if fact.Kind == componentmap.FactRepositoryPath {
+			if _, ok := paths[fact.Value]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type architectureCandidateRecord struct {
@@ -718,16 +802,19 @@ func (b *architectureCandidateBuilder) bundle() componentmap.CandidateBundle {
 		return bindings[i].AnchorID < bindings[j].AnchorID
 	})
 	sort.Slice(b.flowFacts, func(i, j int) bool { return b.flowFacts[i].ID < b.flowFacts[j].ID })
+	sort.Slice(b.researchFindings, func(i, j int) bool { return b.researchFindings[i].ID < b.researchFindings[j].ID })
 
 	return componentmap.CandidateBundle{
-		Version:             componentmap.ContractVersion,
-		RepositoryArchetype: b.archetype,
-		GroundingMode:       b.groundingMode,
-		BehaviorAnchors:     append([]componentmap.BehaviorAnchor(nil), b.behaviorAnchors...),
-		Candidates:          candidates,
-		Flows:               append([]componentmap.Flow(nil), b.flowFacts...),
-		Relations:           relations,
-		AnchorBindings:      bindings,
+		Version:               componentmap.ContractVersion,
+		RepositoryArchetype:   b.archetype,
+		GroundingMode:         b.groundingMode,
+		BehaviorAnchors:       append([]componentmap.BehaviorAnchor(nil), b.behaviorAnchors...),
+		Candidates:            candidates,
+		Flows:                 append([]componentmap.Flow(nil), b.flowFacts...),
+		Relations:             relations,
+		AnchorBindings:        bindings,
+		ResearchFindings:      append([]componentmap.ResearchInterpretation(nil), b.researchFindings...),
+		ResearchPolicyVersion: b.researchPolicyVersion,
 	}
 }
 

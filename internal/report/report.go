@@ -9,9 +9,10 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
-const CurrentFormatVersion = 15
+const CurrentFormatVersion = 16
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
@@ -42,6 +43,7 @@ type ReportData struct {
 	ArchitectureCanvas    *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
 	ArchitectureSynthesis *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
 	ArchitectureGrounding *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
+	ModelResearch         *modelresearch.State         `json:"model_research,omitempty"`
 	DiscoveredSurfaces    *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
 	CommandTraces         []gofacts.CommandTrace       `json:"command_traces,omitempty"`
 	Freshness             *freshness.FreshnessResult   `json:"freshness,omitempty"`

@@ -231,6 +231,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-analysis-details { color: var(--rm-dim); font-size: .84rem; }
 .rm-analysis-details summary { cursor: pointer; font-weight: 650; }
 .rm-analysis-details ul { margin: .55rem 0 0; padding-left: 1.2rem; }
+.rm-model-research { margin-top: .85rem; border-top: 1px solid var(--rm-border); padding-top: .65rem; }
+.rm-model-research-overview, .rm-model-research-coverage { display: grid; gap: .2rem; margin-top: .55rem; }
+.rm-model-research-stages { display: grid; gap: .45rem; margin-top: .65rem; }
+.rm-model-research-stage { display: flex; justify-content: space-between; gap: 1rem; }
+.rm-model-research-round { border-left: 2px solid var(--rm-border); padding-left: .65rem; display: grid; gap: .2rem; }
+.rm-model-research-coverage { border-top: 1px solid var(--rm-border); padding-top: .55rem; }
 
 /* Start Here accent */
 .rm-ov-flow.rm-ov-flow--recommended { border-left: 3px solid var(--rm-accent); }
