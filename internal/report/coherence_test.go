@@ -253,6 +253,27 @@ func TestNonCobraPrimarySurfaceUsesSameRoleForCountsAndGrouping(t *testing.T) {
 	}
 }
 
+func TestRepositoryNamedMainClassifiesPrimaryWithoutArchitectureCanvas(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{RepoName: "caddy"}
+	trigger := DiscoveredTrigger{
+		Kind:     "http_route",
+		Producer: SurfaceProducerGeneric,
+		ProcessEntrypoint: SurfaceSymbol{
+			Name: "main",
+			Location: &SurfaceLocation{
+				Path: "cmd/caddy/main.go",
+				Line: 40,
+			},
+		},
+	}
+	classifySurfaceExecutable(data, &trigger)
+	if trigger.OwningExecutable != "cmd/caddy" || trigger.ExecutableRole != ExecutableRolePrimaryApplication {
+		t.Fatalf("repository-named main executable = %#v", trigger)
+	}
+}
+
 func TestCommandSurfaceIDIgnoresRegistrationLineMovement(t *testing.T) {
 	t.Parallel()
 

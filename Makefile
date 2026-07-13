@@ -29,12 +29,15 @@ quality-check: ## Replay saved quality tasks without a model call
 SURFACE_REPO ?= internal/experiment/surfacediscovery/testdata/direct
 SURFACE_OUT ?= $(TMP_DIR)/surface-discovery
 
-.PHONY: surface-check surface-playground
+.PHONY: surface-check surface-playground caddy-surface-check
 surface-check: ## Run config-driven Go surface discovery fixtures
 	go test ./internal/semantics/catalog ./internal/experiment/surfacediscovery ./internal/surfacebridge
 
 surface-playground: ## Emit local surface JSON and Markdown for SURFACE_REPO
 	go run ./cmd/surface-discovery-playground --repo "$(SURFACE_REPO)" --out "$(SURFACE_OUT)"
+
+caddy-surface-check: ## Compare deterministic surface discovery with a nearby Caddy checkout
+	./scripts/caddy_surface_check.sh "$(CADDY_REPO)"
 
 build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)

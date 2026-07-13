@@ -5,13 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v3"
+	AnalyzerVersion              = "surface-ssa-v4"
 	TriggerCatalogVersion        = 2
 	CoverageVersion              = 2
 	CatalogVersion               = 1
@@ -67,6 +68,7 @@ type TriggerRecord struct {
 	ProcessEntrypoint Symbol       `json:"process_entrypoint"`
 	Dispatcher        Value        `json:"dispatcher"`
 	RegistrationSite  Location     `json:"registration_site"`
+	DescriptorSite    *Location    `json:"descriptor_site,omitempty"`
 	ServerStartSite   *Location    `json:"server_start_site,omitempty"`
 	Handler           Value        `json:"handler"`
 	Middleware        []Value      `json:"middleware"`
@@ -93,6 +95,7 @@ type Value struct {
 	Text       string   `json:"text,omitempty"`
 	Known      bool     `json:"known"`
 	Candidates []string `json:"candidates"`
+	addressKey string
 }
 
 type Symbol struct {
@@ -245,8 +248,14 @@ func (r *Result) normalize() {
 	}
 	for index := range r.Catalog.Triggers {
 		trigger := &r.Catalog.Triggers[index]
+		normalizeValue(&trigger.Identity.Path)
+		normalizeValue(&trigger.Dispatcher)
+		normalizeValue(&trigger.Handler)
 		if trigger.Middleware == nil {
 			trigger.Middleware = []Value{}
+		}
+		for valueIndex := range trigger.Middleware {
+			normalizeValue(&trigger.Middleware[valueIndex])
 		}
 		if trigger.WrapperChain == nil {
 			trigger.WrapperChain = []Wrapper{}
@@ -260,6 +269,21 @@ func (r *Result) normalize() {
 		if trigger.DynamicFrontier == nil {
 			trigger.DynamicFrontier = []Frontier{}
 		}
+		trigger.Evidence = compactEvidence(trigger.Evidence)
+		sort.Slice(trigger.Evidence, func(i, j int) bool {
+			left := trigger.Evidence[i]
+			right := trigger.Evidence[j]
+			return left.ID+"\x00"+left.Kind+"\x00"+locationKey(left.Location) <
+				right.ID+"\x00"+right.Kind+"\x00"+locationKey(right.Location)
+		})
+		trigger.Provenance = compactProvenance(trigger.Provenance)
+		sort.Slice(trigger.Provenance, func(i, j int) bool {
+			left := trigger.Provenance[i]
+			right := trigger.Provenance[j]
+			return left.Provider+"\x00"+left.Version+"\x00"+left.Operation+"\x00"+left.Detail <
+				right.Provider+"\x00"+right.Version+"\x00"+right.Operation+"\x00"+right.Detail
+		})
+		trigger.DynamicFrontier = compactFrontiers(trigger.DynamicFrontier)
 	}
 	if r.Summaries == nil {
 		r.Summaries = []SemanticSummary{}
@@ -291,6 +315,10 @@ func (r *Result) normalize() {
 	if r.Coverage.BudgetsReached == nil {
 		r.Coverage.BudgetsReached = []string{}
 	}
+	r.Coverage.DynamicFrontiers = compactFrontiers(r.Coverage.DynamicFrontiers)
+	r.Coverage.UnsupportedDispatch = compactFrontiers(r.Coverage.UnsupportedDispatch)
+	sort.Strings(r.Coverage.BudgetsReached)
+	r.Coverage.BudgetsReached = compactStrings(r.Coverage.BudgetsReached)
 	if r.Grounding.Anchors == nil {
 		r.Grounding.Anchors = []BehaviorAnchor{}
 	}
@@ -314,7 +342,18 @@ func (r *Result) normalize() {
 		return left.Kind < right.Kind
 	})
 	sort.Slice(r.Summaries, func(i, j int) bool {
-		return r.Summaries[i].FunctionID < r.Summaries[j].FunctionID
+		left := r.Summaries[i]
+		right := r.Summaries[j]
+		if left.FunctionID != right.FunctionID {
+			return left.FunctionID < right.FunctionID
+		}
+		if left.FinalSeed != right.FinalSeed {
+			return left.FinalSeed < right.FinalSeed
+		}
+		if left.Effect != right.Effect {
+			return left.Effect < right.Effect
+		}
+		return strings.Join(left.WrapperPath, "\x00") < strings.Join(right.WrapperPath, "\x00")
 	})
 	sort.Slice(r.Grounding.Anchors, func(i, j int) bool {
 		return r.Grounding.Anchors[i].ID < r.Grounding.Anchors[j].ID
@@ -324,17 +363,85 @@ func (r *Result) normalize() {
 	})
 }
 
+func normalizeValue(value *Value) {
+	if value != nil && value.Candidates == nil {
+		value.Candidates = []string{}
+	}
+}
+
+func compactFrontiers(input []Frontier) []Frontier {
+	result := make([]Frontier, 0, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for _, frontier := range input {
+		location := ""
+		if frontier.Location != nil {
+			location = locationKey(*frontier.Location)
+		}
+		key := frontier.Kind + "\x00" + frontier.Detail + "\x00" + location
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, frontier)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		leftLocation := ""
+		if result[i].Location != nil {
+			leftLocation = locationKey(*result[i].Location)
+		}
+		rightLocation := ""
+		if result[j].Location != nil {
+			rightLocation = locationKey(*result[j].Location)
+		}
+		return result[i].Kind+"\x00"+result[i].Detail+"\x00"+leftLocation <
+			result[j].Kind+"\x00"+result[j].Detail+"\x00"+rightLocation
+	})
+	return result
+}
+
 func stableTriggerID(record TriggerRecord) string {
+	path := record.Identity.Path.Text
+	if !record.Identity.Path.Known {
+		path = "<dynamic>"
+	}
+	dispatcher := record.Dispatcher.Text
+	if !record.Dispatcher.Known {
+		dispatcher = "<dynamic>"
+	}
+	handler := record.Handler.Text
+	if !record.Handler.Known {
+		handler = "<dynamic>"
+	}
+	if record.Kind == "http_server" {
+		path = "<server-start>"
+		dispatcher = "<server-handler>"
+		handler = "<server-handler>"
+	}
 	parts := []string{
-		"trigger-v1", record.Kind, record.Identity.Method, record.Identity.Path.Text,
-		record.Dispatcher.Text, record.RegistrationSite.Path,
-		strconv.Itoa(record.RegistrationSite.Line), record.Handler.Text, record.FinalSeed,
+		"trigger-v1", record.Kind, record.Identity.Method, path,
+		dispatcher, record.ProcessEntrypoint.ID, record.ScenarioID,
+		stableRecordLocation(record).Path,
+		strconv.Itoa(stableRecordLocation(record).Line),
+		strconv.Itoa(stableRecordLocation(record).Column),
+		handler, record.FinalSeed,
 	}
 	if record.Identity.Name != "" {
 		parts = append(parts, record.Identity.Name)
 	}
 	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return "trigger-" + hex.EncodeToString(digest[:12])
+}
+
+func stableRecordLocation(record TriggerRecord) Location {
+	if !filepath.IsAbs(record.RegistrationSite.Path) {
+		return record.RegistrationSite
+	}
+	for _, wrapper := range record.WrapperChain {
+		if wrapper.Callsite.Path != "" && !filepath.IsAbs(wrapper.Callsite.Path) {
+			return wrapper.Callsite
+		}
+	}
+	return Location{Path: "<external>", Line: record.RegistrationSite.Line, Column: record.RegistrationSite.Column}
 }
 
 func compactStrings(input []string) []string {

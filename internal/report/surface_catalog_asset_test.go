@@ -42,15 +42,21 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 			name:  "honest semantics stay distinct",
 			asset: js,
 			tokens: []string{
-				"execution was not observed.",
+				"This is not a runtime trace or a complete route inventory",
 				"Static · not observed",
 				`this.semantic("Status"`,
 				`this.semantic("Certainty"`,
 				`this.semantic("Resolution"`,
 				"does not prove callback execution",
-				"Complete repository-wide catalog",
-				"Application, tooling, tests/helpers, unassigned, and dynamic evidence stay distinct",
+				"Bounded static catalog",
 				"non-worker async tasks",
+				"Static start call found",
+				"Admin route descriptor found",
+				`label: "server start sites"`,
+				`label: "HTTP registrations"`,
+				`"Direct surfaces"`,
+				`value: "http_server"`,
+				`return "HTTP server start call"`,
 				"Executable · ",
 				"Dynamic call-target bound reached",
 				`task[1] + " · task " + task[2]`,
@@ -143,6 +149,18 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 	for _, forbidden := range []string{"fetch(", "XMLHttpRequest", "WebSocket", "EventSource"} {
 		if strings.Contains(js, forbidden) {
 			t.Errorf("surface catalog must not initiate external work: found %q", forbidden)
+		}
+	}
+	if strings.Contains(js, "array(trigger.dynamic_frontier).length > 0") {
+		t.Fatal("an auxiliary frontier must not classify an otherwise exact surface as dynamically identified")
+	}
+	for _, token := range []string{
+		`if (trigger.kind === "http_route_frontier") return true`,
+		`status === "configured_route_inventory_unresolved"`,
+		`trigger.provisional_id && hasDynamicEvidence(trigger)`,
+	} {
+		if !strings.Contains(js, token) {
+			t.Errorf("surface identity classification is missing %q", token)
 		}
 	}
 }

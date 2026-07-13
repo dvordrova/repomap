@@ -5,7 +5,10 @@
  const KIND_FILTERS = [
   { value: "all", label: "All" },
   { value: "cli_command", label: "CLI commands" },
-  { value: "http_route", label: "HTTP" },
+  { value: "http_route", label: "HTTP registrations" },
+  { value: "http_route_descriptor", label: "Route descriptors" },
+  { value: "http_route_frontier", label: "Route frontiers" },
+  { value: "http_server", label: "Server start sites" },
   { value: "worker", label: "Workers" },
   { value: "async_task", label: "Non-worker tasks" },
  ];
@@ -19,6 +22,9 @@
   confirmed_direct_registration: "Confirmed registration",
   confirmed_through_library_wrapper: "Confirmed registration",
   confirmed_through_repository_wrapper: "Confirmed registration",
+  confirmed_server_start_call: "Static start call found",
+  confirmed_route_descriptor: "Admin route descriptor found",
+  configured_route_inventory_unresolved: "Configured routes unresolved",
   dynamic_unknown: "Dynamic registration",
   confirmed_async_task_start: "Async task",
   possible_worker_loop: "Possible worker",
@@ -73,6 +79,15 @@
   return item.known !== false && item.kind !== "dynamic" && valueText(item) !== "";
  }
 
+ function displayValueText(value) {
+  if (!valueKnown(value)) return "";
+  const item = object(value);
+  if (["allocation", "field", "global", "call", "alternatives"].includes(text(item.kind))) return "";
+  const rendered = valueText(item);
+  if (rendered.includes("$") || rendered.includes("@")) return "";
+  return rendered;
+ }
+
  function locationLabel(location) {
   const item = object(location);
   if (!item.path) return "";
@@ -89,13 +104,13 @@
   return text(entrypoint.package || entrypoint.name);
  }
 
- function surfaceGroup(trigger, association) {
-  if (evidenceClass(trigger) === "dynamic") return "dynamic_unresolved";
+function surfaceGroup(trigger, association) {
   switch (text(trigger.executable_role)) {
    case "primary_application": return "application";
    case "secondary_tooling": return "tooling";
    case "test_or_helper": return "tests_helpers";
   }
+  if (hasDynamicEvidence(trigger)) return "dynamic_unresolved";
   return text(association.category || "unassigned");
  }
 
@@ -121,6 +136,12 @@
    const path = valueKnown(identity.path) ? valueText(identity.path) : "<dynamic route>";
    return method + " " + path;
   }
+  if (trigger.kind === "http_route_descriptor") {
+   const path = valueKnown(identity.path) ? valueText(identity.path) : "<dynamic route>";
+   return "Route descriptor " + path;
+  }
+  if (trigger.kind === "http_route_frontier") return "Configured route inventory";
+  if (trigger.kind === "http_server") return "HTTP server start call";
   return compactSymbolLabel(identity.name || trigger.name || valueText(trigger.handler)) || "Unnamed surface";
  }
 
@@ -139,25 +160,54 @@
   return text(trigger.id || "surface-" + index);
  }
 
+function hasDynamicEvidence(trigger) {
+   const resolution = text(trigger.resolution).toLowerCase();
+   const status = text(trigger.status).toLowerCase();
+   const identity = object(trigger.identity);
+   if (trigger.kind === "http_route_frontier") return true;
+   if (status === "dynamic_unknown" || status === "configured_route_inventory_unresolved") return true;
+   if (trigger.kind === "http_route" || trigger.kind === "http_route_descriptor") {
+    return !valueKnown(identity.path) || (trigger.kind === "http_route_descriptor" && !valueKnown(trigger.handler));
+   }
+   if (trigger.kind === "http_server") return !object(trigger.server_start_site).path;
+   return (
+    trigger.provisional_id ||
+    resolution === "dynamic" ||
+    resolution === "ambiguous" ||
+    status === "dynamic_unknown"
+   );
+  }
+
+ function hasWrapperEvidence(trigger) {
+  return array(trigger.wrapper_chain).length > 0 ||
+   text(trigger.discovery_basis).toLowerCase().indexOf("wrapper") >= 0;
+ }
+
  function evidenceClass(trigger) {
-  const resolution = text(trigger.resolution).toLowerCase();
-  const status = text(trigger.status).toLowerCase();
-  if (
-   trigger.provisional_id ||
-   resolution === "dynamic" ||
-   resolution === "ambiguous" ||
-   status === "dynamic_unknown" ||
-   array(trigger.dynamic_frontier).length > 0
-  ) {
-   return "dynamic";
-  }
-  if (
-   array(trigger.wrapper_chain).length > 0 ||
-   text(trigger.discovery_basis).toLowerCase().indexOf("wrapper") >= 0
-  ) {
-   return "wrapper";
-  }
+  if (hasDynamicEvidence(trigger)) return "dynamic";
+  if (hasWrapperEvidence(trigger)) return "wrapper";
   return "direct";
+ }
+
+ function frontierPresentation(frontier) {
+  switch (text(frontier.kind)) {
+   case "configuration_assembled_route_inventory":
+    return { label: "Configuration-built routes", detail: "Runtime configuration assembles these routes; static analysis did not invent or enumerate them." };
+   case "unresolved_dispatch_inventory":
+    return { label: "Route inventory unresolved", detail: "No supported route registration was correlated with this static start call." };
+   case "route_provider_dispatch_candidate":
+    return { label: "Provider selection unresolved", detail: "The returned descriptor is exact, but runtime provider selection and consumer registration were not observed." };
+   case "call_target_limit":
+    return { label: "Static dispatch bounded", detail: "Some possible call targets were intentionally left unresolved." };
+   case "entrypoint_dispatch_unresolved":
+    return { label: "Entrypoint handoff unresolved", detail: "The callback is build-selected, but its runtime handoff from the process entrypoint was not observed." };
+   case "dynamic_route_identity":
+    return { label: "Route identity unresolved", detail: "The route path depends on values unavailable to bounded static analysis." };
+   case "dynamic_handler_identity":
+    return { label: "Handler identity unresolved", detail: "The handler depends on values unavailable to bounded static analysis." };
+   default:
+    return { label: sentenceLabel(frontier.kind), detail: text(frontier.detail) };
+  }
  }
 
  function countByKind(triggers, kind) {
@@ -215,7 +265,7 @@
     element(
      "p",
      "rm-surface__intro",
-      "Complete repository-wide catalog of registrations and starts across build-selected executables. Application, tooling, tests/helpers, unassigned, and dynamic evidence stay distinct; execution was not observed."
+      "Bounded static catalog of supported registrations, route descriptors, route frontiers, and start call sites. This is not a runtime trace or a complete route inventory; configuration-built routes may remain unresolved."
     )
    );
    heading.appendChild(headingCopy);
@@ -294,9 +344,21 @@
       ),
      },
      {
-     label: "HTTP routes",
-     value: firstNumber([this.data.http_count, this.data.http_route_count], countByKind(this.triggers, "http_route")),
-    },
+      label: "HTTP registrations",
+      value: firstNumber([this.data.http_count, this.data.http_route_count], countByKind(this.triggers, "http_route")),
+     },
+     {
+      label: "route descriptors",
+      value: firstNumber([this.data.http_route_descriptor_count], countByKind(this.triggers, "http_route_descriptor")),
+     },
+     {
+      label: "route frontiers",
+      value: firstNumber([this.data.http_route_frontier_count], countByKind(this.triggers, "http_route_frontier")),
+     },
+     {
+      label: "server start sites",
+      value: firstNumber([this.data.http_server_count], countByKind(this.triggers, "http_server")),
+     },
     {
      label: "workers",
      value: firstNumber([this.data.worker_count, coverage.workers], countByKind(this.triggers, "worker")),
@@ -360,7 +422,10 @@
   matchingTriggers() {
    return this.triggers.filter((trigger) => {
     const kindMatches = this.kindFilter === "all" || trigger.kind === this.kindFilter;
-    const evidenceMatches = this.evidenceFilter === "all" || evidenceClass(trigger) === this.evidenceFilter;
+    const evidenceMatches = this.evidenceFilter === "all" ||
+     (this.evidenceFilter === "wrapper" && hasWrapperEvidence(trigger)) ||
+     (this.evidenceFilter === "dynamic" && hasDynamicEvidence(trigger)) ||
+     (this.evidenceFilter === "direct" && !hasWrapperEvidence(trigger));
     return kindMatches && evidenceMatches;
    });
   }
@@ -403,14 +468,18 @@
 
    const visible = this.expanded ? matches : matches.slice(0, PAGE_SIZE);
     GROUPS.forEach((group) => {
-     const grouped = visible.filter((trigger) => {
+      const groupedMatches = matches.filter((trigger) => {
+       const association = object(this.architectureSurfaces.get(triggerID(trigger, this.triggers.indexOf(trigger))));
+       return surfaceGroup(trigger, association) === group.value;
+      });
+      const grouped = visible.filter((trigger) => {
       const association = object(this.architectureSurfaces.get(triggerID(trigger, this.triggers.indexOf(trigger))));
        return surfaceGroup(trigger, association) === group.value;
      });
      if (grouped.length === 0) return;
      const section = element("section", "rm-surface__group");
      const heading = element("h3", "rm-surface__group-title", group.label);
-     heading.appendChild(element("span", "rm-surface__group-count", grouped.length));
+      heading.appendChild(element("span", "rm-surface__group-count", groupedMatches.length));
      section.appendChild(heading);
      grouped.forEach((trigger) => {
       const index = this.triggers.indexOf(trigger);
@@ -448,8 +517,8 @@
    primary.title = primary.textContent;
    identityBlock.appendChild(primary);
 
-   const handler = valueText(trigger.handler);
-    if (handler && handler !== primaryText) {
+   const handler = displayValueText(trigger.handler);
+     if (trigger.kind !== "http_server" && handler && handler !== primaryText) {
     const callback = element("span", "rm-surface__handler", handler);
     callback.title = handler;
      identityBlock.appendChild(callback);
@@ -461,9 +530,13 @@
      identityBlock.appendChild(ownership);
     }
    summary.appendChild(identityBlock);
-   const registration = locationLabel(trigger.registration_site);
+   const serverStart = trigger.kind === "http_server";
+   const descriptor = trigger.kind === "http_route_descriptor";
+   const routeFrontier = trigger.kind === "http_route_frontier";
+   const registration = locationLabel(serverStart ? trigger.server_start_site : (descriptor ? trigger.descriptor_site : trigger.registration_site));
+   const locationVerb = serverStart ? "start call " : (descriptor ? "descriptor " : (routeFrontier ? "assembled " : "registered "));
    summary.appendChild(
-    element("span", "rm-surface__registration", registration ? "registered " + registration : "")
+    element("span", "rm-surface__registration", registration ? locationVerb + registration : "")
    );
 
    const semantics = element("dl", "rm-surface__semantics");
@@ -477,16 +550,11 @@
    const facts = element("dl", "rm-surface__details");
     appendText(facts, "Kind", sentenceLabel(trigger.kind));
     appendText(facts, "Framework", trigger.framework);
-    appendText(facts, "Producer", sentenceLabel(trigger.producer));
-    appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
-    appendText(facts, "Transport", trigger.transport);
-    appendText(facts, "Handler / callback", handler);
-    appendText(facts, "Dispatcher", valueText(trigger.dispatcher));
-    appendText(facts, "Constructor", text(object(trigger.constructor).name));
-   appendText(facts, "Discovery basis", sentenceLabel(trigger.discovery_basis));
-   appendText(facts, "Terminal seed", trigger.final_seed);
-   appendText(facts, "Build scenario", trigger.scenario_id || this.data.scenario_id);
-   if (trigger.provisional_id) appendText(facts, "Identity", "Provisional; unresolved values may change it");
+     appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
+     appendText(facts, "Transport", trigger.transport);
+     appendText(facts, "Handler / callback", handler);
+     appendText(facts, "Constructor", text(object(trigger.constructor).name));
+    if (trigger.provisional_id && hasDynamicEvidence(trigger)) appendText(facts, "Identity", "Provisional; unresolved values may change it");
     body.appendChild(facts);
 
     const progression = element("section", "rm-surface__progression");
@@ -508,7 +576,7 @@
      progression.appendChild(element(
       "p",
       "rm-surface__unavailable",
-      "Trace unavailable: " + (association.trace_unavailable_reason || "bounded surface seed is unavailable")
+       "Trace unavailable: " + (association.trace_unavailable_reason || "no compatible saved trace was found")
      ));
     }
     if (typeof this.options.openSurface === "function") {
@@ -520,7 +588,12 @@
     body.appendChild(progression);
 
    const locations = element("div", "rm-surface__locations");
-    this.appendLocation(locations, "Registration", trigger.registration_site);
+     if (trigger.kind === "http_route") this.appendLocation(locations, "Registration", trigger.registration_site);
+     if (trigger.kind === "http_route_descriptor") {
+      this.appendLocation(locations, "Descriptor source", trigger.descriptor_site);
+      this.appendLocation(locations, "Provider call", trigger.registration_site);
+     }
+     if (trigger.kind === "http_route_frontier") this.appendLocation(locations, "Route assembly", trigger.registration_site);
     this.appendLocation(locations, "Constructor", object(trigger.constructor).location);
     this.appendLocation(locations, "Handler / callback", trigger.handler_location);
    this.appendLocation(locations, "Server start", trigger.server_start_site);
@@ -572,18 +645,6 @@
 
    const frontiers = array(trigger.dynamic_frontier);
    if (frontiers.length > 0) body.appendChild(this.detailSection("Dynamic frontiers", this.renderFrontiers(frontiers)));
-
-   const provenance = array(trigger.provenance);
-   if (provenance.length > 0) {
-    const content = element("ul", "rm-surface__evidence-list");
-    provenance.forEach((source) => {
-     const description = [source.provider, source.version, source.operation].filter(Boolean).join(" · ");
-     const item = element("li", "", description || "Local analyzer");
-     if (source.detail) item.appendChild(element("span", "rm-surface__muted", " — " + source.detail));
-     content.appendChild(item);
-    });
-    body.appendChild(this.detailSection("Provenance", content));
-   }
 
    card.appendChild(body);
    this.listen(card, "toggle", () => {
@@ -641,8 +702,9 @@
    const list = element("ul", "rm-surface__frontiers");
    frontiers.forEach((frontier) => {
     const item = element("li", "rm-surface__frontier");
-    item.appendChild(element("strong", "", sentenceLabel(frontier.kind)));
-    if (frontier.detail) item.appendChild(element("span", "", " — " + frontier.detail));
+     const presentation = frontierPresentation(frontier);
+     item.appendChild(element("strong", "", presentation.label));
+     if (presentation.detail) item.appendChild(element("span", "", " — " + presentation.detail));
     this.appendLocation(item, "Frontier", frontier.location);
     list.appendChild(item);
    });
@@ -675,8 +737,9 @@
   const facts = element("dl", "rm-surface__details rm-surface__coverage-facts");
   appendText(facts, "Scenario", this.data.scenario_id || scenario.id);
   appendText(facts, "Analyzer", this.data.analyzer_version);
-  appendText(facts, "Surfaces projected", coverage.total_count);
-  appendText(facts, "Direct registrations", coverage.direct_count);
+  appendText(facts, "Catalog surfaces", coverage.total_count);
+  if (coverage.truncated === true) appendText(facts, "Surfaces embedded", this.triggers.length);
+  appendText(facts, "Direct surfaces", coverage.direct_count);
   appendText(facts, "Wrapper-derived", coverage.wrapper_count);
   appendText(facts, "Workers", coverage.worker_count);
   appendText(facts, "Non-worker async tasks", coverage.async_task_count);

@@ -51,6 +51,9 @@ type DiscoveredSurfaces struct {
 	TotalCount                int                 `json:"total_count"`
 	Truncated                 bool                `json:"truncated,omitempty"`
 	HTTPRouteCount            int                 `json:"http_route_count"`
+	HTTPServerCount           int                 `json:"http_server_count"`
+	HTTPRouteDescriptorCount  int                 `json:"http_route_descriptor_count"`
+	HTTPRouteFrontierCount    int                 `json:"http_route_frontier_count"`
 	DirectCount               int                 `json:"direct_count"`
 	WrapperCount              int                 `json:"wrapper_count"`
 	WorkerCount               int                 `json:"worker_count"`
@@ -66,6 +69,7 @@ type DiscoveredSurfaces struct {
 	UnresolvedHandlerCount    int                 `json:"unresolved_handler_count"`
 	PackagesInspected         int                 `json:"packages_inspected"`
 	FunctionsInspected        int                 `json:"functions_inspected"`
+	EntrypointsConsidered     []SurfaceSymbol     `json:"entrypoints_considered"`
 	ConfiguredSeedsMatched    []string            `json:"configured_seeds_matched"`
 	Triggers                  []DiscoveredTrigger `json:"triggers"`
 	LoopSignals               []SurfaceLoopSignal `json:"loop_signals"`
@@ -89,6 +93,7 @@ type DiscoveredTrigger struct {
 	Dispatcher                SurfaceValue               `json:"dispatcher"`
 	Constructor               SurfaceSymbol              `json:"constructor,omitempty"`
 	RegistrationSite          *SurfaceLocation           `json:"registration_site,omitempty"`
+	DescriptorSite            *SurfaceLocation           `json:"descriptor_site,omitempty"`
 	ServerStartSite           *SurfaceLocation           `json:"server_start_site,omitempty"`
 	Handler                   SurfaceValue               `json:"handler"`
 	HandlerLocation           *SurfaceLocation           `json:"handler_location,omitempty"`
@@ -193,6 +198,7 @@ type rawSurfaceCoverage struct {
 	ConfiguredSeedsMatched []string               `json:"configured_seeds_matched"`
 	PackagesInspected      int                    `json:"packages_inspected"`
 	FunctionsInspected     int                    `json:"functions_inspected"`
+	EntrypointsConsidered  []rawSurfaceSymbol     `json:"entrypoints_considered"`
 	LoopSignals            []rawSurfaceLoopSignal `json:"loop_signals"`
 	DynamicFrontiers       []rawSurfaceFrontier   `json:"dynamic_frontiers"`
 	UnsupportedDispatch    []rawSurfaceFrontier   `json:"unsupported_dispatch_mechanisms"`
@@ -223,6 +229,7 @@ type rawSurfaceTrigger struct {
 	ProcessEntrypoint rawSurfaceSymbol       `json:"process_entrypoint"`
 	Dispatcher        rawSurfaceValue        `json:"dispatcher"`
 	RegistrationSite  rawSurfaceLocation     `json:"registration_site"`
+	DescriptorSite    *rawSurfaceLocation    `json:"descriptor_site"`
 	ServerStartSite   *rawSurfaceLocation    `json:"server_start_site"`
 	Handler           rawSurfaceValue        `json:"handler"`
 	Middleware        []rawSurfaceValue      `json:"middleware"`
@@ -466,9 +473,19 @@ func projectDiscoveredSurfaces(
 		triggers = append(triggers, projectDiscoveredTrigger(trigger))
 	}
 	httpRouteCount := 0
+	httpServerCount := 0
+	httpRouteDescriptorCount := 0
+	httpRouteFrontierCount := 0
 	for _, trigger := range catalog.Triggers {
-		if trigger.Kind == "http_route" {
+		switch trigger.Kind {
+		case "http_route":
 			httpRouteCount++
+		case "http_server":
+			httpServerCount++
+		case "http_route_descriptor":
+			httpRouteDescriptorCount++
+		case "http_route_frontier":
+			httpRouteFrontierCount++
 		}
 	}
 	return &DiscoveredSurfaces{
@@ -479,6 +496,9 @@ func projectDiscoveredSurfaces(
 		TotalCount:                totalCount,
 		Truncated:                 totalCount > len(triggers),
 		HTTPRouteCount:            httpRouteCount,
+		HTTPServerCount:           httpServerCount,
+		HTTPRouteDescriptorCount:  httpRouteDescriptorCount,
+		HTTPRouteFrontierCount:    httpRouteFrontierCount,
 		DirectCount:               coverage.DirectTriggers,
 		WrapperCount:              coverage.WrapperDerivedTriggers,
 		WorkerCount:               coverage.Workers,
@@ -488,6 +508,7 @@ func projectDiscoveredSurfaces(
 		UnresolvedHandlerCount:    coverage.UnresolvedHandlers,
 		PackagesInspected:         coverage.PackagesInspected,
 		FunctionsInspected:        coverage.FunctionsInspected,
+		EntrypointsConsidered:     projectSurfaceSymbols(boundedSurfaceItems(coverage.EntrypointsConsidered, maxSurfaceCoverageItems)),
 		ConfiguredSeedsMatched:    boundedSurfaceItems(coverage.ConfiguredSeedsMatched, maxSurfaceCoverageItems),
 		Triggers:                  triggers,
 		LoopSignals:               projectSurfaceLoopSignals(boundedSurfaceItems(coverage.LoopSignals, maxSurfaceCoverageItems)),
@@ -554,6 +575,7 @@ func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
 		ProcessEntrypoint: projectSurfaceSymbol(trigger.ProcessEntrypoint),
 		Dispatcher:        projectSurfaceValue(trigger.Dispatcher),
 		RegistrationSite:  projectSurfaceLocation(trigger.RegistrationSite),
+		DescriptorSite:    projectOptionalSurfaceLocation(trigger.DescriptorSite),
 		ServerStartSite:   projectOptionalSurfaceLocation(trigger.ServerStartSite),
 		Handler:           projectSurfaceValue(trigger.Handler),
 		Middleware:        projectSurfaceValues(boundedSurfaceItems(trigger.Middleware, maxSurfaceNestedItems)),
@@ -759,19 +781,49 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 	if catalog == nil {
 		return
 	}
-	catalog.TotalCount = len(catalog.Triggers)
+	rawGenericTotal := catalog.TotalCount - catalog.CLICommandCount
+	preserveRawCounts := catalog.Truncated
+	if !preserveRawCounts {
+		catalog.TotalCount = len(catalog.Triggers)
+	}
 	catalog.CLICommandCount = 0
-	catalog.GenericSurfaceCount = 0
+	if !preserveRawCounts {
+		catalog.GenericSurfaceCount = 0
+		catalog.HTTPRouteCount = 0
+		catalog.HTTPServerCount = 0
+		catalog.HTTPRouteDescriptorCount = 0
+		catalog.HTTPRouteFrontierCount = 0
+	}
 	catalog.ApplicationCount = 0
 	catalog.ToolingCount = 0
 	catalog.TestHelperCount = 0
 	catalog.UnassignedCount = 0
 	for _, trigger := range catalog.Triggers {
+		switch trigger.Kind {
+		case "http_route":
+			if !preserveRawCounts {
+				catalog.HTTPRouteCount++
+			}
+		case "http_server":
+			if !preserveRawCounts {
+				catalog.HTTPServerCount++
+			}
+		case "http_route_descriptor":
+			if !preserveRawCounts {
+				catalog.HTTPRouteDescriptorCount++
+			}
+		case "http_route_frontier":
+			if !preserveRawCounts {
+				catalog.HTTPRouteFrontierCount++
+			}
+		}
 		switch trigger.Producer {
 		case SurfaceProducerCobra:
 			catalog.CLICommandCount++
 		default:
-			catalog.GenericSurfaceCount++
+			if !preserveRawCounts {
+				catalog.GenericSurfaceCount++
+			}
 		}
 		switch trigger.ExecutableRole {
 		case ExecutableRolePrimaryApplication:
@@ -784,15 +836,33 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 			catalog.UnassignedCount++
 		}
 	}
+	if preserveRawCounts {
+		catalog.GenericSurfaceCount = rawGenericTotal
+		catalog.TotalCount = rawGenericTotal + catalog.CLICommandCount
+	}
 }
 
 func projectSurfaceValue(value rawSurfaceValue) SurfaceValue {
+	candidates := boundedSurfaceItems(value.Candidates, maxSurfaceValueCandidates)
+	for index := range candidates {
+		candidates[index] = sanitizeSurfaceValueText(candidates[index])
+	}
 	return SurfaceValue{
 		Kind:       value.Kind,
-		Text:       value.Text,
+		Text:       sanitizeSurfaceValueText(value.Text),
 		Known:      value.Known,
-		Candidates: boundedSurfaceItems(value.Candidates, maxSurfaceValueCandidates),
+		Candidates: candidates,
 	}
+}
+
+func sanitizeSurfaceValueText(value string) string {
+	parts := strings.Split(value, " | ")
+	for index, part := range parts {
+		if marker := strings.Index(part, "@/"); marker >= 0 {
+			parts[index] = part[:marker] + "@<external>"
+		}
+	}
+	return strings.Join(parts, " | ")
 }
 
 func boundedSurfaceItems[T any](values []T, limit int) []T {
@@ -817,6 +887,14 @@ func projectSurfaceSymbol(symbol rawSurfaceSymbol) SurfaceSymbol {
 		Name:     symbol.Name,
 		Location: projectSurfaceLocation(symbol.Location),
 	}
+}
+
+func projectSurfaceSymbols(symbols []rawSurfaceSymbol) []SurfaceSymbol {
+	result := make([]SurfaceSymbol, 0, len(symbols))
+	for _, symbol := range symbols {
+		result = append(result, projectSurfaceSymbol(symbol))
+	}
+	return result
 }
 
 func projectSurfaceWrappers(wrappers []rawSurfaceWrapper) []SurfaceWrapper {
@@ -914,6 +992,7 @@ func collectDiscoveredSurfacePaths(surfaces *DiscoveredSurfaces, add func(string
 		addLocation(trigger.ProcessEntrypoint.Location)
 		addLocation(trigger.Constructor.Location)
 		addLocation(trigger.RegistrationSite)
+		addLocation(trigger.DescriptorSite)
 		addLocation(trigger.ServerStartSite)
 		addLocation(trigger.HandlerLocation)
 		for _, wrapper := range trigger.WrapperChain {

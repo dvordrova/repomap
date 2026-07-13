@@ -1,7 +1,7 @@
 # Current approved implementation decision
 
 Decision:
-    092-cooperative-cancellation-and-soft-waits.md
+    093-echo-and-caddy-http-surfaces.md
 
 Status:
     Approved
@@ -12,6 +12,6 @@ Approved by:
 Notes:
     This changes the active implementation scope.
     It does not delete, rewrite, or invalidate historical decisions 050, 060,
-    070, 080, 090, or 091.
+    070, 080, 090, 091, or 092.
     Unified surface accounting, behavior-grounded architecture, and
     Operational Flow Discovery remain part of the existing product.

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"go/ast"
 	"go/constant"
 	"go/token"
 	"go/types"
@@ -33,9 +34,11 @@ type analyzer struct {
 	catalog                   catalog.Catalog
 	program                   *ssa.Program
 	packages                  []*ssa.Package
+	packageFacts              map[string]*packages.Package
 	graph                     *callgraph.Graph
 	allFunctions              map[*ssa.Function]bool
 	relevant                  map[*ssa.Function]bool
+	relevanceDistance         map[*ssa.Function]int
 	callTargets               map[ssa.CallInstruction][]*ssa.Function
 	root                      string
 	modulePath                string
@@ -46,6 +49,7 @@ type analyzer struct {
 	matchedSeeds              []string
 	starts                    []dispatchStart
 	assignments               map[string]Value
+	valuesByAddress           map[string]Value
 	summaryByID               map[string]SemanticSummary
 	fileDigests               map[string]SourceDigest
 	functionByID              map[string]*ssa.Function
@@ -54,14 +58,23 @@ type analyzer struct {
 	compositionVisited        map[*ssa.Function]bool
 	architectureAnchors       map[string]BehaviorAnchor
 	architectureRelationships map[string]BehaviorRelationship
+	walkedFunctions           map[*ssa.Function]bool
+	callbackReferences        map[*ssa.Function]bool
+	callbackReferenceIDs      map[string]bool
+	detachedWalk              bool
 }
 
 type environment map[ssa.Value]Value
 
 type dispatchStart struct {
-	dispatcher Value
-	server     Value
+	seed       catalog.Seed
+	values     map[string]Value
+	entrypoint *ssa.Function
+	chain      []Wrapper
 	location   Location
+	ambiguous  bool
+	frontiers  []Frontier
+	matched    bool
 }
 
 func Analyze(opts Options) (Result, error) {
@@ -103,8 +116,10 @@ func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
 		root:                      root,
 		active:                    map[*ssa.Function]bool{},
 		assignments:               map[string]Value{},
+		valuesByAddress:           map[string]Value{},
 		summaryByID:               map[string]SemanticSummary{},
 		fileDigests:               map[string]SourceDigest{},
+		packageFacts:              map[string]*packages.Package{},
 		callTargets:               map[ssa.CallInstruction][]*ssa.Function{},
 		functionByID:              map[string]*ssa.Function{},
 		loopCache:                 map[*ssa.Function][]loopDescriptor{},
@@ -112,6 +127,9 @@ func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
 		compositionVisited:        map[*ssa.Function]bool{},
 		architectureAnchors:       map[string]BehaviorAnchor{},
 		architectureRelationships: map[string]BehaviorRelationship{},
+		walkedFunctions:           map[*ssa.Function]bool{},
+		callbackReferences:        map[*ssa.Function]bool{},
+		callbackReferenceIDs:      map[string]bool{},
 	}
 	if err := a.load(); err != nil {
 		return Result{}, err
@@ -145,6 +163,7 @@ func AnalyzeContext(ctx context.Context, opts Options) (Result, error) {
 		)
 		a.walk(entrypoint, environment{}, nil, entrypoint, 0, false, entryAnchorID)
 	}
+	a.walkDisconnectedRelevant(entrypoints)
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
@@ -190,6 +209,12 @@ func (a *analyzer) load() error {
 	if len(loaded) == 0 {
 		return fmt.Errorf("surface discovery: no build-selected Go packages")
 	}
+	packages.Visit(loaded, func(pkg *packages.Package) bool {
+		if pkg != nil && pkg.PkgPath != "" {
+			a.packageFacts[pkg.PkgPath] = pkg
+		}
+		return true
+	}, nil)
 	for _, pkg := range loaded {
 		if pkg.Module != nil && pkg.Module.Main {
 			a.modulePath = pkg.Module.Path
@@ -301,6 +326,7 @@ func surfacePackageLoadError(loaded []*packages.Package) error {
 
 func (a *analyzer) prepare() {
 	a.relevant = map[*ssa.Function]bool{}
+	a.relevanceDistance = map[*ssa.Function]int{}
 	for function := range a.allFunctions {
 		if a.ctx.Err() != nil {
 			return
@@ -312,19 +338,28 @@ func (a *analyzer) prepare() {
 		a.functionByID[cleanFunctionID(a.functionID(function))] = function
 		for _, block := range function.Blocks {
 			for _, instruction := range block.Instrs {
+				if value, ok := instruction.(ssa.Value); ok {
+					a.recordFunctionReference(value)
+				}
 				call, ok := instruction.(ssa.CallInstruction)
 				if ok {
+					for _, argument := range call.Common().Args {
+						a.recordFunctionReference(argument)
+					}
 					targets := a.targets(call)
 					a.callTargets[call] = targets
 					for _, target := range targets {
-						if _, matched := a.callSeed(target); matched {
+						if seed, matched := a.callSeed(target); matched && a.terminalSeedEligible(seed, call, target) {
 							a.relevant[function] = true
+							a.relevanceDistance[function] = 0
 						}
 					}
 				}
 				if store, ok := instruction.(*ssa.Store); ok {
+					a.recordFunctionReference(store.Val)
 					if _, matched := a.fieldSeed(store); matched {
 						a.relevant[function] = true
+						a.relevanceDistance[function] = 0
 					}
 				}
 			}
@@ -355,7 +390,7 @@ func (a *analyzer) prepare() {
 						continue
 					}
 					for _, target := range a.callTargets[call] {
-						if a.relevant[target] {
+						if a.relevant[target] && a.propagationTargetEligible(call, target) {
 							a.relevant[function] = true
 							changed = true
 							break
@@ -364,6 +399,62 @@ func (a *analyzer) prepare() {
 				}
 			}
 		}
+	}
+
+	changed = true
+	for changed {
+		changed = false
+		for function := range a.relevant {
+			if function == nil || function.Blocks == nil {
+				continue
+			}
+			if distance, exists := a.relevanceDistance[function]; exists && distance == 0 {
+				continue
+			}
+			best := int(^uint(0) >> 1)
+			for _, block := range function.Blocks {
+				for _, instruction := range block.Instrs {
+					call, ok := instruction.(ssa.CallInstruction)
+					if !ok {
+						continue
+					}
+					for _, target := range a.callTargets[call] {
+						if distance, ok := a.relevanceDistance[target]; ok && distance+1 < best {
+							best = distance + 1
+						}
+					}
+				}
+			}
+			previous, exists := a.relevanceDistance[function]
+			if best != int(^uint(0)>>1) && (!exists || best < previous) {
+				a.relevanceDistance[function] = best
+				changed = true
+			}
+		}
+	}
+}
+
+func (a *analyzer) recordFunctionReference(value ssa.Value) {
+	if value == nil {
+		return
+	}
+	switch current := value.(type) {
+	case *ssa.Function:
+		a.callbackReferences[current] = true
+		a.callbackReferenceIDs[cleanFunctionID(a.functionID(current))] = true
+	case *ssa.MakeClosure:
+		if function, ok := current.Fn.(*ssa.Function); ok {
+			a.callbackReferences[function] = true
+			a.callbackReferenceIDs[cleanFunctionID(a.functionID(function))] = true
+		}
+	case *ssa.ChangeType:
+		a.recordFunctionReference(current.X)
+	case *ssa.Convert:
+		a.recordFunctionReference(current.X)
+	case *ssa.ChangeInterface:
+		a.recordFunctionReference(current.X)
+	case *ssa.MakeInterface:
+		a.recordFunctionReference(current.X)
 	}
 }
 
@@ -384,6 +475,169 @@ func (a *analyzer) entrypoints() []*ssa.Function {
 	return result
 }
 
+func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
+	if a.ctx.Err() != nil {
+		return
+	}
+	candidates := make(map[*ssa.Function]*ssa.Function)
+	for _, entrypoint := range entrypoints {
+		reachablePackages := importedPackagePaths(entrypoint)
+		for function := range a.relevant {
+			if function == nil || function.Blocks == nil || function.Name() == "init" ||
+				strings.EqualFold(function.Name(), "ServeHTTP") ||
+				(!a.callbackReferences[function] && !a.callbackReferenceIDs[cleanFunctionID(a.functionID(function))]) ||
+				!a.detachedRootEligible(function) ||
+				!a.isRepositoryFunction(function) || !reachablePackages[functionPackagePath(function)] {
+				continue
+			}
+			if _, exists := candidates[function]; !exists {
+				candidates[function] = entrypoint
+			}
+		}
+	}
+	callers := make(map[*ssa.Function]map[*ssa.Function]struct{})
+	for call, targets := range a.callTargets {
+		caller := call.Parent()
+		for _, target := range targets {
+			if callers[target] == nil {
+				callers[target] = make(map[*ssa.Function]struct{})
+			}
+			callers[target][caller] = struct{}{}
+		}
+	}
+
+	for {
+		if a.ctx.Err() != nil {
+			return
+		}
+		remaining := make([]*ssa.Function, 0, len(candidates))
+		for function := range candidates {
+			if !a.walkedFunctions[function] {
+				remaining = append(remaining, function)
+			}
+		}
+		if len(remaining) == 0 {
+			return
+		}
+		sort.Slice(remaining, func(i, j int) bool {
+			return a.functionID(remaining[i]) < a.functionID(remaining[j])
+		})
+		roots := make([]*ssa.Function, 0, len(remaining))
+		for _, function := range remaining {
+			hasRelevantCaller := false
+			for caller := range callers[function] {
+				if caller != function && candidates[caller] != nil && !a.walkedFunctions[caller] {
+					hasRelevantCaller = true
+					break
+				}
+			}
+			if !hasRelevantCaller {
+				roots = append(roots, function)
+			}
+		}
+		if len(roots) == 0 {
+			roots = remaining[:1]
+		}
+		for _, root := range roots {
+			if a.ctx.Err() != nil {
+				return
+			}
+			if a.walkedFunctions[root] {
+				continue
+			}
+			if a.tasks >= a.opts.MaxTasks {
+				a.addBudget("tasks")
+				return
+			}
+			triggerStart := len(a.result.Catalog.Triggers)
+			serverStart := len(a.starts)
+			a.detachedWalk = true
+			a.walk(root, environment{}, nil, candidates[root], 0, false, "")
+			a.detachedWalk = false
+			if a.ctx.Err() != nil {
+				return
+			}
+			if !a.walkedFunctions[root] {
+				continue
+			}
+			location := a.location(root.Pos())
+			frontier := Frontier{
+				Kind:     "entrypoint_dispatch_unresolved",
+				Detail:   "terminal-relevant code is import-reachable but its callback or lifecycle dispatch from the process entrypoint is unresolved",
+				Location: &location,
+			}
+			for index := triggerStart; index < len(a.result.Catalog.Triggers); index++ {
+				trigger := &a.result.Catalog.Triggers[index]
+				trigger.DynamicFrontier = append(trigger.DynamicFrontier, frontier)
+			}
+			for index := serverStart; index < len(a.starts); index++ {
+				a.starts[index].frontiers = append(a.starts[index].frontiers, frontier)
+			}
+			a.result.Coverage.UnsupportedDispatch = append(a.result.Coverage.UnsupportedDispatch, frontier)
+		}
+	}
+}
+
+func (a *analyzer) detachedRootEligible(function *ssa.Function) bool {
+	if function == nil {
+		return false
+	}
+	path := strings.ToLower(functionPackagePath(function))
+	name := strings.ToLower(function.Name())
+	commandPackage := strings.HasSuffix(path, "/cmd") || strings.Contains(path, "/cmd/") ||
+		strings.HasSuffix(path, "/command") || strings.Contains(path, "/command/")
+	if !commandPackage {
+		return false
+	}
+	return strings.Contains(name, "run") || strings.Contains(name, "start") ||
+		strings.Contains(name, "serve") || strings.Contains(name, "execute")
+}
+
+func importedPackagePaths(entrypoint *ssa.Function) map[string]bool {
+	result := make(map[string]bool)
+	if entrypoint == nil || entrypoint.Package() == nil || entrypoint.Package().Pkg == nil {
+		return result
+	}
+	stack := []*types.Package{entrypoint.Package().Pkg}
+	for len(stack) > 0 {
+		pkg := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if pkg == nil || result[pkg.Path()] {
+			continue
+		}
+		result[pkg.Path()] = true
+		stack = append(stack, pkg.Imports()...)
+	}
+	return result
+}
+
+func (a *analyzer) prioritizeTargets(targets []*ssa.Function) []*ssa.Function {
+	result := append([]*ssa.Function(nil), targets...)
+	sort.SliceStable(result, func(i, j int) bool {
+		_, leftSeed := a.callSeed(result[i])
+		_, rightSeed := a.callSeed(result[j])
+		if leftSeed != rightSeed {
+			return leftSeed
+		}
+		if a.relevant[result[i]] != a.relevant[result[j]] {
+			return a.relevant[result[i]]
+		}
+		leftDistance, leftRelevant := a.relevanceDistance[result[i]]
+		rightDistance, rightRelevant := a.relevanceDistance[result[j]]
+		if leftRelevant != rightRelevant {
+			return leftRelevant
+		}
+		if leftRelevant && leftDistance != rightDistance {
+			return leftDistance < rightDistance
+		}
+		if a.isRepositoryFunction(result[i]) != a.isRepositoryFunction(result[j]) {
+			return a.isRepositoryFunction(result[i])
+		}
+		return a.functionID(result[i]) < a.functionID(result[j])
+	})
+	return result
+}
+
 func (a *analyzer) walk(
 	function *ssa.Function,
 	env environment,
@@ -397,6 +651,9 @@ func (a *analyzer) walk(
 		return
 	}
 	if function == nil || function.Blocks == nil {
+		return
+	}
+	if a.detachedWalk && a.walkedFunctions[function] && !a.relevant[function] {
 		return
 	}
 	if depth > a.opts.MaxDepth {
@@ -413,6 +670,7 @@ func (a *analyzer) walk(
 		return
 	}
 	a.tasks++
+	a.walkedFunctions[function] = true
 	a.active[function] = true
 	defer delete(a.active, function)
 	a.result.Coverage.FunctionsInspected++
@@ -423,6 +681,7 @@ func (a *analyzer) walk(
 		}
 		for _, instruction := range block.Instrs {
 			if store, ok := instruction.(*ssa.Store); ok {
+				a.recordAssignment(store, env)
 				if seed, matched := a.fieldSeed(store); matched {
 					a.recordFieldStore(seed, store, env)
 				}
@@ -435,14 +694,37 @@ func (a *analyzer) walk(
 			if len(targets) == 0 {
 				continue
 			}
+			var targetLimitFrontier *Frontier
 			if len(targets) > a.opts.MaxTargets {
 				a.addBudget("targets")
+				targets = a.prioritizeTargets(targets)
+				omitted := len(targets) - a.opts.MaxTargets
+				location := a.location(call.Pos())
+				frontier := Frontier{
+					Kind: "call_target_limit",
+					Detail: fmt.Sprintf(
+						"%s omitted %d lower-priority static call target(s)",
+						a.functionID(function),
+						omitted,
+					),
+					Location: &location,
+				}
+				targetLimitFrontier = &frontier
+				a.result.Coverage.UnsupportedDispatch = append(a.result.Coverage.UnsupportedDispatch, frontier)
 				targets = targets[:a.opts.MaxTargets]
-				ambiguous = true
 			}
-			callAmbiguous := ambiguous || len(targets) > 1
+			callAmbiguous := ambiguous || len(targets) > 1 || targetLimitFrontier != nil
 			for _, target := range targets {
-				architectureKind := a.architectureCallKind(target)
+				triggerStart := len(a.result.Catalog.Triggers)
+				serverStart := len(a.starts)
+				architectureKind := ""
+				// Detached command callbacks recover bounded surfaces only. Their
+				// handoff from the process entrypoint is unresolved, so promoting
+				// every visited target into architecture evidence would overstate
+				// reachability and can swamp the bounded architecture map.
+				if !a.detachedWalk {
+					architectureKind = a.architectureCallKind(target)
+				}
 				nextParentAnchorID := parentAnchorID
 				if architectureKind != "" {
 					anchorID := a.recordArchitectureAnchor(
@@ -466,11 +748,18 @@ func (a *analyzer) walk(
 					}
 				}
 				seed, matched := a.callSeed(target)
+				matched = matched && a.terminalSeedEligible(seed, call, target)
 				if matched {
 					a.recordCall(seed, call, target, env, chain, entrypoint, callAmbiguous)
+					if targetLimitFrontier != nil {
+						a.applyFrontierSince(triggerStart, serverStart, *targetLimitFrontier)
+					}
 					continue
 				}
-				followComposition := a.shouldFollowComposition(target, architectureKind)
+				if !a.detachedWalk && a.relevant[target] && !a.propagationTargetEligible(call, target) {
+					continue
+				}
+				followComposition := !a.detachedWalk && a.shouldFollowComposition(target, architectureKind)
 				if !a.relevant[target] && !followComposition {
 					continue
 				}
@@ -496,8 +785,54 @@ func (a *analyzer) walk(
 					callAmbiguous,
 					nextParentAnchorID,
 				)
+				if targetLimitFrontier != nil {
+					a.applyFrontierSince(triggerStart, serverStart, *targetLimitFrontier)
+				}
 			}
 		}
+	}
+}
+
+func (a *analyzer) terminalTargetEligible(call ssa.CallInstruction, target *ssa.Function) bool {
+	if call == nil || target == nil {
+		return false
+	}
+	if call.Common().StaticCallee() == target {
+		return true
+	}
+	closure, ok := call.Common().Value.(*ssa.MakeClosure)
+	if !ok {
+		return false
+	}
+	function, ok := closure.Fn.(*ssa.Function)
+	return ok && function == target
+}
+
+func (a *analyzer) terminalSeedEligible(
+	seed catalog.Seed,
+	call ssa.CallInstruction,
+	target *ssa.Function,
+) bool {
+	if seed.Effect.Kind == catalog.EffectHTTPRouteProvider {
+		return a.isRepositoryFunction(target)
+	}
+	return a.terminalTargetEligible(call, target)
+}
+
+func (a *analyzer) propagationTargetEligible(call ssa.CallInstruction, target *ssa.Function) bool {
+	if a.terminalTargetEligible(call, target) {
+		return true
+	}
+	return len(a.callTargets[call]) <= a.opts.MaxTargets
+}
+
+func (a *analyzer) applyFrontierSince(triggerStart, serverStart int, frontier Frontier) {
+	for index := triggerStart; index < len(a.result.Catalog.Triggers); index++ {
+		trigger := &a.result.Catalog.Triggers[index]
+		trigger.DynamicFrontier = append(trigger.DynamicFrontier, frontier)
+	}
+	for index := serverStart; index < len(a.starts); index++ {
+		a.starts[index].frontiers = append(a.starts[index].frontiers, frontier)
 	}
 }
 
@@ -516,9 +851,8 @@ func (a *analyzer) recordCall(
 	switch seed.Effect.Kind {
 	case catalog.EffectHTTPServerStart:
 		a.starts = append(a.starts, dispatchStart{
-			dispatcher: values["dispatcher"],
-			server:     values["server"],
-			location:   location,
+			seed: seed, values: values, entrypoint: entrypoint,
+			chain: append([]Wrapper(nil), chain...), location: location, ambiguous: ambiguous,
 		})
 	case catalog.EffectHTTPRouteRegistration:
 		loopSignal, inLoop := a.registrationLoop(call, seed)
@@ -526,10 +860,348 @@ func (a *analyzer) recordCall(
 			a.addLoopSignal(loopSignal)
 		}
 		a.recordRoute(seed, values, location, chain, entrypoint, ambiguous)
+	case catalog.EffectHTTPRouteProvider:
+		a.recordRouteProvider(seed, call, target, chain, entrypoint, ambiguous)
+	case catalog.EffectHTTPRouteAssembly:
+		a.recordRouteAssembly(seed, values, location, chain, entrypoint, ambiguous)
 	case catalog.EffectAsyncTaskStart:
 		a.recordAsyncTask(seed, values, location, chain, entrypoint, ambiguous)
 	}
 	a.recordSummary(seed, values, chain, target)
+}
+
+func (a *analyzer) recordRouteAssembly(
+	seed catalog.Seed,
+	values map[string]Value,
+	location Location,
+	chain []Wrapper,
+	entrypoint *ssa.Function,
+	ambiguous bool,
+) {
+	frontier := Frontier{
+		Kind:     "configuration_assembled_route_inventory",
+		Detail:   "Routes are assembled from runtime configuration; static analysis did not invent or enumerate them.",
+		Location: &location,
+	}
+	resolution := "dynamic"
+	if ambiguous {
+		resolution = "ambiguous"
+	}
+	basis := string(catalog.OriginCatalogStatic)
+	if len(chain) > 0 {
+		basis = string(catalog.OriginWrapperStatic)
+	}
+	record := TriggerRecord{
+		Kind: "http_route_frontier",
+		Identity: Identity{Path: dynamicValue(
+			"routes assembled from runtime configuration",
+		)},
+		Transport: seed.Effect.Transport, Framework: seed.Effect.Framework,
+		ProcessEntrypoint: a.symbol(entrypoint), Dispatcher: values["dispatcher"],
+		RegistrationSite: location, Handler: dynamicValue("configuration-selected handlers"),
+		Middleware: []Value{}, WrapperChain: append([]Wrapper(nil), chain...),
+		FinalSeed: seed.ID, DiscoveryBasis: basis, Certainty: "static",
+		Resolution: resolution, ScenarioID: a.scenario.ID,
+		Evidence: []Evidence{{
+			ID: "route-assembly:" + locationKey(location), Kind: "route_assembly_call",
+			Location: location, Detail: seed.ID,
+		}},
+		Provenance: []Provenance{{
+			Provider: "go_ssa", Version: AnalyzerVersion,
+			Operation: "record_configuration_route_frontier", Detail: seed.ID,
+		}},
+		DynamicFrontier: []Frontier{frontier},
+		Status:          "configured_route_inventory_unresolved",
+		ProvisionalID:   true,
+	}
+	record.ID = stableTriggerID(record)
+	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
+	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontier)
+}
+
+type providedRouteDescriptor struct {
+	path     Value
+	handler  Value
+	location Location
+}
+
+const maxReturnedRouteDescriptors = 32
+
+func (a *analyzer) recordRouteProvider(
+	seed catalog.Seed,
+	call ssa.CallInstruction,
+	target *ssa.Function,
+	chain []Wrapper,
+	entrypoint *ssa.Function,
+	ambiguous bool,
+) {
+	descriptors, diagnostic := a.returnedRouteDescriptors(seed, target)
+	if len(descriptors) == 0 {
+		location := a.location(call.Pos())
+		if diagnostic == "" {
+			diagnostic = a.functionID(target) + " did not yield a bounded returned route descriptor literal"
+		}
+		a.result.Coverage.UnsupportedDispatch = append(a.result.Coverage.UnsupportedDispatch, Frontier{
+			Kind:     "route_provider_projection_unresolved",
+			Detail:   diagnostic,
+			Location: &location,
+		})
+		return
+	}
+	registration := a.location(call.Pos())
+	for _, descriptor := range descriptors {
+		frontiers := []Frontier{{
+			Kind:     "route_provider_dispatch_candidate",
+			Detail:   "Exact route descriptor found; runtime provider selection and consumer registration were not observed.",
+			Location: &registration,
+		}}
+		if !descriptor.handler.Known {
+			frontiers = append(frontiers, Frontier{
+				Kind:     "dynamic_handler_identity",
+				Detail:   "The returned descriptor handler could not be resolved to an exact function or method.",
+				Location: &descriptor.location,
+			})
+		}
+		if diagnostic != "" {
+			frontiers = append(frontiers, Frontier{
+				Kind: "route_provider_projection_bounded", Detail: diagnostic, Location: &registration,
+			})
+		}
+		basis := string(catalog.OriginCatalogStatic)
+		if len(chain) > 0 {
+			basis = string(catalog.OriginWrapperStatic)
+		}
+		descriptorLocation := descriptor.location
+		resolution := "exact"
+		if !descriptor.handler.Known {
+			resolution = "partial"
+		}
+		record := TriggerRecord{
+			Kind:              "http_route_descriptor",
+			Identity:          Identity{Path: descriptor.path},
+			Transport:         seed.Effect.Transport,
+			Framework:         seed.Effect.Framework,
+			ProcessEntrypoint: a.symbol(entrypoint),
+			Dispatcher:        dynamicValue("registry-selected route consumer"),
+			RegistrationSite:  registration,
+			DescriptorSite:    &descriptorLocation,
+			Handler:           descriptor.handler,
+			Middleware:        []Value{},
+			WrapperChain:      append([]Wrapper(nil), chain...),
+			FinalSeed:         seed.ID,
+			DiscoveryBasis:    basis,
+			Certainty:         "static",
+			Resolution:        resolution,
+			ScenarioID:        a.scenario.ID,
+			Evidence: []Evidence{
+				{ID: "route-provider:" + locationKey(registration), Kind: "route_provider_call", Location: registration, Detail: seed.ID},
+				{ID: "route-descriptor:" + locationKey(descriptor.location), Kind: "returned_route_descriptor", Location: descriptor.location, Detail: a.functionID(target)},
+			},
+			Provenance: []Provenance{{
+				Provider: "go_ssa", Version: AnalyzerVersion,
+				Operation: "extract_returned_route_descriptor", Detail: seed.ID,
+			}},
+			DynamicFrontier: frontiers,
+			Status:          "confirmed_route_descriptor",
+			ProvisionalID:   !descriptor.path.Known || !descriptor.handler.Known,
+		}
+		record.ID = stableTriggerID(record)
+		a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
+		a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
+	}
+}
+
+func (a *analyzer) returnedRouteDescriptors(
+	seed catalog.Seed,
+	target *ssa.Function,
+) ([]providedRouteDescriptor, string) {
+	pathField := seed.Projections["path"].Field
+	handlerField := seed.Projections["handler"].Field
+	if target == nil || pathField == "" || handlerField == "" {
+		return nil, "route provider is missing exact returned path/handler field semantics"
+	}
+	if !routeProviderResultHasFields(target.Signature, pathField, handlerField) {
+		return nil, "route provider result type does not contain the configured descriptor fields"
+	}
+	targetPosition := a.program.Fset.PositionFor(target.Pos(), true)
+	if targetPosition.Filename == "" {
+		return nil, "route provider source location is unavailable"
+	}
+	facts := a.packageFacts[functionPackagePath(target)]
+	if facts == nil || facts.TypesInfo == nil {
+		return nil, "route provider typed syntax is unavailable"
+	}
+	var file *ast.File
+	for _, candidate := range facts.Syntax {
+		if a.program.Fset.PositionFor(candidate.Pos(), true).Filename == targetPosition.Filename {
+			file = candidate
+			break
+		}
+	}
+	if file == nil {
+		return nil, "route provider build-selected syntax is unavailable"
+	}
+	fileSet := a.program.Fset
+	result := []providedRouteDescriptor{}
+	diagnostic := ""
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != target.Name() || function.Body == nil ||
+			fileSet.Position(function.Pos()).Line != targetPosition.Line {
+			continue
+		}
+		for _, statement := range function.Body.List {
+			returned, ok := statement.(*ast.ReturnStmt)
+			if !ok {
+				continue
+			}
+			for _, expression := range returned.Results {
+				literal, ok := unwrappedCompositeLiteral(expression)
+				if !ok {
+					diagnostic = "route provider return value is not a direct bounded descriptor literal"
+					continue
+				}
+				for _, element := range literal.Elts {
+					if len(result) >= maxReturnedRouteDescriptors {
+						diagnostic = "route provider descriptor limit reached"
+						break
+					}
+					descriptor, ok := element.(*ast.CompositeLit)
+					if !ok {
+						diagnostic = "route provider contains a non-literal descriptor"
+						continue
+					}
+					fields := keyedCompositeFields(descriptor)
+					pathExpression, pathOK := fields[pathField]
+					handlerExpression, handlerOK := fields[handlerField]
+					if !pathOK || !handlerOK {
+						continue
+					}
+					path, known := typedStringValue(pathExpression, facts.TypesInfo)
+					if !known {
+						diagnostic = "route provider contains a non-constant route path"
+						continue
+					}
+					position := fileSet.Position(descriptor.Pos())
+					result = append(result, providedRouteDescriptor{
+						path:     knownValue("returned_field", path),
+						handler:  routeProviderHandler(handlerExpression, facts.TypesInfo),
+						location: a.sourceLocation(position.Filename, position.Line, position.Column),
+					})
+				}
+			}
+		}
+	}
+	return result, diagnostic
+}
+
+func routeProviderResultHasFields(signature *types.Signature, pathField, handlerField string) bool {
+	if signature == nil || signature.Results() == nil || signature.Results().Len() != 1 {
+		return false
+	}
+	resultType := signature.Results().At(0).Type()
+	var element types.Type
+	switch result := resultType.Underlying().(type) {
+	case *types.Slice:
+		element = result.Elem()
+	case *types.Array:
+		element = result.Elem()
+	default:
+		return false
+	}
+	if pointer, ok := element.(*types.Pointer); ok {
+		element = pointer.Elem()
+	}
+	structure, ok := element.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	foundPath := false
+	foundHandler := false
+	for index := 0; index < structure.NumFields(); index++ {
+		switch structure.Field(index).Name() {
+		case pathField:
+			foundPath = true
+		case handlerField:
+			foundHandler = true
+		}
+	}
+	return foundPath && foundHandler
+}
+
+func unwrappedCompositeLiteral(expression ast.Expr) (*ast.CompositeLit, bool) {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parenthesized.X
+	}
+	literal, ok := expression.(*ast.CompositeLit)
+	return literal, ok
+}
+
+func keyedCompositeFields(literal *ast.CompositeLit) map[string]ast.Expr {
+	result := make(map[string]ast.Expr)
+	for _, element := range literal.Elts {
+		field, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		name, ok := field.Key.(*ast.Ident)
+		if ok {
+			result[name.Name] = field.Value
+		}
+	}
+	return result
+}
+
+func typedStringValue(expression ast.Expr, info *types.Info) (string, bool) {
+	if expression == nil || info == nil {
+		return "", false
+	}
+	value := info.Types[expression].Value
+	if value == nil || value.Kind() != constant.String {
+		return "", false
+	}
+	return constant.StringVal(value), true
+}
+
+func routeProviderHandler(expression ast.Expr, info *types.Info) Value {
+	if expression == nil || info == nil {
+		return dynamicValue("unresolved returned descriptor handler")
+	}
+	if call, ok := expression.(*ast.CallExpr); ok {
+		if len(call.Args) != 1 || !info.Types[call.Fun].IsType() {
+			return dynamicValue("unresolved returned descriptor handler")
+		}
+		expression = call.Args[0]
+	}
+	var object types.Object
+	switch current := expression.(type) {
+	case *ast.Ident:
+		object = info.Uses[current]
+	case *ast.SelectorExpr:
+		if selection := info.Selections[current]; selection != nil {
+			object = selection.Obj()
+		} else {
+			object = info.Uses[current.Sel]
+		}
+	}
+	function, ok := object.(*types.Func)
+	if !ok || function.Pkg() == nil {
+		return dynamicValue("unresolved returned descriptor handler")
+	}
+	return knownValue("function", typesFunctionID(function))
+}
+
+func typesFunctionID(function *types.Func) string {
+	path := function.Pkg().Path()
+	signature, _ := function.Type().(*types.Signature)
+	if signature != nil && signature.Recv() != nil {
+		return path + ".(" + receiverName(signature) + ")." + function.Name()
+	}
+	return path + "." + function.Name()
 }
 
 func (a *analyzer) recordRoute(
@@ -541,11 +1213,32 @@ func (a *analyzer) recordRoute(
 	ambiguous bool,
 ) {
 	pathValue := values["path"]
+	if prefix, exists := values["path_prefix"]; exists {
+		if prefix.Known && pathValue.Known {
+			pathValue = knownValue("concatenation", prefix.Text+pathValue.Text)
+		} else {
+			pathValue = dynamicValue(strings.TrimSpace(prefix.Text + " + " + pathValue.Text))
+		}
+	}
+	if !pathValue.Known && len(pathValue.Candidates) > 0 {
+		concrete, unresolved := partitionRouteCandidates(pathValue.Candidates)
+		for _, candidate := range concrete {
+			candidateValues := cloneValues(values)
+			candidateValues["path"] = knownValue("constant_alternative", candidate)
+			delete(candidateValues, "path_prefix")
+			a.recordRoute(seed, candidateValues, location, chain, entrypoint, true)
+		}
+		if len(unresolved) == 0 {
+			return
+		}
+		pathValue = dynamicValue("unresolved route alternative")
+		pathValue.Candidates = unresolved
+	}
 	handler := values["handler"]
 	dispatcher := values["dispatcher"]
 	method := values["method"].Text
 	middleware := []Value{}
-	if len(handler.Candidates) > 1 {
+	if handler.Kind == "middleware_result" && len(handler.Candidates) > 1 {
 		for _, candidate := range handler.Candidates[1:] {
 			middleware = append(middleware, knownValue("function", candidate))
 		}
@@ -611,8 +1304,68 @@ func (a *analyzer) recordRoute(
 	}
 	record.ProvisionalID = !pathValue.Known || !handler.Known || !dispatcher.Known
 	record.ID = stableTriggerID(record)
+	if filepath.IsAbs(location.Path) && !hasRepositoryWrapper(chain) {
+		return
+	}
 	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
 	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
+}
+
+func partitionRouteCandidates(candidates []string) (concrete, unresolved []string) {
+	seenConcrete := make(map[string]struct{})
+	seenUnresolved := make(map[string]struct{})
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if isConcreteRoutePattern(candidate) {
+			if _, exists := seenConcrete[candidate]; !exists {
+				seenConcrete[candidate] = struct{}{}
+				concrete = append(concrete, candidate)
+			}
+			continue
+		}
+		if _, exists := seenUnresolved[candidate]; !exists {
+			seenUnresolved[candidate] = struct{}{}
+			unresolved = append(unresolved, candidate)
+		}
+	}
+	sort.Strings(concrete)
+	sort.Strings(unresolved)
+	return concrete, unresolved
+}
+
+func isConcreteRoutePattern(value string) bool {
+	if strings.Contains(value, " | ") || strings.Contains(value, " + ") {
+		return false
+	}
+	if strings.HasPrefix(value, "/") {
+		return true
+	}
+	fields := strings.Fields(value)
+	return len(fields) == 2 && fields[0] == strings.ToUpper(fields[0]) && strings.HasPrefix(fields[1], "/")
+}
+
+func hasRepositoryWrapper(chain []Wrapper) bool {
+	for _, wrapper := range chain {
+		if wrapper.Origin == "repository" ||
+			(wrapper.Callsite.Path != "" && !filepath.IsAbs(wrapper.Callsite.Path) &&
+				!strings.Contains(wrapper.Symbol.Name, "$") &&
+				!strings.Contains(wrapper.Symbol.Name, "#") &&
+				!strings.EqualFold(wrapper.Symbol.Name, "init")) {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneValues(values map[string]Value) map[string]Value {
+	result := make(map[string]Value, len(values))
+	for name, value := range values {
+		result[name] = value
+	}
+	return result
 }
 
 func (a *analyzer) recordFieldStore(seed catalog.Seed, store *ssa.Store, env environment) {
@@ -623,9 +1376,75 @@ func (a *analyzer) recordFieldStore(seed catalog.Seed, store *ssa.Store, env env
 	server := a.eval(field.X, env, 0)
 	dispatcher := a.eval(store.Val, env, 0)
 	if server.Text != "" {
-		a.assignments[server.Text] = dispatcher
+		a.assignments[valueAddressKey(server)] = dispatcher
 	}
 	a.matchedSeeds = append(a.matchedSeeds, seed.ID)
+}
+
+func (a *analyzer) recordAssignment(store *ssa.Store, env environment) {
+	if store == nil || !simpleAssignmentValue(store.Val, 0) {
+		return
+	}
+	key := a.assignmentKey(store.Addr, env, 0)
+	value := a.eval(store.Val, env, 0)
+	if key == "" || value.Text == "" {
+		return
+	}
+	if previous, exists := a.valuesByAddress[key]; exists {
+		a.valuesByAddress[key] = mergeValues([]Value{previous, value})
+		return
+	}
+	a.valuesByAddress[key] = value
+}
+
+func simpleAssignmentValue(value ssa.Value, depth int) bool {
+	if value == nil || depth > 8 {
+		return false
+	}
+	switch current := value.(type) {
+	case *ssa.Const, *ssa.Function, *ssa.Parameter, *ssa.Global, *ssa.Alloc, *ssa.MakeClosure:
+		return true
+	case *ssa.ChangeType:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.Convert:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.ChangeInterface:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.MakeInterface:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.TypeAssert:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.UnOp:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.FieldAddr:
+		return simpleAssignmentValue(current.X, depth+1)
+	case *ssa.Field:
+		return simpleAssignmentValue(current.X, depth+1)
+	default:
+		return false
+	}
+}
+
+func (a *analyzer) assignmentKey(value ssa.Value, env environment, depth int) string {
+	switch current := value.(type) {
+	case *ssa.Global:
+		return packagePath(current.Pkg) + "." + current.Name()
+	case *ssa.FieldAddr:
+		base := a.eval(current.X, env, depth+1)
+		if base.Text == "" {
+			return ""
+		}
+		return valueAddressKey(base) + "." + fieldName(current.X.Type(), current.Field)
+	}
+	resolved := a.eval(value, env, depth+1)
+	return valueAddressKey(resolved)
+}
+
+func (a *analyzer) assignment(key string) Value {
+	if key == "" {
+		return Value{}
+	}
+	return a.valuesByAddress[key]
 }
 
 func (a *analyzer) project(
@@ -649,6 +1468,13 @@ func (a *analyzer) project(
 			if len(args) > 0 {
 				value = a.eval(args[0], env, depth+1)
 			}
+		case catalog.ProjectionReceiverField:
+			if len(args) > 0 {
+				receiver := a.eval(args[0], env, depth+1)
+				value = a.assignment(valueAddressKey(receiver) + "." + projection.Field)
+			}
+		case catalog.ProjectionReturnField:
+			value = dynamicValue("returned field " + projection.Field)
 		case catalog.ProjectionArgument:
 			if projection.Index != nil {
 				index := receiverOffset + *projection.Index
@@ -711,7 +1537,9 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 	case *ssa.Global:
 		return knownValue("global", packagePath(current.Pkg)+"."+current.Name())
 	case *ssa.Alloc:
-		return knownValue("allocation", a.valueIdentity(current))
+		value := knownValue("allocation", a.valueIdentity(current))
+		value.addressKey = contextualAddressKey(value.Text, env)
+		return value
 	case *ssa.MakeClosure:
 		if function, ok := current.Fn.(*ssa.Function); ok {
 			return knownValue("method_value", cleanFunctionID(a.functionID(function)))
@@ -739,6 +1567,9 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 		return a.eval(current.Tuple, env, depth+1)
 	case *ssa.UnOp:
 		if current.Op == token.MUL {
+			if assigned := a.assignment(a.assignmentKey(current.X, env, depth+1)); assigned.Text != "" {
+				return assigned
+			}
 			if field, ok := current.X.(*ssa.FieldAddr); ok {
 				base := a.eval(field.X, env, depth+1)
 				return dynamicValue(base.Text + "." + fieldName(field.X.Type(), field.Field))
@@ -747,9 +1578,14 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 		return a.eval(current.X, env, depth+1)
 	case *ssa.FieldAddr:
 		base := a.eval(current.X, env, depth+1)
-		return knownValue("field", base.Text+"."+fieldName(current.X.Type(), current.Field))
+		value := knownValue("field", base.Text+"."+fieldName(current.X.Type(), current.Field))
+		value.addressKey = valueAddressKey(base) + "." + fieldName(current.X.Type(), current.Field)
+		return value
 	case *ssa.Field:
 		base := a.eval(current.X, env, depth+1)
+		if assigned := a.assignment(valueAddressKey(base) + "." + fieldName(current.X.Type(), current.Field)); assigned.Text != "" {
+			return assigned
+		}
 		return dynamicValue(base.Text + "." + fieldName(current.X.Type(), current.Field))
 	case *ssa.Phi:
 		values := []Value{}
@@ -778,7 +1614,9 @@ func (a *analyzer) evalCall(call *ssa.Call, env environment, depth int) Value {
 	}
 	target := targets[0]
 	if packagePath(target.Pkg) == "net/http" && target.Name() == "NewServeMux" {
-		return knownValue("dispatcher", "net/http.NewServeMux@"+locationKey(a.location(call.Pos())))
+		value := knownValue("dispatcher", "net/http.NewServeMux@"+locationKey(a.location(call.Pos())))
+		value.addressKey = contextualAddressKey(value.Text, env)
+		return value
 	}
 	underlying := []string{}
 	for _, argument := range call.Common().Args {
@@ -821,6 +1659,9 @@ func (a *analyzer) evalReturn(
 	values := []Value{}
 	for _, block := range target.Blocks {
 		for _, instruction := range block.Instrs {
+			if store, ok := instruction.(*ssa.Store); ok {
+				a.recordAssignment(store, env)
+			}
 			returned, ok := instruction.(*ssa.Return)
 			if !ok || len(returned.Results) == 0 {
 				continue
@@ -1354,22 +2195,25 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 func (a *analyzer) finish(latency time.Duration) {
 	for index := range a.result.Catalog.Triggers {
 		trigger := &a.result.Catalog.Triggers[index]
-		for _, start := range a.starts {
-			dispatcher := start.dispatcher
-			if dispatcher.Text == "" && start.server.Text != "" {
-				dispatcher = a.assignments[start.server.Text]
-			}
-			if dispatcher.Text != "" && dispatcher.Text == trigger.Dispatcher.Text {
+		for startIndex := range a.starts {
+			start := &a.starts[startIndex]
+			dispatcher := a.startDispatcher(*start)
+			if dispatcher.Text != "" && valueAddressKey(dispatcher) == valueAddressKey(trigger.Dispatcher) {
 				location := start.location
 				trigger.ServerStartSite = &location
 				trigger.Evidence = append(trigger.Evidence, Evidence{
 					ID: "server-start:" + locationKey(location), Kind: "server_start_call",
 					Location: location, Detail: dispatcher.Text,
 				})
+				start.matched = true
 				break
 			}
 		}
 	}
+	for _, start := range a.starts {
+		a.recordServerStart(start)
+	}
+	a.result.Catalog.Triggers = deduplicateTriggerRecords(a.result.Catalog.Triggers)
 	for _, summary := range a.summaryByID {
 		a.result.Summaries = append(a.result.Summaries, summary)
 	}
@@ -1410,6 +2254,194 @@ func (a *analyzer) finish(latency time.Duration) {
 	a.result.normalize()
 }
 
+func deduplicateTriggerRecords(records []TriggerRecord) []TriggerRecord {
+	result := make([]TriggerRecord, 0, len(records))
+	indexByID := make(map[string]int, len(records))
+	for _, record := range records {
+		index, duplicate := indexByID[record.ID]
+		if !duplicate {
+			indexByID[record.ID] = len(result)
+			result = append(result, record)
+			continue
+		}
+		existing := &result[index]
+		if preferTriggerRecord(record, *existing) {
+			record.Evidence = append(record.Evidence, existing.Evidence...)
+			record.Provenance = append(record.Provenance, existing.Provenance...)
+			*existing = record
+		} else {
+			existing.Evidence = append(existing.Evidence, record.Evidence...)
+			existing.Provenance = append(existing.Provenance, record.Provenance...)
+		}
+		existing.Evidence = compactEvidence(existing.Evidence)
+		existing.Provenance = compactProvenance(existing.Provenance)
+	}
+	return result
+}
+
+func preferTriggerRecord(candidate, existing TriggerRecord) bool {
+	rank := func(resolution string) int {
+		switch resolution {
+		case "exact":
+			return 0
+		case "partial":
+			return 1
+		case "ambiguous":
+			return 2
+		default:
+			return 3
+		}
+	}
+	if rank(candidate.Resolution) != rank(existing.Resolution) {
+		return rank(candidate.Resolution) < rank(existing.Resolution)
+	}
+	candidateKnown := boolInt(candidate.Identity.Path.Known) + boolInt(candidate.Dispatcher.Known) + boolInt(candidate.Handler.Known)
+	existingKnown := boolInt(existing.Identity.Path.Known) + boolInt(existing.Dispatcher.Known) + boolInt(existing.Handler.Known)
+	if candidateKnown != existingKnown {
+		return candidateKnown > existingKnown
+	}
+	if candidate.ProvisionalID != existing.ProvisionalID {
+		return !candidate.ProvisionalID
+	}
+	if len(candidate.WrapperChain) != len(existing.WrapperChain) {
+		return len(candidate.WrapperChain) < len(existing.WrapperChain)
+	}
+	return triggerRecordOrderKey(candidate) < triggerRecordOrderKey(existing)
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func triggerRecordOrderKey(record TriggerRecord) string {
+	wrappers := make([]string, 0, len(record.WrapperChain))
+	for _, wrapper := range record.WrapperChain {
+		wrappers = append(wrappers, wrapper.Symbol.ID+"@"+locationKey(wrapper.Callsite))
+	}
+	frontiers := make([]string, 0, len(record.DynamicFrontier))
+	for _, frontier := range record.DynamicFrontier {
+		frontiers = append(frontiers, frontier.Kind+"="+frontier.Detail)
+	}
+	return strings.Join([]string{
+		record.Status,
+		record.Dispatcher.Text,
+		record.Handler.Text,
+		strings.Join(wrappers, "|"),
+		strings.Join(frontiers, "|"),
+	}, "\x00")
+}
+
+func compactEvidence(input []Evidence) []Evidence {
+	result := make([]Evidence, 0, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for _, item := range input {
+		key := item.ID + "\x00" + item.Kind + "\x00" + locationKey(item.Location) + "\x00" + item.Detail
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func compactProvenance(input []Provenance) []Provenance {
+	result := make([]Provenance, 0, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for _, item := range input {
+		key := item.Provider + "\x00" + item.Version + "\x00" + item.Operation + "\x00" + item.Detail
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func (a *analyzer) startDispatcher(start dispatchStart) Value {
+	dispatcher := start.values["dispatcher"]
+	server := start.values["server"]
+	if (!dispatcher.Known || dispatcher.Text == "") && server.Text != "" {
+		if assigned := a.assignments[valueAddressKey(server)]; assigned.Text != "" {
+			dispatcher = assigned
+		}
+	}
+	return dispatcher
+}
+
+func (a *analyzer) recordServerStart(start dispatchStart) {
+	dispatcher := a.startDispatcher(start)
+	identity := firstKnownValue(
+		start.values["address"],
+		start.values["listener"],
+		start.values["server"],
+	)
+	frontiers := append([]Frontier(nil), start.frontiers...)
+	if !start.matched {
+		frontiers = append(frontiers, Frontier{
+			Kind:     "unresolved_dispatch_inventory",
+			Detail:   "No supported route registration was correlated with this static server start call.",
+			Location: &start.location,
+		})
+	}
+	status := "confirmed_server_start_call"
+	resolution := "exact"
+	if len(frontiers) > 0 || start.ambiguous || !dispatcher.Known || !identity.Known {
+		resolution = "partial"
+	}
+	basis := string(catalog.OriginCatalogStatic)
+	if len(start.chain) > 0 {
+		basis = string(catalog.OriginWrapperStatic)
+	}
+	location := start.location
+	record := TriggerRecord{
+		Kind: "http_server", Identity: Identity{Name: "HTTP server", Path: identity},
+		Transport: start.seed.Effect.Transport, Framework: start.seed.Effect.Framework,
+		ProcessEntrypoint: a.symbol(start.entrypoint), Dispatcher: dispatcher,
+		RegistrationSite: location, ServerStartSite: &location, Handler: dispatcher,
+		Middleware: []Value{}, WrapperChain: append([]Wrapper(nil), start.chain...),
+		FinalSeed: start.seed.ID, DiscoveryBasis: basis, Certainty: "static",
+		Resolution: resolution, ScenarioID: a.scenario.ID,
+		Evidence: []Evidence{{
+			ID: "server-start:" + locationKey(location), Kind: "server_start_call",
+			Location: location, Detail: start.seed.ID,
+		}},
+		Provenance: []Provenance{{
+			Provider: "go_ssa", Version: AnalyzerVersion,
+			Operation: "propagate_terminal_semantics", Detail: start.seed.ID,
+		}},
+		DynamicFrontier: frontiers, Status: status,
+	}
+	// A server-start record is identified by its exact static call site. Handler
+	// and listener resolution are supporting facts and may remain bounded without
+	// making that call-site identity provisional.
+	record.ProvisionalID = false
+	record.ID = stableTriggerID(record)
+	if filepath.IsAbs(location.Path) && !hasRepositoryWrapper(start.chain) {
+		return
+	}
+	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
+	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
+}
+
+func firstKnownValue(values ...Value) Value {
+	for _, value := range values {
+		if value.Known && value.Text != "" {
+			return value
+		}
+	}
+	for _, value := range values {
+		if value.Text != "" {
+			return value
+		}
+	}
+	return dynamicValue("unknown server identity")
+}
+
 func (a *analyzer) symbol(function *ssa.Function) Symbol {
 	return Symbol{
 		ID:       a.functionID(function),
@@ -1443,8 +2475,20 @@ func (a *analyzer) location(position token.Pos) Location {
 	return Location{Path: path, Line: resolved.Line, Column: resolved.Column}
 }
 
+func (a *analyzer) sourceLocation(filename string, line, column int) Location {
+	path := filename
+	if relative, err := filepath.Rel(a.root, filename); err == nil && !strings.HasPrefix(relative, "..") {
+		path = filepath.ToSlash(relative)
+	}
+	return Location{Path: path, Line: line, Column: column}
+}
+
 func (a *analyzer) valueIdentity(value ssa.Value) string {
-	return types.TypeString(value.Type(), packageQualifier) + "@" + locationKey(a.location(value.Pos()))
+	location := a.location(value.Pos())
+	if filepath.IsAbs(location.Path) {
+		location.Path = "<external>/" + filepath.Base(location.Path)
+	}
+	return types.TypeString(value.Type(), packageQualifier) + "@" + locationKey(location)
 }
 
 func (a *analyzer) wrapperOrigin(function *ssa.Function) string {
@@ -1485,6 +2529,26 @@ func knownValue(kind, text string) Value {
 	return Value{Kind: kind, Text: text, Known: text != "", Candidates: []string{}}
 }
 
+func valueAddressKey(value Value) string {
+	if value.addressKey != "" {
+		return value.addressKey
+	}
+	return value.Text
+}
+
+func contextualAddressKey(base string, env environment) string {
+	if base == "" || len(env) == 0 {
+		return base
+	}
+	parts := make([]string, 0, len(env))
+	for variable, value := range env {
+		parts = append(parts, variable.Name()+"="+value.Text+"#"+value.addressKey)
+	}
+	sort.Strings(parts)
+	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return base + "#" + hex.EncodeToString(digest[:8])
+}
+
 func dynamicValue(text string) Value {
 	return Value{Kind: "unknown", Text: text, Known: false, Candidates: []string{}}
 }
@@ -1502,6 +2566,9 @@ func mergeValues(values []Value) Value {
 		if value.Text != first.Text || value.Known != first.Known {
 			first.Known = false
 			first.Kind = "alternatives"
+		}
+		if value.addressKey != first.addressKey {
+			first.addressKey = ""
 		}
 	}
 	sort.Strings(candidates)
