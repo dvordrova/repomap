@@ -902,8 +902,10 @@
       var surfaceTotal = String(DATA.run.discovered_surface_count || 0);
       var surfaceBreakdown = [];
       if (DATA.run.application_surface_count) surfaceBreakdown.push(DATA.run.application_surface_count + ' application');
+      if (DATA.run.secondary_service_surface_count) surfaceBreakdown.push(DATA.run.secondary_service_surface_count + ' secondary services');
       if (DATA.run.tooling_surface_count) surfaceBreakdown.push(DATA.run.tooling_surface_count + ' tooling');
       if (DATA.run.test_helper_surface_count) surfaceBreakdown.push(DATA.run.test_helper_surface_count + ' tests/helpers');
+      if (DATA.run.unavailable_surface_count) surfaceBreakdown.push(DATA.run.unavailable_surface_count + ' unavailable');
       if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
       addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
       addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));

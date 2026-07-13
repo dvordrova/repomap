@@ -218,8 +218,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		stopSurfaceHeartbeat := startProgressHeartbeat(ctx, opts, ProgressEvent{
 			Stage: ProgressSurfaceWaiting, RepoName: s.RepoName, Activity: "Go runtime surface discovery",
 		})
-		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContext(
-			ctx, surfacediscovery.DefaultOptions(opts.RepoPath),
+		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
+			ctx,
+			surfacediscovery.DefaultOptions(opts.RepoPath),
+			surfaceDiscoveryInput(s.RepoName, s.GoFacts),
 		)
 		stopSurfaceHeartbeat()
 		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {

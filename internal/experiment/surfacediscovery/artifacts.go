@@ -63,7 +63,7 @@ func Markdown(result Result) string {
 	fmt.Fprintf(&builder, "Scenario: `%s`\n\n", result.Catalog.Scenario.ID)
 	fmt.Fprintf(
 		&builder,
-		"Discovered %d configured runtime trigger(s): %d direct, %d wrapper-derived.\n\n",
+		"Discovered %d static surface record(s): %d direct, %d wrapper-derived.\n\n",
 		len(result.Catalog.Triggers),
 		result.Coverage.DirectTriggers,
 		result.Coverage.WrapperDerivedTriggers,
@@ -80,6 +80,10 @@ func Markdown(result Result) string {
 		fmt.Fprintf(&builder, "## %s\n\n", title)
 		fmt.Fprintf(&builder, "- ID: `%s`\n", trigger.ID)
 		fmt.Fprintf(&builder, "- Status: `%s`; certainty `%s`; resolution `%s`\n", trigger.Status, trigger.Certainty, trigger.Resolution)
+		fmt.Fprintf(&builder, "- Executable: `%s`; role `%s`; availability `%s`\n", trigger.OwningExecutable, trigger.ExecutableRole, trigger.Availability)
+		if trigger.UnavailableReason != "" {
+			fmt.Fprintf(&builder, "- Unavailable reason: %s\n", trigger.UnavailableReason)
+		}
 		fmt.Fprintf(&builder, "- Handler: `%s`\n", displayValue(trigger.Handler))
 		fmt.Fprintf(&builder, "- Dispatcher: `%s`\n", displayValue(trigger.Dispatcher))
 		fmt.Fprintf(&builder, "- Registration: `%s:%d` via `%s`\n", trigger.RegistrationSite.Path, trigger.RegistrationSite.Line, trigger.FinalSeed)
@@ -100,6 +104,28 @@ func Markdown(result Result) string {
 			}
 			sort.Strings(frontiers)
 			fmt.Fprintf(&builder, "- Frontiers: %s\n", strings.Join(frontiers, "; "))
+		}
+		builder.WriteString("\n")
+	}
+	if len(result.Coverage.UnavailablePackages) > 0 {
+		builder.WriteString("## Unavailable packages\n\n")
+		for _, pkg := range result.Coverage.UnavailablePackages {
+			fmt.Fprintf(&builder, "- `%s`", pkg.Package)
+			if pkg.OwningExecutable != "" {
+				fmt.Fprintf(&builder, " (`%s`)", pkg.OwningExecutable)
+			}
+			fmt.Fprintf(&builder, ": %s\n", pkg.Reason)
+		}
+		builder.WriteString("\n")
+	}
+	if len(result.Coverage.PackageDiagnostics) > 0 {
+		builder.WriteString("## Package diagnostics\n\n")
+		for _, diagnostic := range result.Coverage.PackageDiagnostics {
+			fmt.Fprintf(&builder, "- `%s`: %s", diagnostic.Package, diagnostic.Message)
+			if diagnostic.Location != nil {
+				fmt.Fprintf(&builder, " (`%s:%d`)", diagnostic.Location.Path, diagnostic.Location.Line)
+			}
+			builder.WriteString("\n")
 		}
 		builder.WriteString("\n")
 	}

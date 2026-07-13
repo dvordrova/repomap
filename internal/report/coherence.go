@@ -17,10 +17,12 @@ const (
 	surfaceSourceTraceStart = "saved_trace_start"
 
 	surfaceCategoryApplication = "application"
+	surfaceCategoryService     = "secondary_service"
 	surfaceCategoryTooling     = "tooling"
 	surfaceCategoryTests       = "tests_helpers"
 	surfaceCategoryUnassigned  = "unassigned"
 	surfaceCategoryDynamic     = "dynamic_unresolved"
+	surfaceCategoryUnavailable = "unavailable"
 )
 
 type architectureOwnershipIndex struct {
@@ -620,10 +622,15 @@ func surfaceExecutable(trigger DiscoveredTrigger) string {
 }
 
 func surfaceOwnershipCategory(trigger DiscoveredTrigger, _ componentmap.ComponentID) string {
+	if trigger.Availability == SurfaceAvailabilityUnavailable {
+		return surfaceCategoryUnavailable
+	}
 	switch trigger.ExecutableRole {
 	case ExecutableRolePrimaryApplication:
 		return surfaceCategoryApplication
-	case ExecutableRoleSecondaryTooling:
+	case ExecutableRoleSecondaryService:
+		return surfaceCategoryService
+	case ExecutableRoleTooling, "secondary_tooling":
 		return surfaceCategoryTooling
 	case ExecutableRoleTestOrHelper:
 		return surfaceCategoryTests
@@ -650,6 +657,9 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 			trigger.OwningExecutable = surfaceExecutableForPackage(data, trigger.ProcessEntrypoint.Package)
 		}
 	}
+	if trigger.Availability == "" || trigger.Availability == SurfaceAvailabilityUnknown {
+		trigger.Availability = SurfaceAvailabilityAvailable
+	}
 	if trigger.ExecutableRole != "" && trigger.ExecutableRole != ExecutableRoleUnknown {
 		return
 	}
@@ -663,15 +673,15 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 	}
 	if strings.Contains(location, "/helpers/") {
 		if strings.Contains(location, "build") || strings.Contains(location, "release") {
-			trigger.ExecutableRole = ExecutableRoleSecondaryTooling
+			trigger.ExecutableRole = ExecutableRoleTooling
 		} else {
 			trigger.ExecutableRole = ExecutableRoleTestOrHelper
 		}
 		return
 	}
-	for _, segment := range []string{"/tools/", "/tool/", "/hack/", "/scripts/", "/build/", "/release/"} {
+	for _, segment := range []string{"/dev/", "/tools/", "/tool/", "/hack/", "/scripts/", "/build/", "/release/"} {
 		if strings.Contains(location, segment) {
-			trigger.ExecutableRole = ExecutableRoleSecondaryTooling
+			trigger.ExecutableRole = ExecutableRoleTooling
 			return
 		}
 	}
@@ -682,9 +692,15 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 	if trigger.Producer == SurfaceProducerCobra {
 		if primaryCommandExecutable(data, trigger) {
 			trigger.ExecutableRole = ExecutableRolePrimaryApplication
+		} else if trigger.ProcessEntrypoint.Location != nil {
+			trigger.ExecutableRole = ExecutableRoleSecondaryService
 		} else {
 			trigger.ExecutableRole = ExecutableRoleUnknown
 		}
+		return
+	}
+	if trigger.ProcessEntrypoint.Location != nil {
+		trigger.ExecutableRole = ExecutableRoleSecondaryService
 		return
 	}
 	trigger.ExecutableRole = ExecutableRoleUnknown
@@ -705,12 +721,16 @@ func matchesPrimaryProcessAnchor(data *ReportData, trigger *DiscoveredTrigger) b
 		return false
 	}
 	entrypointPath := cleanSurfacePath(trigger.ProcessEntrypoint.Location.Path)
+	processEntries := 0
+	matched := false
 	for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
-		if anchor.Kind == componentmap.AnchorProcessEntry && cleanSurfacePath(anchor.Location.Path) == entrypointPath {
-			return true
+		if anchor.Kind != componentmap.AnchorProcessEntry {
+			continue
 		}
+		processEntries++
+		matched = matched || cleanSurfacePath(anchor.Location.Path) == entrypointPath
 	}
-	return false
+	return processEntries == 1 && matched
 }
 
 func primaryCommandExecutable(data *ReportData, trigger *DiscoveredTrigger) bool {
@@ -736,11 +756,8 @@ func primaryCommandExecutable(data *ReportData, trigger *DiscoveredTrigger) bool
 				}
 			}
 		}
-		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
-			if anchor.Kind == componentmap.AnchorProcessEntry &&
-				cleanSurfacePath(anchor.Location.Path) == cleanSurfacePath(entrypoint.TargetLocation.Path) {
-				return true
-			}
+		if matchesPrimaryProcessAnchor(data, trigger) {
+			return true
 		}
 	}
 	return false
@@ -760,6 +777,11 @@ func surfaceTraceUnavailableReason(trigger DiscoveredTrigger, related componentm
 		return "no saved trace was collected for this command"
 	}
 	switch trigger.Kind {
+	case "process_entry":
+		if trigger.Availability == SurfaceAvailabilityUnavailable {
+			return "typed analysis is unavailable for this executable"
+		}
+		return "no saved trace was collected from this process entry"
 	case "http_server":
 		return "static server start call does not establish a saved request trace"
 	case "http_route_descriptor":

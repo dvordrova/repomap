@@ -20,7 +20,8 @@ import (
 const (
 	surfaceCatalogFilename        = "trigger_catalog.json"
 	surfaceCoverageFilename       = "surface_coverage.json"
-	surfaceArtifactVersion        = 2
+	surfaceArtifactVersion        = 3
+	legacySurfaceArtifactVersion  = 2
 	surfaceSemanticCatalogVersion = 1
 	maxSurfaceArtifactBytes       = 4 * 1024 * 1024
 	maxDiscoveredSurfaceTriggers  = 256
@@ -35,47 +36,62 @@ const (
 	SurfaceProducerCobra   = "deterministic_cobra"
 
 	ExecutableRolePrimaryApplication = "primary_application"
-	ExecutableRoleSecondaryTooling   = "secondary_tooling"
+	ExecutableRoleSecondaryService   = "secondary_service"
+	ExecutableRoleTooling            = "tooling"
 	ExecutableRoleTestOrHelper       = "test_or_helper"
 	ExecutableRoleUnknown            = "unknown"
+	// ExecutableRoleSecondaryTooling keeps source compatibility while new
+	// artifacts use the role name exposed by the product.
+	ExecutableRoleSecondaryTooling = ExecutableRoleTooling
+
+	SurfaceAvailabilityAvailable   = "available"
+	SurfaceAvailabilityUnavailable = "unavailable"
+	SurfaceAvailabilityUnknown     = "unknown"
 )
 
 // DiscoveredSurfaces is the bounded presentation projection of a paired
 // trigger catalog and coverage artifact. Repository roots are intentionally
 // absent: reports only retain repository-relative evidence locations.
 type DiscoveredSurfaces struct {
-	Version                   int                 `json:"version"`
-	AnalyzerVersion           string              `json:"analyzer_version"`
-	ScenarioID                string              `json:"scenario_id"`
-	ScopeStatement            string              `json:"scope_statement"`
-	TotalCount                int                 `json:"total_count"`
-	Truncated                 bool                `json:"truncated,omitempty"`
-	HTTPRouteCount            int                 `json:"http_route_count"`
-	HTTPServerCount           int                 `json:"http_server_count"`
-	HTTPRouteDescriptorCount  int                 `json:"http_route_descriptor_count"`
-	HTTPRouteFrontierCount    int                 `json:"http_route_frontier_count"`
-	DirectCount               int                 `json:"direct_count"`
-	WrapperCount              int                 `json:"wrapper_count"`
-	WorkerCount               int                 `json:"worker_count"`
-	AsyncTaskCount            int                 `json:"async_task_count"`
-	CLICommandCount           int                 `json:"cli_command_count"`
-	GenericSurfaceCount       int                 `json:"generic_surface_count"`
-	ApplicationCount          int                 `json:"application_count"`
-	ToolingCount              int                 `json:"tooling_count"`
-	TestHelperCount           int                 `json:"test_helper_count"`
-	UnassignedCount           int                 `json:"unassigned_count"`
-	DynamicFrontierCount      int                 `json:"dynamic_frontier_count"`
-	PossibleRegistrationCount int                 `json:"possible_registration_count"`
-	UnresolvedHandlerCount    int                 `json:"unresolved_handler_count"`
-	PackagesInspected         int                 `json:"packages_inspected"`
-	FunctionsInspected        int                 `json:"functions_inspected"`
-	EntrypointsConsidered     []SurfaceSymbol     `json:"entrypoints_considered"`
-	ConfiguredSeedsMatched    []string            `json:"configured_seeds_matched"`
-	Triggers                  []DiscoveredTrigger `json:"triggers"`
-	LoopSignals               []SurfaceLoopSignal `json:"loop_signals"`
-	DynamicFrontiers          []SurfaceFrontier   `json:"dynamic_frontiers"`
-	UnsupportedDispatch       []SurfaceFrontier   `json:"unsupported_dispatch_mechanisms"`
-	BudgetsReached            []string            `json:"budgets_reached"`
+	Version                   int                          `json:"version"`
+	AnalyzerVersion           string                       `json:"analyzer_version"`
+	ScenarioID                string                       `json:"scenario_id"`
+	ScopeStatement            string                       `json:"scope_statement"`
+	TotalCount                int                          `json:"total_count"`
+	Truncated                 bool                         `json:"truncated,omitempty"`
+	HTTPRouteCount            int                          `json:"http_route_count"`
+	HTTPServerCount           int                          `json:"http_server_count"`
+	HTTPRouteDescriptorCount  int                          `json:"http_route_descriptor_count"`
+	HTTPRouteFrontierCount    int                          `json:"http_route_frontier_count"`
+	DirectCount               int                          `json:"direct_count"`
+	WrapperCount              int                          `json:"wrapper_count"`
+	WorkerCount               int                          `json:"worker_count"`
+	AsyncTaskCount            int                          `json:"async_task_count"`
+	CLICommandCount           int                          `json:"cli_command_count"`
+	ProcessEntryCount         int                          `json:"process_entry_count"`
+	GenericSurfaceCount       int                          `json:"generic_surface_count"`
+	ApplicationCount          int                          `json:"application_count"`
+	SecondaryServiceCount     int                          `json:"secondary_service_count"`
+	ToolingCount              int                          `json:"tooling_count"`
+	TestHelperCount           int                          `json:"test_helper_count"`
+	UnassignedCount           int                          `json:"unassigned_count"`
+	UnavailableSurfaceCount   int                          `json:"unavailable_surface_count"`
+	PackageDiagnosticCount    int                          `json:"package_diagnostic_count"`
+	UnavailablePackageCount   int                          `json:"unavailable_package_count"`
+	DynamicFrontierCount      int                          `json:"dynamic_frontier_count"`
+	PossibleRegistrationCount int                          `json:"possible_registration_count"`
+	UnresolvedHandlerCount    int                          `json:"unresolved_handler_count"`
+	PackagesInspected         int                          `json:"packages_inspected"`
+	FunctionsInspected        int                          `json:"functions_inspected"`
+	EntrypointsConsidered     []SurfaceSymbol              `json:"entrypoints_considered"`
+	ConfiguredSeedsMatched    []string                     `json:"configured_seeds_matched"`
+	Triggers                  []DiscoveredTrigger          `json:"triggers"`
+	LoopSignals               []SurfaceLoopSignal          `json:"loop_signals"`
+	DynamicFrontiers          []SurfaceFrontier            `json:"dynamic_frontiers"`
+	UnsupportedDispatch       []SurfaceFrontier            `json:"unsupported_dispatch_mechanisms"`
+	PackageDiagnostics        []SurfacePackageDiagnostic   `json:"package_diagnostics"`
+	UnavailablePackages       []SurfacePackageAvailability `json:"unavailable_packages"`
+	BudgetsReached            []string                     `json:"budgets_reached"`
 }
 
 // DiscoveredTrigger keeps the catalog's distinct semantic roles distinct.
@@ -109,6 +125,8 @@ type DiscoveredTrigger struct {
 	Status                    string                     `json:"status"`
 	OwningExecutable          string                     `json:"owning_executable,omitempty"`
 	ExecutableRole            string                     `json:"executable_role"`
+	Availability              string                     `json:"availability"`
+	UnavailableReason         string                     `json:"unavailable_reason,omitempty"`
 	OwningComponentID         componentmap.ComponentID   `json:"owning_component_id,omitempty"`
 	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
 	RelatedTraceID            componentmap.FlowID        `json:"related_saved_trace_id,omitempty"`
@@ -176,6 +194,28 @@ type SurfaceLoopSignal struct {
 	Certainty    string           `json:"certainty"`
 }
 
+type SurfacePackageDiagnostic struct {
+	ID               string           `json:"id"`
+	Kind             string           `json:"kind"`
+	Message          string           `json:"message"`
+	Package          string           `json:"package"`
+	PackageName      string           `json:"package_name,omitempty"`
+	OwningExecutable string           `json:"owning_executable,omitempty"`
+	ExecutableRole   string           `json:"executable_role"`
+	Availability     string           `json:"availability"`
+	Location         *SurfaceLocation `json:"location,omitempty"`
+}
+
+type SurfacePackageAvailability struct {
+	Package          string   `json:"package"`
+	PackageName      string   `json:"package_name,omitempty"`
+	OwningExecutable string   `json:"owning_executable,omitempty"`
+	ExecutableRole   string   `json:"executable_role"`
+	Availability     string   `json:"availability"`
+	Reason           string   `json:"reason"`
+	DiagnosticIDs    []string `json:"diagnostic_ids"`
+}
+
 type rawSurfaceCatalog struct {
 	Version         int                  `json:"version"`
 	AnalyzerVersion string               `json:"analyzer_version"`
@@ -186,24 +226,31 @@ type rawSurfaceCatalog struct {
 }
 
 type rawSurfaceCoverage struct {
-	Version                int                    `json:"version"`
-	Repository             rawSurfaceRepository   `json:"repository"`
-	Scenario               rawSurfaceScenario     `json:"scenario"`
-	DirectTriggers         int                    `json:"direct_triggers"`
-	WrapperDerivedTriggers int                    `json:"wrapper_derived_triggers"`
-	UnresolvedHandlers     int                    `json:"unresolved_handlers"`
-	PossibleRegistrations  int                    `json:"possible_registrations"`
-	Workers                int                    `json:"workers"`
-	AsyncTasks             int                    `json:"async_tasks"`
-	ConfiguredSeedsMatched []string               `json:"configured_seeds_matched"`
-	PackagesInspected      int                    `json:"packages_inspected"`
-	FunctionsInspected     int                    `json:"functions_inspected"`
-	EntrypointsConsidered  []rawSurfaceSymbol     `json:"entrypoints_considered"`
-	LoopSignals            []rawSurfaceLoopSignal `json:"loop_signals"`
-	DynamicFrontiers       []rawSurfaceFrontier   `json:"dynamic_frontiers"`
-	UnsupportedDispatch    []rawSurfaceFrontier   `json:"unsupported_dispatch_mechanisms"`
-	BudgetsReached         []string               `json:"budgets_reached"`
-	ScopeStatement         string                 `json:"scope_statement"`
+	Version                   int                             `json:"version"`
+	Repository                rawSurfaceRepository            `json:"repository"`
+	Scenario                  rawSurfaceScenario              `json:"scenario"`
+	DirectTriggers            int                             `json:"direct_triggers"`
+	WrapperDerivedTriggers    int                             `json:"wrapper_derived_triggers"`
+	UnresolvedHandlers        int                             `json:"unresolved_handlers"`
+	PossibleRegistrations     int                             `json:"possible_registrations"`
+	Workers                   int                             `json:"workers"`
+	AsyncTasks                int                             `json:"async_tasks"`
+	ProcessEntries            int                             `json:"process_entries"`
+	AvailableProcessEntries   int                             `json:"available_process_entries"`
+	UnavailableProcessEntries int                             `json:"unavailable_process_entries"`
+	PackageDiagnosticCount    int                             `json:"package_diagnostic_count"`
+	UnavailablePackageCount   int                             `json:"unavailable_package_count"`
+	PackageDiagnostics        []rawSurfacePackageDiagnostic   `json:"package_diagnostics"`
+	UnavailablePackages       []rawSurfacePackageAvailability `json:"unavailable_packages"`
+	ConfiguredSeedsMatched    []string                        `json:"configured_seeds_matched"`
+	PackagesInspected         int                             `json:"packages_inspected"`
+	FunctionsInspected        int                             `json:"functions_inspected"`
+	EntrypointsConsidered     []rawSurfaceSymbol              `json:"entrypoints_considered"`
+	LoopSignals               []rawSurfaceLoopSignal          `json:"loop_signals"`
+	DynamicFrontiers          []rawSurfaceFrontier            `json:"dynamic_frontiers"`
+	UnsupportedDispatch       []rawSurfaceFrontier            `json:"unsupported_dispatch_mechanisms"`
+	BudgetsReached            []string                        `json:"budgets_reached"`
+	ScopeStatement            string                          `json:"scope_statement"`
 }
 
 type rawSurfaceRepository struct {
@@ -243,6 +290,10 @@ type rawSurfaceTrigger struct {
 	Provenance        []rawSurfaceProvenance `json:"provenance"`
 	DynamicFrontier   []rawSurfaceFrontier   `json:"dynamic_frontier"`
 	Status            string                 `json:"status"`
+	OwningExecutable  string                 `json:"owning_executable"`
+	ExecutableRole    string                 `json:"executable_role"`
+	Availability      string                 `json:"availability"`
+	UnavailableReason string                 `json:"unavailable_reason"`
 }
 
 type rawSurfaceProvenance struct {
@@ -304,6 +355,28 @@ type rawSurfaceLoopSignal struct {
 	TerminalSeed string             `json:"terminal_seed"`
 	Detail       string             `json:"detail"`
 	Certainty    string             `json:"certainty"`
+}
+
+type rawSurfacePackageDiagnostic struct {
+	ID               string              `json:"id"`
+	Kind             string              `json:"kind"`
+	Message          string              `json:"message"`
+	Package          string              `json:"package"`
+	PackageName      string              `json:"package_name"`
+	OwningExecutable string              `json:"owning_executable"`
+	ExecutableRole   string              `json:"executable_role"`
+	Availability     string              `json:"availability"`
+	Location         *rawSurfaceLocation `json:"location"`
+}
+
+type rawSurfacePackageAvailability struct {
+	Package          string   `json:"package"`
+	PackageName      string   `json:"package_name"`
+	OwningExecutable string   `json:"owning_executable"`
+	ExecutableRole   string   `json:"executable_role"`
+	Availability     string   `json:"availability"`
+	Reason           string   `json:"reason"`
+	DiagnosticIDs    []string `json:"diagnostic_ids"`
 }
 
 // parseDiscoveredSurfaces loads a complete v2 catalog/coverage pair. Missing
@@ -396,7 +469,7 @@ func readSurfaceArtifact(path, name string, target any) string {
 }
 
 func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceCoverage) string {
-	if catalog.Version != surfaceArtifactVersion {
+	if !supportedSurfaceArtifactVersion(catalog.Version) {
 		return fmt.Sprintf(
 			"discovered surfaces: unsupported %s version %d (want %d)",
 			surfaceCatalogFilename,
@@ -404,7 +477,7 @@ func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceC
 			surfaceArtifactVersion,
 		)
 	}
-	if coverage.Version != surfaceArtifactVersion {
+	if !supportedSurfaceArtifactVersion(coverage.Version) {
 		return fmt.Sprintf(
 			"discovered surfaces: unsupported %s version %d (want %d)",
 			surfaceCoverageFilename,
@@ -446,6 +519,10 @@ func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceC
 	return ""
 }
 
+func supportedSurfaceArtifactVersion(version int) bool {
+	return version == legacySurfaceArtifactVersion || version == surfaceArtifactVersion
+}
+
 func surfaceScenariosMatch(left, right rawSurfaceScenario) bool {
 	return left.ID == right.ID &&
 		left.GOOS == right.GOOS &&
@@ -476,6 +553,13 @@ func projectDiscoveredSurfaces(
 	httpServerCount := 0
 	httpRouteDescriptorCount := 0
 	httpRouteFrontierCount := 0
+	processEntryCount := 0
+	unavailableSurfaceCount := 0
+	applicationCount := 0
+	secondaryServiceCount := 0
+	toolingCount := 0
+	testHelperCount := 0
+	unassignedCount := 0
 	for _, trigger := range catalog.Triggers {
 		switch trigger.Kind {
 		case "http_route":
@@ -486,6 +570,23 @@ func projectDiscoveredSurfaces(
 			httpRouteDescriptorCount++
 		case "http_route_frontier":
 			httpRouteFrontierCount++
+		case "process_entry":
+			processEntryCount++
+		}
+		if trigger.Availability == SurfaceAvailabilityUnavailable {
+			unavailableSurfaceCount++
+		}
+		switch normalizeSurfaceExecutableRole(trigger.ExecutableRole) {
+		case ExecutableRolePrimaryApplication:
+			applicationCount++
+		case ExecutableRoleSecondaryService:
+			secondaryServiceCount++
+		case ExecutableRoleTooling:
+			toolingCount++
+		case ExecutableRoleTestOrHelper:
+			testHelperCount++
+		default:
+			unassignedCount++
 		}
 	}
 	return &DiscoveredSurfaces{
@@ -499,6 +600,15 @@ func projectDiscoveredSurfaces(
 		HTTPServerCount:           httpServerCount,
 		HTTPRouteDescriptorCount:  httpRouteDescriptorCount,
 		HTTPRouteFrontierCount:    httpRouteFrontierCount,
+		ProcessEntryCount:         processEntryCount,
+		ApplicationCount:          applicationCount,
+		SecondaryServiceCount:     secondaryServiceCount,
+		ToolingCount:              toolingCount,
+		TestHelperCount:           testHelperCount,
+		UnassignedCount:           unassignedCount,
+		UnavailableSurfaceCount:   unavailableSurfaceCount,
+		PackageDiagnosticCount:    coverage.PackageDiagnosticCount,
+		UnavailablePackageCount:   coverage.UnavailablePackageCount,
 		DirectCount:               coverage.DirectTriggers,
 		WrapperCount:              coverage.WrapperDerivedTriggers,
 		WorkerCount:               coverage.Workers,
@@ -518,6 +628,14 @@ func projectDiscoveredSurfaces(
 		)),
 		UnsupportedDispatch: projectSurfaceFrontiers(boundedSurfaceItems(
 			uniqueRawSurfaceFrontiers(coverage.UnsupportedDispatch),
+			maxSurfaceCoverageItems,
+		)),
+		PackageDiagnostics: projectSurfacePackageDiagnostics(boundedSurfaceItems(
+			coverage.PackageDiagnostics,
+			maxSurfaceCoverageItems,
+		)),
+		UnavailablePackages: projectSurfacePackageAvailability(boundedSurfaceItems(
+			coverage.UnavailablePackages,
 			maxSurfaceCoverageItems,
 		)),
 		BudgetsReached: boundedSurfaceItems(uniqueSurfaceStrings(coverage.BudgetsReached), maxSurfaceCoverageItems),
@@ -588,6 +706,35 @@ func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
 		Provenance:        projectSurfaceProvenance(boundedSurfaceItems(trigger.Provenance, maxSurfaceNestedItems)),
 		DynamicFrontier:   projectSurfaceFrontiers(boundedSurfaceItems(trigger.DynamicFrontier, maxSurfaceNestedItems)),
 		Status:            trigger.Status,
+		OwningExecutable:  cleanSurfacePath(trigger.OwningExecutable),
+		ExecutableRole:    normalizeSurfaceExecutableRole(trigger.ExecutableRole),
+		Availability:      normalizeSurfaceAvailability(trigger.Availability),
+		UnavailableReason: trigger.UnavailableReason,
+	}
+}
+
+func normalizeSurfaceExecutableRole(role string) string {
+	switch role {
+	case ExecutableRolePrimaryApplication, ExecutableRoleSecondaryService,
+		ExecutableRoleTooling, ExecutableRoleTestOrHelper:
+		return role
+	case "secondary_tooling":
+		return ExecutableRoleTooling
+	case "":
+		return ""
+	default:
+		return ExecutableRoleUnknown
+	}
+}
+
+func normalizeSurfaceAvailability(availability string) string {
+	switch availability {
+	case SurfaceAvailabilityAvailable, SurfaceAvailabilityUnavailable:
+		return availability
+	case "":
+		return ""
+	default:
+		return SurfaceAvailabilityUnknown
 	}
 }
 
@@ -622,6 +769,9 @@ func mergeCommandSurfaceCatalog(data *ReportData) {
 		}
 		if trigger.ExecutableRole == "" {
 			trigger.ExecutableRole = ExecutableRoleUnknown
+		}
+		if trigger.Availability == "" {
+			trigger.Availability = SurfaceAvailabilityAvailable
 		}
 		seen[trigger.ID] = struct{}{}
 	}
@@ -698,6 +848,7 @@ func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) Discovere
 		Certainty:        "static", Resolution: resolution, Status: status,
 		OwningExecutable: surfaceExecutableForPackage(data, trace.EntrypointPackage),
 		ExecutableRole:   ExecutableRoleUnknown,
+		Availability:     SurfaceAvailabilityAvailable,
 		Provenance: []SurfaceProvenance{{
 			Provider: "gofacts", Version: fmt.Sprintf("command-trace-v%d", trace.Version),
 			Operation: "build_selected_cobra_registration",
@@ -782,19 +933,25 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 		return
 	}
 	rawGenericTotal := catalog.TotalCount - catalog.CLICommandCount
+	rawUnavailableSurfaceCount := catalog.UnavailableSurfaceCount
 	preserveRawCounts := catalog.Truncated
 	if !preserveRawCounts {
 		catalog.TotalCount = len(catalog.Triggers)
 	}
 	catalog.CLICommandCount = 0
 	if !preserveRawCounts {
+		catalog.ProcessEntryCount = 0
 		catalog.GenericSurfaceCount = 0
 		catalog.HTTPRouteCount = 0
 		catalog.HTTPServerCount = 0
 		catalog.HTTPRouteDescriptorCount = 0
 		catalog.HTTPRouteFrontierCount = 0
+		catalog.UnavailableSurfaceCount = 0
+	} else {
+		catalog.UnavailableSurfaceCount = rawUnavailableSurfaceCount
 	}
 	catalog.ApplicationCount = 0
+	catalog.SecondaryServiceCount = 0
 	catalog.ToolingCount = 0
 	catalog.TestHelperCount = 0
 	catalog.UnassignedCount = 0
@@ -816,6 +973,10 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 			if !preserveRawCounts {
 				catalog.HTTPRouteFrontierCount++
 			}
+		case "process_entry":
+			if !preserveRawCounts {
+				catalog.ProcessEntryCount++
+			}
 		}
 		switch trigger.Producer {
 		case SurfaceProducerCobra:
@@ -828,12 +989,17 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 		switch trigger.ExecutableRole {
 		case ExecutableRolePrimaryApplication:
 			catalog.ApplicationCount++
-		case ExecutableRoleSecondaryTooling:
+		case ExecutableRoleSecondaryService:
+			catalog.SecondaryServiceCount++
+		case ExecutableRoleTooling, "secondary_tooling":
 			catalog.ToolingCount++
 		case ExecutableRoleTestOrHelper:
 			catalog.TestHelperCount++
 		default:
 			catalog.UnassignedCount++
+		}
+		if !preserveRawCounts && trigger.Availability == SurfaceAvailabilityUnavailable {
+			catalog.UnavailableSurfaceCount++
 		}
 	}
 	if preserveRawCounts {
@@ -949,6 +1115,36 @@ func projectSurfaceLoopSignals(signals []rawSurfaceLoopSignal) []SurfaceLoopSign
 	return result
 }
 
+func projectSurfacePackageDiagnostics(values []rawSurfacePackageDiagnostic) []SurfacePackageDiagnostic {
+	result := make([]SurfacePackageDiagnostic, 0, len(values))
+	for _, value := range values {
+		result = append(result, SurfacePackageDiagnostic{
+			ID: value.ID, Kind: value.Kind, Message: value.Message,
+			Package: value.Package, PackageName: value.PackageName,
+			OwningExecutable: cleanSurfacePath(value.OwningExecutable),
+			ExecutableRole:   normalizeSurfaceExecutableRole(value.ExecutableRole),
+			Availability:     normalizeSurfaceAvailability(value.Availability),
+			Location:         projectOptionalSurfaceDiagnosticLocation(value.Location),
+		})
+	}
+	return result
+}
+
+func projectSurfacePackageAvailability(values []rawSurfacePackageAvailability) []SurfacePackageAvailability {
+	result := make([]SurfacePackageAvailability, 0, len(values))
+	for _, value := range values {
+		result = append(result, SurfacePackageAvailability{
+			Package: value.Package, PackageName: value.PackageName,
+			OwningExecutable: cleanSurfacePath(value.OwningExecutable),
+			ExecutableRole:   normalizeSurfaceExecutableRole(value.ExecutableRole),
+			Availability:     normalizeSurfaceAvailability(value.Availability),
+			Reason:           value.Reason,
+			DiagnosticIDs:    boundedSurfaceItems(value.DiagnosticIDs, maxSurfaceNestedItems),
+		})
+	}
+	return result
+}
+
 func projectOptionalSurfaceLocation(location *rawSurfaceLocation) *SurfaceLocation {
 	if location == nil {
 		return nil
@@ -967,12 +1163,24 @@ func projectSurfaceLocation(location rawSurfaceLocation) *SurfaceLocation {
 	}
 }
 
+func projectOptionalSurfaceDiagnosticLocation(location *rawSurfaceLocation) *SurfaceLocation {
+	if location == nil || location.Line <= 0 || location.Column < 0 || !validDiscoveredDiagnosticPath(location.Path) {
+		return nil
+	}
+	return &SurfaceLocation{Path: location.Path, Line: location.Line, Column: location.Column}
+}
+
 func validDiscoveredSurfacePath(value string) bool {
 	return len(value) <= maxDiscoveredSurfacePathBytes &&
 		value != "." &&
 		fs.ValidPath(value) &&
 		!strings.ContainsRune(value, '\\') &&
 		strings.HasSuffix(value, ".go")
+}
+
+func validDiscoveredDiagnosticPath(value string) bool {
+	return len(value) <= maxDiscoveredSurfacePathBytes &&
+		value != "." && fs.ValidPath(value) && !strings.ContainsRune(value, '\\')
 }
 
 // collectDiscoveredSurfacePaths adds every retained, exact surface evidence
@@ -1014,6 +1222,9 @@ func collectDiscoveredSurfacePaths(surfaces *DiscoveredSurfaces, add func(string
 	}
 	for _, frontier := range surfaces.UnsupportedDispatch {
 		addLocation(frontier.Location)
+	}
+	for _, diagnostic := range surfaces.PackageDiagnostics {
+		addLocation(diagnostic.Location)
 	}
 
 	ordered := make([]string, 0, len(paths))
