@@ -938,9 +938,79 @@
       if (facts.children.length > 0) card.appendChild(facts);
     }
 
+    var research = renderModelResearchDetails(DATA.model_research);
+    if (research) card.appendChild(research);
+
     var warnings = renderRunWarnings(DATA.warnings);
     if (warnings) card.appendChild(warnings);
     return card;
+  }
+
+  function renderModelResearchDetails(research) {
+    if (!research || !research.policy) return null;
+    var details = el('details', 'rm-analysis-details rm-model-research');
+    details.appendChild(txt('summary', '', 'Model research'));
+
+    var policy = research.policy;
+    var usage = research.usage || {};
+    var overview = el('div', 'rm-model-research-overview');
+    overview.appendChild(txt('div', '', 'Provider calls: ' + String(usage.semantic_calls || 0) + ' / ' + String(policy.max_semantic_calls || 0) + ' budget'));
+    overview.appendChild(txt('div', '', 'External request bytes: ' + formatBytes(usage.request_bytes || 0) + ' / ' + formatBytes(policy.max_total_request_bytes || 0) + ' budget'));
+    details.appendChild(overview);
+
+    var stages = el('div', 'rm-model-research-stages');
+    appendResearchStage(stages, 'Orientation', research.orientation);
+    (research.targeted_rounds || []).forEach(function (round, index) {
+      appendResearchRound(stages, 'Targeted research ' + String(index + 1), round);
+    });
+    (research.skipped_targeted_rounds || []).forEach(function (round, index) {
+      appendResearchRound(stages, 'Skipped targeted round ' + String(index + 1), round);
+    });
+    appendResearchStage(stages, 'Architecture synthesis', research.architecture_synthesis);
+    details.appendChild(stages);
+
+    var coverage = research.coverage || {};
+    var coverageList = el('div', 'rm-model-research-coverage');
+    coverageList.appendChild(txt('div', '', 'Local authorized files: ' + String(coverage.local_authorized_files || 0)));
+    coverageList.appendChild(txt('div', '', 'Initial model summaries: ' + String(coverage.initial_model_summaries || 0)));
+    coverageList.appendChild(txt('div', '', 'Focused local evidence inspected: ' + String(coverage.focused_local_evidence_inspected || 0)));
+    coverageList.appendChild(txt('div', '', 'Targeted model evidence windows: ' + String(coverage.targeted_model_evidence_windows || 0)));
+    details.appendChild(coverageList);
+    return details;
+  }
+
+  function appendResearchStage(container, label, stage) {
+    if (!stage || !stage.status) return;
+    var row = el('div', 'rm-model-research-stage');
+    var status = String(stage.status).replaceAll('_', ' ');
+    if (stage.cache_hit) status += ' · cached';
+    if (stage.request_bytes) status += ' · ' + formatBytes(stage.request_bytes);
+    row.appendChild(txt('strong', '', label));
+    row.appendChild(txt('span', '', status));
+    container.appendChild(row);
+  }
+
+  function appendResearchRound(container, label, round) {
+    if (!round) return;
+    var row = el('div', 'rm-model-research-round');
+    var heading = el('div', 'rm-model-research-stage');
+    heading.appendChild(txt('strong', '', label));
+    var status = String(round.status || 'unknown').replaceAll('_', ' ');
+    if (round.cached) status += ' · cached';
+    heading.appendChild(txt('span', '', status));
+    row.appendChild(heading);
+    if (round.question) row.appendChild(txt('div', '', round.question));
+    if (round.selection_reason) row.appendChild(txt('div', 'rm-muted', 'Why: ' + round.selection_reason.replaceAll('_', ' ')));
+    row.appendChild(txt('div', 'rm-muted', 'Exact evidence: ' + String((round.input_evidence_ids || []).length) + ' · new grounded facts: ' + String(round.new_grounded_facts_count || 0)));
+    if ((round.rejected_findings || []).length) {
+      row.appendChild(txt('div', 'rm-muted', 'Rejected claims: ' + String(round.rejected_findings.length)));
+    }
+    if ((round.unresolved_frontiers || []).length) {
+      row.appendChild(txt('div', 'rm-muted', 'Frontier: ' + String(round.unresolved_frontiers[0].question || 'unresolved')));
+    } else if (round.stop_reason) {
+      row.appendChild(txt('div', 'rm-muted', 'Result: ' + String(round.stop_reason).replaceAll('_', ' ')));
+    }
+    container.appendChild(row);
   }
 
   function componentReferences(statements) {

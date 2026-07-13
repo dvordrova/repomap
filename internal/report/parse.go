@@ -16,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
@@ -374,6 +375,16 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	if state, err := modelresearch.ReadState(absDir); err == nil {
+		data.ModelResearch = &state
+		if data.Run == nil {
+			data.Run = &RunInfo{}
+		}
+		data.Run.ProviderRequestCount = state.Usage.SemanticCalls
+		data.Run.ExternalRequestBytes = state.Usage.RequestBytes
+	} else if !os.IsNotExist(err) {
+		parseWarnings = append(parseWarnings, fmt.Sprintf("model research: %v", err))
+	}
 	architectureStatus, warning := readArchitectureSynthesisStatus(
 		filepath.Join(absDir, ArchitectureSynthesisStatusFile),
 	)
@@ -384,7 +395,7 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if warning = architectureSynthesisUserWarning(data.ArchitectureSynthesis); warning != "" {
 		parseWarnings = append(parseWarnings, warning)
 	}
-	if data.Run != nil && data.ArchitectureSynthesis != nil {
+	if data.Run != nil && data.ArchitectureSynthesis != nil && data.ModelResearch == nil {
 		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
 	}
 	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
@@ -592,6 +603,13 @@ func collectOpenablePaths(data *ReportData) {
 			add(anchor.Location.Path)
 			for _, member := range anchor.AssociatedMembers {
 				add(member.Location.Path)
+			}
+		}
+	}
+	if data.ModelResearch != nil {
+		for _, fact := range data.ModelResearch.Theory.GroundedFacts {
+			if fact.Location != nil {
+				add(fact.Location.Path)
 			}
 		}
 	}

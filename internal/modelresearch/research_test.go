@@ -96,6 +96,33 @@ func TestPlanTargetedRoundsSkipsRuntimeOnlyFrontier(t *testing.T) {
 	}
 }
 
+func TestFocusedScopeMarksEvidenceNeverSentToProvider(t *testing.T) {
+	input := basicPlanningInput(t)
+	input.Policy.Targeted.MaxEvidenceItems = 1
+	result, err := PlanTargetedRounds(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Selected) != 1 {
+		t.Fatalf("selected rounds = %#v", result)
+	}
+	plan := result.Selected[0]
+	if len(plan.Scope.LocalEvidence) <= len(plan.Bundle.Evidence) {
+		t.Fatalf("local/provider evidence = %d/%d, want locally retained omission", len(plan.Scope.LocalEvidence), len(plan.Bundle.Evidence))
+	}
+	foundNeverSent := false
+	for _, item := range plan.Scope.LocalEvidence {
+		for _, visibility := range item.Visibility {
+			if visibility == VisibilityNeverProvider {
+				foundNeverSent = true
+			}
+		}
+	}
+	if !foundNeverSent {
+		t.Fatalf("focused local evidence lacks never-sent provenance: %#v", plan.Scope.LocalEvidence)
+	}
+}
+
 func TestPlanTargetedRoundsHardCapsTwoRounds(t *testing.T) {
 	input := basicPlanningInput(t)
 	input.Questions = []ProposedQuestion{
@@ -200,7 +227,7 @@ func TestFailedRoundPreservesGroundedLocalEvidence(t *testing.T) {
 		t.Fatalf("failed round = %#v, err=%v", round, callErr)
 	}
 	state := NewState(input.Policy, RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"})
-	ApplyRound(&state, planResult.Selected[0].Bundle, round)
+	ApplyRound(&state, planResult.Selected[0], round)
 	if len(state.Theory.GroundedFacts) == 0 {
 		t.Fatal("failed targeted call discarded local evidence")
 	}

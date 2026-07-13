@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 // ComponentSynthesisPromptJSON returns the exact OpenAI-compatible request
@@ -30,11 +31,19 @@ func (c *Client) SynthesizeComponentLandscape(
 	ctx context.Context,
 	prompt componentmap.SynthesisPrompt,
 ) ([]byte, error) {
+	result, err := c.SynthesizeComponentLandscapeMeasured(ctx, prompt)
+	return result.Content, err
+}
+
+func (c *Client) SynthesizeComponentLandscapeMeasured(
+	ctx context.Context,
+	prompt componentmap.SynthesisPrompt,
+) (modelresearch.ProviderResult, error) {
 	body, err := c.ComponentSynthesisPromptJSON(prompt)
 	if err != nil {
-		return nil, err
+		return modelresearch.ProviderResult{}, err
 	}
-	result, _, err := doChat(
+	result, _, err := doChatMeasured(
 		ctx,
 		c.HTTPClient,
 		c.Endpoint,
@@ -43,7 +52,10 @@ func (c *Client) SynthesizeComponentLandscape(
 		body,
 		false,
 	)
-	return result, err
+	return modelresearch.ProviderResult{
+		Content: result.Content, Attempts: 1,
+		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+	}, err
 }
 
 func validateComponentSynthesisPrompt(prompt componentmap.SynthesisPrompt) error {

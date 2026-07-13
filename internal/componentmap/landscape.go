@@ -32,6 +32,7 @@ const (
 	maxComponents        = 32
 	maxProvenanceItems   = 8
 	maxScenarioContexts  = 8
+	maxResearchFindings  = 64
 	maxNameBytes         = 256
 	maxDescriptionBytes  = 1_024
 	maxOpaqueIDBytes     = 128
@@ -261,17 +262,32 @@ type FlowAnchorBinding struct {
 	Scenarios  []ScenarioContext     `json:"scenarios,omitempty"`
 }
 
+// ResearchInterpretation is a validated model interpretation over exact local
+// evidence. It may guide conceptual naming/grouping but is not a LocalFact and
+// cannot create members, anchors, flows, or relations.
+type ResearchInterpretation struct {
+	ID             string     `json:"id"`
+	Question       string     `json:"question"`
+	Interpretation string     `json:"interpretation"`
+	EvidenceIDs    []string   `json:"evidence_ids"`
+	MemberIDs      []MemberID `json:"member_ids,omitempty"`
+	FlowIDs        []FlowID   `json:"flow_ids,omitempty"`
+	AnchorIDs      []string   `json:"anchor_ids,omitempty"`
+}
+
 // CandidateBundle is the bounded, versioned input to conceptual synthesis.
 // It contains no coordinates and gives a proposal no authority over evidence.
 type CandidateBundle struct {
-	Version             int                 `json:"version"`
-	RepositoryArchetype RepositoryArchetype `json:"repository_archetype"`
-	GroundingMode       GroundingMode       `json:"grounding_mode"`
-	BehaviorAnchors     []BehaviorAnchor    `json:"behavior_anchors,omitempty"`
-	Candidates          []Candidate         `json:"candidates"`
-	Flows               []Flow              `json:"flows,omitempty"`
-	Relations           []LocalRelation     `json:"relations,omitempty"`
-	AnchorBindings      []FlowAnchorBinding `json:"flow_anchor_bindings,omitempty"`
+	Version               int                      `json:"version"`
+	RepositoryArchetype   RepositoryArchetype      `json:"repository_archetype"`
+	GroundingMode         GroundingMode            `json:"grounding_mode"`
+	BehaviorAnchors       []BehaviorAnchor         `json:"behavior_anchors,omitempty"`
+	Candidates            []Candidate              `json:"candidates"`
+	Flows                 []Flow                   `json:"flows,omitempty"`
+	Relations             []LocalRelation          `json:"relations,omitempty"`
+	AnchorBindings        []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
+	ResearchFindings      []ResearchInterpretation `json:"accepted_research_findings,omitempty"`
+	ResearchPolicyVersion string                   `json:"research_policy_version,omitempty"`
 }
 
 // Proposal contains the complete provider authority: wording, membership, and
@@ -476,6 +492,12 @@ func (bundle CandidateBundle) Validate() error {
 	if len(bundle.AnchorBindings) > maxAnchorBindings {
 		return fmt.Errorf("componentmap: candidate bundle exceeds %d flow-anchor bindings", maxAnchorBindings)
 	}
+	if len(bundle.ResearchFindings) > maxResearchFindings {
+		return fmt.Errorf("componentmap: candidate bundle exceeds %d research findings", maxResearchFindings)
+	}
+	if len(bundle.ResearchFindings) > 0 && strings.TrimSpace(bundle.ResearchPolicyVersion) == "" {
+		return fmt.Errorf("componentmap: research findings require a policy version")
+	}
 	if !bundle.RepositoryArchetype.valid() {
 		return fmt.Errorf("componentmap: invalid repository archetype %q", bundle.RepositoryArchetype)
 	}
@@ -579,6 +601,47 @@ func (bundle CandidateBundle) Validate() error {
 				return fmt.Errorf("componentmap: scenario %q has conflicting definitions", scenario.ID)
 			}
 			scenarioDefinitions[scenario.ID] = scenario
+		}
+	}
+	researchIDs := make(map[string]struct{}, len(bundle.ResearchFindings))
+	for index, finding := range bundle.ResearchFindings {
+		if err := validateResearchInterpretation(finding, members, flowIDs, anchorIDs); err != nil {
+			return fmt.Errorf("componentmap: accepted_research_findings[%d]: %w", index, err)
+		}
+		if _, duplicate := researchIDs[finding.ID]; duplicate {
+			return fmt.Errorf("componentmap: duplicate research finding id %q", finding.ID)
+		}
+		researchIDs[finding.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateResearchInterpretation(
+	finding ResearchInterpretation,
+	members map[MemberID]Candidate,
+	flows map[FlowID]struct{},
+	anchors map[string]struct{},
+) error {
+	if strings.TrimSpace(finding.ID) == "" || strings.TrimSpace(finding.Question) == "" ||
+		strings.TrimSpace(finding.Interpretation) == "" || len(finding.EvidenceIDs) == 0 {
+		return fmt.Errorf("research interpretation is incomplete")
+	}
+	if len(finding.MemberIDs) == 0 && len(finding.FlowIDs) == 0 && len(finding.AnchorIDs) == 0 {
+		return fmt.Errorf("research interpretation has no exact local binding")
+	}
+	for _, memberID := range finding.MemberIDs {
+		if _, ok := members[memberID]; !ok {
+			return fmt.Errorf("research interpretation references unknown member")
+		}
+	}
+	for _, flowID := range finding.FlowIDs {
+		if _, ok := flows[flowID]; !ok {
+			return fmt.Errorf("research interpretation references unknown flow %q", flowID)
+		}
+	}
+	for _, anchorID := range finding.AnchorIDs {
+		if _, ok := anchors[anchorID]; !ok {
+			return fmt.Errorf("research interpretation references unknown anchor %q", anchorID)
 		}
 	}
 	return nil
@@ -1826,6 +1889,21 @@ func cloneFlowAnchorBindings(bindings []FlowAnchorBinding) []FlowAnchorBinding {
 		}
 	}
 	return cloned
+}
+
+func cloneResearchInterpretations(findings []ResearchInterpretation) []ResearchInterpretation {
+	if findings == nil {
+		return nil
+	}
+	result := make([]ResearchInterpretation, len(findings))
+	for index, finding := range findings {
+		result[index] = finding
+		result[index].EvidenceIDs = append([]string(nil), finding.EvidenceIDs...)
+		result[index].MemberIDs = append([]MemberID(nil), finding.MemberIDs...)
+		result[index].FlowIDs = append([]FlowID(nil), finding.FlowIDs...)
+		result[index].AnchorIDs = append([]string(nil), finding.AnchorIDs...)
+	}
+	return result
 }
 
 func sortCandidates(candidates []Candidate) {

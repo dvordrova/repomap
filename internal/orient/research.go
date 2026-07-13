@@ -88,6 +88,8 @@ func obtainOrientation(
 	result, err := client.OrientMeasured(ctx, bundleJSON)
 	call.Metrics.LatencyMillis = time.Since(started).Milliseconds()
 	call.Metrics.ResponseBytes = len(result.Content)
+	call.Metrics.InputTokens = result.InputTokens
+	call.Metrics.OutputTokens = result.OutputTokens
 	call.Metrics.SemanticCalls = 1
 	if result.Attempts > 1 {
 		call.Metrics.RetryCount = result.Attempts - 1
@@ -150,6 +152,7 @@ func runTargetedResearch(
 		return []string{fmt.Sprintf("targeted model research planning failed: %v", err)}
 	}
 	traceIDs := acceptedFlowIDs(report.CandidateFlows)
+	state.Theory.RelatedTraceIDs = append([]string(nil), traceIDs...)
 	warnings := make([]string, 0)
 	for _, planned := range plan.Selected {
 		planned.Bundle.KnownTraceIDs = append([]string(nil), traceIDs...)
@@ -158,7 +161,7 @@ func runTargetedResearch(
 			RunsDir: dw.BaseDir, RunDir: dw.RunDir(),
 			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
 		})
-		modelresearch.ApplyRound(state, planned.Bundle, round)
+		modelresearch.ApplyRound(state, planned, round)
 		if artifactErr := writeResearchBundleArtifact(dw, round, planned.Bundle); artifactErr != nil {
 			warnings = append(warnings, fmt.Sprintf("persist targeted evidence bundle: %v", artifactErr))
 		}

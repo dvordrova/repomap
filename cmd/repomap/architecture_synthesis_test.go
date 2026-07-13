@@ -11,6 +11,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -20,12 +21,16 @@ type architectureSynthesisStub struct {
 	err      error
 }
 
-func (stub *architectureSynthesisStub) SynthesizeComponentLandscape(
+func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeMeasured(
 	_ context.Context,
 	_ componentmap.SynthesisPrompt,
-) ([]byte, error) {
+) (modelresearch.ProviderResult, error) {
 	stub.calls++
-	return append([]byte(nil), stub.response...), stub.err
+	return modelresearch.ProviderResult{Content: append([]byte(nil), stub.response...), Attempts: 1}, stub.err
+}
+
+func (stub *architectureSynthesisStub) ComponentSynthesisPromptJSON(prompt componentmap.SynthesisPrompt) ([]byte, error) {
+	return json.Marshal(prompt)
 }
 
 func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
@@ -113,7 +118,7 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 	t.Parallel()
 
 	status := architectureSynthesisStatus(
-		architectureSynthesisOutcome{InputBytes: 1200, LatencyMillis: 4321},
+		architectureSynthesisOutcome{InputBytes: 1200, LatencyMillis: 4321, Attempted: true},
 		errors.New("architecture synthesis: provider call: llm response content is empty"),
 	)
 	if status.State != report.ArchitectureSynthesisFailed ||
@@ -135,7 +140,9 @@ func TestEnsureArchitectureSynthesisDoesNotRetryCorruptSavedRecord(t *testing.T)
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cacheKey, err := componentmap.SynthesisCacheKey("revision-corrupt", bundle)
+	cacheKey, err := componentmap.SynthesisCacheKeyForProvider(
+		"revision-corrupt", bundle, "openai-compatible/bearer", "test-model",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,6 +163,32 @@ func TestEnsureArchitectureSynthesisDoesNotRetryCorruptSavedRecord(t *testing.T)
 	}
 	if provider.calls != 0 {
 		t.Fatalf("provider calls = %d, want 0", provider.calls)
+	}
+}
+
+func TestEnsureArchitectureSynthesisCannotExceedFourSemanticCalls(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	policy := modelresearch.DefaultPolicy()
+	state := modelresearch.NewState(policy, modelresearch.RepositoryContext{
+		Identity: runDir, Revision: "abc", Scenario: "go-default",
+	})
+	state.Usage.SemanticCalls = policy.MaxSemanticCalls
+	state.Usage.RequestBytes = 100 << 10
+	if err := modelresearch.WriteState(runDir, state); err != nil {
+		t.Fatal(err)
+	}
+	provider := &architectureSynthesisStub{err: errors.New("must not be called")}
+	_, err := ensureArchitectureSynthesis(
+		context.Background(), architectureSynthesisTestBundle(), runDir, "revision-budget",
+		"openai-compatible/bearer", "test-model", provider,
+	)
+	if err == nil || !strings.Contains(err.Error(), "call_budget_exhausted") {
+		t.Fatalf("error = %v, want call budget exhaustion", err)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("provider calls = %d, want zero", provider.calls)
 	}
 }
 

@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -598,11 +595,8 @@ func researchRepositoryContext(state freshness.RepositoryState, repo string) mod
 	if revision == "" {
 		revision = "unknown"
 	}
-	dirtyJSON, _ := json.Marshal(state.Dirty)
-	digest := sha256.Sum256(dirtyJSON)
 	return modelresearch.RepositoryContext{
-		Identity: identity, Revision: revision,
-		DirtySHA256: hex.EncodeToString(digest[:]), Scenario: "go-default",
+		Identity: identity, Revision: revision, Scenario: "go-default",
 	}
 }
 

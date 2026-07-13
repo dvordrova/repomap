@@ -25,8 +25,9 @@ type ProviderVisibleBundle struct {
 // FocusedInvestigationScope identifies one bounded local expansion. It may
 // contain authorized paths that were absent from initial orientation.
 type FocusedInvestigationScope struct {
-	QuestionID          string   `json:"question_id"`
-	FocusedEvidenceIDs  []string `json:"focused_evidence_ids"`
-	LocallyInspected    []string `json:"locally_inspected_paths"`
-	ProviderEvidenceIDs []string `json:"provider_evidence_ids,omitempty"`
+	QuestionID          string         `json:"question_id"`
+	FocusedEvidenceIDs  []string       `json:"focused_evidence_ids"`
+	LocallyInspected    []string       `json:"locally_inspected_paths"`
+	ProviderEvidenceIDs []string       `json:"provider_evidence_ids,omitempty"`
+	LocalEvidence       []EvidenceItem `json:"local_evidence"`
 }

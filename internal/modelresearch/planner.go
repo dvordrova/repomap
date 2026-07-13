@@ -215,7 +215,7 @@ func assembleEvidenceBundle(
 			Statement: "provider file summary selected for focused local expansion",
 			Location:  &evidence.Location{Path: candidate.Path}, Certainty: evidence.CertaintyStatic,
 			Provenance: []evidence.Provenance{{Provider: "local_research_planner", Version: PolicyVersion, Operation: "select_candidate_file"}},
-			Visibility: []EvidenceVisibility{VisibilityProviderInitial, VisibilityProviderTarget},
+			Visibility: []EvidenceVisibility{VisibilityProviderInitial},
 		})
 	}
 	if len(selectedPaths) == 0 {
@@ -269,15 +269,27 @@ func assembleEvidenceBundle(
 			Kind: EvidenceSource, Statement: "bounded source window selected locally for the research question",
 			Location: &location, Certainty: evidence.CertaintyStatic, Window: &window,
 			Provenance: []evidence.Provenance{{Provider: "reporead", Version: PolicyVersion, Operation: "read_bounded_source_window", Location: &location}},
-			Visibility: []EvidenceVisibility{VisibilityLocalAfter, VisibilityProviderTarget},
+			Visibility: []EvidenceVisibility{VisibilityLocalAfter},
 		}
 		bundle.Evidence = append(bundle.Evidence, item)
 	}
-	bundle.Evidence = deduplicateEvidence(bundle.Evidence)
-	if len(bundle.Evidence) > budget.MaxEvidenceItems {
-		bundle.Evidence = bundle.Evidence[:budget.MaxEvidenceItems]
+	localEvidence := deduplicateEvidence(bundle.Evidence)
+	providerEvidence := append([]EvidenceItem(nil), localEvidence...)
+	if len(providerEvidence) > budget.MaxEvidenceItems {
+		providerEvidence = providerEvidence[:budget.MaxEvidenceItems]
 	}
+	bundle.Evidence = providerEvidence
 	bundle.Evidence = fitEvidenceBytes(bundle, budget.MaxRequestBytes-requestFramingBytes)
+	providerIDs := makeStringSet(nil)
+	for index := range bundle.Evidence {
+		bundle.Evidence[index].Visibility = appendVisibility(bundle.Evidence[index].Visibility, VisibilityProviderTarget)
+		providerIDs[bundle.Evidence[index].ID] = struct{}{}
+	}
+	for index := range localEvidence {
+		if _, sent := providerIDs[localEvidence[index].ID]; !sent {
+			localEvidence[index].Visibility = appendVisibility(localEvidence[index].Visibility, VisibilityNeverProvider)
+		}
+	}
 	for _, item := range bundle.Evidence {
 		if item.Location != nil {
 			bundle.ProviderAllowedPaths = append(bundle.ProviderAllowedPaths, item.Location.Path)
@@ -285,13 +297,15 @@ func assembleEvidenceBundle(
 	}
 	bundle.ProviderAllowedPaths = sortedUnique(bundle.ProviderAllowedPaths)
 
-	scope := FocusedInvestigationScope{QuestionID: question.ID}
-	for _, item := range bundle.Evidence {
+	scope := FocusedInvestigationScope{QuestionID: question.ID, LocalEvidence: localEvidence}
+	for _, item := range localEvidence {
 		scope.FocusedEvidenceIDs = append(scope.FocusedEvidenceIDs, item.ID)
-		scope.ProviderEvidenceIDs = append(scope.ProviderEvidenceIDs, item.ID)
 		if item.Location != nil {
 			scope.LocallyInspected = append(scope.LocallyInspected, item.Location.Path)
 		}
+	}
+	for _, item := range bundle.Evidence {
+		scope.ProviderEvidenceIDs = append(scope.ProviderEvidenceIDs, item.ID)
 	}
 	scope.FocusedEvidenceIDs = sortedUnique(scope.FocusedEvidenceIDs)
 	scope.ProviderEvidenceIDs = sortedUnique(scope.ProviderEvidenceIDs)
@@ -300,7 +314,7 @@ func assembleEvidenceBundle(
 }
 
 func exactEvidenceItem(kind EvidenceKind, symbol, relation string, location evidence.Location, statement string, initial map[string]struct{}) EvidenceItem {
-	visibility := []EvidenceVisibility{VisibilityLocalAfter, VisibilityProviderTarget}
+	visibility := []EvidenceVisibility{VisibilityLocalAfter}
 	if _, wasInitial := initial[location.Path]; wasInitial {
 		visibility = append([]EvidenceVisibility{VisibilityProviderInitial}, visibility...)
 	}
@@ -419,6 +433,16 @@ func deduplicateEvidence(items []EvidenceItem) []EvidenceItem {
 	}
 	sort.SliceStable(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func appendVisibility(values []EvidenceVisibility, value EvidenceVisibility) []EvidenceVisibility {
+	result := append([]EvidenceVisibility(nil), values...)
+	for _, existing := range result {
+		if existing == value {
+			return result
+		}
+	}
+	return append(result, value)
 }
 
 func rankedPaths(paths map[string]int) []string {
