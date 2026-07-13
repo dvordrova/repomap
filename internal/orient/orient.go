@@ -50,6 +50,7 @@ type Options struct {
 	Progress                  func(ProgressEvent)
 	EffectiveOptions          debugdump.EffectiveOptions
 	ResearchPolicy            modelresearch.Policy
+	RepositoryContext         modelresearch.RepositoryContext
 }
 
 type combinedReport struct {
@@ -273,6 +274,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			)
 		}
 		config := client.EffectiveConfig()
+		repository := repositoryContext(opts, modelBundleJSON)
+		researchState := modelresearch.NewState(policy, repository)
+		researchState.Coverage.LocalAuthorizedFiles = len(s.FilteredFiles)
+		researchState.Coverage.InitialModelSummaries = len(bundle.CandidateFileIndex)
 		if dw != nil {
 			runMeta.Model = config.Model
 			runMeta.Endpoint = config.Endpoint
@@ -299,10 +304,10 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if allowed, reason := policy.Allows(policy.Orientation, modelresearch.Usage{}, len(requestJSON)); !allowed {
 			return nil, fmt.Errorf("orientation request rejected by %s: %d bytes", reason, len(requestJSON))
 		}
-		runMeta.ExternalRequestBytes = len(requestJSON)
-		runMeta.ProviderRequestCount = 1
+		runMeta.ExternalRequestBytes = 0
+		runMeta.ProviderRequestCount = 0
 		runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
-			Stage: "orientation", State: "prepared", RequestBytes: len(requestJSON), ProviderCallCount: 1,
+			Stage: "orientation", State: "prepared", RequestBytes: len(requestJSON),
 		})
 		if dw != nil {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
@@ -322,14 +327,27 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RequestBytes: len(requestJSON),
 		})
 
-		requestStarted := time.Now()
-		raw, err := client.Orient(ctx, modelBundleJSON)
-		providerLatency := time.Since(requestStarted).Milliseconds()
+		call, err := obtainOrientation(
+			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
+			modelBundleJSON, requestJSON,
+		)
+		raw := call.Raw
+		providerLatency := call.Metrics.LatencyMillis
+		researchState.Orientation = call.Metrics
+		researchState.Usage.SemanticCalls += call.Metrics.SemanticCalls
+		if call.Metrics.SemanticCalls > 0 {
+			researchState.Usage.RequestBytes += len(requestJSON)
+		}
+		runMeta.ExternalRequestBytes = researchState.Usage.RequestBytes
+		runMeta.ProviderRequestCount = researchState.Usage.SemanticCalls
 		runMeta.ProviderLatencyMillis = &providerLatency
 		attempt := &runMeta.RequestAttempts[len(runMeta.RequestAttempts)-1]
 		attempt.LatencyMillis = &providerLatency
+		attempt.ProviderCallCount = call.Metrics.SemanticCalls
 		if err != nil {
 			attempt.State = "failed"
+		} else if call.Metrics.CacheHit {
+			attempt.State = "cached"
 		} else {
 			attempt.State = "response_received"
 		}
@@ -402,7 +420,16 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 			return nil, err
 		}
-		attempt.State = "succeeded"
+		if call.Metrics.CacheHit {
+			attempt.State = "cached"
+			researchState.Orientation.Status = "cached"
+		} else {
+			attempt.State = "succeeded"
+			researchState.Orientation.Status = "completed"
+			if err := saveOrientationResponse(call); err != nil {
+				return nil, fmt.Errorf("persist validated orientation cache: %w", err)
+			}
+		}
 		if dw != nil {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 				return nil, fmt.Errorf("write successful request metadata: %w", metadataErr)
@@ -416,6 +443,20 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if dw != nil {
 			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 				return nil, fmt.Errorf("write orientation metadata: %w", metadataErr)
+			}
+		}
+		researchWarnings := runTargetedResearch(
+			ctx, opts, client, dw, bundle, s, &or, &researchState, &runMeta,
+		)
+		report.Warnings = append(report.Warnings, researchWarnings...)
+		if dw != nil && len(or.ResearchQuestions) == 0 {
+			if err := modelresearch.WriteState(dw.RunDir(), researchState); err != nil {
+				return nil, fmt.Errorf("persist model research state: %w", err)
+			}
+		}
+		if dw != nil {
+			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+				return nil, fmt.Errorf("write targeted research metadata: %w", metadataErr)
 			}
 		}
 		emitProgress(opts, ProgressEvent{
@@ -450,7 +491,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, err
 		}
 		for _, cf := range cfs {
-			ef := explainOneFlow(ctx, client, cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts, !opts.Offline && !opts.FlowBundlesOnly)
+			ef := explainOneFlow(ctx, client, cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts, false)
 			if ef.ProviderRequestBytes > 0 {
 				runMeta.ExternalRequestBytes += ef.ProviderRequestBytes
 				runMeta.ProviderRequestCount++
