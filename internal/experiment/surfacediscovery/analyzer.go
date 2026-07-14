@@ -66,6 +66,12 @@ type analyzer struct {
 	detachedWalk              bool
 }
 
+const (
+	defaultMaxDepth   = 16
+	defaultMaxTasks   = 1500
+	defaultMaxTargets = 8
+)
+
 type environment map[ssa.Value]Value
 
 type dispatchStart struct {
@@ -102,15 +108,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	if strings.TrimSpace(opts.RepoPath) == "" {
 		return Result{}, fmt.Errorf("surface discovery: repository path is required")
 	}
-	if opts.MaxDepth <= 0 {
-		opts.MaxDepth = 16
-	}
-	if opts.MaxTasks <= 0 {
-		opts.MaxTasks = 1000
-	}
-	if opts.MaxTargets <= 0 {
-		opts.MaxTargets = 8
-	}
+	opts = normalizeOptions(opts)
 	root, err := filepath.Abs(opts.RepoPath)
 	if err != nil {
 		return Result{}, fmt.Errorf("surface discovery: resolve repository: %w", err)
@@ -199,6 +197,19 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
 	return a.result, nil
+}
+
+func normalizeOptions(opts Options) Options {
+	if opts.MaxDepth <= 0 {
+		opts.MaxDepth = defaultMaxDepth
+	}
+	if opts.MaxTasks <= 0 {
+		opts.MaxTasks = defaultMaxTasks
+	}
+	if opts.MaxTargets <= 0 {
+		opts.MaxTargets = defaultMaxTargets
+	}
+	return opts
 }
 
 func (a *analyzer) load() error {
@@ -334,7 +345,8 @@ func checkSurfaceGoVersion(root string) error {
 func (a *analyzer) prepare() {
 	a.relevant = map[*ssa.Function]bool{}
 	a.relevanceDistance = map[*ssa.Function]int{}
-	for function := range a.allFunctions {
+	orderedFunctions := a.orderedFunctions()
+	for _, function := range orderedFunctions {
 		if a.ctx.Err() != nil {
 			return
 		}
@@ -379,7 +391,7 @@ func (a *analyzer) prepare() {
 			return
 		}
 		changed = false
-		for function := range a.allFunctions {
+		for _, function := range orderedFunctions {
 			if a.ctx.Err() != nil {
 				return
 			}
@@ -439,6 +451,19 @@ func (a *analyzer) prepare() {
 			}
 		}
 	}
+}
+
+func (a *analyzer) orderedFunctions() []*ssa.Function {
+	functions := make([]*ssa.Function, 0, len(a.allFunctions))
+	for function := range a.allFunctions {
+		functions = append(functions, function)
+	}
+	sort.Slice(functions, func(i, j int) bool {
+		left := a.functionID(functions[i]) + "\x00" + functions[i].Synthetic + "\x00" + strconv.Itoa(int(functions[i].Pos()))
+		right := a.functionID(functions[j]) + "\x00" + functions[j].Synthetic + "\x00" + strconv.Itoa(int(functions[j].Pos()))
+		return left < right
+	})
+	return functions
 }
 
 func (a *analyzer) recordFunctionReference(value ssa.Value) {
@@ -1807,7 +1832,7 @@ func (a *analyzer) recordSummary(
 
 func (a *analyzer) recordGlobalArchitectureAnchors() {
 	functions := make([]*ssa.Function, 0)
-	for function := range a.allFunctions {
+	for _, function := range a.orderedFunctions() {
 		if a.ctx.Err() != nil {
 			return
 		}
@@ -1815,7 +1840,6 @@ func (a *analyzer) recordGlobalArchitectureAnchors() {
 			functions = append(functions, function)
 		}
 	}
-	sort.Slice(functions, func(i, j int) bool { return a.functionID(functions[i]) < a.functionID(functions[j]) })
 	families := make(map[string][]Symbol)
 	for _, function := range functions {
 		if a.ctx.Err() != nil {
@@ -1932,7 +1956,10 @@ func (a *analyzer) recordArchitectureAnchor(
 	member Symbol,
 	limitation string,
 ) string {
-	return a.recordArchitectureAnchorMembers(kind, label, location, []Symbol{member}, limitation)
+	return a.recordArchitectureAnchorMembersWithProvenance(
+		kind, label, location, []Symbol{member}, limitation,
+		Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "classify_architecture_anchor"},
+	)
 }
 
 func (a *analyzer) recordArchitectureAnchorMembers(
@@ -1941,7 +1968,20 @@ func (a *analyzer) recordArchitectureAnchorMembers(
 	members []Symbol,
 	limitation string,
 ) string {
-	if location.Path == "" || location.Line <= 0 || len(a.architectureAnchors) >= 256 {
+	return a.recordArchitectureAnchorMembersWithProvenance(
+		kind, label, location, members, limitation,
+		Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "classify_architecture_anchor"},
+	)
+}
+
+func (a *analyzer) recordArchitectureAnchorMembersWithProvenance(
+	kind, label string,
+	location Location,
+	members []Symbol,
+	limitation string,
+	producer Provenance,
+) string {
+	if location.Path == "" || location.Line <= 0 {
 		return ""
 	}
 	if len(members) == 0 {
@@ -1949,7 +1989,9 @@ func (a *analyzer) recordArchitectureAnchorMembers(
 	}
 	member := members[0]
 	identity := locationKey(location)
-	if kind == "registry_write" || kind == "extension_family" {
+	if kind == "process_entry" {
+		identity = fmt.Sprintf("%s:%d", location.Path, location.Line)
+	} else if kind == "registry_write" || kind == "extension_family" {
 		identity = member.ID
 	}
 	digest := sha256.Sum256([]byte(strings.Join([]string{
@@ -1959,9 +2001,13 @@ func (a *analyzer) recordArchitectureAnchorMembers(
 	if _, exists := a.architectureAnchors[id]; exists {
 		return id
 	}
+	if len(a.architectureAnchors) >= maxCollectedArchitectureAnchors {
+		a.addBudget("architecture_anchor_collection")
+		return ""
+	}
 	a.architectureAnchors[id] = BehaviorAnchor{
 		ID: id, Kind: kind, Label: label, Location: location, Scenario: a.scenario,
-		Producer:  Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "classify_architecture_anchor"},
+		Producer:  producer,
 		Certainty: "static", AssociatedMembers: append([]Symbol(nil), members...), Limitations: []string{limitation},
 	}
 	return id
@@ -1978,6 +2024,10 @@ func (a *analyzer) recordArchitectureRelationship(from, to string, location Loca
 	id := "handoff-" + hex.EncodeToString(digest[:12])
 	relationship, exists := a.architectureRelationships[id]
 	if !exists {
+		if len(a.architectureRelationships) >= maxCollectedArchitectureRelationships {
+			a.addBudget("architecture_relationship_collection")
+			return
+		}
 		relationship = BehaviorRelationship{
 			ID: id, From: from, To: to, Kind: kind, EvidenceKind: "bounded_direct_call", Location: location,
 			Certainty: "static", witnessPackages: make(map[string]struct{}),
@@ -1987,8 +2037,12 @@ func (a *analyzer) recordArchitectureRelationship(from, to string, location Loca
 	witnessDigest := sha256.Sum256([]byte(strings.Join([]string{
 		"architecture-relationship-witness-v1", from, to, locationKey(location),
 	}, "\x00")))
-	relationship.WitnessIDs = append(relationship.WitnessIDs, "witness-"+hex.EncodeToString(witnessDigest[:12]))
-	relationship.WitnessCount++
+	witnessID := "witness-" + hex.EncodeToString(witnessDigest[:12])
+	if len(relationship.WitnessIDs) < maxArchitectureRelationshipWitnesses &&
+		!stringSliceContains(relationship.WitnessIDs, witnessID) {
+		relationship.WitnessIDs = append(relationship.WitnessIDs, witnessID)
+		relationship.WitnessCount = len(relationship.WitnessIDs)
+	}
 	if len(relationship.RepresentativeLocations) < 8 {
 		relationship.RepresentativeLocations = append(relationship.RepresentativeLocations, location)
 	}
@@ -2071,13 +2125,11 @@ func deduplicateArchitectureSymbols(symbols []Symbol) []Symbol {
 
 func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	anchors := make([]BehaviorAnchor, 0, len(a.architectureAnchors))
-	kinds := make(map[string]bool)
 	for _, anchor := range a.architectureAnchors {
 		if a.ctx.Err() != nil {
 			return
 		}
 		anchors = append(anchors, anchor)
-		kinds[anchor.Kind] = true
 	}
 	relationships := make([]BehaviorRelationship, 0, len(a.architectureRelationships))
 	for _, relationship := range a.architectureRelationships {
@@ -2090,6 +2142,15 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		})
 		relationship.witnessPackages = nil
 		relationships = append(relationships, relationship)
+	}
+	var groundingBounded bool
+	anchors, relationships, groundingBounded = boundArchitectureGrounding(anchors, relationships)
+	if groundingBounded {
+		a.addBudget("architecture_anchors")
+	}
+	kinds := make(map[string]bool)
+	for _, anchor := range anchors {
+		kinds[anchor.Kind] = true
 	}
 	anchorKindByID := make(map[string]string, len(anchors))
 	reachable := make(map[string]bool)
@@ -2161,8 +2222,18 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		mode = "mixed"
 	}
 
+	processEntryCount := 0
+	for _, anchor := range anchors {
+		if anchor.Kind == "process_entry" {
+			processEntryCount++
+		}
+	}
 	archetype := "application"
-	evidenceItems := []string{fmt.Sprintf("%d build-selected process entrypoint(s)", len(entrypoints))}
+	evidenceItems := []string{fmt.Sprintf(
+		"%d exact build-selected process entrypoint(s); %d available to typed analysis",
+		processEntryCount,
+		len(entrypoints),
+	)}
 	alternatives := []string{}
 	switch {
 	case (kinds["registry_write"] || kinds["extension_family"]) &&
@@ -2178,10 +2249,10 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		archetype = "cli_tool"
 		evidenceItems = append(evidenceItems, "exact process and command-dispatch anchors")
 		alternatives = append(alternatives, "application")
-	case len(entrypoints) == 0:
+	case processEntryCount == 0:
 		archetype = "library_framework"
 		evidenceItems = append(evidenceItems, "no build-selected process entrypoint")
-	case len(entrypoints) > 3:
+	case processEntryCount > 3:
 		archetype = "monorepo_mixed"
 		evidenceItems = append(evidenceItems, "several build-selected executable entrypoints")
 		alternatives = append(alternatives, "application")
@@ -2197,6 +2268,136 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		return
 	}
 	a.result.normalize()
+}
+
+const (
+	maxCollectedArchitectureAnchors       = 1024
+	maxCollectedArchitectureRelationships = 4096
+	maxPersistedArchitectureAnchors       = 256
+	maxPersistedArchitectureRelationships = 512
+	maxArchitectureAnchorsPerKind         = 16
+	maxProcessEntryArchitectureAnchors    = 64
+	maxArchitectureRelationshipWitnesses  = 64
+)
+
+func boundArchitectureGrounding(
+	anchors []BehaviorAnchor,
+	relationships []BehaviorRelationship,
+) ([]BehaviorAnchor, []BehaviorRelationship, bool) {
+	reachable := architectureReachableAnchorIDs(anchors, relationships)
+	sort.Slice(anchors, func(i, j int) bool {
+		leftPriority := architectureAnchorRetentionPriority(anchors[i], reachable)
+		rightPriority := architectureAnchorRetentionPriority(anchors[j], reachable)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		if anchors[i].Kind != anchors[j].Kind {
+			return anchors[i].Kind < anchors[j].Kind
+		}
+		leftLocation := locationKey(anchors[i].Location)
+		rightLocation := locationKey(anchors[j].Location)
+		if leftLocation != rightLocation {
+			return leftLocation < rightLocation
+		}
+		return anchors[i].ID < anchors[j].ID
+	})
+	counts := make(map[string]int)
+	retainedIDs := make(map[string]struct{})
+	retained := make([]BehaviorAnchor, 0, len(anchors))
+	bounded := false
+	for _, anchor := range anchors {
+		limit := maxArchitectureAnchorsPerKind
+		if anchor.Kind == "process_entry" {
+			limit = maxProcessEntryArchitectureAnchors
+		}
+		if len(retained) >= maxPersistedArchitectureAnchors || counts[anchor.Kind] >= limit {
+			bounded = true
+			continue
+		}
+		counts[anchor.Kind]++
+		retainedIDs[anchor.ID] = struct{}{}
+		retained = append(retained, anchor)
+	}
+	filteredRelationships := make([]BehaviorRelationship, 0, len(relationships))
+	for _, relationship := range relationships {
+		_, fromRetained := retainedIDs[relationship.From]
+		_, toRetained := retainedIDs[relationship.To]
+		if !fromRetained || !toRetained {
+			bounded = true
+			continue
+		}
+		filteredRelationships = append(filteredRelationships, relationship)
+	}
+	sort.Slice(filteredRelationships, func(i, j int) bool {
+		leftReachable := reachable[filteredRelationships[i].From] && reachable[filteredRelationships[i].To]
+		rightReachable := reachable[filteredRelationships[j].From] && reachable[filteredRelationships[j].To]
+		if leftReachable != rightReachable {
+			return leftReachable
+		}
+		return filteredRelationships[i].ID < filteredRelationships[j].ID
+	})
+	if len(filteredRelationships) > maxPersistedArchitectureRelationships {
+		filteredRelationships = filteredRelationships[:maxPersistedArchitectureRelationships]
+		bounded = true
+	}
+	return retained, filteredRelationships, bounded
+}
+
+func architectureReachableAnchorIDs(
+	anchors []BehaviorAnchor,
+	relationships []BehaviorRelationship,
+) map[string]bool {
+	known := make(map[string]struct{}, len(anchors))
+	reachable := make(map[string]bool)
+	queue := make([]string, 0)
+	for _, anchor := range anchors {
+		known[anchor.ID] = struct{}{}
+		if anchor.Kind == "process_entry" {
+			reachable[anchor.ID] = true
+			queue = append(queue, anchor.ID)
+		}
+	}
+	outgoing := make(map[string][]string)
+	for _, relationship := range relationships {
+		if _, fromExists := known[relationship.From]; !fromExists {
+			continue
+		}
+		if _, toExists := known[relationship.To]; !toExists {
+			continue
+		}
+		outgoing[relationship.From] = append(outgoing[relationship.From], relationship.To)
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, next := range outgoing[current] {
+			if reachable[next] {
+				continue
+			}
+			reachable[next] = true
+			queue = append(queue, next)
+		}
+	}
+	return reachable
+}
+
+func architectureAnchorRetentionPriority(anchor BehaviorAnchor, reachable map[string]bool) int {
+	if anchor.Kind == "process_entry" {
+		return 0
+	}
+	if reachable[anchor.ID] {
+		return 1
+	}
+	return 2
+}
+
+func stringSliceContains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *analyzer) finish(latency time.Duration) {

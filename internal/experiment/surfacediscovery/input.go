@@ -474,6 +474,21 @@ func (a *analyzer) recordProcessEntrypoints() {
 		}
 		record.ID = stableTriggerID(record)
 		a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
+		limitation := "Exact build-selected main declaration; process execution and downstream typed reachability are not observed."
+		if entrypoint.availability == AvailabilityUnavailable {
+			limitation = "Exact build-selected main declaration; deeper typed analysis is unavailable under the recorded build scenario."
+		}
+		a.recordArchitectureAnchorMembersWithProvenance(
+			"process_entry",
+			"process entry "+symbol.ID,
+			location,
+			[]Symbol{symbol},
+			limitation,
+			Provenance{
+				Provider: "gofacts", Version: "entrypoint-anchor-v1",
+				Operation: "classify_exact_process_entry",
+			},
+		)
 	}
 }
 

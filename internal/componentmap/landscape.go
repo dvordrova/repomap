@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path"
 	"reflect"
 	"sort"
 	"strings"
@@ -15,9 +16,10 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion       = 4
-	ProposalVersion       = 4
-	legacyProposalVersion = 3
+	ContractVersion       = 5
+	ProposalVersion       = 5
+	legacyProposalVersion = 4
+	oldestProposalVersion = 3
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -170,11 +172,12 @@ const (
 	FactContainment       FactKind = "containment"
 	FactFlowParticipation FactKind = "flow_participation"
 	FactRepositoryPath    FactKind = "repository_path"
+	FactExecutableRole    FactKind = "executable_role"
 )
 
 func (kind FactKind) valid() bool {
 	switch kind {
-	case FactDeclaration, FactContainment, FactFlowParticipation, FactRepositoryPath:
+	case FactDeclaration, FactContainment, FactFlowParticipation, FactRepositoryPath, FactExecutableRole:
 		return true
 	default:
 		return false
@@ -798,7 +801,8 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	invalid := func(code, message string) {
 		diagnostics = append(diagnostics, newDiagnostic(code, message))
 	}
-	if proposal.Version != ProposalVersion && proposal.Version != legacyProposalVersion {
+	if proposal.Version != ProposalVersion && proposal.Version != legacyProposalVersion &&
+		proposal.Version != oldestProposalVersion {
 		invalid("proposal.unsupported_version", "proposal version is missing or unsupported")
 		return Landscape{}, diagnostics, false
 	}
@@ -925,6 +929,21 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	if len(landscape.Subsystems) == 0 {
 		invalid("proposal.no_usable_subsystems", "no proposed subsystem retained a unique known member")
 		return Landscape{}, diagnostics, false
+	}
+	for _, anchor := range bundle.BehaviorAnchors {
+		if anchor.Kind != AnchorProcessEntry {
+			continue
+		}
+		for _, memberID := range anchor.MemberIDs {
+			if _, included := seenMembers[memberID]; included {
+				continue
+			}
+			invalid(
+				"proposal.omitted_process_entry_member",
+				"proposal omitted an exact process-entry member from the conceptual architecture",
+			)
+			return Landscape{}, diagnostics, false
+		}
 	}
 	if len(seenMembers) != len(bundle.Candidates) {
 		missing := make([]Candidate, 0, len(bundle.Candidates)-len(seenMembers))
@@ -1161,38 +1180,184 @@ func processEntryFallbackComponents(
 	known map[MemberID]Candidate,
 	owned map[MemberID]struct{},
 ) []Component {
+	modulePrefix := processEntryModulePrefix(anchors, known)
 	groups := []struct {
 		name        string
 		description string
-		traced      bool
+		class       string
 	}{
-		{name: "CLI Commands", description: "Process entrypoints with exact saved-trace participation.", traced: true},
-		{name: "Tool entrypoints", description: "Other exact process entrypoints without saved-trace participation."},
+		{name: "Primary application", description: "Repository-named process entrypoint backed by an exact main declaration.", class: "primary"},
+		{name: "Secondary services", description: "Repository service entrypoints distinct from the primary application.", class: "secondary_service"},
+		{name: "Tool entrypoints", description: "Developer, build, release, and maintenance tool entrypoints.", class: "tooling"},
+		{name: "Test and helper entrypoints", description: "Test, example, and helper process entrypoints.", class: "test_or_helper"},
+		{name: "Other process entrypoints", description: "Exact process entrypoints whose product role remains unresolved.", class: "unknown"},
 	}
 	components := make([]Component, 0, len(groups))
 	for _, group := range groups {
-		memberSet := make(map[MemberID]struct{})
-		anchorIDs := make([]string, 0)
+		matching := make([]BehaviorAnchor, 0)
 		for _, anchor := range anchors {
-			if anchorHasFlowParticipation(anchor, known) != group.traced {
+			if processEntryFallbackClass(anchor, known, modulePrefix) != group.class {
 				continue
 			}
-			anchorIDs = append(anchorIDs, anchor.ID)
-			for _, memberID := range anchor.MemberIDs {
-				addAnchorFallbackMember(memberID, known, owned, memberSet)
+			matching = append(matching, anchor)
+		}
+		for start := 0; start < len(matching); start += maxAnchorMembers {
+			end := min(start+maxAnchorMembers, len(matching))
+			memberSet := make(map[MemberID]struct{})
+			anchorIDs := make([]string, 0, end-start)
+			for _, anchor := range matching[start:end] {
+				anchorIDs = append(anchorIDs, anchor.ID)
+				for _, memberID := range anchor.MemberIDs {
+					addAnchorFallbackMember(memberID, known, owned, memberSet)
+				}
 			}
+			members := candidatesFromIDSet(memberSet, known)
+			if len(members) == 0 {
+				continue
+			}
+			id := componentID(candidateIDs(members))
+			name := group.name
+			if len(matching) > maxAnchorMembers {
+				name += fmt.Sprintf(" %d", start/maxAnchorMembers+1)
+			}
+			components = append(components, Component{
+				ID: id, Name: name, Description: group.description,
+				Members: members, AnchorIDs: anchorIDs, SourceIDs: []ComponentID{id},
+			})
 		}
-		members := candidatesFromIDSet(memberSet, known)
-		if len(members) == 0 {
-			continue
-		}
-		id := componentID(candidateIDs(members))
-		components = append(components, Component{
-			ID: id, Name: group.name, Description: group.description,
-			Members: members, AnchorIDs: anchorIDs, SourceIDs: []ComponentID{id},
-		})
 	}
 	return components
+}
+
+func processEntryFallbackClass(anchor BehaviorAnchor, known map[MemberID]Candidate, modulePrefix string) string {
+	if role := processEntryExecutableRole(anchor, known); role != "" {
+		return role
+	}
+	packagePath := processEntryPackagePath(anchor, known)
+	segments := strings.Split(strings.ToLower(packagePath), "/")
+	if containsAnySegment(segments, "test", "tests", "testing", "testutil", "testdata", "helper", "helpers", "example", "examples") {
+		return "test_or_helper"
+	}
+	if containsAnySegment(segments, "dev", "tool", "tools", "hack", "script", "scripts", "build", "release", "generator", "generators") {
+		return "tooling"
+	}
+	if modulePrefix != "" && (packagePath == modulePrefix || path.Base(packagePath) == moduleBaseName(modulePrefix)) {
+		return "primary"
+	}
+	if packagePath != "" {
+		return "secondary_service"
+	}
+	return "unknown"
+}
+
+func processEntryExecutableRole(anchor BehaviorAnchor, known map[MemberID]Candidate) string {
+	for _, memberID := range anchor.MemberIDs {
+		currentID := memberID
+		for {
+			candidate, exists := known[currentID]
+			if !exists {
+				break
+			}
+			for _, fact := range candidate.Facts {
+				if fact.Kind != FactExecutableRole {
+					continue
+				}
+				switch fact.Value {
+				case "primary_application":
+					return "primary"
+				case "secondary_service":
+					return "secondary_service"
+				case "tooling", "secondary_tooling":
+					return "tooling"
+				case "test_or_helper":
+					return "test_or_helper"
+				}
+			}
+			if candidate.ParentID == nil {
+				break
+			}
+			currentID = *candidate.ParentID
+		}
+	}
+	return ""
+}
+
+func moduleBaseName(modulePath string) string {
+	base := path.Base(modulePath)
+	if len(base) > 1 && base[0] == 'v' {
+		allDigits := true
+		for _, char := range base[1:] {
+			if char < '0' || char > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return path.Base(path.Dir(modulePath))
+		}
+	}
+	return base
+}
+
+func processEntryModulePrefix(anchors []BehaviorAnchor, known map[MemberID]Candidate) string {
+	counts := make(map[string]int)
+	for _, anchor := range anchors {
+		packagePath := processEntryPackagePath(anchor, known)
+		if index := strings.Index(packagePath, "/cmd/"); index > 0 {
+			counts[packagePath[:index]]++
+		}
+	}
+	selected := ""
+	selectedCount := 0
+	for prefix, count := range counts {
+		if count > selectedCount || count == selectedCount && prefix < selected {
+			selected = prefix
+			selectedCount = count
+		}
+	}
+	if selected != "" {
+		return selected
+	}
+	if len(anchors) == 1 {
+		return processEntryPackagePath(anchors[0], known)
+	}
+	return ""
+}
+
+func processEntryPackagePath(anchor BehaviorAnchor, known map[MemberID]Candidate) string {
+	for _, memberID := range anchor.MemberIDs {
+		currentID := memberID
+		for {
+			candidate, exists := known[currentID]
+			if !exists {
+				break
+			}
+			for _, fact := range candidate.Facts {
+				if fact.Kind == FactDeclaration && strings.HasSuffix(fact.Value, ".main") {
+					return strings.TrimSuffix(fact.Value, ".main")
+				}
+			}
+			if strings.HasSuffix(candidate.Name, ".main") {
+				return strings.TrimSuffix(candidate.Name, ".main")
+			}
+			if candidate.ParentID == nil {
+				break
+			}
+			currentID = *candidate.ParentID
+		}
+	}
+	return ""
+}
+
+func containsAnySegment(segments []string, candidates ...string) bool {
+	for _, segment := range segments {
+		for _, candidate := range candidates {
+			if segment == candidate {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func anchorHasFlowParticipation(anchor BehaviorAnchor, known map[MemberID]Candidate) bool {

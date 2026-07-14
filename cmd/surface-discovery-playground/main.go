@@ -17,12 +17,13 @@ func main() {
 
 func run(args []string) error {
 	flags := flag.NewFlagSet("surface-discovery-playground", flag.ContinueOnError)
+	defaults := surfacediscovery.DefaultOptions(".")
 	repository := flags.String("repo", ".", "Go repository or module to analyze")
 	output := flags.String("out", "tmp/surface-discovery", "artifact output directory")
 	groupingResponse := flags.String("grouping-response", "", "saved grouping response to validate and replay")
-	maxDepth := flags.Int("max-depth", 16, "maximum wrapper propagation depth")
-	maxTasks := flags.Int("max-tasks", 1000, "maximum functions to inspect")
-	maxTargets := flags.Int("max-targets", 8, "maximum targets retained per callsite")
+	maxDepth := flags.Int("max-depth", defaults.MaxDepth, "maximum wrapper propagation depth")
+	maxTasks := flags.Int("max-tasks", defaults.MaxTasks, "maximum functions to inspect")
+	maxTargets := flags.Int("max-targets", defaults.MaxTargets, "maximum targets retained per callsite")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

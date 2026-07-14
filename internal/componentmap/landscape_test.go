@@ -396,7 +396,7 @@ func TestFallbackIsDeterministicAcrossCandidateOrder(t *testing.T) {
 	}
 }
 
-func TestProcessEntryFallbackSeparatesTraceBackedCLIFromTools(t *testing.T) {
+func TestProcessEntryFallbackSeparatesExecutableRoles(t *testing.T) {
 	t.Parallel()
 
 	appPackage := MemberID{Kind: MemberPackage, Value: "app-package"}
@@ -405,25 +405,115 @@ func TestProcessEntryFallbackSeparatesTraceBackedCLIFromTools(t *testing.T) {
 	toolPackage := MemberID{Kind: MemberPackage, Value: "tool-package"}
 	toolFile := MemberID{Kind: MemberFile, Value: "tool-file"}
 	toolSymbol := MemberID{Kind: MemberSymbol, Value: "tool-symbol"}
+	servicePackage := MemberID{Kind: MemberPackage, Value: "service-package"}
+	serviceFile := MemberID{Kind: MemberFile, Value: "service-file"}
+	serviceSymbol := MemberID{Kind: MemberSymbol, Value: "service-symbol"}
+	testPackage := MemberID{Kind: MemberPackage, Value: "test-package"}
+	testFile := MemberID{Kind: MemberFile, Value: "test-file"}
+	testSymbol := MemberID{Kind: MemberSymbol, Value: "test-symbol"}
 	known := map[MemberID]Candidate{
-		appPackage:  {ID: appPackage, Name: "cmd/app"},
-		appFile:     {ID: appFile, Name: "cmd/app/main.go", ParentID: &appPackage, Participations: []FlowParticipation{{FlowID: "serve"}}},
-		appSymbol:   {ID: appSymbol, Name: "cmd/app.main", ParentID: &appFile},
-		toolPackage: {ID: toolPackage, Name: "tools/release"},
-		toolFile:    {ID: toolFile, Name: "tools/release/main.go", ParentID: &toolPackage},
-		toolSymbol:  {ID: toolSymbol, Name: "tools/release.main", ParentID: &toolFile},
+		appPackage: {ID: appPackage, Name: "cmd/project"},
+		appFile:    {ID: appFile, Name: "cmd/project/main.go", ParentID: &appPackage},
+		appSymbol: {
+			ID: appSymbol, Name: "example.com/project/v2/app.main", ParentID: &appFile,
+			Facts: []LocalFact{
+				{Kind: FactDeclaration, Value: "example.com/project/v2/app.main"},
+				{Kind: FactExecutableRole, Value: "primary_application"},
+			},
+		},
+		servicePackage: {ID: servicePackage, Name: "cmd/server"},
+		serviceFile:    {ID: serviceFile, Name: "cmd/server/main.go", ParentID: &servicePackage, Participations: []FlowParticipation{{FlowID: "serve"}}},
+		serviceSymbol: {
+			ID: serviceSymbol, Name: "example.com/project/cmd/server.main", ParentID: &serviceFile,
+			Facts: []LocalFact{
+				{Kind: FactDeclaration, Value: "example.com/project/cmd/server.main"},
+				{Kind: FactExecutableRole, Value: "secondary_service"},
+			},
+		},
+		toolPackage: {ID: toolPackage, Name: "cmd/inspect"},
+		toolFile:    {ID: toolFile, Name: "cmd/inspect/main.go", ParentID: &toolPackage},
+		toolSymbol: {
+			ID: toolSymbol, Name: "example.com/project/cmd/inspect.main", ParentID: &toolFile,
+			Facts: []LocalFact{
+				{Kind: FactDeclaration, Value: "example.com/project/cmd/inspect.main"},
+				{Kind: FactExecutableRole, Value: "tooling"},
+			},
+		},
+		testPackage: {ID: testPackage, Name: "cmd/helper"},
+		testFile:    {ID: testFile, Name: "cmd/helper/main.go", ParentID: &testPackage},
+		testSymbol: {
+			ID: testSymbol, Name: "example.com/project/cmd/helper.main", ParentID: &testFile,
+			Facts: []LocalFact{
+				{Kind: FactDeclaration, Value: "example.com/project/cmd/helper.main"},
+				{Kind: FactExecutableRole, Value: "test_or_helper"},
+			},
+		},
 	}
 	components := processEntryFallbackComponents([]BehaviorAnchor{
 		{ID: "app-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{appSymbol}},
+		{ID: "service-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{serviceSymbol}},
 		{ID: "tool-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{toolSymbol}},
+		{ID: "test-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{testSymbol}},
 	}, known, make(map[MemberID]struct{}))
-	if len(components) != 2 || components[0].Name != "CLI Commands" || components[1].Name != "Tool entrypoints" {
+	if len(components) != 4 || components[0].Name != "Primary application" ||
+		components[1].Name != "Secondary services" || components[2].Name != "Tool entrypoints" ||
+		components[3].Name != "Test and helper entrypoints" {
 		t.Fatalf("process-entry components = %#v", components)
 	}
 	for _, member := range components[0].Members {
-		if strings.HasPrefix(member.Name, "tools/") {
-			t.Fatalf("CLI Commands includes tool member %q", member.Name)
+		if strings.Contains(member.Name, "server") || strings.Contains(member.Name, "dev/") {
+			t.Fatalf("Primary application includes non-primary member %q", member.Name)
 		}
+	}
+}
+
+func TestModuleBaseNameIgnoresSemanticImportVersion(t *testing.T) {
+	t.Parallel()
+
+	for modulePath, want := range map[string]string{
+		"github.com/example/project":      "project",
+		"github.com/example/project/v2":   "project",
+		"github.com/example/project/v10":  "project",
+		"github.com/example/project/view": "view",
+	} {
+		if got := moduleBaseName(modulePath); got != want {
+			t.Errorf("moduleBaseName(%q) = %q, want %q", modulePath, got, want)
+		}
+	}
+}
+
+func TestApplyRejectsProcessEntryMemberInUnassignedRemainder(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.GroundingMode = GroundingMixed
+	entrypointID := testMemberID(MemberEntrypoint, "backup-command")
+	bundle.BehaviorAnchors = []BehaviorAnchor{{
+		ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
+		Location: evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+		Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+		Producer: evidence.Provenance{
+			Provider: "fixture", Version: "v1", Operation: "process_entry",
+		},
+		Certainty: evidence.CertaintyStatic, MemberIDs: []MemberID{entrypointID},
+		Limitations: []string{"execution is not observed"},
+	}}
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Runtime",
+			Components: []ProposedComponent{{
+				Name:      "Command package",
+				MemberIDs: []MemberID{testMemberID(MemberPackage, "cmd")},
+				AnchorIDs: []string{"process"},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_process_entry_member") {
+		t.Fatalf("process-entry omission result = %#v", result)
 	}
 }
 

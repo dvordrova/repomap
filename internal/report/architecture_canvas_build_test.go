@@ -70,6 +70,72 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	}
 }
 
+func TestBuildArchitectureCanvasUsesExactSurfaceExecutableRole(t *testing.T) {
+	t.Parallel()
+
+	location := evidence.Location{Path: "cmd/inspect/main.go", Line: 12}
+	proof := flowproof.BuildProcess(flowproof.ProcessSeed{
+		FlowID: "inspect", Goal: "Inspect service startup", SeedSurfaceID: "surface-inspect",
+		Entrypoint: flowproof.StaticSurfaceFact{
+			ID: "surface-inspect", Kind: "process_entry", Label: "main",
+			QualifiedName: "example.com/project/cmd/inspect.main", Location: location,
+		},
+		CurrentFrontier: "downstream runtime handoff remains unresolved",
+	})
+	session := flowproof.Start(proof, flowproof.DefaultBudget(), "go:test", flowproof.SurfaceCollectorVersion)
+	data := &ReportData{
+		ArchitectureGrounding: &ArchitectureGrounding{
+			Version:             ArchitectureGroundingVersion,
+			RepositoryArchetype: ArchitectureArchetype{Selected: componentmap.ArchetypeApplication},
+			GroundingMode:       componentmap.GroundingBehavior,
+			BehaviorAnchors: []ArchitectureBehaviorAnchor{{
+				ID: "inspect-entry", Kind: componentmap.AnchorProcessEntry,
+				Label: "process entry example.com/project/cmd/inspect.main", Location: location,
+				Scenario:  architectureGroundingScenario{ID: "go:test", GOOS: "test", GOARCH: "test"},
+				Producer:  evidence.Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
+				Certainty: evidence.CertaintyStatic,
+				AssociatedMembers: []ArchitectureAnchorMember{{
+					ID: "example.com/project/cmd/inspect.main", Package: "example.com/project/cmd/inspect",
+					Name: "main", Location: location,
+				}},
+				Limitations: []string{"execution not observed"},
+			}},
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			Kind: "process_entry", ExecutableRole: ExecutableRoleTooling,
+			ProcessEntrypoint: SurfaceSymbol{
+				ID:       "example.com/project/cmd/inspect.main",
+				Location: &SurfaceLocation{Path: location.Path, Line: location.Line},
+			},
+		}}},
+		CandidateDirections: []CandidateDirection{{
+			ID: "inspect", Name: "Inspect service startup", LocalProof: &session,
+		}},
+	}
+
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRole := false
+	var roleMemberID componentmap.MemberID
+	for _, candidate := range input.CandidateBundle.Candidates {
+		for _, fact := range candidate.Facts {
+			if fact.Kind == componentmap.FactExecutableRole && fact.Value == ExecutableRoleTooling {
+				foundRole = true
+				roleMemberID = candidate.ID
+			}
+		}
+	}
+	if !foundRole {
+		t.Fatal("exact tooling role was not joined to the process-entry candidate")
+	}
+	if len(input.CandidateBundle.AnchorBindings) != 1 ||
+		input.CandidateBundle.AnchorBindings[0].MemberID != roleMemberID {
+		t.Fatalf("process flow binding was not joined to grounded declaration: role=%#v bindings=%#v", roleMemberID, input.CandidateBundle.AnchorBindings)
+	}
+}
+
 func TestProcessTraceQualityPersistsProjectsAndRenders(t *testing.T) {
 	t.Parallel()
 
