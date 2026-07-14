@@ -28,14 +28,21 @@ type componentLandscapeSynthesizer interface {
 }
 
 type architectureSynthesisOutcome struct {
-	Cached         bool
-	InputBytes     int
-	LatencyMillis  int64
-	FallbackReason componentmap.FallbackReason
-	ResponseBytes  int
-	Attempted      bool
-	InputTokens    int
-	OutputTokens   int
+	Cached                bool
+	InputBytes            int
+	LatencyMillis         int64
+	FallbackReason        componentmap.FallbackReason
+	ResponseBytes         int
+	Attempted             bool
+	ProviderCallSucceeded bool
+	ResponseParsed        bool
+	ValidationOutcome     componentmap.ValidationOutcome
+	ArchitectureSource    componentmap.ArchitectureSource
+	ArchitectureLevel     int
+	NormalizationCount    int
+	FallbackSelected      bool
+	InputTokens           int
+	OutputTokens          int
 }
 
 func synthesizeArchitectureForRun(
@@ -214,7 +221,14 @@ func ensureArchitectureSynthesis(
 					return architectureSynthesisOutcome{}, err
 				}
 			}
-			if err := recordArchitectureResearch(runDir, cachedOutcome, "cached", true, policy, usage); err != nil {
+			if err := recordArchitectureResearch(
+				runDir,
+				cachedOutcome,
+				architectureResearchStatus(cachedOutcome),
+				true,
+				policy,
+				usage,
+			); err != nil {
 				return architectureSynthesisOutcome{}, err
 			}
 			return cachedOutcome, nil
@@ -265,13 +279,20 @@ func ensureArchitectureSynthesis(
 	result.Record.Call.Metadata.InputTokens = providerResult.InputTokens
 	result.Record.Call.Metadata.OutputTokens = providerResult.OutputTokens
 	outcome = architectureSynthesisOutcome{
-		InputBytes:     len(requestJSON),
-		LatencyMillis:  result.Record.Call.Metadata.LatencyMillis,
-		FallbackReason: result.Landscape.FallbackReason,
-		ResponseBytes:  len(raw),
-		Attempted:      true,
-		InputTokens:    providerResult.InputTokens,
-		OutputTokens:   providerResult.OutputTokens,
+		InputBytes:            len(requestJSON),
+		LatencyMillis:         result.Record.Call.Metadata.LatencyMillis,
+		FallbackReason:        result.Landscape.FallbackReason,
+		ResponseBytes:         len(raw),
+		Attempted:             true,
+		ProviderCallSucceeded: true,
+		ResponseParsed:        architectureResponseParsed(result.Landscape),
+		ValidationOutcome:     result.Landscape.ValidationOutcome,
+		ArchitectureSource:    result.Landscape.Source,
+		ArchitectureLevel:     result.Landscape.Level,
+		NormalizationCount:    len(result.Landscape.Normalizations),
+		FallbackSelected:      result.Landscape.Fallback,
+		InputTokens:           providerResult.InputTokens,
+		OutputTokens:          providerResult.OutputTokens,
 	}
 	saved, err := json.MarshalIndent(result.Record, "", "  ")
 	if err != nil {
@@ -284,7 +305,14 @@ func ensureArchitectureSynthesis(
 	if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
-	if err := recordArchitectureResearch(runDir, outcome, "completed", false, policy, usage); err != nil {
+	if err := recordArchitectureResearch(
+		runDir,
+		outcome,
+		architectureResearchStatus(outcome),
+		false,
+		policy,
+		usage,
+	); err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
 	return outcome, nil
@@ -341,6 +369,28 @@ func architectureSynthesisDiagnosticCodes(diagnostics []componentmap.Diagnostic)
 	return codes
 }
 
+func architectureResearchStatus(outcome architectureSynthesisOutcome) string {
+	switch outcome.ValidationOutcome {
+	case componentmap.ValidationAcceptedNormalized:
+		return "normalized"
+	case componentmap.ValidationAccepted:
+		return "accepted"
+	case componentmap.ValidationRejected:
+		return "rejected_fallback"
+	default:
+		return "completed"
+	}
+}
+
+func architectureResponseParsed(landscape componentmap.Landscape) bool {
+	for _, diagnostic := range landscape.Diagnostics {
+		if diagnostic.Severity == componentmap.FindingFatal && strings.HasPrefix(diagnostic.Code, "response.") {
+			return false
+		}
+	}
+	return true
+}
+
 func replayArchitectureSynthesisOutcome(
 	bundle componentmap.CandidateBundle,
 	repositoryRevision string,
@@ -355,12 +405,19 @@ func replayArchitectureSynthesisOutcome(
 		return architectureSynthesisOutcome{}, err
 	}
 	return architectureSynthesisOutcome{
-		InputBytes:     record.Call.Metadata.InputBytes,
-		LatencyMillis:  record.Call.Metadata.LatencyMillis,
-		FallbackReason: landscape.FallbackReason,
-		ResponseBytes:  record.Call.ResponseBytes,
-		InputTokens:    record.Call.Metadata.InputTokens,
-		OutputTokens:   record.Call.Metadata.OutputTokens,
+		InputBytes:            record.Call.Metadata.InputBytes,
+		LatencyMillis:         record.Call.Metadata.LatencyMillis,
+		FallbackReason:        landscape.FallbackReason,
+		ResponseBytes:         record.Call.ResponseBytes,
+		ProviderCallSucceeded: true,
+		ResponseParsed:        architectureResponseParsed(landscape),
+		ValidationOutcome:     landscape.ValidationOutcome,
+		ArchitectureSource:    landscape.Source,
+		ArchitectureLevel:     landscape.Level,
+		NormalizationCount:    len(landscape.Normalizations),
+		FallbackSelected:      landscape.Fallback,
+		InputTokens:           record.Call.Metadata.InputTokens,
+		OutputTokens:          record.Call.Metadata.OutputTokens,
 	}, nil
 }
 
@@ -369,9 +426,19 @@ func architectureSynthesisStatus(
 	synthesisErr error,
 ) report.ArchitectureSynthesisStatus {
 	status := report.ArchitectureSynthesisStatus{
-		Version:       report.ArchitectureSynthesisStatusVersion,
-		PromptBytes:   outcome.InputBytes,
-		LatencyMillis: outcome.LatencyMillis,
+		Version:               report.ArchitectureSynthesisStatusVersion,
+		PromptBytes:           outcome.InputBytes,
+		LatencyMillis:         outcome.LatencyMillis,
+		ProviderCallSucceeded: outcome.ProviderCallSucceeded,
+		ResponseParsed:        outcome.ResponseParsed,
+		ProposalAccepted:      outcome.ValidationOutcome == componentmap.ValidationAccepted || outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
+		ProposalNormalized:    outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
+		ProposalRejected:      outcome.ValidationOutcome == componentmap.ValidationRejected,
+		FallbackSelected:      outcome.FallbackSelected,
+		ArchitectureSource:    string(outcome.ArchitectureSource),
+		ArchitectureLevel:     outcome.ArchitectureLevel,
+		NormalizationCount:    outcome.NormalizationCount,
+		FallbackReason:        string(outcome.FallbackReason),
 	}
 	if synthesisErr == nil {
 		if outcome.Cached {

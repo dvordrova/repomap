@@ -593,7 +593,10 @@ func (b *architectureCandidateBuilder) addPackageCandidate(packagePath string) c
 
 func (b *architectureCandidateBuilder) addFlow(direction CandidateDirection) {
 	flowID := componentmap.FlowID(direction.ID)
-	session := *direction.LocalProof
+	session, upgraded := flowproof.UpgradeSession(*direction.LocalProof)
+	if !upgraded {
+		session = *direction.LocalProof
+	}
 	proof := session.Proof
 	name := architectureBuildFlowName(direction, proof)
 	proofLocation := architectureBuildFirstLocation(proof.Anchors)

@@ -482,7 +482,7 @@ func TestModuleBaseNameIgnoresSemanticImportVersion(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsProcessEntryMemberInUnassignedRemainder(t *testing.T) {
+func TestApplyPreservesOmittedProcessEntryMemberInUnassignedRemainder(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -512,8 +512,109 @@ func TestApplyRejectsProcessEntryMemberInUnassignedRemainder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_process_entry_member") {
+	if result.Fallback || result.ValidationOutcome != ValidationAccepted ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_process_entry_member") ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_members_preserved") {
 		t.Fatalf("process-entry omission result = %#v", result)
+	}
+	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
+		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
+	}
+}
+
+func TestApplyNormalizesKnownPackageOnlyGroundedComponent(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.GroundingMode = GroundingMixed
+	bundle.BehaviorAnchors = []BehaviorAnchor{{
+		ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
+		Location:    evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+		Scenario:    ScenarioContext{ID: "go:test", Name: "test build"},
+		Producer:    evidence.Provenance{Provider: "fixture", Version: "v1", Operation: "process_entry"},
+		Certainty:   evidence.CertaintyStatic,
+		MemberIDs:   []MemberID{testMemberID(MemberEntrypoint, "backup-command")},
+		Limitations: []string{"execution is not observed"},
+	}}
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Runtime",
+			Components: []ProposedComponent{
+				{
+					Name:      "Command",
+					MemberIDs: []MemberID{testMemberID(MemberEntrypoint, "backup-command")},
+					AnchorIDs: []string{"process"},
+				},
+				{
+					Name:      "Repository support",
+					MemberIDs: []MemberID{testMemberID(MemberPackage, "repo")},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedNormalized ||
+		result.Source != SourceNormalizedModel || len(result.Normalizations) != 1 {
+		t.Fatalf("normalized result = %#v", result)
+	}
+	if result.Normalizations[0].Code != "normalized_package_only_hypothesis" ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.normalized_package_only_hypothesis") {
+		t.Fatalf("normalization = %#v diagnostics = %#v", result.Normalizations, result.Diagnostics)
+	}
+	var found bool
+	for _, subsystem := range result.Subsystems {
+		for _, component := range subsystem.Components {
+			if component.Name == "Repository support" {
+				found = component.Hypothesis && len(component.AnchorIDs) == 0
+			}
+		}
+	}
+	if !found {
+		t.Fatal("package-only component was not retained as an explicit hypothesis")
+	}
+}
+
+func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		memberID MemberID
+	}{
+		{name: "unknown package", memberID: testMemberID(MemberPackage, "unknown")},
+		{name: "known file", memberID: testMemberID(MemberFile, "repo-file")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			bundle := landscapeTestBundle()
+			bundle.GroundingMode = GroundingMixed
+			bundle.BehaviorAnchors = []BehaviorAnchor{{
+				ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
+				Location:    evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+				Scenario:    ScenarioContext{ID: "go:test", Name: "test build"},
+				Producer:    evidence.Provenance{Provider: "fixture", Version: "v1", Operation: "process_entry"},
+				Certainty:   evidence.CertaintyStatic,
+				MemberIDs:   []MemberID{testMemberID(MemberEntrypoint, "backup-command")},
+				Limitations: []string{"execution is not observed"},
+			}}
+			result, err := Apply(bundle, Proposal{
+				Version: ContractVersion,
+				Subsystems: []ProposedSubsystem{{
+					Name:       "Runtime",
+					Components: []ProposedComponent{{Name: "Unsupported", MemberIDs: []MemberID{test.memberID}}},
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Fallback || result.ValidationOutcome != ValidationRejected || len(result.Normalizations) != 0 {
+				t.Fatalf("result = %#v", result)
+			}
+		})
 	}
 }
 

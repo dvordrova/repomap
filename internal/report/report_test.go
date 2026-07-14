@@ -164,8 +164,8 @@ func TestEnrichSeparatesDirectionFlowSurfaceAndAnchorCounts(t *testing.T) {
 	data := &ReportData{
 		Run: &RunInfo{SurfaceDiscoveryRan: true, SurfaceDiscoveryCount: 0},
 		CandidateDirections: []CandidateDirection{
-			{ID: "startup", Disposition: flowexplain.DirectionAccepted},
-			{ID: "admin", Disposition: flowexplain.DirectionAccepted},
+			{ID: "startup", Disposition: flowexplain.DirectionAccepted, LocalProof: testSavedTraceSession("startup", true)},
+			{ID: "admin", Disposition: flowexplain.DirectionAccepted, LocalProof: testSavedTraceSession("admin", false)},
 			{ID: "threshold", Disposition: flowexplain.DirectionRejected, DispositionReason: "low confidence"},
 		},
 		Flows: []FlowData{{ID: "startup"}, {ID: "admin"}, {ID: "threshold"}},
@@ -197,7 +197,7 @@ func TestEnrichDoesNotCountEvidenceBundleAsSavedFlowOrTrace(t *testing.T) {
 	}
 	enrich(data)
 
-	if data.Run.EvidenceBundleCount != 1 || data.Run.SavedFlowCount != 1 ||
+	if data.Run.EvidenceBundleCount != 1 || data.Run.SavedFlowCount != 0 ||
 		data.Run.SavedTraceCount != 0 || data.Run.FailedTraceAttemptCount != 0 {
 		t.Fatalf("evidence/saved accounting = %#v", data.Run)
 	}

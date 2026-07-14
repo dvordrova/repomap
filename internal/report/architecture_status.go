@@ -8,7 +8,7 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 1
+	ArchitectureSynthesisStatusVersion = 2
 
 	ArchitectureSynthesisSucceeded = "succeeded"
 	ArchitectureSynthesisCached    = "cached"
@@ -20,16 +20,26 @@ const (
 // operational metadata; prompts and provider responses remain in their own
 // debug artifacts.
 type ArchitectureSynthesisStatus struct {
-	Version              int    `json:"version"`
-	State                string `json:"state"`
-	PromptBytes          int    `json:"prompt_bytes,omitempty"`
-	LatencyMillis        int64  `json:"latency_ms,omitempty"`
-	ProviderRequestCount int    `json:"provider_request_count,omitempty"`
-	ErrorCode            string `json:"error_code,omitempty"`
+	Version               int    `json:"version"`
+	State                 string `json:"state"`
+	PromptBytes           int    `json:"prompt_bytes,omitempty"`
+	LatencyMillis         int64  `json:"latency_ms,omitempty"`
+	ProviderRequestCount  int    `json:"provider_request_count,omitempty"`
+	ProviderCallSucceeded bool   `json:"provider_call_succeeded,omitempty"`
+	ResponseParsed        bool   `json:"response_parsed,omitempty"`
+	ProposalAccepted      bool   `json:"proposal_accepted,omitempty"`
+	ProposalNormalized    bool   `json:"proposal_normalized,omitempty"`
+	ProposalRejected      bool   `json:"proposal_rejected,omitempty"`
+	FallbackSelected      bool   `json:"fallback_selected,omitempty"`
+	ArchitectureSource    string `json:"architecture_source,omitempty"`
+	ArchitectureLevel     int    `json:"architecture_level,omitempty"`
+	NormalizationCount    int    `json:"normalization_count,omitempty"`
+	FallbackReason        string `json:"fallback_reason,omitempty"`
+	ErrorCode             string `json:"error_code,omitempty"`
 }
 
 func (status ArchitectureSynthesisStatus) Validate() error {
-	if status.Version != ArchitectureSynthesisStatusVersion {
+	if status.Version != 1 && status.Version != ArchitectureSynthesisStatusVersion {
 		return fmt.Errorf("unsupported architecture synthesis status version %d", status.Version)
 	}
 	switch status.State {
@@ -46,6 +56,36 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 	}
 	if status.PromptBytes < 0 || status.LatencyMillis < 0 || status.ProviderRequestCount < 0 || status.ProviderRequestCount > 1 {
 		return fmt.Errorf("architecture synthesis status contains invalid metrics")
+	}
+	if status.Version == 1 {
+		return nil
+	}
+	if status.ArchitectureLevel < 0 || status.ArchitectureLevel > 4 || status.NormalizationCount < 0 {
+		return fmt.Errorf("architecture synthesis status contains invalid outcome metrics")
+	}
+	if status.ProposalNormalized && !status.ProposalAccepted {
+		return fmt.Errorf("normalized architecture proposal must also be accepted")
+	}
+	if status.ProposalAccepted && status.ProposalRejected {
+		return fmt.Errorf("architecture proposal cannot be accepted and rejected")
+	}
+	if status.State == ArchitectureSynthesisFailed {
+		return nil
+	}
+	if !status.ProviderCallSucceeded {
+		return fmt.Errorf("completed architecture synthesis requires a successful provider response")
+	}
+	if !status.ProposalAccepted && !status.ProposalRejected {
+		return fmt.Errorf("completed architecture synthesis requires a proposal outcome")
+	}
+	if status.ProposalNormalized != (status.NormalizationCount > 0) {
+		return fmt.Errorf("architecture normalization metrics are inconsistent")
+	}
+	if status.ArchitectureSource == "" || status.ArchitectureLevel == 0 {
+		return fmt.Errorf("completed architecture synthesis requires an architecture source")
+	}
+	if status.FallbackSelected != (status.FallbackReason != "") {
+		return fmt.Errorf("architecture fallback metrics are inconsistent")
 	}
 	return nil
 }
@@ -69,7 +109,13 @@ func readArchitectureSynthesisStatus(path string) (*ArchitectureSynthesisStatus,
 }
 
 func architectureSynthesisUserWarning(status *ArchitectureSynthesisStatus) string {
-	if status == nil || status.State != ArchitectureSynthesisFailed {
+	if status == nil {
+		return ""
+	}
+	if status.Version >= 2 && status.FallbackSelected && status.ProposalRejected {
+		return "The model architecture proposal was rejected by local validation; a deterministic local fallback is shown."
+	}
+	if status.State != ArchitectureSynthesisFailed {
 		return ""
 	}
 	switch status.ErrorCode {

@@ -915,7 +915,9 @@
       if (DATA.run.secondary_service_surface_count) surfaceBreakdown.push(DATA.run.secondary_service_surface_count + ' secondary services');
       if (DATA.run.tooling_surface_count) surfaceBreakdown.push(DATA.run.tooling_surface_count + ' tooling');
       if (DATA.run.test_helper_surface_count) surfaceBreakdown.push(DATA.run.test_helper_surface_count + ' tests/helpers');
-      if (DATA.run.unavailable_surface_count) surfaceBreakdown.push(DATA.run.unavailable_surface_count + ' unavailable');
+       if (DATA.run.unavailable_surface_count) surfaceBreakdown.push(DATA.run.unavailable_surface_count + ' unavailable');
+       if (DATA.run.supporting_dependency_surface_count) surfaceBreakdown.push(DATA.run.supporting_dependency_surface_count + ' supporting dependency');
+       if (DATA.run.dependency_only_surface_count) surfaceBreakdown.push(DATA.run.dependency_only_surface_count + ' dependency-only');
       if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
       addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
       addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
@@ -941,8 +943,21 @@
       addFact(LABELS.architectureAnchors, String(DATA.run.architecture_anchor_count || 0) + ' static families');
       if (DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
-        var architectureValue = architectureState === 'succeeded' ? 'Ready' :
-          architectureState === 'cached' ? 'Cached' : 'Unavailable';
+        var architectureValue = 'Unavailable';
+        if (DATA.architecture_synthesis.proposal_normalized) {
+          architectureValue = 'Normalized model';
+        } else if (DATA.architecture_synthesis.proposal_accepted) {
+          architectureValue = 'Validated model';
+        } else if (DATA.architecture_synthesis.proposal_rejected && DATA.architecture_synthesis.fallback_selected) {
+          architectureValue = 'Proposal rejected · local fallback';
+        } else if (architectureState === 'cached') {
+          architectureValue = 'Cached · outcome unavailable';
+        } else if (architectureState === 'succeeded') {
+          architectureValue = 'Completed · outcome unavailable';
+        }
+        if (architectureState === 'cached' && DATA.architecture_synthesis.proposal_accepted) {
+          architectureValue += ' · cached response';
+        }
         if (DATA.architecture_synthesis.latency_ms) {
           architectureValue += ' · ' + formatMillis(DATA.architecture_synthesis.latency_ms);
         }

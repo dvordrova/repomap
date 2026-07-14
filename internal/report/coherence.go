@@ -23,6 +23,7 @@ const (
 	surfaceCategoryUnassigned  = "unassigned"
 	surfaceCategoryDynamic     = "dynamic_unresolved"
 	surfaceCategoryUnavailable = "unavailable"
+	surfaceCategoryDependency  = "supporting_dependency"
 )
 
 type architectureOwnershipIndex struct {
@@ -68,43 +69,49 @@ func linkArchitectureProductObjects(data *ReportData) {
 		canvas.Flows[index].FrontierSummary = ""
 		canvas.Flows[index].ParticipatingComponentIDs = nil
 		canvas.Flows[index].StartSurfaceID = ""
+		canvas.Flows[index].RelatedComponentSurfaceIDs = nil
 	}
 	owners := buildArchitectureOwnershipIndex(*canvas, data.RepositoryGraph)
 	flowLocations := architectureFlowLocations(*canvas)
-	flowByLocation := make(map[string]map[componentmap.FlowID]struct{})
-	flowByCommand := make(map[string]map[componentmap.FlowID]struct{})
-	for flowID, locations := range flowLocations {
-		for location := range locations {
-			addFlowSet(flowByLocation, location, flowID)
-		}
-	}
-	for _, flow := range canvas.Flows {
-		command := strings.TrimSpace(strings.ToLower(flow.Command))
-		if command != "" {
-			addFlowSet(flowByCommand, command, flow.ID)
-		}
-	}
 
 	componentIndex := make(map[componentmap.ComponentID]int, len(canvas.Components))
 	for index := range canvas.Components {
 		componentIndex[canvas.Components[index].ID] = index
 	}
-	flowIndex := make(map[componentmap.FlowID]int, len(canvas.Flows))
+	catalogByID := make(map[string]DiscoveredTrigger)
+	if data.DiscoveredSurfaces != nil {
+		catalogByID = make(map[string]DiscoveredTrigger, len(data.DiscoveredSurfaces.Triggers))
+		for _, trigger := range data.DiscoveredSurfaces.Triggers {
+			catalogByID[trigger.ID] = trigger
+		}
+	}
+	claimedBySurface := make(map[string][]componentmap.FlowID)
 	for index := range canvas.Flows {
-		flowIndex[canvas.Flows[index].ID] = index
-		populateArchitectureTraceSummary(data, &canvas.Flows[index], *canvas)
+		flow := &canvas.Flows[index]
+		populateArchitectureTraceSummary(data, flow, *canvas)
+		for _, surfaceID := range reconcileArchitectureTraceSurfaces(
+			flow,
+			catalogByID,
+			flowLocations[flow.ID],
+			canvas,
+		) {
+			claimedBySurface[surfaceID] = append(claimedBySurface[surfaceID], flow.ID)
+		}
 	}
 
 	if data.DiscoveredSurfaces != nil {
 		for index := range data.DiscoveredSurfaces.Triggers {
 			trigger := &data.DiscoveredSurfaces.Triggers[index]
-			surface := architectureSurfaceFromTrigger(*trigger, owners, flowByLocation, flowByCommand, flowLocations)
-			for _, flow := range canvas.Flows {
-				if flow.SeedSurfaceID == trigger.ID {
-					surface.RelatedTraceID = flow.ID
-					surface.TraceUnavailableReason = ""
-					break
-				}
+			surface := architectureSurfaceFromTrigger(*trigger, owners)
+			claims := claimedBySurface[trigger.ID]
+			if len(claims) == 1 {
+				surface.RelatedTraceID = claims[0]
+				surface.TraceUnavailableReason = ""
+			} else if len(claims) > 1 {
+				canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
+					"coherence", "error", "trace.surface_claim_conflict",
+					"one exact surface is claimed by more than one saved trace", "", nil,
+				))
 			}
 			trigger.OwningExecutable = surface.OwningExecutable
 			trigger.OwningComponentID = surface.OwningComponentID
@@ -113,14 +120,9 @@ func linkArchitectureProductObjects(data *ReportData) {
 			trigger.TraceUnavailableReason = surface.TraceUnavailableReason
 			canvas.Surfaces = append(canvas.Surfaces, surface)
 			attachArchitectureSurface(canvas, componentIndex, surface)
-			if surface.RelatedTraceID != "" {
-				if index, ok := flowIndex[surface.RelatedTraceID]; ok &&
-					(canvas.Flows[index].StartSurfaceID == "" || canvas.Flows[index].SeedSurfaceID == surface.ID) {
-					canvas.Flows[index].StartSurfaceID = surface.ID
-				}
-			}
 		}
 	}
+	populateRelatedComponentSurfaces(canvas)
 
 	linkSuggestedInvestigations(data, owners, componentIndex)
 	refreshSurfaceCatalogCounts(data.DiscoveredSurfaces)
@@ -323,9 +325,6 @@ func populateArchitectureTraceSummary(data *ReportData, flow *ArchitectureFlow, 
 func architectureSurfaceFromTrigger(
 	trigger DiscoveredTrigger,
 	owners architectureOwnershipIndex,
-	flowByLocation map[string]map[componentmap.FlowID]struct{},
-	flowByCommand map[string]map[componentmap.FlowID]struct{},
-	flowLocations map[componentmap.FlowID]map[string]struct{},
 ) ArchitectureSurface {
 	participants := make(map[componentmap.ComponentID]struct{})
 	addOwners := func(values map[componentmap.ComponentID]struct{}) {
@@ -345,34 +344,6 @@ func architectureSurfaceFromTrigger(
 	}
 
 	primary := uniqueOwnerForTrigger(trigger, owners)
-	related := make(map[componentmap.FlowID]struct{})
-	for _, location := range evidence {
-		for flowID := range flowByLocation[surfaceLocationKey(location.Path, location.Line)] {
-			related[flowID] = struct{}{}
-		}
-	}
-	if trigger.Kind == "cli_command" {
-		command := strings.TrimSpace(strings.ToLower(trigger.Identity.Name))
-		commandMatches := flowByCommand[command]
-		typedMatches := make(map[componentmap.FlowID]struct{})
-		for flowID := range commandMatches {
-			if commandSurfaceMatchesFlowExecutable(trigger, flowLocations[flowID]) {
-				typedMatches[flowID] = struct{}{}
-			}
-		}
-		related = make(map[componentmap.FlowID]struct{})
-		if len(typedMatches) == 1 {
-			for flowID := range typedMatches {
-				related[flowID] = struct{}{}
-			}
-		}
-	}
-	var relatedTrace componentmap.FlowID
-	if len(related) == 1 {
-		for id := range related {
-			relatedTrace = id
-		}
-	}
 	category := surfaceOwnershipCategory(trigger, primary)
 	return ArchitectureSurface{
 		ID:                        trigger.ID,
@@ -383,16 +354,180 @@ func architectureSurfaceFromTrigger(
 		OwningExecutable:          firstNonEmpty(trigger.OwningExecutable, surfaceExecutable(trigger)),
 		OwningComponentID:         primary,
 		ParticipatingComponentIDs: sortedComponentIDs(participants),
-		RelatedTraceID:            relatedTrace,
 		Status:                    trigger.Status,
 		Certainty:                 trigger.Certainty,
 		Resolution:                trigger.Resolution,
 		Evidence:                  evidence,
-		TraceUnavailableReason:    surfaceTraceUnavailableReason(trigger, relatedTrace),
+		TraceUnavailableReason:    surfaceTraceUnavailableReason(trigger, ""),
 		SurfaceRole:               trigger.SurfaceRole,
 		TraceReadiness:            trigger.TraceReadiness,
 		TraceReadinessReason:      trigger.TraceReadinessReason,
 		Quality:                   trigger.Quality,
+	}
+}
+
+func reconcileArchitectureTraceSurfaces(
+	flow *ArchitectureFlow,
+	catalog map[string]DiscoveredTrigger,
+	locations map[string]struct{},
+	canvas *ArchitectureCanvas,
+) []string {
+	if flow == nil {
+		return nil
+	}
+	legacyDerivedSeed := false
+	if flow.SeedSurfaceID == "" && flow.Command != "" {
+		flow.SeedSurfaceID = legacyCommandSeedSurface(*flow, catalog, locations)
+		legacyDerivedSeed = flow.SeedSurfaceID != ""
+	}
+	if len(flow.TraceEvidenceSurfaceIDs) == 0 {
+		for _, step := range flow.Steps {
+			if step.ID != flow.SeedSurfaceID {
+				if _, exists := catalog[step.ID]; exists {
+					flow.TraceEvidenceSurfaceIDs = append(flow.TraceEvidenceSurfaceIDs, step.ID)
+				}
+			}
+		}
+	}
+	flow.TraceEvidenceSurfaceIDs = sortedUniqueStrings(flow.TraceEvidenceSurfaceIDs)
+
+	claimed := make([]string, 0, 1+len(flow.TraceEvidenceSurfaceIDs))
+	if flow.SeedSurfaceID != "" {
+		if trigger, exists := catalog[flow.SeedSurfaceID]; !exists ||
+			(!legacyDerivedSeed && !traceSurfaceJustified(*flow, trigger, true)) {
+			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
+				"coherence", "error", "trace.invalid_seed_surface",
+				"saved trace seed surface is absent or not represented by trigger/entry evidence",
+				flow.ID, nil,
+			))
+		} else {
+			flow.StartSurfaceID = flow.SeedSurfaceID
+			claimed = append(claimed, flow.SeedSurfaceID)
+		}
+	}
+	validEvidence := make([]string, 0, len(flow.TraceEvidenceSurfaceIDs))
+	for _, surfaceID := range flow.TraceEvidenceSurfaceIDs {
+		if surfaceID == flow.SeedSurfaceID {
+			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
+				"coherence", "error", "trace.surface_role_overlap",
+				"saved trace repeats its seed in trace evidence surfaces", flow.ID, nil,
+			))
+			continue
+		}
+		trigger, exists := catalog[surfaceID]
+		if !exists || !traceSurfaceJustified(*flow, trigger, false) {
+			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
+				"coherence", "error", "trace.unjustified_evidence_surface",
+				"trace evidence surface is absent or has no corresponding trace anchor or transition",
+				flow.ID, nil,
+			))
+			continue
+		}
+		validEvidence = append(validEvidence, surfaceID)
+		claimed = append(claimed, surfaceID)
+	}
+	flow.TraceEvidenceSurfaceIDs = validEvidence
+	return claimed
+}
+
+func legacyCommandSeedSurface(
+	flow ArchitectureFlow,
+	catalog map[string]DiscoveredTrigger,
+	locations map[string]struct{},
+) string {
+	command := strings.TrimSpace(strings.ToLower(flow.Command))
+	if command == "" {
+		return ""
+	}
+	matches := make([]string, 0, 1)
+	for _, trigger := range catalog {
+		if trigger.Kind == "cli_command" && strings.TrimSpace(strings.ToLower(trigger.Identity.Name)) == command &&
+			commandSurfaceMatchesFlowExecutable(trigger, locations) {
+			matches = append(matches, trigger.ID)
+		}
+	}
+	if len(matches) != 1 {
+		return ""
+	}
+	return matches[0]
+}
+
+func traceSurfaceJustified(flow ArchitectureFlow, trigger DiscoveredTrigger, seed bool) bool {
+	for _, step := range flow.Steps {
+		if step.ID == trigger.ID {
+			return true
+		}
+	}
+	if !seed {
+		return false
+	}
+	allowedStepIDs := make(map[string]struct{})
+	for _, slot := range flow.Slots {
+		if slot.Kind != flowproof.SlotTrigger && slot.Kind != flowproof.SlotEntrypoint && slot.Kind != flowproof.SlotDispatch {
+			continue
+		}
+		for _, evidenceID := range slot.EvidenceIDs {
+			allowedStepIDs[evidenceID] = struct{}{}
+		}
+	}
+	triggerLocations := make(map[string]struct{})
+	for _, location := range surfaceTriggerLocations(trigger) {
+		triggerLocations[surfaceLocationKey(location.Path, location.Line)] = struct{}{}
+	}
+	for _, step := range flow.Steps {
+		if _, allowed := allowedStepIDs[step.ID]; !allowed || step.Location == nil {
+			continue
+		}
+		if _, matched := triggerLocations[surfaceLocationKey(step.Location.Path, step.Location.Line)]; matched {
+			return true
+		}
+	}
+	return false
+}
+
+func populateRelatedComponentSurfaces(canvas *ArchitectureCanvas) {
+	if canvas == nil {
+		return
+	}
+	for flowIndex := range canvas.Flows {
+		flow := &canvas.Flows[flowIndex]
+		exact := make(map[string]struct{}, 1+len(flow.TraceEvidenceSurfaceIDs))
+		exact[flow.SeedSurfaceID] = struct{}{}
+		for _, surfaceID := range flow.TraceEvidenceSurfaceIDs {
+			exact[surfaceID] = struct{}{}
+		}
+		components := make(map[componentmap.ComponentID]struct{}, len(flow.ParticipatingComponentIDs))
+		for _, componentID := range flow.ParticipatingComponentIDs {
+			components[componentID] = struct{}{}
+		}
+		executables := make(map[string]struct{})
+		for _, surface := range canvas.Surfaces {
+			if _, isExact := exact[surface.ID]; isExact && surface.OwningExecutable != "" {
+				executables[surface.OwningExecutable] = struct{}{}
+			}
+		}
+		for _, surface := range canvas.Surfaces {
+			if _, isExact := exact[surface.ID]; isExact {
+				continue
+			}
+			related := false
+			if _, sameExecutable := executables[surface.OwningExecutable]; sameExecutable && surface.OwningExecutable != "" {
+				related = true
+			}
+			for _, componentID := range append(
+				[]componentmap.ComponentID{surface.OwningComponentID},
+				surface.ParticipatingComponentIDs...,
+			) {
+				if _, participates := components[componentID]; participates && componentID != "" {
+					related = true
+					break
+				}
+			}
+			if related {
+				flow.RelatedComponentSurfaceIDs = append(flow.RelatedComponentSurfaceIDs, surface.ID)
+			}
+		}
+		flow.RelatedComponentSurfaceIDs = sortedUniqueStrings(flow.RelatedComponentSurfaceIDs)
 	}
 }
 
@@ -780,7 +915,9 @@ func traceableSuggestionSurfaceMatches(matches []suggestionSurfaceMatch) []sugge
 	for _, match := range matches {
 		ready := match.trigger.TraceReadiness == SurfaceTraceReady ||
 			match.trigger.TraceReadiness == SurfaceTracePartialReady
-		if ready && match.trigger.Availability != SurfaceAvailabilityUnavailable {
+		applicationOwned := match.trigger.ApplicationClass != SurfaceSupportingDependency &&
+			match.trigger.ApplicationClass != SurfaceDependencyOnly
+		if ready && applicationOwned && match.trigger.Availability != SurfaceAvailabilityUnavailable {
 			result = append(result, match)
 		}
 	}
@@ -985,6 +1122,9 @@ func surfaceOwnershipCategory(trigger DiscoveredTrigger, _ componentmap.Componen
 	if trigger.Availability == SurfaceAvailabilityUnavailable {
 		return surfaceCategoryUnavailable
 	}
+	if trigger.ApplicationClass == SurfaceSupportingDependency || trigger.ApplicationClass == SurfaceDependencyOnly {
+		return surfaceCategoryDependency
+	}
 	switch trigger.ExecutableRole {
 	case ExecutableRolePrimaryApplication:
 		return surfaceCategoryApplication
@@ -1020,12 +1160,15 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 	if trigger.Availability == "" || trigger.Availability == SurfaceAvailabilityUnknown {
 		trigger.Availability = SurfaceAvailabilityAvailable
 	}
-	if trigger.ExecutableRole != "" && trigger.ExecutableRole != ExecutableRoleUnknown {
-		return
-	}
 	location := ""
 	if trigger.ProcessEntrypoint.Location != nil {
 		location = "/" + strings.ToLower(cleanSurfacePath(trigger.ProcessEntrypoint.Location.Path))
+	}
+	legacyBuildHelper := trigger.ExecutableRole == ExecutableRoleTestOrHelper &&
+		strings.Contains(location, "/helpers/") &&
+		(strings.Contains(location, "build") || strings.Contains(location, "release"))
+	if trigger.ExecutableRole != "" && trigger.ExecutableRole != ExecutableRoleUnknown && !legacyBuildHelper {
+		return
 	}
 	if strings.HasSuffix(location, "_test.go") || strings.Contains(location, "/test/") || strings.Contains(location, "/tests/") {
 		trigger.ExecutableRole = ExecutableRoleTestOrHelper
@@ -1233,6 +1376,22 @@ func appendUniqueString(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+
+func sortedUniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	compacted := result[:0]
+	for _, value := range result {
+		if value == "" || len(compacted) > 0 && compacted[len(compacted)-1] == value {
+			continue
+		}
+		compacted = append(compacted, value)
+	}
+	return compacted
 }
 
 func appendUniqueComponentID(values []componentmap.ComponentID, value componentmap.ComponentID) []componentmap.ComponentID {

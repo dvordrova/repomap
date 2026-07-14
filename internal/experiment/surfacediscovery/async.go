@@ -83,6 +83,8 @@ func (a *analyzer) recordAsyncTask(
 		DynamicFrontier: frontiers,
 		Status:          status,
 	}
+	record.TerminalSourceScope, record.ApplicationClass, record.PromotionBasis =
+		classifyTerminalOwnership(location, chain, a.detachedWalk)
 	record.ProvisionalID = !callback.Known || !dispatcher.Known
 	record.ID = stableTriggerID(record)
 	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)

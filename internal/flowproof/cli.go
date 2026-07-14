@@ -50,6 +50,7 @@ type CLISeed struct {
 	FlowID              string
 	Goal                string
 	Command             string
+	SeedSurfaceID       string
 	Framework           string
 	CollectorVersion    string
 	ScenarioID          string
@@ -62,12 +63,13 @@ type CLISeed struct {
 // It does not claim that source-order callsites form a runtime sequence.
 func BuildCLI(seed CLISeed) Proof {
 	proof := Proof{
-		Version:   Version,
-		ID:        seed.FlowID,
-		Archetype: ArchetypeCLI,
-		Goal:      seed.Goal,
-		Command:   seed.Command,
-		Slots:     newCLISlots(),
+		Version:       Version,
+		ID:            seed.FlowID,
+		Archetype:     ArchetypeCLI,
+		Goal:          seed.Goal,
+		Command:       seed.Command,
+		Slots:         newCLISlots(),
+		SeedSurfaceID: seed.SeedSurfaceID,
 	}
 	provider := seed.Framework
 	if provider == "" {

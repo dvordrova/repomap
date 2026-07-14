@@ -129,7 +129,9 @@ func compactProcessEntrypoints(input []processEntrypoint) []processEntrypoint {
 
 func classifyExecutableRole(repositoryName string, entrypoint processEntrypoint) string {
 	segments := repositoryPathSegments(entrypoint.packageDir, path.Dir(entrypoint.anchor.Path))
+	joined := strings.Join(segments, "/")
 	if hasAnySegment(segments, "dev", "tool", "tools", "hack", "script", "scripts", "build", "release", "generator", "generators") ||
+		(hasAnySegment(segments, "helper", "helpers") && (strings.Contains(joined, "build") || strings.Contains(joined, "release"))) ||
 		entrypoint.kind == "tool" {
 		return ExecutableRoleTooling
 	}
@@ -465,12 +467,15 @@ func (a *analyzer) recordProcessEntrypoints() {
 				Provider: "gofacts", Version: "entrypoint-anchor-v1",
 				Operation: "build_selected_main_declaration",
 			}},
-			DynamicFrontier:   []Frontier{},
-			Status:            "confirmed_process_entry",
-			OwningExecutable:  entrypoint.owner,
-			ExecutableRole:    entrypoint.role,
-			Availability:      entrypoint.availability,
-			UnavailableReason: entrypoint.unavailableReason,
+			DynamicFrontier:     []Frontier{},
+			Status:              "confirmed_process_entry",
+			OwningExecutable:    entrypoint.owner,
+			ExecutableRole:      entrypoint.role,
+			Availability:        entrypoint.availability,
+			UnavailableReason:   entrypoint.unavailableReason,
+			TerminalSourceScope: "repository",
+			ApplicationClass:    ApplicationSurface,
+			PromotionBasis:      PromotionRepositoryRegistration,
 		}
 		record.ID = stableTriggerID(record)
 		a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)

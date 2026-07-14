@@ -21,6 +21,13 @@ const (
 	SurfaceQualityUnresolved    = "unresolved"
 	SurfaceQualityNotApplicable = "not_applicable"
 	SurfaceQualityRejected      = "rejected"
+
+	ApplicationSurface              = "application_surface"
+	SupportingDependencyBehavior    = "supporting_dependency_behavior"
+	DependencyOnly                  = "dependency_only"
+	PromotionRepositoryRegistration = "repository_registration"
+	PromotionRepositoryWrapper      = "repository_wrapper"
+	PromotionNone                   = "none"
 )
 
 func deriveSurfaceSemantics(trigger *TriggerRecord) {
@@ -49,6 +56,10 @@ func surfaceRoleAndReadiness(trigger TriggerRecord, quality SurfaceQuality) (str
 			reason = "surface evidence is unavailable under the recorded build scenario"
 		}
 		return SurfaceRoleRejected, TraceReadinessRejected, reason
+	}
+	if trigger.ApplicationClass == SupportingDependencyBehavior || trigger.ApplicationClass == DependencyOnly {
+		return SurfaceRoleNoisy, TraceReadinessUnsupported,
+			"dependency behavior remains supporting evidence and is not an application-owned trace seed"
 	}
 	switch trigger.Kind {
 	case "process_entry":

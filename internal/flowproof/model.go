@@ -5,7 +5,7 @@ package flowproof
 
 import "github.com/dvordrova/repomap/internal/evidence"
 
-const Version = 2
+const Version = 3
 
 type Archetype string
 
@@ -107,18 +107,19 @@ type Transition struct {
 }
 
 type Proof struct {
-	Version         int          `json:"version"`
-	ID              string       `json:"id"`
-	Archetype       Archetype    `json:"archetype"`
-	Goal            string       `json:"goal"`
-	Command         string       `json:"command,omitempty"`
-	Slots           []Slot       `json:"slots"`
-	Anchors         []Anchor     `json:"anchors"`
-	Transitions     []Transition `json:"transitions"`
-	Warnings        []string     `json:"warnings,omitempty"`
-	SeedSurfaceID   string       `json:"seed_surface_id,omitempty"`
-	TraceQuality    TraceQuality `json:"trace_quality,omitempty"`
-	CurrentFrontier string       `json:"current_frontier,omitempty"`
+	Version                 int          `json:"version"`
+	ID                      string       `json:"id"`
+	Archetype               Archetype    `json:"archetype"`
+	Goal                    string       `json:"goal"`
+	Command                 string       `json:"command,omitempty"`
+	Slots                   []Slot       `json:"slots"`
+	Anchors                 []Anchor     `json:"anchors"`
+	Transitions             []Transition `json:"transitions"`
+	Warnings                []string     `json:"warnings,omitempty"`
+	SeedSurfaceID           string       `json:"seed_surface_id,omitempty"`
+	TraceEvidenceSurfaceIDs []string     `json:"trace_evidence_surface_ids,omitempty"`
+	TraceQuality            TraceQuality `json:"trace_quality,omitempty"`
+	CurrentFrontier         string       `json:"current_frontier,omitempty"`
 }
 
 func (p Proof) Slot(kind SlotKind) (Slot, bool) {

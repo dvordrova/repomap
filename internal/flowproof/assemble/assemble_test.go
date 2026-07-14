@@ -52,6 +52,9 @@ func TestAttachSeedsPartialProcessTraceFromUniqueExactEntry(t *testing.T) {
 	if _, ok := proof.Anchor(route.ID); !ok {
 		t.Fatalf("same-executable request route was not retained: %#v", proof.Anchors)
 	}
+	if len(proof.TraceEvidenceSurfaceIDs) != 1 || proof.TraceEvidenceSurfaceIDs[0] != route.ID {
+		t.Fatalf("trace evidence surfaces = %v, want only %q", proof.TraceEvidenceSurfaceIDs, route.ID)
+	}
 	if len(proof.Transitions) == 0 || proof.Transitions[0].Evidence.Path != "cmd/app/main.go" {
 		t.Fatalf("wrapper evidence was not retained exactly: %#v", proof.Transitions)
 	}
@@ -208,6 +211,14 @@ func TestAttachKeepsCobraPriorityOverProcessSurface(t *testing.T) {
 		Steps: []gofacts.CommandTraceStep{{
 			Symbol: "main", Relation: "entrypoint",
 			TargetLocation: evidence.Location{Path: "cmd/app/main.go", Line: 10},
+		}, {
+			Symbol: "newRootCommand", Relation: "calls",
+			CallsiteLocation: &evidence.Location{Path: "cmd/app/main.go", Line: 11},
+			TargetLocation:   evidence.Location{Path: "cmd/app/root.go", Line: 20},
+		}, {
+			Symbol: "newServeCommand", Relation: "registers_command",
+			CallsiteLocation: &evidence.Location{Path: "cmd/app/root.go", Line: 30},
+			TargetLocation:   evidence.Location{Path: "cmd/app/serve.go", Line: 40},
 		}},
 	}
 	flows := []flowexplain.CandidateFlow{flow}
@@ -217,6 +228,10 @@ func TestAttachKeepsCobraPriorityOverProcessSurface(t *testing.T) {
 	})
 	if flows[0].LocalProof == nil || flows[0].LocalProof.Proof.Archetype != flowproof.ArchetypeCLI {
 		t.Fatalf("Cobra did not retain proof priority: %#v", flows[0].LocalProof)
+	}
+	wantSeed, _, _ := gofacts.CommandSurfaceIdentity(trace)
+	if flows[0].LocalProof.Proof.SeedSurfaceID != wantSeed {
+		t.Fatalf("CLI seed surface = %q, want %q", flows[0].LocalProof.Proof.SeedSurfaceID, wantSeed)
 	}
 }
 

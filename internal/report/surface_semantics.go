@@ -38,6 +38,10 @@ func projectedSurfaceRoleAndReadiness(trigger DiscoveredTrigger, quality Surface
 		}
 		return SurfaceRoleRejected, SurfaceTraceRejected, reason
 	}
+	if trigger.ApplicationClass == SurfaceSupportingDependency || trigger.ApplicationClass == SurfaceDependencyOnly {
+		return SurfaceRoleNoisy, SurfaceTraceUnsupported,
+			"dependency behavior remains supporting evidence and is not an application-owned trace seed"
+	}
 	switch trigger.Kind {
 	case "process_entry":
 		return SurfaceRoleEntrySurface, SurfaceTracePartialReady,

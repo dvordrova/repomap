@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -161,6 +162,8 @@ type RunInfo struct {
 	UnavailableSurfaceCount      int    `json:"unavailable_surface_count,omitempty"`
 	UnavailablePackageCount      int    `json:"unavailable_package_count,omitempty"`
 	PackageDiagnosticCount       int    `json:"package_diagnostic_count,omitempty"`
+	SupportingDependencyCount    int    `json:"supporting_dependency_surface_count,omitempty"`
+	DependencyOnlySurfaceCount   int    `json:"dependency_only_surface_count,omitempty"`
 	SuggestedInvestigationCount  int    `json:"suggested_investigation_count,omitempty"`
 	DiscoveredSurfaceCount       int    `json:"discovered_surface_count,omitempty"`
 	SavedTraceCount              int    `json:"saved_trace_count,omitempty"`
@@ -341,7 +344,7 @@ func enrich(data *ReportData) {
 		data.Run.CandidateDirectionCount = len(data.CandidateDirections)
 		data.Run.AcceptedDirectionCount = acceptedDirections
 		data.Run.RejectedDirectionCount = rejectedDirections
-		data.Run.SavedFlowCount = savedFlowArtifactCount(data.Flows)
+		data.Run.SavedFlowCount = len(canonicalSavedTraceSessions(data.CandidateDirections))
 		if data.ArchitectureGrounding != nil {
 			data.Run.ArchitectureAnchorCount = len(data.ArchitectureGrounding.BehaviorAnchors)
 		}
@@ -371,21 +374,23 @@ func refreshProductCounts(data *ReportData) {
 	data.Run.UnavailableSurfaceCount = 0
 	data.Run.UnavailablePackageCount = 0
 	data.Run.PackageDiagnosticCount = 0
+	data.Run.SupportingDependencyCount = 0
+	data.Run.DependencyOnlySurfaceCount = 0
 	traced := make(map[string]struct{})
+	for _, session := range canonicalSavedTraceSessions(data.CandidateDirections) {
+		traced[session.Proof.ID] = struct{}{}
+		data.Run.SavedTraceCount++
+		switch flowproof.AssessTraceQuality(session.Proof) {
+		case flowproof.TraceQualityComplete:
+			data.Run.CompleteTraceCount++
+		case flowproof.TraceQualityPartial:
+			data.Run.PartialTraceCount++
+		default:
+			data.Run.UnresolvedTraceCount++
+		}
+	}
 	if data.ArchitectureCanvas != nil {
 		data.Run.SuggestedInvestigationCount = len(data.ArchitectureCanvas.Suggestions)
-		data.Run.SavedTraceCount = len(data.ArchitectureCanvas.Flows)
-		for _, trace := range data.ArchitectureCanvas.Flows {
-			traced[string(trace.ID)] = struct{}{}
-			switch trace.Status {
-			case "complete":
-				data.Run.CompleteTraceCount++
-			case "partial":
-				data.Run.PartialTraceCount++
-			default:
-				data.Run.UnresolvedTraceCount++
-			}
-		}
 	}
 	if data.DiscoveredSurfaces != nil {
 		data.Run.DiscoveredSurfaceCount = len(data.DiscoveredSurfaces.Triggers)
@@ -399,6 +404,8 @@ func refreshProductCounts(data *ReportData) {
 		data.Run.UnavailableSurfaceCount = data.DiscoveredSurfaces.UnavailableSurfaceCount
 		data.Run.UnavailablePackageCount = data.DiscoveredSurfaces.UnavailablePackageCount
 		data.Run.PackageDiagnosticCount = data.DiscoveredSurfaces.PackageDiagnosticCount
+		data.Run.SupportingDependencyCount = data.DiscoveredSurfaces.SupportingDependencyCount
+		data.Run.DependencyOnlySurfaceCount = data.DiscoveredSurfaces.DependencyOnlyCount
 	}
 	if data.ArchitectureCanvas == nil {
 		for _, direction := range data.CandidateDirections {
@@ -428,4 +435,25 @@ func savedFlowArtifactCount(flows []FlowData) int {
 		}
 	}
 	return count
+}
+
+func canonicalSavedTraceSessions(directions []CandidateDirection) []flowproof.Session {
+	result := make([]flowproof.Session, 0)
+	seen := make(map[string]struct{})
+	for _, direction := range directions {
+		if direction.Disposition == flowexplain.DirectionRejected || direction.LocalProof == nil {
+			continue
+		}
+		session, ok := flowproof.UpgradeSession(*direction.LocalProof)
+		if !ok || session.Proof.ID == "" || session.Proof.ID != direction.ID {
+			continue
+		}
+		if _, duplicate := seen[session.Proof.ID]; duplicate {
+			continue
+		}
+		seen[session.Proof.ID] = struct{}{}
+		result = append(result, session)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Proof.ID < result[j].Proof.ID })
+	return result
 }

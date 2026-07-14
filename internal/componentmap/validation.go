@@ -34,6 +34,7 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.invalid_subsystem",
 		"proposal.invalid_component",
 		"proposal.no_usable_subsystems",
+		"proposal.omitted_members_exceed_bounds",
 		"proposal.ungrounded_primary_component",
 		"response.no_json",
 		"response.ambiguous_json",
@@ -44,6 +45,7 @@ func diagnosticSeverity(code string) FindingSeverity {
 	case "proposal.normalized_primary_subsystems",
 		"proposal.normalized_components_per_subsystem",
 		"proposal.normalized_total_components",
+		"proposal.normalized_package_only_hypothesis",
 		"proposal.normalized_description":
 		return FindingRecoverable
 	default:
@@ -60,11 +62,12 @@ func proposalSHA256(proposal Proposal) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func normalizeProposalShape(proposal Proposal) (Proposal, []NormalizationOperation, []Diagnostic) {
+func normalizeProposalShape(bundle CandidateBundle, proposal Proposal) (Proposal, []NormalizationOperation, []Diagnostic) {
 	normalized := cloneProposal(proposal)
 	annotateProposalSources(&normalized)
 	operations := make([]NormalizationOperation, 0)
 	findings := make([]Diagnostic, 0)
+	known := candidateIndex(bundle)
 
 	for index := range normalized.Subsystems {
 		subsystem := &normalized.Subsystems[index]
@@ -78,6 +81,19 @@ func normalizeProposalShape(proposal Proposal) (Proposal, []NormalizationOperati
 		}
 		for componentIndex := range subsystem.Components {
 			component := &subsystem.Components[componentIndex]
+			if bundle.GroundingMode != GroundingPackages && len(component.AnchorIDs) == 0 &&
+				!component.Hypothesis && knownPackageOnlyMembers(known, component.MemberIDs) {
+				component.Hypothesis = true
+				operations = append(operations, NormalizationOperation{
+					Code:               "normalized_package_only_hypothesis",
+					Message:            "marked one package-only conceptual component as an explicit hypothesis",
+					SourceComponentIDs: append([]ComponentID(nil), component.sourceIDs...),
+				})
+				findings = append(findings, newDiagnostic(
+					"proposal.normalized_package_only_hypothesis",
+					"marked an unanchored package-only conceptual component as an explicit hypothesis",
+				))
+			}
 			if len(component.Description) > maxDescriptionBytes {
 				component.Description = truncateDisplayText(component.Description, maxDescriptionBytes)
 				operations = append(operations, NormalizationOperation{
@@ -166,6 +182,21 @@ func normalizeProposalShape(proposal Proposal) (Proposal, []NormalizationOperati
 		))
 	}
 	return normalized, operations, findings
+}
+
+func knownPackageOnlyMembers(known map[MemberID]Candidate, memberIDs []MemberID) bool {
+	if len(memberIDs) == 0 {
+		return false
+	}
+	for _, memberID := range memberIDs {
+		if memberID.Kind != MemberPackage {
+			return false
+		}
+		if _, exists := known[memberID]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneProposal(proposal Proposal) Proposal {

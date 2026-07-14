@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/evidence"
 )
 
-const SessionVersion = 2
+const SessionVersion = 3
 
 type TaskKind string
 
@@ -120,6 +120,23 @@ type Session struct {
 	Pending []Task   `json:"pending"`
 	Seen    []string `json:"seen_task_keys"`
 	Stop    *Stop    `json:"stop,omitempty"`
+}
+
+// UpgradeSession preserves a bounded v2 proof for read-only replay while
+// moving it to the current schema. Exact surface associations are reconciled
+// later against the saved surface catalog; this function never invents them.
+func UpgradeSession(session Session) (Session, bool) {
+	if session.Version == SessionVersion && session.Proof.Version == Version {
+		return session, true
+	}
+	if session.Version != 2 || session.Proof.Version != 2 {
+		return Session{}, false
+	}
+	upgraded := session
+	upgraded.Version = SessionVersion
+	upgraded.Proof.Version = Version
+	upgraded.Proof.TraceEvidenceSurfaceIDs = nil
+	return upgraded, true
 }
 
 type TransitionUpdate struct {
