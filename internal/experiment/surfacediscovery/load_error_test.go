@@ -76,6 +76,16 @@ func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing
 	if !slices.Contains(result.Coverage.PackagesSkipped, "example.com/partial_load/cmd/broken") {
 		t.Fatalf("ill-typed executable was not excluded from SSA: %#v", result.Coverage.PackagesSkipped)
 	}
+	processAnchors := 0
+	for _, anchor := range result.Grounding.Anchors {
+		if anchor.Kind == "process_entry" {
+			processAnchors++
+		}
+	}
+	if processAnchors != 2 || result.Grounding.RepositoryArchetype.Selected == "library_framework" ||
+		!strings.Contains(result.Grounding.RepositoryArchetype.Evidence[0], "2 exact build-selected") {
+		t.Fatalf("degraded process grounding = %#v", result.Grounding)
+	}
 }
 
 func TestClassifyExecutableRoleUsesRepositoryStructureWithoutNamingExecutables(t *testing.T) {

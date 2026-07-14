@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,6 +21,56 @@ func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
 	_, err := AnalyzeContext(ctx, DefaultOptions(filepath.Join("testdata", "cli")))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("AnalyzeContext() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestProcessEntryArchitectureAnchorDeduplicatesSyntaxAndSSAColumns(t *testing.T) {
+	symbol := Symbol{ID: "example.com/project/cmd/project.main", Package: "example.com/project/cmd/project", Name: "main"}
+	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+
+	syntaxID := a.recordArchitectureAnchorMembersWithProvenance(
+		"process_entry",
+		"process entry "+symbol.ID,
+		Location{Path: "cmd/project/main.go", Line: 12},
+		[]Symbol{symbol},
+		"Exact build-selected main declaration.",
+		Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
+	)
+	ssaID := a.recordArchitectureAnchor(
+		"process_entry",
+		"process entry "+symbol.ID,
+		Location{Path: "cmd/project/main.go", Line: 12, Column: 6},
+		symbol,
+		"Exact build-selected main declaration; process execution is not observed.",
+	)
+
+	if syntaxID != ssaID || len(a.architectureAnchors) != 1 {
+		t.Fatalf("process anchors = %d, syntax ID = %q, SSA ID = %q", len(a.architectureAnchors), syntaxID, ssaID)
+	}
+	if got := a.architectureAnchors[syntaxID].Producer.Provider; got != "gofacts" {
+		t.Fatalf("deduplicated process anchor provider = %q, want gofacts", got)
+	}
+}
+
+func TestProcessEntryArchitectureAnchorDeduplicatesAtCollectionLimit(t *testing.T) {
+	symbol := Symbol{ID: "example.com/project/cmd/project.main", Package: "example.com/project/cmd/project", Name: "main"}
+	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+	id := a.recordArchitectureAnchorMembersWithProvenance(
+		"process_entry", "process entry "+symbol.ID,
+		Location{Path: "cmd/project/main.go", Line: 12}, []Symbol{symbol}, "exact declaration",
+		Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
+	)
+	for index := len(a.architectureAnchors); index < maxCollectedArchitectureAnchors; index++ {
+		dummyID := fmt.Sprintf("dummy-%04d", index)
+		a.architectureAnchors[dummyID] = BehaviorAnchor{ID: dummyID}
+	}
+
+	got := a.recordArchitectureAnchor(
+		"process_entry", "process entry "+symbol.ID,
+		Location{Path: "cmd/project/main.go", Line: 12, Column: 6}, symbol, "typed declaration",
+	)
+	if got != id {
+		t.Fatalf("deduplicated process anchor ID at collection limit = %q, want %q", got, id)
 	}
 }
 
@@ -71,6 +122,101 @@ func TestSurfaceSemanticsSeparateDynamicRouteAndLocalServerWrapper(t *testing.T)
 		wrappedServer.TraceReadiness != TraceReadinessPartial ||
 		wrappedServer.Quality.RegistrationStart != SurfaceQualityPartial {
 		t.Fatalf("wrapped server semantics = %#v", wrappedServer)
+	}
+}
+
+func TestBoundArchitectureGroundingCapsKindsAndDropsDanglingRelationships(t *testing.T) {
+	t.Parallel()
+
+	anchors := make([]BehaviorAnchor, 0, maxArchitectureAnchorsPerKind+2)
+	for index := 0; index < maxArchitectureAnchorsPerKind+2; index++ {
+		anchors = append(anchors, BehaviorAnchor{
+			ID: fmt.Sprintf("anchor-%02d", index), Kind: "command_dispatch",
+		})
+	}
+	relationships := []BehaviorRelationship{
+		{ID: "kept", From: "anchor-00", To: "anchor-01"},
+		{ID: "dropped", From: "anchor-00", To: "anchor-17"},
+	}
+
+	gotAnchors, gotRelationships, bounded := boundArchitectureGrounding(anchors, relationships)
+	if !bounded || len(gotAnchors) != maxArchitectureAnchorsPerKind ||
+		len(gotRelationships) != 1 || gotRelationships[0].ID != "kept" {
+		t.Fatalf("bounded grounding = %d anchors, %#v relationships, bounded=%t", len(gotAnchors), gotRelationships, bounded)
+	}
+}
+
+func TestBoundArchitectureGroundingPrioritizesProcessReachableAnchors(t *testing.T) {
+	t.Parallel()
+
+	anchors := []BehaviorAnchor{{ID: "process", Kind: "process_entry"}}
+	for index := 0; index < maxArchitectureAnchorsPerKind+1; index++ {
+		anchors = append(anchors, BehaviorAnchor{
+			ID: fmt.Sprintf("dispatch-%02d", index), Kind: "command_dispatch",
+			Location: Location{Path: fmt.Sprintf("cmd/app/%02d.go", index), Line: 1},
+		})
+	}
+	relationships := []BehaviorRelationship{{ID: "connected", From: "process", To: "dispatch-16"}}
+
+	gotAnchors, gotRelationships, bounded := boundArchitectureGrounding(anchors, relationships)
+	retained := make(map[string]bool, len(gotAnchors))
+	for _, anchor := range gotAnchors {
+		retained[anchor.ID] = true
+	}
+	if !bounded || !retained["dispatch-16"] || len(gotRelationships) != 1 || gotRelationships[0].ID != "connected" {
+		t.Fatalf("reachable anchor was not retained: anchors=%#v relationships=%#v bounded=%t", gotAnchors, gotRelationships, bounded)
+	}
+}
+
+func TestBoundArchitectureGroundingCapsRelationships(t *testing.T) {
+	t.Parallel()
+
+	anchors := []BehaviorAnchor{
+		{ID: "process", Kind: "process_entry"},
+		{ID: "dispatch", Kind: "command_dispatch"},
+	}
+	relationships := make([]BehaviorRelationship, 0, maxPersistedArchitectureRelationships+1)
+	for index := 0; index <= maxPersistedArchitectureRelationships; index++ {
+		relationships = append(relationships, BehaviorRelationship{
+			ID: fmt.Sprintf("relationship-%04d", index), From: "process", To: "dispatch",
+		})
+	}
+
+	_, gotRelationships, bounded := boundArchitectureGrounding(anchors, relationships)
+	if !bounded || len(gotRelationships) != maxPersistedArchitectureRelationships {
+		t.Fatalf("relationships = %d, bounded=%t", len(gotRelationships), bounded)
+	}
+}
+
+func TestArchitectureRelationshipCapsUniqueWitnesses(t *testing.T) {
+	a := analyzer{
+		architectureAnchors: map[string]BehaviorAnchor{
+			"process":  {ID: "process", Kind: "process_entry"},
+			"dispatch": {ID: "dispatch", Kind: "command_dispatch"},
+		},
+		architectureRelationships: make(map[string]BehaviorRelationship),
+	}
+	for index := 0; index < maxArchitectureRelationshipWitnesses+5; index++ {
+		a.recordArchitectureRelationship(
+			"process", "dispatch", Location{Path: "cmd/app/main.go", Line: index + 1},
+		)
+	}
+	if len(a.architectureRelationships) != 1 {
+		t.Fatalf("relationships = %d, want 1", len(a.architectureRelationships))
+	}
+	for _, relationship := range a.architectureRelationships {
+		if relationship.WitnessCount != maxArchitectureRelationshipWitnesses ||
+			len(relationship.WitnessIDs) != maxArchitectureRelationshipWitnesses {
+			t.Fatalf("bounded witnesses = %#v", relationship)
+		}
+	}
+}
+
+func TestDefaultOptionsAndImplicitOptionsUseSameBudgets(t *testing.T) {
+	defaults := DefaultOptions(".")
+	implicit := normalizeOptions(Options{RepoPath: "."})
+	if !reflect.DeepEqual(defaults, implicit) {
+		t.Fatalf("default options = %#v, implicit options = %#v", defaults, implicit)
 	}
 }
 

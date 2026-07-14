@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v6"
+	AnalyzerVersion              = "surface-ssa-v7"
 	TriggerCatalogVersion        = 4
 	CoverageVersion              = 4
 	CatalogVersion               = 1
-	ArchitectureGroundingVersion = 2
+	ArchitectureGroundingVersion = 3
 )
 
 type Options struct {
@@ -30,9 +30,9 @@ type Options struct {
 func DefaultOptions(repoPath string) Options {
 	return Options{
 		RepoPath:   repoPath,
-		MaxDepth:   16,
-		MaxTasks:   1000,
-		MaxTargets: 8,
+		MaxDepth:   defaultMaxDepth,
+		MaxTasks:   defaultMaxTasks,
+		MaxTargets: defaultMaxTargets,
 	}
 }
 

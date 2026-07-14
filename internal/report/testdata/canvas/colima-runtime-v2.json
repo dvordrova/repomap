@@ -10,7 +10,7 @@
   "artifacts_dir": "",
   "architecture_canvas": {
     "version": 4,
-    "landscape_version": 4,
+    "landscape_version": 5,
     "flowproof_version": 2,
     "fallback": false,
     "validation_outcome": "accepted",

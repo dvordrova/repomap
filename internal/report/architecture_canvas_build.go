@@ -37,6 +37,7 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 	builder := newArchitectureCandidateBuilder(data.RepositoryGraph, data.ArchitectureGrounding)
 	builder.addRepositoryGraph(data.RepositoryGraph)
 	builder.addArchitectureGrounding(data.ArchitectureGrounding)
+	builder.addExecutableRoles(data.DiscoveredSurfaces)
 
 	directions := append([]CandidateDirection(nil), data.CandidateDirections...)
 	sort.SliceStable(directions, func(i, j int) bool {
@@ -128,6 +129,8 @@ type architectureCandidateBuilder struct {
 	groundingMode         componentmap.GroundingMode
 	behaviorAnchors       []componentmap.BehaviorAnchor
 	behaviorMembers       map[string]componentmap.MemberID
+	processEntryMembers   map[string]componentmap.MemberID
+	declarationMembers    map[string]componentmap.MemberID
 	groundedPaths         map[string]struct{}
 	researchFindings      []componentmap.ResearchInterpretation
 	researchPolicyVersion string
@@ -228,16 +231,18 @@ func newArchitectureCandidateBuilder(graph *RepositoryGraph, grounding *Architec
 		archetype = componentmap.ArchetypeLibraryFramework
 	}
 	return &architectureCandidateBuilder{
-		graph:              graph,
-		knownPackages:      make(map[string]componentmap.MemberID),
-		candidates:         make(map[componentmap.MemberID]*architectureCandidateRecord),
-		relations:          make(map[string]componentmap.LocalRelation),
-		bindings:           make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
-		packageEdgeMembers: make(map[string]struct{}),
-		archetype:          archetype,
-		groundingMode:      mode,
-		behaviorMembers:    make(map[string]componentmap.MemberID),
-		groundedPaths:      make(map[string]struct{}),
+		graph:               graph,
+		knownPackages:       make(map[string]componentmap.MemberID),
+		candidates:          make(map[componentmap.MemberID]*architectureCandidateRecord),
+		relations:           make(map[string]componentmap.LocalRelation),
+		bindings:            make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
+		packageEdgeMembers:  make(map[string]struct{}),
+		archetype:           archetype,
+		groundingMode:       mode,
+		behaviorMembers:     make(map[string]componentmap.MemberID),
+		processEntryMembers: make(map[string]componentmap.MemberID),
+		declarationMembers:  make(map[string]componentmap.MemberID),
+		groundedPaths:       make(map[string]struct{}),
 	}
 }
 
@@ -276,6 +281,10 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 					"exact declaration associated with a deterministic behavior anchor",
 				)},
 			})
+			b.declarationMembers[architectureDeclarationKey(location, member.ID)] = symbolID
+			if anchor.Kind == componentmap.AnchorProcessEntry {
+				b.processEntryMembers[member.ID] = symbolID
+			}
 			memberIDs = append(memberIDs, symbolID)
 		}
 		if len(memberIDs) == 0 {
@@ -326,6 +335,46 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 				},
 			}},
 		}
+	}
+}
+
+func (b *architectureCandidateBuilder) addExecutableRoles(surfaces *DiscoveredSurfaces) {
+	if surfaces == nil {
+		return
+	}
+	for _, trigger := range surfaces.Triggers {
+		if trigger.Kind != "process_entry" || trigger.ProcessEntrypoint.ID == "" {
+			continue
+		}
+		role := normalizeSurfaceExecutableRole(trigger.ExecutableRole)
+		if role == ExecutableRoleUnknown {
+			continue
+		}
+		memberID, exists := b.processEntryMembers[trigger.ProcessEntrypoint.ID]
+		if !exists {
+			continue
+		}
+		record := b.candidates[memberID]
+		if record == nil {
+			continue
+		}
+		var location *evidence.Location
+		if trigger.ProcessEntrypoint.Location != nil {
+			location = &evidence.Location{
+				Path:   trigger.ProcessEntrypoint.Location.Path,
+				Line:   trigger.ProcessEntrypoint.Location.Line,
+				Column: trigger.ProcessEntrypoint.Location.Column,
+			}
+		}
+		record.candidate.Facts = append(record.candidate.Facts, architectureBuildFact(
+			componentmap.FactExecutableRole,
+			role,
+			evidence.CertaintyStatic,
+			location,
+			"surface_catalog",
+			"exact_process_entry_role",
+			"deterministic executable role joined by exact process-entry declaration ID",
+		))
 	}
 }
 
@@ -634,34 +683,38 @@ func (b *architectureCandidateBuilder) addAnchor(
 
 	boundMemberID := fileID
 	if anchor.Kind == flowproof.AnchorFunction || anchor.Kind == flowproof.AnchorMethod {
-		kind := componentmap.MemberSymbol
-		if _, isEntrypoint := entrypointAnchors[anchor.ID]; isEntrypoint {
-			kind = componentmap.MemberEntrypoint
+		declarationName := architectureBuildAnchorName(anchor)
+		memberID, exists := b.declarationMembers[architectureDeclarationKey(*location, declarationName)]
+		if !exists {
+			kind := componentmap.MemberSymbol
+			if _, isEntrypoint := entrypointAnchors[anchor.ID]; isEntrypoint {
+				kind = componentmap.MemberEntrypoint
+			}
+			identity := strings.Join([]string{
+				location.Path,
+				strconv.Itoa(location.Line),
+				strconv.Itoa(location.Column),
+				string(anchor.Kind),
+				anchor.QualifiedName,
+				anchor.Label,
+			}, "\x00")
+			memberID = architectureBuildMemberID(kind, identity)
+			parentID := fileID
+			b.addCandidate(componentmap.Candidate{
+				ID:       memberID,
+				Name:     anchor.Label,
+				ParentID: &parentID,
+				Facts: []componentmap.LocalFact{architectureBuildFact(
+					componentmap.FactDeclaration,
+					declarationName,
+					evidence.CertaintyStatic,
+					location,
+					"flowproof",
+					"anchor_declaration",
+					"exact declaration anchor from the saved typed flow contract",
+				)},
+			})
 		}
-		identity := strings.Join([]string{
-			location.Path,
-			strconv.Itoa(location.Line),
-			strconv.Itoa(location.Column),
-			string(anchor.Kind),
-			anchor.QualifiedName,
-			anchor.Label,
-		}, "\x00")
-		memberID := architectureBuildMemberID(kind, identity)
-		parentID := fileID
-		b.addCandidate(componentmap.Candidate{
-			ID:       memberID,
-			Name:     anchor.Label,
-			ParentID: &parentID,
-			Facts: []componentmap.LocalFact{architectureBuildFact(
-				componentmap.FactDeclaration,
-				architectureBuildAnchorName(anchor),
-				evidence.CertaintyStatic,
-				location,
-				"flowproof",
-				"anchor_declaration",
-				"exact declaration anchor from the saved typed flow contract",
-			)},
-		})
 		b.addParticipation(memberID, flowID, location)
 		boundMemberID = memberID
 	}
@@ -681,6 +734,14 @@ func (b *architectureCandidateBuilder) addAnchor(
 			Location:  cloneArchitectureLocation(location),
 		}},
 	}
+}
+
+func architectureDeclarationKey(location evidence.Location, declaration string) string {
+	return strings.Join([]string{
+		location.Path,
+		strconv.Itoa(location.Line),
+		strings.TrimSpace(declaration),
+	}, "\x00")
 }
 
 func (b *architectureCandidateBuilder) addCandidate(candidate componentmap.Candidate) {

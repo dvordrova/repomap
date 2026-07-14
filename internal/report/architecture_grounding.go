@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	ArchitectureGroundingFile    = "architecture_grounding.json"
-	ArchitectureGroundingVersion = 2
-	maxArchitectureGroundingSize = 4 * 1024 * 1024
+	ArchitectureGroundingFile          = "architecture_grounding.json"
+	ArchitectureGroundingVersion       = 3
+	legacyArchitectureGroundingVersion = 2
+	maxArchitectureGroundingSize       = 4 * 1024 * 1024
 )
 
 type ArchitectureGrounding struct {
@@ -102,7 +103,8 @@ func parseArchitectureGrounding(runDir string) (*ArchitectureGrounding, string) 
 }
 
 func validateArchitectureGrounding(grounding ArchitectureGrounding) error {
-	if grounding.Version != 1 && grounding.Version != ArchitectureGroundingVersion {
+	if grounding.Version != 1 && grounding.Version != legacyArchitectureGroundingVersion &&
+		grounding.Version != ArchitectureGroundingVersion {
 		return fmt.Errorf("unsupported version %d", grounding.Version)
 	}
 	if !validArchitectureArchetype(grounding.RepositoryArchetype.Selected) {
