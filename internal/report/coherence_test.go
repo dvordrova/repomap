@@ -311,7 +311,12 @@ func TestSuggestionsKeepSourceAndTypedTraceAvailabilityDistinct(t *testing.T) {
 				ID: "broken-process", Kind: "process_entry", Availability: SurfaceAvailabilityUnavailable,
 				UnavailableReason: "package failed to load under the recorded build scenario",
 				ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/broken/main.go", Line: 5}},
-				Resolution:        "exact",
+				Resolution:        "exact", ApplicationClass: SurfaceApplicationOwned,
+				SurfaceRole: SurfaceRoleEntrySurface, TraceReadiness: SurfaceTracePartialReady,
+				TraceReadinessReason: "exact process entry can seed a one-anchor partial trace; typed downstream closure is unavailable",
+				Quality: SurfaceQuality{Identity: surfaceQualityExact, RegistrationStart: surfaceQualityNotApplicable,
+					HandlerCallback: surfaceQualityNotApplicable, Reachability: surfaceQualityPartial,
+					Ownership: surfaceQualityExact, Traceability: SurfaceTracePartialReady},
 			},
 		}},
 	}
@@ -325,20 +330,19 @@ func TestSuggestionsKeepSourceAndTypedTraceAvailabilityDistinct(t *testing.T) {
 		suggestions["route"].StartLocation == nil || suggestions["route"].StartLocation.Line != 20 {
 		t.Fatalf("route suggestion = %#v", suggestions["route"])
 	}
-	for _, id := range []string{"aggregate", "activity", "broken"} {
+	for _, id := range []string{"aggregate", "activity"} {
 		suggestion := suggestions[id]
 		if !suggestion.InvestigationAvailable || suggestion.CanStartTrace || suggestion.StartLocation == nil ||
 			suggestion.TraceUnavailableReason == "" || suggestion.UnavailableReason != "" {
 			t.Errorf("source-only suggestion %q = %#v", id, suggestion)
 		}
 	}
-	if suggestions["aggregate"].TraceUnavailableReason == suggestions["activity"].TraceUnavailableReason ||
-		!strings.Contains(suggestions["broken"].TraceUnavailableReason, "package failed to load") {
-		t.Fatalf("typed trace reasons = aggregate:%q activity:%q broken:%q",
-			suggestions["aggregate"].TraceUnavailableReason,
-			suggestions["activity"].TraceUnavailableReason,
-			suggestions["broken"].TraceUnavailableReason,
-		)
+	if !suggestions["broken"].InvestigationAvailable || !suggestions["broken"].CanStartTrace ||
+		suggestions["broken"].TraceUnavailableReason != "" {
+		t.Fatalf("exact unavailable process suggestion = %#v", suggestions["broken"])
+	}
+	if suggestions["aggregate"].TraceUnavailableReason == suggestions["activity"].TraceUnavailableReason {
+		t.Fatalf("aggregate/activity trace reasons are not distinct: %q", suggestions["aggregate"].TraceUnavailableReason)
 	}
 	rendered, err := RenderHTML(data)
 	if err != nil {

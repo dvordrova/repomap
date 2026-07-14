@@ -15,6 +15,9 @@ func ensureProjectedSurfaceSemantics(trigger *DiscoveredTrigger) {
 	if trigger == nil {
 		return
 	}
+	if hasProducerSurfaceSemantics(*trigger) {
+		return
+	}
 	quality := SurfaceQuality{
 		Identity:          projectedIdentityQuality(*trigger),
 		RegistrationStart: projectedRegistrationQuality(*trigger),
@@ -28,6 +31,18 @@ func ensureProjectedSurfaceSemantics(trigger *DiscoveredTrigger) {
 	trigger.TraceReadiness = readiness
 	trigger.TraceReadinessReason = reason
 	trigger.Quality = quality
+}
+
+// Current surface artifacts persist one complete semantic assessment alongside
+// every record. The report must preserve that producer contract rather than
+// deriving a second, potentially contradictory assessment. Report-built and
+// legacy records without the complete set retain the canonical fallback below.
+func hasProducerSurfaceSemantics(trigger DiscoveredTrigger) bool {
+	quality := trigger.Quality
+	return trigger.SurfaceRole != "" && trigger.TraceReadiness != "" &&
+		trigger.TraceReadinessReason != "" && quality.Identity != "" &&
+		quality.RegistrationStart != "" && quality.HandlerCallback != "" &&
+		quality.Reachability != "" && quality.Ownership != "" && quality.Traceability != ""
 }
 
 func projectedSurfaceRoleAndReadiness(trigger DiscoveredTrigger, quality SurfaceQuality) (string, string, string) {

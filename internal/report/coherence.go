@@ -917,11 +917,18 @@ func traceableSuggestionSurfaceMatches(matches []suggestionSurfaceMatch) []sugge
 			match.trigger.TraceReadiness == SurfaceTracePartialReady
 		applicationOwned := match.trigger.ApplicationClass != SurfaceSupportingDependency &&
 			match.trigger.ApplicationClass != SurfaceDependencyOnly
-		if ready && applicationOwned && match.trigger.Availability != SurfaceAvailabilityUnavailable {
+		if ready && applicationOwned &&
+			(match.trigger.Availability != SurfaceAvailabilityUnavailable || traceableUnavailableProcessEntry(match.trigger)) {
 			result = append(result, match)
 		}
 	}
 	return result
+}
+
+func traceableUnavailableProcessEntry(trigger DiscoveredTrigger) bool {
+	return trigger.Kind == "process_entry" && trigger.Resolution == "exact" && !trigger.ProvisionalID &&
+		trigger.SurfaceRole == SurfaceRoleEntrySurface && trigger.TraceReadiness == SurfaceTracePartialReady &&
+		trigger.ApplicationClass == SurfaceApplicationOwned && validProjectedSurfaceLocation(trigger.ProcessEntrypoint.Location)
 }
 
 func candidateBasisExcludesTrace(basis string) bool {

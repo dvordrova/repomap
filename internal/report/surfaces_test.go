@@ -208,6 +208,26 @@ func TestProjectDiscoveredSurfacesRetainsProcessEntryAndUnavailablePackage(t *te
 	}
 }
 
+func TestProjectDiscoveredSurfacesPreservesUnavailableProcessProducerSemantics(t *testing.T) {
+	t.Parallel()
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: []rawSurfaceTrigger{{
+		ID: "process-primary", Kind: "process_entry", Resolution: "exact",
+		ProcessEntrypoint: rawSurfaceSymbol{Location: rawSurfaceLocation{Path: "cmd/app/main.go", Line: 7}},
+		Availability:      SurfaceAvailabilityUnavailable, ApplicationClass: SurfaceApplicationOwned,
+		SurfaceRole: SurfaceRoleEntrySurface, TraceReadiness: SurfaceTracePartialReady,
+		TraceReadinessReason: "exact process entry can seed a one-anchor partial trace; typed downstream closure is unavailable",
+		Quality: rawSurfaceQuality{Identity: surfaceQualityExact, RegistrationStart: surfaceQualityNotApplicable,
+			HandlerCallback: surfaceQualityNotApplicable, Reachability: surfaceQualityPartial,
+			Ownership: surfaceQualityExact, Traceability: SurfaceTracePartialReady},
+	}}}, rawSurfaceCoverage{})
+	trigger := projected.Triggers[0]
+	if trigger.SurfaceRole != SurfaceRoleEntrySurface || trigger.TraceReadiness != SurfaceTracePartialReady ||
+		trigger.Quality.Identity != surfaceQualityExact || trigger.Quality.Traceability != SurfaceTracePartialReady {
+		t.Fatalf("producer process semantics were rewritten: %#v", trigger)
+	}
+}
+
 func TestProjectDiscoveredSurfacesSanitizesEmbeddedExternalLocations(t *testing.T) {
 	t.Parallel()
 
