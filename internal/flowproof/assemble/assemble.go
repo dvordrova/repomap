@@ -128,7 +128,9 @@ func supportingSurfaceForFlow(
 		if surface.ID == entry.ID || surface.OwningExecutable == "" ||
 			surface.OwningExecutable != entry.OwningExecutable ||
 			surface.Availability != surfacediscovery.AvailabilityAvailable ||
-			surface.SurfaceRole != surfacediscovery.SurfaceRoleEntrySurface {
+			surface.SurfaceRole != surfacediscovery.SurfaceRoleEntrySurface ||
+			surface.ApplicationClass == surfacediscovery.SupportingDependencyBehavior ||
+			surface.ApplicationClass == surfacediscovery.DependencyOnly {
 			continue
 		}
 		safeRoute := surface.Kind == "http_route" && surface.TraceReadiness == surfacediscovery.TraceReadinessReady
@@ -239,6 +241,7 @@ func seedForFlow(flow flowexplain.CandidateFlow, trace gofacts.CommandTrace) flo
 		Calls:               make([]flowproof.CLICall, 0, len(trace.HandlerCalls)),
 		ConcurrentLifecycle: concurrentLifecycleFact(trace.Concurrency),
 	}
+	seed.SeedSurfaceID, _, _ = gofacts.CommandSurfaceIdentity(trace)
 	for _, step := range trace.Steps {
 		seed.Steps = append(seed.Steps, flowproof.CLIStep{
 			Symbol: step.Symbol, Relation: step.Relation,

@@ -63,8 +63,8 @@ func BuildProcess(seed ProcessSeed) Proof {
 		setSlot(&proof, SlotEntrypoint, SlotVerified, "exact process entrypoint", []string{entry.ID}, "")
 	}
 
-	if seed.Supporting != nil {
-		addProcessSupportingSurface(&proof, entry.ID, *seed.Supporting)
+	if seed.Supporting != nil && addProcessSupportingSurface(&proof, entry.ID, *seed.Supporting) {
+		proof.TraceEvidenceSurfaceIDs = []string{seed.Supporting.ID}
 	}
 	setMissingProcessSlots(&proof)
 	if proof.CurrentFrontier == "" {
@@ -111,10 +111,10 @@ func BuildDescriptor(seed DescriptorSeed) Proof {
 	return proof
 }
 
-func addProcessSupportingSurface(proof *Proof, entryID string, supporting StaticSurfaceFact) {
+func addProcessSupportingSurface(proof *Proof, entryID string, supporting StaticSurfaceFact) bool {
 	surface := staticSurfaceAnchor(supporting, AnchorCallsite)
 	if surface.ID == "" || surface.Location == nil {
-		return
+		return false
 	}
 	transitionIDs := make([]string, 0, len(supporting.Wrappers)+1)
 	previousID := entryID
@@ -155,6 +155,7 @@ func addProcessSupportingSurface(proof *Proof, entryID string, supporting Static
 	if strings.TrimSpace(supporting.Handler) != "" {
 		setSlot(proof, SlotApplicationCallable, SlotPartial, "exact registered handler or callback identity", []string{surface.ID}, "runtime callback invocation")
 	}
+	return true
 }
 
 func setMissingProcessSlots(proof *Proof) {

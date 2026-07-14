@@ -428,9 +428,12 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		return Landscape{}, err
 	}
 
-	normalized, operations, shapeDiagnostics := normalizeProposalShape(proposal)
+	normalized, operations, shapeDiagnostics := normalizeProposalShape(bundle, proposal)
 	landscape, diagnostics, usable := applyProposal(bundle, normalized)
 	diagnostics = append(shapeDiagnostics, diagnostics...)
+	if !usable && !hasFatalDiagnostics(diagnostics) {
+		return Landscape{}, fmt.Errorf("componentmap: rejected proposal has no fatal diagnostic")
+	}
 	if !usable {
 		landscape = deterministicFallback(bundle)
 		landscape.Diagnostics = diagnostics
@@ -942,7 +945,6 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				"proposal.omitted_process_entry_member",
 				"proposal omitted an exact process-entry member from the conceptual architecture",
 			)
-			return Landscape{}, diagnostics, false
 		}
 	}
 	if len(seenMembers) != len(bundle.Candidates) {

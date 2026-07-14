@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 4
+const ArchitectureCanvasVersion = 5
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -132,29 +132,31 @@ type ArchitectureStructuralEdge struct {
 }
 
 type ArchitectureFlow struct {
-	ID                        componentmap.FlowID        `json:"id"`
-	Name                      string                     `json:"name"`
-	Archetype                 flowproof.Archetype        `json:"archetype"`
-	Trigger                   string                     `json:"trigger,omitempty"`
-	Scope                     string                     `json:"scope,omitempty"`
-	MentalModel               string                     `json:"mental_model,omitempty"`
-	Goal                      string                     `json:"goal,omitempty"`
-	Command                   string                     `json:"command,omitempty"`
-	Steps                     []ArchitectureFlowStep     `json:"steps"`
-	Branches                  []ArchitectureFlowBranch   `json:"branches"`
-	Slots                     []flowproof.Slot           `json:"slots"`
-	TransitionIDs             []string                   `json:"transition_ids"`
-	Status                    string                     `json:"status,omitempty"`
-	EvidenceBasis             string                     `json:"evidence_basis,omitempty"`
-	WhyInspect                string                     `json:"why_inspect,omitempty"`
-	GroundedAreas             int                        `json:"grounded_areas,omitempty"`
-	TotalAreas                int                        `json:"total_areas,omitempty"`
-	FrontierSummary           string                     `json:"frontier_summary,omitempty"`
-	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
-	StartSurfaceID            string                     `json:"start_surface_id,omitempty"`
-	SeedSurfaceID             string                     `json:"seed_surface_id,omitempty"`
-	TraceQuality              flowproof.TraceQuality     `json:"trace_quality,omitempty"`
-	CurrentFrontier           string                     `json:"current_frontier,omitempty"`
+	ID                         componentmap.FlowID        `json:"id"`
+	Name                       string                     `json:"name"`
+	Archetype                  flowproof.Archetype        `json:"archetype"`
+	Trigger                    string                     `json:"trigger,omitempty"`
+	Scope                      string                     `json:"scope,omitempty"`
+	MentalModel                string                     `json:"mental_model,omitempty"`
+	Goal                       string                     `json:"goal,omitempty"`
+	Command                    string                     `json:"command,omitempty"`
+	Steps                      []ArchitectureFlowStep     `json:"steps"`
+	Branches                   []ArchitectureFlowBranch   `json:"branches"`
+	Slots                      []flowproof.Slot           `json:"slots"`
+	TransitionIDs              []string                   `json:"transition_ids"`
+	Status                     string                     `json:"status,omitempty"`
+	EvidenceBasis              string                     `json:"evidence_basis,omitempty"`
+	WhyInspect                 string                     `json:"why_inspect,omitempty"`
+	GroundedAreas              int                        `json:"grounded_areas,omitempty"`
+	TotalAreas                 int                        `json:"total_areas,omitempty"`
+	FrontierSummary            string                     `json:"frontier_summary,omitempty"`
+	ParticipatingComponentIDs  []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
+	StartSurfaceID             string                     `json:"start_surface_id,omitempty"`
+	SeedSurfaceID              string                     `json:"seed_surface_id,omitempty"`
+	TraceEvidenceSurfaceIDs    []string                   `json:"trace_evidence_surface_ids,omitempty"`
+	RelatedComponentSurfaceIDs []string                   `json:"related_component_surface_ids,omitempty"`
+	TraceQuality               flowproof.TraceQuality     `json:"trace_quality,omitempty"`
+	CurrentFrontier            string                     `json:"current_frontier,omitempty"`
 }
 
 type ArchitectureFlowStep struct {
@@ -455,9 +457,11 @@ func projectArchitectureFlow(
 		ID: input.ID, Name: name, Archetype: proof.Archetype,
 		Trigger: input.Trigger, Scope: input.Scope,
 		MentalModel: input.MentalModel, Goal: proof.Goal, Command: proof.Command,
-		Branches:      branches,
-		SeedSurfaceID: proof.SeedSurfaceID, TraceQuality: proof.TraceQuality,
-		CurrentFrontier: proof.CurrentFrontier,
+		Branches:                branches,
+		SeedSurfaceID:           proof.SeedSurfaceID,
+		TraceEvidenceSurfaceIDs: append([]string(nil), proof.TraceEvidenceSurfaceIDs...),
+		TraceQuality:            proof.TraceQuality,
+		CurrentFrontier:         proof.CurrentFrontier,
 	}
 	if flow.TraceQuality == "" {
 		flow.TraceQuality = flowproof.AssessTraceQuality(proof)

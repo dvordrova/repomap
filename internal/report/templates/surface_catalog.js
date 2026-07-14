@@ -380,6 +380,20 @@ function hasDynamicEvidence(trigger) {
         this.triggers.filter((trigger) => trigger.availability === "unavailable").length
        ),
       },
+      {
+       label: "supporting dependency",
+       value: firstNumber(
+        [this.data.supporting_dependency_count],
+        this.triggers.filter((trigger) => trigger.application_classification === "supporting_dependency_behavior").length
+       ),
+      },
+      {
+       label: "dependency-only",
+       value: firstNumber(
+        [this.data.dependency_only_count],
+        this.triggers.filter((trigger) => trigger.application_classification === "dependency_only").length
+       ),
+      },
      {
       label: "HTTP registrations",
       value: firstNumber([this.data.http_count, this.data.http_route_count], countByKind(this.triggers, "http_route")),
@@ -590,8 +604,11 @@ function hasDynamicEvidence(trigger) {
    const facts = element("dl", "rm-surface__details");
     appendText(facts, "Kind", sentenceLabel(trigger.kind));
     appendText(facts, "Framework", trigger.framework);
-      appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
-      appendText(facts, "Availability", sentenceLabel(trigger.availability));
+       appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
+       appendText(facts, "Availability", sentenceLabel(trigger.availability));
+       appendText(facts, "Application ownership", sentenceLabel(trigger.application_classification));
+       appendText(facts, "Terminal source", sentenceLabel(trigger.terminal_source_scope));
+       appendText(facts, "Promotion basis", sentenceLabel(trigger.promotion_basis));
       appendText(facts, "Unavailable reason", trigger.unavailable_reason);
       appendText(facts, "Trace readiness reason", trigger.trace_readiness_reason);
       const quality = object(trigger.quality);

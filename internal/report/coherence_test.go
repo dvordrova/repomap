@@ -34,6 +34,7 @@ func TestLinkArchitectureProductObjectsUsesExactEvidenceJoins(t *testing.T) {
 			}},
 			Flows: []ArchitectureFlow{{
 				ID: "backup", Name: "Backup", Trigger: "CLI command backup", Command: "backup",
+				SeedSurfaceID: "surface-backup",
 				Steps: []ArchitectureFlowStep{{
 					ID: "register-backup", ComponentID: componentID,
 					Location: &evidence.Location{Path: "cmd/restic/cmd_backup.go", Line: 74},
@@ -69,6 +70,102 @@ func TestLinkArchitectureProductObjectsUsesExactEvidenceJoins(t *testing.T) {
 	if trace.Status != "complete" || trace.GroundedAreas != 2 || trace.TotalAreas != 2 ||
 		trace.StartSurfaceID != surface.ID || len(trace.ParticipatingComponentIDs) != 1 {
 		t.Fatalf("trace summary = %#v", trace)
+	}
+}
+
+func TestTraceAssociationUsesOnlyPersistedSeedAndEvidenceSurfaces(t *testing.T) {
+	t.Parallel()
+
+	const componentID = componentmap.ComponentID("runtime")
+	processLocation := &SurfaceLocation{Path: "cmd/app/main.go", Line: 20}
+	data := &ReportData{
+		ArchitectureCanvas: &ArchitectureCanvas{
+			Components: []ArchitectureComponent{{
+				ID: componentID,
+				Members: []componentmap.Candidate{{
+					ID: componentmap.MemberID{Kind: componentmap.MemberFile, Value: "cmd/app/main.go"},
+					Facts: []componentmap.LocalFact{{
+						Kind: componentmap.FactRepositoryPath, Value: "cmd/app/main.go",
+						Location:  &evidence.Location{Path: "cmd/app/main.go", Line: 20},
+						Certainty: evidence.CertaintyStatic,
+					}},
+				}},
+				ParticipatingFlowIDs: []componentmap.FlowID{"startup"},
+			}},
+			Flows: []ArchitectureFlow{{
+				ID: "startup", Name: "Startup", SeedSurfaceID: "entry",
+				TraceEvidenceSurfaceIDs: []string{"server"},
+				Steps: []ArchitectureFlowStep{
+					{ID: "entry", ComponentID: componentID, Location: &evidence.Location{Path: "cmd/app/main.go", Line: 20}},
+					{ID: "server", ComponentID: componentID, Location: &evidence.Location{Path: "internal/admin.go", Line: 40}},
+				},
+				Slots: []flowproof.Slot{{
+					Kind: flowproof.SlotEntrypoint, Status: flowproof.SlotVerified, EvidenceIDs: []string{"entry"},
+				}},
+			}},
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{
+			{
+				ID: "entry", Kind: "process_entry", ProcessEntrypoint: SurfaceSymbol{Location: processLocation},
+				OwningExecutable: "cmd/app", Availability: SurfaceAvailabilityAvailable,
+			},
+			{
+				ID: "server", Kind: "http_server", ProcessEntrypoint: SurfaceSymbol{Location: processLocation},
+				ServerStartSite:  &SurfaceLocation{Path: "internal/admin.go", Line: 40},
+				OwningExecutable: "cmd/app", Availability: SurfaceAvailabilityAvailable,
+			},
+			{
+				ID: "unrelated-route", Kind: "http_route", ProcessEntrypoint: SurfaceSymbol{Location: processLocation},
+				RegistrationSite: &SurfaceLocation{Path: "internal/routes.go", Line: 70},
+				OwningExecutable: "cmd/app", Availability: SurfaceAvailabilityAvailable,
+			},
+		}},
+	}
+
+	linkArchitectureProductObjects(data)
+
+	trace := data.ArchitectureCanvas.Flows[0]
+	if trace.StartSurfaceID != "entry" || len(trace.TraceEvidenceSurfaceIDs) != 1 ||
+		trace.TraceEvidenceSurfaceIDs[0] != "server" || len(trace.RelatedComponentSurfaceIDs) != 1 ||
+		trace.RelatedComponentSurfaceIDs[0] != "unrelated-route" {
+		t.Fatalf("trace surface relations = %#v", trace)
+	}
+	for _, surface := range data.ArchitectureCanvas.Surfaces {
+		switch surface.ID {
+		case "entry", "server":
+			if surface.RelatedTraceID != "startup" {
+				t.Fatalf("exact trace surface = %#v", surface)
+			}
+		case "unrelated-route":
+			if surface.RelatedTraceID != "" {
+				t.Fatalf("component-related surface was mislabeled as trace evidence: %#v", surface)
+			}
+		}
+	}
+}
+
+func TestTraceAssociationRejectsEvidenceSurfaceWithoutAnchorOrTransition(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		ArchitectureCanvas: &ArchitectureCanvas{Flows: []ArchitectureFlow{{
+			ID: "startup", TraceEvidenceSurfaceIDs: []string{"route"},
+		}}},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "route", Kind: "http_route", RegistrationSite: &SurfaceLocation{Path: "routes.go", Line: 10},
+		}}},
+	}
+	linkArchitectureProductObjects(data)
+	if data.ArchitectureCanvas.Surfaces[0].RelatedTraceID != "" ||
+		len(data.ArchitectureCanvas.Flows[0].TraceEvidenceSurfaceIDs) != 0 {
+		t.Fatalf("unjustified trace evidence survived: %#v", data.ArchitectureCanvas)
+	}
+	var found bool
+	for _, diagnostic := range data.ArchitectureCanvas.Diagnostics {
+		found = found || diagnostic.Code == "trace.unjustified_evidence_surface"
+	}
+	if !found {
+		t.Fatalf("diagnostics = %#v", data.ArchitectureCanvas.Diagnostics)
 	}
 }
 
@@ -259,7 +356,8 @@ func TestRefreshProductCountsKeepsSuggestionsDistinctFromSavedTraces(t *testing.
 	data := &ReportData{
 		Run: &RunInfo{},
 		CandidateDirections: []CandidateDirection{
-			{ID: "complete"},
+			{ID: "complete", LocalProof: testSavedTraceSession("complete", true)},
+			{ID: "partial", LocalProof: testSavedTraceSession("partial", false)},
 			{ID: "suggested"},
 			{ID: "rejected", Disposition: flowexplain.DirectionRejected},
 		},
@@ -282,6 +380,36 @@ func TestRefreshProductCountsKeepsSuggestionsDistinctFromSavedTraces(t *testing.
 		data.Run.FailedTraceAttemptCount != 1 || data.Run.EvidenceBundleCount != 1 ||
 		data.Run.DiscoveredSurfaceCount != 2 {
 		t.Fatalf("counts = %#v", data.Run)
+	}
+}
+
+func testSavedTraceSession(id string, complete bool) *flowproof.Session {
+	slots := make([]flowproof.Slot, 0, 8)
+	for _, kind := range []flowproof.SlotKind{
+		flowproof.SlotTrigger,
+		flowproof.SlotEntrypoint,
+		flowproof.SlotDispatch,
+		flowproof.SlotApplicationCallable,
+		flowproof.SlotCoreOperation,
+		flowproof.SlotIOBoundary,
+		flowproof.SlotConcurrency,
+		flowproof.SlotTermination,
+	} {
+		status := flowproof.SlotMissing
+		missing := "not collected"
+		if complete || len(slots) == 0 {
+			status = flowproof.SlotVerified
+			missing = ""
+		}
+		slots = append(slots, flowproof.Slot{Kind: kind, Status: status, Missing: missing})
+	}
+	return &flowproof.Session{
+		Version: flowproof.SessionVersion,
+		Proof: flowproof.Proof{
+			Version: flowproof.Version,
+			ID:      id, Archetype: flowproof.ArchetypeProcess,
+			Slots: slots,
+		},
 	}
 }
 

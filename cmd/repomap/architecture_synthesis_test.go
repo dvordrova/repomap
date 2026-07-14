@@ -130,6 +130,71 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 	}
 }
 
+func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		outcome    architectureSynthesisOutcome
+		accepted   bool
+		normalized bool
+		rejected   bool
+		fallback   bool
+	}{
+		{
+			name: "accepted",
+			outcome: architectureSynthesisOutcome{
+				ProviderCallSucceeded: true,
+				ResponseParsed:        true,
+				ValidationOutcome:     componentmap.ValidationAccepted,
+				ArchitectureSource:    componentmap.SourceValidatedModel,
+				ArchitectureLevel:     1,
+			},
+			accepted: true,
+		},
+		{
+			name: "normalized",
+			outcome: architectureSynthesisOutcome{
+				Cached:                true,
+				ProviderCallSucceeded: true,
+				ResponseParsed:        true,
+				ValidationOutcome:     componentmap.ValidationAcceptedNormalized,
+				ArchitectureSource:    componentmap.SourceNormalizedModel,
+				ArchitectureLevel:     2,
+				NormalizationCount:    1,
+			},
+			accepted: true, normalized: true,
+		},
+		{
+			name: "rejected fallback",
+			outcome: architectureSynthesisOutcome{
+				ProviderCallSucceeded: true,
+				ResponseParsed:        true,
+				ValidationOutcome:     componentmap.ValidationRejected,
+				ArchitectureSource:    componentmap.SourceLocalAnchors,
+				ArchitectureLevel:     3,
+				FallbackSelected:      true,
+				FallbackReason:        componentmap.FallbackRejectedUnknownAnchor,
+			},
+			rejected: true, fallback: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			status := architectureSynthesisStatus(test.outcome, nil)
+			if err := status.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v; status = %#v", err, status)
+			}
+			if status.ProposalAccepted != test.accepted || status.ProposalNormalized != test.normalized ||
+				status.ProposalRejected != test.rejected || status.FallbackSelected != test.fallback {
+				t.Fatalf("status = %#v", status)
+			}
+		})
+	}
+}
+
 func TestEnsureArchitectureSynthesisDoesNotRetryCorruptSavedRecord(t *testing.T) {
 	t.Parallel()
 

@@ -175,15 +175,22 @@ func TestSavedResticCoherence(t *testing.T) {
 			t.Errorf("saved Restic trace is missing %q", id)
 		}
 	}
-	if len(data.DiscoveredSurfaces.Triggers) != 30 || len(data.ArchitectureCanvas.Surfaces) != 30 || data.Run.DiscoveredSurfaceCount != 30 {
-		t.Fatalf("saved Restic catalog/canvas/headline = %d/%d/%d, want 30", len(data.DiscoveredSurfaces.Triggers), len(data.ArchitectureCanvas.Surfaces), data.Run.DiscoveredSurfaceCount)
+	if len(data.DiscoveredSurfaces.Triggers) != 56 || len(data.ArchitectureCanvas.Surfaces) != 56 || data.Run.DiscoveredSurfaceCount != 56 {
+		t.Fatalf("saved Restic catalog/canvas/headline = %d/%d/%d, want 56 retained records", len(data.DiscoveredSurfaces.Triggers), len(data.ArchitectureCanvas.Surfaces), data.Run.DiscoveredSurfaceCount)
 	}
-	if data.Run.CLICommandSurfaceCount != 28 || data.Run.GenericSurfaceCount != 2 ||
-		data.Run.ApplicationSurfaceCount != 28 || data.Run.ToolingSurfaceCount != 2 {
+	if data.Run.CLICommandSurfaceCount != 28 || data.Run.GenericSurfaceCount != 28 ||
+		data.Run.ApplicationSurfaceCount != 29 || data.Run.ToolingSurfaceCount != 4 || data.Run.TestHelperSurfaceCount != 0 ||
+		data.Run.SupportingDependencyCount != 23 || data.Run.DependencyOnlySurfaceCount != 0 {
 		t.Fatalf("saved Restic surface breakdown = %#v", data.Run)
 	}
 	required := map[string]bool{"backup": false, "check": false, "init": false, "restore": false, "snapshots": false, "list": false, "prune": false, "find": false}
 	for _, surface := range data.DiscoveredSurfaces.Triggers {
+		if surface.Kind == "http_route" || surface.Kind == "http_server" {
+			if surface.ApplicationClass != SurfaceSupportingDependency ||
+				surface.TraceReadiness != SurfaceTraceUnsupported || surface.RelatedTraceID != "" {
+				t.Fatalf("dependency-derived HTTP behavior was promoted: %#v", surface)
+			}
+		}
 		if surface.Producer == SurfaceProducerCobra {
 			if _, wanted := required[surface.Identity.Name]; wanted {
 				required[surface.Identity.Name] = true

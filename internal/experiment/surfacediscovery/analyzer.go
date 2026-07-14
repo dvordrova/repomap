@@ -83,6 +83,7 @@ type dispatchStart struct {
 	ambiguous  bool
 	frontiers  []Frontier
 	matched    bool
+	detached   bool
 }
 
 func Analyze(opts Options) (Result, error) {
@@ -885,6 +886,7 @@ func (a *analyzer) recordCall(
 		a.starts = append(a.starts, dispatchStart{
 			seed: seed, values: values, entrypoint: entrypoint,
 			chain: append([]Wrapper(nil), chain...), location: location, ambiguous: ambiguous,
+			detached: a.detachedWalk,
 		})
 	case catalog.EffectHTTPRouteRegistration:
 		loopSignal, inLoop := a.registrationLoop(call, seed)
@@ -1334,11 +1336,10 @@ func (a *analyzer) recordRoute(
 		DynamicFrontier: frontiers,
 		Status:          status,
 	}
+	record.TerminalSourceScope, record.ApplicationClass, record.PromotionBasis =
+		classifyTerminalOwnership(location, chain, a.detachedWalk)
 	record.ProvisionalID = !pathValue.Known || !handler.Known || !dispatcher.Known
 	record.ID = stableTriggerID(record)
-	if filepath.IsAbs(location.Path) && !hasRepositoryWrapper(chain) {
-		return
-	}
 	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
 	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
 }
@@ -1390,6 +1391,31 @@ func hasRepositoryWrapper(chain []Wrapper) bool {
 		}
 	}
 	return false
+}
+
+func classifyTerminalOwnership(location Location, chain []Wrapper, detached bool) (string, string, string) {
+	repositoryWrapper := hasRepositoryWrapper(chain)
+	if detached {
+		basis := PromotionNone
+		if repositoryWrapper {
+			basis = PromotionRepositoryWrapper
+		}
+		return terminalSourceScope(location), SupportingDependencyBehavior, basis
+	}
+	if !filepath.IsAbs(location.Path) {
+		return "repository", ApplicationSurface, PromotionRepositoryRegistration
+	}
+	if repositoryWrapper {
+		return "dependency", ApplicationSurface, PromotionRepositoryWrapper
+	}
+	return terminalSourceScope(location), DependencyOnly, PromotionNone
+}
+
+func terminalSourceScope(location Location) string {
+	if !filepath.IsAbs(location.Path) {
+		return "repository"
+	}
+	return "dependency"
 }
 
 func cloneValues(values map[string]Value) map[string]Value {
@@ -2637,14 +2663,13 @@ func (a *analyzer) recordServerStart(start dispatchStart) {
 		}},
 		DynamicFrontier: frontiers, Status: status,
 	}
+	record.TerminalSourceScope, record.ApplicationClass, record.PromotionBasis =
+		classifyTerminalOwnership(location, start.chain, start.detached)
 	// A server-start record is identified by its exact static call site. Handler
 	// and listener resolution are supporting facts and may remain bounded without
 	// making that call-site identity provisional.
 	record.ProvisionalID = false
 	record.ID = stableTriggerID(record)
-	if filepath.IsAbs(location.Path) && !hasRepositoryWrapper(start.chain) {
-		return
-	}
 	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
 	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
 }

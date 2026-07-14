@@ -398,7 +398,7 @@ func TestUnknownSynthesisResponseFieldsAreIgnoredWithWarning(t *testing.T) {
 	}
 }
 
-func TestGroundedSynthesisRequiresSuppliedAnchorOrExplicitHypothesis(t *testing.T) {
+func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGrounding(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -433,10 +433,29 @@ func TestGroundedSynthesisRequiresSuppliedAnchorOrExplicitHypothesis(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.ungrounded_primary_component") {
-		t.Fatalf("ungrounded proposal = %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedNormalized ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.normalized_package_only_hypothesis") {
+		t.Fatalf("package-only proposal = %#v", result.Landscape)
 	}
 
+	proposal.Subsystems[0].Components[0] = ProposedComponent{
+		Name: "Source file", MemberIDs: []MemberID{bundle.Candidates[2].ID},
+	}
+	raw, err = json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.ungrounded_primary_component") {
+		t.Fatalf("ungrounded non-package proposal = %#v", result.Landscape)
+	}
+
+	proposal.Subsystems[0].Components[0] = ProposedComponent{
+		Name: "Process", MemberIDs: []MemberID{bundle.Candidates[0].ID},
+	}
 	proposal.Subsystems[0].Components[0].AnchorIDs = []string{"process"}
 	raw, err = json.Marshal(proposal)
 	if err != nil {

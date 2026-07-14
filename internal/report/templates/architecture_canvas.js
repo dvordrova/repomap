@@ -1949,8 +1949,19 @@
    summary.appendChild(participating);
    this.appendSummaryItem(summary, "Grounded sequence", groundedSequence);
    this.appendSummaryItem(summary, "Concurrent activities", concurrentActivities);
-   this.appendSummaryItem(summary, "Current frontier", flow.frontier_summary || flow.current_frontier || "No explicit frontier was saved");
-   this.appendSummaryItem(summary, "Evidence basis", (flow.evidence_basis || "static") + " evidence; execution was not observed");
+    this.appendSummaryItem(summary, "Current frontier", flow.frontier_summary || flow.current_frontier || "No explicit frontier was saved");
+    this.appendSummaryItem(summary, "Evidence basis", (flow.evidence_basis || "static") + " evidence; execution was not observed");
+    this.appendSummaryItem(
+     summary,
+     "Trace surfaces",
+     String((flow.seed_surface_id ? 1 : 0) + array(flow.trace_evidence_surface_ids).length) +
+      " exact seed/evidence surface(s)"
+    );
+    this.appendSummaryItem(
+     summary,
+     "Other component surfaces",
+     String(array(flow.related_component_surface_ids).length) + " related surface(s) — not trace evidence"
+    );
    heading.appendChild(summary);
    const proofNode = element("div", "rm-arch__focus-proof is-" + proof.status);
    proofNode.appendChild(element("strong", null, proof.grounded + "/" + proof.total + " proof areas grounded"));
@@ -2551,7 +2562,12 @@
    this.appendKeyValue(purpose, "Grounding", component.hypothesis ? "Conceptual / package-derived" : "Exact local membership");
 
    const surfaceIDs = Array.from(new Set(array(component.owned_surface_ids).concat(array(component.participating_surface_ids))));
-   const surfaces = this.inspectorSection("Surfaces");
+   const surfaces = this.inspectorSection("Component surfaces");
+   surfaces.appendChild(element(
+    "p",
+    "rm-arch__copy",
+    "These surfaces share exact component or executable evidence. Only a saved trace's explicit seed/evidence surfaces participate in that trace."
+   ));
    if (surfaceIDs.length === 0) {
      surfaces.appendChild(element("p", "rm-arch__empty", "No supported surface has a unique exact association with this component."));
    }

@@ -20,9 +20,10 @@ import (
 const (
 	surfaceCatalogFilename         = "trigger_catalog.json"
 	surfaceCoverageFilename        = "surface_coverage.json"
-	surfaceArtifactVersion         = 4
-	previousSurfaceArtifactVersion = 3
-	legacySurfaceArtifactVersion   = 2
+	surfaceArtifactVersion         = 5
+	previousSurfaceArtifactVersion = 4
+	legacySurfaceArtifactVersion   = 3
+	oldestSurfaceArtifactVersion   = 2
 	surfaceSemanticCatalogVersion  = 1
 	maxSurfaceArtifactBytes        = 4 * 1024 * 1024
 	maxDiscoveredSurfaceTriggers   = 256
@@ -60,6 +61,10 @@ const (
 	SurfaceTracePartialReady = "partial_trace_ready"
 	SurfaceTraceUnsupported  = "unsupported"
 	SurfaceTraceRejected     = "rejected"
+
+	SurfaceApplicationOwned     = "application_surface"
+	SurfaceSupportingDependency = "supporting_dependency_behavior"
+	SurfaceDependencyOnly       = "dependency_only"
 )
 
 // DiscoveredSurfaces is the bounded presentation projection of a paired
@@ -91,6 +96,8 @@ type DiscoveredSurfaces struct {
 	UnavailableSurfaceCount   int                          `json:"unavailable_surface_count"`
 	PackageDiagnosticCount    int                          `json:"package_diagnostic_count"`
 	UnavailablePackageCount   int                          `json:"unavailable_package_count"`
+	SupportingDependencyCount int                          `json:"supporting_dependency_count"`
+	DependencyOnlyCount       int                          `json:"dependency_only_count"`
 	DynamicFrontierCount      int                          `json:"dynamic_frontier_count"`
 	PossibleRegistrationCount int                          `json:"possible_registration_count"`
 	UnresolvedHandlerCount    int                          `json:"unresolved_handler_count"`
@@ -140,6 +147,9 @@ type DiscoveredTrigger struct {
 	ExecutableRole            string                     `json:"executable_role"`
 	Availability              string                     `json:"availability"`
 	UnavailableReason         string                     `json:"unavailable_reason,omitempty"`
+	TerminalSourceScope       string                     `json:"terminal_source_scope,omitempty"`
+	ApplicationClass          string                     `json:"application_classification,omitempty"`
+	PromotionBasis            string                     `json:"promotion_basis,omitempty"`
 	OwningComponentID         componentmap.ComponentID   `json:"owning_component_id,omitempty"`
 	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
 	RelatedTraceID            componentmap.FlowID        `json:"related_saved_trace_id,omitempty"`
@@ -320,6 +330,9 @@ type rawSurfaceTrigger struct {
 	ExecutableRole       string                 `json:"executable_role"`
 	Availability         string                 `json:"availability"`
 	UnavailableReason    string                 `json:"unavailable_reason"`
+	TerminalSourceScope  string                 `json:"terminal_source_scope"`
+	ApplicationClass     string                 `json:"application_classification"`
+	PromotionBasis       string                 `json:"promotion_basis"`
 	SurfaceRole          string                 `json:"surface_role"`
 	TraceReadiness       string                 `json:"trace_readiness"`
 	TraceReadinessReason string                 `json:"trace_readiness_reason"`
@@ -559,7 +572,8 @@ func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceC
 }
 
 func supportedSurfaceArtifactVersion(version int) bool {
-	return version == legacySurfaceArtifactVersion || version == previousSurfaceArtifactVersion ||
+	return version == oldestSurfaceArtifactVersion || version == legacySurfaceArtifactVersion ||
+		version == previousSurfaceArtifactVersion ||
 		version == surfaceArtifactVersion
 }
 
@@ -750,6 +764,9 @@ func projectDiscoveredTrigger(trigger rawSurfaceTrigger) DiscoveredTrigger {
 		ExecutableRole:       normalizeSurfaceExecutableRole(trigger.ExecutableRole),
 		Availability:         normalizeSurfaceAvailability(trigger.Availability),
 		UnavailableReason:    trigger.UnavailableReason,
+		TerminalSourceScope:  trigger.TerminalSourceScope,
+		ApplicationClass:     normalizeSurfaceApplicationClass(trigger.ApplicationClass, trigger.DynamicFrontier),
+		PromotionBasis:       trigger.PromotionBasis,
 		SurfaceRole:          trigger.SurfaceRole,
 		TraceReadiness:       trigger.TraceReadiness,
 		TraceReadinessReason: trigger.TraceReadinessReason,
@@ -786,6 +803,19 @@ func normalizeSurfaceAvailability(availability string) string {
 	default:
 		return SurfaceAvailabilityUnknown
 	}
+}
+
+func normalizeSurfaceApplicationClass(classification string, frontiers []rawSurfaceFrontier) string {
+	switch classification {
+	case SurfaceApplicationOwned, SurfaceSupportingDependency, SurfaceDependencyOnly:
+		return classification
+	}
+	for _, frontier := range frontiers {
+		if frontier.Kind == "entrypoint_dispatch_unresolved" {
+			return SurfaceSupportingDependency
+		}
+	}
+	return SurfaceApplicationOwned
 }
 
 func projectSurfaceProvenance(values []rawSurfaceProvenance) []SurfaceProvenance {
@@ -852,12 +882,10 @@ func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) Discovere
 	root, _ := commandTraceStep(trace, "calls")
 	constructor, constructorOK := commandTraceStep(trace, "registers_command")
 	callback, callbackOK := commandTraceStep(trace, "callback")
-	commandName, constructorDerivedIdentity := commandSurfaceName(trace, constructor)
-	identity := strings.Fields(commandName)
-	if len(identity) == 0 {
+	id, command, constructorDerivedIdentity := gofacts.CommandSurfaceIdentity(trace)
+	if id == "" {
 		return DiscoveredTrigger{}
 	}
-	command := identity[0]
 	registration := surfaceLocationFromEvidence(constructor.CallsiteLocation)
 	constructorLocation := surfaceLocationFromEvidence(&constructor.TargetLocation)
 	entrypointLocation := surfaceLocationFromEvidence(&entrypoint.TargetLocation)
@@ -868,7 +896,6 @@ func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) Discovere
 		status = "partial_command_registration"
 		resolution = "partial"
 	}
-	id := stableSurfaceID("cobra-command", trace.EntrypointPackage, command, constructor.Symbol)
 	identityKind := "command"
 	identityKnown := true
 	discoveryBasis := "build_selected_cobra_registration"
@@ -897,9 +924,12 @@ func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) Discovere
 		HandlerLocation:  handlerLocation,
 		DiscoveryBasis:   discoveryBasis,
 		Certainty:        "static", Resolution: resolution, Status: status,
-		OwningExecutable: surfaceExecutableForPackage(data, trace.EntrypointPackage),
-		ExecutableRole:   ExecutableRoleUnknown,
-		Availability:     SurfaceAvailabilityAvailable,
+		OwningExecutable:    surfaceExecutableForPackage(data, trace.EntrypointPackage),
+		ExecutableRole:      ExecutableRoleUnknown,
+		Availability:        SurfaceAvailabilityAvailable,
+		TerminalSourceScope: "repository",
+		ApplicationClass:    SurfaceApplicationOwned,
+		PromotionBasis:      "repository_registration",
 		Provenance: []SurfaceProvenance{{
 			Provider: "gofacts", Version: fmt.Sprintf("command-trace-v%d", trace.Version),
 			Operation: "build_selected_cobra_registration",
@@ -924,18 +954,6 @@ func commandTraceSurface(data *ReportData, trace gofacts.CommandTrace) Discovere
 	}
 	ensureProjectedSurfaceSemantics(&trigger)
 	return trigger
-}
-
-func commandSurfaceName(trace gofacts.CommandTrace, constructor gofacts.CommandTraceStep) (string, bool) {
-	if !slices.Contains(trace.Missing, "command name") || trace.Command != constructor.Symbol {
-		return trace.Command, false
-	}
-	name := strings.TrimPrefix(constructor.Symbol, "new")
-	name = strings.TrimSuffix(name, "Command")
-	if name == "" {
-		return trace.Command, true
-	}
-	return strings.ToLower(name[:1]) + name[1:], true
 }
 
 func commandTraceStep(trace gofacts.CommandTrace, relation string) (gofacts.CommandTraceStep, bool) {
@@ -1007,6 +1025,8 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 	catalog.ToolingCount = 0
 	catalog.TestHelperCount = 0
 	catalog.UnassignedCount = 0
+	catalog.SupportingDependencyCount = 0
+	catalog.DependencyOnlyCount = 0
 	for _, trigger := range catalog.Triggers {
 		switch trigger.Kind {
 		case "http_route":
@@ -1038,17 +1058,24 @@ func refreshSurfaceCatalogCounts(catalog *DiscoveredSurfaces) {
 				catalog.GenericSurfaceCount++
 			}
 		}
-		switch trigger.ExecutableRole {
-		case ExecutableRolePrimaryApplication:
-			catalog.ApplicationCount++
-		case ExecutableRoleSecondaryService:
-			catalog.SecondaryServiceCount++
-		case ExecutableRoleTooling, "secondary_tooling":
-			catalog.ToolingCount++
-		case ExecutableRoleTestOrHelper:
-			catalog.TestHelperCount++
+		switch trigger.ApplicationClass {
+		case SurfaceSupportingDependency:
+			catalog.SupportingDependencyCount++
+		case SurfaceDependencyOnly:
+			catalog.DependencyOnlyCount++
 		default:
-			catalog.UnassignedCount++
+			switch trigger.ExecutableRole {
+			case ExecutableRolePrimaryApplication:
+				catalog.ApplicationCount++
+			case ExecutableRoleSecondaryService:
+				catalog.SecondaryServiceCount++
+			case ExecutableRoleTooling, "secondary_tooling":
+				catalog.ToolingCount++
+			case ExecutableRoleTestOrHelper:
+				catalog.TestHelperCount++
+			default:
+				catalog.UnassignedCount++
+			}
 		}
 		if !preserveRawCounts && trigger.Availability == SurfaceAvailabilityUnavailable {
 			catalog.UnavailableSurfaceCount++

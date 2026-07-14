@@ -1,6 +1,7 @@
 package gofacts
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -62,6 +63,52 @@ type CommandTraceCall struct {
 	Resolved   bool                `json:"resolved"`
 	TargetPath string              `json:"target_path,omitempty"`
 	TargetLine int                 `json:"target_line,omitempty"`
+}
+
+// CommandSurfaceIdentity returns the stable report-surface identity derived
+// from one exact Cobra command trace. Keeping this identity with the trace
+// producer lets FlowProof persist its seed without depending on report code.
+func CommandSurfaceIdentity(trace CommandTrace) (id, command string, constructorDerived bool) {
+	if trace.Framework != "cobra" || strings.TrimSpace(trace.Command) == "" {
+		return "", "", false
+	}
+	constructorSymbol := ""
+	for _, step := range trace.Steps {
+		if step.Relation == "registers_command" {
+			constructorSymbol = step.Symbol
+			break
+		}
+	}
+	if constructorSymbol == "" {
+		return "", "", false
+	}
+	command = trace.Command
+	if slicesContain(trace.Missing, "command name") && trace.Command == constructorSymbol {
+		constructorDerived = true
+		name := strings.TrimSuffix(strings.TrimPrefix(constructorSymbol, "new"), "Command")
+		if name != "" {
+			command = strings.ToLower(name[:1]) + name[1:]
+		}
+	}
+	identity := strings.Fields(command)
+	if len(identity) == 0 {
+		return "", "", false
+	}
+	command = identity[0]
+	hash := sha256.New()
+	for _, part := range []string{"cobra-command", trace.EntrypointPackage, command, constructorSymbol} {
+		fmt.Fprintf(hash, "%d:%s\n", len(part), part)
+	}
+	return "surface-" + fmt.Sprintf("%x", hash.Sum(nil))[:24], command, constructorDerived
+}
+
+func slicesContain(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 type commandSyntaxFunction struct {

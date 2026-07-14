@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v7"
-	TriggerCatalogVersion        = 4
-	CoverageVersion              = 4
+	AnalyzerVersion              = "surface-ssa-v8"
+	TriggerCatalogVersion        = 5
+	CoverageVersion              = 5
 	CatalogVersion               = 1
 	ArchitectureGroundingVersion = 3
 )
@@ -86,6 +86,9 @@ type TriggerRecord struct {
 	ExecutableRole       string         `json:"executable_role,omitempty"`
 	Availability         string         `json:"availability"`
 	UnavailableReason    string         `json:"unavailable_reason,omitempty"`
+	TerminalSourceScope  string         `json:"terminal_source_scope,omitempty"`
+	ApplicationClass     string         `json:"application_classification,omitempty"`
+	PromotionBasis       string         `json:"promotion_basis,omitempty"`
 	SurfaceRole          string         `json:"surface_role"`
 	TraceReadiness       string         `json:"trace_readiness"`
 	TraceReadinessReason string         `json:"trace_readiness_reason"`
