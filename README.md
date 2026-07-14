@@ -46,6 +46,12 @@ file references can open in VS Code; press Ctrl-C when finished. Use `--no-open`
 to keep the browser closed, `--port` to choose a port, or `--no-serve` for a
 standalone static report.
 
+Go orientation also groups bounded source signals into operational-flow
+candidates for background loops, maintenance, thresholds, consensus state, and
+storage durability. They stay in the same flow list as request-driven work and
+are labeled **Request** or **Operational**. Operational candidates are static
+hints, work in offline mode, and do not claim observed execution.
+
 Persisted Go runs normalize build-selected Cobra command registrations and a
 bounded generic scan for configured HTTP registrations, async starts, and
 worker-loop registrations into one **All surfaces** catalog. They are static

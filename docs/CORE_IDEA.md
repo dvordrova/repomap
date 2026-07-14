@@ -46,7 +46,8 @@ engineer's normal Go environment and may use a configured company proxy:
   the first reader records Cobra root construction, command registration,
   Run/RunE callbacks, and ranked handler call sites as typed syntax evidence
 - module summaries (role guess, top internal imports, top external imports)
-- orientation candidates (ranked entrypoints with repo-relative `open_files`)
+- orientation candidates (ranked entrypoints plus bounded operational
+  candidates derived from source signals, all with repo-relative `open_files`)
 - known docs (Documentation/, docs/, architecture .md files)
 
 ### 2. Compact LLM bundle
@@ -91,6 +92,11 @@ first already-allowed `likely_file`; structured file lists remain fail-closed.
 Other prose remains an explicit model interpretation.
 
 The report proposes **candidate runtime/event flows**, not folder summaries.
+Request-driven and operational candidates remain one ranked list, distinguished
+by `flow_type`. Operational candidates must originate in deterministic source
+signals; weak static evidence is capped at 0.3 confidence and never presented
+as observed execution. Offline runs retain these candidates with an explicit
+`(offline hint)` suffix.
 Every candidate flow must cite evidence from the bundle.
 Confidence must be explicit, warnings for low confidence.
 Provider confidence is only a proposal: a local gate caps each candidate using
