@@ -63,6 +63,7 @@ type analyzer struct {
 	walkedFunctions           map[*ssa.Function]bool
 	callbackReferences        map[*ssa.Function]bool
 	callbackReferenceIDs      map[string]bool
+	entrypointPackages        map[*ssa.Function]map[string]bool
 	detachedWalk              bool
 }
 
@@ -142,6 +143,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		walkedFunctions:           map[*ssa.Function]bool{},
 		callbackReferences:        map[*ssa.Function]bool{},
 		callbackReferenceIDs:      map[string]bool{},
+		entrypointPackages:        map[*ssa.Function]map[string]bool{},
 		scenario: Scenario{
 			ID:   scenarioID(runtime.GOOS, runtime.GOARCH, opts.BuildTags),
 			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
@@ -176,6 +178,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 			a.result.Coverage.EntrypointsConsidered,
 			a.symbol(entrypoint),
 		)
+		a.entrypointPackages[entrypoint] = importedPackagePaths(entrypoint)
 		entryAnchorID := a.recordArchitectureAnchor(
 			"process_entry",
 			"process entry "+a.functionID(entrypoint),
@@ -728,6 +731,7 @@ func (a *analyzer) walk(
 				continue
 			}
 			var targetLimitFrontier *Frontier
+			var dispatchFrontier *Frontier
 			if len(targets) > a.opts.MaxTargets {
 				a.addBudget("targets")
 				targets = a.prioritizeTargets(targets)
@@ -744,10 +748,20 @@ func (a *analyzer) walk(
 				}
 				targetLimitFrontier = &frontier
 				a.result.Coverage.UnsupportedDispatch = append(a.result.Coverage.UnsupportedDispatch, frontier)
+				dispatch := Frontier{
+					Kind:     "entrypoint_dispatch_unresolved",
+					Detail:   "bounded callback candidates prevent proving dispatch from the process entrypoint",
+					Location: &location,
+				}
+				dispatchFrontier = &dispatch
 				targets = targets[:a.opts.MaxTargets]
 			}
-			callAmbiguous := ambiguous || len(targets) > 1 || targetLimitFrontier != nil
+			callAmbiguous := ambiguous || (targetLimitFrontier == nil && len(targets) > 1)
 			for _, target := range targets {
+				if !a.callTargetEligible(call, target, entrypoint) {
+					a.recordUnresolvedCallTarget(function, call, target, entrypoint)
+					continue
+				}
 				triggerStart := len(a.result.Catalog.Triggers)
 				serverStart := len(a.starts)
 				architectureKind := ""
@@ -784,12 +798,9 @@ func (a *analyzer) walk(
 				matched = matched && a.terminalSeedEligible(seed, call, target)
 				if matched {
 					a.recordCall(seed, call, target, env, chain, entrypoint, callAmbiguous)
-					if targetLimitFrontier != nil {
-						a.applyFrontierSince(triggerStart, serverStart, *targetLimitFrontier)
+					if dispatchFrontier != nil {
+						a.applyFrontierSince(triggerStart, serverStart, *dispatchFrontier)
 					}
-					continue
-				}
-				if !a.detachedWalk && a.relevant[target] && !a.propagationTargetEligible(call, target) {
 					continue
 				}
 				followComposition := !a.detachedWalk && a.shouldFollowComposition(target, architectureKind)
@@ -818,8 +829,8 @@ func (a *analyzer) walk(
 					callAmbiguous,
 					nextParentAnchorID,
 				)
-				if targetLimitFrontier != nil {
-					a.applyFrontierSince(triggerStart, serverStart, *targetLimitFrontier)
+				if dispatchFrontier != nil {
+					a.applyFrontierSince(triggerStart, serverStart, *dispatchFrontier)
 				}
 			}
 		}
@@ -841,6 +852,58 @@ func (a *analyzer) terminalTargetEligible(call ssa.CallInstruction, target *ssa.
 	return ok && function == target
 }
 
+// callTargetEligible admits only call-graph candidates that are compatible with
+// the exact SSA call and the selected executable's build/import closure. CHA can
+// otherwise join equal-shaped callbacks from independent main packages, which is
+// not evidence that one executable reaches the other's behavior.
+func (a *analyzer) callTargetEligible(
+	call ssa.CallInstruction,
+	target, entrypoint *ssa.Function,
+) bool {
+	if !a.callTargetWitness(call, target) || entrypoint == nil {
+		return false
+	}
+	packages := a.entrypointPackages[entrypoint]
+	if packages == nil {
+		packages = importedPackagePaths(entrypoint)
+		a.entrypointPackages[entrypoint] = packages
+	}
+	return packages[functionPackagePath(target)]
+}
+
+func (a *analyzer) callTargetWitness(call ssa.CallInstruction, target *ssa.Function) bool {
+	if a.terminalTargetEligible(call, target) {
+		return true
+	}
+	if call == nil || target == nil || target.Signature == nil {
+		return false
+	}
+	if call.Common().IsInvoke() {
+		return true
+	}
+	value := call.Common().Value
+	return value != nil && types.AssignableTo(target.Signature, value.Type())
+}
+
+func (a *analyzer) recordUnresolvedCallTarget(
+	function *ssa.Function,
+	call ssa.CallInstruction,
+	target, entrypoint *ssa.Function,
+) {
+	location := a.location(call.Pos())
+	detail := fmt.Sprintf(
+		"%s did not admit candidate %s for executable %s: no exact or type-valid call witness within its import closure",
+		a.functionID(function),
+		a.functionID(target),
+		a.functionID(entrypoint),
+	)
+	a.result.Coverage.UnsupportedDispatch = append(a.result.Coverage.UnsupportedDispatch, Frontier{
+		Kind:     "call_target_unresolved",
+		Detail:   detail,
+		Location: &location,
+	})
+}
+
 func (a *analyzer) terminalSeedEligible(
 	seed catalog.Seed,
 	call ssa.CallInstruction,
@@ -853,10 +916,7 @@ func (a *analyzer) terminalSeedEligible(
 }
 
 func (a *analyzer) propagationTargetEligible(call ssa.CallInstruction, target *ssa.Function) bool {
-	if a.terminalTargetEligible(call, target) {
-		return true
-	}
-	return len(a.callTargets[call]) <= a.opts.MaxTargets
+	return a.callTargetWitness(call, target)
 }
 
 func (a *analyzer) applyFrontierSince(triggerStart, serverStart int, frontier Frontier) {
@@ -948,6 +1008,8 @@ func (a *analyzer) recordRouteAssembly(
 		Status:          "configured_route_inventory_unresolved",
 		ProvisionalID:   true,
 	}
+	record.TerminalSourceScope, record.ApplicationClass, record.PromotionBasis =
+		classifyTerminalOwnership(location, chain, a.detachedWalk)
 	record.ID = stableTriggerID(record)
 	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
 	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontier)
@@ -1039,6 +1101,8 @@ func (a *analyzer) recordRouteProvider(
 			Status:          "confirmed_route_descriptor",
 			ProvisionalID:   !descriptor.path.Known || !descriptor.handler.Known,
 		}
+		record.TerminalSourceScope, record.ApplicationClass, record.PromotionBasis =
+			classifyTerminalOwnership(descriptorLocation, chain, a.detachedWalk)
 		record.ID = stableTriggerID(record)
 		a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
 		a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
@@ -1395,15 +1459,18 @@ func hasRepositoryWrapper(chain []Wrapper) bool {
 
 func classifyTerminalOwnership(location Location, chain []Wrapper, detached bool) (string, string, string) {
 	repositoryWrapper := hasRepositoryWrapper(chain)
+	if !filepath.IsAbs(location.Path) {
+		// An unresolved dispatch does not turn repository-local registrations
+		// into dependency behavior. It limits reachability, which is recorded
+		// separately as a frontier on the surface.
+		return "repository", ApplicationSurface, PromotionRepositoryRegistration
+	}
 	if detached {
 		basis := PromotionNone
 		if repositoryWrapper {
 			basis = PromotionRepositoryWrapper
 		}
 		return terminalSourceScope(location), SupportingDependencyBehavior, basis
-	}
-	if !filepath.IsAbs(location.Path) {
-		return "repository", ApplicationSurface, PromotionRepositoryRegistration
 	}
 	if repositoryWrapper {
 		return "dependency", ApplicationSurface, PromotionRepositoryWrapper

@@ -52,6 +52,17 @@ func TestProcessEntryArchitectureAnchorDeduplicatesSyntaxAndSSAColumns(t *testin
 	}
 }
 
+func TestClassifyTerminalOwnershipKeepsDetachedRepositorySurfaceApplicationOwned(t *testing.T) {
+	t.Parallel()
+
+	scope, classification, basis := classifyTerminalOwnership(
+		Location{Path: "internal/admin/routes.go", Line: 42}, nil, true,
+	)
+	if scope != "repository" || classification != ApplicationSurface || basis != PromotionRepositoryRegistration {
+		t.Fatalf("detached repository surface = %q/%q/%q, want repository application registration", scope, classification, basis)
+	}
+}
+
 func TestProcessEntryArchitectureAnchorDeduplicatesAtCollectionLimit(t *testing.T) {
 	symbol := Symbol{ID: "example.com/project/cmd/project.main", Package: "example.com/project/cmd/project", Name: "main"}
 	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
@@ -291,6 +302,23 @@ func TestAnalyzeCrossPackageWrapper(t *testing.T) {
 	}
 	if len(result.Summaries) == 0 || len(result.Summaries[0].SourceDependency) == 0 {
 		t.Fatalf("summaries = %#v", result.Summaries)
+	}
+}
+
+func TestAnalyzeDoesNotCrossExecutableRoots(t *testing.T) {
+	result := analyzeFixture(t, "separate_mains")
+
+	for _, trigger := range triggersOfKind(result, "http_route") {
+		if trigger.Identity.Path.Text == "/helper" || strings.Contains(wrapperIDs(trigger.WrapperChain), "helper") {
+			t.Fatalf("primary executable inherited helper behavior: %#v", trigger)
+		}
+	}
+	trigger := onlyTriggerOfKind(t, result, "http_route")
+	if trigger.Identity.Path.Text != "/primary" {
+		t.Fatalf("route = %#v, want only primary route", trigger)
+	}
+	if !hasFrontier(result.Coverage.UnsupportedDispatch, "call_target_unresolved") {
+		t.Fatalf("cross-executable callback was silently discarded: %#v", result.Coverage.UnsupportedDispatch)
 	}
 }
 
