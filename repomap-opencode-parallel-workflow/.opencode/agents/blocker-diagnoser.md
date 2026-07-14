@@ -1,7 +1,7 @@
 ---
 description: Deeply diagnoses one precise stubborn blocker without implementing it
 mode: subagent
-model: openai/gpt-5.6-sol
+model: __MODEL_SOL__
 reasoningEffort: xhigh
 textVerbosity: low
 temperature: 0.1
