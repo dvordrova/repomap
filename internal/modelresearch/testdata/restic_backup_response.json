@@ -1,0 +1,25 @@
+{
+  "findings": [
+    {
+      "id": "restic-backup-boundary",
+      "interpretation": "The backup command coordinates an archiver-facing operation and a distinct repository-opening boundary.",
+      "responsibility_name": "Backup repository boundary",
+      "hypothesis_assessment": "supported",
+      "evidence_ids": [
+        "evidence-da880e59bd593fa6",
+        "evidence-e961ed52f4e5c3f5"
+      ],
+      "explanation": "The supplied locally resolved targets support separating command coordination from repository and archiver responsibilities. Runtime backend selection remains unknown."
+    }
+  ],
+  "unresolved_frontiers": [
+    {
+      "question": "Which supplied local boundary determines the concrete repository backend?",
+      "evidence_ids": ["evidence-e961ed52f4e5c3f5"],
+      "evidence_category": "resolved_target",
+      "runtime_only": false,
+      "reason": "The current exact evidence reaches repository opening but not backend selection."
+    }
+  ],
+  "summary": "Backup reaches distinct repository and archiver responsibilities through exact local targets."
+}

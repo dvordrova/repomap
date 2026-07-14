@@ -1,0 +1,159 @@
+{
+  "version": 3,
+  "subsystems": [
+    {
+      "name": "Core",
+      "description": "Core lifecycle, module registry, and logging",
+      "components": [
+        {
+          "name": "Module Registry",
+          "description": "Module registration and loading",
+          "member_ids": [
+            {"kind": "package", "value": "member-package-fa63772756ead60fe5d48965"}
+          ],
+          "anchor_ids": ["anchor-13712c6ead2b942f11dcffac", "anchor-e97c73cefeeab8629977e8e2", "anchor-5b79058ae0786d830a6cd1d5"],
+          "hypothesis": false
+        },
+        {
+          "name": "Lifecycle",
+          "description": "Provision, start, validate, cleanup interfaces",
+          "member_ids": [
+            {"kind": "package", "value": "member-package-d41e86645e8d4351c8fb942c"},
+            {"kind": "package", "value": "member-package-7e2255216a56b1c6138108cd"}
+          ],
+          "anchor_ids": ["anchor-b95e592bce5b179ca6607eca", "anchor-c068a8bd8b4edb1b113b3b4a"],
+          "hypothesis": false
+        },
+        {
+          "name": "Logging",
+          "description": "Log provisioning and sink setup",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-523d01e1c98649036df4c5dc"}
+          ],
+          "anchor_ids": ["anchor-b95e592bce5b179ca6607eca"],
+          "hypothesis": false
+        }
+      ]
+    },
+    {
+      "name": "Config",
+      "description": "Configuration loading, parsing, and adaptation",
+      "components": [
+        {
+          "name": "Config Ingress",
+          "description": "Config loading and parsing",
+          "member_ids": [
+            {"kind": "package", "value": "member-package-ab168c32b1d8053db4464ed9"},
+            {"kind": "package", "value": "member-package-2a54b53f1fb50ceb55bdfe7e"}
+          ],
+          "anchor_ids": ["anchor-a020c474f76db85ae85d9357"],
+          "hypothesis": false
+        },
+        {
+          "name": "Config Adapter",
+          "description": "Config format adaptation",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-8f2f55eb9f4f49ad3997d63a"}
+          ],
+          "anchor_ids": ["anchor-e55d283d2f5bd2fd480082ec"],
+          "hypothesis": false
+        },
+        {
+          "name": "HTTP Caddyfile",
+          "description": "HTTP-specific config building",
+          "member_ids": [
+            {"kind": "package", "value": "member-package-01cfc29ec050b5054e16ed47"}
+          ],
+          "anchor_ids": ["anchor-1cbc8e5d96c6a3d4ee8cfc55"],
+          "hypothesis": false
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "Admin API and control plane",
+      "components": [
+        {
+          "name": "Admin Handler",
+          "description": "Admin HTTP server and handlers",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-7390abf12603fa4e86c83b64"}
+          ],
+          "anchor_ids": ["anchor-15a7795600d479a868920444"],
+          "hypothesis": false
+        }
+      ]
+    },
+    {
+      "name": "HTTP",
+      "description": "HTTP server and middleware",
+      "components": [
+        {
+          "name": "HTTP App",
+          "description": "HTTP app lifecycle and server",
+          "member_ids": [
+            {"kind": "package", "value": "member-package-58967e82b6789595fbe867b9"}
+          ],
+          "anchor_ids": ["anchor-472447da3f3b81394c5d1b51"],
+          "hypothesis": false
+        },
+        {
+          "name": "Request Dispatch",
+          "description": "Request routing and middleware chain",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-eeaa165b62d86b6fd4529ddb"},
+            {"kind": "file", "value": "member-file-2209ade5ca43ad44bc52dc6e"},
+            {"kind": "file", "value": "member-file-009ec95dcbab66f9768403ce"},
+            {"kind": "file", "value": "member-file-8e847588992dd79909f8b1e8"},
+            {"kind": "file", "value": "member-file-7d6f1ac422d8bab15a17182c"},
+            {"kind": "file", "value": "member-file-b86ae89c1aa7526232bb5b23"},
+            {"kind": "file", "value": "member-file-ee609124073e61bc56af89aa"}
+          ],
+          "anchor_ids": ["anchor-472447da3f3b81394c5d1b51"],
+          "hypothesis": false
+        },
+        {
+          "name": "Headers",
+          "description": "Header manipulation middleware",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-21c7da592c7348028c4f1102"}
+          ],
+          "anchor_ids": ["anchor-1cbc8e5d96c6a3d4ee8cfc55"],
+          "hypothesis": false
+        }
+      ]
+    },
+    {
+      "name": "Security",
+      "description": "TLS and PKI configuration",
+      "components": [
+        {
+          "name": "TLS/PKI",
+          "description": "TLS app and PKI app building",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-baea4d8eb35ba20333e96526"},
+            {"kind": "file", "value": "member-file-bd518a1000ae147d2b8ed874"}
+          ],
+          "anchor_ids": ["anchor-fa09229b7ce874a630de6544"],
+          "hypothesis": false
+        }
+      ]
+    },
+    {
+      "name": "Entry",
+      "description": "Process entry and command dispatch",
+      "components": [
+        {
+          "name": "Main",
+          "description": "Process entry point and command dispatch",
+          "member_ids": [
+            {"kind": "file", "value": "member-file-03d2ee639dd4356d0930f1af"},
+            {"kind": "file", "value": "member-file-dd81f4823d18b7068b1a1ec4"}
+          ],
+          "anchor_ids": ["anchor-19ecb1abd8774376a314e8c5", "anchor-1cb683cf6bdf9da982a3a2cb"],
+          "hypothesis": false
+        }
+      ]
+    }
+  ]
+}

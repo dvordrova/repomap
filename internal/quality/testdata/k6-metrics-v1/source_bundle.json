@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "repo_name": "k6",
+  "target": {
+    "evidence_id": "resolution-001",
+    "entity_id": "method:api/v1/client/metrics.go:12:18:Client.Metrics",
+    "name": "Client.Metrics",
+    "kind": "method",
+    "path": "api/v1/client/metrics.go",
+    "line": 12,
+    "column": 18
+  },
+  "source": {
+    "file_sha256": "d9ec05aa546fd888999c0fda761ea49ef5b46c84b76164a66e1c6dff5084310b",
+    "window": {
+      "start_line": 12,
+      "end_line": 21,
+      "included_bytes": 255,
+      "stop_reason": "end_of_file",
+      "truncated": false
+    },
+    "complete": false,
+    "stop_reason": "end_of_file",
+    "lines": [
+      {
+        "evidence_id": "source-12",
+        "line": 12,
+        "text": "func (c *Client) Metrics(ctx context.Context) (ret []v1.Metric, err error) {"
+      },
+      {
+        "evidence_id": "source-13",
+        "line": 13,
+        "text": "\tvar resp v1.MetricsJSONAPI"
+      },
+      {
+        "evidence_id": "source-14",
+        "line": 14,
+        "text": ""
+      },
+      {
+        "evidence_id": "source-15",
+        "line": 15,
+        "text": "\terr = c.CallAPI(ctx, http.MethodGet, &url.URL{Path: \"/v1/metrics\"}, nil, &resp)"
+      },
+      {
+        "evidence_id": "source-16",
+        "line": 16,
+        "text": "\tif err != nil {"
+      },
+      {
+        "evidence_id": "source-17",
+        "line": 17,
+        "text": "\t\treturn ret, err"
+      },
+      {
+        "evidence_id": "source-18",
+        "line": 18,
+        "text": "\t}"
+      },
+      {
+        "evidence_id": "source-19",
+        "line": 19,
+        "text": ""
+      },
+      {
+        "evidence_id": "source-20",
+        "line": 20,
+        "text": "\treturn resp.Metrics(), nil"
+      },
+      {
+        "evidence_id": "source-21",
+        "line": 21,
+        "text": "}"
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "question-call-out-002",
+      "predicate": "delegates_operation",
+      "anchor_evidence_id": "call-out-002",
+      "anchor_source_evidence_id": "source-20",
+      "callee_name": "Metrics",
+      "candidate_source_evidence_ids": [
+        "source-20"
+      ]
+    }
+  ],
+  "allowed_actions": [
+    {
+      "id": "action-find-tests",
+      "operation": "find_tests",
+      "anchor_evidence_id": "resolution-001"
+    },
+    {
+      "id": "action-read-call-out-002",
+      "operation": "read_callee",
+      "anchor_evidence_id": "call-out-002"
+    }
+  ],
+  "warnings": [
+    "source lines show written control flow, not runtime reachability",
+    "callee names and calls do not establish callee behavior"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seeds": [
+    {
+      "id": "x-sync-errgroup-go",
+      "operation": "call",
+      "symbol": {"package": "golang.org/x/sync/errgroup", "receiver": "*Group", "name": "Go", "min_args": 1},
+      "effect": {"kind": "async_task_start", "transport": "in_process", "framework": "errgroup"},
+      "projections": {"callback": {"source": "argument", "index": 0}, "dispatcher": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "golang.org/x/sync/errgroup Group.Go starts one managed asynchronous function",
+      "fixture_coverage": ["channel_worker", "finite_async_task"]
+    }
+  ]
+}

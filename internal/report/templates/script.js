@@ -1,0 +1,2922 @@
+(function () {
+  'use strict';
+
+  var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
+  var OPENABLE_PATHS = (DATA.openable_paths || []).slice().sort(function (a, b) {
+    return b.length - a.length;
+  });
+  var OPENABLE_PATH_SET = {};
+  OPENABLE_PATHS.forEach(function (path) { OPENABLE_PATH_SET[path] = true; });
+  var SOURCE_IDS = DATA.source_ids || {};
+  var toastTimer = null;
+  var symbolLookupStates = {};
+  var symbolLookupViews = {};
+  var componentSelectionViews = {};
+  var architectureCanvasView = null;
+  var surfaceCatalogView = null;
+  var resumeInvestigationStarted = false;
+  var maxSymbolCandidates = 8;
+  var maxStaticCalls = 5;
+  var maxSourceLines = 20;
+  var maxInspectionWarnings = 8;
+  var maxTestReferences = 5;
+
+  var LABELS = {
+    purpose: 'Project purpose · model orientation',
+    systemMap: 'Components · model orientation',
+    startFiles: 'Start here',
+    terms: 'Important terms',
+    questions: 'Questions for a teammate',
+    model: 'Model',
+    localContext: 'Compact local context',
+    externalRequest: 'Provider request bodies',
+    providerRequests: 'Provider requests',
+    providerLatency: 'Orientation latency',
+    surfaceAnalysis: 'Generic surface scan',
+    architectureAnchors: 'Architecture anchors',
+    snapshotFreshness: 'Analyzed-input freshness',
+    architectureGrouping: 'Architecture grouping',
+    directionsFound: 'Suggested investigations',
+    rejectedDirections: 'Rejected suggestions',
+    savedFlows: 'Saved traces',
+    candidateFlows: 'Saved traces',
+    candidateDirections: 'Suggested investigations',
+    directionHint: 'Choose a direction to get a focused starting point in the repository.',
+    trigger: 'Starts when',
+    likelyEntrypoint: 'Likely entrypoint',
+    likelyFiles: 'Likely files',
+    orientationEvidence: 'Why the model suggested this',
+    verifiedEvidence: 'Locally verified',
+    missingEvidence: 'Missing evidence',
+    verifiedFlow: 'Evidence-backed flow',
+    proofSlots: 'Proof coverage',
+    proofStop: 'Current proof boundary',
+    filesToRead: 'Read order — open these files in sequence',
+    testsToRead: 'Tests',
+    executionChain: 'Execution chain',
+    knownUnknowns: 'Known unknowns',
+    unverified: 'Unverified paths',
+    unknowns: 'Unknowns',
+    warnings: 'Warnings',
+    retrievalDetails: 'Retrieval details',
+    noFlows: 'No candidate directions were produced.',
+    startHere: 'Start here',
+    suggestedStart: 'Suggested start',
+    quickStart: 'Quick start',
+    errorUnavailable: 'Analysis unavailable',
+    openLocalEvidence: 'Explore this direction →',
+    localEvidenceIntro: 'Suggested files are selected from repository facts. Treat them as a starting point, not a verified runtime trace.',
+    localEvidenceLegacyIntro: 'Suggested files come from a saved repository snapshot. Treat them as a starting point, not a verified runtime trace.',
+    suggestedFiles: 'Suggested files to inspect',
+    evidenceFiles: 'Evidence files',
+    showAll: 'Show all ({count})',
+    showMore: 'Show {count} more',
+    showLess: 'Show less',
+  };
+
+  function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function evidenceClass(c) {
+    var v = Math.max(0, c || 0);
+    if (v <= 0) return 'rm-ev-none';
+    return v >= 0.7 ? 'rm-ev-strong' : v >= 0.4 ? 'rm-ev-medium' : 'rm-ev-weak';
+  }
+
+  function evidenceLabel(c) {
+    var v = Math.max(0, c || 0);
+    if (v <= 0) return 'Model confidence: not estimated';
+    if (v >= 0.7) return 'Model confidence: high';
+    if (v >= 0.4) return 'Model confidence: medium';
+    return 'Model confidence: low';
+  }
+
+  function chainCircleClass(c) {
+    var v = Math.max(0, c || 0);
+    if (v <= 0) return 'rm-chain-circle--none';
+    return v >= 0.7 ? 'rm-chain-circle--hi' : v >= 0.4 ? 'rm-chain-circle--md' : 'rm-chain-circle--lo';
+  }
+
+  function kindClass(kind) {
+    if (!kind) return '';
+    return 'rm-kind rm-kind--' + kind;
+  }
+
+  // ── DOM builders ───────────────────────────────────────────────
+
+  function el(tag, cls, attrs) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    return e;
+  }
+
+  function txt(tag, cls, text) {
+    var e = el(tag, cls);
+    e.textContent = text || '';
+    return e;
+  }
+
+  function serverMode() {
+    var loopback = window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '::1';
+    return loopback && window.location.protocol === 'http:' && serverBasePath() !== '';
+  }
+
+  function serverBasePath() {
+    var match = window.location.pathname.match(/^(\/_repomap\/[A-Za-z0-9_-]+)(?:\/|$)/);
+    return match ? match[1] : '';
+  }
+
+  function currentRunID() {
+    var base = serverBasePath().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var match = base && window.location.pathname.match(new RegExp('^' + base + '/runs/([^/]+)/report\\.html$'));
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  function showToast(message, isError) {
+    var toast = document.getElementById('rm-toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.className = 'rm-toast' + (isError ? ' rm-toast--error' : '');
+    toast.hidden = false;
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () { toast.hidden = true; }, 2600);
+  }
+
+  function copyText(value) {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return;
+    navigator.clipboard.writeText(value).then(function () {
+      showToast('Copied ' + value, false);
+    }).catch(function () {});
+  }
+
+  function showEditorUnavailable(filePath, line, column) {
+    var toast = document.getElementById('rm-toast');
+    if (!toast) return;
+    var location = filePath + (line ? ':' + line : '') + (column ? ':' + column : '');
+    toast.replaceChildren();
+    toast.className = 'rm-toast rm-toast--error rm-toast--fallback';
+    toast.appendChild(txt('strong', '', 'VS Code is not available'));
+    var actions = el('span', 'rm-toast-actions');
+    var relative = txt('button', '', 'Copy repository-relative path');
+    relative.type = 'button';
+    relative.onclick = function () { copyText(filePath); };
+    var exact = txt('button', '', 'Copy path:line:column');
+    exact.type = 'button';
+    exact.onclick = function () { copyText(location); };
+    actions.append(relative, exact);
+    toast.appendChild(actions);
+    toast.hidden = false;
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () { toast.hidden = true; }, 8000);
+  }
+
+  function requestOpenFile(filePath, line, column) {
+    var runID = currentRunID();
+    var sourceID = SOURCE_IDS[filePath];
+    if (!serverMode() || !runID || !sourceID) return Promise.resolve();
+    var openingTimer = window.setTimeout(function () {
+      showToast('Opening in VS Code…', false);
+    }, 250);
+    return fetch(serverBasePath() + '/api/open', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Repomap-Action': 'open-file',
+      },
+      body: JSON.stringify({ run_id: runID, source_id: sourceID, line: line || 0, column: column || 0 }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) {
+          var error = new Error(body.error || 'editor action failed');
+          error.code = body.code || '';
+          throw error;
+        }
+        return body;
+      });
+    }).then(function (body) {
+      window.clearTimeout(openingTimer);
+      var stale = body.source_changed || DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
+      var message = 'Opened ' + filePath + (line ? ':' + line : '') + ' in VS Code';
+      if (stale) message += ' · Source changed since this report was generated';
+      showToast(message, false);
+    }).catch(function (error) {
+      window.clearTimeout(openingTimer);
+      if (error.code === 'editor_unavailable') {
+        showEditorUnavailable(filePath, line || 0, column || 0);
+        return;
+      }
+      showToast(error.message || 'Could not open file in VS Code', true);
+    });
+  }
+
+  function renderFileReference(filePath, cls, line, label) {
+    var text = label || filePath;
+    var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
+    if (!serverMode() || !OPENABLE_PATH_SET[filePath]) {
+      var reference = txt('span', cls + (stale ? ' rm-file-link--stale' : ''), text);
+      if (stale) reference.title = 'This source changed after the report was generated.';
+      return reference;
+    }
+    var button = txt('button', cls + ' rm-file-link', text);
+    button.type = 'button';
+    button.title = stale ? 'This source changed after the report was generated. Open current source.' : 'Open current source in VS Code';
+    if (stale) button.classList.add('rm-file-link--stale');
+    button.onclick = function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      requestOpenFile(filePath, line || 0, 0);
+    };
+    return button;
+  }
+
+  function githubPackageURL(pkg) {
+    // Import paths are canonical identities, not verified repository URLs.
+    return '';
+  }
+
+  function packageDisplayName(pkg) {
+    var packages = ((DATA.repository_graph || {}).packages || []);
+    for (var packageIndex = 0; packageIndex < packages.length; packageIndex++) {
+      if (packages[packageIndex].canonical_package_path === pkg) {
+        return packages[packageIndex].display_path || packages[packageIndex].name || pkg;
+      }
+    }
+    var modules = ((DATA.repository_graph || {}).modules || []).slice().sort(function (a, b) {
+      return (b.path || '').length - (a.path || '').length;
+    });
+    for (var i = 0; i < modules.length; i++) {
+      var modulePath = modules[i].path || '';
+      if (pkg === modulePath) return DATA.repo_name || modules[i].display_name || modulePath;
+      if (modulePath && pkg.indexOf(modulePath + '/') === 0) return pkg.slice(modulePath.length + 1);
+    }
+    return pkg;
+  }
+
+  function renderPackageReference(pkg) {
+    var url = githubPackageURL(pkg);
+    var label = packageDisplayName(pkg);
+    if (!url) {
+      var code = txt('code', '', label);
+      code.title = pkg;
+      return code;
+    }
+    var link = el('a', 'rm-component-package-link', {
+      href: url,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      title: pkg,
+    });
+    var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('aria-hidden', 'true');
+    var mark = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    mark.setAttribute('fill', 'currentColor');
+    mark.setAttribute('d', 'M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.5v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.4-1.3-5.4-5.6 0-1.2.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.7.8 1.2 1.9 1.2 3.1 0 4.3-2.8 5.3-5.4 5.6.4.4.8 1.1.8 2.2v3.2c0 .3.2.6.8.5A11.3 11.3 0 0 0 12 .7Z');
+    icon.appendChild(mark);
+    link.appendChild(icon);
+    link.appendChild(txt('code', '', label));
+    return link;
+  }
+
+  function appendLinkifiedText(container, statement) {
+    if (!serverMode() || !statement || OPENABLE_PATHS.length === 0) {
+      container.textContent = statement || '';
+      return;
+    }
+    var cursor = 0;
+    while (cursor < statement.length) {
+      var nextPath = '';
+      var nextIndex = -1;
+      OPENABLE_PATHS.forEach(function (filePath) {
+        var index = statement.indexOf(filePath, cursor);
+        if (index >= 0 && (nextIndex < 0 || index < nextIndex)) {
+          nextIndex = index;
+          nextPath = filePath;
+        }
+      });
+      if (nextIndex < 0) {
+        container.appendChild(document.createTextNode(statement.slice(cursor)));
+        break;
+      }
+      if (nextIndex > cursor) {
+        container.appendChild(document.createTextNode(statement.slice(cursor, nextIndex)));
+      }
+      var end = nextIndex + nextPath.length;
+      var line = 0;
+      var remainder = statement.slice(end);
+      var suffix = remainder.match(/^:(\d+)/);
+      var label = nextPath;
+      if (suffix) {
+        line = parseInt(suffix[1], 10) || 0;
+        label += suffix[0];
+        end += suffix[0].length;
+      }
+      container.appendChild(renderFileReference(nextPath, 'rm-inline-file', line, label));
+      cursor = end;
+    }
+  }
+
+  function linkified(tag, cls, statement) {
+    var node = el(tag, cls);
+    appendLinkifiedText(node, statement);
+    return node;
+  }
+
+  function setupServerFeatures() {
+    if (!serverMode()) return;
+    var hint = document.getElementById('rm-editor-hint');
+    if (hint) hint.hidden = false;
+    fetch(serverBasePath() + '/api/runs').then(function (response) {
+      if (!response.ok) throw new Error('report list unavailable');
+      return response.json();
+    }).then(function (payload) {
+      var runs = payload.runs || [];
+      if (runs.length === 0) return;
+      var picker = document.getElementById('rm-run-picker');
+      var selector = document.getElementById('rm-run-selector');
+      var selected = currentRunID();
+      selector.innerHTML = '';
+      runs.forEach(function (run) {
+        var option = document.createElement('option');
+        option.value = run.id;
+        option.textContent = (run.repo_name ? run.repo_name + ' · ' : '') + run.id;
+        option.selected = run.id === selected;
+        selector.appendChild(option);
+      });
+      selector.onchange = function () {
+        window.location.assign(serverBasePath() + '/runs/' + encodeURIComponent(selector.value) + '/report.html');
+      };
+      picker.hidden = false;
+    }).catch(function () {
+      // The report remains fully usable when the optional server API is absent.
+    });
+  }
+
+  function formatBytes(value) {
+    if (!value || value < 0) return '';
+    if (value < 1024) return value + ' B';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KiB';
+    return (value / (1024 * 1024)).toFixed(1) + ' MiB';
+  }
+
+  function humanizeReason(reason) {
+    if (!reason) return '';
+    if (reason === 'likely_file from candidate_flow') {
+      return 'Suggested by initial orientation';
+    }
+
+    var retrievalReason = reason.indexOf('exact basename match') >= 0 ||
+      reason.indexOf('filename contains term') >= 0 ||
+      reason.indexOf('directory segment') >= 0 ||
+      reason.indexOf('path contains term') >= 0;
+    if (!retrievalReason) return reason;
+
+    var lower = reason.toLowerCase();
+    if (lower.indexOf('raft') >= 0) return 'Matches Raft-related repository signals';
+    if (lower.indexOf('grpc') >= 0 || lower.indexOf('rpc') >= 0) return 'Matches RPC-related repository signals';
+    if (lower.indexOf('lease') >= 0) return 'Matches lease-related repository signals';
+    if (lower.indexOf('wal') >= 0 || lower.indexOf('backend') >= 0 || lower.indexOf('mvcc') >= 0) {
+      return 'Matches storage-related repository signals';
+    }
+    return 'Selected from repository signals';
+  }
+
+  // ── Components ──────────────────────────────────────────────────
+
+  function renderEvidenceBadge(confidence, verification) {
+    var badge = el('span', 'rm-evidence ' + evidenceClass(confidence));
+    badge.textContent = evidenceLabel(confidence);
+    if (verification) badge.textContent = badge.textContent.replace('Model confidence', 'Evidence confidence');
+    return badge;
+  }
+
+  function renderLocalVerification(verification) {
+    if (!verification || (!verification.verified || !verification.verified.length) && (!verification.missing || !verification.missing.length)) {
+      return null;
+    }
+    var box = el('div', 'rm-local-verification rm-local-verification--' + (verification.status || 'partial'));
+    if (verification.verified && verification.verified.length) {
+      box.appendChild(txt('div', 'rm-direction-label', LABELS.verifiedEvidence));
+      verification.verified.forEach(function (statement) {
+        var item = el('div', 'rm-verification-item rm-verification-item--verified');
+        appendLinkifiedText(item, statement);
+        box.appendChild(item);
+      });
+    }
+    if (verification.missing && verification.missing.length) {
+      box.appendChild(txt('div', 'rm-direction-label rm-verification-missing-label', LABELS.missingEvidence));
+      verification.missing.forEach(function (statement) {
+        box.appendChild(txt('div', 'rm-verification-item rm-verification-item--missing', statement));
+      });
+    }
+    return box;
+  }
+
+  function proofAnchorMap(proof) {
+    var result = {};
+    (proof.anchors || []).forEach(function (anchor) { result[anchor.id] = anchor; });
+    return result;
+  }
+
+  function proofStatusCounts(proof) {
+    var counts = { verified: 0, partial: 0, missing: 0, unresolved: 0 };
+    (proof.slots || []).forEach(function (slot) {
+      counts[slot.status] = (counts[slot.status] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function renderProofLocation(location, cls) {
+    if (!location || !location.path) return null;
+    var label = location.path + (location.line ? ':' + location.line : '');
+    return renderFileReference(location.path, cls || 'rm-proof-location', location.line || 0, label);
+  }
+
+  function proofLocationMatches(left, right) {
+    if (!left || !right) return false;
+    return left.path === right.path && left.line === right.line && left.column === right.column;
+  }
+
+  function proofAnchorLabel(anchor, fallback) {
+    return anchor && (anchor.label || anchor.qualified_name || anchor.id) || fallback;
+  }
+
+  function isCommandSetupTransition(transition, anchors) {
+    var from = anchors[transition.from];
+    var to = anchors[transition.to];
+    return (transition.id || '').indexOf('dispatch-') === 0 ||
+      transition.relation === 'registers_command' ||
+      transition.relation === 'dispatches' ||
+      from && from.kind === 'command' ||
+      to && to.kind === 'command';
+  }
+
+  function proofStaticRelationGroups(proof) {
+    var anchors = proofAnchorMap(proof);
+    var transitions = (proof.transitions || []).slice();
+    var transitionsByID = {};
+    var assigned = {};
+    transitions.forEach(function (transition) { transitionsByID[transition.id] = transition; });
+
+    var commandSetup = transitions.filter(function (transition) {
+      if (!isCommandSetupTransition(transition, anchors)) return false;
+      assigned[transition.id] = true;
+      return true;
+    });
+
+    var taskGroups = [];
+    (proof.anchors || []).forEach(function (anchor) {
+      if (anchor.kind !== 'task') return;
+      var taskRelations = transitions.filter(function (transition) {
+        if (assigned[transition.id]) return false;
+        var belongsToTask = transition.from === anchor.id || transition.to === anchor.id;
+        if (belongsToTask) assigned[transition.id] = true;
+        return belongsToTask;
+      });
+      taskGroups.push({ title: 'Task · ' + proofAnchorLabel(anchor, anchor.id), anchor: anchor, relations: taskRelations });
+    });
+
+    var handlerAnchors = {};
+    var applicationSlot = (proof.slots || []).filter(function (slot) {
+      return slot.kind === 'application_callable';
+    })[0];
+    (applicationSlot && applicationSlot.evidence_ids || []).forEach(function (id) {
+      var transition = transitionsByID[id];
+      if (transition) handlerAnchors[transition.to] = true;
+      if (anchors[id]) handlerAnchors[id] = true;
+    });
+    if (!Object.keys(handlerAnchors).length && commandSetup.length) {
+      handlerAnchors[commandSetup[commandSetup.length - 1].to] = true;
+    }
+
+    var mainHandler = [];
+    var foundRelation = true;
+    while (foundRelation) {
+      foundRelation = false;
+      transitions.forEach(function (transition) {
+        if (assigned[transition.id] || !handlerAnchors[transition.from]) return;
+        if (anchors[transition.to] && anchors[transition.to].kind === 'task') return;
+        assigned[transition.id] = true;
+        mainHandler.push(transition);
+        handlerAnchors[transition.to] = true;
+        foundRelation = true;
+      });
+    }
+
+    var other = transitions.filter(function (transition) { return !assigned[transition.id]; });
+    var groups = [];
+    if (commandSetup.length) groups.push({ title: 'Command setup', relations: commandSetup });
+    if (mainHandler.length) groups.push({ title: 'Main handler branch', relations: mainHandler });
+    taskGroups.forEach(function (group) { groups.push(group); });
+    if (other.length) groups.push({ title: 'Other static relations', relations: other });
+    return groups;
+  }
+
+  function appendProofNamedLocation(parent, label, location, duplicate) {
+    if (!location || !location.path || duplicate && proofLocationMatches(location, duplicate)) return;
+    var row = el('div', 'rm-proof-target');
+    row.appendChild(document.createTextNode(label + ' '));
+    row.appendChild(renderProofLocation(location, 'rm-proof-location'));
+    parent.appendChild(row);
+  }
+
+  function renderProofStaticRelation(transition, anchors) {
+    var from = anchors[transition.from];
+    var to = anchors[transition.to];
+    var row = el('div', 'rm-direction-evidence-item');
+    var top = el('div', 'rm-proof-step-top');
+    top.appendChild(txt('span', 'rm-proof-symbol', proofAnchorLabel(from, transition.from)));
+    var relation = (transition.relation || 'related').replace(/_/g, ' ');
+    var invocation = (transition.invocation || 'unknown').replace(/_/g, ' ');
+    top.appendChild(txt('span', 'rm-proof-relation', '→ ' + relation + ' / ' + invocation + ' →'));
+    top.appendChild(txt('span', 'rm-proof-symbol', proofAnchorLabel(to, transition.to)));
+    row.appendChild(top);
+
+    var semantics = [];
+    if (transition.resolution) semantics.push(transition.resolution.replace(/_/g, ' ') + ' resolution');
+    if (transition.certainty) semantics.push(transition.certainty + ' evidence');
+    if (semantics.length) row.appendChild(txt('div', 'rm-proof-relation', semantics.join(' · ')));
+
+    appendProofNamedLocation(row, 'evidence', transition.evidence, null);
+    appendProofNamedLocation(row, 'from declaration', from && from.location, transition.evidence);
+    appendProofNamedLocation(row, 'target declaration', to && to.location, transition.evidence);
+    if (transition.condition) {
+      var condition = el('div', 'rm-proof-target');
+      condition.appendChild(document.createTextNode('condition' + (transition.condition.expression ? ' ' + transition.condition.expression : '')));
+      if (transition.condition.location && transition.condition.location.path) {
+        condition.appendChild(document.createTextNode(' at '));
+        condition.appendChild(renderProofLocation(transition.condition.location, 'rm-proof-location'));
+      }
+      row.appendChild(condition);
+    }
+    return row;
+  }
+
+  function renderLocalProof(session, compact) {
+    if (!session || !session.proof) return null;
+    var proof = session.proof;
+    var counts = proofStatusCounts(proof);
+    var box = el('section', 'rm-flow-proof' + (compact ? ' rm-flow-proof--compact' : ''));
+    var header = el('div', 'rm-proof-header');
+    header.appendChild(txt('div', 'rm-direction-label', LABELS.verifiedFlow + ' · ' + (proof.archetype || 'flow')));
+    header.appendChild(txt(
+      'div',
+      'rm-proof-summary',
+      (proof.trace_quality || 'partial') + ' trace · ' + counts.verified + '/' + (proof.slots || []).length + ' slots verified'
+    ));
+    box.appendChild(header);
+
+    var slots = el('div', 'rm-proof-slots');
+    (proof.slots || []).forEach(function (slot) {
+      var slotNode = txt('span', 'rm-proof-slot rm-proof-slot--' + (slot.status || 'missing'), slot.kind.replace(/_/g, ' '));
+      slotNode.title = slot.summary || slot.missing || slot.status;
+      slots.appendChild(slotNode);
+    });
+    box.appendChild(slots);
+
+    if (!compact) {
+      var anchors = proofAnchorMap(proof);
+      var groups = proofStaticRelationGroups(proof);
+      if (groups.length) {
+        box.appendChild(txt('div', 'rm-direction-label rm-proof-path-label', 'Static relation groups'));
+        box.appendChild(txt('div', 'rm-direction-hint', 'Grouped by static scope. Runtime order is not inferred.'));
+        groups.forEach(function (group) {
+          var groupNode = el('div', 'rm-direction-field');
+          groupNode.appendChild(txt('div', 'rm-direction-label', group.title));
+          if (group.anchor) appendProofNamedLocation(groupNode, 'task anchor', group.anchor.location, null);
+          if (!group.relations.length) {
+            groupNode.appendChild(txt('div', 'rm-proof-relation', 'No static relations captured for this task.'));
+          }
+          group.relations.forEach(function (transition) {
+            groupNode.appendChild(renderProofStaticRelation(transition, anchors));
+          });
+          box.appendChild(groupNode);
+        });
+      }
+
+      var stats = session.stats || {};
+      var meta = el('div', 'rm-proof-meta');
+      meta.appendChild(txt('span', '', (stats.tasks_completed || 0) + ' tasks'));
+      meta.appendChild(txt('span', '', (stats.files || []).length + ' evidence files'));
+      meta.appendChild(txt('span', '', (stats.symbols || []).length + ' symbols'));
+      if (stats.wall_millis) meta.appendChild(txt('span', '', (stats.wall_millis / 1000).toFixed(1) + ' s local analysis'));
+      box.appendChild(meta);
+    }
+
+    if (session.stop && session.stop.reason !== 'complete') {
+      var boundary = el('div', 'rm-proof-boundary');
+      boundary.appendChild(txt('span', 'rm-proof-boundary-label', LABELS.proofStop + ': '));
+      boundary.appendChild(document.createTextNode(session.stop.reason.replace(/_/g, ' ') + (session.stop.message ? ' — ' + session.stop.message : '')));
+      box.appendChild(boundary);
+    }
+    if (proof.current_frontier) {
+      var frontier = el('div', 'rm-proof-boundary');
+      frontier.appendChild(txt('span', 'rm-proof-boundary-label', 'Current frontier: '));
+      frontier.appendChild(document.createTextNode(proof.current_frontier));
+      box.appendChild(frontier);
+    }
+    return box;
+  }
+
+  function renderPill(text, kind) {
+    var pill = el('span', 'rm-pill rm-pill--' + (kind || 'accent'));
+    pill.textContent = text;
+    return pill;
+  }
+
+  function renderFlowTypePill(flow) {
+    var flowType = flow && flow.flow_type;
+    if (flowType !== 'request' && flowType !== 'operational') return null;
+    var label = flowType === 'operational' ? 'Operational' : 'Request';
+    return renderPill(label, flowType);
+  }
+
+  function renderKindBadge(kind) {
+    if (!kind) return null;
+    var badge = el('span', 'rm-kind rm-kind--' + kind);
+    badge.textContent = kind;
+    return badge;
+  }
+
+  function renderFlowCard(flow, isRecommended) {
+    var card = el('div', 'rm-ov-flow');
+    if (isRecommended) card.classList.add('rm-ov-flow--recommended');
+
+    if (flow.error) {
+      card.classList.add('rm-ov-flow--error');
+      var eh = el('div', 'rm-ov-flow-header');
+      var eh3 = txt('h3', '', flow.name || flow.id);
+      eh.appendChild(eh3);
+      var errorFlowType = renderFlowTypePill(flow);
+      if (errorFlowType) eh.appendChild(errorFlowType);
+      eh.appendChild(renderPill(LABELS.errorUnavailable, 'error'));
+      card.appendChild(eh);
+      if (flow.bundle_stats_label) {
+        var meta = txt('div', 'rm-meta', flow.bundle_stats_label);
+        card.appendChild(meta);
+      }
+      card.onclick = function () { showTab('rm-flow-' + flow.id); };
+      return card;
+    }
+
+    var header = el('div', 'rm-ov-flow-header');
+    var h3 = txt('h3', '', flow.name || flow.id);
+    header.appendChild(h3);
+    var flowType = renderFlowTypePill(flow);
+    if (flowType) header.appendChild(flowType);
+    if (isRecommended) header.appendChild(renderPill(LABELS.startHere));
+    card.appendChild(header);
+
+    if (flow.summary) {
+      var truncated = flow.summary.length > 100 ? flow.summary.slice(0, 100) + '...' : flow.summary;
+      card.appendChild(linkified('div', 'rm-summary-line', truncated));
+    }
+
+    var preview = el('div', 'rm-ov-flow-preview');
+    var previewFiles = flow.files_to_read_in_order;
+    if ((!previewFiles || previewFiles.length === 0) && flow.bundle_files) {
+      previewFiles = flow.bundle_files;
+    }
+    if (previewFiles && previewFiles.length > 0) {
+      previewFiles.slice(0, 3).forEach(function (fi) {
+        var p = el('div', 'rm-ov-flow-file');
+        p.appendChild(renderFileReference(fi.path, '', 0, fi.path));
+        preview.appendChild(p);
+      });
+    }
+    card.appendChild(preview);
+
+    var footer = el('div', 'rm-ov-flow-footer');
+    if (!flow.evidence_only) footer.appendChild(renderEvidenceBadge(flow.confidence));
+    if (flow.warnings && flow.warnings.length > 0) {
+      footer.appendChild(txt('span', 'rm-ov-flow-stat', flow.warnings.length + ' warnings'));
+    }
+    if (flow.tests_to_read && flow.tests_to_read.length > 0) {
+      footer.appendChild(txt('span', 'rm-ov-flow-stat', flow.tests_to_read.length + ' tests'));
+    }
+    card.appendChild(footer);
+
+    card.onclick = function () { showTab('rm-flow-' + flow.id); };
+    return card;
+  }
+
+  function candidateDirections() {
+    if (DATA.candidate_directions && DATA.candidate_directions.length > 0) {
+      return DATA.candidate_directions;
+    }
+    if (!DATA.candidate_flows) return [];
+    return DATA.candidate_flows.map(function (candidate, index) {
+      if (typeof candidate === 'string') {
+        return { id: 'candidate-' + index, name: candidate };
+      }
+      return candidate;
+    });
+  }
+
+  function architectureSourceLabel(value) {
+    return {
+      validated_model: 'validated model',
+      normalized_model: 'normalized model',
+      local_anchors: 'local anchors',
+      package_fallback: 'package fallback'
+    }[value] || 'unspecified';
+  }
+
+  function renderDirectionField(label, value, code) {
+    if (!value) return null;
+    var row = el('div', 'rm-direction-field');
+    row.appendChild(txt('div', 'rm-direction-label', label));
+    var body = el('div', code ? 'rm-direction-code' : 'rm-direction-value');
+    if (code) appendLinkifiedText(body, value);
+    else body.textContent = value;
+    row.appendChild(body);
+    return row;
+  }
+
+  function flowByID(id) {
+    if (!id || !DATA.flows) return null;
+    for (var i = 0; i < DATA.flows.length; i++) {
+      if (DATA.flows[i].id === id) return DATA.flows[i];
+    }
+    return null;
+  }
+
+  function directionByID(id) {
+    if (!id) return null;
+    var directions = candidateDirections();
+    for (var i = 0; i < directions.length; i++) {
+      if (directions[i].id === id) return directions[i];
+    }
+    return null;
+  }
+
+  function renderDirectionContext(direction) {
+    if (!direction) return null;
+
+    var context = el('section', 'rm-direction-context');
+    if (direction.why_interesting) {
+      context.appendChild(linkified('p', 'rm-direction-purpose', direction.why_interesting));
+    }
+
+    var facts = el('div', 'rm-direction-context-facts');
+    var trigger = renderDirectionField(LABELS.trigger, direction.trigger, false);
+    if (trigger) facts.appendChild(trigger);
+    var entrypoint = renderDirectionField(LABELS.likelyEntrypoint, direction.likely_entrypoint, true);
+    if (entrypoint) facts.appendChild(entrypoint);
+    if (facts.children.length > 0) context.appendChild(facts);
+
+    var verification = renderLocalVerification(direction.local_verification);
+    if (verification) context.appendChild(verification);
+
+    var proof = renderLocalProof(direction.local_proof, false);
+    if (proof) context.appendChild(proof);
+
+    if (direction.evidence && direction.evidence.length > 0) {
+      var evidence = el('div', 'rm-direction-context-evidence');
+      evidence.appendChild(txt('div', 'rm-direction-label', LABELS.orientationEvidence));
+      direction.evidence.forEach(function (statement) {
+        var item = el('div', 'rm-direction-evidence-item');
+        appendLinkifiedText(item, statement);
+        evidence.appendChild(item);
+      });
+      context.appendChild(evidence);
+    }
+
+    return context;
+  }
+
+  function renderCandidateDirectionCard(direction, isSuggestedStart) {
+    var card = el('div', 'rm-ov-flow rm-candidate-direction');
+
+    var header = el('div', 'rm-ov-flow-header');
+    header.appendChild(txt('h3', '', direction.name || direction.id));
+    var directionFlowType = renderFlowTypePill(direction);
+    if (directionFlowType) header.appendChild(directionFlowType);
+    if (isSuggestedStart) header.appendChild(renderPill(LABELS.suggestedStart));
+    if (direction.disposition === 'rejected') header.appendChild(renderPill('Not used as a flow'));
+    header.appendChild(renderEvidenceBadge(direction.confidence, direction.local_verification));
+    card.appendChild(header);
+
+    if (direction.why_interesting) {
+      card.appendChild(linkified('div', 'rm-summary-line', direction.why_interesting));
+    }
+    if (direction.disposition === 'rejected' && direction.disposition_reason) {
+      card.appendChild(txt('div', 'rm-direction-hint', direction.disposition_reason));
+    }
+
+    var trigger = renderDirectionField(LABELS.trigger, direction.trigger, false);
+    if (trigger) card.appendChild(trigger);
+
+    var entrypoint = renderDirectionField(LABELS.likelyEntrypoint, direction.likely_entrypoint, true);
+    if (entrypoint) card.appendChild(entrypoint);
+
+    var verification = renderLocalVerification(direction.local_verification);
+    if (verification) card.appendChild(verification);
+
+    var proof = renderLocalProof(direction.local_proof, true);
+    if (proof) card.appendChild(proof);
+
+    if (direction.likely_files && direction.likely_files.length > 0) {
+      var files = el('div', 'rm-direction-field');
+      files.appendChild(txt('div', 'rm-direction-label', LABELS.likelyFiles));
+      direction.likely_files.forEach(function (path) {
+        var file = el('div', 'rm-direction-code');
+        file.appendChild(renderFileReference(path, '', 0, path));
+        files.appendChild(file);
+      });
+      card.appendChild(files);
+    }
+
+    if (direction.evidence && direction.evidence.length > 0) {
+      var evidence = el('div', 'rm-direction-evidence');
+      evidence.appendChild(txt('div', 'rm-direction-label', LABELS.orientationEvidence));
+      direction.evidence.forEach(function (statement) {
+        var item = el('div', 'rm-direction-evidence-item');
+        appendLinkifiedText(item, statement);
+        evidence.appendChild(item);
+      });
+      card.appendChild(evidence);
+    }
+
+    var focused = flowByID(direction.id);
+    if (focused && direction.disposition !== 'rejected') {
+      card.classList.add('rm-candidate-direction--clickable');
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.appendChild(txt('div', 'rm-direction-action', LABELS.openLocalEvidence));
+      var openFocused = function () { showTab('rm-flow-' + focused.id); };
+      card.onclick = openFocused;
+      card.onkeydown = function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openFocused();
+        }
+      };
+    }
+
+    return card;
+  }
+
+  function appendOrientationEvidence(container, evidence) {
+    if (!evidence || evidence.length === 0) return;
+
+    var evidenceBlock = el('div', 'rm-direction-evidence');
+    evidenceBlock.appendChild(txt('div', 'rm-direction-label', LABELS.orientationEvidence));
+    evidence.forEach(function (statement) {
+      var item = el('div', 'rm-direction-evidence-item');
+      appendLinkifiedText(item, statement);
+      evidenceBlock.appendChild(item);
+    });
+    container.appendChild(evidenceBlock);
+  }
+
+  function renderPurposeCard() {
+    var card = el('div', 'rm-card');
+    var header = el('div', 'rm-flow-header');
+    header.appendChild(txt('h2', '', LABELS.purpose));
+    if (DATA.project_guess) {
+      header.appendChild(renderEvidenceBadge(DATA.orientation_confidence));
+    }
+    card.appendChild(header);
+    card.appendChild(txt(
+      'div',
+      DATA.project_guess ? 'rm-summary' : 'rm-placeholder',
+      DATA.project_guess || 'No project purpose was produced.'
+    ));
+
+    if (DATA.run) {
+      var facts = el('div', 'rm-run-facts');
+      var addFact = function (label, value) {
+        if (!value) return;
+        var fact = el('div', 'rm-run-fact');
+        fact.appendChild(txt('span', 'rm-run-fact-label', label));
+        fact.appendChild(txt('span', 'rm-run-fact-value', value));
+        facts.appendChild(fact);
+      };
+      addFact(LABELS.model, DATA.run.model);
+      addFact(LABELS.localContext, formatBytes(DATA.run.compact_context_bytes));
+      addFact(LABELS.externalRequest, formatBytes(DATA.run.external_request_bytes));
+      if (DATA.run.provider_request_count) {
+        addFact(LABELS.providerRequests, String(DATA.run.provider_request_count));
+      }
+      if (DATA.run.provider_latency_ms !== undefined && DATA.run.provider_latency_ms !== null) {
+        addFact(LABELS.providerLatency, DATA.run.provider_latency_ms + ' ms');
+      }
+      addFact(LABELS.directionsFound, String(DATA.run.suggested_investigation_count || 0));
+      addFact(LABELS.rejectedDirections, String(DATA.run.rejected_direction_count || 0));
+      var surfaceTotal = String(DATA.run.discovered_surface_count || 0);
+      var surfaceBreakdown = [];
+      if (DATA.run.application_surface_count) surfaceBreakdown.push(DATA.run.application_surface_count + ' application');
+      if (DATA.run.secondary_service_surface_count) surfaceBreakdown.push(DATA.run.secondary_service_surface_count + ' secondary services');
+      if (DATA.run.tooling_surface_count) surfaceBreakdown.push(DATA.run.tooling_surface_count + ' tooling');
+      if (DATA.run.test_helper_surface_count) surfaceBreakdown.push(DATA.run.test_helper_surface_count + ' tests/helpers');
+       if (DATA.run.unavailable_surface_count) surfaceBreakdown.push(DATA.run.unavailable_surface_count + ' unavailable');
+       if (DATA.run.supporting_dependency_surface_count) surfaceBreakdown.push(DATA.run.supporting_dependency_surface_count + ' supporting dependency');
+       if (DATA.run.dependency_only_surface_count) surfaceBreakdown.push(DATA.run.dependency_only_surface_count + ' dependency-only');
+      if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
+      addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
+      addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
+      addFact('Evidence bundles', String(DATA.run.evidence_bundle_count || 0));
+      addFact('Complete traces', String(DATA.run.complete_trace_count || 0));
+      addFact('Partial traces', String(DATA.run.partial_trace_count || 0));
+      addFact('Unresolved traces', String(DATA.run.unresolved_trace_count || 0));
+      addFact('Failed trace attempts', String(DATA.run.failed_trace_attempt_count || 0));
+      if (DATA.run.surface_discovery_ran) {
+        var surfaceValue = formatMillis(DATA.run.surface_discovery_ms);
+        surfaceValue += ' · ' + String(DATA.run.surface_discovery_count || 0) + ' found';
+        addFact(LABELS.surfaceAnalysis, surfaceValue);
+      }
+      if (DATA.freshness) {
+        var freshnessValue = String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+        if ((DATA.freshness.affected_paths || []).length > 0) {
+          freshnessValue += ' · ' + DATA.freshness.affected_paths.length + ' analyzed input(s) changed';
+        } else if ((DATA.freshness.affected_submodules || []).length > 0) {
+          freshnessValue += ' · ' + DATA.freshness.affected_submodules.length + ' excluded submodule change(s)';
+        }
+        addFact(LABELS.snapshotFreshness, freshnessValue);
+      }
+      addFact(LABELS.architectureAnchors, String(DATA.run.architecture_anchor_count || 0) + ' static families');
+      if (DATA.architecture_synthesis) {
+        var architectureState = DATA.architecture_synthesis.state || 'unknown';
+        var architectureValue = 'Unavailable';
+        if (DATA.architecture_synthesis.proposal_normalized) {
+          architectureValue = 'Normalized model';
+        } else if (DATA.architecture_synthesis.proposal_accepted) {
+          architectureValue = 'Validated model';
+        } else if (DATA.architecture_synthesis.proposal_rejected && DATA.architecture_synthesis.fallback_selected) {
+          architectureValue = 'Proposal rejected · local fallback';
+        } else if (architectureState === 'cached') {
+          architectureValue = 'Cached · outcome unavailable';
+        } else if (architectureState === 'succeeded') {
+          architectureValue = 'Completed · outcome unavailable';
+        }
+        if (architectureState === 'cached' && DATA.architecture_synthesis.proposal_accepted) {
+          architectureValue += ' · cached response';
+        }
+        if (DATA.architecture_synthesis.latency_ms) {
+          architectureValue += ' · ' + formatMillis(DATA.architecture_synthesis.latency_ms);
+        }
+        addFact(LABELS.architectureGrouping, architectureValue);
+      }
+      if (facts.children.length > 0) card.appendChild(facts);
+    }
+
+    var research = renderModelResearchDetails(DATA.model_research);
+    if (research) card.appendChild(research);
+
+    var warnings = renderRunWarnings(DATA.warnings);
+    if (warnings) card.appendChild(warnings);
+    return card;
+  }
+
+  function renderModelResearchDetails(research) {
+    if (!research || !research.policy) return null;
+    var details = el('details', 'rm-analysis-details rm-model-research');
+    details.appendChild(txt('summary', '', 'Model research'));
+
+    var policy = research.policy;
+    var usage = research.usage || {};
+    var overview = el('div', 'rm-model-research-overview');
+    overview.appendChild(txt('div', '', 'Provider calls: ' + String(usage.semantic_calls || 0) + ' / ' + String(policy.max_semantic_calls || 0) + ' budget'));
+    overview.appendChild(txt('div', '', 'External request bytes: ' + formatBytes(usage.request_bytes || 0) + ' / ' + formatBytes(policy.max_total_request_bytes || 0) + ' budget'));
+    details.appendChild(overview);
+
+    var stages = el('div', 'rm-model-research-stages');
+    appendResearchStage(stages, 'Orientation', research.orientation);
+    (research.targeted_rounds || []).forEach(function (round, index) {
+      appendResearchRound(stages, 'Targeted research ' + String(index + 1), round);
+    });
+    (research.skipped_targeted_rounds || []).forEach(function (round, index) {
+      appendResearchRound(stages, 'Skipped targeted round ' + String(index + 1), round);
+    });
+    appendResearchStage(stages, 'Architecture synthesis', research.architecture_synthesis);
+    details.appendChild(stages);
+
+    var coverage = research.coverage || {};
+    var coverageList = el('div', 'rm-model-research-coverage');
+    coverageList.appendChild(txt('div', '', 'Local authorized files: ' + String(coverage.local_authorized_files || 0)));
+    coverageList.appendChild(txt('div', '', 'Initial model summaries: ' + String(coverage.initial_model_summaries || 0)));
+    coverageList.appendChild(txt('div', '', 'Focused local evidence inspected: ' + String(coverage.focused_local_evidence_inspected || 0)));
+    coverageList.appendChild(txt('div', '', 'Targeted model evidence windows: ' + String(coverage.targeted_model_evidence_windows || 0)));
+    details.appendChild(coverageList);
+    return details;
+  }
+
+  function appendResearchStage(container, label, stage) {
+    if (!stage || !stage.status) return;
+    var row = el('div', 'rm-model-research-stage');
+    var status = String(stage.status).replaceAll('_', ' ');
+    if (stage.cache_hit) status += ' · cached';
+    if (stage.request_bytes) status += ' · ' + formatBytes(stage.request_bytes);
+    row.appendChild(txt('strong', '', label));
+    row.appendChild(txt('span', '', status));
+    container.appendChild(row);
+  }
+
+  function appendResearchRound(container, label, round) {
+    if (!round) return;
+    var row = el('div', 'rm-model-research-round');
+    var heading = el('div', 'rm-model-research-stage');
+    heading.appendChild(txt('strong', '', label));
+    var status = String(round.status || 'unknown').replaceAll('_', ' ');
+    if (round.cached) status += ' · cached';
+    heading.appendChild(txt('span', '', status));
+    row.appendChild(heading);
+    if (round.question) row.appendChild(txt('div', '', round.question));
+    if (round.selection_reason) row.appendChild(txt('div', 'rm-muted', 'Why: ' + round.selection_reason.replaceAll('_', ' ')));
+    row.appendChild(txt('div', 'rm-muted', 'Exact evidence: ' + String((round.input_evidence_ids || []).length) + ' · new grounded facts: ' + String(round.new_grounded_facts_count || 0)));
+    if ((round.rejected_findings || []).length) {
+      row.appendChild(txt('div', 'rm-muted', 'Rejected claims: ' + String(round.rejected_findings.length)));
+    }
+    if ((round.unresolved_frontiers || []).length) {
+      row.appendChild(txt('div', 'rm-muted', 'Frontier: ' + String(round.unresolved_frontiers[0].question || 'unresolved')));
+    } else if (round.stop_reason) {
+      row.appendChild(txt('div', 'rm-muted', 'Result: ' + String(round.stop_reason).replaceAll('_', ' ')));
+    }
+    container.appendChild(row);
+  }
+
+  function componentReferences(statements) {
+    var seen = {};
+    var references = [];
+    (statements || []).forEach(function (statement) {
+      OPENABLE_PATHS.forEach(function (filePath) {
+        var cursor = 0;
+        while (cursor < statement.length) {
+          var index = statement.indexOf(filePath, cursor);
+          if (index < 0) break;
+          var before = index > 0 ? statement[index - 1] : '';
+          var afterIndex = index + filePath.length;
+          var after = afterIndex < statement.length ? statement[afterIndex] : '';
+          var pathChar = /[A-Za-z0-9_./-]/;
+          if ((!before || !pathChar.test(before)) && (!after || !pathChar.test(after))) {
+            var suffix = statement.slice(afterIndex).match(/^:(\d+)/);
+            var line = suffix ? parseInt(suffix[1], 10) || 0 : 0;
+            var key = filePath + ':' + line;
+            if (!seen[key]) {
+              seen[key] = true;
+              references.push({ path: filePath, line: line, statement: statement });
+            }
+          }
+          cursor = afterIndex;
+        }
+      });
+    });
+    return references;
+  }
+
+  function directionPaths(direction) {
+    var paths = [];
+    if (direction.likely_entrypoint) paths.push(direction.likely_entrypoint);
+    (direction.likely_files || []).forEach(function (path) { paths.push(path); });
+    componentReferences(direction.evidence || []).forEach(function (ref) { paths.push(ref.path); });
+    return paths;
+  }
+
+  function packageForFile(filePath) {
+    var graph = DATA.repository_graph || {};
+    var slash = filePath.lastIndexOf('/');
+    var fileDir = slash < 0 ? '' : filePath.slice(0, slash);
+    var packages = graph.packages || [];
+    if (packages.length > 0) {
+      for (var packageIndex = 0; packageIndex < packages.length; packageIndex++) {
+        if ((packages[packageIndex].package_directory || '') === fileDir) {
+          return packages[packageIndex].canonical_package_path || '';
+        }
+      }
+      return '';
+    }
+    var modules = graph.modules || [];
+    var best = null;
+    modules.forEach(function (module) {
+      var moduleDir = module.dir || '';
+      var matches = !moduleDir || fileDir === moduleDir || fileDir.indexOf(moduleDir + '/') === 0;
+      if (matches && (!best || moduleDir.length > (best.dir || '').length)) best = module;
+    });
+    if (!best || !best.path) return '';
+    var relativeDir = fileDir;
+    if (best.dir) {
+      relativeDir = fileDir === best.dir ? '' : fileDir.slice(best.dir.length + 1);
+    }
+    return best.path + (relativeDir ? '/' + relativeDir : '');
+  }
+
+  function groupComponentFiles(references) {
+    var groups = [];
+    var byPath = {};
+    var add = function (path, line, statement) {
+      if (!path || !OPENABLE_PATH_SET[path]) return;
+      var group = byPath[path];
+      if (!group) {
+        group = { path: path, lines: [], statements: [] };
+        byPath[path] = group;
+        groups.push(group);
+      }
+      if (line && group.lines.indexOf(line) < 0) group.lines.push(line);
+      if (statement && group.statements.indexOf(statement) < 0) group.statements.push(statement);
+    };
+    references.forEach(function (ref) { add(ref.path, ref.line, ref.statement); });
+    groups.forEach(function (group) { group.lines.sort(function (a, b) { return a - b; }); });
+    return groups;
+  }
+
+  function componentFileLinks(group) {
+    if (!group.lines || group.lines.length === 0) {
+      return [{ path: group.path, line: 0, label: group.path }];
+    }
+    return group.lines.map(function (line) {
+      return { path: group.path, line: line, label: group.path + ':' + line };
+    });
+  }
+
+  function boundedText(value, maxLength) {
+    if (typeof value !== 'string') return '';
+    value = value.trim();
+    if (value.length <= maxLength) return value;
+    return value.slice(0, Math.max(0, maxLength - 1)) + '…';
+  }
+
+  function humanizeSymbolDetail(value) {
+    return boundedText(value, 80).replace(/_/g, ' ');
+  }
+
+  function symbolLookupLine(anchor) {
+    if (!anchor.lines || anchor.lines.length === 0) return 0;
+    return anchor.lines[0] || 0;
+  }
+
+  function symbolLookupKey(component, anchor, line) {
+    return component.id + ':' + anchor.id + ':' + line;
+  }
+
+  function symbolLookupElementID(key) {
+    return 'rm-symbol-results-' + key.replace(/[^A-Za-z0-9_-]/g, '-');
+  }
+
+  function renderEntityLocation(entity, cls) {
+    if (!entity || typeof entity.path !== 'string') return txt('code', cls, 'unknown location');
+    var line = Number.isInteger(entity.line) && entity.line > 0 ? entity.line : 0;
+    var label = boundedText(entity.path, 320) + (line ? ':' + line : '');
+    return renderFileReference(entity.path, cls, line, label);
+  }
+
+  function renderSymbolCandidate(candidate, key, state) {
+    var row = el('div', 'rm-symbol-candidate');
+    row.setAttribute('role', 'listitem');
+    var inspection = state.inspection || { status: 'idle' };
+    var selected = inspection.candidateID === candidate.id;
+    if (selected) row.classList.add('rm-symbol-candidate--selected');
+
+    var heading = el('div', 'rm-symbol-candidate-heading');
+    heading.appendChild(txt('code', 'rm-symbol-candidate-name', boundedText(candidate.name, 160) || 'Unnamed Go symbol'));
+    var kind = humanizeSymbolDetail(candidate.kind);
+    if (kind) heading.appendChild(txt('span', 'rm-symbol-candidate-kind', kind));
+    row.appendChild(heading);
+
+    var path = boundedText(candidate.path, 320) || 'unknown location';
+    var line = Number.isInteger(candidate.line) && candidate.line > 0 ? candidate.line : 0;
+    row.appendChild(txt('code', 'rm-symbol-candidate-location', path + (line ? ':' + line : '')));
+
+    var details = [];
+    var match = humanizeSymbolDetail(candidate.match);
+    var certainty = humanizeSymbolDetail(candidate.certainty);
+    if (match) details.push(match);
+    if (certainty) details.push(certainty);
+    if (details.length > 0) {
+      row.appendChild(txt('div', 'rm-symbol-candidate-meta', details.join(' · ')));
+    }
+
+    var reasons = Array.isArray(candidate.rank_reasons) ? candidate.rank_reasons.slice(0, 3).map(function (reason) {
+      return humanizeSymbolDetail(reason);
+    }).filter(Boolean) : [];
+    if (reasons.length > 0) {
+      row.appendChild(txt('div', 'rm-symbol-candidate-reasons', 'Ranked by: ' + reasons.join(' · ')));
+    }
+    if (selected && state.persisted) {
+      row.appendChild(txt('div', 'rm-investigation-saved-label', 'Saved selection'));
+      return row;
+    }
+    var inspect = txt('button', 'rm-symbol-inspect-button', selected && inspection.status === 'loading' ? 'Inspecting…' : 'Inspect symbol');
+    inspect.type = 'button';
+    inspect.disabled = inspection.status === 'loading' || !state.candidateSetID || typeof candidate.id !== 'string' || !candidate.id;
+    inspect.setAttribute('aria-pressed', selected && inspection.status === 'ready' ? 'true' : 'false');
+    inspect.setAttribute('aria-controls', symbolInspectionElementID(key));
+    inspect.onclick = function () {
+      requestSymbolInspection(key, candidate);
+    };
+    row.appendChild(inspect);
+    return row;
+  }
+
+  function symbolInspectionElementID(key) {
+    return 'rm-symbol-inspection-' + key.replace(/[^A-Za-z0-9_-]/g, '-');
+  }
+
+  function renderStaticCallList(title, calls, omitted) {
+    var section = el('section', 'rm-symbol-call-section');
+    var label = title + ' · ' + calls.length + ' shown';
+    if (omitted > 0) label += ' · ' + omitted + ' additional returned calls omitted';
+    section.appendChild(txt('div', 'rm-symbol-detail-label', label));
+    if (calls.length === 0) {
+      section.appendChild(txt('div', 'rm-symbol-detail-empty', 'No calls were returned within this bounded static view. This does not prove that none exist.'));
+      return section;
+    }
+    var list = el('div', 'rm-symbol-call-list');
+    list.setAttribute('role', 'list');
+    calls.slice(0, maxStaticCalls).forEach(function (call) {
+      var item = el('div', 'rm-symbol-call');
+      item.setAttribute('role', 'listitem');
+      var symbol = call && call.symbol ? call.symbol : {};
+      item.appendChild(txt('code', 'rm-symbol-call-name', boundedText(symbol.name, 160) || 'Unnamed Go symbol'));
+      item.appendChild(renderEntityLocation(symbol, 'rm-symbol-call-location'));
+      if (call.callsite && call.callsite.path) {
+        var callsite = el('div', 'rm-symbol-callsite');
+        callsite.appendChild(document.createTextNode('Callsite: '));
+        callsite.appendChild(renderEntityLocation(call.callsite, 'rm-symbol-callsite-location'));
+        item.appendChild(callsite);
+      }
+      var certainty = humanizeSymbolDetail(call.certainty);
+      if (certainty) item.appendChild(txt('div', 'rm-symbol-candidate-meta', certainty + ' evidence'));
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  function renderSourceWindow(source) {
+    var section = el('section', 'rm-symbol-source');
+    section.appendChild(txt('div', 'rm-symbol-detail-label', 'Bounded source'));
+    if (!source || !Array.isArray(source.lines) || source.lines.length === 0) {
+      section.appendChild(txt('div', 'rm-symbol-detail-empty', 'No source lines returned.'));
+      return section;
+    }
+    if (source.path) {
+      section.appendChild(renderEntityLocation({ path: source.path, line: source.start_line }, 'rm-symbol-source-location'));
+    }
+    var summary = [];
+    if (source.start_line > 0 && source.end_line >= source.start_line) {
+      summary.push('lines ' + source.start_line + '–' + source.end_line);
+    }
+    if (source.stop_reason) summary.push('stop: ' + humanizeSymbolDetail(source.stop_reason));
+    if (source.truncated) summary.push('truncated');
+    if (summary.length > 0) section.appendChild(txt('div', 'rm-symbol-source-summary', summary.join(' · ')));
+
+    var lines = el('div', 'rm-symbol-source-lines');
+    lines.setAttribute('aria-label', 'Bounded source lines');
+    source.lines.slice(0, maxSourceLines).forEach(function (sourceLine) {
+      var row = el('div', 'rm-symbol-source-line');
+      var number = Number.isInteger(sourceLine.line) && sourceLine.line > 0 ? String(sourceLine.line) : '·';
+      row.appendChild(txt('span', 'rm-symbol-source-number', number));
+      var code = el('code', 'rm-symbol-source-text');
+      code.textContent = typeof sourceLine.text === 'string' ? sourceLine.text : '';
+      row.appendChild(code);
+      if (sourceLine.truncated) row.appendChild(txt('span', 'rm-symbol-source-line-note', 'line truncated'));
+      lines.appendChild(row);
+    });
+    section.appendChild(lines);
+    return section;
+  }
+
+	function renderNeighborhoodEntity(entity, location, basis) {
+	  var card = el('div', 'rm-symbol-neighborhood-node');
+	  card.appendChild(txt('code', 'rm-symbol-neighborhood-name', boundedText(entity && entity.name, 120) || 'Unnamed Go symbol'));
+	  card.appendChild(renderEntityLocation(location || entity || {}, 'rm-symbol-neighborhood-location'));
+	  card.appendChild(txt('span', 'rm-symbol-neighborhood-basis', basis));
+	  return card;
+	}
+
+	function renderNeighborhoodSide(label, calls, omitted) {
+	  var side = el('div', 'rm-symbol-neighborhood-side');
+	  side.appendChild(txt('div', 'rm-symbol-neighborhood-label', label));
+	  if (calls.length === 0) {
+		side.appendChild(txt('div', 'rm-symbol-neighborhood-empty', '? none returned in this bounded view'));
+	  } else {
+		calls.slice(0, 2).forEach(function (call) {
+		  var symbol = call && call.symbol ? call.symbol : {};
+		  side.appendChild(renderNeighborhoodEntity(symbol, call.callsite || symbol, 'static active build'));
+		});
+	  }
+	  var beyond = Math.max(0, calls.length - 2) + omitted;
+	  if (beyond > 0) side.appendChild(txt('div', 'rm-symbol-neighborhood-frontier', '+' + beyond + ' outside the focused view'));
+	  return side;
+	}
+
+	function renderSymbolNeighborhood(target, incoming, outgoing, incomingOmitted, outgoingOmitted) {
+	  var section = el('section', 'rm-symbol-neighborhood');
+	  section.appendChild(txt('div', 'rm-symbol-detail-label', 'Focused static neighborhood'));
+	  section.appendChild(txt('p', 'rm-symbol-neighborhood-caption', 'A navigation projection for the active build, not observed runtime order.'));
+	  var graph = el('div', 'rm-symbol-neighborhood-graph');
+	  graph.appendChild(renderNeighborhoodSide('Arrives from', incoming, incomingOmitted));
+	  graph.appendChild(txt('div', 'rm-symbol-neighborhood-arrow', '→'));
+	  var center = el('div', 'rm-symbol-neighborhood-center');
+	  center.appendChild(txt('div', 'rm-symbol-neighborhood-label', 'Selected symbol'));
+	  center.appendChild(renderNeighborhoodEntity(target, target, 'static active build'));
+	  graph.appendChild(center);
+	  graph.appendChild(txt('div', 'rm-symbol-neighborhood-arrow', '→'));
+	  graph.appendChild(renderNeighborhoodSide('Calls next', outgoing, outgoingOmitted));
+	  section.appendChild(graph);
+	  return section;
+	}
+
+  function renderInspectionTruncation(truncated) {
+    if (!truncated || typeof truncated !== 'object' || Array.isArray(truncated)) return null;
+    var items = Object.keys(truncated).sort().filter(function (key) {
+      return key !== 'incoming_calls' && key !== 'outgoing_calls' &&
+        Number.isInteger(truncated[key]) && truncated[key] > 0;
+    }).slice(0, 5).map(function (key) {
+      return humanizeSymbolDetail(key) + ' +' + truncated[key];
+    });
+    if (items.length === 0) return null;
+    return txt('div', 'rm-symbol-truncation', 'Evidence omitted by bounds: ' + items.join(' · '));
+  }
+
+  function renderTestReferences(response) {
+    var section = el('section', 'rm-investigation-tests');
+    section.appendChild(txt('div', 'rm-symbol-detail-label', 'Related test references'));
+    var references = Array.isArray(response.test_references) ? response.test_references.slice(0, maxTestReferences) : [];
+    if (references.length === 0) {
+      section.appendChild(txt('div', 'rm-symbol-detail-empty', 'No _test.go references were found in the active build. This does not prove that no relevant tests exist.'));
+    } else {
+      var list = el('div', 'rm-investigation-test-list');
+      list.setAttribute('role', 'list');
+      references.forEach(function (reference) {
+        if (!reference || typeof reference.path !== 'string') return;
+        var path = boundedText(reference.path, 320);
+        var line = Number.isInteger(reference.line) && reference.line > 0 ? reference.line : 0;
+        if (!path || !line) return;
+        var item = el('div', 'rm-investigation-test-reference');
+        item.setAttribute('role', 'listitem');
+        item.appendChild(txt('code', '', path + ':' + line));
+        item.appendChild(txt('span', '', 'Direct static reference to the exact symbol'));
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+    }
+    section.appendChild(txt('p', 'rm-investigation-caveat', 'Navigation evidence only; this does not prove coverage or what a test asserts. Test paths stay non-clickable until they are part of saved run authority.'));
+    var warnings = Array.isArray(response.test_warnings) ? response.test_warnings.slice(0, 4) : [];
+    warnings.forEach(function (warning) {
+      section.appendChild(txt('div', 'rm-investigation-test-warning', boundedText(warning, 180)));
+    });
+    return section;
+  }
+
+  function renderInvestigationCheckpoint(response, key) {
+    var status = response && typeof response.investigation_status === 'string' ? response.investigation_status : '';
+    if (status !== 'source_ready' && status !== 'tests_ready') return null;
+    var section = el('section', 'rm-investigation-checkpoint');
+    if (status === 'tests_ready') {
+      section.appendChild(txt('div', 'rm-investigation-checkpoint-status', 'Local checkpoint complete'));
+      section.appendChild(renderTestReferences(response));
+      return section;
+    }
+    section.appendChild(txt('div', 'rm-investigation-checkpoint-status', 'Saved locally'));
+    if (response.can_find_test_references) {
+      var state = symbolLookupStates[key] || {};
+      var loading = state.testStatus === 'loading';
+      var button = txt('button', 'rm-investigation-test-button', loading ? 'Finding test references…' : 'Find related test references');
+      button.type = 'button';
+      button.disabled = loading;
+      button.onclick = function () { requestTargetTestReferences(key); };
+      section.appendChild(button);
+      section.appendChild(txt('div', 'rm-investigation-local-hint', 'Local gopls only · no model request'));
+    }
+    return section;
+  }
+
+  function renderSymbolInspection(inspection, key) {
+    var detail = el('section', 'rm-symbol-detail');
+    detail.id = symbolInspectionElementID(key);
+    detail.setAttribute('aria-label', 'Exact Go symbol details');
+    if (inspection.status === 'loading') {
+      var loading = txt('div', 'rm-symbol-status', 'Inspecting exact Go symbol locally…');
+      loading.setAttribute('role', 'status');
+      loading.setAttribute('aria-live', 'polite');
+      detail.appendChild(loading);
+      return detail;
+    }
+    if (inspection.status === 'error') {
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(inspection.error, 180) || 'Could not inspect this Go symbol.');
+      error.setAttribute('role', 'alert');
+      detail.appendChild(error);
+      return detail;
+    }
+    if (inspection.status !== 'ready' || !inspection.detail) return detail;
+
+    var response = inspection.detail;
+    var target = response.target || {};
+    detail.appendChild(txt('div', 'rm-symbol-detail-label', 'Exact symbol'));
+    var targetHeading = el('div', 'rm-symbol-detail-heading');
+    targetHeading.appendChild(txt('code', 'rm-symbol-detail-name', boundedText(target.name, 160) || 'Unnamed Go symbol'));
+    var targetKind = humanizeSymbolDetail(target.kind);
+    if (targetKind) targetHeading.appendChild(txt('span', 'rm-symbol-candidate-kind', targetKind));
+    detail.appendChild(targetHeading);
+    detail.appendChild(renderEntityLocation(target, 'rm-symbol-detail-location'));
+
+    var evidenceLevel = humanizeSymbolDetail(response.evidence_level) || 'static';
+    detail.appendChild(txt('p', 'rm-symbol-static-note', 'Bounded static call hierarchy · ' + evidenceLevel + ' evidence. Production callers are ranked before tests and benchmarks when the analyzer returns them. This is not observed runtime execution, and the lists are not exhaustive.'));
+
+    var incoming = Array.isArray(response.incoming_calls) ? response.incoming_calls.slice(0, maxStaticCalls) : [];
+    var outgoing = Array.isArray(response.outgoing_calls) ? response.outgoing_calls.slice(0, maxStaticCalls) : [];
+    var truncated = response.truncated && typeof response.truncated === 'object' ? response.truncated : {};
+    var incomingOmitted = Number.isInteger(truncated.incoming_calls) && truncated.incoming_calls > 0 ? truncated.incoming_calls : 0;
+    var outgoingOmitted = Number.isInteger(truncated.outgoing_calls) && truncated.outgoing_calls > 0 ? truncated.outgoing_calls : 0;
+	detail.appendChild(renderSymbolNeighborhood(target, incoming, outgoing, incomingOmitted, outgoingOmitted));
+	detail.appendChild(renderSourceWindow(response.source || {}));
+	if (incoming.length > 2 || outgoing.length > 2 || incomingOmitted > 0 || outgoingOmitted > 0) {
+	  var callDetails = el('details', 'rm-symbol-call-details');
+	  callDetails.appendChild(txt('summary', 'rm-symbol-call-details-summary', 'All returned static relations'));
+	  callDetails.appendChild(renderStaticCallList('Incoming static calls', incoming, incomingOmitted));
+	  callDetails.appendChild(renderStaticCallList('Outgoing static calls', outgoing, outgoingOmitted));
+	  detail.appendChild(callDetails);
+	}
+
+    var truncation = renderInspectionTruncation(truncated);
+    if (truncation) detail.appendChild(truncation);
+    var checkpoint = renderInvestigationCheckpoint(response, key);
+    if (checkpoint) detail.appendChild(checkpoint);
+    var warnings = Array.isArray(response.warnings) ? response.warnings.slice(0, maxInspectionWarnings) : [];
+    if (warnings.length > 0) {
+      var warningSection = el('section', 'rm-symbol-warnings');
+      warningSection.appendChild(txt('div', 'rm-symbol-detail-label', 'Warnings'));
+      var warningList = el('ul', 'rm-symbol-warning-list');
+      warnings.forEach(function (warning) {
+        warningList.appendChild(txt('li', '', boundedText(warning, 180)));
+      });
+      warningSection.appendChild(warningList);
+      detail.appendChild(warningSection);
+    }
+    return detail;
+  }
+
+  function paintSymbolLookup(key) {
+    var state = symbolLookupStates[key] || { status: 'idle', candidates: [] };
+    var view = symbolLookupViews[key];
+    if (!view) return;
+
+    var inspection = state.inspection || { status: 'idle' };
+    view.button.disabled = state.status === 'loading' || inspection.status === 'loading';
+    view.button.textContent = state.status === 'ready' ? 'Refresh Go symbols' : 'Find Go symbols';
+    view.button.setAttribute('aria-expanded', state.status === 'ready' ? 'true' : 'false');
+    view.results.setAttribute('aria-busy', state.status === 'loading' || inspection.status === 'loading' ? 'true' : 'false');
+    view.results.innerHTML = '';
+
+    if (state.status === 'loading') {
+      var loading = txt('div', 'rm-symbol-status', 'Finding Go symbols locally…');
+      loading.setAttribute('role', 'status');
+      loading.setAttribute('aria-live', 'polite');
+      view.results.appendChild(loading);
+      return;
+    }
+    if (state.status === 'error') {
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(state.error, 180) || 'Could not find Go symbols.');
+      error.setAttribute('role', 'alert');
+      view.results.appendChild(error);
+      return;
+    }
+    if (state.status !== 'ready') return;
+
+    var candidates = state.candidates.slice(0, maxSymbolCandidates);
+    if (candidates.length === 0) {
+      var empty = txt('div', 'rm-symbol-status', 'No Go functions or methods found near this anchor.');
+      empty.setAttribute('role', 'status');
+      empty.setAttribute('aria-live', 'polite');
+      view.results.appendChild(empty);
+      return;
+    }
+    var title = txt('div', 'rm-symbol-results-title', 'Go symbols (' + candidates.length + ')');
+    title.setAttribute('role', 'status');
+    title.setAttribute('aria-live', 'polite');
+    view.results.appendChild(title);
+    var list = el('div', 'rm-symbol-candidates');
+    list.setAttribute('role', 'list');
+    candidates.forEach(function (candidate) {
+      list.appendChild(renderSymbolCandidate(candidate, key, state));
+      if (inspection.status !== 'idle' && inspection.candidateID === candidate.id) {
+        list.appendChild(renderSymbolInspection(inspection, key));
+      }
+    });
+    view.results.appendChild(list);
+  }
+
+  function revealSymbolInspection(key) {
+    var detail = document.getElementById(symbolInspectionElementID(key));
+    if (!detail || typeof detail.scrollIntoView !== 'function') return;
+    detail.scrollIntoView({ block: 'nearest' });
+  }
+
+  function requestSymbols(component, anchor, line, key) {
+    var runID = currentRunID();
+    if (!runID) {
+      symbolLookupStates[key] = { status: 'error', candidates: [], error: 'Saved run is unavailable.' };
+      paintSymbolLookup(key);
+      return;
+    }
+
+    symbolLookupStates[key] = { status: 'loading', candidates: [] };
+    paintSymbolLookup(key);
+    fetch(serverBasePath() + '/api/symbols', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Repomap-Action': 'list-symbols',
+      },
+      body: JSON.stringify({
+        run_id: runID,
+        component_id: component.id,
+        anchor_id: anchor.id,
+        line: line,
+      }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Go symbol lookup failed');
+        return body;
+      });
+    }).then(function (payload) {
+      var candidates = Array.isArray(payload.candidates) ? payload.candidates.slice(0, maxSymbolCandidates) : [];
+      var candidateSetID = typeof payload.candidate_set_id === 'string' ? payload.candidate_set_id : '';
+      if (candidates.length > 0 && !candidateSetID) throw new Error('Go symbol candidates cannot be inspected.');
+      symbolLookupStates[key] = {
+        status: 'ready',
+        candidates: candidates,
+        candidateSetID: candidateSetID,
+        inspection: { status: 'idle' },
+      };
+      paintSymbolLookup(key);
+    }).catch(function (error) {
+      symbolLookupStates[key] = {
+        status: 'error',
+        candidates: [],
+        error: error && error.message ? error.message : 'Could not find Go symbols.',
+      };
+      paintSymbolLookup(key);
+    });
+  }
+
+  function requestSymbolInspection(key, candidate) {
+    var state = symbolLookupStates[key];
+    var runID = currentRunID();
+    if (!state || state.status !== 'ready' || !runID || !state.candidateSetID || typeof candidate.id !== 'string' || !candidate.id) {
+      if (state) {
+        state.inspection = { status: 'error', candidateID: candidate.id, error: 'This symbol candidate is no longer available.' };
+        paintSymbolLookup(key);
+      }
+      return;
+    }
+
+    var candidateSetID = state.candidateSetID;
+    state.inspection = { status: 'loading', candidateID: candidate.id };
+    paintSymbolLookup(key);
+    revealSymbolInspection(key);
+    fetch(serverBasePath() + '/api/symbol', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Repomap-Action': 'inspect-symbol',
+      },
+      body: JSON.stringify({
+        run_id: runID,
+        candidate_set_id: candidateSetID,
+        candidate_id: candidate.id,
+      }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Exact Go symbol inspection failed');
+        return body;
+      });
+    }).then(function (payload) {
+      var current = symbolLookupStates[key];
+      if (!current || current.candidateSetID !== candidateSetID) return;
+      current.inspection = { status: 'ready', candidateID: candidate.id, detail: payload };
+      current.persisted = payload.investigation_status === 'source_ready' || payload.investigation_status === 'tests_ready';
+      paintSymbolLookup(key);
+      revealSymbolInspection(key);
+    }).catch(function (error) {
+      var current = symbolLookupStates[key];
+      if (!current || current.candidateSetID !== candidateSetID) return;
+      current.inspection = {
+        status: 'error',
+        candidateID: candidate.id,
+        error: error && error.message ? error.message : 'Could not inspect this Go symbol.',
+      };
+      paintSymbolLookup(key);
+      revealSymbolInspection(key);
+    });
+  }
+
+  function requestTargetTestReferences(key) {
+    var state = symbolLookupStates[key];
+    var runID = currentRunID();
+    if (!state || !state.inspection || state.inspection.status !== 'ready' || !runID || state.testStatus === 'loading') return;
+    state.testStatus = 'loading';
+    paintSymbolLookup(key);
+    revealSymbolInspection(key);
+    fetch(serverBasePath() + '/api/investigation/target-tests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Repomap-Action': 'find-test-references',
+      },
+      body: JSON.stringify({ run_id: runID }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Could not find related test references.');
+        return body;
+      });
+    }).then(function (payload) {
+      var current = symbolLookupStates[key];
+      if (current) current.testStatus = 'idle';
+      if (!applyResumedInvestigation(payload)) {
+        if (current) paintSymbolLookup(key);
+        throw new Error('Saved investigation no longer matches this component.');
+      }
+    }).catch(function (error) {
+      var current = symbolLookupStates[key];
+      if (current) current.testStatus = 'idle';
+      paintSymbolLookup(key);
+      showToast(error && error.message ? error.message : 'Could not find related test references.', true);
+      revealSymbolInspection(key);
+    });
+  }
+
+  function rawComponentAnchor(componentID, anchorID) {
+    var components = Array.isArray(DATA.components) ? DATA.components : [];
+    for (var componentIndex = 0; componentIndex < components.length; componentIndex++) {
+      if (components[componentIndex].id !== componentID) continue;
+      var anchors = Array.isArray(components[componentIndex].anchor_groups) ? components[componentIndex].anchor_groups : [];
+      for (var anchorIndex = 0; anchorIndex < anchors.length; anchorIndex++) {
+        if (anchors[anchorIndex].id === anchorID) {
+          return { component: components[componentIndex], anchor: anchors[anchorIndex] };
+        }
+      }
+    }
+    return null;
+  }
+
+  function applyResumedInvestigation(payload) {
+    if (!payload || typeof payload.component_id !== 'string' || typeof payload.anchor_id !== 'string' || !payload.target) return false;
+    var raw = rawComponentAnchor(payload.component_id, payload.anchor_id);
+    var selectComponent = componentSelectionViews[payload.component_id];
+    if (!raw || typeof selectComponent !== 'function') return false;
+    var line = 0;
+    if (Array.isArray(raw.anchor.locations)) {
+      raw.anchor.locations.forEach(function (location) {
+        if (!location || !Number.isInteger(location.line) || location.line <= 0) return;
+        if (line === 0 || location.line < line) line = location.line;
+      });
+    }
+    var key = symbolLookupKey(raw.component, raw.anchor, line);
+    var target = payload.target;
+    var savedCandidateID = 'saved-investigation';
+    symbolLookupStates[key] = {
+      status: 'ready',
+      candidates: [{
+        id: savedCandidateID,
+        name: boundedText(target.name, 160),
+        kind: target.kind,
+        path: boundedText(target.path, 320),
+        line: target.line,
+        column: target.column,
+        match: 'saved exact selection',
+        certainty: payload.evidence_level || 'static',
+        distance_lines: 0,
+        rank_reasons: [],
+      }],
+      candidateSetID: '',
+      persisted: true,
+      inspection: { status: 'ready', candidateID: savedCandidateID, detail: payload },
+    };
+    showTab('rm-overview');
+    selectComponent();
+    revealSymbolInspection(key);
+    return true;
+  }
+
+  function resumeLatestInvestigation() {
+    if (resumeInvestigationStarted || !serverMode()) return;
+    var runID = currentRunID();
+    if (!runID) return;
+    resumeInvestigationStarted = true;
+    fetch(serverBasePath() + '/api/investigation/latest', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Repomap-Action': 'resume-investigation',
+      },
+      body: JSON.stringify({ run_id: runID }),
+    }).then(function (response) {
+      if (response.status === 204 || response.status === 404) return null;
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Saved investigation is unavailable.');
+        return body;
+      });
+    }).then(function (payload) {
+      if (payload) applyResumedInvestigation(payload);
+    }).catch(function (error) {
+      showToast(error && error.message ? error.message : 'Saved investigation is unavailable.', true);
+    });
+  }
+
+  function renderSymbolLookup(component, anchor) {
+    var line = symbolLookupLine(anchor);
+    var key = symbolLookupKey(component, anchor, line);
+    var container = el('div', 'rm-symbol-lookup');
+    var button = txt('button', 'rm-symbol-find-button', 'Find Go symbols');
+    button.type = 'button';
+    var results = el('div', 'rm-symbol-results');
+    results.id = symbolLookupElementID(key);
+    button.setAttribute('aria-controls', results.id);
+    button.onclick = function () {
+      requestSymbols(component, anchor, line, key);
+    };
+    container.appendChild(button);
+    container.appendChild(results);
+    symbolLookupViews[key] = { button: button, results: results };
+    paintSymbolLookup(key);
+    return container;
+  }
+
+  function buildComponentModel(item, index, directions, flows) {
+    var references = componentReferences(item.evidence || []);
+    var componentPathSet = {};
+    references.forEach(function (ref) { componentPathSet[ref.path] = true; });
+    var relatedDirections = (directions || []).filter(function (direction) {
+      return directionPaths(direction).some(function (path) { return componentPathSet[path]; });
+    });
+    var relatedIDs = {};
+    relatedDirections.forEach(function (direction) { relatedIDs[direction.id] = true; });
+    var relatedFlows = (flows || []).filter(function (flow) { return relatedIDs[flow.id]; });
+
+    var files = groupComponentFiles(references);
+
+    var packages = [];
+    var packageSet = {};
+    var tests = [];
+    var testSet = {};
+    files.forEach(function (file) {
+      var pkg = packageForFile(file.path);
+      if (pkg && !packageSet[pkg]) {
+        packageSet[pkg] = true;
+        packages.push(pkg);
+      }
+    });
+    relatedFlows.forEach(function (flow) {
+      (flow.bundle_tests || []).concat(flow.tests_to_read || []).forEach(function (test) {
+        if (test.path && !testSet[test.path]) {
+          testSet[test.path] = true;
+          tests.push(test);
+        }
+      });
+    });
+
+    return {
+      id: 'component-' + index,
+      name: item.name || 'Unnamed component',
+	  role: normalizeComponentRole(item.role),
+	  role_basis: normalizeComponentRole(item.role) === 'unknown' ? 'unknown' : 'hypothesis',
+      purpose: item.why_it_matters || '',
+      evidence: item.evidence || [],
+      references: references,
+      files: files,
+      directions: relatedDirections,
+      flows: relatedFlows,
+      packages: packages,
+      tests: tests,
+    };
+  }
+
+  function buildStructuredComponentModel(item, index, directions, flows) {
+    var directionIDs = {};
+    (item.related_flow_ids || []).forEach(function (id) { directionIDs[id] = true; });
+    var relatedDirections = (directions || []).filter(function (direction) { return directionIDs[direction.id]; });
+    var relatedFlows = (flows || []).filter(function (flow) { return directionIDs[flow.id]; });
+    var files = (item.anchor_groups || []).map(function (anchor) {
+      var lines = [];
+      (anchor.locations || []).forEach(function (location) {
+        if (location.line && lines.indexOf(location.line) < 0) lines.push(location.line);
+      });
+      lines.sort(function (a, b) { return a - b; });
+      return {
+        id: anchor.id,
+        path: anchor.path,
+        lines: lines,
+        statements: anchor.model_notes || [],
+        grounding: anchor.grounding,
+        context: anchor.local_context || [],
+        can_list_symbols: !!anchor.can_list_symbols,
+      };
+    });
+    var references = [];
+    files.forEach(function (file) {
+      if (file.lines.length === 0) references.push({ path: file.path, line: 0 });
+      file.lines.forEach(function (line) { references.push({ path: file.path, line: line }); });
+    });
+    var tests = [];
+    var testSet = {};
+    relatedFlows.forEach(function (flow) {
+      (flow.bundle_tests || []).concat(flow.tests_to_read || []).forEach(function (test) {
+        if (test.path && !testSet[test.path]) {
+          testSet[test.path] = true;
+          tests.push(test);
+        }
+      });
+    });
+    var evidence = [];
+    files.forEach(function (file) {
+      file.statements.forEach(function (statement) {
+        if (evidence.indexOf(statement) < 0) evidence.push(statement);
+      });
+    });
+    return {
+      id: item.id || 'component-' + index,
+      name: item.name || 'Unnamed component',
+	  role: normalizeComponentRole(item.role),
+	  role_basis: item.role_basis || 'hypothesis',
+      purpose: item.model_purpose || '',
+      evidence: evidence,
+      references: references,
+      files: files,
+      directions: relatedDirections,
+      flows: relatedFlows,
+      packages: item.packages || [],
+      tests: tests,
+    };
+  }
+
+	var componentRoleOrder = ['entry', 'boundary', 'coordination', 'domain', 'state', 'support', 'unknown'];
+	var componentRoleLabels = {
+	  entry: 'Entrypoints',
+	  boundary: 'Boundaries',
+	  coordination: 'Coordination',
+	  domain: 'Core domain',
+	  state: 'State',
+	  support: 'Support',
+	  unknown: 'Unclassified',
+	};
+
+	function normalizeComponentRole(role) {
+	  role = typeof role === 'string' ? role.toLowerCase() : '';
+	  return componentRoleOrder.indexOf(role) >= 0 ? role : 'unknown';
+	}
+
+  function componentAnchorGroundingLabel(grounding) {
+    if (grounding === 'verified_line') return 'Model-cited line · source verified';
+    if (grounding === 'verified_direction_path') return 'Selected from a related guided flow · file verified';
+    if (grounding === 'verified_path') return 'Model-cited path · file verified';
+    return 'Repository anchor';
+  }
+
+  function renderComponentInspector(component) {
+    var inspector = el('aside', 'rm-component-inspector');
+    inspector.setAttribute('aria-label', 'Selected component details');
+    inspector.appendChild(txt('div', 'rm-direction-label', 'Component inspector'));
+    inspector.appendChild(txt('h3', '', component.name));
+    if (component.purpose) inspector.appendChild(linkified('p', 'rm-component-purpose', component.purpose));
+
+    if (component.files.length > 0) {
+      inspector.appendChild(txt('div', 'rm-section-title', 'Start here'));
+      var hasSymbolAnchors = component.files.some(function (group) {
+        return group.id && group.can_list_symbols;
+      });
+      if (hasSymbolAnchors && !serverMode()) {
+        inspector.appendChild(txt('p', 'rm-symbol-static-hint', 'Run repomap serve to find Go symbols near these anchors.'));
+      }
+      var files = el('div', 'rm-component-inspector-list');
+      component.files.slice(0, 8).forEach(function (group, index) {
+        var row = el('div', 'rm-component-inspector-row');
+        if (index === 0) row.classList.add('rm-component-inspector-row--recommended');
+        var links = el('div', 'rm-component-anchor-links');
+        if (index === 0) {
+          links.appendChild(txt('span', 'rm-component-anchor-recommended', 'Recommended start'));
+        }
+        componentFileLinks(group).forEach(function (ref) {
+          links.appendChild(renderFileReference(ref.path, 'rm-component-file', ref.line, ref.label));
+        });
+        row.appendChild(links);
+        if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(group.path) >= 0) {
+          row.appendChild(txt('div', 'rm-component-anchor-context', 'This source changed after the report was generated.'));
+        }
+        if (group.grounding) {
+          row.appendChild(txt('span', 'rm-component-anchor-grounding', componentAnchorGroundingLabel(group.grounding)));
+        }
+        if (group.context && group.context.length > 0) {
+          var context = group.context[0];
+          var contextText = context.reason || context.category || 'Local source signal';
+          if (context.snippet) contextText += ': ' + context.snippet;
+          row.appendChild(txt('div', 'rm-component-anchor-context', contextText));
+        }
+        if (serverMode() && group.id && group.can_list_symbols) {
+          row.appendChild(renderSymbolLookup(component, group));
+        }
+        files.appendChild(row);
+      });
+      inspector.appendChild(files);
+    }
+
+    if (component.directions.length > 0) {
+      inspector.appendChild(txt('div', 'rm-section-title', 'Related flows'));
+      var directions = el('div', 'rm-component-related-list');
+      component.directions.forEach(function (direction) {
+        var flow = flowByID(direction.id);
+        var row = el('div', 'rm-component-related-row');
+        if (flow) {
+          var button = txt('button', 'rm-component-related-button', direction.name || direction.id);
+          button.type = 'button';
+          button.onclick = function () { showTab('rm-flow-' + flow.id); };
+          row.appendChild(button);
+        } else {
+          row.appendChild(txt('span', 'rm-component-related-name', direction.name || direction.id));
+        }
+        if (direction.trigger) {
+          row.appendChild(txt('span', 'rm-component-related-trigger', LABELS.trigger + ': ' + direction.trigger));
+        }
+        directions.appendChild(row);
+      });
+      inspector.appendChild(directions);
+    }
+
+    if (component.packages.length > 0) {
+      inspector.appendChild(txt('div', 'rm-section-title', 'Packages'));
+      var packages = el('div', 'rm-component-packages');
+      component.packages.slice(0, 8).forEach(function (pkg) {
+        packages.appendChild(renderPackageReference(pkg));
+      });
+      inspector.appendChild(packages);
+    }
+
+    if (component.tests.length > 0) {
+      inspector.appendChild(txt('div', 'rm-section-title', 'Tests'));
+      var tests = el('div', 'rm-component-inspector-list');
+      component.tests.slice(0, 6).forEach(function (test) {
+        var row = el('div', 'rm-component-inspector-row');
+        row.appendChild(renderFileReference(test.path, 'rm-component-file', 0, test.path));
+        tests.appendChild(row);
+      });
+      inspector.appendChild(tests);
+    }
+
+    if (component.evidence.length > 0) {
+      inspector.appendChild(txt('div', 'rm-section-title', LABELS.orientationEvidence));
+      var evidence = el('div', 'rm-component-inspector-evidence');
+      component.evidence.forEach(function (statement) {
+        evidence.appendChild(linkified('div', 'rm-direction-evidence-item', statement));
+      });
+      inspector.appendChild(evidence);
+    }
+    return inspector;
+  }
+
+  // Reports without a saved Architecture Canvas keep a compact orientation
+  // fallback. This is deliberately a list, not a second graph renderer: the
+  // model-oriented cards remain useful while graph semantics stay owned by
+  // ArchitectureCanvas.
+  function renderSystemMapCard(items, directions, flows) {
+    var structured = DATA.components && DATA.components.length > 0;
+    var componentItems = structured ? DATA.components : (items || []);
+    if (componentItems.length === 0) return null;
+
+    var components = componentItems.map(function (item, index) {
+      return structured ? buildStructuredComponentModel(item, index, directions, flows) :
+        buildComponentModel(item, index, directions, flows);
+    });
+    var card = el('section', 'rm-card rm-orientation-map');
+    card.appendChild(txt('h2', '', LABELS.systemMap));
+    card.appendChild(txt(
+      'p',
+      'rm-orientation-map-hint',
+      DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
+        'The interactive architecture map was not generated. Showing the model orientation without a substitute graph.' :
+        'Conceptual orientation from the saved report. No substitute package graph is shown.'
+    ));
+
+    var grid = el('div', 'rm-orientation-component-grid');
+    var buttons = [];
+    var inspectorHost = el('div', 'rm-orientation-inspector');
+    function selectComponent(index) {
+      buttons.forEach(function (button, buttonIndex) {
+        var selected = buttonIndex === index;
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+      inspectorHost.innerHTML = '';
+      inspectorHost.appendChild(renderComponentInspector(components[index]));
+    }
+
+    components.forEach(function (component, index) {
+      var button = el('button', 'rm-orientation-component');
+      button.type = 'button';
+      button.setAttribute('aria-pressed', 'false');
+      button.appendChild(txt('strong', '', component.name));
+      if (component.purpose) button.appendChild(txt('span', '', component.purpose));
+      button.appendChild(txt(
+        'small',
+        '',
+        (componentRoleLabels[component.role] || componentRoleLabels.unknown) + ' · ' + component.files.length + ' anchors'
+      ));
+      button.onclick = function () { selectComponent(index); };
+      buttons.push(button);
+      componentSelectionViews[component.id] = function () { selectComponent(index); };
+      grid.appendChild(button);
+    });
+    card.appendChild(grid);
+    card.appendChild(inspectorHost);
+    selectComponent(0);
+    return card;
+  }
+
+  function renderStartHereCard(files) {
+    if (!files || files.length === 0) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.startFiles));
+    var list = el('div', 'rm-read-order');
+    files.forEach(function (file, index) {
+      list.appendChild(renderReadOrderItem(file, index + 1, file.priority || index + 1));
+    });
+    card.appendChild(list);
+    return card;
+  }
+
+  function renderTermsCard(words) {
+    if (!words || words.length === 0) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.terms));
+    var grid = el('div', 'rm-overview-flows');
+    words.forEach(function (word) {
+      var term = el('div', 'rm-ov-flow rm-candidate-direction');
+      term.appendChild(txt('h3', '', word.word));
+      if (word.guess) {
+        term.appendChild(linkified('div', 'rm-summary-line', word.guess));
+      }
+      appendOrientationEvidence(term, word.evidence);
+      grid.appendChild(term);
+    });
+    card.appendChild(grid);
+    return card;
+  }
+
+  function renderQuestionsCard(questions, unverifiedPaths) {
+    var hasQuestions = questions && questions.length > 0;
+    var hasUnverified = unverifiedPaths && unverifiedPaths.length > 0;
+    if (!hasQuestions && !hasUnverified) return null;
+
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.questions));
+    if (hasQuestions) {
+      var list = el('ul', 'rm-file-list');
+      questions.forEach(function (question) {
+        list.appendChild(linkified('li', '', question));
+      });
+      card.appendChild(list);
+    }
+    var unverified = renderUnverifiedPaths(unverifiedPaths);
+    if (unverified) card.appendChild(unverified);
+    return card;
+  }
+
+  function renderDirectionsCard(directions, flows) {
+    var card = el('div', 'rm-card');
+    card.appendChild(txt('h2', '', LABELS.candidateDirections));
+    var acceptedDirections = directions.filter(function (direction) { return direction.disposition !== 'rejected'; });
+    var rejectedDirections = directions.filter(function (direction) { return direction.disposition === 'rejected'; });
+    if (acceptedDirections.length === 0) {
+      card.appendChild(renderPlaceholder(LABELS.noFlows));
+    } else {
+      card.appendChild(txt('p', 'rm-direction-hint', LABELS.directionHint));
+      var directionsGrid = el('div', 'rm-overview-flows');
+      var highestConfidence = Math.max.apply(null, acceptedDirections.map(function (direction) {
+        return direction.confidence || 0;
+      }));
+      acceptedDirections.forEach(function (direction) {
+        directionsGrid.appendChild(renderCandidateDirectionCard(
+          direction,
+          (direction.confidence || 0) === highestConfidence
+        ));
+      });
+      card.appendChild(directionsGrid);
+    }
+
+    if (rejectedDirections.length > 0) {
+      var rejected = el('details', 'rm-details');
+      rejected.appendChild(txt('summary', '', LABELS.rejectedDirections + ' · ' + rejectedDirections.length));
+      var rejectedGrid = el('div', 'rm-overview-flows');
+      rejectedDirections.forEach(function (direction) {
+        rejectedGrid.appendChild(renderCandidateDirectionCard(direction, false));
+      });
+      rejected.appendChild(rejectedGrid);
+      card.appendChild(rejected);
+    }
+
+    var expandedFlows = flows.filter(function (flow) {
+      return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+    });
+    if (expandedFlows.length > 0) {
+      card.appendChild(txt('div', 'rm-section-title', LABELS.candidateFlows));
+      var flowsGrid = el('div', 'rm-overview-flows');
+      expandedFlows.forEach(function (flow) {
+        var isRecommended = DATA.recommended_flow && flow.id === DATA.recommended_flow;
+        flowsGrid.appendChild(renderFlowCard(flow, isRecommended));
+      });
+      card.appendChild(flowsGrid);
+
+      var quickStart = el('div', 'rm-quick-start');
+      quickStart.appendChild(txt('div', 'rm-section-title', LABELS.quickStart));
+      expandedFlows.forEach(function (flow) {
+        if (!flow.files_to_read_in_order || flow.files_to_read_in_order.length === 0) return;
+
+        var item = el('div', 'rm-quick-start-item');
+        var flowLink = el('span', 'rm-quick-start-flow');
+        flowLink.textContent = flow.name || flow.id;
+        flowLink.onclick = function () { showTab('rm-flow-' + flow.id); };
+        item.appendChild(flowLink);
+        item.appendChild(document.createTextNode('→ '));
+        item.appendChild(renderFileReference(
+          flow.files_to_read_in_order[0].path,
+          '',
+          0,
+          flow.files_to_read_in_order[0].path
+        ));
+        quickStart.appendChild(item);
+      });
+      card.appendChild(quickStart);
+    }
+
+    return card;
+  }
+
+  function buildFileReasonIndex(filesToRead) {
+    var idx = {};
+    if (!filesToRead) return idx;
+    filesToRead.forEach(function (fi) {
+      if (fi.reason) idx[fi.path] = fi.reason;
+    });
+    return idx;
+  }
+
+  function renderChainSteps(chain, filesToRead) {
+    var reasonIndex = buildFileReasonIndex(filesToRead);
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', LABELS.executionChain));
+
+    var container = el('div', 'rm-chain');
+
+    chain.forEach(function (s) {
+      var hasName = s.name && s.name.length > 0;
+      var hasWhat = s.what_happens && s.what_happens.length > 0;
+      var hasEvidence = s.evidence_files && s.evidence_files.length > 0;
+
+      var stepWhat = s.what_happens;
+      var stepName = s.name;
+
+      if (!hasWhat && hasEvidence) {
+        for (var i = 0; i < s.evidence_files.length; i++) {
+          var r = reasonIndex[s.evidence_files[i]];
+          if (r) { stepWhat = r; break; }
+        }
+      }
+      if (!hasName && hasEvidence) {
+        var fname = s.evidence_files[0];
+        var last = fname.split('/').pop();
+        stepName = last || fname;
+      }
+
+      if (!hasEvidence && !stepWhat) return;
+
+      var step = el('div', 'rm-chain-step');
+
+      var circle = el('div', 'rm-chain-circle ' + chainCircleClass(s.confidence));
+      circle.textContent = s.step;
+      step.appendChild(circle);
+
+      var body = el('div', 'rm-chain-body');
+
+      if (stepName) {
+        body.appendChild(txt('div', 'rm-chain-name', 'Step ' + s.step + ': ' + stepName));
+      } else {
+        body.appendChild(txt('div', 'rm-chain-name', 'Step ' + s.step));
+      }
+
+      if (stepWhat) {
+        body.appendChild(linkified('div', 'rm-chain-desc', stepWhat));
+      }
+
+      if (hasEvidence) {
+        var filesDiv = el('div', 'rm-chain-files');
+        filesDiv.appendChild(txt('span', 'rm-chain-files-label', LABELS.evidenceFiles + ': '));
+        s.evidence_files.forEach(function (ef) {
+          var fileRow = el('div', 'rm-chain-file-row');
+          var pathSpan = renderFileReference(ef, 'rm-chain-file', 0, ef);
+          fileRow.appendChild(pathSpan);
+          var eReason = reasonIndex[ef];
+          if (eReason) {
+            var reasonSpan = linkified('span', 'rm-chain-file-reason', eReason);
+            fileRow.appendChild(reasonSpan);
+          }
+          filesDiv.appendChild(fileRow);
+        });
+        body.appendChild(filesDiv);
+      }
+
+      step.appendChild(body);
+      container.appendChild(step);
+    });
+
+    section.appendChild(container);
+    return section;
+  }
+
+  function renderReadOrder(files, maxShow, title) {
+    if (!files || !files.length) return null;
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', (title || LABELS.filesToRead) + ' (' + files.length + ')'));
+
+    var limit = maxShow || files.length;
+    var visible = files.slice(0, limit);
+    var hidden = files.slice(limit);
+
+    var ol = el('div', 'rm-read-order');
+    visible.forEach(function (fi, i) {
+      ol.appendChild(renderReadOrderItem(fi, i + 1, fi.priority));
+    });
+    section.appendChild(ol);
+
+    if (hidden.length > 0) {
+      var expandDiv = el('div', 'rm-read-order-expand');
+      var btn = el('button', 'rm-expand-btn');
+      btn.textContent = LABELS.showMore.replace('{count}', hidden.length);
+      var expanded = false;
+      btn.onclick = function () {
+        if (expanded) {
+          while (ol.children.length > limit) ol.removeChild(ol.lastChild);
+          btn.textContent = LABELS.showMore.replace('{count}', hidden.length);
+        } else {
+          hidden.forEach(function (fi, j) {
+            ol.appendChild(renderReadOrderItem(fi, limit + j + 1, fi.priority));
+          });
+          btn.textContent = LABELS.showLess;
+        }
+        expanded = !expanded;
+      };
+      expandDiv.appendChild(btn);
+      section.appendChild(expandDiv);
+    }
+
+    return section;
+  }
+
+  function renderReadOrderItem(fi, num, priority) {
+    var item = el('div', 'rm-read-order-item');
+
+    var numEl = el('div', 'rm-read-order-num');
+    if (priority >= 3) numEl.classList.add('rm-read-order-num--p3');
+    else if (priority >= 2) numEl.classList.add('rm-read-order-num--p2');
+    numEl.textContent = num;
+    item.appendChild(numEl);
+
+    var body = el('div', 'rm-read-order-body');
+    var pathRow = el('div', 'rm-read-order-path-row');
+    pathRow.appendChild(renderFileReference(fi.path, 'rm-read-order-path', 0, fi.path));
+    if (fi.kind) pathRow.appendChild(renderKindBadge(fi.kind));
+    body.appendChild(pathRow);
+    if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(fi.path) >= 0) {
+      body.appendChild(txt('div', 'rm-read-order-reason', 'This source changed after the report was generated.'));
+    }
+    if (fi.reason) {
+      var reason = linkified('div', 'rm-read-order-reason', humanizeReason(fi.reason));
+      reason.title = fi.reason;
+      body.appendChild(reason);
+    }
+    item.appendChild(body);
+
+    return item;
+  }
+
+  function renderFileList(title, files) {
+    if (!files || !files.length) return null;
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', title + ' (' + files.length + ')'));
+
+    var ul = el('ul', 'rm-file-list');
+    files.forEach(function (f) {
+      var li = el('li', 'rm-file-list-item');
+      var pathSpan = renderFileReference(f.path, 'rm-file-path', 0, f.path);
+      li.appendChild(pathSpan);
+      if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(f.path) >= 0) {
+        li.appendChild(txt('span', 'rm-file-reason', 'This source changed after the report was generated.'));
+      }
+      if (f.reason) {
+        var reason = linkified('span', 'rm-file-reason', humanizeReason(f.reason));
+        reason.title = f.reason;
+        li.appendChild(reason);
+      }
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    return section;
+  }
+
+  function renderBoundedFileList(title, files, maxShow) {
+    if (!files || !files.length) return null;
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', title + ' (' + files.length + ')'));
+    var list = el('ul', 'rm-file-list');
+    var limit = Math.min(maxShow || files.length, files.length);
+    var renderItem = function (file) {
+      var li = el('li', 'rm-file-list-item');
+      li.appendChild(renderFileReference(file.path, 'rm-file-path', 0, file.path));
+      if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(file.path) >= 0) {
+        li.appendChild(txt('span', 'rm-file-reason', 'This source changed after the report was generated.'));
+      }
+      if (file.reason) {
+        var reason = linkified('span', 'rm-file-reason', humanizeReason(file.reason));
+        reason.title = file.reason;
+        li.appendChild(reason);
+      }
+      return li;
+    };
+    files.slice(0, limit).forEach(function (file) { list.appendChild(renderItem(file)); });
+    section.appendChild(list);
+    if (files.length > limit) {
+      var controls = el('div', 'rm-read-order-expand');
+      var button = txt('button', 'rm-expand-btn', LABELS.showMore.replace('{count}', files.length - limit));
+      var expanded = false;
+      button.type = 'button';
+      button.onclick = function () {
+        if (expanded) {
+          while (list.children.length > limit) list.removeChild(list.lastChild);
+          button.textContent = LABELS.showMore.replace('{count}', files.length - limit);
+        } else {
+          files.slice(limit).forEach(function (file) { list.appendChild(renderItem(file)); });
+          button.textContent = LABELS.showLess;
+        }
+        expanded = !expanded;
+      };
+      controls.appendChild(button);
+      section.appendChild(controls);
+    }
+    return section;
+  }
+
+  function renderExpandableList(title, items, boxClass, maxShow) {
+    if (!items || !items.length) return null;
+    var limit = maxShow || 3;
+    var visible = items.slice(0, limit);
+    var hidden = items.slice(limit);
+
+    var box = el('div', boxClass);
+    var titleEl = el('strong');
+    titleEl.textContent = title + ': ';
+    box.appendChild(titleEl);
+
+    visible.forEach(function (u, i) {
+      var p = el('div');
+      p.className = 'rm-exp-item';
+      p.appendChild(document.createTextNode('• '));
+      appendLinkifiedText(p, u);
+      box.appendChild(p);
+    });
+
+    if (hidden.length > 0) {
+      var hiddenDiv = el('div', 'rm-exp-hidden');
+      hidden.forEach(function (u) {
+        var p = el('div');
+        p.className = 'rm-exp-item';
+        p.appendChild(document.createTextNode('• '));
+        appendLinkifiedText(p, u);
+        hiddenDiv.appendChild(p);
+      });
+      box.appendChild(hiddenDiv);
+
+      var btn = el('button', 'rm-expand-btn-inline');
+      btn.textContent = LABELS.showMore.replace('{count}', hidden.length);
+      btn.onclick = function () {
+        var showing = hiddenDiv.style.display === 'block';
+        hiddenDiv.style.display = showing ? 'none' : 'block';
+        btn.textContent = showing ? LABELS.showMore.replace('{count}', hidden.length) : LABELS.showLess;
+      };
+      box.appendChild(btn);
+    }
+
+    return box;
+  }
+
+  function renderUnknowns(unknowns) {
+    return renderExpandableList(LABELS.knownUnknowns, unknowns, 'rm-info-box', 3);
+  }
+
+  function renderWarnings(warnings) {
+    return renderExpandableList(LABELS.warnings, warnings, 'rm-warn-box', 3);
+  }
+
+  function formatMillis(value) {
+    var millis = Number(value || 0);
+    if (!Number.isFinite(millis) || millis <= 0) return '0 ms';
+    if (millis < 1000) return Math.round(millis) + ' ms';
+    return (millis / 1000).toFixed(millis < 10000 ? 1 : 0) + ' s';
+  }
+
+  function summarizeRunWarnings(warnings) {
+    var primary = [];
+    var modelContext = [];
+    var groundingRepairs = 0;
+    var confidenceAdjustments = 0;
+    var toolchain = null;
+    (warnings || []).forEach(function (warning) {
+      var value = String(warning || '').trim();
+      if (!value) return;
+      var isModelContextWarning =
+        /(truncat|limited|not fully visible).*(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths)/i.test(value) ||
+        /(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths).*(truncat|limited|not fully visible)/i.test(value);
+      if (isModelContextWarning) {
+        modelContext.push(value);
+        return;
+      }
+      if (/^(parser )?(dropped|replaced|removed) ungrounded/.test(value)) {
+        groundingRepairs++;
+        return;
+      }
+      if (value.indexOf('local confidence gate capped') === 0) {
+        confidenceAdjustments++;
+        return;
+      }
+      var isToolchainWarning =
+        value.indexOf('target module requires go') >= 0 ||
+        (value.indexOf('local proof ') === 0 && value.indexOf('requires newer Go version') >= 0);
+      if (isToolchainWarning) {
+        var versions = value.match(/go[0-9]+(?:\.[0-9]+){1,2}/g) || [];
+        toolchain = versions.length >= 2 ?
+          'Some local Go analysis was skipped: the repository requires ' + versions[0] +
+            ', while repomap uses ' + versions[1] + '. Rebuild repomap with ' + versions[0] + ' or newer.' :
+          'Some local Go analysis was skipped because repomap uses an older Go toolchain than the repository.';
+        return;
+      }
+      primary.push(value);
+    });
+    if (toolchain) primary.unshift(toolchain);
+    var details = [];
+    if (groundingRepairs > 0) {
+      details.push(groundingRepairs + ' model evidence reference(s) could not be grounded and were hidden.');
+    }
+    if (confidenceAdjustments > 0) {
+      details.push('Local verification reduced model confidence in ' + confidenceAdjustments + ' place(s).');
+    }
+    return { primary: primary, modelContext: modelContext, details: details };
+  }
+
+  function renderRunWarnings(warnings) {
+    var summarized = summarizeRunWarnings(warnings);
+    if (summarized.primary.length === 0 && summarized.modelContext.length === 0 && summarized.details.length === 0) return null;
+    var container = el('div', 'rm-run-warning-stack');
+    if (summarized.modelContext.length > 0) {
+      var contextItems = [
+        'The orientation model saw a bounded selection of repository files and dependency edges, so its overview and suggestions may miss areas. Local source links, surface counts, and saved traces still use the saved local evidence available to this report.'
+      ].concat(summarized.modelContext.map(function (warning) { return 'Model-reported note: ' + warning; }));
+      var context = renderExpandableList('Model context limit', contextItems, 'rm-info-box', 1);
+      if (context) container.appendChild(context);
+    }
+    var primary = renderExpandableList(LABELS.warnings, summarized.primary, 'rm-warn-box', 3);
+    if (primary) container.appendChild(primary);
+    if (summarized.details.length > 0) {
+      var details = el('details', 'rm-analysis-details');
+      details.appendChild(txt('summary', '', 'Analysis details (' + summarized.details.length + ')'));
+      var list = el('ul');
+      summarized.details.forEach(function (item) { list.appendChild(txt('li', '', item)); });
+      details.appendChild(list);
+      container.appendChild(details);
+    }
+    return container;
+  }
+
+  function renderBundleStats(stats) {
+    var container = el('div', 'rm-collapsible');
+
+    var toggle = el('button', 'rm-collapsible-toggle');
+    toggle.textContent = LABELS.retrievalDetails;
+    toggle.onclick = function () {
+      container.classList.toggle('rm-collapsible--open');
+    };
+    container.appendChild(toggle);
+
+    var body = el('div', 'rm-collapsible-body');
+    var list = [
+      'Source files selected: ' + stats.selected_files_count,
+      'Test files selected:   ' + stats.selected_tests_count,
+      'Docs selected:         ' + stats.selected_docs_count,
+      'Packages selected:     ' + stats.selected_packages_count,
+      'Related import edges:  ' + stats.related_edges_count,
+    ];
+    list.forEach(function (line) {
+      var div = txt('div', 'rm-bundle-stat', line);
+      body.appendChild(div);
+    });
+    container.appendChild(body);
+    return container;
+  }
+
+  function renderStringList(title, items) {
+    if (!items || !items.length) return null;
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', title + ' (' + items.length + ')'));
+
+    var ul = el('ul', 'rm-file-list');
+    items.forEach(function (s) {
+      var li = el('li');
+      li.textContent = s;
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    return section;
+  }
+
+  function renderEdgeList(title, edges) {
+    if (!edges || !edges.length) return null;
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', title + ' (' + edges.length + ')'));
+
+    var ul = el('ul', 'rm-file-list');
+    edges.forEach(function (e) {
+      var li = el('li');
+      li.textContent = e.from + ' → ' + e.to;
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    return section;
+  }
+
+  function renderErrorBox(error) {
+    var box = el('div', 'rm-error-box');
+    box.textContent = error;
+    return box;
+  }
+
+  function renderCollapsedError(error) {
+    var container = el('div', 'rm-collapsible');
+
+    var toggle = el('button', 'rm-collapsible-toggle');
+    toggle.textContent = 'Show parse error';
+    toggle.onclick = function () {
+      container.classList.toggle('rm-collapsible--open');
+    };
+    container.appendChild(toggle);
+
+    var body = el('div', 'rm-collapsible-body');
+    body.appendChild(renderErrorBox(error));
+    container.appendChild(body);
+    return container;
+  }
+
+  function renderUnverifiedPaths(paths) {
+    if (!paths || !paths.length) return null;
+
+    var section = el('div');
+    section.appendChild(txt('div', 'rm-section-title', LABELS.unverified));
+    var tags = el('div', 'rm-tags');
+    paths.forEach(function (up) {
+      var tag = el('span', 'rm-tag');
+      tag.textContent = up.path;
+      if (up.reason) tag.title = up.reason;
+      tags.appendChild(tag);
+    });
+    section.appendChild(tags);
+    return section;
+  }
+
+  function renderFlowPage(flow) {
+    var page = el('div');
+    var direction = directionByID(flow.id);
+
+    var header = el('div', 'rm-flow-header');
+    header.appendChild(txt('h2', '', flow.name || flow.id));
+    var detailFlowType = renderFlowTypePill(direction || flow);
+    if (detailFlowType) header.appendChild(detailFlowType);
+    if (!flow.error && !flow.evidence_only) {
+      header.appendChild(renderEvidenceBadge(flow.confidence));
+    } else if (!flow.error && direction) {
+      header.appendChild(renderEvidenceBadge(direction.confidence, direction.local_verification));
+    }
+    page.appendChild(header);
+    var directionContext = renderDirectionContext(direction);
+    if (directionContext) page.appendChild(directionContext);
+
+    if (flow.error) {
+      page.appendChild(txt('div', 'rm-fallback-heading', 'Flow explanation failed, but local context was collected'));
+
+      var filesSection = renderFileList('Files selected by deterministic retrieval', flow.bundle_files);
+      if (filesSection) page.appendChild(filesSection);
+
+      var testsSection = renderFileList('Tests selected by deterministic retrieval', flow.bundle_tests);
+      if (testsSection) page.appendChild(testsSection);
+
+      var docsSection = renderFileList('Docs selected', flow.bundle_docs);
+      if (docsSection) page.appendChild(docsSection);
+
+      var pkgsSection = renderStringList('Packages selected', flow.bundle_packages);
+      if (pkgsSection) page.appendChild(pkgsSection);
+
+      var edgesSection = renderEdgeList('Related import edges', flow.bundle_edges);
+      if (edgesSection) page.appendChild(edgesSection);
+
+      if (flow.bundle_summary) {
+        page.appendChild(renderBundleStats(flow.bundle_summary));
+      }
+
+      page.appendChild(renderCollapsedError(flow.error));
+      return page;
+    }
+
+    if (flow.evidence_only) {
+      page.appendChild(txt(
+        'div',
+        'rm-method-note',
+        flow.flow_status === 'local_only' ? LABELS.localEvidenceIntro : LABELS.localEvidenceLegacyIntro
+      ));
+
+      var modelAnchors = (flow.bundle_files || []).filter(function (file) {
+        return file.reason === 'likely_file from candidate_flow';
+      });
+      var localNeighbors = (flow.bundle_files || []).filter(function (file) {
+        return file.reason !== 'likely_file from candidate_flow';
+      });
+      var anchorsSection = renderBoundedFileList('Repository anchors from orientation', modelAnchors, 5);
+      if (anchorsSection) page.appendChild(anchorsSection);
+      var neighborsSection = renderBoundedFileList('Related files from local retrieval', localNeighbors, 5);
+      if (neighborsSection) page.appendChild(neighborsSection);
+
+      var localTests = renderFileList('Tests selected locally', (flow.bundle_tests || []).slice(0, 8));
+      if (localTests) page.appendChild(localTests);
+
+      var localDocs = renderFileList('Docs selected locally', (flow.bundle_docs || []).slice(0, 8));
+      if (localDocs) page.appendChild(localDocs);
+
+      var localPackages = renderStringList('Packages in this focused neighborhood', (flow.bundle_packages || []).slice(0, 12));
+      if (localPackages) page.appendChild(localPackages);
+
+      var localEdges = renderEdgeList('Related import edges', (flow.bundle_edges || []).slice(0, 12));
+      if (localEdges) page.appendChild(localEdges);
+
+      if (flow.bundle_summary) page.appendChild(renderBundleStats(flow.bundle_summary));
+      return page;
+    }
+
+    if (flow.summary) {
+      page.appendChild(linkified('div', 'rm-summary', flow.summary));
+    }
+
+    if (flow.files_to_read_in_order && flow.files_to_read_in_order.length > 0) {
+      page.appendChild(renderReadOrder(flow.files_to_read_in_order, 5));
+    }
+
+    if (flow.likely_chain && flow.likely_chain.length > 0) {
+      var chainSection = renderChainSteps(flow.likely_chain, flow.files_to_read_in_order);
+      if (chainSection.children.length > 1) {
+        page.appendChild(chainSection);
+      }
+    }
+
+    var testsSection = renderFileList(LABELS.testsToRead, flow.tests_to_read);
+    if (testsSection) page.appendChild(testsSection);
+
+    var unknownsSection = renderUnknowns(flow.unknowns);
+    if (unknownsSection) page.appendChild(unknownsSection);
+
+    var warningsSection = renderWarnings(flow.warnings);
+    if (warningsSection) page.appendChild(warningsSection);
+
+    var uvSection = renderUnverifiedPaths(flow.unverified_paths);
+    if (uvSection) page.appendChild(uvSection);
+
+    if (flow.bundle_summary) {
+      page.appendChild(renderBundleStats(flow.bundle_summary));
+    }
+
+    return page;
+  }
+
+  function renderPlaceholder(text) {
+    return txt('div', 'rm-placeholder', text);
+  }
+
+  // ── Tab management ──────────────────────────────────────────────
+
+  function renderSavedTraceMenu(flows) {
+    if (!flows || flows.length === 0) return null;
+    var menu = el('details', 'rm-guided-flow-menu');
+    var defaultLabel = 'Saved traces (' + flows.length + ')';
+    var summary = txt('summary', 'rm-guided-flow-summary', defaultLabel);
+    summary.id = 'rm-guided-flow-summary';
+    summary.setAttribute('data-default-label', defaultLabel);
+    menu.appendChild(summary);
+    var list = el('div', 'rm-guided-flow-list');
+    flows.forEach(function (flow) {
+      var label = flow.name || flow.id;
+      if (flow.error) label += ' · analysis unavailable';
+      var option = txt('button', 'rm-guided-flow-option', label);
+      option.type = 'button';
+      option.setAttribute('data-flow-target', 'rm-flow-' + flow.id);
+      option.setAttribute('data-flow-label', flow.name || flow.id);
+      option.onclick = function () {
+        menu.open = false;
+        showTab('rm-flow-' + flow.id);
+      };
+      list.appendChild(option);
+    });
+    menu.appendChild(list);
+    return menu;
+  }
+
+  function showTab(id) {
+    document.querySelectorAll('.rm-tab, .rm-tab-content, .rm-guided-flow-option').forEach(function (e) {
+      e.classList.remove('rm-active');
+      e.removeAttribute('aria-current');
+    });
+    var content = document.getElementById(id);
+    if (content) content.classList.add('rm-active');
+    var tab = document.querySelector('.rm-tab[data-tab="' + id + '"]');
+    if (tab) {
+      tab.classList.add('rm-active');
+      tab.setAttribute('aria-current', 'page');
+    }
+    var activeFlowLabel = '';
+    document.querySelectorAll('.rm-guided-flow-option').forEach(function (option) {
+      if (option.getAttribute('data-flow-target') !== id) return;
+      option.classList.add('rm-active');
+      option.setAttribute('aria-current', 'page');
+      activeFlowLabel = option.getAttribute('data-flow-label') || '';
+    });
+    var flowSummary = document.getElementById('rm-guided-flow-summary');
+    if (flowSummary) {
+      flowSummary.textContent = activeFlowLabel ? 'Saved trace · ' + activeFlowLabel : flowSummary.getAttribute('data-default-label');
+    }
+  }
+
+  // ── Main render ─────────────────────────────────────────────────
+
+  function render() {
+    DATA.flows = DATA.flows || [];
+    componentSelectionViews = {};
+    resumeInvestigationStarted = false;
+    setupServerFeatures();
+    document.getElementById('rm-repo-name').textContent = DATA.repo_name || 'unknown';
+    if (DATA.artifacts_dir) {
+      document.getElementById('rm-artifacts-dir').textContent = 'Artifacts: ' + DATA.artifacts_dir;
+    }
+    if (DATA.feedback_path) {
+      document.getElementById('rm-feedback-path').textContent = 'Feedback notes: ' + DATA.feedback_path;
+    }
+    if (DATA.captured_revision) {
+      document.getElementById('rm-snapshot-detail').textContent = 'Captured snapshot: ' + DATA.captured_revision.slice(0, 12) + ' · ' + (DATA.captured_input_count || 0) + ' analyzed inputs';
+    }
+    if (DATA.freshness) {
+      document.getElementById('rm-freshness-detail').textContent = 'Current freshness: ' + String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+    }
+    var excludedSubmodules = DATA.repository_submodules || [];
+    if (excludedSubmodules.length > 0) {
+      var dirtySubmodules = excludedSubmodules.filter(function (submodule) {
+        return submodule.gitlink_changed || submodule.worktree_modified || submodule.worktree_untracked || submodule.availability === 'unavailable';
+      });
+      document.getElementById('rm-submodule-detail').textContent = 'Excluded submodules: ' + excludedSubmodules.length + ' · changed: ' + dirtySubmodules.length + ' · analyzed: no';
+    }
+
+    var tabs = document.getElementById('rm-tabs');
+    var overviewTab = el('button', 'rm-tab rm-active');
+    overviewTab.textContent = 'Overview';
+    overviewTab.setAttribute('data-tab', 'rm-overview');
+    overviewTab.setAttribute('aria-current', 'page');
+    overviewTab.onclick = function () { showTab('rm-overview'); };
+    tabs.appendChild(overviewTab);
+    if (!DATA.architecture_canvas) {
+      var savedTraceFlows = DATA.flows.filter(function (flow) {
+        return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+      });
+      var savedTraceMenu = renderSavedTraceMenu(savedTraceFlows);
+      if (savedTraceMenu) tabs.appendChild(savedTraceMenu);
+    }
+
+    var overview = document.getElementById('rm-overview');
+    var overviewHTML = el('div');
+
+    overviewHTML.appendChild(renderPurposeCard());
+
+    var directions = candidateDirections();
+    var architectureCanvasHost = null;
+    var surfaceCatalogHost = null;
+    if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
+      var architectureCard = el('section', 'rm-card rm-architecture-canvas-card');
+      var architectureHeading = el('div', 'rm-architecture-canvas-heading');
+      architectureHeading.appendChild(txt('h2', null, DATA.architecture_canvas.title || 'Architecture & flows'));
+      architectureHeading.appendChild(txt('p', null, DATA.architecture_canvas.subtitle || 'Select a component, surface, or saved trace, then challenge each step through exact evidence.'));
+      architectureHeading.appendChild(txt(
+        'div',
+        'rm-direction-hint',
+        'Architecture source: ' + architectureSourceLabel(DATA.architecture_canvas.architecture_source)
+      ));
+      architectureCard.appendChild(architectureHeading);
+      architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
+      architectureCard.appendChild(architectureCanvasHost);
+      overviewHTML.appendChild(architectureCard);
+    } else {
+      var systemMap = renderSystemMapCard(DATA.high_level_map, directions, DATA.flows);
+      if (systemMap) overviewHTML.appendChild(systemMap);
+    }
+
+    if (DATA.discovered_surfaces && window.RepomapSurfaceCatalog) {
+      surfaceCatalogHost = el('div', 'rm-surface-catalog-host');
+      overviewHTML.appendChild(surfaceCatalogHost);
+    }
+
+    var startHere = renderStartHereCard(DATA.first_files_to_open);
+    if (startHere) overviewHTML.appendChild(startHere);
+
+    var terms = renderTermsCard(DATA.important_domain_words);
+    if (terms) overviewHTML.appendChild(terms);
+
+    var questions = renderQuestionsCard(DATA.questions_for_human, DATA.unverified_paths);
+    if (questions) overviewHTML.appendChild(questions);
+
+    overview.innerHTML = '';
+    overview.appendChild(overviewHTML);
+
+    if (architectureCanvasView) {
+      architectureCanvasView.destroy();
+      architectureCanvasView = null;
+    }
+    if (architectureCanvasHost) {
+      var architectureOptions = {};
+      if (serverMode() && currentRunID()) {
+        architectureOptions.openLocation = function (filePath, line, column) {
+          if (!OPENABLE_PATH_SET[filePath]) return;
+          return requestOpenFile(filePath, line || 0, column || 0);
+        };
+      }
+      architectureOptions.candidateDirections = directions;
+      architectureOptions.savedFlows = DATA.flows;
+      architectureOptions.stalePaths = new Set((DATA.freshness && DATA.freshness.affected_paths) || []);
+      architectureCanvasView = window.RepomapArchitectureCanvas.mount(
+        architectureCanvasHost,
+        DATA.architecture_canvas,
+        architectureOptions
+      );
+    }
+
+    if (surfaceCatalogView) {
+      surfaceCatalogView.destroy();
+      surfaceCatalogView = null;
+    }
+    if (surfaceCatalogHost) {
+      var surfaceOptions = {};
+      if (serverMode() && currentRunID()) {
+        surfaceOptions.openLocation = function (location) {
+          if (!location || !OPENABLE_PATH_SET[location.path]) return;
+          return requestOpenFile(location.path, location.line || 0, location.column || 0);
+        };
+      }
+      surfaceOptions.openTrace = function (flowID) {
+        if (architectureCanvasView) {
+          architectureCanvasView.openTrace(flowID);
+          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      surfaceOptions.openSurface = function (surfaceID) {
+        if (architectureCanvasView) {
+          architectureCanvasView.openSurface(surfaceID);
+          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      surfaceOptions.openComponent = function (componentID) {
+        if (architectureCanvasView) {
+          architectureCanvasView.openComponent(componentID);
+          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      surfaceOptions.architectureSurfaces = (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [];
+      surfaceOptions.architectureAnchorCount = DATA.run && DATA.run.architecture_anchor_count || 0;
+      surfaceCatalogView = window.RepomapSurfaceCatalog.mount(
+        surfaceCatalogHost,
+        DATA.discovered_surfaces,
+        surfaceOptions
+      );
+    }
+
+    var flowsContainer = document.getElementById('rm-flows-container');
+    flowsContainer.innerHTML = '';
+    if (!DATA.architecture_canvas) DATA.flows.forEach(function (f) {
+      var page = el('div', 'rm-tab-content');
+      page.id = 'rm-flow-' + f.id;
+      page.appendChild(renderFlowPage(f));
+      flowsContainer.appendChild(page);
+    });
+    resumeLatestInvestigation();
+  }
+
+  window.addEventListener('DOMContentLoaded', render);
+})();

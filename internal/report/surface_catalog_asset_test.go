@@ -1,0 +1,193 @@
+package report
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestSurfaceCatalogAssetContract(t *testing.T) {
+	t.Parallel()
+
+	js := readSurfaceCatalogAsset(t, "surface_catalog.js")
+	css := readSurfaceCatalogAsset(t, "surface_catalog.css")
+
+	tests := []struct {
+		name   string
+		asset  string
+		tokens []string
+	}{
+		{
+			name:  "replaceable runtime API",
+			asset: js,
+			tokens: []string{
+				"global.RepomapSurfaceCatalog",
+				"Object.freeze({ mount: mount })",
+				"RepomapSurfaceCatalog.mount requires a host Element",
+			},
+		},
+		{
+			name:  "bounded local filters",
+			asset: js,
+			tokens: []string{
+				"const PAGE_SIZE = 6",
+				"Surface kind",
+				"All evidence",
+				"Through wrapper",
+				"Show less",
+			},
+		},
+		{
+			name:  "honest semantics stay distinct",
+			asset: js,
+			tokens: []string{
+				"This is not a runtime trace or a complete route inventory",
+				"Static · not observed",
+				`this.semantic("Status"`,
+				`this.semantic("Role"`,
+				`this.semantic("Trace readiness"`,
+				`this.semantic("Certainty"`,
+				`this.semantic("Resolution"`,
+				"does not prove callback execution",
+				"Bounded static catalog",
+				"non-worker async tasks",
+				"Static start call found",
+				"Admin route descriptor found",
+				`label: "server start sites"`,
+				`label: "HTTP registrations"`,
+				`"Direct surfaces"`,
+				`value: "http_server"`,
+				`return "HTTP server start call"`,
+				`value: "process_entry"`,
+				`"Process entry "`,
+				`"Exact process entry"`,
+				"Executable · ",
+				"Dynamic call-target bound reached",
+				`"Trace readiness reason"`,
+				`"Quality"`,
+				`task[1] + " · task " + task[2]`,
+			},
+		},
+		{
+			name:  "zero and filtered states do not claim absence",
+			asset: js,
+			tokens: []string{
+				"No supported runtime registrations were cataloged.",
+				"No surfaces match these filters.",
+				"different scopes; absence here does not prove runtime absence.",
+			},
+		},
+		{
+			name:  "catalog groups and trace progression",
+			asset: js + css,
+			tokens: []string{
+				`"All surfaces"`,
+				`label: "Application"`,
+				`label: "Secondary services"`,
+				`label: "Tooling"`,
+				`label: "Tests/helpers"`,
+				`label: "Unassigned"`,
+				`label: "Dynamic/unresolved"`,
+				`label: "Unavailable"`,
+				`"Open saved trace"`,
+				`"Trace unavailable: "`,
+				`"View in Architecture"`,
+				`case "primary_application": return "application"`,
+				`case "secondary_service": return "secondary_service"`,
+				`case "secondary_tooling": return "tooling"`,
+				`label: "CLI commands"`,
+				`label: "process entries"`,
+				`label: "total"`,
+				`label: "trace-ready"`,
+				`label: "partial-trace candidates"`,
+				`label: "runtime activities"`,
+				`label: "rejected/noisy"`,
+			},
+		},
+		{
+			name:  "empty analysis avoids inert catalog controls",
+			asset: js,
+			tokens: []string{
+				`if (this.triggers.length === 0)`,
+				`this.root.classList.add("is-empty")`,
+				`this.summary.remove()`,
+			},
+		},
+		{
+			name:  "expandable evidence remains separated",
+			asset: js,
+			tokens: []string{
+				`this.detailSection("Middleware"`,
+				`this.detailSection("Wrapper chain"`,
+				`this.detailSection("Evidence"`,
+				`this.detailSection("Dynamic frontiers"`,
+				"View coverage and limits",
+				"Loop signals",
+				`this.detailSection("Unavailable packages"`,
+				`this.detailSection("Package diagnostics"`,
+			},
+		},
+		{
+			name:  "editor links and hash are supplied integration points",
+			asset: js,
+			tokens: []string{
+				`typeof this.options.openLocation === "function"`,
+				"this.options.openLocation(object(location))",
+				"new URLSearchParams",
+				`params.set("surface", id)`,
+				`params.delete("surface")`,
+			},
+		},
+		{
+			name:  "keyboard controls and scoped styles",
+			asset: css,
+			tokens: []string{
+				".rm-surface button:focus-visible",
+				".rm-surface summary:focus-visible",
+				".rm-surface__filter[aria-pressed=\"true\"]",
+				".rm-surface__semantics",
+				".rm-surface__coverage",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			for _, token := range test.tokens {
+				if !strings.Contains(test.asset, token) {
+					t.Errorf("asset is missing integration token %q", token)
+				}
+			}
+		})
+	}
+
+	for _, forbidden := range []string{"fetch(", "XMLHttpRequest", "WebSocket", "EventSource"} {
+		if strings.Contains(js, forbidden) {
+			t.Errorf("surface catalog must not initiate external work: found %q", forbidden)
+		}
+	}
+	if strings.Contains(js, "array(trigger.dynamic_frontier).length > 0") {
+		t.Fatal("an auxiliary frontier must not classify an otherwise exact surface as dynamically identified")
+	}
+	for _, token := range []string{
+		`if (trigger.kind === "http_route_frontier") return true`,
+		`status === "configured_route_inventory_unresolved"`,
+		`trigger.provisional_id && hasDynamicEvidence(trigger)`,
+	} {
+		if !strings.Contains(js, token) {
+			t.Errorf("surface identity classification is missing %q", token)
+		}
+	}
+}
+
+func readSurfaceCatalogAsset(t *testing.T, name string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join("templates", name))
+	if err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	return string(data)
+}

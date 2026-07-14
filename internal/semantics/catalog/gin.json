@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seeds": [
+    {
+      "id": "gin-router-group-handle",
+      "operation": "call",
+      "symbol": {"package": "github.com/gin-gonic/gin", "receiver": "*RouterGroup", "name": "Handle", "min_args": 3, "variadic": true},
+      "effect": {"kind": "http_route_registration", "transport": "http", "framework": "gin"},
+      "projections": {"method": {"source": "argument", "index": 0}, "path": {"source": "argument", "index": 1}, "handler": {"source": "argument", "index": 2}, "dispatcher": {"source": "receiver"}},
+      "scenario": {},
+      "reference": "gin v1 RouterGroup.Handle; convenience methods delegate to Handle",
+      "fixture_coverage": ["gin_convenience_wrapper"]
+    }
+  ]
+}

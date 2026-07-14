@@ -1,0 +1,238 @@
+package evidence
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestCertaintyValid(t *testing.T) {
+	tests := []struct {
+		name      string
+		certainty Certainty
+		expected  bool
+	}{
+		{name: "possible", certainty: CertaintyPossible, expected: true},
+		{name: "static", certainty: CertaintyStatic, expected: true},
+		{name: "observed", certainty: CertaintyObserved, expected: true},
+		{name: "invalid", certainty: Certainty("certain-ish"), expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.certainty.Valid(); got != tt.expected {
+				t.Fatalf("Valid() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGraphAddRelationMergesEvidence(t *testing.T) {
+	graph := NewGraph("/repo", "Put")
+	graph.Scenarios = append(graph.Scenarios, Scenario{ID: "test-put", Name: "put test"})
+	graph.AddEntity(Entity{ID: "a", Kind: EntityFunction, Name: "a"})
+	graph.AddEntity(Entity{ID: "b", Kind: EntityFunction, Name: "b"})
+
+	graph.AddRelation(Relation{
+		From:      "a",
+		To:        "b",
+		Kind:      RelationCalls,
+		Certainty: CertaintyStatic,
+		Provenance: []Provenance{{
+			Provider:  "gopls",
+			Operation: "call_hierarchy",
+		}},
+	})
+	graph.AddRelation(Relation{
+		From:      "a",
+		To:        "b",
+		Kind:      RelationCalls,
+		Certainty: CertaintyStatic,
+		Provenance: []Provenance{{
+			Provider:  "gopls",
+			Operation: "call_hierarchy",
+		}, {
+			Provider:  "ssa",
+			Operation: "static_call",
+		}},
+		Scenarios: []string{"test-put"},
+	})
+
+	if len(graph.Relations) != 1 {
+		t.Fatalf("relations = %d, want 1", len(graph.Relations))
+	}
+	if len(graph.Relations[0].Provenance) != 2 {
+		t.Fatalf("provenance = %d, want 2", len(graph.Relations[0].Provenance))
+	}
+	if len(graph.Relations[0].Scenarios) != 1 {
+		t.Fatalf("scenarios = %d, want 1", len(graph.Relations[0].Scenarios))
+	}
+	if err := graph.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestGraphValidateRejectsUnknownEntity(t *testing.T) {
+	graph := NewGraph("/repo", "Put")
+	graph.AddEntity(Entity{ID: "a", Kind: EntityFunction, Name: "a"})
+	graph.AddRelation(Relation{
+		From:      "a",
+		To:        "missing",
+		Kind:      RelationCalls,
+		Certainty: CertaintyStatic,
+		Provenance: []Provenance{{
+			Provider:  "gopls",
+			Operation: "call_hierarchy",
+		}},
+	})
+
+	if err := graph.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want unknown entity error")
+	}
+}
+
+func TestGraphValidateRejectsUnknownScenario(t *testing.T) {
+	graph := NewGraph("/repo", "query")
+	graph.AddEntity(Entity{ID: "query", Kind: EntityQuery, Name: "query"})
+	graph.AddEntity(Entity{ID: "symbol", Kind: EntityFunction, Name: "Run"})
+	graph.AddRelation(Relation{
+		From:       "query",
+		To:         "symbol",
+		Kind:       RelationMatchesQuery,
+		Certainty:  CertaintyPossible,
+		Provenance: []Provenance{{Provider: "gopls", Operation: "workspace_symbol"}},
+		Scenarios:  []string{"missing"},
+	})
+
+	err := graph.Validate()
+	if err == nil || !strings.Contains(err.Error(), "unknown scenario") {
+		t.Fatalf("Validate() error = %v, want unknown scenario", err)
+	}
+}
+
+func TestEvidenceGraphRejectsUnknownSemanticEnums(t *testing.T) {
+	for _, language := range []string{"go", "python"} {
+		t.Run("valid_"+language, func(t *testing.T) {
+			if err := semanticGraph(language).Validate(); err != nil {
+				t.Fatalf("valid %s graph: %v", language, err)
+			}
+		})
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Graph)
+		want   string
+	}{
+		{
+			name: "entity kind",
+			mutate: func(graph *Graph) {
+				graph.Entities[0].Kind = EntityKind("mystery")
+			},
+			want: "invalid kind",
+		},
+		{
+			name: "source scope",
+			mutate: func(graph *Graph) {
+				graph.Entities[0].Scope = SourceScope("somewhere")
+			},
+			want: "invalid source scope",
+		},
+		{
+			name: "relation kind",
+			mutate: func(graph *Graph) {
+				graph.Relations[0].Kind = RelationKind("sort_of_calls")
+			},
+			want: "invalid kind",
+		},
+		{
+			name: "resolution",
+			mutate: func(graph *Graph) {
+				graph.Relations[0].Resolution = ResolutionKind("probably_static")
+			},
+			want: "invalid resolution",
+		},
+		{
+			name: "invocation",
+			mutate: func(graph *Graph) {
+				graph.Relations[0].Invocation = InvocationMode("later")
+			},
+			want: "invalid invocation",
+		},
+		{
+			name: "repository location",
+			mutate: func(graph *Graph) {
+				graph.Entities[0].Location = nil
+			},
+			want: "repository-relative location",
+		},
+		{
+			name: "repository source line",
+			mutate: func(graph *Graph) {
+				graph.Entities[0].Location.Line = 0
+			},
+			want: "repository-relative location",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			graph := semanticGraph("go")
+			test.mutate(&graph)
+			err := graph.Validate()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func semanticGraph(language string) Graph {
+	extension := ".go"
+	if language == "python" {
+		extension = ".py"
+	}
+	graph := NewGraph("/repo", "run")
+	graph.Scenarios = []Scenario{{ID: language + "-fixture", Name: language + " fixture"}}
+	graph.AddEntity(Entity{
+		ID: language + ":run", Kind: EntityFunction, Name: "run", Language: language,
+		Scope: SourceScopeRepository, Location: &Location{Path: "app/main" + extension, Line: 5, Column: 1},
+	})
+	// External entities are valid without leaking absolute dependency or
+	// toolchain paths into the repository graph.
+	graph.AddEntity(Entity{
+		ID: language + ":external", Kind: EntityFunction, Name: "external", Language: language,
+		Scope: SourceScopeDependency,
+	})
+	graph.AddRelation(Relation{
+		From: language + ":run", To: language + ":external", Kind: RelationCalls,
+		Resolution: ResolutionStatic, Invocation: InvocationSynchronous, Certainty: CertaintyStatic,
+		Provenance: []Provenance{{Provider: language + "-fixture", Operation: "call_hierarchy"}},
+		Scenarios:  []string{language + "-fixture"},
+	})
+	return graph
+}
+
+func TestLocationSetRequiresProviderContext(t *testing.T) {
+	t.Parallel()
+
+	valid := LocationSet{
+		Locations:  []Location{{Path: "server/key_test.go", Line: 10, Column: 2}},
+		Certainty:  CertaintyStatic,
+		Provenance: []Provenance{{Provider: "gopls", Version: "v1", Operation: "references"}},
+		Scenarios:  []Scenario{{ID: "active-build", Name: "active Go build"}},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	invalid := valid
+	invalid.Provenance = nil
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("Validate() accepted missing provenance")
+	}
+	invalid = valid
+	invalid.Scenarios = nil
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("Validate() accepted missing build scenario")
+	}
+}

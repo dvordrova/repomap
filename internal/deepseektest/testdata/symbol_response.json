@@ -1,0 +1,22 @@
+{
+  "summary": {
+    "statement": "The selected method is a statically resolved node with one incoming and one outgoing call edge.",
+    "evidence_ids": ["resolution-001", "call-in-001", "call-out-001"],
+    "confidence": 0.72
+  },
+  "responsibility": {
+    "statement": "Its name and outgoing edge suggest a Put-related adapter that delegates to Txn, but source behavior is not established.",
+    "evidence_ids": ["resolution-001", "call-out-001"],
+    "confidence": 0.65
+  },
+  "read_evidence_ids": ["resolution-001", "call-out-001"],
+  "test_evidence_ids": [],
+  "unknowns": ["Which runtime or test scenario executes this edge?"],
+  "next_queries": [
+    {
+      "query": "find references to kvServer.Put in *_test.go files",
+      "reason": "identify an executable scenario and runtime assertions"
+    }
+  ],
+  "warnings": ["Static edges do not establish runtime execution or business semantics."]
+}

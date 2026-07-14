@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "repo_name": "fixture-repo",
+  "query": "kvServer.Put",
+  "target": {
+    "evidence_id": "resolution-001",
+    "entity": {
+      "id": "method:server/key.go:90:20:kvServer.Put",
+      "kind": "method",
+      "name": "kvServer.Put",
+      "language": "go",
+      "location": {"path": "server/key.go", "line": 90, "column": 20}
+    },
+    "certainty": "static",
+    "provenance": [{"provider":"fixture","version":"v1","operation":"workspace_symbol"}],
+    "scenarios": ["fixture-build"]
+  },
+  "candidates": [],
+  "incoming_calls": [
+    {
+      "evidence_id": "call-in-001",
+      "caller": {
+        "id": "function:server/handler.go:40:6:servePut",
+        "kind": "function",
+        "name": "servePut",
+        "language": "go",
+        "location": {"path": "server/handler.go", "line": 40, "column": 6}
+      },
+      "callee": {
+        "id": "method:server/key.go:90:20:kvServer.Put",
+        "kind": "method",
+        "name": "kvServer.Put",
+        "language": "go",
+        "location": {"path": "server/key.go", "line": 90, "column": 20}
+      },
+      "callsite": {"path": "server/handler.go", "line": 51, "column": 10},
+      "certainty": "static",
+      "provenance": [{"provider":"fixture","version":"v1","operation":"call_hierarchy"}],
+      "scenarios": ["fixture-build"]
+    }
+  ],
+  "outgoing_calls": [
+    {
+      "evidence_id": "call-out-001",
+      "caller": {
+        "id": "method:server/key.go:90:20:kvServer.Put",
+        "kind": "method",
+        "name": "kvServer.Put",
+        "language": "go",
+        "location": {"path": "server/key.go", "line": 90, "column": 20}
+      },
+      "callee": {
+        "id": "method:server/txn.go:30:18:Txn",
+        "kind": "method",
+        "name": "Txn",
+        "language": "go",
+        "location": {"path": "server/txn.go", "line": 30, "column": 18}
+      },
+      "callsite": {"path": "server/key.go", "line": 94, "column": 9},
+      "certainty": "static",
+      "provenance": [{"provider":"fixture","version":"v1","operation":"call_hierarchy"}],
+      "scenarios": ["fixture-build"]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "fixture-build",
+      "name": "",
+      "build": {"goos":"linux","goarch":"amd64"}
+    }
+  ],
+  "allowed_paths": ["server/handler.go", "server/key.go", "server/txn.go"],
+  "warnings": [
+    "the bundle contains static analysis only; it does not prove which calls execute at runtime",
+    "fuzzy candidates are possible matches; only target is the unique exact resolution"
+  ]
+}

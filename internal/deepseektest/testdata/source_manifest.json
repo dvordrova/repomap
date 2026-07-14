@@ -1,0 +1,18 @@
+{
+  "fixture_id": "etcd-kvserver-put-deepseek-source-v2",
+  "captured_at": "2026-07-10",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "source_card_version": 1,
+  "source_bundle_version": 1,
+  "prompt_version": "source-assessment-json-v2",
+  "parser_version": 1,
+  "report_version": 1,
+  "evaluation_version": 2,
+  "sha256": {
+    "source_card.json": "ca8b3c5dad369c006321028ca11b62e53341b6a5823297cabc91fd70a4be716e",
+    "source_bundle.json": "2251f4ce08085ecadb4d484912aa2c8da8cb4090168fe6800f70fca0d5bbd3a6",
+    "source_response.json": "66dca4d55d499955d0e440ae8f9b27065647adc35558d603a1fa81f2853b2074"
+  },
+  "note": "Raw response captured from the bounded kvServer.Put DeepSeek source-stage v2 experiment; test references are collected locally after this response."
+}

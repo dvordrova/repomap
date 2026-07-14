@@ -1,0 +1,343 @@
+{
+  "version": 1,
+  "target_name": "kvServer.Put",
+  "searches": [
+    {
+      "anchor_evidence_id": "resolution-001",
+      "symbol_name": "kvServer.Put",
+      "location": {
+        "path": "server/etcdserver/api/v3rpc/key.go",
+        "line": 90,
+        "column": 20,
+        "end_line": 90,
+        "end_column": 23
+      },
+      "source_evidence_ids": []
+    },
+    {
+      "anchor_evidence_id": "call-out-002",
+      "symbol_name": "checkPutRequest",
+      "location": {
+        "path": "server/etcdserver/api/v3rpc/key.go",
+        "line": 182,
+        "column": 6,
+        "end_line": 182,
+        "end_column": 21
+      },
+      "predicate": "validates_input",
+      "source_evidence_ids": [
+        "source-91",
+        "source-92"
+      ]
+    },
+    {
+      "anchor_evidence_id": "call-out-003",
+      "symbol_name": "togRPCError",
+      "location": {
+        "path": "server/etcdserver/api/v3rpc/util.go",
+        "line": 98,
+        "column": 6,
+        "end_line": 98,
+        "end_column": 17
+      },
+      "predicate": "maps_error",
+      "source_evidence_ids": [
+        "source-96",
+        "source-97"
+      ]
+    },
+    {
+      "anchor_evidence_id": "call-out-004",
+      "symbol_name": "Put",
+      "location": {
+        "path": "server/etcdserver/v3_server.go",
+        "line": 63,
+        "column": 2,
+        "end_line": 63,
+        "end_column": 5
+      },
+      "predicate": "delegates_operation",
+      "source_evidence_ids": [
+        "source-95"
+      ]
+    }
+  ],
+  "references": [
+    {
+      "evidence_id": "test-ref-001",
+      "search_anchor_id": "call-out-002",
+      "predicate": "validates_input",
+      "path": "server/etcdserver/api/v3rpc/validationfuzz_test.go",
+      "line": 110,
+      "column": 11,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/api/v3rpc/key.go",
+            "line": 182,
+            "column": 6,
+            "end_line": 182,
+            "end_column": 21
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-002",
+      "search_anchor_id": "call-out-003",
+      "predicate": "maps_error",
+      "path": "server/etcdserver/api/v3rpc/util_test.go",
+      "line": 41,
+      "column": 13,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/api/v3rpc/util.go",
+            "line": 98,
+            "column": 6,
+            "end_line": 98,
+            "end_column": 17
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-003",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 138,
+      "column": 21,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-004",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 152,
+      "column": 21,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-005",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 168,
+      "column": 20,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-006",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 183,
+      "column": 21,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-007",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 197,
+      "column": 19,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-008",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 199,
+      "column": 18,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    },
+    {
+      "evidence_id": "test-ref-009",
+      "search_anchor_id": "call-out-004",
+      "predicate": "delegates_operation",
+      "path": "etcdutl/snapshot/v3_snapshot_test.go",
+      "line": 230,
+      "column": 18,
+      "kind": "test_reference",
+      "certainty": "static",
+      "provenance": [
+        {
+          "provider": "gopls",
+          "version": "v0.23.0",
+          "operation": "references",
+          "detail": "source references reported by gopls",
+          "location": {
+            "path": "server/etcdserver/v3_server.go",
+            "line": 63,
+            "column": 2,
+            "end_line": 63,
+            "end_column": 5
+          }
+        }
+      ],
+      "scenarios": [
+        "gopls-active-build"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "gopls-active-build",
+      "name": "gopls active build configuration",
+      "build": {
+        "goos": "darwin",
+        "goarch": "amd64"
+      }
+    }
+  ],
+  "warnings": [
+    {
+      "code": "support.reference_only",
+      "message": "test references are navigation evidence only; no claim is test_supported until bounded test source is assessed"
+    },
+    {
+      "code": "searches.truncated",
+      "message": "omitted 1 lower-priority reference searches"
+    },
+    {
+      "code": "quality.fixture_sanitized",
+      "message": "the machine-specific scenario working directory was removed from this committed replay fixture"
+    }
+  ]
+}

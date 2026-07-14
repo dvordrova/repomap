@@ -4,125 +4,719 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
-	defaultEndpoint = "https://api.deepseek.com/chat/completions"
-	defaultModel    = "deepseek-chat"
+	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
+	defaultModel     = "deepseek-v4-flash"
+	defaultMaxTokens = 6000
+	defaultTimeout   = 10 * time.Minute
+
+	authBearer = "bearer"
+	authNone   = "none"
+
+	envEndpoint  = "REPOMAP_LLM_ENDPOINT"
+	envModel     = "REPOMAP_LLM_MODEL"
+	envAPIKey    = "REPOMAP_LLM_API_KEY"
+	envMaxTokens = "REPOMAP_LLM_MAX_TOKENS"
+	envTimeout   = "REPOMAP_LLM_TIMEOUT"
+	envAuth      = "REPOMAP_LLM_AUTH"
+
+	legacyEnvEndpoint  = "DEEPSEEK_ENDPOINT"
+	legacyEnvModel     = "DEEPSEEK_MODEL"
+	legacyEnvAPIKey    = "DEEPSEEK_API_KEY"
+	legacyEnvMaxTokens = "DEEPSEEK_MAX_TOKENS"
+	legacyEnvTimeout   = "DEEPSEEK_TIMEOUT"
+	legacyEnvAuth      = "DEEPSEEK_AUTH"
 )
+
+// OrientationPromptVersionJSON identifies the semantic orientation prompt and
+// request contract used by Orient and OrientPromptJSON.
+const OrientationPromptVersionJSON = "orientation-json-v10"
 
 type Client struct {
 	HTTPClient *http.Client
 	APIKey     string
 	Model      string
+	MaxTokens  int
 	Endpoint   string
+	Auth       string
+	// OnWait is called from a heartbeat goroutine during long semantic stages.
+	// Set it before starting a request; it must be concurrency-safe, return
+	// promptly, and never log prompt, response, source, or credential content.
+	OnWait       func(WaitProgress)
+	waitInterval time.Duration
+}
+
+type WaitProgress struct {
+	Stage   string
+	Elapsed time.Duration
+}
+
+type EffectiveConfig struct {
+	Endpoint  string
+	Model     string
+	AuthMode  string
+	Timeout   time.Duration
+	MaxTokens int
+}
+
+func (c *Client) EffectiveConfig() EffectiveConfig {
+	auth := c.Auth
+	if auth == "" {
+		auth = authBearer
+	}
+	var timeout time.Duration
+	if c.HTTPClient != nil {
+		timeout = c.HTTPClient.Timeout
+	}
+	return EffectiveConfig{
+		Endpoint:  c.Endpoint,
+		Model:     c.Model,
+		AuthMode:  auth,
+		Timeout:   timeout,
+		MaxTokens: c.MaxTokens,
+	}
 }
 
 func NewFromEnv() (*Client, error) {
-	key := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
-	if key == "" {
-		return nil, fmt.Errorf("DEEPSEEK_API_KEY is required unless --snapshot-only is used")
+	return newFromEnv(true)
+}
+
+// NewPromptFromEnv builds request configuration without requiring an API key.
+// It is intended for offline prompt inspection only.
+func NewPromptFromEnv() (*Client, error) {
+	return newFromEnv(false)
+}
+
+func newFromEnv(requireAPIKey bool) (*Client, error) {
+	useGenericConfig := anyEnvSet(
+		envEndpoint,
+		envModel,
+		envAPIKey,
+		envMaxTokens,
+		envTimeout,
+		envAuth,
+	)
+	value := func(primary, legacy string) string {
+		if useGenericConfig {
+			return strings.TrimSpace(os.Getenv(primary))
+		}
+		return strings.TrimSpace(os.Getenv(legacy))
 	}
-	model := strings.TrimSpace(os.Getenv("DEEPSEEK_MODEL"))
+
+	auth := value(envAuth, legacyEnvAuth)
+	if auth == "" {
+		auth = authBearer
+	}
+	if auth != authBearer && auth != authNone {
+		return nil, fmt.Errorf("%s must be %q or %q", envAuth, authBearer, authNone)
+	}
+
+	model := value(envModel, legacyEnvModel)
 	if model == "" {
 		model = defaultModel
 	}
+
+	maxTokens := defaultMaxTokens
+	if s := value(envMaxTokens, legacyEnvMaxTokens); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, fmt.Errorf("%s must be an integer: %w", envMaxTokens, err)
+		}
+		if n <= 0 {
+			return nil, fmt.Errorf("%s must be positive", envMaxTokens)
+		}
+		maxTokens = n
+	}
+
+	timeout := defaultTimeout
+	if s := value(envTimeout, legacyEnvTimeout); s != "" {
+		parsed, err := time.ParseDuration(s)
+		if err != nil {
+			return nil, fmt.Errorf("%s must be a duration: %w", envTimeout, err)
+		}
+		if parsed <= 0 {
+			return nil, fmt.Errorf("%s must be positive", envTimeout)
+		}
+		timeout = parsed
+	}
+
+	endpoint := value(envEndpoint, legacyEnvEndpoint)
+	if endpoint == "" {
+		if useGenericConfig {
+			return nil, fmt.Errorf("%s is required when using REPOMAP_LLM_* configuration", envEndpoint)
+		}
+		if auth == authNone {
+			return nil, fmt.Errorf("%s is required when unauthenticated mode is enabled", legacyEnvEndpoint)
+		}
+		endpoint = defaultEndpoint
+	}
+	if err := validateEndpoint(endpoint); err != nil {
+		return nil, fmt.Errorf("%s is invalid: %w", envEndpoint, err)
+	}
+
+	key := value(envAPIKey, legacyEnvAPIKey)
+	if requireAPIKey && auth == authBearer && key == "" {
+		return nil, fmt.Errorf("%s is required when %s=%s", envAPIKey, envAuth, authBearer)
+	}
+	if !requireAPIKey || auth == authNone {
+		key = ""
+	}
+
 	return &Client{
-		HTTPClient: &http.Client{Timeout: 60 * time.Second},
+		HTTPClient: &http.Client{Timeout: timeout},
 		APIKey:     key,
 		Model:      model,
-		Endpoint:   defaultEndpoint,
+		MaxTokens:  maxTokens,
+		Endpoint:   endpoint,
+		Auth:       auth,
 	}, nil
 }
 
+func anyEnvSet(names ...string) bool {
+	for _, name := range names {
+		if _, ok := os.LookupEnv(name); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func validateEndpoint(endpoint string) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https")
+	}
+	if parsed.Host == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("host is required")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("userinfo is not allowed")
+	}
+	return nil
+}
+
+type jsonFormat struct {
+	Type string `json:"type"`
+}
+
+type thinkingConfig struct {
+	Type string `json:"type"`
+}
+
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
+	Model          string          `json:"model"`
+	Messages       []chatMessage   `json:"messages"`
+	Temperature    float64         `json:"temperature"`
+	MaxTokens      int             `json:"max_tokens"`
+	ResponseFormat *jsonFormat     `json:"response_format,omitempty"`
+	Thinking       *thinkingConfig `json:"thinking,omitempty"`
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type chatResponse struct {
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
+		Message      chatMessage `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens           int `json:"prompt_tokens"`
+		CompletionTokens       int `json:"completion_tokens"`
+		CompletionTokenDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
 }
 
-func (c *Client) Orient(ctx context.Context, snapshotJSON []byte) ([]byte, error) {
-	reqPayload := chatRequest{
+const maxRetries = 3
+
+const maxProviderErrorBytes = 8 * 1024
+
+const maxProviderResponseBytes = 16 * 1024 * 1024
+
+func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
+	return chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
 			{
 				Role:    "system",
-				Content: "You are an expert software repository orientation assistant. Respond with JSON only, no markdown fences, no extra text.",
+				Content: "You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
 			},
 			{
 				Role: "user",
-				Content: `Produce an orientation report JSON with this exact shape:
+				Content: `Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
+
+Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
+
+Produce a json orientation report with this exact shape:
 {
   "project_guess": "short guess what this repo is",
   "confidence": 0.0,
-  "first_files_to_open": [{"path":"file path","reason":"why this file is useful"}],
-  "detected_entrypoints": [{"name":"entrypoint name","evidence_files":["paths"],"why_it_matters":"..."}],
-  "candidate_flows": [{"name":"flow name","trigger":"what starts the flow","likely_files":["paths"],"why_interesting":"...","confidence":0.0}],
-  "important_domain_words": [{"word":"term","guess":"what it probably means in this repo"}],
-  "questions_for_human": ["question that would help choose next analysis step"]
+  "high_level_map": [
+    {
+      "name": "component or subsystem name",
+      "role": "entry | boundary | coordination | domain | state | support | unknown",
+      "evidence": ["facts or paths from the bundle"],
+      "why_it_matters": "why this component matters for understanding the repo"
+    }
+  ],
+  "first_files_to_open": [
+    {
+      "path": "must be from allowed_paths",
+      "reason": "why this file is worth opening first"
+    }
+  ],
+  "candidate_flows": [
+    {
+      "name": "runtime or event flow name",
+      "flow_type": "request | operational",
+      "trigger": "what starts this flow",
+      "likely_entrypoint": "exact full path from allowed_paths, preferably one of likely_files",
+      "likely_files": ["all must be from allowed_paths"],
+      "why_interesting": "why this flow matters",
+      "evidence": ["facts from the bundle supporting this flow"],
+      "confidence": 0.0
+    }
+  ],
+  "important_domain_words": [
+    {
+      "word": "term found in paths or readme",
+      "guess": "what it probably means in this repo",
+      "evidence": ["paths or readme excerpts from the bundle"]
+    }
+  ],
+  "questions_for_human": [
+    "question that helps guide the next analysis step"
+  ],
+  "research_questions": [
+    {
+      "id": "short question id",
+      "purpose": "why resolving this question would improve architecture or a saved trace",
+      "question": "one concrete high-value repository question",
+      "candidate_ids": ["opaque ids copied from candidate_file_index"],
+      "evidence_categories": ["declaration, callsite, transition, source_window, test, or frontier"]
+    }
+  ],
+  "unverified_paths": [
+    {
+      "path": "path model suspects but was not present in allowed_paths",
+      "reason": "why it might be relevant"
+    }
+  ],
+  "warnings": [
+    "any uncertainty or missing context"
+  ]
 }
 
-Use only evidence from this local repository snapshot. If uncertain, lower confidence.
-Snapshot JSON:
-` + string(snapshotJSON),
+Important rules:
+- Candidate flows must be runtime/event-oriented (e.g. "CLI command dispatch", "HTTP request handling", "server startup", "plugin loading", "background job execution"), not folder-oriented (do not say "server module" or "pkg folder").
+- Set flow_type to "request" for user/request-driven work and "operational" for background, maintenance, threshold, consensus, or durability work. Prefer the strongest grounded evidence regardless of flow type.
+- An operational candidate must cite source_signal evidence. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
+- Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
+- Every candidate flow must include evidence from the bundle.
+- Propose two to four research_questions only when bounded local evidence could answer them. Use only opaque candidate_file_index ids and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
+- go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.
+- Keep each evidence item atomic. When citing source_signals or go.command_traces, start with its exact path:line and optionally add one short fact, for example "app/service.py:42 registers the handler". Never write "path line 42", "path lines 42-43", or "at line 42". For evidence without a grounded line, use either one exact full allowed_paths value or one non-path fact copied from the bundle. Never abbreviate a path.
+- Distinguish facts from guesses. If confidence is low, say so in warnings.
+- Use only the provided facts bundle. Do not imagine files you cannot see.
+
+Facts bundle JSON:
+` + string(bundleJSON),
 			},
 		},
-		Temperature: 0.1,
+		Temperature:    0.1,
+		MaxTokens:      c.MaxTokens,
+		ResponseFormat: &jsonFormat{Type: "json_object"},
 	}
+}
 
+func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
+	reqPayload := c.buildRequest(bundleJSON)
+	return json.Marshal(reqPayload)
+}
+
+func (c *Client) FlowExplainPromptJSON(userContent, systemContent string) ([]byte, error) {
+	reqPayload := c.flowExplainRequest(userContent, systemContent, true)
+	return json.Marshal(reqPayload)
+}
+
+func (c *Client) flowExplainPromptText(userContent, systemContent string) ([]byte, error) {
+	reqPayload := c.flowExplainRequest(userContent, systemContent, false)
+	return json.Marshal(reqPayload)
+}
+
+func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode bool) chatRequest {
+	request := chatRequest{
+		Model: c.Model,
+		Messages: []chatMessage{
+			{Role: "system", Content: systemContent},
+			{Role: "user", Content: userContent},
+		},
+		Temperature: 0.1,
+		MaxTokens:   c.MaxTokens,
+	}
+	if jsonMode {
+		request.ResponseFormat = &jsonFormat{Type: "json_object"}
+	}
+	return request
+}
+
+func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
+	return c.flowExplain(ctx, userContent, systemContent, true, true)
+}
+
+// BuildResearchRequest returns the exact OpenAI-compatible request body for
+// one bounded targeted research prompt.
+func (c *Client) BuildResearchRequest(prompt modelresearch.Prompt) ([]byte, error) {
+	if prompt.Version != modelresearch.PromptVersion {
+		return nil, fmt.Errorf("unsupported model research prompt version %q", prompt.Version)
+	}
+	return c.FlowExplainPromptJSON(prompt.User, prompt.System)
+}
+
+// Research performs one semantic targeted stage. Transport retries remain
+// inside the stage and are returned as Attempts rather than extra rounds.
+func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (modelresearch.ProviderResult, error) {
+	stopWaiting := c.startWaitProgress(ctx, "targeted research")
+	defer stopWaiting()
+	body, err := c.BuildResearchRequest(prompt)
+	if err != nil {
+		return modelresearch.ProviderResult{}, err
+	}
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := backoffDuration(attempt)
+			select {
+			case <-ctx.Done():
+				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+		completion, shouldRetry, callErr := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+		if callErr == nil {
+			return modelresearch.ProviderResult{
+				Content: completion.Content, Attempts: attempt + 1,
+				InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
+			}, nil
+		}
+		lastErr = callErr
+		if !shouldRetry {
+			return modelresearch.ProviderResult{Attempts: attempt + 1}, callErr
+		}
+	}
+	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
+		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
+	)
+}
+
+// CheckJSONCompatibility makes exactly one small synthetic request. It is used
+// by the CLI doctor and deliberately does not inherit normal retry behavior.
+func (c *Client) CheckJSONCompatibility(ctx context.Context) error {
+	reqPayload := c.flowExplainRequest(
+		`Return exactly one JSON object: {"status":"ok"}`,
+		"This is a provider compatibility check. Return valid JSON only.",
+		true,
+	)
+	reqPayload.MaxTokens = 64
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal deepseek request: %w", err)
+		return fmt.Errorf("marshal llm compatibility request: %w", err)
+	}
+	raw, _, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+	if err != nil {
+		return err
+	}
+	var response struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil || response.Status != "ok" {
+		return fmt.Errorf("llm provider returned JSON but not the expected status")
+	}
+	return nil
+}
+
+func (c *Client) flowExplain(ctx context.Context, userContent, systemContent string, jsonMode, validateJSON bool) ([]byte, error) {
+	var (
+		body []byte
+		err  error
+	)
+	if jsonMode {
+		body, err = c.FlowExplainPromptJSON(userContent, systemContent)
+	} else {
+		body, err = c.flowExplainPromptText(userContent, systemContent)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("marshal flow explain request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint, bytes.NewReader(body))
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := backoffDuration(attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		result, shouldRetry, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, validateJSON)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !shouldRetry {
+			return nil, err
+		}
+	}
+
+	return nil, fmt.Errorf("retries exhausted (%d attempts): %w", maxRetries+1, lastErr)
+}
+
+func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) {
+	result, err := c.OrientMeasured(ctx, bundleJSON)
+	return result.Content, err
+}
+
+// OrientMeasured performs one semantic orientation stage and reports bounded
+// transport attempts separately from semantic call accounting.
+func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelresearch.ProviderResult, error) {
+	stopWaiting := c.startWaitProgress(ctx, "orientation")
+	defer stopWaiting()
+	body, err := c.OrientPromptJSON(bundleJSON)
 	if err != nil {
-		return nil, fmt.Errorf("build deepseek request: %w", err)
+		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := backoffDuration(attempt)
+			select {
+			case <-ctx.Done():
+				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		result, shouldRetry, err := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+		if err == nil {
+			return modelresearch.ProviderResult{
+				Content: result.Content, Attempts: attempt + 1,
+				InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+			}, nil
+		}
+		lastErr = err
+		if !shouldRetry {
+			return modelresearch.ProviderResult{Attempts: attempt + 1}, err
+		}
+	}
+
+	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
+		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
+	)
+}
+
+func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
+	if c == nil || c.OnWait == nil {
+		return func() {}
+	}
+	interval := c.waitInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	var wait sync.WaitGroup
+	wait.Add(1)
+	started := time.Now()
+	go func() {
+		defer wait.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				c.OnWait(WaitProgress{Stage: stage, Elapsed: time.Since(started)})
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() { close(done) })
+		wait.Wait()
+	}
+}
+
+func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) ([]byte, bool, error) {
+	return doChat(ctx, httpClient, endpoint, apiKey, auth, body, true)
+}
+
+func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) ([]byte, bool, error) {
+	result, retry, err := doChatMeasured(ctx, httpClient, endpoint, apiKey, auth, body, validateJSON)
+	return result.Content, retry, err
+}
+
+type chatCompletion struct {
+	Content      []byte
+	InputTokens  int
+	OutputTokens int
+}
+
+func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) (chatCompletion, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return chatCompletion{}, false, fmt.Errorf("build llm request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	switch auth {
+	case "", authBearer:
+		if apiKey == "" {
+			return chatCompletion{}, false, fmt.Errorf("llm bearer authentication requires an API key")
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	case authNone:
+		// Explicit no-auth endpoints must not receive even an empty Authorization header.
+	default:
+		return chatCompletion{}, false, fmt.Errorf("unsupported llm authentication mode %q", auth)
+	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("deepseek request failed: %w", err)
+		retry := isRetryableNetworkError(err)
+		return chatCompletion{}, retry, fmt.Errorf("llm request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read deepseek response: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("read llm response: %w", err)
 	}
+	if len(respBody) > maxProviderResponseBytes {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return chatCompletion{}, isRetryableHTTP(resp.StatusCode), fmt.Errorf(
+				"llm request failed with status %d: %s...[truncated]",
+				resp.StatusCode,
+				safeProviderErrorText(respBody[:maxProviderErrorBytes]),
+			)
+		}
+		return chatCompletion{}, false, fmt.Errorf("llm response exceeds %d bytes", maxProviderResponseBytes)
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("deepseek request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		retry := isRetryableHTTP(resp.StatusCode)
+		return chatCompletion{}, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
 	}
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, fmt.Errorf("parse deepseek response envelope: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("parse llm response envelope: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("deepseek response contains no choices")
+		return chatCompletion{}, false, fmt.Errorf("llm response contains no choices")
 	}
-	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
+	choice := parsed.Choices[0]
+	content := strings.TrimSpace(choice.Message.Content)
 	if content == "" {
-		return nil, fmt.Errorf("deepseek response content is empty")
+		details := make([]string, 0, 4)
+		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
+			details = append(details, "finish_reason="+finishReason)
+		}
+		if parsed.Usage.CompletionTokens > 0 {
+			details = append(details, fmt.Sprintf("completion_tokens=%d", parsed.Usage.CompletionTokens))
+		}
+		if parsed.Usage.CompletionTokenDetails.ReasoningTokens > 0 {
+			details = append(details, fmt.Sprintf(
+				"reasoning_tokens=%d",
+				parsed.Usage.CompletionTokenDetails.ReasoningTokens,
+			))
+		} else if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
+			details = append(details, "reasoning_content_present")
+		}
+		if len(details) > 0 {
+			return chatCompletion{}, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
+		}
+		return chatCompletion{}, false, fmt.Errorf("llm response content is empty")
 	}
-	return []byte(content), nil
+
+	if validateJSON {
+		var validate json.RawMessage
+		if err := json.Unmarshal([]byte(content), &validate); err != nil {
+			return chatCompletion{}, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
+		}
+	}
+
+	return chatCompletion{
+		Content: []byte(content), InputTokens: parsed.Usage.PromptTokens,
+		OutputTokens: parsed.Usage.CompletionTokens,
+	}, false, nil
+}
+
+func knownFinishReason(reason string) string {
+	switch reason {
+	case "stop", "length", "content_filter", "tool_calls", "insufficient_system_resource":
+		return reason
+	default:
+		return ""
+	}
+}
+
+func safeProviderErrorText(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if kind, found := secretscan.Detect(text); found {
+		return fmt.Sprintf("[redacted: %s detected in provider response]", kind)
+	}
+	if len(text) <= maxProviderErrorBytes {
+		return text
+	}
+	cut := maxProviderErrorBytes
+	for cut > 0 && !utf8.ValidString(text[:cut]) {
+		cut--
+	}
+	return text[:cut] + "...[truncated]"
+}
+
+func isRetryableHTTP(status int) bool {
+	return status == 429 || status >= 500
+}
+
+func isRetryableNetworkError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	return true
+}
+
+func backoffDuration(attempt int) time.Duration {
+	base := time.Duration(1<<(attempt-1)) * 500 * time.Millisecond
+	jitter := time.Duration(float64(base) * (0.5 + rand.Float64()*0.5))
+	return jitter
 }

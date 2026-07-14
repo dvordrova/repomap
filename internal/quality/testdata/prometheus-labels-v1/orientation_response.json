@@ -1,0 +1,177 @@
+{
+  "project_guess": "Prometheus monitoring system",
+  "confidence": 1.0,
+  "high_level_map": [
+    {
+      "name": "Command Entrypoint",
+      "evidence": ["cmd/prometheus/main.go is the main entrypoint", "cmd/prometheus/main.go contains flags for delayed compaction and auto GOMAXPROCS"],
+      "why_it_matters": "Understanding the main entrypoint is critical to see how all components are wired together."
+    },
+    {
+      "name": "Configuration Management",
+      "evidence": ["config/config.go and config/reload.go are imported by the entrypoint", "config package has edges to discovery and storage"],
+      "why_it_matters": "Configuration drives scrape targets, rules, and alerting; reloading is a key runtime event."
+    },
+    {
+      "name": "Service Discovery",
+      "evidence": ["discovery/manager.go, discovery/discovery.go, and multiple provider files under discovery/kubernetes/", "discovery package is imported by entrypoint"],
+      "why_it_matters": "Service discovery dynamically finds targets to scrape, a core feature of Prometheus."
+    },
+    {
+      "name": "Time Series Storage (TSDB)",
+      "evidence": ["tsdb/head_wal.go is the Write-Ahead Log for in-memory state", "model/labels/ and model/histogram/ define core data types"],
+      "why_it_matters": "TSDB is the heart of Prometheus, handling metric storage and compaction."
+    },
+    {
+      "name": "Command-Line Tool (promtool)",
+      "evidence": ["cmd/promtool/main.go and many subcommands in cmd/promtool/", "tool for analyzing, debugging, and querying Prometheus data"],
+      "why_it_matters": "promtool is used for offline analysis and testing, complementing the server."
+    },
+    {
+      "name": "Remote Write/Storage",
+      "evidence": ["prompb/io/prometheus/client/metrics.proto defines the remote write protocol", "storage/remote package is referenced in important edges (not in allowed_paths but inferred)"],
+      "why_it_matters": "Remote storage allows sending metrics to external systems, a common deployment pattern."
+    }
+  ],
+  "first_files_to_open": [
+    {
+      "path": "cmd/prometheus/main.go",
+      "reason": "Main entrypoint of the Prometheus server; shows how all components are initialized and started."
+    },
+    {
+      "path": "config/config.go",
+      "reason": "Defines the configuration structure used across the entire system; essential for understanding runtime behavior."
+    },
+    {
+      "path": "discovery/manager.go",
+      "reason": "Core of service discovery orchestration; links configuration to target updates."
+    },
+    {
+      "path": "tsdb/head_wal.go",
+      "reason": "Implements the Write-Ahead Log, critical for understanding how ingested metrics are persisted."
+    },
+    {
+      "path": "docs/querying/api.md",
+      "reason": "Documents the HTTP API for PromQL queries; helps understand the query flow."
+    }
+  ],
+  "candidate_flows": [
+    {
+      "name": "Server Startup and Configuration Initialization",
+      "trigger": "Running the prometheus binary",
+      "likely_entrypoint": "cmd/prometheus/main.go",
+      "likely_files": ["cmd/prometheus/main.go", "config/config.go", "config/reload.go"],
+      "why_interesting": "Initialization sets up storage, discovery, scraping, and rule evaluation; understanding startup is key to the whole system.",
+      "evidence": ["cmd/prometheus/main.go is the entrypoint with flags for compaction and quotas", "config/config.go and config/reload.go are imported by the entrypoint"],
+      "confidence": 0.9
+    },
+    {
+      "name": "Scrape Cycle (Pull Model)",
+      "trigger": "Configured scrape interval for a target",
+      "likely_entrypoint": "cmd/prometheus/main.go",
+      "likely_files": ["cmd/prometheus/main.go", "config/config.go", "discovery/manager.go", "discovery/targetgroup/targetgroup.go"],
+      "why_interesting": "The pull model is Prometheus's primary data collection mechanism; understanding scrape is fundamental.",
+      "evidence": ["README.md describes an HTTP pull model", "config/config.go defines scrape configurations", "discovery provides target groups"],
+      "confidence": 0.6
+    },
+    {
+      "name": "Service Discovery Update Flow",
+      "trigger": "Configuration load or periodic refresh",
+      "likely_entrypoint": "discovery/manager.go",
+      "likely_files": ["discovery/manager.go", "discovery/discovery.go", "discovery/targetgroup/targetgroup.go"],
+      "why_interesting": "Dynamic target updates keep scrape configurations current; vital for Kubernetes environments.",
+      "evidence": ["discovery/manager.go orchestrates discovery providers", "discovery/kubernetes/ files show Kubernetes-specific discovery"],
+      "confidence": 0.8
+    },
+    {
+      "name": "TSDB Write Path (Ingestion to WAL)",
+      "trigger": "Scrape results returning metrics",
+      "likely_entrypoint": "cmd/prometheus/main.go",
+      "likely_files": ["cmd/prometheus/main.go", "tsdb/head_wal.go", "model/labels/labels_common.go", "model/histogram/histogram.go"],
+      "why_interesting": "Metrics must be written durably; the WAL and head block are core to performance and reliability.",
+      "evidence": ["tsdb/head_wal.go is the WAL implementation", "model/labels/ and model/histogram/ define metric data types"],
+      "confidence": 0.5
+    },
+    {
+      "name": "PromQL Query Execution",
+      "trigger": "HTTP API request to /api/v1/query",
+      "likely_entrypoint": "cmd/prometheus/main.go",
+      "likely_files": ["cmd/prometheus/main.go", "docs/querying/api.md"],
+      "why_interesting": "PromQL is powerful and unique; query execution touches storage and rule evaluation.",
+      "evidence": ["docs/querying/api.md documents the query API", "promql package is imported by the entrypoint (inferred from important edges)"],
+      "confidence": 0.4
+    }
+  ],
+  "important_domain_words": [
+    {
+      "word": "PromQL",
+      "guess": "Prometheus Query Language, a functional query language for time series data",
+      "evidence": ["README.md mentions 'PromQL, a powerful and flexible query language'"]
+    },
+    {
+      "word": "TSDB",
+      "guess": "Time Series Database, the embedded storage engine for Prometheus",
+      "evidence": ["tsdb directory at root level", "tsdb/head_wal.go is a key file"]
+    },
+    {
+      "word": "Scrape",
+      "guess": "The act of pulling metrics from a target at a configured interval",
+      "evidence": ["README.md describes 'HTTP pull model'", "scrape directory exists (though not fully in allowed_paths)"]
+    },
+    {
+      "word": "Service Discovery",
+      "guess": "Mechanisms to dynamically find and update scrape targets",
+      "evidence": ["README.md mentions 'service discovery'", "discovery directory contains multiple providers"]
+    },
+    {
+      "word": "Rule Evaluation",
+      "guess": "Evaluation of recording and alerting rules defined in PromQL",
+      "evidence": ["README.md mentions 'evaluates rule expressions'", "rules directory (not in allowed_paths but inferred from important edges)"]
+    },
+    {
+      "word": "Federation",
+      "guess": "Hierarchical or horizontal configuration where Prometheus servers can scrape each other",
+      "evidence": ["README.md lists 'federation' as a feature"]
+    },
+    {
+      "word": "Alerting",
+      "guess": "Triggering alerts based on alerting rules and sending notifications",
+      "evidence": ["README.md mentions 'trigger alerts'", "notifier package (inferred from important edges)"]
+    }
+  ],
+  "questions_for_human": [
+    "How does the scrape manager interact with the WAL for writing metrics?",
+    "What is the exact flow from a config reload to updating the scrape targets?",
+    "How are PromQL queries executed against the TSDB? Which files handle the query lifecycle?",
+    "What is the role of tsdb/head_wal.go in the overall write path?",
+    "How does the main function in cmd/prometheus/main.go initialize and start all components?"
+  ],
+  "unverified_paths": [
+    {
+      "path": "scrape/scrape.go",
+      "reason": "Likely contains the core scrape loop logic, but not present in allowed_paths."
+    },
+    {
+      "path": "web/api/v1/api.go",
+      "reason": "Probably implements the HTTP API for PromQL queries, but not in allowed_paths."
+    },
+    {
+      "path": "rules/manager.go",
+      "reason": "Likely manages rule evaluation and alerting, but not in allowed_paths."
+    },
+    {
+      "path": "storage/remote/storage.go",
+      "reason": "Implements remote write/read storage, inferred from important edges but not in allowed_paths."
+    },
+    {
+      "path": "notifier/notifier.go",
+      "reason": "Handles alert notification dispatch, inferred from important edges but not in allowed_paths."
+    }
+  ],
+  "warnings": [
+    "The source signals and candidate file index are truncated; some important files may be missing.",
+    "The scrape, web, rules, and notifier packages are not present in allowed_paths, so their flows are inferred from directory structure and dependencies.",
+    "Confidence in candidates flows that rely on unverified paths is lower.",
+    "The readme excerpt is truncated."
+  ]
+}
