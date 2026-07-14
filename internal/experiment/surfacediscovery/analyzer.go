@@ -68,6 +68,10 @@ type analyzer struct {
 	closureBindingAmbiguous   map[*ssa.Function]bool
 	freeVarBindings           map[*ssa.FreeVar]ssa.Value
 	freeVarBindingAmbiguous   map[*ssa.FreeVar]bool
+	parameterBindings         map[*ssa.Parameter]ssa.Value
+	parameterBindingAmbiguous map[*ssa.Parameter]bool
+	uniqueStoreValues         map[ssa.Value]ssa.Value
+	storeValueAmbiguous       map[ssa.Value]bool
 	detachedWalk              bool
 }
 
@@ -152,6 +156,10 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		closureBindingAmbiguous:   map[*ssa.Function]bool{},
 		freeVarBindings:           map[*ssa.FreeVar]ssa.Value{},
 		freeVarBindingAmbiguous:   map[*ssa.FreeVar]bool{},
+		parameterBindings:         map[*ssa.Parameter]ssa.Value{},
+		parameterBindingAmbiguous: map[*ssa.Parameter]bool{},
+		uniqueStoreValues:         map[ssa.Value]ssa.Value{},
+		storeValueAmbiguous:       map[ssa.Value]bool{},
 		scenario: Scenario{
 			ID:   scenarioID(runtime.GOOS, runtime.GOARCH, opts.BuildTags),
 			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
@@ -390,6 +398,7 @@ func (a *analyzer) prepare() {
 					}
 				}
 				if store, ok := instruction.(*ssa.Store); ok {
+					a.recordUniqueStore(store)
 					a.recordFunctionReference(store.Val)
 					if _, matched := a.fieldSeed(store); matched {
 						a.relevant[function] = true
@@ -466,6 +475,18 @@ func (a *analyzer) prepare() {
 			}
 		}
 	}
+}
+
+func (a *analyzer) recordUniqueStore(store *ssa.Store) {
+	if store == nil || store.Addr == nil || store.Val == nil || a.storeValueAmbiguous[store.Addr] {
+		return
+	}
+	if previous, exists := a.uniqueStoreValues[store.Addr]; exists && previous != store.Val {
+		a.storeValueAmbiguous[store.Addr] = true
+		delete(a.uniqueStoreValues, store.Addr)
+		return
+	}
+	a.uniqueStoreValues[store.Addr] = store.Val
 }
 
 func (a *analyzer) orderedFunctions() []*ssa.Function {
@@ -925,6 +946,9 @@ func (a *analyzer) addBoundValueTarget(
 	}
 	value := a.eval(call.Common().Value, env, 0)
 	ids := append([]string{value.Text}, value.Candidates...)
+	if function := a.uniqueOriginFunction(call.Common().Value, 0); function != nil {
+		ids = append(ids, a.functionID(function))
+	}
 	if freeVar, ok := call.Common().Value.(*ssa.FreeVar); ok && !a.freeVarBindingAmbiguous[freeVar] {
 		if function := a.boundFunction(a.freeVarBindings[freeVar], 0); function != nil {
 			ids = append(ids, a.functionID(function))
@@ -947,6 +971,87 @@ func (a *analyzer) addBoundValueTarget(
 		}
 	}
 	return targets
+}
+
+// uniqueOriginFunction follows only identity-preserving, single-origin SSA
+// values. It intentionally rejects Phi, maps, reflection, invokes, and every
+// ambiguous store/parameter/free-variable binding.
+func (a *analyzer) uniqueOriginFunction(value ssa.Value, depth int) *ssa.Function {
+	if value == nil || depth > 8 {
+		return nil
+	}
+	switch current := value.(type) {
+	case *ssa.Function:
+		return current
+	case *ssa.MakeClosure:
+		function, _ := current.Fn.(*ssa.Function)
+		return function
+	case *ssa.Parameter:
+		if a.parameterBindingAmbiguous[current] {
+			return nil
+		}
+		return a.uniqueOriginFunction(a.parameterBindings[current], depth+1)
+	case *ssa.FreeVar:
+		if a.freeVarBindingAmbiguous[current] {
+			return nil
+		}
+		return a.uniqueOriginFunction(a.freeVarBindings[current], depth+1)
+	case *ssa.ChangeType:
+		return a.uniqueOriginFunction(current.X, depth+1)
+	case *ssa.Convert:
+		return a.uniqueOriginFunction(current.X, depth+1)
+	case *ssa.MakeInterface:
+		return a.uniqueOriginFunction(current.X, depth+1)
+	case *ssa.UnOp:
+		if a.storeValueAmbiguous[current.X] {
+			return nil
+		}
+		if stored := a.uniqueStoreValues[current.X]; stored != nil {
+			return a.uniqueOriginFunction(stored, depth+1)
+		}
+		return nil
+	case *ssa.Alloc:
+		if a.storeValueAmbiguous[current] {
+			return nil
+		}
+		return a.uniqueOriginFunction(a.uniqueStoreValues[current], depth+1)
+	case *ssa.Extract:
+		call, ok := current.Tuple.(*ssa.Call)
+		if !ok || call.Common().StaticCallee() == nil {
+			return nil
+		}
+		return a.uniqueReturnFunction(call.Common().StaticCallee(), current.Index, depth+1)
+	case *ssa.Call:
+		if current.Common().StaticCallee() == nil {
+			return nil
+		}
+		return a.uniqueReturnFunction(current.Common().StaticCallee(), 0, depth+1)
+	}
+	return nil
+}
+
+func (a *analyzer) uniqueReturnFunction(function *ssa.Function, index, depth int) *ssa.Function {
+	if function == nil || function.Blocks == nil || index < 0 {
+		return nil
+	}
+	var result *ssa.Function
+	for _, block := range function.Blocks {
+		for _, instruction := range block.Instrs {
+			returned, ok := instruction.(*ssa.Return)
+			if !ok || index >= len(returned.Results) {
+				continue
+			}
+			candidate := a.uniqueOriginFunction(returned.Results[index], depth+1)
+			if candidate == nil {
+				return nil
+			}
+			if result != nil && result != candidate {
+				return nil
+			}
+			result = candidate
+		}
+	}
+	return result
 }
 
 func (a *analyzer) boundFunction(value ssa.Value, depth int) *ssa.Function {
@@ -1041,6 +1146,9 @@ func (a *analyzer) callTargetWitness(call ssa.CallInstruction, target *ssa.Funct
 	}
 	if call == nil || target == nil || call.Common().Value == nil {
 		return false
+	}
+	if origin := a.uniqueOriginFunction(call.Common().Value, 0); origin == target {
+		return true
 	}
 	value := a.eval(call.Common().Value, env, 0)
 	targetID := a.functionID(target)
@@ -1809,9 +1917,22 @@ func (a *analyzer) bind(
 			result[parameter] = dynamicValue("parameter " + parameter.Name())
 			continue
 		}
+		a.recordParameterBinding(parameter, args[index])
 		result[parameter] = a.eval(args[index], caller, depth+1)
 	}
 	return result
+}
+
+func (a *analyzer) recordParameterBinding(parameter *ssa.Parameter, value ssa.Value) {
+	if parameter == nil || value == nil || a.parameterBindingAmbiguous[parameter] {
+		return
+	}
+	if previous, exists := a.parameterBindings[parameter]; exists && previous != value {
+		a.parameterBindingAmbiguous[parameter] = true
+		delete(a.parameterBindings, parameter)
+		return
+	}
+	a.parameterBindings[parameter] = value
 }
 
 func (a *analyzer) bindWithCall(
