@@ -33,6 +33,9 @@ coverage = json.loads(pathlib.Path(sys.argv[2]).read_text())
 grounding = json.loads(pathlib.Path(sys.argv[3]).read_text())
 triggers = catalog["triggers"]
 
+def is_application(trigger):
+    return trigger.get("application_classification", "application_surface") == "application_surface"
+
 expected_registration_routes = {
     "/config/",
     "/id/",
@@ -55,6 +58,7 @@ exact_registration_routes = {
     trigger["identity"]["path"].get("text", "")
     for trigger in triggers
     if trigger["kind"] == "http_route"
+    and is_application(trigger)
     and trigger["identity"]["path"].get("known")
 }
 exact_descriptor_routes = {
@@ -71,7 +75,7 @@ if exact_descriptor_routes != expected_descriptor_routes:
 server_sites = {
     (trigger["server_start_site"]["path"], trigger["server_start_site"]["line"])
     for trigger in triggers
-    if trigger["kind"] == "http_server"
+    if trigger["kind"] == "http_server" and is_application(trigger)
 }
 expected_server_sites = {
     ("admin.go", 442),
@@ -85,7 +89,9 @@ if server_sites != expected_server_sites:
 dynamic_routes = [
     trigger
     for trigger in triggers
-    if trigger["kind"] == "http_route" and not trigger["identity"]["path"].get("known")
+    if trigger["kind"] == "http_route"
+    and is_application(trigger)
+    and not trigger["identity"]["path"].get("known")
 ]
 if len(dynamic_routes) != 1 or dynamic_routes[0]["registration_site"] != {
     "path": "admin.go",
@@ -125,7 +131,9 @@ if frontier_sites != {
 
 exact_routes = [
     trigger for trigger in triggers
-    if trigger["kind"] == "http_route" and trigger["identity"]["path"].get("known")
+    if trigger["kind"] == "http_route"
+    and is_application(trigger)
+    and trigger["identity"]["path"].get("known")
 ]
 if len(exact_routes) != 9 or any(trigger["resolution"] != "exact" for trigger in exact_routes):
     raise SystemExit("exact Caddy registrations were degraded by auxiliary reachability frontiers")
@@ -133,8 +141,11 @@ server_roots = [trigger for trigger in triggers if trigger["kind"] == "http_serv
 if any(trigger["resolution"] == "dynamic" or trigger["provisional_id"] for trigger in server_roots):
     raise SystemExit("exact Caddy server start sites were presented as dynamically identified")
 
-if any(pathlib.PurePath(trigger["registration_site"]["path"]).is_absolute() for trigger in triggers):
-    raise SystemExit("Caddy catalog retained a dependency-owned absolute registration site")
+if any(
+    is_application(trigger) and pathlib.PurePath(trigger["registration_site"]["path"]).is_absolute()
+    for trigger in triggers
+):
+    raise SystemExit("Caddy application surface retained a dependency-owned absolute registration site")
 
 required_seeds = {
     "net-http-servemux-handle",
@@ -150,8 +161,17 @@ matched_seeds = set(coverage["configured_seeds_matched"])
 if not required_seeds <= matched_seeds:
     raise SystemExit(f"Caddy seeds missing: {sorted(required_seeds - matched_seeds)}")
 
-if len(triggers) != 21 or len({trigger["id"] for trigger in triggers}) != 21:
+class_counts = {
+    classification: sum(
+        trigger.get("application_classification", "application_surface") == classification
+        for trigger in triggers
+    )
+    for classification in {"application_surface", "supporting_dependency_behavior"}
+}
+if len(triggers) != 32 or len({trigger["id"] for trigger in triggers}) != 32:
     raise SystemExit(f"Caddy surface multiplicity mismatch: {len(triggers)} records")
+if class_counts != {"application_surface": 21, "supporting_dependency_behavior": 11}:
+    raise SystemExit(f"Caddy application/dependency classification mismatch: {class_counts}")
 
 anchors = grounding.get("behavior_anchors") or []
 anchor_counts = {
@@ -165,8 +185,8 @@ if len(anchors) != 13 or any(count > 16 for count in anchor_counts.values()):
     )
 
 print(
-    "OK: Caddy matched 14 exact admin route facts, 2 configured-site route frontiers, "
-    "and 4 static HTTP server start sites without inventing configured site routes"
+    "OK: Caddy retained 21 application-owned surfaces and 11 supporting dependency "
+    "behaviors without promoting dependency routes into application trace seeds"
 )
 PY
 
@@ -191,10 +211,10 @@ surfaces = report.get("discovered_surfaces") or {}
 triggers = surfaces.get("triggers") or []
 expected_counts = {
     "process_entry": 1,
-    "http_route": 10,
+    "http_route": 19,
     "http_route_descriptor": 5,
     "http_route_frontier": 2,
-    "http_server": 4,
+    "http_server": 6,
 }
 actual_counts = {
     kind: sum(trigger.get("kind") == kind for trigger in triggers)
@@ -204,18 +224,20 @@ if actual_counts != expected_counts:
     raise SystemExit(f"projected Caddy surface mismatch: {actual_counts}")
 expected_projected_fields = {
     "process_entry_count": 1,
-    "http_route_count": 10,
+    "http_route_count": 19,
     "http_route_descriptor_count": 5,
     "http_route_frontier_count": 2,
-    "http_server_count": 4,
+    "http_server_count": 6,
 }
 for field, expected in expected_projected_fields.items():
     if surfaces.get(field) != expected:
         raise SystemExit(f"projected Caddy count {field}={surfaces.get(field)!r}, expected {expected}")
-if surfaces.get("application_count") != 22 or surfaces.get("unassigned_count") != 0:
+if surfaces.get("application_count") != 22 or surfaces.get("supporting_dependency_count") != 11 or surfaces.get("unassigned_count") != 0:
     raise SystemExit(
-        "Caddy surfaces were not attributed to the exact repository-named main executable: "
-        f"application={surfaces.get('application_count')!r} unassigned={surfaces.get('unassigned_count')!r}"
+        "Caddy surfaces did not keep application-owned and dependency behavior distinct: "
+        f"application={surfaces.get('application_count')!r} "
+        f"supporting_dependency={surfaces.get('supporting_dependency_count')!r} "
+        f"unassigned={surfaces.get('unassigned_count')!r}"
     )
 quality_counts = {
     value: sum(trigger.get("trace_readiness") == value for trigger in triggers)
@@ -224,7 +246,7 @@ quality_counts = {
 if quality_counts != {
     "trace_ready": 0,
     "partial_trace_ready": 19,
-    "unsupported": 3,
+    "unsupported": 14,
     "rejected": 0,
 }:
     raise SystemExit(f"projected Caddy trace-readiness mismatch: {quality_counts}")

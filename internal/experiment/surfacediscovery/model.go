@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v8"
-	TriggerCatalogVersion        = 5
-	CoverageVersion              = 5
+	AnalyzerVersion              = "surface-ssa-v9"
+	TriggerCatalogVersion        = 6
+	CoverageVersion              = 6
 	CatalogVersion               = 1
 	ArchitectureGroundingVersion = 3
 )
