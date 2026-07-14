@@ -36,6 +36,7 @@ func Attach(ctx context.Context, repoPath string, flows []flowexplain.CandidateF
 	}
 	executor := gotypes.NewExecutor()
 	usedTraces := make(map[int]struct{})
+	usedUnavailableProcessEntries := make(map[string]struct{})
 	var warnings []string
 	for index := range flows {
 		flow := &flows[index]
@@ -68,11 +69,26 @@ func Attach(ctx context.Context, repoPath string, flows []flowexplain.CandidateF
 		if !ok {
 			continue
 		}
+		if processEntryUnavailable(input.Surfaces, seed.SeedSurfaceID) {
+			if _, used := usedUnavailableProcessEntries[seed.SeedSurfaceID]; used {
+				continue
+			}
+			usedUnavailableProcessEntries[seed.SeedSurfaceID] = struct{}{}
+		}
 		proof := flowproof.BuildProcess(seed)
 		session := flowproof.Start(proof, budget, seed.ScenarioID, seed.CollectorVersion)
 		flow.LocalProof = &session
 	}
 	return warnings
+}
+
+func processEntryUnavailable(surfaces []surfacediscovery.TriggerRecord, id string) bool {
+	for _, surface := range surfaces {
+		if surface.ID == id {
+			return surface.Availability == surfacediscovery.AvailabilityUnavailable
+		}
+	}
+	return false
 }
 
 func excludesProcessProof(basis string) bool {
@@ -90,7 +106,6 @@ func processSeedForFlow(
 	entries := make([]surfacediscovery.TriggerRecord, 0, 1)
 	for _, surface := range surfaces {
 		if surface.Kind != "process_entry" || surface.SurfaceRole != surfacediscovery.SurfaceRoleEntrySurface ||
-			surface.Availability != surfacediscovery.AvailabilityAvailable ||
 			surface.TraceReadiness != surfacediscovery.TraceReadinessPartial ||
 			surface.Resolution != "exact" || surface.ProvisionalID ||
 			surface.ProcessEntrypoint.Location.Path != flow.LikelyEntrypoint {
@@ -108,6 +123,9 @@ func processSeedForFlow(
 		CollectorVersion: flowproof.SurfaceCollectorVersion,
 		Entrypoint:       staticSurfaceFact(entry),
 		CurrentFrontier:  "downstream runtime handoff from the exact process entry remains unresolved",
+	}
+	if entry.Availability == surfacediscovery.AvailabilityUnavailable {
+		seed.CurrentFrontier = "typed downstream closure is unavailable under the recorded build scenario"
 	}
 	if support, ok := supportingSurfaceForFlow(flow, entry, surfaces); ok {
 		fact := staticSurfaceFact(support)

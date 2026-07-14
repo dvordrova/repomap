@@ -47,7 +47,7 @@ func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing
 			}
 		case "example.com/partial_load/cmd/broken":
 			if entry.ExecutableRole != ExecutableRoleSecondaryService || entry.Availability != AvailabilityUnavailable ||
-				entry.SurfaceRole != SurfaceRoleRejected || entry.TraceReadiness != TraceReadinessRejected ||
+				entry.SurfaceRole != SurfaceRoleEntrySurface || entry.TraceReadiness != TraceReadinessPartial ||
 				entry.ProcessEntrypoint.Location != (Location{Path: "cmd/broken/main.go", Line: 3}) ||
 				len(entry.Evidence) != 1 || entry.Evidence[0].Kind != "process_entry_declaration" {
 				t.Fatalf("broken process entry = %#v", entry)

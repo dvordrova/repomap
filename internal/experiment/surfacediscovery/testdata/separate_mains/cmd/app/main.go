@@ -11,6 +11,7 @@ func primary() {
 }
 
 func main() {
+	primary()
 	shared.Set(primary)
 	shared.Run()
 }

@@ -20,9 +20,9 @@ import (
 const (
 	surfaceCatalogFilename         = "trigger_catalog.json"
 	surfaceCoverageFilename        = "surface_coverage.json"
-	surfaceArtifactVersion         = 5
-	previousSurfaceArtifactVersion = 4
-	legacySurfaceArtifactVersion   = 3
+	surfaceArtifactVersion         = 6
+	previousSurfaceArtifactVersion = 5
+	legacySurfaceArtifactVersion   = 4
 	oldestSurfaceArtifactVersion   = 2
 	surfaceSemanticCatalogVersion  = 1
 	maxSurfaceArtifactBytes        = 4 * 1024 * 1024
@@ -572,9 +572,7 @@ func validateSurfaceArtifactPair(catalog rawSurfaceCatalog, coverage rawSurfaceC
 }
 
 func supportedSurfaceArtifactVersion(version int) bool {
-	return version == oldestSurfaceArtifactVersion || version == legacySurfaceArtifactVersion ||
-		version == previousSurfaceArtifactVersion ||
-		version == surfaceArtifactVersion
+	return version >= oldestSurfaceArtifactVersion && version <= surfaceArtifactVersion
 }
 
 func surfaceScenariosMatch(left, right rawSurfaceScenario) bool {
