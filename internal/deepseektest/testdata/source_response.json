@@ -1,0 +1,35 @@
+{
+  "assessments": [
+    {
+      "question_id": "question-call-out-002",
+      "verdict": "shown",
+      "source_evidence_ids": ["source-91", "source-92"]
+    },
+    {
+      "question_id": "question-call-out-004",
+      "verdict": "shown",
+      "source_evidence_ids": ["source-95"]
+    },
+    {
+      "question_id": "question-call-out-003",
+      "verdict": "shown",
+      "source_evidence_ids": ["source-96", "source-97"]
+    },
+    {
+      "question_id": "question-call-out-001",
+      "verdict": "shown",
+      "source_evidence_ids": ["source-100"]
+    }
+  ],
+  "unknowns": [
+    {
+      "kind": "test_coverage",
+      "anchor_evidence_id": "resolution-001"
+    },
+    {
+      "kind": "runtime_reachability",
+      "anchor_evidence_id": "resolution-001"
+    }
+  ],
+  "next_action_id": "action-find-tests"
+}

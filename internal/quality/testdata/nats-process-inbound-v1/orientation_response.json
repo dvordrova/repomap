@@ -1,0 +1,264 @@
+{
+  "project_guess": "NATS messaging server - high-performance publish/subscribe and distributed queueing system with JetStream persistence, clustering, and multi-protocol support",
+  "confidence": 0.95,
+  "high_level_map": [
+    {
+      "name": "Core NATS messaging",
+      "evidence": [
+        "server/server.go",
+        "server/client.go",
+        "server/parser.go",
+        "server/accounts.go",
+        "server/auth.go"
+      ],
+      "why_it_matters": "Implements core pub/sub and request/reply messaging, client connection handling, parsing, and authentication"
+    },
+    {
+      "name": "JetStream persistence",
+      "evidence": [
+        "server/jetstream.go",
+        "server/jetstream_api.go",
+        "server/jetstream_cluster.go",
+        "server/jetstream_batching.go",
+        "server/filestore.go",
+        "server/memstore.go",
+        "server/consumer.go"
+      ],
+      "why_it_matters": "Adds stream and consumer management with persistence, exactly-once semantics, and clustering"
+    },
+    {
+      "name": "Clustering and replication",
+      "evidence": [
+        "server/jetstream_cluster.go",
+        "server/gateway.go",
+        "server/leafnode.go",
+        "server/route.go (not in allowed_paths but inferred)"
+      ],
+      "why_it_matters": "Enables horizontal scaling, fault tolerance, and geo-replication across server instances"
+    },
+    {
+      "name": "Multi-protocol support",
+      "evidence": [
+        "server/mqtt.go",
+        "server/leafnode.go",
+        "server/gateway.go",
+        "server/websocket.go (not in allowed_paths)"
+      ],
+      "why_it_matters": "Allows clients using MQTT, leaf nodes, gateways, and WebSocket to connect"
+    },
+    {
+      "name": "Observability and management",
+      "evidence": [
+        "server/monitor.go",
+        "server/events.go",
+        "server/log.go",
+        "server/msgtrace.go",
+        "main.go (trace flags)"
+      ],
+      "why_it_matters": "Provides monitoring endpoints, system events, and tracing for debugging"
+    }
+  ],
+  "first_files_to_open": [
+    {
+      "path": "main.go",
+      "reason": "Entry point of the server; shows CLI flags and initialization flow"
+    },
+    {
+      "path": "server/server.go",
+      "reason": "Core server struct and startup logic; central to understanding the system"
+    },
+    {
+      "path": "server/client.go",
+      "reason": "Handles client connections and message processing; key for understanding the critical path"
+    },
+    {
+      "path": "server/jetstream.go",
+      "reason": "JetStream subsystem; adds persistence and is a major feature"
+    }
+  ],
+  "candidate_flows": [
+    {
+      "name": "Server startup flow",
+      "trigger": "Launch of nats-server binary",
+      "likely_entrypoint": "main.go",
+      "likely_files": [
+        "main.go",
+        "server/server.go",
+        "server/opts.go",
+        "server/events.go"
+      ],
+      "why_interesting": "Foundational flow that initializes all subsystems, parses config, starts listeners",
+      "evidence": [
+        "main.go is the entrypoint source file",
+        "server/server.go is the main server package imported by entrypoint"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "name": "Client connection and message publish flow",
+      "trigger": "TCP connection from a NATS client, followed by a PUB message",
+      "likely_entrypoint": "server/client.go",
+      "likely_files": [
+        "server/client.go",
+        "server/parser.go",
+        "server/accounts.go",
+        "server/auth.go",
+        "server/jetstream_api.go"
+      ],
+      "why_interesting": "Most common operation; shows how messages flow from client to server, routing, and possibly JetStream",
+      "evidence": [
+        "server/client.go is a source file for client handling",
+        "server/parser.go for protocol parsing",
+        "server/accounts.go for account-based routing"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "name": "JetStream publish and store flow",
+      "trigger": "Client publishes to a JetStream stream via the $JS.API.STREAM.MSG.PUB endpoint",
+      "likely_entrypoint": "server/jetstream_api.go",
+      "likely_files": [
+        "server/jetstream_api.go",
+        "server/jetstream.go",
+        "server/jetstream_batching.go",
+        "server/filestore.go",
+        "server/memstore.go",
+        "server/consumer.go"
+      ],
+      "why_interesting": "Demonstrates persistent storage, batching, and interaction with clustering",
+      "evidence": [
+        "server/jetstream_api.go handles JetStream API requests",
+        "server/filestore.go and server/memstore.go store messages",
+        "server/jetstream_batching.go batches operations"
+      ],
+      "confidence": 0.8
+    },
+    {
+      "name": "JetStream cluster replication flow",
+      "trigger": "A stream is configured with a replication factor > 1, and a message is published",
+      "likely_entrypoint": "server/jetstream_cluster.go",
+      "likely_files": [
+        "server/jetstream_cluster.go",
+        "server/jetstream.go",
+        "server/jetstream_api.go"
+      ],
+      "why_interesting": "Key for understanding data safety and leader election in distributed NATS",
+      "evidence": [
+        "server/jetstream_cluster.go handles cluster operations",
+        "server/jetstream.go contains cluster metadata"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "name": "Gateway forwarding flow",
+      "trigger": "A message is published locally and needs to be forwarded to remote gateway clusters",
+      "likely_entrypoint": "server/gateway.go",
+      "likely_files": [
+        "server/gateway.go",
+        "server/client.go",
+        "server/accounts.go"
+      ],
+      "why_interesting": "Enables multi-datacenter replication and global topic routing",
+      "evidence": [
+        "server/gateway.go is for gateway functionality"
+      ],
+      "confidence": 0.75
+    },
+    {
+      "name": "Leaf node connection flow",
+      "trigger": "A remote leaf node connects to the server",
+      "likely_entrypoint": "server/leafnode.go",
+      "likely_files": [
+        "server/leafnode.go",
+        "server/client.go",
+        "server/accounts.go"
+      ],
+      "why_interesting": "Hierarchical topology extension for NATS, important for edge deployments",
+      "evidence": [
+        "server/leafnode.go handles leaf node connections"
+      ],
+      "confidence": 0.7
+    }
+  ],
+  "important_domain_words": [
+    {
+      "word": "JetStream",
+      "guess": "A built-in streaming data persistence layer providing at-least-once delivery, stream replay, and exactly-once semantics",
+      "evidence": [
+        "server/jetstream.go",
+        "server/jetstream_api.go",
+        "server/jetstream_cluster.go"
+      ]
+    },
+    {
+      "word": "NATS",
+      "guess": "A high-performance messaging system for cloud-native applications, supporting pub/sub, request/reply, and load balancing",
+      "evidence": [
+        "README.md"
+      ]
+    },
+    {
+      "word": "leafnode",
+      "guess": "A lightweight NATS server that connects to a hub server, extending the mesh without full routing table exchange",
+      "evidence": [
+        "server/leafnode.go"
+      ]
+    },
+    {
+      "word": "gateway",
+      "guess": "A mechanism to connect independent NATS superclusters, allowing cross-cluster message routing",
+      "evidence": [
+        "server/gateway.go"
+      ]
+    },
+    {
+      "word": "MQTT",
+      "guess": "An IoT messaging protocol that NATS server supports as a protocol adapter",
+      "evidence": [
+        "server/mqtt.go",
+        "server/README-MQTT.md"
+      ]
+    },
+    {
+      "word": "stream",
+      "guess": "A persistent message log in JetStream that stores messages across multiple servers for durability and replay",
+      "evidence": [
+        "server/jetstream.go",
+        "server/filestore.go",
+        "server/memstore.go"
+      ]
+    },
+    {
+      "word": "consumer",
+      "guess": "A JetStream entity that reads messages from a stream with configurable delivery semantics (push/pull, durable/ephemeral)",
+      "evidence": [
+        "server/consumer.go"
+      ]
+    }
+  ],
+  "questions_for_human": [
+    "Which specific runtime flow do you want to trace: a simple client publish, a JetStream store operation, or a cluster replication path?",
+    "Are you interested in understanding how authentication and authorization work in the connection flow?",
+    "Do you want to see how the server handles graceful shutdown or error recovery?",
+    "Would you like to inspect the startup sequence to see how subsystems are wired together?"
+  ],
+  "unverified_paths": [
+    {
+      "path": "server/route.go",
+      "reason": "Likely handles route connections between cluster members; not in allowed_paths but important for clustering"
+    },
+    {
+      "path": "server/raft.go",
+      "reason": "Probably implements Raft consensus for JetStream metadata; not in allowed_paths but critical for cluster replication"
+    },
+    {
+      "path": "server/websocket.go",
+      "reason": "Likely implements WebSocket support; not in allowed_paths but mentioned in README"
+    }
+  ],
+  "warnings": [
+    "The file list is truncated; some important files like server/route.go, server/raft.go, server/websocket.go are not in allowed_paths but are likely present.",
+    "Confidence for candidate flows is based on file names and structure; actual code inspection may refine understanding.",
+    "No explicit documentation about flow sequences was provided beyond file names."
+  ]
+}

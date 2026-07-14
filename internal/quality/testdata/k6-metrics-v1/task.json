@@ -1,0 +1,145 @@
+{
+  "version": 2,
+  "id": "k6-metrics-orientation-drilldown-v1",
+  "repository": {
+    "name": "k6",
+    "revision": "dfa0d07cee2b535fef57077cca261ea5e155f423",
+    "scenario": {
+      "orientation": "default local Go environment with go list -e and no explicit build tags",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "go_version": "go1.26.4",
+      "gopls_version": "v0.23.0",
+      "build_tags": []
+    }
+  },
+  "goal": "I know k6 only at a high level. Show useful runtime directions, then help inspect how the metrics API client retrieves current metrics and find a relevant test reference.",
+  "captures": {
+    "orientation": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "orientation-json-v1",
+      "response_form": "provider_content",
+      "captured_at": "2026-07-10T12:39:47Z",
+      "model_context_sha256": "c08e20b45e939252cb550b19148186534e966e75dd472d5b7356406eb19832e5",
+      "model_context_bytes": 32659,
+      "provider_request_sha256": "9b24367e89e20e644d15e2c6e559bb450459590f3ddf8c17d838e86a5313c4e2",
+      "provider_request_bytes": 38838,
+      "latency_ms": null
+    },
+    "source": {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "prompt_version": "source-assessment-json-v2",
+      "response_form": "provider_content",
+      "captured_at": "2026-07-10",
+      "model_context_sha256": "66004b9d485aac4607bd03ca599de05657c5d04071e0eba23668acec28c54415",
+      "model_context_bytes": 1804,
+      "provider_request_sha256": "e07df08d66f82c02f41b53bce6ddb83e9af21b573c2417cc40206b41fe59b122",
+      "provider_request_bytes": 5167,
+      "latency_ms": null
+    }
+  },
+  "artifacts": {
+    "orientation_context": {
+      "path": "orientation_context.json",
+      "sha256": "bcaeff97c5738b3de9733f95f753dac8f8b095af50ddaa539f666dab142cebf4"
+    },
+    "orientation_response": {
+      "path": "orientation_response.json",
+      "sha256": "2f1091435f5b85c585179c9ecdfc3209971a4a5375ff7e6f2c8058d410296dc7"
+    },
+    "source_bundle": {
+      "path": "source_bundle.json",
+      "sha256": "c37870a6256d4e437786dfad07880f64d62db0e50c0d5df4244c0ad759cb5497"
+    },
+    "source_response": {
+      "path": "source_response.json",
+      "sha256": "ed23c88e805f963b766befba451c86e8cf49a153cc9432ce1c49759f05f2198a"
+    },
+    "test_evidence": {
+      "path": "test_evidence.json",
+      "sha256": "347a3efda0c15c7ba52f079a3c91b6ffb574a5eb95e8264c14748fb59c019a22"
+    }
+  },
+  "expected": {
+    "directions": [
+      {
+        "id": "metrics-rest-api",
+        "aliases": [
+          "metrics rest api",
+          "metrics retrieval"
+        ],
+        "important_paths": [
+          "internal/api/server.go",
+          "api/v1/client/metrics.go",
+          "api/v1/metric_routes_test.go",
+          "api/v1/metric_test.go"
+        ]
+      },
+      {
+        "id": "test-execution-startup",
+        "aliases": [
+          "test execution startup",
+          "k6 run"
+        ],
+        "important_paths": [
+          "main.go"
+        ]
+      },
+      {
+        "id": "grpc-streaming-example",
+        "aliases": [
+          "grpc streaming example",
+          "grpc streaming"
+        ],
+        "important_paths": [
+          "examples/grpc_server/main.go",
+          "examples/grpc_server_streaming.js"
+        ]
+      }
+    ],
+    "drilldown": {
+      "symbol": "Client.Metrics",
+      "path": "api/v1/client/metrics.go",
+      "source_predicates": [
+        "delegates_operation"
+      ],
+      "test_reference_paths": [
+        "api/v1/metric_routes_test.go"
+      ]
+    },
+    "forbidden_overclaims": [
+      {
+        "id": "main-directly-runs-scheduler",
+        "scope": "orientation",
+        "contains_all": [
+          "main.go directly invokes",
+          "Scheduler.Run"
+        ]
+      },
+      {
+        "id": "client-method-proves-network-io",
+        "scope": "drilldown",
+        "contains_all": [
+          "Client.Metrics proves",
+          "network I/O"
+        ]
+      },
+      {
+        "id": "runtime-observed-without-runtime-evidence",
+        "scope": "drilldown",
+        "contains_all": [
+          "observed at runtime"
+        ]
+      },
+      {
+        "id": "test-reference-proves-coverage",
+        "scope": "drilldown",
+        "contains_all": [
+          "test references prove coverage"
+        ]
+      }
+    ]
+  }
+}

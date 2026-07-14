@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "repo_name": "etcd",
+  "target": {
+    "evidence_id": "resolution-001",
+    "entity_id": "method:server/etcdserver/api/v3rpc/key.go:90:20:kvServer.Put",
+    "name": "kvServer.Put",
+    "kind": "method",
+    "path": "server/etcdserver/api/v3rpc/key.go",
+    "line": 90,
+    "column": 20
+  },
+  "source": {
+    "file_sha256": "44d5c37b56232c0f3067d8eb9b3c636b013f839a80a54eb87a849fcc1b01209e",
+    "window": {
+      "start_line": 90,
+      "end_line": 103,
+      "included_bytes": 283,
+      "stop_reason": "next_top_level_func",
+      "truncated": false
+    },
+    "complete": false,
+    "stop_reason": "next_top_level_func",
+    "lines": [
+      {"evidence_id":"source-90","line":90,"text":"func (s *kvServer) Put(ctx context.Context, r *pb.PutRequest) (*pb.PutResponse, error) {"},
+      {"evidence_id":"source-91","line":91,"text":"\tif err := checkPutRequest(r); err != nil {"},
+      {"evidence_id":"source-92","line":92,"text":"\t\treturn nil, err"},
+      {"evidence_id":"source-93","line":93,"text":"\t}"},
+      {"evidence_id":"source-94","line":94,"text":""},
+      {"evidence_id":"source-95","line":95,"text":"\tresp, err := s.kv.Put(ctx, r)"},
+      {"evidence_id":"source-96","line":96,"text":"\tif err != nil {"},
+      {"evidence_id":"source-97","line":97,"text":"\t\treturn nil, togRPCError(err)"},
+      {"evidence_id":"source-98","line":98,"text":"\t}"},
+      {"evidence_id":"source-99","line":99,"text":""},
+      {"evidence_id":"source-100","line":100,"text":"\ts.hdr.fill(resp.Header)"},
+      {"evidence_id":"source-101","line":101,"text":"\treturn resp, nil"},
+      {"evidence_id":"source-102","line":102,"text":"}"},
+      {"evidence_id":"source-103","line":103,"text":""}
+    ]
+  },
+  "questions": [
+    {
+      "id": "question-call-out-002",
+      "predicate": "validates_input",
+      "anchor_evidence_id": "call-out-002",
+      "anchor_source_evidence_id": "source-91",
+      "callee_name": "checkPutRequest",
+      "candidate_source_evidence_ids": ["source-91", "source-92", "source-93"]
+    },
+    {
+      "id": "question-call-out-004",
+      "predicate": "delegates_operation",
+      "anchor_evidence_id": "call-out-004",
+      "anchor_source_evidence_id": "source-95",
+      "callee_name": "Put",
+      "candidate_source_evidence_ids": ["source-95"]
+    },
+    {
+      "id": "question-call-out-003",
+      "predicate": "maps_error",
+      "anchor_evidence_id": "call-out-003",
+      "anchor_source_evidence_id": "source-97",
+      "callee_name": "togRPCError",
+      "candidate_source_evidence_ids": ["source-96", "source-97"]
+    },
+    {
+      "id": "question-call-out-001",
+      "predicate": "fills_response",
+      "anchor_evidence_id": "call-out-001",
+      "anchor_source_evidence_id": "source-100",
+      "callee_name": "fill",
+      "candidate_source_evidence_ids": ["source-100"]
+    }
+  ],
+  "allowed_actions": [
+    {"id":"action-find-tests","operation":"find_tests","anchor_evidence_id":"resolution-001"},
+    {"id":"action-read-call-out-002","operation":"read_callee","anchor_evidence_id":"call-out-002"},
+    {"id":"action-read-call-out-004","operation":"read_callee","anchor_evidence_id":"call-out-004"},
+    {"id":"action-read-call-out-003","operation":"read_callee","anchor_evidence_id":"call-out-003"},
+    {"id":"action-read-call-out-001","operation":"read_callee","anchor_evidence_id":"call-out-001"}
+  ],
+  "warnings": [
+    "source lines show written control flow, not runtime reachability",
+    "callee names and calls do not establish callee behavior"
+  ]
+}

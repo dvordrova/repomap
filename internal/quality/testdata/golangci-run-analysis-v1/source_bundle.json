@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "repo_name": "golangci-lint",
+  "target": {
+    "evidence_id": "resolution-001",
+    "entity_id": "method:pkg/commands/run.go:370:22:runCommand.runAnalysis",
+    "name": "runCommand.runAnalysis",
+    "kind": "method",
+    "path": "pkg/commands/run.go",
+    "line": 370,
+    "column": 22
+  },
+  "source": {
+    "file_sha256": "59e88b1d7c4b3f876f0f0f188782ce800a91810cae3332cabb4f5796cbcb225b",
+    "window": {
+      "start_line": 370,
+      "end_line": 389,
+      "included_bytes": 576,
+      "stop_reason": "next_top_level_func",
+      "truncated": false
+    },
+    "complete": false,
+    "stop_reason": "next_top_level_func",
+    "lines": [
+      {
+        "evidence_id": "source-370",
+        "line": 370,
+        "text": "func (c *runCommand) runAnalysis(ctx context.Context) ([]*result.Issue, error) {"
+      },
+      {
+        "evidence_id": "source-371",
+        "line": 371,
+        "text": "\tlintersToRun, err := c.dbManager.GetOptimizedLinters()"
+      },
+      {
+        "evidence_id": "source-372",
+        "line": 372,
+        "text": "\tif err != nil {"
+      },
+      {
+        "evidence_id": "source-373",
+        "line": 373,
+        "text": "\t\treturn nil, err"
+      },
+      {
+        "evidence_id": "source-374",
+        "line": 374,
+        "text": "\t}"
+      },
+      {
+        "evidence_id": "source-375",
+        "line": 375,
+        "text": ""
+      },
+      {
+        "evidence_id": "source-376",
+        "line": 376,
+        "text": "\tlintCtx, err := c.contextBuilder.Build(ctx, c.log.Child(logutils.DebugKeyLintersContext), lintersToRun)"
+      },
+      {
+        "evidence_id": "source-377",
+        "line": 377,
+        "text": "\tif err != nil {"
+      },
+      {
+        "evidence_id": "source-378",
+        "line": 378,
+        "text": "\t\treturn nil, fmt.Errorf(\"context loading failed: %w\", err)"
+      },
+      {
+        "evidence_id": "source-379",
+        "line": 379,
+        "text": "\t}"
+      },
+      {
+        "evidence_id": "source-380",
+        "line": 380,
+        "text": ""
+      },
+      {
+        "evidence_id": "source-381",
+        "line": 381,
+        "text": "\trunner, err := lint.NewRunner(c.log.Child(logutils.DebugKeyRunner), c.cfg,"
+      },
+      {
+        "evidence_id": "source-382",
+        "line": 382,
+        "text": "\t\tc.goenv, c.lineCache, c.fileCache, c.dbManager, lintCtx)"
+      },
+      {
+        "evidence_id": "source-383",
+        "line": 383,
+        "text": "\tif err != nil {"
+      },
+      {
+        "evidence_id": "source-384",
+        "line": 384,
+        "text": "\t\treturn nil, err"
+      },
+      {
+        "evidence_id": "source-385",
+        "line": 385,
+        "text": "\t}"
+      },
+      {
+        "evidence_id": "source-386",
+        "line": 386,
+        "text": ""
+      },
+      {
+        "evidence_id": "source-387",
+        "line": 387,
+        "text": "\treturn runner.Run(ctx, lintersToRun)"
+      },
+      {
+        "evidence_id": "source-388",
+        "line": 388,
+        "text": "}"
+      },
+      {
+        "evidence_id": "source-389",
+        "line": 389,
+        "text": ""
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "question-call-out-002",
+      "predicate": "checks_call_result",
+      "anchor_evidence_id": "call-out-002",
+      "anchor_source_evidence_id": "source-371",
+      "callee_name": "GetOptimizedLinters",
+      "candidate_source_evidence_ids": [
+        "source-371",
+        "source-372"
+      ]
+    },
+    {
+      "id": "question-call-out-001",
+      "predicate": "checks_call_result",
+      "anchor_evidence_id": "call-out-001",
+      "anchor_source_evidence_id": "source-376",
+      "callee_name": "Build",
+      "candidate_source_evidence_ids": [
+        "source-376",
+        "source-377"
+      ]
+    },
+    {
+      "id": "question-call-out-004",
+      "predicate": "checks_call_result",
+      "anchor_evidence_id": "call-out-004",
+      "anchor_source_evidence_id": "source-381",
+      "callee_name": "NewRunner",
+      "candidate_source_evidence_ids": [
+        "source-381",
+        "source-383"
+      ]
+    },
+    {
+      "id": "question-call-out-003",
+      "predicate": "returns_call_result",
+      "anchor_evidence_id": "call-out-003",
+      "anchor_source_evidence_id": "source-387",
+      "callee_name": "Run",
+      "candidate_source_evidence_ids": [
+        "source-387"
+      ]
+    }
+  ],
+  "allowed_actions": [
+    {
+      "id": "action-find-tests",
+      "operation": "find_tests",
+      "anchor_evidence_id": "resolution-001"
+    },
+    {
+      "id": "action-read-call-out-002",
+      "operation": "read_callee",
+      "anchor_evidence_id": "call-out-002"
+    },
+    {
+      "id": "action-read-call-out-001",
+      "operation": "read_callee",
+      "anchor_evidence_id": "call-out-001"
+    },
+    {
+      "id": "action-read-call-out-004",
+      "operation": "read_callee",
+      "anchor_evidence_id": "call-out-004"
+    },
+    {
+      "id": "action-read-call-out-003",
+      "operation": "read_callee",
+      "anchor_evidence_id": "call-out-003"
+    }
+  ],
+  "warnings": [
+    "source lines show written control flow, not runtime reachability",
+    "callee names and calls do not establish callee behavior"
+  ]
+}

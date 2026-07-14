@@ -1,0 +1,5097 @@
+{
+  "format_version": 14,
+  "repo_name": "colima",
+  "project_guess": "Provider-free architecture and start/runtime selection",
+  "orientation_confidence": 0,
+  "candidate_flows": [
+    "Start VM and selected runtimes"
+  ],
+  "flows": null,
+  "artifacts_dir": "",
+  "architecture_canvas": {
+    "version": 4,
+    "landscape_version": 5,
+    "flowproof_version": 2,
+    "fallback": false,
+    "validation_outcome": "accepted",
+    "architecture_source": "validated_model",
+    "architecture_level": 1,
+    "repository_archetype": "application",
+    "grounding_mode": "mixed",
+    "title": "Architecture hypotheses and grounded behavior",
+    "subtitle": "Some areas remain package-derived",
+    "subsystems": [
+      {
+        "id": "subsystem-306a58b6071e0d04be2b322fb6c9e5170f082b28ade8fbb76d4a40efbb8bf208",
+        "name": "Command interface",
+        "description": "Bootstraps Cobra and prepares the start request.",
+        "component_ids": [
+          "component-d403fc714196316ba8c3d765039b616d9f870c66a126d2d5da077c791d920d8b",
+          "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6"
+        ]
+      },
+      {
+        "id": "subsystem-8287ac9a9f5bcb78673db41a180c7fbe1fce7ec0cd71e6a0ddc1f33ac7359bb1",
+        "name": "Application orchestration",
+        "description": "Constructs the app and coordinates VM and runtime startup.",
+        "component_ids": [
+          "component-b3e4d74b6a0899c4164c4491d5270562e4db0900e1beb0a8abfb4f0d7c596f31",
+          "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5"
+        ]
+      },
+      {
+        "id": "subsystem-4e59fc838e946e579178405a40b0a1cb674b12600af94b7804c90142a7739a8a",
+        "name": "Virtual machine",
+        "description": "Creates and starts Lima while preserving the QEMU/VZ choice.",
+        "component_ids": [
+          "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+          "component-903f6c97a0587bf8f0569b249a33d7df8b26b6ead2aa7274d5829ca3f1d5c029"
+        ]
+      },
+      {
+        "id": "subsystem-6d82724487a9fbee5a86d28cc4b8f921d377b011a1b6c4e0a646f2241c0200d3",
+        "name": "Runtime backends",
+        "description": "Resolves registered container implementations and invokes their lifecycle methods.",
+        "component_ids": [
+          "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+          "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+          "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+          "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec"
+        ]
+      }
+    ],
+    "components": [
+      {
+        "id": "component-d403fc714196316ba8c3d765039b616d9f870c66a126d2d5da077c791d920d8b",
+        "subsystem_id": "subsystem-306a58b6071e0d04be2b322fb6c9e5170f082b28ade8fbb76d4a40efbb8bf208",
+        "name": "CLI bootstrap",
+        "description": "Enters the root command and delegates command selection to Cobra.",
+        "members": [
+          {
+            "id": {
+              "kind": "entrypoint",
+              "value": "github.com/abiosoft/colima/cmd/colima.main"
+            },
+            "name": "main",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd/colima"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/colima/main.go",
+                    "line": 11
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/colima/main.go",
+                        "line": 11
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "main",
+                "location": {
+                  "path": "cmd/colima/main.go",
+                  "line": 11
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/colima/main.go",
+                      "line": 11
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd/colima"
+            },
+            "name": "cmd/colima",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "cmd/colima/main.go",
+                "location": {
+                  "path": "cmd/colima/main.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/colima/main.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd/root"
+            },
+            "name": "cmd/root",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "cmd/root/root.go",
+                "location": {
+                  "path": "cmd/root/root.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/root/root.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/cmd/root.Execute"
+            },
+            "name": "root.Execute",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd/root"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/root/root.go",
+                    "line": 67
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/root/root.go",
+                        "line": 67
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "root.Execute",
+                "location": {
+                  "path": "cmd/root/root.go",
+                  "line": 67
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/root/root.go",
+                      "line": 67
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6",
+        "subsystem_id": "subsystem-306a58b6071e0d04be2b322fb6c9e5170f082b28ade8fbb76d4a40efbb8bf208",
+        "name": "Start command and config",
+        "description": "Registers start callbacks and merges CLI/config values before execution.",
+        "members": [
+          {
+            "id": {
+              "kind": "entrypoint",
+              "value": "github.com/abiosoft/colima/cmd.startCmd"
+            },
+            "name": "start command",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 28
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/start.go",
+                        "line": 28
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "start command",
+                "location": {
+                  "path": "cmd/start.go",
+                  "line": 28
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/start.go",
+                      "line": 28
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd"
+            },
+            "name": "cmd",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "cmd/start.go",
+                "location": {
+                  "path": "cmd/start.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/start.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/cmd.prepareConfig"
+            },
+            "name": "prepareConfig",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 301
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/start.go",
+                        "line": 301
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "prepareConfig",
+                "location": {
+                  "path": "cmd/start.go",
+                  "line": 301
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/start.go",
+                      "line": 301
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/cmd.start"
+            },
+            "name": "start",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 455
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/start.go",
+                        "line": 455
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "start",
+                "location": {
+                  "path": "cmd/start.go",
+                  "line": 455
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/start.go",
+                      "line": 455
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/cmd.startCmd.RunE"
+            },
+            "name": "start command RunE",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 48
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/start.go",
+                        "line": 48
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "start command RunE",
+                "location": {
+                  "path": "cmd/start.go",
+                  "line": 48
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/start.go",
+                      "line": 48
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-b3e4d74b6a0899c4164c4491d5270562e4db0900e1beb0a8abfb4f0d7c596f31",
+        "subsystem_id": "subsystem-8287ac9a9f5bcb78673db41a180c7fbe1fce7ec0cd71e6a0ddc1f33ac7359bb1",
+        "name": "Application construction",
+        "description": "Builds the concrete Colima app around a Lima-backed guest.",
+        "members": [
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/app.New"
+            },
+            "name": "app.New",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/app"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 41
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "app/app.go",
+                        "line": 41
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "app.New",
+                "location": {
+                  "path": "app/app.go",
+                  "line": 41
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "app/app.go",
+                      "line": 41
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/cmd.newApp"
+            },
+            "name": "newApp",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/cmd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "cmd/util.go",
+                    "line": 17
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "cmd/util.go",
+                        "line": 17
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "newApp",
+                "location": {
+                  "path": "cmd/util.go",
+                  "line": 17
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "cmd/util.go",
+                      "line": 17
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+        "subsystem_id": "subsystem-8287ac9a9f5bcb78673db41a180c7fbe1fce7ec0cd71e6a0ddc1f33ac7359bb1",
+        "name": "Startup coordinator",
+        "description": "Creates runtime environments, starts the VM, then invokes runtime lifecycle methods.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/app"
+            },
+            "name": "app",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "app/app.go",
+                "location": {
+                  "path": "app/app.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "app/app.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/app.colimaApp.Start"
+            },
+            "name": "colimaApp.Start",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/app"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 56
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "app/app.go",
+                        "line": 56
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "colimaApp.Start",
+                "location": {
+                  "path": "app/app.go",
+                  "line": 56
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "app/app.go",
+                      "line": 56
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/app.colimaApp.containerEnvironment"
+            },
+            "name": "colimaApp.containerEnvironment",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/app"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 402
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "app/app.go",
+                        "line": 402
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "colimaApp.containerEnvironment",
+                "location": {
+                  "path": "app/app.go",
+                  "line": 402
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "app/app.go",
+                      "line": 402
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+        "subsystem_id": "subsystem-4e59fc838e946e579178405a40b0a1cb674b12600af94b7804c90142a7739a8a",
+        "name": "Lima lifecycle",
+        "description": "Owns Lima construction and the fresh-profile start command chain.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/vm/lima"
+            },
+            "name": "environment/vm/lima",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "environment/vm/lima/lima.go",
+                "location": {
+                  "path": "environment/vm/lima/lima.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/vm/lima/lima.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/vm/lima.New"
+            },
+            "name": "lima.New",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/vm/lima"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/vm/lima/lima.go",
+                    "line": 25
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/vm/lima/lima.go",
+                        "line": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "lima.New",
+                "location": {
+                  "path": "environment/vm/lima/lima.go",
+                  "line": 25
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/vm/lima/lima.go",
+                      "line": 25
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/vm/lima.limaVM.Start"
+            },
+            "name": "limaVM.Start",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/vm/lima"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/vm/lima/lima.go",
+                    "line": 80
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/vm/lima/lima.go",
+                        "line": 80
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "limaVM.Start",
+                "location": {
+                  "path": "environment/vm/lima/lima.go",
+                  "line": 80
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/vm/lima/lima.go",
+                      "line": 80
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-903f6c97a0587bf8f0569b249a33d7df8b26b6ead2aa7274d5829ca3f1d5c029",
+        "subsystem_id": "subsystem-4e59fc838e946e579178405a40b0a1cb674b12600af94b7804c90142a7739a8a",
+        "name": "VM driver configuration",
+        "description": "Defaults to QEMU and conditionally selects VZ when platform and architecture permit it.",
+        "members": [
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/vm/lima.newConf"
+            },
+            "name": "lima.newConf",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/vm/lima"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/vm/lima/yaml.go",
+                    "line": 21
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/vm/lima/yaml.go",
+                        "line": 21
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "lima.newConf",
+                "location": {
+                  "path": "environment/vm/lima/yaml.go",
+                  "line": 21
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/vm/lima/yaml.go",
+                      "line": 21
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+        "subsystem_id": "subsystem-6d82724487a9fbee5a86d28cc4b8f921d377b011a1b6c4e0a646f2241c0200d3",
+        "name": "Runtime registry",
+        "description": "Looks up a runtime factory by configured name; the selected map target is intentionally unresolved.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment"
+            },
+            "name": "environment",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "environment/container.go",
+                "location": {
+                  "path": "environment/container.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment.NewContainer"
+            },
+            "name": "environment.NewContainer",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container.go",
+                    "line": 31
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container.go",
+                        "line": 31
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "environment.NewContainer",
+                "location": {
+                  "path": "environment/container.go",
+                  "line": 31
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container.go",
+                      "line": 31
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+        "subsystem_id": "subsystem-6d82724487a9fbee5a86d28cc4b8f921d377b011a1b6c4e0a646f2241c0200d3",
+        "name": "Docker runtime",
+        "description": "One registered implementation for provisioning and starting Docker.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/docker"
+            },
+            "name": "environment/container/docker",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "environment/container/docker/docker.go",
+                "location": {
+                  "path": "environment/container/docker/docker.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/docker/docker.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/docker.dockerRuntime.Provision"
+            },
+            "name": "dockerRuntime.Provision",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/docker"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 40
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/docker/docker.go",
+                        "line": 40
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "dockerRuntime.Provision",
+                "location": {
+                  "path": "environment/container/docker/docker.go",
+                  "line": 40
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/docker/docker.go",
+                      "line": 40
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/docker.dockerRuntime.Start"
+            },
+            "name": "dockerRuntime.Start",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/docker"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 67
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/docker/docker.go",
+                        "line": 67
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "dockerRuntime.Start",
+                "location": {
+                  "path": "environment/container/docker/docker.go",
+                  "line": 67
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/docker/docker.go",
+                      "line": 67
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/docker.newRuntime"
+            },
+            "name": "docker.newRuntime",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/docker"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 28
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/docker/docker.go",
+                        "line": 28
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "docker.newRuntime",
+                "location": {
+                  "path": "environment/container/docker/docker.go",
+                  "line": 28
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/docker/docker.go",
+                      "line": 28
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+        "subsystem_id": "subsystem-6d82724487a9fbee5a86d28cc4b8f921d377b011a1b6c4e0a646f2241c0200d3",
+        "name": "Containerd runtime",
+        "description": "One registered implementation for provisioning and starting containerd/buildkit.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/containerd"
+            },
+            "name": "environment/container/containerd",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "environment/container/containerd/containerd.go",
+                "location": {
+                  "path": "environment/container/containerd/containerd.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/containerd/containerd.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/containerd.containerdRuntime.Provision"
+            },
+            "name": "containerdRuntime.Provision",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/containerd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 48
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/containerd/containerd.go",
+                        "line": 48
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "containerdRuntime.Provision",
+                "location": {
+                  "path": "environment/container/containerd/containerd.go",
+                  "line": 48
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/containerd/containerd.go",
+                      "line": 48
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/containerd.containerdRuntime.Start"
+            },
+            "name": "containerdRuntime.Start",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/containerd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 57
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/containerd/containerd.go",
+                        "line": 57
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "containerdRuntime.Start",
+                "location": {
+                  "path": "environment/container/containerd/containerd.go",
+                  "line": 57
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/containerd/containerd.go",
+                      "line": 57
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/containerd.newRuntime"
+            },
+            "name": "containerd.newRuntime",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/containerd"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 24
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/containerd/containerd.go",
+                        "line": 24
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "containerd.newRuntime",
+                "location": {
+                  "path": "environment/container/containerd/containerd.go",
+                  "line": 24
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/containerd/containerd.go",
+                      "line": 24
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      },
+      {
+        "id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+        "subsystem_id": "subsystem-6d82724487a9fbee5a86d28cc4b8f921d377b011a1b6c4e0a646f2241c0200d3",
+        "name": "Kubernetes extension",
+        "description": "An optional registered runtime appended after the configured base runtime.",
+        "members": [
+          {
+            "id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+            },
+            "name": "environment/container/kubernetes",
+            "facts": [
+              {
+                "kind": "repository_path",
+                "value": "environment/container/kubernetes/kubernetes.go",
+                "location": {
+                  "path": "environment/container/kubernetes/kubernetes.go",
+                  "line": 1
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/kubernetes/kubernetes.go",
+                      "line": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes.kubernetesRuntime.Provision"
+            },
+            "name": "kubernetesRuntime.Provision",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 89
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/kubernetes/kubernetes.go",
+                        "line": 89
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "kubernetesRuntime.Provision",
+                "location": {
+                  "path": "environment/container/kubernetes/kubernetes.go",
+                  "line": 89
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/kubernetes/kubernetes.go",
+                      "line": 89
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes.kubernetesRuntime.Start"
+            },
+            "name": "kubernetesRuntime.Start",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 140
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/kubernetes/kubernetes.go",
+                        "line": 140
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "kubernetesRuntime.Start",
+                "location": {
+                  "path": "environment/container/kubernetes/kubernetes.go",
+                  "line": 140
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/kubernetes/kubernetes.go",
+                      "line": 140
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": {
+              "kind": "symbol",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes.newRuntime"
+            },
+            "name": "kubernetes.newRuntime",
+            "parent_id": {
+              "kind": "package",
+              "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+            },
+            "flow_participations": [
+              {
+                "flow_id": "colima-start",
+                "evidence": {
+                  "kind": "flow_participation",
+                  "value": "colima-start",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 26
+                  },
+                  "certainty": "static",
+                  "provenance": [
+                    {
+                      "provider": "source_fixture",
+                      "version": "colima-281757a",
+                      "operation": "collect_fact",
+                      "location": {
+                        "path": "environment/container/kubernetes/kubernetes.go",
+                        "line": 26
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "facts": [
+              {
+                "kind": "declaration",
+                "value": "kubernetes.newRuntime",
+                "location": {
+                  "path": "environment/container/kubernetes/kubernetes.go",
+                  "line": 26
+                },
+                "certainty": "static",
+                "provenance": [
+                  {
+                    "provider": "source_fixture",
+                    "version": "colima-281757a",
+                    "operation": "collect_fact",
+                    "location": {
+                      "path": "environment/container/kubernetes/kubernetes.go",
+                      "line": 26
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "participating_flow_ids": [
+          "colima-start"
+        ]
+      }
+    ],
+    "structural_facts": [
+      {
+        "id": "app-imports-docker",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/app"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/container/docker"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "app/app.go",
+          "line": 16
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "app/app.go",
+              "line": 16
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "app-imports-environment",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/app"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "app/app.go",
+          "line": 15
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "app/app.go",
+              "line": 15
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "app-imports-kubernetes",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/app"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "app/app.go",
+          "line": 17
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "app/app.go",
+              "line": 17
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "app-imports-lima",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/app"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/vm/lima"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "app/app.go",
+          "line": 19
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "app/app.go",
+              "line": 19
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "cmd-imports-app",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/cmd"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/app"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/start.go",
+          "line": 12
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "cmd/start.go",
+              "line": 12
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "containerd-imports-environment",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/container/containerd"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "environment/container/containerd/containerd.go",
+          "line": 9
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "environment/container/containerd/containerd.go",
+              "line": 9
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "docker-imports-environment",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/container/docker"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "environment/container/docker/docker.go",
+          "line": 9
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "environment/container/docker/docker.go",
+              "line": 9
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "kubernetes-imports-environment",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "environment/container/kubernetes/kubernetes.go",
+          "line": 12
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "environment/container/kubernetes/kubernetes.go",
+              "line": 12
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "lima-imports-containerd",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/vm/lima"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/container/containerd"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "environment/vm/lima/lima.go",
+          "line": 16
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "environment/vm/lima/lima.go",
+              "line": 16
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "lima-imports-environment",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment/vm/lima"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/environment"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "environment/vm/lima/lima.go",
+          "line": 15
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "environment/vm/lima/lima.go",
+              "line": 15
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      },
+      {
+        "id": "main-imports-root",
+        "from": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/cmd/colima"
+        },
+        "to": {
+          "kind": "package",
+          "value": "github.com/abiosoft/colima/cmd/root"
+        },
+        "kind": "package_import",
+        "location": {
+          "path": "cmd/colima/main.go",
+          "line": 8
+        },
+        "certainty": "static",
+        "provenance": [
+          {
+            "provider": "go_list",
+            "version": "colima-281757a",
+            "operation": "package_import",
+            "location": {
+              "path": "cmd/colima/main.go",
+              "line": 8
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "colima-darwin-amd64",
+            "name": "Colima Darwin amd64 default Go build",
+            "build": {
+              "goos": "darwin",
+              "goarch": "amd64"
+            }
+          }
+        ]
+      }
+    ],
+    "structural_edges": [
+      {
+        "id": "structural-edge-05f86f0442536d3c16a73ec8aaec30401540fdc852af1e181f129216324bdf2e",
+        "from_component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+        "to_component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+        "witness": {
+          "id": "app-imports-environment",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/app"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "app/app.go",
+            "line": 15
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "app/app.go",
+                "line": 15
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-0d5a4f980e6c4a9a43c34c499a3181dee32d941706a09611ec45619f6c0ad29b",
+        "from_component_id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+        "to_component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+        "witness": {
+          "id": "docker-imports-environment",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/container/docker"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "environment/container/docker/docker.go",
+            "line": 9
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "environment/container/docker/docker.go",
+                "line": 9
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-0e8ec6d3a741dbae6f9de4ed28a26460099b79b6e519b7dd4ff6db85e1c79ca6",
+        "from_component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+        "to_component_id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+        "witness": {
+          "id": "app-imports-lima",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/app"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/vm/lima"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "app/app.go",
+            "line": 19
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "app/app.go",
+                "line": 19
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-3e70c39ef64679d031f6f7c43d5a9b18cf47acddb238c30e5f1f3d317a417b1f",
+        "from_component_id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+        "to_component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+        "witness": {
+          "id": "kubernetes-imports-environment",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "environment/container/kubernetes/kubernetes.go",
+            "line": 12
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "environment/container/kubernetes/kubernetes.go",
+                "line": 12
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-473238799f2d9b01da1cf6063ae44c35c71eb31817afb641756fe0ee72800471",
+        "from_component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+        "to_component_id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+        "witness": {
+          "id": "app-imports-docker",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/app"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/container/docker"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "app/app.go",
+            "line": 16
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "app/app.go",
+                "line": 16
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-9f6adc81df7866ef93736dd6eb627e51fa8d069095cf20ade76f74cbf66b30a2",
+        "from_component_id": "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6",
+        "to_component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+        "witness": {
+          "id": "cmd-imports-app",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/cmd"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/app"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "cmd/start.go",
+            "line": 12
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "cmd/start.go",
+                "line": 12
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-aaa39c6e1f61a8ea6a746e3508ff950e51bedbcff7eec8eec2586837d5d41bcb",
+        "from_component_id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+        "to_component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+        "witness": {
+          "id": "containerd-imports-environment",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/container/containerd"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "environment/container/containerd/containerd.go",
+            "line": 9
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "environment/container/containerd/containerd.go",
+                "line": 9
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-b0ac5d7cd9ea1cc88498a5c0776927a0f9fd3cef104dfac29f480678e3423682",
+        "from_component_id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+        "to_component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+        "witness": {
+          "id": "lima-imports-environment",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/vm/lima"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "environment/vm/lima/lima.go",
+            "line": 15
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "environment/vm/lima/lima.go",
+                "line": 15
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-d181eced92b8f0434313d454a182c9bef58f9871163ff8f0ea55cafa31131d87",
+        "from_component_id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+        "to_component_id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+        "witness": {
+          "id": "lima-imports-containerd",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/vm/lima"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/container/containerd"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "environment/vm/lima/lima.go",
+            "line": 16
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "environment/vm/lima/lima.go",
+                "line": 16
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "structural-edge-e5fd15e183742dff3074d4e59dc8007d8a80bc697fea49c9c94c6861b13bbe70",
+        "from_component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+        "to_component_id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+        "witness": {
+          "id": "app-imports-kubernetes",
+          "from": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/app"
+          },
+          "to": {
+            "kind": "package",
+            "value": "github.com/abiosoft/colima/environment/container/kubernetes"
+          },
+          "kind": "package_import",
+          "location": {
+            "path": "app/app.go",
+            "line": 17
+          },
+          "certainty": "static",
+          "provenance": [
+            {
+              "provider": "go_list",
+              "version": "colima-281757a",
+              "operation": "package_import",
+              "location": {
+                "path": "app/app.go",
+                "line": 17
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "colima-darwin-amd64",
+              "name": "Colima Darwin amd64 default Go build",
+              "build": {
+                "goos": "darwin",
+                "goarch": "amd64"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "flows": [
+      {
+        "id": "colima-start",
+        "name": "Start VM and selected runtimes",
+        "archetype": "cli",
+        "trigger": "User runs colima start",
+        "scope": "Fresh-profile start; configured VM driver and registered runtime implementations remain alternatives",
+        "mental_model": "Cobra prepares config, the app starts Lima, then provisions and starts each selected runtime. Static candidates do not prove the runtime choice.",
+        "goal": "start the configured Colima VM and container runtimes",
+        "command": "colima start",
+        "steps": [
+          {
+            "id": "app-new",
+            "kind": "function",
+            "label": "app.New",
+            "location": {
+              "path": "app/app.go",
+              "line": 41
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-b3e4d74b6a0899c4164c4491d5270562e4db0900e1beb0a8abfb4f0d7c596f31",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "app-new",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.New"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 41
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 41
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "app-start",
+            "kind": "method",
+            "label": "colimaApp.Start",
+            "location": {
+              "path": "app/app.go",
+              "line": 56
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "app-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.colimaApp.Start"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 56
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 56
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "app-start-return",
+            "kind": "operation",
+            "label": "app.Start handler return",
+            "location": {
+              "path": "app/app.go",
+              "line": 121
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "app-start-return",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.colimaApp.Start"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 121
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 121
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "cli-main",
+            "kind": "function",
+            "label": "main",
+            "location": {
+              "path": "cmd/colima/main.go",
+              "line": 11
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-d403fc714196316ba8c3d765039b616d9f870c66a126d2d5da077c791d920d8b",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "cli-main",
+              "member_id": {
+                "kind": "entrypoint",
+                "value": "github.com/abiosoft/colima/cmd/colima.main"
+              },
+              "location": {
+                "path": "cmd/colima/main.go",
+                "line": 11
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/colima/main.go",
+                    "line": 11
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "containerd-factory",
+            "kind": "function",
+            "label": "containerd factory registered as containerd",
+            "location": {
+              "path": "environment/container/containerd/containerd.go",
+              "line": 24
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "containerd-factory",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/containerd.newRuntime"
+              },
+              "location": {
+                "path": "environment/container/containerd/containerd.go",
+                "line": 24
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 24
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "containerd-provision",
+            "kind": "method",
+            "label": "containerdRuntime.Provision",
+            "location": {
+              "path": "environment/container/containerd/containerd.go",
+              "line": 48
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "containerd-provision",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/containerd.containerdRuntime.Provision"
+              },
+              "location": {
+                "path": "environment/container/containerd/containerd.go",
+                "line": 48
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 48
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "containerd-service-start",
+            "kind": "operation",
+            "label": "service containerd restart",
+            "location": {
+              "path": "environment/container/containerd/containerd.go",
+              "line": 61
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "containerd-service-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/containerd.containerdRuntime.Start"
+              },
+              "location": {
+                "path": "environment/container/containerd/containerd.go",
+                "line": 61
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 61
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "containerd-start",
+            "kind": "method",
+            "label": "containerdRuntime.Start",
+            "location": {
+              "path": "environment/container/containerd/containerd.go",
+              "line": 57
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-f0f53fc92225df15f56ee0c59a76c9148eea52478936bed1b6215f61cb7b435e",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "containerd-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/containerd.containerdRuntime.Start"
+              },
+              "location": {
+                "path": "environment/container/containerd/containerd.go",
+                "line": 57
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/containerd/containerd.go",
+                    "line": 57
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "docker-factory",
+            "kind": "function",
+            "label": "Docker factory registered as docker",
+            "location": {
+              "path": "environment/container/docker/docker.go",
+              "line": 28
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "docker-factory",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/docker.newRuntime"
+              },
+              "location": {
+                "path": "environment/container/docker/docker.go",
+                "line": 28
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 28
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "docker-provision",
+            "kind": "method",
+            "label": "dockerRuntime.Provision",
+            "location": {
+              "path": "environment/container/docker/docker.go",
+              "line": 40
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "docker-provision",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/docker.dockerRuntime.Provision"
+              },
+              "location": {
+                "path": "environment/container/docker/docker.go",
+                "line": 40
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 40
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "docker-service-start",
+            "kind": "operation",
+            "label": "service docker start",
+            "location": {
+              "path": "environment/container/docker/docker.go",
+              "line": 73
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "docker-service-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/docker.dockerRuntime.Start"
+              },
+              "location": {
+                "path": "environment/container/docker/docker.go",
+                "line": 73
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 73
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "docker-start",
+            "kind": "method",
+            "label": "dockerRuntime.Start",
+            "location": {
+              "path": "environment/container/docker/docker.go",
+              "line": 67
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-b48139df15ce5f1c22440fc6e067593729a321843bc741a2c49b52103867c7d6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "docker-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/docker.dockerRuntime.Start"
+              },
+              "location": {
+                "path": "environment/container/docker/docker.go",
+                "line": 67
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/docker/docker.go",
+                    "line": 67
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "k3s-service-start",
+            "kind": "operation",
+            "label": "service k3s start",
+            "location": {
+              "path": "environment/container/kubernetes/kubernetes.go",
+              "line": 149
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "k3s-service-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/kubernetes.kubernetesRuntime.Start"
+              },
+              "location": {
+                "path": "environment/container/kubernetes/kubernetes.go",
+                "line": 149
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 149
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "kubernetes-factory",
+            "kind": "function",
+            "label": "Kubernetes factory registered as kubernetes",
+            "location": {
+              "path": "environment/container/kubernetes/kubernetes.go",
+              "line": 26
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "kubernetes-factory",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/kubernetes.newRuntime"
+              },
+              "location": {
+                "path": "environment/container/kubernetes/kubernetes.go",
+                "line": 26
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 26
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "kubernetes-provision",
+            "kind": "method",
+            "label": "kubernetesRuntime.Provision",
+            "location": {
+              "path": "environment/container/kubernetes/kubernetes.go",
+              "line": 89
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "kubernetes-provision",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/kubernetes.kubernetesRuntime.Provision"
+              },
+              "location": {
+                "path": "environment/container/kubernetes/kubernetes.go",
+                "line": 89
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 89
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "kubernetes-runtime-environment",
+            "kind": "callsite",
+            "label": "append optional Kubernetes environment",
+            "location": {
+              "path": "app/app.go",
+              "line": 78
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "kubernetes-runtime-environment",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.colimaApp.containerEnvironment"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 78
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 78
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "kubernetes-start",
+            "kind": "method",
+            "label": "kubernetesRuntime.Start",
+            "location": {
+              "path": "environment/container/kubernetes/kubernetes.go",
+              "line": 140
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-ccab8687cb9aaf9c3a5e74b03ca234c2469b73ca73a83817252aa4fc044751ec",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "kubernetes-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/container/kubernetes.kubernetesRuntime.Start"
+              },
+              "location": {
+                "path": "environment/container/kubernetes/kubernetes.go",
+                "line": 140
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container/kubernetes/kubernetes.go",
+                    "line": 140
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "lima-new",
+            "kind": "function",
+            "label": "lima.New",
+            "location": {
+              "path": "environment/vm/lima/lima.go",
+              "line": 25
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "lima-new",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/vm/lima.New"
+              },
+              "location": {
+                "path": "environment/vm/lima/lima.go",
+                "line": 25
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/vm/lima/lima.go",
+                    "line": 25
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "lima-start",
+            "kind": "method",
+            "label": "limaVM.Start",
+            "location": {
+              "path": "environment/vm/lima/lima.go",
+              "line": 80
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "lima-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/vm/lima.limaVM.Start"
+              },
+              "location": {
+                "path": "environment/vm/lima/lima.go",
+                "line": 80
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/vm/lima/lima.go",
+                    "line": 80
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "limactl-start",
+            "kind": "operation",
+            "label": "limactl start subprocess",
+            "location": {
+              "path": "environment/vm/lima/lima.go",
+              "line": 104
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-c4455a4c3e221dd51e3910b25d2719e035c6ed5eba0683ba2de45f51e64530b4",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "limactl-start",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/vm/lima.limaVM.Start"
+              },
+              "location": {
+                "path": "environment/vm/lima/lima.go",
+                "line": 104
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/vm/lima/lima.go",
+                    "line": 104
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "new-app",
+            "kind": "function",
+            "label": "newApp",
+            "location": {
+              "path": "cmd/util.go",
+              "line": 17
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-b3e4d74b6a0899c4164c4491d5270562e4db0900e1beb0a8abfb4f0d7c596f31",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "new-app",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/cmd.newApp"
+              },
+              "location": {
+                "path": "cmd/util.go",
+                "line": 17
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/util.go",
+                    "line": 17
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "new-container",
+            "kind": "function",
+            "label": "environment.NewContainer",
+            "location": {
+              "path": "environment/container.go",
+              "line": 31
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "new-container",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment.NewContainer"
+              },
+              "location": {
+                "path": "environment/container.go",
+                "line": 31
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container.go",
+                    "line": 31
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "new-lima-config",
+            "kind": "function",
+            "label": "newConf",
+            "location": {
+              "path": "environment/vm/lima/yaml.go",
+              "line": 21
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-903f6c97a0587bf8f0569b249a33d7df8b26b6ead2aa7274d5829ca3f1d5c029",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "new-lima-config",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/vm/lima.newConf"
+              },
+              "location": {
+                "path": "environment/vm/lima/yaml.go",
+                "line": 21
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/vm/lima/yaml.go",
+                    "line": 21
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "prepare-config",
+            "kind": "function",
+            "label": "prepareConfig",
+            "location": {
+              "path": "cmd/start.go",
+              "line": 301
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "prepare-config",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/cmd.prepareConfig"
+              },
+              "location": {
+                "path": "cmd/start.go",
+                "line": 301
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 301
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "primary-runtime-environment",
+            "kind": "callsite",
+            "label": "create configured runtime environment",
+            "location": {
+              "path": "app/app.go",
+              "line": 70
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "primary-runtime-environment",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.colimaApp.containerEnvironment"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 70
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 70
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "provision-dispatch",
+            "kind": "callsite",
+            "label": "Container.Provision interface call",
+            "location": {
+              "path": "app/app.go",
+              "line": 97
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "provision-dispatch",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.colimaApp.Start"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 97
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 97
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "qemu-driver",
+            "kind": "operation",
+            "label": "default QEMU driver",
+            "location": {
+              "path": "environment/vm/lima/yaml.go",
+              "line": 25
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-903f6c97a0587bf8f0569b249a33d7df8b26b6ead2aa7274d5829ca3f1d5c029",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "qemu-driver",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/vm/lima.newConf"
+              },
+              "location": {
+                "path": "environment/vm/lima/yaml.go",
+                "line": 25
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/vm/lima/yaml.go",
+                    "line": 25
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "root-execute",
+            "kind": "function",
+            "label": "root.Execute",
+            "location": {
+              "path": "cmd/root/root.go",
+              "line": 67
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-d403fc714196316ba8c3d765039b616d9f870c66a126d2d5da077c791d920d8b",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "root-execute",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/cmd/root.Execute"
+              },
+              "location": {
+                "path": "cmd/root/root.go",
+                "line": 67
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/root/root.go",
+                    "line": 67
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "runtime-factory-dispatch",
+            "kind": "callsite",
+            "label": "containerRuntimes[runtime].Func",
+            "location": {
+              "path": "environment/container.go",
+              "line": 36
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-96069e87cbcfe1b601f2fad68890a942ab47a6578e9b92dd43c7251d3be9660c",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "runtime-factory-dispatch",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment.NewContainer"
+              },
+              "location": {
+                "path": "environment/container.go",
+                "line": 36
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/container.go",
+                    "line": 36
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-command",
+            "kind": "command",
+            "label": "colima start command",
+            "location": {
+              "path": "cmd/start.go",
+              "line": 28
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "start-command",
+              "member_id": {
+                "kind": "entrypoint",
+                "value": "github.com/abiosoft/colima/cmd.startCmd"
+              },
+              "location": {
+                "path": "cmd/start.go",
+                "line": 28
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 28
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-handler",
+            "kind": "function",
+            "label": "start RunE handler",
+            "location": {
+              "path": "cmd/start.go",
+              "line": 48
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "start-handler",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/cmd.startCmd.RunE"
+              },
+              "location": {
+                "path": "cmd/start.go",
+                "line": 48
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 48
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-helper",
+            "kind": "function",
+            "label": "start",
+            "location": {
+              "path": "cmd/start.go",
+              "line": 455
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-0880f7c0bdb809f2eb207b2e02ce8e81ac42b640ef9fd493d88d3d067e3469a6",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "start-helper",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/cmd.start"
+              },
+              "location": {
+                "path": "cmd/start.go",
+                "line": 455
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "cmd/start.go",
+                    "line": 455
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "start-runtime-dispatch",
+            "kind": "callsite",
+            "label": "Container.Start interface call",
+            "location": {
+              "path": "app/app.go",
+              "line": 101
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-cd199ee0651d818b2398771a52415b48daba6a1aab5a52e8d7f25b201586bfc5",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "start-runtime-dispatch",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/app.colimaApp.Start"
+              },
+              "location": {
+                "path": "app/app.go",
+                "line": 101
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "app/app.go",
+                    "line": 101
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "vz-driver",
+            "kind": "operation",
+            "label": "conditional VZ driver",
+            "location": {
+              "path": "environment/vm/lima/yaml.go",
+              "line": 30
+            },
+            "branch_id": "flow:colima-start:main",
+            "component_id": "component-903f6c97a0587bf8f0569b249a33d7df8b26b6ead2aa7274d5829ca3f1d5c029",
+            "binding": {
+              "flow_id": "colima-start",
+              "anchor_id": "vz-driver",
+              "member_id": {
+                "kind": "symbol",
+                "value": "github.com/abiosoft/colima/environment/vm/lima.newConf"
+              },
+              "location": {
+                "path": "environment/vm/lima/yaml.go",
+                "line": 30
+              },
+              "certainty": "static",
+              "provenance": [
+                {
+                  "provider": "source_fixture",
+                  "version": "colima-281757a",
+                  "operation": "bind_flow_anchor",
+                  "location": {
+                    "path": "environment/vm/lima/yaml.go",
+                    "line": 30
+                  }
+                }
+              ],
+              "scenarios": [
+                {
+                  "id": "colima-darwin-amd64",
+                  "name": "Colima Darwin amd64 default Go build",
+                  "build": {
+                    "goos": "darwin",
+                    "goarch": "amd64"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "branches": [
+          {
+            "id": "flow:colima-start:main",
+            "kind": "main",
+            "root_anchor_ids": [
+              "app-start",
+              "cli-main",
+              "containerd-start",
+              "docker-start",
+              "kubernetes-start",
+              "lima-start",
+              "new-container",
+              "new-lima-config",
+              "root-execute",
+              "start-command",
+              "start-helper",
+              "start-runtime-dispatch"
+            ],
+            "anchor_ids": [
+              "app-new",
+              "app-start",
+              "app-start-return",
+              "cli-main",
+              "containerd-factory",
+              "containerd-provision",
+              "containerd-service-start",
+              "containerd-start",
+              "docker-factory",
+              "docker-provision",
+              "docker-service-start",
+              "docker-start",
+              "k3s-service-start",
+              "kubernetes-factory",
+              "kubernetes-provision",
+              "kubernetes-runtime-environment",
+              "kubernetes-start",
+              "lima-new",
+              "lima-start",
+              "limactl-start",
+              "new-app",
+              "new-container",
+              "new-lima-config",
+              "prepare-config",
+              "primary-runtime-environment",
+              "provision-dispatch",
+              "qemu-driver",
+              "root-execute",
+              "runtime-factory-dispatch",
+              "start-command",
+              "start-handler",
+              "start-helper",
+              "start-runtime-dispatch",
+              "vz-driver"
+            ]
+          }
+        ],
+        "slots": [
+          {
+            "kind": "trigger",
+            "status": "verified",
+            "summary": "colima start selects the start command",
+            "evidence_ids": [
+              "start-command"
+            ]
+          },
+          {
+            "kind": "entrypoint",
+            "status": "verified",
+            "summary": "main enters root.Execute",
+            "evidence_ids": [
+              "call-root-execute"
+            ]
+          },
+          {
+            "kind": "dispatch",
+            "status": "verified",
+            "summary": "Cobra dispatches PreRunE and RunE for start",
+            "evidence_ids": [
+              "dispatch-start-command",
+              "invoke-prepare-config",
+              "invoke-start-handler"
+            ]
+          },
+          {
+            "kind": "application_callable",
+            "status": "verified",
+            "summary": "start calls the concrete app Start method through app.App",
+            "evidence_ids": [
+              "call-app-start"
+            ]
+          },
+          {
+            "kind": "core_operation",
+            "status": "partial",
+            "summary": "VM and registered runtime alternatives are identified, but the selected map/interface targets are not observed",
+            "evidence_ids": [
+              "select-runtime-factory",
+              "select-qemu-driver",
+              "select-vz-driver",
+              "dispatch-docker-start",
+              "dispatch-containerd-start",
+              "dispatch-kubernetes-start"
+            ],
+            "missing": "selected runtime factory and concrete lifecycle target remain unresolved"
+          },
+          {
+            "kind": "io_boundary",
+            "status": "partial",
+            "summary": "limactl and backend service subprocess callsites are exact possible boundaries",
+            "evidence_ids": [
+              "run-limactl-start",
+              "run-docker-service",
+              "run-containerd-service",
+              "run-k3s-service"
+            ],
+            "missing": "the runtime-selected external boundary is not observed"
+          },
+          {
+            "kind": "concurrency",
+            "status": "not_applicable",
+            "summary": "no concrete concurrent lifecycle is modeled in this bounded start flow",
+            "provenance": [
+              {
+                "provider": "source_fixture",
+                "version": "colima-281757a",
+                "operation": "inspect_lifecycle",
+                "location": {
+                  "path": "app/app.go",
+                  "line": 56
+                }
+              }
+            ],
+            "applicability_reason": "no_concurrent_lifecycle_in_scope"
+          },
+          {
+            "kind": "termination",
+            "status": "partial",
+            "summary": "app.Start returns after lifecycle orchestration",
+            "evidence_ids": [
+              "return-app-start"
+            ],
+            "missing": "app.Start return does not prove Cobra handler or process completion"
+          }
+        ],
+        "transition_ids": [
+          "build-lima-config",
+          "call-app-new",
+          "call-app-start",
+          "call-lima-start",
+          "call-new-app",
+          "call-provision-dispatch",
+          "call-root-execute",
+          "call-start-after-edit",
+          "call-start-default",
+          "call-start-runtime-dispatch",
+          "candidate-containerd-factory",
+          "candidate-docker-factory",
+          "candidate-kubernetes-factory",
+          "construct-lima-vm",
+          "create-kubernetes-runtime",
+          "create-primary-runtime",
+          "dispatch-containerd-provision",
+          "dispatch-containerd-start",
+          "dispatch-docker-provision",
+          "dispatch-docker-start",
+          "dispatch-kubernetes-provision",
+          "dispatch-kubernetes-start",
+          "dispatch-start-command",
+          "invoke-prepare-config",
+          "invoke-start-handler",
+          "resolve-kubernetes-runtime",
+          "resolve-primary-runtime",
+          "return-app-start",
+          "run-containerd-service",
+          "run-docker-service",
+          "run-k3s-service",
+          "run-limactl-start",
+          "select-qemu-driver",
+          "select-runtime-factory",
+          "select-vz-driver"
+        ]
+      }
+    ],
+    "flow_edges": [
+      {
+        "id": "build-lima-config",
+        "flow_id": "colima-start",
+        "from": "lima-start",
+        "to": "new-lima-config",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "!l.Created()",
+          "location": {
+            "path": "environment/vm/lima/lima.go",
+            "line": 83
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "environment/vm/lima/lima.go",
+          "line": 96
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-app-new",
+        "flow_id": "colima-start",
+        "from": "new-app",
+        "to": "app-new",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/util.go",
+          "line": 18
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-app-start",
+        "flow_id": "colima-start",
+        "from": "start-helper",
+        "to": "app-start",
+        "relation": "calls",
+        "resolution": "type_inferred",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/start.go",
+          "line": 456
+        },
+        "provider": "go_types",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-lima-start",
+        "flow_id": "colima-start",
+        "from": "app-start",
+        "to": "lima-start",
+        "relation": "calls",
+        "resolution": "type_inferred",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 89
+        },
+        "provider": "go_types",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-new-app",
+        "flow_id": "colima-start",
+        "from": "start-handler",
+        "to": "new-app",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/start.go",
+          "line": 49
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-provision-dispatch",
+        "flow_id": "colima-start",
+        "from": "app-start",
+        "to": "provision-dispatch",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 97
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-root-execute",
+        "flow_id": "colima-start",
+        "from": "cli-main",
+        "to": "root-execute",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/colima/main.go",
+          "line": 12
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-start-after-edit",
+        "flow_id": "colima-start",
+        "from": "start-handler",
+        "to": "start-helper",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "startCmdArgs.Flags.Edit",
+          "location": {
+            "path": "cmd/start.go",
+            "line": 60
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/start.go",
+          "line": 87
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-start-default",
+        "flow_id": "colima-start",
+        "from": "start-handler",
+        "to": "start-helper",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "!startCmdArgs.Flags.Edit",
+          "location": {
+            "path": "cmd/start.go",
+            "line": 52
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/start.go",
+          "line": 57
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "call-start-runtime-dispatch",
+        "flow_id": "colima-start",
+        "from": "app-start",
+        "to": "start-runtime-dispatch",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 101
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "candidate-containerd-factory",
+        "flow_id": "colima-start",
+        "from": "runtime-factory-dispatch",
+        "to": "containerd-factory",
+        "relation": "constructs",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "environment/container.go",
+          "line": 36
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "candidate-docker-factory",
+        "flow_id": "colima-start",
+        "from": "runtime-factory-dispatch",
+        "to": "docker-factory",
+        "relation": "constructs",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "environment/container.go",
+          "line": 36
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "candidate-kubernetes-factory",
+        "flow_id": "colima-start",
+        "from": "runtime-factory-dispatch",
+        "to": "kubernetes-factory",
+        "relation": "constructs",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "conf.Kubernetes.Enabled",
+          "location": {
+            "path": "app/app.go",
+            "line": 77
+          }
+        },
+        "certainty": "possible",
+        "evidence": {
+          "path": "environment/container.go",
+          "line": 36
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "construct-lima-vm",
+        "flow_id": "colima-start",
+        "from": "app-new",
+        "to": "lima-new",
+        "relation": "constructs",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 42
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "create-kubernetes-runtime",
+        "flow_id": "colima-start",
+        "from": "app-start",
+        "to": "kubernetes-runtime-environment",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "conf.Kubernetes.Enabled",
+          "location": {
+            "path": "app/app.go",
+            "line": 77
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 78
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "create-primary-runtime",
+        "flow_id": "colima-start",
+        "from": "app-start",
+        "to": "primary-runtime-environment",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 70
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-containerd-provision",
+        "flow_id": "colima-start",
+        "from": "provision-dispatch",
+        "to": "containerd-provision",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 97
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-containerd-start",
+        "flow_id": "colima-start",
+        "from": "start-runtime-dispatch",
+        "to": "containerd-start",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 101
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-docker-provision",
+        "flow_id": "colima-start",
+        "from": "provision-dispatch",
+        "to": "docker-provision",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 97
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-docker-start",
+        "flow_id": "colima-start",
+        "from": "start-runtime-dispatch",
+        "to": "docker-start",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 101
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-kubernetes-provision",
+        "flow_id": "colima-start",
+        "from": "provision-dispatch",
+        "to": "kubernetes-provision",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "conf.Kubernetes.Enabled",
+          "location": {
+            "path": "app/app.go",
+            "line": 77
+          }
+        },
+        "certainty": "possible",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 97
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-kubernetes-start",
+        "flow_id": "colima-start",
+        "from": "start-runtime-dispatch",
+        "to": "kubernetes-start",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "conf.Kubernetes.Enabled",
+          "location": {
+            "path": "app/app.go",
+            "line": 77
+          }
+        },
+        "certainty": "possible",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 101
+        },
+        "provider": "go_registry",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "dispatch-start-command",
+        "flow_id": "colima-start",
+        "from": "root-execute",
+        "to": "start-command",
+        "relation": "dispatches",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/root/root.go",
+          "line": 68
+        },
+        "provider": "cobra_contract",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "invoke-prepare-config",
+        "flow_id": "colima-start",
+        "from": "start-command",
+        "to": "prepare-config",
+        "relation": "callback",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/start.go",
+          "line": 89
+        },
+        "provider": "cobra_contract",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "invoke-start-handler",
+        "flow_id": "colima-start",
+        "from": "start-command",
+        "to": "start-handler",
+        "relation": "callback",
+        "resolution": "framework_rule",
+        "invocation": "callback",
+        "certainty": "static",
+        "evidence": {
+          "path": "cmd/start.go",
+          "line": 48
+        },
+        "provider": "cobra_contract",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "resolve-kubernetes-runtime",
+        "flow_id": "colima-start",
+        "from": "kubernetes-runtime-environment",
+        "to": "new-container",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 403
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "resolve-primary-runtime",
+        "flow_id": "colima-start",
+        "from": "primary-runtime-environment",
+        "to": "new-container",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 403
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "return-app-start",
+        "flow_id": "colima-start",
+        "from": "app-start",
+        "to": "app-start-return",
+        "relation": "returns",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "app/app.go",
+          "line": 121
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "run-containerd-service",
+        "flow_id": "colima-start",
+        "from": "containerd-start",
+        "to": "containerd-service-start",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "environment/container/containerd/containerd.go",
+          "line": 61
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "run-docker-service",
+        "flow_id": "colima-start",
+        "from": "docker-start",
+        "to": "docker-service-start",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "environment/container/docker/docker.go",
+          "line": 73
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "run-k3s-service",
+        "flow_id": "colima-start",
+        "from": "kubernetes-start",
+        "to": "k3s-service-start",
+        "relation": "calls",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "environment/container/kubernetes/kubernetes.go",
+          "line": 149
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "run-limactl-start",
+        "flow_id": "colima-start",
+        "from": "lima-start",
+        "to": "limactl-start",
+        "relation": "calls",
+        "resolution": "type_inferred",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "!l.Created()",
+          "location": {
+            "path": "environment/vm/lima/lima.go",
+            "line": 83
+          }
+        },
+        "certainty": "static",
+        "evidence": {
+          "path": "environment/vm/lima/lima.go",
+          "line": 104
+        },
+        "provider": "go_types",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "select-qemu-driver",
+        "flow_id": "colima-start",
+        "from": "new-lima-config",
+        "to": "qemu-driver",
+        "relation": "dispatches",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "certainty": "static",
+        "evidence": {
+          "path": "environment/vm/lima/yaml.go",
+          "line": 25
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "select-runtime-factory",
+        "flow_id": "colima-start",
+        "from": "new-container",
+        "to": "runtime-factory-dispatch",
+        "relation": "dispatches",
+        "resolution": "unresolved",
+        "invocation": "synchronous",
+        "certainty": "possible",
+        "evidence": {
+          "path": "environment/container.go",
+          "line": 36
+        },
+        "provider": "go_map_dispatch",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      },
+      {
+        "id": "select-vz-driver",
+        "flow_id": "colima-start",
+        "from": "new-lima-config",
+        "to": "vz-driver",
+        "relation": "dispatches",
+        "resolution": "static",
+        "invocation": "synchronous",
+        "condition": {
+          "expression": "util.MacOS13OrNewer() && conf.VMType == VZ && sameArchitecture",
+          "location": {
+            "path": "environment/vm/lima/yaml.go",
+            "line": 30
+          }
+        },
+        "certainty": "possible",
+        "evidence": {
+          "path": "environment/vm/lima/yaml.go",
+          "line": 30
+        },
+        "provider": "go_source",
+        "from_branch_id": "flow:colima-start:main",
+        "to_branch_id": "flow:colima-start:main",
+        "cross_branch": false
+      }
+    ],
+    "frontiers": [
+      {
+        "id": "frontier-5e10408dec2ac9bdf95c8266a0f26fc757e6b23286f81b3e743312deb330fcf1",
+        "flow_id": "colima-start",
+        "kind": "unresolved_transition",
+        "transition_id": "select-runtime-factory",
+        "reason": "transition resolution remains unresolved",
+        "evidence": {
+          "path": "environment/container.go",
+          "line": 36
+        }
+      },
+      {
+        "id": "frontier-65d7303f4532c272916d8ac2c1a09495b498725ab5650654f21221ad66878662",
+        "flow_id": "colima-start",
+        "kind": "proof_slot",
+        "slot": "termination",
+        "reason": "app.Start return does not prove Cobra handler or process completion"
+      },
+      {
+        "id": "frontier-7d0f2a3c9a980cb2667008648350123d3b5455b427fad550cb96260df95b1ee5",
+        "flow_id": "colima-start",
+        "kind": "proof_slot",
+        "slot": "io_boundary",
+        "reason": "the runtime-selected external boundary is not observed"
+      },
+      {
+        "id": "frontier-b65e90a843d94c1960f37c43edad8585b982f525793aa0ddb00a994d323d97b9",
+        "flow_id": "colima-start",
+        "kind": "proof_slot",
+        "slot": "core_operation",
+        "reason": "selected runtime factory and concrete lifecycle target remain unresolved"
+      }
+    ],
+    "diagnostics": [
+      {
+        "id": "diagnostic-39d9002841d6a9a06bd3a330f3950a49657bfaf1356eaa1a42d0bb297bf33ca4",
+        "source": "flowproof",
+        "severity": "warning",
+        "code": "flowproof.warning",
+        "message": "Registered backend edges enumerate possible implementations; they do not prove which runtime key was selected.",
+        "flow_id": "colima-start"
+      },
+      {
+        "id": "diagnostic-e123c46a18c8142aebccaa833074cf5c26c98f47ada4ea3d90842cbc3cc3cee6",
+        "source": "flowproof",
+        "severity": "warning",
+        "code": "flowproof.warning",
+        "message": "Provision and Start are sibling interface callsites in app.Start; no call edge is invented between concrete backend methods.",
+        "flow_id": "colima-start"
+      }
+    ]
+  },
+  "recommended_flow": "colima-start",
+  "flow_count": 1
+}
