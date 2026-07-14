@@ -281,19 +281,19 @@ func TestParseDiscoveredSurfacesRejectsUnusablePairs(t *testing.T) {
 			name: "unsupported catalog version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCatalog(t, runDir, func(catalog *rawSurfaceCatalog) {
-					catalog.Version = 6
+					catalog.Version = 7
 				})
 			},
-			warning: "unsupported trigger_catalog.json version 6",
+			warning: "unsupported trigger_catalog.json version 7",
 		},
 		{
 			name: "unsupported coverage version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCoverage(t, runDir, func(coverage *rawSurfaceCoverage) {
-					coverage.Version = 6
+					coverage.Version = 7
 				})
 			},
-			warning: "unsupported surface_coverage.json version 6",
+			warning: "unsupported surface_coverage.json version 7",
 		},
 		{
 			name: "repository mismatch",

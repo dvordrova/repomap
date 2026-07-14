@@ -64,6 +64,10 @@ type analyzer struct {
 	callbackReferences        map[*ssa.Function]bool
 	callbackReferenceIDs      map[string]bool
 	entrypointPackages        map[*ssa.Function]map[string]bool
+	closureBindings           map[*ssa.Function][]ssa.Value
+	closureBindingAmbiguous   map[*ssa.Function]bool
+	freeVarBindings           map[*ssa.FreeVar]ssa.Value
+	freeVarBindingAmbiguous   map[*ssa.FreeVar]bool
 	detachedWalk              bool
 }
 
@@ -144,6 +148,10 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		callbackReferences:        map[*ssa.Function]bool{},
 		callbackReferenceIDs:      map[string]bool{},
 		entrypointPackages:        map[*ssa.Function]map[string]bool{},
+		closureBindings:           map[*ssa.Function][]ssa.Value{},
+		closureBindingAmbiguous:   map[*ssa.Function]bool{},
+		freeVarBindings:           map[*ssa.FreeVar]ssa.Value{},
+		freeVarBindingAmbiguous:   map[*ssa.FreeVar]bool{},
 		scenario: Scenario{
 			ID:   scenarioID(runtime.GOOS, runtime.GOARCH, opts.BuildTags),
 			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
@@ -364,6 +372,9 @@ func (a *analyzer) prepare() {
 				if value, ok := instruction.(ssa.Value); ok {
 					a.recordFunctionReference(value)
 				}
+				if closure, ok := instruction.(*ssa.MakeClosure); ok {
+					a.recordClosureBindings(closure)
+				}
 				call, ok := instruction.(ssa.CallInstruction)
 				if ok {
 					for _, argument := range call.Common().Args {
@@ -521,8 +532,6 @@ func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
 		for function := range a.relevant {
 			if function == nil || function.Blocks == nil || function.Name() == "init" ||
 				strings.EqualFold(function.Name(), "ServeHTTP") ||
-				(!a.callbackReferences[function] && !a.callbackReferenceIDs[cleanFunctionID(a.functionID(function))]) ||
-				!a.detachedRootEligible(function) ||
 				!a.isRepositoryFunction(function) || !reachablePackages[functionPackagePath(function)] {
 				continue
 			}
@@ -567,7 +576,8 @@ func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
 					break
 				}
 			}
-			if !hasRelevantCaller {
+			_, capturedClosure := a.closureBindings[function]
+			if !hasRelevantCaller || capturedClosure {
 				roots = append(roots, function)
 			}
 		}
@@ -588,7 +598,7 @@ func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
 			triggerStart := len(a.result.Catalog.Triggers)
 			serverStart := len(a.starts)
 			a.detachedWalk = true
-			a.walk(root, environment{}, nil, candidates[root], 0, false, "")
+			a.walk(root, a.closureEnvironment(root), nil, candidates[root], 0, false, "")
 			a.detachedWalk = false
 			if a.ctx.Err() != nil {
 				return
@@ -612,6 +622,58 @@ func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
 			a.result.Coverage.UnsupportedDispatch = append(a.result.Coverage.UnsupportedDispatch, frontier)
 		}
 	}
+}
+
+
+
+func (a *analyzer) recordClosureBindings(closure *ssa.MakeClosure) {
+	if closure == nil {
+		return
+	}
+	function, ok := closure.Fn.(*ssa.Function)
+	if !ok || a.closureBindingAmbiguous[function] {
+		return
+	}
+	bindings := append([]ssa.Value(nil), closure.Bindings...)
+	if previous, exists := a.closureBindings[function]; exists {
+		if len(previous) != len(bindings) {
+			a.closureBindingAmbiguous[function] = true
+			delete(a.closureBindings, function)
+			return
+		}
+		for index := range previous {
+			if previous[index] != bindings[index] {
+				a.closureBindingAmbiguous[function] = true
+				delete(a.closureBindings, function)
+				return
+			}
+		}
+		return
+	}
+	a.closureBindings[function] = bindings
+	for index, freeVar := range function.FreeVars {
+		if index >= len(bindings) || a.freeVarBindingAmbiguous[freeVar] {
+			continue
+		}
+		if previous, exists := a.freeVarBindings[freeVar]; exists && previous != bindings[index] {
+			a.freeVarBindingAmbiguous[freeVar] = true
+			delete(a.freeVarBindings, freeVar)
+			continue
+		}
+		a.freeVarBindings[freeVar] = bindings[index]
+	}
+}
+
+func (a *analyzer) closureEnvironment(function *ssa.Function) environment {
+	bindings, exists := a.closureBindings[function]
+	if !exists || len(bindings) != len(function.FreeVars) {
+		return environment{}
+	}
+	env := environment{}
+	for index, freeVar := range function.FreeVars {
+		env[freeVar] = a.eval(bindings[index], environment{}, 0)
+	}
+	return env
 }
 
 func (a *analyzer) detachedRootEligible(function *ssa.Function) bool {
@@ -727,6 +789,25 @@ func (a *analyzer) walk(
 				continue
 			}
 			targets := a.callTargets[call]
+			targets = a.addBoundValueTarget(targets, call, env)
+			if len(targets) == 0 {
+				continue
+			}
+			admitted := make([]*ssa.Function, 0, len(targets))
+			var rejected *ssa.Function
+			for _, target := range targets {
+				if a.callTargetEligible(call, target, entrypoint, env) {
+					admitted = append(admitted, target)
+					continue
+				}
+				if rejected == nil {
+					rejected = target
+				}
+			}
+			if rejected != nil {
+				a.recordUnresolvedCallTarget(function, call, rejected, entrypoint)
+			}
+			targets = admitted
 			if len(targets) == 0 {
 				continue
 			}
@@ -758,10 +839,6 @@ func (a *analyzer) walk(
 			}
 			callAmbiguous := ambiguous || (targetLimitFrontier == nil && len(targets) > 1)
 			for _, target := range targets {
-				if !a.callTargetEligible(call, target, entrypoint) {
-					a.recordUnresolvedCallTarget(function, call, target, entrypoint)
-					continue
-				}
 				triggerStart := len(a.result.Catalog.Triggers)
 				serverStart := len(a.starts)
 				architectureKind := ""
@@ -822,7 +899,7 @@ func (a *analyzer) walk(
 				nextChain := append(append([]Wrapper{}, chain...), wrapper)
 				a.walk(
 					target,
-					a.bind(target, a.arguments(call), env, depth),
+					a.bindWithCall(target, a.arguments(call), env, depth, call),
 					nextChain,
 					entrypoint,
 					depth+1,
@@ -835,6 +912,92 @@ func (a *analyzer) walk(
 			}
 		}
 	}
+}
+
+
+func (a *analyzer) addBoundValueTarget(
+	targets []*ssa.Function,
+	call ssa.CallInstruction,
+	env environment,
+) []*ssa.Function {
+	if call == nil || call.Common().Value == nil {
+		return targets
+	}
+	value := a.eval(call.Common().Value, env, 0)
+	ids := append([]string{value.Text}, value.Candidates...)
+	if freeVar, ok := call.Common().Value.(*ssa.FreeVar); ok && !a.freeVarBindingAmbiguous[freeVar] {
+		if function := a.boundFunction(a.freeVarBindings[freeVar], 0); function != nil {
+			ids = append(ids, a.functionID(function))
+		}
+	}
+	seen := make(map[*ssa.Function]struct{}, len(targets))
+	for _, target := range targets {
+		seen[target] = struct{}{}
+	}
+	for _, id := range ids {
+		target := a.functionByID[id]
+		if target == nil {
+			target = a.functionByID[cleanFunctionID(id)]
+		}
+		if target != nil {
+			if _, exists := seen[target]; !exists {
+				seen[target] = struct{}{}
+				targets = append(targets, target)
+			}
+		}
+	}
+	return targets
+}
+
+func (a *analyzer) boundFunction(value ssa.Value, depth int) *ssa.Function {
+	if value == nil || depth > 4 {
+		return nil
+	}
+	switch current := value.(type) {
+	case *ssa.Function:
+		return current
+	case *ssa.MakeClosure:
+		function, _ := current.Fn.(*ssa.Function)
+		return function
+	case *ssa.ChangeType:
+		return a.boundFunction(current.X, depth+1)
+	case *ssa.Convert:
+		return a.boundFunction(current.X, depth+1)
+	case *ssa.MakeInterface:
+		return a.boundFunction(current.X, depth+1)
+	case *ssa.UnOp:
+		return a.boundFunction(current.X, depth+1)
+	case *ssa.Alloc:
+		var resolved *ssa.Function
+		for function := range a.allFunctions {
+			if function == nil {
+				continue
+			}
+			for _, block := range function.Blocks {
+				for _, instruction := range block.Instrs {
+					store, ok := instruction.(*ssa.Store)
+					if !ok || store.Addr != current {
+						continue
+					}
+					candidate := a.boundFunction(store.Val, depth+1)
+					if candidate == nil {
+						continue
+					}
+					if resolved != nil && resolved != candidate {
+						return nil
+					}
+					resolved = candidate
+				}
+			}
+		}
+		return resolved
+	case *ssa.FreeVar:
+		if a.freeVarBindingAmbiguous[current] {
+			return nil
+		}
+		return a.boundFunction(a.freeVarBindings[current], depth+1)
+	}
+	return nil
 }
 
 func (a *analyzer) terminalTargetEligible(call ssa.CallInstruction, target *ssa.Function) bool {
@@ -859,8 +1022,9 @@ func (a *analyzer) terminalTargetEligible(call ssa.CallInstruction, target *ssa.
 func (a *analyzer) callTargetEligible(
 	call ssa.CallInstruction,
 	target, entrypoint *ssa.Function,
+	env environment,
 ) bool {
-	if !a.callTargetWitness(call, target) || entrypoint == nil {
+	if !a.callTargetWitness(call, target, env) || entrypoint == nil {
 		return false
 	}
 	packages := a.entrypointPackages[entrypoint]
@@ -871,18 +1035,28 @@ func (a *analyzer) callTargetEligible(
 	return packages[functionPackagePath(target)]
 }
 
-func (a *analyzer) callTargetWitness(call ssa.CallInstruction, target *ssa.Function) bool {
+func (a *analyzer) callTargetWitness(call ssa.CallInstruction, target *ssa.Function, env environment) bool {
 	if a.terminalTargetEligible(call, target) {
 		return true
 	}
-	if call == nil || target == nil || target.Signature == nil {
+	if call == nil || target == nil || call.Common().Value == nil {
 		return false
 	}
-	if call.Common().IsInvoke() {
+	value := a.eval(call.Common().Value, env, 0)
+	targetID := a.functionID(target)
+	if value.Text == targetID || cleanFunctionID(value.Text) == cleanFunctionID(targetID) {
 		return true
 	}
-	value := call.Common().Value
-	return value != nil && types.AssignableTo(target.Signature, value.Type())
+	for _, candidate := range value.Candidates {
+		if candidate == targetID || cleanFunctionID(candidate) == cleanFunctionID(targetID) {
+			return true
+		}
+	}
+	if _, captured := call.Common().Value.(*ssa.FreeVar); captured && !a.closureBindingAmbiguous[target] {
+		_, witnessed := a.closureBindings[target]
+		return witnessed
+	}
+	return false
 }
 
 func (a *analyzer) recordUnresolvedCallTarget(
@@ -916,7 +1090,11 @@ func (a *analyzer) terminalSeedEligible(
 }
 
 func (a *analyzer) propagationTargetEligible(call ssa.CallInstruction, target *ssa.Function) bool {
-	return a.callTargetWitness(call, target)
+	if a.terminalTargetEligible(call, target) {
+		return true
+	}
+	_, captured := call.Common().Value.(*ssa.FreeVar)
+	return captured
 }
 
 func (a *analyzer) applyFrontierSince(triggerStart, serverStart int, frontier Frontier) {
@@ -1632,6 +1810,32 @@ func (a *analyzer) bind(
 			continue
 		}
 		result[parameter] = a.eval(args[index], caller, depth+1)
+	}
+	return result
+}
+
+func (a *analyzer) bindWithCall(
+	target *ssa.Function,
+	args []ssa.Value,
+	caller environment,
+	depth int,
+	call ssa.CallInstruction,
+) environment {
+	result := a.bind(target, args, caller, depth)
+	closure, ok := call.Common().Value.(*ssa.MakeClosure)
+	if !ok || closure == nil || closure.Fn != target {
+		if _, captured := call.Common().Value.(*ssa.FreeVar); captured {
+			for freeVar, value := range a.closureEnvironment(target) {
+				result[freeVar] = value
+			}
+		}
+		return result
+	}
+	for index, freeVar := range target.FreeVars {
+		if index >= len(closure.Bindings) {
+			break
+		}
+		result[freeVar] = a.eval(closure.Bindings[index], caller, depth+1)
 	}
 	return result
 }

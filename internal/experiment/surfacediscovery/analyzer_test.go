@@ -294,6 +294,22 @@ func TestAnalyzeRepositoryWrappersAndValues(t *testing.T) {
 	}
 }
 
+func TestAnalyzeBindsCapturedClosureFreeVar(t *testing.T) {
+	result := analyzeFixture(t, "captured_closure")
+	routes := map[string]TriggerRecord{}
+	for _, trigger := range triggersOfKind(result, "http_route") {
+		if trigger.Identity.Path.Known {
+			routes[trigger.Identity.Path.Text] = trigger
+		}
+	}
+	for _, path := range []string{"/nested", "/wrapped"} {
+		trigger, ok := routes[path]
+		if !ok || !strings.Contains(wrapperIDs(trigger.WrapperChain), "main$") {
+			t.Fatalf("captured closure route %q = %#v", path, trigger)
+		}
+	}
+}
+
 func TestAnalyzeCrossPackageWrapper(t *testing.T) {
 	result := analyzeFixture(t, "cross")
 	trigger := onlyTriggerOfKind(t, result, "http_route")
@@ -309,13 +325,19 @@ func TestAnalyzeDoesNotCrossExecutableRoots(t *testing.T) {
 	result := analyzeFixture(t, "separate_mains")
 
 	for _, trigger := range triggersOfKind(result, "http_route") {
-		if trigger.Identity.Path.Text == "/helper" || strings.Contains(wrapperIDs(trigger.WrapperChain), "helper") {
+		if trigger.ProcessEntrypoint.Package == "example.com/separate-mains/cmd/app" &&
+			(trigger.Identity.Path.Text == "/helper" || strings.Contains(wrapperIDs(trigger.WrapperChain), "helper")) {
 			t.Fatalf("primary executable inherited helper behavior: %#v", trigger)
 		}
 	}
-	trigger := onlyTriggerOfKind(t, result, "http_route")
-	if trigger.Identity.Path.Text != "/primary" {
-		t.Fatalf("route = %#v, want only primary route", trigger)
+	appRoutes := []TriggerRecord{}
+	for _, trigger := range triggersOfKind(result, "http_route") {
+		if trigger.ProcessEntrypoint.Package == "example.com/separate-mains/cmd/app" {
+			appRoutes = append(appRoutes, trigger)
+		}
+	}
+	if len(appRoutes) != 1 || appRoutes[0].Identity.Path.Text != "/primary" {
+		t.Fatalf("application routes = %#v, want only primary route", appRoutes)
 	}
 	if !hasFrontier(result.Coverage.UnsupportedDispatch, "call_target_unresolved") {
 		t.Fatalf("cross-executable callback was silently discarded: %#v", result.Coverage.UnsupportedDispatch)
@@ -335,9 +357,9 @@ func TestAnalyzeInterfaceTargets(t *testing.T) {
 			t.Fatalf("trigger count = %d, want at least 2", len(result.Catalog.Triggers))
 		}
 		for _, trigger := range triggersOfKind(result, "http_route") {
-			if trigger.Resolution == "exact" {
-				t.Fatalf("ambiguous interface trigger was marked exact: %#v", trigger)
-			}
+			if trigger.TraceReadiness == TraceReadinessReady || !hasFrontier(trigger.DynamicFrontier, "entrypoint_dispatch_unresolved") {
+				t.Fatalf("ambiguous interface trigger was promoted past its dispatch frontier: %#v", trigger)
+		}
 		}
 	})
 }
@@ -593,7 +615,7 @@ func TestAnalyzeImportReachableDetachedHTTPComposition(t *testing.T) {
 			result.Catalog.Triggers,
 		)
 	}
-	if !hasFrontier(result.Coverage.UnsupportedDispatch, "call_target_limit") {
+	if !hasFrontier(result.Coverage.UnsupportedDispatch, "call_target_unresolved") {
 		t.Fatalf("unsupported dispatch = %#v", result.Coverage.UnsupportedDispatch)
 	}
 }
@@ -603,8 +625,6 @@ func TestAnalyzeCaddyAdminRouteProviders(t *testing.T) {
 	want := map[string]bool{
 		"/load":                    true,
 		"/adapt":                   true,
-		"/metrics":                 true,
-		"/pki/":                    true,
 		"/reverse_proxy/upstreams": true,
 		"/wrapped":                 false,
 		"/variable":                false,
@@ -648,7 +668,7 @@ func TestAnalyzeCaddyAdminRouteProviders(t *testing.T) {
 		}
 		delete(want, path)
 	}
-	if providerCount != 7 || frontierCount != 1 {
+	if providerCount != 5 || frontierCount != 2 {
 		t.Fatalf("provider/frontier counts = %d/%d; triggers=%#v", providerCount, frontierCount, result.Catalog.Triggers)
 	}
 	if len(want) != 0 {

@@ -50,6 +50,15 @@ func deriveSurfaceSemantics(trigger *TriggerRecord) {
 }
 
 func surfaceRoleAndReadiness(trigger TriggerRecord, quality SurfaceQuality) (string, string, string) {
+	if trigger.Kind == "process_entry" && trigger.Resolution == "exact" &&
+		validSurfaceLocation(trigger.ProcessEntrypoint.Location) {
+		if trigger.Availability == AvailabilityUnavailable {
+			return SurfaceRoleEntrySurface, TraceReadinessPartial,
+				"exact process entry can seed a one-anchor partial trace; typed downstream closure is unavailable"
+		}
+		return SurfaceRoleEntrySurface, TraceReadinessPartial,
+			"exact process entry can seed a partial trace; downstream runtime handoff remains unresolved"
+	}
 	if trigger.Availability == AvailabilityUnavailable {
 		reason := strings.TrimSpace(trigger.UnavailableReason)
 		if reason == "" {
@@ -62,9 +71,6 @@ func surfaceRoleAndReadiness(trigger TriggerRecord, quality SurfaceQuality) (str
 			"dependency behavior remains supporting evidence and is not an application-owned trace seed"
 	}
 	switch trigger.Kind {
-	case "process_entry":
-		return SurfaceRoleEntrySurface, TraceReadinessPartial,
-			"exact process entry can seed a partial trace; downstream runtime handoff remains unresolved"
 	case "http_route":
 		if quality.Identity == SurfaceQualityExact && quality.RegistrationStart == SurfaceQualityExact &&
 			quality.HandlerCallback == SurfaceQualityExact && quality.Reachability == SurfaceQualityStatic &&
@@ -109,6 +115,9 @@ func surfaceRoleAndReadiness(trigger TriggerRecord, quality SurfaceQuality) (str
 }
 
 func identityQuality(trigger TriggerRecord) string {
+	if trigger.Kind == "process_entry" && validSurfaceLocation(trigger.ProcessEntrypoint.Location) {
+		return SurfaceQualityExact
+	}
 	if trigger.Availability == AvailabilityUnavailable {
 		return SurfaceQualityRejected
 	}
@@ -128,11 +137,11 @@ func identityQuality(trigger TriggerRecord) string {
 }
 
 func registrationQuality(trigger TriggerRecord) string {
-	if trigger.Availability == AvailabilityUnavailable {
-		return SurfaceQualityRejected
-	}
 	if trigger.Kind == "process_entry" {
 		return SurfaceQualityNotApplicable
+	}
+	if trigger.Availability == AvailabilityUnavailable {
+		return SurfaceQualityRejected
 	}
 	location := trigger.RegistrationSite
 	if trigger.Kind == "http_route_descriptor" && trigger.DescriptorSite != nil {
@@ -155,11 +164,11 @@ func registrationQuality(trigger TriggerRecord) string {
 }
 
 func handlerQuality(trigger TriggerRecord) string {
-	if trigger.Availability == AvailabilityUnavailable {
-		return SurfaceQualityRejected
-	}
 	if trigger.Kind == "process_entry" || trigger.Kind == "http_route_frontier" {
 		return SurfaceQualityNotApplicable
+	}
+	if trigger.Availability == AvailabilityUnavailable {
+		return SurfaceQualityRejected
 	}
 	if trigger.Handler.Known && strings.TrimSpace(trigger.Handler.Text) != "" {
 		return SurfaceQualityExact
@@ -171,11 +180,11 @@ func handlerQuality(trigger TriggerRecord) string {
 }
 
 func reachabilityQuality(trigger TriggerRecord) string {
-	if trigger.Availability == AvailabilityUnavailable {
-		return SurfaceQualityRejected
-	}
 	if trigger.Kind == "process_entry" {
 		return SurfaceQualityPartial
+	}
+	if trigger.Availability == AvailabilityUnavailable {
+		return SurfaceQualityRejected
 	}
 	if trigger.Kind == "http_route_frontier" {
 		return SurfaceQualityUnresolved
@@ -192,6 +201,9 @@ func reachabilityQuality(trigger TriggerRecord) string {
 }
 
 func ownershipQuality(trigger TriggerRecord) string {
+	if trigger.Kind == "process_entry" && strings.TrimSpace(trigger.OwningExecutable) != "" {
+		return SurfaceQualityExact
+	}
 	if trigger.Availability == AvailabilityUnavailable {
 		return SurfaceQualityRejected
 	}
