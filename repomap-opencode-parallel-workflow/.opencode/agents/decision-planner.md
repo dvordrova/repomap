@@ -1,7 +1,7 @@
 ---
 description: Proposes one small evidence-driven next product decision
 mode: subagent
-model: openai/gpt-5.6-sol
+model: __MODEL_SOL__
 reasoningEffort: high
 textVerbosity: low
 temperature: 0.1

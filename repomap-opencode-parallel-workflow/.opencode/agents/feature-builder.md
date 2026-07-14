@@ -1,7 +1,7 @@
 ---
 description: Owns the current decision using bounded parallel evidence, fixture, and acceptance waves
 mode: primary
-model: openai/gpt-5.6-terra
+model: __MODEL_TERRA__
 reasoningEffort: high
 textVerbosity: low
 temperature: 0.1

@@ -1,7 +1,7 @@
 ---
 description: Manages next-decision approval and safe publishing
 mode: primary
-model: openai/gpt-5.6-terra
+model: __MODEL_TERRA__
 reasoningEffort: high
 textVerbosity: low
 temperature: 0.1

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": true,
+  "permission": {
+    "lsp": "allow"
+  },
+  "mcp": {
+    "ui": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest",
+
+        "--browser=chrome",
+        "--viewport-size=1440x900",
+
+        "--caps=testing,storage",
+        "--console-level=warning",
+
+        "--output-dir=.opencode/playwright"
+      ],
+      "enabled": true
+    }
+  }
+}

@@ -2,7 +2,7 @@
 description: Independently tries to disprove completion using all fixture and browser evidence
 mode: subagent
 hidden: true
-model: openai/gpt-5.6-sol
+model: __MODEL_SOL__
 reasoningEffort: high
 textVerbosity: low
 temperature: 0.1
