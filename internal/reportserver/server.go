@@ -66,6 +66,7 @@ type runRecord struct {
 	Manifest           *report.RunManifest
 	Report             *report.ReportData
 	Sources            map[string]sourceTarget
+	SourceContexts     map[string]sourceContextTarget
 	ArtifactsSignature string
 }
 
@@ -80,6 +81,7 @@ type handler struct {
 	urlPrefix    string
 	openFile     OpenFileFunc
 	openSlot     chan struct{}
+	sourceSlot   chan struct{}
 	analysis     *symbolAnalysis
 	captureRepo  CaptureRepositoryFunc
 	logf         func(string, ...any)
@@ -217,6 +219,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 		urlPrefix:    urlPrefix,
 		openFile:     openFile,
 		openSlot:     make(chan struct{}, 1),
+		sourceSlot:   make(chan struct{}, 1),
 		analysis:     newSymbolAnalysis(opts),
 		captureRepo:  captureRepo,
 		logf:         opts.Logf,
@@ -237,6 +240,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("GET "+urlPrefix+"/{$}", h.serveRoot)
 	mux.HandleFunc("GET "+urlPrefix+"/api/runs", h.serveRuns)
 	mux.HandleFunc("POST "+urlPrefix+"/api/open", h.serveOpen)
+	mux.HandleFunc("POST "+urlPrefix+"/api/source-context", h.serveSourceContext)
 	mux.HandleFunc("POST "+urlPrefix+"/api/symbols", h.serveSymbols)
 	mux.HandleFunc("POST "+urlPrefix+"/api/symbol", h.serveInspectSymbol)
 	mux.HandleFunc("POST "+urlPrefix+"/api/investigation/latest", h.serveLatestInvestigation)
@@ -428,6 +432,29 @@ func (h *handler) reloadRuns() error {
 				}
 				run.Report.SourceIDs[relativePath] = sourceID
 			}
+			run.SourceContexts = make(map[string]sourceContextTarget)
+			run.Report.SourceContextIDs = make(map[string]string)
+			if run.Manifest.Version >= report.CurrentRunManifestVersion {
+				for _, snippet := range reportSourceSnippets(run.Report) {
+					if err := snippet.Validate(); err != nil {
+						continue
+					}
+					input, ok := capturedSourceInput(*run.Manifest, snippet.Path)
+					if !ok || input.Kind != freshness.FileRegular || input.ContentSHA256 == "" {
+						continue
+					}
+					contextID := manifestSourceContextID(run.ID, run.Manifest.ReportSHA256, snippet.PresentationSHA256)
+					focusLine := snippet.StartLine
+					if len(snippet.HighlightRanges) > 0 {
+						focusLine = snippet.HighlightRanges[0].StartLine
+					}
+					run.SourceContexts[contextID] = sourceContextTarget{
+						relativePath: snippet.Path, capturedSHA256: input.ContentSHA256,
+						startLine: snippet.StartLine, endLine: snippet.EndLine, focusLine: focusLine,
+					}
+					run.Report.SourceContextIDs[snippet.PresentationSHA256] = contextID
+				}
+			}
 		}
 		byID[run.ID] = *run
 	}
@@ -464,10 +491,14 @@ func (h *handler) runArtifactsChanged(run runRecord) bool {
 }
 
 func runArtifactSignature(runDir string) (string, error) {
-	parts := make([]string, 0, 2)
-	for index, name := range []string{"report.json", report.RunManifestFilename} {
+	parts := make([]string, 0, 6)
+	for index, name := range []string{
+		"report.json", report.RunManifestFilename,
+		"task_investigation_bundle.json", "task_investigation_attempt.json",
+		"task_investigation_pack.json", "task_investigation_status.json",
+	} {
 		info, err := os.Lstat(filepath.Join(runDir, name))
-		if os.IsNotExist(err) && index == 1 {
+		if os.IsNotExist(err) && index > 0 {
 			parts = append(parts, name+":missing")
 			continue
 		}
@@ -568,7 +599,8 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 		manifestJSON, manifestErr := readRootFile(root, path.Join(entry.Name(), report.RunManifestFilename), maxArtifactBytes)
 		if manifestErr == nil {
 			manifest, decodeErr := report.DecodeRunManifest(manifestJSON)
-			if decodeErr == nil && manifest.VerifyReportJSON(reportJSON) == nil {
+			if decodeErr == nil && manifest.VerifyReportJSON(reportJSON) == nil &&
+				manifest.VerifyTaskInvestigationArtifacts(filepath.Join(h.runsDir, entry.Name())) == nil {
 				analysisRoot, rootErr := manifest.ResolveAnalysisRoot()
 				if rootErr == nil {
 					run.Manifest = &manifest
@@ -580,6 +612,12 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 					}
 				}
 			}
+		}
+		// Task Lens is an evidence-backed workspace, not a legacy view-only
+		// report. Never expose it when its exact report/manifest/artifact chain
+		// cannot be verified.
+		if reportData.TaskInvestigation != nil && run.Manifest == nil {
+			continue
 		}
 		runs = append(runs, run)
 	}

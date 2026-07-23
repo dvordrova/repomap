@@ -243,8 +243,16 @@ func committedInput(ctx context.Context, state RepositoryState, path string) (Fi
 	if err != nil || size < 0 || size > maxCapturedInputBytes {
 		return "", "", "", fmt.Errorf("freshness: captured input %q exceeds the bounded content limit", path)
 	}
-	command := exec.CommandContext(ctx, "git", "-C", state.Identity, "cat-file", "blob", object)
-	command.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	command := exec.CommandContext(
+		ctx,
+		"git",
+		"--no-pager",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath="+os.DevNull,
+		"-C", state.Identity,
+		"cat-file", "blob", object,
+	)
+	command.Env = isolatedGitEnvironment(os.Environ())
 	content, err := command.Output()
 	if err != nil {
 		return "", "", "", fmt.Errorf("freshness: read captured input %q: %w", path, err)

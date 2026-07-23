@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -158,8 +159,10 @@ func TestBundleRespectsMaxLimits(t *testing.T) {
 	}
 	var edges []gofacts.Edge
 	for i := 0; i < 100; i++ {
-		edges = append(edges, gofacts.Edge{})
-
+		edges = append(edges, gofacts.Edge{
+			From: fmt.Sprintf("m/from/%03d", i),
+			To:   fmt.Sprintf("m/to/%03d", i),
+		})
 	}
 
 	s := snapshot.Snapshot{
@@ -232,6 +235,27 @@ func TestFindKnownDocs(t *testing.T) {
 	}
 	if !hasRST {
 		t.Fatalf("expected docs/operator-guide.rst in known_docs, got: %v", docs)
+	}
+}
+
+func TestFindKnownDocsKeepsCurrentDocumentationAheadOfDecisionHistory(t *testing.T) {
+	files := []string{
+		"docs/agent-room/CURRENT.md",
+		"docs/CORE_IDEA.md",
+	}
+	for index := 0; index < 40; index++ {
+		files = append(files, fmt.Sprintf("docs/agent-room/%03d-old-decision.md", index))
+	}
+
+	docs := findKnownDocs(files)
+	if len(docs) != 30 {
+		t.Fatalf("known docs = %d, want unchanged limit 30", len(docs))
+	}
+	if !containsString(docs, "docs/agent-room/CURRENT.md") || !containsString(docs, "docs/CORE_IDEA.md") {
+		t.Fatalf("current documentation was displaced by decision history: %v", docs)
+	}
+	if docs[0] != "docs/CORE_IDEA.md" || docs[1] != "docs/agent-room/CURRENT.md" {
+		t.Fatalf("known docs order = %v, want current docs first", docs[:2])
 	}
 }
 
@@ -546,6 +570,95 @@ func TestSelectOrientationEntrypointsIgnoresAuxiliaryMains(t *testing.T) {
 	}
 }
 
+func TestSelectOrientationEntrypointsPrefersProductionCommandOverPreviewAndTest(t *testing.T) {
+	entrypoints := []gofacts.Entrypoint{
+		{ImportPath: "example.com/project/cmd/app-preview", PackageDir: "cmd/app-preview", Kind: "unknown"},
+		{ImportPath: "example.com/project/cmd/app-test", PackageDir: "cmd/app-test", Kind: "unknown"},
+		{ImportPath: "example.com/project/cmd/app", PackageDir: "cmd/app", Kind: "unknown"},
+	}
+
+	selected := selectOrientationEntrypoints(entrypoints)
+	if len(selected) != 1 || selected[0].ImportPath != "example.com/project/cmd/app" {
+		t.Fatalf("selected entrypoints = %#v, want only production command", selected)
+	}
+}
+
+func TestBuildSelectsProductionModulesBeforeFixtureModules(t *testing.T) {
+	moduleSummaries := []gofacts.ModuleSummary{
+		{ModulePath: "example.com/project/testdata/fixture", ModuleDir: "testdata/fixture", EntrypointsCount: 1},
+		{ModulePath: "example.com/project/api", ModuleDir: "api", RoleGuess: "api_definitions"},
+		{ModulePath: "example.com/project", ModuleDir: ".", EntrypointsCount: 1},
+	}
+	for index := 0; index < 24; index++ {
+		moduleSummaries = append(moduleSummaries, gofacts.ModuleSummary{
+			ModulePath: fmt.Sprintf("example.com/project/testdata/fixture-%02d", index),
+			ModuleDir:  fmt.Sprintf("testdata/fixture-%02d", index),
+		})
+	}
+
+	bundle := Build(snapshot.Snapshot{
+		RepoName: "project",
+		GoFacts:  &gofacts.Facts{ModuleSummaries: moduleSummaries},
+	}, []string{"go.mod", "api/api.go"}, Options{MaxModules: 2})
+	if len(bundle.Go.ModuleSummaries) != 2 {
+		t.Fatalf("module summaries = %#v, want two", bundle.Go.ModuleSummaries)
+	}
+	if bundle.Go.ModuleSummaries[0].ModuleDir != "." || bundle.Go.ModuleSummaries[1].ModuleDir != "api" {
+		t.Fatalf("selected module summaries = %#v, want production root and public api", bundle.Go.ModuleSummaries)
+	}
+}
+
+func TestSelectImportantEdgesRetainsPrimaryEntryToCoreConnectivity(t *testing.T) {
+	modules := []gofacts.ModuleFact{{ModulePath: "example.com/project", ModuleDir: "."}}
+	entrypoints := []gofacts.Entrypoint{{
+		ImportPath: "example.com/project/cmd/app",
+		PackageDir: "cmd/app",
+		Kind:       "primary_binary",
+	}}
+	edges := []gofacts.Edge{
+		{From: "example.com/project/cmd/app", To: "example.com/project/testdata/fixture"},
+		{From: "example.com/project/cmd/app", To: "example.com/project/bootstrap"},
+		{From: "example.com/project/bootstrap", To: "example.com/project/core"},
+		{From: "example.com/project/testdata/fixture", To: "example.com/project/testdata/helper"},
+	}
+
+	selected := selectImportantEdges(edges, entrypoints, modules, 2)
+	want := []gofacts.Edge{
+		{From: "example.com/project/cmd/app", To: "example.com/project/bootstrap"},
+		{From: "example.com/project/bootstrap", To: "example.com/project/core"},
+	}
+	if !reflect.DeepEqual(selected, want) {
+		t.Fatalf("important edges = %#v, want exact entry-to-core path %#v", selected, want)
+	}
+}
+
+func TestSelectCommandTracesDoesNotLetPreviewDisplaceProductionCommand(t *testing.T) {
+	preview := gofacts.CommandTrace{
+		Command: "preview",
+		Steps: []gofacts.CommandTraceStep{{
+			TargetLocation: evidence.Location{Path: "cmd/app-preview/main.go", Line: 1},
+		}},
+	}
+	production := gofacts.CommandTrace{
+		Command: "serve",
+		Steps: []gofacts.CommandTraceStep{{
+			TargetLocation: evidence.Location{Path: "cmd/app/main.go", Line: 1},
+		}},
+	}
+
+	selected := selectCommandTraces([]gofacts.CommandTrace{preview, production}, "run preview", 1)
+	if len(selected) != 1 || selected[0].Command != "serve" {
+		t.Fatalf("selected command traces = %#v, want production command", selected)
+	}
+	pins := selectedCommandTracePaths([]gofacts.CommandTrace{preview, production})
+	if _, ok := pins["cmd/app/main.go"]; !ok {
+		t.Fatalf("production command path was not pinned: %v", pins)
+	}
+	if _, ok := pins["cmd/app-preview/main.go"]; ok {
+		t.Fatalf("preview command path was pinned beside production: %v", pins)
+	}
+}
+
 func TestSelectOrientationEntrypointsFallsBackForLibraryTools(t *testing.T) {
 	entrypoints := []gofacts.Entrypoint{
 		{ImportPath: "example.com/project/tools/four", PackageDir: "tools/four", Kind: "tool"},
@@ -590,8 +703,8 @@ func TestSelectFileIndexReservesDiverseEvidenceAndFillsShortages(t *testing.T) {
 	if len(selected) != 60 {
 		t.Fatalf("selected files = %d, want 60", len(selected))
 	}
-	if counts["source"] != 46 || counts["test"] != 6 || counts["doc"] != 2 || counts["support"] != 6 {
-		t.Fatalf("selected groups = %v, want source=46 test=6 doc=2 support=6 after flex fill", counts)
+	if counts["source"] != 48 || counts["test"] != 6 || counts["doc"] != 2 || counts["support"] != 4 {
+		t.Fatalf("selected groups = %v, want production sources to displace generated flex entries", counts)
 	}
 	if selected[0].Path != "api/service.proto" || selected[len(selected)-1].Path != "README.md" {
 		t.Fatalf("selection order changed: first=%q last=%q", selected[0].Path, selected[len(selected)-1].Path)
@@ -654,6 +767,70 @@ func TestSelectFileIndexPinsUserFacingEntrypoint(t *testing.T) {
 	selected = selectFileIndex(entries, 1)
 	if len(selected) != 1 || selected[0].Path != "main.go" {
 		t.Fatalf("one-file selection = %#v, want pinned main.go", selected)
+	}
+}
+
+func TestBuildFileIndexDoesNotLetPreviewSignalsConsumeProductionSlots(t *testing.T) {
+	facts := &gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{ModulePath: "example.com/project", ModuleDir: "."}},
+		EntrypointPackages: []gofacts.Entrypoint{{
+			ImportPath: "example.com/project/cmd/app",
+			PackageDir: "cmd/app",
+			Kind:       "primary_binary",
+			GoFiles:    []string{"main.go"},
+		}},
+	}
+	files := []string{
+		"cmd/app/main.go",
+		"internal/core/core.go",
+		"internal/storage/write.go",
+	}
+	signals := []sourcesignals.Signal{
+		{Path: "internal/storage/write.go", Category: "storage_durability", Weight: 40},
+	}
+	for index := 0; index < 20; index++ {
+		filePath := fmt.Sprintf("cmd/tool-preview/%02d.go", index)
+		files = append(files, filePath)
+		signals = append(signals, sourcesignals.Signal{
+			Path: filePath, Category: "background_loop", Weight: 200,
+		})
+	}
+
+	bundle := Build(
+		snapshot.Snapshot{RepoName: "project", GoFacts: facts},
+		files,
+		Options{MaxFiles: 3, SourceSignals: signals},
+	)
+	want := []string{"cmd/app/main.go", "internal/core/core.go", "internal/storage/write.go"}
+	for _, filePath := range want {
+		if !containsFileIndexPath(bundle.CandidateFileIndex, filePath) {
+			t.Fatalf("candidate anchors = %#v, missing production role %q", bundle.CandidateFileIndex, filePath)
+		}
+	}
+	for _, entry := range bundle.CandidateFileIndex {
+		if strings.Contains(entry.Path, "preview") {
+			t.Fatalf("preview consumed a production candidate slot: %#v", bundle.CandidateFileIndex)
+		}
+	}
+}
+
+func TestBuildFileIndexAuxiliaryPythonEntrypointDoesNotConsumeProductionSlot(t *testing.T) {
+	bundle := Build(
+		snapshot.Snapshot{RepoName: "project"},
+		[]string{
+			"cmd/app-preview/main.py",
+			"app/main.py",
+			"internal/core/engine.py",
+		},
+		Options{MaxFiles: 2},
+	)
+	for _, required := range []string{"app/main.py", "internal/core/engine.py"} {
+		if !containsFileIndexPath(bundle.CandidateFileIndex, required) {
+			t.Fatalf("candidate anchors = %#v, missing production path %q", bundle.CandidateFileIndex, required)
+		}
+	}
+	if containsFileIndexPath(bundle.CandidateFileIndex, "cmd/app-preview/main.py") {
+		t.Fatalf("preview Python entrypoint consumed a production slot: %#v", bundle.CandidateFileIndex)
 	}
 }
 

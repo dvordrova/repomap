@@ -131,6 +131,39 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   a bounded classification task, so the official DeepSeek endpoint receives
   `"thinking": {"type":"disabled"}` for that request only. Generic compatible
   endpoints do not receive this DeepSeek-specific extension.
+- The guided-onboarding comparison uses the opposite, purpose-specific policy
+  on the official endpoint: independently verifiable semantic leaves receive
+  `"thinking":{"type":"enabled"}` with `"reasoning_effort":"high"`; the
+  monolithic editor and final fan-in planner receive `reasoning_effort:"max"`.
+  Thinking mode ignores temperature, so determinism comes from strict JSON
+  contracts, opaque-ID validation, canonical inputs, and replayable caches.
+- The final guided fan-in uses a minimum 12,000-token response envelope on the
+  official endpoint. The 6,000-token default remains unchanged for bounded
+  leaves and existing stages, and a larger explicit user configuration is
+  preserved. The self experiment showed `thinking/max` consuming the ordinary
+  envelope before completing the strict fan-in JSON wrapper.
+- Semantic discovery always uses JSON mode. On the official DeepSeek endpoint,
+  the opportunity scan, fan-in synthesis, and monolithic comparison use
+  `"thinking":{"type":"enabled"}` with `reasoning_effort:"max"`; bounded
+  evidence leaves use `reasoning_effort:"high"`. Temperature is omitted for
+  all of these thinking-mode requests. These three global semantic tasks use
+  a minimum 20,000-token response envelope, while
+  bounded leaves retain the configured default and larger explicit user
+  configurations are preserved. Generic compatible endpoints receive the
+  ordinary OpenAI-compatible JSON request without DeepSeek-specific thinking
+  fields. The first self scan exhausted exactly 6,000 output tokens and ended
+  in a locally rejected, truncated JSON object; no invalid response was
+  accepted or written to the semantic replay record.
+  A later five-artifact fan-in also exhausted exactly 12,000 output tokens and
+  ended mid-JSON, so 12,000 is not sufficient for DeepSeek V4 Flash at
+  `reasoning_effort:"max"` even when the final JSON itself is small. The
+  20,000-token minimum is limited to global semantic tasks; bounded leaves and
+  unrelated stages keep their existing limits.
+- DeepSeek usage may report `prompt_cache_hit_tokens` and
+  `prompt_cache_miss_tokens`. Guided experiment records and semantic-discovery
+  measured results preserve both fields independently from total prompt tokens
+  so a stable common leaf prefix can be evaluated rather than assumed to hit
+  cache.
 - Empty content errors include safe `finish_reason` and token-count diagnostics
   when the provider supplies them. Reasoning content itself is never echoed or
   retained.
@@ -355,6 +388,24 @@ Stable bundle/response fixtures and an in-memory explainer live in
 `internal/deepseektest`; they let higher layers test without calling DeepSeek.
 Capture tooling reads current contract IDs from `repomap dev prompt-versions`
 instead of duplicating prompt-version literals in shell.
+
+## Task investigation synthesis
+
+Task Lens uses one compact JSON-mode editing request after deterministic local
+retrieval. The provider receives only the bounded task bundle projection:
+opaque IDs, selected source/document excerpts, exact local relations, and the
+closed `allowed_paths` set. It never receives the checkout display name, raw
+file tree, global edges, or generic onboarding artifacts.
+
+On the official DeepSeek endpoint, this request enables thinking with
+`reasoning_effort: "high"`, omits temperature, and uses a purpose-specific
+10,000-token minimum because the development run demonstrated truncation at
+the ordinary 6,000-token envelope. Compatible endpoints receive the ordinary
+configured JSON-mode request. The
+response is only a proposal: local reduction rejects unknown IDs, fabricated
+local relations, unsupported causal claims, ungrounded commands, and paths
+outside the bundle. A substantive rejection is not retried; Task Lens may
+publish a clearly labeled deterministic local partial instead.
 
 ## Source assessment
 

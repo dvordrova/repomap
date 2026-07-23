@@ -228,6 +228,59 @@ func TestAssessInputsSeparatesUnrelatedAndAnalyzedChanges(t *testing.T) {
 	}
 }
 
+func TestCaptureInputsIgnoresAmbientAlternateGitIdentity(t *testing.T) {
+	wanted := newRepository(t)
+	const wantedContent = "package fixture\n\nconst wanted = true\n"
+	writeFile(t, filepath.Join(wanted, "main.go"), wantedContent)
+	gitCommand(t, wanted, "add", "main.go")
+	gitCommand(t, wanted, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "wanted content")
+	wantedState := capture(t, wanted)
+
+	other := newRepository(t)
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+
+	inputs, err := CaptureInputs(context.Background(), wantedState, []string{"main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != 1 || inputs[0].Path != "main.go" ||
+		inputs[0].ContentSHA256 != sha256Hex([]byte(wantedContent)) {
+		t.Fatalf("captured inputs = %#v", inputs)
+	}
+}
+
+func TestIsolatedGitEnvironmentDropsGitConfigInjectionAndNeutralizesGlobalConfig(t *testing.T) {
+	got := strings.Join(isolatedGitEnvironment([]string{
+		"PATH=/usr/bin",
+		"GIT_CONFIG=/tmp/injected",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.bare",
+		"GIT_CONFIG_VALUE_0=true",
+		"GIT_CONFIG_PARAMETERS='core.worktree'='/tmp/other'",
+		"GIT_CONFIG_GLOBAL=/tmp/global",
+		"GIT_CONFIG_SYSTEM=/tmp/system",
+	}), "\n")
+	for _, forbidden := range []string{
+		"GIT_CONFIG=/tmp/injected", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=",
+		"GIT_CONFIG_VALUE_0=", "GIT_CONFIG_PARAMETERS=", "GIT_CONFIG_GLOBAL=/tmp/global",
+		"GIT_CONFIG_SYSTEM=/tmp/system",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("isolated environment retained %q: %q", forbidden, got)
+		}
+	}
+	for _, required := range []string{
+		"PATH=/usr/bin", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
+	} {
+		if !strings.Contains(got, required) {
+			t.Fatalf("isolated environment lacks %q: %q", required, got)
+		}
+	}
+}
+
 func TestAssessInputsDoesNotCallAnalyzedChangeUnrelated(t *testing.T) {
 	t.Parallel()
 

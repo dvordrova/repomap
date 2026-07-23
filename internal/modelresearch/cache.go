@@ -28,18 +28,20 @@ type FingerprintInput struct {
 }
 
 type cacheRecord struct {
-	Version        int    `json:"version"`
-	CacheKey       string `json:"cache_key"`
-	RequestSHA256  string `json:"request_sha256"`
-	BundleSHA256   string `json:"bundle_sha256"`
-	ResponseSHA256 string `json:"response_sha256"`
-	Response       []byte `json:"response"`
-	RequestBytes   int    `json:"request_bytes"`
-	ResponseBytes  int    `json:"response_bytes"`
-	InputTokens    int    `json:"input_tokens,omitempty"`
-	OutputTokens   int    `json:"output_tokens,omitempty"`
-	LatencyMillis  int64  `json:"latency_ms,omitempty"`
-	RetryCount     int    `json:"retry_count,omitempty"`
+	Version               int    `json:"version"`
+	CacheKey              string `json:"cache_key"`
+	RequestSHA256         string `json:"request_sha256"`
+	BundleSHA256          string `json:"bundle_sha256"`
+	ResponseSHA256        string `json:"response_sha256"`
+	Response              []byte `json:"response"`
+	RequestBytes          int    `json:"request_bytes"`
+	ResponseBytes         int    `json:"response_bytes"`
+	InputTokens           int    `json:"input_tokens,omitempty"`
+	OutputTokens          int    `json:"output_tokens,omitempty"`
+	PromptCacheHitTokens  int    `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens int    `json:"prompt_cache_miss_tokens,omitempty"`
+	LatencyMillis         int64  `json:"latency_ms,omitempty"`
+	RetryCount            int    `json:"retry_count,omitempty"`
 }
 
 type StageCacheInput struct {
@@ -50,15 +52,17 @@ type StageCacheInput struct {
 }
 
 type StageResponse struct {
-	CacheKey      string
-	Content       []byte
-	RequestBytes  int
-	ResponseBytes int
-	InputTokens   int
-	OutputTokens  int
-	LatencyMillis int64
-	RetryCount    int
-	Cached        bool
+	CacheKey              string
+	Content               []byte
+	RequestBytes          int
+	ResponseBytes         int
+	InputTokens           int
+	OutputTokens          int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
+	LatencyMillis         int64
+	RetryCount            int
+	Cached                bool
 }
 
 func SHA256(data []byte) string {
@@ -79,7 +83,9 @@ func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
 		CacheKey: cacheKey, Content: append([]byte(nil), record.Response...),
 		RequestBytes: record.RequestBytes, ResponseBytes: record.ResponseBytes,
 		InputTokens: record.InputTokens, OutputTokens: record.OutputTokens,
-		LatencyMillis: record.LatencyMillis, RetryCount: record.RetryCount, Cached: true,
+		PromptCacheHitTokens:  record.PromptCacheHitTokens,
+		PromptCacheMissTokens: record.PromptCacheMissTokens,
+		LatencyMillis:         record.LatencyMillis, RetryCount: record.RetryCount, Cached: true,
 	}, true, nil
 }
 
@@ -94,7 +100,9 @@ func SaveStageResponse(input StageCacheInput, response StageResponse) (StageResp
 		ResponseSHA256: requestHash(response.Content), Response: append([]byte(nil), response.Content...),
 		RequestBytes: len(input.Request), ResponseBytes: len(response.Content),
 		InputTokens: response.InputTokens, OutputTokens: response.OutputTokens,
-		LatencyMillis: response.LatencyMillis, RetryCount: response.RetryCount,
+		PromptCacheHitTokens:  response.PromptCacheHitTokens,
+		PromptCacheMissTokens: response.PromptCacheMissTokens,
+		LatencyMillis:         response.LatencyMillis, RetryCount: response.RetryCount,
 	}
 	if err := saveCache(input.RunsDir, record); err != nil {
 		return StageResponse{}, err

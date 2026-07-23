@@ -25,7 +25,12 @@ type Options struct {
 }
 
 type Snapshot struct {
-	RepoName           string         `json:"repo_name"`
+	// RepoName is a semantic repository identity derived from repository
+	// metadata. It must not depend on the local checkout directory name.
+	RepoName string `json:"repo_name"`
+	// DisplayName is local presentation copy only. Provider bundles deliberately
+	// omit it because temporary checkout names can contain task labels.
+	DisplayName        string         `json:"display_name,omitempty"`
 	Readme             string         `json:"readme"`
 	FileTree           []string       `json:"file_tree"`
 	TopLevelStats      map[string]int `json:"top_level_directory_stats"`
@@ -126,7 +131,6 @@ func Build(opts Options) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 
-	repoName := filepath.Base(filepath.Clean(opts.RepoPath))
 	filtered := make([]string, 0, len(files))
 	skippedSamples := make([]string, 0, 20)
 	for _, f := range files {
@@ -140,8 +144,10 @@ func Build(opts Options) (Snapshot, error) {
 	}
 
 	sort.Strings(filtered)
+	goMetadata := goHints(opts.RepoPath, filtered)
 	s := Snapshot{
-		RepoName:           repoName,
+		RepoName:           repositoryIdentity(opts.RepoPath, filtered, goMetadata),
+		DisplayName:        repositoryDisplayName(opts.RepoPath),
 		FileTree:           takeFirst(filtered, opts.MaxTreeLines),
 		TopLevelStats:      topLevelStats(filtered),
 		LanguageHints:      detectLanguages(filtered),
@@ -150,9 +156,9 @@ func Build(opts Options) (Snapshot, error) {
 		FilesSkipped:       len(files) - len(filtered),
 		SkippedPathSamples: skippedSamples,
 		FilteredFiles:      filtered,
+		Go:                 goMetadata,
 	}
 
-	s.Go = goHints(opts.RepoPath, filtered)
 	s.Readme = readReadme(opts.RepoPath, filtered, opts.MaxReadmeBytes)
 
 	if s.Go.GoModExists || hasGoFiles(filtered) {

@@ -10,16 +10,23 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 18
+const CurrentFormatVersion = 26
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
-	RepoName                   string               `json:"repo_name"`
-	ProjectGuess               string               `json:"project_guess"`
+	RepoName     string `json:"repo_name"`
+	ProjectGuess string `json:"project_guess"`
+	// DocumentedPurpose is a bounded presentation-only repository purpose
+	// extracted from the repository's own documentation. It is kept separate
+	// from model orientation so the onboarding thesis can prefer author-written
+	// purpose without promoting it into semantic evidence.
+	DocumentedPurpose          string               `json:"documented_purpose,omitempty"`
 	OrientationConfidence      float64              `json:"orientation_confidence"`
 	HighLevelMap               []Subsystem          `json:"high_level_map,omitempty"`
 	FirstFilesToOpen           []FileItem           `json:"first_files_to_open,omitempty"`
@@ -37,25 +44,84 @@ type ReportData struct {
 	// SourceIDs is an ephemeral server-rendered map from authorized
 	// repository-relative paths to opaque navigation IDs. WriteReportJSON
 	// deliberately excludes it from persisted report evidence.
-	SourceIDs             map[string]string            `json:"source_ids,omitempty"`
-	RepositoryGraph       *RepositoryGraph             `json:"repository_graph,omitempty"`
-	Components            []Component                  `json:"components,omitempty"`
-	ComponentRelations    []ComponentRelation          `json:"component_relations,omitempty"`
-	ArchitectureCanvas    *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
-	ArchitectureSynthesis *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
-	ArchitectureGrounding *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
-	ModelResearch         *modelresearch.State         `json:"model_research,omitempty"`
-	DiscoveredSurfaces    *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
-	CommandTraces         []gofacts.CommandTrace       `json:"command_traces,omitempty"`
-	Freshness             *freshness.FreshnessResult   `json:"freshness,omitempty"`
-	CapturedRevision      string                       `json:"captured_revision,omitempty"`
-	CapturedInputCount    int                          `json:"captured_input_count,omitempty"`
-	RepositorySubmodules  []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
-	evidenceLocations     []evidence.Location
-	sourceSignals         []SourceSignal
+	SourceIDs          map[string]string            `json:"source_ids,omitempty"`
+	RepositoryGraph    *RepositoryGraph             `json:"repository_graph,omitempty"`
+	Components         []Component                  `json:"components,omitempty"`
+	ComponentRelations []ComponentRelation          `json:"component_relations,omitempty"`
+	ArchitectureCanvas *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
+	GuidedTour         *guidedtour.Story            `json:"guided_tour,omitempty"`
+	SemanticArtifacts  []semanticdiscovery.Artifact `json:"semantic_artifacts,omitempty"`
+	// UserMechanisms is a presentation-only supported slice of independently
+	// replayed canonical Mechanisms. Raw artifacts remain available for replay
+	// and provenance, but default onboarding renders this narrower projection.
+	UserMechanisms []UserMechanism `json:"user_mechanisms,omitempty"`
+	// RepositoryThesis is a presentation-only overview assembled exclusively
+	// from bounded documented purpose and already validated report navigation
+	// targets. It does not participate in semantic identity or evidence.
+	RepositoryThesis *RepositoryThesis `json:"repository_thesis,omitempty"`
+	// RepositoryGuide is the product-facing ordering of already accepted
+	// Mechanisms, exact source continuations, and useful architecture areas.
+	// It is a presentation projection only: canonical semantic objects remain
+	// the sole authority for every explanation it references.
+	RepositoryGuide *RepositoryGuide `json:"repository_guide,omitempty"`
+	// StudyMap is a presentation-only repository brief and ordered reading
+	// guide over exact, locally validated code anchors. Its order is editorial,
+	// not a runtime sequence; canonical Mechanisms remain separate authority.
+	StudyMap *RepositoryStudyMap `json:"study_map,omitempty"`
+	// Operations is a presentation-only operating guide over exact, bounded
+	// repository-owned commands, configuration, endpoints, and documentation.
+	// It never authorizes command execution; CopyText is present only after
+	// conservative local validation.
+	Operations *RepositoryOperations `json:"operations,omitempty"`
+	// TaskInvestigation is an optional task-first projection of one validated,
+	// bounded Task Investigation Pack. It deliberately omits the pack's opaque
+	// evidence identifiers and never replaces the canonical saved task artifacts.
+	TaskInvestigation *TaskInvestigationWorkspace `json:"task_investigation,omitempty"`
+	// UserSources contains bounded saved source for a useful Overview fallback.
+	// SourceContextIDs is issued only by the verified localhost server and is
+	// removed from persisted report evidence beside SourceIDs.
+	UserSources      []SourceSnippet          `json:"user_sources,omitempty"`
+	SourceContextIDs map[string]string        `json:"source_context_ids,omitempty"`
+	SemanticCoverage *SemanticCoverageSummary `json:"semantic_coverage,omitempty"`
+	// StartHereArtifactID is a presentation-only selection of one validated
+	// semantic artifact. It is not evidence and does not participate in the
+	// Mechanism content hash.
+	StartHereArtifactID string `json:"start_here_artifact_id,omitempty"`
+	// SemanticSupplementalFacts is an ephemeral, locally validated enrichment
+	// used while replaying one bounded semantic experiment. It is deliberately
+	// excluded from report.json; the authoritative copy remains the saved local
+	// probe artifact beside the replay record.
+	SemanticSupplementalFacts []semanticdiscovery.Fact     `json:"-"`
+	SemanticSearchDisabled    bool                         `json:"semantic_search_disabled,omitempty"`
+	SemanticSearch            *SemanticSearchIndex         `json:"semantic_search,omitempty"`
+	ArchitectureSynthesis     *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	ArchitectureGrounding     *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
+	ModelResearch             *modelresearch.State         `json:"model_research,omitempty"`
+	DiscoveredSurfaces        *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	CommandTraces             []gofacts.CommandTrace       `json:"command_traces,omitempty"`
+	Freshness                 *freshness.FreshnessResult   `json:"freshness,omitempty"`
+	CapturedRevision          string                       `json:"captured_revision,omitempty"`
+	CapturedInputCount        int                          `json:"captured_input_count,omitempty"`
+	RepositorySubmodules      []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
+	evidenceLocations         []evidence.Location
+	sourceSignals             []SourceSignal
+	studyDocumentSourceRoot   string
+	externalImports           []externalImportUsage
+	semanticAttempted         int
+	semanticInvestigated      int
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// SemanticCoverageSummary keeps the publication funnel visible beside a
+// small set of polished semantic artifacts. It is derived locally from saved
+// replay records and never participates in semantic truth or Mechanism hashes.
+type SemanticCoverageSummary struct {
+	OpportunitiesAttempted       int    `json:"opportunities_attempted"`
+	CandidatesInvestigated       int    `json:"candidates_investigated"`
+	CanonicalMechanismsPublished int    `json:"canonical_mechanisms_published"`
+	CentralRoutingMechanism      string `json:"central_routing_mechanism,omitempty"`
 }
 
 // RepositoryGraph is a bounded deterministic projection of local repository
@@ -236,6 +302,12 @@ type FlowData struct {
 	BundleDocs     []FileItem `json:"bundle_docs,omitempty"`
 	BundlePackages []string   `json:"bundle_packages,omitempty"`
 	BundleEdges    []EdgeInfo `json:"bundle_edges,omitempty"`
+	bundleSignals  []SourceSignal
+}
+
+type externalImportUsage struct {
+	ImportPath  string
+	UsedByCount int
 }
 
 type EdgeInfo struct {

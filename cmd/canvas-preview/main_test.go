@@ -162,7 +162,7 @@ func TestResticBackupV2FixturePreservesAuditedTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := string(html)
-	for _, expected := range []string{"restic-backup", "starts_goroutine", "join-scanner", "Architecture & flows"} {
+	for _, expected := range []string{"restic-backup", "starts_goroutine", "join-scanner", "Architecture"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("preview HTML does not contain %q", expected)
 		}

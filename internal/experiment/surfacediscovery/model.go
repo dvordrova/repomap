@@ -25,6 +25,24 @@ type Options struct {
 	MaxDepth   int
 	MaxTasks   int
 	MaxTargets int
+	Progress   func(PhaseProgress)
+}
+
+type PhaseProgress struct {
+	Phase         string
+	State         string
+	ElapsedMillis int64
+	Completed     int
+	Total         int
+	Detail        string
+}
+
+type PhaseMetric struct {
+	Phase         string `json:"phase"`
+	LatencyMillis int64  `json:"latency_ms"`
+	Completed     int    `json:"completed,omitempty"`
+	Total         int    `json:"total,omitempty"`
+	Detail        string `json:"detail,omitempty"`
 }
 
 func DefaultOptions(repoPath string) Options {
@@ -210,6 +228,7 @@ type SurfaceCoverage struct {
 	ColdLatencyMillis         int64                 `json:"cold_latency_ms"`
 	WarmLatencyMillis         *int64                `json:"warm_latency_ms,omitempty"`
 	CacheReuse                bool                  `json:"cache_reuse"`
+	Phases                    []PhaseMetric         `json:"phases,omitempty"`
 	ScopeStatement            string                `json:"scope_statement"`
 }
 
@@ -371,6 +390,9 @@ func (r *Result) normalize() {
 	}
 	if r.Coverage.BudgetsReached == nil {
 		r.Coverage.BudgetsReached = []string{}
+	}
+	if r.Coverage.Phases == nil {
+		r.Coverage.Phases = []PhaseMetric{}
 	}
 	r.Coverage.DynamicFrontiers = compactFrontiers(r.Coverage.DynamicFrontiers)
 	r.Coverage.UnsupportedDispatch = compactFrontiers(r.Coverage.UnsupportedDispatch)

@@ -31,6 +31,12 @@ var surfaceCatalogCSS string
 //go:embed templates/surface_catalog.js
 var surfaceCatalogJS string
 
+//go:embed templates/semantic_search.css
+var semanticSearchCSS string
+
+//go:embed templates/semantic_search.js
+var semanticSearchJS string
+
 //go:embed templates/script.js
 var scriptJS string
 
@@ -44,11 +50,12 @@ func WriteReportJSON(data *ReportData, path string) error {
 	if data == nil {
 		return fmt.Errorf("report: data is required")
 	}
-	persisted := *data
+	persisted := reportDataForRendering(data)
 	// SourceIDs are issued by the local report server after manifest
 	// verification. They are session navigation IDs, not persistent evidence.
 	persisted.SourceIDs = nil
-	b, err := json.MarshalIndent(&persisted, "", "  ")
+	persisted.SourceContextIDs = nil
+	b, err := json.MarshalIndent(persisted, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -73,7 +80,8 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 }
 
 func buildHTML(data *ReportData) ([]byte, error) {
-	dataJSON, err := json.Marshal(data)
+	rendered := reportDataForRendering(data)
+	dataJSON, err := json.Marshal(rendered)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +102,9 @@ func buildHTML(data *ReportData) ([]byte, error) {
 		"HasDiscoveredSurfaces": data.DiscoveredSurfaces != nil,
 		"SurfaceCatalogCSS":     template.CSS(surfaceCatalogCSS),
 		"SurfaceCatalogJS":      template.JS(surfaceCatalogJS),
+		"HasSemanticSearch":     rendered.SemanticSearch != nil && !rendered.SemanticSearchDisabled,
+		"SemanticSearchCSS":     template.CSS(semanticSearchCSS),
+		"SemanticSearchJS":      template.JS(semanticSearchJS),
 		"DataJSON":              template.JS(dataJSON),
 		"JS":                    template.JS(scriptJS),
 	})
@@ -102,6 +113,22 @@ func buildHTML(data *ReportData) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func reportDataForRendering(data *ReportData) *ReportData {
+	rendered := *data
+	if rendered.SemanticSearchDisabled {
+		rendered.SemanticSearch = nil
+		return &rendered
+	}
+	if rendered.SemanticSearch != nil {
+		if err := rendered.SemanticSearch.Validate(&rendered); err == nil {
+			return &rendered
+		}
+	}
+	rendered.SemanticSearch = nil
+	_ = attachSemanticSearchIndex(&rendered)
+	return &rendered
 }
 
 func Generate(runDir string) error {
@@ -123,7 +150,11 @@ func generate(runDir string, authority *RunAuthority) error {
 			return err
 		}
 	}
-	data, err := ReadRunDir(runDir)
+	studyDocumentSourceRoot := ""
+	if authority != nil {
+		studyDocumentSourceRoot = authority.analysisRoot
+	}
+	data, err := readRunDir(runDir, studyDocumentSourceRoot)
 	if err != nil {
 		return err
 	}
@@ -136,6 +167,10 @@ func generate(runDir string, authority *RunAuthority) error {
 		freshnessResult := authority.freshness
 		data.Freshness = &freshnessResult
 		data.CapturedRevision = authority.repository.Head
+		bindOperationalRevision(data.Operations, data.CapturedRevision)
+		if err := bindTaskInvestigationAuthority(data.TaskInvestigation, authority.repository); err != nil {
+			return err
+		}
 		data.CapturedInputCount = len(authority.inputs)
 		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
 	}

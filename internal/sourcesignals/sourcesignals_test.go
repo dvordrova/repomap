@@ -317,6 +317,7 @@ func (s *Server) run() {
 		}
 	}
 }
+
 func (s *Server) Propose(ctx context.Context, data []byte) error { return s.node.Propose(ctx, data) }
 func (s *Server) snapshot() { /* compaction, snapshot, defrag */ }
 `)
@@ -326,6 +327,90 @@ func (s *Server) snapshot() { /* compaction, snapshot, defrag */ }
 
 	if len(signals) > 3 {
 		t.Errorf("expected max 3 signals, got %d", len(signals))
+	}
+}
+
+func TestScanFilesReservesBoundedSignalsForProductionRoles(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"_examples/library/main.go": "package main\nfunc main() { time.NewTicker(time.Second) }\n",
+		"cmd/app-preview/main.go":   "package main\nfunc main() { time.NewTicker(time.Second) }\n",
+		"cmd/app/main.go":           "package main\nfunc main() { time.NewTicker(time.Second) }\n",
+		"cmd/app/serve.go":          "package main\nfunc serve() { time.NewTicker(time.Second) }\n",
+		"cmd/app/start.go":          "package main\nfunc start() { time.NewTicker(time.Second) }\n",
+		"client/client.go":          "package client\nfunc (c *Client) ServeHTTP() {}\n",
+		"internal/scheduler/run.go": "package scheduler\nfunc run() { go func() {}() }\n",
+		"internal/storage/write.go": "package storage\nfunc write() { file.Sync() }\n",
+	}
+	paths := make([]string, 0, len(files))
+	for filePath, content := range files {
+		resolved := filepath.Join(dir, filepath.FromSlash(filePath))
+		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(resolved, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, filePath)
+	}
+
+	signals := ScanFiles(paths, dir, ScanOptions{MaxPerFile: 1, MaxTotal: 4})
+	if len(signals) != 4 {
+		t.Fatalf("signals = %#v, want four bounded production signals", signals)
+	}
+	seen := make(map[string]bool, len(signals))
+	for _, signal := range signals {
+		seen[signal.Path] = true
+	}
+	for _, required := range []string{
+		"cmd/app/main.go",
+		"internal/storage/write.go",
+		"client/client.go",
+		"internal/scheduler/run.go",
+	} {
+		if !seen[required] {
+			t.Fatalf("selected signal paths = %v, missing production role %q", seen, required)
+		}
+	}
+}
+
+func TestScanFilesPrefersShallowProductionPeersOverAdaptersAndMocks(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"abs/replica_client.go":  "package abs\nfunc sync() { file.Sync() }\n",
+		"file/replica_client.go": "package file\nfunc sync() { file.Sync() }\n",
+		"mock/replica_client.go": "package mock\nfunc sync() { file.Sync() }\n",
+		"replica_client.go":      "package repo\nfunc sync() { file.Sync() }\n",
+		"replica.go":             "package repo\nfunc run() { time.NewTicker(time.Second) }\n",
+	}
+	paths := make([]string, 0, len(files))
+	for filePath, content := range files {
+		resolved := filepath.Join(dir, filepath.FromSlash(filePath))
+		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(resolved, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, filePath)
+	}
+
+	signals := ScanFiles(paths, dir, ScanOptions{MaxPerFile: 1, MaxTotal: 2})
+	seen := make(map[string]bool, len(signals))
+	for _, signal := range signals {
+		seen[signal.Path] = true
+	}
+	if !seen["replica_client.go"] || !seen["replica.go"] {
+		t.Fatalf("selected signal paths = %v, want shallow effect and core files", seen)
+	}
+	for _, omitted := range []string{
+		"abs/replica_client.go",
+		"file/replica_client.go",
+		"mock/replica_client.go",
+	} {
+		if seen[omitted] {
+			t.Fatalf("adapter/test-support path %q consumed a shallow production slot: %v", omitted, seen)
+		}
 	}
 }
 

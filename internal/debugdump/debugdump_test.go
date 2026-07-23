@@ -37,6 +37,41 @@ func TestNewWriterCreatesDir(t *testing.T) {
 	}
 }
 
+func TestNewWriterRejectsExistingRunDirectoryWithoutReusingIt(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "test-run")
+	if err := os.Mkdir(existing, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(existing, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewWriter(dir, "test-run", true); err == nil {
+		t.Fatal("NewWriter accepted an existing run directory")
+	}
+	got, err := os.ReadFile(sentinel)
+	if err != nil || string(got) != "keep" {
+		t.Fatalf("existing run was changed: content=%q err=%v", got, err)
+	}
+}
+
+func TestNewWriterRejectsSymlinkRunDirectory(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "test-run")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWriter(dir, "test-run", true); err == nil {
+		t.Fatal("NewWriter accepted a symlink run directory")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("outside directory was touched: entries=%v err=%v", entries, err)
+	}
+}
+
 func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
 	t.Parallel()
 
@@ -50,6 +85,7 @@ func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
 		EffectiveOptions: EffectiveOptions{
 			FlowCount:        3,
 			DiscoverSurfaces: true,
+			NoSearch:         true,
 			NoOpen:           true,
 			DebugEnabled:     true,
 		},
@@ -67,6 +103,7 @@ func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
 		`"stage":"orientation"`,
 		`"state":"failed"`,
 		`"flows":3`,
+		`"no_search":true`,
 		`"no_open":true`,
 	} {
 		if !strings.Contains(text, want) {
@@ -152,6 +189,25 @@ func TestWriteFileUsesTempThenRename(t *testing.T) {
 	}
 }
 
+func TestWriteFileAtomicallyReplacesPublishedArtifact(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "run", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if err := w.WriteFile("test.json", []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteFile("test.json", []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "run", "test.json"))
+	if err != nil || string(got) != "second" {
+		t.Fatalf("published artifact changed: content=%q err=%v", got, err)
+	}
+}
+
 func TestWriteDirErrorRedactsPlainTextCredential(t *testing.T) {
 	dir := t.TempDir()
 	w, err := NewWriter(dir, "run", true)
@@ -171,6 +227,7 @@ func TestWriteDirErrorRedactsPlainTextCredential(t *testing.T) {
 
 func TestGenerateRunID(t *testing.T) {
 	id := GenerateRunID("etcd")
+	second := GenerateRunID("etcd")
 	if !strings.Contains(id, "etcd") {
 		t.Fatalf("run ID should contain repo name: %q", id)
 	}
@@ -179,6 +236,9 @@ func TestGenerateRunID(t *testing.T) {
 	}
 	if strings.Contains(id, " ") {
 		t.Fatalf("run ID contains spaces: %q", id)
+	}
+	if id == second {
+		t.Fatalf("independent run IDs collided: %q", id)
 	}
 }
 

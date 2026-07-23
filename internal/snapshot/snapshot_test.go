@@ -1,11 +1,207 @@
 package snapshot
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
+	t.Run("root module precedes remote and manifest", func(t *testing.T) {
+		t.Parallel()
+
+		repo := filepath.Join(t.TempDir(), "task-labelled-checkout")
+		writeSnapshotFile(t, repo, "go.mod", "module example.com/owner/module\n\ngo 1.26\n")
+		writeSnapshotFile(t, repo, "main.go", "package main\n\nfunc main() {}\n")
+		writeSnapshotFile(t, repo, "package.json", `{"name":"manifest-name"}`)
+		trackSnapshotFiles(t, repo, "go.mod", "main.go", "package.json")
+		runSnapshotGit(t, "-C", repo, "remote", "add", "origin", "git@github.com:owner/remote-name.git")
+
+		got, err := Build(Options{RepoPath: repo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RepoName != "example.com/owner/module" {
+			t.Fatalf("repo_name = %q, want root module path", got.RepoName)
+		}
+		if got.DisplayName != "task-labelled-checkout" {
+			t.Fatalf("display_name = %q, want local checkout label", got.DisplayName)
+		}
+	})
+
+	t.Run("normalized remote precedes manifest", func(t *testing.T) {
+		t.Parallel()
+
+		repo := filepath.Join(t.TempDir(), "another-task-label")
+		writeSnapshotFile(t, repo, "README.md", "# Project\n")
+		writeSnapshotFile(t, repo, "package.json", `{"name":"manifest-name"}`)
+		trackSnapshotFiles(t, repo, "README.md", "package.json")
+		runSnapshotGit(t, "-C", repo, "remote", "add", "origin", "https://token@GitHub.com/owner/remote-name.git")
+
+		got, err := Build(Options{RepoPath: repo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RepoName != "github.com/owner/remote-name" {
+			t.Fatalf("repo_name = %q, want normalized remote identity", got.RepoName)
+		}
+	})
+
+	t.Run("tracked manifest precedes neutral fallback", func(t *testing.T) {
+		t.Parallel()
+
+		repo := filepath.Join(t.TempDir(), "manifest-task-label")
+		writeSnapshotFile(t, repo, "package.json", `{"name":"@example/manifest-project"}`)
+		trackSnapshotFiles(t, repo, "package.json")
+
+		got, err := Build(Options{RepoPath: repo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RepoName != "@example/manifest-project" {
+			t.Fatalf("repo_name = %q, want manifest identity", got.RepoName)
+		}
+	})
+
+	t.Run("untracked manifest cannot replace neutral fallback", func(t *testing.T) {
+		t.Parallel()
+
+		repo := filepath.Join(t.TempDir(), "untracked-task-label")
+		writeSnapshotFile(t, repo, "README.md", "# Project\n")
+		writeSnapshotFile(t, repo, "package.json", `{"name":"leaked-task-name"}`)
+		trackSnapshotFiles(t, repo, "README.md")
+
+		got, err := Build(Options{RepoPath: repo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RepoName != neutralRepositoryName {
+			t.Fatalf("repo_name = %q, want neutral fallback", got.RepoName)
+		}
+		encoded, err := json.Marshal(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "leaked-task-name") {
+			t.Fatalf("snapshot included untracked manifest identity: %s", encoded)
+		}
+	})
+}
+
+func TestNormalizeRemoteIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		remote   string
+		expected string
+	}{
+		{name: "https", remote: "https://github.com/go-fuego/fuego.git", expected: "github.com/go-fuego/fuego"},
+		{name: "https credentials", remote: "https://secret@example.com/owner/repo.git", expected: "example.com/owner/repo"},
+		{name: "ssh url", remote: "ssh://git@GitHub.com/go-fuego/fuego.git", expected: "github.com/go-fuego/fuego"},
+		{name: "scp syntax", remote: "git@github.com:go-fuego/fuego.git", expected: "github.com/go-fuego/fuego"},
+		{name: "local absolute path", remote: "/tmp/task-labelled-checkout", expected: ""},
+		{name: "file url", remote: "file:///tmp/task-labelled-checkout", expected: ""},
+		{name: "local relative path", remote: "../task-labelled-checkout", expected: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := normalizeRemoteIdentity(test.remote); got != test.expected {
+				t.Fatalf("normalizeRemoteIdentity(%q) = %q, want %q", test.remote, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestBuildIdentityIgnoresAmbientGitConfigOverrides(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "ambient-config-checkout")
+	writeSnapshotFile(t, repo, "README.md", "# Repository\n")
+	trackSnapshotFiles(t, repo, "README.md")
+	runSnapshotGit(t, "-C", repo, "remote", "add", "origin", "https://github.com/wanted/repository.git")
+
+	ambientConfig := filepath.Join(t.TempDir(), "ambient.gitconfig")
+	if err := os.WriteFile(
+		ambientConfig,
+		[]byte("[remote \"origin\"]\n\turl = https://example.invalid/ambient/repository.git\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG", ambientConfig)
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "remote.origin.url")
+	t.Setenv("GIT_CONFIG_VALUE_0", "https://example.invalid/injected/repository.git")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'remote.origin.url'='https://example.invalid/parameters/repository.git'")
+	t.Setenv("GIT_CONFIG_GLOBAL", ambientConfig)
+	t.Setenv("GIT_CONFIG_SYSTEM", ambientConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	got, err := Build(Options{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RepoName != "github.com/wanted/repository" {
+		t.Fatalf("repo_name = %q, want repository-local origin", got.RepoName)
+	}
+}
+
+func TestRepositoryGitEnvironmentDropsAmbientConfigOverrides(t *testing.T) {
+	t.Parallel()
+
+	environment := []string{
+		"PATH=/usr/bin", "GIT_DIR=/tmp/other.git", "GIT_CONFIG=/tmp/config",
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=remote.origin.url",
+		"GIT_CONFIG_VALUE_0=https://example.invalid/repository.git",
+		"GIT_CONFIG_PARAMETERS='remote.origin.url'='https://example.invalid/parameters.git'",
+		"GIT_CONFIG_SYSTEM=/tmp/system", "GIT_CONFIG_GLOBAL=/tmp/global", "GIT_CONFIG_NOSYSTEM=1",
+	}
+	joined := strings.Join(repositoryGitEnvironment(environment), "\n")
+	for _, forbidden := range []string{
+		"GIT_DIR=", "GIT_CONFIG=", "GIT_CONFIG_COUNT=", "GIT_CONFIG_KEY_",
+		"GIT_CONFIG_VALUE_", "GIT_CONFIG_PARAMETERS=", "GIT_CONFIG_SYSTEM=",
+		"GIT_CONFIG_GLOBAL=", "GIT_CONFIG_NOSYSTEM=",
+	} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("repository environment retained %q: %q", forbidden, joined)
+		}
+	}
+	if !strings.Contains(joined, "PATH=/usr/bin") {
+		t.Fatalf("repository environment lost PATH: %q", joined)
+	}
+}
+
+func TestParseRepositoryManifestName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		parse    func([]byte) string
+		manifest string
+		expected string
+	}{
+		{name: "package json", parse: parseJSONManifestName, manifest: `{"name":"web-project"}`, expected: "web-project"},
+		{name: "python project", parse: parsePythonManifestName, manifest: "[project]\nname = \"python-project\"\n", expected: "python-project"},
+		{name: "poetry project", parse: parsePythonManifestName, manifest: "[tool.poetry]\nname = 'poetry-project'\n", expected: "poetry-project"},
+		{name: "cargo package", parse: parseCargoManifestName, manifest: "[package]\nname = \"rust-project\"\n", expected: "rust-project"},
+		{name: "setup metadata", parse: parseSetupConfigName, manifest: "[metadata]\nname = python-legacy\n", expected: "python-legacy"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := test.parse([]byte(test.manifest)); got != test.expected {
+				t.Fatalf("manifest name = %q, want %q", got, test.expected)
+			}
+		})
+	}
+}
 
 func TestBuildReadsBoundedTrackedReadme(t *testing.T) {
 	t.Parallel()
@@ -141,6 +337,18 @@ func trackSnapshotFiles(t *testing.T, repo string, paths ...string) {
 	args := []string{"-C", repo, "add", "--"}
 	args = append(args, paths...)
 	runSnapshotGit(t, args...)
+}
+
+func writeSnapshotFile(t *testing.T, repo, relativePath, contents string) {
+	t.Helper()
+
+	filePath := filepath.Join(repo, relativePath)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filePath, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func runSnapshotGit(t *testing.T, args ...string) {

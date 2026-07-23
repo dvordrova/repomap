@@ -65,6 +65,7 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		EffectiveOptions: debugdump.EffectiveOptions{
 			FlowCount:        2,
 			DiscoverSurfaces: true,
+			NoSearch:         true,
 			OutputJSON:       true,
 			NoOpen:           true,
 			Port:             59769,
@@ -118,7 +119,7 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		)
 	}
 	if metadata.EffectiveOptions.FlowCount != 2 || !metadata.EffectiveOptions.DiscoverSurfaces ||
-		metadata.EffectiveOptions.DumpLLM || !metadata.EffectiveOptions.OutputJSON ||
+		!metadata.EffectiveOptions.NoSearch || metadata.EffectiveOptions.DumpLLM || !metadata.EffectiveOptions.OutputJSON ||
 		!metadata.EffectiveOptions.NoOpen || metadata.EffectiveOptions.Port != 59769 ||
 		!metadata.EffectiveOptions.DebugEnabled {
 		t.Fatalf("metadata effective options = %#v", metadata.EffectiveOptions)

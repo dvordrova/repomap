@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/reporead"
 )
 
@@ -166,7 +167,7 @@ func ScanFiles(filePaths []string, repoPath string, opts ScanOptions) []Signal {
 	}
 	defer reader.Close()
 
-	for _, f := range filePaths {
+	for _, f := range artifactrole.SortPaths(filePaths) {
 		if shouldSkipFile(f) {
 			continue
 		}

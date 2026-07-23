@@ -55,6 +55,17 @@ func TestReduceAcceptsComponentAnchorOriginWithoutFlow(t *testing.T) {
 	}
 }
 
+func TestReduceAcceptsCanonicalSlashRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
+	origin := validOrientationOrigin()
+	origin.RepoName = "example.com/owner/repository"
+	session := startWithOrigin(t, origin)
+	if session.Origin == nil || session.Origin.RepoName != origin.RepoName {
+		t.Fatalf("canonical origin = %#v, want repository identity %q", session.Origin, origin.RepoName)
+	}
+}
+
 func TestReduceRejectsInvalidOrientationOrigin(t *testing.T) {
 	t.Parallel()
 
@@ -81,9 +92,21 @@ func TestReduceRejectsInvalidOrientationOrigin(t *testing.T) {
 			},
 		},
 		{
-			name: "repository name",
+			name: "repository traversal",
 			mutate: func(origin *Origin) {
-				origin.RepoName = "parent/repo"
+				origin.RepoName = "../repo"
+			},
+		},
+		{
+			name: "repository absolute path",
+			mutate: func(origin *Origin) {
+				origin.RepoName = "/parent/repo"
+			},
+		},
+		{
+			name: "repository backslash",
+			mutate: func(origin *Origin) {
+				origin.RepoName = `parent\repo`
 			},
 		},
 		{

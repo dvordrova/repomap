@@ -8,13 +8,14 @@
   <style>{{.CSS}}</style>
 {{if .HasArchitectureCanvas}}  <style id="rm-architecture-canvas-css">{{.ArchitectureCanvasCSS}}</style>{{end}}
 {{if .HasDiscoveredSurfaces}}  <style id="rm-surface-catalog-css">{{.SurfaceCatalogCSS}}</style>{{end}}
+{{if .HasSemanticSearch}}  <style id="rm-semantic-search-css">{{.SemanticSearchCSS}}</style>{{end}}
 </head>
 <body>
   <header>
     <div class="rm-header-inner">
       <div>
         <h1 id="rm-repo-name"></h1>
-        <p>Repository onboarding</p>
+        <p id="rm-workspace-purpose">Repository onboarding</p>
       </div>
       <div class="rm-header-actions">
         <label class="rm-run-picker" id="rm-run-picker" hidden>
@@ -22,7 +23,7 @@
           <select id="rm-run-selector"></select>
         </label>
         <span class="rm-editor-hint" id="rm-editor-hint" hidden>File paths open in VS Code ↗</span>
-        <details class="rm-run-details">
+        <details class="rm-run-details" id="rm-run-details" hidden>
           <summary>Run details</summary>
           <div class="rm-artifacts" id="rm-artifacts-dir"></div>
           <div class="rm-artifacts" id="rm-feedback-path"></div>
@@ -33,10 +34,45 @@
       </div>
     </div>
   </header>
-  <div class="rm-container">
-    <nav class="rm-tabs" id="rm-tabs"></nav>
-    <section id="rm-overview" class="rm-tab-content rm-active"></section>
-    <div id="rm-flows-container"></div>
+  <div class="rm-workspace">
+    <aside class="rm-repository-nav" aria-label="Repository navigation">
+      <div class="rm-repository-nav__eyebrow">Repository workspace</div>
+      <nav class="rm-tabs" id="rm-tabs"></nav>
+    </aside>
+    <main class="rm-main-content" id="rm-main-content">
+      <section id="rm-overview" class="rm-tab-content rm-active"></section>
+      <section id="rm-task-investigation" class="rm-tab-content"></section>
+      <section id="rm-mechanisms" class="rm-tab-content"></section>
+      <section id="rm-mechanism-detail" class="rm-tab-content"></section>
+      <section id="rm-study-detail" class="rm-tab-content"></section>
+      <section id="rm-operate-detail" class="rm-tab-content"></section>
+      <section id="rm-search-view" class="rm-tab-content">
+{{if .HasSemanticSearch}}        <section class="rm-semantic-search" id="rm-semantic-search" aria-label="Repository search">
+          <label class="rm-semantic-search__label" for="rm-semantic-search-entry">Search the repository model</label>
+          <p class="rm-semantic-search__intro">Find a code path, component, symbol, or exact source file.</p>
+          <div class="rm-semantic-search__field">
+            <input
+              class="rm-semantic-search__entry"
+              id="rm-semantic-search-entry"
+              data-semantic-search-entry
+              type="search"
+              placeholder="What do you want to understand?"
+              autocomplete="off"
+              aria-haspopup="dialog"
+            >
+            <span class="rm-semantic-search__shortcut"><span>Open </span><kbd>⌘/Ctrl K</kbd></span>
+          </div>
+          <div class="rm-semantic-search__suggestions" data-semantic-search-suggestions aria-label="Suggested questions"></div>
+        </section>{{end}}
+      </section>
+      <section id="rm-architecture" class="rm-tab-content"></section>
+      <section id="rm-provenance" class="rm-tab-content"></section>
+      <div id="rm-flows-container"></div>
+    </main>
+    <aside class="rm-source-drawer" id="rm-source-drawer" aria-label="Source locations" hidden>
+      <button class="rm-source-drawer__close" id="rm-source-drawer-close" type="button" aria-label="Close source drawer">×</button>
+      <div id="rm-source-drawer-content"></div>
+    </aside>
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
@@ -44,6 +80,7 @@
 {{if .HasArchitectureCanvas}}  <script id="rm-elkjs">{{.ELKJS}}</script>
   <script id="rm-architecture-canvas-js">{{.ArchitectureCanvasJS}}</script>{{end}}
 {{if .HasDiscoveredSurfaces}}  <script id="rm-surface-catalog-js">{{.SurfaceCatalogJS}}</script>{{end}}
+{{if .HasSemanticSearch}}  <script id="rm-semantic-search-js">{{.SemanticSearchJS}}</script>{{end}}
   <script>{{.JS}}</script>
 </body>
 </html>

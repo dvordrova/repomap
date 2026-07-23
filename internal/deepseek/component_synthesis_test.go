@@ -32,7 +32,7 @@ func TestComponentSynthesisPromptJSONPreservesExactChatContract(t *testing.T) {
 			{Role: "system", Content: prompt.System},
 			{Role: "user", Content: prompt.User},
 		},
-		Temperature:    0.1,
+		Temperature:    float64Pointer(0.1),
 		MaxTokens:      client.MaxTokens,
 		ResponseFormat: &jsonFormat{Type: "json_object"},
 	})

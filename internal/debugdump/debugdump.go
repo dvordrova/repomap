@@ -1,6 +1,8 @@
 package debugdump
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -45,6 +47,8 @@ type EffectiveOptions struct {
 	Offline          bool `json:"offline"`
 	FlowCount        int  `json:"flows"`
 	DiscoverSurfaces bool `json:"discover_surfaces"`
+	GuidedTour       bool `json:"guided_tour"`
+	NoSearch         bool `json:"no_search"`
 	DumpLLM          bool `json:"dump_llm"`
 	OutputJSON       bool `json:"json_output"`
 	PreviewRequest   bool `json:"preview_request"`
@@ -67,32 +71,79 @@ type Writer struct {
 	RunID    string
 	Redacted bool
 	runDir   string
+	root     *os.Root
 }
 
 func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("debug dir is empty")
 	}
-	runDir := filepath.Join(baseDir, runID)
-	if err := os.MkdirAll(runDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create debug run dir: %w", err)
+	if runID == "" || !filepath.IsLocal(runID) || filepath.Clean(runID) != runID || filepath.Base(runID) != runID {
+		return nil, fmt.Errorf("debug run id must be one local path component")
 	}
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create debug base dir: %w", err)
+	}
+	baseRoot, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("open debug base dir: %w", err)
+	}
+	defer baseRoot.Close()
+	// The caller binds metadata, report routing, and browser authority to this
+	// exact ID. Fail closed on collision instead of reusing or silently
+	// suffixing a directory that those callers did not authorize.
+	if err := baseRoot.Mkdir(runID, 0o700); err != nil {
+		return nil, fmt.Errorf("create unique debug run dir: %w", err)
+	}
+	runRoot, err := baseRoot.OpenRoot(runID)
+	if err != nil {
+		return nil, fmt.Errorf("open debug run dir: %w", err)
+	}
+	runDir := filepath.Join(baseDir, runID)
 	fmt.Fprintf(os.Stderr, "debug artifacts: %s\n", runDir)
-	return &Writer{BaseDir: baseDir, RunID: runID, Redacted: redacted, runDir: runDir}, nil
+	return &Writer{
+		BaseDir: baseDir, RunID: runID, Redacted: redacted,
+		runDir: runDir, root: runRoot,
+	}, nil
 }
 
 func (w *Writer) WriteFile(name string, data []byte) error {
-	path := filepath.Join(w.runDir, name)
+	return w.writeRootFile(name, data)
+}
+
+func (w *Writer) writeRootFile(name string, data []byte) error {
+	if w == nil || w.root == nil {
+		return fmt.Errorf("debug writer is closed")
+	}
+	localName := filepath.FromSlash(name)
+	if name == "" || !filepath.IsLocal(localName) || filepath.Clean(localName) != localName {
+		return fmt.Errorf("invalid debug artifact path %q", name)
+	}
 	if w.Redacted {
 		data = redactJSON(data)
 	}
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+	tmpName := localName + ".tmp"
+	file, err := w.root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
 		return fmt.Errorf("write %s: %w", name, err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename %s: %w", name, err)
+	written := false
+	defer func() {
+		if !written {
+			_ = w.root.Remove(tmpName)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write %s: %w", name, err)
 	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", name, err)
+	}
+	if err := w.root.Rename(tmpName, localName); err != nil {
+		return fmt.Errorf("publish %s: %w", name, err)
+	}
+	written = true
 	return nil
 }
 
@@ -126,33 +177,35 @@ func (w *Writer) WriteOrientationValidation(validationJSON []byte) error {
 }
 
 func (w *Writer) WriteDirFile(subdir, name string, data []byte) error {
-	dir := filepath.Join(w.runDir, subdir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	localSubdir := filepath.FromSlash(subdir)
+	if w == nil || w.root == nil || subdir == "" || !filepath.IsLocal(localSubdir) ||
+		filepath.Clean(localSubdir) != localSubdir || localSubdir == "." ||
+		name == "" || filepath.Base(name) != name {
+		return fmt.Errorf("invalid debug artifact subpath")
+	}
+	if err := w.root.MkdirAll(localSubdir, 0o700); err != nil {
 		return err
 	}
-	path := filepath.Join(dir, name)
-	if w.Redacted {
-		data = redactJSON(data)
-	}
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
-		return fmt.Errorf("write %s/%s: %w", subdir, name, err)
-	}
-	return os.Rename(tmpPath, path)
+	return w.writeRootFile(filepath.Join(localSubdir, name), data)
 }
 
 func (w *Writer) WriteDirError(subdir string, err error) {
-	dir := filepath.Join(w.runDir, subdir)
-	os.MkdirAll(dir, 0o700)
 	data := []byte(fmt.Sprintf("error: %v\n", err))
-	if w.Redacted {
-		data = redactJSON(data)
-	}
-	os.WriteFile(filepath.Join(dir, "error.txt"), data, 0o600)
+	_ = w.WriteDirFile(subdir, "error.txt", data)
 }
 
 func (w *Writer) RunDir() string {
 	return w.runDir
+}
+
+// Close releases the directory handle that confines artifact writes.
+func (w *Writer) Close() error {
+	if w == nil || w.root == nil {
+		return nil
+	}
+	err := w.root.Close()
+	w.root = nil
+	return err
 }
 
 func (w *Writer) WriteError(err error) {
@@ -190,7 +243,11 @@ func redactJSON(data []byte) []byte {
 
 func GenerateRunID(repoName string) string {
 	ts := time.Now().UTC().Format("20060102-150405")
-	return fmt.Sprintf("%s-%s", ts, sanitize(repoName))
+	var nonce [6]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return fmt.Sprintf("%s-%s-%x", ts, sanitize(repoName), time.Now().UTC().UnixNano())
+	}
+	return fmt.Sprintf("%s-%s-%s", ts, sanitize(repoName), hex.EncodeToString(nonce[:]))
 }
 
 func sanitize(s string) string {

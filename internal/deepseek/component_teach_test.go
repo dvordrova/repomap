@@ -71,7 +71,7 @@ func TestComponentTeacherPromptJSONUsesGroundedContract(t *testing.T) {
 	if request.Model != client.Model || request.MaxTokens != client.MaxTokens {
 		t.Fatalf("request config = model %q, max_tokens %d", request.Model, request.MaxTokens)
 	}
-	if request.Temperature != 0 {
+	if request.Temperature == nil || *request.Temperature != 0 {
 		t.Fatalf("temperature = %v, want 0", request.Temperature)
 	}
 	if request.ResponseFormat == nil || request.ResponseFormat.Type != "json_object" {

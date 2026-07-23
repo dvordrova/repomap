@@ -40,7 +40,7 @@ func (c *Client) TeacherPromptJSON(bundleJSON []byte) ([]byte, error) {
 		return nil, err
 	}
 	request := c.flowExplainRequest(userPrompt, systemPrompt, true)
-	request.Temperature = 0
+	request.Temperature = float64Pointer(0)
 	return json.Marshal(request)
 }
 

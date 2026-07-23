@@ -365,6 +365,10 @@
    this.host = host;
    this.data = data && typeof data === "object" ? data : {};
    this.options = options && typeof options === "object" ? options : {};
+   this.userMode = this.options.userMode === true;
+   this.componentContexts = this.options.componentContexts && typeof this.options.componentContexts === "object"
+    ? this.options.componentContexts
+    : {};
    this.destroyed = false;
    this.layoutStarted = false;
     this.layoutResult = null;
@@ -386,11 +390,31 @@
    this.structuralEdges = array(this.data.structural_edges);
      this.flows = array(this.data.flows);
      this.surfaces = array(this.data.surfaces);
-     this.suggestions = array(this.data.suggested_investigations);
-    this.candidateDirections = array(this.options.candidateDirections);
+     this.suggestions = this.userMode ? [] : array(this.data.suggested_investigations);
+    this.candidateDirections = this.userMode ? [] : array(this.options.candidateDirections);
    this.flowEdges = array(this.data.flow_edges);
-   this.frontiers = array(this.data.frontiers);
-   this.diagnostics = array(this.data.diagnostics);
+   this.frontiers = this.userMode ? [] : array(this.data.frontiers);
+   this.diagnostics = this.userMode ? [] : array(this.data.diagnostics);
+   const guidedTourStory = this.options.guidedTour;
+   const activeGuidedTourStory = this.userMode ? null : guidedTourStory;
+   const guidedTourSteps = activeGuidedTourStory && typeof activeGuidedTourStory === "object"
+    ? array(activeGuidedTourStory.steps).filter((step) => step && typeof step === "object")
+    : [];
+   this.guidedTourStory = guidedTourSteps.length > 0 ? activeGuidedTourStory : null;
+   this.guidedTourSteps = guidedTourSteps;
+   this.guidedTour = { active: false, index: 0 };
+   this.semanticArtifacts = (this.userMode ? [] : array(this.options.semanticArtifacts)).filter(
+    (artifact) => artifact && typeof artifact === "object" && text(artifact.id)
+   );
+   this.semanticArtifactByID = new Map(
+    this.semanticArtifacts.map((artifact) => [text(artifact.id), artifact])
+   );
+   const requestedStartHereArtifactID = text(this.options.startHereArtifactID);
+   const startHereArtifact = this.semanticArtifactByID.get(requestedStartHereArtifactID);
+   this.startHereArtifactID = startHereArtifact && text(startHereArtifact.kind) === "mechanism"
+    ? requestedStartHereArtifactID
+    : "";
+   this.semanticNarrative = { artifactID: "", index: 0 };
 
     this.componentByID = new Map();
     this.anchorByID = new Map();
@@ -485,9 +509,36 @@
      this.backToArchitecture();
     });
     flowNav.appendChild(this.landscapeButton);
+    if (this.startHereArtifactID) {
+     this.startHereButton = element("button", "rm-arch__flow-button rm-arch__tour-start", "Start here");
+     this.startHereButton.type = "button";
+     this.startHereButton.setAttribute("aria-pressed", "false");
+     this.startHereButton.title = "Open the primary evidence-backed mechanism";
+     this.listen(this.startHereButton, "click", () => {
+      this.openSemanticArtifact(this.startHereArtifactID, 0);
+     });
+     flowNav.appendChild(this.startHereButton);
+    }
+    if (this.guidedTourStory) {
+     const guidedTourLabel = this.startHereArtifactID ? "Guided tour" : "Start here";
+     this.guidedTourButton = element(
+      "button",
+      "rm-arch__flow-button" + (this.startHereArtifactID ? "" : " rm-arch__tour-start"),
+      guidedTourLabel
+     );
+     this.guidedTourButton.type = "button";
+     this.guidedTourButton.setAttribute("aria-pressed", "false");
+     this.guidedTourButton.title = "Open the guided architecture tour";
+     this.listen(this.guidedTourButton, "click", () => this.startGuidedTour());
+     flowNav.appendChild(this.guidedTourButton);
+    }
     if (this.flows.length > 0) {
      this.traceMenu = element("div", "rm-arch__trace-menu");
-     this.traceMenuSummary = element("button", "rm-arch__flow-button", "Saved traces (" + this.flows.length + ")");
+     this.traceMenuSummary = element(
+      "button",
+      "rm-arch__flow-button",
+      (this.userMode ? "Code paths (" : "Saved traces (") + this.flows.length + ")"
+     );
      this.traceMenuSummary.type = "button";
      this.traceMenuSummary.setAttribute("aria-haspopup", "menu");
      this.traceMenuSummary.setAttribute("aria-expanded", "false");
@@ -503,20 +554,20 @@
        const button = element("button", "rm-arch__trace-option");
       button.type = "button";
        button.setAttribute("role", "menuitem");
-       button.appendChild(element("strong", null, flow.name || flow.id));
+       button.appendChild(element("strong", null, flow.name || "Code path"));
        if (flow.why_inspect) button.appendChild(element("small", "rm-arch__trace-purpose", flow.why_inspect));
         const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
         const originName = startSurface ? startSurface.name || startSurface.kind : flow.trigger || flow.command;
-        const origin = [savedTraceLabel(flow.archetype), originName].filter(Boolean).join(" · ");
+        const origin = [this.userMode ? "Code path" : savedTraceLabel(flow.archetype), originName].filter(Boolean).join(" · ");
        button.appendChild(element(
         "span",
         null,
-        [origin, flow.status]
+        [origin, this.userMode ? "" : flow.status]
          .filter(Boolean)
          .join(" · ")
        ));
        button.appendChild(element("span", null, array(flow.participating_component_ids).length + " components"));
-      if (flow.status !== "complete" && flow.frontier_summary) {
+      if (!this.userMode && flow.status !== "complete" && flow.frontier_summary) {
        button.appendChild(element("small", null, "Frontier: " + flow.frontier_summary));
       }
       this.listen(button, "click", () => {
@@ -531,7 +582,7 @@
    toolbar.appendChild(flowNav);
 
     const controls = element("div", "rm-arch__controls");
-    const diagnosticComponents = this.diagnosticComponents();
+    const diagnosticComponents = this.userMode ? [] : this.diagnosticComponents();
     if (diagnosticComponents.length > 0) {
      diagnosticComponents.forEach((component) => this.diagnosticComponentIDs.add(text(component.id)));
      this.diagnosticButton = this.controlButton(
@@ -564,7 +615,8 @@
     this.drawerBackdrop = element("button", "rm-arch__drawer-backdrop");
     this.drawerBackdrop.type = "button";
      this.drawerBackdrop.setAttribute("aria-label", "Close inspector");
-     this.drawerBackdrop.hidden = true;
+    this.drawerBackdrop.hidden = true;
+    this.listen(this.drawerBackdrop, "click", () => this.closeInspector());
      this.inspector = element("aside", "rm-arch__inspector");
     this.inspector.setAttribute("aria-label", "Architecture inspector");
     workspace.appendChild(this.inspector);
@@ -572,9 +624,17 @@
 
    this.host.appendChild(this.root);
    this.installViewportInteractions();
-    this.listen(global, "hashchange", () => this.restoreHash(true));
+    if (!this.userMode) this.listen(global, "hashchange", () => this.restoreHash(true));
     this.listen(global, "keydown", (event) => {
      if (event.key !== "Escape") return;
+     if (this.semanticArtifact()) {
+      this.finishSemanticArtifact(true);
+      return;
+     }
+     if (this.guidedTour.active) {
+      this.finishGuidedTour(true);
+      return;
+     }
      if (this.traceList && !this.traceList.hidden) {
       this.toggleTraceMenu(false);
       this.traceMenuSummary.focus();
@@ -586,9 +646,11 @@
      if (this.traceList && !this.traceList.hidden) this.positionTraceMenu();
     });
     this.listen(global.document, "click", (event) => {
-     if (!this.hasInspectorSelection(this.selection)) return;
+     if (!this.hasInspectorSelection(this.selection) && !this.guidedTour.active && !this.semanticArtifact()) return;
      const target = event.target;
      if (!target || this.inspector.contains(target)) return;
+     if (target === this.drawerBackdrop) return;
+     if (typeof target.closest === "function" && target.closest(".rm-semantic-search, .rm-search-modal, .rm-explore")) return;
      if (typeof target.closest === "function" && target.closest(".rm-arch__component-card")) return;
      this.closeInspector();
     }, { capture: true });
@@ -692,6 +754,7 @@
     const componentOwner = new Map();
     const allGroups = [];
     this.subsystems.forEach((subsystem) => {
+     if (this.userMode && this.isDiagnosticSubsystem(subsystem)) return;
      const id = text(subsystem.id);
      const componentIDs = array(subsystem.component_ids)
       .map(text)
@@ -712,12 +775,12 @@
     const ungrouped = this.components
      .map((component) => text(component.id))
      .filter((id) => !componentIDsInSubsystems.has(id));
-    if (ungrouped.length > 0) {
+    if (!this.userMode && ungrouped.length > 0) {
      ungrouped.forEach((componentID) => componentOwner.set(componentID, "__ungrouped__"));
      allGroups.push({ id: "__ungrouped__", subsystem: null, componentIDs: ungrouped, diagnostic: true });
     }
 
-    const diagnosticGroups = allGroups.filter((group) => group.diagnostic);
+    const diagnosticGroups = this.userMode ? [] : allGroups.filter((group) => group.diagnostic);
     const groups = allGroups.filter((group) => !group.diagnostic);
     const architectureGroupIDs = new Set(groups.map((group) => group.id));
     const architectureComponentIDs = new Set();
@@ -1159,7 +1222,7 @@
 
    this.renderGroups();
    this.renderComponents();
-   this.renderUnassignedRail();
+   if (!this.userMode) this.renderUnassignedRail();
    this.renderStructuralEdges();
    this.renderFlowSteps();
    this.renderFlowEdges();
@@ -1190,10 +1253,10 @@
     group.style.top = position.y + "px";
     group.style.width = position.width + "px";
     group.style.height = position.height + "px";
-     group.title = text(subsystem.description || subsystem.name || subsystem.id);
+     group.title = text(subsystem.description || subsystem.name || (this.userMode ? "Repository area" : subsystem.id));
      const header = element("div", "rm-arch__group-header");
      header.appendChild(element("span", "rm-arch__category-marker"));
-     header.appendChild(element("h3", "rm-arch__group-title", subsystem.name || subsystem.id));
+     header.appendChild(element("h3", "rm-arch__group-title", subsystem.name || (this.userMode ? "Repository area" : subsystem.id)));
      const categoryLabel = this.semanticCategoryLabel(category);
      if (categoryLabel) header.appendChild(element("span", "rm-arch__group-category", categoryLabel));
      header.appendChild(element("span", "rm-arch__group-count", array(subsystem.component_ids).length + " components"));
@@ -1238,11 +1301,11 @@
 
       const button = element("button", "rm-arch__component-card");
       button.type = "button";
-      button.title = text(component.name || id);
+      button.title = text(component.name || (this.userMode ? "Code component" : id));
       if (singleton && subsystem) {
-       button.appendChild(element("span", "rm-arch__component-group", subsystem.name || subsystem.id));
+       button.appendChild(element("span", "rm-arch__component-group", subsystem.name || (this.userMode ? "Repository area" : subsystem.id)));
       }
-     button.appendChild(element("strong", "rm-arch__component-name", component.name || id));
+     button.appendChild(element("strong", "rm-arch__component-name", component.name || (this.userMode ? "Code component" : id)));
      if (component.description) {
       button.appendChild(element("span", "rm-arch__component-description", component.description));
      }
@@ -1251,7 +1314,7 @@
        const surfaceSummary = element("span", "rm-arch__component-surfaces");
        surfaceSummary.appendChild(element("span", "rm-arch__component-surfaces-label", "Surfaces"));
        associatedSurfaces.slice(0, 2).forEach((surface) => {
-        surfaceSummary.appendChild(element("span", "rm-arch__surface-chip", surface.name || surface.id));
+        surfaceSummary.appendChild(element("span", "rm-arch__surface-chip", surface.name || surface.kind || (this.userMode ? "Runtime surface" : surface.id)));
        });
        if (associatedSurfaces.length > 2) {
         surfaceSummary.appendChild(element("span", "rm-arch__surface-chip is-more", "+" + (associatedSurfaces.length - 2)));
@@ -1265,11 +1328,11 @@
        }
        const participatingFlows = array(component.participating_flow_ids).map((flowID) => this.flowByID.get(text(flowID))).filter(Boolean);
        if (participatingFlows.length === 1) {
-        metadata.push("1 " + (participatingFlows[0].status || "saved") + " trace");
+        metadata.push(this.userMode ? "1 code path" : "1 " + (participatingFlows[0].status || "saved") + " trace");
        } else if (participatingFlows.length > 1) {
-        metadata.push(participatingFlows.length + " saved traces");
+        metadata.push(participatingFlows.length + (this.userMode ? " code paths" : " saved traces"));
        }
-       const suggestionCount = array(component.suggested_investigation_ids).length;
+       const suggestionCount = this.userMode ? 0 : array(component.suggested_investigation_ids).length;
        if (suggestionCount > 0) metadata.push(suggestionCount + " suggested investigation" + (suggestionCount === 1 ? "" : "s"));
        const anchorCount = array(component.anchor_ids).length;
        if (anchorCount > 0) metadata.push(anchorCount + " exact anchor" + (anchorCount === 1 ? "" : "s"));
@@ -1314,7 +1377,7 @@
     const group = this.interactiveSVGPath(
      route,
      "rm-arch__edge rm-arch__edge--structural",
-     "Structural relation " + text((edge.witness || {}).kind || edge.id),
+     "Structural relation " + text((edge.witness || {}).kind || (this.userMode ? "between code areas" : edge.id)),
      () => this.setSelection({ edge: text(edge.id), step: "" }, true)
     );
      setSVGVisible(group, true);
@@ -1365,6 +1428,7 @@
      });
 
     buckets.forEach((items, owner) => {
+     if (this.userMode && owner === UNASSIGNED_ID) return;
      const visible = this.selectVisibleItems(flow, items);
      visible.forEach((item, index) => {
       if (item.kind === "step") this.renderStepChip(flow, item.value, owner, index);
@@ -1429,7 +1493,7 @@
     flowID,
     geometry,
     "rm-arch__step " + branchClass(kind) + " " + this.stepSemantics(flowID, step.id).join(" "),
-    step.label || step.id
+    step.label || step.qualified_name || (this.userMode ? "Code step" : step.id)
    );
    this.listen(button, "click", (event) => {
     event.stopPropagation();
@@ -1597,10 +1661,18 @@
      edge.cross_branch ? "is-cross-branch" : "",
      edge.from_branch_id === edge.to_branch_id ? branchClass(this.branchKind(edge.flow_id, edge.from_branch_id)) : "",
     ].filter(Boolean).join(" ");
+    const fromStep = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.from));
+    const toStep = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.to));
+    const userTransitionLabel = [
+     fromStep && (fromStep.label || fromStep.qualified_name),
+     toStep && (toStep.label || toStep.qualified_name),
+    ].filter(Boolean).join(" to ");
     const group = this.interactiveSVGPath(
      route,
      className,
-     "Flow transition " + text(edge.relation || edge.id) + " from " + text(edge.from) + " to " + text(edge.to),
+     this.userMode
+      ? "Code transition" + (userTransitionLabel ? " from " + userTransitionLabel : "")
+      : "Flow transition " + text(edge.relation || edge.id) + " from " + text(edge.from) + " to " + text(edge.to),
      () => this.setSelection({ flow: text(edge.flow_id), edge: text(edge.id), step: "" }, true)
     );
     setSVGVisible(group, false);
@@ -1669,12 +1741,13 @@
    button.dataset.stepId = text(step.id);
    if (sequence) button.appendChild(element("span", "rm-arch__focus-step-number", sequence));
    const copy = element("span", "rm-arch__focus-step-copy");
-   copy.appendChild(element("strong", null, step.label || step.id));
+   copy.appendChild(element("strong", null, step.label || step.qualified_name || (this.userMode ? "Code step" : step.id)));
    const component = this.componentByID.get(text(step.component_id));
    copy.appendChild(element(
     "span",
     "rm-arch__focus-step-meta",
-    [component && (component.name || component.id), locationLabel(step.location)].filter(Boolean).join(" · ") || "Exact saved anchor"
+    [component && (component.name || (this.userMode ? "" : component.id)), locationLabel(step.location)].filter(Boolean).join(" · ") ||
+     (this.userMode ? "Implementation step" : "Exact saved anchor")
    ));
    button.appendChild(copy);
    this.listen(button, "click", () => this.setSelection({
@@ -1898,7 +1971,82 @@
    this.appendDiagnostics(section("Diagnostics"), text(flow.id));
   }
 
+  renderUserFocusedFlow(flow) {
+   const flowID = text(flow && flow.id);
+   if (!flowID || this.focusFlowID === flowID) return;
+   this.focusFlowID = flowID;
+   this.flowFocus.replaceChildren();
+
+   const projection = this.primaryFlowSteps(flow);
+   const connectedSteps = projection.items;
+   const steps = connectedSteps.length > 0 ? connectedSteps : array(flow.steps).slice(0, 8);
+   const flowEdges = this.focusedFlowEdges(flowID);
+   const header = element("header", "rm-arch__focus-header");
+   const back = element("button", "rm-arch__focus-back", "← Back to architecture");
+   back.type = "button";
+   this.listen(back, "click", () => this.backToArchitecture());
+   header.appendChild(back);
+
+   const heading = element("div", "rm-arch__focus-heading");
+   heading.appendChild(element("span", "rm-arch__focus-kicker", "Code path"));
+   heading.appendChild(element("h3", null, flow.name || "Source-backed code path"));
+   const explanation = flow.mental_model || flow.goal || flow.why_inspect;
+   if (explanation) heading.appendChild(element("p", null, explanation));
+   const summary = element("dl", "rm-arch__trace-summary");
+   const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
+   const trigger = flow.trigger || flow.command || startSurface && (startSurface.name || startSurface.kind);
+   this.appendSummaryItem(summary, "Starts when", trigger);
+   this.appendSummaryItem(summary, "Scope", flow.scope);
+   const participantNames = array(flow.participating_component_ids)
+    .map((componentID) => this.componentByID.get(text(componentID)))
+    .filter((component) => component && component.name);
+   if (participantNames.length > 0) {
+    const participating = element("div", "rm-arch__trace-participants");
+    participating.appendChild(element("dt", null, "Code areas"));
+    const values = element("dd");
+    participantNames.forEach((component) => {
+     const button = element("button", null, component.name);
+     button.type = "button";
+     this.listen(button, "click", () => this.setSelection({
+      component: text(component.id), surface: "", step: "", edge: "",
+     }, true));
+     values.appendChild(button);
+    });
+    participating.appendChild(values);
+    summary.appendChild(participating);
+   }
+   heading.appendChild(summary);
+   header.appendChild(heading);
+   if (steps.length > 0) {
+    const stats = element("div", "rm-arch__focus-stats");
+    stats.appendChild(element("strong", null, steps.length + " code step" + (steps.length === 1 ? "" : "s")));
+    header.appendChild(stats);
+   }
+   this.flowFocus.appendChild(header);
+
+   if (steps.length > 0) {
+    const section = element("section", "rm-arch__focus-section");
+    const sectionHeader = element("div", "rm-arch__focus-section-heading");
+    sectionHeader.appendChild(element("h4", null, connectedSteps.length > 0 ? "Source-linked sequence" : "Implementation steps"));
+    section.appendChild(sectionHeader);
+    const path = element("div", "rm-arch__focus-path");
+    steps.forEach((step, index) => {
+     if (connectedSteps.length > 0 && index > 0) {
+      const previous = steps[index - 1];
+      const edge = flowEdges.find((candidate) =>
+       text(candidate.from) === text(previous.id) && text(candidate.to) === text(step.id)
+      );
+      path.appendChild(this.focusedTransitionButton(flow, edge, "is-path"));
+     }
+     path.appendChild(this.focusedStepButton(flow, step, "is-primary", String(index + 1).padStart(2, "0")));
+    });
+    section.appendChild(path);
+    this.flowFocus.appendChild(section);
+   }
+  }
+
   renderFocusedFlow(flow) {
+   if (this.userMode) return this.renderUserFocusedFlow(flow);
    const flowID = text(flow && flow.id);
    if (!flowID || this.focusFlowID === flowID) return;
    this.focusFlowID = flowID;
@@ -2304,7 +2452,174 @@
    this.root.style.setProperty("--rm-arch-scale", this.view.scale);
   }
 
-   setSelection(patch, writeHash) {
+   guidedTourStep() {
+    if (!this.guidedTour.active) return null;
+    return this.guidedTourSteps[this.guidedTour.index] || null;
+   }
+
+   guidedTourComponentIDs(step) {
+    const ids = new Set();
+    array(step && step.component_ids).forEach((componentID) => {
+     componentID = text(componentID);
+     if (this.componentByID.has(componentID)) ids.add(componentID);
+    });
+    return Array.from(ids);
+   }
+
+   semanticArtifact() {
+    return this.semanticArtifactByID.get(text(this.semanticNarrative.artifactID)) || null;
+   }
+
+   semanticArtifactSteps(artifact) {
+    const steps = array(artifact && artifact.steps).filter((step) => step && typeof step === "object");
+    if (steps.length > 0) return steps;
+    if (!artifact) return [];
+    return [{
+     id: text(artifact.id) + ":overview",
+     title: artifact.title || "Repository explanation",
+     explanation: artifact.summary || "",
+     statement_ids: array(artifact.statements).map((statement) => text(statement && statement.id)).filter(Boolean),
+     focus: artifact.focus || {},
+     evidence: artifact.evidence || [],
+    }];
+   }
+
+   semanticArtifactStep() {
+    const artifact = this.semanticArtifact();
+    if (!artifact) return null;
+    return this.semanticArtifactSteps(artifact)[this.semanticNarrative.index] || null;
+   }
+
+   semanticArtifactReferenceStep(artifact, step) {
+    const artifactFocus = artifact && artifact.focus && typeof artifact.focus === "object" ? artifact.focus : {};
+    const stepFocus = step && step.focus && typeof step.focus === "object" ? step.focus : {};
+    const focusValues = (key) => {
+     const localValues = array(stepFocus[key]).map(text).filter(Boolean);
+     return localValues.length > 0 ? localValues : array(artifactFocus[key]).map(text).filter(Boolean);
+    };
+    return {
+     component_ids: focusValues("component_ids"),
+     flow_ids: focusValues("flow_ids"),
+     surface_ids: focusValues("surface_ids"),
+     flow_step_ids: focusValues("flow_step_ids"),
+    };
+   }
+
+   openSemanticArtifact(artifactID, index) {
+    artifactID = text(artifactID);
+    if (!this.semanticArtifactByID.has(artifactID)) return;
+    if (this.traceList && !this.traceList.hidden) this.toggleTraceMenu(false);
+    this.deactivateGuidedTour();
+    this.semanticNarrative.artifactID = artifactID;
+    this.returnHighlightIDs = new Set();
+    this.showSemanticArtifactStep(index, true);
+   }
+
+   showSemanticArtifactStep(index, animate) {
+    const artifact = this.semanticArtifact();
+    const steps = this.semanticArtifactSteps(artifact);
+    if (!artifact || steps.length === 0) return;
+    const requested = Number(index);
+    const nextIndex = clamp(Number.isFinite(requested) ? Math.trunc(requested) : 0, 0, steps.length - 1);
+    this.semanticNarrative.index = nextIndex;
+    const referenceStep = this.semanticArtifactReferenceStep(artifact, steps[nextIndex]);
+    const componentIDs = this.guidedTourComponentIDs(referenceStep);
+    const primaryComponentID = componentIDs[0] || "";
+    const primaryFlowID = primaryComponentID
+     ? ""
+     : array(referenceStep.flow_ids).map(text).find((flowID) => this.flowByID.has(flowID)) || "";
+    const primarySurfaceID = primaryComponentID || primaryFlowID
+     ? ""
+     : array(referenceStep.surface_ids).map(text).find((surfaceID) => this.surfaceByID.has(surfaceID)) || "";
+    this.setSelection({
+     flow: primaryFlowID, component: primaryComponentID, surface: primarySurfaceID, step: "", edge: "",
+    }, false, true);
+    requestAnimationFrame(() => {
+     if (!this.semanticArtifact() || this.semanticNarrative.index !== nextIndex) return;
+     if (primaryComponentID) this.focusComponent(primaryComponentID, animate);
+     else if (!primaryFlowID && !primarySurfaceID) this.fit();
+    });
+   }
+
+   moveSemanticArtifact(delta) {
+    this.showSemanticArtifactStep(this.semanticNarrative.index + Number(delta || 0), true);
+   }
+
+   deactivateSemanticArtifact() {
+    this.semanticNarrative.artifactID = "";
+    this.semanticNarrative.index = 0;
+   }
+
+   finishSemanticArtifact(focusTrigger) {
+    if (!this.semanticArtifact()) return;
+    this.deactivateSemanticArtifact();
+    this.returnHighlightIDs = new Set();
+    this.setSelection({ flow: "", component: "", surface: "", step: "", edge: "" }, true);
+    requestAnimationFrame(() => {
+     this.fit();
+     if (focusTrigger && this.startHereButton) this.startHereButton.focus();
+     else if (focusTrigger && this.landscapeButton) this.landscapeButton.focus();
+    });
+   }
+
+   startGuidedTour() {
+    this.openGuidedTourStep(0);
+   }
+
+   openGuidedTourStep(index) {
+    if (!this.guidedTourStory || this.guidedTourSteps.length === 0) return;
+    if (this.traceList && !this.traceList.hidden) this.toggleTraceMenu(false);
+    this.deactivateSemanticArtifact();
+    this.guidedTour.active = true;
+    this.returnHighlightIDs = new Set();
+    this.showGuidedTourStep(index, true);
+   }
+
+   showGuidedTourStep(index, animate) {
+    if (!this.guidedTour.active || this.guidedTourSteps.length === 0) return;
+    const requested = Number(index);
+    const nextIndex = clamp(
+     Number.isFinite(requested) ? Math.trunc(requested) : 0,
+     0,
+     this.guidedTourSteps.length - 1
+    );
+    this.guidedTour.index = nextIndex;
+    const componentIDs = this.guidedTourComponentIDs(this.guidedTourSteps[nextIndex]);
+    const primaryComponentID = componentIDs[0] || "";
+    this.setSelection({
+     flow: "", component: primaryComponentID, surface: "", step: "", edge: "",
+    }, false, true);
+    requestAnimationFrame(() => {
+     if (!this.guidedTour.active || this.guidedTour.index !== nextIndex) return;
+     if (primaryComponentID) this.focusComponent(primaryComponentID, animate);
+     else this.fit();
+    });
+   }
+
+   moveGuidedTour(delta) {
+    this.showGuidedTourStep(this.guidedTour.index + Number(delta || 0), true);
+   }
+
+   deactivateGuidedTour() {
+    this.guidedTour.active = false;
+   }
+
+   finishGuidedTour(focusTrigger) {
+    if (!this.guidedTour.active) return;
+    this.deactivateGuidedTour();
+    this.returnHighlightIDs = new Set();
+    this.setSelection({ flow: "", component: "", surface: "", step: "", edge: "" }, true);
+    requestAnimationFrame(() => {
+     this.fit();
+     if (focusTrigger && this.guidedTourButton) this.guidedTourButton.focus();
+    });
+   }
+
+   setSelection(patch, writeHash, preserveNarrative) {
+     if (!preserveNarrative) {
+      if (this.guidedTour.active) this.deactivateGuidedTour();
+      if (this.semanticArtifact()) this.deactivateSemanticArtifact();
+     }
      const previous = this.selection;
      const next = Object.assign({}, this.selection, patch || {});
      this.selection = this.validateSelection(next);
@@ -2313,13 +2628,13 @@
       this.landscapeComponentID = previous.component;
       this.returnHighlightIDs = new Set();
      }
-     if (previous.flow && !this.selection.flow) {
+     if (previous.flow && !this.selection.flow && !this.guidedTour.active && !this.semanticArtifact()) {
       this.returnHighlightIDs = new Set(this.flowComponentIDs.get(previous.flow) || []);
      }
      if (this.selection.flow && this.selection.component) {
       this.landscapeComponentID = this.selection.component;
      }
-     if (writeHash) this.writeHash();
+     if (writeHash && !this.userMode) this.writeHash();
      this.renderSelection();
      if (previous.flow && !this.selection.flow && this.landscapeView) {
       this.view = Object.assign({}, this.landscapeView);
@@ -2331,6 +2646,26 @@
     flowID = text(flowID);
     if (!this.flowByID.has(flowID)) return;
     this.setSelection({ flow: flowID, component: "", surface: "", step: "", edge: "" }, true);
+   }
+
+   openFlowStep(flowID, stepID) {
+    flowID = text(flowID);
+    stepID = text(stepID);
+    if (!this.flowByID.has(flowID)) return;
+    const step = this.flowStepsByKey.get(flowStepKey(flowID, stepID));
+    if (!step) return;
+    this.setSelection({
+     flow: flowID, component: text(step.component_id), surface: "", step: stepID, edge: "",
+    }, true);
+    requestAnimationFrame(() => {
+     if (this.selection.flow !== flowID || this.selection.step !== stepID) return;
+     const target = Array.from(this.flowFocus.querySelectorAll("[data-step-id]")).find(
+      (node) => node.dataset.stepId === stepID
+     );
+     if (!target) return;
+     target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+     target.focus({ preventScroll: true });
+    });
    }
 
    openSurface(surfaceID) {
@@ -2353,6 +2688,14 @@
    }
 
    closeInspector() {
+    if (this.semanticArtifact()) {
+     this.finishSemanticArtifact(false);
+     return;
+    }
+    if (this.guidedTour.active) {
+     this.finishGuidedTour(false);
+     return;
+    }
     this.setSelection({ component: "", surface: "", step: "", edge: "" }, true);
    }
 
@@ -2384,6 +2727,7 @@
   }
 
   readHash() {
+   if (this.userMode) return { flow: "", component: "", surface: "", step: "", edge: "" };
    const params = new URLSearchParams(global.location.hash.replace(/^#/, ""));
    return {
     flow: params.get("flow") || "",
@@ -2395,11 +2739,19 @@
   }
 
   restoreHash(render) {
+   if (this.userMode) {
+    this.selection = this.validateSelection({});
+    if (render && this.surface) this.renderSelection();
+    return;
+   }
+   if (render && this.guidedTour.active) this.deactivateGuidedTour();
+   if (render && this.semanticArtifact()) this.deactivateSemanticArtifact();
    this.selection = this.validateSelection(this.readHash());
    if (render && this.surface) this.renderSelection();
   }
 
   writeHash() {
+   if (this.userMode) return;
    const params = new URLSearchParams(global.location.hash.replace(/^#/, ""));
    HASH_KEYS.forEach((key) => params.delete(key));
    if (this.selection.flow) params.set("flow", this.selection.flow);
@@ -2413,12 +2765,35 @@
   }
 
   renderSelection() {
+   const guidedTourActive = Boolean(this.guidedTour.active && this.guidedTourStep());
+   const semanticArtifact = this.semanticArtifact();
+   const semanticStep = this.semanticArtifactStep();
+   const semanticArtifactActive = Boolean(semanticArtifact && semanticStep);
+   this.root.classList.toggle("has-guided-tour", guidedTourActive);
+   this.root.classList.toggle("has-semantic-artifact", semanticArtifactActive);
+   if (this.startHereButton) {
+    const startHereActive = semanticArtifactActive && text(semanticArtifact.id) === this.startHereArtifactID;
+    this.startHereButton.classList.toggle("is-active", startHereActive);
+    this.startHereButton.setAttribute("aria-pressed", startHereActive ? "true" : "false");
+   }
+   if (this.guidedTourButton) {
+    this.guidedTourButton.classList.toggle("is-active", guidedTourActive);
+    this.guidedTourButton.setAttribute("aria-pressed", guidedTourActive ? "true" : "false");
+   }
    if (!this.surface) {
     this.renderInspector();
     return;
    }
     const flowID = this.selection.flow;
     const hasFlow = Boolean(flowID);
+    const guidedComponentIDs = new Set(
+     guidedTourActive ? this.guidedTourComponentIDs(this.guidedTourStep()) : []
+    );
+    const semanticComponentIDs = new Set(
+     semanticArtifactActive
+      ? this.guidedTourComponentIDs(this.semanticArtifactReferenceStep(semanticArtifact, semanticStep))
+      : []
+    );
    this.root.classList.toggle("has-selected-flow", hasFlow);
      this.landscapeButton.classList.toggle("is-active", !hasFlow);
      this.landscapeButton.textContent = hasFlow ? "← Back to architecture" : "Architecture";
@@ -2434,6 +2809,8 @@
    const relatedComponents = this.flowComponentIDs.get(flowID) || new Set();
     this.componentElements.forEach((node, id) => {
      node.classList.toggle("is-selected", id === this.selection.component);
+    node.classList.toggle("is-guided-tour-highlight", guidedComponentIDs.has(id));
+    node.classList.toggle("is-semantic-artifact-highlight", semanticComponentIDs.has(id));
     node.classList.toggle("is-unrelated", hasFlow && !relatedComponents.has(id));
      node.classList.toggle("is-flow-related", hasFlow && relatedComponents.has(id));
      node.classList.toggle("is-return-highlighted", !hasFlow && this.returnHighlightIDs.has(id));
@@ -2486,8 +2863,23 @@
   }
 
   renderInspector() {
-   const visible = this.hasInspectorSelection(this.selection);
+   const semanticArtifactActive = Boolean(this.semanticArtifact());
+   const selectedComponent = this.selection.component && this.componentByID.get(this.selection.component);
+   const lowInformationComponent = Boolean(
+    this.userMode && selectedComponent && !this.selection.surface && !this.selection.step && !this.selection.edge &&
+    !this.userComponentHasInspector(selectedComponent)
+   );
+   const visible = semanticArtifactActive || this.guidedTour.active ||
+    (this.hasInspectorSelection(this.selection) && !lowInformationComponent);
+    this.inspector.setAttribute(
+     "aria-label",
+     semanticArtifactActive ? "Repository explanation" : (this.guidedTour.active ? "Guided tour" : "Architecture inspector")
+    );
     this.root.classList.toggle("has-detail-inspector", visible);
+    this.root.classList.toggle(
+     "has-user-compact-inspector",
+     Boolean(this.userMode && visible && selectedComponent && !this.selection.surface && !this.selection.step && !this.selection.edge)
+    );
     this.inspector.hidden = !visible;
     this.drawerBackdrop.hidden = !visible;
     this.inspector.replaceChildren();
@@ -2497,6 +2889,8 @@
     close.setAttribute("aria-label", "Close inspector");
     this.listen(close, "click", () => this.closeInspector());
     this.inspector.appendChild(close);
+    if (semanticArtifactActive) return this.renderSemanticArtifactInspector();
+    if (this.guidedTour.active) return this.renderGuidedTourInspector();
    if (this.selection.step && this.selection.flow) {
     const step = this.flowStepsByKey.get(flowStepKey(this.selection.flow, this.selection.step));
     if (step) return this.inspectStep(this.flowByID.get(this.selection.flow), step);
@@ -2517,6 +2911,283 @@
    }
   }
 
+  renderSemanticArtifactInspector() {
+   const artifact = this.semanticArtifact();
+   const steps = this.semanticArtifactSteps(artifact);
+   const step = this.semanticArtifactStep();
+   if (!artifact || !step) return;
+
+   this.inspectorHeading(
+    this.guidedTourValueLabel(artifact.kind || "Repository explanation"),
+    artifact.title || artifact.question || "Repository explanation",
+    artifact.summary
+   );
+
+   const overview = this.inspectorSection("What this answers");
+   if (artifact.question) overview.appendChild(element("p", "rm-arch__copy", artifact.question));
+   this.appendKeyValue(overview, "Verdict", this.guidedTourValueLabel(artifact.verdict || "unknown"));
+   this.appendKeyValue(overview, "Confidence", this.guidedTourValueLabel(artifact.confidence || "unknown"));
+   const requiredAspects = array(artifact.required_answer_aspects);
+   if (requiredAspects.length > 0) {
+    this.appendKeyValue(
+     overview,
+     "Answer coverage",
+     array(artifact.covered_answer_aspects).length + "/" + requiredAspects.length + " aspects"
+    );
+   }
+   if (artifact.verdict === "insufficient_evidence") {
+    overview.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning",
+     "The saved facts do not support a complete answer. Verified observations and missing links are shown separately."
+    ));
+   }
+
+   const stepCard = element("section", "rm-arch__tour-step rm-arch__semantic-step");
+   stepCard.appendChild(element(
+    "div",
+    "rm-arch__tour-progress",
+    "Step " + (this.semanticNarrative.index + 1) + "/" + steps.length
+   ));
+   stepCard.appendChild(element("h4", "rm-arch__tour-step-title", step.title || "Explanation step"));
+   if (step.explanation) stepCard.appendChild(element("p", "rm-arch__copy", step.explanation));
+
+   const actions = element("div", "rm-arch__tour-actions");
+   const back = element("button", "rm-arch__tour-action", "Back");
+   back.type = "button";
+   back.disabled = this.semanticNarrative.index === 0;
+   this.listen(back, "click", () => this.moveSemanticArtifact(-1));
+   const next = element("button", "rm-arch__tour-action is-primary", "Next");
+   next.type = "button";
+   next.disabled = this.semanticNarrative.index === steps.length - 1;
+   this.listen(next, "click", () => this.moveSemanticArtifact(1));
+   const evidence = element("button", "rm-arch__tour-action", "Evidence");
+   evidence.type = "button";
+   this.listen(evidence, "click", () => {
+    const target = this.inspector.querySelector("[data-semantic-artifact-evidence]");
+    if (target && typeof target.scrollIntoView === "function") {
+     target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+   });
+   const fullMap = element("button", "rm-arch__tour-action is-quiet", "Full map");
+   fullMap.type = "button";
+   this.listen(fullMap, "click", () => this.finishSemanticArtifact(true));
+   actions.append(back, next, evidence, fullMap);
+   stepCard.appendChild(actions);
+   this.inspector.appendChild(stepCard);
+
+   const statementByID = new Map(
+    array(artifact.statements).filter(Boolean).map((statement) => [text(statement.id), statement])
+   );
+   const requestedStatementIDs = array(step.statement_ids).map(text).filter(Boolean);
+   const statements = (requestedStatementIDs.length > 0
+    ? requestedStatementIDs.map((statementID) => statementByID.get(statementID)).filter(Boolean)
+    : array(artifact.statements).filter(Boolean));
+   const statementsSection = this.inspectorSection("Claims in this step");
+   if (statements.length === 0) {
+    statementsSection.appendChild(element("p", "rm-arch__empty", "No materialized claim is attached to this step."));
+   }
+   statements.forEach((statement) => {
+    const basis = text(statement.basis || "unresolved");
+    const card = element(
+     "article",
+     "rm-arch__notice rm-arch__semantic-statement " +
+      (basis === "unresolved" || basis === "interpretive" ? "is-warning" : "is-info")
+    );
+    card.appendChild(element("span", "rm-arch__badge", this.guidedTourValueLabel(basis)));
+    card.appendChild(element("p", null, statement.text || "Untitled claim"));
+    const supportCount = array(statement.support_ids).length;
+    const sourceGroupCount = array(statement.source_groups).length;
+    if (supportCount || sourceGroupCount) {
+     card.appendChild(element(
+      "small",
+      "rm-arch__semantic-support",
+      [
+       supportCount ? supportCount + (supportCount === 1 ? " supporting fact" : " supporting facts") : "",
+       sourceGroupCount ? sourceGroupCount + (sourceGroupCount === 1 ? " evidence group" : " evidence groups") : "",
+      ].filter(Boolean).join(" · ")
+     ));
+    }
+    statementsSection.appendChild(card);
+   });
+
+   const referenceStep = this.semanticArtifactReferenceStep(artifact, step);
+   const references = this.inspectorSection("Related map objects");
+   this.appendGuidedTourReferences(references, referenceStep);
+
+   const evidenceSection = this.inspectorSection("Evidence");
+   evidenceSection.classList.add("rm-arch__tour-evidence");
+   evidenceSection.setAttribute("data-semantic-artifact-evidence", "true");
+   const evidenceItems = array(step.evidence).length > 0 ? step.evidence : artifact.evidence;
+   if (this.appendGuidedTourEvidence(evidenceSection, evidenceItems) === 0) {
+    evidenceSection.appendChild(element("p", "rm-arch__empty", "No exact evidence record is attached to this step."));
+   }
+
+   const unknowns = array(artifact.unknowns).map(text).filter(Boolean);
+   if (unknowns.length > 0) {
+    const gaps = this.inspectorSection("Known gaps");
+    unknowns.forEach((unknown) => {
+     gaps.appendChild(element("p", "rm-arch__notice is-warning", unknown));
+    });
+   }
+  }
+
+  guidedTourValueLabel(value) {
+   if (value && typeof value === "object") {
+    value = value.label || value.name || value.kind || value.id;
+   }
+   return text(value).replaceAll("_", " ");
+  }
+
+  guidedTourUsesEditorialOrder() {
+   const basis = text(this.guidedTourStory && this.guidedTourStory.ordering_basis).toLowerCase();
+   return basis.indexOf("editorial") >= 0;
+  }
+
+  renderGuidedTourInspector() {
+   const story = this.guidedTourStory;
+   const step = this.guidedTourStep();
+   if (!story || !step) return;
+
+   this.inspectorHeading("Guided tour", story.title || "Start here", story.summary);
+   const stepCard = element("section", "rm-arch__tour-step");
+   stepCard.appendChild(element(
+    "div",
+    "rm-arch__tour-progress",
+    "Step " + (this.guidedTour.index + 1) + "/" + this.guidedTourSteps.length
+   ));
+   stepCard.appendChild(element("h4", "rm-arch__tour-step-title", step.title || "Orientation step"));
+   if (step.explanation) stepCard.appendChild(element("p", "rm-arch__copy", step.explanation));
+   this.appendKeyValue(stepCard, "Story kind", this.guidedTourValueLabel(story.candidate_kind));
+   this.appendKeyValue(stepCard, "Ordering", this.guidedTourValueLabel(story.ordering_basis));
+   if (story.trigger) this.appendKeyValue(stepCard, "Starts when", story.trigger);
+   if (this.guidedTourUsesEditorialOrder()) {
+    stepCard.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning rm-arch__tour-disclaimer",
+     "This is an editorial reading order for orientation, not runtime order or observed execution."
+    ));
+   }
+
+   const actions = element("div", "rm-arch__tour-actions");
+   const back = element("button", "rm-arch__tour-action", "Back");
+   back.type = "button";
+   back.disabled = this.guidedTour.index === 0;
+   this.listen(back, "click", () => this.moveGuidedTour(-1));
+   const next = element("button", "rm-arch__tour-action is-primary", "Next");
+   next.type = "button";
+   next.disabled = this.guidedTour.index === this.guidedTourSteps.length - 1;
+   this.listen(next, "click", () => this.moveGuidedTour(1));
+   const evidence = element("button", "rm-arch__tour-action", "Evidence");
+   evidence.type = "button";
+   this.listen(evidence, "click", () => {
+    const target = this.inspector.querySelector("[data-guided-tour-evidence]");
+    if (target && typeof target.scrollIntoView === "function") {
+     target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+   });
+   const fullMap = element("button", "rm-arch__tour-action is-quiet", "Full map");
+   fullMap.type = "button";
+   this.listen(fullMap, "click", () => this.finishGuidedTour(true));
+   actions.append(back, next, evidence, fullMap);
+   stepCard.appendChild(actions);
+   this.inspector.appendChild(stepCard);
+
+   const references = this.inspectorSection("Related map objects");
+   this.appendGuidedTourReferences(references, step);
+
+   const evidenceSection = this.inspectorSection("Evidence");
+   evidenceSection.classList.add("rm-arch__tour-evidence");
+   evidenceSection.setAttribute("data-guided-tour-evidence", "true");
+   if (this.appendGuidedTourEvidence(evidenceSection, step.evidence) === 0) {
+    evidenceSection.appendChild(element("p", "rm-arch__empty", "No exact evidence record is attached to this step."));
+   }
+
+   const gapSummaries = array(story.gap_summary).filter((summary) => summary && typeof summary === "object");
+   if (gapSummaries.length > 0) {
+    const gapSection = this.inspectorSection("Known gaps");
+    gapSummaries.forEach((summary) => {
+     array(summary.gaps).forEach((gap) => {
+      if (!gap || typeof gap !== "object") return;
+      const card = element("article", "rm-arch__notice is-warning rm-arch__tour-gap");
+      card.appendChild(element("strong", null, gap.label || "Unresolved gap"));
+      if (summary.explanation) card.appendChild(element("p", null, summary.explanation));
+      if (gap.detail) card.appendChild(element("p", null, gap.detail));
+      this.appendGuidedTourEvidence(card, gap.evidence);
+      gapSection.appendChild(card);
+     });
+    });
+   }
+  }
+
+  appendGuidedTourReferences(parent, step) {
+   let count = 0;
+   this.guidedTourComponentIDs(step).forEach((componentID) => {
+    const component = this.componentByID.get(componentID);
+    if (!component) return;
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, component.name || component.id));
+    button.appendChild(element("span", null, "Component"));
+    this.listen(button, "click", () => this.openComponent(componentID));
+    parent.appendChild(button);
+    count++;
+   });
+
+   const surfaceIDs = new Set(array(step && step.surface_ids).map(text));
+   surfaceIDs.forEach((surfaceID) => {
+    const surface = this.surfaceByID.get(surfaceID);
+    if (!surface) return;
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, surface.name || surface.id));
+    button.appendChild(element("span", null, [surface.kind, surface.status].filter(Boolean).join(" · ") || "Surface"));
+    this.listen(button, "click", () => this.openSurface(surfaceID));
+    parent.appendChild(button);
+    count++;
+   });
+
+   const flowIDs = new Set(array(step && step.flow_ids).map(text));
+   flowIDs.forEach((flowID) => {
+    const flow = this.flowByID.get(flowID);
+    if (!flow) return;
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, flow.name || flow.id));
+    button.appendChild(element("span", null, [savedTraceLabel(flow.archetype), flow.status].filter(Boolean).join(" · ")));
+    this.listen(button, "click", () => this.openTrace(flowID));
+    parent.appendChild(button);
+    count++;
+
+    const flowStepIDs = new Set(array(step.flow_step_ids).map(text));
+    flowStepIDs.forEach((stepID) => {
+     const flowStep = this.flowStepsByKey.get(flowStepKey(flowID, stepID));
+     if (!flowStep) return;
+     parent.appendChild(this.stepJumpButton(flow, flowStep));
+     count++;
+    });
+   });
+
+   if (count === 0) {
+    parent.appendChild(element("p", "rm-arch__empty", "No referenced canvas object resolves in this report."));
+   }
+  }
+
+  appendGuidedTourEvidence(parent, evidenceItems) {
+   let count = 0;
+   array(evidenceItems).forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const card = element("article", "rm-arch__evidence-card rm-arch__tour-evidence-card");
+    card.appendChild(element("strong", "rm-arch__evidence-title", item.label || item.kind || item.id || "Evidence"));
+    if (item.kind) card.appendChild(element("span", "rm-arch__badge", this.guidedTourValueLabel(item.kind)));
+    if (item.id) card.appendChild(element("code", "rm-arch__member-id", item.id));
+    this.appendLocation(card, item.location || (item.path ? item : null), "Exact source");
+    parent.appendChild(card);
+    count++;
+   });
+   return count;
+  }
+
   inspectorHeading(kind, title, subtitle) {
    this.inspector.appendChild(element("div", "rm-arch__inspector-kicker", kind));
    this.inspector.appendChild(element("h3", "rm-arch__inspector-title", title));
@@ -2530,7 +3201,214 @@
    return section;
   }
 
+  userComponentContext(component) {
+   if (!component || !component.id) return null;
+   const context = this.componentContexts[text(component.id)];
+   return context && typeof context === "object" ? context : null;
+  }
+
+  userComponentActions(component) {
+   const context = this.userComponentContext(component);
+   if (!context) return [];
+   const actions = [];
+   if (typeof this.options.openSourceLocation === "function") {
+    const source = array(context.sources).find((candidate) => candidate && locationLabel(candidate.location));
+    if (source) actions.push({ kind: "source", value: source });
+   }
+   if (typeof this.options.openStudyDirection === "function") {
+    array(context.studies).forEach((study) => {
+     if (actions.length >= 3 || !study || !text(study.id) || !text(study.question)) return;
+     actions.push({ kind: "study", value: study });
+    });
+   }
+   return actions.slice(0, 3);
+  }
+
+  userComponentHasInspector(component) {
+   return this.userComponentActions(component).length > 0;
+  }
+
+  inspectUserComponent(component) {
+   const subsystem = this.subsystemByID.get(text(component.subsystem_id));
+   const context = this.userComponentContext(component);
+   const actions = this.userComponentActions(component);
+   if (!context || actions.length === 0) return;
+   this.inspectorHeading("Code area", component.name || "Repository component", component.description);
+
+   if (subsystem && subsystem.name) {
+    const areaSection = this.inspectorSection("Repository area");
+    areaSection.appendChild(element("p", "rm-arch__copy", subsystem.name));
+   }
+
+   if (array(context.package_paths).length > 0) {
+    const packages = this.inspectorSection("Package");
+    array(context.package_paths).slice(0, 2).forEach((packagePath) => {
+     packages.appendChild(element("code", "rm-arch__compact-package", packagePath));
+    });
+    if (Number(context.file_count) > 0) {
+     packages.appendChild(element(
+      "p",
+      "rm-arch__compact-meta",
+      context.file_count + " repository file" + (Number(context.file_count) === 1 ? "" : "s")
+     ));
+    }
+   }
+
+   const sourceActions = actions.filter((action) => action.kind === "source");
+   if (sourceActions.length > 0) {
+    const sourceSection = this.inspectorSection("Start in code");
+    sourceActions.forEach((action) => {
+     const source = action.value;
+     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+     button.type = "button";
+     button.appendChild(element("strong", null, source.detail || source.label || "Open code"));
+     button.appendChild(element("span", null, locationLabel(source.location)));
+     this.listen(button, "click", () => this.options.openSourceLocation(source.location));
+     sourceSection.appendChild(button);
+    });
+   }
+
+   const studyActions = actions.filter((action) => action.kind === "study");
+   if (studyActions.length > 0) {
+    const studySection = this.inspectorSection("Reading paths");
+    studyActions.forEach((action) => {
+     const study = action.value;
+     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+     button.type = "button";
+     button.appendChild(element("strong", null, study.question));
+     button.appendChild(element("span", null, "Open reading path"));
+     this.listen(button, "click", () => this.options.openStudyDirection(study.id));
+     studySection.appendChild(button);
+    });
+   }
+  }
+
+  inspectUserSurface(surface) {
+   this.inspectorHeading("Runtime surface", surface.name || surface.kind || "Runtime surface", "Where the repository exposes this entry point.");
+   const owner = this.componentByID.get(text(surface.owning_component_id));
+   if (owner && owner.name) {
+    const section = this.inspectorSection("Code area");
+    const button = element("button", "rm-arch__edge-jump", owner.name);
+    button.type = "button";
+    this.listen(button, "click", () => this.openComponent(owner.id));
+    section.appendChild(button);
+   }
+   const locations = array(surface.evidence).filter((location) => locationLabel(location));
+   if (locations.length > 0 || surface.owning_executable) {
+    const section = this.inspectorSection("Code");
+    this.appendKeyValue(section, "Executable", surface.owning_executable);
+    locations.forEach((location) => this.appendLocation(section, location, "Open code"));
+   }
+   const flow = this.flowByID.get(text(surface.related_saved_trace_id));
+   if (flow) {
+    const section = this.inspectorSection("Code path");
+    const button = element("button", "rm-arch__edge-jump", flow.name || "Source-backed code path");
+    button.type = "button";
+    this.listen(button, "click", () => this.openTrace(flow.id));
+    section.appendChild(button);
+   }
+  }
+
+  appendUserFlowEvidence(parent, flow) {
+   this.appendKeyValue(parent, "Starts when", flow.trigger);
+   this.appendKeyValue(parent, "Command", flow.command);
+   this.appendKeyValue(parent, "Scope", flow.scope);
+   const steps = array(flow.steps);
+   if (steps.length === 0) return;
+   const section = element("section", "rm-arch__inspector-section");
+   section.appendChild(element("h4", "rm-arch__inspector-section-title", "Implementation steps"));
+   steps.forEach((step) => {
+    const button = element("button", "rm-arch__edge-jump");
+    button.type = "button";
+    button.appendChild(element("strong", null, step.label || step.qualified_name || "Code step"));
+    const detail = [step.qualified_name, locationLabel(step.location)].filter(Boolean).join(" · ");
+    if (detail) button.appendChild(element("span", null, detail));
+    this.listen(button, "click", () => this.setSelection({
+     flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
+    }, true));
+    section.appendChild(button);
+   });
+   parent.appendChild(section);
+  }
+
+  inspectUserFlow(flow) {
+   this.inspectorHeading(
+    "Code path",
+    flow.name || "Source-backed code path",
+    flow.mental_model || flow.goal || flow.why_inspect
+   );
+   this.appendUserFlowEvidence(this.inspector, flow);
+  }
+
+  inspectUserStep(flow, step) {
+   const title = step.label || step.qualified_name || "Code step";
+   const subtitle = step.qualified_name && step.qualified_name !== title ? step.qualified_name : "";
+   this.inspectorHeading("Implementation step", title, subtitle);
+   const component = this.componentByID.get(text(step.component_id));
+   if (component && component.name) {
+    const section = this.inspectorSection("Code area");
+    const button = element("button", "rm-arch__edge-jump", component.name);
+    button.type = "button";
+    this.listen(button, "click", () => this.openComponent(component.id));
+    section.appendChild(button);
+   }
+   const locations = [step.location, step.binding && step.binding.location].filter((location) => locationLabel(location));
+   if (locations.length > 0) {
+    const source = this.inspectorSection("Source");
+    this.appendLocation(source, step.location, "Open code");
+    if (step.binding) this.appendLocation(source, step.binding.location, "Binding code");
+   }
+  }
+
+  inspectUserFlowEdge(edge) {
+   const source = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.from));
+   const target = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.to));
+   const sourceName = source && (source.label || source.qualified_name);
+   const targetName = target && (target.label || target.qualified_name);
+   this.inspectorHeading(
+    "Code transition",
+    relationLabel(edge.relation),
+    sourceName && targetName ? sourceName + " → " + targetName : ""
+   );
+   const locations = [edge.evidence, source && source.location, target && target.location]
+    .filter((location) => locationLabel(location));
+   if (locations.length > 0) {
+    const code = this.inspectorSection("Source");
+    this.appendLocation(code, edge.evidence, "Call site");
+    if (source) this.appendLocation(code, source.location, "From");
+    if (target) this.appendLocation(code, target.location, "To");
+   }
+   if (edge.condition && (edge.condition.expression || locationLabel(edge.condition.location))) {
+    const condition = this.inspectorSection("Condition");
+    if (edge.condition.expression) {
+     condition.appendChild(element("code", "rm-arch__condition", edge.condition.expression));
+    }
+    this.appendLocation(condition, edge.condition.location, "Open condition");
+   }
+  }
+
+  inspectUserStructuralEdge(edge) {
+   const from = this.componentByID.get(text(edge.from_component_id));
+   const to = this.componentByID.get(text(edge.to_component_id));
+   const witness = edge.witness || {};
+   const fromName = from && from.name;
+   const toName = to && to.name;
+   this.inspectorHeading(
+    "Code relation",
+    witness.kind || "Source-backed relation",
+    fromName && toName ? fromName + " → " + toName : ""
+   );
+   if (locationLabel(witness.location)) {
+    const source = this.inspectorSection("Source");
+    this.appendLocation(source, witness.location, "Open code");
+   }
+  }
+
   inspectLandscape() {
+   if (this.userMode) {
+    this.inspectorHeading("Architecture", "Explore the repository map", "Select a code area, runtime surface, or source-backed code path.");
+    return;
+   }
    const hasFlows = this.flows.length > 0;
    this.inspectorHeading(
     "Architecture",
@@ -2554,6 +3432,7 @@
   }
 
   inspectComponent(component) {
+   if (this.userMode) return this.inspectUserComponent(component);
    const subsystem = this.subsystemByID.get(text(component.subsystem_id));
    this.inspectorHeading("Component", component.name || component.id, component.description);
    const purpose = this.inspectorSection("Purpose and grounding");
@@ -2671,6 +3550,7 @@
   }
 
   inspectSurface(surface) {
+   if (this.userMode) return this.inspectUserSurface(surface);
    this.inspectorHeading("Surface", surface.name || surface.id, "Deterministic registration/start evidence; runtime execution was not observed.");
    const ownership = this.inspectorSection("Ownership");
    this.appendKeyValue(ownership, "Executable", surface.owning_executable || "Unassigned");
@@ -2706,11 +3586,13 @@
   }
 
   inspectFlow(flow) {
+   if (this.userMode) return this.inspectUserFlow(flow);
    this.inspectorHeading("Saved trace", flow.name || flow.id, flow.why_inspect || flow.mental_model || flow.goal);
    this.appendFlowEvidence(this.inspector, flow);
   }
 
   inspectStep(flow, step) {
+   if (this.userMode) return this.inspectUserStep(flow, step);
    const branch = this.flowBranch(flow.id, step.branch_id);
    this.inspectorHeading("Flow step", step.label || step.id, step.qualified_name);
    this.appendKeyValue(this.inspector, "Flow", flow.name || flow.id);
@@ -2733,6 +3615,7 @@
   }
 
   inspectFlowEdge(edge) {
+   if (this.userMode) return this.inspectUserFlowEdge(edge);
    this.inspectorHeading("Flow transition", edge.relation || edge.id, text(edge.from) + " → " + text(edge.to));
    this.appendKeyValue(this.inspector, "Flow", edge.flow_id);
    this.appendKeyValue(this.inspector, "Resolution", edge.resolution);
@@ -2759,6 +3642,7 @@
   }
 
   inspectStructuralEdge(edge) {
+   if (this.userMode) return this.inspectUserStructuralEdge(edge);
    const from = this.componentByID.get(text(edge.from_component_id));
    const to = this.componentByID.get(text(edge.to_component_id));
    const witness = edge.witness || {};
@@ -2791,6 +3675,13 @@
 
   appendFact(parent, fact) {
    if (!fact) return;
+   if (this.userMode) {
+    const block = element("div", "rm-arch__fact");
+    if (fact.value) block.appendChild(element("span", "rm-arch__fact-value", fact.value));
+    this.appendLocation(block, fact.location, "Open code");
+    if (block.childElementCount > 0) parent.appendChild(block);
+    return;
+   }
    const block = element("div", "rm-arch__fact");
    const heading = element("div", "rm-arch__fact-heading");
    heading.appendChild(element("span", "rm-arch__badge", fact.kind || "fact"));
@@ -2804,6 +3695,14 @@
 
   appendKeyValue(parent, key, value) {
    if (value == null || value === "") return;
+   if (this.userMode) {
+    const internalKeys = [
+     "answer coverage", "architecture anchors", "architecture source", "certainty", "current frontier",
+     "derived verdict", "evidence basis", "grounding", "grounding mode", "model", "model verdict",
+     "provider", "resolution", "status", "trace quality", "verdict",
+    ];
+    if (internalKeys.indexOf(text(key).toLowerCase()) >= 0) return;
+   }
    const row = element("div", "rm-arch__key-value");
    row.appendChild(element("span", "rm-arch__key", key));
    row.appendChild(element("span", "rm-arch__value", value));
@@ -2812,6 +3711,10 @@
 
   appendSummaryItem(parent, key, value) {
    if (value == null || value === "") return;
+   if (this.userMode) {
+    const internalKeys = ["current frontier", "evidence basis", "proof coverage", "status", "verdict"];
+    if (internalKeys.indexOf(text(key).toLowerCase()) >= 0) return;
+   }
    const row = element("div");
    row.appendChild(element("dt", null, key));
    row.appendChild(element("dd", null, value));
@@ -2833,12 +3736,13 @@
     row.appendChild(element("code", "rm-arch__location-text", formatted));
    }
     parent.appendChild(row);
-    if (this.options.stalePaths && this.options.stalePaths.has && this.options.stalePaths.has(text(location.path))) {
+    if (!this.userMode && this.options.stalePaths && this.options.stalePaths.has && this.options.stalePaths.has(text(location.path))) {
      parent.appendChild(element("p", "rm-arch__source-warning", "Source changed since this report was generated"));
     }
   }
 
   appendProvenance(parent, provenanceItems) {
+   if (this.userMode) return;
    const items = array(provenanceItems);
    if (items.length === 0) return;
    const details = element("details", "rm-arch__details");
@@ -2858,6 +3762,7 @@
   }
 
   appendScenarios(parent, scenarios) {
+   if (this.userMode) return;
    const items = array(scenarios);
    if (items.length === 0) return;
    const details = element("details", "rm-arch__details");
@@ -2876,6 +3781,7 @@
   }
 
   appendDiagnostics(parent, flowID) {
+   if (this.userMode) return;
    const diagnostics = this.diagnostics.filter((diagnostic) => !flowID || text(diagnostic.flow_id) === flowID);
    if (diagnostics.length === 0) {
     parent.appendChild(element("p", "rm-arch__empty", "No saved diagnostics."));
@@ -2905,8 +3811,11 @@
    ready: ready,
    fit: () => app.fit(),
    openTrace: (flowID) => app.openTrace(flowID),
+   openFlowStep: (flowID, stepID) => app.openFlowStep(flowID, stepID),
    openSurface: (surfaceID) => app.openSurface(surfaceID),
    openComponent: (componentID) => app.openComponent(componentID),
+   openSemanticArtifact: (artifactID, index) => app.openSemanticArtifact(artifactID, index),
+   openGuidedTourStep: (index) => app.openGuidedTourStep(index),
    destroy: () => app.destroy(),
   });
  }
