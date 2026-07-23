@@ -17,10 +17,14 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/orient"
+	"github.com/dvordrova/repomap/internal/pavedpath"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
+	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
 func main() {
@@ -45,7 +49,7 @@ func main() {
 	}
 
 	// repomap <repo> [flags]
-	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "serve" && os.Args[1] != "dev" {
+	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "investigate" && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "serve" && os.Args[1] != "dev" {
 		if err := runDefault(os.Args[1], os.Args[2:]); err != nil {
 			writeDefaultRunError(os.Stderr, err)
 			os.Exit(defaultRunExitCode(err))
@@ -63,6 +67,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "investigate":
+		if err := runInvestigate(os.Args[2:], investigateDependencies{}); err != nil {
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
+		}
 	case "serve":
 		if err := runServe(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -80,10 +89,15 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> | prompt-versions")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
+		case "v32-refresh":
+			if err := runV32RefreshCLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		case "render-report":
 			if len(os.Args) < 4 {
 				fmt.Fprintf(os.Stderr, "Usage: repomap dev render-report <.repomap-runs/<run-id>>\n")
@@ -93,12 +107,102 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
+		case "fresh-repo-onboarding":
+			if err := runFreshRepoOnboardingCLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		case "prompt-versions":
 			if len(os.Args) != 3 {
 				fmt.Fprintln(os.Stderr, "Usage: repomap dev prompt-versions")
 				os.Exit(2)
 			}
 			printPromptVersions(os.Stdout)
+		case "guided-tour":
+			if len(os.Args) != 4 {
+				fmt.Fprintln(os.Stderr, "Usage: repomap dev guided-tour <run-dir>")
+				os.Exit(2)
+			}
+			if err := runGuidedTour(os.Args[3], os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "guided-tour-experiment":
+			if len(os.Args) != 4 {
+				fmt.Fprintln(os.Stderr, "Usage: repomap dev guided-tour-experiment <run-dir>")
+				os.Exit(2)
+			}
+			if err := runGuidedTourExperiment(os.Args[3], os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "guided-tour-fanout":
+			if len(os.Args) != 4 {
+				fmt.Fprintln(os.Stderr, "Usage: repomap dev guided-tour-fanout <run-dir>")
+				os.Exit(2)
+			}
+			if err := runGuidedTourFanout(os.Args[3], os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "semantic-discovery":
+			if len(os.Args) != 4 {
+				fmt.Fprintln(os.Stderr, "Usage: repomap dev semantic-discovery <run-dir>")
+				os.Exit(2)
+			}
+			if err := runSemanticDiscovery(os.Args[3], os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "semantic-discovery-experiment":
+			if len(os.Args) != 4 {
+				fmt.Fprintln(os.Stderr, "Usage: repomap dev semantic-discovery-experiment <run-dir>")
+				os.Exit(2)
+			}
+			if err := runSemanticDiscoveryExperiment(os.Args[3], os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "golden-mechanism":
+			if err := runGoldenMechanismCLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "golden-mechanism-v01":
+			if err := runGoldenMechanismV01CLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "golden-mechanism-v02":
+			if err := runGoldenMechanismV02CLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "golden-mechanism-v03":
+			if err := runGoldenMechanismV03CLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "golden-mechanism-v1":
+			if err := runGoldenMechanismV1CLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "mechanism-v1":
+			if err := runMechanismV1CLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "chi-request-dispatch":
+			if err := runChiRequestDispatchCLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "review-cockpit":
+			if err := runReviewCockpitCLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		default:
 			fmt.Fprintf(os.Stderr, "unknown dev command: %s\n", os.Args[2])
 			os.Exit(2)
@@ -127,11 +231,25 @@ func defaultRunExitCode(err error) int {
 func printPromptVersions(writer io.Writer) {
 	fmt.Fprintf(
 		writer,
-		"{\"orientation_json\":%q,\"source_json\":%q,\"symbol_json\":%q,\"symbol_tagged\":%q}\n",
+		"{\"orientation_json\":%q,\"source_json\":%q,\"symbol_json\":%q,\"symbol_tagged\":%q,\"guided_tour\":%q,\"guided_tour_leaf\":%q,\"guided_tour_fan_in\":%q,\"semantic_opportunity\":%q,\"semantic_leaf\":%q,\"semantic_fan_in\":%q,\"semantic_monolithic\":%q,\"golden_mechanism\":%q,\"repository_onboarding_editor\":%q,\"repository_brief_shape\":%q,\"study_direction_candidates\":%q,\"reading_pack_review\":%q,\"paved_paths\":%q,\"task_investigation\":%q}\n",
 		deepseek.OrientationPromptVersionJSON,
 		deepseek.SourcePromptVersionJSON,
 		deepseek.SymbolPromptVersionJSON,
 		deepseek.SymbolPromptVersionTagged,
+		guidedtour.PromptVersion,
+		guidedtour.LeafPromptVersion,
+		guidedtour.FanInPromptVersion,
+		semanticdiscovery.OpportunityPromptVersion,
+		semanticdiscovery.LeafPromptVersion,
+		semanticdiscovery.FanInPromptVersion,
+		semanticdiscovery.MonolithicPromptVersion,
+		semanticdiscovery.GoldenMechanismPromptVersion,
+		semanticdiscovery.OnboardingEditorPromptVersion,
+		semanticdiscovery.StudyBriefPromptVersion,
+		semanticdiscovery.StudyCandidatesPromptVersion,
+		semanticdiscovery.ReadingPackReviewPromptVersion,
+		pavedpath.PromptVersion,
+		tasklens.PromptVersion,
 	)
 }
 
@@ -171,6 +289,21 @@ func writeProgress(writer io.Writer, event orient.ProgressEvent) {
 		)
 	case orient.ProgressSurfaceStarted:
 		fmt.Fprintln(writer, "repomap: discovering local Go runtime surfaces")
+	case orient.ProgressSurfacePhase:
+		elapsed := (time.Duration(event.LatencyMillis) * time.Millisecond).Round(time.Second)
+		switch event.PhaseState {
+		case "started":
+			fmt.Fprintf(writer, "repomap: surface discovery phase %s: %s\n", event.Phase, event.Activity)
+		case "completed":
+			fmt.Fprintf(writer, "repomap: surface discovery phase %s completed in %d ms", event.Phase, event.LatencyMillis)
+			if event.TotalCount > 0 {
+				fmt.Fprintf(writer, " (%d/%d)", event.CompletedCount, event.TotalCount)
+			}
+			fmt.Fprintln(writer)
+		default:
+			fmt.Fprintf(writer, "repomap: surface discovery phase %s: %d/%d after %s\n",
+				event.Phase, event.CompletedCount, event.TotalCount, elapsed)
+		}
 	case orient.ProgressSurfaceWaiting, orient.ProgressPlanningWaiting:
 		fmt.Fprintf(
 			writer,
@@ -283,7 +416,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	jsonOut := fs.Bool("json", false, "print combined JSON report instead of text")
 	offline := fs.Bool("offline", false, "skip model calls, build local facts/bundles only")
 	flows := fs.Int("flows", 0, "number of top candidate directions to expand after orientation")
-	discoverSurfaces := fs.Bool("discover-surfaces", true, "discover bounded Go runtime surfaces for the report")
+	discoverSurfaces := fs.Bool("discover-surfaces", false, "discover bounded Go runtime surfaces for the report")
+	guidedTour := fs.Bool("guided-tour", true, "add an optional model-edited guided tour to the existing architecture map")
+	noSearch := fs.Bool("no-search", false, "omit Super Search from the generated report")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
@@ -387,6 +522,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			Offline:          *offline,
 			FlowCount:        *flows,
 			DiscoverSurfaces: *discoverSurfaces && artifactRun,
+			GuidedTour:       *guidedTour && !*offline,
+			NoSearch:         *noSearch,
 			DumpLLM:          *dumpLLM,
 			OutputJSON:       *jsonOut,
 			PreviewRequest:   *previewRequest,
@@ -421,6 +558,126 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					return ctxErr
 				}
 				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable (after %d ms)\n", err, time.Since(architectureStarted).Milliseconds())
+			}
+		}
+		if !*offline && *guidedTour {
+			guidedStarted := time.Now()
+			fmt.Fprintln(deps.stderr, "repomap: editing one bounded onboarding story from saved facts")
+			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if guidedErr != nil {
+				fmt.Fprintf(
+					deps.stderr,
+					"warning: %v; report will keep the full architecture map without a guided tour (after %d ms)\n",
+					guidedErr,
+					time.Since(guidedStarted).Milliseconds(),
+				)
+			} else if outcome.Cached {
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: reused cached guided tour response of %d bytes for a %d-byte request\n",
+					outcome.ResponseBytes,
+					outcome.RequestBytes,
+				)
+			} else {
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: guided tour accepted %d response bytes from a %d-byte request in %d ms (%s)\n",
+					outcome.ResponseBytes,
+					outcome.RequestBytes,
+					outcome.LatencyMillis,
+					formatTokenUsage(outcome.InputTokens, outcome.OutputTokens),
+				)
+			}
+		}
+		if !*offline {
+			semanticStarted := time.Now()
+			fmt.Fprintln(deps.stderr, "repomap: selecting bounded source-backed onboarding paths from saved facts")
+			freshResult, semanticErr := editFreshRepoMechanismForRun(
+				ctx,
+				runDir,
+				repo,
+				deps.stderr,
+			)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if semanticErr != nil {
+				fmt.Fprintf(
+					deps.stderr,
+					"warning: %v; report will keep its code-first fallback (after %d ms)\n",
+					semanticErr,
+					time.Since(semanticStarted).Milliseconds(),
+				)
+			} else if freshResult.Status.State == "published" {
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: published %d canonical onboarding path(s) from %d proposed question(s) and %d candidate probe(s) in %d ms\n",
+					len(freshResult.Status.PublishedMechanisms),
+					freshResult.Status.QuestionsProposed,
+					len(freshResult.Status.Attempts),
+					time.Since(semanticStarted).Milliseconds(),
+				)
+			} else {
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: no bounded mechanism passed local publication checks; keeping the code-first fallback (after %d ms)\n",
+					time.Since(semanticStarted).Milliseconds(),
+				)
+			}
+		}
+		if !*offline {
+			studyStarted := time.Now()
+			fmt.Fprintln(deps.stderr, "repomap: editing a bounded repository brief and study map")
+			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if studyErr != nil {
+				fmt.Fprintf(
+					deps.stderr,
+					"warning: %v; report will keep its existing overview and code paths (after %d ms)\n",
+					studyErr,
+					time.Since(studyStarted).Milliseconds(),
+				)
+			} else {
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: selected %d source-backed study direction(s) from %d proposed candidate(s) in %d ms (%s)\n",
+					studyStatus.Selected,
+					studyStatus.Candidates,
+					time.Since(studyStarted).Milliseconds(),
+					formatTokenUsage(studyStatus.Metrics.InputTokens, studyStatus.Metrics.OutputTokens),
+				)
+			}
+		}
+		if !*offline {
+			operateStarted := time.Now()
+			fmt.Fprintln(deps.stderr, "repomap: collecting exact repository-owned ways to run and verify")
+			operateStatus, operateErr := editPavedPathsForRun(ctx, runDir, repo, deps.stderr)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if operateErr != nil {
+				fmt.Fprintf(
+					deps.stderr,
+					"warning: %v; report will keep %d exact operational landmark(s) when available (after %d ms)\n",
+					operateErr,
+					operateStatus.Landmarks,
+					time.Since(operateStarted).Milliseconds(),
+				)
+			} else {
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: published %d paved path(s) and %d exact operational landmark(s) from %d bounded item(s) in %d ms (%s)\n",
+					operateStatus.Paths,
+					operateStatus.Landmarks,
+					operateStatus.Evidence,
+					time.Since(operateStarted).Milliseconds(),
+					formatTokenUsage(operateStatus.Metrics.InputTokens, operateStatus.Metrics.OutputTokens),
+				)
 			}
 		}
 		reconciliationStarted := time.Now()
@@ -478,6 +735,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				fmt.Fprintf(deps.stderr, "repomap: "+format+"\n", args...)
 			},
 			OnReady: func(url string) error {
+				url = reportOverviewURL(url)
 				fmt.Fprintf(deps.stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
 				if !*noOpen && deps.openReport != nil {
 					if err := deps.openReport(url); err != nil {
@@ -530,6 +788,7 @@ func runServe(args []string) error {
 			fmt.Fprintf(os.Stderr, "repomap: "+format+"\n", args...)
 		},
 		OnReady: func(url string) error {
+			url = reportOverviewURL(url)
 			fmt.Fprintf(os.Stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
 			if !*noOpen {
 				if err := openReport(url); err != nil {
@@ -770,6 +1029,11 @@ func repoRunLabel(repo string) string {
 	return filepath.Base(filepath.Clean(repo))
 }
 
+func reportOverviewURL(location string) string {
+	base, _, _ := strings.Cut(location, "#")
+	return base + "#/overview"
+}
+
 func runRenderReport(runDir string) error {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
@@ -782,8 +1046,32 @@ func runRenderReport(runDir string) error {
 	return nil
 }
 
+func runGuidedTour(runDir string, stderr io.Writer) error {
+	absDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	outcome, err := editGuidedTourForRun(ctx, absDir, stderr)
+	if err != nil {
+		return err
+	}
+	if err := report.Generate(absDir); err != nil {
+		return err
+	}
+	if outcome.Cached {
+		fmt.Fprintf(stderr, "repomap: reused cached guided tour (%d response bytes)\n", outcome.ResponseBytes)
+	} else {
+		fmt.Fprintf(stderr, "repomap: guided tour accepted in %d ms\n", outcome.LatencyMillis)
+	}
+	fmt.Printf("Report: %s/report.html\n", absDir)
+	return nil
+}
+
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: repomap [repo] [flags]\n")
+	fmt.Fprintf(os.Stderr, "       repomap investigate <repo> --task-file <task.md> [flags]\n")
 	fmt.Fprintf(os.Stderr, "       repomap doctor llm [--check]\n")
 	fmt.Fprintf(os.Stderr, "       repomap serve [--run RUN_ID] [--port PORT]\n")
 	fmt.Fprintf(os.Stderr, "       repomap orient --repo <repo> [flags]\n")
@@ -791,7 +1079,9 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --json          output JSON instead of text\n")
 	fmt.Fprintf(os.Stderr, "  --offline       skip model calls, local facts only\n")
 	fmt.Fprintf(os.Stderr, "  --flows N       expand top N directions after orientation (default 0)\n")
-	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default true)\n")
+	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default false)\n")
+	fmt.Fprintf(os.Stderr, "  --guided-tour   add an optional guided tour to the architecture map (default true)\n")
+	fmt.Fprintf(os.Stderr, "  --no-search     omit Super Search from the generated report\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")
 	fmt.Fprintf(os.Stderr, "  --no-serve      generate a static report without starting the local server\n")

@@ -212,6 +212,9 @@ func validateEndpoint(endpoint string) error {
 	if parsed.User != nil {
 		return fmt.Errorf("userinfo is not allowed")
 	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("query and fragment are not allowed")
+	}
 	return nil
 }
 
@@ -224,12 +227,13 @@ type thinkingConfig struct {
 }
 
 type chatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []chatMessage   `json:"messages"`
-	Temperature    float64         `json:"temperature"`
-	MaxTokens      int             `json:"max_tokens"`
-	ResponseFormat *jsonFormat     `json:"response_format,omitempty"`
-	Thinking       *thinkingConfig `json:"thinking,omitempty"`
+	Model           string          `json:"model"`
+	Messages        []chatMessage   `json:"messages"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	MaxTokens       int             `json:"max_tokens"`
+	ResponseFormat  *jsonFormat     `json:"response_format,omitempty"`
+	Thinking        *thinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 }
 
 type chatMessage struct {
@@ -246,6 +250,8 @@ type chatResponse struct {
 	Usage struct {
 		PromptTokens           int `json:"prompt_tokens"`
 		CompletionTokens       int `json:"completion_tokens"`
+		PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens"`
+		PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens"`
 		CompletionTokenDetails struct {
 			ReasoningTokens int `json:"reasoning_tokens"`
 		} `json:"completion_tokens_details"`
@@ -348,7 +354,7 @@ Facts bundle JSON:
 ` + string(bundleJSON),
 			},
 		},
-		Temperature:    0.1,
+		Temperature:    float64Pointer(0.1),
 		MaxTokens:      c.MaxTokens,
 		ResponseFormat: &jsonFormat{Type: "json_object"},
 	}
@@ -376,13 +382,17 @@ func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode 
 			{Role: "system", Content: systemContent},
 			{Role: "user", Content: userContent},
 		},
-		Temperature: 0.1,
+		Temperature: float64Pointer(0.1),
 		MaxTokens:   c.MaxTokens,
 	}
 	if jsonMode {
 		request.ResponseFormat = &jsonFormat{Type: "json_object"}
 	}
 	return request
+}
+
+func float64Pointer(value float64) *float64 {
+	return &value
 }
 
 func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
@@ -422,6 +432,8 @@ func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (mod
 			return modelresearch.ProviderResult{
 				Content: completion.Content, Attempts: attempt + 1,
 				InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
+				PromptCacheHitTokens:  completion.PromptCacheHitTokens,
+				PromptCacheMissTokens: completion.PromptCacheMissTokens,
 			}, nil
 		}
 		lastErr = callErr
@@ -529,6 +541,8 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 			return modelresearch.ProviderResult{
 				Content: result.Content, Attempts: attempt + 1,
 				InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+				PromptCacheHitTokens:  result.PromptCacheHitTokens,
+				PromptCacheMissTokens: result.PromptCacheMissTokens,
 			}, nil
 		}
 		lastErr = err
@@ -586,9 +600,11 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 }
 
 type chatCompletion struct {
-	Content      []byte
-	InputTokens  int
-	OutputTokens int
+	Content               []byte
+	InputTokens           int
+	OutputTokens          int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
 }
 
 func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) (chatCompletion, bool, error) {
@@ -640,8 +656,14 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return chatCompletion{}, false, fmt.Errorf("parse llm response envelope: %w", err)
 	}
+	completion := chatCompletion{
+		InputTokens:           parsed.Usage.PromptTokens,
+		OutputTokens:          parsed.Usage.CompletionTokens,
+		PromptCacheHitTokens:  parsed.Usage.PromptCacheHitTokens,
+		PromptCacheMissTokens: parsed.Usage.PromptCacheMissTokens,
+	}
 	if len(parsed.Choices) == 0 {
-		return chatCompletion{}, false, fmt.Errorf("llm response contains no choices")
+		return completion, false, fmt.Errorf("llm response contains no choices")
 	}
 	choice := parsed.Choices[0]
 	content := strings.TrimSpace(choice.Message.Content)
@@ -662,22 +684,20 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			details = append(details, "reasoning_content_present")
 		}
 		if len(details) > 0 {
-			return chatCompletion{}, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
+			return completion, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
 		}
-		return chatCompletion{}, false, fmt.Errorf("llm response content is empty")
+		return completion, false, fmt.Errorf("llm response content is empty")
 	}
 
 	if validateJSON {
 		var validate json.RawMessage
 		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			return chatCompletion{}, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
+			return completion, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
 		}
 	}
 
-	return chatCompletion{
-		Content: []byte(content), InputTokens: parsed.Usage.PromptTokens,
-		OutputTokens: parsed.Usage.CompletionTokens,
-	}, false, nil
+	completion.Content = []byte(content)
+	return completion, false, nil
 }
 
 func knownFinishReason(reason string) string {

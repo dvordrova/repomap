@@ -1,7 +1,9 @@
 package gitfiles
 
 import (
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -26,5 +28,35 @@ func TestSplitNull(t *testing.T) {
 				t.Fatalf("splitNull(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsolatedEnvironmentDropsGitConfigInjectionAndNeutralizesGlobalConfig(t *testing.T) {
+	got := strings.Join(isolatedEnvironment([]string{
+		"PATH=/usr/bin",
+		"GIT_CONFIG=/tmp/injected",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.bare",
+		"GIT_CONFIG_VALUE_0=true",
+		"GIT_CONFIG_PARAMETERS='core.worktree'='/tmp/other'",
+		"GIT_CONFIG_GLOBAL=/tmp/global",
+		"GIT_CONFIG_SYSTEM=/tmp/system",
+	}), "\n")
+	for _, forbidden := range []string{
+		"GIT_CONFIG=/tmp/injected", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=",
+		"GIT_CONFIG_VALUE_0=", "GIT_CONFIG_PARAMETERS=", "GIT_CONFIG_GLOBAL=/tmp/global",
+		"GIT_CONFIG_SYSTEM=/tmp/system",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("isolated environment retained %q: %q", forbidden, got)
+		}
+	}
+	for _, required := range []string{
+		"PATH=/usr/bin", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
+	} {
+		if !strings.Contains(got, required) {
+			t.Fatalf("isolated environment lacks %q: %q", required, got)
+		}
 	}
 }

@@ -33,7 +33,10 @@ func TestWriteArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(markdown), "/health") || !strings.Contains(string(markdown), "not a runtime trace") ||
-		!strings.Contains(string(markdown), "trace readiness `trace_ready`") {
+		!strings.Contains(string(markdown), "trace readiness `trace_ready`") ||
+		!strings.Contains(string(markdown), "## Discovery phases") ||
+		!strings.Contains(string(markdown), "`package_load`") ||
+		!strings.Contains(string(markdown), "`detached_walk`") {
 		t.Fatalf("markdown = %s", markdown)
 	}
 	catalog, err := os.ReadFile(filepath.Join(directory, TriggerCatalogFilename))

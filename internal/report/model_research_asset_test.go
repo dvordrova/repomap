@@ -16,6 +16,7 @@ func TestModelResearchDetailsRemainCollapsedAndTyped(t *testing.T) {
 		"Initial model summaries:",
 		"Focused local evidence inspected:",
 		"Targeted model evidence windows:",
+		"Guided tour editor",
 		"rejected_findings",
 		"unresolved_frontiers",
 	} {
@@ -40,7 +41,7 @@ func TestModelResearchDetailsRemainCollapsedAndTyped(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(html), `"local_authorized_files":382`) ||
-		!strings.Contains(string(html), `"max_semantic_calls":4`) {
+		!strings.Contains(string(html), `"max_semantic_calls":5`) {
 		t.Fatalf("rendered report omitted typed research state: %s", html)
 	}
 }

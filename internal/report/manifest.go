@@ -19,10 +19,11 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
 const (
-	CurrentRunManifestVersion = 3
+	CurrentRunManifestVersion = 4
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -57,11 +58,17 @@ type RunManifest struct {
 }
 
 type MaterialInputs struct {
-	SelectedRevision     string `json:"selected_revision"`
-	ModelBundleSHA256    string `json:"model_bundle_sha256,omitempty"`
-	InputPolicyVersion   string `json:"input_policy_version"`
-	ArchitectureContract int    `json:"architecture_contract"`
-	ReportContract       int    `json:"report_contract"`
+	SelectedRevision                 string `json:"selected_revision"`
+	ModelBundleSHA256                string `json:"model_bundle_sha256,omitempty"`
+	TaskBundleSHA256                 string `json:"task_bundle_sha256,omitempty"`
+	TaskAttemptSHA256                string `json:"task_attempt_sha256,omitempty"`
+	TaskPackSHA256                   string `json:"task_pack_sha256,omitempty"`
+	TaskStatusSHA256                 string `json:"task_status_sha256,omitempty"`
+	TaskRetrievalTraceSHA256         string `json:"task_retrieval_trace_sha256,omitempty"`
+	TaskRetrievalTraceMarkdownSHA256 string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
+	InputPolicyVersion               string `json:"input_policy_version"`
+	ArchitectureContract             int    `json:"architecture_contract"`
+	ReportContract                   int    `json:"report_contract"`
 }
 
 // RunAuthority is a repository state that was captured before repository
@@ -101,7 +108,7 @@ type AnchorAuthority struct {
 // Validate checks that a manifest is bounded, canonical, and internally
 // consistent before it is used as an authority source.
 func (m RunManifest) Validate() error {
-	if m.Version != 2 && m.Version != CurrentRunManifestVersion {
+	if m.Version != 2 && m.Version != 3 && m.Version != CurrentRunManifestVersion {
 		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
 	}
 	if err := m.RepositoryState.Validate(); err != nil {
@@ -147,6 +154,30 @@ func (m RunManifest) Validate() error {
 		}
 		if m.MaterialInputs.ModelBundleSHA256 != "" && !validManifestSHA256(m.MaterialInputs.ModelBundleSHA256) {
 			return fmt.Errorf("report manifest: model bundle sha256 is invalid")
+		}
+		taskDigests := []string{
+			m.MaterialInputs.TaskBundleSHA256,
+			m.MaterialInputs.TaskAttemptSHA256,
+			m.MaterialInputs.TaskPackSHA256,
+			m.MaterialInputs.TaskStatusSHA256,
+		}
+		if m.Version >= 4 {
+			taskDigests = append(taskDigests,
+				m.MaterialInputs.TaskRetrievalTraceSHA256,
+				m.MaterialInputs.TaskRetrievalTraceMarkdownSHA256,
+			)
+		}
+		taskDigestCount := 0
+		for _, digest := range taskDigests {
+			if digest != "" {
+				taskDigestCount++
+				if !validManifestSHA256(digest) {
+					return fmt.Errorf("report manifest: Task Lens artifact sha256 is invalid")
+				}
+			}
+		}
+		if taskDigestCount != 0 && taskDigestCount != len(taskDigests) {
+			return fmt.Errorf("report manifest: Task Lens artifact identity is incomplete")
 		}
 	}
 	openable := make(map[string]struct{}, len(m.OpenablePaths))
@@ -377,6 +408,9 @@ func CapturedInputPaths(data *ReportData) []string {
 		return nil
 	}
 	paths := append([]string(nil), data.OpenablePaths...)
+	if data.TaskInvestigation != nil {
+		paths = append(paths, data.TaskInvestigation.MaterialPaths...)
+	}
 	paths = append(paths, "go.work", "go.work.sum")
 	if data.RepositoryGraph != nil {
 		for _, module := range data.RepositoryGraph.Modules {
@@ -442,9 +476,17 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: report sha256 mismatch")
 	}
 	var report struct {
-		FormatVersion int         `json:"format_version"`
-		OpenablePaths []string    `json:"openable_paths"`
-		Components    []Component `json:"components"`
+		FormatVersion     int         `json:"format_version"`
+		OpenablePaths     []string    `json:"openable_paths"`
+		Components        []Component `json:"components"`
+		TaskInvestigation *struct {
+			BundleSHA256                 string `json:"bundle_sha256"`
+			AttemptSHA256                string `json:"attempt_sha256"`
+			PackSHA256                   string `json:"pack_sha256"`
+			StatusSHA256                 string `json:"status_sha256"`
+			RetrievalTraceSHA256         string `json:"retrieval_trace_sha256"`
+			RetrievalTraceMarkdownSHA256 string `json:"retrieval_trace_markdown_sha256"`
+		} `json:"task_investigation"`
 	}
 	if err := json.Unmarshal(reportJSON, &report); err != nil {
 		return fmt.Errorf("report manifest: decode report: %w", err)
@@ -458,6 +500,64 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	}
 	if !reflect.DeepEqual(report.OpenablePaths, m.OpenablePaths) || !reflect.DeepEqual(authority, m.Components) {
 		return fmt.Errorf("report manifest: authority does not match report")
+	}
+	material := m.MaterialInputs
+	if report.TaskInvestigation == nil {
+		if material.TaskBundleSHA256 != "" || material.TaskAttemptSHA256 != "" ||
+			material.TaskPackSHA256 != "" || material.TaskStatusSHA256 != "" ||
+			material.TaskRetrievalTraceSHA256 != "" || material.TaskRetrievalTraceMarkdownSHA256 != "" {
+			return fmt.Errorf("report manifest: Task Lens artifacts are not present in report")
+		}
+	} else if report.TaskInvestigation.BundleSHA256 != material.TaskBundleSHA256 ||
+		report.TaskInvestigation.AttemptSHA256 != material.TaskAttemptSHA256 ||
+		report.TaskInvestigation.PackSHA256 != material.TaskPackSHA256 ||
+		report.TaskInvestigation.StatusSHA256 != material.TaskStatusSHA256 ||
+		!validManifestSHA256(report.TaskInvestigation.BundleSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.AttemptSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.PackSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.StatusSHA256) ||
+		(m.Version >= 4 &&
+			(report.TaskInvestigation.RetrievalTraceSHA256 != material.TaskRetrievalTraceSHA256 ||
+				report.TaskInvestigation.RetrievalTraceMarkdownSHA256 != material.TaskRetrievalTraceMarkdownSHA256 ||
+				!validManifestSHA256(report.TaskInvestigation.RetrievalTraceSHA256) ||
+				!validManifestSHA256(report.TaskInvestigation.RetrievalTraceMarkdownSHA256))) {
+		return fmt.Errorf("report manifest: Task Lens artifact identity does not match report")
+	}
+	return nil
+}
+
+// VerifyTaskInvestigationArtifacts binds the canonical Task Lens files
+// to the exact report/manifest pair before any saved workspace is exposed.
+func (m RunManifest) VerifyTaskInvestigationArtifacts(runDir string) error {
+	material := m.MaterialInputs
+	if material.TaskBundleSHA256 == "" {
+		return nil
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open Task Lens run: %w", err)
+	}
+	defer root.Close()
+	artifacts := []struct {
+		name string
+		want string
+	}{
+		{tasklens.BundleFile, material.TaskBundleSHA256},
+		{tasklens.AttemptFile, material.TaskAttemptSHA256},
+		{tasklens.PackFile, material.TaskPackSHA256},
+		{tasklens.StatusFile, material.TaskStatusSHA256},
+	}
+	if m.Version >= 4 {
+		artifacts = append(artifacts,
+			struct{ name, want string }{tasklens.TraceJSONFile, material.TaskRetrievalTraceSHA256},
+			struct{ name, want string }{tasklens.TraceMarkdownFile, material.TaskRetrievalTraceMarkdownSHA256},
+		)
+	}
+	for _, artifact := range artifacts {
+		data, readErr := readManifestFile(root, artifact.name, maxRunManifestBytes)
+		if readErr != nil || manifestSHA256(data) != artifact.want {
+			return fmt.Errorf("report manifest: Task Lens artifact %s sha256 mismatch", artifact.name)
+		}
 	}
 	return nil
 }
@@ -540,6 +640,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
+		return RunManifest{}, err
+	}
 	return manifest, nil
 }
 
@@ -611,7 +714,13 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		Freshness:             authority.freshness,
 		MaterialInputs: MaterialInputs{
 			SelectedRevision: authority.repository.Head, ModelBundleSHA256: savedArtifactSHA256(runDir, "llm_bundle.json"),
-			InputPolicyVersion: "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
+			TaskBundleSHA256:                 savedArtifactSHA256(runDir, tasklens.BundleFile),
+			TaskAttemptSHA256:                savedArtifactSHA256(runDir, tasklens.AttemptFile),
+			TaskPackSHA256:                   savedArtifactSHA256(runDir, tasklens.PackFile),
+			TaskStatusSHA256:                 savedArtifactSHA256(runDir, tasklens.StatusFile),
+			TaskRetrievalTraceSHA256:         savedArtifactSHA256(runDir, tasklens.TraceJSONFile),
+			TaskRetrievalTraceMarkdownSHA256: savedArtifactSHA256(runDir, tasklens.TraceMarkdownFile),
+			InputPolicyVersion:               "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
 			ReportContract: data.FormatVersion,
 		},
 	}

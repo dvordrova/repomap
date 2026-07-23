@@ -7,22 +7,49 @@
   });
   var OPENABLE_PATH_SET = {};
   OPENABLE_PATHS.forEach(function (path) { OPENABLE_PATH_SET[path] = true; });
-  var SOURCE_IDS = DATA.source_ids || {};
+	var SOURCE_IDS = DATA.source_ids || {};
+	var SOURCE_CONTEXT_IDS = DATA.source_context_ids || {};
   var toastTimer = null;
   var symbolLookupStates = {};
   var symbolLookupViews = {};
   var componentSelectionViews = {};
   var architectureCanvasView = null;
   var surfaceCatalogView = null;
+  var semanticSearchView = null;
   var resumeInvestigationStarted = false;
   var maxSymbolCandidates = 8;
   var maxStaticCalls = 5;
   var maxSourceLines = 20;
   var maxInspectionWarnings = 8;
   var maxTestReferences = 5;
+  var DEBUG_MODE = /^(1|true)$/i.test(new URLSearchParams(window.location.search).get('debug') || '');
+	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
+	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
+	var REPOSITORY_GUIDE = DATA.repository_guide || null;
+	var STUDY_MAP = DATA.study_map || null;
+	var STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
+	var OPERATIONS = DATA.operations || null;
+	var PAVED_PATHS = OPERATIONS && Array.isArray(OPERATIONS.paths) ? OPERATIONS.paths : [];
+	var OPERATIONAL_LANDMARKS = OPERATIONS && Array.isArray(OPERATIONS.landmarks) ? OPERATIONS.landmarks : [];
+	var TASK_INVESTIGATION = DATA.task_investigation || null;
+  var workspaceState = {
+		view: TASK_INVESTIGATION ? 'investigate' : 'overview',
+		taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
+    artifactID: '',
+		directionID: '',
+		operationID: '',
+    stepIndex: 0,
+    sourceLocation: null,
+    mapReturn: null,
+    mapTarget: null,
+  };
+  var architectureCanvasHost = null;
+  var architectureReady = null;
+  var architectureAppliedFocus = null;
 
   var LABELS = {
     purpose: 'Project purpose · model orientation',
+    explore: 'Explore this repository',
     systemMap: 'Components · model orientation',
     startFiles: 'Start here',
     terms: 'Important terms',
@@ -73,6 +100,406 @@
     showMore: 'Show {count} more',
     showLess: 'Show less',
   };
+
+  function userMechanismByID(mechanisms, artifactID) {
+    mechanisms = Array.isArray(mechanisms) ? mechanisms : [];
+    for (var index = 0; index < mechanisms.length; index++) {
+      if (mechanisms[index] && mechanisms[index].artifact_id === artifactID) return mechanisms[index];
+    }
+    return null;
+  }
+
+	function studyDirectionByID(directionID) {
+		for (var index = 0; index < STUDY_DIRECTIONS.length; index++) {
+			if (STUDY_DIRECTIONS[index] && STUDY_DIRECTIONS[index].id === directionID) return STUDY_DIRECTIONS[index];
+		}
+		return null;
+	}
+
+	function pavedPathByID(pavedPathID) {
+		for (var index = 0; index < PAVED_PATHS.length; index++) {
+			if (PAVED_PATHS[index] && PAVED_PATHS[index].id === pavedPathID) return PAVED_PATHS[index];
+		}
+		return null;
+	}
+
+  function mechanismNarrativeItems(mechanism) {
+    var phases = mechanism && Array.isArray(mechanism.phases)
+      ? mechanism.phases.filter(Boolean)
+      : [];
+    if (phases.length) return phases;
+    return mechanism && Array.isArray(mechanism.steps) ? mechanism.steps.filter(Boolean) : [];
+  }
+
+  function mechanismUsesPhases(mechanism) {
+    return !!(mechanism && Array.isArray(mechanism.phases) && mechanism.phases.length);
+  }
+
+  function mechanismImplementationSteps(mechanism, phase) {
+    if (!mechanismUsesPhases(mechanism) || !phase) return [];
+    var steps = Array.isArray(mechanism.steps) ? mechanism.steps : [];
+    var seen = {};
+    var indexed = (Array.isArray(phase.implementation_step_indexes)
+      ? phase.implementation_step_indexes
+      : []).map(function (index) {
+        index = Number(index);
+        if (!Number.isInteger(index) || index < 0 || index >= steps.length || seen[index]) return null;
+        seen[index] = true;
+        return steps[index];
+      }).filter(Boolean);
+    var attached = Array.isArray(phase.implementation_details)
+      ? phase.implementation_details.filter(Boolean)
+      : [];
+    return indexed.concat(attached);
+  }
+
+  function narrativeIndexForImplementationStep(mechanism, stepIndex) {
+    var items = mechanismNarrativeItems(mechanism);
+    if (!items.length || !mechanismUsesPhases(mechanism)) {
+      return boundedMechanismStep(mechanism, stepIndex);
+    }
+    stepIndex = Number(stepIndex);
+    for (var index = 0; index < items.length; index++) {
+      var members = Array.isArray(items[index].implementation_step_indexes)
+        ? items[index].implementation_step_indexes
+        : [];
+      if (members.some(function (candidate) { return Number(candidate) === stepIndex; })) return index;
+    }
+    return 0;
+  }
+
+  function boundedMechanismStep(mechanism, requested) {
+    var steps = mechanismNarrativeItems(mechanism);
+    if (!steps.length) return 0;
+    requested = Number.isFinite(Number(requested)) ? Math.trunc(Number(requested)) : 0;
+    return Math.max(0, Math.min(steps.length - 1, requested));
+  }
+
+  function emptyWorkspaceState() {
+    return {
+			view: TASK_INVESTIGATION ? 'investigate' : 'overview',
+			taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
+      artifactID: '',
+		directionID: '',
+		operationID: '',
+      stepIndex: 0,
+      sourceLocation: null,
+      mapReturn: null,
+      mapTarget: null,
+    };
+  }
+
+	function defaultWorkspaceHash() {
+		if (TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
+			return '#/investigate/' + encodeRoutePart(TASK_INVESTIGATION.task_id);
+		}
+		return '#/overview';
+	}
+
+  function encodeRoutePart(value) {
+    return encodeURIComponent(String(value == null ? '' : value));
+  }
+
+  function decodeRoutePart(value) {
+    try {
+      return decodeURIComponent(String(value || ''));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function architectureFocusValue(target) {
+    target = target || {};
+    var kind = String(target && target.kind || '');
+    if (kind === 'component' && target.component_id) {
+      return 'component:' + encodeRoutePart(target.component_id);
+    }
+    if (kind === 'flow' && target.flow_id) {
+      return 'flow:' + encodeRoutePart(target.flow_id);
+    }
+    if (kind === 'surface' && target.surface_id) {
+      return 'surface:' + encodeRoutePart(target.surface_id);
+    }
+    if (kind === 'flow_step' && target.flow_id && target.step_id) {
+      return 'flow_step:' + encodeRoutePart(target.flow_id) + ':' + encodeRoutePart(target.step_id);
+    }
+    return '';
+  }
+
+  function architectureTargetFromFocus(value) {
+    var parts = String(value || '').split(':');
+    var kind = parts.shift() || '';
+    if (kind === 'component' && parts.length === 1) {
+      var componentID = decodeRoutePart(parts[0]);
+      return componentID ? { kind: kind, component_id: componentID } : null;
+    }
+    if (kind === 'flow' && parts.length === 1) {
+      var flowID = decodeRoutePart(parts[0]);
+      return flowID ? { kind: kind, flow_id: flowID } : null;
+    }
+    if (kind === 'surface' && parts.length === 1) {
+      var surfaceID = decodeRoutePart(parts[0]);
+      return surfaceID ? { kind: kind, surface_id: surfaceID } : null;
+    }
+    if (kind === 'flow_step' && parts.length === 2) {
+      var stepFlowID = decodeRoutePart(parts[0]);
+      var stepID = decodeRoutePart(parts[1]);
+      return stepFlowID && stepID ? { kind: kind, flow_id: stepFlowID, step_id: stepID } : null;
+    }
+    return null;
+  }
+
+  function workspaceHashForState(state, mechanismRoot) {
+    state = state || emptyWorkspaceState();
+		if (state.view === 'investigate' && TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
+			return defaultWorkspaceHash();
+		}
+    if (state.view === 'mechanisms') return '#/mechanisms';
+    if (state.view === 'search') return '#/search';
+    if (state.view === 'architecture') {
+      var focus = architectureFocusValue(state.mapTarget);
+      return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
+    }
+    if (state.view === 'mechanism' && state.artifactID) {
+      var mechanismHash = '#/mechanism/' + encodeRoutePart(state.artifactID);
+      return mechanismRoot ? mechanismHash : mechanismHash + '/step/' + (Number(state.stepIndex) + 1);
+    }
+		if (state.view === 'study' && state.directionID) {
+			return '#/study/' + encodeRoutePart(state.directionID);
+		}
+		if (state.view === 'operate' && state.operationID) {
+			return '#/operate/' + encodeRoutePart(state.operationID);
+		}
+    if (state.view === 'provenance' && DEBUG_MODE) return '#/provenance';
+    return '#/overview';
+  }
+
+	function workspaceRouteFamily(state) {
+		state = state || emptyWorkspaceState();
+		if (state.view === 'investigate' && state.taskID) {
+			return 'investigate:' + state.taskID;
+		}
+		if (state.view === 'mechanism' && state.artifactID) {
+			return 'mechanism:' + state.artifactID;
+		}
+		if (state.view === 'study' && state.directionID) {
+			return 'study:' + state.directionID;
+		}
+		if (state.view === 'operate' && state.operationID) {
+			return 'operate:' + state.operationID;
+		}
+		return 'view:' + (state.view || 'overview');
+	}
+
+	function resetWorkspaceScroll() {
+		if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
+	}
+
+  function parseWorkspaceHash(hash, mechanisms, historyState) {
+    hash = String(hash || '');
+    var state = emptyWorkspaceState();
+		var route = hash.replace(/^#/, '') || (TASK_INVESTIGATION ? defaultWorkspaceHash().replace(/^#/, '') : '/overview');
+    var queryIndex = route.indexOf('?');
+    var query = queryIndex >= 0 ? route.slice(queryIndex + 1) : '';
+    var path = queryIndex >= 0 ? route.slice(0, queryIndex) : route;
+    var segments = path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+    var valid = true;
+		var canonicalHash = defaultWorkspaceHash();
+
+    if (segments.length === 1 && segments[0] === 'overview') {
+			if (TASK_INVESTIGATION) {
+				state = emptyWorkspaceState();
+				valid = false;
+			} else {
+				canonicalHash = '#/overview';
+			}
+		} else if (segments.length === 2 && segments[0] === 'investigate') {
+			var routeTaskID = decodeRoutePart(segments[1]);
+			if (!TASK_INVESTIGATION || routeTaskID !== TASK_INVESTIGATION.task_id) {
+				valid = false;
+			} else {
+				state.view = 'investigate';
+				state.taskID = routeTaskID;
+				canonicalHash = defaultWorkspaceHash();
+			}
+    } else if (segments.length === 1 && segments[0] === 'mechanisms') {
+      state.view = mechanisms && mechanisms.length ? 'mechanisms' : 'overview';
+      valid = state.view === 'mechanisms';
+      canonicalHash = valid ? '#/mechanisms' : '#/overview';
+    } else if (segments.length === 1 && segments[0] === 'search') {
+      if (DATA.semantic_search && window.RepomapSemanticSearch) {
+        state.view = 'search';
+        canonicalHash = '#/search';
+      } else {
+        valid = false;
+      }
+    } else if (segments.length === 1 && segments[0] === 'architecture') {
+      state.view = 'architecture';
+      var focus = new URLSearchParams(query).get('focus') || '';
+      state.mapTarget = architectureTargetFromFocus(focus);
+      state.mapReturn = historyState && historyState.mapReturn || null;
+      canonicalHash = workspaceHashForState(state);
+    } else if (segments.length === 1 && segments[0] === 'provenance' && DEBUG_MODE) {
+      state.view = 'provenance';
+      canonicalHash = '#/provenance';
+    } else if (segments.length === 2 && segments[0] === 'mechanism') {
+      var rootArtifactID = decodeRoutePart(segments[1]);
+      var rootMechanism = userMechanismByID(mechanisms, rootArtifactID);
+      if (!rootMechanism || !mechanismNarrativeItems(rootMechanism).length) {
+        valid = false;
+      } else {
+        state.view = 'mechanism';
+        state.artifactID = rootArtifactID;
+        canonicalHash = workspaceHashForState(state, true);
+      }
+		} else if (segments.length === 2 && segments[0] === 'study') {
+			var routeDirectionID = decodeRoutePart(segments[1]);
+			var routeDirection = studyDirectionByID(routeDirectionID);
+			if (!routeDirection) {
+				valid = false;
+			} else if (routeDirection.mechanism_id && userMechanismByID(mechanisms, routeDirection.mechanism_id)) {
+				state.view = 'mechanism';
+				state.artifactID = routeDirection.mechanism_id;
+				state.stepIndex = 0;
+				canonicalHash = workspaceHashForState(state, true);
+			} else {
+				state.view = 'study';
+				state.directionID = routeDirectionID;
+				canonicalHash = workspaceHashForState(state);
+			}
+		} else if (segments.length === 2 && segments[0] === 'operate') {
+			var routeOperationID = decodeRoutePart(segments[1]);
+			if (!pavedPathByID(routeOperationID)) {
+				valid = false;
+			} else {
+				state.view = 'operate';
+				state.operationID = routeOperationID;
+				canonicalHash = workspaceHashForState(state);
+			}
+    } else if (segments.length === 4 && segments[0] === 'mechanism' && segments[2] === 'step') {
+      var artifactID = decodeRoutePart(segments[1]);
+      var mechanism = userMechanismByID(mechanisms, artifactID);
+      var humanStep = Number(segments[3]);
+      if (!mechanism || !mechanismNarrativeItems(mechanism).length || !Number.isInteger(humanStep) || humanStep < 1) {
+        valid = false;
+      } else {
+        state.view = 'mechanism';
+        state.artifactID = artifactID;
+        state.stepIndex = boundedMechanismStep(mechanism, humanStep - 1);
+        canonicalHash = workspaceHashForState(state);
+      }
+    } else {
+      valid = false;
+    }
+
+		if (!valid) state = emptyWorkspaceState();
+		return { valid: valid, canonicalHash: valid ? canonicalHash : defaultWorkspaceHash(), state: state };
+  }
+
+  function reduceWorkspaceState(state, action, mechanisms) {
+    state = state || workspaceState;
+    action = action || {};
+    var next = {
+      view: state.view || 'overview',
+			taskID: state.taskID || '',
+      artifactID: state.artifactID || '',
+		directionID: state.directionID || '',
+		operationID: state.operationID || '',
+      stepIndex: Number(state.stepIndex) || 0,
+      sourceLocation: state.sourceLocation || null,
+      mapReturn: state.mapReturn || null,
+      mapTarget: state.mapTarget || null,
+    };
+    var mechanism;
+    switch (action.type) {
+    case 'view':
+      next.view = action.view || 'overview';
+      if (next.view !== 'architecture') {
+        next.mapTarget = null;
+        if (!action.keepReturn) next.mapReturn = null;
+      }
+      return next;
+    case 'open_mechanism':
+      mechanism = userMechanismByID(mechanisms, action.artifactID);
+      if (!mechanism) return next;
+      next.view = 'mechanism';
+      next.artifactID = mechanism.artifact_id;
+		next.directionID = '';
+		next.operationID = '';
+      next.stepIndex = boundedMechanismStep(mechanism, action.stepIndex);
+      next.mapTarget = null;
+      next.mapReturn = null;
+      return next;
+		case 'open_study':
+			var direction = studyDirectionByID(action.directionID);
+			if (!direction || direction.mechanism_id) return next;
+			next.view = 'study';
+			next.directionID = direction.id;
+			next.artifactID = '';
+			next.operationID = '';
+			next.stepIndex = 0;
+			next.mapTarget = null;
+			next.mapReturn = null;
+			return next;
+		case 'open_operation':
+			var pavedPath = pavedPathByID(action.operationID);
+			if (!pavedPath) return next;
+			next.view = 'operate';
+			next.operationID = pavedPath.id;
+			next.artifactID = '';
+			next.directionID = '';
+			next.stepIndex = 0;
+			next.mapTarget = null;
+			next.mapReturn = null;
+			return next;
+    case 'select_step':
+      mechanism = userMechanismByID(mechanisms, next.artifactID);
+      if (!mechanism) return next;
+      next.stepIndex = boundedMechanismStep(mechanism, action.stepIndex);
+      return next;
+    case 'move_step':
+      mechanism = userMechanismByID(mechanisms, next.artifactID);
+      if (!mechanism) return next;
+      next.stepIndex = boundedMechanismStep(mechanism, next.stepIndex + Number(action.delta || 0));
+      return next;
+	case 'open_source':
+		if (!action.selection || !action.selection.snippet ||
+			!Array.isArray(action.selection.snippet.lines) || !action.selection.snippet.lines.length) return next;
+		next.sourceLocation = action.selection;
+      return next;
+    case 'close_source':
+      next.sourceLocation = null;
+      return next;
+    case 'show_map':
+      if (!action.target) return next;
+      next.mapReturn = { artifactID: next.artifactID, stepIndex: next.stepIndex };
+      next.mapTarget = action.target;
+      next.view = 'architecture';
+      return next;
+    case 'return_from_map':
+      if (!next.mapReturn) return next;
+		if (next.mapReturn.directionID) {
+			var returnDirection = studyDirectionByID(next.mapReturn.directionID);
+			if (!returnDirection) return next;
+			next.view = 'study';
+			next.directionID = returnDirection.id;
+			next.artifactID = '';
+			next.mapTarget = null;
+			next.mapReturn = null;
+			return next;
+		}
+      mechanism = userMechanismByID(mechanisms, next.mapReturn.artifactID);
+      if (!mechanism) return next;
+      next.view = 'mechanism';
+      next.artifactID = mechanism.artifact_id;
+      next.stepIndex = boundedMechanismStep(mechanism, next.mapReturn.stepIndex);
+      next.mapTarget = null;
+      next.mapReturn = null;
+      return next;
+    default:
+      return next;
+    }
+  }
 
   function esc(s) {
     if (!s) return '';
@@ -344,7 +771,13 @@
       runs.forEach(function (run) {
         var option = document.createElement('option');
         option.value = run.id;
-        option.textContent = (run.repo_name ? run.repo_name + ' · ' : '') + run.id;
+        var label = run.repo_name || 'Saved repository report';
+        var captured = String(run.created_at || '');
+        var parsed = new Date(captured);
+        if (!Number.isNaN(parsed.getTime())) {
+          label += ' · ' + parsed.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+        }
+        option.textContent = label;
         option.selected = run.id === selected;
         selector.appendChild(option);
       });
@@ -974,6 +1407,130 @@
     return card;
   }
 
+  function semanticArtifactGroup(kind) {
+    if (kind === 'contribution_guide') return 'Contribute';
+    if (kind === 'dependency_usage' || kind === 'repository_pattern' || kind === 'go_learning') {
+      return 'Learn from the code';
+    }
+    return 'Understand';
+  }
+
+  function semanticArtifactKindLabel(kind) {
+    return {
+      repository_story: 'Repository story',
+      mechanism: 'Mechanism',
+      dependency_usage: 'Dependency usage',
+      repository_pattern: 'Repository pattern',
+      contribution_guide: 'Contribution guide',
+      go_learning: 'Go learning',
+    }[kind] || String(kind || 'Explanation').replace(/_/g, ' ');
+  }
+
+  function semanticArtifactBasisCounts(artifact) {
+    var counts = { direct: 0, compositional: 0, interpretive: 0, unresolved: 0 };
+    (artifact && artifact.statements || []).forEach(function (statement) {
+      var basis = statement && statement.basis;
+      if (Object.prototype.hasOwnProperty.call(counts, basis)) counts[basis]++;
+    });
+    counts.unresolved += (artifact && artifact.unknowns || []).length;
+    return counts;
+  }
+
+  function renderSemanticArtifactCard(artifact) {
+    var button = el('button', 'rm-explore-artifact');
+    button.type = 'button';
+    button.setAttribute('data-semantic-artifact-id', artifact.id || '');
+    button.appendChild(txt('span', 'rm-explore-artifact__kind', semanticArtifactKindLabel(artifact.kind)));
+    button.appendChild(txt('strong', 'rm-explore-artifact__title', artifact.title || artifact.question || 'Repository explanation'));
+    if (artifact.question && artifact.question !== artifact.title) {
+      button.appendChild(txt('span', 'rm-explore-artifact__question', artifact.question));
+    }
+    if (artifact.summary) button.appendChild(txt('span', 'rm-explore-artifact__summary', artifact.summary));
+
+    var counts = semanticArtifactBasisCounts(artifact);
+    var meta = el('span', 'rm-explore-artifact__meta');
+    var supported = counts.direct + counts.compositional;
+    var requiredAspects = artifact.required_answer_aspects || [];
+    var coveredAspects = artifact.covered_answer_aspects || [];
+    if (supported) meta.appendChild(txt('span', 'is-supported', supported + ' evidence-linked'));
+    if (requiredAspects.length) {
+      meta.appendChild(txt(
+        'span',
+        'rm-explore-artifact__coverage',
+        coveredAspects.length + '/' + requiredAspects.length + ' aspects'
+      ));
+    }
+    if (counts.interpretive) meta.appendChild(txt('span', 'is-interpretive', counts.interpretive + ' interpretive'));
+    if (counts.unresolved || artifact.verdict === 'insufficient_evidence') {
+      meta.appendChild(txt(
+        'span',
+        'is-unresolved',
+        (counts.unresolved || 1) + (counts.unresolved === 1 ? ' known gap' : ' known gaps')
+      ));
+    }
+    if (artifact.verdict) {
+      meta.appendChild(txt('span', 'rm-explore-artifact__verdict', String(artifact.verdict).replace(/_/g, ' ')));
+    }
+    if (meta.childElementCount) button.appendChild(meta);
+    button.appendChild(txt('span', 'rm-explore-artifact__action', 'Open explanation on the map →'));
+    button.addEventListener('click', function () {
+      openSemanticSearchTarget({ kind: 'semantic_artifact', artifact_id: artifact.id });
+    });
+    return button;
+  }
+
+  function renderSemanticCoverageSummary(coverage) {
+    if (!coverage || typeof coverage !== 'object') return null;
+    var summary = el('div', 'rm-semantic-coverage');
+    summary.appendChild(txt('strong', 'rm-semantic-coverage__title', 'Publication coverage'));
+    var items = el('div', 'rm-semantic-coverage__items');
+    items.appendChild(txt('span', '', 'Opportunities attempted: ' + String(coverage.opportunities_attempted || 0)));
+    items.appendChild(txt('span', '', 'Candidates investigated: ' + String(coverage.candidates_investigated || 0)));
+    items.appendChild(txt('span', '', 'Canonical mechanisms published: ' + String(coverage.canonical_mechanisms_published || 0)));
+    if (coverage.central_routing_mechanism) {
+      items.appendChild(txt(
+        'span',
+        'rm-semantic-coverage__routing is-' + String(coverage.central_routing_mechanism),
+        'Central routing mechanism: ' + String(coverage.central_routing_mechanism)
+      ));
+    }
+    summary.appendChild(items);
+    return summary;
+  }
+
+  function renderExploreCard(artifacts) {
+    artifacts = (artifacts || []).filter(function (artifact) {
+      return artifact && artifact.id && (artifact.title || artifact.question);
+    });
+    if (!artifacts.length) return null;
+
+    var card = el('section', 'rm-card rm-explore');
+    card.appendChild(txt('h2', 'rm-explore__title', LABELS.explore));
+    card.appendChild(txt(
+      'p',
+      'rm-explore__intro',
+      'Evidence-linked explanations generated from this saved repository model. Gaps stay visible.'
+    ));
+    var coverage = renderSemanticCoverageSummary(DATA.semantic_coverage);
+    if (coverage) card.appendChild(coverage);
+    var order = ['Understand', 'Learn from the code', 'Contribute'];
+    order.forEach(function (groupName) {
+      var groupArtifacts = artifacts.filter(function (artifact) {
+        return semanticArtifactGroup(artifact.kind) === groupName;
+      });
+      if (!groupArtifacts.length) return;
+      var group = el('section', 'rm-explore__group');
+      group.appendChild(txt('h3', 'rm-explore__group-title', groupName));
+      var grid = el('div', 'rm-explore__grid');
+      groupArtifacts.forEach(function (artifact) {
+        grid.appendChild(renderSemanticArtifactCard(artifact));
+      });
+      group.appendChild(grid);
+      card.appendChild(group);
+    });
+    return card;
+  }
+
   function renderModelResearchDetails(research) {
     if (!research || !research.policy) return null;
     var details = el('details', 'rm-analysis-details rm-model-research');
@@ -994,7 +1551,8 @@
     (research.skipped_targeted_rounds || []).forEach(function (round, index) {
       appendResearchRound(stages, 'Skipped targeted round ' + String(index + 1), round);
     });
-    appendResearchStage(stages, 'Architecture synthesis', research.architecture_synthesis);
+	appendResearchStage(stages, 'Architecture synthesis', research.architecture_synthesis);
+	appendResearchStage(stages, 'Guided tour editor', research.guided_tour);
     details.appendChild(stages);
 
     var coverage = research.coverage || {};
@@ -1719,6 +2277,89 @@
     }).catch(function (error) {
       showToast(error && error.message ? error.message : 'Saved investigation is unavailable.', true);
     });
+  }
+
+  function showArchitectureFromSearch() {
+    showTab('rm-overview');
+    var target = document.querySelector('.rm-architecture-canvas-card') ||
+      document.querySelector('.rm-orientation-map') || document.getElementById('rm-overview');
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  function openSemanticSearchTarget(target) {
+    target = target || {};
+    var kind = String(target.kind || 'map');
+    if (kind === 'semantic_artifact') {
+      var hasArtifactStep = target.step_index != null || target.index != null;
+      var artifactStepIndex = Number(target.step_index != null ? target.step_index : target.index);
+      var searchMechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
+      var narrativeStepIndex = Number.isFinite(artifactStepIndex) && searchMechanism
+        ? narrativeIndexForImplementationStep(searchMechanism, artifactStepIndex)
+        : 0;
+      openUserMechanism(
+        target.artifact_id || target.id,
+        narrativeStepIndex,
+        hasArtifactStep
+      );
+      return;
+    }
+		if (kind === 'study_direction') {
+			openStudyDirection(target.direction_id || target.id);
+			return;
+		}
+		if (kind === 'paved_path') {
+			openPavedPath(target.paved_path_id || target.id);
+			return;
+		}
+    if (kind === 'component') {
+      openArchitectureTarget({ kind: 'component', component_id: target.component_id || target.id }, null);
+      return;
+    }
+    if (kind === 'flow') {
+      openArchitectureTarget({ kind: 'flow', flow_id: target.flow_id || target.id }, null);
+      return;
+    }
+    if (kind === 'flow_step') {
+      openArchitectureTarget({
+        kind: 'flow_step',
+        flow_id: target.flow_id || target.scope_id,
+        step_id: target.step_id || target.id,
+      }, null);
+      return;
+    }
+    if (kind === 'surface') {
+      openArchitectureTarget({ kind: 'surface', surface_id: target.surface_id || target.id }, null);
+      return;
+    }
+    if (kind === 'guided_step' && DEBUG_MODE && architectureCanvasView) {
+      var stepIndex = Number(target.step_index != null ? target.step_index : target.index);
+      architectureCanvasView.openGuidedTourStep(Number.isFinite(stepIndex) ? stepIndex : 0);
+      showArchitectureFromSearch();
+      return;
+    }
+    var location = target.location || target;
+    if (kind === 'location' && location.path) {
+      openSourceLocation(location);
+      return;
+    }
+    openArchitectureTarget(null, null);
+  }
+
+  function semanticSearchTargetAvailable(target) {
+    target = target || {};
+    var kind = target ? String(target.kind || '') : '';
+    if (kind === 'map' || kind === 'component' || kind === 'flow' || kind === 'flow_step' || kind === 'surface') {
+      return userArchitectureAvailable();
+    }
+		if (kind === 'paved_path') return !!pavedPathByID(target.paved_path_id || target.id);
+		if (kind === 'study_direction') return !!studyDirectionByID(target.direction_id || target.id);
+    if (kind !== 'location') return true;
+    var location = target.location || target;
+    if (!location.path || !OPENABLE_PATH_SET[location.path]) return false;
+    if (embeddedSourceForLocation(location)) return true;
+    return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
 
   function renderSymbolLookup(component, anchor) {
@@ -2761,162 +3402,2840 @@
 
   // ── Main render ─────────────────────────────────────────────────
 
-  function render() {
-    DATA.flows = DATA.flows || [];
-    componentSelectionViews = {};
-    resumeInvestigationStarted = false;
-    setupServerFeatures();
-    document.getElementById('rm-repo-name').textContent = DATA.repo_name || 'unknown';
-    if (DATA.artifacts_dir) {
-      document.getElementById('rm-artifacts-dir').textContent = 'Artifacts: ' + DATA.artifacts_dir;
-    }
-    if (DATA.feedback_path) {
-      document.getElementById('rm-feedback-path').textContent = 'Feedback notes: ' + DATA.feedback_path;
-    }
-    if (DATA.captured_revision) {
-      document.getElementById('rm-snapshot-detail').textContent = 'Captured snapshot: ' + DATA.captured_revision.slice(0, 12) + ' · ' + (DATA.captured_input_count || 0) + ' analyzed inputs';
-    }
-    if (DATA.freshness) {
-      document.getElementById('rm-freshness-detail').textContent = 'Current freshness: ' + String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
-    }
-    var excludedSubmodules = DATA.repository_submodules || [];
-    if (excludedSubmodules.length > 0) {
-      var dirtySubmodules = excludedSubmodules.filter(function (submodule) {
-        return submodule.gitlink_changed || submodule.worktree_modified || submodule.worktree_untracked || submodule.availability === 'unavailable';
-      });
-      document.getElementById('rm-submodule-detail').textContent = 'Excluded submodules: ' + excludedSubmodules.length + ' · changed: ' + dirtySubmodules.length + ' · analyzed: no';
-    }
+  function viewSectionID(view) {
+		if (view === 'investigate') return 'rm-task-investigation';
+    if (view === 'mechanisms') return 'rm-mechanisms';
+    if (view === 'mechanism') return 'rm-mechanism-detail';
+		if (view === 'study') return 'rm-study-detail';
+		if (view === 'operate') return 'rm-operate-detail';
+    if (view === 'search') return 'rm-search-view';
+    if (view === 'architecture') return 'rm-architecture';
+    if (view === 'provenance') return 'rm-provenance';
+    return 'rm-overview';
+  }
 
+  function renderViewHeading(kicker, title, copy) {
+    var heading = el('div', 'rm-view-heading');
+    if (kicker) heading.appendChild(txt('div', 'rm-view-kicker', kicker));
+    heading.appendChild(txt('h2', '', title));
+    if (copy) heading.appendChild(txt('p', '', copy));
+    return heading;
+  }
+
+  function mechanismPresentationTitle(mechanism) {
+    mechanism = mechanism || {};
+    var projected = String(mechanism.presentation_title || mechanism.presentationTitle || '').trim();
+    if (projected) return projected.replace(/\?$/, '');
+    var title = String(mechanism.title || '').trim();
+    if (/^How\b/i.test(title)) return title.replace(/\?$/, '');
+    var question = String(mechanism.question || '').trim();
+    if (question) return question.replace(/\?$/, '');
+    return title || 'How this code works';
+  }
+
+  function mechanismShortAnswer(mechanism) {
+    var answer = String(mechanism && mechanism.answer || '').trim();
+    if (/^Source-backed path\s*:/i.test(answer)) return '';
+    return answer;
+  }
+
+  function workspaceHistoryPayload(state, sourceDrawer) {
+    return {
+      repomapWorkspace: true,
+      mapReturn: state && state.mapReturn || null,
+      sourceDrawer: sourceDrawer || null,
+    };
+  }
+
+  function writeWorkspaceHistory(hash, state, options) {
+    options = options || {};
+    if (!window.history || typeof window.history.pushState !== 'function') {
+      if (window.location) window.location.hash = hash;
+      return;
+    }
+    var method = options.replace ? 'replaceState' : 'pushState';
+    window.history[method](workspaceHistoryPayload(state, options.sourceDrawer), '', hash);
+  }
+
+  function commitWorkspaceState(next, options) {
+    options = options || {};
+		var routeChanged = workspaceRouteFamily(workspaceState) !== workspaceRouteFamily(next);
+    next.sourceLocation = options.keepSource ? next.sourceLocation : null;
+    var hash = options.hash || workspaceHashForState(next, !!options.mechanismRoot);
+    writeWorkspaceHistory(hash, next, { replace: !!options.replace });
+    workspaceState = next;
+    renderWorkspaceState();
+		if (routeChanged) resetWorkspaceScroll();
+  }
+
+  function sourceDrawerHistoryReference(selection) {
+    if (!selection || !selection.snippet) return null;
+    return {
+      path: selection.path || selection.snippet.path,
+      line: Number(selection.line) || 0,
+      column: Number(selection.column) || 0,
+      presentation_sha256: selection.snippet.presentation_sha256 || '',
+      expanded: !!selection.expanded,
+    };
+  }
+
+  function restoreSourceDrawer(historyState) {
+    var reference = historyState && historyState.sourceDrawer;
+    if (!reference || !reference.path) return null;
+    var snippets = allEmbeddedSourceSnippets();
+    var snippet = null;
+    for (var index = 0; index < snippets.length; index++) {
+      if (!sourceSnippetHasCode(snippets[index]) || snippets[index].path !== reference.path) continue;
+      if (reference.presentation_sha256 &&
+          snippets[index].presentation_sha256 !== reference.presentation_sha256) continue;
+      snippet = snippets[index];
+      break;
+    }
+    if (!snippet) snippet = embeddedSourceForLocation(reference);
+    if (!snippet) return null;
+    return {
+      path: reference.path,
+      line: Number(reference.line) || sourceSnippetLocation(snippet).line,
+      column: Number(reference.column) || 0,
+      snippet: snippet,
+      expanded: false,
+    };
+  }
+
+  function restoreWorkspaceFromRoute(options) {
+    options = options || {};
+    var historyState = window.history && window.history.state || null;
+    var parsed = parseWorkspaceHash(window.location && window.location.hash, USER_MECHANISMS, historyState);
+    if (parsed.state.view === 'architecture' && !userArchitectureAvailable()) {
+			parsed = { state: emptyWorkspaceState(), valid: false, canonicalHash: defaultWorkspaceHash() };
+    }
+    workspaceState = parsed.state;
+    workspaceState.sourceLocation = restoreSourceDrawer(historyState);
+    var currentHash = String(window.location && window.location.hash || '');
+    if (options.replace || !parsed.valid || currentHash !== parsed.canonicalHash) {
+      writeWorkspaceHistory(parsed.canonicalHash, workspaceState, {
+        replace: true,
+        sourceDrawer: sourceDrawerHistoryReference(workspaceState.sourceLocation),
+      });
+    }
+    renderWorkspaceState();
+  }
+
+  var workspaceRestoreScheduled = false;
+  function scheduleWorkspaceRouteRestore() {
+    if (workspaceRestoreScheduled) return;
+    workspaceRestoreScheduled = true;
+    Promise.resolve().then(function () {
+      workspaceRestoreScheduled = false;
+      restoreWorkspaceFromRoute();
+    });
+  }
+
+  function navigateWorkspace(view) {
+    if (view === 'architecture') {
+		if (!userArchitectureAvailable()) {
+			commitWorkspaceState(emptyWorkspaceState());
+			return;
+		}
+      openArchitectureTarget(null, null);
+      return;
+    }
+    var next = reduceWorkspaceState(workspaceState, { type: 'view', view: view }, USER_MECHANISMS);
+    commitWorkspaceState(next);
+  }
+
+  function addWorkspaceTab(label, view) {
     var tabs = document.getElementById('rm-tabs');
-    var overviewTab = el('button', 'rm-tab rm-active');
-    overviewTab.textContent = 'Overview';
-    overviewTab.setAttribute('data-tab', 'rm-overview');
-    overviewTab.setAttribute('aria-current', 'page');
-    overviewTab.onclick = function () { showTab('rm-overview'); };
-    tabs.appendChild(overviewTab);
-    if (!DATA.architecture_canvas) {
-      var savedTraceFlows = DATA.flows.filter(function (flow) {
-        return !flow.evidence_only && !flow.error && flow.flow_status !== 'local_only';
+    if (!tabs) return;
+    var button = txt('button', 'rm-tab', label);
+    button.type = 'button';
+    button.setAttribute('data-workspace-view', view);
+    button.onclick = function () { navigateWorkspace(view); };
+    tabs.appendChild(button);
+  }
+
+  function primaryUserMechanism() {
+		var guideID = REPOSITORY_GUIDE && REPOSITORY_GUIDE.start_here_artifact_id || '';
+		var guided = userMechanismByID(USER_MECHANISMS, guideID);
+		if (guided) return guided;
+    var thesis = DATA.repository_thesis || {};
+    var recommended = userMechanismByID(USER_MECHANISMS, thesis.recommended_artifact_id || '');
+    if (recommended) return recommended;
+    for (var index = 0; index < USER_MECHANISMS.length; index++) {
+      if (USER_MECHANISMS[index] && USER_MECHANISMS[index].role === 'primary_behavior') {
+        return USER_MECHANISMS[index];
+      }
+    }
+    return null;
+  }
+
+  function mechanismIsPrimary(mechanism) {
+    var primary = primaryUserMechanism();
+    return !!(primary && mechanism && primary.artifact_id === mechanism.artifact_id);
+  }
+
+  function mechanismRoleLabel(mechanism) {
+		if (mechanismIsPrimary(mechanism)) return 'Main code path';
+		if (mechanism && mechanism.role === 'extension_point') return 'Extension path';
+		if (mechanism && mechanism.role === 'operational_support') return 'Maintenance path';
+		if (mechanism && mechanism.target_user_job === 'question_driven_exploration') return 'Question path';
+		return 'Other code path';
+  }
+
+	function userArchitectureAvailable() {
+		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		if (STUDY_MAP) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		if (REPOSITORY_GUIDE) {
+			return !!(REPOSITORY_GUIDE.architecture_useful && DATA.architecture_canvas);
+		}
+		return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+	}
+
+	function guideMechanisms(ids) {
+		var seen = {};
+		return (Array.isArray(ids) ? ids : []).map(function (id) {
+			return userMechanismByID(USER_MECHANISMS, id);
+		}).filter(function (mechanism) {
+			if (!mechanism || seen[mechanism.artifact_id]) return false;
+			seen[mechanism.artifact_id] = true;
+			return true;
+		});
+	}
+
+	function renderGuideReadNext(mechanism, targets) {
+		if (!mechanism || !Array.isArray(targets) || !targets.length) return null;
+		var section = el('section', 'rm-workspace-section rm-read-next-section');
+		section.appendChild(renderViewHeading(
+			'Read next',
+			'Continue in the implementation',
+			'Jump to an exact symbol or file already used by the main code path.'
+		));
+		var grid = el('div', 'rm-read-next-grid');
+		targets.slice(0, 5).forEach(function (target) {
+			if (!target || !target.path) return;
+			var button = el('button', 'rm-read-next-target');
+			button.type = 'button';
+			button.appendChild(txt('strong', '', target.label || target.symbol || target.path));
+			button.appendChild(txt('code', '', target.path + (target.line ? ':' + target.line : '')));
+			button.appendChild(txt('span', '', 'Open in code path →'));
+			button.onclick = function () {
+				openUserMechanism(mechanism.artifact_id, Number(target.step_index) || 0, true);
+			};
+			grid.appendChild(button);
+		});
+		if (!grid.children || !grid.children.length) return null;
+		section.appendChild(grid);
+		return section;
+	}
+
+  function mechanismPrincipalFiles(mechanism) {
+    var result = [];
+    var seen = {};
+    (mechanism && Array.isArray(mechanism.files) ? mechanism.files : []).forEach(function (location) {
+      var path = String(location && location.path || '').trim();
+      if (!path || seen[path] || result.length >= 4) return;
+      seen[path] = true;
+      result.push(path);
+    });
+    return result;
+  }
+
+  function renderUserMechanismCard(mechanism) {
+    var card = el('button', 'rm-mechanism-card');
+    if (mechanismIsPrimary(mechanism)) card.className += ' is-primary';
+    card.type = 'button';
+    card.appendChild(txt('span', 'rm-mechanism-card__label', mechanismRoleLabel(mechanism)));
+    card.appendChild(txt('strong', '', mechanismPresentationTitle(mechanism)));
+    var titleQuestion = mechanismPresentationTitle(mechanism).replace(/[?.!]+$/, '').toLowerCase();
+    var question = String(mechanism.question || '').trim();
+    if (question && question.replace(/[?.!]+$/, '').toLowerCase() !== titleQuestion) {
+      card.appendChild(txt('p', 'rm-mechanism-card__question', question));
+    }
+    var answer = mechanismShortAnswer(mechanism);
+    if (answer) card.appendChild(txt('p', 'rm-mechanism-card__answer', answer));
+
+    var phases = mechanismNarrativeItems(mechanism).slice(0, 5);
+    if (phases.length) {
+      var phasePreview = el('span', 'rm-mechanism-card__phases');
+      phases.forEach(function (phase, index) {
+        phasePreview.appendChild(txt('span', '', (index + 1) + '. ' + (phase.title || 'Implementation')));
       });
-      var savedTraceMenu = renderSavedTraceMenu(savedTraceFlows);
-      if (savedTraceMenu) tabs.appendChild(savedTraceMenu);
+      card.appendChild(phasePreview);
     }
 
-    var overview = document.getElementById('rm-overview');
-    var overviewHTML = el('div');
+    var principalFiles = mechanismPrincipalFiles(mechanism);
+    if (principalFiles.length) {
+      var files = el('span', 'rm-mechanism-card__files');
+      principalFiles.forEach(function (path) { files.appendChild(txt('code', '', path)); });
+      card.appendChild(files);
+    }
+    card.appendChild(txt('span', 'rm-mechanism-card__action', 'Open code path →'));
+    card.onclick = function () { openUserMechanism(mechanism.artifact_id, 0); };
+    return card;
+  }
 
-    overviewHTML.appendChild(renderPurposeCard());
+  function repositoryLocationAvailable(location) {
+    if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
+    if (embeddedSourceForLocation(location)) return true;
+    return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
+  }
 
-    var directions = candidateDirections();
-    var architectureCanvasHost = null;
-    var surfaceCatalogHost = null;
-    if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
-      var architectureCard = el('section', 'rm-card rm-architecture-canvas-card');
-      var architectureHeading = el('div', 'rm-architecture-canvas-heading');
-      architectureHeading.appendChild(txt('h2', null, DATA.architecture_canvas.title || 'Architecture & flows'));
-      architectureHeading.appendChild(txt('p', null, DATA.architecture_canvas.subtitle || 'Select a component, surface, or saved trace, then challenge each step through exact evidence.'));
-      architectureHeading.appendChild(txt(
-        'div',
-        'rm-direction-hint',
-        'Architecture source: ' + architectureSourceLabel(DATA.architecture_canvas.architecture_source)
-      ));
-      architectureCard.appendChild(architectureHeading);
-      architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
-      architectureCard.appendChild(architectureCanvasHost);
-      overviewHTML.appendChild(architectureCard);
+  function repositoryAreaAction(area) {
+    if (area && repositoryLocationAvailable(area.code_location)) return 'code';
+    if (area && area.map_target && userArchitectureAvailable()) return 'map';
+    return '';
+  }
+
+  function renderRepositoryArea(area) {
+    var action = repositoryAreaAction(area);
+    if (!action) return null;
+    var card = el('button', 'rm-repository-area');
+    card.type = 'button';
+    card.appendChild(txt('strong', '', area.label || area.name || 'Code area'));
+    if (area.responsibility) card.appendChild(txt('span', 'rm-repository-area__responsibility', area.responsibility));
+    if (action === 'code') {
+      card.appendChild(txt('code', '', formatCodeLocation(area.code_location)));
+      card.appendChild(txt('span', 'rm-repository-area__action', 'Open code →'));
+      card.onclick = function () { openSourceLocation(area.code_location); };
     } else {
-      var systemMap = renderSystemMapCard(DATA.high_level_map, directions, DATA.flows);
-      if (systemMap) overviewHTML.appendChild(systemMap);
+      card.appendChild(txt('span', 'rm-repository-area__action', 'View on map →'));
+      card.onclick = function () { openArchitectureTarget(area.map_target, null); };
+    }
+    return card;
+  }
+
+  function appendMechanismGrid(root, mechanisms) {
+    if (!mechanisms.length) return;
+    var grid = el('div', 'rm-mechanism-grid');
+    mechanisms.forEach(function (mechanism) { grid.appendChild(renderUserMechanismCard(mechanism)); });
+    root.appendChild(grid);
+  }
+
+	function openStudyDirection(directionID) {
+		var direction = studyDirectionByID(directionID);
+		if (!direction) {
+			commitWorkspaceState(emptyWorkspaceState());
+			return;
+		}
+		if (direction.mechanism_id && userMechanismByID(USER_MECHANISMS, direction.mechanism_id)) {
+			openUserMechanism(direction.mechanism_id, 0, false);
+			return;
+		}
+		var next = reduceWorkspaceState(workspaceState, {
+			type: 'open_study', directionID: direction.id,
+		}, USER_MECHANISMS);
+		commitWorkspaceState(next);
+	}
+
+	function openPavedPath(operationID) {
+		if (!pavedPathByID(operationID)) {
+			commitWorkspaceState(emptyWorkspaceState());
+			return;
+		}
+		var next = reduceWorkspaceState(workspaceState, {
+			type: 'open_operation', operationID: operationID,
+		}, USER_MECHANISMS);
+		commitWorkspaceState(next);
+	}
+
+	function firstOperationalLiteral(pavedPath) {
+		var actions = pavedPath && Array.isArray(pavedPath.actions) ? pavedPath.actions : [];
+		for (var index = 0; index < actions.length; index++) {
+			if (actions[index] && (actions[index].command || actions[index].endpoint)) {
+				return actions[index].command || actions[index].endpoint;
+			}
+		}
+		return '';
+	}
+
+	function renderPavedPathCard(pavedPath) {
+		var card = el('button', 'rm-operation-card');
+		card.type = 'button';
+		card.appendChild(txt('span', 'rm-operation-card__label', 'Run and verify'));
+		card.appendChild(txt('strong', '', pavedPath.title || 'Repository operation'));
+		if (pavedPath.goal) card.appendChild(txt('p', '', pavedPath.goal));
+		var literal = firstOperationalLiteral(pavedPath);
+		if (literal) card.appendChild(txt('code', 'rm-operation-card__literal', literal));
+		var actionCount = Array.isArray(pavedPath.actions) ? pavedPath.actions.length : 0;
+		if (actionCount) card.appendChild(txt('span', 'rm-operation-card__meta', actionCount + (actionCount === 1 ? ' step' : ' steps')));
+		card.appendChild(txt('span', 'rm-operation-card__action', 'Open instructions →'));
+		card.onclick = function () { openPavedPath(pavedPath.id); };
+		return card;
+	}
+
+	function renderOperationalLandmark(landmark) {
+		var card = el('article', 'rm-operation-landmark');
+		card.appendChild(txt('span', 'rm-operation-card__label', 'Repository reference'));
+		card.appendChild(txt('strong', '', landmark.label || 'Operational reference'));
+		if (landmark.command) card.appendChild(txt('code', 'rm-operation-card__literal', landmark.command));
+		if (landmark.endpoint) card.appendChild(txt('code', 'rm-operation-card__literal', landmark.endpoint));
+		var actions = el('div', 'rm-overview-actions');
+		if (landmark.copy_text) {
+			var copy = txt('button', 'rm-secondary-action', 'Copy command');
+			copy.type = 'button';
+			copy.onclick = function () { copyText(landmark.copy_text); };
+			actions.appendChild(copy);
+		}
+		if (landmark.reference && !landmark.reference.redacted && sourceSnippetHasCode(landmark.reference.source)) {
+			var source = txt('button', 'rm-quiet-action', 'Show source');
+			source.type = 'button';
+			source.onclick = function () {
+				openSourceSnippet(landmark.reference.source, landmark.reference.location, false);
+			};
+			actions.appendChild(source);
+		}
+		if (actions.childNodes.length) card.appendChild(actions);
+		return card;
+	}
+
+	function renderOperationsOverview(root) {
+		if (!PAVED_PATHS.length && !OPERATIONAL_LANDMARKS.length) return;
+		var section = el('section', 'rm-workspace-section rm-operations-section');
+		section.appendChild(renderViewHeading(
+			'How to run and verify',
+			'Repository-backed operating paths',
+			'Use exact commands, endpoints, and checks saved from this repository, with their source beside them.'
+		));
+		if (PAVED_PATHS.length) {
+			var grid = el('div', 'rm-operation-grid');
+			PAVED_PATHS.forEach(function (pavedPath) { grid.appendChild(renderPavedPathCard(pavedPath)); });
+			section.appendChild(grid);
+		} else {
+			var landmarks = el('div', 'rm-operation-landmark-grid');
+			OPERATIONAL_LANDMARKS.slice(0, 8).forEach(function (landmark) {
+				landmarks.appendChild(renderOperationalLandmark(landmark));
+			});
+			section.appendChild(landmarks);
+		}
+		root.appendChild(section);
+	}
+
+	function renderStudyDirectionCard(direction, index) {
+		var card = el('button', 'rm-study-direction-card');
+		card.type = 'button';
+		card.appendChild(txt('span', 'rm-study-direction-card__order', String(index + 1)));
+		var body = el('span', 'rm-study-direction-card__body');
+		body.appendChild(txt('strong', '', direction.question || 'Explore this code area'));
+		if (direction.why_it_matters) body.appendChild(txt('span', 'rm-study-direction-card__reason', direction.why_it_matters));
+		if (direction.learning_outcome) body.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
+		var anchors = el('span', 'rm-study-direction-card__anchors');
+		(direction.principal_anchors || []).slice(0, 4).forEach(function (anchor) {
+			anchors.appendChild(txt('code', '', anchor.symbol || anchor.path));
+		});
+		if (anchors.childNodes.length) body.appendChild(anchors);
+		body.appendChild(txt(
+			'span',
+			'rm-study-direction-card__action',
+			direction.mechanism_id ? 'Open ready deep dive →' : 'Explore this direction →'
+		));
+		card.appendChild(body);
+		card.onclick = function () { openStudyDirection(direction.id); };
+		return card;
+	}
+
+	function renderStudyMapOverview(root) {
+		var brief = STUDY_MAP && STUDY_MAP.brief || {};
+		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
+		hero.appendChild(txt('div', 'rm-view-kicker', 'Repository brief'));
+		hero.appendChild(txt('h2', '', DATA.repo_name || 'Repository overview'));
+		if (brief.what_it_is) hero.appendChild(txt('p', 'rm-brief-lead', brief.what_it_is));
+		if (brief.problem && brief.problem !== brief.what_it_is) hero.appendChild(txt('p', '', brief.problem));
+		var briefFacts = el('div', 'rm-brief-facts');
+		[
+			['Main input', brief.main_input],
+			['Central responsibility', brief.central_responsibility],
+			['Observable result', brief.observable_result],
+		].forEach(function (item) {
+			if (!item[1]) return;
+			var fact = el('div', 'rm-brief-fact');
+			fact.appendChild(txt('span', '', item[0]));
+			fact.appendChild(txt('strong', '', item[1]));
+			briefFacts.appendChild(fact);
+		});
+		if (briefFacts.childNodes.length) hero.appendChild(briefFacts);
+		var terms = Array.isArray(brief.domain_terms) ? brief.domain_terms : [];
+		if (terms.length) {
+			var termList = el('div', 'rm-brief-terms');
+			terms.slice(0, 8).forEach(function (term) {
+				var item = el('span', 'rm-brief-term');
+				item.appendChild(txt('strong', '', term.term));
+				item.appendChild(txt('span', '', term.meaning));
+				termList.appendChild(item);
+			});
+			hero.appendChild(termList);
+		}
+		root.appendChild(hero);
+
+		var areaCards = (Array.isArray(STUDY_MAP.shape) ? STUDY_MAP.shape : []).map(renderRepositoryArea).filter(Boolean);
+		if (areaCards.length) {
+			var shapeSection = el('section', 'rm-workspace-section');
+			shapeSection.appendChild(renderViewHeading('Repository shape', 'Code areas to know', 'A compact map of the production areas worth recognizing first.'));
+			var areaGrid = el('div', 'rm-repository-area-grid');
+			areaCards.forEach(function (card) { areaGrid.appendChild(card); });
+			shapeSection.appendChild(areaGrid);
+			root.appendChild(shapeSection);
+		}
+
+		if (STUDY_DIRECTIONS.length) {
+			var studySection = el('section', 'rm-workspace-section rm-study-map-section');
+			studySection.appendChild(renderViewHeading('What to study', 'A useful path through the repository', 'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.'));
+			var directionList = el('div', 'rm-study-direction-list');
+			STUDY_DIRECTIONS.forEach(function (direction, index) {
+				directionList.appendChild(renderStudyDirectionCard(direction, index));
+			});
+			studySection.appendChild(directionList);
+			root.appendChild(studySection);
+		}
+
+		renderOperationsOverview(root);
+
+		if (USER_MECHANISMS.length) {
+			var deepDiveSection = el('section', 'rm-workspace-section');
+			deepDiveSection.appendChild(renderViewHeading('Ready deep dives', 'Source-backed code paths', 'These directions already have a validated step-by-step implementation explanation.'));
+			appendMechanismGrid(deepDiveSection, USER_MECHANISMS.slice(0, 6));
+			root.appendChild(deepDiveSection);
+		}
+
+		var hasSearch = DATA.semantic_search && window.RepomapSemanticSearch;
+		var hasArchitecture = userArchitectureAvailable();
+		if (hasSearch || hasArchitecture) {
+			var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
+			exploreSection.appendChild(renderViewHeading('Explore', 'Search or open the full architecture', 'Use the study map as a starting point, then branch into a symbol, file, or architecture area.'));
+			var actions = el('div', 'rm-overview-actions');
+			if (hasSearch) {
+				var search = txt('button', 'rm-secondary-action', 'Search');
+				search.type = 'button';
+				search.onclick = function () { navigateWorkspace('search'); };
+				actions.appendChild(search);
+			}
+			if (hasArchitecture) {
+				var architecture = txt('button', 'rm-secondary-action', 'Full architecture');
+				architecture.type = 'button';
+				architecture.onclick = function () { openArchitectureTarget(null, null); };
+				actions.appendChild(architecture);
+			}
+			exploreSection.appendChild(actions);
+			root.appendChild(exploreSection);
+		}
+	}
+
+	function renderStudyDetailWorkspace() {
+		var root = document.getElementById('rm-study-detail');
+		if (!root) return;
+		root.replaceChildren();
+		var direction = studyDirectionByID(workspaceState.directionID);
+		if (!direction) return;
+		var back = txt('button', 'rm-secondary-action rm-study-back', '← Repository overview');
+		back.type = 'button';
+		back.onclick = function () { navigateWorkspace('overview'); };
+		root.appendChild(back);
+		root.appendChild(renderViewHeading('Reading path', direction.question, direction.why_it_matters));
+		if (direction.learning_outcome) {
+			var outcome = el('aside', 'rm-study-outcome');
+			outcome.appendChild(txt('span', '', 'After this reading path'));
+			outcome.appendChild(txt('strong', '', direction.learning_outcome));
+			root.appendChild(outcome);
+		}
+		root.appendChild(txt('p', 'rm-study-order-note', 'These anchors are ordered for learning. They do not claim runtime execution order.'));
+		var start = studyStartReference(direction);
+		if (start) {
+			var startActions = el('div', 'rm-study-start-actions');
+			var startButton = txt('button', 'rm-primary-action', 'Start with ' + start.label + ' →');
+			startButton.type = 'button';
+			startButton.onclick = function () {
+				openSourceSnippet(start.source, start.location);
+			};
+			startActions.appendChild(startButton);
+			root.appendChild(startActions);
+		}
+		root.appendChild(renderViewHeading('', 'You will inspect', 'Open an anchor to reveal its exact saved source.'));
+		var anchors = el('div', 'rm-study-reading-list');
+		(direction.reading_anchors || []).forEach(function (reading, index) {
+			var card = renderStudyReadingAnchor(reading, index);
+			if (card) anchors.appendChild(card);
+		});
+		root.appendChild(anchors);
+
+		var related = el('section', 'rm-workspace-section rm-study-related');
+		related.appendChild(renderViewHeading('Continue exploring', 'Related repository context', 'Open a referenced document, search for a nearby concept, or inspect the full architecture.'));
+		var actions = el('div', 'rm-overview-actions');
+		(direction.documents || []).forEach(function (document) {
+			if (!document || !repositoryLocationAvailable(document.location)) return;
+			var button = txt('button', 'rm-secondary-action', document.label || 'Open documentation');
+			button.type = 'button';
+			button.onclick = function () {
+				if (document.source) openSourceSnippet(document.source, document.location);
+				else openSourceLocation(document.location);
+			};
+			actions.appendChild(button);
+		});
+		if (DATA.semantic_search && window.RepomapSemanticSearch) {
+			var search = txt('button', 'rm-secondary-action', 'Search');
+			search.type = 'button';
+			search.onclick = function () { navigateWorkspace('search'); };
+			actions.appendChild(search);
+		}
+		if (userArchitectureAvailable()) {
+			var areaTarget = null;
+			(direction.areas || []).some(function (area) {
+				if (area && area.map_target) { areaTarget = area.map_target; return true; }
+				return false;
+			});
+			var architecture = txt('button', 'rm-secondary-action', 'Architecture');
+			architecture.type = 'button';
+			architecture.onclick = function () {
+				openArchitectureTarget(areaTarget, { directionID: direction.id });
+			};
+			actions.appendChild(architecture);
+		}
+		related.appendChild(actions);
+		root.appendChild(related);
+	}
+
+	function firstSourcedStudyDocument(direction) {
+		var documents = direction && Array.isArray(direction.documents) ? direction.documents : [];
+		for (var index = 0; index < documents.length; index++) {
+			if (documents[index] && sourceSnippetHasCode(documents[index].source)) return documents[index];
+		}
+		return null;
+	}
+
+	function firstSourcedStudyAnchor(direction) {
+		var anchors = direction && Array.isArray(direction.reading_anchors) ? direction.reading_anchors : [];
+		for (var index = 0; index < anchors.length; index++) {
+			if (anchors[index] && sourceSnippetHasCode(anchors[index].source)) return anchors[index];
+		}
+		return null;
+	}
+
+	function studyStartReference(direction) {
+		if (!direction) return null;
+		var documentFirst = direction.target_user_job === 'first_contact' ||
+			direction.target_user_job === 'use_or_operate';
+		var documentReference = documentFirst ? firstSourcedStudyDocument(direction) : null;
+		if (documentReference) {
+			return {
+				kind: 'document',
+				label: documentReference.label || documentReference.location.path,
+				location: documentReference.location || sourceSnippetLocation(documentReference.source),
+				source: documentReference.source,
+			};
+		}
+		var reading = firstSourcedStudyAnchor(direction);
+		if (!reading) return null;
+		return {
+			kind: 'anchor',
+			label: reading.source.enclosing_symbol || reading.label || reading.location.path,
+			location: reading.location || sourceSnippetLocation(reading.source),
+			source: reading.source,
+		};
+	}
+
+	function renderStudyReadingAnchor(reading, index) {
+		if (!reading || !sourceSnippetHasCode(reading.source)) return null;
+		var location = reading.location || sourceSnippetLocation(reading.source);
+		var card = el('article', 'rm-study-reading-anchor');
+		card.appendChild(txt('span', 'rm-study-reading-anchor__order', String(index + 1)));
+		var copy = el('div', 'rm-study-reading-anchor__copy');
+		if (reading.label) copy.appendChild(txt('span', 'rm-study-reading-anchor__label', reading.label));
+		copy.appendChild(txt('strong', '', reading.source.enclosing_symbol || location.path));
+		copy.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
+		if (reading.what_to_look_for) copy.appendChild(txt('p', '', reading.what_to_look_for));
+		card.appendChild(copy);
+		var open = txt('button', 'rm-secondary-action rm-study-reading-anchor__open', 'Open exact source');
+		open.type = 'button';
+		open.onclick = function () { openSourceSnippet(reading.source, location); };
+		card.appendChild(open);
+		return card;
+	}
+
+	function operationOrderingCopy(pavedPath) {
+		if (!pavedPath) return '';
+		if (pavedPath.ordering_basis === 'documented_procedure') {
+			return 'The action order follows the procedure documented by this repository.';
+		}
+		if (pavedPath.ordering_basis === 'script_sequence') {
+			return 'The action order follows the repository-owned script.';
+		}
+		return 'These source-backed actions are arranged as a practical operating path. Review each referenced source before using it.';
+	}
+
+	function appendOperationalReferences(root, title, copy, references) {
+		references = Array.isArray(references) ? references.filter(Boolean) : [];
+		if (!references.length) return;
+		var section = el('section', 'rm-workspace-section rm-operation-references');
+		section.appendChild(renderViewHeading('', title, copy));
+			references.forEach(function (reference) {
+			if (!reference || !sourceSnippetHasCode(reference.source)) return;
+			section.appendChild(renderSourceSnippetCard(reference.source, {
+				roleLabel: reference.label || title,
+				reason: reference.label || '',
+				location: reference.location || sourceSnippetLocation(reference.source),
+				redacted: !!reference.redacted,
+			}));
+		});
+		root.appendChild(section);
+	}
+
+	function renderOperationAction(action, index) {
+		var section = el('section', 'rm-operation-action');
+		var heading = el('div', 'rm-operation-action__heading');
+		heading.appendChild(txt('span', 'rm-operation-action__order', String(index + 1)));
+		var copy = el('div', 'rm-operation-action__copy');
+		copy.appendChild(txt('strong', '', action.instruction || 'Use this repository reference'));
+		if (action.command) {
+			var literalRow = el('div', 'rm-operation-literal');
+			literalRow.appendChild(txt('code', '', action.command));
+			if (action.copy_text) {
+				var copyButton = txt('button', 'rm-secondary-action', 'Copy command');
+				copyButton.type = 'button';
+				copyButton.onclick = function () { copyText(action.copy_text); };
+				literalRow.appendChild(copyButton);
+			}
+			copy.appendChild(literalRow);
+		}
+		if (action.endpoint) {
+			var endpointRow = el('div', 'rm-operation-literal');
+			endpointRow.appendChild(txt('code', '', action.endpoint));
+			copy.appendChild(endpointRow);
+		}
+		heading.appendChild(copy);
+		section.appendChild(heading);
+		if (action.reference && sourceSnippetHasCode(action.reference.source)) {
+			section.appendChild(renderSourceSnippetCard(action.reference.source, {
+				primary: index === 0,
+				roleLabel: action.reference.label || 'Repository source',
+				reason: action.instruction || '',
+				location: action.reference.location || sourceSnippetLocation(action.reference.source),
+				redacted: !!action.reference.redacted,
+			}));
+		}
+		return section;
+	}
+
+	function operationalResultLabel(kind) {
+		if (kind === 'command_output') return 'Documented output';
+		if (kind === 'generated_artifact') return 'Generated artifact';
+		return '';
+	}
+
+	function renderOperationalResults(pavedPath) {
+		var actionCount = Array.isArray(pavedPath && pavedPath.actions) ? pavedPath.actions.length : 0;
+		var results = Array.isArray(pavedPath && pavedPath.expected_results)
+			? pavedPath.expected_results.filter(function (result) {
+				var afterAction = Number(result && result.after_action) || 0;
+				return !!(result && operationalResultLabel(result.kind) && String(result.value || '').trim() &&
+					afterAction > 0 && afterAction <= actionCount && result.reference &&
+					!result.reference.redacted && sourceSnippetHasCode(result.reference.source));
+			})
+			: [];
+		if (!results.length) return null;
+
+		var section = el('section', 'rm-workspace-section rm-operation-results');
+		section.appendChild(renderViewHeading('', 'Expected result', 'Exact output or generated paths retained from this repository.'));
+		var list = el('div', 'rm-operation-result-list');
+		results.forEach(function (result) {
+			var card = el('article', 'rm-operation-result');
+			var meta = el('div', 'rm-operation-result__meta');
+			meta.appendChild(txt('span', 'rm-operation-result__action', 'After action ' + result.after_action));
+			meta.appendChild(txt('span', 'rm-operation-result__kind', operationalResultLabel(result.kind)));
+			card.appendChild(meta);
+			if (result.kind === 'command_output') {
+				var output = el('pre', 'rm-operation-result__value rm-operation-result__value--output');
+				output.appendChild(txt('code', '', result.value));
+				card.appendChild(output);
+			} else {
+				card.appendChild(txt('code', 'rm-operation-result__value', result.value));
+			}
+			var source = txt('button', 'rm-quiet-action', 'Show source');
+			source.type = 'button';
+			source.onclick = function () {
+				openSourceSnippet(result.reference.source, result.reference.location, false);
+			};
+			card.appendChild(source);
+			list.appendChild(card);
+		});
+		section.appendChild(list);
+		return section;
+	}
+
+	function renderOperateDetailWorkspace() {
+		var root = document.getElementById('rm-operate-detail');
+		if (!root) return;
+		root.replaceChildren();
+		var pavedPath = pavedPathByID(workspaceState.operationID);
+		if (!pavedPath) return;
+		var back = txt('button', 'rm-secondary-action rm-study-back', '← Repository overview');
+		back.type = 'button';
+		back.onclick = function () { navigateWorkspace('overview'); };
+		root.appendChild(back);
+		root.appendChild(renderViewHeading('How to run and verify', pavedPath.title, pavedPath.goal));
+		root.appendChild(txt('p', 'rm-operation-order-note', operationOrderingCopy(pavedPath)));
+
+		appendOperationalReferences(
+			root,
+			'Before you start',
+			'Check the repository-owned prerequisites referenced below.',
+			pavedPath.prerequisites
+		);
+
+		var actions = Array.isArray(pavedPath.actions) ? pavedPath.actions.filter(Boolean) : [];
+		if (actions.length) {
+			var actionSection = el('section', 'rm-workspace-section');
+			actionSection.appendChild(renderViewHeading('', 'Actions', 'Each action keeps its exact command or endpoint beside the repository source that defines it.'));
+			var actionList = el('div', 'rm-operation-action-list');
+			actions.forEach(function (action, index) {
+				actionList.appendChild(renderOperationAction(action, index));
+			});
+			actionSection.appendChild(actionList);
+			root.appendChild(actionSection);
+		}
+		var expectedResults = renderOperationalResults(pavedPath);
+		if (expectedResults) root.appendChild(expectedResults);
+
+		appendOperationalReferences(
+			root,
+			'What to verify',
+			'Use these repository references to check the expected result.',
+			pavedPath.expected
+		);
+		appendOperationalReferences(
+			root,
+			'If it does not work',
+			'Continue with the repository-owned troubleshooting references.',
+			pavedPath.troubleshooting
+		);
+
+		var relatedIDs = Array.isArray(pavedPath.related_study_direction_ids)
+			? pavedPath.related_study_direction_ids : [];
+		var relatedDirections = relatedIDs.map(studyDirectionByID).filter(Boolean);
+		if (relatedDirections.length) {
+			var related = el('section', 'rm-workspace-section rm-operation-related');
+			related.appendChild(renderViewHeading('Study the implementation', 'Related reading paths', 'Follow the code behind this operation without losing this page from browser history.'));
+			var buttons = el('div', 'rm-overview-actions');
+			relatedDirections.forEach(function (direction) {
+				var button = txt('button', 'rm-secondary-action', direction.question);
+				button.type = 'button';
+				button.onclick = function () { openStudyDirection(direction.id); };
+				buttons.appendChild(button);
+			});
+			related.appendChild(buttons);
+			root.appendChild(related);
+		}
+	}
+
+	function taskLensLabel(value) {
+		return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, function (letter) {
+			return letter.toUpperCase();
+		});
+	}
+
+	function taskLensAnchor(index) {
+		var anchors = TASK_INVESTIGATION && Array.isArray(TASK_INVESTIGATION.anchors)
+			? TASK_INVESTIGATION.anchors
+			: [];
+		index = Number(index);
+		return Number.isInteger(index) && index >= 0 && index < anchors.length ? anchors[index] : null;
+	}
+
+	function taskLensAnchorTitle(anchor) {
+		if (!anchor) return 'Repository anchor';
+		return String(anchor.symbol || anchor.section || anchor.path || 'Repository anchor');
+	}
+
+	function taskLensSupportBadge(value) {
+		var normalized = String(value || 'unresolved');
+		return txt(
+			'span',
+			'rm-task-support rm-task-support--' + normalized.replace(/[^a-z0-9_-]/gi, '-'),
+			taskLensLabel(normalized)
+		);
+	}
+
+	function taskLensAnchorElementID(index) {
+		return 'rm-task-anchor-' + (Number(index) + 1);
+	}
+
+	function scrollToTaskLensAnchor(index) {
+		var anchor = taskLensAnchor(index);
+		var target = anchor && document.getElementById(taskLensAnchorElementID(index));
+		if (!target) return;
+		if (typeof target.scrollIntoView === 'function') {
+			target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}
+		if (typeof target.focus === 'function') target.focus({ preventScroll: true });
+	}
+
+	function taskLensCitations(indexes, label) {
+		indexes = Array.isArray(indexes) ? indexes : [];
+		var valid = indexes.map(function (index) {
+			index = Number(index);
+			return taskLensAnchor(index) ? index : null;
+		}).filter(function (index) { return index !== null; });
+		if (!valid.length) return null;
+		var citations = el('div', 'rm-task-citations');
+		citations.appendChild(txt('span', 'rm-task-citations__label', label || 'Evidence'));
+		valid.forEach(function (index) {
+			var anchor = taskLensAnchor(index);
+			var button = txt(
+				'button',
+				'rm-task-citation',
+				'Anchor ' + String(index + 1) + ' · ' + taskLensAnchorTitle(anchor)
+			);
+			button.type = 'button';
+			button.onclick = function () { scrollToTaskLensAnchor(index); };
+			citations.appendChild(button);
+		});
+		return citations;
+	}
+
+	function appendTaskLensCitations(root, indexes, label) {
+		var citations = taskLensCitations(indexes, label);
+		if (citations) root.appendChild(citations);
+	}
+
+	function taskLensTermGroup(label, values, className) {
+		values = Array.isArray(values) ? values.filter(Boolean) : [];
+		if (!values.length) return null;
+		var group = el('div', 'rm-task-term-group ' + className);
+		group.appendChild(txt('span', 'rm-task-term-label', label));
+		var terms = el('div', 'rm-task-term-list');
+		values.forEach(function (value) {
+			terms.appendChild(txt('code', 'rm-task-term', value));
+		});
+		group.appendChild(terms);
+		return group;
+	}
+
+	function taskLensJoinConnector(kind) {
+		return kind === 'direct_call_expression' ? ' → ' : ' ↔ ';
+	}
+
+	function taskLensGuidanceList(values) {
+		var list = el('ol', 'rm-task-guidance-list');
+		(Array.isArray(values) ? values : []).forEach(function (guidance) {
+			if (!guidance || !guidance.text) return;
+			var item = el('li', 'rm-task-guidance');
+			item.appendChild(txt('p', '', guidance.text));
+			item.appendChild(taskLensSupportBadge(guidance.authority));
+			appendTaskLensCitations(item, guidance.support_anchor_indexes, 'Evidence');
+			list.appendChild(item);
+		});
+		return list;
+	}
+
+	function renderTaskInvestigationWorkspace() {
+		var root = document.getElementById('rm-task-investigation');
+		if (!root) return;
+		root.replaceChildren();
+		if (!TASK_INVESTIGATION) return;
+
+		var interpretation = TASK_INVESTIGATION.interpretation || {};
+		var hero = el('section', 'rm-task-hero');
+		hero.appendChild(renderViewHeading(
+			'Task investigation',
+			interpretation.restatement || 'Repository task',
+			interpretation.observable_or_outcome || ''
+		));
+		var taskText = linkified('p', 'rm-task-original', TASK_INVESTIGATION.task || '');
+		if (taskText.textContent || taskText.childNodes && taskText.childNodes.length) hero.appendChild(taskText);
+		var classification = el('div', 'rm-task-classification');
+		classification.appendChild(taskLensSupportBadge(interpretation.task_kind));
+		classification.appendChild(taskLensSupportBadge(TASK_INVESTIGATION.locality));
+		classification.appendChild(taskLensSupportBadge(
+			TASK_INVESTIGATION.sufficient ? 'bounded evidence sufficient' : 'partial bounded evidence'
+		));
+		hero.appendChild(classification);
+		var termBoundary = el('div', 'rm-task-term-boundary');
+		var foundTerms = taskLensTermGroup(
+			'Found in repository evidence',
+			interpretation.repository_terms_found,
+			'rm-task-term-group--found'
+		);
+		var userOnlyTerms = taskLensTermGroup(
+			'Task-provided only',
+			interpretation.user_provided_only_terms,
+			'rm-task-term-group--task'
+		);
+		if (foundTerms) termBoundary.appendChild(foundTerms);
+		if (userOnlyTerms) termBoundary.appendChild(userOnlyTerms);
+		if (termBoundary.childNodes.length) hero.appendChild(termBoundary);
+		root.appendChild(hero);
+
+		var warnings = Array.isArray(TASK_INVESTIGATION.warnings)
+			? TASK_INVESTIGATION.warnings.filter(Boolean)
+			: [];
+		if (warnings.length) {
+			var warningSection = el('section', 'rm-workspace-section rm-task-warnings');
+			warningSection.appendChild(renderViewHeading(
+				'Evidence cautions',
+				'Limits to keep in view',
+				'These cautions qualify the bounded investigation below.'
+			));
+			var warningList = el('ul', 'rm-task-warning-list');
+			warnings.forEach(function (warning) {
+				warningList.appendChild(txt('li', '', warning));
+			});
+			warningSection.appendChild(warningList);
+			root.appendChild(warningSection);
+		}
+
+		var areas = Array.isArray(TASK_INVESTIGATION.likely_areas) ? TASK_INVESTIGATION.likely_areas : [];
+		if (areas.length) {
+			var areaSection = el('section', 'rm-workspace-section rm-task-areas');
+			areaSection.appendChild(renderViewHeading(
+				'Likely areas',
+				'Where the bounded evidence points',
+				'Each area remains tied to the exact retained anchors shown below.'
+			));
+			areas.forEach(function (area) {
+				var areaCard = el('article', 'rm-task-area');
+				areaCard.appendChild(txt('h3', '', area.label || 'Relevant code area'));
+				if (area.why) areaCard.appendChild(txt('p', '', area.why));
+				var areaAnchors = el('div', 'rm-task-area-anchors');
+				(area.anchor_indexes || []).forEach(function (anchorIndex) {
+					var anchor = taskLensAnchor(anchorIndex);
+					if (!anchor) return;
+					areaAnchors.appendChild(txt(
+						'code',
+						'rm-task-area-anchor',
+						taskLensAnchorTitle(anchor) + ' · ' + anchor.path
+					));
+				});
+				areaCard.appendChild(areaAnchors);
+				areaSection.appendChild(areaCard);
+			});
+			root.appendChild(areaSection);
+		}
+
+		var hypotheses = Array.isArray(TASK_INVESTIGATION.working_hypothesis)
+			? TASK_INVESTIGATION.working_hypothesis
+			: [];
+		if (hypotheses.length) {
+			var hypothesisSection = el('section', 'rm-workspace-section rm-task-hypothesis');
+			hypothesisSection.appendChild(renderViewHeading(
+				'Working hypothesis',
+				'What the bounded evidence supports',
+				'Each clause keeps its support status visible; plausible and unresolved claims are not presented as repository facts.'
+			));
+			var hypothesisList = el('div', 'rm-task-hypothesis-list');
+				hypotheses.forEach(function (clause) {
+					var item = el('article', 'rm-task-hypothesis-clause');
+					item.appendChild(taskLensSupportBadge(clause.status));
+					var claim = el('div', 'rm-task-hypothesis-claim');
+					claim.appendChild(txt('p', '', clause.text || ''));
+					appendTaskLensCitations(claim, clause.support_anchor_indexes, 'Evidence');
+					item.appendChild(claim);
+				hypothesisList.appendChild(item);
+			});
+			hypothesisSection.appendChild(hypothesisList);
+			root.appendChild(hypothesisSection);
+		}
+
+		var anchors = Array.isArray(TASK_INVESTIGATION.anchors) ? TASK_INVESTIGATION.anchors : [];
+		if (anchors.length) {
+			var anchorSection = el('section', 'rm-workspace-section rm-task-anchors');
+			anchorSection.appendChild(renderViewHeading(
+				'Anchor map',
+				'Files and symbols to inspect',
+				'Source stays folded until you choose an anchor.'
+			));
+			var anchorList = el('div', 'rm-task-anchor-list');
+			anchors.forEach(function (anchor, index) {
+				var card = el('article', 'rm-task-anchor');
+				card.id = taskLensAnchorElementID(index);
+				card.tabIndex = -1;
+				var heading = el('div', 'rm-task-anchor__heading');
+				var title = el('div', '');
+				title.appendChild(txt('span', 'rm-task-anchor__index', String(index + 1)));
+				title.appendChild(txt('strong', '', taskLensAnchorTitle(anchor)));
+				title.appendChild(taskLensSupportBadge(anchor.role));
+				heading.appendChild(title);
+				var showSource = txt('button', 'rm-secondary-action', 'Show source');
+				showSource.type = 'button';
+				showSource.onclick = function () {
+					openSourceSnippet(anchor.source, { path: anchor.path, line: anchor.start_line });
+				};
+				heading.appendChild(showSource);
+				card.appendChild(heading);
+				card.appendChild(txt('code', 'rm-task-anchor__location',
+					anchor.path + ':' + anchor.start_line + '–' + anchor.end_line));
+				card.appendChild(txt('p', '', anchor.why || ''));
+				anchorList.appendChild(card);
+			});
+			anchorSection.appendChild(anchorList);
+			root.appendChild(anchorSection);
+		}
+
+		var joins = Array.isArray(TASK_INVESTIGATION.evidence_joins)
+			? TASK_INVESTIGATION.evidence_joins
+			: [];
+		if (joins.length) {
+			var joinSection = el('section', 'rm-workspace-section rm-task-joins');
+			joinSection.appendChild(renderViewHeading(
+				'Evidence joins',
+				'How the selected anchors connect',
+				'Every join states both its support type and what it does not prove.'
+			));
+			var joinList = el('div', 'rm-task-join-list');
+			joins.forEach(function (join) {
+				var left = taskLensAnchor(join.left_anchor);
+				var right = taskLensAnchor(join.right_anchor);
+				if (!left || !right) return;
+				var card = el('article', 'rm-task-join');
+				var title = el('div', 'rm-task-join__title');
+				title.appendChild(txt('strong', '', taskLensAnchorTitle(left)));
+				var connector = taskLensJoinConnector(join.kind);
+				title.appendChild(txt('span', '', connector + taskLensLabel(join.kind) + connector));
+				title.appendChild(txt('strong', '', taskLensAnchorTitle(right)));
+				card.appendChild(title);
+				card.appendChild(taskLensSupportBadge(join.support));
+				card.appendChild(txt('p', '', join.explanation || ''));
+				card.appendChild(txt('p', 'rm-task-scope', 'Scope: ' + (join.scope_non_guarantees || 'bounded local evidence only')));
+				appendTaskLensCitations(card, join.support_anchor_indexes, 'Supporting anchors');
+				joinList.appendChild(card);
+			});
+			joinSection.appendChild(joinList);
+			root.appendChild(joinSection);
+		}
+
+		var guidanceGrid = el('div', 'rm-task-guidance-grid');
+		var reproduce = el('section', 'rm-workspace-section');
+		reproduce.appendChild(renderViewHeading(
+			'Reproduce or observe',
+			'Collect the relevant signal',
+			'Authority labels distinguish repository instructions from task-provided or missing evidence.'
+		));
+		reproduce.appendChild(taskLensGuidanceList(TASK_INVESTIGATION.reproduce_or_observe));
+		guidanceGrid.appendChild(reproduce);
+
+		var verification = TASK_INVESTIGATION.verify || {};
+		var verify = el('section', 'rm-workspace-section');
+		verify.appendChild(renderViewHeading('Verify', 'Confirm the intended effect', verification.effect_to_observe || ''));
+		verify.appendChild(taskLensGuidanceList(verification.steps));
+		guidanceGrid.appendChild(verify);
+		root.appendChild(guidanceGrid);
+
+		var probes = Array.isArray(TASK_INVESTIGATION.next_probes) ? TASK_INVESTIGATION.next_probes : [];
+		if (probes.length) {
+			var probeSection = el('section', 'rm-workspace-section rm-task-probes');
+			probeSection.appendChild(renderViewHeading(
+				'Next probes',
+				'What remains unresolved',
+				'These are bounded follow-ups, not claims that the missing relationship exists.'
+			));
+			var probeList = el('ul', '');
+			probes.forEach(function (probe) {
+				var item = el('li', '');
+				var probeBody = el('div', 'rm-task-probe-body');
+				probeBody.appendChild(txt('span', '', probe.text || ''));
+				appendTaskLensCitations(probeBody, probe.anchor_indexes, 'Inspect');
+				item.appendChild(taskLensSupportBadge(probe.action));
+				item.appendChild(probeBody);
+				probeList.appendChild(item);
+			});
+			probeSection.appendChild(probeList);
+			root.appendChild(probeSection);
+		}
+
+		var details = el('details', 'rm-task-retrieval');
+		details.appendChild(txt('summary', '', 'Bounded retrieval details'));
+		var budget = TASK_INVESTIGATION.budget || {};
+		details.appendChild(txt(
+			'p',
+			'',
+			String(budget.read_files || 0) + ' files · ' + String(budget.read_bytes || 0) +
+			' bytes · ' + String(TASK_INVESTIGATION.provider && TASK_INVESTIGATION.provider.calls || 0) +
+			' model calls'
+		));
+		if ((TASK_INVESTIGATION.stages_skipped || []).length) {
+			details.appendChild(txt('p', '', 'Skipped: ' + TASK_INVESTIGATION.stages_skipped.map(taskLensLabel).join(', ')));
+		}
+		root.appendChild(details);
+	}
+
+	function renderOverviewWorkspace() {
+    var root = document.getElementById('rm-overview');
+    if (!root) return;
+    root.replaceChildren();
+		if (STUDY_MAP) {
+			renderStudyMapOverview(root);
+			return;
+		}
+
+		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+    var hero = el('section', 'rm-overview-hero rm-purpose-hero');
+    hero.appendChild(txt('div', 'rm-view-kicker', 'Purpose'));
+    hero.appendChild(txt('h2', '', DATA.repo_name || 'Repository overview'));
+    hero.appendChild(txt('p', '', thesis.purpose || DATA.project_guess || 'Explore how this repository is organized and implemented.'));
+    root.appendChild(hero);
+
+    var areas = Array.isArray(thesis.areas) ? thesis.areas.slice(0, 7) : [];
+    var areaCards = areas.map(renderRepositoryArea).filter(Boolean);
+    if (areaCards.length) {
+      var shapeSection = el('section', 'rm-workspace-section');
+      shapeSection.appendChild(renderViewHeading('Repository shape', 'Code areas to know', 'Open a concrete source location or continue on the architecture map.'));
+      var areaGrid = el('div', 'rm-repository-area-grid');
+      areaCards.forEach(function (card) { areaGrid.appendChild(card); });
+      shapeSection.appendChild(areaGrid);
+      root.appendChild(shapeSection);
     }
 
-    if (DATA.discovered_surfaces && window.RepomapSurfaceCatalog) {
-      surfaceCatalogHost = el('div', 'rm-surface-catalog-host');
-      overviewHTML.appendChild(surfaceCatalogHost);
+		renderOperationsOverview(root);
+
+    var primary = primaryUserMechanism();
+    if (primary) {
+      var primarySection = el('section', 'rm-workspace-section rm-primary-path-section');
+      primarySection.appendChild(renderViewHeading('Primary path', 'Start with the main behavior', 'Read one source-backed path before exploring the rest of the repository.'));
+      appendMechanismGrid(primarySection, [primary]);
+      root.appendChild(primarySection);
     }
 
-    var startHere = renderStartHereCard(DATA.first_files_to_open);
-    if (startHere) overviewHTML.appendChild(startHere);
+		var extension = REPOSITORY_GUIDE
+			? guideMechanisms(REPOSITORY_GUIDE.extension_artifact_ids)
+			: USER_MECHANISMS.filter(function (mechanism) { return mechanism.role === 'extension_point'; });
+		if (extension.length) {
+			var extensionSection = el('section', 'rm-workspace-section');
+			extensionSection.appendChild(renderViewHeading('Extension paths', 'Where behavior plugs in', 'Follow an accepted code path to a registration, factory, adapter, or boundary.'));
+			appendMechanismGrid(extensionSection, extension.slice(0, 3));
+			root.appendChild(extensionSection);
+		}
 
-    var terms = renderTermsCard(DATA.important_domain_words);
-    if (terms) overviewHTML.appendChild(terms);
+		var secondary = REPOSITORY_GUIDE
+			? guideMechanisms(REPOSITORY_GUIDE.more_path_artifact_ids)
+			: USER_MECHANISMS.filter(function (mechanism) {
+				return (!primary || mechanism.artifact_id !== primary.artifact_id) && mechanism.role !== 'extension_point';
+			});
+		if (secondary.length) {
+      var secondarySection = el('section', 'rm-workspace-section');
+      secondarySection.appendChild(renderViewHeading('Other paths', 'More behavior to explore', 'Continue with another source-backed explanation when it matches what you need.'));
+      appendMechanismGrid(secondarySection, secondary.slice(0, 4));
+      root.appendChild(secondarySection);
+    }
 
-    var questions = renderQuestionsCard(DATA.questions_for_human, DATA.unverified_paths);
-    if (questions) overviewHTML.appendChild(questions);
+		var readNext = renderGuideReadNext(primary, REPOSITORY_GUIDE && REPOSITORY_GUIDE.read_next || primary && primary.read_next || []);
+		if (readNext) root.appendChild(readNext);
 
-    overview.innerHTML = '';
-    overview.appendChild(overviewHTML);
+		var systemStory = Array.isArray(thesis.system_story) ? thesis.system_story.filter(Boolean) : [];
+		if (systemStory.length) {
+			var storySection = el('section', 'rm-workspace-section');
+			storySection.appendChild(renderViewHeading('System story', 'How the parts fit together', 'A compact orientation assembled from repository documentation and existing code areas.'));
+			var story = el('ol', 'rm-system-story');
+			systemStory.forEach(function (item) { story.appendChild(txt('li', '', item)); });
+			storySection.appendChild(story);
+			root.appendChild(storySection);
+		}
 
+    if (USER_SOURCES.length && !USER_MECHANISMS.length) {
+      var filesSection = el('section', 'rm-workspace-section');
+      filesSection.appendChild(renderViewHeading('Code', 'Where to start', 'Ranked landmarks from the source captured with this report.'));
+      var landmarks = USER_SOURCES.filter(sourceSnippetHasCode).slice(0, 6);
+      var strongPrimary = landmarks.length && overviewSourceIsStrong(landmarks[0]);
+      var landmarkList = el('div', 'rm-overview-landmark-list');
+      landmarks.forEach(function (snippet, index) {
+        landmarkList.appendChild(renderSourceSnippetCard(snippet, {
+          primary: !!strongPrimary && index === 0,
+          overviewLandmark: true,
+          roleLabel: overviewSourceRoleLabel(snippet),
+          reason: overviewSourceReason(snippet),
+          location: sourceSnippetLocation(snippet),
+        }));
+      });
+      filesSection.appendChild(landmarkList);
+      root.appendChild(filesSection);
+    }
+
+    var hasSearch = DATA.semantic_search && window.RepomapSemanticSearch;
+		var hasArchitecture = userArchitectureAvailable();
+    if (hasSearch || hasArchitecture) {
+      var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
+      exploreSection.appendChild(renderViewHeading('Explore', 'Find another way in', 'Search for a behavior, symbol, or file, or inspect the repository map.'));
+      var actions = el('div', 'rm-overview-actions');
+      if (hasSearch) {
+        var search = txt('button', 'rm-secondary-action', 'Search');
+        search.type = 'button';
+        search.onclick = function () { navigateWorkspace('search'); };
+        actions.appendChild(search);
+      }
+      if (hasArchitecture) {
+        var architecture = txt('button', 'rm-secondary-action', 'Explore architecture');
+        architecture.type = 'button';
+        architecture.onclick = function () { openArchitectureTarget(null, null); };
+        actions.appendChild(architecture);
+      }
+      exploreSection.appendChild(actions);
+      root.appendChild(exploreSection);
+    }
+  }
+
+  function renderMechanismsWorkspace() {
+    var root = document.getElementById('rm-mechanisms');
+    if (!root) return;
+    root.replaceChildren();
+    root.appendChild(renderViewHeading(
+      'Mechanisms',
+      'Ready explanations',
+      'Choose a source-backed path and walk through its implementation one step at a time.'
+    ));
+    if (!USER_MECHANISMS.length) {
+      var empty = el('div', 'rm-empty-state');
+		empty.appendChild(txt('p', '', userArchitectureAvailable()
+			? 'Search for a symbol or file, or explore the architecture map.'
+			: 'Search for a symbol or file to continue.'));
+      root.appendChild(empty);
+      return;
+    }
+    var primary = primaryUserMechanism();
+    if (primary) {
+      root.appendChild(txt('h3', 'rm-mechanism-group-title', 'Main code path'));
+      appendMechanismGrid(root, [primary]);
+    }
+    var secondary = USER_MECHANISMS.filter(function (mechanism) {
+      return !primary || mechanism.artifact_id !== primary.artifact_id;
+    });
+    if (secondary.length) {
+      root.appendChild(txt('h3', 'rm-mechanism-group-title', 'Other code paths'));
+      appendMechanismGrid(root, secondary);
+    }
+  }
+
+  function formatCodeLocation(location) {
+    if (!location) return '';
+    return location.path + (location.line ? ':' + location.line : '') + (location.column ? ':' + location.column : '');
+  }
+
+  function sourceSnippetHasCode(snippet) {
+    return !!(snippet && snippet.path && Array.isArray(snippet.lines) && snippet.lines.length);
+  }
+
+  function sourceSnippetIdentity(snippet) {
+    if (!snippet) return '';
+    return String(snippet.path || '') + '\u0000' + String(snippet.enclosing_symbol || '');
+  }
+
+  function uniqueSourceSnippets(snippets, excluded, limit, byPath) {
+    var result = [];
+    var seen = {};
+    Object.keys(excluded || {}).forEach(function (key) { seen[key] = true; });
+    (Array.isArray(snippets) ? snippets : []).forEach(function (snippet) {
+      if (!sourceSnippetHasCode(snippet) || result.length >= limit) return;
+      var key = byPath ? String(snippet.path || '') : sourceSnippetIdentity(snippet);
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      result.push(snippet);
+    });
+    return result;
+  }
+
+  function overviewSourceReason(snippet) {
+    if (!snippet) return '';
+    return String(snippet.reason || snippet.landmark_reason || snippet.selection_reason || '').trim();
+  }
+
+  function overviewSourceRoleLabel(snippet) {
+    var kind = String(snippet && (snippet.landmark_kind || snippet.role) || 'source');
+    var labels = {
+      cli_entrypoint: 'CLI entrypoint',
+      public_api: 'Public API',
+      quickstart: 'Quickstart example',
+      quickstart_example: 'Quickstart example',
+      start_here: 'Start here',
+      orientation_start: 'Start here',
+      constructor: 'Core constructor',
+      handler: 'Core handler',
+      test: 'Representative test',
+      example: 'Example',
+      core: 'Core code',
+      implementation: 'Implementation',
+      entrypoint: 'Start here',
+    };
+    return labels[kind] || 'Source code';
+  }
+
+  function overviewSourceIsStrong(snippet) {
+    var kind = String(snippet && (snippet.landmark_kind || snippet.role) || '');
+    return ['cli_entrypoint', 'public_api', 'quickstart', 'quickstart_example'].indexOf(kind) >= 0;
+  }
+
+  function sourceSnippetLocation(snippet, fallback) {
+    fallback = fallback || {};
+    var line = Number(fallback.line) || 0;
+    if (!line && snippet && Array.isArray(snippet.highlight_ranges) && snippet.highlight_ranges.length) {
+      line = Number(snippet.highlight_ranges[0].start_line) || 0;
+    }
+    if (!line) line = Number(snippet && snippet.start_line) || 0;
+    return {
+      path: fallback.path || snippet.path,
+      line: line,
+      column: Number(fallback.column) || 0,
+    };
+  }
+
+  function allEmbeddedSourceSnippets() {
+    var result = USER_SOURCES.slice();
+		if (TASK_INVESTIGATION) {
+			(TASK_INVESTIGATION.anchors || []).forEach(function (anchor) {
+				if (anchor && anchor.source) result.push(anchor.source);
+			});
+		}
+    USER_MECHANISMS.forEach(function (mechanism) {
+      (mechanism.steps || []).forEach(function (step) {
+        (step.sources || []).forEach(function (snippet) { result.push(snippet); });
+      });
+      (mechanism.phases || []).forEach(function (phase) {
+        (phase.sources || []).forEach(function (snippet) { result.push(snippet); });
+      });
+    });
+		STUDY_DIRECTIONS.forEach(function (direction) {
+			(direction.reading_anchors || []).forEach(function (reading) {
+				if (reading && reading.source) result.push(reading.source);
+			});
+			(direction.documents || []).forEach(function (document) {
+				if (document && document.source) result.push(document.source);
+			});
+		});
+		((STUDY_MAP && STUDY_MAP.shape) || []).forEach(function (area) {
+			if (area && area.source) result.push(area.source);
+		});
+		function appendOperationalReference(reference) {
+			if (reference && !reference.redacted && reference.source) result.push(reference.source);
+		}
+		PAVED_PATHS.forEach(function (pavedPath) {
+			(pavedPath.prerequisites || []).forEach(appendOperationalReference);
+			(pavedPath.actions || []).forEach(function (action) {
+				if (action) appendOperationalReference(action.reference);
+			});
+			(pavedPath.expected_results || []).forEach(function (result) {
+				if (result) appendOperationalReference(result.reference);
+			});
+			(pavedPath.expected || []).forEach(appendOperationalReference);
+			(pavedPath.troubleshooting || []).forEach(appendOperationalReference);
+		});
+		OPERATIONAL_LANDMARKS.forEach(function (landmark) {
+			if (landmark) appendOperationalReference(landmark.reference);
+		});
+    return result;
+  }
+
+  function embeddedSourceForLocation(location) {
+    if (!location || !location.path) return null;
+    var snippets = allEmbeddedSourceSnippets().filter(function (snippet) {
+      return sourceSnippetHasCode(snippet) && snippet.path === location.path;
+    });
+    if (!snippets.length) return null;
+    var line = Number(location.line) || 0;
+    if (line) {
+      for (var index = 0; index < snippets.length; index++) {
+        if (line >= Number(snippets[index].start_line) && line <= Number(snippets[index].end_line)) {
+          return snippets[index];
+        }
+      }
+      return null;
+    }
+    return snippets[0];
+  }
+
+  function sourceSnippetLabel(snippet) {
+    var symbol = snippet.enclosing_symbol || snippet.path;
+    return symbol + ' · ' + snippet.path + ':' + snippet.start_line + '–' + snippet.end_line;
+  }
+
+  function sourceLineHighlighted(snippet, line) {
+    if (line && typeof line.highlight === 'boolean') return line.highlight;
+    var lineNumber = Number(line && line.line) || 0;
+    return (snippet.highlight_ranges || []).some(function (range) {
+      return lineNumber >= Number(range.start_line) && lineNumber <= Number(range.end_line);
+    });
+  }
+
+  function sourceHighlightRanges(snippet) {
+    var ranges = Array.isArray(snippet && snippet.highlight_ranges)
+      ? snippet.highlight_ranges.slice()
+      : [];
+    if (ranges.length) return ranges;
+    (snippet && snippet.lines || []).forEach(function (line) {
+      if (line && line.highlight) {
+        ranges.push({ start_line: Number(line.line), end_line: Number(line.line) });
+      }
+    });
+    return ranges;
+  }
+
+  function remainingExactReferences(locations, primary) {
+    if (!Array.isArray(locations)) return [];
+    if (!sourceSnippetHasCode(primary)) return locations.slice();
+    var ranges = sourceHighlightRanges(primary);
+    return locations.filter(function (location) {
+      if (!location || location.path !== primary.path) return true;
+      var start = Number(location.line || location.start_line) || 0;
+      var end = Number(location.end_line || location.line || location.start_line) || start;
+      if (!start) return true;
+      return !ranges.some(function (range) {
+        return start >= Number(range.start_line) && end <= Number(range.end_line);
+      });
+    });
+  }
+
+  function renderSourceCode(snippet, sourceLines) {
+    var code = el('div', 'rm-source-code');
+    code.setAttribute('data-source-path', snippet.path || '');
+    code.setAttribute('data-source-content', 'true');
+    (sourceLines || snippet.lines || []).forEach(function (line) {
+      if (line.gap_before) {
+        var gap = el('div', 'rm-source-code__gap');
+        gap.appendChild(txt('span', '', '⋮'));
+        gap.appendChild(txt('span', '', '… lines omitted …'));
+        code.appendChild(gap);
+      }
+      var row = el('div', 'rm-source-code__line' + (sourceLineHighlighted(snippet, line) ? ' is-highlighted' : ''));
+      row.setAttribute('data-source-line', String(line.line || ''));
+      row.appendChild(txt('span', 'rm-source-code__number', String(line.line || '')));
+      row.appendChild(txt('code', 'rm-source-code__text', line.text == null ? '' : String(line.text)));
+      code.appendChild(row);
+    });
+    return code;
+  }
+
+	function isMarkdownDocumentSource(snippet) {
+		return !!(snippet && /\.(md|mdx)$/i.test(String(snippet.path || '')));
+	}
+
+	function studyDocumentForSnippet(direction, snippet) {
+		if (!direction || !snippet) return null;
+		var documents = Array.isArray(direction.documents) ? direction.documents : [];
+		for (var index = 0; index < documents.length; index++) {
+			var source = documents[index] && documents[index].source;
+			if (!sourceSnippetHasCode(source) || source.path !== snippet.path) continue;
+			if (source.presentation_sha256 && snippet.presentation_sha256 &&
+				source.presentation_sha256 !== snippet.presentation_sha256) continue;
+			return documents[index];
+		}
+		return null;
+	}
+
+	function appendReadableDocumentInline(root, value) {
+		var textValue = String(value || '');
+		var tokenPattern = /(`[^`\n]+`|\[[^\]\n]+\]\([^)]+\))/g;
+		var offset = 0;
+		var match;
+
+		function appendPlainText(plain) {
+			var safe = String(plain || '')
+				.replace(/<!--.*?-->/g, '')
+				.replace(/<\/?[A-Za-z][^>]*>/g, '');
+			if (safe) root.appendChild(txt('span', '', safe));
+		}
+
+		while ((match = tokenPattern.exec(textValue)) !== null) {
+			appendPlainText(textValue.slice(offset, match.index));
+			var token = match[0];
+			if (token.charAt(0) === '`') {
+				root.appendChild(txt('code', 'rm-readable-document__inline-code', token.slice(1, -1)));
+			} else {
+				var link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+				if (link) {
+					var safeHref = /^https?:\/\//i.test(link[2]) ? link[2] : '';
+					var label = txt(safeHref ? 'a' : 'span', 'rm-readable-document__link', link[1]);
+					label.setAttribute('title', link[2]);
+					if (safeHref) {
+						label.setAttribute('href', safeHref);
+						label.setAttribute('target', '_blank');
+						label.setAttribute('rel', 'noreferrer noopener');
+					}
+					root.appendChild(label);
+				}
+			}
+			offset = match.index + token.length;
+		}
+		appendPlainText(textValue.slice(offset));
+	}
+
+	function renderReadableDocument(snippet) {
+		var article = el('article', 'rm-readable-document');
+		var paragraphLines = [];
+		var quoteLines = [];
+		var list = null;
+		var codeLines = null;
+		var fenceCharacter = '';
+		var insideHTMLComment = false;
+		var insideHTMLTag = false;
+
+		function flushParagraph() {
+			if (!paragraphLines.length) return;
+			var paragraph = el('p', '');
+			appendReadableDocumentInline(paragraph, paragraphLines.join(' '));
+			if (paragraph.childNodes.length) article.appendChild(paragraph);
+			paragraphLines = [];
+		}
+
+		function flushQuote() {
+			if (!quoteLines.length) return;
+			var quote = el('blockquote', '');
+			var paragraph = el('p', '');
+			appendReadableDocumentInline(paragraph, quoteLines.join(' '));
+			if (paragraph.childNodes.length) {
+				quote.appendChild(paragraph);
+				article.appendChild(quote);
+			}
+			quoteLines = [];
+		}
+
+		function flushList() {
+			if (list) article.appendChild(list.node);
+			list = null;
+		}
+
+		function flushTextBlocks() {
+			flushParagraph();
+			flushQuote();
+			flushList();
+		}
+
+		function flushCode() {
+			if (codeLines === null) return;
+			var pre = el('pre', '');
+			pre.appendChild(txt('code', '', codeLines.join('\n')));
+			article.appendChild(pre);
+			codeLines = null;
+			fenceCharacter = '';
+		}
+
+		(snippet.lines || []).forEach(function (sourceLine) {
+			var raw = sourceLine && sourceLine.text != null ? String(sourceLine.text) : '';
+			var trimmed = raw.trim();
+			if (codeLines !== null) {
+				var closesBackticks = fenceCharacter === '`' && /^```+\s*$/.test(trimmed);
+				var closesTildes = fenceCharacter === '~' && /^~~~+\s*$/.test(trimmed);
+				if (closesBackticks || closesTildes) flushCode();
+				else codeLines.push(raw);
+				return;
+			}
+
+			if (insideHTMLComment) {
+				if (trimmed.indexOf('-->') >= 0) insideHTMLComment = false;
+				return;
+			}
+			if (trimmed.indexOf('<!--') === 0) {
+				flushTextBlocks();
+				insideHTMLComment = trimmed.indexOf('-->') < 0;
+				return;
+			}
+			if (insideHTMLTag) {
+				if (trimmed.indexOf('>') >= 0) insideHTMLTag = false;
+				return;
+			}
+			if (trimmed.charAt(0) === '<' && trimmed.indexOf('>') < 0) {
+				flushTextBlocks();
+				insideHTMLTag = true;
+				return;
+			}
+
+			var fence = trimmed.match(/^(```+|~~~+)/);
+			if (fence) {
+				flushTextBlocks();
+				codeLines = [];
+				fenceCharacter = fence[1].charAt(0);
+				return;
+			}
+			if (!trimmed) {
+				flushTextBlocks();
+				return;
+			}
+			var isMDXDirective = /^(import|export)\s/.test(trimmed);
+			var isHTMLTag = /^<\/?[A-Za-z][^>]*>\s*$/.test(trimmed);
+			if (isMDXDirective || isHTMLTag) {
+				flushTextBlocks();
+				return;
+			}
+
+			var heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+			if (heading) {
+				flushTextBlocks();
+				var level = Math.min(6, heading[1].length + 2);
+				var headingNode = el('h' + level, '');
+				appendReadableDocumentInline(headingNode, heading[2].replace(/\s+#+\s*$/, ''));
+				if (headingNode.childNodes.length) article.appendChild(headingNode);
+				return;
+			}
+
+			var quote = trimmed.match(/^>\s?(.*)$/);
+			if (quote) {
+				flushParagraph();
+				flushList();
+				quoteLines.push(quote[1]);
+				return;
+			}
+
+			var unordered = trimmed.match(/^[-*+]\s+(.+)$/);
+			var ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+			if (unordered || ordered) {
+				flushParagraph();
+				flushQuote();
+				var orderedList = !!ordered;
+				if (!list || list.ordered !== orderedList) {
+					flushList();
+					list = { ordered: orderedList, node: el(orderedList ? 'ol' : 'ul', '') };
+				}
+				var item = el('li', '');
+				appendReadableDocumentInline(item, (ordered || unordered)[1]);
+				if (item.childNodes.length) list.node.appendChild(item);
+				return;
+			}
+
+			flushQuote();
+			flushList();
+			paragraphLines.push(trimmed);
+		});
+		flushTextBlocks();
+		flushCode();
+		return article;
+	}
+
+	function renderReadableDocumentCard(snippet, location, reference) {
+		var card = el('section', 'rm-source-card rm-readable-document-card');
+		var heading = el('div', 'rm-source-card__heading');
+		var title = el('div', '');
+		title.appendChild(txt('div', 'rm-source-card__role', reference.label || 'Documentation'));
+		title.appendChild(txt('strong', '', snippet.path));
+		title.appendChild(txt(
+			'code',
+			'rm-source-card__location',
+			snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line
+		));
+		heading.appendChild(title);
+		if (snippet.revision && DEBUG_MODE) {
+			heading.appendChild(txt('span', 'rm-source-card__snapshot', 'saved snapshot'));
+		}
+		card.appendChild(heading);
+
+		var readable = renderReadableDocument(snippet);
+		card.appendChild(readable);
+		var rawHost = el('div', 'rm-readable-document-card__raw');
+		rawHost.hidden = true;
+		card.appendChild(rawHost);
+
+		var actions = renderSourceActions(snippet, sourceSnippetLocation(snippet, location), {});
+		var raw = txt('button', 'rm-secondary-action', 'Show raw exact source');
+		raw.type = 'button';
+		var showingRaw = false;
+		raw.onclick = function () {
+			showingRaw = !showingRaw;
+			readable.hidden = showingRaw;
+			rawHost.hidden = !showingRaw;
+			rawHost.replaceChildren();
+			if (showingRaw) rawHost.appendChild(renderSourceCode(snippet));
+			raw.textContent = showingRaw ? 'Show readable document' : 'Show raw exact source';
+		};
+		actions.appendChild(raw);
+		card.appendChild(actions);
+		return card;
+	}
+
+  function requestSourceContext(snippet) {
+    var runID = currentRunID();
+    var contextID = SOURCE_CONTEXT_IDS[snippet.presentation_sha256];
+    if (!serverMode() || !runID || !contextID) return Promise.resolve(null);
+    return fetch(serverBasePath() + '/api/source-context', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Repomap-Action': 'read-source-context',
+      },
+      body: JSON.stringify({ run_id: runID, context_id: contextID }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'source context is unavailable');
+        return body;
+      });
+    }).then(function (body) {
+      if (!body || !body.source || !Array.isArray(body.source.lines) || !body.source.lines.length) return null;
+      var expanded = {
+        path: body.source.path,
+        language: snippet.language,
+        enclosing_symbol: snippet.enclosing_symbol,
+        start_line: body.source.start_line,
+        end_line: body.source.end_line,
+        highlight_ranges: snippet.highlight_ranges || [],
+        content_sha256: snippet.content_sha256,
+        presentation_sha256: snippet.presentation_sha256,
+        role: snippet.role,
+        revision: snippet.revision,
+        source_complete: !!body.source.source_complete,
+        lines: body.source.lines.map(function (line) {
+          var highlighted = (snippet.highlight_ranges || []).some(function (range) {
+            return line.line >= range.start_line && line.line <= range.end_line;
+          });
+          return { line: line.line, text: line.text, highlight: highlighted };
+        }),
+      };
+      return expanded;
+    });
+  }
+
+  function renderSourceActions(snippet, location, options) {
+    options = options || {};
+    var actions = el('div', 'rm-source-actions');
+    if (serverMode() && currentRunID() && SOURCE_IDS[snippet.path]) {
+      var open = txt('button', 'rm-primary-action', 'Open in editor');
+      open.type = 'button';
+      open.onclick = function () { requestOpenFile(snippet.path, location.line, location.column); };
+      actions.appendChild(open);
+    }
+    if (!options.expanded && serverMode() && SOURCE_CONTEXT_IDS[snippet.presentation_sha256]) {
+      var more = txt('button', 'rm-secondary-action', 'Show more context');
+      more.type = 'button';
+      more.onclick = function () {
+        more.disabled = true;
+        requestSourceContext(snippet).then(function (expanded) {
+          more.disabled = false;
+          if (expanded) openSourceSnippet(expanded, location, true);
+        }).catch(function (error) {
+          more.disabled = false;
+          showToast(error && error.message ? error.message : 'Source context is unavailable.', true);
+        });
+      };
+      actions.appendChild(more);
+    }
+    if (typeof options.toggleFullFunction === 'function') {
+      var full = txt('button', 'rm-secondary-action', 'Show full function');
+      full.type = 'button';
+      full.onclick = function () { options.toggleFullFunction(full); };
+      actions.appendChild(full);
+    }
+    var copyLocation = txt('button', 'rm-secondary-action', 'Copy file:line');
+    copyLocation.type = 'button';
+    copyLocation.onclick = function () { copyText(formatCodeLocation(location)); };
+    actions.appendChild(copyLocation);
+    var copyPath = txt('button', 'rm-quiet-action', 'Copy path');
+    copyPath.type = 'button';
+    copyPath.onclick = function () { copyText(snippet.path); };
+    actions.appendChild(copyPath);
+    return actions;
+  }
+
+  function sourceNoticeRanges(notice, snippet) {
+    if (!notice || notice.path !== snippet.path || !Array.isArray(notice.supporting_ranges)) return [];
+    var highlights = Array.isArray(snippet.highlight_ranges) ? snippet.highlight_ranges : [];
+    var ranges = notice.supporting_ranges.filter(function (range) {
+      var start = Number(range && range.start_line) || 0;
+      var end = Number(range && range.end_line) || 0;
+      if (!start || end < start) return false;
+      return highlights.some(function (highlight) {
+        return start >= Number(highlight.start_line) && end <= Number(highlight.end_line);
+      });
+    });
+    return ranges.length === notice.supporting_ranges.length ? ranges : [];
+  }
+
+  function sourceNoticeLineLabel(ranges) {
+    var labels = ranges.map(function (range) {
+      return Number(range.start_line) === Number(range.end_line)
+        ? 'Line ' + range.start_line
+        : 'Lines ' + range.start_line + '–' + range.end_line;
+    });
+    return labels.join(', ');
+  }
+
+  function renderSourceNotices(notices, snippet, card) {
+    var safe = (Array.isArray(notices) ? notices : []).map(function (notice) {
+      return { notice: notice, ranges: sourceNoticeRanges(notice, snippet) };
+    }).filter(function (item) {
+      return item.ranges.length && String(item.notice.text || '').trim();
+    }).slice(0, 2);
+    if (!safe.length) return null;
+    var section = el('aside', 'rm-source-notices');
+    section.appendChild(txt('h4', '', 'What to notice'));
+    var list = el('ul', '');
+    safe.forEach(function (item) {
+      var listItem = el('li', '');
+      var jump = txt('button', 'rm-source-notice__line', sourceNoticeLineLabel(item.ranges));
+      jump.type = 'button';
+      jump.onclick = function () {
+        if (!card || typeof card.querySelector !== 'function') return;
+        var firstLine = item.ranges[0].start_line;
+        var row = card.querySelector('[data-source-line="' + firstLine + '"]');
+        if (row && typeof row.scrollIntoView === 'function') {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      };
+      listItem.appendChild(jump);
+      listItem.appendChild(txt('span', '', item.notice.text));
+      list.appendChild(listItem);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  function renderSourceSnippetCard(snippet, options) {
+    options = options || {};
+    var card = el(
+      'section',
+      'rm-source-card' + (options.primary ? ' is-primary' : '') + (options.overviewLandmark ? ' is-overview-landmark' : '')
+    );
+    var heading = el('div', 'rm-source-card__heading');
+    var title = el('div', '');
+    title.appendChild(txt(
+      'div',
+      'rm-source-card__role',
+      options.roleLabel || (options.primary ? 'Primary implementation' : 'Source code')
+    ));
+    title.appendChild(txt('strong', '', snippet.enclosing_symbol || snippet.path));
+    var locationLabel = txt(
+      'code', 'rm-source-card__location',
+      snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line
+    );
+    title.appendChild(locationLabel);
+    heading.appendChild(title);
+    if (snippet.revision && (DEBUG_MODE || options.showSnapshot)) {
+      heading.appendChild(txt('span', 'rm-source-card__snapshot', 'saved snapshot'));
+    }
+    card.appendChild(heading);
+    if (String(options.reason || '').trim()) {
+      card.appendChild(txt('p', 'rm-source-card__reason', String(options.reason).trim()));
+    }
+    var notices = renderSourceNotices(options.notices, snippet, card);
+    if (notices) card.appendChild(notices);
+    var codeHost = el('div', 'rm-source-card__code');
+    codeHost.appendChild(renderSourceCode(snippet));
+    card.appendChild(codeHost);
+    var location = sourceSnippetLocation(snippet, options.location);
+    var fullLines = Array.isArray(snippet.full_function_lines) ? snippet.full_function_lines : [];
+    var showingFullFunction = false;
+    var toggleFullFunction = null;
+    if (fullLines.length) {
+      toggleFullFunction = function (button) {
+        showingFullFunction = !showingFullFunction;
+        codeHost.replaceChildren(renderSourceCode(snippet, showingFullFunction ? fullLines : snippet.lines));
+        button.textContent = showingFullFunction ? 'Show focused excerpt' : 'Show full function';
+        var start = showingFullFunction ? snippet.full_function_start_line : snippet.start_line;
+        var end = showingFullFunction ? snippet.full_function_end_line : snippet.end_line;
+        locationLabel.textContent = snippet.path + ' · lines ' + start + '–' + end;
+      };
+    }
+		if (!options.redacted) {
+			card.appendChild(renderSourceActions(snippet, location, {
+				expanded: !!options.expanded,
+				toggleFullFunction: toggleFullFunction,
+			}));
+		}
+    return card;
+  }
+
+  function renderRelatedSourceTarget(snippet) {
+    var card = el('article', 'rm-related-source');
+    var meta = el('div', '');
+    meta.appendChild(txt('strong', '', snippet.enclosing_symbol || snippet.path));
+    meta.appendChild(txt('code', '', snippet.path + ':' + snippet.start_line + '–' + snippet.end_line));
+    var reason = overviewSourceReason(snippet);
+    if (reason) meta.appendChild(txt('span', 'rm-related-source__reason', reason));
+    card.appendChild(meta);
+    var show = txt('button', 'rm-secondary-action', 'Show code');
+    show.type = 'button';
+    show.onclick = function () { openSourceSnippet(snippet, sourceSnippetLocation(snippet)); };
+    card.appendChild(show);
+    return card;
+  }
+
+  function renderExactReferences(locations) {
+    if (!Array.isArray(locations) || !locations.length) return null;
+    var details = el('details', 'rm-exact-references');
+    details.appendChild(txt('summary', '', 'Show ' + locations.length + ' exact references'));
+    var list = el('div', 'rm-exact-references__list');
+    locations.forEach(function (location) {
+      list.appendChild(txt('code', '', formatCodeLocation(location)));
+    });
+    details.appendChild(list);
+    return details;
+  }
+
+  function openUserMechanism(artifactID, stepIndex, explicitStep) {
+    var mechanism = userMechanismByID(USER_MECHANISMS, artifactID);
+    if (!mechanism) {
+      commitWorkspaceState(emptyWorkspaceState());
+      return;
+    }
+    var next = reduceWorkspaceState(workspaceState, {
+      type: 'open_mechanism', artifactID: artifactID, stepIndex: stepIndex,
+    }, USER_MECHANISMS);
+    commitWorkspaceState(next, { mechanismRoot: !explicitStep });
+  }
+
+  function selectUserMechanismStep(stepIndex) {
+    var mechanism = userMechanismByID(USER_MECHANISMS, workspaceState.artifactID);
+    if (mechanism && boundedMechanismStep(mechanism, stepIndex) === workspaceState.stepIndex) return;
+    var next = reduceWorkspaceState(workspaceState, {
+      type: 'select_step', stepIndex: stepIndex,
+    }, USER_MECHANISMS);
+    commitWorkspaceState(next);
+  }
+
+  function moveUserMechanismStep(delta) {
+    var next = reduceWorkspaceState(workspaceState, {
+      type: 'move_step', delta: delta,
+    }, USER_MECHANISMS);
+    commitWorkspaceState(next);
+  }
+
+  function narrativeUnitName(mechanism) {
+    return mechanismUsesPhases(mechanism) ? 'Phase' : 'Step';
+  }
+
+  function renderMechanismContext(mechanism) {
+    var context = Array.isArray(mechanism && mechanism.context) ? mechanism.context : [];
+    var items = [];
+    context.forEach(function (item) {
+      var action = repositoryAreaAction(item);
+      if (!action) return;
+      var button = el('button', 'rm-context-item');
+      button.type = 'button';
+      button.appendChild(txt('strong', '', item.label || 'Related code area'));
+      if (item.responsibility) button.appendChild(txt('span', '', item.responsibility));
+      if (action === 'code') {
+        button.appendChild(txt('code', '', formatCodeLocation(item.code_location)));
+        button.onclick = function () { openSourceLocation(item.code_location); };
+      } else {
+        button.appendChild(txt('span', 'rm-context-item__action', 'View on map →'));
+        button.onclick = function () {
+          openArchitectureTarget(item.map_target, {
+            artifactID: mechanism.artifact_id,
+            stepIndex: workspaceState.stepIndex,
+          });
+        };
+      }
+      items.push(button);
+    });
+    if (!items.length) return null;
+    var strip = el('aside', 'rm-mechanism-context');
+    strip.setAttribute('aria-label', 'Code areas around this path');
+    strip.appendChild(txt('span', 'rm-mechanism-context__label', 'Around this path'));
+    var list = el('div', 'rm-mechanism-context__items');
+    items.forEach(function (item) { list.appendChild(item); });
+    strip.appendChild(list);
+    return strip;
+  }
+
+  function renderImplementationDetails(mechanism, phase) {
+    var implementationSteps = mechanismImplementationSteps(mechanism, phase);
+    if (!implementationSteps.length) return null;
+    var details = el('details', 'rm-implementation-details');
+    details.appendChild(txt('summary', '', 'Show implementation details (' + implementationSteps.length + ')'));
+    var list = el('div', 'rm-implementation-details__list');
+    implementationSteps.forEach(function (step, index) {
+      var item = el('article', 'rm-implementation-detail');
+      item.appendChild(txt('strong', '', (index + 1) + '. ' + (step.title || 'Implementation')));
+      if (step.explanation) item.appendChild(txt('p', '', step.explanation));
+      var sources = uniqueSourceSnippets(step.sources || [], {}, 3, false);
+      if (sources.length) {
+        var sourceList = el('div', 'rm-related-source-list');
+        sources.forEach(function (snippet) { sourceList.appendChild(renderRelatedSourceTarget(snippet)); });
+        item.appendChild(sourceList);
+      }
+      var exact = renderExactReferences(step.locations || []);
+      if (exact) item.appendChild(exact);
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    return details;
+  }
+
+  function renderStepButtons(mechanism, step, className, includeMap) {
+    var actions = el('div', className || 'rm-step-actions');
+    actions.setAttribute('data-step-controls', 'true');
+    var previous = txt('button', 'rm-quiet-action', '← Previous');
+    previous.type = 'button';
+    previous.disabled = workspaceState.stepIndex === 0;
+    previous.onclick = function () { moveUserMechanismStep(-1); };
+    actions.appendChild(previous);
+    var next = txt('button', 'rm-primary-action', 'Next →');
+    next.type = 'button';
+    next.disabled = workspaceState.stepIndex >= mechanismNarrativeItems(mechanism).length - 1;
+    next.onclick = function () { moveUserMechanismStep(1); };
+    actions.appendChild(next);
+		if (includeMap && step.map_target && userArchitectureAvailable()) {
+      var showMap = txt('button', 'rm-secondary-action', 'Show on map');
+      showMap.type = 'button';
+      showMap.onclick = function () { showMechanismStepOnMap(step.map_target); };
+      actions.appendChild(showMap);
+    }
+    return actions;
+  }
+
+  function renderMobileStepControls(mechanism) {
+    var narrative = mechanismNarrativeItems(mechanism);
+    var unit = narrativeUnitName(mechanism);
+    var controls = el('div', 'rm-mobile-step-controls');
+    controls.appendChild(txt(
+      'strong', 'rm-mobile-step-progress',
+      unit + ' ' + (workspaceState.stepIndex + 1) + ' of ' + narrative.length
+    ));
+    var previous = txt('button', 'rm-quiet-action', 'Previous');
+    previous.type = 'button';
+    previous.disabled = workspaceState.stepIndex === 0;
+    previous.onclick = function () { moveUserMechanismStep(-1); };
+    controls.appendChild(previous);
+    var picker = el('details', 'rm-mobile-step-picker');
+    picker.appendChild(txt('summary', 'rm-secondary-action', 'All ' + unit.toLowerCase() + 's'));
+    var choices = el('div', 'rm-mobile-step-picker__choices');
+    narrative.forEach(function (candidate, index) {
+      var choice = txt('button', index === workspaceState.stepIndex ? 'is-active' : '', (index + 1) + '. ' + candidate.title);
+      choice.type = 'button';
+      if (index === workspaceState.stepIndex) choice.setAttribute('aria-current', 'step');
+      choice.onclick = function () {
+        picker.open = false;
+        selectUserMechanismStep(index);
+      };
+      choices.appendChild(choice);
+    });
+    picker.appendChild(choices);
+    controls.appendChild(picker);
+    var next = txt('button', 'rm-primary-action', 'Next');
+    next.type = 'button';
+    next.disabled = workspaceState.stepIndex >= narrative.length - 1;
+    next.onclick = function () { moveUserMechanismStep(1); };
+    controls.appendChild(next);
+    return controls;
+  }
+
+  function renderMechanismDetailWorkspace() {
+    var root = document.getElementById('rm-mechanism-detail');
+    if (!root) return;
+    root.replaceChildren();
+    var mechanism = userMechanismByID(USER_MECHANISMS, workspaceState.artifactID);
+    var narrative = mechanismNarrativeItems(mechanism);
+    if (!mechanism || !narrative.length) return;
+    workspaceState.stepIndex = boundedMechanismStep(mechanism, workspaceState.stepIndex);
+    var step = narrative[workspaceState.stepIndex];
+    var unit = narrativeUnitName(mechanism);
+
+    root.appendChild(renderViewHeading(
+      mechanismRoleLabel(mechanism),
+      mechanismPresentationTitle(mechanism),
+      mechanism.question || 'Trace through the implementation.'
+    ));
+    var shortAnswer = mechanismShortAnswer(mechanism);
+    if (shortAnswer) root.appendChild(txt('p', 'rm-mechanism-answer', shortAnswer));
+    var context = renderMechanismContext(mechanism);
+    if (context) root.appendChild(context);
+
+    var layout = el('div', 'rm-mechanism-layout');
+    var stepList = el('nav', 'rm-step-list');
+    stepList.setAttribute('aria-label', 'Mechanism ' + unit.toLowerCase() + 's');
+    narrative.forEach(function (candidate, index) {
+      var button = txt('button', index === workspaceState.stepIndex ? 'is-active' : '', (index + 1) + '. ' + candidate.title);
+      button.type = 'button';
+      if (index === workspaceState.stepIndex) button.setAttribute('aria-current', 'step');
+      button.onclick = function () { selectUserMechanismStep(index); };
+      stepList.appendChild(button);
+    });
+    layout.appendChild(stepList);
+
+    var current = el('article', 'rm-step-workspace');
+    current.appendChild(renderMobileStepControls(mechanism));
+    current.appendChild(txt(
+      'div', 'rm-step-progress', unit + ' ' + (workspaceState.stepIndex + 1) + ' of ' + narrative.length
+    ));
+    current.appendChild(txt('h3', '', step.title));
+    current.appendChild(txt('p', 'rm-step-explanation', step.explanation));
+    current.appendChild(renderStepButtons(mechanism, step, 'rm-step-actions is-before', false));
+    var sources = Array.isArray(step.sources) ? step.sources.filter(sourceSnippetHasCode) : [];
+		if (sources.length) {
+			var remainingLocations = (step.locations || []).slice();
+			sources.forEach(function (snippet, sourceIndex) {
+				current.appendChild(renderSourceSnippetCard(snippet, {
+					primary: sourceIndex === 0,
+					roleLabel: sourceIndex === 0 ? 'Primary implementation' : 'Supporting implementation',
+					location: sourceSnippetLocation(snippet),
+					notices: step.what_to_notice || [],
+				}));
+				remainingLocations = remainingExactReferences(remainingLocations, snippet);
+			});
+			var exactReferences = renderExactReferences(remainingLocations);
+      if (exactReferences) current.appendChild(exactReferences);
+    }
+    var implementationDetails = renderImplementationDetails(mechanism, step);
+    if (implementationDetails) current.appendChild(implementationDetails);
+    current.appendChild(renderStepButtons(mechanism, step, 'rm-step-actions is-after', true));
+    layout.appendChild(current);
+    root.appendChild(layout);
+
+    var allMechanismSources = [];
+    var currentSourcePaths = {};
+		sources.forEach(function (snippet) { currentSourcePaths[snippet.path] = true; });
+    (mechanism.steps || []).forEach(function (candidate) {
+      (candidate.sources || []).forEach(function (snippet) {
+        allMechanismSources.push(snippet);
+      });
+    });
+    var mechanismSources = uniqueSourceSnippets(allMechanismSources, currentSourcePaths, Number.MAX_SAFE_INTEGER, true);
+    if (mechanismSources.length) {
+      var involved = el('details', 'rm-workspace-section rm-mechanism-files');
+      involved.appendChild(txt('summary', '', 'All files (' + mechanismSources.length + ' more)'));
+      involved.appendChild(txt('p', 'rm-mechanism-files__hint', 'Open another source excerpt without leaving this step.'));
+      var fileList = el('div', 'rm-related-source-list');
+      mechanismSources.forEach(function (snippet) {
+        fileList.appendChild(renderRelatedSourceTarget(snippet));
+      });
+      involved.appendChild(fileList);
+      root.appendChild(involved);
+    }
+  }
+
+  function openSourceLocation(location) {
+    if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
+    var snippet = embeddedSourceForLocation(location);
+    if (snippet) {
+      openSourceSnippet(snippet, location);
+      return;
+    }
+    if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
+      requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
+    }
+  }
+
+  function openSourceSnippet(snippet, location, expanded) {
+    if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
+    var resolved = sourceSnippetLocation(snippet, location);
+    var next = reduceWorkspaceState(workspaceState, {
+      type: 'open_source',
+      selection: {
+        path: snippet.path,
+        line: resolved.line,
+        column: resolved.column,
+        snippet: snippet,
+        expanded: !!expanded,
+      },
+    }, USER_MECHANISMS);
+    var reference = sourceDrawerHistoryReference(next.sourceLocation);
+    var replacingDrawer = !!(window.history && window.history.state && window.history.state.sourceDrawer);
+    writeWorkspaceHistory(
+      String(window.location && window.location.hash || workspaceHashForState(next)),
+      next,
+      { replace: replacingDrawer, sourceDrawer: reference }
+    );
+    workspaceState = next;
+    renderSourceDrawer();
+  }
+
+  function closeSourceDrawer() {
+    if (window.history && window.history.state && window.history.state.sourceDrawer &&
+        typeof window.history.back === 'function') {
+      window.history.back();
+      return;
+    }
+    workspaceState = reduceWorkspaceState(workspaceState, { type: 'close_source' }, USER_MECHANISMS);
+    writeWorkspaceHistory(workspaceHashForState(workspaceState), workspaceState, { replace: true });
+    renderSourceDrawer();
+  }
+
+  function activeSourceDrawerMechanism() {
+    if (workspaceState.view !== 'mechanism') return null;
+    return userMechanismByID(USER_MECHANISMS, workspaceState.artifactID);
+  }
+
+	function activeSourceDrawerStudy() {
+		if (workspaceState.view !== 'study') return null;
+		return studyDirectionByID(workspaceState.directionID);
+	}
+
+	function activeSourceDrawerOperation() {
+		if (workspaceState.view !== 'operate') return null;
+		return pavedPathByID(workspaceState.operationID);
+	}
+
+  function renderSourceDrawer() {
+    var workspace = document.querySelector('.rm-workspace');
+    var drawer = document.getElementById('rm-source-drawer');
+    var content = document.getElementById('rm-source-drawer-content');
+    var close = document.getElementById('rm-source-drawer-close');
+    if (!workspace || !drawer || !content) return;
+    if (!workspaceState.sourceLocation) {
+      drawer.hidden = true;
+      workspace.classList.remove('has-source-drawer');
+      content.replaceChildren();
+      return;
+    }
+    var selection = workspaceState.sourceLocation;
+    var snippet = selection.snippet;
+    if (!sourceSnippetHasCode(snippet)) {
+      closeSourceDrawer();
+      return;
+    }
+    drawer.hidden = false;
+    workspace.classList.add('has-source-drawer');
+    if (close) close.onclick = closeSourceDrawer;
+    content.replaceChildren();
+			var mechanism = activeSourceDrawerMechanism();
+			var study = activeSourceDrawerStudy();
+			var operation = activeSourceDrawerOperation();
+			var task = workspaceState.view === 'investigate' ? TASK_INVESTIGATION : null;
+			content.appendChild(txt('div', 'rm-view-kicker', mechanism ? 'Source in this code path' : study ? 'Source in this reading path' : operation ? 'Source in this operating path' : task ? 'Source in this task investigation' : 'Saved source'));
+    if (mechanism) {
+      var step = mechanismNarrativeItems(mechanism)[boundedMechanismStep(mechanism, workspaceState.stepIndex)];
+      var unit = narrativeUnitName(mechanism);
+      content.appendChild(txt('h2', '', mechanismPresentationTitle(mechanism)));
+      content.appendChild(txt('p', '', unit + ' ' + (workspaceState.stepIndex + 1) + ': ' + (step.title || 'Implementation')));
+    }
+			if (study) {
+			content.appendChild(txt('h2', '', study.question));
+			content.appendChild(txt('p', '', study.learning_outcome || study.why_it_matters || 'Repository reading path'));
+			}
+			if (operation) {
+				content.appendChild(txt('h2', '', operation.title));
+				content.appendChild(txt('p', '', operation.goal || 'Repository operating path'));
+			}
+			if (task) {
+				content.appendChild(txt('h2', '', task.interpretation && task.interpretation.restatement || 'Task investigation'));
+				content.appendChild(txt('p', '', task.interpretation && task.interpretation.observable_or_outcome || 'Bounded saved source'));
+			}
+			var documentReference = study ? studyDocumentForSnippet(study, snippet) : null;
+			if (documentReference && isMarkdownDocumentSource(snippet)) {
+				content.appendChild(renderReadableDocumentCard(
+					snippet,
+					{ path: selection.path, line: selection.line, column: selection.column },
+					documentReference
+				));
+				return;
+			}
+    content.appendChild(renderSourceSnippetCard(snippet, {
+      location: { path: selection.path, line: selection.line, column: selection.column },
+      expanded: !!selection.expanded,
+      showSnapshot: true,
+    }));
+  }
+
+  function userArchitectureData() {
+		if (!DATA.architecture_canvas || !userArchitectureAvailable()) return null;
+    if (DEBUG_MODE) return DATA.architecture_canvas;
+    var canvas = JSON.parse(JSON.stringify(DATA.architecture_canvas));
+    delete canvas.suggested_investigations;
+    delete canvas.frontiers;
+    delete canvas.diagnostics;
+    delete canvas.normalizations;
+    delete canvas.hash;
+    delete canvas.architecture_source;
+    (canvas.behavior_anchors || []).forEach(function (anchor) {
+      delete anchor.limitations;
+      delete anchor.diagnostics;
+      delete anchor.hash;
+    });
+    (canvas.components || []).forEach(function (component) {
+      delete component.diagnostics;
+      delete component.hash;
+      delete component.source_component_ids;
+    });
+    (canvas.subsystems || []).forEach(function (subsystem) {
+      delete subsystem.diagnostics;
+      delete subsystem.hash;
+      delete subsystem.source_subsystem_ids;
+    });
+    (canvas.flows || []).forEach(function (flow) {
+      delete flow.frontier;
+      delete flow.flow_status;
+      delete flow.status;
+      delete flow.diagnostics;
+      delete flow.hash;
+    });
+    (canvas.surfaces || []).forEach(function (surface) {
+      delete surface.unavailable_reason;
+      delete surface.readiness;
+      delete surface.status;
+      delete surface.diagnostics;
+      delete surface.hash;
+    });
+    return canvas;
+  }
+
+	function architecturePackagePathForMember(member, packageByPath) {
+		if (!member || !member.id || String(member.id.kind || '') !== 'package') return '';
+		var facts = Array.isArray(member.facts) ? member.facts : [];
+		for (var index = 0; index < facts.length; index++) {
+			var fact = facts[index];
+			if (!fact || String(fact.kind || '') !== 'declaration') continue;
+			var packagePath = String(fact.value || '');
+			if (packagePath && packageByPath[packagePath]) return packagePath;
+		}
+		return '';
+	}
+
+	function architectureComponentContexts() {
+		var canvas = DATA.architecture_canvas || {};
+		var graph = DATA.repository_graph || {};
+		var graphPackages = Array.isArray(graph.packages) ? graph.packages : [];
+		var packageByPath = {};
+		graphPackages.forEach(function (pkg) {
+			var packagePath = String(pkg && pkg.canonical_package_path || '');
+			if (packagePath) packageByPath[packagePath] = pkg;
+		});
+
+		var contexts = {};
+		(canvas.components || []).forEach(function (component) {
+			if (!component || !component.id) return;
+			var packagePaths = [];
+			var packageSeen = {};
+			(component.members || []).forEach(function (member) {
+				var packagePath = architecturePackagePathForMember(member, packageByPath);
+				if (!packagePath || packageSeen[packagePath]) return;
+				packageSeen[packagePath] = true;
+				packagePaths.push(packagePath);
+			});
+			packagePaths.sort();
+			if (!packagePaths.length) return;
+
+			var packageFiles = {};
+			packagePaths.forEach(function (packagePath) {
+				(packageByPath[packagePath].files || []).forEach(function (filePath) {
+					filePath = String(filePath || '');
+					if (filePath) packageFiles[filePath] = true;
+				});
+			});
+
+			var matches = [];
+			STUDY_DIRECTIONS.forEach(function (direction, directionIndex) {
+				if (!direction || !direction.id) return;
+				var matchedAnchors = (direction.reading_anchors || []).filter(function (anchor) {
+					var location = anchor && (anchor.location || (anchor.source && {
+						path: anchor.source.path,
+						line: anchor.source.start_line,
+					}));
+					return !!(location && packageFiles[String(location.path || '')]);
+				});
+				if (!matchedAnchors.length) return;
+				matches.push({ direction: direction, directionIndex: directionIndex, anchors: matchedAnchors });
+			});
+			matches.sort(function (left, right) {
+				return right.anchors.length - left.anchors.length ||
+					left.directionIndex - right.directionIndex ||
+					String(left.direction.id).localeCompare(String(right.direction.id));
+			});
+
+			var sourceSeen = {};
+			var sources = [];
+			matches.forEach(function (match) {
+				match.anchors.forEach(function (anchor) {
+					var source = anchor && anchor.source;
+					var location = anchor && anchor.location;
+					if (!sourceSnippetHasCode(source) || !location || !OPENABLE_PATH_SET[location.path]) return;
+					var key = String(location.path) + '\u0000' + String(Number(location.line) || 0);
+					if (sourceSeen[key]) return;
+					sourceSeen[key] = true;
+					sources.push({
+						label: anchor.label || source.enclosing_symbol || location.path,
+						detail: anchor.what_to_look_for || '',
+						location: location,
+					});
+				});
+			});
+
+			contexts[String(component.id)] = {
+				package_paths: packagePaths,
+				file_count: Object.keys(packageFiles).length,
+				sources: sources,
+				studies: matches.map(function (match) {
+					return {
+						id: match.direction.id,
+						question: match.direction.question,
+						why_it_matters: match.direction.why_it_matters || '',
+					};
+				}),
+			};
+		});
+		return contexts;
+	}
+
+  function renderArchitectureReturn() {
+    var root = document.getElementById('rm-architecture');
+    if (!root) return;
+    var existing = root.querySelector('.rm-architecture-return');
+    if (existing) existing.remove();
+    if (!workspaceState.mapReturn) return;
+		if (workspaceState.mapReturn.directionID) {
+			var direction = studyDirectionByID(workspaceState.mapReturn.directionID);
+			if (!direction) return;
+			var directionBanner = el('div', 'rm-architecture-return');
+			directionBanner.appendChild(txt('span', '', 'Map context for “' + direction.question + '”'));
+			var directionBack = txt('button', 'rm-secondary-action', '← Back to reading path');
+			directionBack.type = 'button';
+			directionBack.onclick = returnFromArchitecture;
+			directionBanner.appendChild(directionBack);
+			root.prepend(directionBanner);
+			return;
+		}
+    var mechanism = userMechanismByID(USER_MECHANISMS, workspaceState.mapReturn.artifactID);
+    if (!mechanism) return;
+    var banner = el('div', 'rm-architecture-return');
+    banner.appendChild(txt('span', '', 'Map context for “' + mechanismPresentationTitle(mechanism) + '”'));
+    var back = txt(
+      'button',
+      'rm-secondary-action',
+      '← Back to ' + narrativeUnitName(mechanism).toLowerCase() + ' ' + (workspaceState.mapReturn.stepIndex + 1)
+    );
+    back.type = 'button';
+    back.onclick = returnFromArchitecture;
+    banner.appendChild(back);
+    root.prepend(banner);
+  }
+
+  function renderArchitectureWorkspace() {
+    var root = document.getElementById('rm-architecture');
+    if (!root) return;
+    root.replaceChildren();
+    root.appendChild(renderViewHeading(
+      'Architecture',
+      'Explore the repository map',
+      'Select a component, runtime surface, or code path to inspect its implementation context.'
+    ));
+    if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
+      var card = el('section', 'rm-card rm-architecture-canvas-card');
+      architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
+      card.appendChild(architectureCanvasHost);
+      root.appendChild(card);
+    } else {
+      var systemMap = renderUserSystemMap(DATA.high_level_map || []);
+      if (systemMap) root.appendChild(systemMap);
+      else root.appendChild(txt('p', 'rm-empty-state', 'Search for a symbol or open one of the suggested source files.'));
+    }
+    renderArchitectureReturn();
+  }
+
+  function renderUserSystemMap(subsystems) {
+    if (!Array.isArray(subsystems) || !subsystems.length) return null;
+    var grid = el('div', 'rm-mechanism-grid');
+    subsystems.forEach(function (subsystem) {
+      if (!subsystem || !subsystem.name) return;
+      var card = el('article', 'rm-card');
+      card.appendChild(txt('h3', '', subsystem.name));
+      if (subsystem.why_it_matters) card.appendChild(txt('p', 'rm-step-explanation', subsystem.why_it_matters));
+      var sourceLines = el('div', 'rm-code-location-list');
+      (subsystem.evidence || []).forEach(function (statement) {
+        var line = el('div', 'rm-summary-line');
+        appendLinkifiedText(line, statement);
+        sourceLines.appendChild(line);
+      });
+      if (sourceLines.childNodes.length) card.appendChild(sourceLines);
+      grid.appendChild(card);
+    });
+    return grid.childNodes.length ? grid : null;
+  }
+
+  function mountArchitectureCanvas() {
+    if (!architectureCanvasHost || !DATA.architecture_canvas || !window.RepomapArchitectureCanvas) {
+      return Promise.resolve(null);
+    }
     if (architectureCanvasView) {
       architectureCanvasView.destroy();
       architectureCanvasView = null;
     }
-    if (architectureCanvasHost) {
-      var architectureOptions = {};
-      if (serverMode() && currentRunID()) {
-        architectureOptions.openLocation = function (filePath, line, column) {
-          if (!OPENABLE_PATH_SET[filePath]) return;
-          return requestOpenFile(filePath, line || 0, column || 0);
-        };
-      }
-      architectureOptions.candidateDirections = directions;
-      architectureOptions.savedFlows = DATA.flows;
-      architectureOptions.stalePaths = new Set((DATA.freshness && DATA.freshness.affected_paths) || []);
-      architectureCanvasView = window.RepomapArchitectureCanvas.mount(
-        architectureCanvasHost,
-        DATA.architecture_canvas,
-        architectureOptions
-      );
+    architectureAppliedFocus = null;
+    var options = {
+      userMode: !DEBUG_MODE,
+      candidateDirections: DEBUG_MODE ? candidateDirections() : [],
+      savedFlows: DEBUG_MODE ? (DATA.flows || []) : [],
+      guidedTour: DEBUG_MODE ? (DATA.guided_tour || null) : null,
+      semanticArtifacts: DEBUG_MODE ? (DATA.semantic_artifacts || []) : [],
+      startHereArtifactID: DEBUG_MODE ? (DATA.start_here_artifact_id || '') : '',
+      stalePaths: new Set((DATA.freshness && DATA.freshness.affected_paths) || []),
+    };
+		if (!DEBUG_MODE) {
+			options.componentContexts = architectureComponentContexts();
+			options.openStudyDirection = openStudyDirection;
+			options.openSourceLocation = openSourceLocation;
+		}
+    if (serverMode() && currentRunID()) {
+      options.openLocation = function (filePath, line, column) {
+        if (!OPENABLE_PATH_SET[filePath]) return;
+        return requestOpenFile(filePath, line || 0, column || 0);
+      };
     }
+    architectureCanvasView = window.RepomapArchitectureCanvas.mount(
+      architectureCanvasHost,
+      userArchitectureData(),
+      options
+    );
+    architectureReady = Promise.resolve(architectureCanvasView.ready).then(function () {
+      return architectureCanvasView;
+    });
+    return architectureReady;
+  }
 
+  function architectureFocusNeedsReset(appliedFocus, target) {
+    return appliedFocus !== null && appliedFocus !== architectureFocusValue(target);
+  }
+
+  function focusArchitectureTarget(target) {
+    if (!architectureCanvasView) return Promise.resolve(null);
+    if (architectureFocusNeedsReset(architectureAppliedFocus, target)) {
+      return mountArchitectureCanvas().then(function () {
+        return focusArchitectureTarget(target);
+      });
+    }
+    var kind = target ? String(target.kind || '') : '';
+    if (target) {
+      if (kind === 'component' && target.component_id) architectureCanvasView.openComponent(target.component_id);
+      else if (kind === 'flow' && target.flow_id) architectureCanvasView.openTrace(target.flow_id);
+      else if (kind === 'flow_step' && target.flow_id && target.step_id) {
+        architectureCanvasView.openFlowStep(target.flow_id, target.step_id);
+      } else if (kind === 'surface' && target.surface_id) architectureCanvasView.openSurface(target.surface_id);
+    }
+    architectureAppliedFocus = architectureFocusValue(target);
+    return Promise.resolve(architectureCanvasView);
+  }
+
+  function showMechanismStepOnMap(target) {
+		if (!target || !userArchitectureAvailable()) return;
+    var next = reduceWorkspaceState(workspaceState, { type: 'show_map', target: target }, USER_MECHANISMS);
+    commitWorkspaceState(next);
+  }
+
+  function openArchitectureTarget(target, returnTarget) {
+		if (!userArchitectureAvailable()) {
+			commitWorkspaceState(emptyWorkspaceState());
+			return;
+		}
+    var next = reduceWorkspaceState(workspaceState, { type: 'view', view: 'architecture' }, USER_MECHANISMS);
+    next.mapReturn = returnTarget || null;
+    next.mapTarget = target || null;
+    commitWorkspaceState(next);
+  }
+
+  function returnFromArchitecture() {
+    var returnTarget = workspaceState.mapReturn;
+    if (!returnTarget) return;
+    var next = reduceWorkspaceState(workspaceState, { type: 'return_from_map' }, USER_MECHANISMS);
+    commitWorkspaceState(next, { replace: true });
+  }
+
+  function renderProvenanceWorkspace() {
+    var root = document.getElementById('rm-provenance');
+    if (!root || !DEBUG_MODE) return;
+    root.replaceChildren();
+    root.appendChild(renderViewHeading(
+      'Debug mode',
+      'Validation and provenance',
+      'Canonical semantic objects and pipeline diagnostics retained by this report.'
+    ));
+    var payload = {
+      semantic_artifacts: DATA.semantic_artifacts || [],
+      semantic_coverage: DATA.semantic_coverage || null,
+      warnings: DATA.warnings || [],
+      architecture_synthesis: DATA.architecture_synthesis || null,
+      architecture_grounding: DATA.architecture_grounding || null,
+      run: DATA.run || null,
+    };
+    root.appendChild(txt('pre', 'rm-provenance-card', JSON.stringify(payload, null, 2)));
+    mountDebugSurfaceCatalog(root);
+  }
+
+  function mountDebugSurfaceCatalog(root) {
+    if (!DEBUG_MODE || !root || !DATA.discovered_surfaces || !window.RepomapSurfaceCatalog) return;
     if (surfaceCatalogView) {
       surfaceCatalogView.destroy();
       surfaceCatalogView = null;
     }
-    if (surfaceCatalogHost) {
-      var surfaceOptions = {};
-      if (serverMode() && currentRunID()) {
-        surfaceOptions.openLocation = function (location) {
-          if (!location || !OPENABLE_PATH_SET[location.path]) return;
-          return requestOpenFile(location.path, location.line || 0, location.column || 0);
-        };
-      }
-      surfaceOptions.openTrace = function (flowID) {
-        if (architectureCanvasView) {
-          architectureCanvasView.openTrace(flowID);
-          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+    var host = el('div', 'rm-surface-catalog-host');
+    root.appendChild(host);
+    var options = {
+      architectureSurfaces: (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [],
+      architectureAnchorCount: DATA.run && DATA.run.architecture_anchor_count || 0,
+      openTrace: function (flowID) {
+        openArchitectureTarget({ kind: 'flow', flow_id: flowID }, null);
+      },
+      openSurface: function (surfaceID) {
+        openArchitectureTarget({ kind: 'surface', surface_id: surfaceID }, null);
+      },
+      openComponent: function (componentID) {
+        openArchitectureTarget({ kind: 'component', component_id: componentID }, null);
+      },
+    };
+    if (serverMode() && currentRunID()) {
+      options.openLocation = function (location) {
+        if (!location || !OPENABLE_PATH_SET[location.path]) return;
+        return requestOpenFile(location.path, location.line || 0, location.column || 0);
       };
-      surfaceOptions.openSurface = function (surfaceID) {
-        if (architectureCanvasView) {
-          architectureCanvasView.openSurface(surfaceID);
-          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      };
-      surfaceOptions.openComponent = function (componentID) {
-        if (architectureCanvasView) {
-          architectureCanvasView.openComponent(componentID);
-          architectureCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      };
-      surfaceOptions.architectureSurfaces = (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [];
-      surfaceOptions.architectureAnchorCount = DATA.run && DATA.run.architecture_anchor_count || 0;
-      surfaceCatalogView = window.RepomapSurfaceCatalog.mount(
-        surfaceCatalogHost,
-        DATA.discovered_surfaces,
-        surfaceOptions
-      );
     }
-
-    var flowsContainer = document.getElementById('rm-flows-container');
-    flowsContainer.innerHTML = '';
-    if (!DATA.architecture_canvas) DATA.flows.forEach(function (f) {
-      var page = el('div', 'rm-tab-content');
-      page.id = 'rm-flow-' + f.id;
-      page.appendChild(renderFlowPage(f));
-      flowsContainer.appendChild(page);
-    });
-    resumeLatestInvestigation();
+    surfaceCatalogView = window.RepomapSurfaceCatalog.mount(host, DATA.discovered_surfaces, options);
   }
 
+  function activateWorkspaceView(view) {
+    var sectionID = viewSectionID(view);
+    document.querySelectorAll('.rm-main-content > .rm-tab-content').forEach(function (section) {
+      section.classList.toggle('rm-active', section.id === sectionID);
+    });
+		var navView = view === 'mechanism' ? 'mechanisms' : (view === 'study' || view === 'operate') ? 'overview' : view;
+    document.querySelectorAll('[data-workspace-view]').forEach(function (button) {
+      var active = button.getAttribute('data-workspace-view') === navView;
+      button.classList.toggle('rm-active', active);
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+  }
+
+  function renderWorkspaceState() {
+		if (workspaceState.view === 'investigate') renderTaskInvestigationWorkspace();
+    if (workspaceState.view === 'mechanism') renderMechanismDetailWorkspace();
+		if (workspaceState.view === 'study') renderStudyDetailWorkspace();
+		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
+    if (workspaceState.view === 'architecture') {
+      if (!architectureCanvasHost) renderArchitectureWorkspace();
+      else renderArchitectureReturn();
+      activateWorkspaceView('architecture');
+      var ready = architectureCanvasView ? (architectureReady || Promise.resolve(architectureCanvasView)) : mountArchitectureCanvas();
+      ready.then(function () { focusArchitectureTarget(workspaceState.mapTarget); });
+    } else {
+      activateWorkspaceView(workspaceState.view);
+    }
+    renderSourceDrawer();
+  }
+
+  function renderRunDetails() {
+    var details = document.getElementById('rm-run-details');
+    if (!details) return;
+    details.hidden = !DEBUG_MODE;
+    if (!DEBUG_MODE) return;
+    if (DATA.artifacts_dir) document.getElementById('rm-artifacts-dir').textContent = 'Artifacts: ' + DATA.artifacts_dir;
+    if (DATA.feedback_path) document.getElementById('rm-feedback-path').textContent = 'Feedback notes: ' + DATA.feedback_path;
+    if (DATA.captured_revision) {
+      document.getElementById('rm-snapshot-detail').textContent =
+        'Captured snapshot: ' + DATA.captured_revision.slice(0, 12) + ' · ' + (DATA.captured_input_count || 0) + ' analyzed inputs';
+    }
+    if (DATA.freshness) {
+      document.getElementById('rm-freshness-detail').textContent =
+        'Current freshness: ' + String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+    }
+    var submodules = DATA.repository_submodules || [];
+    if (submodules.length) {
+      document.getElementById('rm-submodule-detail').textContent = 'Excluded submodules: ' + submodules.length;
+    }
+  }
+
+  function mountSemanticSearch() {
+    if (semanticSearchView) {
+      semanticSearchView.destroy();
+      semanticSearchView = null;
+    }
+    var view = document.getElementById('rm-search-view');
+    var root = document.getElementById('rm-semantic-search');
+    if (!view || !root || !DATA.semantic_search || !window.RepomapSemanticSearch) return;
+    if (!view.querySelector('.rm-view-heading')) {
+      view.insertBefore(renderViewHeading(
+        'Search',
+        'Find the code you need',
+        'Search by behavior, symbol, component, or source path.'
+      ), root);
+    }
+    root.hidden = false;
+    semanticSearchView = window.RepomapSemanticSearch.mount(root, DATA.semantic_search, {
+      openTarget: openSemanticSearchTarget,
+      targetAvailable: semanticSearchTargetAvailable,
+      presentationTitle: function (item) {
+        var target = item && item.target || {};
+        if (target.kind !== 'semantic_artifact') return '';
+        var mechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
+        return mechanism ? mechanismPresentationTitle(mechanism) : '';
+      },
+    });
+  }
+
+  function render() {
+    DATA.flows = DATA.flows || [];
+    componentSelectionViews = {};
+    resumeInvestigationStarted = false;
+    var repoName = document.getElementById('rm-repo-name');
+    if (repoName) repoName.textContent = DATA.repo_name || 'Repository';
+		var workspacePurpose = document.getElementById('rm-workspace-purpose');
+		if (workspacePurpose && TASK_INVESTIGATION) workspacePurpose.textContent = 'Task investigation';
+    setupServerFeatures();
+    renderRunDetails();
+
+    var tabs = document.getElementById('rm-tabs');
+    if (tabs) {
+      tabs.replaceChildren();
+			if (TASK_INVESTIGATION) {
+				addWorkspaceTab('Task', 'investigate');
+			} else {
+				addWorkspaceTab('Overview', 'overview');
+				if (USER_MECHANISMS.length) addWorkspaceTab('Mechanisms', 'mechanisms');
+				if (DATA.semantic_search && window.RepomapSemanticSearch) addWorkspaceTab('Search', 'search');
+				if (userArchitectureAvailable()) addWorkspaceTab('Architecture', 'architecture');
+			}
+      if (DEBUG_MODE) addWorkspaceTab('Provenance', 'provenance');
+    }
+
+		if (TASK_INVESTIGATION) {
+			renderTaskInvestigationWorkspace();
+		} else {
+			renderOverviewWorkspace();
+			renderMechanismsWorkspace();
+			renderMechanismDetailWorkspace();
+			renderStudyDetailWorkspace();
+			renderOperateDetailWorkspace();
+		}
+    renderProvenanceWorkspace();
+		if (!TASK_INVESTIGATION) mountSemanticSearch();
+    restoreWorkspaceFromRoute();
+    if (DEBUG_MODE) resumeLatestInvestigation();
+  }
+
+  if (window.__REPOMAP_WORKSPACE_TEST__ && typeof window.__REPOMAP_WORKSPACE_TEST__ === 'object') {
+    Object.assign(window.__REPOMAP_WORKSPACE_TEST__, {
+      boundedMechanismStep: boundedMechanismStep,
+      mechanismNarrativeItems: mechanismNarrativeItems,
+      mechanismImplementationSteps: mechanismImplementationSteps,
+      narrativeIndexForImplementationStep: narrativeIndexForImplementationStep,
+      architectureFocusValue: architectureFocusValue,
+      architectureFocusNeedsReset: architectureFocusNeedsReset,
+      architectureTargetFromFocus: architectureTargetFromFocus,
+		architectureComponentContexts: architectureComponentContexts,
+      parseWorkspaceHash: parseWorkspaceHash,
+      workspaceHashForState: workspaceHashForState,
+			workspaceRouteFamily: workspaceRouteFamily,
+      reduceWorkspaceState: reduceWorkspaceState,
+      renderExactReferences: renderExactReferences,
+      renderSourceCode: renderSourceCode,
+      renderSourceSnippetCard: renderSourceSnippetCard,
+      sourceSnippetIdentity: sourceSnippetIdentity,
+      uniqueSourceSnippets: uniqueSourceSnippets,
+      remainingExactReferences: remainingExactReferences,
+      overviewSourceIsStrong: overviewSourceIsStrong,
+      overviewSourceRoleLabel: overviewSourceRoleLabel,
+      renderUserMechanismCard: renderUserMechanismCard,
+      renderImplementationDetails: renderImplementationDetails,
+      renderOverviewWorkspace: renderOverviewWorkspace,
+			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
+      renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,
+		renderStudyDetailWorkspace: renderStudyDetailWorkspace,
+		renderStudyDirectionCard: renderStudyDirectionCard,
+		renderStudyReadingAnchor: renderStudyReadingAnchor,
+		studyStartReference: studyStartReference,
+		renderReadableDocument: renderReadableDocument,
+		renderReadableDocumentCard: renderReadableDocumentCard,
+		renderOperateDetailWorkspace: renderOperateDetailWorkspace,
+		renderPavedPathCard: renderPavedPathCard,
+      sourceNoticeRanges: sourceNoticeRanges,
+      embeddedSourceForLocation: embeddedSourceForLocation,
+      mechanismPresentationTitle: mechanismPresentationTitle,
+      mechanismShortAnswer: mechanismShortAnswer,
+      openUserMechanism: openUserMechanism,
+		openStudyDirection: openStudyDirection,
+		openPavedPath: openPavedPath,
+      selectUserMechanismStep: selectUserMechanismStep,
+      openSourceSnippet: openSourceSnippet,
+      closeSourceDrawer: closeSourceDrawer,
+      activeSourceDrawerMechanism: activeSourceDrawerMechanism,
+		activeSourceDrawerOperation: activeSourceDrawerOperation,
+      navigateWorkspace: navigateWorkspace,
+      showMechanismStepOnMap: showMechanismStepOnMap,
+      returnFromArchitecture: returnFromArchitecture,
+      restoreWorkspaceFromRoute: restoreWorkspaceFromRoute,
+      workspaceStateSnapshot: function () { return JSON.parse(JSON.stringify(workspaceState)); },
+      userMechanismByID: userMechanismByID,
+		pavedPathByID: pavedPathByID,
+      viewSectionID: viewSectionID,
+		openSemanticSearchTarget: openSemanticSearchTarget,
+      semanticSearchTargetAvailable: semanticSearchTargetAvailable,
+    });
+  }
+
+  window.addEventListener('hashchange', scheduleWorkspaceRouteRestore);
+  window.addEventListener('popstate', scheduleWorkspaceRouteRestore);
   window.addEventListener('DOMContentLoaded', render);
 })();

@@ -57,6 +57,8 @@ func (c *Client) SynthesizeComponentLandscapeMeasured(
 	return modelresearch.ProviderResult{
 		Content: result.Content, Attempts: 1,
 		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+		PromptCacheHitTokens:  result.PromptCacheHitTokens,
+		PromptCacheMissTokens: result.PromptCacheMissTokens,
 	}, err
 }
 

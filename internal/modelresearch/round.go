@@ -19,10 +19,13 @@ type Prompt struct {
 }
 
 type ProviderResult struct {
-	Content      []byte
-	Attempts     int
-	InputTokens  int
-	OutputTokens int
+	Content               []byte
+	Attempts              int
+	RequestBytes          int
+	InputTokens           int
+	OutputTokens          int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
 }
 
 type Provider interface {
@@ -169,6 +172,8 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 			round.ResponseBytes = record.ResponseBytes
 			round.InputTokens = record.InputTokens
 			round.OutputTokens = record.OutputTokens
+			round.PromptCacheHitTokens = record.PromptCacheHitTokens
+			round.PromptCacheMissTokens = record.PromptCacheMissTokens
 			round.LatencyMillis = record.LatencyMillis
 			round.RetryCount = record.RetryCount
 			if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, record.Response); err != nil {
@@ -190,6 +195,8 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	round.ResponseBytes = len(result.Content)
 	round.InputTokens = result.InputTokens
 	round.OutputTokens = result.OutputTokens
+	round.PromptCacheHitTokens = result.PromptCacheHitTokens
+	round.PromptCacheMissTokens = result.PromptCacheMissTokens
 	if result.Attempts > 1 {
 		round.RetryCount = result.Attempts - 1
 	}
@@ -208,7 +215,9 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 			ResponseSHA256: requestHash(result.Content), Response: append([]byte(nil), result.Content...),
 			RequestBytes: len(request), ResponseBytes: len(result.Content),
 			InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-			LatencyMillis: round.LatencyMillis, RetryCount: round.RetryCount,
+			PromptCacheHitTokens:  result.PromptCacheHitTokens,
+			PromptCacheMissTokens: result.PromptCacheMissTokens,
+			LatencyMillis:         round.LatencyMillis, RetryCount: round.RetryCount,
 		}
 		if err := saveCache(input.RunsDir, record); err != nil {
 			return round, err

@@ -2134,6 +2134,17 @@ func TestParseFlowReport_WarningsAsBareString(t *testing.T) {
 	}
 }
 
+func TestBoundedDocumentedPurposeSkipsReadmeChrome(t *testing.T) {
+	readme := "Project\n![status](badge.svg)\n==========\n\n" +
+		"Project safely copies database changes to durable storage.\n" +
+		"It runs beside the application.\n\n" +
+		"## Installation\nRun the installer.\n"
+	want := "Project safely copies database changes to durable storage. It runs beside the application."
+	if got := boundedDocumentedPurpose(readme); got != want {
+		t.Fatalf("documented purpose = %q, want %q", got, want)
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

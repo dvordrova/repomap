@@ -7,11 +7,11 @@ func TestDefaultPolicyCapsNormalRun(t *testing.T) {
 	if err := policy.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if policy.MaxSemanticCalls != 4 || policy.MaxTargetedRounds != 2 {
-		t.Fatalf("call limits = %d/%d, want 4/2", policy.MaxSemanticCalls, policy.MaxTargetedRounds)
+	if policy.MaxSemanticCalls != 5 || policy.MaxTargetedRounds != 2 {
+		t.Fatalf("call limits = %d/%d, want 5/2", policy.MaxSemanticCalls, policy.MaxTargetedRounds)
 	}
-	if policy.MaxTotalRequestBytes != 4<<20 {
-		t.Fatalf("total request budget = %d, want %d", policy.MaxTotalRequestBytes, 4<<20)
+	if policy.MaxTotalRequestBytes != 4<<20+guidedTourMaxRequestBytes {
+		t.Fatalf("total request budget = %d, want %d", policy.MaxTotalRequestBytes, 4<<20+guidedTourMaxRequestBytes)
 	}
 	if policy.Architecture.MaxRequestBytes != 1<<20 {
 		t.Fatalf("architecture technical ceiling = %d, want %d", policy.Architecture.MaxRequestBytes, 1<<20)
@@ -35,12 +35,53 @@ func TestPolicyTreatsStageTargetsAsSoft(t *testing.T) {
 		"orientation":  policy.Orientation,
 		"targeted":     policy.Targeted,
 		"architecture": policy.Architecture,
+		"guided_tour":  policy.GuidedTour,
 	} {
 		requestBytes := stage.TargetRequestBytes + 1
 		allowed, reason := policy.Allows(stage, Usage{}, requestBytes)
 		if !allowed || reason != "within_budget" {
 			t.Errorf("%s Allows(%d) = %t, %q, want true within_budget", name, requestBytes, allowed, reason)
 		}
+	}
+}
+
+func TestLegacyPolicyCanUpgradeForGuidedTourWithoutChangingAnalysisVersion(t *testing.T) {
+	legacy := DefaultPolicy()
+	legacy.GuidedTour = StageBudget{}
+	legacy.MaxGuidedTourCalls = 0
+	legacy.MaxGuidedTourBytes = 0
+	legacy.MaxSemanticCalls = 4
+	legacy.MaxTotalRequestBytes -= guidedTourMaxRequestBytes
+	if err := legacy.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded, err := legacy.WithGuidedTour()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.Version != legacy.Version || upgraded.MaxSemanticCalls != 5 ||
+		upgraded.GuidedTour.MaxRequestBytes != guidedTourMaxRequestBytes {
+		t.Fatalf("upgraded policy = %#v", upgraded)
+	}
+}
+
+func TestPolicyCanReserveFanOutByAggregateBudget(t *testing.T) {
+	legacy := DefaultPolicy()
+	legacy.GuidedTour = StageBudget{}
+	legacy.MaxGuidedTourCalls = 0
+	legacy.MaxGuidedTourBytes = 0
+	legacy.MaxSemanticCalls = coreSemanticCallLimit
+	legacy.MaxTotalRequestBytes = coreTotalRequestBytes
+
+	upgraded, err := legacy.WithGuidedTourBudget(7, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.MaxSemanticCalls != 11 || upgraded.MaxGuidedTourCalls != 7 ||
+		upgraded.MaxGuidedTourBytes != 1<<20 ||
+		upgraded.MaxTotalRequestBytes != coreTotalRequestBytes+(1<<20) {
+		t.Fatalf("fan-out policy = %#v", upgraded)
 	}
 }
 

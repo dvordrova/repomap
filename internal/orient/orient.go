@@ -194,6 +194,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			dw = nil
 		}
 		if dw != nil {
+			defer dw.Close()
 			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug metadata: %w", err)
 			}
@@ -216,15 +217,20 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			Stage:    ProgressSurfaceStarted,
 			RepoName: s.RepoName,
 		})
-		stopSurfaceHeartbeat := startProgressHeartbeat(ctx, opts, ProgressEvent{
-			Stage: ProgressSurfaceWaiting, RepoName: s.RepoName, Activity: "Go runtime surface discovery",
-		})
+		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
+				Phase: progress.Phase, PhaseState: progress.State, Activity: progress.Detail,
+				CompletedCount: progress.Completed, TotalCount: progress.Total,
+				LatencyMillis: progress.ElapsedMillis,
+			})
+		}
 		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
 			ctx,
-			surfacediscovery.DefaultOptions(opts.RepoPath),
+			surfaceOptions,
 			surfaceDiscoveryInput(s.RepoName, s.GoFacts),
 		)
-		stopSurfaceHeartbeat()
 		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
 			return nil, surfaceErr
 		}

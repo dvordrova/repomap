@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
@@ -169,12 +170,28 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				TopExternalImports:      ms.TopExternalImports,
 			})
 		}
+		sort.SliceStable(modSummaries, func(i, j int) bool {
+			left := moduleSummaryRole(modSummaries[i])
+			right := moduleSummaryRole(modSummaries[j])
+			if artifactrole.SelectionPriority(left) != artifactrole.SelectionPriority(right) {
+				return artifactrole.SelectionPriority(left) > artifactrole.SelectionPriority(right)
+			}
+			return artifactrole.LessPath(
+				modSummaries[i].ModuleDir,
+				modSummaries[j].ModuleDir,
+				left,
+			)
+		})
 		if len(modSummaries) > opts.MaxModules {
 			b.Warnings = append(b.Warnings, "truncated module summaries")
 			modSummaries = modSummaries[:opts.MaxModules]
 		}
 
 		selectedEntrypoints := selectOrientationEntrypoints(f.EntrypointPackages)
+		if len(selectedEntrypoints) > opts.MaxEntrypoints {
+			b.Warnings = append(b.Warnings, "truncated entrypoints")
+			selectedEntrypoints = selectedEntrypoints[:opts.MaxEntrypoints]
+		}
 		selectedEntrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
 		eps := make([]entrypointCompact, 0, len(selectedEntrypoints))
 		for _, ep := range selectedEntrypoints {
@@ -209,11 +226,6 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				OpenFiles:  openFiles,
 			})
 		}
-		if len(eps) > opts.MaxEntrypoints {
-			b.Warnings = append(b.Warnings, "truncated entrypoints")
-			eps = eps[:opts.MaxEntrypoints]
-		}
-
 		candidates := make([]gofacts.OrientationCandidate, 0, len(f.OrientationCandidates))
 		for _, candidate := range f.OrientationCandidates {
 			_, selectedEntrypoint := selectedEntrypointImports[candidate.EntrypointPackage]
@@ -226,10 +238,9 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			candidates = candidates[:opts.MaxFiles]
 		}
 
-		edges := f.InternalEdges
-		if len(edges) > opts.MaxEdges {
+		edges := selectImportantEdges(f.InternalEdges, selectedEntrypoints, f.Modules, opts.MaxEdges)
+		if len(f.InternalEdges) > opts.MaxEdges {
 			b.Warnings = append(b.Warnings, "truncated important edges")
-			edges = edges[:opts.MaxEdges]
 		}
 
 		b.Go = goSection{
@@ -428,6 +439,15 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 		if score <= 0 {
 			continue
 		}
+		role := artifactrole.Classify(f, artifactrole.Hints{
+			PrimaryEntry:  containsPath(entrypointPaths, f),
+			Documentation: kind == "doc",
+			Generated:     kind == "generated",
+			Test:          kind == "test",
+		})
+		score += fileRoleScore(role)
+		signals = append(signals, "role:"+string(role))
+		reasons = append(reasons, "bounded context role: "+string(role))
 
 		entries = append(entries, fileIndexEntry{
 			ID:      providerFileID(f),
@@ -441,6 +461,11 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Score == entries[j].Score {
+			leftRole := fileIndexEntryRole(entries[i])
+			rightRole := fileIndexEntryRole(entries[j])
+			if leftRole == rightRole {
+				return artifactrole.LessPath(entries[i].Path, entries[j].Path, leftRole)
+			}
 			return entries[i].Path < entries[j].Path
 		}
 		return entries[i].Score > entries[j].Score
@@ -466,18 +491,113 @@ func selectOrientationEntrypoints(entrypoints []gofacts.Entrypoint) []gofacts.En
 		}
 	}
 	if len(selected) > 0 {
+		sortEntrypointsByRole(selected)
+		production := selected[:0]
+		for _, entrypoint := range selected {
+			if artifactrole.IsProduction(entrypointRole(entrypoint)) {
+				production = append(production, entrypoint)
+			}
+		}
+		if len(production) > 0 {
+			return production
+		}
 		return selected
 	}
 
 	const fallbackLimit = 3
 	fallback := append([]gofacts.Entrypoint(nil), entrypoints...)
-	sort.Slice(fallback, func(i, j int) bool {
-		return fallback[i].ImportPath < fallback[j].ImportPath
-	})
+	sortEntrypointsByRole(fallback)
 	if len(fallback) > fallbackLimit {
 		return fallback[:fallbackLimit]
 	}
 	return fallback
+}
+
+func sortEntrypointsByRole(entrypoints []gofacts.Entrypoint) {
+	sort.SliceStable(entrypoints, func(i, j int) bool {
+		left := entrypointRole(entrypoints[i])
+		right := entrypointRole(entrypoints[j])
+		if artifactrole.SelectionPriority(left) != artifactrole.SelectionPriority(right) {
+			return artifactrole.SelectionPriority(left) > artifactrole.SelectionPriority(right)
+		}
+		return artifactrole.LessPath(
+			entrypointArtifactPath(entrypoints[i]),
+			entrypointArtifactPath(entrypoints[j]),
+			left,
+		)
+	})
+}
+
+func entrypointRole(entrypoint gofacts.Entrypoint) artifactrole.Role {
+	return artifactrole.Classify(entrypointArtifactPath(entrypoint), artifactrole.Hints{
+		PrimaryEntry: entrypoint.Kind == "primary_binary" || entrypoint.Kind == "cli",
+		Test:         entrypoint.Kind == "test_binary",
+	})
+}
+
+func entrypointArtifactPath(entrypoint gofacts.Entrypoint) string {
+	entryPath := strings.Trim(strings.ReplaceAll(entrypoint.PackageDir, "\\", "/"), "/")
+	if len(entrypoint.Anchors) > 0 && entrypoint.Anchors[0].Path != "" {
+		entryPath = entrypoint.Anchors[0].Path
+	} else if entryPath != "" && entryPath != "." {
+		entryPath += "/main.go"
+	} else {
+		entryPath = "main.go"
+	}
+	return entryPath
+}
+
+func moduleSummaryRole(summary moduleSummaryCompact) artifactrole.Role {
+	modulePath := strings.Trim(strings.ReplaceAll(summary.ModuleDir, "\\", "/"), "/")
+	if modulePath == "" || modulePath == "." {
+		modulePath = "go.mod"
+	} else {
+		modulePath += "/go.mod"
+	}
+	hints := artifactrole.Hints{PrimaryEntry: summary.EntrypointsCount > 0}
+	switch summary.RoleGuess {
+	case "api_definitions", "client_library":
+		hints.PublicAPI = true
+	case "server_runtime":
+		hints.EffectBoundary = true
+	case "tests":
+		hints.Test = true
+	}
+	return artifactrole.Classify(modulePath, hints)
+}
+
+func containsPath(paths map[string]struct{}, target string) bool {
+	_, ok := paths[target]
+	return ok
+}
+
+func fileRoleScore(role artifactrole.Role) int {
+	switch role {
+	case artifactrole.RolePrimaryProductionEntry:
+		return 60
+	case artifactrole.RoleEffectBoundary:
+		return 35
+	case artifactrole.RolePublicAPI:
+		return 30
+	case artifactrole.RoleProductionCore:
+		return 20
+	case artifactrole.RoleCurrentDocumentation:
+		return 15
+	case artifactrole.RoleExperimental:
+		return -5
+	case artifactrole.RoleExample:
+		return -15
+	case artifactrole.RoleHistoricalDocumentation:
+		return -20
+	case artifactrole.RolePlayground:
+		return -30
+	case artifactrole.RoleTest:
+		return -40
+	case artifactrole.RoleFixture, artifactrole.RoleGenerated:
+		return -50
+	default:
+		return 0
+	}
 }
 
 func selectFileIndex(entries []fileIndexEntry, maxFiles int) []fileIndexEntry {
@@ -523,19 +643,56 @@ func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[
 		}
 		selectEntry(i)
 	}
+	productionEntrypoints := 0
 	for i := range entries {
 		if selectedCount == maxFiles {
 			break
 		}
-		if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") {
+		if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") ||
+			!fileIndexEntryIsProduction(entries[i]) {
 			continue
 		}
 		selectEntry(i)
+		productionEntrypoints++
+	}
+	if productionEntrypoints == 0 {
+		for i := range entries {
+			if selectedCount == maxFiles {
+				break
+			}
+			if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") {
+				continue
+			}
+			selectEntry(i)
+		}
 	}
 	for _, target := range targets {
 		remaining := target.count - selectedByGroup[target.group]
 		if target.group == "source" {
 			const maxInitialSourcesPerDir = 4
+			for _, productionOnly := range []bool{true, false} {
+				for i := range entries {
+					if remaining <= 0 || selectedCount == maxFiles {
+						break
+					}
+					if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
+						continue
+					}
+					if productionOnly != fileIndexEntryIsProduction(entries[i]) {
+						continue
+					}
+					dir := path.Dir(entries[i].Path)
+					if selectedSourcesByDir[dir] >= maxInitialSourcesPerDir {
+						continue
+					}
+					selected[i] = true
+					selectedCount++
+					remaining--
+					selectedSourcesByDir[dir]++
+				}
+			}
+		}
+		for _, productionOnly := range []bool{true, false} {
 			for i := range entries {
 				if remaining <= 0 || selectedCount == maxFiles {
 					break
@@ -543,38 +700,30 @@ func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[
 				if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
 					continue
 				}
-				dir := path.Dir(entries[i].Path)
-				if selectedSourcesByDir[dir] >= maxInitialSourcesPerDir {
+				if target.group == "source" && productionOnly != fileIndexEntryIsProduction(entries[i]) {
 					continue
 				}
 				selected[i] = true
 				selectedCount++
 				remaining--
-				selectedSourcesByDir[dir]++
 			}
-		}
-		for i := range entries {
-			if remaining <= 0 || selectedCount == maxFiles {
+			if target.group != "source" {
 				break
 			}
-			if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
+		}
+	}
+
+	for _, productionOnly := range []bool{true, false} {
+		for i := range entries {
+			if selectedCount == maxFiles {
+				break
+			}
+			if selected[i] || productionOnly != fileIndexEntryIsProduction(entries[i]) {
 				continue
 			}
 			selected[i] = true
 			selectedCount++
-			remaining--
 		}
-	}
-
-	for i := range entries {
-		if selectedCount == maxFiles {
-			break
-		}
-		if selected[i] {
-			continue
-		}
-		selected[i] = true
-		selectedCount++
 	}
 
 	result := make([]fileIndexEntry, 0, maxFiles)
@@ -586,9 +735,34 @@ func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[
 	return result
 }
 
+func fileIndexEntryIsProduction(entry fileIndexEntry) bool {
+	return artifactrole.IsProduction(fileIndexEntryRole(entry))
+}
+
+func fileIndexEntryRole(entry fileIndexEntry) artifactrole.Role {
+	for _, signal := range entry.Signals {
+		const prefix = "role:"
+		if !strings.HasPrefix(signal, prefix) {
+			continue
+		}
+		return artifactrole.Role(strings.TrimPrefix(signal, prefix))
+	}
+	return artifactrole.Classify(entry.Path, artifactrole.Hints{})
+}
+
 func selectedCommandTracePaths(traces []gofacts.CommandTrace) map[string]struct{} {
+	productionOnly := false
+	for _, trace := range traces {
+		if artifactrole.IsProduction(commandTraceRole(trace)) {
+			productionOnly = true
+			break
+		}
+	}
 	paths := make(map[string]struct{})
 	for _, trace := range traces {
+		if productionOnly && !artifactrole.IsProduction(commandTraceRole(trace)) {
+			continue
+		}
 		for _, step := range trace.Steps {
 			paths[step.TargetLocation.Path] = struct{}{}
 			if step.CallsiteLocation != nil {
@@ -625,6 +799,179 @@ func fileIndexGroup(kind string) string {
 	default:
 		return "support"
 	}
+}
+
+type importantParentEdge struct {
+	edge  gofacts.Edge
+	depth int
+}
+
+func selectImportantEdges(
+	edges []gofacts.Edge,
+	entrypoints []gofacts.Entrypoint,
+	modules []gofacts.ModuleFact,
+	limit int,
+) []gofacts.Edge {
+	if limit <= 0 || len(edges) == 0 {
+		return nil
+	}
+
+	ordered := append([]gofacts.Edge(nil), edges...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].From != ordered[j].From {
+			return ordered[i].From < ordered[j].From
+		}
+		return ordered[i].To < ordered[j].To
+	})
+	if len(ordered) <= limit {
+		return ordered
+	}
+
+	roots := make([]string, 0, len(entrypoints))
+	for _, entrypoint := range entrypoints {
+		if entrypointRole(entrypoint) == artifactrole.RolePrimaryProductionEntry {
+			roots = append(roots, entrypoint.ImportPath)
+		}
+	}
+	sort.Strings(roots)
+
+	parents := make(map[string]importantParentEdge)
+	depths := make(map[string]int, len(roots))
+	queue := append([]string(nil), roots...)
+	for _, root := range roots {
+		depths[root] = 0
+	}
+	adjacency := make(map[string][]gofacts.Edge)
+	for _, edge := range ordered {
+		adjacency[edge.From] = append(adjacency[edge.From], edge)
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		depth := depths[current]
+		for _, edge := range adjacency[current] {
+			if _, seen := depths[edge.To]; seen {
+				continue
+			}
+			depths[edge.To] = depth + 1
+			parents[edge.To] = importantParentEdge{edge: edge, depth: depth + 1}
+			queue = append(queue, edge.To)
+		}
+	}
+
+	targets := make([]string, 0, len(parents))
+	for target := range parents {
+		role := importArtifactRole(target, modules)
+		if artifactrole.IsProduction(role) {
+			targets = append(targets, target)
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		leftRole := importArtifactRole(targets[i], modules)
+		rightRole := importArtifactRole(targets[j], modules)
+		if artifactrole.SelectionPriority(leftRole) != artifactrole.SelectionPriority(rightRole) {
+			return artifactrole.SelectionPriority(leftRole) > artifactrole.SelectionPriority(rightRole)
+		}
+		if depths[targets[i]] != depths[targets[j]] {
+			return depths[targets[i]] > depths[targets[j]]
+		}
+		return targets[i] < targets[j]
+	})
+
+	selected := make([]gofacts.Edge, 0, min(limit, len(ordered)))
+	seen := make(map[gofacts.Edge]struct{}, limit)
+	connectivityLimit := limit / 2
+	if connectivityLimit < 4 {
+		connectivityLimit = limit
+	}
+	for _, target := range targets {
+		pathEdges := connectivityPath(target, parents)
+		newCount := 0
+		for _, edge := range pathEdges {
+			if _, exists := seen[edge]; !exists {
+				newCount++
+			}
+		}
+		pathLimit := connectivityLimit
+		if len(selected) == 0 {
+			pathLimit = limit
+		}
+		if len(selected)+newCount > pathLimit {
+			continue
+		}
+		for _, edge := range pathEdges {
+			if _, exists := seen[edge]; exists {
+				continue
+			}
+			seen[edge] = struct{}{}
+			selected = append(selected, edge)
+		}
+		if len(selected) == connectivityLimit {
+			break
+		}
+	}
+
+	type rankedEdge struct {
+		edge  gofacts.Edge
+		score int
+	}
+	ranked := make([]rankedEdge, 0, len(ordered))
+	for _, edge := range ordered {
+		toRole := importArtifactRole(edge.To, modules)
+		fromRole := importArtifactRole(edge.From, modules)
+		score := artifactrole.SelectionPriority(toRole)*10 + artifactrole.SelectionPriority(fromRole)
+		if depth, reachable := depths[edge.From]; reachable {
+			score += 10_000 - depth*100
+			if !artifactrole.IsProduction(toRole) {
+				score -= 5_000
+			}
+		}
+		ranked = append(ranked, rankedEdge{edge: edge, score: score})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		if ranked[i].edge.From != ranked[j].edge.From {
+			return ranked[i].edge.From < ranked[j].edge.From
+		}
+		return ranked[i].edge.To < ranked[j].edge.To
+	})
+	for _, item := range ranked {
+		if len(selected) == limit {
+			break
+		}
+		if _, exists := seen[item.edge]; exists {
+			continue
+		}
+		seen[item.edge] = struct{}{}
+		selected = append(selected, item.edge)
+	}
+	return selected
+}
+
+func connectivityPath(target string, parents map[string]importantParentEdge) []gofacts.Edge {
+	var reversed []gofacts.Edge
+	for {
+		parent, ok := parents[target]
+		if !ok {
+			break
+		}
+		reversed = append(reversed, parent.edge)
+		target = parent.edge.From
+	}
+	result := make([]gofacts.Edge, len(reversed))
+	for index := range reversed {
+		result[index] = reversed[len(reversed)-1-index]
+	}
+	return result
+}
+
+func importArtifactRole(importPath string, modules []gofacts.ModuleFact) artifactrole.Role {
+	if directory, ok := repositoryDirForImport(importPath, modules); ok {
+		return artifactrole.Classify(path.Join(directory, "package.go"), artifactrole.Hints{})
+	}
+	return artifactrole.Classify(importPath+"/package.go", artifactrole.Hints{})
 }
 
 func repositoryDirForImport(importPath string, modules []gofacts.ModuleFact) (string, bool) {
@@ -923,6 +1270,7 @@ func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int
 	type rankedTrace struct {
 		trace    gofacts.CommandTrace
 		score    int
+		role     artifactrole.Role
 		position int
 	}
 	lowerReadme := strings.ToLower(readme)
@@ -936,9 +1284,16 @@ func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int
 		if trace.Complete {
 			score += 10
 		}
-		ranked = append(ranked, rankedTrace{trace: trace, score: score, position: position})
+		ranked = append(ranked, rankedTrace{
+			trace: trace, score: score, role: commandTraceRole(trace), position: position,
+		})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
+		leftRole := artifactrole.SelectionPriority(ranked[i].role)
+		rightRole := artifactrole.SelectionPriority(ranked[j].role)
+		if leftRole != rightRole {
+			return leftRole > rightRole
+		}
 		if ranked[i].score != ranked[j].score {
 			return ranked[i].score > ranked[j].score
 		}
@@ -952,6 +1307,26 @@ func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int
 		selected[index] = ranked[index].trace
 	}
 	return selected
+}
+
+func commandTraceRole(trace gofacts.CommandTrace) artifactrole.Role {
+	for _, step := range trace.Steps {
+		if step.TargetLocation.Path != "" {
+			return artifactrole.Classify(step.TargetLocation.Path, artifactrole.Hints{PrimaryEntry: true})
+		}
+		if step.CallsiteLocation != nil && step.CallsiteLocation.Path != "" {
+			return artifactrole.Classify(step.CallsiteLocation.Path, artifactrole.Hints{PrimaryEntry: true})
+		}
+	}
+	for _, call := range trace.HandlerCalls {
+		if call.Path != "" {
+			return artifactrole.Classify(call.Path, artifactrole.Hints{PrimaryEntry: true})
+		}
+		if call.TargetPath != "" {
+			return artifactrole.Classify(call.TargetPath, artifactrole.Hints{PrimaryEntry: true})
+		}
+	}
+	return artifactrole.Classify(trace.EntrypointPackage+"/main.go", artifactrole.Hints{PrimaryEntry: true})
 }
 
 func containsWord(text, word string) bool {
@@ -1075,7 +1450,14 @@ func findKnownDocs(files []string) []string {
 		docs = append(docs, f)
 	}
 
-	sort.Strings(docs)
+	sort.Slice(docs, func(i, j int) bool {
+		left := artifactrole.Classify(docs[i], artifactrole.Hints{Documentation: true})
+		right := artifactrole.Classify(docs[j], artifactrole.Hints{Documentation: true})
+		if artifactrole.SelectionPriority(left) != artifactrole.SelectionPriority(right) {
+			return artifactrole.SelectionPriority(left) > artifactrole.SelectionPriority(right)
+		}
+		return artifactrole.LessPath(docs[i], docs[j], left)
+	})
 
 	if len(docs) > 30 {
 		docs = docs[:30]

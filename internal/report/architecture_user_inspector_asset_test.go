@@ -1,0 +1,148 @@
+package report
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestArchitectureComponentContextsUseExactPackageFileStudyJoin(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+function snippet(path, symbol, line) {
+  return {
+    path, enclosing_symbol: symbol, start_line: line, end_line: line + 1,
+    lines: [{ line, text: "func " + symbol + "() {}", highlight: true }],
+  };
+}
+const report = {
+  user_mechanisms: [], user_sources: [], source_ids: {},
+  openable_paths: ["core/a.go", "core/b.go", "other.go"],
+  architecture_canvas: {
+    components: [
+      { id: "core", members: [{
+        id: { kind: "package", value: "opaque-package-id" },
+        facts: [{ kind: "declaration", value: "example.test/project/core" }],
+      }] },
+      { id: "same-name-only", members: [{
+        id: { kind: "package", value: "opaque-package-id-2" }, name: "core", facts: [],
+      }] },
+    ],
+  },
+  repository_graph: { packages: [{
+    canonical_package_path: "example.test/project/core",
+    files: ["core/a.go", "core/b.go"],
+  }] },
+  study_map: { directions: [
+    {
+      id: "study-one", question: "How does core work?",
+      reading_anchors: [
+        { label: "Start here", location: { path: "core/a.go", line: 11 }, source: snippet("core/a.go", "A", 11) },
+        { label: "Then inspect", location: { path: "core/b.go", line: 21 }, source: snippet("core/b.go", "B", 21) },
+      ],
+    },
+    {
+      id: "study-other", question: "How does another package work?",
+      reading_anchors: [
+        { label: "Start here", location: { path: "other.go", line: 31 }, source: snippet("other.go", "Other", 31) },
+      ],
+    },
+  ] },
+};
+const window = {
+  location: { search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const document = {
+  getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
+  querySelectorAll() { return []; },
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window, document, URLSearchParams, Set, Map, AbortController,
+});
+process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectureComponentContexts()));
+`
+	runnerPath := filepath.Join(t.TempDir(), "architecture-context-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run architecture context projection: %v\n%s", err, output)
+	}
+	var contexts map[string]struct {
+		PackagePaths []string `json:"package_paths"`
+		FileCount    int      `json:"file_count"`
+		Sources      []struct {
+			Location struct {
+				Path string `json:"path"`
+			} `json:"location"`
+		} `json:"sources"`
+		Studies []struct {
+			ID string `json:"id"`
+		} `json:"studies"`
+	}
+	if err := json.Unmarshal(output, &contexts); err != nil {
+		t.Fatalf("decode architecture contexts: %v\n%s", err, output)
+	}
+	core, ok := contexts["core"]
+	if !ok {
+		t.Fatalf("exact package component context is absent: %#v", contexts)
+	}
+	if strings.Join(core.PackagePaths, "|") != "example.test/project/core" || core.FileCount != 2 {
+		t.Fatalf("package projection = %#v, file count = %d", core.PackagePaths, core.FileCount)
+	}
+	if len(core.Sources) != 2 || core.Sources[0].Location.Path != "core/a.go" || core.Sources[1].Location.Path != "core/b.go" {
+		t.Fatalf("source joins = %#v", core.Sources)
+	}
+	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
+		t.Fatalf("Study joins = %#v", core.Studies)
+	}
+	if _, ok := contexts["same-name-only"]; ok {
+		t.Fatalf("package-name similarity created a non-exact join: %#v", contexts["same-name-only"])
+	}
+}
+
+func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
+	js := readCanvasAsset(t, "architecture_canvas.js")
+	css := readCanvasAsset(t, "architecture_canvas.css")
+	reportJS := readCanvasAsset(t, "script.js")
+
+	for _, token := range []string{
+		"architecturePackagePathForMember(member, packageByPath)",
+		"packageFiles[String(location.path || '')]",
+		"options.componentContexts = architectureComponentContexts()",
+		"userComponentActions(component)",
+		"return actions.slice(0, 3)",
+		"lowInformationComponent",
+		"has-user-compact-inspector",
+	} {
+		if !strings.Contains(reportJS+js+css, token) {
+			t.Errorf("compact architecture inspector is missing %q", token)
+		}
+	}
+
+	start := strings.Index(js, "  inspectUserComponent(component) {")
+	end := strings.Index(js, "  inspectUserSurface(surface) {")
+	if start < 0 || end <= start {
+		t.Fatal("cannot isolate user component inspector")
+	}
+	componentInspector := js[start:end]
+	for _, forbidden := range []string{"participating_flow_ids", "Mechanism", "Paved", "Runtime surfaces"} {
+		if strings.Contains(componentInspector, forbidden) {
+			t.Errorf("component inspector infers or expands an unsupported relation through %q", forbidden)
+		}
+	}
+}

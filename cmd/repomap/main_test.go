@@ -14,14 +14,19 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/orient"
+	"github.com/dvordrova/repomap/internal/pavedpath"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
+	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
 func TestPrintPromptVersions(t *testing.T) {
@@ -34,10 +39,24 @@ func TestPrintPromptVersions(t *testing.T) {
 		t.Fatalf("prompt versions are not JSON: %v", err)
 	}
 	want := map[string]string{
-		"orientation_json": deepseek.OrientationPromptVersionJSON,
-		"source_json":      deepseek.SourcePromptVersionJSON,
-		"symbol_json":      deepseek.SymbolPromptVersionJSON,
-		"symbol_tagged":    deepseek.SymbolPromptVersionTagged,
+		"orientation_json":             deepseek.OrientationPromptVersionJSON,
+		"source_json":                  deepseek.SourcePromptVersionJSON,
+		"symbol_json":                  deepseek.SymbolPromptVersionJSON,
+		"symbol_tagged":                deepseek.SymbolPromptVersionTagged,
+		"guided_tour":                  guidedtour.PromptVersion,
+		"guided_tour_leaf":             guidedtour.LeafPromptVersion,
+		"guided_tour_fan_in":           guidedtour.FanInPromptVersion,
+		"semantic_opportunity":         semanticdiscovery.OpportunityPromptVersion,
+		"semantic_leaf":                semanticdiscovery.LeafPromptVersion,
+		"semantic_fan_in":              semanticdiscovery.FanInPromptVersion,
+		"semantic_monolithic":          semanticdiscovery.MonolithicPromptVersion,
+		"golden_mechanism":             semanticdiscovery.GoldenMechanismPromptVersion,
+		"repository_onboarding_editor": semanticdiscovery.OnboardingEditorPromptVersion,
+		"repository_brief_shape":       semanticdiscovery.StudyBriefPromptVersion,
+		"study_direction_candidates":   semanticdiscovery.StudyCandidatesPromptVersion,
+		"reading_pack_review":          semanticdiscovery.ReadingPackReviewPromptVersion,
+		"paved_paths":                  pavedpath.PromptVersion,
+		"task_investigation":           tasklens.PromptVersion,
 	}
 	if !reflect.DeepEqual(versions, want) {
 		t.Fatalf("prompt versions = %#v, want %#v", versions, want)
@@ -49,6 +68,18 @@ func TestWriteProgressShowsWaitsAndProviderMeasurements(t *testing.T) {
 
 	var output bytes.Buffer
 	for _, event := range []orient.ProgressEvent{
+		{
+			Stage: orient.ProgressSurfacePhase, Phase: "ssa_build", PhaseState: "started",
+			Activity: "building SSA once for the loaded package dependency closure",
+		},
+		{
+			Stage: orient.ProgressSurfacePhase, Phase: "ssa_build", PhaseState: "progress",
+			CompletedCount: 50, TotalCount: 120, LatencyMillis: 10_000,
+		},
+		{
+			Stage: orient.ProgressSurfacePhase, Phase: "ssa_build", PhaseState: "completed",
+			CompletedCount: 120, TotalCount: 120, LatencyMillis: 12_500,
+		},
 		{
 			Stage: orient.ProgressProviderWaiting, Model: "fixture-model",
 			Activity: "orientation", LatencyMillis: 10_000,
@@ -69,6 +100,9 @@ func TestWriteProgressShowsWaitsAndProviderMeasurements(t *testing.T) {
 	}
 
 	for _, want := range []string{
+		"surface discovery phase ssa_build: building SSA once",
+		"surface discovery phase ssa_build: 50/120 after 10s",
+		"surface discovery phase ssa_build completed in 12500 ms (120/120)",
 		"orientation from fixture-model still running after 10s (Ctrl-C to cancel)",
 		"reused cached orientation response of 4096 bytes (original call: 12500 ms, 900 input / 120 output tokens)",
 		"validated 3 candidate direction(s)",
@@ -191,7 +225,11 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	var requestBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requestCount++
-		requestBody, err = io.ReadAll(request.Body)
+		body, readErr := io.ReadAll(request.Body)
+		if requestCount == 1 {
+			requestBody = body
+		}
+		err = readErr
 		if err != nil {
 			t.Errorf("read request: %v", err)
 		}
@@ -254,7 +292,7 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	}
 
 	if requestCount != 1 {
-		t.Fatalf("provider request count = %d, want 1", requestCount)
+		t.Fatalf("provider request count = %d, want 1; model-only orientation is not semantic evidence", requestCount)
 	}
 	if !bytes.Equal(preview.Bytes(), requestBody) {
 		t.Fatalf("preview differs from outbound request\npreview: %s\nrequest: %s", preview.Bytes(), requestBody)
@@ -273,8 +311,6 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 		"repomap: collecting tracked repository facts from ",
 		"repomap: repository facts ready: ",
 		"repomap: compact local context ",
-		"repomap: discovering local Go runtime surfaces",
-		"repomap: discovered 1 local runtime surface(s)",
 		fmt.Sprintf("repomap: prepared %d-byte orientation request for deepseek-v4-flash", len(requestBody)),
 		"validated 1 candidate direction(s)",
 		"Report: ",
@@ -282,6 +318,9 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
 		}
+	}
+	if strings.Contains(stderr.String(), "discovering local Go runtime surfaces") {
+		t.Fatalf("default run unexpectedly enabled slow runtime-surface discovery:\n%s", stderr.String())
 	}
 	if openedReport == "" {
 		t.Fatal("generated report was not opened")
@@ -295,15 +334,12 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 	}
 	for _, want := range [][]byte{
 		[]byte("Process startup"),
-		[]byte(`"process_entry_count": 1`),
 		[]byte(`"high_level_map"`),
 		[]byte("it owns process startup"),
 		[]byte(`"first_files_to_open"`),
 		[]byte("Which behavior should we inspect next?"),
 		[]byte(`"compact_context_bytes"`),
 		[]byte(`"external_request_bytes"`),
-		[]byte(`"discovered_surfaces"`),
-		[]byte(`"evidence_only": true`),
 	} {
 		if !bytes.Contains(reportJSON, want) {
 			t.Fatalf("report.json does not retain %q: %s", want, reportJSON)
@@ -372,7 +408,11 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 	var requestBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requestCount++
-		requestBody, err = io.ReadAll(request.Body)
+		body, readErr := io.ReadAll(request.Body)
+		if requestCount == 1 {
+			requestBody = body
+		}
+		err = readErr
 		if err != nil {
 			t.Errorf("read request: %v", err)
 			return
@@ -399,7 +439,7 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
 	if requestCount != 1 {
-		t.Fatalf("provider request count = %d, want 1", requestCount)
+		t.Fatalf("provider request count = %d, want 1; model-only orientation is not semantic evidence", requestCount)
 	}
 	requestText := string(requestBody)
 	for _, want := range []string{`\"language\":\"Python\"`, "src/tool/__main__.py", "src/tool/service.py", "tests/test_service.py"} {
@@ -461,6 +501,85 @@ func TestRunDefaultNoOpenSuppressesBrowser(t *testing.T) {
 	}
 	if opened {
 		t.Fatal("browser opener was called with --no-open")
+	}
+}
+
+func TestRunDefaultNoServeSuppressesServer(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/no-serve\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	served := false
+	if err := runDefaultWithDeps(repo, []string{
+		"--offline", "--no-open", "--no-serve", "--debug-dir", t.TempDir(),
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: io.Discard,
+		serveReport: func(context.Context, reportserver.Options) error {
+			served = true
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	if served {
+		t.Fatal("report server was started with --no-serve")
+	}
+}
+
+func TestRunDefaultSurfaceDiscoveryIsOptIn(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/surface-opt-in\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "default disabled", want: false},
+		{name: "explicit opt-in", args: []string{"--discover-surfaces=true"}, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			debugDir := t.TempDir()
+			args := append([]string{
+				"--offline", "--no-open", "--no-serve", "--debug-dir", debugDir,
+			}, test.args...)
+			if err := runDefaultWithDeps(repo, args, defaultRunDeps{
+				stdout: io.Discard,
+				stderr: io.Discard,
+			}); err != nil {
+				t.Fatalf("runDefaultWithDeps() error = %v", err)
+			}
+
+			runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			metadataJSON, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var metadata struct {
+				EffectiveOptions struct {
+					DiscoverSurfaces bool `json:"discover_surfaces"`
+				} `json:"effective_options"`
+			}
+			if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+				t.Fatal(err)
+			}
+			if got := metadata.EffectiveOptions.DiscoverSurfaces; got != test.want {
+				t.Fatalf("discover_surfaces = %t, want %t; metadata: %s", got, test.want, metadataJSON)
+			}
+		})
 	}
 }
 
@@ -693,7 +812,7 @@ func TestRunDefaultServesGeneratedReportAndOpensServerURL(t *testing.T) {
 	if served.LocationResolver == nil || served.ExactSymbolAnalyzer == nil {
 		t.Fatal("interactive report server did not receive the local Go analyzer")
 	}
-	if opened != "http://127.0.0.1:4321/runs/fixture/report.html" {
+	if opened != "http://127.0.0.1:4321/runs/fixture/report.html#/overview" {
 		t.Fatalf("opened location = %q", opened)
 	}
 	metadataJSON, err := os.ReadFile(filepath.Join(debugDir, served.InitialRunID, "metadata.json"))
@@ -714,7 +833,7 @@ func TestRunDefaultAcceptsRepositoryAfterFlags(t *testing.T) {
 	runGit(t, repo, "add", "--", "go.mod", "main.go")
 
 	var stdout bytes.Buffer
-	if err := runDefaultWithDeps(".", []string{"--offline", "--no-debug", repo}, defaultRunDeps{
+	if err := runDefaultWithDeps(".", []string{"--offline", "--no-search", "--no-debug", repo}, defaultRunDeps{
 		stdout: &stdout,
 		stderr: io.Discard,
 	}); err != nil {
@@ -722,6 +841,190 @@ func TestRunDefaultAcceptsRepositoryAfterFlags(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "offline mode") {
 		t.Fatalf("stdout does not describe offline run:\n%s", stdout.String())
+	}
+}
+
+func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/no-search\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	debugDir := t.TempDir()
+	if err := runDefaultWithDeps(".", []string{
+		"--offline",
+		"--discover-surfaces=false",
+		"--no-search",
+		"--no-open",
+		"--no-serve",
+		"--debug-dir", debugDir,
+		repo,
+	}, defaultRunDeps{
+		ctx:    context.Background(),
+		stdout: io.Discard,
+		stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataJSON, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		EffectiveOptions struct {
+			NoSearch bool `json:"no_search"`
+		} `json:"effective_options"`
+	}
+	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !metadata.EffectiveOptions.NoSearch {
+		t.Fatalf("metadata effective options did not retain --no-search: %s", metadataJSON)
+	}
+
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(reportJSON, []byte(`"semantic_search_disabled": true`)) ||
+		bytes.Contains(reportJSON, []byte(`"semantic_search":`)) {
+		t.Fatalf("saved report does not honor --no-search: %s", reportJSON)
+	}
+	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range [][]byte{
+		[]byte(`id="rm-semantic-search"`),
+		[]byte(`id="rm-semantic-search-css"`),
+		[]byte(`id="rm-semantic-search-js"`),
+		[]byte(`<kbd>⌘/Ctrl K</kbd>`),
+	} {
+		if bytes.Contains(reportHTML, marker) {
+			t.Fatalf("--no-search report unexpectedly contains %q", marker)
+		}
+	}
+}
+
+func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "internal/a"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "internal/b"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/no-search-plan\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\n\nimport \"example.com/no-search-plan/internal/a\"\n\nfunc main() { a.Run() }\n")
+	writeFile(t, filepath.Join(repo, "internal/a/a.go"), "package a\n\nimport \"example.com/no-search-plan/internal/b\"\n\nfunc Run() { b.Run() }\n")
+	writeFile(t, filepath.Join(repo, "internal/b/b.go"), "package b\n\nfunc Run() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go", "internal/a/a.go", "internal/b/b.go")
+	commitTestRepository(t, repo)
+
+	orientationJSON, err := json.Marshal(map[string]any{
+		"project_guess": "three-stage Go command",
+		"confidence":    0.9,
+		"high_level_map": []any{
+			map[string]any{"name": "command", "evidence": []string{"main.go"}, "why_it_matters": "starts the command"},
+			map[string]any{"name": "service", "evidence": []string{"internal/a/a.go"}, "why_it_matters": "coordinates work"},
+			map[string]any{"name": "worker", "evidence": []string{"internal/b/b.go"}, "why_it_matters": "finishes work"},
+		},
+		"first_files_to_open": []any{
+			map[string]any{"path": "main.go", "reason": "entrypoint"},
+			map[string]any{"path": "internal/a/a.go", "reason": "coordination"},
+			map[string]any{"path": "internal/b/b.go", "reason": "terminal work"},
+		},
+		"candidate_flows": []any{map[string]any{
+			"name":              "Command startup",
+			"trigger":           "the executable starts",
+			"likely_entrypoint": "main.go",
+			"likely_files":      []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
+			"why_interesting":   "connects startup to the terminal worker",
+			"evidence":          []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
+			"confidence":        0.9,
+		}},
+		"important_domain_words": []any{},
+		"questions_for_human":    []any{},
+		"unverified_paths":       []any{},
+		"warnings":               []any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(noSearch bool) [][]byte {
+		t.Helper()
+		var mu sync.Mutex
+		var requests [][]byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			body, readErr := io.ReadAll(request.Body)
+			if readErr != nil {
+				t.Errorf("read request: %v", readErr)
+				return
+			}
+			mu.Lock()
+			requests = append(requests, bytes.Clone(body))
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{"message": map[string]any{
+					"role": "assistant", "content": string(orientationJSON),
+				}}},
+			})
+		}))
+		defer server.Close()
+		t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
+		t.Setenv("REPOMAP_LLM_MODEL", "deepseek-v4-flash")
+		t.Setenv("REPOMAP_LLM_AUTH", "none")
+		t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+
+		args := []string{
+			"--discover-surfaces=false",
+			"--no-open",
+			"--no-serve",
+			"--debug-dir", t.TempDir(),
+		}
+		if noSearch {
+			args = append(args, "--no-search")
+		}
+		if err := runDefaultWithDeps(repo, args, defaultRunDeps{
+			ctx: context.Background(), stdout: io.Discard, stderr: io.Discard,
+		}); err != nil {
+			t.Fatalf("runDefaultWithDeps(noSearch=%t) error = %v", noSearch, err)
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		return append([][]byte(nil), requests...)
+	}
+
+	withSearch := run(false)
+	withoutSearch := run(true)
+	if !reflect.DeepEqual(withoutSearch, withSearch) {
+		t.Fatalf("--no-search changed model request plan\nwith search: %q\nwithout search: %q", withSearch, withoutSearch)
+	}
+	if len(withSearch) != 4 {
+		t.Fatalf("model request count = %d, want orientation, architecture, guided tour, and repository study map", len(withSearch))
+	}
+	wantStageMarkers := []string{
+		"senior software engineer helping orient",
+		"compact conceptual architecture landscape",
+		"optional editorial guide for one bounded repository tour",
+		"editorial onboarding planner for one bounded repository model",
+	}
+	for index, marker := range wantStageMarkers {
+		if !bytes.Contains(withSearch[index], []byte(marker)) {
+			t.Fatalf("model request %d does not contain stage marker %q: %s", index, marker, withSearch[index])
+		}
 	}
 }
 
@@ -757,6 +1060,34 @@ func TestRepoRunLabelResolvesCurrentDirectory(t *testing.T) {
 	label := repoRunLabel(".")
 	if label == "" || label == "." || label == string(filepath.Separator) {
 		t.Fatalf("repoRunLabel(.) = %q", label)
+	}
+}
+
+func TestReportOverviewURL(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		location string
+		want     string
+	}{
+		{
+			name:     "plain report",
+			location: "http://127.0.0.1:4321/runs/fixture/report.html",
+			want:     "http://127.0.0.1:4321/runs/fixture/report.html#/overview",
+		},
+		{
+			name:     "replace existing route",
+			location: "http://127.0.0.1:4321/runs/fixture/report.html#/mechanisms",
+			want:     "http://127.0.0.1:4321/runs/fixture/report.html#/overview",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := reportOverviewURL(test.location); got != test.want {
+				t.Fatalf("reportOverviewURL(%q) = %q, want %q", test.location, got, test.want)
+			}
+		})
 	}
 }
 

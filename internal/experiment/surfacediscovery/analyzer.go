@@ -73,6 +73,8 @@ type analyzer struct {
 	uniqueStoreValues         map[ssa.Value]ssa.Value
 	storeValueAmbiguous       map[ssa.Value]bool
 	detachedWalk              bool
+	currentPhase              string
+	currentPhaseStarted       time.Time
 }
 
 const (
@@ -174,18 +176,23 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
 	if a.program != nil {
+		finishPhase := a.startPhase("candidate_index", "indexing call targets and bounded wrapper candidates")
 		a.prepare()
+		finishPhase(len(a.allFunctions), len(a.allFunctions))
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
 	if a.program != nil {
+		finishPhase := a.startPhase("architecture_anchors", "projecting existing exact architecture anchors")
 		a.recordGlobalArchitectureAnchors()
+		finishPhase(len(a.architectureAnchors), len(a.architectureAnchors))
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
 	entrypoints := a.entrypoints()
+	finishEntrypoints := a.startPhase("entrypoint_walk", "walking build-selected executable entrypoints")
 	for _, entrypoint := range entrypoints {
 		if err := ctx.Err(); err != nil {
 			return Result{}, fmt.Errorf("surface discovery: %w", err)
@@ -203,16 +210,24 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 			"Exact build-selected main declaration; process execution is not observed.",
 		)
 		a.walk(entrypoint, environment{}, nil, entrypoint, 0, false, entryAnchorID)
+		a.emitPhaseProgress(len(a.result.Coverage.EntrypointsConsidered), len(entrypoints), "entrypoints")
 	}
+	finishEntrypoints(len(entrypoints), len(entrypoints))
+	finishDetached := a.startPhase("detached_walk", "recovering import-reachable registrations with unresolved entry dispatch")
 	a.walkDisconnectedRelevant(entrypoints)
+	finishDetached(a.result.Coverage.FunctionsInspected, a.opts.MaxTasks)
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
+	finishCatalog := a.startPhase("catalog_finalize", "deduplicating surfaces and deriving presentation semantics")
 	a.finish(time.Since(started))
+	finishCatalog(len(a.result.Catalog.Triggers), len(a.result.Catalog.Triggers))
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
+	finishGrounding := a.startPhase("grounding_finalize", "finalizing existing architecture grounding")
 	a.finishArchitectureGrounding(entrypoints)
+	finishGrounding(len(a.result.Grounding.Anchors), len(a.result.Grounding.Anchors))
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
@@ -230,6 +245,41 @@ func normalizeOptions(opts Options) Options {
 		opts.MaxTargets = defaultMaxTargets
 	}
 	return opts
+}
+
+func (a *analyzer) startPhase(phase, detail string) func(int, int) {
+	a.currentPhase = phase
+	a.currentPhaseStarted = time.Now()
+	a.emitProgress(PhaseProgress{Phase: phase, State: "started", Detail: detail})
+	return func(completed, total int) {
+		latency := time.Since(a.currentPhaseStarted).Milliseconds()
+		a.result.Coverage.Phases = append(a.result.Coverage.Phases, PhaseMetric{
+			Phase: phase, LatencyMillis: latency, Completed: completed, Total: total, Detail: detail,
+		})
+		a.emitProgress(PhaseProgress{
+			Phase: phase, State: "completed", ElapsedMillis: latency,
+			Completed: completed, Total: total, Detail: detail,
+		})
+		a.currentPhase = ""
+		a.currentPhaseStarted = time.Time{}
+	}
+}
+
+func (a *analyzer) emitPhaseProgress(completed, total int, detail string) {
+	if a.currentPhase == "" || a.currentPhaseStarted.IsZero() {
+		return
+	}
+	a.emitProgress(PhaseProgress{
+		Phase: a.currentPhase, State: "progress",
+		ElapsedMillis: time.Since(a.currentPhaseStarted).Milliseconds(),
+		Completed:     completed, Total: total, Detail: detail,
+	})
+}
+
+func (a *analyzer) emitProgress(progress PhaseProgress) {
+	if a.opts.Progress != nil {
+		a.opts.Progress(progress)
+	}
 }
 
 func (a *analyzer) load() error {
@@ -250,7 +300,9 @@ func (a *analyzer) load() error {
 		BuildFlags: buildFlags,
 		Tests:      false,
 	}
+	finishLoad := a.startPhase("package_load", "loading build-selected packages and dependency type information")
 	loaded, err := packages.Load(config, "./...")
+	finishLoad(len(loaded), len(loaded))
 	if ctxErr := a.ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("surface discovery: %w", ctxErr)
 	}
@@ -291,6 +343,7 @@ func (a *analyzer) load() error {
 	if len(safeLoaded) == 0 {
 		return nil
 	}
+	finishSSA := a.startPhase("ssa_build", "building SSA once for the loaded package dependency closure")
 	a.program, a.packages = ssautil.AllPackages(safeLoaded, ssa.InstantiateGenerics)
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
@@ -299,7 +352,7 @@ func (a *analyzer) load() error {
 	sort.Slice(ssaPackages, func(i, j int) bool {
 		return ssaPackagePath(ssaPackages[i]) < ssaPackagePath(ssaPackages[j])
 	})
-	for _, pkg := range ssaPackages {
+	for index, pkg := range ssaPackages {
 		if err := a.ctx.Err(); err != nil {
 			return fmt.Errorf("surface discovery: %w", err)
 		}
@@ -307,15 +360,21 @@ func (a *analyzer) load() error {
 			continue
 		}
 		pkg.Build()
+		if (index+1)%50 == 0 {
+			a.emitPhaseProgress(index+1, len(ssaPackages), "SSA packages")
+		}
 	}
+	finishSSA(len(ssaPackages), len(ssaPackages))
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
+	finishGraph := a.startPhase("call_graph", "indexing all SSA functions and constructing one CHA call graph")
 	a.allFunctions = ssautil.AllFunctions(a.program)
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
 	a.graph = cha.CallGraph(a.program)
+	finishGraph(len(a.allFunctions), len(a.allFunctions))
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
@@ -366,7 +425,7 @@ func (a *analyzer) prepare() {
 	a.relevant = map[*ssa.Function]bool{}
 	a.relevanceDistance = map[*ssa.Function]int{}
 	orderedFunctions := a.orderedFunctions()
-	for _, function := range orderedFunctions {
+	for functionIndex, function := range orderedFunctions {
 		if a.ctx.Err() != nil {
 			return
 		}
@@ -406,6 +465,9 @@ func (a *analyzer) prepare() {
 					}
 				}
 			}
+		}
+		if (functionIndex+1)%1000 == 0 {
+			a.emitPhaseProgress(functionIndex+1, len(orderedFunctions), "SSA functions indexed")
 		}
 	}
 
@@ -645,8 +707,6 @@ func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
 	}
 }
 
-
-
 func (a *analyzer) recordClosureBindings(closure *ssa.MakeClosure) {
 	if closure == nil {
 		return
@@ -789,6 +849,9 @@ func (a *analyzer) walk(
 		return
 	}
 	a.tasks++
+	if a.tasks%100 == 0 {
+		a.emitPhaseProgress(a.tasks, a.opts.MaxTasks, "bounded functions walked")
+	}
 	a.walkedFunctions[function] = true
 	a.active[function] = true
 	defer delete(a.active, function)
@@ -934,7 +997,6 @@ func (a *analyzer) walk(
 		}
 	}
 }
-
 
 func (a *analyzer) addBoundValueTarget(
 	targets []*ssa.Function,

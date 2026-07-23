@@ -15,9 +15,13 @@ import (
 )
 
 type savedProvider struct {
-	response []byte
-	err      error
-	calls    int
+	response              []byte
+	err                   error
+	calls                 int
+	inputTokens           int
+	outputTokens          int
+	promptCacheHitTokens  int
+	promptCacheMissTokens int
 }
 
 func TestPlanTargetedRoundsHonorsCanceledContext(t *testing.T) {
@@ -36,7 +40,12 @@ func (p *savedProvider) BuildResearchRequest(prompt Prompt) ([]byte, error) {
 
 func (p *savedProvider) Research(context.Context, Prompt) (ProviderResult, error) {
 	p.calls++
-	return ProviderResult{Content: append([]byte(nil), p.response...), Attempts: 1}, p.err
+	return ProviderResult{
+		Content: append([]byte(nil), p.response...), Attempts: 1,
+		InputTokens: p.inputTokens, OutputTokens: p.outputTokens,
+		PromptCacheHitTokens:  p.promptCacheHitTokens,
+		PromptCacheMissTokens: p.promptCacheMissTokens,
+	}, p.err
 }
 
 func TestPlanTargetedRoundsSelectsOnlyFocusedExactEvidence(t *testing.T) {
@@ -290,7 +299,10 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &savedProvider{response: response}
+	provider := &savedProvider{
+		response: response, inputTokens: 120, outputTokens: 17,
+		promptCacheHitTokens: 96, promptCacheMissTokens: 24,
+	}
 	runsDir := t.TempDir()
 	repository := RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"}
 	execute := func() ResearchRound {
@@ -311,6 +323,85 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	}
 	if provider.calls != 1 {
 		t.Fatalf("provider calls = %d, want one call plus cache replay", provider.calls)
+	}
+	for _, round := range []ResearchRound{first, second} {
+		if round.InputTokens != 120 || round.OutputTokens != 17 ||
+			round.PromptCacheHitTokens != 96 || round.PromptCacheMissTokens != 24 {
+			t.Fatalf("round token usage = %#v", round)
+		}
+	}
+}
+
+func TestStageResponseCachePreservesPromptCacheTokens(t *testing.T) {
+	t.Parallel()
+
+	runsDir := t.TempDir()
+	request := []byte(`{"model":"fixture"}`)
+	bundleHash := SHA256([]byte("bounded evidence"))
+	cacheInput := StageCacheInput{
+		RunsDir: runsDir,
+		Fingerprint: FingerprintInput{
+			Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+			Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
+			Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+		},
+		Request: request, EvidenceBundleHash: bundleHash,
+	}
+	_, err := SaveStageResponse(cacheInput, StageResponse{
+		Content:     []byte(`{"status":"ok"}`),
+		InputTokens: 120, OutputTokens: 17,
+		PromptCacheHitTokens: 96, PromptCacheMissTokens: 24,
+	})
+	if err != nil {
+		t.Fatalf("SaveStageResponse() error = %v", err)
+	}
+	response, found, err := LoadStageResponse(cacheInput)
+	if err != nil {
+		t.Fatalf("LoadStageResponse() error = %v", err)
+	}
+	if !found || !response.Cached {
+		t.Fatalf("LoadStageResponse() found/cached = %t/%t", found, response.Cached)
+	}
+	if response.InputTokens != 120 || response.OutputTokens != 17 ||
+		response.PromptCacheHitTokens != 96 || response.PromptCacheMissTokens != 24 {
+		t.Fatalf("cached token usage = %#v", response)
+	}
+}
+
+func TestStageResponseCacheReplaysLegacyRecordWithoutPromptCacheTokens(t *testing.T) {
+	t.Parallel()
+
+	runsDir := t.TempDir()
+	request := []byte(`{"model":"legacy"}`)
+	responseContent := []byte(`{"status":"ok"}`)
+	bundleHash := SHA256([]byte("legacy evidence"))
+	fingerprint := FingerprintInput{
+		Repository: RepositoryContext{Identity: "legacy", Revision: "abc", Scenario: "go-default"},
+		Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
+		Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+	}
+	cacheKey, err := CacheKey(fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveCache(runsDir, cacheRecord{
+		Version: ContractVersion, CacheKey: cacheKey,
+		RequestSHA256: requestHash(request), BundleSHA256: bundleHash,
+		ResponseSHA256: requestHash(responseContent), Response: responseContent,
+		RequestBytes: len(request), ResponseBytes: len(responseContent),
+		InputTokens: 41, OutputTokens: 7,
+	}); err != nil {
+		t.Fatalf("save legacy cache record: %v", err)
+	}
+
+	response, found, err := LoadStageResponse(StageCacheInput{
+		RunsDir: runsDir, Fingerprint: fingerprint, Request: request, EvidenceBundleHash: bundleHash,
+	})
+	if err != nil {
+		t.Fatalf("LoadStageResponse() error = %v", err)
+	}
+	if !found || response.PromptCacheHitTokens != 0 || response.PromptCacheMissTokens != 0 {
+		t.Fatalf("legacy cache replay = found %t, response %#v", found, response)
 	}
 }
 

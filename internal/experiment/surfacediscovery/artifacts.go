@@ -69,6 +69,20 @@ func Markdown(result Result) string {
 		result.Coverage.WrapperDerivedTriggers,
 	)
 	builder.WriteString("This is not a runtime trace. " + result.Coverage.ScopeStatement + ".\n\n")
+	if len(result.Coverage.Phases) > 0 {
+		builder.WriteString("## Discovery phases\n\n")
+		for _, phase := range result.Coverage.Phases {
+			fmt.Fprintf(&builder, "- `%s`: %d ms", phase.Phase, phase.LatencyMillis)
+			if phase.Total > 0 {
+				fmt.Fprintf(&builder, " (%d/%d)", phase.Completed, phase.Total)
+			}
+			if phase.Detail != "" {
+				fmt.Fprintf(&builder, " — %s", phase.Detail)
+			}
+			builder.WriteString("\n")
+		}
+		builder.WriteString("\n")
+	}
 	for _, trigger := range result.Catalog.Triggers {
 		title := strings.TrimSpace(trigger.Identity.Method + " " + trigger.Identity.Path.Text)
 		if trigger.Identity.Name != "" {

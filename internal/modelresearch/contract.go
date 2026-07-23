@@ -151,20 +151,22 @@ type Frontier struct {
 }
 
 type StageMetrics struct {
-	Stage               string `json:"stage"`
-	Status              string `json:"status"`
-	RequestBytes        int    `json:"request_bytes,omitempty"`
-	ResponseBytes       int    `json:"response_bytes,omitempty"`
-	InputTokens         int    `json:"input_tokens,omitempty"`
-	OutputTokens        int    `json:"output_tokens,omitempty"`
-	LatencyMillis       int64  `json:"latency_ms,omitempty"`
-	SemanticCalls       int    `json:"semantic_calls,omitempty"`
-	RetryCount          int    `json:"retry_count,omitempty"`
-	CacheHit            bool   `json:"cache_hit,omitempty"`
-	LocalFilesInspected int    `json:"local_files_inspected,omitempty"`
-	EvidenceItemsSent   int    `json:"evidence_items_sent,omitempty"`
-	NewGroundedFacts    int    `json:"new_grounded_facts,omitempty"`
-	RejectedClaims      int    `json:"rejected_claims,omitempty"`
+	Stage                 string `json:"stage"`
+	Status                string `json:"status"`
+	RequestBytes          int    `json:"request_bytes,omitempty"`
+	ResponseBytes         int    `json:"response_bytes,omitempty"`
+	InputTokens           int    `json:"input_tokens,omitempty"`
+	OutputTokens          int    `json:"output_tokens,omitempty"`
+	PromptCacheHitTokens  int    `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens int    `json:"prompt_cache_miss_tokens,omitempty"`
+	LatencyMillis         int64  `json:"latency_ms,omitempty"`
+	SemanticCalls         int    `json:"semantic_calls,omitempty"`
+	RetryCount            int    `json:"retry_count,omitempty"`
+	CacheHit              bool   `json:"cache_hit,omitempty"`
+	LocalFilesInspected   int    `json:"local_files_inspected,omitempty"`
+	EvidenceItemsSent     int    `json:"evidence_items_sent,omitempty"`
+	NewGroundedFacts      int    `json:"new_grounded_facts,omitempty"`
+	RejectedClaims        int    `json:"rejected_claims,omitempty"`
 }
 
 type ResearchRound struct {
@@ -185,6 +187,8 @@ type ResearchRound struct {
 	ResponseBytes             int                `json:"response_bytes,omitempty"`
 	InputTokens               int                `json:"input_tokens,omitempty"`
 	OutputTokens              int                `json:"output_tokens,omitempty"`
+	PromptCacheHitTokens      int                `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens     int                `json:"prompt_cache_miss_tokens,omitempty"`
 	LatencyMillis             int64              `json:"latency_ms,omitempty"`
 	RetryCount                int                `json:"retry_count,omitempty"`
 	Cached                    bool               `json:"cached"`
@@ -227,6 +231,7 @@ type State struct {
 	Rounds        []ResearchRound   `json:"targeted_rounds"`
 	SkippedRounds []ResearchRound   `json:"skipped_targeted_rounds,omitempty"`
 	Architecture  StageMetrics      `json:"architecture_synthesis"`
+	GuidedTour    StageMetrics      `json:"guided_tour"`
 	Theory        WorkingTheory     `json:"working_theory"`
 	Coverage      Coverage          `json:"coverage"`
 	Usage         Usage             `json:"usage"`

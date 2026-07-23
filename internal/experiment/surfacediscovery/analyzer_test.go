@@ -24,6 +24,25 @@ func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRecordsNamedDiscoveryPhases(t *testing.T) {
+	result := analyzeFixture(t, "direct")
+	var names []string
+	for _, phase := range result.Coverage.Phases {
+		names = append(names, phase.Phase)
+		if phase.Detail == "" {
+			t.Fatalf("phase %q has no human-readable detail", phase.Phase)
+		}
+	}
+	want := []string{
+		"package_load", "ssa_build", "call_graph", "candidate_index",
+		"architecture_anchors", "entrypoint_walk", "detached_walk",
+		"catalog_finalize", "grounding_finalize",
+	}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("phase names = %v, want %v", names, want)
+	}
+}
+
 func TestProcessEntryArchitectureAnchorDeduplicatesSyntaxAndSSAColumns(t *testing.T) {
 	symbol := Symbol{ID: "example.com/project/cmd/project.main", Package: "example.com/project/cmd/project", Name: "main"}
 	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
@@ -359,7 +378,7 @@ func TestAnalyzeInterfaceTargets(t *testing.T) {
 		for _, trigger := range triggersOfKind(result, "http_route") {
 			if trigger.TraceReadiness == TraceReadinessReady || !hasFrontier(trigger.DynamicFrontier, "entrypoint_dispatch_unresolved") {
 				t.Fatalf("ambiguous interface trigger was promoted past its dispatch frontier: %#v", trigger)
-		}
+			}
 		}
 	})
 }
@@ -776,6 +795,12 @@ func TestAnalyzeIsDeterministic(t *testing.T) {
 	}
 	first.Coverage.ColdLatencyMillis = 0
 	second.Coverage.ColdLatencyMillis = 0
+	for index := range first.Coverage.Phases {
+		first.Coverage.Phases[index].LatencyMillis = 0
+	}
+	for index := range second.Coverage.Phases {
+		second.Coverage.Phases[index].LatencyMillis = 0
+	}
 	firstJSON, err := MarshalDeterministic(first)
 	if err != nil {
 		t.Fatal(err)

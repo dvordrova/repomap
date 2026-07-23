@@ -1,0 +1,1343 @@
+{
+  "candidate": {
+    "id": "semantic-candidate-8d47b99879d5cfbc1413052a",
+    "kind": "mechanism",
+    "title": "File Server Directory Listing",
+    "question_answered": "How does the file server generate and sort directory listings?",
+    "support_ids": [
+      "sf-06613468fcd3163c",
+      "sf-1e015094d9f3bd4a",
+      "sf-2fde70cb99f7f341",
+      "sf-93edd78bf29df471",
+      "sf-a76968dd8981ba15",
+      "sf-bd70e76c061742ac"
+    ],
+    "enrichment_support_ids": [
+      "gmf-0ec8ef0974e6bca4e91a0355",
+      "gmf-63fee9ff4e4ab91b356962ee",
+      "gmf-7afe2d8279da85ce2346ac3a",
+      "gmf-b774c86f6b35d386bcb95299",
+      "gmf-e7c6e36ae4486ba9ea1213df",
+      "gmf-fc86a4e7f0832a9377f2085c"
+    ],
+    "missing_information": [
+      "Direct tests for sorting, paging, and response formats were not inspected by this bounded probe"
+    ],
+    "expected_value": "high",
+    "confidence": "medium",
+    "capability_contract": {
+      "required_capabilities": [
+        "static",
+        "entry",
+        "direct_call",
+        "sequence",
+        "branch",
+        "data_read",
+        "data_write",
+        "data_transformation",
+        "output_effect",
+        "error_path",
+        "test_evidence"
+      ],
+      "available_capabilities": [
+        "static",
+        "entry",
+        "direct_call",
+        "sequence",
+        "branch",
+        "data_read",
+        "data_write",
+        "data_transformation",
+        "output_effect",
+        "error_path"
+      ],
+      "missing_capabilities": [
+        "test_evidence"
+      ],
+      "resolution": "partial"
+    },
+    "intent_contract": {
+      "required_answer_aspects": [
+        {
+          "id": "entry_trigger",
+          "label": "What triggers directory browsing?",
+          "required_capabilities": [
+            "entry",
+            "direct_call",
+            "branch"
+          ],
+          "key": true
+        },
+        {
+          "id": "item_collection",
+          "label": "Where are directory entries collected into listing items?",
+          "required_capabilities": [
+            "data_read",
+            "data_write",
+            "direct_call"
+          ],
+          "key": true
+        },
+        {
+          "id": "request_options",
+          "label": "Where do sort, order, limit, and offset come from?",
+          "required_capabilities": [
+            "data_read",
+            "direct_call"
+          ]
+        },
+        {
+          "id": "sort_and_page",
+          "label": "How are ordering, offset, and limit applied?",
+          "required_capabilities": [
+            "data_transformation",
+            "data_write",
+            "branch"
+          ],
+          "key": true
+        },
+        {
+          "id": "format_selection",
+          "label": "How is the response representation selected?",
+          "required_capabilities": [
+            "branch",
+            "output_effect"
+          ]
+        },
+        {
+          "id": "response_output",
+          "label": "Where is the representation written to the client?",
+          "required_capabilities": [
+            "output_effect"
+          ],
+          "key": true
+        },
+        {
+          "id": "important_branches",
+          "label": "Which redirects, cache responses, and error paths matter?",
+          "required_capabilities": [
+            "branch",
+            "error_path"
+          ]
+        },
+        {
+          "id": "known_unknowns",
+          "label": "Which direct behavior tests remain uninspected?",
+          "required_capabilities": [
+            "test_evidence"
+          ]
+        }
+      ],
+      "min_covered": 4,
+      "min_key_covered": 3,
+      "local_search_aliases": [
+        "how Caddy builds a file listing",
+        "how does Caddy build directory listings",
+        "как Caddy строит список файлов"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "id": "gmf-0ec8ef0974e6bca4e91a0355",
+      "kind": "source_signal",
+      "statement": "The request handler enters directory browsing when the resolved target remains a directory, browsing is configured, and the target is not hidden; the branch contains a direct local call into browsing.",
+      "keywords": [
+        "answer_aspect:entry_trigger",
+        "browse entry",
+        "directory listing"
+      ],
+      "source_group": "gmsg-81d9f00a7e226f0a70823336",
+      "capabilities": [
+        "branch",
+        "direct_call",
+        "entry",
+        "static"
+      ],
+      "scope": "local",
+      "focus": {},
+      "evidence": [
+        {
+          "id": "gm-ev-736c9981ee5419b7ab6274a5",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/staticfiles.go",
+          "line": 269,
+          "column": 25
+        },
+        {
+          "id": "gm-ev-fc424615e856496194e1c6fc",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/staticfiles.go",
+          "line": 324,
+          "column": 5
+        },
+        {
+          "id": "gm-ev-2d22a090f5e265d1dad3053e",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/staticfiles.go",
+          "line": 371,
+          "column": 6
+        },
+        {
+          "id": "gm-ev-7ff148b9b24e98c32ee00003",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/staticfiles.go",
+          "line": 372,
+          "column": 11
+        }
+      ]
+    },
+    {
+      "id": "gmf-63fee9ff4e4ab91b356962ee",
+      "kind": "source_signal",
+      "statement": "Directory browsing calls a bounded collection step that reads directory entries, passes them to local listing construction, and appends structured item records to the listing.",
+      "keywords": [
+        "answer_aspect:item_collection",
+        "directory entries",
+        "listing items"
+      ],
+      "source_group": "gmsg-dcfa6c0cea9efc6af4839bd1",
+      "capabilities": [
+        "data_read",
+        "data_transformation",
+        "data_write",
+        "direct_call",
+        "sequence",
+        "static"
+      ],
+      "scope": "local",
+      "focus": {},
+      "evidence": [
+        {
+          "id": "gm-ev-664ee871cd44ad0afcdcb883",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 119,
+          "column": 18
+        },
+        {
+          "id": "gm-ev-c6bcf96c4ef9bb30bd40f54c",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 226,
+          "column": 16
+        },
+        {
+          "id": "gm-ev-7c7855b563ab34149c5a5563",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 234,
+          "column": 9
+        },
+        {
+          "id": "gm-ev-8d29c30ce0a6c3a7f50c1d14",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 121,
+          "column": 3
+        }
+      ]
+    },
+    {
+      "id": "gmf-e7c6e36ae4486ba9ea1213df",
+      "kind": "source_signal",
+      "statement": "Query handling reads layout, limit, offset, sort, and order from request parameters. Empty sort and order values have named defaults before a direct local call passes the selected controls to listing transformation.",
+      "keywords": [
+        "answer_aspect:request_options",
+        "query options",
+        "sort order limit offset"
+      ],
+      "source_group": "gmsg-312f9b4a4ac437226c6063f4",
+      "capabilities": [
+        "branch",
+        "data_read",
+        "direct_call",
+        "sequence",
+        "static"
+      ],
+      "scope": "local",
+      "focus": {},
+      "evidence": [
+        {
+          "id": "gm-ev-cd6ca33322b8f33a9ee946e2",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 257,
+          "column": 17
+        },
+        {
+          "id": "gm-ev-0e20ba66d5056cae600e745f",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 258,
+          "column": 16
+        },
+        {
+          "id": "gm-ev-c20a613e6d95decd0e774ad6",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 259,
+          "column": 17
+        },
+        {
+          "id": "gm-ev-db6a8d769677b0c785f14e15",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 260,
+          "column": 18
+        },
+        {
+          "id": "gm-ev-ca30c9d601911b5493112c7a",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 264,
+          "column": 19
+        },
+        {
+          "id": "gm-src-f863ec94478b0adf98935351",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 279,
+          "column": 1
+        },
+        {
+          "id": "gm-src-7389355384c895d9209a12f0",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 296,
+          "column": 1
+        },
+        {
+          "id": "gm-ev-786f5a2ae3e89adf65fde88e",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 311,
+          "column": 2
+        }
+      ]
+    },
+    {
+      "id": "gmf-b774c86f6b35d386bcb95299",
+      "kind": "source_signal",
+      "statement": "Listing transformation branches between ascending and reverse ordering for name, directories-first name, size, and modification time, then slices the item list for valid offset and limit values.",
+      "keywords": [
+        "answer_aspect:sort_and_page",
+        "listing sort",
+        "offset limit"
+      ],
+      "source_group": "gmsg-50c17d55a752c5cd5a84f9e0",
+      "capabilities": [
+        "branch",
+        "data_transformation",
+        "data_write",
+        "sequence",
+        "static"
+      ],
+      "scope": "local",
+      "focus": {},
+      "evidence": [
+        {
+          "id": "gm-ev-825e8696ddbbc6e4581d487b",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 223,
+          "column": 5
+        },
+        {
+          "id": "gm-ev-eeb5b2351c8ebe322dcb154e",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 226,
+          "column": 4
+        },
+        {
+          "id": "gm-ev-7103a4aaf34b294bf3fc10a9",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 228,
+          "column": 4
+        },
+        {
+          "id": "gm-ev-f0a83668e0df333b05b26290",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 230,
+          "column": 4
+        },
+        {
+          "id": "gm-ev-4b137542861cbcbe9ff7dc81",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 232,
+          "column": 4
+        },
+        {
+          "id": "gm-ev-b69676279506200c4d446e0d",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 250,
+          "column": 14
+        },
+        {
+          "id": "gm-ev-dbf01b54064c5449affb4e66",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 250,
+          "column": 4
+        },
+        {
+          "id": "gm-ev-d89b12d7b3f216dd85258065",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+          "line": 259,
+          "column": 14
+        }
+      ]
+    },
+    {
+      "id": "gmf-7afe2d8279da85ce2346ac3a",
+      "kind": "source_signal",
+      "statement": "The representation stage branches on the normalized Accept value: JSON encoding writes listing items to a buffer, plain-text formatting writes rows, and the default executes an HTML template. Each branch sets its content type, and the final buffered write targets the HTTP response writer.",
+      "keywords": [
+        "accept format",
+        "answer_aspect:format_selection",
+        "answer_aspect:response_output",
+        "json plain html",
+        "response output"
+      ],
+      "source_group": "gmsg-86910b9ff8516d8bd6cc5d02",
+      "capabilities": [
+        "branch",
+        "data_transformation",
+        "output_effect",
+        "sequence",
+        "static"
+      ],
+      "scope": "local",
+      "focus": {},
+      "evidence": [
+        {
+          "id": "gm-ev-caa43f21bd677e45b16c4a65",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 150,
+          "column": 2
+        },
+        {
+          "id": "gm-ev-66a1e07274acba25078498c7",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 152,
+          "column": 13
+        },
+        {
+          "id": "gm-ev-05a3507009d22528ed4738dc",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 155,
+          "column": 3
+        },
+        {
+          "id": "gm-ev-3ba8da37b861f6ca86dee51a",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 173,
+          "column": 17
+        },
+        {
+          "id": "gm-ev-c6da30a2a49d70dc9ddd99f3",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 184,
+          "column": 3
+        },
+        {
+          "id": "gm-ev-15034f2260be02a5b6af4b6a",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 205,
+          "column": 13
+        },
+        {
+          "id": "gm-ev-3df24b86274adfa0b13f99e4",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 208,
+          "column": 3
+        },
+        {
+          "id": "gm-ev-2e29a55ec68feebef6b438ac",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 211,
+          "column": 9
+        }
+      ]
+    },
+    {
+      "id": "gmf-fc86a4e7f0832a9377f2085c",
+      "kind": "source_signal",
+      "statement": "Material alternative paths include a trailing-slash redirect, forbidden and not-found outcomes for collection failures, an internal-error outcome, a not-modified response, and template parsing failure.",
+      "keywords": [
+        "answer_aspect:important_branches",
+        "error paths",
+        "not modified",
+        "redirect"
+      ],
+      "source_group": "gmsg-88ccc11d3c5991bce29cf9cc",
+      "capabilities": [
+        "branch",
+        "direct_call",
+        "error_path",
+        "output_effect",
+        "static"
+      ],
+      "scope": "local",
+      "focus": {},
+      "evidence": [
+        {
+          "id": "gm-ev-df16d78cb25b615aa9d1ca40",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 102,
+          "column": 6
+        },
+        {
+          "id": "gm-ev-6f23543808be3bfe0fad9b8a",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 106,
+          "column": 11
+        },
+        {
+          "id": "gm-ev-be0c05b92b2868aedd121287",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 122,
+          "column": 10
+        },
+        {
+          "id": "gm-ev-1a586ddbcbc6f0596633a0ef",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 124,
+          "column": 10
+        },
+        {
+          "id": "gm-ev-b7d21a97d51942ce27d2c4b4",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 126,
+          "column": 10
+        },
+        {
+          "id": "gm-ev-c500ff1966fe00fec632ec80",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 136,
+          "column": 4
+        },
+        {
+          "id": "gm-ev-323e4e3cc2bdbb731cd4c312",
+          "kind": "bounded_go_syntax",
+          "path": "modules/caddyhttp/fileserver/browse.go",
+          "line": 203,
+          "column": 11
+        }
+      ]
+    }
+  ],
+  "leaf": {
+    "task": {
+      "version": 1,
+      "id": "semantic-leaf-d432113d97c6d2f0f9d8e0db",
+      "candidate": {
+        "id": "semantic-candidate-8d47b99879d5cfbc1413052a",
+        "kind": "mechanism",
+        "title": "File Server Directory Listing",
+        "question_answered": "How does the file server generate and sort directory listings?",
+        "support_ids": [
+          "sf-06613468fcd3163c",
+          "sf-1e015094d9f3bd4a",
+          "sf-2fde70cb99f7f341",
+          "sf-93edd78bf29df471",
+          "sf-a76968dd8981ba15",
+          "sf-bd70e76c061742ac"
+        ],
+        "enrichment_support_ids": [
+          "gmf-0ec8ef0974e6bca4e91a0355",
+          "gmf-63fee9ff4e4ab91b356962ee",
+          "gmf-7afe2d8279da85ce2346ac3a",
+          "gmf-b774c86f6b35d386bcb95299",
+          "gmf-e7c6e36ae4486ba9ea1213df",
+          "gmf-fc86a4e7f0832a9377f2085c"
+        ],
+        "missing_information": [
+          "Direct tests for sorting, paging, and response formats were not inspected by this bounded probe"
+        ],
+        "expected_value": "high",
+        "confidence": "medium",
+        "capability_contract": {
+          "required_capabilities": [
+            "static",
+            "entry",
+            "direct_call",
+            "sequence",
+            "branch",
+            "data_read",
+            "data_write",
+            "data_transformation",
+            "output_effect",
+            "error_path",
+            "test_evidence"
+          ],
+          "available_capabilities": [
+            "static",
+            "entry",
+            "direct_call",
+            "sequence",
+            "branch",
+            "data_read",
+            "data_write",
+            "data_transformation",
+            "output_effect",
+            "error_path"
+          ],
+          "missing_capabilities": [
+            "test_evidence"
+          ],
+          "resolution": "partial"
+        },
+        "intent_contract": {
+          "required_answer_aspects": [
+            {
+              "id": "entry_trigger",
+              "label": "What triggers directory browsing?",
+              "required_capabilities": [
+                "entry",
+                "direct_call",
+                "branch"
+              ],
+              "key": true
+            },
+            {
+              "id": "item_collection",
+              "label": "Where are directory entries collected into listing items?",
+              "required_capabilities": [
+                "data_read",
+                "data_write",
+                "direct_call"
+              ],
+              "key": true
+            },
+            {
+              "id": "request_options",
+              "label": "Where do sort, order, limit, and offset come from?",
+              "required_capabilities": [
+                "data_read",
+                "direct_call"
+              ]
+            },
+            {
+              "id": "sort_and_page",
+              "label": "How are ordering, offset, and limit applied?",
+              "required_capabilities": [
+                "data_transformation",
+                "data_write",
+                "branch"
+              ],
+              "key": true
+            },
+            {
+              "id": "format_selection",
+              "label": "How is the response representation selected?",
+              "required_capabilities": [
+                "branch",
+                "output_effect"
+              ]
+            },
+            {
+              "id": "response_output",
+              "label": "Where is the representation written to the client?",
+              "required_capabilities": [
+                "output_effect"
+              ],
+              "key": true
+            },
+            {
+              "id": "important_branches",
+              "label": "Which redirects, cache responses, and error paths matter?",
+              "required_capabilities": [
+                "branch",
+                "error_path"
+              ]
+            },
+            {
+              "id": "known_unknowns",
+              "label": "Which direct behavior tests remain uninspected?",
+              "required_capabilities": [
+                "test_evidence"
+              ]
+            }
+          ],
+          "min_covered": 4,
+          "min_key_covered": 3,
+          "local_search_aliases": [
+            "how Caddy builds a file listing",
+            "how does Caddy build directory listings",
+            "как Caddy строит список файлов"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "id": "gmf-0ec8ef0974e6bca4e91a0355",
+          "kind": "source_signal",
+          "statement": "The request handler enters directory browsing when the resolved target remains a directory, browsing is configured, and the target is not hidden; the branch contains a direct local call into browsing.",
+          "keywords": [
+            "answer_aspect:entry_trigger",
+            "browse entry",
+            "directory listing"
+          ],
+          "source_group": "gmsg-81d9f00a7e226f0a70823336",
+          "capabilities": [
+            "branch",
+            "direct_call",
+            "entry",
+            "static"
+          ],
+          "scope": "local",
+          "focus": {
+            "component_ids": [
+              "component-6ef29e3cd5e945ad57495d0055b7621c9e2c4dbfeaf64439d2e75a47e18f513a"
+            ]
+          },
+          "evidence": [
+            {
+              "id": "gm-ev-736c9981ee5419b7ab6274a5",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/staticfiles.go",
+              "line": 269,
+              "column": 25
+            },
+            {
+              "id": "gm-ev-fc424615e856496194e1c6fc",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/staticfiles.go",
+              "line": 324,
+              "column": 5
+            },
+            {
+              "id": "gm-ev-2d22a090f5e265d1dad3053e",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/staticfiles.go",
+              "line": 371,
+              "column": 6
+            },
+            {
+              "id": "gm-ev-7ff148b9b24e98c32ee00003",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/staticfiles.go",
+              "line": 372,
+              "column": 11
+            }
+          ]
+        },
+        {
+          "id": "gmf-63fee9ff4e4ab91b356962ee",
+          "kind": "source_signal",
+          "statement": "Directory browsing calls a bounded collection step that reads directory entries, passes them to local listing construction, and appends structured item records to the listing.",
+          "keywords": [
+            "answer_aspect:item_collection",
+            "directory entries",
+            "listing items"
+          ],
+          "source_group": "gmsg-dcfa6c0cea9efc6af4839bd1",
+          "capabilities": [
+            "data_read",
+            "data_transformation",
+            "data_write",
+            "direct_call",
+            "sequence",
+            "static"
+          ],
+          "scope": "local",
+          "focus": {
+            "component_ids": [
+              "component-6ef29e3cd5e945ad57495d0055b7621c9e2c4dbfeaf64439d2e75a47e18f513a"
+            ]
+          },
+          "evidence": [
+            {
+              "id": "gm-ev-664ee871cd44ad0afcdcb883",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 119,
+              "column": 18
+            },
+            {
+              "id": "gm-ev-c6bcf96c4ef9bb30bd40f54c",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 226,
+              "column": 16
+            },
+            {
+              "id": "gm-ev-7c7855b563ab34149c5a5563",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 234,
+              "column": 9
+            },
+            {
+              "id": "gm-ev-8d29c30ce0a6c3a7f50c1d14",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 121,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "id": "gmf-7afe2d8279da85ce2346ac3a",
+          "kind": "source_signal",
+          "statement": "The representation stage branches on the normalized Accept value: JSON encoding writes listing items to a buffer, plain-text formatting writes rows, and the default executes an HTML template. Each branch sets its content type, and the final buffered write targets the HTTP response writer.",
+          "keywords": [
+            "accept format",
+            "answer_aspect:format_selection",
+            "answer_aspect:response_output",
+            "json plain html",
+            "response output"
+          ],
+          "source_group": "gmsg-86910b9ff8516d8bd6cc5d02",
+          "capabilities": [
+            "branch",
+            "data_transformation",
+            "output_effect",
+            "sequence",
+            "static"
+          ],
+          "scope": "local",
+          "focus": {
+            "component_ids": [
+              "component-6ef29e3cd5e945ad57495d0055b7621c9e2c4dbfeaf64439d2e75a47e18f513a"
+            ]
+          },
+          "evidence": [
+            {
+              "id": "gm-ev-caa43f21bd677e45b16c4a65",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 150,
+              "column": 2
+            },
+            {
+              "id": "gm-ev-66a1e07274acba25078498c7",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 152,
+              "column": 13
+            },
+            {
+              "id": "gm-ev-05a3507009d22528ed4738dc",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 155,
+              "column": 3
+            },
+            {
+              "id": "gm-ev-3ba8da37b861f6ca86dee51a",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 173,
+              "column": 17
+            },
+            {
+              "id": "gm-ev-c6da30a2a49d70dc9ddd99f3",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 184,
+              "column": 3
+            },
+            {
+              "id": "gm-ev-15034f2260be02a5b6af4b6a",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 205,
+              "column": 13
+            },
+            {
+              "id": "gm-ev-3df24b86274adfa0b13f99e4",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 208,
+              "column": 3
+            },
+            {
+              "id": "gm-ev-2e29a55ec68feebef6b438ac",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 211,
+              "column": 9
+            }
+          ]
+        },
+        {
+          "id": "gmf-b774c86f6b35d386bcb95299",
+          "kind": "source_signal",
+          "statement": "Listing transformation branches between ascending and reverse ordering for name, directories-first name, size, and modification time, then slices the item list for valid offset and limit values.",
+          "keywords": [
+            "answer_aspect:sort_and_page",
+            "listing sort",
+            "offset limit"
+          ],
+          "source_group": "gmsg-50c17d55a752c5cd5a84f9e0",
+          "capabilities": [
+            "branch",
+            "data_transformation",
+            "data_write",
+            "sequence",
+            "static"
+          ],
+          "scope": "local",
+          "focus": {
+            "component_ids": [
+              "component-6ef29e3cd5e945ad57495d0055b7621c9e2c4dbfeaf64439d2e75a47e18f513a"
+            ]
+          },
+          "evidence": [
+            {
+              "id": "gm-ev-825e8696ddbbc6e4581d487b",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 223,
+              "column": 5
+            },
+            {
+              "id": "gm-ev-eeb5b2351c8ebe322dcb154e",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 226,
+              "column": 4
+            },
+            {
+              "id": "gm-ev-7103a4aaf34b294bf3fc10a9",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 228,
+              "column": 4
+            },
+            {
+              "id": "gm-ev-f0a83668e0df333b05b26290",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 230,
+              "column": 4
+            },
+            {
+              "id": "gm-ev-4b137542861cbcbe9ff7dc81",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 232,
+              "column": 4
+            },
+            {
+              "id": "gm-ev-b69676279506200c4d446e0d",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 250,
+              "column": 14
+            },
+            {
+              "id": "gm-ev-dbf01b54064c5449affb4e66",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 250,
+              "column": 4
+            },
+            {
+              "id": "gm-ev-d89b12d7b3f216dd85258065",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 259,
+              "column": 14
+            }
+          ]
+        },
+        {
+          "id": "gmf-e7c6e36ae4486ba9ea1213df",
+          "kind": "source_signal",
+          "statement": "Query handling reads layout, limit, offset, sort, and order from request parameters. Empty sort and order values have named defaults before a direct local call passes the selected controls to listing transformation.",
+          "keywords": [
+            "answer_aspect:request_options",
+            "query options",
+            "sort order limit offset"
+          ],
+          "source_group": "gmsg-312f9b4a4ac437226c6063f4",
+          "capabilities": [
+            "branch",
+            "data_read",
+            "direct_call",
+            "sequence",
+            "static"
+          ],
+          "scope": "local",
+          "focus": {
+            "component_ids": [
+              "component-6ef29e3cd5e945ad57495d0055b7621c9e2c4dbfeaf64439d2e75a47e18f513a"
+            ]
+          },
+          "evidence": [
+            {
+              "id": "gm-ev-cd6ca33322b8f33a9ee946e2",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 257,
+              "column": 17
+            },
+            {
+              "id": "gm-ev-0e20ba66d5056cae600e745f",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 258,
+              "column": 16
+            },
+            {
+              "id": "gm-ev-c20a613e6d95decd0e774ad6",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 259,
+              "column": 17
+            },
+            {
+              "id": "gm-ev-db6a8d769677b0c785f14e15",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 260,
+              "column": 18
+            },
+            {
+              "id": "gm-ev-ca30c9d601911b5493112c7a",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 264,
+              "column": 19
+            },
+            {
+              "id": "gm-src-f863ec94478b0adf98935351",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 279,
+              "column": 1
+            },
+            {
+              "id": "gm-src-7389355384c895d9209a12f0",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 296,
+              "column": 1
+            },
+            {
+              "id": "gm-ev-786f5a2ae3e89adf65fde88e",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 311,
+              "column": 2
+            }
+          ]
+        },
+        {
+          "id": "gmf-fc86a4e7f0832a9377f2085c",
+          "kind": "source_signal",
+          "statement": "Material alternative paths include a trailing-slash redirect, forbidden and not-found outcomes for collection failures, an internal-error outcome, a not-modified response, and template parsing failure.",
+          "keywords": [
+            "answer_aspect:important_branches",
+            "error paths",
+            "not modified",
+            "redirect"
+          ],
+          "source_group": "gmsg-88ccc11d3c5991bce29cf9cc",
+          "capabilities": [
+            "branch",
+            "direct_call",
+            "error_path",
+            "output_effect",
+            "static"
+          ],
+          "scope": "local",
+          "focus": {
+            "component_ids": [
+              "component-6ef29e3cd5e945ad57495d0055b7621c9e2c4dbfeaf64439d2e75a47e18f513a"
+            ]
+          },
+          "evidence": [
+            {
+              "id": "gm-ev-df16d78cb25b615aa9d1ca40",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 102,
+              "column": 6
+            },
+            {
+              "id": "gm-ev-6f23543808be3bfe0fad9b8a",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 106,
+              "column": 11
+            },
+            {
+              "id": "gm-ev-be0c05b92b2868aedd121287",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 122,
+              "column": 10
+            },
+            {
+              "id": "gm-ev-1a586ddbcbc6f0596633a0ef",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 124,
+              "column": 10
+            },
+            {
+              "id": "gm-ev-b7d21a97d51942ce27d2c4b4",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 126,
+              "column": 10
+            },
+            {
+              "id": "gm-ev-c500ff1966fe00fec632ec80",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 136,
+              "column": 4
+            },
+            {
+              "id": "gm-ev-323e4e3cc2bdbb731cd4c312",
+              "kind": "bounded_go_syntax",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 203,
+              "column": 11
+            }
+          ]
+        },
+        {
+          "id": "sf-06613468fcd3163c",
+          "kind": "source_signal",
+          "statement": "Saved bounded local source signal categorized as consensus_state: apply call. Bounded excerpt: func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {",
+          "keywords": [
+            "consensus_state",
+            "source signal"
+          ],
+          "source_group": "sg-2465f4e1420d9400",
+          "capabilities": [
+            "static"
+          ],
+          "scope": "local",
+          "focus": {},
+          "evidence": [
+            {
+              "id": "se-8897541cba14e0f1",
+              "kind": "source_signal",
+              "label": "consensus_state",
+              "path": "modules/caddyhttp/fileserver/browsetplcontext.go",
+              "line": 219
+            }
+          ]
+        },
+        {
+          "id": "sf-1e015094d9f3bd4a",
+          "kind": "source_signal",
+          "statement": "Saved bounded local source signal categorized as observability: logger reference. Bounded excerpt: if c := fsrv.logger.Check(zapcore.DebugLevel, \"browse enabled; listing directory contents\"); c != nil {",
+          "keywords": [
+            "observability",
+            "source signal"
+          ],
+          "source_group": "sg-2465f4e1420d9400",
+          "capabilities": [
+            "static",
+            "behavior"
+          ],
+          "scope": "local",
+          "focus": {},
+          "evidence": [
+            {
+              "id": "se-c86c57bca3d0ff22",
+              "kind": "source_signal",
+              "label": "observability",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 79
+            }
+          ]
+        },
+        {
+          "id": "sf-2fde70cb99f7f341",
+          "kind": "source_signal",
+          "statement": "Saved bounded local source signal categorized as consensus_state: apply call. Bounded excerpt: listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)",
+          "keywords": [
+            "consensus_state",
+            "source signal"
+          ],
+          "source_group": "sg-2465f4e1420d9400",
+          "capabilities": [
+            "static"
+          ],
+          "scope": "local",
+          "focus": {},
+          "evidence": [
+            {
+              "id": "se-02f890c69508920e",
+              "kind": "source_signal",
+              "label": "consensus_state",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 311
+            }
+          ]
+        },
+        {
+          "id": "sf-93edd78bf29df471",
+          "kind": "source_signal",
+          "statement": "Saved bounded local source signal categorized as request_handler: method returning error, possible handler. Bounded excerpt: func (fsrv *FileServer) FinalizeUnmarshalCaddyfile(h httpcaddyfile.Helper) error {",
+          "keywords": [
+            "request_handler",
+            "source signal"
+          ],
+          "source_group": "sg-2465f4e1420d9400",
+          "capabilities": [
+            "static"
+          ],
+          "scope": "local",
+          "focus": {},
+          "evidence": [
+            {
+              "id": "se-e863d61734a84b43",
+              "kind": "source_signal",
+              "label": "request_handler",
+              "path": "modules/caddyhttp/fileserver/caddyfile.go",
+              "line": 211
+            }
+          ]
+        },
+        {
+          "id": "sf-a76968dd8981ba15",
+          "kind": "source_signal",
+          "statement": "Saved bounded local source signal categorized as request_handler: method returning error, possible handler. Bounded excerpt: func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, n...",
+          "keywords": [
+            "request_handler",
+            "source signal"
+          ],
+          "source_group": "sg-2465f4e1420d9400",
+          "capabilities": [
+            "static"
+          ],
+          "scope": "local",
+          "focus": {},
+          "evidence": [
+            {
+              "id": "se-4ac8086fec1232ba",
+              "kind": "source_signal",
+              "label": "request_handler",
+              "path": "modules/caddyhttp/fileserver/browse.go",
+              "line": 78
+            }
+          ]
+        },
+        {
+          "id": "sf-bd70e76c061742ac",
+          "kind": "source_signal",
+          "statement": "Saved bounded local source signal categorized as request_handler: method returning error, possible handler. Bounded excerpt: func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {",
+          "keywords": [
+            "request_handler",
+            "source signal"
+          ],
+          "source_group": "sg-2465f4e1420d9400",
+          "capabilities": [
+            "static"
+          ],
+          "scope": "local",
+          "focus": {},
+          "evidence": [
+            {
+              "id": "se-c14c05a3dfd5c07c",
+              "kind": "source_signal",
+              "label": "request_handler",
+              "path": "modules/caddyhttp/fileserver/caddyfile.go",
+              "line": 67
+            }
+          ]
+        }
+      ]
+    },
+    "artifact": {
+      "version": 1,
+      "task_id": "semantic-leaf-d432113d97c6d2f0f9d8e0db",
+      "candidate_id": "semantic-candidate-8d47b99879d5cfbc1413052a",
+      "status": "usable",
+      "observations": [
+        {
+          "text": "The request handler enters directory browsing when the resolved target remains a directory, browsing is configured, and the target is not hidden; the branch contains a direct local call into browsing.",
+          "support_ids": [
+            "gmf-0ec8ef0974e6bca4e91a0355"
+          ]
+        },
+        {
+          "text": "Directory browsing calls a bounded collection step that reads directory entries, passes them to local listing construction, and appends structured item records to the listing.",
+          "support_ids": [
+            "gmf-63fee9ff4e4ab91b356962ee"
+          ]
+        },
+        {
+          "text": "The representation stage branches on the normalized Accept value: JSON encoding writes listing items to a buffer, plain-text formatting writes rows, and the default executes an HTML template. Each branch sets its content type, and the final buffered write targets the HTTP response writer.",
+          "support_ids": [
+            "gmf-7afe2d8279da85ce2346ac3a"
+          ]
+        },
+        {
+          "text": "Listing transformation branches between ascending and reverse ordering for name, directories-first name, size, and modification time, then slices the item list for valid offset and limit values.",
+          "support_ids": [
+            "gmf-b774c86f6b35d386bcb95299"
+          ]
+        },
+        {
+          "text": "Query handling reads layout, limit, offset, sort, and order from request parameters. Empty sort and order values have named defaults before a direct local call passes the selected controls to listing transformation.",
+          "support_ids": [
+            "gmf-e7c6e36ae4486ba9ea1213df"
+          ]
+        },
+        {
+          "text": "Material alternative paths include a trailing-slash redirect, forbidden and not-found outcomes for collection failures, an internal-error outcome, a not-modified response, and template parsing failure.",
+          "support_ids": [
+            "gmf-fc86a4e7f0832a9377f2085c"
+          ]
+        }
+      ],
+      "candidate_connection": {
+        "candidate_id": "semantic-candidate-8d47b99879d5cfbc1413052a",
+        "relation": "needs_combination",
+        "explanation": "The locally verified mechanism observations require one bounded editorial synthesis.",
+        "support_ids": [
+          "gmf-0ec8ef0974e6bca4e91a0355",
+          "gmf-63fee9ff4e4ab91b356962ee",
+          "gmf-7afe2d8279da85ce2346ac3a",
+          "gmf-b774c86f6b35d386bcb95299",
+          "gmf-e7c6e36ae4486ba9ea1213df",
+          "gmf-fc86a4e7f0832a9377f2085c"
+        ]
+      },
+      "contradictions": null,
+      "missing_evidence": [
+        {
+          "explanation": "Direct behavior tests for sorting, paging, and response representations remain uninspected by the bounded probe.",
+          "support_ids": [
+            "gmf-7afe2d8279da85ce2346ac3a",
+            "gmf-b774c86f6b35d386bcb95299"
+          ],
+          "missing_capabilities": [
+            "test_evidence"
+          ]
+        }
+      ]
+    }
+  }
+}

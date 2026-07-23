@@ -288,6 +288,8 @@ func TestNewFromEnvRejectsInvalidConfig(t *testing.T) {
 		{name: "endpoint ftp", environ: map[string]string{envEndpoint: "ftp://models.example.com/chat", envAuth: authNone}, want: "scheme"},
 		{name: "endpoint missing host", environ: map[string]string{envEndpoint: "https:///chat/completions", envAuth: authNone}, want: "host"},
 		{name: "endpoint with userinfo", environ: map[string]string{envEndpoint: "https://user:password@models.example.com/chat", envAuth: authNone}, want: "userinfo"},
+		{name: "endpoint with query secret", environ: map[string]string{envEndpoint: "https://models.example.com/chat?api_key=sk-secret", envAuth: authNone}, want: "query"},
+		{name: "endpoint with fragment", environ: map[string]string{envEndpoint: "https://models.example.com/chat#secret", envAuth: authNone}, want: "fragment"},
 	}
 
 	for _, test := range tests {
@@ -397,8 +399,8 @@ func TestOrientResponseFormat(t *testing.T) {
 	if parsed.MaxTokens != 4000 {
 		t.Fatalf("max_tokens = %d, want %d", parsed.MaxTokens, 4000)
 	}
-	if parsed.Temperature != 0.1 {
-		t.Fatalf("temperature = %f, want 0.1", parsed.Temperature)
+	if parsed.Temperature == nil || *parsed.Temperature != 0.1 {
+		t.Fatalf("temperature = %v, want 0.1", parsed.Temperature)
 	}
 }
 
@@ -423,6 +425,40 @@ func TestOrientValidJSON(t *testing.T) {
 	}
 	if string(result) != `{"key": "value"}` {
 		t.Fatalf("got %q, want %q", string(result), `{"key": "value"}`)
+	}
+}
+
+func TestOrientMeasuredReportsPromptCacheTokens(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{"message":{"content":"{}"}}],
+			"usage":{
+				"prompt_tokens":120,
+				"completion_tokens":17,
+				"prompt_cache_hit_tokens":96,
+				"prompt_cache_miss_tokens":24
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   server.URL,
+		Auth:       authNone,
+	}
+	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
+	if err != nil {
+		t.Fatalf("OrientMeasured() error = %v", err)
+	}
+	if result.InputTokens != 120 || result.OutputTokens != 17 ||
+		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 {
+		t.Fatalf("OrientMeasured() token usage = %#v", result)
 	}
 }
 

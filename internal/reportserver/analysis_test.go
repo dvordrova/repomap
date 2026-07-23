@@ -199,8 +199,9 @@ func TestSymbolsEndpointRejectsStaleOrUnauthorizedRequestsBeforeGopls(t *testing
 	}
 }
 
-func TestInspectSymbolEndpointUsesOpaqueCandidateAndReturnsBoundedLocalEvidence(t *testing.T) {
+func TestInspectSymbolEndpointAcceptsCanonicalSlashIdentityAndReturnsBoundedLocalEvidence(t *testing.T) {
 	repo, runsDir, state := writeAnalysisRun(t)
+	rewriteRunReportName(t, runsDir, "20260711-220000-pebble", "example.com/cockroachdb/pebble")
 	target := evidence.Entity{
 		ID:       "function:batch.go:3:1:Commit",
 		Kind:     evidence.EntityFunction,

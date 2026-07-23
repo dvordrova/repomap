@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -17,11 +19,14 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
+	"github.com/dvordrova/repomap/internal/studymap"
 )
 
 type snapshotJSON struct {
 	RepoName string `json:"repo_name"`
+	Readme   string `json:"readme"`
 	GoFacts  *struct {
 		Modules []struct {
 			ID          string `json:"id"`
@@ -29,8 +34,12 @@ type snapshotJSON struct {
 			ModuleDir   string `json:"module_dir"`
 			DisplayName string `json:"display_name"`
 		} `json:"modules"`
-		Packages      []PackageInfo          `json:"packages"`
-		CommandTraces []gofacts.CommandTrace `json:"command_traces"`
+		Packages           []PackageInfo          `json:"packages"`
+		CommandTraces      []gofacts.CommandTrace `json:"command_traces"`
+		ExternalImportsTop []struct {
+			ImportPath  string `json:"import_path"`
+			UsedByCount int    `json:"used_by_count"`
+		} `json:"external_imports_top"`
 	} `json:"go_facts"`
 }
 
@@ -61,6 +70,9 @@ type runMetadataJSON struct {
 	SurfaceDiscoveryCount   int      `json:"surface_discovery_count"`
 	SurfaceDiscoveryMillis  *int64   `json:"surface_discovery_ms"`
 	Warnings                []string `json:"warnings"`
+	EffectiveOptions        struct {
+		NoSearch bool `json:"no_search"`
+	} `json:"effective_options"`
 }
 
 type orientationReportJSON struct {
@@ -363,11 +375,15 @@ func (f *flexStrings) UnmarshalJSON(b []byte) error {
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
+	return readRunDir(runDir, "")
+}
+
+func readRunDir(runDir, studyDocumentSourceRoot string) (*ReportData, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve run dir: %w", err)
 	}
-	data := &ReportData{ArtifactsDir: absDir}
+	data := &ReportData{ArtifactsDir: absDir, studyDocumentSourceRoot: studyDocumentSourceRoot}
 	var parseWarnings []string
 
 	if w := parseSnapshot(filepath.Join(absDir, "snapshot.json"), data); w != "" {
@@ -405,6 +421,13 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	if w := parseLLMBundle(filepath.Join(absDir, "llm_bundle.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	data.TaskInvestigation, warning = readTaskInvestigation(absDir, studyDocumentSourceRoot)
+	if warning != "" {
+		parseWarnings = append(parseWarnings, warning)
+	}
+	if data.TaskInvestigation != nil && data.RepoName == "" {
+		data.RepoName = data.TaskInvestigation.RepoName()
+	}
 	var surfaceWarnings []string
 	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
 	parseWarnings = append(parseWarnings, surfaceWarnings...)
@@ -427,6 +450,9 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 		parseWarnings = append(parseWarnings, w)
 	}
 	linkArchitectureProductObjects(data)
+	if w := replaySavedGuidedTour(data, filepath.Join(absDir, GuidedStoryFile)); w != "" {
+		parseWarnings = append(parseWarnings, w)
+	}
 
 	enrich(data)
 
@@ -441,6 +467,48 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	})
 
 	data.Warnings = append(data.Warnings, parseWarnings...)
+	if warning := replaySavedSemanticArtifacts(
+		data,
+		filepath.Join(absDir, semanticDiscoveryRecordFile),
+	); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
+	if warning := replaySavedGoldenMechanism(
+		data,
+		filepath.Join(absDir, GoldenMechanismFactsFile),
+		filepath.Join(absDir, GoldenMechanismRecordFile),
+	); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
+	if warning := replaySavedMechanismV1(
+		data,
+		filepath.Join(absDir, semanticdiscovery.MechanismFile),
+		filepath.Join(absDir, GoldenMechanismFactsFile),
+		filepath.Join(absDir, GoldenMechanismProbeFile),
+	); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
+	data.Warnings = append(
+		data.Warnings,
+		replaySavedMechanismV1Collection(data, absDir)...,
+	)
+	editorial, editorialWarning := readRepositoryOnboardingEditorial(
+		filepath.Join(absDir, RepositoryOnboardingFile),
+	)
+	if editorialWarning != "" {
+		data.Warnings = append(data.Warnings, editorialWarning)
+	}
+	applyRepositoryOnboardingEditorial(data, editorial)
+	if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
+	if warning := replaySavedPavedPaths(data, pavedPathRecordPath(absDir)); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
+	data.UserSources = projectOverviewSourceSnippets(data)
+	if err := attachSemanticSearchIndex(data); err != nil {
+		data.Warnings = append(data.Warnings, fmt.Sprintf("semantic search unavailable: %v", err))
+	}
 	return data, nil
 }
 
@@ -614,6 +682,11 @@ func collectOpenablePaths(data *ReportData) {
 			}
 		}
 	}
+	if data.TaskInvestigation != nil {
+		for _, anchor := range data.TaskInvestigation.Anchors {
+			add(anchor.Path)
+		}
+	}
 	data.OpenablePaths = data.OpenablePaths[:0]
 	for path := range paths {
 		data.OpenablePaths = append(data.OpenablePaths, path)
@@ -648,6 +721,7 @@ func parseRunMetadata(path string, data *ReportData) string {
 		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
 		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
 	}
+	data.SemanticSearchDisabled = metadata.EffectiveOptions.NoSearch
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""
 }
@@ -662,8 +736,17 @@ func parseSnapshot(path string, data *ReportData) string {
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
 	}
 	data.RepoName = snap.RepoName
+	data.DocumentedPurpose = boundedDocumentedPurpose(snap.Readme)
 	if snap.GoFacts != nil {
 		data.CommandTraces = append([]gofacts.CommandTrace(nil), snap.GoFacts.CommandTraces...)
+		for _, item := range snap.GoFacts.ExternalImportsTop {
+			if strings.TrimSpace(item.ImportPath) == "" || item.UsedByCount <= 0 {
+				continue
+			}
+			data.externalImports = append(data.externalImports, externalImportUsage{
+				ImportPath: item.ImportPath, UsedByCount: item.UsedByCount,
+			})
+		}
 	}
 	if snap.GoFacts != nil && (len(snap.GoFacts.Modules) > 0 || len(snap.GoFacts.Packages) > 0) {
 		graph := &RepositoryGraph{Version: 2, Packages: append([]PackageInfo(nil), snap.GoFacts.Packages...)}
@@ -679,6 +762,66 @@ func parseSnapshot(path string, data *ReportData) string {
 		data.RepositoryGraph = graph
 	}
 	return ""
+}
+
+func boundedDocumentedPurpose(readme string) string {
+	const maxBytes = 1 << 10
+	lines := strings.Split(strings.ReplaceAll(readme, "\r\n", "\n"), "\n")
+	paragraphs := make([][]string, 0, 4)
+	paragraph := make([]string, 0, 8)
+	flush := func() {
+		if len(paragraph) == 0 {
+			return
+		}
+		paragraphs = append(paragraphs, append([]string(nil), paragraph...))
+		paragraph = paragraph[:0]
+	}
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			flush()
+			continue
+		}
+		if !documentedPurposeDecoration(line) {
+			paragraph = append(paragraph, line)
+		}
+	}
+	flush()
+	var text string
+	for _, candidate := range paragraphs {
+		value := strings.Join(strings.Fields(strings.Join(candidate, " ")), " ")
+		if len(strings.Fields(value)) < 6 {
+			continue
+		}
+		text = value
+		break
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) <= maxBytes {
+		return text
+	}
+	text = text[:maxBytes]
+	for !utf8.ValidString(text) {
+		text = text[:len(text)-1]
+	}
+	if boundary := strings.LastIndexByte(text, ' '); boundary > maxBytes/2 {
+		text = text[:boundary]
+	}
+	return strings.TrimSpace(text)
+}
+
+func documentedPurposeDecoration(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "![") ||
+		strings.HasPrefix(trimmed, "<") || strings.HasPrefix(trimmed, "[") {
+		return true
+	}
+	for _, value := range trimmed {
+		if value != '=' && value != '-' && value != '_' && !unicode.IsSpace(value) {
+			return false
+		}
+	}
+	return trimmed != ""
 }
 
 func repositoryGraphHasModule(modules []ModuleInfo, modulePath, moduleDir string) bool {
@@ -852,6 +995,12 @@ func parseFlowBundle(path string, fd *FlowData) string {
 	fd.BundleEdges = make([]EdgeInfo, 0, len(fb.RelatedEdges))
 	for _, e := range fb.RelatedEdges {
 		fd.BundleEdges = append(fd.BundleEdges, EdgeInfo{From: e.From, To: e.To})
+	}
+	for _, signal := range fb.SourceSignals {
+		fd.bundleSignals = append(fd.bundleSignals, SourceSignal{
+			Path: signal.Path, Line: signal.Line, Category: signal.Category,
+			Snippet: signal.Snippet, Reason: signal.Reason,
+		})
 	}
 	return ""
 }
