@@ -197,9 +197,14 @@ func TestNewFiltersEmbeddedAbsolutePathsFromPublicScalars(t *testing.T) {
 		"location(/private/tmp/x.go)",
 		"source:/Users/name/private.go",
 		"FILE:///private/tmp/x.go",
+		"`/private/tmp/x.go`",
+		"meta|/private/tmp/x.go",
+		"meta@/private/tmp/x.go",
+		"meta#/private/tmp/x.go",
 		`C:\Users\name\x.go`,
 		`path=C:\Users\name\x.go`,
 		`\\server\share\x.go`,
+		`meta|\\server\share\x.go`,
 	}
 	symbols := []evidence.Entity{
 		{
@@ -218,6 +223,14 @@ func TestNewFiltersEmbeddedAbsolutePathsFromPublicScalars(t *testing.T) {
 			Scope:    evidence.SourceScopeRepository,
 			Location: testLocation("main.go", 2),
 		},
+		{
+			ID:       "pkg-name/subpkg.Type",
+			Kind:     evidence.EntityType,
+			Name:     "./relative/path",
+			Language: "../relative/path",
+			Scope:    evidence.SourceScopeRepository,
+			Location: testLocation("main.go", 3),
+		},
 	}
 	for index, value := range unsafeValues {
 		unsafeID := testSymbol(value, fmt.Sprintf("UnsafeID%d", index), "main.go", index+10)
@@ -232,8 +245,8 @@ func TestNewFiltersEmbeddedAbsolutePathsFromPublicScalars(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	entries := index.Entries()
-	if len(entries) != 3 {
-		t.Fatalf("entries = %#v, want one file and two safe symbols", entries)
+	if len(entries) != 4 {
+		t.Fatalf("entries = %#v, want one file and three safe symbols", entries)
 	}
 	matches, err := index.Search(Query{Text: "main.go"})
 	if err != nil {
