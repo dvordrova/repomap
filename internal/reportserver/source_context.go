@@ -5,15 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/freshness"
-	"github.com/dvordrova/repomap/internal/reporead"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/secretscan"
+	"github.com/dvordrova/repomap/internal/workspacecontent"
 )
 
 const (
@@ -96,80 +93,69 @@ func (h *handler) serveSourceContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reader, err := reporead.New(analysisRoot)
+	contentService, err := workspacecontent.New(*run.SourceCatalog)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
 		return
 	}
-	defer reader.Close()
-	current, err := reader.ReadFile(target.relativePath, maxSourceContextFileBytes)
-	if err != nil || current.Truncated || !utf8.Valid(current.Bytes) {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
+	defer contentService.Close()
+	content, err := contentService.Read(r.Context(), workspacecontent.Request{
+		Path: target.relativePath,
+		Range: workspacecontent.Range{
+			StartLine: target.startLine,
+			EndLine:   target.endLine,
+			FocusLine: target.focusLine,
+		},
+		Limits: workspacecontent.Limits{
+			MaxFileBytes: maxSourceContextFileBytes,
+			MaxLines:     maxSourceContextLines,
+			MaxBytes:     maxSourceContextTextBytes,
+			MaxLineBytes: maxSourceContextTextBytes,
+		},
+	})
+	if err != nil {
+		writeSourceContextReadError(w, err)
 		return
 	}
-	digest := sha256.Sum256(current.Bytes)
-	if fmt.Sprintf("%x", digest[:]) != target.capturedSHA256 {
-		writeJSON(w, http.StatusConflict, map[string]string{
-			"error": "source changed since this report was generated", "code": "source_changed",
-		})
-		return
-	}
-
-	lines := strings.Split(string(current.Bytes), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	startLine, endLine, ok := boundedSourceContextRange(target, len(lines))
-	if !ok {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source location is unavailable", "code": "source_unavailable"})
-		return
-	}
-	selected := lines[startLine-1 : endLine]
-	text := strings.Join(selected, "\n")
-	if len(text) > maxSourceContextTextBytes {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "bounded source context is too large"})
-		return
-	}
-	if _, containsSecret := secretscan.Detect(text); containsSecret {
+	if _, containsSecret := secretscan.Detect(content.Text); containsSecret {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "bounded source context is unavailable"})
 		return
 	}
 	response := sourceContextResponse{
 		Status: "ok",
 		Source: publicSourceContext{
-			Path: target.relativePath, StartLine: startLine, EndLine: endLine,
-			Lines: make([]publicSourceLine, 0, len(selected)),
+			Path: content.Path, StartLine: content.StartLine, EndLine: content.EndLine,
+			Lines: make([]publicSourceLine, 0, len(content.Lines)),
 		},
 	}
-	for index, line := range selected {
+	for _, line := range content.Lines {
 		response.Source.Lines = append(response.Source.Lines, publicSourceLine{
-			Line: startLine + index, Text: strings.TrimSuffix(line, "\r"),
+			Line: line.Number, Text: line.Text, Truncated: line.Truncated,
 		})
 	}
 	writeBoundedSourceContextJSON(w, response)
 }
 
-func boundedSourceContextRange(target sourceContextTarget, lineCount int) (int, int, bool) {
-	if lineCount <= 0 || target.startLine <= 0 || target.endLine < target.startLine || target.startLine > lineCount {
-		return 0, 0, false
+func writeSourceContextReadError(w http.ResponseWriter, err error) {
+	switch {
+	case workspacecontent.ErrorKindOf(err) == workspacecontent.ErrorSourceChanged:
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "source changed since this report was generated", "code": "source_changed",
+		})
+	case workspacecontent.ErrorKindOf(err) == workspacecontent.ErrorLimitExceeded &&
+		workspacecontent.LimitKindOf(err) != workspacecontent.LimitFile:
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"error": "bounded source context is too large",
+		})
+	case workspacecontent.FailureStageOf(err) == workspacecontent.StageRange:
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "authorized source location is unavailable", "code": "source_unavailable",
+		})
+	default:
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "authorized source is unavailable", "code": "source_unavailable",
+		})
 	}
-	start := target.startLine
-	end := min(target.endLine, lineCount)
-	if end-start+1 <= 60 {
-		start = max(1, start-10)
-		end = min(lineCount, end+10)
-	} else {
-		focus := target.focusLine
-		if focus < target.startLine || focus > target.endLine {
-			focus = target.startLine
-		}
-		start = max(1, focus-20)
-		end = min(lineCount, start+maxSourceContextLines-1)
-	}
-	if end-start+1 > maxSourceContextLines {
-		end = start + maxSourceContextLines - 1
-	}
-	return start, end, start > 0 && end >= start
 }
 
 func manifestSourceContextID(runID, reportSHA256, presentationSHA256 string) string {

@@ -115,6 +115,47 @@ func TestSourceContextPreservesSubdirectoryAnalysisRoot(t *testing.T) {
 	}
 }
 
+func TestSourceContextPreservesExactCRLFUTF8WireResponse(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	source := "package café\r\n\r\nfunc Run() {\r\n\tprintln(\"привет\")\r\n}\r\n"
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260716-100700-source-context-wire"
+	writeRun(t, runsDir, runID, repo, "saved report")
+	snippet := sourceContextTestSnippet("batch.go", 3, []string{
+		"func Run() {",
+		"\tprintln(\"привет\")",
+		"}",
+	})
+	manifest := rewriteRunSourceSnippets(t, runsDir, runID, []reportpkg.SourceSnippet{snippet})
+	server, baseURL := newSourceContextTestServer(t, runsDir, runID)
+	defer server.Close()
+
+	response := postSourceContext(t, baseURL, sourceContextRequest{
+		RunID:     runID,
+		ContextID: manifestSourceContextID(runID, manifest.ReportSHA256, snippet.PresentationSHA256),
+	})
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("{\"status\":\"ok\",\"source\":{\"path\":\"batch.go\",\"start_line\":1,\"end_line\":5,\"lines\":[{\"line\":1,\"text\":\"package café\"},{\"line\":2,\"text\":\"\"},{\"line\":3,\"text\":\"func Run() {\"},{\"line\":4,\"text\":\"\\tprintln(\\\"привет\\\")\"},{\"line\":5,\"text\":\"}\"}],\"source_complete\":false}}\n")
+	if response.StatusCode != http.StatusOK || !bytes.Equal(body, want) {
+		t.Fatalf("wire response status=%d\n got=%q\nwant=%q", response.StatusCode, body, want)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := response.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+}
+
 func TestReportSourceSnippetsIncludesStudyMapReadingAnchors(t *testing.T) {
 	t.Parallel()
 
@@ -353,67 +394,82 @@ func TestSourceContextRejectsModifiedWorkingTreeWithoutLeakingBytes(t *testing.T
 	}
 }
 
-func TestBoundedSourceContextRange(t *testing.T) {
+func TestSourceContextRejectsSymlinkReplacementWithoutReadingTarget(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name      string
-		target    sourceContextTarget
-		lineCount int
-		wantStart int
-		wantEnd   int
-		wantOK    bool
-	}{
-		{
-			name:      "short range gains ten lines of context",
-			target:    sourceContextTarget{startLine: 41, endLine: 45, focusLine: 43},
-			lineCount: 120,
-			wantStart: 31,
-			wantEnd:   55,
-			wantOK:    true,
-		},
-		{
-			name:      "wide range is centered on focus and bounded",
-			target:    sourceContextTarget{startLine: 10, endLine: 100, focusLine: 80},
-			lineCount: 200,
-			wantStart: 60,
-			wantEnd:   139,
-			wantOK:    true,
-		},
-		{
-			name:      "out of range focus falls back to saved start",
-			target:    sourceContextTarget{startLine: 10, endLine: 100, focusLine: 150},
-			lineCount: 200,
-			wantStart: 1,
-			wantEnd:   80,
-			wantOK:    true,
-		},
-		{
-			name:      "range clips at end of file",
-			target:    sourceContextTarget{startLine: 110, endLine: 140, focusLine: 120},
-			lineCount: 120,
-			wantStart: 100,
-			wantEnd:   120,
-			wantOK:    true,
-		},
-		{
-			name:      "saved range starts beyond file",
-			target:    sourceContextTarget{startLine: 121, endLine: 130, focusLine: 121},
-			lineCount: 120,
-			wantOK:    false,
-		},
+	repo := t.TempDir()
+	const source = "package exact\nconst marker = \"DO_NOT_LEAK_SYMLINK_TARGET\"\n"
+	for _, name := range []string{"batch.go", "escape.go"} {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			start, end, ok := boundedSourceContextRange(test.target, test.lineCount)
-			if ok != test.wantOK || start != test.wantStart || end != test.wantEnd {
-				t.Fatalf("range = (%d, %d, %t), want (%d, %d, %t)",
-					start, end, ok, test.wantStart, test.wantEnd, test.wantOK)
-			}
-			if ok && end-start+1 > maxSourceContextLines {
-				t.Fatalf("range contains %d lines, maximum is %d", end-start+1, maxSourceContextLines)
-			}
-		})
+	runsDir := t.TempDir()
+	const runID = "20260716-103000-source-context-symlink"
+	writeRun(t, runsDir, runID, repo, "saved report")
+	snippet := sourceContextTestSnippet("batch.go", 1, []string{"package exact"})
+	manifest := rewriteRunSourceSnippets(t, runsDir, runID, []reportpkg.SourceSnippet{snippet})
+	server, baseURL := newSourceContextTestServer(t, runsDir, runID)
+	defer server.Close()
+
+	batchPath := filepath.Join(repo, "batch.go")
+	if err := os.Remove(batchPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("escape.go", batchPath); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	response := postSourceContext(t, baseURL, sourceContextRequest{
+		RunID:     runID,
+		ContextID: manifestSourceContextID(runID, manifest.ReportSHA256, snippet.PresentationSHA256),
+	})
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("symlink status = %d body=%q", response.StatusCode, body)
+	}
+	var diagnostic map[string]string
+	if err := json.Unmarshal(body, &diagnostic); err != nil {
+		t.Fatal(err)
+	}
+	if diagnostic["code"] != "source_unavailable" ||
+		bytes.Contains(body, []byte("DO_NOT_LEAK_SYMLINK_TARGET")) {
+		t.Fatalf("symlink diagnostic = %#v body=%q", diagnostic, body)
+	}
+}
+
+func TestSourceContextKeepsSecretScanAtHTTPBoundary(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	const secret = `api_key = "actual-secret-value"`
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte(secret+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260716-104000-source-context-secret"
+	writeRun(t, runsDir, runID, repo, "saved report")
+	snippet := sourceContextTestSnippet("batch.go", 1, []string{"api_key = \"[redacted]\""})
+	manifest := rewriteRunSourceSnippets(t, runsDir, runID, []reportpkg.SourceSnippet{snippet})
+	server, baseURL := newSourceContextTestServer(t, runsDir, runID)
+	defer server.Close()
+
+	response := postSourceContext(t, baseURL, sourceContextRequest{
+		RunID:     runID,
+		ContextID: manifestSourceContextID(runID, manifest.ReportSHA256, snippet.PresentationSHA256),
+	})
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusUnprocessableEntity ||
+		!bytes.Contains(body, []byte("bounded source context is unavailable")) ||
+		bytes.Contains(body, []byte("actual-secret-value")) {
+		t.Fatalf("secret response status=%d body=%q", response.StatusCode, body)
 	}
 }
 

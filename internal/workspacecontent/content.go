@@ -93,11 +93,11 @@ type Service struct {
 // New binds an authorized content service to one catalog analysis root.
 func New(catalog sourcecatalog.Catalog) (*Service, error) {
 	if catalog.AnalysisRoot() == "" {
-		return nil, workspaceContentError(ErrorInvalidRequest)
+		return nil, workspaceContentError(ErrorInvalidRequest, StageRequest)
 	}
 	reader, err := reporead.New(catalog.AnalysisRoot())
 	if err != nil {
-		return nil, workspaceContentError(ErrorUnavailable)
+		return nil, workspaceContentError(ErrorUnavailable, StageRead)
 	}
 	return &Service{catalog: catalog, reader: reader}, nil
 }
@@ -108,7 +108,7 @@ func (s *Service) Close() error {
 		return nil
 	}
 	if err := s.reader.Close(); err != nil {
-		return workspaceContentError(ErrorReadFailed)
+		return workspaceContentError(ErrorReadFailed, StageRead)
 	}
 	return nil
 }
@@ -116,33 +116,36 @@ func (s *Service) Close() error {
 // Read returns one verified and allocation-bounded exact text range.
 func (s *Service) Read(ctx context.Context, request Request) (Result, error) {
 	if s == nil || s.reader == nil || s.catalog.AnalysisRoot() == "" {
-		return Result{}, workspaceContentError(ErrorInvalidRequest)
+		return Result{}, workspaceContentError(ErrorInvalidRequest, StageRequest)
 	}
 	if err := contextFailure(ctx); err != nil {
 		return Result{}, err
 	}
 	limits, err := normalizeLimits(request.Limits)
-	if err != nil || !validPath(request.Path) || !validRange(request.Range) {
-		return Result{}, workspaceContentError(ErrorInvalidRequest)
+	if err != nil || !validPath(request.Path) {
+		return Result{}, workspaceContentError(ErrorInvalidRequest, StageRequest)
+	}
+	if !validRange(request.Range) {
+		return Result{}, workspaceContentError(ErrorInvalidRequest, StageRange)
 	}
 	source, ok := s.catalog.Lookup(request.Path)
 	if !ok || source.Path != request.Path || source.ContentSHA256 == "" {
-		return Result{}, workspaceContentError(ErrorUnauthorized)
+		return Result{}, workspaceContentError(ErrorUnauthorized, StageAuthority)
 	}
 
 	current, readErr := s.reader.ReadFileNoSymlinks(request.Path, limits.MaxFileBytes)
 	if readErr != nil {
-		return Result{}, workspaceContentError(ErrorUnavailable)
+		return Result{}, workspaceContentError(ErrorUnavailable, StageRead)
 	}
 	if current.Truncated {
 		return Result{}, workspaceContentLimit(LimitFile)
 	}
 	digest := fmt.Sprintf("%x", sha256.Sum256(current.Bytes))
 	if digest != source.ContentSHA256 {
-		return Result{}, workspaceContentError(ErrorSourceChanged)
+		return Result{}, workspaceContentError(ErrorSourceChanged, StageRead)
 	}
 	if !utf8.Valid(current.Bytes) {
-		return Result{}, workspaceContentError(ErrorUnsupportedText)
+		return Result{}, workspaceContentError(ErrorUnsupportedText, StageRead)
 	}
 	if err := contextFailure(ctx); err != nil {
 		return Result{}, err
@@ -155,7 +158,7 @@ func (s *Service) Read(ctx context.Context, request Request) (Result, error) {
 		limits.MaxLines,
 	)
 	if !ok {
-		return Result{}, workspaceContentError(ErrorUnavailable)
+		return Result{}, workspaceContentError(ErrorUnavailable, StageRange)
 	}
 	lines, text, err := selectLines(
 		current.Bytes,
@@ -194,10 +197,10 @@ func (s *Service) Read(ctx context.Context, request Request) (Result, error) {
 
 func contextFailure(ctx context.Context) error {
 	if ctx == nil {
-		return workspaceContentError(ErrorInvalidRequest)
+		return workspaceContentError(ErrorInvalidRequest, StageRequest)
 	}
 	if ctx.Err() != nil {
-		return workspaceContentError(ErrorCanceled)
+		return workspaceContentError(ErrorCanceled, StageRead)
 	}
 	return nil
 }
@@ -219,7 +222,7 @@ func normalizeLimits(value Limits) (Limits, error) {
 		value.MaxLines < 1 || value.MaxLines > maxLines ||
 		value.MaxBytes < 1 || value.MaxBytes > maxTextBytes ||
 		value.MaxLineBytes < 1 || value.MaxLineBytes > maxLineBytes {
-		return Limits{}, workspaceContentError(ErrorInvalidRequest)
+		return Limits{}, workspaceContentError(ErrorInvalidRequest, StageRequest)
 	}
 	return value, nil
 }
