@@ -17,6 +17,7 @@ import (
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -281,6 +282,77 @@ func TestInspectSymbolEndpointAcceptsCanonicalSlashIdentityAndReturnsBoundedLoca
 	}
 }
 
+func TestInspectSymbolEndpointDelegatesCapturedHashAuthorityToInspectionService(t *testing.T) {
+	repo, runsDir, state := writeAnalysisRun(t)
+	target := evidence.Entity{
+		ID:       "function:batch.go:3:1:Commit",
+		Kind:     evidence.EntityFunction,
+		Name:     "Commit",
+		Language: "go",
+		Location: &evidence.Location{Path: "batch.go", Line: 3, Column: 1},
+	}
+	resolver := &recordingLocationResolver{resolution: analysis.LocationResolution{
+		Location: evidence.Location{Path: "batch.go", Line: 395},
+		Candidates: []analysis.LocationCandidate{{
+			Entity: target, Match: "file_callable", Certainty: evidence.CertaintyPossible, Investigable: true,
+		}},
+		Certainty:  evidence.CertaintyPossible,
+		Provenance: evidence.Provenance{Provider: "gopls", Operation: "document_symbols"},
+	}}
+	exact := &recordingExactAnalyzer{graph: exactGraphFixture(repo, target)}
+	handler, err := NewHandler(Options{
+		RunsDir:             runsDir,
+		Capability:          testCapability,
+		LocationResolver:    resolver,
+		ExactSymbolAnalyzer: exact,
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			return state, nil
+		},
+		CaptureFactContext: func(context.Context, freshness.RepositoryState, string) (freshness.FactContext, error) {
+			t.Fatal("fact capture must not run after an exact source hash mismatch")
+			return freshness.FactContext{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := performSymbolsRequest(t, handler, symbolsRequest{
+		RunID:       "20260711-220000-pebble",
+		ComponentID: "component-batch",
+		AnchorID:    "anchor-batch",
+		Line:        395,
+	})
+	if lookup.Code != http.StatusOK {
+		t.Fatalf("lookup status = %d, body=%s", lookup.Code, lookup.Body.String())
+	}
+	var candidates symbolsResponse
+	if err := json.Unmarshal(lookup.Body.Bytes(), &candidates); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inspect := performInspectRequest(t, handler, inspectSymbolRequest{
+		RunID:          "20260711-220000-pebble",
+		CandidateSetID: candidates.CandidateSetID,
+		CandidateID:    candidates.Candidates[0].ID,
+	})
+	if inspect.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(inspect.Body.String(), "could not read a bounded source window") ||
+		strings.Contains(inspect.Body.String(), repo) {
+		t.Fatalf("inspect status=%d body=%s", inspect.Code, inspect.Body.String())
+	}
+	sessionPath := filepath.Join(
+		runsDir,
+		"20260711-220000-pebble",
+		investigationDirectory,
+		memory.SessionFileName,
+	)
+	if _, err := os.Lstat(sessionPath); !os.IsNotExist(err) {
+		t.Fatalf("unexpected checkpoint after source mismatch: %v", err)
+	}
+}
+
 func TestInvestigationCheckpointResumesAfterHandlerRestartAndFindsTests(t *testing.T) {
 	repo, runsDir, state := writeAnalysisRun(t)
 	target := evidence.Entity{
@@ -486,7 +558,9 @@ func caller() {
 	Commit()
 }
 `
-	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte(source), 0o600); err != nil {
+	sourceBytes := []byte(source)
+	sourceSHA256 := fmt.Sprintf("%x", sha256.Sum256(sourceBytes))
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), sourceBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runsDir := t.TempDir()
@@ -530,7 +604,7 @@ func caller() {
 		Head:     strings.Repeat("0", 40),
 		Dirty: []freshness.DirtyFile{{
 			Status: "modified", Path: "batch.go", Kind: freshness.FileRegular,
-			ContentSHA256: strings.Repeat("a", 64),
+			ContentSHA256: sourceSHA256,
 		}},
 	}
 	digest, err := state.Digest()
@@ -539,7 +613,7 @@ func caller() {
 	}
 	inputs := []freshness.CapturedInput{{
 		Version: freshness.CapturedInputVersion, ID: strings.Repeat("b", 64), Path: "batch.go",
-		Kind: freshness.FileRegular, Mode: "file", ContentSHA256: strings.Repeat("a", 64),
+		Kind: freshness.FileRegular, Mode: "file", ContentSHA256: sourceSHA256,
 		Stages: []string{"report_evidence"},
 	}}
 	inputsDigest, err := freshness.CapturedInputsDigest(inputs)

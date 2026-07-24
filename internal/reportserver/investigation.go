@@ -17,6 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/sourcecard"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/symbol"
 	"github.com/dvordrova/repomap/internal/testevidence"
 )
@@ -400,11 +401,20 @@ func (h *handler) readAuthorizedRun(runID string, root *os.Root) (runRecord, err
 	if err != nil {
 		return runRecord{}, err
 	}
+	var catalog *sourcecatalog.Catalog
+	sourceCatalog, catalogErr := manifest.SourceCatalog()
+	if catalogErr == nil && sourceCatalog.AnalysisRoot() == analysisRoot {
+		catalog = &sourceCatalog
+	} else if manifest.Version >= report.CurrentRunManifestVersion {
+		return runRecord{}, fmt.Errorf("invalid source authority")
+	}
 	return runRecord{
-		RunSummary: RunSummary{ID: runID, RepoName: reportData.RepoName},
-		RepoPath:   analysisRoot,
-		Manifest:   &manifest,
-		Report:     &reportData,
+		RunSummary:    RunSummary{ID: runID, RepoName: reportData.RepoName},
+		RepoPath:      analysisRoot,
+		Manifest:      &manifest,
+		Report:        &reportData,
+		ReportSHA256:  manifest.ReportSHA256,
+		SourceCatalog: catalog,
 	}, nil
 }
 
