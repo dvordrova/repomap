@@ -303,6 +303,111 @@ func TestResolveBoundsAndDropsUnsafeAnalyzerMetadata(t *testing.T) {
 	}
 }
 
+func TestResolveRawMetadataBudgetsBoundUnsafePrefixAndCapacities(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	reasons := make([]string, maxRawCandidateRankReasons+100_000)
+	for index := range reasons {
+		reasons[index] = "trace=/private/tmp/reason.go"
+	}
+	reasons[maxRawCandidateRankReasons-1] = "accepted reason"
+	warnings := make([]string, maxRawResolverWarnings+10_000)
+	for index := range warnings {
+		warnings[index] = "trace=/private/tmp/warning.go"
+	}
+	warnings[maxRawResolverWarnings-1] = "accepted warning"
+
+	service := mustService(t, fixture.catalog, Dependencies{
+		Resolver: resolverFunc(func(_ context.Context, request analyzer.LocationRequest) (analyzer.LocationResolution, error) {
+			return analyzer.LocationResolution{
+				Location: request.Location,
+				Candidates: []analyzer.LocationCandidate{{
+					Entity:       fixtureTarget(),
+					Match:        "file_callable",
+					Certainty:    evidence.CertaintyStatic,
+					Investigable: true,
+					RankReasons:  reasons,
+				}},
+				Certainty:  evidence.CertaintyStatic,
+				Provenance: evidence.Provenance{Provider: "fake", Operation: "resolve"},
+				Warnings:   warnings,
+			}, nil
+		}),
+	})
+	result, err := service.Resolve(context.Background(), ResolveRequest{
+		Location: evidence.Location{Path: "main.go", Line: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Candidates) != 1 ||
+		!reflect.DeepEqual(result.Candidates[0].RankReasons, []string{"accepted reason"}) ||
+		!reflect.DeepEqual(result.Warnings, []string{"accepted warning"}) {
+		t.Fatalf("raw-budget result = %#v", result)
+	}
+	if cap(result.Candidates) > maxCandidates ||
+		cap(result.Candidates[0].RankReasons) > maxRankReasons ||
+		cap(result.Warnings) > maxResolverWarnings {
+		t.Fatalf(
+			"result capacities candidates=%d reasons=%d warnings=%d",
+			cap(result.Candidates),
+			cap(result.Candidates[0].RankReasons),
+			cap(result.Warnings),
+		)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/private/tmp") {
+		t.Fatalf("result leaked raw metadata tail: %s", encoded)
+	}
+}
+
+func TestResolveRawCandidateBudgetIgnoresInvalidTail(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	candidates := make([]analyzer.LocationCandidate, maxRawResolverCandidates+1)
+	for index := 0; index < maxRawResolverCandidates; index++ {
+		candidates[index] = analyzer.LocationCandidate{
+			Entity: evidence.Entity{
+				ID:   fmt.Sprintf("invalid-%03d", index),
+				Kind: evidence.EntityType,
+				Name: "trace=/private/tmp/invalid.go",
+				Location: &evidence.Location{
+					Path: "main.go", Line: index + 1, Column: 1,
+				},
+			},
+			Certainty:    evidence.CertaintyStatic,
+			Investigable: false,
+		}
+	}
+	candidates[maxRawResolverCandidates] = analyzer.LocationCandidate{
+		Entity:       fixtureTarget(),
+		Match:        "file_callable",
+		Certainty:    evidence.CertaintyStatic,
+		Investigable: true,
+	}
+	service := mustService(t, fixture.catalog, Dependencies{
+		Resolver: resolverFunc(func(_ context.Context, request analyzer.LocationRequest) (analyzer.LocationResolution, error) {
+			return analyzer.LocationResolution{
+				Location:   request.Location,
+				Candidates: candidates,
+				Certainty:  evidence.CertaintyStatic,
+				Provenance: evidence.Provenance{Provider: "fake", Operation: "resolve"},
+			}, nil
+		}),
+	})
+	_, err := service.Resolve(context.Background(), ResolveRequest{
+		Location: evidence.Location{Path: "main.go", Line: 3},
+	})
+	if ErrorKindOf(err) != ErrorNotFound {
+		t.Fatalf("raw candidate tail error = %v", err)
+	}
+}
+
 func TestInspectReturnsAuthorizedBoundedSourceCallsAndReferences(t *testing.T) {
 	t.Parallel()
 
@@ -433,6 +538,263 @@ func TestInspectBoundsReferenceMetadataAndAggregateProvenance(t *testing.T) {
 		len(result.Tests.Scenarios) != maxReferenceScenarios ||
 		len(result.Provenance) != maxAggregateProvenance {
 		t.Fatalf("metadata bounds were not applied: %#v", result)
+	}
+}
+
+func TestInspectBoundsReferenceInputsBeforeValidationSortAndClone(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, true)
+	target := fixtureTarget()
+	locations := make([]evidence.Location, maxRawReferenceLocations+10_000)
+	for index := 0; index < maxRawReferenceLocations; index++ {
+		path := "main.go"
+		if index%2 == 1 {
+			path = "main_test.go"
+		}
+		locations[index] = evidence.Location{Path: path, Line: index + 1, Column: 1}
+	}
+	// Invalid locations outside the accepted prefix must not reach validation.
+	for index := maxRawReferenceLocations; index < len(locations); index++ {
+		locations[index] = evidence.Location{Path: "/private/tmp/outside.go"}
+	}
+	provenance := make([]evidence.Provenance, maxRawReferenceProvenance+1_000)
+	for index := 0; index < maxRawReferenceProvenance; index++ {
+		provenance[index] = evidence.Provenance{
+			Provider: "fake", Operation: fmt.Sprintf("references-%d", index),
+		}
+	}
+	provenance[maxRawReferenceProvenance] = evidence.Provenance{
+		Provider: "", Operation: "", Detail: "/private/tmp/provenance",
+	}
+	scenarios := make([]evidence.Scenario, maxRawReferenceScenarios+1_000)
+	for index := 0; index < maxRawReferenceScenarios; index++ {
+		scenarios[index] = evidence.Scenario{
+			ID: fmt.Sprintf("build-%d", index), Name: fmt.Sprintf("build %d", index),
+			Build: evidence.BuildContext{BuildTags: []string{fmt.Sprintf("tag-%d", index)}},
+		}
+	}
+	scenarios[maxRawReferenceScenarios] = evidence.Scenario{
+		ID: "", Name: "", WorkingDir: "/private/tmp/scenario",
+		Build: evidence.BuildContext{
+			BuildTags: make([]string, maxRawBuildTags+10_000),
+		},
+	}
+
+	service := mustService(t, fixture.catalog, Dependencies{
+		ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+			return fixtureGraph(fixture.root, target, false), nil
+		}),
+		ReferenceFinder: referenceFinderFunc(func(context.Context, string, evidence.Location) (evidence.LocationSet, error) {
+			return evidence.LocationSet{
+				Locations:  locations,
+				Certainty:  evidence.CertaintyStatic,
+				Provenance: provenance,
+				Scenarios:  scenarios,
+			}, nil
+		}),
+	})
+	result, err := service.Inspect(context.Background(), InspectRequest{
+		Target: target, IncludeReferences: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.References == nil || result.Tests == nil ||
+		len(result.References.Locations) != maxReferences ||
+		len(result.Tests.Locations) != maxTestReferences ||
+		len(result.References.Provenance) != maxReferenceProvenance ||
+		len(result.References.Scenarios) != maxReferenceScenarios ||
+		len(result.Provenance) != maxAggregateProvenance {
+		t.Fatalf("bounded reference result = %#v", result)
+	}
+	if cap(result.References.Locations) > maxReferences ||
+		cap(result.Tests.Locations) > maxTestReferences ||
+		cap(result.References.Provenance) > maxReferenceProvenance ||
+		cap(result.References.Scenarios) > maxReferenceScenarios ||
+		cap(result.Tests.Provenance) > maxReferenceProvenance ||
+		cap(result.Tests.Scenarios) > maxReferenceScenarios ||
+		cap(result.Provenance) > maxAggregateProvenance ||
+		cap(result.Structural.Target.Provenance) > DefaultLimits().Symbol.MaxProvenancePerFact ||
+		cap(result.Structural.Target.Scenarios) > maxRawRelationScenarios ||
+		cap(result.Structural.Candidates) > DefaultLimits().Symbol.MaxCandidates ||
+		cap(result.Structural.IncomingCalls) > DefaultLimits().Symbol.MaxIncomingCalls ||
+		cap(result.Structural.OutgoingCalls) > DefaultLimits().Symbol.MaxOutgoingCalls ||
+		cap(result.Structural.Scenarios) > maxRawGraphScenarios ||
+		cap(result.Structural.AllowedPaths) > maxStructuralAllowedPaths ||
+		cap(result.Structural.Warnings) > maxStructuralWarnings {
+		t.Fatalf(
+			"unbounded result capacities refs=%d tests=%d provenance=%d scenarios=%d tests_provenance=%d tests_scenarios=%d aggregate=%d target_provenance=%d target_scenarios=%d candidates=%d incoming=%d outgoing=%d structural_scenarios=%d paths=%d warnings=%d",
+			cap(result.References.Locations),
+			cap(result.Tests.Locations),
+			cap(result.References.Provenance),
+			cap(result.References.Scenarios),
+			cap(result.Tests.Provenance),
+			cap(result.Tests.Scenarios),
+			cap(result.Provenance),
+			cap(result.Structural.Target.Provenance),
+			cap(result.Structural.Target.Scenarios),
+			cap(result.Structural.Candidates),
+			cap(result.Structural.IncomingCalls),
+			cap(result.Structural.OutgoingCalls),
+			cap(result.Structural.Scenarios),
+			cap(result.Structural.AllowedPaths),
+			cap(result.Structural.Warnings),
+		)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/private/tmp") {
+		t.Fatalf("reference result leaked ignored tail: %s", encoded)
+	}
+}
+
+func TestInspectRejectsGraphCollectionsAboveRawBudgets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*evidence.Graph)
+	}{
+		{
+			name: "entities",
+			mutate: func(graph *evidence.Graph) {
+				for len(graph.Entities) <= maxRawGraphEntities {
+					index := len(graph.Entities)
+					graph.Entities = append(graph.Entities, evidence.Entity{
+						ID: fmt.Sprintf("extra-%03d", index), Kind: evidence.EntityFunction,
+						Name: "extra", Location: &evidence.Location{Path: "main.go", Line: 1, Column: 1},
+					})
+				}
+			},
+		},
+		{
+			name: "relations",
+			mutate: func(graph *evidence.Graph) {
+				template := graph.Relations[0]
+				for len(graph.Relations) <= maxRawGraphRelations {
+					graph.Relations = append(graph.Relations, template)
+				}
+			},
+		},
+		{
+			name: "scenarios",
+			mutate: func(graph *evidence.Graph) {
+				for len(graph.Scenarios) <= maxRawGraphScenarios {
+					index := len(graph.Scenarios)
+					graph.Scenarios = append(graph.Scenarios, evidence.Scenario{
+						ID: fmt.Sprintf("extra-%03d", index), Name: "extra",
+					})
+				}
+			},
+		},
+		{
+			name: "graph build tags",
+			mutate: func(graph *evidence.Graph) {
+				graph.Build.BuildTags = make([]string, maxRawBuildTags+1)
+			},
+		},
+		{
+			name: "scenario build tags",
+			mutate: func(graph *evidence.Graph) {
+				graph.Scenarios[0].Build.BuildTags = make([]string, maxRawBuildTags+1)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newInspectionFixture(t, false)
+			target := fixtureTarget()
+			graph := fixtureGraph(fixture.root, target, false)
+			test.mutate(&graph)
+			service := mustService(t, fixture.catalog, Dependencies{
+				ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+					return graph, nil
+				}),
+			})
+			_, err := service.Inspect(context.Background(), InspectRequest{Target: target})
+			if ErrorKindOf(err) != ErrorAnalysisFailed {
+				t.Fatalf("over-budget graph error = %v", err)
+			}
+		})
+	}
+}
+
+func TestInspectTruncatesGraphMetadataBeforeValidationAndKeepsKnownWarning(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	target := fixtureTarget()
+	graph := fixtureGraph(fixture.root, target, false)
+	scenarioIDs := []string{"build"}
+	for index := 1; index < maxRawGraphScenarios; index++ {
+		id := fmt.Sprintf("build-%02d", index)
+		scenarioIDs = append(scenarioIDs, id)
+		graph.Scenarios = append(graph.Scenarios, evidence.Scenario{
+			ID: id, Name: "accepted build",
+		})
+	}
+	for index := range graph.Relations {
+		if graph.Relations[index].Kind != evidence.RelationResolvesTo {
+			continue
+		}
+		for len(graph.Relations[index].Provenance) < maxRawRelationProvenance {
+			graph.Relations[index].Provenance = append(
+				graph.Relations[index].Provenance,
+				evidence.Provenance{
+					Provider: "fake",
+					Operation: fmt.Sprintf(
+						"resolve-%02d",
+						len(graph.Relations[index].Provenance),
+					),
+				},
+			)
+		}
+		graph.Relations[index].Provenance = append(
+			graph.Relations[index].Provenance,
+			evidence.Provenance{Provider: "", Operation: "", Detail: "/private/tmp/tail"},
+		)
+		graph.Relations[index].Scenarios = append(
+			scenarioIDs,
+			"/private/tmp/unknown-scenario",
+		)
+	}
+	const knownWarning = "gopls CLI adapter is experimental; evidence is scoped to the active build configuration"
+	graph.Warnings = make([]string, maxRawGraphWarnings+1)
+	for index := range graph.Warnings {
+		graph.Warnings[index] = "gopls failed at key=/private/tmp/gopls.log"
+	}
+	graph.Warnings[maxRawGraphWarnings-1] = knownWarning
+	service := mustService(t, fixture.catalog, Dependencies{
+		ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+			return graph, nil
+		}),
+	})
+	result, err := service.Inspect(context.Background(), InspectRequest{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(result.Structural.Warnings, "\n"), knownWarning) ||
+		len(result.Structural.Target.Scenarios) != maxRawRelationScenarios ||
+		len(result.Structural.Scenarios) != maxRawGraphScenarios {
+		t.Fatalf("bounded graph metadata = %#v", result.Structural)
+	}
+	if cap(result.Structural.Scenarios) > maxRawGraphScenarios ||
+		cap(result.Structural.Warnings) > maxRawGraphWarnings+2 {
+		t.Fatalf(
+			"structural capacities scenarios=%d warnings=%d",
+			cap(result.Structural.Scenarios),
+			cap(result.Structural.Warnings),
+		)
+	}
+	encoded, err := json.Marshal(result.Structural)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/private/tmp") {
+		t.Fatalf("structural result leaked metadata tail: %s", encoded)
 	}
 }
 
@@ -570,13 +932,51 @@ func TestMissingOptionalDependenciesAndAnalyzerFailures(t *testing.T) {
 	}
 }
 
+func BenchmarkResolveAnalyzerMetadataBudget(b *testing.B) {
+	fixture := newInspectionFixture(b, false)
+	reasons := make([]string, maxRawCandidateRankReasons+100_000)
+	for index := range reasons {
+		reasons[index] = "trace=/private/tmp/ignored.go"
+	}
+	reasons[maxRawCandidateRankReasons-1] = "accepted reason"
+	resolution := analyzer.LocationResolution{
+		Location: evidence.Location{Path: "main.go", Line: 3},
+		Candidates: []analyzer.LocationCandidate{{
+			Entity:       fixtureTarget(),
+			Match:        "file_callable",
+			Certainty:    evidence.CertaintyStatic,
+			Investigable: true,
+			RankReasons:  reasons,
+		}},
+		Certainty:  evidence.CertaintyStatic,
+		Provenance: evidence.Provenance{Provider: "fake", Operation: "resolve"},
+	}
+	service := mustService(b, fixture.catalog, Dependencies{
+		Resolver: resolverFunc(func(context.Context, analyzer.LocationRequest) (analyzer.LocationResolution, error) {
+			return resolution, nil
+		}),
+	})
+	request := ResolveRequest{Location: evidence.Location{Path: "main.go", Line: 3}}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		result, err := service.Resolve(context.Background(), request)
+		if err != nil || len(result.Candidates) != 1 ||
+			!reflect.DeepEqual(result.Candidates[0].RankReasons, []string{"accepted reason"}) {
+			b.Fatalf("Resolve result=%#v err=%v", result, err)
+		}
+	}
+	b.ReportMetric(float64(maxRawCandidateRankReasons), "raw-rank-reasons/op")
+}
+
 type inspectionFixture struct {
 	root    string
 	catalog sourcecatalog.Catalog
 	hashes  map[string]string
 }
 
-func newInspectionFixture(t *testing.T, includeTest bool) inspectionFixture {
+func newInspectionFixture(t testing.TB, includeTest bool) inspectionFixture {
 	t.Helper()
 	root := canonicalTempDir(t)
 	files := map[string][]byte{
@@ -678,7 +1078,7 @@ func fixtureGraph(root string, target evidence.Entity, includeOutside bool) evid
 	return graph
 }
 
-func canonicalTempDir(t *testing.T) string {
+func canonicalTempDir(t testing.TB) string {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -687,7 +1087,7 @@ func canonicalTempDir(t *testing.T) string {
 	return filepath.Clean(root)
 }
 
-func newCatalog(t *testing.T, root string, files map[string][]byte) sourcecatalog.Catalog {
+func newCatalog(t testing.TB, root string, files map[string][]byte) sourcecatalog.Catalog {
 	t.Helper()
 	paths := make([]string, 0, len(files))
 	inputs := make([]freshness.CapturedInput, 0, len(files))
@@ -716,7 +1116,7 @@ func newCatalog(t *testing.T, root string, files map[string][]byte) sourcecatalo
 	return catalog
 }
 
-func mustService(t *testing.T, catalog sourcecatalog.Catalog, dependencies Dependencies) *Service {
+func mustService(t testing.TB, catalog sourcecatalog.Catalog, dependencies Dependencies) *Service {
 	t.Helper()
 	service, err := New(catalog, dependencies)
 	if err != nil {
