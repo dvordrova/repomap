@@ -87,18 +87,6 @@ func New(input Input) (Catalog, error) {
 		repositoryPath := allowedPath
 		if analysisPrefix != "" {
 			repositoryPath = path.Join(analysisPrefix, allowedPath)
-			if _, alias := capturedByPath[allowedPath]; alias {
-				if _, exact := capturedByPath[repositoryPath]; exact {
-					return Catalog{}, fmt.Errorf(
-						"source catalog: allowed path %q has ambiguous captured-input aliases %q and %q",
-						allowedPath, allowedPath, repositoryPath,
-					)
-				}
-				return Catalog{}, fmt.Errorf(
-					"source catalog: captured input %q is an analysis-relative alias; want %q",
-					allowedPath, repositoryPath,
-				)
-			}
 		}
 		if owner, duplicate := repositoryOwners[repositoryPath]; duplicate {
 			return Catalog{}, fmt.Errorf(
@@ -110,6 +98,14 @@ func New(input Input) (Catalog, error) {
 
 		captured, ok := capturedByPath[repositoryPath]
 		if !ok {
+			if analysisPrefix != "" {
+				if _, alias := capturedByPath[allowedPath]; alias {
+					return Catalog{}, fmt.Errorf(
+						"source catalog: captured input %q is an analysis-relative alias; want %q",
+						allowedPath, repositoryPath,
+					)
+				}
+			}
 			return Catalog{}, fmt.Errorf(
 				"source catalog: allowed path %q has no captured input %q",
 				allowedPath, repositoryPath,

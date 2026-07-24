@@ -203,6 +203,10 @@ func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 		RankTerms: componentRankTerms(authorized.component, authorized.anchor),
 	})
 	if err != nil {
+		if inspection.ErrorKindOf(err) == inspection.ErrorSourceChanged {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "report is stale; regenerate it before analyzing symbols"})
+			return
+		}
 		if inspection.ErrorKindOf(err) == inspection.ErrorNotFound {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "no callable Go declarations were found near this anchor"})
 			return

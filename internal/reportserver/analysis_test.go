@@ -200,6 +200,36 @@ func TestSymbolsEndpointRejectsStaleOrUnauthorizedRequestsBeforeGopls(t *testing
 	}
 }
 
+func TestSymbolsEndpointMapsExactSourceChangeToExistingStaleResponse(t *testing.T) {
+	repo, runsDir, state := writeAnalysisRun(t)
+	resolver := &recordingLocationResolver{}
+	handler, err := NewHandler(Options{
+		RunsDir:          runsDir,
+		Capability:       testCapability,
+		LocationResolver: resolver,
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			return state, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	response := performSymbolsRequest(t, handler, symbolsRequest{
+		RunID:       "20260711-220000-pebble",
+		ComponentID: "component-batch",
+		AnchorID:    "anchor-batch",
+		Line:        395,
+	})
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), "report is stale") ||
+		strings.Contains(response.Body.String(), repo) || len(resolver.requests) != 0 {
+		t.Fatalf("changed-source response=%d body=%s calls=%d", response.Code, response.Body.String(), len(resolver.requests))
+	}
+}
+
 func TestInspectSymbolEndpointAcceptsCanonicalSlashIdentityAndReturnsBoundedLocalEvidence(t *testing.T) {
 	repo, runsDir, state := writeAnalysisRun(t)
 	rewriteRunReportName(t, runsDir, "20260711-220000-pebble", "example.com/cockroachdb/pebble")
@@ -279,6 +309,181 @@ func TestInspectSymbolEndpointAcceptsCanonicalSlashIdentityAndReturnsBoundedLoca
 	}
 	if len(exact.requests) != 1 || !reflect.DeepEqual(exact.requests[0].Symbol, target) {
 		t.Fatalf("exact requests = %#v", exact.requests)
+	}
+}
+
+func TestVersion3SymbolListAndExactInspectPreserveEndpointParity(t *testing.T) {
+	repo, runsDir, state := writeAnalysisRun(t)
+	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+		manifest.Version = 3
+	})
+	target := evidence.Entity{
+		ID:       "function:batch.go:3:1:Commit",
+		Kind:     evidence.EntityFunction,
+		Name:     "Commit",
+		Language: "go",
+		Location: &evidence.Location{Path: "batch.go", Line: 3, Column: 1},
+	}
+	resolver := &recordingLocationResolver{resolution: analysis.LocationResolution{
+		Location: evidence.Location{Path: "batch.go", Line: 395},
+		Candidates: []analysis.LocationCandidate{{
+			Entity: target, Match: "file_callable", Certainty: evidence.CertaintyPossible, Investigable: true,
+		}},
+		Certainty:  evidence.CertaintyPossible,
+		Provenance: evidence.Provenance{Provider: "gopls", Operation: "document_symbols"},
+	}}
+	exact := &recordingExactAnalyzer{graph: exactGraphFixture(repo, target)}
+	handler, err := NewHandler(Options{
+		RunsDir:             runsDir,
+		Capability:          testCapability,
+		LocationResolver:    resolver,
+		ExactSymbolAnalyzer: exact,
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			return state, nil
+		},
+		CaptureFactContext: func(context.Context, freshness.RepositoryState, string) (freshness.FactContext, error) {
+			return browserTestFactContext(state), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := performSymbolsRequest(t, handler, symbolsRequest{
+		RunID:       "20260711-220000-pebble",
+		ComponentID: "component-batch",
+		AnchorID:    "anchor-batch",
+		Line:        395,
+	})
+	if lookup.Code != http.StatusOK {
+		t.Fatalf("v3 lookup status = %d, body=%s", lookup.Code, lookup.Body.String())
+	}
+	var candidates symbolsResponse
+	if err := json.Unmarshal(lookup.Body.Bytes(), &candidates); err != nil {
+		t.Fatal(err)
+	}
+	if candidates.Status != "ok" || len(candidates.Candidates) != 1 ||
+		candidates.Candidates[0].Name != target.Name {
+		t.Fatalf("v3 candidates = %#v", candidates)
+	}
+	inspect := performInspectRequest(t, handler, inspectSymbolRequest{
+		RunID:          "20260711-220000-pebble",
+		CandidateSetID: candidates.CandidateSetID,
+		CandidateID:    candidates.Candidates[0].ID,
+	})
+	if inspect.Code != http.StatusOK {
+		t.Fatalf("v3 inspect status = %d, body=%s", inspect.Code, inspect.Body.String())
+	}
+	var result inspectSymbolResponse
+	if err := json.Unmarshal(inspect.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "ok" || result.Target.Name != target.Name ||
+		result.Source.Path != "batch.go" || len(result.IncomingCalls) != 1 ||
+		len(result.OutgoingCalls) != 1 || strings.Contains(inspect.Body.String(), repo) {
+		t.Fatalf("v3 inspect response = %#v body=%s", result, inspect.Body.String())
+	}
+}
+
+func TestVersion3SourceOpenKeepsLegacyOpaqueIDBehavior(t *testing.T) {
+	repo, runsDir, _ := writeAnalysisRun(t)
+	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+		manifest.Version = 3
+	})
+	sourceID := testSourceID(t, runsDir, "20260711-220000-pebble", "batch.go")
+	var opened string
+	handler, err := NewHandler(Options{
+		RunsDir:    runsDir,
+		Capability: testCapability,
+		OpenFile: func(_ context.Context, absolutePath string, _, _ int) error {
+			opened = absolutePath
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response := postOpen(
+		t,
+		server.URL+capabilityURLPrefix(testCapability),
+		openRequest{
+			RunID:    "20260711-220000-pebble",
+			SourceID: sourceID,
+			Line:     3,
+		},
+		true,
+	)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || opened != filepath.Join(repo, "batch.go") {
+		t.Fatalf("v3 source open status=%d path=%q", response.StatusCode, opened)
+	}
+}
+
+func TestCurrentManifestCatalogFailureDisablesAnalysisWithoutLeakingDiagnostic(t *testing.T) {
+	repo, runsDir, state := writeAnalysisRun(t)
+	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+		manifest.CapturedInputs[0].Kind = freshness.FileMissing
+		manifest.CapturedInputs[0].Mode = ""
+		manifest.CapturedInputs[0].ContentSHA256 = ""
+		digest, err := freshness.CapturedInputsDigest(manifest.CapturedInputs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.CapturedInputsSHA256 = digest
+	})
+	resolver := &recordingLocationResolver{}
+	var logs []string
+	internal := &handler{
+		runsDir: runsDir,
+		analysis: newSymbolAnalysis(Options{
+			LocationResolver: resolver,
+		}),
+		logf: func(format string, args ...any) {
+			logs = append(logs, fmt.Sprintf(format, args...))
+		},
+	}
+	runs, err := internal.loadRuns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Manifest == nil || runs[0].Report == nil ||
+		runs[0].SourceCatalog != nil || runs[0].AnalysisAvailable {
+		t.Fatalf("catalog-failed run = %#v", runs)
+	}
+	diagnostics := 0
+	for _, log := range logs {
+		if strings.Contains(log, "source catalog unavailable") {
+			diagnostics++
+		}
+		if strings.Contains(log, repo) || strings.Contains(log, "captured input") {
+			t.Fatalf("catalog diagnostic leaked local/error detail: %q", log)
+		}
+	}
+	if diagnostics != 1 {
+		t.Fatalf("catalog diagnostics = %d, logs=%v", diagnostics, logs)
+	}
+
+	handler, err := NewHandler(Options{
+		RunsDir:          runsDir,
+		Capability:       testCapability,
+		LocationResolver: resolver,
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			return state, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performSymbolsRequest(t, handler, symbolsRequest{
+		RunID:       "20260711-220000-pebble",
+		ComponentID: "component-batch",
+		AnchorID:    "anchor-batch",
+		Line:        395,
+	})
+	if response.Code != http.StatusForbidden || strings.Contains(response.Body.String(), repo) ||
+		strings.Contains(response.Body.String(), "catalog") || len(resolver.requests) != 0 {
+		t.Fatalf("catalog-failed response=%d body=%s calls=%d", response.Code, response.Body.String(), len(resolver.requests))
 	}
 }
 
@@ -653,6 +858,31 @@ func caller() {
 		t.Fatal(err)
 	}
 	return repo, runsDir, state
+}
+
+func rewriteAnalysisManifest(
+	t *testing.T,
+	runsDir string,
+	mutate func(*report.RunManifest),
+) {
+	t.Helper()
+	path := filepath.Join(runsDir, "20260711-220000-pebble", report.RunManifestFilename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := report.DecodeRunManifest(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutate(&manifest)
+	data, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func exactGraphFixture(repo string, target evidence.Entity) evidence.Graph {

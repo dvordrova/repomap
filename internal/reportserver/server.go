@@ -427,17 +427,17 @@ func (h *handler) reloadRuns() error {
 		report.ApplyProductCoherence(run.Report)
 		if run.Manifest != nil && run.Report != nil {
 			switch {
-			case run.SourceCatalog != nil:
-				run.Sources, run.Report.SourceIDs = catalogSourceTargets(
-					run.ID,
-					run.ReportSHA256,
-					*run.SourceCatalog,
-				)
 			case run.Manifest.Version < report.CurrentRunManifestVersion:
 				run.Sources, run.Report.SourceIDs = legacyManifestSourceTargets(
 					run.ID,
 					run.ReportSHA256,
 					*run.Manifest,
+				)
+			case run.SourceCatalog != nil:
+				run.Sources, run.Report.SourceIDs = catalogSourceTargets(
+					run.ID,
+					run.ReportSHA256,
+					*run.SourceCatalog,
 				)
 			default:
 				run.Sources = make(map[string]sourceTarget)
@@ -658,13 +658,15 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 					run.Manifest = &manifest
 					run.RepoPath = analysisRoot
 					run.ReportSHA256 = manifest.ReportSHA256
-					run.AnalysisAvailable = h.analysisAvailable(manifest)
-					if manifest.Version >= report.CurrentRunManifestVersion {
+					if manifest.Version >= 3 {
 						catalog, catalogErr := manifest.SourceCatalog()
 						if catalogErr == nil && catalog.AnalysisRoot() == analysisRoot {
 							run.SourceCatalog = &catalog
+						} else if manifest.Version >= report.CurrentRunManifestVersion {
+							h.log("report %s source catalog unavailable; local analysis disabled", run.ID)
 						}
 					}
+					run.AnalysisAvailable = run.SourceCatalog != nil && h.analysisAvailable(manifest)
 					if manifest.Version < report.CurrentRunManifestVersion {
 						legacy := freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
 						run.Report.Freshness = &legacy

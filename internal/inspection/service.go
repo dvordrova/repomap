@@ -1,6 +1,9 @@
-// Package inspection resolves and inspects exact repository declarations
-// within one immutable authorized source catalog. It owns no report, HTTP,
-// browser, provider, persistence, or user-facing semantics.
+// Package inspection provides presentation-neutral exact callable inspection
+// within one immutable authorized source catalog. Resolve can use another
+// language adapter through neutral evidence ports; Inspect currently composes
+// the Go-specific symbol.Bundle and sourcecard.Card contracts, including Go
+// _test.go reference classification. The package owns no report, HTTP, browser,
+// provider, persistence, or user-facing semantics.
 package inspection
 
 import (
@@ -17,11 +20,15 @@ import (
 )
 
 const (
-	maxResolverCandidates = 20
-	maxCandidates         = 8
-	maxRankTerms          = 16
-	maxReferences         = 5
-	maxTestReferences     = 5
+	maxResolverCandidates  = 20
+	maxCandidates          = 8
+	maxRankTerms           = 16
+	maxRankReasons         = 8
+	maxReferences          = 5
+	maxTestReferences      = 5
+	maxReferenceProvenance = 4
+	maxReferenceScenarios  = 4
+	maxAggregateProvenance = 4
 
 	maxSourceFileBytes   int64 = 1024 * 1024
 	maxSourceWindowLines       = 20
@@ -232,6 +239,14 @@ func (s *Service) safeScenario(value evidence.Scenario) bool {
 	return true
 }
 
+func (s *Service) safeEntity(value evidence.Entity) bool {
+	if s == nil || !safeText(value.ID, s.catalog.AnalysisRoot(), 512) ||
+		!safeText(value.Name, s.catalog.AnalysisRoot(), 256) {
+		return false
+	}
+	return value.Language == "" || safeText(value.Language, s.catalog.AnalysisRoot(), 32)
+}
+
 func safeText(value, root string, limit int) bool {
 	value = strings.TrimSpace(value)
 	if value == "" || len(value) > limit || strings.Contains(value, root) ||
@@ -242,6 +257,12 @@ func safeText(value, root string, limit int) bool {
 		trimmed := strings.Trim(field, `"'(),:;[]`)
 		if filepath.IsAbs(trimmed) {
 			return false
+		}
+		if index := strings.Index(trimmed, "="); index >= 0 {
+			suffix := strings.Trim(trimmed[index+1:], `"'(),:;[]`)
+			if filepath.IsAbs(suffix) {
+				return false
+			}
 		}
 	}
 	for _, character := range value {
