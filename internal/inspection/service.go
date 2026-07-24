@@ -24,6 +24,7 @@ const (
 	maxCandidates          = 8
 	maxRankTerms           = 16
 	maxRankReasons         = 8
+	maxResolverWarnings    = 8
 	maxReferences          = 5
 	maxTestReferences      = 5
 	maxReferenceProvenance = 4
@@ -199,8 +200,13 @@ func cloneEntity(entity evidence.Entity) evidence.Entity {
 	return entity
 }
 
-func cloneProvenance(values []evidence.Provenance, service *Service) []evidence.Provenance {
-	result := make([]evidence.Provenance, 0, len(values))
+func cloneProvenance(
+	values []evidence.Provenance,
+	service *Service,
+	limit int,
+) []evidence.Provenance {
+	values = boundedPrefix(values, limit)
+	result := make([]evidence.Provenance, 0, limit)
 	for _, value := range values {
 		provenance := evidence.Provenance{
 			Provider:  value.Provider,
@@ -215,6 +221,17 @@ func cloneProvenance(values []evidence.Provenance, service *Service) []evidence.
 	return result
 }
 
+func appendProvenance(
+	result []evidence.Provenance,
+	values []evidence.Provenance,
+	limit int,
+) []evidence.Provenance {
+	if len(result) >= limit {
+		return result[:limit]
+	}
+	return append(result, boundedPrefix(values, limit-len(result))...)
+}
+
 func (s *Service) safeProvenance(value evidence.Provenance) bool {
 	if s == nil ||
 		!safeText(value.Provider, s.catalog.AnalysisRoot(), 64) ||
@@ -227,11 +244,19 @@ func (s *Service) safeProvenance(value evidence.Provenance) bool {
 func (s *Service) safeScenario(value evidence.Scenario) bool {
 	if s == nil || !safeText(value.ID, s.catalog.AnalysisRoot(), 128) ||
 		(value.Name != "" && !safeText(value.Name, s.catalog.AnalysisRoot(), 256)) ||
-		(value.Build.GOOS != "" && !safeText(value.Build.GOOS, s.catalog.AnalysisRoot(), 64)) ||
-		(value.Build.GOARCH != "" && !safeText(value.Build.GOARCH, s.catalog.AnalysisRoot(), 64)) {
+		!s.safeBuildContext(value.Build) {
 		return false
 	}
-	for _, tag := range value.Build.BuildTags {
+	return true
+}
+
+func (s *Service) safeBuildContext(value evidence.BuildContext) bool {
+	if s == nil || len(value.BuildTags) > maxRawBuildTags ||
+		(value.GOOS != "" && !safeText(value.GOOS, s.catalog.AnalysisRoot(), 64)) ||
+		(value.GOARCH != "" && !safeText(value.GOARCH, s.catalog.AnalysisRoot(), 64)) {
+		return false
+	}
+	for _, tag := range boundedPrefix(value.BuildTags, maxRawBuildTags) {
 		if !safeText(tag, s.catalog.AnalysisRoot(), 128) {
 			return false
 		}

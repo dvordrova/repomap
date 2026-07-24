@@ -58,8 +58,8 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ResolveR
 	); err != nil {
 		return ResolveResult{}, err
 	}
-	rankTerms := make([]string, 0, min(len(request.RankTerms), limits.MaxRankTerms))
-	for _, term := range request.RankTerms {
+	rankTerms := make([]string, 0, limits.MaxRankTerms)
+	for _, term := range boundedPrefix(request.RankTerms, maxRawRankTerms) {
 		if len(rankTerms) == limits.MaxRankTerms {
 			break
 		}
@@ -92,12 +92,13 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ResolveR
 			Version:   resolution.Provenance.Version,
 			Operation: resolution.Provenance.Operation,
 		},
-		Candidates: make([]Candidate, 0, min(len(resolution.Candidates), limits.MaxCandidates)),
+		Candidates: make([]Candidate, 0, limits.MaxCandidates),
 	}
 	if resolution.Provenance.Location != nil && s.authorizedLocation(*resolution.Provenance.Location) {
 		result.Provenance.Location = cloneLocation(resolution.Provenance.Location)
 	}
-	for _, candidate := range resolution.Candidates {
+	rawCandidateLimit := min(maxRawResolverCandidates, limits.MaxResolverCandidates)
+	for _, candidate := range boundedPrefix(resolution.Candidates, rawCandidateLimit) {
 		if len(result.Candidates) == limits.MaxCandidates {
 			break
 		}
@@ -112,8 +113,8 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ResolveR
 			(candidate.Match != "" && !safeText(candidate.Match, s.catalog.AnalysisRoot(), 64)) {
 			continue
 		}
-		rankReasons := make([]string, 0, len(candidate.RankReasons))
-		for _, reason := range candidate.RankReasons {
+		rankReasons := make([]string, 0, maxRankReasons)
+		for _, reason := range boundedPrefix(candidate.RankReasons, maxRawCandidateRankReasons) {
 			if len(rankReasons) == maxRankReasons {
 				break
 			}
@@ -129,11 +130,12 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ResolveR
 			RankReasons: rankReasons,
 		})
 	}
-	for _, warning := range resolution.Warnings {
+	result.Warnings = make([]string, 0, maxResolverWarnings)
+	for _, warning := range boundedPrefix(resolution.Warnings, maxRawResolverWarnings) {
 		if safeText(warning, s.catalog.AnalysisRoot(), 256) {
 			result.Warnings = append(result.Warnings, warning)
 		}
-		if len(result.Warnings) == 8 {
+		if len(result.Warnings) == maxResolverWarnings {
 			break
 		}
 	}

@@ -76,6 +76,7 @@ func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, 
 	if err != nil || !reflect.DeepEqual(structural.Target.Entity, request.Target) {
 		return Result{}, analyzerFailure("exact_symbol", ctx, err)
 	}
+	structural = boundStructuralBundle(structural, limits)
 
 	capturedSource, ok := s.catalog.Lookup(structural.Target.Entity.Location.Path)
 	if !ok {
@@ -111,7 +112,7 @@ func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, 
 	result := Result{
 		Structural: structural,
 		Source:     card,
-		Provenance: cloneProvenance(structural.Target.Provenance, s),
+		Provenance: cloneProvenance(structural.Target.Provenance, s, maxAggregateProvenance),
 	}
 	if request.IncludeReferences {
 		if s.referenceFinder == nil {
@@ -168,24 +169,32 @@ func verifyCurrentSourceHash(root, path, capturedSHA256 string, maxBytes int64) 
 }
 
 func (s *Service) authorizeGraph(graph evidence.Graph) (evidence.Graph, error) {
-	if graph.RepoPath != s.catalog.AnalysisRoot() {
+	graph, err := s.boundAnalyzerGraph(graph)
+	if err != nil {
+		return evidence.Graph{}, err
+	}
+	if graph.RepoPath != s.catalog.AnalysisRoot() ||
+		!safeText(graph.Query, s.catalog.AnalysisRoot(), 256) ||
+		!s.safeBuildContext(graph.Build) {
 		return evidence.Graph{}, analyzerFailure("exact_symbol", nil, nil)
 	}
 	if err := graph.Validate(); err != nil {
 		return evidence.Graph{}, analyzerFailure("exact_symbol", nil, err)
 	}
-	for _, scenario := range graph.Scenarios {
+	for _, scenario := range boundedPrefix(graph.Scenarios, maxRawGraphScenarios) {
 		if !s.safeScenario(scenario) {
 			return evidence.Graph{}, analyzerFailure("exact_symbol", nil, nil)
 		}
 	}
 	authorized := evidence.NewGraph(s.catalog.AnalysisRoot(), graph.Query)
-	authorized.Build = graph.Build
-	authorized.Warnings = append([]string(nil), graph.Warnings...)
-	authorized.Scenarios = cloneScenarios(graph.Scenarios)
+	authorized.Build = cloneBuildContext(graph.Build)
+	authorized.Warnings = cloneStrings(graph.Warnings, maxRawGraphWarnings)
+	authorized.Scenarios = cloneScenarios(graph.Scenarios, maxRawGraphScenarios)
+	authorized.Entities = make([]evidence.Entity, 0, min(len(graph.Entities), maxRawGraphEntities))
+	authorized.Relations = make([]evidence.Relation, 0, min(len(graph.Relations), maxRawGraphRelations))
 
-	kept := make(map[string]struct{}, len(graph.Entities))
-	for _, entity := range graph.Entities {
+	kept := make(map[string]struct{}, min(len(graph.Entities), maxRawGraphEntities))
+	for _, entity := range boundedPrefix(graph.Entities, maxRawGraphEntities) {
 		if !s.safeEntity(entity) ||
 			(entity.Location != nil && !s.authorizedLocation(*entity.Location)) {
 			continue
@@ -193,7 +202,7 @@ func (s *Service) authorizeGraph(graph evidence.Graph) (evidence.Graph, error) {
 		authorized.Entities = append(authorized.Entities, cloneEntity(entity))
 		kept[entity.ID] = struct{}{}
 	}
-	for _, relation := range graph.Relations {
+	for _, relation := range boundedPrefix(graph.Relations, maxRawGraphRelations) {
 		if _, ok := kept[relation.From]; !ok {
 			continue
 		}
@@ -201,7 +210,7 @@ func (s *Service) authorizeGraph(graph evidence.Graph) (evidence.Graph, error) {
 			continue
 		}
 		provenanceAuthorized := true
-		for _, provenance := range relation.Provenance {
+		for _, provenance := range boundedPrefix(relation.Provenance, maxRawRelationProvenance) {
 			if !s.safeProvenance(provenance) ||
 				(provenance.Location != nil && !s.authorizedLocation(*provenance.Location)) {
 				provenanceAuthorized = false
@@ -212,8 +221,12 @@ func (s *Service) authorizeGraph(graph evidence.Graph) (evidence.Graph, error) {
 			continue
 		}
 		copy := relation
-		copy.Provenance = cloneProvenance(relation.Provenance, s)
-		copy.Scenarios = append([]string(nil), relation.Scenarios...)
+		copy.Provenance = cloneProvenance(
+			relation.Provenance,
+			s,
+			maxRawRelationProvenance,
+		)
+		copy.Scenarios = cloneStrings(relation.Scenarios, maxRawRelationScenarios)
 		authorized.Relations = append(authorized.Relations, copy)
 	}
 	authorized.Sort()
@@ -221,6 +234,44 @@ func (s *Service) authorizeGraph(graph evidence.Graph) (evidence.Graph, error) {
 		return evidence.Graph{}, analyzerFailure("exact_symbol", nil, err)
 	}
 	return authorized, nil
+}
+
+func (s *Service) boundAnalyzerGraph(graph evidence.Graph) (evidence.Graph, error) {
+	if len(graph.Entities) > maxRawGraphEntities ||
+		len(graph.Relations) > maxRawGraphRelations ||
+		len(graph.Scenarios) > maxRawGraphScenarios ||
+		len(graph.Build.BuildTags) > maxRawBuildTags {
+		return evidence.Graph{}, analyzerFailure("exact_symbol", nil, nil)
+	}
+	for _, scenario := range graph.Scenarios {
+		if len(scenario.Build.BuildTags) > maxRawBuildTags {
+			return evidence.Graph{}, analyzerFailure("exact_symbol", nil, nil)
+		}
+	}
+
+	bounded := evidence.Graph{
+		Version:   graph.Version,
+		RepoPath:  graph.RepoPath,
+		Query:     graph.Query,
+		Build:     cloneBuildContext(graph.Build),
+		Entities:  make([]evidence.Entity, 0, min(len(graph.Entities), maxRawGraphEntities)),
+		Relations: make([]evidence.Relation, 0, min(len(graph.Relations), maxRawGraphRelations)),
+		Scenarios: cloneRawScenarios(graph.Scenarios, maxRawGraphScenarios),
+		Warnings:  cloneStrings(graph.Warnings, maxRawGraphWarnings),
+	}
+	for _, entity := range graph.Entities {
+		bounded.Entities = append(bounded.Entities, cloneEntity(entity))
+	}
+	for _, relation := range graph.Relations {
+		copy := relation
+		copy.Provenance = cloneRawProvenance(
+			relation.Provenance,
+			maxRawRelationProvenance,
+		)
+		copy.Scenarios = cloneStrings(relation.Scenarios, maxRawRelationScenarios)
+		bounded.Relations = append(bounded.Relations, copy)
+	}
+	return bounded, nil
 }
 
 func (s *Service) collectReferences(
@@ -233,17 +284,15 @@ func (s *Service) collectReferences(
 	if err != nil {
 		return analyzerFailure("references", ctx, err)
 	}
+	locationSet, err = s.boundReferenceLocationSet(locationSet)
+	if err != nil {
+		return err
+	}
 	if err := locationSet.Validate(); err != nil {
 		return analyzerFailure("references", ctx, err)
 	}
-	provenance := locationSet.Provenance
-	if len(provenance) > maxReferenceProvenance {
-		provenance = provenance[:maxReferenceProvenance]
-	}
-	scenarios := locationSet.Scenarios
-	if len(scenarios) > maxReferenceScenarios {
-		scenarios = scenarios[:maxReferenceScenarios]
-	}
+	provenance := boundedPrefix(locationSet.Provenance, maxReferenceProvenance)
+	scenarios := boundedPrefix(locationSet.Scenarios, maxReferenceScenarios)
 	for _, provenance := range provenance {
 		if !s.safeProvenance(provenance) {
 			return analyzerFailure("references", ctx, nil)
@@ -254,9 +303,9 @@ func (s *Service) collectReferences(
 			return analyzerFailure("references", ctx, nil)
 		}
 	}
-	references := make([]evidence.Location, 0, min(len(locationSet.Locations), limits.MaxReferences))
-	tests := make([]evidence.Location, 0, min(len(locationSet.Locations), limits.MaxTestReferences))
-	for _, location := range sortedUniqueLocations(locationSet.Locations) {
+	references := make([]evidence.Location, 0, limits.MaxReferences)
+	tests := make([]evidence.Location, 0, limits.MaxTestReferences)
+	for _, location := range sortedUniqueLocations(locationSet.Locations, maxRawReferenceLocations) {
 		if !s.authorizedLocation(location) || location.Column <= 0 {
 			continue
 		}
@@ -272,14 +321,14 @@ func (s *Service) collectReferences(
 	}
 	base := evidence.LocationSet{
 		Certainty:  locationSet.Certainty,
-		Provenance: cloneProvenance(provenance, s),
-		Scenarios:  cloneScenarios(scenarios),
+		Provenance: cloneProvenance(provenance, s, maxReferenceProvenance),
+		Scenarios:  cloneScenarios(scenarios, maxReferenceScenarios),
 	}
 	referenceSet := base
 	referenceSet.Locations = references
 	testSet := base
-	testSet.Provenance = cloneProvenance(base.Provenance, s)
-	testSet.Scenarios = cloneScenarios(base.Scenarios)
+	testSet.Provenance = cloneProvenance(base.Provenance, s, maxReferenceProvenance)
+	testSet.Scenarios = cloneScenarios(base.Scenarios, maxReferenceScenarios)
 	testSet.Locations = tests
 	if err := referenceSet.Validate(); err != nil {
 		return analyzerFailure("references", ctx, err)
@@ -289,29 +338,48 @@ func (s *Service) collectReferences(
 	}
 	result.References = &referenceSet
 	result.Tests = &testSet
-	result.Provenance = append(result.Provenance, cloneProvenance(base.Provenance, s)...)
-	if len(result.Provenance) > maxAggregateProvenance {
-		result.Provenance = result.Provenance[:maxAggregateProvenance]
-	}
+	result.Provenance = appendProvenance(
+		result.Provenance,
+		cloneProvenance(base.Provenance, s, maxReferenceProvenance),
+		maxAggregateProvenance,
+	)
 	return nil
 }
 
-func cloneScenarios(values []evidence.Scenario) []evidence.Scenario {
-	result := make([]evidence.Scenario, 0, len(values))
+func (s *Service) boundReferenceLocationSet(
+	locationSet evidence.LocationSet,
+) (evidence.LocationSet, error) {
+	provenance := boundedPrefix(locationSet.Provenance, maxRawReferenceProvenance)
+	scenarios := boundedPrefix(locationSet.Scenarios, maxRawReferenceScenarios)
+	for _, scenario := range scenarios {
+		if len(scenario.Build.BuildTags) > maxRawBuildTags {
+			return evidence.LocationSet{}, analyzerFailure("references", nil, nil)
+		}
+	}
+	return evidence.LocationSet{
+		Locations:  cloneLocations(locationSet.Locations, maxRawReferenceLocations),
+		Certainty:  locationSet.Certainty,
+		Provenance: cloneRawProvenance(provenance, maxRawReferenceProvenance),
+		Scenarios:  cloneRawScenarios(scenarios, maxRawReferenceScenarios),
+	}, nil
+}
+
+func cloneScenarios(values []evidence.Scenario, limit int) []evidence.Scenario {
+	values = boundedPrefix(values, limit)
+	result := make([]evidence.Scenario, 0, limit)
 	for _, value := range values {
 		copy := evidence.Scenario{
 			ID:    value.ID,
 			Name:  value.Name,
-			Build: value.Build,
+			Build: cloneBuildContext(value.Build),
 		}
-		copy.Build.BuildTags = append([]string(nil), value.Build.BuildTags...)
 		result = append(result, copy)
 	}
 	return result
 }
 
-func sortedUniqueLocations(values []evidence.Location) []evidence.Location {
-	result := append([]evidence.Location(nil), values...)
+func sortedUniqueLocations(values []evidence.Location, limit int) []evidence.Location {
+	result := cloneLocations(values, limit)
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Path != result[j].Path {
 			return result[i].Path < result[j].Path
