@@ -186,6 +186,82 @@ func TestNewFiltersMalformedExactEntities(t *testing.T) {
 	}
 }
 
+func TestNewFiltersEmbeddedAbsolutePathsFromPublicScalars(t *testing.T) {
+	t.Parallel()
+
+	catalog := testCatalog(t, "repository", []string{"main.go"})
+	unsafeValues := []string{
+		"/private/tmp/x.go",
+		"path=/private/tmp/x.go",
+		"path:/private/tmp/x.go",
+		"location(/private/tmp/x.go)",
+		"source:/Users/name/private.go",
+		"FILE:///private/tmp/x.go",
+		`C:\Users\name\x.go`,
+		`path=C:\Users\name\x.go`,
+		`\\server\share\x.go`,
+	}
+	symbols := []evidence.Entity{
+		{
+			ID:       "symbol:service.Run",
+			Kind:     evidence.EntityFunction,
+			Name:     "package.Type",
+			Language: "go:method",
+			Scope:    evidence.SourceScopeRepository,
+			Location: testLocation("main.go", 1),
+		},
+		{
+			ID:       "github.com/acme/pkg.Type",
+			Kind:     evidence.EntityType,
+			Name:     "RepositoryType",
+			Language: "go",
+			Scope:    evidence.SourceScopeRepository,
+			Location: testLocation("main.go", 2),
+		},
+	}
+	for index, value := range unsafeValues {
+		unsafeID := testSymbol(value, fmt.Sprintf("UnsafeID%d", index), "main.go", index+10)
+		unsafeName := testSymbol(fmt.Sprintf("unsafe-name-%d", index), value, "main.go", index+30)
+		unsafeLanguage := testSymbol(fmt.Sprintf("unsafe-language-%d", index), fmt.Sprintf("UnsafeLanguage%d", index), "main.go", index+50)
+		unsafeLanguage.Language = value
+		symbols = append(symbols, unsafeID, unsafeName, unsafeLanguage)
+	}
+
+	index, err := New(Input{Catalog: catalog, Symbols: symbols})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	entries := index.Entries()
+	if len(entries) != 3 {
+		t.Fatalf("entries = %#v, want one file and two safe symbols", entries)
+	}
+	matches, err := index.Search(Query{Text: "main.go"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for name, value := range map[string]any{
+		"entries": entries,
+		"matches": matches,
+	} {
+		encoded, marshalErr := json.Marshal(value)
+		if marshalErr != nil {
+			t.Fatalf("json.Marshal(%s): %v", name, marshalErr)
+		}
+		for _, unsafe := range []string{
+			"/private/tmp",
+			"/Users/",
+			`C:\\Users`,
+			`\\\\server\\share`,
+			"file://",
+			"FILE://",
+		} {
+			if strings.Contains(string(encoded), unsafe) {
+				t.Fatalf("encoded %s leaked %q: %s", name, unsafe, encoded)
+			}
+		}
+	}
+}
+
 func TestSearchValidatesQueryAndBoundsResults(t *testing.T) {
 	paths := make([]string, 0, 40)
 	for index := 0; index < 40; index++ {
