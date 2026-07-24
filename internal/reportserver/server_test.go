@@ -18,9 +18,101 @@ import (
 
 	"github.com/dvordrova/repomap/internal/freshness"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
 )
 
 const testCapability = "test-capability"
+
+func TestCatalogSourceTargetsUseOnlyCatalogAuthority(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "offline-root")
+	contentSHA256 := strings.Repeat("c", 64)
+	inputID := sha256.Sum256([]byte("catalog-target-test"))
+	catalog, err := sourcecatalog.New(sourcecatalog.Input{
+		RepositoryRoot: root,
+		AnalysisRoot:   root,
+		AllowedPaths:   []string{"batch.go"},
+		CapturedInputs: []freshness.CapturedInput{{
+			Version:       freshness.CapturedInputVersion,
+			ID:            fmt.Sprintf("%x", inputID[:]),
+			Path:          "batch.go",
+			Kind:          freshness.FileRegular,
+			Mode:          "100644",
+			ContentSHA256: contentSHA256,
+			Stages:        []string{"report_evidence"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("sourcecatalog.New: %v", err)
+	}
+	const runID = "20260724-120000-catalog"
+	reportSHA256 := strings.Repeat("a", 64)
+	targets, sourceIDs := catalogSourceTargets(runID, reportSHA256, catalog)
+	sourceID := manifestSourceID(runID, reportSHA256, "batch.go")
+	target, ok := targets[sourceID]
+	if !ok || target.relativePath != "batch.go" || target.capturedSHA256 != contentSHA256 {
+		t.Fatalf("catalog target = %#v, %t", target, ok)
+	}
+	if len(targets) != 1 || len(sourceIDs) != 1 || sourceIDs["batch.go"] != sourceID {
+		t.Fatalf("targets=%#v source IDs=%#v", targets, sourceIDs)
+	}
+}
+
+func TestOpaqueSourceIDFormulasRemainReportserverBound(t *testing.T) {
+	t.Parallel()
+
+	const runID = "20260724-120000-slice1"
+	reportSHA256 := strings.Repeat("a", 64)
+	if got, want := manifestSourceID(runID, reportSHA256, "service/main.go"),
+		"w_Gd_C_vYaqc3HhzJxDZkjG4BBCGQH28UURTLzOACH8"; got != want {
+		t.Fatalf("manifestSourceID() = %q, want %q", got, want)
+	}
+	if got, want := manifestSourceContextID(runID, reportSHA256, strings.Repeat("b", 64)),
+		"Te4jr1_reQBquPAGzhMukVNYR9gQWH9NYYzhcggcOUk"; got != want {
+		t.Fatalf("manifestSourceContextID() = %q, want %q", got, want)
+	}
+}
+
+func TestLegacyManifestSourceTargetsPreserveV2V3Behavior(t *testing.T) {
+	t.Parallel()
+
+	reportSHA256 := strings.Repeat("a", 64)
+	contentSHA256 := strings.Repeat("b", 64)
+	manifest := reportpkg.RunManifest{
+		RepositoryState: freshness.RepositoryState{Identity: "/repo"},
+		AnalysisRoot:    "/repo/service",
+		ReportSHA256:    reportSHA256,
+		OpenablePaths:   []string{"batch.go"},
+		CapturedInputs: []freshness.CapturedInput{{
+			Path: "service/batch.go", ContentSHA256: contentSHA256,
+		}},
+	}
+	const runID = "20260724-120000-legacy"
+	sourceID := manifestSourceID(runID, reportSHA256, "batch.go")
+	for _, test := range []struct {
+		version    int
+		wantSHA256 string
+	}{
+		{version: 2, wantSHA256: ""},
+		{version: 3, wantSHA256: contentSHA256},
+	} {
+		manifest.Version = test.version
+		if test.version == 2 {
+			manifest.CapturedInputs = nil
+		} else {
+			manifest.CapturedInputs = []freshness.CapturedInput{{
+				Path: "service/batch.go", ContentSHA256: contentSHA256,
+			}}
+		}
+		targets, sourceIDs := legacyManifestSourceTargets(runID, reportSHA256, manifest)
+		target, ok := targets[sourceID]
+		if !ok || target.relativePath != "batch.go" ||
+			target.capturedSHA256 != test.wantSHA256 || sourceIDs["batch.go"] != sourceID {
+			t.Fatalf("v%d targets=%#v source IDs=%#v", test.version, targets, sourceIDs)
+		}
+	}
+}
 
 func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	t.Parallel()
@@ -301,6 +393,47 @@ func TestOpenEndpointRechecksSymlinksAfterHandlerStartup(t *testing.T) {
 	}
 }
 
+func TestOpenEndpointRejectsSourceRemovedAfterHandlerStartup(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	filePath := filepath.Join(repo, "batch.go")
+	if err := os.WriteFile(filePath, []byte("package original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260711-200000-removed-source"
+	writeRun(t, runsDir, runID, repo, "report")
+	sourceID := testSourceID(t, runsDir, runID, "batch.go")
+	launches := 0
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(context.Context, string, int, int) error {
+			launches++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response := postOpen(t, server.URL+capabilityURLPrefix(testCapability), openRequest{
+		RunID: runID, SourceID: sourceID,
+	}, true)
+	defer response.Body.Close()
+	var payload map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusConflict || payload["code"] != "source_unavailable" || launches != 0 {
+		t.Fatalf("status=%d payload=%v launches=%d", response.StatusCode, payload, launches)
+	}
+}
+
 func TestOpenEndpointInvalidatesReplacedRunAuthority(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
@@ -423,12 +556,19 @@ func TestOpenEndpointRejectsCrossOriginShapeAndRepositoryEscape(t *testing.T) {
 
 	repo := t.TempDir()
 	runsDir := t.TempDir()
+	escapePath := filepath.Join(repo, "escape.go")
+	if err := os.WriteFile(escapePath, []byte("package placeholder\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	writeRun(t, runsDir, "20260711-200000-project", repo, "report")
 	outside := filepath.Join(t.TempDir(), "outside.go")
 	if err := os.WriteFile(outside, []byte("package outside\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(repo, "escape.go")); err != nil {
+	if err := os.Remove(escapePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, escapePath); err != nil {
 		t.Fatal(err)
 	}
 
@@ -986,10 +1126,17 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 	if err := os.WriteFile(filepath.Join(runDir, "report.html"), []byte(report), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	openablePaths := make([]string, 0, 2)
+	for _, candidate := range []string{"batch.go", "escape.go"} {
+		info, statErr := os.Lstat(filepath.Join(analysisRoot, filepath.FromSlash(candidate)))
+		if statErr == nil && info.Mode().IsRegular() {
+			openablePaths = append(openablePaths, candidate)
+		}
+	}
 	reportData := reportpkg.ReportData{
 		FormatVersion: reportpkg.CurrentFormatVersion,
 		RepoName:      filepath.Base(analysisRoot),
-		OpenablePaths: []string{"batch.go", "escape.go", "missing.go"},
+		OpenablePaths: openablePaths,
 	}
 	reportJSON, err := json.Marshal(reportData)
 	if err != nil {
@@ -1026,6 +1173,10 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 		t.Fatal(err)
 	}
 	canonicalAnalysisRoot = filepath.Clean(canonicalAnalysisRoot)
+	analysisRelative, err := filepath.Rel(canonicalRepoPath, canonicalAnalysisRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
 	state := freshness.RepositoryState{
 		Version:  freshness.RepositoryStateVersion,
 		Identity: canonicalRepoPath,
@@ -1037,9 +1188,13 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 	}
 	inputs := make([]freshness.CapturedInput, 0, len(reportData.OpenablePaths))
 	for _, inputPath := range reportData.OpenablePaths {
+		repositoryInputPath := inputPath
+		if analysisRelative != "." {
+			repositoryInputPath = filepath.ToSlash(filepath.Join(analysisRelative, filepath.FromSlash(inputPath)))
+		}
 		input := freshness.CapturedInput{
-			Version: freshness.CapturedInputVersion, ID: fmt.Sprintf("%x", sha256.Sum256([]byte("input\x00"+inputPath))),
-			Path: inputPath, Kind: freshness.FileMissing, Stages: []string{"report_evidence"},
+			Version: freshness.CapturedInputVersion, ID: fmt.Sprintf("%x", sha256.Sum256([]byte("input\x00"+repositoryInputPath))),
+			Path: repositoryInputPath, Kind: freshness.FileMissing, Stages: []string{"report_evidence"},
 		}
 		if data, readErr := os.ReadFile(filepath.Join(analysisRoot, filepath.FromSlash(inputPath))); readErr == nil {
 			input.Kind = freshness.FileRegular
