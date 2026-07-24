@@ -248,6 +248,9 @@ func (s *Service) boundAnalyzerGraph(graph evidence.Graph) (evidence.Graph, erro
 			return evidence.Graph{}, analyzerFailure("exact_symbol", nil, nil)
 		}
 	}
+	if !preflightGraphScalars(graph) {
+		return evidence.Graph{}, analyzerFailure("exact_symbol", nil, nil)
+	}
 
 	bounded := evidence.Graph{
 		Version:   graph.Version,
@@ -349,15 +352,15 @@ func (s *Service) collectReferences(
 func (s *Service) boundReferenceLocationSet(
 	locationSet evidence.LocationSet,
 ) (evidence.LocationSet, error) {
+	locations := boundedPrefix(locationSet.Locations, maxRawReferenceLocations)
 	provenance := boundedPrefix(locationSet.Provenance, maxRawReferenceProvenance)
 	scenarios := boundedPrefix(locationSet.Scenarios, maxRawReferenceScenarios)
-	for _, scenario := range scenarios {
-		if len(scenario.Build.BuildTags) > maxRawBuildTags {
-			return evidence.LocationSet{}, analyzerFailure("references", nil, nil)
-		}
+	if !locationSet.Certainty.Valid() ||
+		!preflightReferenceScalars(locations, provenance, scenarios) {
+		return evidence.LocationSet{}, analyzerFailure("references", nil, nil)
 	}
 	return evidence.LocationSet{
-		Locations:  cloneLocations(locationSet.Locations, maxRawReferenceLocations),
+		Locations:  cloneLocations(locations, maxRawReferenceLocations),
 		Certainty:  locationSet.Certainty,
 		Provenance: cloneRawProvenance(provenance, maxRawReferenceProvenance),
 		Scenarios:  cloneRawScenarios(scenarios, maxRawReferenceScenarios),
