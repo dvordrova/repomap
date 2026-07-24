@@ -140,15 +140,15 @@ func (s *Service) Read(ctx context.Context, request Request) (Result, error) {
 	if current.Truncated {
 		return Result{}, workspaceContentLimit(LimitFile)
 	}
-	digest := fmt.Sprintf("%x", sha256.Sum256(current.Bytes))
-	if digest != source.ContentSHA256 {
-		return Result{}, workspaceContentError(ErrorSourceChanged, StageRead)
-	}
 	if !utf8.Valid(current.Bytes) {
 		return Result{}, workspaceContentError(ErrorUnsupportedText, StageRead)
 	}
 	if err := contextFailure(ctx); err != nil {
 		return Result{}, err
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(current.Bytes))
+	if digest != source.ContentSHA256 {
+		return Result{}, workspaceContentError(ErrorSourceChanged, StageRead)
 	}
 
 	totalLines := physicalLineCount(current.Bytes)
