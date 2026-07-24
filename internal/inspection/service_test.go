@@ -408,6 +408,57 @@ func TestResolveRawCandidateBudgetIgnoresInvalidTail(t *testing.T) {
 	}
 }
 
+func TestResolveFiltersMultiMegabyteScalarMetadataBeforeTextScanning(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	oversized := strings.Repeat(" ", 2*1024*1024) + "/private/tmp/scalar-leak.go"
+	unsafeTarget := fixtureTarget()
+	unsafeTarget.Name = oversized
+	service := mustService(t, fixture.catalog, Dependencies{
+		Resolver: resolverFunc(func(_ context.Context, request analyzer.LocationRequest) (analyzer.LocationResolution, error) {
+			return analyzer.LocationResolution{
+				Location: request.Location,
+				Candidates: []analyzer.LocationCandidate{
+					{
+						Entity:       unsafeTarget,
+						Certainty:    evidence.CertaintyStatic,
+						Investigable: true,
+					},
+					{
+						Entity:       fixtureTarget(),
+						Certainty:    evidence.CertaintyStatic,
+						Investigable: true,
+						RankReasons:  []string{oversized, "safe reason"},
+					},
+				},
+				Certainty:  evidence.CertaintyStatic,
+				Provenance: evidence.Provenance{Provider: "fake", Operation: "resolve"},
+				Warnings:   []string{oversized, "safe warning"},
+			}, nil
+		}),
+	})
+	result, err := service.Resolve(context.Background(), ResolveRequest{
+		Location: evidence.Location{Path: "main.go", Line: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Candidates) != 1 ||
+		!reflect.DeepEqual(result.Candidates[0].RankReasons, []string{"safe reason"}) ||
+		!reflect.DeepEqual(result.Warnings, []string{"safe warning"}) {
+		t.Fatalf("filtered scalar result = %#v", result)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/private/tmp") ||
+		strings.Contains(string(encoded), oversized) {
+		t.Fatalf("encoded result leaked oversized analyzer metadata")
+	}
+}
+
 func TestInspectReturnsAuthorizedBoundedSourceCallsAndReferences(t *testing.T) {
 	t.Parallel()
 
@@ -651,6 +702,52 @@ func TestInspectBoundsReferenceInputsBeforeValidationSortAndClone(t *testing.T) 
 	}
 }
 
+func TestInspectRejectsMultiMegabyteReferencePathBeforeSorting(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, true)
+	target := fixtureTarget()
+	oversized := strings.Repeat("x", 2*1024*1024) + "/private/tmp/reference.go"
+	locationSet := evidence.LocationSet{
+		Locations: []evidence.Location{
+			{Path: oversized, Line: 1, Column: 1},
+			{Path: "main.go", Line: 10, Column: 1},
+		},
+		Certainty: evidence.CertaintyStatic,
+		Provenance: []evidence.Provenance{{
+			Provider: "fake", Operation: "references",
+		}},
+		Scenarios: []evidence.Scenario{{
+			ID: "build", Name: "active build",
+		}},
+	}
+	if preflightReferenceScalars(
+		locationSet.Locations,
+		locationSet.Provenance,
+		locationSet.Scenarios,
+	) {
+		t.Fatal("oversized reference path passed scalar preflight")
+	}
+	service := mustService(t, fixture.catalog, Dependencies{
+		ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+			return fixtureGraph(fixture.root, target, false), nil
+		}),
+		ReferenceFinder: referenceFinderFunc(func(context.Context, string, evidence.Location) (evidence.LocationSet, error) {
+			return locationSet, nil
+		}),
+	})
+	_, err := service.Inspect(context.Background(), InspectRequest{
+		Target: target, IncludeReferences: true,
+	})
+	if ErrorKindOf(err) != ErrorAnalysisFailed {
+		t.Fatalf("oversized reference path error = %v", err)
+	}
+	if strings.Contains(err.Error(), "/private/tmp") ||
+		strings.Contains(err.Error(), oversized) {
+		t.Fatal("analysis error leaked oversized reference path")
+	}
+}
+
 func TestInspectRejectsGraphCollectionsAboveRawBudgets(t *testing.T) {
 	t.Parallel()
 
@@ -717,6 +814,101 @@ func TestInspectRejectsGraphCollectionsAboveRawBudgets(t *testing.T) {
 			_, err := service.Inspect(context.Background(), InspectRequest{Target: target})
 			if ErrorKindOf(err) != ErrorAnalysisFailed {
 				t.Fatalf("over-budget graph error = %v", err)
+			}
+		})
+	}
+}
+
+func TestGraphScalarPreflightCoversAcceptedMetadataFields(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	target := fixtureTarget()
+	tests := []struct {
+		name   string
+		mutate func(*evidence.Graph)
+	}{
+		{"entity id", func(graph *evidence.Graph) { graph.Entities[0].ID = strings.Repeat("x", 513) }},
+		{"entity name", func(graph *evidence.Graph) { graph.Entities[0].Name = strings.Repeat("x", 257) }},
+		{"entity language", func(graph *evidence.Graph) { graph.Entities[0].Language = strings.Repeat("x", 33) }},
+		{"relation from", func(graph *evidence.Graph) { graph.Relations[0].From = strings.Repeat("x", 513) }},
+		{"relation to", func(graph *evidence.Graph) { graph.Relations[0].To = strings.Repeat("x", 513) }},
+		{"scenario id", func(graph *evidence.Graph) { graph.Scenarios[0].ID = strings.Repeat("x", 129) }},
+		{"scenario name", func(graph *evidence.Graph) { graph.Scenarios[0].Name = strings.Repeat("x", 257) }},
+		{"scenario goos", func(graph *evidence.Graph) { graph.Scenarios[0].Build.GOOS = strings.Repeat("x", 65) }},
+		{"scenario goarch", func(graph *evidence.Graph) { graph.Scenarios[0].Build.GOARCH = strings.Repeat("x", 65) }},
+		{"scenario build tag", func(graph *evidence.Graph) {
+			graph.Scenarios[0].Build.BuildTags = []string{strings.Repeat("x", 129)}
+		}},
+		{"provenance provider", func(graph *evidence.Graph) {
+			graph.Relations[0].Provenance[0].Provider = strings.Repeat("x", 65)
+		}},
+		{"provenance version", func(graph *evidence.Graph) {
+			graph.Relations[0].Provenance[0].Version = strings.Repeat("x", 129)
+		}},
+		{"provenance operation", func(graph *evidence.Graph) {
+			graph.Relations[0].Provenance[0].Operation = strings.Repeat("x", 65)
+		}},
+		{"warning", func(graph *evidence.Graph) {
+			graph.Warnings = []string{strings.Repeat("x", maxAnalyzerWarningBytes+1)}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			graph := fixtureGraph(fixture.root, target, false)
+			test.mutate(&graph)
+			if preflightGraphScalars(graph) {
+				t.Fatal("oversized accepted graph scalar passed preflight")
+			}
+		})
+	}
+}
+
+func TestInspectRejectsMultiMegabyteGraphScalarsBeforeValidationOrWarningRegex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*evidence.Graph, string)
+	}{
+		{
+			name: "entity id before validation map",
+			mutate: func(graph *evidence.Graph, oversized string) {
+				graph.Entities[0].ID = oversized
+			},
+		},
+		{
+			name: "relation endpoint before validation lookup",
+			mutate: func(graph *evidence.Graph, oversized string) {
+				graph.Relations[0].From = oversized
+			},
+		},
+		{
+			name: "warning before allow-list regex",
+			mutate: func(graph *evidence.Graph, oversized string) {
+				graph.Warnings = []string{oversized}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newInspectionFixture(t, false)
+			target := fixtureTarget()
+			graph := fixtureGraph(fixture.root, target, false)
+			oversized := strings.Repeat("x", 2*1024*1024) + "/private/tmp/scalar-leak.go"
+			test.mutate(&graph, oversized)
+			service := mustService(t, fixture.catalog, Dependencies{
+				ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+					return graph, nil
+				}),
+			})
+			_, err := service.Inspect(context.Background(), InspectRequest{Target: target})
+			if ErrorKindOf(err) != ErrorAnalysisFailed {
+				t.Fatalf("oversized graph scalar error = %v", err)
+			}
+			if strings.Contains(err.Error(), "/private/tmp") ||
+				strings.Contains(err.Error(), oversized) {
+				t.Fatalf("analysis error leaked oversized graph scalar")
 			}
 		})
 	}
@@ -846,6 +1038,34 @@ func TestInspectDropsCallerAndCalleeAbsoluteMetadata(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "/private/tmp") {
 		t.Fatalf("structural result leaked absolute metadata: %s", encoded)
+	}
+}
+
+func TestInspectGoplsLikeOutputMatchesScalarPreflightBaseline(t *testing.T) {
+	fixture := newInspectionFixture(t, false)
+	target := fixtureTarget()
+	graph := fixtureGraph(fixture.root, target, false)
+	graph.Warnings = []string{
+		"gopls CLI adapter is experimental; evidence is scoped to the active build configuration",
+	}
+	service := mustService(t, fixture.catalog, Dependencies{
+		ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+			return graph, nil
+		}),
+	})
+	result, err := service.Inspect(context.Background(), InspectRequest{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Structural.RepoName = "fixture"
+	result.Source.RepoName = "fixture"
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "1de795b64ddbcfea6d8e0d297bdd0c11e2a21e56ce1bdd06c53b1353c04b707b"
+	if got := fmt.Sprintf("%x", sha256.Sum256(encoded)); got != want {
+		t.Fatalf("neutral result digest = %s, want preflight baseline %s", got, want)
 	}
 }
 

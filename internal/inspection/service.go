@@ -273,8 +273,11 @@ func (s *Service) safeEntity(value evidence.Entity) bool {
 }
 
 func safeText(value, root string, limit int) bool {
+	if len(value) > limit {
+		return false
+	}
 	value = strings.TrimSpace(value)
-	if value == "" || len(value) > limit || strings.Contains(value, root) ||
+	if value == "" || strings.Contains(value, root) ||
 		strings.Contains(value, "file://") {
 		return false
 	}

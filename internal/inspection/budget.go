@@ -27,6 +27,8 @@ const (
 	maxRawReferenceScenarios   = maxReferenceScenarios
 	maxStructuralWarnings      = maxRawGraphWarnings + 2
 	maxStructuralAllowedPaths  = 2 + 2*(5+5)
+	maxAnalyzerPathBytes       = 4096
+	maxAnalyzerWarningBytes    = 256
 )
 
 func boundedPrefix[T any](values []T, limit int) []T {
@@ -95,6 +97,108 @@ func cloneRawScenarios(values []evidence.Scenario, limit int) []evidence.Scenari
 		})
 	}
 	return result
+}
+
+// These preflights run only after collection cardinality has been bounded.
+// They use byte lengths and enum switches so oversized analyzer strings cannot
+// reach hashing, sorting, path normalization, or warning regex processing.
+func preflightGraphScalars(graph evidence.Graph) bool {
+	if len(graph.Query) > 256 ||
+		!preflightBuildContextScalars(graph.Build) {
+		return false
+	}
+	for _, warning := range boundedPrefix(graph.Warnings, maxRawGraphWarnings) {
+		if len(warning) > maxAnalyzerWarningBytes {
+			return false
+		}
+	}
+	for _, entity := range graph.Entities {
+		if len(entity.ID) > 512 ||
+			len(entity.Name) > 256 ||
+			len(entity.Language) > 32 ||
+			!entity.Kind.Valid() ||
+			!entity.Scope.Valid() ||
+			(entity.Location != nil && len(entity.Location.Path) > maxAnalyzerPathBytes) {
+			return false
+		}
+	}
+	for _, relation := range graph.Relations {
+		if len(relation.From) > 512 ||
+			len(relation.To) > 512 ||
+			!relation.Kind.Valid() ||
+			!relation.Resolution.Valid() ||
+			!relation.Invocation.Valid() ||
+			!relation.Certainty.Valid() ||
+			!preflightProvenanceScalars(
+				boundedPrefix(relation.Provenance, maxRawRelationProvenance),
+			) {
+			return false
+		}
+		for _, scenarioID := range boundedPrefix(relation.Scenarios, maxRawRelationScenarios) {
+			if len(scenarioID) > 128 {
+				return false
+			}
+		}
+	}
+	for _, scenario := range graph.Scenarios {
+		if !preflightScenarioScalars(scenario) {
+			return false
+		}
+	}
+	return true
+}
+
+func preflightReferenceScalars(
+	locations []evidence.Location,
+	provenance []evidence.Provenance,
+	scenarios []evidence.Scenario,
+) bool {
+	for _, location := range locations {
+		if len(location.Path) > maxAnalyzerPathBytes {
+			return false
+		}
+	}
+	if !preflightProvenanceScalars(provenance) {
+		return false
+	}
+	for _, scenario := range scenarios {
+		if !preflightScenarioScalars(scenario) {
+			return false
+		}
+	}
+	return true
+}
+
+func preflightProvenanceScalars(values []evidence.Provenance) bool {
+	for _, value := range values {
+		if len(value.Provider) > 64 ||
+			len(value.Version) > 128 ||
+			len(value.Operation) > 64 ||
+			(value.Location != nil && len(value.Location.Path) > maxAnalyzerPathBytes) {
+			return false
+		}
+	}
+	return true
+}
+
+func preflightScenarioScalars(value evidence.Scenario) bool {
+	return len(value.ID) <= 128 &&
+		len(value.Name) <= 256 &&
+		preflightBuildContextScalars(value.Build)
+}
+
+func preflightBuildContextScalars(value evidence.BuildContext) bool {
+	if len(value.GOOS) > 64 ||
+		len(value.GOARCH) > 64 ||
+		len(value.BuildTags) > maxRawBuildTags {
+		return false
+	}
+	for _, tag := range value.BuildTags {
+		if len(tag) > 128 {
+			return false
+		}
+	}
+	return true
 }
 
 func boundStructuralBundle(value symbol.Bundle, limits Limits) symbol.Bundle {
