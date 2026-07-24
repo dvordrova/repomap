@@ -28,9 +28,22 @@ const (
 	LimitLine  LimitKind = "line"
 )
 
+// FailureStage identifies the closed phase that rejected the read. Adapters
+// may use it to preserve an existing error message without inspecting raw
+// filesystem errors.
+type FailureStage string
+
+const (
+	StageRequest   FailureStage = "request"
+	StageAuthority FailureStage = "authority"
+	StageRead      FailureStage = "read"
+	StageRange     FailureStage = "range"
+)
+
 type contentError struct {
 	kind  ErrorKind
 	limit LimitKind
+	stage FailureStage
 }
 
 func (err *contentError) Error() string {
@@ -40,12 +53,16 @@ func (err *contentError) Error() string {
 	return "workspace content: " + string(err.kind)
 }
 
-func workspaceContentError(kind ErrorKind) error {
-	return &contentError{kind: kind}
+func workspaceContentError(kind ErrorKind, stage FailureStage) error {
+	return &contentError{kind: kind, stage: stage}
 }
 
 func workspaceContentLimit(limit LimitKind) error {
-	return &contentError{kind: ErrorLimitExceeded, limit: limit}
+	stage := StageRange
+	if limit == LimitFile {
+		stage = StageRead
+	}
+	return &contentError{kind: ErrorLimitExceeded, limit: limit, stage: stage}
 }
 
 // ErrorKindOf returns the closed kind for an error produced by this package.
@@ -64,4 +81,14 @@ func LimitKindOf(err error) LimitKind {
 		return target.limit
 	}
 	return LimitNone
+}
+
+// FailureStageOf returns the closed phase for an error produced by this
+// package.
+func FailureStageOf(err error) FailureStage {
+	var target *contentError
+	if errors.As(err, &target) {
+		return target.stage
+	}
+	return ""
 }
