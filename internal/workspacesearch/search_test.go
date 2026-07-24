@@ -2,6 +2,7 @@ package workspacesearch
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -65,6 +66,34 @@ func TestNewAndSearchExactWorkspaceFacts(t *testing.T) {
 	}
 	if !reflect.DeepEqual(index.Entries(), again.Entries()) {
 		t.Fatal("construction is not deterministic")
+	}
+}
+
+func TestNewDeterministicallyCollapsesConflictingDuplicates(t *testing.T) {
+	t.Parallel()
+
+	catalog := testCatalog(t, "repository", []string{"service.go"})
+	early := testSymbol("run", "Run", "service.go", 3)
+	late := testSymbol("run", "Run", "service.go", 30)
+
+	first, err := New(Input{Catalog: catalog, Symbols: []evidence.Entity{late, early}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := New(Input{Catalog: catalog, Symbols: []evidence.Entity{early, late}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first.Entries(), second.Entries()) {
+		t.Fatalf("conflicting duplicate order changed construction:\nfirst:  %#v\nsecond: %#v", first.Entries(), second.Entries())
+	}
+	result, err := first.Search(Query{Text: "Run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 1 || result[0].Entry.Entity == nil ||
+		result[0].Entry.Entity.Location.Line != early.Location.Line {
+		t.Fatalf("deterministic duplicate selection = %#v", result)
 	}
 }
 
@@ -134,6 +163,10 @@ func TestNewFiltersMalformedExactEntities(t *testing.T) {
 		{ID: "control", Kind: evidence.EntityFunction, Name: "Bad\nName", Location: testLocation("main.go", 1)},
 		{ID: "space", Kind: evidence.EntityFunction, Name: " Padded", Location: testLocation("main.go", 1)},
 		{ID: "range", Kind: evidence.EntityFunction, Name: "Range", Location: &evidence.Location{Path: "main.go", Line: 4, EndLine: 3}},
+		{ID: "file:///private/tmp/id", Kind: evidence.EntityFunction, Name: "FileURL", Location: testLocation("main.go", 1)},
+		{ID: "absolute-name", Kind: evidence.EntityFunction, Name: "/private/tmp/Name", Location: testLocation("main.go", 1)},
+		{ID: "root-name", Kind: evidence.EntityFunction, Name: catalog.AnalysisRoot() + "/secret.go", Location: testLocation("main.go", 1)},
+		{ID: "absolute-language", Kind: evidence.EntityFunction, Name: "Language", Language: "sdk=/opt/go", Location: testLocation("main.go", 1)},
 	}
 	index, err := New(Input{Catalog: catalog, Symbols: symbols})
 	if err != nil {
@@ -141,6 +174,15 @@ func TestNewFiltersMalformedExactEntities(t *testing.T) {
 	}
 	if got := index.Entries(); len(got) != 1 || got[0].Kind != KindFile {
 		t.Fatalf("malformed exact entities survived: %#v", got)
+	}
+	encoded, err := json.Marshal(index.Entries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, unsafe := range []string{"file://", "/private/tmp", catalog.AnalysisRoot(), "/opt/go"} {
+		if strings.Contains(string(encoded), unsafe) {
+			t.Fatalf("encoded entries leaked %q: %s", unsafe, encoded)
+		}
 	}
 }
 

@@ -162,10 +162,53 @@ func TestCatalogExactSearchRejectsMismatchedPathAuthority(t *testing.T) {
 	t.Parallel()
 
 	data := semanticSearchTestReport()
+	legacy, err := BuildSemanticSearchIndex(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data.SemanticSearch = &legacy
 	catalog := exactSearchTestCatalog(t, []string{"cmd/repomap/main.go"})
 	if _, err := BuildSemanticSearchIndexWithCatalog(data, catalog); err == nil ||
 		!strings.Contains(err.Error(), "does not match openable paths") {
 		t.Fatalf("mismatched catalog error = %v", err)
+	}
+	before, err := json.Marshal(data.SemanticSearch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AttachExactWorkspaceSearch(data, catalog); err == nil ||
+		!strings.Contains(err.Error(), "does not match openable paths") {
+		t.Fatalf("AttachExactWorkspaceSearch mismatch error = %v", err)
+	}
+	after, err := json.Marshal(data.SemanticSearch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("failed exact adapter replaced legacy projection:\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func TestCatalogExactSearchBoundsRawReportMembersBeforeProjection(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		RepoName:      "bounded",
+		OpenablePaths: []string{"service.go"},
+		ArchitectureCanvas: &ArchitectureCanvas{
+			Components: []ArchitectureComponent{{
+				ID:      "service",
+				Name:    "Service",
+				Members: make([]componentmap.Candidate, maxReportExactSymbols+1),
+			}},
+		},
+	}
+	_, err := BuildSemanticSearchIndexWithCatalog(
+		data,
+		exactSearchTestCatalog(t, data.OpenablePaths),
+	)
+	if err == nil || !strings.Contains(err.Error(), "exact candidate input exceeds") {
+		t.Fatalf("raw member bound error = %v", err)
 	}
 }
 

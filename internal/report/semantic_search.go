@@ -422,9 +422,6 @@ func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) {
 		}, 40)
 	}
 	for _, anchor := range canvas.BehaviorAnchors {
-		if exact != nil && exact.acceptsAnchor(anchor) {
-			continue
-		}
 		builder.addAnchor(anchor)
 	}
 }

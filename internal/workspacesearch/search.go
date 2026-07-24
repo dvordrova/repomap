@@ -6,6 +6,7 @@ package workspacesearch
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -113,8 +114,17 @@ func New(input Input) (Index, error) {
 			return Index{}, fmt.Errorf("workspace search: symbol %d contains an oversized scalar", index)
 		}
 	}
+	validSymbols := make([]evidence.Entity, 0, min(len(input.Symbols), maxSymbolEntries))
+	for _, entity := range input.Symbols {
+		if validSymbol(entity, input.Catalog) {
+			validSymbols = append(validSymbols, cloneEntity(entity))
+		}
+	}
+	sort.Slice(validSymbols, func(i, j int) bool {
+		return entityLess(validSymbols[i], validSymbols[j])
+	})
 
-	capacity := len(paths) + len(input.Symbols)
+	capacity := len(paths) + len(validSymbols)
 	if capacity > maxEntries {
 		capacity = maxEntries
 	}
@@ -142,10 +152,7 @@ func New(input Input) (Index, error) {
 		entries = append(entries, entry)
 	}
 
-	for _, entity := range input.Symbols {
-		if !validSymbol(entity, input.Catalog) {
-			continue
-		}
+	for _, entity := range validSymbols {
 		copy := cloneEntity(entity)
 		entry := Entry{
 			Kind:     KindSymbol,
@@ -234,6 +241,12 @@ func (index Index) Search(query Query) ([]Match, error) {
 		if left.record.name != right.record.name {
 			return left.record.name < right.record.name
 		}
+		if left.record.entry.Path != right.record.entry.Path {
+			return left.record.entry.Path < right.record.entry.Path
+		}
+		if left.record.entry.Name != right.record.entry.Name {
+			return left.record.entry.Name < right.record.entry.Name
+		}
 		return entityID(left.record.entry) < entityID(right.record.entry)
 	})
 	if len(ranked) > limit {
@@ -308,9 +321,10 @@ func symbolScalarOversized(entity evidence.Entity) bool {
 }
 
 func validSymbol(entity evidence.Entity, catalog sourcecatalog.Catalog) bool {
-	if entity.ID == "" || !safeScalar(entity.ID, maxEntityIDBytes, true) ||
-		entity.Name == "" || !safeScalar(entity.Name, maxNameBytes, true) ||
-		(entity.Language != "" && !safeScalar(entity.Language, maxLanguageBytes, true)) ||
+	root := catalog.AnalysisRoot()
+	if entity.ID == "" || !safePublicScalar(entity.ID, root, maxEntityIDBytes, true) ||
+		entity.Name == "" || !safePublicScalar(entity.Name, root, maxNameBytes, true) ||
+		(entity.Language != "" && !safePublicScalar(entity.Language, root, maxLanguageBytes, true)) ||
 		!searchableEntityKind(entity.Kind) ||
 		(entity.Scope != "" && entity.Scope != evidence.SourceScopeRepository) ||
 		entity.Location == nil || !validExactLocation(*entity.Location) {
@@ -350,6 +364,38 @@ func validExactLocation(location evidence.Location) bool {
 	return location.EndLine != 0 || location.EndColumn == 0
 }
 
+func entityLess(left, right evidence.Entity) bool {
+	if left.ID != right.ID {
+		return left.ID < right.ID
+	}
+	if left.Kind != right.Kind {
+		return left.Kind < right.Kind
+	}
+	if left.Name != right.Name {
+		return left.Name < right.Name
+	}
+	if left.Language != right.Language {
+		return left.Language < right.Language
+	}
+	if left.Scope != right.Scope {
+		return left.Scope < right.Scope
+	}
+	leftLocation, rightLocation := left.Location, right.Location
+	if leftLocation.Path != rightLocation.Path {
+		return leftLocation.Path < rightLocation.Path
+	}
+	if leftLocation.Line != rightLocation.Line {
+		return leftLocation.Line < rightLocation.Line
+	}
+	if leftLocation.Column != rightLocation.Column {
+		return leftLocation.Column < rightLocation.Column
+	}
+	if leftLocation.EndLine != rightLocation.EndLine {
+		return leftLocation.EndLine < rightLocation.EndLine
+	}
+	return leftLocation.EndColumn < rightLocation.EndColumn
+}
+
 func safeScalar(value string, limit int, required bool) bool {
 	if len(value) > limit {
 		return false
@@ -361,6 +407,28 @@ func safeScalar(value string, limit int, required bool) bool {
 		return false
 	}
 	return strings.TrimSpace(value) == value
+}
+
+func safePublicScalar(value, root string, limit int, required bool) bool {
+	if !safeScalar(value, limit, required) {
+		return false
+	}
+	if strings.Contains(value, root) || strings.Contains(value, "file://") {
+		return false
+	}
+	for _, field := range strings.Fields(value) {
+		trimmed := strings.Trim(field, `"'(),:;[]`)
+		if filepath.IsAbs(trimmed) {
+			return false
+		}
+		if index := strings.Index(trimmed, "="); index >= 0 {
+			suffix := strings.Trim(trimmed[index+1:], `"'(),:;[]`)
+			if filepath.IsAbs(suffix) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func containsControl(value string) bool {
