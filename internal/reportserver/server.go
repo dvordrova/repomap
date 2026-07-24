@@ -25,6 +25,7 @@ import (
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/testevidence"
 )
 
@@ -65,6 +66,8 @@ type runRecord struct {
 	RepoPath           string
 	Manifest           *report.RunManifest
 	Report             *report.ReportData
+	ReportSHA256       string // Adapter-only binding for opaque browser IDs.
+	SourceCatalog      *sourcecatalog.Catalog
 	Sources            map[string]sourceTarget
 	SourceContexts     map[string]sourceContextTarget
 	ArtifactsSignature string
@@ -343,7 +346,8 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authorizeStarted := time.Now()
-	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) {
+	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) ||
+		(run.Manifest.Version >= report.CurrentRunManifestVersion && run.SourceCatalog == nil) {
 		h.logSourceOpen(run.ID, request.SourceID, "view_only", resolveRunMS, time.Since(authorizeStarted).Milliseconds(), 0, 0, started)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only; regenerate it to enable editor actions"})
 		return
@@ -422,34 +426,41 @@ func (h *handler) reloadRuns() error {
 		run := &runs[index]
 		report.ApplyProductCoherence(run.Report)
 		if run.Manifest != nil && run.Report != nil {
-			run.Sources = make(map[string]sourceTarget, len(run.Manifest.OpenablePaths))
-			run.Report.SourceIDs = make(map[string]string, len(run.Manifest.OpenablePaths))
-			for _, relativePath := range run.Manifest.OpenablePaths {
-				sourceID := manifestSourceID(run.ID, run.Manifest.ReportSHA256, relativePath)
-				run.Sources[sourceID] = sourceTarget{
-					relativePath:   relativePath,
-					capturedSHA256: capturedSourceSHA256(*run.Manifest, relativePath),
-				}
-				run.Report.SourceIDs[relativePath] = sourceID
+			switch {
+			case run.SourceCatalog != nil:
+				run.Sources, run.Report.SourceIDs = catalogSourceTargets(
+					run.ID,
+					run.ReportSHA256,
+					*run.SourceCatalog,
+				)
+			case run.Manifest.Version < report.CurrentRunManifestVersion:
+				run.Sources, run.Report.SourceIDs = legacyManifestSourceTargets(
+					run.ID,
+					run.ReportSHA256,
+					*run.Manifest,
+				)
+			default:
+				run.Sources = make(map[string]sourceTarget)
+				run.Report.SourceIDs = make(map[string]string)
 			}
 			run.SourceContexts = make(map[string]sourceContextTarget)
 			run.Report.SourceContextIDs = make(map[string]string)
-			if run.Manifest.Version >= report.CurrentRunManifestVersion {
+			if run.Manifest.Version >= report.CurrentRunManifestVersion && run.SourceCatalog != nil {
 				for _, snippet := range reportSourceSnippets(run.Report) {
 					if err := snippet.Validate(); err != nil {
 						continue
 					}
-					input, ok := capturedSourceInput(*run.Manifest, snippet.Path)
-					if !ok || input.Kind != freshness.FileRegular || input.ContentSHA256 == "" {
+					source, ok := run.SourceCatalog.Lookup(snippet.Path)
+					if !ok || source.Kind != freshness.FileRegular || source.ContentSHA256 == "" {
 						continue
 					}
-					contextID := manifestSourceContextID(run.ID, run.Manifest.ReportSHA256, snippet.PresentationSHA256)
+					contextID := manifestSourceContextID(run.ID, run.ReportSHA256, snippet.PresentationSHA256)
 					focusLine := snippet.StartLine
 					if len(snippet.HighlightRanges) > 0 {
 						focusLine = snippet.HighlightRanges[0].StartLine
 					}
 					run.SourceContexts[contextID] = sourceContextTarget{
-						relativePath: snippet.Path, capturedSHA256: input.ContentSHA256,
+						relativePath: snippet.Path, capturedSHA256: source.ContentSHA256,
 						startLine: snippet.StartLine, endLine: snippet.EndLine, focusLine: focusLine,
 					}
 					run.Report.SourceContextIDs[snippet.PresentationSHA256] = contextID
@@ -510,7 +521,48 @@ func runArtifactSignature(runDir string) (string, error) {
 	return strings.Join(parts, "|"), nil
 }
 
-func capturedSourceSHA256(manifest report.RunManifest, relativePath string) string {
+func catalogSourceTargets(
+	runID, reportSHA256 string,
+	catalog sourcecatalog.Catalog,
+) (map[string]sourceTarget, map[string]string) {
+	paths := catalog.Paths()
+	targets := make(map[string]sourceTarget, len(paths))
+	sourceIDs := make(map[string]string, len(paths))
+	for _, relativePath := range paths {
+		source, ok := catalog.Lookup(relativePath)
+		if !ok {
+			continue
+		}
+		sourceID := manifestSourceID(runID, reportSHA256, relativePath)
+		targets[sourceID] = sourceTarget{
+			relativePath:   source.Path,
+			capturedSHA256: source.ContentSHA256,
+		}
+		sourceIDs[relativePath] = sourceID
+	}
+	return targets, sourceIDs
+}
+
+func legacyManifestSourceTargets(
+	runID, reportSHA256 string,
+	manifest report.RunManifest,
+) (map[string]sourceTarget, map[string]string) {
+	// Manifest v2/v3 source-open behavior predates captured regular-file
+	// catalogs. Keep this compatibility path out of current-v4 authority.
+	targets := make(map[string]sourceTarget, len(manifest.OpenablePaths))
+	sourceIDs := make(map[string]string, len(manifest.OpenablePaths))
+	for _, relativePath := range manifest.OpenablePaths {
+		sourceID := manifestSourceID(runID, reportSHA256, relativePath)
+		targets[sourceID] = sourceTarget{
+			relativePath:   relativePath,
+			capturedSHA256: legacyCapturedSourceSHA256(manifest, relativePath),
+		}
+		sourceIDs[relativePath] = sourceID
+	}
+	return targets, sourceIDs
+}
+
+func legacyCapturedSourceSHA256(manifest report.RunManifest, relativePath string) string {
 	repositoryRelative := relativePath
 	if analysisRelative, err := filepath.Rel(manifest.RepositoryState.Identity, manifest.AnalysisRoot); err == nil && analysisRelative != "." {
 		repositoryRelative = filepath.ToSlash(filepath.Join(analysisRelative, filepath.FromSlash(relativePath)))
@@ -605,7 +657,14 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 				if rootErr == nil {
 					run.Manifest = &manifest
 					run.RepoPath = analysisRoot
+					run.ReportSHA256 = manifest.ReportSHA256
 					run.AnalysisAvailable = h.analysisAvailable(manifest)
+					if manifest.Version >= report.CurrentRunManifestVersion {
+						catalog, catalogErr := manifest.SourceCatalog()
+						if catalogErr == nil && catalog.AnalysisRoot() == analysisRoot {
+							run.SourceCatalog = &catalog
+						}
+					}
 					if manifest.Version < report.CurrentRunManifestVersion {
 						legacy := freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
 						run.Report.Freshness = &legacy

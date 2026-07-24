@@ -234,6 +234,94 @@ func TestRunManifestValidateRejectsUnsafeOrAmbiguousAuthority(t *testing.T) {
 	}
 }
 
+func TestRunManifestSourceCatalogPreservesCurrentSourceScopeAndJSON(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	before, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := manifest.SourceCatalog()
+	if err != nil {
+		t.Fatalf("SourceCatalog: %v", err)
+	}
+	if catalog.AnalysisRoot() != manifest.AnalysisRoot {
+		t.Fatalf("catalog analysis root = %q, want %q", catalog.AnalysisRoot(), manifest.AnalysisRoot)
+	}
+	if got := catalog.Paths(); len(got) != 1 || got[0] != manifest.OpenablePaths[0] {
+		t.Fatalf("catalog paths = %#v, want %#v", got, manifest.OpenablePaths)
+	}
+	source, ok := catalog.Lookup("batch.go")
+	if !ok || source.RepositoryPath != manifest.CapturedInputs[0].Path ||
+		source.ContentSHA256 != manifest.CapturedInputs[0].ContentSHA256 {
+		t.Fatalf("catalog source = %#v, %t; input = %#v", source, ok, manifest.CapturedInputs[0])
+	}
+	after, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("SourceCatalog changed manifest JSON:\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func TestRunManifestSourceCatalogPreservesSubdirectoryMapping(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	manifest.AnalysisRoot = "/repo/service"
+	manifest.CapturedInputs[0].Path = "service/batch.go"
+	inputsDigest, err := freshness.CapturedInputsDigest(manifest.CapturedInputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.CapturedInputsSHA256 = inputsDigest
+
+	catalog, err := manifest.SourceCatalog()
+	if err != nil {
+		t.Fatalf("SourceCatalog: %v", err)
+	}
+	source, ok := catalog.Lookup("batch.go")
+	if !ok || source.Path != "batch.go" || source.RepositoryPath != "service/batch.go" ||
+		source.ContentSHA256 != manifest.CapturedInputs[0].ContentSHA256 {
+		t.Fatalf("subdirectory source = %#v, %t", source, ok)
+	}
+}
+
+func TestRunManifestSourceCatalogDoesNotChangeLegacyValidation(t *testing.T) {
+	t.Parallel()
+
+	version3 := validRunManifestFixture(t)
+	version3.Version = 3
+	if _, err := version3.SourceCatalog(); err != nil {
+		t.Fatalf("v3 SourceCatalog: %v", err)
+	}
+
+	version2 := validRunManifestFixture(t)
+	version2.Version = 2
+	version2.RepositoryState.Version = 1
+	version2.CapturedInputs = nil
+	version2.CapturedInputsSHA256 = ""
+	version2.Freshness = freshness.FreshnessResult{}
+	version2.MaterialInputs = MaterialInputs{}
+	digest, err := version2.RepositoryState.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	version2.RepositoryStateSHA256 = digest
+	encoded, err := json.Marshal(version2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeRunManifest(encoded); err != nil {
+		t.Fatalf("DecodeRunManifest(v2): %v", err)
+	}
+	if _, err := version2.SourceCatalog(); err == nil || !strings.Contains(err.Error(), "has no captured input") {
+		t.Fatalf("v2 SourceCatalog error = %v", err)
+	}
+}
+
 func TestDecodeRunManifestRejectsUnknownFields(t *testing.T) {
 	manifest := validRunManifestFixture(t)
 	data, err := json.Marshal(manifest)

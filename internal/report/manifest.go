@@ -19,6 +19,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
@@ -461,6 +462,25 @@ func (m RunManifest) ResolveAnalysisRoot() (string, error) {
 		return "", fmt.Errorf("report manifest: analysis root: %w", err)
 	}
 	return analysisRoot, nil
+}
+
+// SourceCatalog adapts the source scope of an already validated manifest into
+// a presentation-neutral catalog. Report/run binding and all other manifest
+// authority remain outside the catalog.
+func (m RunManifest) SourceCatalog() (sourcecatalog.Catalog, error) {
+	if err := m.Validate(); err != nil {
+		return sourcecatalog.Catalog{}, err
+	}
+	catalog, err := sourcecatalog.New(sourcecatalog.Input{
+		RepositoryRoot: m.RepositoryState.Identity,
+		AnalysisRoot:   m.AnalysisRoot,
+		AllowedPaths:   m.OpenablePaths,
+		CapturedInputs: m.CapturedInputs,
+	})
+	if err != nil {
+		return sourcecatalog.Catalog{}, fmt.Errorf("report manifest: source catalog: %w", err)
+	}
+	return catalog, nil
 }
 
 // VerifyReportJSON verifies both the exact report bytes and the authority

@@ -73,6 +73,48 @@ func TestSourceContextReturnsCapturedBoundedSource(t *testing.T) {
 	}
 }
 
+func TestSourceContextPreservesSubdirectoryAnalysisRoot(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	analysisRoot := filepath.Join(repository, "service")
+	if err := os.Mkdir(analysisRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sourceLines := numberedSourceLines(20)
+	if err := os.WriteFile(
+		filepath.Join(analysisRoot, "batch.go"),
+		[]byte(strings.Join(sourceLines, "\n")+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260716-100500-subdirectory-source-context"
+	writeScopedRun(t, runsDir, runID, repository, analysisRoot, "saved report")
+	snippet := sourceContextTestSnippet("batch.go", 5, sourceLines[4:8])
+	manifest := rewriteRunSourceSnippets(t, runsDir, runID, []reportpkg.SourceSnippet{snippet})
+	server, baseURL := newSourceContextTestServer(t, runsDir, runID)
+	defer server.Close()
+
+	response := postSourceContext(t, baseURL, sourceContextRequest{
+		RunID:     runID,
+		ContextID: manifestSourceContextID(runID, manifest.ReportSHA256, snippet.PresentationSHA256),
+	})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("subdirectory source context status = %d body=%q", response.StatusCode, body)
+	}
+	var payload sourceContextResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Source.Path != "batch.go" || len(payload.Source.Lines) == 0 {
+		t.Fatalf("subdirectory source context = %#v", payload)
+	}
+}
+
 func TestReportSourceSnippetsIncludesStudyMapReadingAnchors(t *testing.T) {
 	t.Parallel()
 

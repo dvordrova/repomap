@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -67,7 +66,8 @@ func (h *handler) serveSourceContext(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
 		return
 	}
-	if run.Manifest == nil || run.Manifest.Version < report.CurrentRunManifestVersion || run.Report == nil {
+	if run.Manifest == nil || run.Manifest.Version < report.CurrentRunManifestVersion ||
+		run.Report == nil || run.SourceCatalog == nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only"})
 		return
 	}
@@ -76,14 +76,15 @@ func (h *handler) serveSourceContext(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source context is not authorized by this report"})
 		return
 	}
-	analysisRoot, err := run.Manifest.ResolveAnalysisRoot()
-	if err != nil || analysisRoot != run.RepoPath {
+	analysisRoot := run.SourceCatalog.AnalysisRoot()
+	resolvedRoot, err := run.Manifest.ResolveAnalysisRoot()
+	if err != nil || resolvedRoot != analysisRoot || analysisRoot != run.RepoPath {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
 		return
 	}
-	input, ok := capturedSourceInput(*run.Manifest, target.relativePath)
-	if !ok || input.Kind != freshness.FileRegular || input.ContentSHA256 == "" ||
-		input.ContentSHA256 != target.capturedSHA256 {
+	source, ok := run.SourceCatalog.Lookup(target.relativePath)
+	if !ok || source.Kind != freshness.FileRegular || source.ContentSHA256 == "" ||
+		source.ContentSHA256 != target.capturedSHA256 {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source snapshot is unavailable", "code": "source_unavailable"})
 		return
 	}
@@ -235,19 +236,6 @@ func reportSourceSnippets(data *report.ReportData) []report.SourceSnippet {
 		}
 	}
 	return result
-}
-
-func capturedSourceInput(manifest report.RunManifest, relativePath string) (freshness.CapturedInput, bool) {
-	repositoryRelative := relativePath
-	if analysisRelative, err := filepath.Rel(manifest.RepositoryState.Identity, manifest.AnalysisRoot); err == nil && analysisRelative != "." {
-		repositoryRelative = filepath.ToSlash(filepath.Join(analysisRelative, filepath.FromSlash(relativePath)))
-	}
-	for _, input := range manifest.CapturedInputs {
-		if input.Path == repositoryRelative || input.Path == relativePath {
-			return input, true
-		}
-	}
-	return freshness.CapturedInput{}, false
 }
 
 func writeBoundedSourceContextJSON(w http.ResponseWriter, response sourceContextResponse) {
