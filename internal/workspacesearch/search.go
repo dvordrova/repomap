@@ -6,7 +6,6 @@ package workspacesearch
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -413,22 +412,46 @@ func safePublicScalar(value, root string, limit int, required bool) bool {
 	if !safeScalar(value, limit, required) {
 		return false
 	}
-	if strings.Contains(value, root) || strings.Contains(value, "file://") {
+	if strings.Contains(value, root) || containsAbsolutePathToken(value) {
 		return false
 	}
-	for _, field := range strings.Fields(value) {
-		trimmed := strings.Trim(field, `"'(),:;[]`)
-		if filepath.IsAbs(trimmed) {
-			return false
-		}
-		if index := strings.Index(trimmed, "="); index >= 0 {
-			suffix := strings.Trim(trimmed[index+1:], `"'(),:;[]`)
-			if filepath.IsAbs(suffix) {
-				return false
-			}
-		}
-	}
 	return true
+}
+
+// containsAbsolutePathToken recognizes local absolute paths independently of
+// the host OS. Analyzer metadata may use Unix, Windows drive, UNC, or file URL
+// syntax even when repomap is running on a different platform.
+func containsAbsolutePathToken(value string) bool {
+	if strings.Contains(strings.ToLower(value), "file://") {
+		return true
+	}
+	for index := 0; index < len(value); index++ {
+		if !absolutePathPrefix(value[index:]) || !pathTokenBoundary(value, index) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func absolutePathPrefix(value string) bool {
+	if value == "" {
+		return false
+	}
+	if value[0] == '/' || value[0] == '\\' {
+		return true
+	}
+	return len(value) >= 3 &&
+		((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) &&
+		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+}
+
+func pathTokenBoundary(value string, index int) bool {
+	if index == 0 {
+		return true
+	}
+	previous, _ := utf8.DecodeLastRuneInString(value[:index])
+	return unicode.IsSpace(previous) || strings.ContainsRune(`"'(),:;=[]{}<>`, previous)
 }
 
 func containsControl(value string) bool {
