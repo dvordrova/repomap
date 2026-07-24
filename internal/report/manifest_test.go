@@ -272,6 +272,11 @@ func TestRunManifestSourceCatalogPreservesSubdirectoryMapping(t *testing.T) {
 	manifest := validRunManifestFixture(t)
 	manifest.AnalysisRoot = "/repo/service"
 	manifest.CapturedInputs[0].Path = "service/batch.go"
+	rootAlias := manifest.CapturedInputs[0]
+	rootAlias.ID = strings.Repeat("d", 64)
+	rootAlias.Path = "batch.go"
+	rootAlias.ContentSHA256 = strings.Repeat("e", 64)
+	manifest.CapturedInputs = append(manifest.CapturedInputs, rootAlias)
 	inputsDigest, err := freshness.CapturedInputsDigest(manifest.CapturedInputs)
 	if err != nil {
 		t.Fatal(err)

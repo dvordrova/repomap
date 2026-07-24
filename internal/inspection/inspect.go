@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -35,8 +37,9 @@ type Result struct {
 	Provenance []evidence.Provenance
 }
 
-// Inspect confirms one selected declaration, returns its bounded exact source
-// and structural calls, and optionally collects authorized exact references.
+// Inspect confirms one selected Go declaration, returns its bounded Go
+// structural/source contracts, and optionally collects authorized exact
+// references with Go _test.go classification.
 func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, error) {
 	if ctx == nil || s == nil || request.Target.ID == "" || request.Target.Name == "" ||
 		(request.Target.Kind != evidence.EntityFunction && request.Target.Kind != evidence.EntityMethod) ||
@@ -121,6 +124,30 @@ func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, 
 }
 
 func verifyCurrentSourceHash(root, path, capturedSHA256 string, maxBytes int64) error {
+	if maxBytes == 0 {
+		openedRoot, err := os.OpenRoot(root)
+		if err != nil {
+			return inspectionError(ErrorAnalysisFailed, "source", err)
+		}
+		defer openedRoot.Close()
+		info, err := openedRoot.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return inspectionError(ErrorAnalysisFailed, "source", err)
+		}
+		file, err := openedRoot.Open(path)
+		if err != nil {
+			return inspectionError(ErrorAnalysisFailed, "source", err)
+		}
+		defer file.Close()
+		hash := sha256.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			return inspectionError(ErrorAnalysisFailed, "source", err)
+		}
+		if fmt.Sprintf("%x", hash.Sum(nil)) != capturedSHA256 {
+			return inspectionError(ErrorSourceChanged, "source", nil)
+		}
+		return nil
+	}
 	reader, err := reporead.New(root)
 	if err != nil {
 		return inspectionError(ErrorAnalysisFailed, "source", err)
@@ -159,7 +186,8 @@ func (s *Service) authorizeGraph(graph evidence.Graph) (evidence.Graph, error) {
 
 	kept := make(map[string]struct{}, len(graph.Entities))
 	for _, entity := range graph.Entities {
-		if entity.Location != nil && !s.authorizedLocation(*entity.Location) {
+		if !s.safeEntity(entity) ||
+			(entity.Location != nil && !s.authorizedLocation(*entity.Location)) {
 			continue
 		}
 		authorized.Entities = append(authorized.Entities, cloneEntity(entity))
@@ -208,12 +236,20 @@ func (s *Service) collectReferences(
 	if err := locationSet.Validate(); err != nil {
 		return analyzerFailure("references", ctx, err)
 	}
-	for _, provenance := range locationSet.Provenance {
+	provenance := locationSet.Provenance
+	if len(provenance) > maxReferenceProvenance {
+		provenance = provenance[:maxReferenceProvenance]
+	}
+	scenarios := locationSet.Scenarios
+	if len(scenarios) > maxReferenceScenarios {
+		scenarios = scenarios[:maxReferenceScenarios]
+	}
+	for _, provenance := range provenance {
 		if !s.safeProvenance(provenance) {
 			return analyzerFailure("references", ctx, nil)
 		}
 	}
-	for _, scenario := range locationSet.Scenarios {
+	for _, scenario := range scenarios {
 		if !s.safeScenario(scenario) {
 			return analyzerFailure("references", ctx, nil)
 		}
@@ -236,8 +272,8 @@ func (s *Service) collectReferences(
 	}
 	base := evidence.LocationSet{
 		Certainty:  locationSet.Certainty,
-		Provenance: cloneProvenance(locationSet.Provenance, s),
-		Scenarios:  cloneScenarios(locationSet.Scenarios),
+		Provenance: cloneProvenance(provenance, s),
+		Scenarios:  cloneScenarios(scenarios),
 	}
 	referenceSet := base
 	referenceSet.Locations = references
@@ -254,6 +290,9 @@ func (s *Service) collectReferences(
 	result.References = &referenceSet
 	result.Tests = &testSet
 	result.Provenance = append(result.Provenance, cloneProvenance(base.Provenance, s)...)
+	if len(result.Provenance) > maxAggregateProvenance {
+		result.Provenance = result.Provenance[:maxAggregateProvenance]
+	}
 	return nil
 }
 

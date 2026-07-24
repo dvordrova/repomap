@@ -65,6 +65,7 @@ func TestNewMapsSubdirectoryAnalysisPathsToRepositoryInputs(t *testing.T) {
 		AllowedPaths:   []string{"cmd/main.go"},
 		CapturedInputs: []freshness.CapturedInput{
 			testCapturedInput("service/cmd/main.go", freshness.FileRegular, strings.Repeat("a", 64)),
+			testCapturedInput("cmd/main.go", freshness.FileRegular, strings.Repeat("b", 64)),
 		},
 	})
 	if err != nil {
@@ -82,6 +83,29 @@ func TestNewMapsSubdirectoryAnalysisPathsToRepositoryInputs(t *testing.T) {
 		if source, ok := catalog.Lookup(invalid); ok {
 			t.Fatalf("Lookup(%q) = %#v, true", invalid, source)
 		}
+	}
+}
+
+func TestNewPrefersExactSubdirectoryInputOverUnrelatedRootPath(t *testing.T) {
+	t.Parallel()
+
+	repositoryRoot := testRoot("repository")
+	catalog, err := New(Input{
+		RepositoryRoot: repositoryRoot,
+		AnalysisRoot:   filepath.Join(repositoryRoot, "service"),
+		AllowedPaths:   []string{"main.go"},
+		CapturedInputs: []freshness.CapturedInput{
+			testCapturedInput("main.go", freshness.FileRegular, strings.Repeat("b", 64)),
+			testCapturedInput("service/main.go", freshness.FileRegular, strings.Repeat("a", 64)),
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	source, ok := catalog.Lookup("main.go")
+	if !ok || source.RepositoryPath != "service/main.go" ||
+		source.ContentSHA256 != strings.Repeat("a", 64) {
+		t.Fatalf("Lookup(main.go) = %#v, %t", source, ok)
 	}
 }
 
@@ -153,7 +177,7 @@ func TestNewRejectsUnsafeOrAmbiguousSourceScopes(t *testing.T) {
 			want: "canonical relative slash path",
 		},
 		{
-			name: "duplicate allowed path",
+			name: "two allowed paths map to one exact captured input",
 			mutate: func(input *Input) {
 				input.AllowedPaths = append(input.AllowedPaths, "main.go")
 			},
@@ -176,17 +200,7 @@ func TestNewRejectsUnsafeOrAmbiguousSourceScopes(t *testing.T) {
 			want: "analysis-relative alias",
 		},
 		{
-			name: "ambiguous captured aliases",
-			mutate: func(input *Input) {
-				input.CapturedInputs = append(
-					input.CapturedInputs,
-					testCapturedInput("main.go", freshness.FileRegular, strings.Repeat("b", 64)),
-				)
-			},
-			want: "ambiguous captured-input aliases",
-		},
-		{
-			name: "duplicate captured input",
+			name: "duplicate exact captured input path",
 			mutate: func(input *Input) {
 				input.CapturedInputs = append(input.CapturedInputs, input.CapturedInputs[0])
 			},

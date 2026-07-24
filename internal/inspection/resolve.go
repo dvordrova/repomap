@@ -46,6 +46,18 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ResolveR
 	if err != nil {
 		return ResolveResult{}, err
 	}
+	source, ok := s.catalog.Lookup(request.Location.Path)
+	if !ok {
+		return ResolveResult{}, inspectionError(ErrorUnauthorized, "resolve", nil)
+	}
+	if err := verifyCurrentSourceHash(
+		s.catalog.AnalysisRoot(),
+		source.Path,
+		source.ContentSHA256,
+		0,
+	); err != nil {
+		return ResolveResult{}, err
+	}
 	rankTerms := make([]string, 0, min(len(request.RankTerms), limits.MaxRankTerms))
 	for _, term := range request.RankTerms {
 		if len(rankTerms) == limits.MaxRankTerms {
@@ -102,6 +114,9 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ResolveR
 		}
 		rankReasons := make([]string, 0, len(candidate.RankReasons))
 		for _, reason := range candidate.RankReasons {
+			if len(rankReasons) == maxRankReasons {
+				break
+			}
 			if safeText(reason, s.catalog.AnalysisRoot(), 256) {
 				rankReasons = append(rankReasons, reason)
 			}

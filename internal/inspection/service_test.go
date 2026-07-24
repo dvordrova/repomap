@@ -202,7 +202,7 @@ func TestResolvePreservesDeterministicCandidateOrderAndBound(t *testing.T) {
 	}
 }
 
-func TestResolveSupportsLanguageNeutralFakeAdapter(t *testing.T) {
+func TestResolveSupportsPortableResolverEvidence(t *testing.T) {
 	t.Parallel()
 
 	root := canonicalTempDir(t)
@@ -233,7 +233,73 @@ func TestResolveSupportsLanguageNeutralFakeAdapter(t *testing.T) {
 		Location: evidence.Location{Path: path, Line: 1},
 	})
 	if err != nil || len(result.Candidates) != 1 || result.Candidates[0].Entity.Language != "python" {
-		t.Fatalf("language-neutral result=%#v err=%v", result, err)
+		t.Fatalf("portable resolver result=%#v err=%v", result, err)
+	}
+}
+
+func TestResolveRejectsChangedSourceBeforeAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	calls := 0
+	service := mustService(t, fixture.catalog, Dependencies{
+		Resolver: resolverFunc(func(_ context.Context, request analyzer.LocationRequest) (analyzer.LocationResolution, error) {
+			calls++
+			return analyzer.LocationResolution{}, nil
+		}),
+	})
+	if err := os.WriteFile(filepath.Join(fixture.root, "main.go"), []byte("package changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := service.Resolve(context.Background(), ResolveRequest{
+		Location: evidence.Location{Path: "main.go", Line: 3},
+	})
+	if ErrorKindOf(err) != ErrorSourceChanged || calls != 0 || strings.Contains(err.Error(), fixture.root) {
+		t.Fatalf("changed-source err=%v calls=%d", err, calls)
+	}
+}
+
+func TestResolveBoundsAndDropsUnsafeAnalyzerMetadata(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	reasons := []string{"trace=/private/tmp/analyzer-source.go"}
+	for index := 0; index < 10; index++ {
+		reasons = append(reasons, fmt.Sprintf("reason-%02d", index))
+	}
+	service := mustService(t, fixture.catalog, Dependencies{
+		Resolver: resolverFunc(func(_ context.Context, request analyzer.LocationRequest) (analyzer.LocationResolution, error) {
+			return analyzer.LocationResolution{
+				Location: request.Location,
+				Candidates: []analyzer.LocationCandidate{{
+					Entity:       fixtureTarget(),
+					Match:        "file_callable",
+					Certainty:    evidence.CertaintyStatic,
+					Investigable: true,
+					RankReasons:  reasons,
+				}},
+				Certainty:  evidence.CertaintyStatic,
+				Provenance: evidence.Provenance{Provider: "fake", Operation: "resolve"},
+				Warnings:   []string{"safe warning", "trace=/private/tmp/analyzer-source.go"},
+			}, nil
+		}),
+	})
+	result, err := service.Resolve(context.Background(), ResolveRequest{
+		Location: evidence.Location{Path: "main.go", Line: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Candidates) != 1 || len(result.Candidates[0].RankReasons) != maxRankReasons ||
+		len(result.Warnings) != 1 || result.Warnings[0] != "safe warning" {
+		t.Fatalf("bounded metadata result = %#v", result)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/private/tmp") {
+		t.Fatalf("result leaked embedded absolute path: %s", encoded)
 	}
 }
 
@@ -323,6 +389,101 @@ func TestInspectReturnsAuthorizedBoundedSourceCallsAndReferences(t *testing.T) {
 	}
 	if second.Source.Lines[0].Text == "mutated" || second.References.Locations[0].Path != "main.go" {
 		t.Fatalf("result was not defensively reconstructed: %#v", second)
+	}
+}
+
+func TestInspectBoundsReferenceMetadataAndAggregateProvenance(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, true)
+	target := fixtureTarget()
+	provenance := make([]evidence.Provenance, 0, 7)
+	scenarios := make([]evidence.Scenario, 0, 7)
+	for index := 0; index < 7; index++ {
+		provenance = append(provenance, evidence.Provenance{
+			Provider: "fake", Operation: fmt.Sprintf("references-%d", index),
+		})
+		scenarios = append(scenarios, evidence.Scenario{
+			ID: fmt.Sprintf("build-%d", index), Name: fmt.Sprintf("build %d", index),
+		})
+	}
+	service := mustService(t, fixture.catalog, Dependencies{
+		ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+			return fixtureGraph(fixture.root, target, false), nil
+		}),
+		ReferenceFinder: referenceFinderFunc(func(context.Context, string, evidence.Location) (evidence.LocationSet, error) {
+			return evidence.LocationSet{
+				Locations:  []evidence.Location{{Path: "main.go", Line: 10, Column: 1}},
+				Certainty:  evidence.CertaintyStatic,
+				Provenance: provenance,
+				Scenarios:  scenarios,
+			}, nil
+		}),
+	})
+	result, err := service.Inspect(context.Background(), InspectRequest{
+		Target: target, IncludeReferences: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.References == nil || result.Tests == nil ||
+		len(result.References.Provenance) != maxReferenceProvenance ||
+		len(result.References.Scenarios) != maxReferenceScenarios ||
+		len(result.Tests.Provenance) != maxReferenceProvenance ||
+		len(result.Tests.Scenarios) != maxReferenceScenarios ||
+		len(result.Provenance) != maxAggregateProvenance {
+		t.Fatalf("metadata bounds were not applied: %#v", result)
+	}
+}
+
+func TestInspectDropsCallerAndCalleeAbsoluteMetadata(t *testing.T) {
+	t.Parallel()
+
+	fixture := newInspectionFixture(t, false)
+	target := fixtureTarget()
+	graph := fixtureGraph(fixture.root, target, false)
+	const knownWarning = "gopls CLI adapter is experimental; evidence is scoped to the active build configuration"
+	graph.Warnings = []string{knownWarning, "gopls failed at key=/private/tmp/gopls.log"}
+	oldCalleeID := "callee"
+	unsafeCalleeID := "callee key=/private/tmp/callee.go"
+	for index := range graph.Entities {
+		switch graph.Entities[index].ID {
+		case "caller":
+			graph.Entities[index].Name = "caller key=/private/tmp/caller.go"
+		case oldCalleeID:
+			graph.Entities[index].ID = unsafeCalleeID
+		}
+	}
+	for index := range graph.Relations {
+		if graph.Relations[index].From == oldCalleeID {
+			graph.Relations[index].From = unsafeCalleeID
+		}
+		if graph.Relations[index].To == oldCalleeID {
+			graph.Relations[index].To = unsafeCalleeID
+		}
+	}
+	graph.Sort()
+	service := mustService(t, fixture.catalog, Dependencies{
+		ExactAnalyzer: exactAnalyzerFunc(func(context.Context, analyzer.ExactSymbolRequest) (evidence.Graph, error) {
+			return graph, nil
+		}),
+	})
+	result, err := service.Inspect(context.Background(), InspectRequest{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Structural.IncomingCalls) != 0 || len(result.Structural.OutgoingCalls) != 0 {
+		t.Fatalf("unsafe callers/callees escaped filtering: %#v", result.Structural)
+	}
+	if !strings.Contains(strings.Join(result.Structural.Warnings, "\n"), knownWarning) {
+		t.Fatalf("known analyzer warning was lost: %#v", result.Structural.Warnings)
+	}
+	encoded, err := json.Marshal(result.Structural)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/private/tmp") {
+		t.Fatalf("structural result leaked absolute metadata: %s", encoded)
 	}
 }
 
