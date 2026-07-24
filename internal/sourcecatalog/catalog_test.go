@@ -32,6 +32,9 @@ func TestNewBuildsDeterministicRepositoryRootCatalog(t *testing.T) {
 	if catalog.AnalysisRoot() != root {
 		t.Fatalf("AnalysisRoot() = %q, want %q", catalog.AnalysisRoot(), root)
 	}
+	if catalog.Len() != 2 {
+		t.Fatalf("Len() = %d, want 2", catalog.Len())
+	}
 	if got := catalog.Paths(); !reflect.DeepEqual(got, []string{"a.go", "z.go"}) {
 		t.Fatalf("Paths() = %#v", got)
 	}
