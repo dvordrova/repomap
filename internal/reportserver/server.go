@@ -425,6 +425,11 @@ func (h *handler) reloadRuns() error {
 	for index := range runs {
 		run := &runs[index]
 		report.ApplyProductCoherence(run.Report)
+		if run.SourceCatalog != nil {
+			if err := report.AttachExactWorkspaceSearch(run.Report, *run.SourceCatalog); err != nil {
+				h.log("report %s exact workspace search unavailable: %v", run.ID, err)
+			}
+		}
 		if run.Manifest != nil && run.Report != nil {
 			switch {
 			case run.Manifest.Version < report.CurrentRunManifestVersion:

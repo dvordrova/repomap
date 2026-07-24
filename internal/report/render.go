@@ -173,6 +173,15 @@ func generate(runDir string, authority *RunAuthority) error {
 		}
 		data.CapturedInputCount = len(authority.inputs)
 		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
+		catalog, available, catalogErr := authorizedExactSearchCatalog(data, *authority)
+		if catalogErr != nil {
+			return catalogErr
+		}
+		if available {
+			if err := AttachExactWorkspaceSearch(data, catalog); err != nil {
+				return err
+			}
+		}
 	}
 
 	jsonPath := runDir + "/report.json"
