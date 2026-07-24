@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const (
@@ -107,6 +108,30 @@ func (r *Reader) ReadFile(repoRelativePath string, maxBytes int64) (Content, err
 	}
 	defer file.Close()
 
+	return readBoundedFile(file, maxBytes)
+}
+
+// ReadFileNoSymlinks is ReadFile with a stricter identity check: every path
+// component must be non-symlink and the opened target must be the same regular
+// file checked immediately before opening.
+func (r *Reader) ReadFileNoSymlinks(repoRelativePath string, maxBytes int64) (Content, error) {
+	if r == nil || r.root == nil {
+		return Content{}, fmt.Errorf("reporead: reader is not initialized")
+	}
+	if maxBytes < 0 || maxBytes == maxReadBytes {
+		return Content{}, fmt.Errorf("reporead: invalid byte limit %d", maxBytes)
+	}
+
+	file, err := r.openRegularFileNoSymlinks(repoRelativePath)
+	if err != nil {
+		return Content{}, err
+	}
+	defer file.Close()
+
+	return readBoundedFile(file, maxBytes)
+}
+
+func readBoundedFile(file *os.File, maxBytes int64) (Content, error) {
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		return Content{}, fmt.Errorf("reporead: read file: %w", err)
@@ -164,13 +189,9 @@ func (r *Reader) ReadLineWindows(
 }
 
 func (r *Reader) openRegularFile(repoRelativePath string) (*os.File, error) {
-	localPath := filepath.FromSlash(repoRelativePath)
-	if repoRelativePath == "" || filepath.IsAbs(localPath) || !filepath.IsLocal(localPath) {
-		return nil, fmt.Errorf("reporead: invalid repository-relative path %q", repoRelativePath)
-	}
-	cleanPath := filepath.Clean(localPath)
-	if cleanPath == "." || cleanPath != localPath {
-		return nil, fmt.Errorf("reporead: path must be a clean repository-relative file")
+	cleanPath, err := cleanRelativePath(repoRelativePath)
+	if err != nil {
+		return nil, err
 	}
 
 	file, err := r.root.Open(cleanPath)
@@ -188,6 +209,64 @@ func (r *Reader) openRegularFile(repoRelativePath string) (*os.File, error) {
 		return nil, fmt.Errorf("reporead: path is not a regular file")
 	}
 	return file, nil
+}
+
+func (r *Reader) openRegularFileNoSymlinks(repoRelativePath string) (*os.File, error) {
+	cleanPath, err := cleanRelativePath(repoRelativePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var prefix string
+	var checked os.FileInfo
+	parts := strings.Split(cleanPath, string(filepath.Separator))
+	for index, part := range parts {
+		if prefix == "" {
+			prefix = part
+		} else {
+			prefix = filepath.Join(prefix, part)
+		}
+		checked, err = r.root.Lstat(prefix)
+		if err != nil {
+			return nil, fmt.Errorf("reporead: lstat file: %w", err)
+		}
+		if checked.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("reporead: symbolic links are not allowed")
+		}
+		if index < len(parts)-1 && !checked.IsDir() {
+			return nil, fmt.Errorf("reporead: path component is not a directory")
+		}
+	}
+	if checked == nil || !checked.Mode().IsRegular() {
+		return nil, fmt.Errorf("reporead: path is not a regular file")
+	}
+
+	file, err := r.root.Open(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("reporead: open file: %w", err)
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("reporead: stat file: %w", err)
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(checked, opened) {
+		file.Close()
+		return nil, fmt.Errorf("reporead: file changed while opening")
+	}
+	return file, nil
+}
+
+func cleanRelativePath(repoRelativePath string) (string, error) {
+	localPath := filepath.FromSlash(repoRelativePath)
+	if repoRelativePath == "" || filepath.IsAbs(localPath) || !filepath.IsLocal(localPath) {
+		return "", fmt.Errorf("reporead: invalid repository-relative path %q", repoRelativePath)
+	}
+	cleanPath := filepath.Clean(localPath)
+	if cleanPath == "." || cleanPath != localPath {
+		return "", fmt.Errorf("reporead: path must be a clean repository-relative file")
+	}
+	return cleanPath, nil
 }
 
 func normalizeLineWindows(windows []LineWindow) ([]LineWindow, error) {

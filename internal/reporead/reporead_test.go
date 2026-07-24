@@ -150,6 +150,27 @@ func TestReaderReadFileRejectsSymlinkEscapeAndAllowsContainedSymlink(t *testing.
 	}
 }
 
+func TestReaderReadFileNoSymlinksRejectsContainedSymlinks(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "inside.go"), []byte("inside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("inside.go", filepath.Join(repo, "alias.go")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	reader := newTestReader(t, repo)
+
+	content, err := reader.ReadFileNoSymlinks("inside.go", 32)
+	if err != nil || string(content.Bytes) != "inside" {
+		t.Fatalf("regular strict read = %q, %v", content.Bytes, err)
+	}
+	if _, err := reader.ReadFileNoSymlinks("alias.go", 32); err == nil {
+		t.Fatal("ReadFileNoSymlinks() accepted a contained symlink")
+	}
+}
+
 func TestNewRejectsFileAsRepositoryRoot(t *testing.T) {
 	t.Parallel()
 
