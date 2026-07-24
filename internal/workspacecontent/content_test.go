@@ -277,6 +277,26 @@ func TestReadFailsClosedForChangedMissingSymlinkAndUnsupportedContent(t *testing
 		}
 	})
 
+	t.Run("invalid UTF-8 remains unavailable before changed hash", func(t *testing.T) {
+		t.Parallel()
+		service := testService(t, testScope{
+			files: map[string][]byte{"source.go": []byte("ok\n")},
+		})
+		if err := os.WriteFile(
+			filepath.Join(service.catalog.AnalysisRoot(), "source.go"),
+			[]byte{'o', 'k', '\n', 0xff, '\n'},
+			0o600,
+		); err != nil {
+			t.Fatal(err)
+		}
+		_, err := service.Read(context.Background(), Request{
+			Path: "source.go", Range: Range{1, 1, 1},
+		})
+		if ErrorKindOf(err) != ErrorUnsupportedText {
+			t.Fatalf("changed invalid UTF-8 error = %v", err)
+		}
+	})
+
 	t.Run("final symlink replacement", func(t *testing.T) {
 		t.Parallel()
 		service := testService(t, testScope{
