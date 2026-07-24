@@ -122,19 +122,28 @@ type SemanticSearchTarget struct {
 // BuildSemanticSearchIndex derives a deterministic, bounded index without
 // reading repository files or introducing new architecture facts.
 func BuildSemanticSearchIndex(data *ReportData) (SemanticSearchIndex, error) {
+	return buildSemanticSearchIndex(data, nil)
+}
+
+func buildSemanticSearchIndex(data *ReportData, exact *reportExactSearch) (SemanticSearchIndex, error) {
 	if data == nil {
 		return SemanticSearchIndex{}, fmt.Errorf("semantic search: report data is required")
 	}
 
 	builder := newSemanticSearchBuilder(data)
-	if data.RepositoryGuide == nil || data.RepositoryGuide.ArchitectureUseful {
+	architectureUseful := data.RepositoryGuide == nil || data.RepositoryGuide.ArchitectureUseful
+	if architectureUseful {
 		builder.addMap()
-		builder.addCanvas()
+		builder.addCanvas(exact)
 	}
 	builder.addUserMechanisms()
 	builder.addStudyDirections()
 	builder.addPavedPaths()
-	builder.addOpenableLocations()
+	if exact == nil {
+		builder.addOpenableLocations()
+	} else {
+		builder.addExactWorkspace(exact, architectureUseful)
+	}
 
 	index := builder.finish()
 	if err := index.Validate(data); err != nil {
@@ -320,7 +329,7 @@ func (builder *semanticSearchBuilder) addMap() {
 	}, 0)
 }
 
-func (builder *semanticSearchBuilder) addCanvas() {
+func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) {
 	canvas := builder.data.ArchitectureCanvas
 	if canvas == nil {
 		return
@@ -354,24 +363,10 @@ func (builder *semanticSearchBuilder) addCanvas() {
 			},
 		}, 20)
 		for _, member := range component.Members {
-			builder.add(SemanticSearchItem{
-				ID: semanticSearchID(
-					SemanticSearchKindMember,
-					"member",
-					string(component.ID),
-					string(member.ID.Kind),
-					member.ID.Value,
-				),
-				Kind:      SemanticSearchKindMember,
-				Title:     member.Name,
-				Summary:   component.Name,
-				Aliases:   []string{string(member.ID.Kind)},
-				Stability: SemanticSearchStabilityExact,
-				Target: SemanticSearchTarget{
-					Kind:        SemanticSearchTargetComponent,
-					ComponentID: component.ID,
-				},
-			}, 55)
+			if exact != nil && exact.acceptsMember(member) {
+				continue
+			}
+			builder.addMember(component, member)
 		}
 	}
 	for _, flow := range canvas.Flows {
@@ -427,20 +422,51 @@ func (builder *semanticSearchBuilder) addCanvas() {
 		}, 40)
 	}
 	for _, anchor := range canvas.BehaviorAnchors {
-		target := SemanticSearchTarget{Kind: SemanticSearchTargetMap}
-		if builder.pathIsOpenable(anchor.Location.Path) {
-			location := anchor.Location
-			target = SemanticSearchTarget{Kind: SemanticSearchTargetLocation, Location: &location}
+		if exact != nil && exact.acceptsAnchor(anchor) {
+			continue
 		}
-		builder.add(SemanticSearchItem{
-			ID:        semanticSearchID(SemanticSearchKindAnchor, anchor.ID),
-			Kind:      SemanticSearchKindAnchor,
-			Title:     anchor.Label,
-			Aliases:   []string{string(anchor.Kind), anchor.Location.Path},
-			Stability: SemanticSearchStabilityExact,
-			Target:    target,
-		}, 65)
+		builder.addAnchor(anchor)
 	}
+}
+
+func (builder *semanticSearchBuilder) addMember(
+	component ArchitectureComponent,
+	member componentmap.Candidate,
+) {
+	builder.add(SemanticSearchItem{
+		ID: semanticSearchID(
+			SemanticSearchKindMember,
+			"member",
+			string(component.ID),
+			string(member.ID.Kind),
+			member.ID.Value,
+		),
+		Kind:      SemanticSearchKindMember,
+		Title:     member.Name,
+		Summary:   component.Name,
+		Aliases:   []string{string(member.ID.Kind)},
+		Stability: SemanticSearchStabilityExact,
+		Target: SemanticSearchTarget{
+			Kind:        SemanticSearchTargetComponent,
+			ComponentID: component.ID,
+		},
+	}, 55)
+}
+
+func (builder *semanticSearchBuilder) addAnchor(anchor componentmap.BehaviorAnchor) {
+	target := SemanticSearchTarget{Kind: SemanticSearchTargetMap}
+	if builder.pathIsOpenable(anchor.Location.Path) {
+		location := anchor.Location
+		target = SemanticSearchTarget{Kind: SemanticSearchTargetLocation, Location: &location}
+	}
+	builder.add(SemanticSearchItem{
+		ID:        semanticSearchID(SemanticSearchKindAnchor, anchor.ID),
+		Kind:      SemanticSearchKindAnchor,
+		Title:     anchor.Label,
+		Aliases:   []string{string(anchor.Kind), anchor.Location.Path},
+		Stability: SemanticSearchStabilityExact,
+		Target:    target,
+	}, 65)
 }
 
 func (builder *semanticSearchBuilder) addUserMechanisms() {
