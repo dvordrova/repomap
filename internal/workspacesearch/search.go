@@ -451,7 +451,11 @@ func pathTokenBoundary(value string, index int) bool {
 		return true
 	}
 	previous, _ := utf8.DecodeLastRuneInString(value[:index])
-	return unicode.IsSpace(previous) || strings.ContainsRune(`"'(),:;=[]{}<>`, previous)
+	return !unicode.IsLetter(previous) &&
+		!unicode.IsNumber(previous) &&
+		previous != '_' &&
+		previous != '.' &&
+		previous != '-'
 }
 
 func containsControl(value string) bool {
