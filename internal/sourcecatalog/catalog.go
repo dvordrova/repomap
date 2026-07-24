@@ -147,6 +147,11 @@ func (c Catalog) AnalysisRoot() string {
 	return c.analysisRoot
 }
 
+// Len returns the number of authorized sources without cloning their paths.
+func (c Catalog) Len() int {
+	return len(c.paths)
+}
+
 // Paths returns the authorized analysis-relative paths in deterministic order.
 // The returned slice may be modified by the caller.
 func (c Catalog) Paths() []string {
