@@ -129,6 +129,7 @@ func New(input Input) (Index, error) {
 
 			pkg, ok := packageLookup[raw.importPath]
 			if !ok ||
+				pkg.Name != "main" ||
 				raw.modulePath != pkg.ModulePath ||
 				raw.packageDir != pkg.Dir ||
 				raw.moduleRelativeDir != pkg.ModuleRelativeDir {
