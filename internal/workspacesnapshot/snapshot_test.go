@@ -189,6 +189,118 @@ func TestNewChecksCollectionAndPathBoundsBeforeConstruction(t *testing.T) {
 	}
 }
 
+func TestNewRejectsAggregateScalarBytesBeforeDigest(t *testing.T) {
+	oversized := strings.Repeat("x", maxAuthorityScalarBytes+1)
+	halfBudget := strings.Repeat("x", maxAuthorityScalarBytes/2+1)
+	tests := []struct {
+		name   string
+		mutate func(*Input)
+	}{
+		{
+			name: "captured ownership",
+			mutate: func(input *Input) {
+				input.CapturedInputs[0].OwningPackage = oversized
+			},
+		},
+		{
+			name: "captured stage",
+			mutate: func(input *Input) {
+				input.CapturedInputs[0].Stages = []string{oversized}
+			},
+		},
+		{
+			name: "dirty mode",
+			mutate: func(input *Input) {
+				input.Repository.Dirty = []freshness.DirtyFile{
+					dirtyFile("notes.txt", strings.Repeat("d", 64)),
+				}
+				input.Repository.Dirty[0].Mode = oversized
+			},
+		},
+		{
+			name: "aggregate captured metadata",
+			mutate: func(input *Input) {
+				input.CapturedInputs[0].OwningModuleID = halfBudget
+				input.CapturedInputs[0].OwningPackage = halfBudget
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := validSnapshotInput("/repo", "/repo", "main.go")
+			test.mutate(&input)
+			if _, err := New(input); err == nil ||
+				!strings.Contains(err.Error(), "scalar authority exceeds bounds") {
+				t.Fatalf("New error = %v, want scalar authority bounds", err)
+			}
+		})
+	}
+}
+
+func TestAssessRejectsOversizedCurrentScalarsBeforeFreshnessProcessing(t *testing.T) {
+	input := validSnapshotInput("/repo", "/repo", "main.go")
+	snapshot, err := New(input)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	current := repositoryWithDirty(
+		input.Repository,
+		dirtyFile("notes.txt", strings.Repeat("d", 64)),
+	)
+	current.Dirty[0].Mode = strings.Repeat("x", maxAuthorityScalarBytes+1)
+	result := snapshot.Assess(current)
+	if result.State != freshness.FreshnessUnavailable ||
+		!reflect.DeepEqual(result.Diagnostics, []string{unavailableDiagnostic}) {
+		t.Fatalf("Assess oversized current state = %#v", result)
+	}
+	if err := snapshot.Verify(current); err == nil ||
+		!strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("Verify oversized current state error = %v", err)
+	}
+}
+
+func TestSnapshotCopiesPreserveNilAndEmptyCollections(t *testing.T) {
+	tests := []struct {
+		name    string
+		empty   bool
+		wantNil bool
+	}{
+		{name: "nil", wantNil: true},
+		{name: "empty", empty: true, wantNil: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := Input{
+				AnalysisRoot: "/repo",
+				Repository:   validRepository("/repo"),
+			}
+			input.Repository.Dirty = nil
+			input.Repository.Submodules = nil
+			if test.empty {
+				input.Repository.Dirty = []freshness.DirtyFile{}
+				input.Repository.Submodules = []freshness.SubmoduleState{}
+				input.CapturedInputs = []freshness.CapturedInput{}
+				input.AllowedPaths = []string{}
+			}
+			snapshot, err := New(input)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if (snapshot.repository.Dirty == nil) != test.wantNil ||
+				(snapshot.repository.Submodules == nil) != test.wantNil ||
+				(snapshot.capturedInputs == nil) != test.wantNil {
+				t.Fatalf(
+					"copied nil state: dirty=%t submodules=%t inputs=%t, want %t",
+					snapshot.repository.Dirty == nil,
+					snapshot.repository.Submodules == nil,
+					snapshot.capturedInputs == nil,
+					test.wantNil,
+				)
+			}
+		})
+	}
+}
+
 func TestSnapshotDefensivelyCopiesAuthorityAndResults(t *testing.T) {
 	t.Parallel()
 
