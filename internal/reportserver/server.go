@@ -391,7 +391,13 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resolveTargetStarted := time.Now()
-	absolutePath, sourceChanged, resolveErr := resolveOpenTarget(r.Context(), run, target)
+	// Target resolution and hashing historically ignored request cancellation;
+	// the launcher below still receives the original request context.
+	absolutePath, sourceChanged, resolveErr := resolveOpenTarget(
+		context.WithoutCancel(r.Context()),
+		run,
+		target,
+	)
 	if resolveErr != nil {
 		resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
 		h.logSourceOpen(run.ID, request.SourceID, "source_unavailable", resolveRunMS, authorizeMS, resolveTargetMS, 0, started)
