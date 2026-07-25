@@ -7,6 +7,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/workspaceedgeselection"
 	"github.com/dvordrova/repomap/internal/workspacegraph"
+	"github.com/dvordrova/repomap/internal/workspacepackageselection"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
@@ -163,6 +164,38 @@ func projectWorkspacePackageGraph(
 		totalFiles += len(pkg.Files)
 	}
 
+	var packageCandidates []workspacepackageselection.Candidate
+	if legacy.Packages != nil {
+		packageCandidates = make(
+			[]workspacepackageselection.Candidate,
+			0,
+			min(len(legacy.Packages), workspacepackageselection.MaxRows),
+		)
+	}
+	for _, legacyPackage := range legacy.Packages {
+		packageCandidates = append(
+			packageCandidates,
+			workspacepackageselection.Candidate{
+				CanonicalPath:     legacyPackage.CanonicalPath,
+				Name:              legacyPackage.Name,
+				ModuleID:          legacyPackage.ModuleID,
+				ModulePath:        legacyPackage.ModulePath,
+				PackageDir:        legacyPackage.Dir,
+				ModuleRelativeDir: legacyPackage.ModuleRelativeDir,
+			},
+		)
+	}
+	packageSelection, err := workspacepackageselection.New(
+		workspacepackageselection.Input{
+			Graph:      graph,
+			Candidates: packageCandidates,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workspace graph: package projection is unavailable")
+	}
+	selectedPackages := packageSelection.Packages()
+
 	var candidates []workspaceedgeselection.Candidate
 	if legacy.PackageEdges != nil {
 		candidates = make(
@@ -212,7 +245,7 @@ func projectWorkspacePackageGraph(
 			return nil, fmt.Errorf("workspace graph: package projection %d differs", index)
 		}
 		pkg, ok := graph.Package(fact.CanonicalPath)
-		if !ok || !workspacePackageMatchesFact(pkg, fact) {
+		if !ok || !workspacePackageFilesMatchFact(pkg, fact) {
 			return nil, fmt.Errorf("workspace graph: package projection %d is unavailable", index)
 		}
 		files := make([]string, len(pkg.Files))
@@ -223,12 +256,12 @@ func projectWorkspacePackageGraph(
 			files = nil
 		}
 		projected.Packages[index] = PackageInfo{
-			CanonicalPath:     pkg.CanonicalPath,
-			Name:              pkg.Name,
-			ModuleID:          pkg.ModuleID,
-			ModulePath:        pkg.ModulePath,
-			Dir:               pkg.Dir,
-			ModuleRelativeDir: pkg.ModuleRelativeDir,
+			CanonicalPath:     selectedPackages[index].CanonicalPath,
+			Name:              selectedPackages[index].Name,
+			ModuleID:          selectedPackages[index].ModuleID,
+			ModulePath:        selectedPackages[index].ModulePath,
+			Dir:               selectedPackages[index].PackageDir,
+			ModuleRelativeDir: selectedPackages[index].ModuleRelativeDir,
 			DisplayPath:       legacyPackage.DisplayPath,
 			Locality:          legacyPackage.Locality,
 			Files:             files,
@@ -290,14 +323,8 @@ func reportPackageMatchesFact(pkg PackageInfo, fact gofacts.PackageFact) bool {
 		stringSlicesEqual(pkg.Files, fact.Files)
 }
 
-func workspacePackageMatchesFact(pkg workspacegraph.Package, fact gofacts.PackageFact) bool {
-	if pkg.CanonicalPath != fact.CanonicalPath ||
-		pkg.Name != fact.Name ||
-		pkg.ModuleID != fact.ModuleID ||
-		pkg.ModulePath != fact.ModulePath ||
-		pkg.Dir != fact.PackageDir ||
-		pkg.ModuleRelativeDir != fact.ModuleRelativeDir ||
-		len(pkg.Files) != len(fact.Files) {
+func workspacePackageFilesMatchFact(pkg workspacegraph.Package, fact gofacts.PackageFact) bool {
+	if len(pkg.Files) != len(fact.Files) {
 		return false
 	}
 	for index, file := range pkg.Files {
