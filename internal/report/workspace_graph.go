@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/workspaceedgeselection"
 	"github.com/dvordrova/repomap/internal/workspacegraph"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
@@ -162,6 +163,29 @@ func projectWorkspacePackageGraph(
 		totalFiles += len(pkg.Files)
 	}
 
+	var candidates []workspaceedgeselection.Candidate
+	if legacy.PackageEdges != nil {
+		candidates = make(
+			[]workspaceedgeselection.Candidate,
+			0,
+			min(len(legacy.PackageEdges), workspaceedgeselection.MaxRows),
+		)
+	}
+	for _, legacyEdge := range legacy.PackageEdges {
+		candidates = append(candidates, workspaceedgeselection.Candidate{
+			From: legacyEdge.From,
+			To:   legacyEdge.To,
+		})
+	}
+	selection, err := workspaceedgeselection.New(workspaceedgeselection.Input{
+		Graph:      graph,
+		Candidates: candidates,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("workspace graph: edge projection is unavailable")
+	}
+	selectedEdges := selection.Edges()
+
 	projected := cloneRepositoryGraph(legacy)
 	for index, fact := range facts.Modules {
 		module, ok := graph.Module(fact.ID, fact.ModulePath, fact.ModuleDir)
@@ -211,14 +235,15 @@ func projectWorkspacePackageGraph(
 		}
 	}
 
-	for index, legacyEdge := range projected.PackageEdges {
-		edge, ok := graph.Edge(legacyEdge.From, legacyEdge.To)
-		if !ok {
-			return nil, fmt.Errorf("workspace graph: edge projection %d is unavailable", index)
+	if selectedEdges == nil {
+		projected.PackageEdges = nil
+	} else {
+		if projected.PackageEdges == nil {
+			projected.PackageEdges = make([]EdgeInfo, len(selectedEdges))
 		}
-		projected.PackageEdges[index] = EdgeInfo{
-			From: edge.FromPackage,
-			To:   edge.ToPackage,
+		for index, edge := range selectedEdges {
+			projected.PackageEdges[index].From = edge.From
+			projected.PackageEdges[index].To = edge.To
 		}
 	}
 	return projected, nil
@@ -242,7 +267,8 @@ func cloneRepositoryGraph(graph *RepositoryGraph) *RepositoryGraph {
 		}
 	}
 	if graph.PackageEdges != nil {
-		cloned.PackageEdges = append([]EdgeInfo(nil), graph.PackageEdges...)
+		cloned.PackageEdges = make([]EdgeInfo, len(graph.PackageEdges))
+		copy(cloned.PackageEdges, graph.PackageEdges)
 	}
 	return cloned
 }
