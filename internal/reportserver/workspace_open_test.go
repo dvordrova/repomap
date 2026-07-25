@@ -169,6 +169,54 @@ func TestOpenEndpointRejectsReplacedSnapshotRootWithExistingWire(t *testing.T) {
 	}
 }
 
+func TestOpenEndpointPreservesCanceledRequestAdapterCompatibility(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "batch.go"), []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260725-115000-canceled-open"
+	writeRun(t, runsDir, runID, repo, "report")
+	sourceID := testSourceID(t, runsDir, runID, "batch.go")
+	launches := 0
+	var launcherContextError error
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(ctx context.Context, _ string, _, _ int) error {
+			launches++
+			launcherContextError = ctx.Err()
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(openRequest{RunID: runID, SourceID: sourceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"http://127.0.0.1"+capabilityURLPrefix(testCapability)+"/api/open",
+		bytes.NewReader(body),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://127.0.0.1")
+	request.Header.Set("X-Repomap-Action", "open-file")
+	ctx, cancel := context.WithCancel(request.Context())
+	cancel()
+	request = request.WithContext(ctx)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK ||
+		response.Body.String() != `{"source_changed":false,"status":"opened"}`+"\n" ||
+		launches != 1 || !errors.Is(launcherContextError, context.Canceled) {
+		t.Fatalf("status=%d body=%q launches=%d launcher_ctx=%v",
+			response.Code, response.Body.String(), launches, launcherContextError)
+	}
+}
+
 func TestResolveOpenTargetUsesSnapshotCatalogAndLegacyFallback(t *testing.T) {
 	repo, runsDir, _ := writeAnalysisRun(t)
 	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
