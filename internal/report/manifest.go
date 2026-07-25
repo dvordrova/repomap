@@ -21,6 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
+	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
@@ -481,6 +482,28 @@ func (m RunManifest) SourceCatalog() (sourcecatalog.Catalog, error) {
 		return sourcecatalog.Catalog{}, fmt.Errorf("report manifest: source catalog: %w", err)
 	}
 	return catalog, nil
+}
+
+// WorkspaceSnapshot adapts captured-input authority from v3/v4 manifests into
+// one presentation-neutral immutable value. Live filesystem canonicality
+// remains the responsibility of ResolveAnalysisRoot.
+func (m RunManifest) WorkspaceSnapshot() (workspacesnapshot.Snapshot, error) {
+	if err := m.Validate(); err != nil {
+		return workspacesnapshot.Snapshot{}, err
+	}
+	if m.Version != 3 && m.Version != CurrentRunManifestVersion {
+		return workspacesnapshot.Snapshot{}, fmt.Errorf("report manifest: workspace snapshot is unavailable for version %d", m.Version)
+	}
+	snapshot, err := workspacesnapshot.New(workspacesnapshot.Input{
+		AnalysisRoot:   m.AnalysisRoot,
+		Repository:     m.RepositoryState,
+		CapturedInputs: m.CapturedInputs,
+		AllowedPaths:   m.OpenablePaths,
+	})
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, fmt.Errorf("report manifest: workspace snapshot: %w", err)
+	}
+	return snapshot, nil
 }
 
 // VerifyReportJSON verifies both the exact report bytes and the authority

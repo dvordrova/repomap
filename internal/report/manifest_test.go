@@ -3,13 +3,16 @@ package report
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
 )
 
 func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T) {
@@ -266,6 +269,109 @@ func TestRunManifestSourceCatalogPreservesCurrentSourceScopeAndJSON(t *testing.T
 	}
 }
 
+func TestRunManifestWorkspaceSnapshotPreservesV3V4AuthorityAndJSON(t *testing.T) {
+	t.Parallel()
+
+	for _, version := range []int{3, CurrentRunManifestVersion} {
+		t.Run(fmt.Sprintf("version %d", version), func(t *testing.T) {
+			t.Parallel()
+
+			manifest := validRunManifestFixture(t)
+			manifest.Version = version
+			before, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := manifest.WorkspaceSnapshot()
+			if err != nil {
+				t.Fatalf("WorkspaceSnapshot: %v", err)
+			}
+			if snapshot.RepositoryRoot() != manifest.RepositoryState.Identity ||
+				snapshot.AnalysisRoot() != manifest.AnalysisRoot ||
+				snapshot.Revision() != manifest.RepositoryState.Head ||
+				snapshot.RepositoryDigest() != manifest.RepositoryStateSHA256 ||
+				snapshot.CapturedInputsDigest() != manifest.CapturedInputsSHA256 {
+				t.Fatalf("snapshot identity does not match manifest: %#v", snapshot)
+			}
+			wantCatalog, err := manifest.SourceCatalog()
+			if err != nil {
+				t.Fatalf("SourceCatalog: %v", err)
+			}
+			assertCatalogParity(t, snapshot.Catalog(), wantCatalog)
+
+			for _, current := range []freshness.RepositoryState{
+				manifest.RepositoryState,
+				reportRepositoryWithDirty(
+					manifest.RepositoryState,
+					"notes.txt",
+					strings.Repeat("e", 64),
+				),
+				reportRepositoryWithDirty(
+					manifest.RepositoryState,
+					"batch.go",
+					strings.Repeat("f", 64),
+				),
+				func() freshness.RepositoryState {
+					state := manifest.RepositoryState
+					state.Identity = "/other"
+					return state
+				}(),
+			} {
+				want := manifest.CurrentFreshness(current)
+				got := snapshot.Assess(current)
+				want.ComparedAt = ""
+				got.ComparedAt = ""
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("Assess parity:\n got: %#v\nwant: %#v", got, want)
+				}
+				wantAllowed := manifest.VerifyRepositoryState(current) == nil
+				if gotAllowed := snapshot.Verify(current) == nil; gotAllowed != wantAllowed {
+					t.Fatalf("Verify allowed = %t, want %t", gotAllowed, wantAllowed)
+				}
+			}
+
+			after, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) {
+				t.Fatalf("WorkspaceSnapshot changed manifest JSON:\nbefore: %s\nafter:  %s", before, after)
+			}
+		})
+	}
+}
+
+func TestRunManifestWorkspaceSnapshotExcludesReportBindings(t *testing.T) {
+	t.Parallel()
+
+	first := validRunManifestFixture(t)
+	second := validRunManifestFixture(t)
+	second.ReportSHA256 = strings.Repeat("e", 64)
+	second.Components = nil
+	second.Freshness = freshness.NewFreshnessResult(freshness.FreshnessUnrelatedChanges)
+
+	firstSnapshot, err := first.WorkspaceSnapshot()
+	if err != nil {
+		t.Fatalf("first WorkspaceSnapshot: %v", err)
+	}
+	secondSnapshot, err := second.WorkspaceSnapshot()
+	if err != nil {
+		t.Fatalf("second WorkspaceSnapshot: %v", err)
+	}
+	if firstSnapshot.RepositoryDigest() != secondSnapshot.RepositoryDigest() ||
+		firstSnapshot.CapturedInputsDigest() != secondSnapshot.CapturedInputsDigest() ||
+		firstSnapshot.AnalysisRoot() != secondSnapshot.AnalysisRoot() ||
+		!reflect.DeepEqual(firstSnapshot.Catalog().Paths(), secondSnapshot.Catalog().Paths()) {
+		t.Fatalf("report-only fields changed neutral authority")
+	}
+
+	invalid := first
+	invalid.ReportSHA256 = "invalid"
+	if _, err := invalid.WorkspaceSnapshot(); err == nil || !strings.Contains(err.Error(), "report sha256 is invalid") {
+		t.Fatalf("WorkspaceSnapshot validation error = %v", err)
+	}
+}
+
 func TestRunManifestSourceCatalogPreservesSubdirectoryMapping(t *testing.T) {
 	t.Parallel()
 
@@ -292,6 +398,11 @@ func TestRunManifestSourceCatalogPreservesSubdirectoryMapping(t *testing.T) {
 		source.ContentSHA256 != manifest.CapturedInputs[0].ContentSHA256 {
 		t.Fatalf("subdirectory source = %#v, %t", source, ok)
 	}
+	snapshot, err := manifest.WorkspaceSnapshot()
+	if err != nil {
+		t.Fatalf("WorkspaceSnapshot: %v", err)
+	}
+	assertCatalogParity(t, snapshot.Catalog(), catalog)
 }
 
 func TestRunManifestSourceCatalogDoesNotChangeLegacyValidation(t *testing.T) {
@@ -324,6 +435,16 @@ func TestRunManifestSourceCatalogDoesNotChangeLegacyValidation(t *testing.T) {
 	}
 	if _, err := version2.SourceCatalog(); err == nil || !strings.Contains(err.Error(), "has no captured input") {
 		t.Fatalf("v2 SourceCatalog error = %v", err)
+	}
+	if _, err := version2.WorkspaceSnapshot(); err == nil ||
+		!strings.Contains(err.Error(), "workspace snapshot is unavailable for version 2") {
+		t.Fatalf("v2 WorkspaceSnapshot error = %v", err)
+	}
+	if err := version2.VerifyRepositoryState(version2.RepositoryState); err != nil {
+		t.Fatalf("v2 VerifyRepositoryState: %v", err)
+	}
+	if got := version2.CurrentFreshness(version2.RepositoryState).State; got != freshness.FreshnessLegacyUnknown {
+		t.Fatalf("v2 CurrentFreshness = %s", got)
 	}
 }
 
@@ -414,6 +535,40 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 			}},
 		}},
 	}
+}
+
+func assertCatalogParity(t *testing.T, got, want interface {
+	AnalysisRoot() string
+	Paths() []string
+	Lookup(string) (sourcecatalog.Source, bool)
+}) {
+	t.Helper()
+	if got.AnalysisRoot() != want.AnalysisRoot() || !reflect.DeepEqual(got.Paths(), want.Paths()) {
+		t.Fatalf("catalog roots/paths differ: got=%q %#v want=%q %#v",
+			got.AnalysisRoot(), got.Paths(), want.AnalysisRoot(), want.Paths())
+	}
+	for _, path := range want.Paths() {
+		gotSource, gotOK := got.Lookup(path)
+		wantSource, wantOK := want.Lookup(path)
+		if gotOK != wantOK || !reflect.DeepEqual(gotSource, wantSource) {
+			t.Fatalf("catalog source %q differs: got=%#v,%t want=%#v,%t",
+				path, gotSource, gotOK, wantSource, wantOK)
+		}
+	}
+}
+
+func reportRepositoryWithDirty(
+	repository freshness.RepositoryState,
+	path, digest string,
+) freshness.RepositoryState {
+	repository.Dirty = []freshness.DirtyFile{{
+		Status:        "modified",
+		Path:          path,
+		Kind:          freshness.FileRegular,
+		Mode:          "100644",
+		ContentSHA256: digest,
+	}}
+	return repository
 }
 
 func newRunManifestRepository(t *testing.T) string {
