@@ -166,22 +166,30 @@ func TestIndexFiltersUntrustedRowsAfterPreflight(t *testing.T) {
 	modules := []gofacts.ModuleFact{{
 		ID: "root-id", ModulePath: "example.com/repo", ModuleDir: ".",
 	}}
-	packages := []gofacts.PackageFact{{
-		CanonicalPath: "example.com/repo/cmd/app", Name: "main",
-		ModuleID: "root-id", ModulePath: "example.com/repo",
-		PackageDir: "cmd/app", ModuleRelativeDir: "cmd/app",
-		Files: []string{
-			"cmd/app/generated.go",
-			"cmd/app/invalid-kind.go",
-			"cmd/app/invalid-version.go",
-			"cmd/app/main.go",
+	packages := []gofacts.PackageFact{
+		{
+			CanonicalPath: "example.com/repo/cmd/app", Name: "main",
+			ModuleID: "root-id", ModulePath: "example.com/repo",
+			PackageDir: "cmd/app", ModuleRelativeDir: "cmd/app",
+			Files: []string{
+				"cmd/app/generated.go",
+				"cmd/app/invalid-kind.go",
+				"cmd/app/invalid-version.go",
+				"cmd/app/main.go",
+			},
 		},
-	}}
+		{
+			CanonicalPath: "example.com/repo/internal/library", Name: "library",
+			ModuleID: "root-id", ModulePath: "example.com/repo",
+			PackageDir: "internal/library", ModuleRelativeDir: "internal/library",
+			Files: []string{"internal/library/main.go"},
+		},
+	}
 	graph := newTestGraph(
 		t,
 		repositoryRoot,
 		repositoryRoot,
-		[]string{"cmd/app/main.go"},
+		[]string{"cmd/app/main.go", "internal/library/main.go"},
 		modules,
 		packages,
 	)
@@ -228,9 +236,23 @@ func TestIndexFiltersUntrustedRowsAfterPreflight(t *testing.T) {
 		"cmd/missing/main.go",
 		11,
 	)
+	nonMainPackage := testEntrypoint(
+		"example.com/repo",
+		"example.com/repo/internal/library",
+		"internal/library",
+		"internal/library",
+		".",
+		"internal/library/main.go",
+		12,
+	)
 	index, err := New(Input{
-		GoFacts: gofacts.Facts{EntrypointPackages: []gofacts.Entrypoint{valid, wrongOwner, unknown}},
-		Graph:   graph,
+		GoFacts: gofacts.Facts{EntrypointPackages: []gofacts.Entrypoint{
+			valid,
+			wrongOwner,
+			unknown,
+			nonMainPackage,
+		}},
+		Graph: graph,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
