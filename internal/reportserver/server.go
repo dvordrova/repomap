@@ -27,12 +27,13 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/testevidence"
+	"github.com/dvordrova/repomap/internal/workspaceopen"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
 	maxArtifactBytes   = 32 * 1024 * 1024
-	maxSourceHashBytes = 8 * 1024 * 1024
+	maxSourceHashBytes = workspaceopen.MaxHashBytes
 	capabilityBytes    = 32
 )
 
@@ -390,14 +391,13 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resolveTargetStarted := time.Now()
-	absolutePath, resolveErr := resolveRepoFile(run.RepoPath, target.relativePath)
+	absolutePath, sourceChanged, resolveErr := resolveOpenTarget(r.Context(), run, target)
 	if resolveErr != nil {
 		resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
 		h.logSourceOpen(run.ID, request.SourceID, "source_unavailable", resolveRunMS, authorizeMS, resolveTargetMS, 0, started)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
 		return
 	}
-	sourceChanged := sourceTargetChanged(absolutePath, target.capturedSHA256)
 	resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
 	select {
 	case h.openSlot <- struct{}{}:
@@ -629,6 +629,36 @@ func sourceTargetChanged(absolutePath, capturedSHA256 string) bool {
 		return false
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil)) != capturedSHA256
+}
+
+func resolveOpenTarget(
+	ctx context.Context,
+	run runRecord,
+	target sourceTarget,
+) (string, bool, error) {
+	if run.WorkspaceSnapshot != nil {
+		service, err := workspaceopen.New(*run.WorkspaceSnapshot)
+		if err != nil {
+			return "", false, err
+		}
+		resolved, err := service.Resolve(ctx, workspaceopen.Request{
+			Path:         target.relativePath,
+			MaxHashBytes: maxSourceHashBytes,
+		})
+		if err != nil {
+			return "", false, err
+		}
+		return resolved.AbsolutePath, resolved.SourceChanged, nil
+	}
+
+	// v2 and tolerated degraded-v3 runs predate reusable snapshot authority.
+	// Preserve their existing verified-manifest source-open compatibility
+	// without manufacturing a neutral snapshot.
+	absolutePath, err := resolveRepoFile(run.RepoPath, target.relativePath)
+	if err != nil {
+		return "", false, err
+	}
+	return absolutePath, sourceTargetChanged(absolutePath, target.capturedSHA256), nil
 }
 
 func (h *handler) logSourceOpen(
