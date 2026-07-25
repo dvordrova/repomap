@@ -472,6 +472,195 @@ func TestSnapshotExactGoFactsPreflightRejectsOversizedEdgeBeforeCapture(t *testi
 	}
 }
 
+func TestSnapshotExactGoFactsPreflightRejectsCaseInsensitiveKnownKeyAliases(t *testing.T) {
+	const canonical = `{
+		"repo_name":"fixture",
+		"go_facts":{
+			"modules":[{
+				"id":"root-id",
+				"module_path":"example.com/repo",
+				"module_dir":".",
+				"display_name":".",
+				"main":true
+			}],
+			"packages":[{
+				"canonical_package_path":"example.com/repo",
+				"name":"repo",
+				"owning_module_id":"root-id",
+				"module_path":"example.com/repo",
+				"package_directory":".",
+				"module_relative_path":".",
+				"display_path":"repo",
+				"locality":"local",
+				"files":["main.go"]
+			}],
+			"internal_edges":[{
+				"from":"example.com/repo",
+				"to":"example.com/repo"
+			}]
+		}
+	}`
+	edge := `{"from":"example.com/repo","to":"example.com/repo"}`
+	oversizedEdges := strings.Repeat(edge+",", maxReportGraphFactEdges) + edge
+
+	tests := []struct {
+		name     string
+		snapshot string
+	}{
+		{
+			name:     "GO_FACTS",
+			snapshot: strings.Replace(canonical, `"go_facts"`, `"GO_FACTS"`, 1),
+		},
+		{
+			name:     "MODULES",
+			snapshot: strings.Replace(canonical, `"modules"`, `"MODULES"`, 1),
+		},
+		{
+			name:     "PACKAGES",
+			snapshot: strings.Replace(canonical, `"packages"`, `"PACKAGES"`, 1),
+		},
+		{
+			name: "INTERNAL_EDGES beyond collection limit",
+			snapshot: strings.Replace(
+				canonical,
+				`"internal_edges":[{`+
+					"\n\t\t\t\t"+`"from":"example.com/repo",`+
+					"\n\t\t\t\t"+`"to":"example.com/repo"`+
+					"\n\t\t\t"+`}]`,
+				`"INTERNAL_EDGES":[`+oversizedEdges+`]`,
+				1,
+			),
+		},
+		{
+			name:     "FILES",
+			snapshot: strings.Replace(canonical, `"files"`, `"FILES"`, 1),
+		},
+		{
+			name:     "MODULE_PATH",
+			snapshot: strings.Replace(canonical, `"module_path"`, `"MODULE_PATH"`, 1),
+		},
+		{
+			name:     "FROM",
+			snapshot: strings.Replace(canonical, `"from"`, `"FROM"`, 1),
+		},
+		{
+			name:     "TO",
+			snapshot: strings.Replace(canonical, `"to"`, `"TO"`, 1),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertSnapshotExactGoFactsAliasRejected(t, test.snapshot)
+		})
+	}
+}
+
+func TestSnapshotExactGoFactsPreflightRejectsEscapedKnownKeyAliases(t *testing.T) {
+	const canonical = `{
+		"repo_name":"fixture",
+		"go_facts":{
+			"modules":[{
+				"id":"root-id",
+				"module_path":"example.com/repo",
+				"module_dir":".",
+				"display_name":".",
+				"main":true
+			}],
+			"packages":[{
+				"canonical_package_path":"example.com/repo",
+				"name":"repo",
+				"owning_module_id":"root-id",
+				"module_path":"example.com/repo",
+				"package_directory":".",
+				"module_relative_path":".",
+				"display_path":"repo",
+				"locality":"local",
+				"files":["main.go"]
+			}],
+			"internal_edges":[{
+				"from":"example.com/repo",
+				"to":"example.com/repo"
+			}]
+		}
+	}`
+	tests := []struct {
+		name     string
+		snapshot string
+	}{
+		{
+			name:     `go\u005ffacts`,
+			snapshot: strings.Replace(canonical, `"go_facts"`, `"go\u005ffacts"`, 1),
+		},
+		{
+			name:     `internal\u005fedges`,
+			snapshot: strings.Replace(canonical, `"internal_edges"`, `"internal\u005fedges"`, 1),
+		},
+		{
+			name:     `module\u005fpath`,
+			snapshot: strings.Replace(canonical, `"module_path"`, `"module\u005fpath"`, 1),
+		},
+		{
+			name:     `f\u0069les`,
+			snapshot: strings.Replace(canonical, `"files"`, `"f\u0069les"`, 1),
+		},
+		{
+			name:     `fr\u006fm`,
+			snapshot: strings.Replace(canonical, `"from"`, `"fr\u006fm"`, 1),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertSnapshotExactGoFactsAliasRejected(t, test.snapshot)
+		})
+	}
+}
+
+func assertSnapshotExactGoFactsAliasRejected(t *testing.T, snapshot string) {
+	t.Helper()
+	input := []byte(snapshot)
+	if _, err := preflightSnapshotExactGoFacts(input); !errors.Is(
+		err,
+		errReportGraphJSONUnavailable,
+	) {
+		t.Fatalf("preflight error = %v, want unavailable", err)
+	}
+	facts, err := decodeSnapshotExactGoFacts(input)
+	if !errors.Is(err, errReportGraphJSONUnavailable) {
+		t.Fatalf("decode error = %v, want unavailable", err)
+	}
+	if !reflect.DeepEqual(facts, gofacts.Facts{}) {
+		t.Fatalf("decode returned facts: %#v", facts)
+	}
+
+	dir := t.TempDir()
+	writeTestFile(t, dir, "snapshot.json", snapshot)
+	data := &ReportData{}
+	if warning := parseSnapshotWithExactFacts(
+		filepath.Join(dir, "snapshot.json"),
+		data,
+		true,
+	); warning != "" {
+		t.Fatalf("legacy parse changed: %s", warning)
+	}
+	if data.repositoryGoFacts != nil {
+		t.Fatal("alias exact facts were retained")
+	}
+	if data.RepositoryGraph == nil ||
+		len(data.RepositoryGraph.Modules) == 0 ||
+		len(data.RepositoryGraph.Packages) == 0 {
+		t.Fatalf("legacy graph missing: %#v", data.RepositoryGraph)
+	}
+	original := data.RepositoryGraph
+	before := mustJSON(t, original)
+	attachAuthorizedWorkspacePackageGraph(data, &RunAuthority{})
+	if data.RepositoryGraph != original ||
+		string(mustJSON(t, data.RepositoryGraph)) != string(before) {
+		t.Fatalf("alias changed legacy graph: %#v", data.RepositoryGraph)
+	}
+}
+
 func TestSnapshotExactGoFactsPreflightStopsBeforeExcessEdge(t *testing.T) {
 	var input strings.Builder
 	input.WriteString(`{"go_facts":{"modules":[],"packages":[],"internal_edges":[`)

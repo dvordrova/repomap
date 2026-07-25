@@ -2,6 +2,8 @@ package report
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -34,7 +36,17 @@ func preflightSnapshotExactGoFacts(data []byte) (savedGraphJSONSpan, error) {
 		data,
 		start,
 		func(keyStart, keyEnd, valueStart int) (int, error) {
-			if !savedGraphJSONKeyEqual(data, keyStart, keyEnd, "go_facts") {
+			field, err := matchSavedGraphJSONKey(
+				data,
+				keyStart,
+				keyEnd,
+				false,
+				"go_facts",
+			)
+			if err != nil {
+				return 0, err
+			}
+			if field == 0 {
 				return skipSavedGraphJSONValue(data, valueStart)
 			}
 			if found {
@@ -68,8 +80,20 @@ func preflightSavedGraphGoFacts(
 		data,
 		start,
 		func(keyStart, keyEnd, valueStart int) (int, error) {
-			switch {
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "modules"):
+			field, err := matchSavedGraphJSONKey(
+				data,
+				keyStart,
+				keyEnd,
+				true,
+				"modules",
+				"packages",
+				"internal_edges",
+			)
+			if err != nil {
+				return 0, err
+			}
+			switch field {
+			case 1:
 				if seen&1 != 0 {
 					return 0, errReportGraphJSONUnavailable
 				}
@@ -82,7 +106,7 @@ func preflightSavedGraphGoFacts(
 						return preflightSavedGraphModule(data, itemStart, budget)
 					},
 				)
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "packages"):
+			case 2:
 				if seen&2 != 0 {
 					return 0, errReportGraphJSONUnavailable
 				}
@@ -95,7 +119,7 @@ func preflightSavedGraphGoFacts(
 						return preflightSavedGraphPackage(data, itemStart, budget)
 					},
 				)
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "internal_edges"):
+			case 3:
 				if seen&4 != 0 {
 					return 0, errReportGraphJSONUnavailable
 				}
@@ -125,21 +149,24 @@ func preflightSavedGraphModule(
 		data,
 		start,
 		func(keyStart, keyEnd, valueStart int) (int, error) {
-			var field uint8
-			switch {
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "id"):
-				field = 1
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "module_path"):
-				field = 2
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "module_dir"):
-				field = 4
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "go_mod"):
-				field = 8
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "main"):
-				field = 16
-			default:
+			fieldIndex, err := matchSavedGraphJSONKey(
+				data,
+				keyStart,
+				keyEnd,
+				true,
+				"id",
+				"module_path",
+				"module_dir",
+				"go_mod",
+				"main",
+			)
+			if err != nil {
+				return 0, err
+			}
+			if fieldIndex == 0 {
 				return skipSavedGraphJSONValue(data, valueStart)
 			}
+			field := uint8(1 << (fieldIndex - 1))
 			if seen&field != 0 {
 				return 0, errReportGraphJSONUnavailable
 			}
@@ -162,25 +189,26 @@ func preflightSavedGraphPackage(
 		data,
 		start,
 		func(keyStart, keyEnd, valueStart int) (int, error) {
-			var field uint8
-			switch {
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "canonical_package_path"):
-				field = 1
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "name"):
-				field = 2
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "owning_module_id"):
-				field = 4
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "module_path"):
-				field = 8
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "package_directory"):
-				field = 16
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "module_relative_path"):
-				field = 32
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "files"):
-				field = 64
-			default:
+			fieldIndex, err := matchSavedGraphJSONKey(
+				data,
+				keyStart,
+				keyEnd,
+				true,
+				"canonical_package_path",
+				"name",
+				"owning_module_id",
+				"module_path",
+				"package_directory",
+				"module_relative_path",
+				"files",
+			)
+			if err != nil {
+				return 0, err
+			}
+			if fieldIndex == 0 {
 				return skipSavedGraphJSONValue(data, valueStart)
 			}
+			field := uint8(1 << (fieldIndex - 1))
 			if seen&field != 0 {
 				return 0, errReportGraphJSONUnavailable
 			}
@@ -214,15 +242,21 @@ func preflightSavedGraphEdge(
 		data,
 		start,
 		func(keyStart, keyEnd, valueStart int) (int, error) {
-			var field uint8
-			switch {
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "from"):
-				field = 1
-			case savedGraphJSONKeyEqual(data, keyStart, keyEnd, "to"):
-				field = 2
-			default:
+			fieldIndex, err := matchSavedGraphJSONKey(
+				data,
+				keyStart,
+				keyEnd,
+				true,
+				"from",
+				"to",
+			)
+			if err != nil {
+				return 0, err
+			}
+			if fieldIndex == 0 {
 				return skipSavedGraphJSONValue(data, valueStart)
 			}
+			field := uint8(1 << (fieldIndex - 1))
 			if seen&field != 0 {
 				return 0, errReportGraphJSONUnavailable
 			}
@@ -462,6 +496,55 @@ func savedGraphJSONKeyEqual(data []byte, start, end int, want string) bool {
 		}
 	}
 	return true
+}
+
+// matchSavedGraphJSONKey returns a one-based canonical field index. Known
+// aliases are rejected before encoding/json can apply its unescaping and
+// case-folding rules. Within the consumed go_facts subtree, any escaped object
+// key fails closed; unknown ordinary keys retain their legacy skip behavior.
+func matchSavedGraphJSONKey(
+	data []byte,
+	start,
+	end int,
+	rejectEscaped bool,
+	wants ...string,
+) (int, error) {
+	for index, want := range wants {
+		if savedGraphJSONKeyEqual(data, start, end, want) {
+			return index + 1, nil
+		}
+	}
+
+	escaped := false
+	for index := start; index < end; index++ {
+		if data[index] == '\\' {
+			escaped = true
+			break
+		}
+	}
+	if escaped {
+		if rejectEscaped || start == 0 || end >= len(data) {
+			return 0, errReportGraphJSONUnavailable
+		}
+		key, err := strconv.Unquote(string(data[start-1 : end+1]))
+		if err != nil {
+			return 0, errReportGraphJSONUnavailable
+		}
+		for _, want := range wants {
+			if strings.EqualFold(key, want) {
+				return 0, errReportGraphJSONUnavailable
+			}
+		}
+		return 0, nil
+	}
+
+	key := string(data[start:end])
+	for _, want := range wants {
+		if strings.EqualFold(key, want) {
+			return 0, errReportGraphJSONUnavailable
+		}
+	}
+	return 0, nil
 }
 
 func savedGraphJSONLiteralAt(data []byte, start int, literal string) bool {
