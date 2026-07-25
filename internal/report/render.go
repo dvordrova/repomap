@@ -2,11 +2,13 @@ package report
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"os"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/freshness"
 
@@ -145,9 +147,25 @@ func generate(runDir string, authority *RunAuthority) error {
 	if err := RemoveRunManifest(runDir); err != nil {
 		return err
 	}
+	deferredSourceAuthority := authority != nil && authority.inputs == nil
 	if authority != nil {
 		if err := authority.validate(); err != nil {
 			return err
+		}
+		if sourceAuthorityNeedsLiteralGitMode(authority.inputs) {
+			// Clean captured-input mode lookup is pathspec-sensitive. Mark the
+			// ambiguous path unavailable before any exact workspace adapters run
+			// so both the report and manifest remain view-only.
+			viewOnlyAuthority := *authority
+			viewOnlyAuthority.inputs = append([]freshness.CapturedInput(nil), authority.inputs...)
+			for index := range viewOnlyAuthority.inputs {
+				if sourcePathNeedsLiteralGitMode(viewOnlyAuthority.inputs[index].Path) {
+					viewOnlyAuthority.inputs[index].Kind = freshness.FileMissing
+					viewOnlyAuthority.inputs[index].Mode = ""
+					viewOnlyAuthority.inputs[index].ContentSHA256 = ""
+				}
+			}
+			authority = &viewOnlyAuthority
 		}
 	}
 	studyDocumentSourceRoot := ""
@@ -157,6 +175,21 @@ func generate(runDir string, authority *RunAuthority) error {
 	data, err := readRunDir(runDir, studyDocumentSourceRoot, authority)
 	if err != nil {
 		return err
+	}
+	if deferredSourceAuthority {
+		repositoryPaths, pathErr := repositoryRelativeInputPaths(
+			authority.repository.Identity,
+			authority.analysisRoot,
+			data.OpenablePaths,
+		)
+		if pathErr != nil {
+			return pathErr
+		}
+		if sourcePathsNeedLiteralGitMode(repositoryPaths) {
+			viewOnlyAuthority := *authority
+			viewOnlyAuthority.inputs = missingSourceAuthority(repositoryPaths)
+			authority = &viewOnlyAuthority
+		}
 	}
 	feedbackPath := runDir + "/onboarding-feedback.md"
 	if err := ensureFeedbackTemplate(data, feedbackPath); err != nil {
@@ -174,10 +207,11 @@ func generate(runDir string, authority *RunAuthority) error {
 		data.CapturedInputCount = len(authority.inputs)
 		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
 		catalog, available, catalogErr := authorizedExactSearchCatalog(data, *authority)
-		if catalogErr != nil {
-			return catalogErr
-		}
-		if available {
+		// Source-backed actions are optional capabilities. A manifest may still
+		// bind a coherent view-only report when its captured scope cannot form a
+		// regular-file catalog; reportserver will reconstruct the same failure
+		// and withhold source IDs and local analysis.
+		if catalogErr == nil && available {
 			if err := AttachExactWorkspaceSearch(data, catalog); err != nil {
 				return err
 			}
@@ -206,6 +240,43 @@ func generate(runDir string, authority *RunAuthority) error {
 		}
 	}
 	return nil
+}
+
+func sourcePathNeedsLiteralGitMode(sourcePath string) bool {
+	return strings.HasPrefix(sourcePath, ":") || strings.ContainsAny(sourcePath, "*?[")
+}
+
+func sourcePathsNeedLiteralGitMode(paths []string) bool {
+	for _, sourcePath := range paths {
+		if sourcePathNeedsLiteralGitMode(sourcePath) {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceAuthorityNeedsLiteralGitMode(inputs []freshness.CapturedInput) bool {
+	for _, input := range inputs {
+		if sourcePathNeedsLiteralGitMode(input.Path) {
+			return true
+		}
+	}
+	return false
+}
+
+func missingSourceAuthority(paths []string) []freshness.CapturedInput {
+	inputs := make([]freshness.CapturedInput, 0, len(paths))
+	for _, sourcePath := range paths {
+		id := sha256.Sum256([]byte("captured-input-v1\x00" + sourcePath))
+		inputs = append(inputs, freshness.CapturedInput{
+			Version: freshness.CapturedInputVersion,
+			ID:      fmt.Sprintf("%x", id),
+			Path:    sourcePath,
+			Kind:    freshness.FileMissing,
+			Stages:  []string{"report_evidence"},
+		})
+	}
+	return inputs
 }
 
 func ensureFeedbackTemplate(data *ReportData, path string) error {
