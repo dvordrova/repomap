@@ -346,6 +346,151 @@ func TestOpenEndpointPreservesLegacyAndCurrentVersionMatrix(t *testing.T) {
 	}
 }
 
+func TestOpenEndpointPreservesVersionedWhitespacePathCompatibility(t *testing.T) {
+	const authorizedPath = " main.go "
+	exactContent := []byte("package exact\n")
+	tests := []struct {
+		name      string
+		rewrite   func(*testing.T, string)
+		wantExact bool
+	}{
+		{
+			name:      "current version snapshot exact",
+			wantExact: true,
+		},
+		{
+			name: "valid version 3 snapshot exact",
+			rewrite: func(t *testing.T, runsDir string) {
+				rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+					manifest.Version = 3
+				})
+			},
+			wantExact: true,
+		},
+		{
+			name: "version 2 legacy trim",
+			rewrite: func(t *testing.T, runsDir string) {
+				rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+					manifest.Version = 2
+					manifest.RepositoryState.Version = 1
+					manifest.CapturedInputs = nil
+					manifest.CapturedInputsSHA256 = ""
+					manifest.Freshness = freshness.FreshnessResult{}
+					manifest.MaterialInputs = report.MaterialInputs{}
+					digest, err := manifest.RepositoryState.Digest()
+					if err != nil {
+						t.Fatal(err)
+					}
+					manifest.RepositoryStateSHA256 = digest
+				})
+			},
+		},
+		{
+			name: "degraded version 3 legacy trim",
+			rewrite: func(t *testing.T, runsDir string) {
+				rewriteAnalysisManifestWithOversizedStages(t, runsDir, 3)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo, runsDir, _ := writeAnalysisRun(t)
+			exactPath := filepath.Join(repo, authorizedPath)
+			trimmedAlias := filepath.Join(repo, "main.go")
+			if err := os.WriteFile(exactPath, exactContent, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(trimmedAlias, exactContent, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			rewriteAnalysisOpenAuthority(t, runsDir, authorizedPath, exactContent)
+			if test.rewrite != nil {
+				test.rewrite(t, runsDir)
+			}
+
+			launches := 0
+			var openedPath string
+			handler, err := NewHandler(Options{
+				RunsDir: runsDir, Capability: testCapability,
+				OpenFile: func(_ context.Context, absolutePath string, _, _ int) error {
+					launches++
+					openedPath = absolutePath
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			response := postOpen(
+				t,
+				server.URL+capabilityURLPrefix(testCapability),
+				openRequest{
+					RunID:    "20260711-220000-pebble",
+					SourceID: testSourceID(t, runsDir, "20260711-220000-pebble", authorizedPath),
+				},
+				true,
+			)
+			assertOpenWire(
+				t,
+				response,
+				http.StatusOK,
+				`{"source_changed":false,"status":"opened"}`+"\n",
+			)
+			wantPath := trimmedAlias
+			if test.wantExact {
+				wantPath = exactPath
+			}
+			if launches != 1 || openedPath != wantPath {
+				t.Fatalf("launches=%d path=%q, want %q", launches, openedPath, wantPath)
+			}
+		})
+	}
+}
+
+func TestOpenEndpointRejectsTrimmedAliasForUnavailableExactSnapshotPath(t *testing.T) {
+	const authorizedPath = " missing.go "
+	repo, runsDir, _ := writeAnalysisRun(t)
+	content := []byte("package alias\n")
+	if err := os.WriteFile(filepath.Join(repo, "missing.go"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rewriteAnalysisOpenAuthority(t, runsDir, authorizedPath, content)
+
+	launches := 0
+	handler, err := NewHandler(Options{
+		RunsDir: runsDir, Capability: testCapability,
+		OpenFile: func(context.Context, string, int, int) error {
+			launches++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response := postOpen(
+		t,
+		server.URL+capabilityURLPrefix(testCapability),
+		openRequest{
+			RunID:    "20260711-220000-pebble",
+			SourceID: testSourceID(t, runsDir, "20260711-220000-pebble", authorizedPath),
+		},
+		true,
+	)
+	assertOpenWire(
+		t,
+		response,
+		http.StatusConflict,
+		`{"code":"source_unavailable","error":"authorized source is unavailable"}`+"\n",
+	)
+	if launches != 0 {
+		t.Fatalf("trimmed alias launched editor %d times", launches)
+	}
+}
+
 func TestOpenEndpointPreservesEditorBusyAndFailureWire(t *testing.T) {
 	t.Run("busy", func(t *testing.T) {
 		repo := t.TempDir()
@@ -518,4 +663,47 @@ func sendOpen(baseURL string, request openRequest) (*http.Response, error) {
 
 func hashBytes(content []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(content))
+}
+
+func rewriteAnalysisOpenAuthority(
+	t *testing.T,
+	runsDir, sourcePath string,
+	capturedContent []byte,
+) {
+	t.Helper()
+	runDir := filepath.Join(runsDir, "20260711-220000-pebble")
+	reportPath := filepath.Join(runDir, "report.json")
+	reportJSON, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reportData report.ReportData
+	if err := json.Unmarshal(reportJSON, &reportData); err != nil {
+		t.Fatal(err)
+	}
+	reportData.OpenablePaths = []string{sourcePath}
+	reportData.Components = nil
+	reportJSON, err = json.Marshal(reportData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, reportJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+		manifest.ReportSHA256 = hashBytes(reportJSON)
+		manifest.OpenablePaths = []string{sourcePath}
+		manifest.Components = nil
+		input := manifest.CapturedInputs[0]
+		input.Path = sourcePath
+		input.Kind = freshness.FileRegular
+		input.ContentSHA256 = hashBytes(capturedContent)
+		manifest.CapturedInputs = []freshness.CapturedInput{input}
+		digest, digestErr := freshness.CapturedInputsDigest(manifest.CapturedInputs)
+		if digestErr != nil {
+			t.Fatal(digestErr)
+		}
+		manifest.CapturedInputsSHA256 = digest
+	})
 }

@@ -52,7 +52,7 @@ func TestResolveAuthorizedTargetAndChangeFlag(t *testing.T) {
 	}
 }
 
-func TestResolvePreservesSubdirectoryAndAuthorizedWhitespaceSemantics(t *testing.T) {
+func TestResolveUsesExactAuthorizedPath(t *testing.T) {
 	t.Parallel()
 
 	repository := canonicalTempDir(t)
@@ -61,20 +61,40 @@ func TestResolvePreservesSubdirectoryAndAuthorizedWhitespaceSemantics(t *testing
 		t.Fatal(err)
 	}
 	const authorizedPath = " main.go "
-	untrimmed := filepath.Join(analysisRoot, authorizedPath)
-	trimmed := filepath.Join(analysisRoot, "main.go")
-	content := []byte("package service\n")
-	writeFile(t, untrimmed, []byte("package captured_name\n"))
-	writeFile(t, trimmed, content)
+	exact := filepath.Join(analysisRoot, authorizedPath)
+	trimmedAlias := filepath.Join(analysisRoot, "main.go")
+	content := []byte("package exact\n")
+	writeFile(t, exact, content)
+	writeFile(t, trimmedAlias, []byte("package alias\n"))
 	service := testService(t, repository, analysisRoot, authorizedPath, content)
 
 	target, err := service.Resolve(context.Background(), Request{Path: authorizedPath})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if target.Path != authorizedPath || target.AbsolutePath != trimmed || target.SourceChanged {
-		t.Fatalf("target = %#v, want authorized path and trimmed local target", target)
+	if target.Path != authorizedPath || target.AbsolutePath != exact || target.SourceChanged {
+		t.Fatalf("target = %#v, want exact authorized path %q", target, exact)
 	}
+	if target.AbsolutePath == trimmedAlias {
+		t.Fatalf("exact authorized path resolved to trimmed alias %q", trimmedAlias)
+	}
+}
+
+func TestResolveDoesNotOpenTrimmedAliasForUnavailableAuthorizedPath(t *testing.T) {
+	t.Parallel()
+
+	root := canonicalTempDir(t)
+	const authorizedPath = " missing.go "
+	trimmedAlias := filepath.Join(root, "missing.go")
+	content := []byte("package alias\n")
+	writeFile(t, trimmedAlias, content)
+	service := testService(t, root, root, authorizedPath, content)
+
+	target, err := service.Resolve(context.Background(), Request{Path: authorizedPath})
+	if ErrorKindOf(err) != ErrorTargetUnavailable || target != (Target{}) {
+		t.Fatalf("Resolve = %#v, %v kind=%q", target, err, ErrorKindOf(err))
+	}
+	assertPrivateError(t, err, root, authorizedPath, trimmedAlias)
 }
 
 func TestResolveRejectsInvalidUnauthorizedAndUnavailableTargets(t *testing.T) {

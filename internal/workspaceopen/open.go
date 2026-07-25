@@ -127,8 +127,8 @@ func (service *Service) Resolve(ctx context.Context, request Request) (Target, e
 		return Target{}, err
 	}
 
-	// Preserve the pre-extraction interpretation of already-authorized paths.
-	localPath := filepath.FromSlash(strings.TrimSpace(request.Path))
+	// Resolve the exact path authorized by the catalog.
+	localPath := filepath.FromSlash(request.Path)
 	if !filepath.IsLocal(localPath) || localPath == "." {
 		return Target{}, workspaceOpenError(ErrorTargetUnavailable)
 	}
