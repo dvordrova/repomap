@@ -15,6 +15,8 @@ const (
 	maxReportGraphFilesPerPackage  = 4096
 	maxReportGraphAggregateFiles   = 20_000
 	maxReportGraphFactEdges        = 1000
+	maxReportGraphScalarBytes      = 4096
+	maxReportGraphAggregateScalars = 4 * 1024 * 1024
 	maxReportGraphProjectedModules = 2 * maxReportGraphFactModules
 )
 
@@ -47,14 +49,10 @@ type snapshotExactPackageFact struct {
 // legacy graph without adding a new report warning or partial result.
 func attachAuthorizedWorkspacePackageGraph(data *ReportData, authority *RunAuthority) {
 	if data == nil || authority == nil || data.RepositoryGraph == nil ||
-		len(data.repositoryGoFactsJSON) == 0 {
+		data.repositoryGoFacts == nil {
 		return
 	}
 	if err := authority.validate(); err != nil {
-		return
-	}
-	facts, err := decodeSnapshotExactGoFacts(data.repositoryGoFactsJSON)
-	if err != nil {
 		return
 	}
 	snapshot, err := workspacesnapshot.New(workspacesnapshot.Input{
@@ -68,17 +66,21 @@ func attachAuthorizedWorkspacePackageGraph(data *ReportData, authority *RunAutho
 	}
 	graph, err := workspacegraph.New(workspacegraph.Input{
 		Snapshot: snapshot,
-		GoFacts:  facts,
+		GoFacts:  *data.repositoryGoFacts,
 	})
 	if err != nil {
 		return
 	}
-	_ = attachWorkspacePackageGraph(data, facts, graph)
+	_ = attachWorkspacePackageGraph(data, *data.repositoryGoFacts, graph)
 }
 
-func decodeSnapshotExactGoFacts(raw json.RawMessage) (gofacts.Facts, error) {
+func decodeSnapshotExactGoFacts(snapshotJSON []byte) (gofacts.Facts, error) {
+	goFacts, err := preflightSnapshotExactGoFacts(snapshotJSON)
+	if err != nil {
+		return gofacts.Facts{}, err
+	}
 	var saved snapshotExactGoFacts
-	if err := json.Unmarshal(raw, &saved); err != nil {
+	if err := json.Unmarshal(snapshotJSON[goFacts.start:goFacts.end], &saved); err != nil {
 		return gofacts.Facts{}, fmt.Errorf("workspace graph: saved Go facts are unavailable")
 	}
 	if len(saved.Modules) > maxReportGraphFactModules ||
