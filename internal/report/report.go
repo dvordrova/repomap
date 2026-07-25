@@ -108,6 +108,7 @@ type ReportData struct {
 	studyDocumentSourceRoot   string
 	externalImports           []externalImportUsage
 	repositoryGoFacts         *gofacts.Facts
+	repositoryEntrypointFacts *gofacts.Facts
 	semanticAttempted         int
 	semanticInvestigated      int
 

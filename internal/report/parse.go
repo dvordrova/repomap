@@ -454,6 +454,7 @@ func readRunDir(
 	canonicalizeReportEvidence(data)
 	collectOpenablePaths(data)
 	attachAuthorizedWorkspacePackageGraph(data, authority)
+	attachAuthorizedWorkspaceEntrypointIndex(data, authority)
 	buildComponents(data)
 	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
 		parseWarnings = append(parseWarnings, w)
@@ -752,6 +753,10 @@ func parseSnapshotWithExactFacts(path string, data *ReportData, captureExact boo
 		data.repositoryGoFacts = nil
 		if facts, err := decodeSnapshotExactGoFacts(b); err == nil {
 			data.repositoryGoFacts = &facts
+		}
+		data.repositoryEntrypointFacts = nil
+		if facts, err := decodeSnapshotExactEntrypoints(b); err == nil {
+			data.repositoryEntrypointFacts = &facts
 		}
 	}
 	data.RepoName = snap.RepoName
