@@ -375,10 +375,14 @@ func (f *flexStrings) UnmarshalJSON(b []byte) error {
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
-	return readRunDir(runDir, "")
+	return readRunDir(runDir, "", nil)
 }
 
-func readRunDir(runDir, studyDocumentSourceRoot string) (*ReportData, error) {
+func readRunDir(
+	runDir,
+	studyDocumentSourceRoot string,
+	authority *RunAuthority,
+) (*ReportData, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve run dir: %w", err)
@@ -386,7 +390,11 @@ func readRunDir(runDir, studyDocumentSourceRoot string) (*ReportData, error) {
 	data := &ReportData{ArtifactsDir: absDir, studyDocumentSourceRoot: studyDocumentSourceRoot}
 	var parseWarnings []string
 
-	if w := parseSnapshot(filepath.Join(absDir, "snapshot.json"), data); w != "" {
+	if w := parseSnapshotWithExactFacts(
+		filepath.Join(absDir, "snapshot.json"),
+		data,
+		authority != nil,
+	); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
 	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
@@ -445,6 +453,7 @@ func readRunDir(runDir, studyDocumentSourceRoot string) (*ReportData, error) {
 	parseWarnings = append(parseWarnings, flowWarnings...)
 	canonicalizeReportEvidence(data)
 	collectOpenablePaths(data)
+	attachAuthorizedWorkspacePackageGraph(data, authority)
 	buildComponents(data)
 	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
 		parseWarnings = append(parseWarnings, w)
@@ -727,6 +736,10 @@ func parseRunMetadata(path string, data *ReportData) string {
 }
 
 func parseSnapshot(path string, data *ReportData) string {
+	return parseSnapshotWithExactFacts(path, data, false)
+}
+
+func parseSnapshotWithExactFacts(path string, data *ReportData, captureExact bool) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Sprintf("snapshot: %v", err)
@@ -734,6 +747,17 @@ func parseSnapshot(path string, data *ReportData) string {
 	var snap snapshotJSON
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
+	}
+	if captureExact {
+		var rawSnapshot struct {
+			GoFacts json.RawMessage `json:"go_facts"`
+		}
+		if err := json.Unmarshal(b, &rawSnapshot); err == nil {
+			data.repositoryGoFactsJSON = append(
+				data.repositoryGoFactsJSON[:0],
+				rawSnapshot.GoFacts...,
+			)
+		}
 	}
 	data.RepoName = snap.RepoName
 	data.DocumentedPurpose = boundedDocumentedPurpose(snap.Readme)
