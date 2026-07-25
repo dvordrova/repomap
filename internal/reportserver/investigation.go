@@ -17,7 +17,6 @@ import (
 	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/sourcecard"
-	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/symbol"
 	"github.com/dvordrova/repomap/internal/testevidence"
 )
@@ -224,7 +223,7 @@ func (h *handler) serveTargetTestReferences(w http.ResponseWriter, r *http.Reque
 		h.writeAnalysisError(w, ctx, "could not recheck repository state")
 		return
 	}
-	if err := loaded.run.Manifest.VerifyRepositoryState(after); err != nil {
+	if err := loaded.run.verifyRepositoryState(after); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "repository changed during analysis; regenerate the report"})
 		return
 	}
@@ -306,7 +305,7 @@ func (h *handler) loadBrowserInvestigation(ctx context.Context, runID string) (l
 	if err != nil {
 		return fail(err)
 	}
-	if err := run.Manifest.VerifyRepositoryState(repository); err != nil {
+	if err := run.verifyRepositoryState(repository); err != nil {
 		return fail(errInvestigationStale)
 	}
 	facts, err := h.analysis.captureFacts(ctx, repository, run.RepoPath)
@@ -401,20 +400,22 @@ func (h *handler) readAuthorizedRun(runID string, root *os.Root) (runRecord, err
 	if err != nil {
 		return runRecord{}, err
 	}
-	var catalog *sourcecatalog.Catalog
-	sourceCatalog, catalogErr := manifest.SourceCatalog()
-	if catalogErr == nil && sourceCatalog.AnalysisRoot() == analysisRoot {
-		catalog = &sourceCatalog
-	} else if manifest.Version >= report.CurrentRunManifestVersion {
+	snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)
+	if snapshotErr != nil && manifest.Version >= report.CurrentRunManifestVersion {
 		return runRecord{}, fmt.Errorf("invalid source authority")
 	}
+	repoPath := analysisRoot
+	if snapshot != nil {
+		repoPath = snapshot.AnalysisRoot()
+	}
 	return runRecord{
-		RunSummary:    RunSummary{ID: runID, RepoName: reportData.RepoName},
-		RepoPath:      analysisRoot,
-		Manifest:      &manifest,
-		Report:        &reportData,
-		ReportSHA256:  manifest.ReportSHA256,
-		SourceCatalog: catalog,
+		RunSummary:        RunSummary{ID: runID, RepoName: reportData.RepoName},
+		RepoPath:          repoPath,
+		Manifest:          &manifest,
+		WorkspaceSnapshot: snapshot,
+		Report:            &reportData,
+		ReportSHA256:      manifest.ReportSHA256,
+		SourceCatalog:     catalog,
 	}, nil
 }
 
@@ -422,17 +423,17 @@ func verifyInvestigationBinding(run runRecord, record memory.Record) error {
 	if run.Manifest == nil || run.Report == nil || record.Facts == nil || record.Claims != nil || len(record.Changes) != 0 {
 		return errInvestigationBinding
 	}
-	if run.Manifest.VerifyRepositoryState(record.Repository) != nil ||
-		run.Manifest.VerifyRepositoryState(record.Facts.Repository) != nil {
+	if run.verifyRepositoryState(record.Repository) != nil ||
+		run.verifyRepositoryState(record.Facts.Repository) != nil {
 		return errInvestigationBinding
 	}
 	session := record.Session
-	if session.Repository.Path != run.Manifest.AnalysisRoot || session.Repository.Path != run.RepoPath ||
-		session.Repository.Revision != run.Manifest.RepositoryStateSHA256 || session.Origin == nil ||
+	if session.Repository.Path != run.workspaceAnalysisRoot() || session.Repository.Path != run.RepoPath ||
+		session.Repository.Revision != run.workspaceRepositoryDigest() || session.Origin == nil ||
 		session.Origin.Kind != investigation.OriginOrientationComponent ||
 		session.Origin.Status != investigation.OriginCandidate ||
 		session.Origin.ReportSHA256 != run.Manifest.ReportSHA256 ||
-		session.Origin.AcceptedRevision != run.Manifest.RepositoryStateSHA256 ||
+		session.Origin.AcceptedRevision != run.workspaceRepositoryDigest() ||
 		session.Origin.RepoName != run.Report.RepoName || session.Origin.FlowID != "" || session.Origin.FlowName != "" ||
 		session.Focus.Entity == nil || session.Focus.Entity.Location == nil || session.Symbol == nil || session.Source == nil ||
 		session.Assessment != nil || session.SourceReport != nil {

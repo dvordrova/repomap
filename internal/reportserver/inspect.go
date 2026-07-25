@@ -108,8 +108,9 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer storeRoot.Close()
-	if run.Manifest == nil || run.Manifest.ReportSHA256 != set.ReportSHA256 ||
-		run.Manifest.RepositoryStateSHA256 != set.RepositoryHash || run.RepoPath == "" || run.RepoPath != set.AnalysisRoot {
+	if run.Manifest == nil || run.WorkspaceSnapshot == nil || run.Manifest.ReportSHA256 != set.ReportSHA256 ||
+		run.workspaceRepositoryDigest() != set.RepositoryHash || run.RepoPath == "" ||
+		run.workspaceAnalysisRoot() != set.AnalysisRoot || run.RepoPath != set.AnalysisRoot {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "report authority changed; find Go symbols again"})
 		return
 	}
@@ -129,7 +130,7 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not verify repository state")
 		return
 	}
-	if err := run.Manifest.VerifyRepositoryState(before); err != nil {
+	if err := run.verifyRepositoryState(before); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "report is stale; regenerate it before inspecting symbols"})
 		return
 	}
@@ -208,7 +209,7 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not recheck repository state")
 		return
 	}
-	if err := run.Manifest.VerifyRepositoryState(after); err != nil {
+	if err := run.verifyRepositoryState(after); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "repository changed during analysis; regenerate the report"})
 		return
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/testevidence"
+	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
@@ -65,12 +66,40 @@ type runRecord struct {
 	RunSummary
 	RepoPath           string
 	Manifest           *report.RunManifest
+	WorkspaceSnapshot  *workspacesnapshot.Snapshot
 	Report             *report.ReportData
 	ReportSHA256       string // Adapter-only binding for opaque browser IDs.
 	SourceCatalog      *sourcecatalog.Catalog
 	Sources            map[string]sourceTarget
 	SourceContexts     map[string]sourceContextTarget
 	ArtifactsSignature string
+}
+
+func (run runRecord) verifyRepositoryState(current freshness.RepositoryState) error {
+	if run.WorkspaceSnapshot != nil {
+		return run.WorkspaceSnapshot.Verify(current)
+	}
+	if run.Manifest == nil || run.Manifest.Version >= report.CurrentRunManifestVersion {
+		return fmt.Errorf("workspace authority unavailable")
+	}
+	return run.Manifest.VerifyRepositoryState(current)
+}
+
+func (run runRecord) workspaceAnalysisRoot() string {
+	if run.WorkspaceSnapshot != nil {
+		return run.WorkspaceSnapshot.AnalysisRoot()
+	}
+	return run.RepoPath
+}
+
+func (run runRecord) workspaceRepositoryDigest() string {
+	if run.WorkspaceSnapshot != nil {
+		return run.WorkspaceSnapshot.RepositoryDigest()
+	}
+	if run.Manifest != nil {
+		return run.Manifest.RepositoryStateSHA256
+	}
+	return ""
 }
 
 type runIndex struct {
@@ -347,7 +376,8 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 	}
 	authorizeStarted := time.Now()
 	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) ||
-		(run.Manifest.Version >= report.CurrentRunManifestVersion && run.SourceCatalog == nil) {
+		(run.Manifest.Version >= report.CurrentRunManifestVersion &&
+			(run.WorkspaceSnapshot == nil || run.SourceCatalog == nil)) {
 		h.logSourceOpen(run.ID, request.SourceID, "view_only", resolveRunMS, time.Since(authorizeStarted).Milliseconds(), 0, 0, started)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only; regenerate it to enable editor actions"})
 		return
@@ -425,6 +455,10 @@ func (h *handler) reloadRuns() error {
 	for index := range runs {
 		run := &runs[index]
 		report.ApplyProductCoherence(run.Report)
+		if run.WorkspaceSnapshot != nil {
+			catalog := run.WorkspaceSnapshot.Catalog()
+			run.SourceCatalog = &catalog
+		}
 		if run.SourceCatalog != nil {
 			if err := report.AttachExactWorkspaceSearch(run.Report, *run.SourceCatalog); err != nil {
 				h.log("report %s exact workspace search unavailable: %v", run.ID, err)
@@ -664,9 +698,11 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 					run.RepoPath = analysisRoot
 					run.ReportSHA256 = manifest.ReportSHA256
 					if manifest.Version >= 3 {
-						catalog, catalogErr := manifest.SourceCatalog()
-						if catalogErr == nil && catalog.AnalysisRoot() == analysisRoot {
-							run.SourceCatalog = &catalog
+						snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)
+						if snapshotErr == nil {
+							run.WorkspaceSnapshot = snapshot
+							run.SourceCatalog = catalog
+							run.RepoPath = snapshot.AnalysisRoot()
 						} else if manifest.Version >= report.CurrentRunManifestVersion {
 							h.log("report %s source catalog unavailable; local analysis disabled", run.ID)
 						}
@@ -698,7 +734,11 @@ func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
 		return
 	}
 	started := time.Now()
-	current, err := h.captureRepo(ctx, run.Manifest.RepositoryState.Identity)
+	repositoryRoot := run.Manifest.RepositoryState.Identity
+	if run.WorkspaceSnapshot != nil {
+		repositoryRoot = run.WorkspaceSnapshot.RepositoryRoot()
+	}
+	current, err := h.captureRepo(ctx, repositoryRoot)
 	if err != nil {
 		result := freshness.NewFreshnessResult(freshness.FreshnessUnavailable)
 		result.Diagnostics = []string{"current analyzed-input freshness could not be checked"}
@@ -707,6 +747,9 @@ func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
 		return
 	}
 	result := run.Manifest.CurrentFreshness(current)
+	if run.WorkspaceSnapshot != nil {
+		result = run.WorkspaceSnapshot.Assess(current)
+	}
 	run.Report.Freshness = &result
 	h.log("report %s freshness=%s in %d ms affected_inputs=%d affected_submodules=%d",
 		run.ID,
@@ -715,6 +758,24 @@ func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
 		len(result.AffectedInputIDs),
 		len(result.AffectedSubmodules),
 	)
+}
+
+func workspaceSnapshotForManifest(
+	manifest report.RunManifest,
+	resolvedRoot string,
+) (*workspacesnapshot.Snapshot, *sourcecatalog.Catalog, error) {
+	if manifest.Version < 3 {
+		return nil, nil, nil
+	}
+	snapshot, err := manifest.WorkspaceSnapshot()
+	if err != nil {
+		return nil, nil, fmt.Errorf("workspace snapshot unavailable")
+	}
+	catalog := snapshot.Catalog()
+	if snapshot.AnalysisRoot() != resolvedRoot || catalog.AnalysisRoot() != resolvedRoot {
+		return nil, nil, fmt.Errorf("workspace snapshot root mismatch")
+	}
+	return &snapshot, &catalog, nil
 }
 
 func (h *handler) log(format string, args ...any) {
