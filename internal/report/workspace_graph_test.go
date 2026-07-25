@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/workspaceedgeselection"
 	"github.com/dvordrova/repomap/internal/workspacegraph"
+	"github.com/dvordrova/repomap/internal/workspacepackageselection"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
@@ -359,6 +360,146 @@ func TestWorkspacePackageEdgeSelectionPreservesAuthorizedSelfEdge(t *testing.T) 
 	}
 }
 
+func TestWorkspacePackageSelectionPreservesOrderDuplicatesFilesAndEditorialFields(
+	t *testing.T,
+) {
+	baseFacts := reportRootFacts()
+	facts := baseFacts
+	facts.Packages = []gofacts.PackageFact{
+		baseFacts.Packages[2],
+		baseFacts.Packages[0],
+		baseFacts.Packages[1],
+		baseFacts.Packages[0],
+	}
+	allowed := []string{
+		"cmd/app/main.go",
+		"internal/core/core.go",
+		"tools/cmd/tool/main.go",
+	}
+	legacy := parseLegacyGraphFixture(t, facts, allowed, nil, nil).RepositoryGraph
+	for index := range legacy.Packages {
+		legacy.Packages[index].DisplayPath = fmt.Sprintf("editorial/%d", index)
+		legacy.Packages[index].Locality = fmt.Sprintf("locality-%d", index)
+	}
+	before := mustJSON(t, legacy)
+	graph, err := workspacegraph.New(workspacegraph.Input{
+		Snapshot: reportGraphSnapshot(
+			t,
+			"/workspacegraph-report-package-order",
+			"/workspacegraph-report-package-order",
+			allowed,
+		),
+		GoFacts: facts,
+	})
+	if err != nil {
+		t.Fatalf("workspacegraph.New: %v", err)
+	}
+
+	projected, err := projectWorkspacePackageGraph(legacy, facts, graph)
+	if err != nil {
+		t.Fatalf("projectWorkspacePackageGraph: %v", err)
+	}
+	if !reflect.DeepEqual(projected, legacy) ||
+		string(mustJSON(t, projected)) != string(before) {
+		t.Fatalf("package projection changed graph: %#v", projected)
+	}
+	if projected.Packages[1].CanonicalPath !=
+		projected.Packages[3].CanonicalPath ||
+		projected.Packages[1].DisplayPath ==
+			projected.Packages[3].DisplayPath ||
+		projected.Packages[0].CanonicalPath !=
+			"example.com/repo/tools/cmd/tool" {
+		t.Fatalf(
+			"package order, duplicates, or editorial fields changed: %#v",
+			projected.Packages,
+		)
+	}
+}
+
+func TestWorkspacePackageSelectionPreservesNilAndEmptyShape(t *testing.T) {
+	const repositoryRoot = "/workspacegraph-report-package-shape"
+	graph, err := workspacegraph.New(workspacegraph.Input{
+		Snapshot: reportGraphSnapshot(t, repositoryRoot, repositoryRoot, nil),
+		GoFacts:  gofacts.Facts{},
+	})
+	if err != nil {
+		t.Fatalf("workspacegraph.New: %v", err)
+	}
+	tests := []struct {
+		name     string
+		packages []PackageInfo
+	}{
+		{name: "nil", packages: nil},
+		{name: "non-nil empty", packages: []PackageInfo{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			legacy := &RepositoryGraph{Version: 2, Packages: test.packages}
+			before := mustJSON(t, legacy)
+			projected, err := projectWorkspacePackageGraph(
+				legacy,
+				gofacts.Facts{},
+				graph,
+			)
+			if err != nil {
+				t.Fatalf("projectWorkspacePackageGraph: %v", err)
+			}
+			if (projected.Packages == nil) != (test.packages == nil) ||
+				!reflect.DeepEqual(projected, legacy) ||
+				string(mustJSON(t, projected)) != string(before) {
+				t.Fatalf("package shape projection changed graph: %#v", projected)
+			}
+		})
+	}
+}
+
+func TestWorkspacePackageSelectionPreflightsBeforeGraphProjection(t *testing.T) {
+	if maxReportGraphFactPackages != workspacepackageselection.MaxRows {
+		t.Fatalf(
+			"report/selection row budgets differ: %d != %d",
+			maxReportGraphFactPackages,
+			workspacepackageselection.MaxRows,
+		)
+	}
+	oversized := strings.Repeat(
+		"x",
+		workspacepackageselection.MaxScalarBytes+1,
+	)
+	legacy := &RepositoryGraph{
+		Modules: []ModuleInfo{{
+			ID: "legacy-id", Path: "example.com/legacy", Dir: "",
+		}},
+		Packages: []PackageInfo{{
+			CanonicalPath:     "example.com/repo/internal/core",
+			Name:              oversized,
+			ModuleID:          "root-id",
+			ModulePath:        "example.com/repo",
+			Dir:               "internal/core",
+			ModuleRelativeDir: "internal/core",
+		}},
+	}
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "fact-id", ModulePath: "example.com/repo", ModuleDir: ".",
+		}},
+		Packages: []gofacts.PackageFact{{
+			CanonicalPath:     "example.com/repo/internal/core",
+			Name:              "core",
+			ModuleID:          "root-id",
+			ModulePath:        "example.com/repo",
+			PackageDir:        "internal/core",
+			ModuleRelativeDir: "internal/core",
+		}},
+	}
+	_, err := projectWorkspacePackageGraph(legacy, facts, workspacegraph.Graph{})
+	if err == nil || err.Error() != "workspace graph: package projection is unavailable" {
+		t.Fatalf("projection error = %v, want package preflight before module lookup", err)
+	}
+	if strings.Contains(err.Error(), oversized[:64]) {
+		t.Fatalf("projection error exposed oversized scalar: %v", err)
+	}
+}
+
 func TestWorkspacePackageEdgeSelectionPreflightsBeforeGraphProjection(t *testing.T) {
 	oversized := strings.Repeat("x", workspaceedgeselection.MaxEndpointBytes+1)
 	legacy := &RepositoryGraph{
@@ -521,6 +662,44 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 		if data.RepositoryGraph != original ||
 			string(mustJSON(t, data.RepositoryGraph)) != string(before) {
 			t.Fatalf("adapter failure mutated graph: %#v", data.RepositoryGraph)
+		}
+	})
+
+	t.Run("package identity failure retains pointer bytes and warnings", func(t *testing.T) {
+		original := cloneRepositoryGraph(legacyData.RepositoryGraph)
+		original.Packages[0].Name = "private_conflicting_name"
+		warnings := []string{"existing warning"}
+		data := &ReportData{
+			RepositoryGraph:   original,
+			OpenablePaths:     append([]string(nil), allowed...),
+			Warnings:          append([]string(nil), warnings...),
+			repositoryGoFacts: &facts,
+		}
+		before := mustJSON(t, data.RepositoryGraph)
+		attachAuthorizedWorkspacePackageGraph(data, &authority)
+		if data.RepositoryGraph != original ||
+			string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
+			!reflect.DeepEqual(data.Warnings, warnings) {
+			t.Fatalf("package identity failure changed pointer, bytes, or warnings")
+		}
+	})
+
+	t.Run("package file failure retains pointer bytes and warnings", func(t *testing.T) {
+		original := cloneRepositoryGraph(legacyData.RepositoryGraph)
+		original.Packages[0].Files = []string{"cmd/app/private.go"}
+		warnings := []string{"existing warning"}
+		data := &ReportData{
+			RepositoryGraph:   original,
+			OpenablePaths:     append([]string(nil), allowed...),
+			Warnings:          append([]string(nil), warnings...),
+			repositoryGoFacts: &facts,
+		}
+		before := mustJSON(t, data.RepositoryGraph)
+		attachAuthorizedWorkspacePackageGraph(data, &authority)
+		if data.RepositoryGraph != original ||
+			string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
+			!reflect.DeepEqual(data.Warnings, warnings) {
+			t.Fatalf("package file failure changed pointer, bytes, or warnings")
 		}
 	})
 
