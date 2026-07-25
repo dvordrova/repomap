@@ -16,6 +16,7 @@ const (
 	maxCapturedInputs       = 20_000
 	maxStagesPerInput       = 64
 	maxPathBytes            = 4096
+	maxAuthorityScalarBytes = 4 * 1024 * 1024
 	unavailableDiagnostic   = "current repository state is outside authorized bounds"
 	uninitializedDiagnostic = "workspace snapshot is unavailable"
 )
@@ -44,7 +45,7 @@ type Snapshot struct {
 // New validates and copies one bounded authority without reading the
 // filesystem or invoking Git.
 func New(input Input) (Snapshot, error) {
-	if err := inputCountsBounded(input); err != nil {
+	if err := inputBounded(input); err != nil {
 		return Snapshot{}, err
 	}
 	if err := input.Repository.Validate(); err != nil {
@@ -118,7 +119,7 @@ func (snapshot Snapshot) Assess(current freshness.RepositoryState) freshness.Fre
 	if !snapshot.initialized {
 		return unavailableResult(uninitializedDiagnostic)
 	}
-	if err := repositoryCountsBounded(current); err != nil {
+	if err := repositoryBounded(current); err != nil {
 		return unavailableResult(unavailableDiagnostic)
 	}
 	result := freshness.AssessInputs(
@@ -135,14 +136,14 @@ func (snapshot Snapshot) Verify(current freshness.RepositoryState) error {
 	return verifyFreshnessResult(snapshot.Assess(current))
 }
 
-func inputCountsBounded(input Input) error {
+func inputBounded(input Input) error {
 	if len(input.AllowedPaths) > maxAllowedPaths {
 		return fmt.Errorf("workspace snapshot: allowed source authority exceeds bounds")
 	}
 	if len(input.CapturedInputs) > maxCapturedInputs {
 		return fmt.Errorf("workspace snapshot: captured input authority exceeds bounds")
 	}
-	if err := repositoryCountsBounded(input.Repository); err != nil {
+	if err := repositoryShapeBounded(input.Repository); err != nil {
 		return err
 	}
 	for _, captured := range input.CapturedInputs {
@@ -161,10 +162,36 @@ func inputCountsBounded(input Input) error {
 			return fmt.Errorf("workspace snapshot: allowed source path exceeds bounds")
 		}
 	}
+	budget := scalarByteBudget{remaining: maxAuthorityScalarBytes}
+	if !consumeRepositoryScalars(&budget, input.Repository) ||
+		!budget.consume(input.AnalysisRoot) {
+		return fmt.Errorf("workspace snapshot: scalar authority exceeds bounds")
+	}
+	for _, captured := range input.CapturedInputs {
+		if !consumeCapturedInputScalars(&budget, captured) {
+			return fmt.Errorf("workspace snapshot: scalar authority exceeds bounds")
+		}
+	}
+	for _, allowedPath := range input.AllowedPaths {
+		if !budget.consume(allowedPath) {
+			return fmt.Errorf("workspace snapshot: scalar authority exceeds bounds")
+		}
+	}
 	return nil
 }
 
-func repositoryCountsBounded(repository freshness.RepositoryState) error {
+func repositoryBounded(repository freshness.RepositoryState) error {
+	if err := repositoryShapeBounded(repository); err != nil {
+		return err
+	}
+	budget := scalarByteBudget{remaining: maxAuthorityScalarBytes}
+	if !consumeRepositoryScalars(&budget, repository) {
+		return fmt.Errorf("workspace snapshot: repository scalar state exceeds bounds")
+	}
+	return nil
+}
+
+func repositoryShapeBounded(repository freshness.RepositoryState) error {
 	if len(repository.Dirty) > maxRepositoryEntries {
 		return fmt.Errorf("workspace snapshot: repository dirty state exceeds bounds")
 	}
@@ -187,6 +214,75 @@ func repositoryCountsBounded(repository freshness.RepositoryState) error {
 	return nil
 }
 
+type scalarByteBudget struct {
+	remaining int
+}
+
+func (budget *scalarByteBudget) consume(values ...string) bool {
+	for _, value := range values {
+		if len(value) > budget.remaining {
+			return false
+		}
+		budget.remaining -= len(value)
+	}
+	return true
+}
+
+func consumeRepositoryScalars(
+	budget *scalarByteBudget,
+	repository freshness.RepositoryState,
+) bool {
+	if !budget.consume(repository.Identity, repository.Head) {
+		return false
+	}
+	for _, dirty := range repository.Dirty {
+		if !budget.consume(
+			dirty.Status,
+			dirty.Path,
+			dirty.FromPath,
+			string(dirty.Kind),
+			dirty.Mode,
+			dirty.ContentSHA256,
+		) {
+			return false
+		}
+	}
+	for _, submodule := range repository.Submodules {
+		if !budget.consume(
+			submodule.Path,
+			submodule.RecordedGitlink,
+			submodule.CurrentHead,
+			string(submodule.Availability),
+		) {
+			return false
+		}
+	}
+	return true
+}
+
+func consumeCapturedInputScalars(
+	budget *scalarByteBudget,
+	input freshness.CapturedInput,
+) bool {
+	if !budget.consume(
+		input.ID,
+		input.Path,
+		string(input.Kind),
+		input.Mode,
+		input.ContentSHA256,
+		input.OwningModuleID,
+		input.OwningPackage,
+	) {
+		return false
+	}
+	for _, stage := range input.Stages {
+		if !budget.consume(stage) {
+			return false
+		}
+	}
+	return true
+}
+
 func verifyFreshnessResult(result freshness.FreshnessResult) error {
 	switch result.State {
 	case freshness.FreshnessFresh, freshness.FreshnessUnrelatedChanges:
@@ -204,32 +300,35 @@ func unavailableResult(diagnostic string) freshness.FreshnessResult {
 
 func cloneRepositoryState(repository freshness.RepositoryState) freshness.RepositoryState {
 	cloned := repository
-	cloned.Dirty = append([]freshness.DirtyFile(nil), repository.Dirty...)
-	cloned.Submodules = append([]freshness.SubmoduleState(nil), repository.Submodules...)
+	cloned.Dirty = cloneSlice(repository.Dirty)
+	cloned.Submodules = cloneSlice(repository.Submodules)
 	return cloned
 }
 
 func cloneCapturedInputs(inputs []freshness.CapturedInput) []freshness.CapturedInput {
+	if inputs == nil {
+		return nil
+	}
 	cloned := make([]freshness.CapturedInput, len(inputs))
 	for index := range inputs {
 		cloned[index] = inputs[index]
-		cloned[index].Stages = append([]string(nil), inputs[index].Stages...)
+		cloned[index].Stages = cloneSlice(inputs[index].Stages)
 	}
 	return cloned
 }
 
 func cloneFreshnessResult(result freshness.FreshnessResult) freshness.FreshnessResult {
 	cloned := result
-	cloned.AffectedInputIDs = cloneStrings(result.AffectedInputIDs)
-	cloned.AffectedPaths = cloneStrings(result.AffectedPaths)
-	cloned.AffectedSubmodules = cloneStrings(result.AffectedSubmodules)
-	cloned.Diagnostics = cloneStrings(result.Diagnostics)
+	cloned.AffectedInputIDs = cloneSlice(result.AffectedInputIDs)
+	cloned.AffectedPaths = cloneSlice(result.AffectedPaths)
+	cloned.AffectedSubmodules = cloneSlice(result.AffectedSubmodules)
+	cloned.Diagnostics = cloneSlice(result.Diagnostics)
 	return cloned
 }
 
-func cloneStrings(values []string) []string {
+func cloneSlice[T any](values []T) []T {
 	if values == nil {
 		return nil
 	}
-	return append([]string{}, values...)
+	return append([]T{}, values...)
 }
