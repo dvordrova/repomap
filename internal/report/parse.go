@@ -749,14 +749,9 @@ func parseSnapshotWithExactFacts(path string, data *ReportData, captureExact boo
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
 	}
 	if captureExact {
-		var rawSnapshot struct {
-			GoFacts json.RawMessage `json:"go_facts"`
-		}
-		if err := json.Unmarshal(b, &rawSnapshot); err == nil {
-			data.repositoryGoFactsJSON = append(
-				data.repositoryGoFactsJSON[:0],
-				rawSnapshot.GoFacts...,
-			)
+		data.repositoryGoFacts = nil
+		if facts, err := decodeSnapshotExactGoFacts(b); err == nil {
+			data.repositoryGoFacts = &facts
 		}
 	}
 	data.RepoName = snap.RepoName

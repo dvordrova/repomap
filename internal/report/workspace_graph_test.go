@@ -3,6 +3,7 @@ package report
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -73,10 +74,10 @@ func TestWorkspacePackageGraphProjectionPreservesLegacyBytes(t *testing.T) {
 			legacy := cloneRepositoryGraph(data.RepositoryGraph)
 			legacyJSON := mustJSON(t, legacy)
 
-			exactFacts, err := decodeSnapshotExactGoFacts(data.repositoryGoFactsJSON)
-			if err != nil {
-				t.Fatalf("decodeSnapshotExactGoFacts: %v", err)
+			if data.repositoryGoFacts == nil {
+				t.Fatal("exact graph facts were not captured")
 			}
+			exactFacts := *data.repositoryGoFacts
 			snapshot := reportGraphSnapshot(
 				t,
 				test.repositoryRoot,
@@ -136,10 +137,10 @@ func TestWorkspacePackageGraphPreservesArchitectureComponentAndSearchConsumers(t
 		"tools/cmd/tool/main.go",
 	}, selected, nil)
 	legacy := cloneRepositoryGraph(data.RepositoryGraph)
-	exactFacts, err := decodeSnapshotExactGoFacts(data.repositoryGoFactsJSON)
-	if err != nil {
-		t.Fatal(err)
+	if data.repositoryGoFacts == nil {
+		t.Fatal("exact graph facts were not captured")
 	}
+	exactFacts := *data.repositoryGoFacts
 	snapshot := reportGraphSnapshot(
 		t,
 		"/workspacegraph-report-consumers",
@@ -256,9 +257,9 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 		invalid.Modules[0].ModulePath = "../private-module"
 		original := cloneRepositoryGraph(legacyData.RepositoryGraph)
 		data := &ReportData{
-			RepositoryGraph:       original,
-			OpenablePaths:         append([]string(nil), allowed...),
-			repositoryGoFactsJSON: mustJSON(t, invalid),
+			RepositoryGraph:   original,
+			OpenablePaths:     append([]string(nil), allowed...),
+			repositoryGoFacts: &invalid,
 		}
 		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
@@ -275,9 +276,9 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 			To:   "example.com/repo/not-collected",
 		}}
 		data := &ReportData{
-			RepositoryGraph:       original,
-			OpenablePaths:         append([]string(nil), allowed...),
-			repositoryGoFactsJSON: mustJSON(t, facts),
+			RepositoryGraph:   original,
+			OpenablePaths:     append([]string(nil), allowed...),
+			repositoryGoFacts: &facts,
 		}
 		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
@@ -290,9 +291,9 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 	t.Run("success attaches complete equal replacement", func(t *testing.T) {
 		original := cloneRepositoryGraph(legacyData.RepositoryGraph)
 		data := &ReportData{
-			RepositoryGraph:       original,
-			OpenablePaths:         append([]string(nil), allowed...),
-			repositoryGoFactsJSON: mustJSON(t, facts),
+			RepositoryGraph:   original,
+			OpenablePaths:     append([]string(nil), allowed...),
+			repositoryGoFacts: &facts,
 		}
 		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
@@ -334,8 +335,8 @@ func TestAuthorizedReadRunDirUsesGraphWithoutChangingReportBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("legacy ReadRunDir: %v", err)
 	}
-	if len(legacy.repositoryGoFactsJSON) != 0 {
-		t.Fatal("plain ReadRunDir retained neutral-only raw facts")
+	if legacy.repositoryGoFacts != nil {
+		t.Fatal("plain ReadRunDir retained neutral-only exact facts")
 	}
 	authority := reportGraphAuthority(
 		t,
@@ -347,7 +348,7 @@ func TestAuthorizedReadRunDirUsesGraphWithoutChangingReportBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authorized readRunDir: %v", err)
 	}
-	if len(adapted.repositoryGoFactsJSON) == 0 {
+	if adapted.repositoryGoFacts == nil {
 		t.Fatal("authorized readRunDir did not retain exact facts for attachment")
 	}
 	if !reflect.DeepEqual(adapted.RepositoryGraph, legacy.RepositoryGraph) {
@@ -389,6 +390,9 @@ func TestMalformedNewExactFieldsKeepLegacySnapshotProjection(t *testing.T) {
 	if data.RepositoryGraph == nil || len(data.RepositoryGraph.Modules) != 1 {
 		t.Fatalf("legacy graph missing: %#v", data.RepositoryGraph)
 	}
+	if data.repositoryGoFacts != nil {
+		t.Fatal("malformed exact extension was retained")
+	}
 	original := data.RepositoryGraph
 	before := mustJSON(t, original)
 	authority := reportGraphAuthority(
@@ -401,6 +405,103 @@ func TestMalformedNewExactFieldsKeepLegacySnapshotProjection(t *testing.T) {
 	if data.RepositoryGraph != original ||
 		string(mustJSON(t, data.RepositoryGraph)) != string(before) {
 		t.Fatalf("malformed exact extension changed legacy graph: %#v", data.RepositoryGraph)
+	}
+}
+
+func TestSnapshotExactGoFactsPreflightRejectsOversizedEdgeBeforeCapture(t *testing.T) {
+	oversized := strings.Repeat("x", 2*1024*1024)
+	dir := t.TempDir()
+	writeTestFile(t, dir, "snapshot.json", `{
+		"repo_name":"fixture",
+		"go_facts":{
+			"modules":[{
+				"id":"root-id",
+				"module_path":"example.com/repo",
+				"module_dir":".",
+				"display_name":".",
+				"main":true
+			}],
+			"packages":[{
+				"canonical_package_path":"example.com/repo/internal/core",
+				"name":"core",
+				"owning_module_id":"root-id",
+				"module_path":"example.com/repo",
+				"package_directory":"internal/core",
+				"module_relative_path":"internal/core",
+				"display_path":"internal/core",
+				"locality":"local",
+				"files":["internal/core/core.go"]
+			}],
+			"internal_edges":[{
+				"from":"`+oversized+`",
+				"to":"example.com/repo/internal/core"
+			}]
+		}
+	}`)
+
+	data := &ReportData{}
+	if warning := parseSnapshotWithExactFacts(
+		filepath.Join(dir, "snapshot.json"),
+		data,
+		true,
+	); warning != "" {
+		t.Fatalf("legacy parse changed: %s", warning)
+	}
+	if data.repositoryGoFacts != nil {
+		t.Fatal("oversized exact facts were retained")
+	}
+	if data.RepositoryGraph == nil || len(data.RepositoryGraph.Packages) != 1 {
+		t.Fatalf("legacy graph missing: %#v", data.RepositoryGraph)
+	}
+	original := data.RepositoryGraph
+	before := mustJSON(t, original)
+	authority := reportGraphAuthority(
+		t,
+		"/workspacegraph-report-oversized",
+		"/workspacegraph-report-oversized",
+		[]string{"internal/core/core.go"},
+	)
+	attachAuthorizedWorkspacePackageGraph(data, &authority)
+	after := mustJSON(t, data.RepositoryGraph)
+	if data.RepositoryGraph != original || string(after) != string(before) {
+		t.Fatalf("oversized exact facts changed legacy graph: %s", after)
+	}
+	if strings.Contains(string(after), oversized[:maxReportGraphScalarBytes+1]) ||
+		strings.Contains(string(after), authority.analysisRoot) {
+		t.Fatalf("unsafe scalar or absolute root reached encoded graph: %s", after)
+	}
+}
+
+func TestSnapshotExactGoFactsPreflightStopsBeforeExcessEdge(t *testing.T) {
+	var input strings.Builder
+	input.WriteString(`{"go_facts":{"modules":[],"packages":[],"internal_edges":[`)
+	for index := 0; index < maxReportGraphFactEdges; index++ {
+		if index > 0 {
+			input.WriteByte(',')
+		}
+		input.WriteString(`{"from":"a","to":"b"}`)
+	}
+	// The element beyond the fixed edge budget is intentionally incomplete.
+	// A bounded preflight must reject before scanning or decoding it.
+	input.WriteString(`,{"from":"`)
+	input.WriteString(strings.Repeat("x", 2*1024*1024))
+
+	_, err := preflightSnapshotExactGoFacts([]byte(input.String()))
+	if !errors.Is(err, errReportGraphJSONBounds) {
+		t.Fatalf("preflight error = %v, want bounds", err)
+	}
+}
+
+func BenchmarkSnapshotExactGoFactsPreflightOversizedScalar(b *testing.B) {
+	input := []byte(
+		`{"go_facts":{"modules":[],"packages":[],"internal_edges":[{"from":"` +
+			strings.Repeat("x", 2*1024*1024),
+	)
+	b.ReportAllocs()
+	b.SetBytes(maxReportGraphScalarBytes + 1)
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		_, _ = preflightSnapshotExactGoFacts(input)
 	}
 }
 

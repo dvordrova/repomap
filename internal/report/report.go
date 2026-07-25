@@ -107,7 +107,7 @@ type ReportData struct {
 	sourceSignals             []SourceSignal
 	studyDocumentSourceRoot   string
 	externalImports           []externalImportUsage
-	repositoryGoFactsJSON     []byte
+	repositoryGoFacts         *gofacts.Facts
 	semanticAttempted         int
 	semanticInvestigated      int
 
