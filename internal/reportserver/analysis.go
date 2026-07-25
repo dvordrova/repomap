@@ -184,7 +184,7 @@ func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not verify repository state")
 		return
 	}
-	if err := authorized.run.Manifest.VerifyRepositoryState(before); err != nil {
+	if err := authorized.run.verifyRepositoryState(before); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "report is stale; regenerate it before analyzing symbols"})
 		return
 	}
@@ -219,7 +219,7 @@ func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not recheck repository state")
 		return
 	}
-	if err := authorized.run.Manifest.VerifyRepositoryState(after); err != nil {
+	if err := authorized.run.verifyRepositoryState(after); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "repository changed during analysis; regenerate the report"})
 		return
 	}
@@ -242,7 +242,8 @@ func (h *handler) writeAnalysisError(w http.ResponseWriter, ctx context.Context,
 
 func (h *handler) authorizeAnchor(request symbolsRequest) (authorizedAnchor, error) {
 	run, err := h.findRun(request.RunID)
-	if err != nil || run.Manifest == nil || run.Report == nil || run.SourceCatalog == nil || h.analysis == nil {
+	if err != nil || run.Manifest == nil || run.WorkspaceSnapshot == nil ||
+		run.Report == nil || run.SourceCatalog == nil || h.analysis == nil {
 		return authorizedAnchor{}, fmt.Errorf("analysis authority unavailable")
 	}
 	var componentAuthority *report.ComponentAuthority
@@ -340,8 +341,8 @@ func (a *symbolAnalysis) rememberCandidates(
 		AnchorID:       authorized.anchor.ID,
 		AnchorLine:     anchorLine,
 		ReportSHA256:   authorized.run.Manifest.ReportSHA256,
-		RepositoryHash: authorized.run.Manifest.RepositoryStateSHA256,
-		AnalysisRoot:   authorized.run.RepoPath,
+		RepositoryHash: authorized.run.workspaceRepositoryDigest(),
+		AnalysisRoot:   authorized.run.workspaceAnalysisRoot(),
 		Candidates:     make(map[string]inspection.Candidate, len(resolution.Candidates)),
 		CreatedAt:      time.Now(),
 	}

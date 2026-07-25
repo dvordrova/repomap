@@ -64,7 +64,7 @@ func (h *handler) serveSourceContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if run.Manifest == nil || run.Manifest.Version < report.CurrentRunManifestVersion ||
-		run.Report == nil || run.SourceCatalog == nil {
+		run.WorkspaceSnapshot == nil || run.Report == nil || run.SourceCatalog == nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only"})
 		return
 	}
@@ -73,9 +73,10 @@ func (h *handler) serveSourceContext(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source context is not authorized by this report"})
 		return
 	}
-	analysisRoot := run.SourceCatalog.AnalysisRoot()
+	analysisRoot := run.WorkspaceSnapshot.AnalysisRoot()
 	resolvedRoot, err := run.Manifest.ResolveAnalysisRoot()
-	if err != nil || resolvedRoot != analysisRoot || analysisRoot != run.RepoPath {
+	if err != nil || resolvedRoot != analysisRoot ||
+		run.SourceCatalog.AnalysisRoot() != analysisRoot || analysisRoot != run.RepoPath {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
 		return
 	}
