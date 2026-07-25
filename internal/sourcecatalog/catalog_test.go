@@ -278,6 +278,27 @@ func TestNewDoesNotRequireRootsOrSourcesToExistOnDisk(t *testing.T) {
 	}
 }
 
+func TestCatalogRejectsTrackedSymlink(t *testing.T) {
+	t.Parallel()
+
+	root := testRoot("repository")
+	input := testCapturedInput(
+		"client/v3/example_lease_test.go",
+		freshness.FileSymlink,
+		strings.Repeat("a", 64),
+	)
+	input.Mode = "120000"
+	_, err := New(Input{
+		RepositoryRoot: root,
+		AnalysisRoot:   root,
+		AllowedPaths:   []string{"client/v3/example_lease_test.go"},
+		CapturedInputs: []freshness.CapturedInput{input},
+	})
+	if err == nil || !strings.Contains(err.Error(), "is not a regular file") {
+		t.Fatalf("New tracked-symlink error = %v", err)
+	}
+}
+
 func TestNeutralCatalogContractHasNoReportBinding(t *testing.T) {
 	t.Parallel()
 

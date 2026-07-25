@@ -1,17 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
 	"github.com/dvordrova/repomap/internal/debugdump"
@@ -548,9 +553,29 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		return err
 	}
 
+	runOptionalModelStages := !*offline
+	if artifactRun && runOptionalModelStages {
+		earlyReportData, readErr := report.ReadRunDir(runDir)
+		if readErr != nil {
+			return fmt.Errorf("read source catalog preflight inputs: %w", readErr)
+		}
+		if !sourceCatalogPathsAreRegular(
+			ctx,
+			initialState,
+			analysisRoot,
+			earlyReportData.OpenablePaths,
+		) {
+			runOptionalModelStages = false
+			fmt.Fprintln(
+				deps.stderr,
+				"warning: authorized source catalog is unavailable; skipping optional model stages and publishing a view-only report",
+			)
+		}
+	}
+
 	var reportPath string
 	if artifactRun {
-		if !*offline {
+		if runOptionalModelStages {
 			architectureStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: synthesizing bounded architecture grouping")
 			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr); err != nil {
@@ -560,7 +585,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable (after %d ms)\n", err, time.Since(architectureStarted).Milliseconds())
 			}
 		}
-		if !*offline && *guidedTour {
+		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: editing one bounded onboarding story from saved facts")
 			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr)
@@ -592,7 +617,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				)
 			}
 		}
-		if !*offline {
+		if runOptionalModelStages {
 			semanticStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: selecting bounded source-backed onboarding paths from saved facts")
 			freshResult, semanticErr := editFreshRepoMechanismForRun(
@@ -628,7 +653,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				)
 			}
 		}
-		if !*offline {
+		if runOptionalModelStages {
 			studyStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: editing a bounded repository brief and study map")
 			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr)
@@ -653,7 +678,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				)
 			}
 		}
-		if !*offline {
+		if runOptionalModelStages {
 			operateStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: collecting exact repository-owned ways to run and verify")
 			operateStatus, operateErr := editPavedPathsForRun(ctx, runDir, repo, deps.stderr)
@@ -941,6 +966,167 @@ func runOrient(args []string) error {
 		fmt.Println()
 	}
 	return nil
+}
+
+const (
+	maxEarlySourceCatalogPaths          = 4096
+	maxEarlySourceCatalogPathBytes      = 4096
+	maxEarlySourceCatalogTotalPathBytes = 64 * 1024
+)
+
+// sourceCatalogPathsAreRegular is a bounded, kind-only preflight. It neither
+// follows symlinks nor reads file contents; final captured-input reconciliation
+// remains the TOCTOU authority before report publication.
+func sourceCatalogPathsAreRegular(
+	ctx context.Context,
+	state freshness.RepositoryState,
+	analysisRoot string,
+	sourcePaths []string,
+) bool {
+	if len(sourcePaths) > maxEarlySourceCatalogPaths ||
+		len(state.Dirty) > maxEarlySourceCatalogPaths {
+		return false
+	}
+
+	repositoryPrefix, err := filepath.Rel(state.Identity, analysisRoot)
+	if err != nil || filepath.IsAbs(repositoryPrefix) ||
+		repositoryPrefix == ".." ||
+		strings.HasPrefix(repositoryPrefix, ".."+string(filepath.Separator)) {
+		return false
+	}
+	if repositoryPrefix == "." {
+		repositoryPrefix = ""
+	} else {
+		repositoryPrefix = filepath.ToSlash(repositoryPrefix)
+	}
+
+	repositoryPaths := make([]string, 0, len(sourcePaths))
+	requested := make(map[string]struct{}, len(sourcePaths))
+	totalPathBytes := 0
+	for _, sourcePath := range sourcePaths {
+		if len(sourcePath) > maxEarlySourceCatalogPathBytes ||
+			sourcePath == "" || sourcePath == "." ||
+			!fs.ValidPath(sourcePath) || path.Clean(sourcePath) != sourcePath ||
+			strings.ContainsRune(sourcePath, '\\') {
+			return false
+		}
+		for _, character := range sourcePath {
+			if unicode.IsControl(character) {
+				return false
+			}
+		}
+		repositoryPath := sourcePath
+		if repositoryPrefix != "" {
+			repositoryPath = path.Join(repositoryPrefix, sourcePath)
+		}
+		if _, duplicate := requested[repositoryPath]; duplicate {
+			return false
+		}
+		requested[repositoryPath] = struct{}{}
+		repositoryPaths = append(repositoryPaths, repositoryPath)
+		totalPathBytes += len(repositoryPath) + len(":(literal)")
+		if totalPathBytes > maxEarlySourceCatalogTotalPathBytes {
+			return false
+		}
+	}
+
+	dirtyKinds := make(map[string]freshness.FileKind, len(repositoryPaths))
+	for _, dirty := range state.Dirty {
+		if _, included := requested[dirty.Path]; included {
+			dirtyKinds[dirty.Path] = dirty.Kind
+		}
+		if dirty.FromPath != "" {
+			if _, included := requested[dirty.FromPath]; included {
+				dirtyKinds[dirty.FromPath] = freshness.FileMissing
+			}
+		}
+	}
+	cleanPaths := make([]string, 0, len(repositoryPaths))
+	for _, repositoryPath := range repositoryPaths {
+		if kind, dirty := dirtyKinds[repositoryPath]; dirty {
+			if kind != freshness.FileRegular {
+				return false
+			}
+			continue
+		}
+		cleanPaths = append(cleanPaths, repositoryPath)
+	}
+	return committedSourceCatalogPathsAreRegular(ctx, state, cleanPaths, totalPathBytes)
+}
+
+func committedSourceCatalogPathsAreRegular(
+	ctx context.Context,
+	state freshness.RepositoryState,
+	repositoryPaths []string,
+	totalPathBytes int,
+) bool {
+	if len(repositoryPaths) == 0 {
+		return true
+	}
+	args := []string{
+		"--no-pager",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath=" + os.DevNull,
+		"-C", state.Identity,
+		"ls-tree", "-z", state.Head, "--",
+	}
+	expected := make(map[string]struct{}, len(repositoryPaths))
+	for _, repositoryPath := range repositoryPaths {
+		args = append(args, ":(literal)"+repositoryPath)
+		expected[repositoryPath] = struct{}{}
+	}
+	command := exec.CommandContext(ctx, "git", args...)
+	command.Env = sourceCatalogGitEnvironment(os.Environ())
+	stdout, err := command.StdoutPipe()
+	if err != nil || command.Start() != nil {
+		return false
+	}
+	outputLimit := int64(totalPathBytes + len(repositoryPaths)*128 + 1)
+	output, readErr := io.ReadAll(io.LimitReader(stdout, outputLimit))
+	_, drainErr := io.Copy(io.Discard, stdout)
+	waitErr := command.Wait()
+	if readErr != nil || drainErr != nil || waitErr != nil || int64(len(output)) >= outputLimit {
+		return false
+	}
+	for len(output) > 0 {
+		end := bytes.IndexByte(output, 0)
+		if end < 0 {
+			return false
+		}
+		record := output[:end]
+		output = output[end+1:]
+		header, rawPath, found := bytes.Cut(record, []byte{'\t'})
+		fields := bytes.Fields(header)
+		repositoryPath := string(rawPath)
+		if !found || len(fields) != 3 || !bytes.HasPrefix(fields[0], []byte("100")) {
+			return false
+		}
+		if _, included := expected[repositoryPath]; !included {
+			return false
+		}
+		delete(expected, repositoryPath)
+	}
+	return len(expected) == 0
+}
+
+func sourceCatalogGitEnvironment(environment []string) []string {
+	result := make([]string, 0, len(environment)+6)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, "GIT_") || name == "PAGER" {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(
+		result,
+		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_PAGER=cat",
+		"PAGER=cat",
+	)
 }
 
 func researchRepositoryContext(state freshness.RepositoryState, repo string) modelresearch.RepositoryContext {
