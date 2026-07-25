@@ -707,7 +707,9 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 							h.log("report %s source catalog unavailable; local analysis disabled", run.ID)
 						}
 					}
-					run.AnalysisAvailable = run.SourceCatalog != nil && h.analysisAvailable(manifest)
+					run.AnalysisAvailable = run.WorkspaceSnapshot != nil &&
+						run.SourceCatalog != nil &&
+						h.analysisAvailable(manifest)
 					if manifest.Version < report.CurrentRunManifestVersion {
 						legacy := freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
 						run.Report.Freshness = &legacy
