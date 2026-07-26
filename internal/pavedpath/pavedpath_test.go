@@ -9,11 +9,12 @@ func TestBuildRecordKeepsExactCommandsAndRejectsInventedPathIndependently(t *tes
 	bundle := testBundle()
 	proposal := Proposal{Version: ProposalVersion, Paths: []ProposedPath{
 		{
-			Title: "Build and inspect the CLI", Goal: "Produce the local binary and inspect its supported flags.",
-			Actions: []ProposedAction{
-				{EvidenceID: "ev-build", Instruction: "Use the repository build target.", Command: "make build"},
-				{EvidenceID: "ev-help", Instruction: "Ask the built CLI for its documented flags.", Command: "./repomap --help"},
-			},
+			Title: "Inspect the CLI", Goal: "Inspect the supported flags and their documented output.",
+			PrerequisiteEvidenceIDs: []string{"ev-help-prerequisite"},
+			Actions: []ProposedAction{{
+				EvidenceID: "ev-help", Instruction: "Ask the CLI for its documented flags.",
+				Command: "./repomap --help",
+			}},
 			RelatedStudyDirectionIDs: []string{"study-cli"}, OrderingBasis: OrderingDocumented,
 		},
 		{
@@ -26,7 +27,7 @@ func TestBuildRecordKeepsExactCommandsAndRejectsInventedPathIndependently(t *tes
 	if err != nil {
 		t.Fatalf("BuildRecord() error = %v", err)
 	}
-	if len(record.Paths) != 1 || record.Paths[0].Actions[0].Command != "make build" {
+	if len(record.Paths) != 1 || record.Paths[0].Actions[0].Command != "./repomap --help" {
 		t.Fatalf("paths = %#v", record.Paths)
 	}
 	if len(record.Issues) != 1 || record.Issues[0].Code != "command_not_in_evidence" {
@@ -95,13 +96,15 @@ func TestRecordRoundTripRevalidatesIdentityAndEvidence(t *testing.T) {
 
 func TestRecordRejectsTamperedCopyAuthorization(t *testing.T) {
 	bundle := testBundle()
-	bundle.Evidence[0].Commands[0].SafeToCopy = false
+	bundle.Evidence[1].Commands[0].SafeToCopy = false
 	record, err := BuildRecord(bundle, Proposal{Version: ProposalVersion, Paths: []ProposedPath{{
-		Title: "Build", Goal: "Build the local binary.",
+		Title: "Inspect", Goal: "Inspect the documented CLI output.",
+		PrerequisiteEvidenceIDs: []string{"ev-help-prerequisite"},
 		Actions: []ProposedAction{{
-			EvidenceID: "ev-build", Instruction: "Use the repository build target.", Command: "make build",
+			EvidenceID: "ev-help", Instruction: "Inspect the documented flags.",
+			Command: "./repomap --help",
 		}},
-		OrderingBasis: OrderingEditorial,
+		OrderingBasis: OrderingDocumented,
 	}}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -180,11 +183,13 @@ func TestBuildRecordRejectsCommandSmuggledThroughProse(t *testing.T) {
 func TestBuildRecordAllowsInstructionToRepeatItsExactCommand(t *testing.T) {
 	bundle := testBundle()
 	proposal := Proposal{Version: ProposalVersion, Paths: []ProposedPath{{
-		Title: "Build", Goal: "Build the local binary.",
+		Title: "Inspect", Goal: "Inspect the documented CLI output.",
+		PrerequisiteEvidenceIDs: []string{"ev-help-prerequisite"},
 		Actions: []ProposedAction{{
-			EvidenceID: "ev-build", Instruction: "Run the make build target.", Command: "make build",
+			EvidenceID: "ev-help", Instruction: "Run ./repomap --help.",
+			Command: "./repomap --help",
 		}},
-		OrderingBasis: OrderingEditorial,
+		OrderingBasis: OrderingDocumented,
 	}}}
 	record, err := BuildRecord(bundle, proposal, nil)
 	if err != nil {
@@ -198,12 +203,13 @@ func TestBuildRecordAllowsInstructionToRepeatItsExactCommand(t *testing.T) {
 func TestBuildRecordAllowsProductNameInOperationalProse(t *testing.T) {
 	bundle := testBundle()
 	proposal := Proposal{Version: ProposalVersion, Paths: []ProposedPath{{
-		Title: "Build the repomap binary", Goal: "Compile the repomap binary and display help.",
+		Title: "Inspect the repomap binary", Goal: "Display the repomap CLI help output.",
+		PrerequisiteEvidenceIDs: []string{"ev-help-prerequisite"},
 		Actions: []ProposedAction{{
 			EvidenceID: "ev-help", Instruction: "Ask repomap to display its documented flags.",
 			Command: "./repomap --help",
 		}},
-		OrderingBasis: OrderingEditorial,
+		OrderingBasis: OrderingDocumented,
 	}}}
 	record, err := BuildRecord(bundle, proposal, nil)
 	if err != nil {
@@ -214,10 +220,14 @@ func TestBuildRecordAllowsProductNameInOperationalProse(t *testing.T) {
 	}
 }
 
-func TestBuildRecordDowngradesUnprovenOrdering(t *testing.T) {
+func TestBuildRecordRejectsUnprovenOrderingAtPublication(t *testing.T) {
 	bundle := testBundle()
 	proposal := Proposal{Version: ProposalVersion, Paths: []ProposedPath{{
 		Title: "Build and inspect", Goal: "Prepare a binary and inspect its flags.",
+		PrerequisiteEvidenceIDs: []string{
+			"ev-build-prerequisite",
+			"ev-help-prerequisite",
+		},
 		Actions: []ProposedAction{
 			{EvidenceID: "ev-build", Instruction: "Use the repository build target.", Command: "make build"},
 			{EvidenceID: "ev-help", Instruction: "Inspect the documented flags.", Command: "./repomap --help"},
@@ -228,8 +238,9 @@ func TestBuildRecordDowngradesUnprovenOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(record.Paths) != 1 || record.Paths[0].OrderingBasis != OrderingEditorial {
-		t.Fatalf("cross-file order was not downgraded: %#v", record.Paths)
+	if len(record.Paths) != 0 || len(record.Issues) != 1 ||
+		record.Issues[0].Code != PublicationIssueMissingActions {
+		t.Fatalf("unproven cross-file order was published: %#v", record)
 	}
 }
 
@@ -252,9 +263,29 @@ func testBundle() Bundle {
 				Target: "build", Commands: []Command{{Value: "make build", Basis: CommandStructural, SafeToCopy: true}},
 			},
 			{
-				ID: "ev-help", Role: RoleDocumentedProcedure, Path: "README.md", StartLine: 20, EndLine: 20,
-				Label: "inspect CLI flags", Excerpt: []string{"./repomap --help"},
+				ID: "ev-help", Role: RoleDocumentedProcedure, Path: "README.md", StartLine: 20, EndLine: 21,
+				Label: "inspect CLI flags",
+				Excerpt: []string{
+					"$ ./repomap --help",
+					"Usage: repomap [flags]",
+				},
 				Commands: []Command{{Value: "./repomap --help", Basis: CommandExact, SafeToCopy: true}},
+			},
+			{
+				ID: "ev-build-prerequisite", Role: RoleDocumentedProcedure, Path: "Makefile",
+				StartLine: 7, EndLine: 8, Label: "build prerequisites",
+				Excerpt: []string{
+					"Before running make build, install the required Go toolchain.",
+					"build:",
+				},
+			},
+			{
+				ID: "ev-help-prerequisite", Role: RoleDocumentedProcedure, Path: "README.md",
+				StartLine: 19, EndLine: 20, Label: "CLI prerequisites",
+				Excerpt: []string{
+					"Before running this procedure, install repomap.",
+					"$ ./repomap --help",
+				},
 			},
 		},
 	}

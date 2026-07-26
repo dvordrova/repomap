@@ -176,6 +176,9 @@ func generate(runDir string, authority *RunAuthority) error {
 	if err != nil {
 		return err
 	}
+	if err := writePavedPathPublicationDiagnostics(runDir); err != nil {
+		return err
+	}
 	if deferredSourceAuthority {
 		repositoryPaths, pathErr := repositoryRelativeInputPaths(
 			authority.repository.Identity,
