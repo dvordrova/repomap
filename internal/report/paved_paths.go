@@ -1,12 +1,13 @@
 package report
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -16,10 +17,9 @@ import (
 
 const maxSavedPavedPathBytes = 4 << 20
 
-const maxOperationalResultBytes = 4 << 10
-
-var operationalOutputFlagRE = regexp.MustCompile(
-	`(?:^|[ \t])(?:-o|--output|-coverprofile)(?:=|[ \t]+)(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^ \t\r\n]+))`,
+const (
+	pavedPathPublicationDiagnosticsFile    = "paved_paths_publication_diagnostics.json"
+	pavedPathPublicationDiagnosticsVersion = 1
 )
 
 type OperationalResultKind string
@@ -211,7 +211,14 @@ func projectRepositoryOperations(
 		}
 	}
 	result := &RepositoryOperations{Version: record.Version}
+	incompleteActions := make(map[operationalActionIdentity]struct{})
+	completeActions := make(map[operationalActionIdentity]struct{})
 	for _, saved := range record.Paths {
+		assessment := pavedpath.AssessPathPublication(saved, evidence)
+		if assessment.IssueCode != "" {
+			markOperationalActions(incompleteActions, saved)
+			continue
+		}
 		projected := RepositoryPavedPath{
 			ID: saved.ID, Title: saved.Title, Goal: saved.Goal,
 			OrderingBasis: saved.OrderingBasis,
@@ -252,10 +259,11 @@ func projectRepositoryOperations(
 			}
 			projected.Actions = append(projected.Actions, projectedAction)
 		}
-		projected.ExpectedResults, err = deriveOperationalResults(data, saved, evidence)
+		projected.ExpectedResults, err = projectOperationalResults(data, assessment.Results, evidence)
 		if err != nil {
 			return nil, err
 		}
+		markOperationalActions(completeActions, saved)
 		result.Paths = append(result.Paths, projected)
 	}
 	for _, saved := range record.Landmarks {
@@ -271,12 +279,49 @@ func projectRepositoryOperations(
 			ID: saved.ID, Label: saved.Label, Role: string(saved.Role),
 			Command: saved.Command, Endpoint: saved.Endpoint, Reference: reference,
 		}
-		if saved.SafeToCopy && approvedOperationalCopy(saved.Command) {
+		viewOnly := evidenceOnlySupportsIncompletePath(
+			operationalActionIdentity{
+				evidenceID: saved.EvidenceID,
+				command:    saved.Command,
+				endpoint:   saved.Endpoint,
+			},
+			incompleteActions,
+			completeActions,
+		)
+		if !viewOnly && saved.SafeToCopy && approvedOperationalCopy(saved.Command) {
 			landmark.CopyText = saved.Command
 		}
 		result.Landmarks = append(result.Landmarks, landmark)
 	}
 	return result, nil
+}
+
+type operationalActionIdentity struct {
+	evidenceID string
+	command    string
+	endpoint   string
+}
+
+func markOperationalActions(seen map[operationalActionIdentity]struct{}, saved pavedpath.Path) {
+	for _, action := range saved.Actions {
+		seen[operationalActionIdentity{
+			evidenceID: action.EvidenceID,
+			command:    action.Command,
+			endpoint:   action.Endpoint,
+		}] = struct{}{}
+	}
+}
+
+func evidenceOnlySupportsIncompletePath(
+	action operationalActionIdentity,
+	incomplete map[operationalActionIdentity]struct{},
+	complete map[operationalActionIdentity]struct{},
+) bool {
+	if _, usedByIncomplete := incomplete[action]; !usedByIncomplete {
+		return false
+	}
+	_, usedByComplete := complete[action]
+	return !usedByComplete
 }
 
 func readOperationalTrackedPaths(snapshotPath string, savedAllowedPaths ...[]string) ([]string, error) {
@@ -379,246 +424,61 @@ func projectOperationalReference(data *ReportData, item pavedpath.Evidence) (Ope
 	}, nil
 }
 
-type operationalResultCandidate struct {
-	kind        OperationalResultKind
-	value       string
-	startOffset int
-	endOffset   int
-}
-
 func deriveOperationalResults(
 	data *ReportData,
 	saved pavedpath.Path,
 	evidence map[string]pavedpath.Evidence,
 ) ([]OperationalResult, error) {
-	results := []OperationalResult{}
-	for actionIndex, action := range saved.Actions {
-		if strings.TrimSpace(action.Command) == "" {
-			continue
-		}
-		item, ok := evidence[action.EvidenceID]
+	assessment := pavedpath.AssessPathPublication(saved, evidence)
+	return projectOperationalResults(data, assessment.Results, evidence)
+}
+
+func projectOperationalResults(
+	data *ReportData,
+	classified []pavedpath.PublicationResult,
+	evidence map[string]pavedpath.Evidence,
+) ([]OperationalResult, error) {
+	results := make([]OperationalResult, 0, len(classified))
+	for _, candidate := range classified {
+		item, ok := evidence[candidate.EvidenceID]
 		if !ok {
 			return nil, fmt.Errorf("operating result references unavailable evidence")
 		}
-		if item.Redacted {
-			continue
+		reference, err := projectOperationalResultReference(data, item, candidate)
+		if err != nil {
+			return nil, err
 		}
-
-		candidates := operationalResultCandidates(action, item)
-		seen := make(map[string]struct{}, len(candidates))
-		for _, candidate := range candidates {
-			key := string(candidate.kind) + "\x00" + candidate.value
-			if _, duplicate := seen[key]; duplicate {
-				continue
-			}
-			seen[key] = struct{}{}
-			reference, err := projectOperationalResultReference(data, item, candidate)
-			if err != nil {
-				return nil, err
-			}
-			results = append(results, OperationalResult{
-				Kind: candidate.kind, Value: candidate.value, AfterAction: actionIndex + 1,
-				ResultEvidenceIDs: []string{item.ID}, Reference: reference,
-			})
+		kind := OperationalResultKind(candidate.Kind)
+		switch kind {
+		case OperationalResultCommandOutput, OperationalResultGeneratedArtifact:
+		default:
+			return nil, fmt.Errorf("operating result has invalid kind")
 		}
+		results = append(results, OperationalResult{
+			Kind: kind, Value: candidate.Value, AfterAction: candidate.AfterAction,
+			ResultEvidenceIDs: []string{item.ID}, Reference: reference,
+		})
 	}
 	return results, nil
-}
-
-func operationalResultCandidates(
-	action pavedpath.Action,
-	item pavedpath.Evidence,
-) []operationalResultCandidate {
-	result := []operationalResultCandidate{}
-	if value, startOffset, endOffset, ok := documentedCommandOutput(action.Command, item); ok {
-		result = append(result, operationalResultCandidate{
-			kind: OperationalResultCommandOutput, value: value,
-			startOffset: startOffset, endOffset: endOffset,
-		})
-	}
-	for _, value := range operationalOutputFlagValues(action.Command, operationalOutputFlagRE) {
-		offset, ok := operationalOutputFlagLine(item.Excerpt, value, operationalOutputFlagRE)
-		if !ok {
-			continue
-		}
-		result = append(result, operationalResultCandidate{
-			kind: OperationalResultGeneratedArtifact, value: value,
-			startOffset: offset, endOffset: offset,
-		})
-	}
-
-	isMakeTarget := item.Role == pavedpath.RoleBuildTarget &&
-		strings.HasPrefix(strings.TrimSpace(action.Command), "make ")
-	if !isMakeTarget {
-		return result
-	}
-	for offset, line := range item.Excerpt {
-		if !strings.HasPrefix(line, "\t") || strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		for _, value := range operationalMakeCoverProfileValues(line) {
-			result = append(result, operationalResultCandidate{
-				kind: OperationalResultGeneratedArtifact, value: value,
-				startOffset: offset, endOffset: offset,
-			})
-		}
-	}
-	return result
-}
-
-func documentedCommandOutput(
-	command string,
-	item pavedpath.Evidence,
-) (string, int, int, bool) {
-	if item.Role != pavedpath.RoleDocumentedProcedure {
-		return "", 0, 0, false
-	}
-	prompt := "$ " + strings.TrimSpace(command)
-	for index, line := range item.Excerpt {
-		if strings.TrimSpace(line) != prompt {
-			continue
-		}
-		start := index + 1
-		end := len(item.Excerpt) - 1
-		for offset := start; offset < len(item.Excerpt); offset++ {
-			trimmed := strings.TrimSpace(item.Excerpt[offset])
-			isNextPrompt := strings.HasPrefix(trimmed, "$ ") ||
-				strings.HasPrefix(trimmed, "% ") || strings.HasPrefix(trimmed, "> ")
-			if isNextPrompt {
-				end = offset - 1
-				break
-			}
-		}
-		for start <= end && strings.TrimSpace(item.Excerpt[start]) == "" {
-			start++
-		}
-		for end >= start && strings.TrimSpace(item.Excerpt[end]) == "" {
-			end--
-		}
-		if start > end {
-			continue
-		}
-		value := dedentOperationalOutput(item.Excerpt[start : end+1])
-		if validOperationalResultValue(value) {
-			return value, start, end, true
-		}
-	}
-	return "", 0, 0, false
-}
-
-func dedentOperationalOutput(lines []string) string {
-	indent := -1
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		current := len(line) - len(strings.TrimLeft(line, " \t"))
-		if indent < 0 || current < indent {
-			indent = current
-		}
-	}
-	if indent <= 0 {
-		return strings.Join(lines, "\n")
-	}
-	result := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if len(line) >= indent {
-			line = line[indent:]
-		}
-		result = append(result, line)
-	}
-	return strings.Join(result, "\n")
-}
-
-func operationalOutputFlagValues(command string, expression *regexp.Regexp) []string {
-	values := []string{}
-	for _, match := range expression.FindAllStringSubmatch(command, -1) {
-		for index := 1; index < len(match); index++ {
-			if validOperationalArtifactPath(match[index]) {
-				values = append(values, match[index])
-				break
-			}
-		}
-	}
-	return values
-}
-
-func operationalMakeCoverProfileValues(line string) []string {
-	const marker = "-coverprofile="
-	values := []string{}
-	remaining := line
-	for {
-		index := strings.Index(remaining, marker)
-		if index < 0 {
-			return values
-		}
-		remaining = remaining[index+len(marker):]
-		value := strings.Fields(remaining)
-		if len(value) == 0 {
-			return values
-		}
-		candidate := strings.Trim(value[0], `"'`)
-		if validOperationalArtifactPath(candidate) {
-			values = append(values, candidate)
-		}
-		remaining = remaining[len(value[0]):]
-	}
-}
-
-func operationalOutputFlagLine(lines []string, value string, expression *regexp.Regexp) (int, bool) {
-	for index, line := range lines {
-		for _, candidate := range operationalOutputFlagValues(line, expression) {
-			if candidate == value {
-				return index, true
-			}
-		}
-	}
-	return 0, false
-}
-
-func validOperationalArtifactPath(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" || len(value) > 512 || strings.HasPrefix(value, "-") ||
-		strings.ContainsAny(value, "\r\n\x00`$|;&<>{}()") {
-		return false
-	}
-	for _, char := range value {
-		if unicode.IsControl(char) {
-			return false
-		}
-	}
-	return true
-}
-
-func validOperationalResultValue(value string) bool {
-	if strings.TrimSpace(value) == "" || len(value) > maxOperationalResultBytes {
-		return false
-	}
-	for _, char := range value {
-		if unicode.IsControl(char) && char != '\t' && char != '\n' {
-			return false
-		}
-	}
-	return true
 }
 
 func projectOperationalResultReference(
 	data *ReportData,
 	item pavedpath.Evidence,
-	candidate operationalResultCandidate,
+	candidate pavedpath.PublicationResult,
 ) (OperationalReference, error) {
-	if candidate.startOffset < 0 || candidate.endOffset < candidate.startOffset ||
-		candidate.endOffset >= len(item.Excerpt) {
+	if candidate.StartOffset < 0 || candidate.EndOffset < candidate.StartOffset ||
+		candidate.EndOffset >= len(item.Excerpt) {
 		return OperationalReference{}, fmt.Errorf("operating result has invalid source coordinates")
 	}
 	projected := item
-	projected.StartLine = item.StartLine + candidate.startOffset
-	projected.EndLine = item.StartLine + candidate.endOffset
-	projected.Excerpt = append([]string{}, item.Excerpt[candidate.startOffset:candidate.endOffset+1]...)
-	switch candidate.kind {
-	case OperationalResultCommandOutput:
+	projected.StartLine = item.StartLine + candidate.StartOffset
+	projected.EndLine = item.StartLine + candidate.EndOffset
+	projected.Excerpt = append([]string{}, item.Excerpt[candidate.StartOffset:candidate.EndOffset+1]...)
+	switch candidate.Kind {
+	case pavedpath.PublicationResultCommandOutput:
 		projected.Label = "Documented command output"
-	case OperationalResultGeneratedArtifact:
+	case pavedpath.PublicationResultGeneratedArtifact:
 		projected.Label = "Generated artifact path"
 	default:
 		return OperationalReference{}, fmt.Errorf("operating result has invalid kind")
@@ -656,4 +516,137 @@ func approvedOperationalCopy(command string) bool {
 
 func pavedPathRecordPath(runDir string) string {
 	return filepath.Join(runDir, pavedpath.RecordFile)
+}
+
+type pavedPathPublicationIssue struct {
+	PathIndex int    `json:"path_index"`
+	Code      string `json:"code"`
+}
+
+type pavedPathPublicationDiagnostics struct {
+	Version         int                         `json:"version"`
+	RecordRawSHA256 string                      `json:"record_raw_sha256"`
+	BundleSHA256    string                      `json:"bundle_sha256"`
+	RecordIssues    []pavedPathPublicationIssue `json:"record_issues"`
+	ReplayIssues    []pavedPathPublicationIssue `json:"replay_issues"`
+}
+
+func writePavedPathPublicationDiagnostics(runDir string) error {
+	diagnostics := loadPavedPathPublicationDiagnostics(runDir)
+	target := filepath.Join(runDir, pavedPathPublicationDiagnosticsFile)
+	if diagnostics == nil {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale paved path publication diagnostics: %w", err)
+		}
+		return nil
+	}
+	raw, err := json.MarshalIndent(diagnostics, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode paved path publication diagnostics: %w", err)
+	}
+	raw = append(raw, '\n')
+	if len(raw) > 16<<10 {
+		return fmt.Errorf("paved path publication diagnostics exceed internal bound")
+	}
+
+	temporary, err := os.CreateTemp(runDir, ".paved-path-publication-diagnostics-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create paved path publication diagnostics temporary file: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("secure paved path publication diagnostics temporary file: %w", err)
+	}
+	if _, err := temporary.Write(raw); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("write paved path publication diagnostics temporary file: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("sync paved path publication diagnostics temporary file: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close paved path publication diagnostics temporary file: %w", err)
+	}
+	if err := os.Rename(temporaryPath, target); err != nil {
+		return fmt.Errorf("replace paved path publication diagnostics: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func loadPavedPathPublicationDiagnostics(runDir string) *pavedPathPublicationDiagnostics {
+	recordPath := pavedPathRecordPath(runDir)
+	info, err := os.Lstat(recordPath)
+	if err != nil || !info.Mode().IsRegular() ||
+		info.Size() <= 0 || info.Size() > maxSavedPavedPathBytes {
+		return nil
+	}
+	raw, err := os.ReadFile(recordPath)
+	if err != nil {
+		return nil
+	}
+	record, err := pavedpath.DecodeRecord(raw)
+	if err != nil {
+		return nil
+	}
+
+	recordIssues := make([]pavedPathPublicationIssue, 0, pavedpath.MaxPaths)
+	for _, issue := range record.Issues {
+		if issue.PathIndex < 0 || issue.PathIndex >= pavedpath.MaxPaths ||
+			!pavedPathPublicationIssueCode(issue.Code) {
+			continue
+		}
+		recordIssues = append(recordIssues, pavedPathPublicationIssue{
+			PathIndex: issue.PathIndex,
+			Code:      issue.Code,
+		})
+		if len(recordIssues) == pavedpath.MaxPaths {
+			break
+		}
+	}
+	evidence := make(map[string]pavedpath.Evidence, len(record.Bundle.Evidence))
+	for _, item := range record.Bundle.Evidence {
+		evidence[item.ID] = item
+	}
+	replayIssues := make([]pavedPathPublicationIssue, 0, len(record.Paths))
+	for index, saved := range record.Paths {
+		assessment := pavedpath.AssessPathPublication(saved, evidence)
+		if assessment.IssueCode == "" {
+			continue
+		}
+		replayIssues = append(replayIssues, pavedPathPublicationIssue{
+			PathIndex: index,
+			Code:      assessment.IssueCode,
+		})
+	}
+	if len(recordIssues) == 0 && len(replayIssues) == 0 {
+		return nil
+	}
+	digest := sha256.Sum256(raw)
+	return &pavedPathPublicationDiagnostics{
+		Version:         pavedPathPublicationDiagnosticsVersion,
+		RecordRawSHA256: hex.EncodeToString(digest[:]),
+		BundleSHA256:    record.BundleSHA256,
+		RecordIssues:    recordIssues,
+		ReplayIssues:    replayIssues,
+	}
+}
+
+func pavedPathPublicationIssueCode(code string) bool {
+	switch code {
+	case pavedpath.PublicationIssueMissingPrerequisite,
+		pavedpath.PublicationIssueMissingActions,
+		pavedpath.PublicationIssueMissingResult:
+		return true
+	default:
+		return false
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -35,7 +36,20 @@ const (
 	MaxActions   = 8
 	MaxLandmarks = 24
 
-	maxArtifactBytes = 4 << 20
+	maxArtifactBytes          = 4 << 20
+	maxPublicationResultBytes = 4 << 10
+
+	PublicationIssueMissingPrerequisite = "missing_prerequisite"
+	PublicationIssueMissingActions      = "missing_essential_action_sequence"
+	PublicationIssueMissingResult       = "missing_observable_result"
+)
+
+var publicationOutputFlagRE = regexp.MustCompile(
+	`(?:^|[ \t])(?:-o|--output|-coverprofile)(?:=|[ \t]+)(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^ \t\r\n]+))`,
+)
+
+var publicationAbsentPrerequisiteRE = regexp.MustCompile(
+	`\b(?:prerequisites?|requirements?)\s*:\s*(?:none|no|n/?a|not\s+applicable|optional)\b`,
 )
 
 // EvidenceRole describes an operational affordance, independently of the
@@ -171,6 +185,29 @@ type Issue struct {
 	Detail    string `json:"detail,omitempty"`
 }
 
+type PublicationResultKind string
+
+const (
+	PublicationResultCommandOutput     PublicationResultKind = "command_output"
+	PublicationResultGeneratedArtifact PublicationResultKind = "generated_artifact"
+)
+
+// PublicationResult is an internal, non-serialized classification of an
+// exact result already present in selected operational evidence.
+type PublicationResult struct {
+	Kind        PublicationResultKind
+	Value       string
+	AfterAction int
+	EvidenceID  string
+	StartOffset int
+	EndOffset   int
+}
+
+type PublicationAssessment struct {
+	IssueCode string
+	Results   []PublicationResult
+}
+
 type Record struct {
 	Version      int        `json:"version"`
 	BundleSHA256 string     `json:"bundle_sha256"`
@@ -280,6 +317,8 @@ func BuildRecordScoped(
 			allowedEvidence[id] = struct{}{}
 		}
 	}
+	rejectedActions := make(map[publicationActionIdentity]struct{})
+	completeActions := make(map[publicationActionIdentity]struct{})
 	for index, proposed := range proposal.Paths {
 		if !proposedPathWithinEvidenceScope(proposed, allowedEvidence) {
 			record.Issues = append(record.Issues, Issue{
@@ -293,10 +332,25 @@ func BuildRecordScoped(
 			record.Issues = append(record.Issues, Issue{PathIndex: index, Code: code})
 			continue
 		}
+		assessment := AssessPathPublication(built, evidence)
+		if assessment.IssueCode != "" {
+			record.Issues = append(record.Issues, Issue{
+				PathIndex: index,
+				Code:      assessment.IssueCode,
+			})
+			markPublicationActions(rejectedActions, built)
+			continue
+		}
+		markPublicationActions(completeActions, built)
 		record.Paths = append(record.Paths, built)
 	}
 	record.Paths = compressPaths(record.Paths)
-	record.Landmarks = buildLandmarks(bundle.Evidence, record.Paths)
+	record.Landmarks = buildLandmarks(
+		bundle.Evidence,
+		record.Paths,
+		rejectedActions,
+		completeActions,
+	)
 	if err := record.Validate(); err != nil {
 		return Record{}, err
 	}
@@ -444,7 +498,7 @@ func (record Record) Validate() error {
 		}
 		if item.Command != "" {
 			command, ok := commandByValue(source.Commands, item.Command)
-			if !ok || item.SafeToCopy != command.SafeToCopy {
+			if !ok || item.SafeToCopy && !command.SafeToCopy {
 				return fmt.Errorf("paved paths: landmark command mismatch")
 			}
 		} else if item.Endpoint != source.Endpoint {
@@ -553,7 +607,40 @@ func validOperationalInstruction(action ProposedAction) bool {
 	return validOperationalProse(instruction, 768)
 }
 
-func buildLandmarks(evidence []Evidence, paths []Path) []Landmark {
+type publicationActionIdentity struct {
+	evidenceID string
+	command    string
+	endpoint   string
+}
+
+func markPublicationActions(seen map[publicationActionIdentity]struct{}, item Path) {
+	for _, action := range item.Actions {
+		seen[publicationActionIdentity{
+			evidenceID: action.EvidenceID,
+			command:    action.Command,
+			endpoint:   action.Endpoint,
+		}] = struct{}{}
+	}
+}
+
+func publicationActionRejectedOnly(
+	action publicationActionIdentity,
+	rejected map[publicationActionIdentity]struct{},
+	complete map[publicationActionIdentity]struct{},
+) bool {
+	if _, rejectedAction := rejected[action]; !rejectedAction {
+		return false
+	}
+	_, completeAction := complete[action]
+	return !completeAction
+}
+
+func buildLandmarks(
+	evidence []Evidence,
+	paths []Path,
+	rejectedActions map[publicationActionIdentity]struct{},
+	completeActions map[publicationActionIdentity]struct{},
+) []Landmark {
 	used := make(map[string]struct{})
 	for _, item := range paths {
 		for _, action := range item.Actions {
@@ -562,9 +649,18 @@ func buildLandmarks(evidence []Evidence, paths []Path) []Landmark {
 	}
 	result := make([]Landmark, 0, min(MaxLandmarks, len(evidence)))
 	appendLandmark := func(item Evidence, command Command, endpoint string) {
+		viewOnly := publicationActionRejectedOnly(
+			publicationActionIdentity{
+				evidenceID: item.ID,
+				command:    command.Value,
+				endpoint:   endpoint,
+			},
+			rejectedActions,
+			completeActions,
+		)
 		landmark := Landmark{
 			EvidenceID: item.ID, Label: item.Label, Command: command.Value,
-			Endpoint: endpoint, SafeToCopy: command.SafeToCopy, Role: item.Role,
+			Endpoint: endpoint, SafeToCopy: command.SafeToCopy && !viewOnly, Role: item.Role,
 		}
 		landmark.ID = stableID("landmark", item.ID, landmark.Command, landmark.Endpoint)
 		result = append(result, landmark)
@@ -747,6 +843,405 @@ func normalizedOrderingBasis(
 		}
 	}
 	return proposed
+}
+
+// AssessPathPublication applies the fail-closed operating-path publication
+// contract and derives the exact typed results consumed by report projection.
+// Record decoding deliberately does not call this helper: historical records
+// remain replayable, while new construction and public replay share one
+// deterministic assessment.
+func AssessPathPublication(saved Path, evidence map[string]Evidence) PublicationAssessment {
+	results := derivePublicationResults(saved, evidence)
+	if !publicationPrerequisitesClosed(saved, evidence) {
+		return PublicationAssessment{
+			IssueCode: PublicationIssueMissingPrerequisite,
+			Results:   results,
+		}
+	}
+	if !publicationActionSequenceClosed(saved, evidence) {
+		return PublicationAssessment{
+			IssueCode: PublicationIssueMissingActions,
+			Results:   results,
+		}
+	}
+	for _, result := range results {
+		if result.AfterAction == len(saved.Actions) {
+			return PublicationAssessment{Results: results}
+		}
+	}
+	return PublicationAssessment{
+		IssueCode: PublicationIssueMissingResult,
+		Results:   results,
+	}
+}
+
+func publicationPrerequisitesClosed(saved Path, evidence map[string]Evidence) bool {
+	if len(saved.PrerequisiteEvidenceIDs) == 0 || len(saved.Actions) == 0 {
+		return false
+	}
+	actionIDs := make(map[string]struct{}, len(saved.Actions))
+	for _, action := range saved.Actions {
+		if _, ok := evidence[action.EvidenceID]; !ok {
+			return false
+		}
+		actionIDs[action.EvidenceID] = struct{}{}
+	}
+	for _, id := range saved.PrerequisiteEvidenceIDs {
+		item, ok := evidence[id]
+		if !ok || item.Redacted || !publicationPrerequisiteRole(item.Role) ||
+			!explicitPrerequisiteEvidence(item) {
+			return false
+		}
+		if _, reused := actionIDs[id]; reused {
+			return false
+		}
+		sameProcedure := false
+		for _, action := range saved.Actions {
+			actionEvidence := evidence[action.EvidenceID]
+			if publicationEvidenceDuplicatesAction(item, actionEvidence, action) {
+				return false
+			}
+			if publicationPrerequisiteMatchesAction(item, actionEvidence, action) {
+				sameProcedure = true
+				break
+			}
+		}
+		if !sameProcedure {
+			return false
+		}
+	}
+	return true
+}
+
+func publicationEvidenceDuplicatesAction(
+	prerequisite Evidence,
+	actionEvidence Evidence,
+	action Action,
+) bool {
+	if action.Command != "" {
+		for _, command := range prerequisite.Commands {
+			if command.Value == action.Command {
+				return true
+			}
+		}
+	}
+	return prerequisite.Path == actionEvidence.Path &&
+		prerequisite.StartLine == actionEvidence.StartLine &&
+		prerequisite.EndLine == actionEvidence.EndLine &&
+		slices.Equal(prerequisite.Excerpt, actionEvidence.Excerpt)
+}
+
+func publicationPrerequisiteRole(role EvidenceRole) bool {
+	switch role {
+	case RoleDocumentedProcedure, RoleBuildTarget, RolePackageScript,
+		RoleRepositoryScript, RoleComposeService, RoleEnvironment,
+		RoleConfiguration:
+		return true
+	default:
+		return false
+	}
+}
+
+func explicitPrerequisiteEvidence(item Evidence) bool {
+	text := " " + strings.ToLower(strings.Join(item.Excerpt, "\n")) + " "
+	if publicationAbsentPrerequisiteRE.MatchString(text) {
+		return false
+	}
+	for _, negation := range []string{
+		" no prerequisite", " no additional prerequisite", " no requirements",
+		" no additional requirements", " no setup ", " no installation ",
+		" no configuration ", " not required", " none required",
+		" prerequisites: none", " requirements: none", " without prerequisites",
+		" without requirements", " requires no ", " does not require",
+		" do not need", " don't need", " need not ", " nothing required",
+	} {
+		if strings.Contains(text, negation) {
+			return false
+		}
+	}
+	for _, marker := range []string{
+		" prerequisite:", " prerequisites:", " requirement:", " requirements:",
+		" requires ", " required ",
+		" must ", " need ", " needs ", " before ", "first install",
+		"first, install", "install first", "first set up", "first, set up",
+		"first configure", "first, configure",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicationActionSequenceClosed(saved Path, evidence map[string]Evidence) bool {
+	if len(saved.Actions) == 0 || saved.OrderingBasis == OrderingEditorial ||
+		normalizedOrderingBasis(saved.OrderingBasis, saved.Actions, evidence) != saved.OrderingBasis {
+		return false
+	}
+	first, ok := evidence[saved.Actions[0].EvidenceID]
+	if !ok || first.Redacted {
+		return false
+	}
+	previousPosition := -1
+	for _, action := range saved.Actions {
+		item, exists := evidence[action.EvidenceID]
+		if !exists || item.Redacted || item.ID != first.ID ||
+			(action.Command == "") == (action.Endpoint == "") {
+			return false
+		}
+		position := operationalActionPosition(action, evidence)
+		if previousPosition >= 0 && position != previousPosition+1 {
+			return false
+		}
+		previousPosition = position
+	}
+	return true
+}
+
+func publicationPrerequisiteMatchesAction(
+	prerequisite Evidence,
+	actionEvidence Evidence,
+	action Action,
+) bool {
+	if prerequisite.Path == "" || prerequisite.Path != actionEvidence.Path {
+		return false
+	}
+	if prerequisite.StartLine > actionEvidence.EndLine ||
+		actionEvidence.StartLine > prerequisite.EndLine {
+		return false
+	}
+	prerequisiteWords := words(
+		prerequisite.Label + "\n" + strings.Join(prerequisite.Excerpt, "\n"),
+	)
+	actionWords := words(action.Command + "\n" + action.Endpoint)
+	for _, word := range prerequisiteWords {
+		if slices.Contains(actionWords, word) {
+			return true
+		}
+	}
+	return false
+}
+
+type publicationResultCandidate struct {
+	kind        PublicationResultKind
+	value       string
+	startOffset int
+	endOffset   int
+}
+
+func derivePublicationResults(
+	saved Path,
+	evidence map[string]Evidence,
+) []PublicationResult {
+	results := []PublicationResult{}
+	for actionIndex, action := range saved.Actions {
+		if strings.TrimSpace(action.Command) == "" {
+			continue
+		}
+		item, ok := evidence[action.EvidenceID]
+		if !ok || item.Redacted {
+			continue
+		}
+		candidates := publicationResultCandidates(action, item)
+		seen := make(map[string]struct{}, len(candidates))
+		for _, candidate := range candidates {
+			key := string(candidate.kind) + "\x00" + candidate.value
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			results = append(results, PublicationResult{
+				Kind: candidate.kind, Value: candidate.value, AfterAction: actionIndex + 1,
+				EvidenceID: item.ID, StartOffset: candidate.startOffset,
+				EndOffset: candidate.endOffset,
+			})
+		}
+	}
+	return results
+}
+
+func publicationResultCandidates(
+	action Action,
+	item Evidence,
+) []publicationResultCandidate {
+	result := []publicationResultCandidate{}
+	if value, startOffset, endOffset, ok := publicationDocumentedCommandOutput(
+		action.Command,
+		item,
+	); ok {
+		result = append(result, publicationResultCandidate{
+			kind: PublicationResultCommandOutput, value: value,
+			startOffset: startOffset, endOffset: endOffset,
+		})
+	}
+	for _, value := range publicationOutputFlagValues(action.Command, publicationOutputFlagRE) {
+		offset, ok := publicationOutputFlagLine(item.Excerpt, value, publicationOutputFlagRE)
+		if !ok {
+			continue
+		}
+		result = append(result, publicationResultCandidate{
+			kind: PublicationResultGeneratedArtifact, value: value,
+			startOffset: offset, endOffset: offset,
+		})
+	}
+
+	isMakeTarget := item.Role == RoleBuildTarget &&
+		strings.HasPrefix(strings.TrimSpace(action.Command), "make ")
+	if !isMakeTarget {
+		return result
+	}
+	for offset, line := range item.Excerpt {
+		if !strings.HasPrefix(line, "\t") || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		for _, value := range publicationMakeCoverProfileValues(line) {
+			result = append(result, publicationResultCandidate{
+				kind: PublicationResultGeneratedArtifact, value: value,
+				startOffset: offset, endOffset: offset,
+			})
+		}
+	}
+	return result
+}
+
+func publicationDocumentedCommandOutput(
+	command string,
+	item Evidence,
+) (string, int, int, bool) {
+	if item.Role != RoleDocumentedProcedure {
+		return "", 0, 0, false
+	}
+	prompt := "$ " + strings.TrimSpace(command)
+	for index, line := range item.Excerpt {
+		if strings.TrimSpace(line) != prompt {
+			continue
+		}
+		start := index + 1
+		end := len(item.Excerpt) - 1
+		for offset := start; offset < len(item.Excerpt); offset++ {
+			trimmed := strings.TrimSpace(item.Excerpt[offset])
+			isNextPrompt := strings.HasPrefix(trimmed, "$ ") ||
+				strings.HasPrefix(trimmed, "% ") || strings.HasPrefix(trimmed, "> ")
+			if isNextPrompt {
+				end = offset - 1
+				break
+			}
+		}
+		for start <= end && strings.TrimSpace(item.Excerpt[start]) == "" {
+			start++
+		}
+		for end >= start && strings.TrimSpace(item.Excerpt[end]) == "" {
+			end--
+		}
+		if start > end {
+			continue
+		}
+		value := dedentPublicationOutput(item.Excerpt[start : end+1])
+		if validPublicationResultValue(value) {
+			return value, start, end, true
+		}
+	}
+	return "", 0, 0, false
+}
+
+func dedentPublicationOutput(lines []string) string {
+	indent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		current := len(line) - len(strings.TrimLeft(line, " \t"))
+		if indent < 0 || current < indent {
+			indent = current
+		}
+	}
+	if indent <= 0 {
+		return strings.Join(lines, "\n")
+	}
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if len(line) >= indent {
+			line = line[indent:]
+		}
+		result = append(result, line)
+	}
+	return strings.Join(result, "\n")
+}
+
+func publicationOutputFlagValues(command string, expression *regexp.Regexp) []string {
+	values := []string{}
+	for _, match := range expression.FindAllStringSubmatch(command, -1) {
+		for index := 1; index < len(match); index++ {
+			if validPublicationArtifactPath(match[index]) {
+				values = append(values, match[index])
+				break
+			}
+		}
+	}
+	return values
+}
+
+func publicationMakeCoverProfileValues(line string) []string {
+	const marker = "-coverprofile="
+	values := []string{}
+	remaining := line
+	for {
+		index := strings.Index(remaining, marker)
+		if index < 0 {
+			return values
+		}
+		remaining = remaining[index+len(marker):]
+		value := strings.Fields(remaining)
+		if len(value) == 0 {
+			return values
+		}
+		candidate := strings.Trim(value[0], `"'`)
+		if validPublicationArtifactPath(candidate) {
+			values = append(values, candidate)
+		}
+		remaining = remaining[len(value[0]):]
+	}
+}
+
+func publicationOutputFlagLine(
+	lines []string,
+	value string,
+	expression *regexp.Regexp,
+) (int, bool) {
+	for index, line := range lines {
+		for _, candidate := range publicationOutputFlagValues(line, expression) {
+			if candidate == value {
+				return index, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func validPublicationArtifactPath(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 512 || strings.HasPrefix(value, "-") ||
+		strings.ContainsAny(value, "\r\n\x00`$|;&<>{}()") {
+		return false
+	}
+	for _, char := range value {
+		if unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+func validPublicationResultValue(value string) bool {
+	if strings.TrimSpace(value) == "" || len(value) > maxPublicationResultBytes {
+		return false
+	}
+	for _, char := range value {
+		if unicode.IsControl(char) && char != '\t' && char != '\n' {
+			return false
+		}
+	}
+	return true
 }
 
 func operationalActionPosition(action Action, evidence map[string]Evidence) int {
