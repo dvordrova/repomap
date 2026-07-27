@@ -1,0 +1,764 @@
+{
+  "artifact_kind": "source-episode-microexperiment",
+  "artifact_version": "1",
+  "episode_id": "etcd-put-recoverability",
+  "repository": {
+    "name": "etcd-io/etcd",
+    "revision": "58f45a9ff1c083130830eb02b0cc7d9783609095",
+    "web_base": "https://github.com/etcd-io/etcd/tree/58f45a9ff1c083130830eb02b0cc7d9783609095"
+  },
+  "question": "What does a successful Put actually wait for, and which bytes make it recoverable?",
+  "trust_states": [
+    "extracted",
+    "corroborated",
+    "inferred",
+    "unknown"
+  ],
+  "scope": {
+    "included": [
+      "The successful unary v3 Put path on one etcd member.",
+      "The local waiter boundary between proposal and response.",
+      "The distinct Ready collections used for apply and WAL storage.",
+      "The MVCC write transaction, read buffer, backend batch commit, and consistent index.",
+      "WAL entry encoding and committed-entry filtering during restart."
+    ],
+    "excluded": [
+      "README files, documentation prose, and provider output.",
+      "The implementation of the external go.etcd.io/raft/v3 module.",
+      "Quorum formation, peer acknowledgments, transport delivery, retries, and failure paths.",
+      "Lease semantics, PrevKv semantics, authorization, quota, and alarms.",
+      "A guarantee about kernel, filesystem, controller, or device persistence under unsafe settings."
+    ]
+  },
+  "anchors": [
+    {
+      "id": "anchor-rpc-put-return",
+      "path": "server/etcdserver/api/v3rpc/key.go",
+      "start_line": 90,
+      "end_line": 101,
+      "blob_oid": "4f87716a73aa810e096daea846b4ccd94bd879fb",
+      "line_sha256": "43586d6068a12df104324c392a7728250b25c23a46f806493da71e0923fb5516",
+      "needle": "resp, err := s.kv.Put(ctx, r)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/api/v3rpc/key.go#L90-L101"
+    },
+    {
+      "id": "anchor-put-submits-raft",
+      "path": "server/etcdserver/v3_server.go",
+      "start_line": 295,
+      "end_line": 307,
+      "blob_oid": "7e5f67c55951a6b9f1c4d9080378cddd024e66ff",
+      "line_sha256": "75efa8a4466180c17927fbac91ef416bdba0b8bc892df0a2bcf0d164c8d8dc28",
+      "needle": "s.raftRequest(ctx, &pb.InternalRaftRequest{Put: r})",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/v3_server.go#L295-L307"
+    },
+    {
+      "id": "anchor-request-bytes-and-waiter",
+      "path": "server/etcdserver/v3_server.go",
+      "start_line": 1093,
+      "end_line": 1129,
+      "blob_oid": "7e5f67c55951a6b9f1c4d9080378cddd024e66ff",
+      "line_sha256": "b8c8255456fa1a1fecb6c09a6ba607d84896a4817147d68002b32e537667c622",
+      "needle": "data, err = proto.Marshal(r)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/v3_server.go#L1093-L1129"
+    },
+    {
+      "id": "anchor-committed-entries-to-apply",
+      "path": "server/etcdserver/raft.go",
+      "start_line": 218,
+      "end_line": 231,
+      "blob_oid": "ec3004294b00cdd69bac2255850f4128acc0eef1",
+      "line_sha256": "60442e99a74a68216bd9f721a22d445da4573371a2bf5eef2f74ebd9ee30730e",
+      "needle": "entries:       rd.CommittedEntries",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/raft.go#L218-L231"
+    },
+    {
+      "id": "anchor-unstable-entries-to-wal",
+      "path": "server/etcdserver/raft.go",
+      "start_line": 243,
+      "end_line": 260,
+      "blob_oid": "ec3004294b00cdd69bac2255850f4128acc0eef1",
+      "line_sha256": "154653bcefccf21487b6447b866bd7569215b87e21fecfcdea822f043e97d0db",
+      "needle": "r.storage.Save(rd.HardState, rd.Entries)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/raft.go#L243-L260"
+    },
+    {
+      "id": "anchor-apply-result-to-waiter",
+      "path": "server/etcdserver/server.go",
+      "start_line": 1968,
+      "end_line": 1981,
+      "blob_oid": "364ad36a5d04d18b50ad4f106deb8f526903a1c2",
+      "line_sha256": "9bca31662fb4c314e7a8486c863f4cc20e64677fd777c2916872a702d6a07c1a",
+      "needle": "s.w.Trigger(id, ar)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/server.go#L1968-L1981"
+    },
+    {
+      "id": "anchor-mvcc-put-transaction",
+      "path": "server/etcdserver/txn/put.go",
+      "start_line": 30,
+      "end_line": 45,
+      "blob_oid": "ec3ae38c7b8ef8cf0f837bb23a3e37aa309b85e6",
+      "line_sha256": "67169aaab653bedada8f2229f30e7439cc5a924495fb2b1cffd4f46ba3fa6710",
+      "needle": "defer txnWrite.End()",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/txn/put.go#L30-L45"
+    },
+    {
+      "id": "anchor-mvcc-keyvalue-bytes",
+      "path": "server/storage/mvcc/kvstore_txn.go",
+      "start_line": 212,
+      "end_line": 238,
+      "blob_oid": "86dd6b504b043ed13dfc84fa79d965620f3a2ae6",
+      "line_sha256": "8d447d59ddffabe51101cd8a6f8bad3cb94451a264c61bb5725875cfe9fd7db3",
+      "needle": "tw.tx.UnsafeSeqPut(schema.Key, ibytes, d)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/mvcc/kvstore_txn.go#L212-L238"
+    },
+    {
+      "id": "anchor-mvcc-revision-publication",
+      "path": "server/storage/mvcc/kvstore_txn.go",
+      "start_line": 185,
+      "end_line": 197,
+      "blob_oid": "86dd6b504b043ed13dfc84fa79d965620f3a2ae6",
+      "line_sha256": "58ad3079c812d479d144a91cfdf2f703cd8d6e51e8bbcc5e61726ff04d6fef8e",
+      "needle": "tw.s.currentRev++",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/mvcc/kvstore_txn.go#L185-L197"
+    },
+    {
+      "id": "anchor-put-read-buffer-before-commit",
+      "path": "server/storage/backend/batch_tx.go",
+      "start_line": 308,
+      "end_line": 339,
+      "blob_oid": "5af557cb428377b0af4c96992882a9443720f2f3",
+      "line_sha256": "075e227bb625d22e8df09affa38bcf1c3455ffde368bede0ae61c630e12f1715",
+      "needle": "we don't need to commit the transaction for put requests",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L308-L339"
+    },
+    {
+      "id": "anchor-backend-periodic-commit",
+      "path": "server/storage/backend/backend.go",
+      "start_line": 441,
+      "end_line": 455,
+      "blob_oid": "8f5f76429c742e33f139f300a9aaa6e4d8cfbd01",
+      "line_sha256": "213d3f4b43b218c217c41f2595fcdfa5bf881c3d9ddaf30bbc77c134023aebfd",
+      "needle": "b.batchTx.Commit()",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L441-L455"
+    },
+    {
+      "id": "anchor-backend-bbolt-commit",
+      "path": "server/storage/backend/batch_tx.go",
+      "start_line": 261,
+      "end_line": 287,
+      "blob_oid": "5af557cb428377b0af4c96992882a9443720f2f3",
+      "line_sha256": "761102ee3795a8012cf1a9302238d25e7d1e155878700afc3d6e370214f4d453",
+      "needle": "err := t.tx.Commit()",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L261-L287"
+    },
+    {
+      "id": "anchor-wal-entry-record-and-sync",
+      "path": "server/storage/wal/wal.go",
+      "start_line": 936,
+      "end_line": 992,
+      "blob_oid": "a4cd53db0b8e151d79ba7da1ab28b491c604dc8d",
+      "line_sha256": "3ae416667a95b42f83bc24665b066544f970baed4de8812879d93baa07e5c479",
+      "needle": "b := pbutil.MustMarshal(e)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/wal/wal.go#L936-L992"
+    },
+    {
+      "id": "anchor-restart-reads-wal",
+      "path": "server/etcdserver/bootstrap.go",
+      "start_line": 624,
+      "end_line": 662,
+      "blob_oid": "c0e26c62f194d21a3e67f9644925547b70511a43",
+      "line_sha256": "3dd7340e1c3bddc2300b4bb826f25853adee38efe5fed0c373e5a798f8b0ccdf",
+      "needle": "wmetadata, st, ents, err := w.ReadAll()",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/bootstrap.go#L624-L662"
+    },
+    {
+      "id": "anchor-restart-filters-uncommitted",
+      "path": "server/etcdserver/bootstrap.go",
+      "start_line": 714,
+      "end_line": 727,
+      "blob_oid": "c0e26c62f194d21a3e67f9644925547b70511a43",
+      "line_sha256": "c2d923bc285166a2b3653041a72f34e9e137771793b05c63d75d564464ce454f",
+      "needle": "discarding uncommitted WAL entries",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/bootstrap.go#L714-L727"
+    },
+    {
+      "id": "anchor-apply-uses-consistent-index",
+      "path": "server/etcdserver/server.go",
+      "start_line": 1905,
+      "end_line": 1917,
+      "blob_oid": "364ad36a5d04d18b50ad4f106deb8f526903a1c2",
+      "line_sha256": "e5e42818616d510fb1b03512743c78aa747f9776b570b9ab32ede25850d215ab",
+      "needle": "if e.Index > index",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/etcdserver/server.go#L1905-L1917"
+    },
+    {
+      "id": "anchor-backend-saves-consistent-index",
+      "path": "server/storage/hooks.go",
+      "start_line": 40,
+      "end_line": 52,
+      "blob_oid": "ffec71c0bca22eef85a9349157522058f95d1596",
+      "line_sha256": "9636f9f5ab02ef34054c5e3b08517b3a61af9ad85346fd48329171a68eb13251",
+      "needle": "bh.indexer.UnsafeSave(tx)",
+      "url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/hooks.go#L40-L52"
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact-rpc-put-returns-kv-result",
+      "state": "extracted",
+      "statement": "The unary RPC handler returns only after its delegated KV Put call returns a response without error.",
+      "anchor_ids": [
+        "anchor-rpc-put-return"
+      ]
+    },
+    {
+      "id": "fact-put-wraps-raft-request",
+      "state": "extracted",
+      "statement": "EtcdServer.Put wraps the PutRequest in InternalRaftRequest and delegates to raftRequest.",
+      "anchor_ids": [
+        "anchor-put-submits-raft"
+      ]
+    },
+    {
+      "id": "fact-request-bytes-proposed-and-waited",
+      "state": "extracted",
+      "statement": "processInternalRaftRequestOnce protobuf-encodes InternalRaftRequest, proposes those bytes, and then waits on the request-ID channel for an apply result or a terminal condition.",
+      "anchor_ids": [
+        "anchor-request-bytes-and-waiter"
+      ]
+    },
+    {
+      "id": "fact-committed-entries-feed-apply",
+      "state": "extracted",
+      "statement": "The apply work item receives rd.CommittedEntries.",
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply"
+      ]
+    },
+    {
+      "id": "fact-unstable-entries-feed-wal",
+      "state": "extracted",
+      "statement": "The storage Save call receives rd.HardState and rd.Entries, not rd.CommittedEntries.",
+      "anchor_ids": [
+        "anchor-unstable-entries-to-wal"
+      ]
+    },
+    {
+      "id": "fact-apply-result-triggers-waiter",
+      "state": "extracted",
+      "statement": "A normal entry is applied and its non-nil result is used to trigger the request-ID waiter.",
+      "anchor_ids": [
+        "anchor-apply-result-to-waiter"
+      ]
+    },
+    {
+      "id": "fact-mvcc-put-ends-write-transaction",
+      "state": "extracted",
+      "statement": "The MVCC Put opens a write transaction, defers End, and creates the PutResponse through txnWrite.Put.",
+      "anchor_ids": [
+        "anchor-mvcc-put-transaction"
+      ]
+    },
+    {
+      "id": "fact-mvcc-encodes-revision-and-keyvalue",
+      "state": "extracted",
+      "statement": "MVCC encodes the revision into ibytes, protobuf-encodes mvccpb.KeyValue into d, and stages the pair in schema.Key while updating the in-memory key index.",
+      "anchor_ids": [
+        "anchor-mvcc-keyvalue-bytes"
+      ]
+    },
+    {
+      "id": "fact-mvcc-end-publishes-revision",
+      "state": "extracted",
+      "statement": "For a modifying transaction, End advances currentRev while holding revMu, unlocks the backend transaction, then releases revMu and the store lock.",
+      "anchor_ids": [
+        "anchor-mvcc-revision-publication"
+      ]
+    },
+    {
+      "id": "fact-put-buffer-readable-before-commit",
+      "state": "extracted",
+      "statement": "Unlock writes pending data into the shared read buffer; a Put below the batch limit need not immediately commit because reads merge bbolt state with that buffer.",
+      "anchor_ids": [
+        "anchor-put-read-buffer-before-commit"
+      ]
+    },
+    {
+      "id": "fact-backend-commits-periodically",
+      "state": "extracted",
+      "statement": "The backend loop commits a non-empty batch transaction when its batch timer fires.",
+      "anchor_ids": [
+        "anchor-backend-periodic-commit"
+      ]
+    },
+    {
+      "id": "fact-wal-records-entry-and-state",
+      "state": "extracted",
+      "statement": "WAL Save protobuf-encodes each raftpb.Entry into an entry record, encodes HardState, and performs a sync when raft.MustSync requires one.",
+      "anchor_ids": [
+        "anchor-wal-entry-record-and-sync"
+      ]
+    },
+    {
+      "id": "fact-restart-reads-committed-wal",
+      "state": "extracted",
+      "statement": "Restart reads HardState and entries from WAL and its committed-entry view removes entries whose index exceeds HardState.Commit.",
+      "anchor_ids": [
+        "anchor-restart-reads-wal",
+        "anchor-restart-filters-uncommitted"
+      ]
+    },
+    {
+      "id": "fact-backend-commit-saves-consistent-index",
+      "state": "extracted",
+      "statement": "The backend pre-commit hook writes the consistent index into the same transaction before the bbolt transaction commits.",
+      "anchor_ids": [
+        "anchor-backend-saves-consistent-index",
+        "anchor-backend-bbolt-commit"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-success-waits-for-local-apply",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "Success waits for the local apply result",
+      "statement": "On this path, a successful unary Put response is downstream of the request-ID result triggered by applying the committed normal entry on the serving member.",
+      "support_fact_ids": [
+        "fact-rpc-put-returns-kv-result",
+        "fact-request-bytes-proposed-and-waited",
+        "fact-apply-result-triggers-waiter"
+      ],
+      "anchor_ids": [
+        "anchor-rpc-put-return",
+        "anchor-request-bytes-and-waiter",
+        "anchor-apply-result-to-waiter"
+      ],
+      "limits": [
+        "This is the server handler boundary, not proof that response bytes have reached the client process."
+      ]
+    },
+    {
+      "id": "claim-applied-put-is-mvcc-visible",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "Apply publishes an MVCC-visible revision before returning its result",
+      "statement": "The Put apply call returns through a deferred transaction End that advances the MVCC revision and writes the staged Put into the backend read buffer, so later local reads can observe it before the waiter result becomes the RPC response.",
+      "support_fact_ids": [
+        "fact-mvcc-put-ends-write-transaction",
+        "fact-mvcc-end-publishes-revision",
+        "fact-put-buffer-readable-before-commit"
+      ],
+      "anchor_ids": [
+        "anchor-mvcc-put-transaction",
+        "anchor-mvcc-revision-publication",
+        "anchor-put-read-buffer-before-commit"
+      ],
+      "limits": [
+        "The episode does not model concurrent read modes or prove visibility timing on another member."
+      ]
+    },
+    {
+      "id": "claim-small-put-does-not-wait-for-backend-commit",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "An ordinary small Put need not wait for a per-request bbolt commit",
+      "statement": "For a Put that does not hit the batch limit, backend Unlock exposes the write through the read buffer without committing it; a later timer can commit the batch.",
+      "support_fact_ids": [
+        "fact-put-buffer-readable-before-commit",
+        "fact-backend-commits-periodically"
+      ],
+      "anchor_ids": [
+        "anchor-put-read-buffer-before-commit",
+        "anchor-backend-periodic-commit"
+      ],
+      "limits": [
+        "A Put that reaches the configured batch limit can cause a commit during Unlock; this claim is intentionally limited to an ordinary below-limit Put."
+      ]
+    },
+    {
+      "id": "claim-wal-carries-replayable-request-bytes",
+      "state": "inferred",
+      "strength": "moderate",
+      "title": "The WAL-side recovery bytes are a raft entry carrying the encoded request",
+      "statement": "The Put becomes encoded InternalRaftRequest proposal bytes, while WAL Save encodes whole raftpb.Entry values and restart reads committed entries back. The useful recovery interpretation is that a committed WAL entry carries the command bytes needed to reapply the Put.",
+      "support_fact_ids": [
+        "fact-request-bytes-proposed-and-waited",
+        "fact-wal-records-entry-and-state",
+        "fact-restart-reads-committed-wal"
+      ],
+      "anchor_ids": [
+        "anchor-request-bytes-and-waiter",
+        "anchor-wal-entry-record-and-sync",
+        "anchor-restart-reads-wal"
+      ],
+      "limits": [
+        "The exact transformation from raftNode.Propose(data) to raftpb.Entry.Data occurs inside go.etcd.io/raft/v3 and is outside this code-only episode, so this relation is shown as inferred rather than extracted."
+      ]
+    },
+    {
+      "id": "claim-backend-carries-materialized-keyvalue-bytes",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "The backend-side recovery bytes are revision-keyed KeyValue data",
+      "statement": "The materialized MVCC form is an encoded revision key paired with protobuf mvccpb.KeyValue bytes in schema.Key; backend commit makes the bbolt transaction containing those bytes and its consistent index the durable materialized boundary.",
+      "support_fact_ids": [
+        "fact-mvcc-encodes-revision-and-keyvalue",
+        "fact-backend-commit-saves-consistent-index"
+      ],
+      "anchor_ids": [
+        "anchor-mvcc-keyvalue-bytes",
+        "anchor-backend-saves-consistent-index",
+        "anchor-backend-bbolt-commit"
+      ],
+      "limits": [
+        "Physical durability still depends on bbolt and filesystem settings that are not expanded in this episode."
+      ]
+    },
+    {
+      "id": "claim-ready-entry-sets-have-distinct-roles",
+      "state": "extracted",
+      "strength": "strong",
+      "title": "rd.Entries and rd.CommittedEntries are different inputs",
+      "statement": "The Ready loop sends rd.CommittedEntries to the apply pipeline and sends rd.Entries with HardState to storage Save. The episode therefore does not substitute one collection for the other.",
+      "support_fact_ids": [
+        "fact-committed-entries-feed-apply",
+        "fact-unstable-entries-feed-wal"
+      ],
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply",
+        "anchor-unstable-entries-to-wal"
+      ],
+      "limits": [
+        "A concrete entry may appear in these collections in different Ready batches; collection membership across batches is not reconstructed here."
+      ]
+    },
+    {
+      "id": "claim-ack-versus-wal-save-order-is-unknown",
+      "state": "unknown",
+      "strength": "open",
+      "title": "Client acknowledgment and this Ready loop's WAL Save completion are not ordered here",
+      "statement": "The Ready loop hands committed entries to the apply channel before calling storage Save, while the apply path can trigger the request waiter independently. These anchors do not establish whether the Put handler returns before or after the relevant WAL Save call completes.",
+      "support_fact_ids": [
+        "fact-committed-entries-feed-apply",
+        "fact-unstable-entries-feed-wal",
+        "fact-apply-result-triggers-waiter"
+      ],
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply",
+        "anchor-unstable-entries-to-wal",
+        "anchor-apply-result-to-waiter"
+      ],
+      "limits": [
+        "No runtime schedule, Ready-batch identity, or external Raft invariant is asserted."
+      ]
+    },
+    {
+      "id": "claim-consistent-index-bounds-replay",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "The consistent index separates materialized backend state from replay work",
+      "statement": "Apply sends an entry through the V3 backend only when its index is above the backend consistent index, and backend pre-commit saves that index with the materialized transaction. Together with committed-WAL filtering, this bounds which recovered entries need V3 reapplication.",
+      "support_fact_ids": [
+        "fact-restart-reads-committed-wal",
+        "fact-backend-commit-saves-consistent-index"
+      ],
+      "anchor_ids": [
+        "anchor-restart-filters-uncommitted",
+        "anchor-apply-uses-consistent-index",
+        "anchor-backend-saves-consistent-index"
+      ],
+      "limits": [
+        "Startup scheduling between WAL bootstrap and the apply loop is not expanded; the claim is about the visible replay guards."
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "boundary-client-acknowledgment",
+      "state": "corroborated",
+      "label": "Client acknowledgment",
+      "statement": "For this episode, acknowledgment means the unary Put handler can return its successful response after the request waiter receives the local apply result.",
+      "anchor_ids": [
+        "anchor-rpc-put-return",
+        "anchor-request-bytes-and-waiter",
+        "anchor-apply-result-to-waiter"
+      ],
+      "limits": "Network delivery to the caller is outside the boundary."
+    },
+    {
+      "id": "boundary-wal-stability",
+      "state": "corroborated",
+      "label": "WAL stability",
+      "statement": "The local WAL boundary is completion of WAL Save after encoding rd.Entries and HardState and performing the sync required by raft.MustSync.",
+      "anchor_ids": [
+        "anchor-unstable-entries-to-wal",
+        "anchor-wal-entry-record-and-sync"
+      ],
+      "limits": "UnsafeNoFsync and device-level persistence are excluded, and this boundary is not ordered against client acknowledgment."
+    },
+    {
+      "id": "boundary-committed-entry-apply",
+      "state": "extracted",
+      "label": "Committed-entry apply",
+      "statement": "The local apply boundary begins from rd.CommittedEntries and reaches apply.Apply for a normal entry.",
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply",
+        "anchor-apply-result-to-waiter"
+      ],
+      "limits": "Commit quorum mechanics inside Raft are outside this episode."
+    },
+    {
+      "id": "boundary-mvcc-visibility",
+      "state": "corroborated",
+      "label": "MVCC visibility",
+      "statement": "The local Put becomes visible through the advanced revision, updated key index, and backend read buffer when the MVCC write transaction ends.",
+      "anchor_ids": [
+        "anchor-mvcc-keyvalue-bytes",
+        "anchor-mvcc-revision-publication",
+        "anchor-put-read-buffer-before-commit"
+      ],
+      "limits": "This does not imply that the bbolt batch has committed."
+    },
+    {
+      "id": "boundary-backend-commit",
+      "state": "corroborated",
+      "label": "Backend commit",
+      "statement": "The materialized backend boundary is the bbolt transaction commit after the pre-commit hook places the consistent index into that transaction.",
+      "anchor_ids": [
+        "anchor-backend-saves-consistent-index",
+        "anchor-backend-bbolt-commit",
+        "anchor-backend-periodic-commit"
+      ],
+      "limits": "For an ordinary below-limit Put, this can occur after the successful handler result."
+    }
+  ],
+  "flow": {
+    "id": "flow-successful-put-partial",
+    "state": "partial",
+    "summary": "A partial, branch-shaped source episode: proposal bytes lead toward committed local apply and acknowledgment, while WAL and backend persistence are separate recovery branches with explicit ordering gaps.",
+    "nodes": [
+      {
+        "id": "flow-node-proposal-bytes",
+        "claim_id": "claim-wal-carries-replayable-request-bytes"
+      },
+      {
+        "id": "flow-node-committed-apply",
+        "claim_id": "claim-ready-entry-sets-have-distinct-roles"
+      },
+      {
+        "id": "flow-node-mvcc-visible",
+        "claim_id": "claim-applied-put-is-mvcc-visible"
+      },
+      {
+        "id": "flow-node-client-ack",
+        "claim_id": "claim-success-waits-for-local-apply"
+      },
+      {
+        "id": "flow-node-wal-stable",
+        "claim_id": "claim-ack-versus-wal-save-order-is-unknown"
+      },
+      {
+        "id": "flow-node-backend-committed",
+        "claim_id": "claim-backend-carries-materialized-keyvalue-bytes"
+      },
+      {
+        "id": "flow-node-replay-guard",
+        "claim_id": "claim-consistent-index-bounds-replay"
+      }
+    ],
+    "edges": [
+      {
+        "from": "flow-node-proposal-bytes",
+        "to": "flow-node-committed-apply",
+        "relation": "The proposed request is later observed as committed apply work.",
+        "ordering": "logical-dependency-only",
+        "support_fact_ids": [
+          "fact-request-bytes-proposed-and-waited",
+          "fact-committed-entries-feed-apply"
+        ]
+      },
+      {
+        "from": "flow-node-committed-apply",
+        "to": "flow-node-mvcc-visible",
+        "relation": "Applying the committed Put executes the MVCC write transaction.",
+        "ordering": "established-local-call-path",
+        "support_fact_ids": [
+          "fact-apply-result-triggers-waiter",
+          "fact-mvcc-put-ends-write-transaction"
+        ]
+      },
+      {
+        "from": "flow-node-mvcc-visible",
+        "to": "flow-node-client-ack",
+        "relation": "The MVCC transaction ends before its apply result triggers the waiter returned through the RPC handler.",
+        "ordering": "established-local-call-path",
+        "support_fact_ids": [
+          "fact-mvcc-end-publishes-revision",
+          "fact-apply-result-triggers-waiter",
+          "fact-rpc-put-returns-kv-result"
+        ]
+      },
+      {
+        "from": "flow-node-proposal-bytes",
+        "to": "flow-node-wal-stable",
+        "relation": "The WAL branch encodes Ready entries and HardState for restart.",
+        "ordering": "entry-data-link-inferred",
+        "support_fact_ids": [
+          "fact-request-bytes-proposed-and-waited",
+          "fact-unstable-entries-feed-wal",
+          "fact-wal-records-entry-and-state"
+        ]
+      },
+      {
+        "from": "flow-node-mvcc-visible",
+        "to": "flow-node-backend-committed",
+        "relation": "Buffered MVCC bytes are later included in a backend batch commit.",
+        "ordering": "eventual-batch-boundary",
+        "support_fact_ids": [
+          "fact-put-buffer-readable-before-commit",
+          "fact-backend-commits-periodically",
+          "fact-backend-commit-saves-consistent-index"
+        ]
+      },
+      {
+        "from": "flow-node-wal-stable",
+        "to": "flow-node-replay-guard",
+        "relation": "Restart keeps the committed WAL prefix for possible replay.",
+        "ordering": "restart-path",
+        "support_fact_ids": [
+          "fact-restart-reads-committed-wal"
+        ]
+      },
+      {
+        "from": "flow-node-backend-committed",
+        "to": "flow-node-replay-guard",
+        "relation": "The committed consistent index marks backend materialization progress.",
+        "ordering": "restart-path",
+        "support_fact_ids": [
+          "fact-backend-commit-saves-consistent-index"
+        ]
+      }
+    ],
+    "frontiers": [
+      {
+        "id": "frontier-external-raft-data-mapping",
+        "state": "inferred",
+        "statement": "The exact code that maps Propose(data) into raftpb.Entry.Data is in the external Raft module and is not anchored here.",
+        "anchor_ids": [
+          "anchor-request-bytes-and-waiter",
+          "anchor-wal-entry-record-and-sync"
+        ]
+      },
+      {
+        "id": "frontier-network-delivery",
+        "state": "unknown",
+        "statement": "The episode stops at successful RPC-handler return and does not trace delivery of response bytes to the client process.",
+        "anchor_ids": [
+          "anchor-rpc-put-return"
+        ]
+      },
+      {
+        "id": "frontier-physical-durability",
+        "state": "unknown",
+        "statement": "Filesystem and device persistence after WAL sync or bbolt commit are not established by the selected anchors.",
+        "anchor_ids": [
+          "anchor-wal-entry-record-and-sync",
+          "anchor-backend-bbolt-commit"
+        ]
+      }
+    ],
+    "non_order_constraints": [
+      {
+        "id": "constraint-no-ack-wal-save-order",
+        "state": "unknown",
+        "statement": "Do not draw an ordering edge between client acknowledgment and completion of the relevant r.storage.Save call.",
+        "anchor_ids": [
+          "anchor-committed-entries-to-apply",
+          "anchor-unstable-entries-to-wal",
+          "anchor-apply-result-to-waiter"
+        ]
+      },
+      {
+        "id": "constraint-ready-collections-not-interchangeable",
+        "state": "extracted",
+        "statement": "Do not replace rd.Entries with rd.CommittedEntries or imply that the two collections have identical membership.",
+        "anchor_ids": [
+          "anchor-committed-entries-to-apply",
+          "anchor-unstable-entries-to-wal"
+        ]
+      }
+    ]
+  },
+  "non_claims": [
+    {
+      "id": "nonclaim-no-per-request-backend-flush",
+      "statement": "A successful ordinary Put is not claimed to wait for a dedicated backend commit.",
+      "reason": "The backend explicitly allows below-limit Put data to remain in its read buffer until a later batch commit.",
+      "anchor_ids": [
+        "anchor-put-read-buffer-before-commit",
+        "anchor-backend-periodic-commit"
+      ]
+    },
+    {
+      "id": "nonclaim-no-client-ack-wal-order",
+      "statement": "Client acknowledgment is not claimed to occur before or after the relevant WAL Save completion.",
+      "reason": "Apply is handed to another path before the Ready loop calls Save, and the selected code does not serialize their completions.",
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply",
+        "anchor-unstable-entries-to-wal",
+        "anchor-apply-result-to-waiter"
+      ]
+    },
+    {
+      "id": "nonclaim-no-ready-set-equivalence",
+      "statement": "rd.Entries is not claimed to be equivalent to rd.CommittedEntries.",
+      "reason": "The two fields are consumed by different paths and have different roles.",
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply",
+        "anchor-unstable-entries-to-wal"
+      ]
+    },
+    {
+      "id": "nonclaim-no-quorum-proof",
+      "statement": "The episode does not claim how many peers have persisted or acknowledged the Put when the server returns success.",
+      "reason": "Peer transport and the external Raft implementation are intentionally outside scope.",
+      "anchor_ids": [
+        "anchor-request-bytes-and-waiter"
+      ]
+    }
+  ],
+  "uncertainties": [
+    {
+      "id": "uncertainty-proposal-to-entry-data",
+      "state": "inferred",
+      "statement": "The exact byte-preserving path from InternalRaftRequest proposal data to raftpb.Entry.Data is not visible in this repository-only slice.",
+      "anchor_ids": [
+        "anchor-request-bytes-and-waiter",
+        "anchor-wal-entry-record-and-sync"
+      ],
+      "next_check": "Inspect the pinned go.etcd.io/raft/v3 implementation only if this relation must be promoted from inferred to corroborated."
+    },
+    {
+      "id": "uncertainty-handler-return-versus-network-receipt",
+      "state": "unknown",
+      "statement": "Successful handler return does not prove when the client process receives response bytes.",
+      "anchor_ids": [
+        "anchor-rpc-put-return"
+      ],
+      "next_check": "Trace the generated gRPC transport send path if network receipt is part of a later episode."
+    },
+    {
+      "id": "uncertainty-local-wal-timing-at-ack",
+      "state": "unknown",
+      "statement": "The selected code does not determine whether the local WAL Save relevant to this Put has completed at the instant the handler returns.",
+      "anchor_ids": [
+        "anchor-committed-entries-to-apply",
+        "anchor-unstable-entries-to-wal",
+        "anchor-apply-result-to-waiter"
+      ],
+      "next_check": "Use a focused failpoint or trace experiment if a runtime ordering observation is product-critical; do not infer it from source order."
+    }
+  ]
+}
