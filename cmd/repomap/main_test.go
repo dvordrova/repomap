@@ -812,6 +812,9 @@ func TestRunDefaultServesGeneratedReportAndOpensServerURL(t *testing.T) {
 	if served.LocationResolver == nil || served.ExactSymbolAnalyzer == nil {
 		t.Fatal("interactive report server did not receive the local Go analyzer")
 	}
+	if served.SourceEpisodeJSON != nil {
+		t.Fatalf("ordinary report unexpectedly received %d source episode bytes", len(served.SourceEpisodeJSON))
+	}
 	if opened != "http://127.0.0.1:4321/runs/fixture/report.html#/overview" {
 		t.Fatalf("opened location = %q", opened)
 	}
@@ -822,6 +825,206 @@ func TestRunDefaultServesGeneratedReportAndOpensServerURL(t *testing.T) {
 	if !bytes.Contains(metadataJSON, []byte(filepath.Clean(repo))) {
 		t.Fatalf("metadata does not retain absolute repo path: %s", metadataJSON)
 	}
+	reportHTML, err := os.ReadFile(filepath.Join(debugDir, served.InitialRunID, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(reportHTML, []byte(`"source_episode":`)) {
+		t.Fatal("ordinary report unexpectedly contains a source episode")
+	}
+}
+
+func TestRunDefaultSourceEpisodeGeneratesStaticHTMLAndPassesServerBytes(t *testing.T) {
+	clearLLMEnv(t)
+	sourceEpisodePath, sourceEpisodeJSON, revision, episodeID, question := sourceEpisodeCLIFixture(t)
+
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/source-episode\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	captureAtAcceptedRevision := func(ctx context.Context, root string) (freshness.RepositoryState, error) {
+		state, err := freshness.CaptureRepository(ctx, root)
+		if err == nil {
+			state.Head = revision
+		}
+		return state, err
+	}
+	debugDir := t.TempDir()
+	var served reportserver.Options
+	err := runDefaultWithDeps(repo, []string{
+		"--offline",
+		"--no-open",
+		"--debug-dir", debugDir,
+		"--source-episode", sourceEpisodePath,
+	}, defaultRunDeps{
+		ctx:         context.Background(),
+		stdout:      io.Discard,
+		stderr:      io.Discard,
+		captureRepo: captureAtAcceptedRevision,
+		serveReport: func(_ context.Context, options reportserver.Options) error {
+			served = options
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	if served.InitialRunID == "" {
+		t.Fatal("source episode run was not selected for the report server")
+	}
+	if !bytes.Equal(served.SourceEpisodeJSON, sourceEpisodeJSON) {
+		t.Fatal("report server did not receive the exact accepted source episode bytes")
+	}
+
+	runDir := filepath.Join(debugDir, served.InitialRunID)
+	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{`"source_episode":`, episodeID, question} {
+		if !bytes.Contains(reportHTML, []byte(required)) {
+			t.Fatalf("generated static HTML is missing %q", required)
+		}
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{sourceEpisodePath, episodeID, question} {
+		if bytes.Contains(reportJSON, []byte(forbidden)) {
+			t.Fatalf("persisted report recorded transient source episode value %q", forbidden)
+		}
+	}
+	if bytes.Contains(reportHTML, []byte(sourceEpisodePath)) {
+		t.Fatal("generated HTML recorded the source episode input path")
+	}
+}
+
+func TestRunServeSourceEpisodeRequiresSelectedRunAndPassesBytes(t *testing.T) {
+	sourceEpisodePath, sourceEpisodeJSON, _, _, _ := sourceEpisodeCLIFixture(t)
+	var served reportserver.Options
+	serve := func(_ context.Context, options reportserver.Options) error {
+		served = options
+		return nil
+	}
+	err := runServeWithDeps(
+		context.Background(),
+		[]string{"--debug-dir", t.TempDir(), "--source-episode", sourceEpisodePath, "--no-open"},
+		io.Discard,
+		nil,
+		serve,
+	)
+	if err == nil || !strings.Contains(err.Error(), "--source-episode requires --run") {
+		t.Fatalf("serve without selected run error = %v", err)
+	}
+	if served.SourceEpisodeJSON != nil {
+		t.Fatal("serve was called after rejecting a source episode without --run")
+	}
+
+	err = runServeWithDeps(
+		context.Background(),
+		[]string{
+			"--debug-dir", t.TempDir(),
+			"--run", "accepted-fixture-run",
+			"--source-episode", sourceEpisodePath,
+			"--no-open",
+		},
+		io.Discard,
+		nil,
+		serve,
+	)
+	if err != nil {
+		t.Fatalf("runServeWithDeps() error = %v", err)
+	}
+	if served.InitialRunID != "accepted-fixture-run" {
+		t.Fatalf("selected run = %q", served.InitialRunID)
+	}
+	if !bytes.Equal(served.SourceEpisodeJSON, sourceEpisodeJSON) {
+		t.Fatal("serve did not receive the exact source episode bytes")
+	}
+}
+
+func TestSourceEpisodeCLIInputFailsClosed(t *testing.T) {
+	sourceEpisodePath, _, _, _, _ := sourceEpisodeCLIFixture(t)
+	t.Run("default requires generated run", func(t *testing.T) {
+		err := runDefaultWithDeps(t.TempDir(), []string{
+			"--offline",
+			"--no-debug",
+			"--source-episode", sourceEpisodePath,
+		}, defaultRunDeps{stdout: io.Discard, stderr: io.Discard})
+		if err == nil || !strings.Contains(err.Error(), "--source-episode requires a generated report run") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("oversized", func(t *testing.T) {
+		inputPath := filepath.Join(t.TempDir(), "oversized.json")
+		if err := os.WriteFile(inputPath, bytes.Repeat([]byte("x"), report.MaxSourceEpisodeBytes+1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := runDefaultWithDeps(t.TempDir(), []string{
+			"--offline",
+			"--debug-dir", t.TempDir(),
+			"--source-episode", inputPath,
+		}, defaultRunDeps{stdout: io.Discard, stderr: io.Discard})
+		if err == nil || !strings.Contains(err.Error(), "exceeds the") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("symlink", func(t *testing.T) {
+		inputDir := t.TempDir()
+		targetPath := filepath.Join(inputDir, "episode.json")
+		writeFile(t, targetPath, "{}")
+		linkPath := filepath.Join(inputDir, "episode-link.json")
+		if err := os.Symlink(targetPath, linkPath); err != nil {
+			t.Skipf("create symlink: %v", err)
+		}
+		err := runDefaultWithDeps(t.TempDir(), []string{
+			"--offline",
+			"--debug-dir", t.TempDir(),
+			"--source-episode", linkPath,
+		}, defaultRunDeps{stdout: io.Discard, stderr: io.Discard})
+		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("unapproved artifact before orientation", func(t *testing.T) {
+		inputPath := filepath.Join(t.TempDir(), "unapproved.json")
+		writeFile(t, inputPath, "{}")
+		repo := t.TempDir()
+		writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/source-episode-preflight\n\ngo 1.24\n")
+		runGit(t, repo, "init", "--quiet")
+		runGit(t, repo, "add", "--", "go.mod")
+		commitTestRepository(t, repo)
+		captures := 0
+		err := runDefaultWithDeps(repo, []string{
+			"--debug-dir", t.TempDir(),
+			"--source-episode", inputPath,
+		}, defaultRunDeps{
+			stdout: io.Discard,
+			stderr: io.Discard,
+			captureRepo: func(_ context.Context, root string) (freshness.RepositoryState, error) {
+				captures++
+				return freshness.RepositoryState{
+					Version:  freshness.RepositoryStateVersion,
+					Identity: root,
+					Head:     strings.Repeat("a", 40),
+					Dirty:    []freshness.DirtyFile{},
+				}, nil
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "before orientation") {
+			t.Fatalf("error = %v", err)
+		}
+		if captures != 1 {
+			t.Fatalf("repository captures = %d, want exactly the initial preflight capture", captures)
+		}
+	})
 }
 
 func TestRunDefaultAcceptsRepositoryAfterFlags(t *testing.T) {
@@ -1196,6 +1399,31 @@ func writeFile(t *testing.T, path, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func sourceEpisodeCLIFixture(t *testing.T) (path string, raw []byte, revision, episodeID, question string) {
+	t.Helper()
+	path, err := filepath.Abs(filepath.Join(
+		"..", "..", "experiments", "source-episode", "django-atomic", "episode.json",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		EpisodeID  string `json:"episode_id"`
+		Question   string `json:"question"`
+		Repository struct {
+			Revision string `json:"revision"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	return path, raw, fixture.Repository.Revision, fixture.EpisodeID, fixture.Question
 }
 
 func runGit(t *testing.T, repo string, args ...string) {

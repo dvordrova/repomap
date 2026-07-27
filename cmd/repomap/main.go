@@ -414,6 +414,47 @@ type defaultRunDeps struct {
 	captureRepo func(context.Context, string) (freshness.RepositoryState, error)
 }
 
+func readSourceEpisodeFile(filePath string) ([]byte, error) {
+	info, err := os.Lstat(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("inspect source episode %q: %w", filePath, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("source episode %q must be a regular file; symlinks are not allowed", filePath)
+	}
+	if info.Size() < 0 || info.Size() > report.MaxSourceEpisodeBytes {
+		return nil, fmt.Errorf("source episode %q exceeds the %d-byte limit", filePath, report.MaxSourceEpisodeBytes)
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open source episode %q: %w", filePath, err)
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat opened source episode %q: %w", filePath, err)
+	}
+	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+		return nil, fmt.Errorf("source episode %q changed before it could be read", filePath)
+	}
+	if openedInfo.Size() < 0 || openedInfo.Size() > report.MaxSourceEpisodeBytes {
+		return nil, fmt.Errorf("source episode %q exceeds the %d-byte limit", filePath, report.MaxSourceEpisodeBytes)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(file, report.MaxSourceEpisodeBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read source episode %q: %w", filePath, err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("source episode %q is empty", filePath)
+	}
+	if len(data) > report.MaxSourceEpisodeBytes {
+		return nil, fmt.Errorf("source episode %q exceeds the %d-byte limit", filePath, report.MaxSourceEpisodeBytes)
+	}
+	return data, nil
+}
+
 func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) error {
 	fs := flag.NewFlagSet("repomap", flag.ContinueOnError)
 	fs.SetOutput(deps.stderr)
@@ -432,6 +473,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	dumpLLM := fs.Bool("dump-llm", false, "dump LLM request/response to debug dir")
 	previewRequest := fs.Bool("preview-request", false, "print the exact redacted LLM request without sending it")
 	strictSnapshot := fs.Bool("strict-snapshot", false, "fail when captured analyzed inputs change before report publication")
+	sourceEpisodePath := fs.String("source-episode", "", "render an approved bounded source episode over the generated report")
 	out := fs.String("out", "", "write output to file instead of stdout")
 
 	if err := fs.Parse(extraArgs); err != nil {
@@ -462,6 +504,16 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 
 	var runID string
 	artifactRun := dDir != "" && !*previewRequest
+	var sourceEpisodeJSON []byte
+	if *sourceEpisodePath != "" {
+		if !artifactRun {
+			return fmt.Errorf("--source-episode requires a generated report run")
+		}
+		sourceEpisodeJSON, err = readSourceEpisodeFile(*sourceEpisodePath)
+		if err != nil {
+			return err
+		}
+	}
 	if artifactRun {
 		runID = debugdump.GenerateRunID(repoRunLabel(repo))
 	}
@@ -491,6 +543,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		initialState, err = captureRepo(ctx, repo)
 		if err != nil {
 			return fmt.Errorf("capture repository state before orientation: %w", err)
+		}
+		if sourceEpisodeJSON != nil {
+			if err := report.ValidateSourceEpisodeForRevision(sourceEpisodeJSON, initialState.Head); err != nil {
+				return fmt.Errorf("validate source episode before orientation: %w", err)
+			}
 		}
 	}
 
@@ -726,8 +783,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			fmt.Fprintf(deps.stderr, "repomap: snapshot freshness: %s\n", authority.Freshness().State)
 		}
 		reportStarted := time.Now()
-		if err := report.GenerateAuthorized(runDir, authority); err != nil {
-			return fmt.Errorf("generate authorized browser report: %w", err)
+		var generateErr error
+		if sourceEpisodeJSON != nil {
+			generateErr = report.GenerateAuthorizedWithSourceEpisode(runDir, authority, sourceEpisodeJSON)
+		} else {
+			generateErr = report.GenerateAuthorized(runDir, authority)
+		}
+		if generateErr != nil {
+			return fmt.Errorf("generate authorized browser report: %w", generateErr)
 		}
 		fmt.Fprintf(deps.stderr, "repomap: generated authorized report in %d ms\n", time.Since(reportStarted).Milliseconds())
 		reportPath = filepath.Join(runDir, "report.html")
@@ -756,6 +819,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			LocationResolver:    localAnalyzer,
 			ExactSymbolAnalyzer: localAnalyzer,
 			ReferenceFinder:     localAnalyzer,
+			SourceEpisodeJSON:   sourceEpisodeJSON,
 			Logf: func(format string, args ...any) {
 				fmt.Fprintf(deps.stderr, "repomap: "+format+"\n", args...)
 			},
@@ -780,12 +844,28 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 }
 
 func runServe(args []string) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	return runServeWithDeps(ctx, args, os.Stderr, openReport, reportserver.Serve)
+}
+
+func runServeWithDeps(
+	ctx context.Context,
+	args []string,
+	stderr io.Writer,
+	open func(string) error,
+	serve func(context.Context, reportserver.Options) error,
+) error {
+	if stderr == nil {
+		stderr = io.Discard
+	}
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(stderr)
 	runsDir := fs.String("debug-dir", defaultDebugDir(), "directory containing saved report runs")
 	runID := fs.String("run", "", "saved run to open (default: latest)")
 	port := fs.Int("port", 0, "local report server port (default: random)")
 	noOpen := fs.Bool("no-open", false, "do not open the report in a browser")
+	sourceEpisodePath := fs.String("source-episode", "", "render an approved bounded source episode over the selected run")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -799,25 +879,38 @@ func runServe(args []string) error {
 		return fmt.Errorf("serve: --port must be between 0 and 65535")
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+	var sourceEpisodeJSON []byte
+	if *sourceEpisodePath != "" {
+		if strings.TrimSpace(*runID) == "" {
+			return fmt.Errorf("serve: --source-episode requires --run")
+		}
+		var err error
+		sourceEpisodeJSON, err = readSourceEpisodeFile(*sourceEpisodePath)
+		if err != nil {
+			return fmt.Errorf("serve: %w", err)
+		}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	localAnalyzer := newReportAnalyzer()
-	return reportserver.Serve(ctx, reportserver.Options{
+	return serve(ctx, reportserver.Options{
 		RunsDir:             *runsDir,
 		InitialRunID:        *runID,
 		Port:                *port,
 		LocationResolver:    localAnalyzer,
 		ExactSymbolAnalyzer: localAnalyzer,
 		ReferenceFinder:     localAnalyzer,
+		SourceEpisodeJSON:   sourceEpisodeJSON,
 		Logf: func(format string, args ...any) {
-			fmt.Fprintf(os.Stderr, "repomap: "+format+"\n", args...)
+			fmt.Fprintf(stderr, "repomap: "+format+"\n", args...)
 		},
 		OnReady: func(url string) error {
 			url = reportOverviewURL(url)
-			fmt.Fprintf(os.Stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
-			if !*noOpen {
-				if err := openReport(url); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: could not open report: %v\n", err)
+			fmt.Fprintf(stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
+			if !*noOpen && open != nil {
+				if err := open(url); err != nil {
+					fmt.Fprintf(stderr, "warning: could not open report: %v\n", err)
 				}
 			}
 			return nil
@@ -1259,7 +1352,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: repomap [repo] [flags]\n")
 	fmt.Fprintf(os.Stderr, "       repomap investigate <repo> --task-file <task.md> [flags]\n")
 	fmt.Fprintf(os.Stderr, "       repomap doctor llm [--check]\n")
-	fmt.Fprintf(os.Stderr, "       repomap serve [--run RUN_ID] [--port PORT]\n")
+	fmt.Fprintf(os.Stderr, "       repomap serve [--run RUN_ID] [--source-episode PATH] [--port PORT]\n")
 	fmt.Fprintf(os.Stderr, "       repomap orient --repo <repo> [flags]\n")
 	fmt.Fprintf(os.Stderr, "\nFlags:\n")
 	fmt.Fprintf(os.Stderr, "  --json          output JSON instead of text\n")
@@ -1276,6 +1369,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --dump-llm      dump LLM request/response in debug dir\n")
 	fmt.Fprintf(os.Stderr, "  --preview-request print exact redacted request without an API call\n")
 	fmt.Fprintf(os.Stderr, "  --strict-snapshot fail if captured analyzed inputs change during the run\n")
+	fmt.Fprintf(os.Stderr, "  --source-episode PATH render one approved bounded source episode over the generated report\n")
 	fmt.Fprintf(os.Stderr, "  --help, -h      show this help\n")
 	fmt.Fprintf(os.Stderr, "  --version       show version\n")
 	fmt.Fprintf(os.Stderr, "\nEnvironment:\n")
