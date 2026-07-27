@@ -1,0 +1,271 @@
+{
+  "artifact_kind": "source-episode-question-spec",
+  "artifact_version": "1",
+  "question_id": "django-transactional-outbox-handoff",
+  "episode_id": "django-nested-atomic",
+  "title": "Where to place a transactional outbox handoff",
+  "question": "Where should a Django application place an outbox write and its dispatch trigger so nested transaction.atomic() rollback semantics are respected, dispatch starts only after the outer commit, and the remaining delivery gap is explicit?",
+  "evidence": {
+    "claim_ids": [
+      "claim-inner-success-remains-rollbackable",
+      "claim-oncommit-follows-savepoint-scope",
+      "claim-callbacks-run-after-commit-and-autocommit",
+      "claim-oncommit-is-handoff-not-delivery"
+    ],
+    "fact_ids": [
+      "fact-commit-arms-hooks-rollback-clears",
+      "fact-savepoint-rollback-prunes-hooks",
+      "fact-oncommit-captures-savepoint-scope",
+      "fact-hooks-run-after-autocommit-restored",
+      "fact-tests-delay-until-outer-commit",
+      "fact-tests-separate-rollback-scopes"
+    ],
+    "anchor_ids": [
+      "anchor-atomic-clean-exit",
+      "anchor-connection-commit-rollback",
+      "anchor-savepoint-callback-discard",
+      "anchor-autocommit-runs-hooks",
+      "anchor-oncommit-queue-or-immediate",
+      "anchor-hook-runner",
+      "anchor-test-delayed-through-nesting",
+      "anchor-test-rollback-scopes",
+      "anchor-test-postcommit-context"
+    ],
+    "uncertainty_ids": [
+      "uncertainty-callback-delivery-after-crash"
+    ]
+  },
+  "design_statements": [
+    {
+      "id": "design-outbox-short-answer",
+      "role": "answer",
+      "state": "inferred",
+      "title": "Place the row and registration inside the owning rollback scope",
+      "statement": "Create the outbox row at the application-service boundary that owns the business mutation, using the same active atomic(using=alias) scope and database alias. Before that rollback scope exits, register transaction.on_commit(lambda: wake(outbox_id), using=alias). An inner or outer rollback then removes both the row and the callback registration; only a successful outer commit allows the callback to run. The callback is a latency optimization. Independently scanning pending rows is the recovery path.",
+      "claim_ids": [
+        "claim-inner-success-remains-rollbackable",
+        "claim-oncommit-follows-savepoint-scope",
+        "claim-callbacks-run-after-commit-and-autocommit",
+        "claim-oncommit-is-handoff-not-delivery"
+      ],
+      "uncertainty_ids": [
+        "uncertainty-callback-delivery-after-crash"
+      ]
+    },
+    {
+      "id": "design-place-outbox-row",
+      "role": "change",
+      "state": "inferred",
+      "title": "Application-service mutation boundary",
+      "statement": "Insert the outbox row beside the business write inside the same atomic(using=alias) block and on the same alias, so both writes share every enclosing savepoint and the outer commit.",
+      "claim_ids": [
+        "claim-inner-success-remains-rollbackable"
+      ],
+      "fact_ids": [
+        "fact-tests-delay-until-outer-commit",
+        "fact-tests-separate-rollback-scopes"
+      ],
+      "anchor_ids": [
+        "anchor-atomic-clean-exit",
+        "anchor-test-rollback-scopes"
+      ]
+    },
+    {
+      "id": "design-register-wakeup",
+      "role": "change",
+      "state": "inferred",
+      "title": "Post-commit wake-up",
+      "statement": "After the row has an ID and before the current transaction or savepoint scope exits, register transaction.on_commit(lambda: wake(outbox_id), using=alias). If registration happens after the owning transaction has exited, on_commit() executes immediately and no longer provides ordering against that commit.",
+      "claim_ids": [
+        "claim-oncommit-follows-savepoint-scope",
+        "claim-callbacks-run-after-commit-and-autocommit"
+      ],
+      "fact_ids": [
+        "fact-savepoint-rollback-prunes-hooks",
+        "fact-oncommit-captures-savepoint-scope",
+        "fact-hooks-run-after-autocommit-restored"
+      ],
+      "anchor_ids": [
+        "anchor-savepoint-callback-discard",
+        "anchor-autocommit-runs-hooks",
+        "anchor-oncommit-queue-or-immediate"
+      ]
+    },
+    {
+      "id": "design-durable-dispatcher",
+      "role": "change",
+      "state": "inferred",
+      "title": "Recovery dispatcher",
+      "statement": "Independently scan pending outbox rows and retry unfinished publication. Use the outbox ID as a stable deduplication key, and define explicitly when a row becomes delivered. Treat on_commit() only as a low-latency wake-up for this recovery path.",
+      "claim_ids": [
+        "claim-oncommit-is-handoff-not-delivery"
+      ],
+      "anchor_ids": [
+        "anchor-hook-runner"
+      ],
+      "uncertainty_ids": [
+        "uncertainty-callback-delivery-after-crash"
+      ]
+    },
+    {
+      "id": "effect-inner-rollback",
+      "role": "effect",
+      "state": "inferred",
+      "title": "Inner rollback",
+      "statement": "The outbox row is rolled back and the callback registration from that savepoint scope is pruned.",
+      "claim_ids": [
+        "claim-oncommit-follows-savepoint-scope"
+      ],
+      "fact_ids": [
+        "fact-savepoint-rollback-prunes-hooks",
+        "fact-tests-separate-rollback-scopes"
+      ]
+    },
+    {
+      "id": "effect-outer-rollback-after-inner-success",
+      "role": "effect",
+      "state": "inferred",
+      "title": "Inner success followed by outer rollback",
+      "statement": "The provisional outbox row is rolled back later and the queued callback never runs.",
+      "claim_ids": [
+        "claim-inner-success-remains-rollbackable"
+      ],
+      "fact_ids": [
+        "fact-commit-arms-hooks-rollback-clears",
+        "fact-tests-delay-until-outer-commit",
+        "fact-tests-separate-rollback-scopes"
+      ]
+    },
+    {
+      "id": "effect-outer-commit",
+      "role": "effect",
+      "state": "inferred",
+      "title": "Successful outer commit",
+      "statement": "The transaction commits the outbox row, Django restores autocommit, and the surviving wake-up callback then runs.",
+      "claim_ids": [
+        "claim-callbacks-run-after-commit-and-autocommit"
+      ],
+      "fact_ids": [
+        "fact-commit-arms-hooks-rollback-clears",
+        "fact-hooks-run-after-autocommit-restored"
+      ]
+    },
+    {
+      "id": "effect-lost-fast-wakeup",
+      "role": "effect",
+      "state": "inferred",
+      "title": "Process exit after commit but before callback completion",
+      "statement": "The committed pending row remains, the fast wake-up may be lost, and independent scanning is required to resume publication.",
+      "claim_ids": [
+        "claim-oncommit-is-handoff-not-delivery"
+      ],
+      "uncertainty_ids": [
+        "uncertainty-callback-delivery-after-crash"
+      ]
+    },
+    {
+      "id": "unknown-commit-to-callback-gap",
+      "role": "limit",
+      "state": "unknown",
+      "title": "Commit-to-callback gap",
+      "statement": "Django does not guarantee that an in-process callback completes after commit. In this proposed design, process exit can therefore leave a committed pending outbox row without the fast wake-up; only independent scanning can recover it.",
+      "anchor_ids": [
+        "anchor-hook-runner"
+      ],
+      "uncertainty_ids": [
+        "uncertainty-callback-delivery-after-crash"
+      ]
+    },
+    {
+      "id": "unknown-publish-to-record-gap",
+      "role": "limit",
+      "state": "unknown",
+      "title": "Publish-to-record gap",
+      "statement": "If the dispatcher publishes an event and exits before recording completion, a retry may publish it again. Broker acknowledgement, mark-delivered ordering, and consumer deduplication were not inspected.",
+      "claim_ids": [
+        "claim-oncommit-is-handoff-not-delivery"
+      ]
+    },
+    {
+      "id": "unknown-application-seams",
+      "role": "limit",
+      "state": "unknown",
+      "title": "Exact application edit points were not inspected",
+      "statement": "This framework episode contains no application service, outbox schema, broker adapter, or dispatcher, so it cannot name a project file or establish retry and idempotency behavior.",
+      "claim_ids": [
+        "claim-oncommit-is-handoff-not-delivery"
+      ]
+    },
+    {
+      "id": "check-rollback-scopes",
+      "role": "check",
+      "state": "inferred",
+      "title": "Rollback scopes",
+      "statement": "Prove that inner rollback and outer rollback after inner success leave neither the outbox row nor a runnable callback.",
+      "fact_ids": [
+        "fact-savepoint-rollback-prunes-hooks",
+        "fact-tests-separate-rollback-scopes"
+      ]
+    },
+    {
+      "id": "check-commit-order",
+      "role": "check",
+      "state": "inferred",
+      "title": "Commit order",
+      "statement": "Prove that outer commit makes the row visible before the wake-up callback runs.",
+      "fact_ids": [
+        "fact-hooks-run-after-autocommit-restored",
+        "fact-tests-delay-until-outer-commit"
+      ],
+      "anchor_ids": [
+        "anchor-test-postcommit-context"
+      ]
+    },
+    {
+      "id": "check-lost-wakeup",
+      "role": "check",
+      "state": "inferred",
+      "title": "Lost wake-up",
+      "statement": "Suppress the callback and prove that independent scanning still finds and publishes the pending row.",
+      "claim_ids": [
+        "claim-oncommit-is-handoff-not-delivery"
+      ],
+      "uncertainty_ids": [
+        "uncertainty-callback-delivery-after-crash"
+      ]
+    },
+    {
+      "id": "check-duplicate-publication",
+      "role": "check",
+      "state": "inferred",
+      "title": "Duplicate publication",
+      "statement": "Crash after publish but before completion recording and prove that retry does not create an unintended duplicate effect.",
+      "claim_ids": [
+        "claim-oncommit-is-handoff-not-delivery"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-rollback-scope-drives-row-placement",
+      "state": "inferred",
+      "from_id": "claim-inner-success-remains-rollbackable",
+      "to_id": "design-place-outbox-row",
+      "statement": "Because inner success remains provisional, the durable row must share the business write's enclosing transaction."
+    },
+    {
+      "id": "relation-postcommit-order-drives-wakeup",
+      "state": "inferred",
+      "from_id": "claim-callbacks-run-after-commit-and-autocommit",
+      "to_id": "design-register-wakeup",
+      "statement": "The callback is useful as a post-commit wake-up only when it is registered before the owning transaction exits."
+    },
+    {
+      "id": "relation-delivery-gap-drives-poller",
+      "state": "inferred",
+      "from_id": "uncertainty-callback-delivery-after-crash",
+      "to_id": "design-durable-dispatcher",
+      "statement": "The callback crash window makes independent scanning the recovery path."
+    }
+  ]
+}
