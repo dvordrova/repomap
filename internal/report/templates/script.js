@@ -28,6 +28,9 @@
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
 	var STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
+// repomap-source-episode:start
+	var SOURCE_EPISODE = DATA.source_episode || null;
+// repomap-source-episode:end
 	var OPERATIONS = DATA.operations || null;
 	var PAVED_PATHS = OPERATIONS && Array.isArray(OPERATIONS.paths) ? OPERATIONS.paths : [];
 	var OPERATIONAL_LANDMARKS = OPERATIONS && Array.isArray(OPERATIONS.landmarks) ? OPERATIONS.landmarks : [];
@@ -3833,7 +3836,135 @@
 		return card;
 	}
 
+// repomap-source-episode:start
+	function sourceEpisodeStateLabel(state) {
+		switch (String(state || '').toLowerCase()) {
+		case 'extracted': return 'EXTRACTED';
+		case 'corroborated': return 'CORROBORATED';
+		case 'inferred': return 'INFERRED';
+		case 'unknown': return 'UNKNOWN';
+		default: return '';
+		}
+	}
+
+	function renderSourceEpisodeState(state) {
+		var label = sourceEpisodeStateLabel(state);
+		if (!label) return null;
+		var badge = txt('span', 'rm-source-episode__state rm-source-episode__state--' + String(state).toLowerCase(), label);
+		badge.setAttribute('aria-label', 'Evidence status: ' + label.toLowerCase());
+		return badge;
+	}
+
+	function sourceEpisodeSourceAvailable(source) {
+		return !!(
+			source && source.path && OPENABLE_PATH_SET[source.path] &&
+			typeof SOURCE_IDS[source.path] === 'string' && SOURCE_IDS[source.path]
+		);
+	}
+
+	function sourceEpisodeSourceLabel(source) {
+		if (!source) return '';
+		var start = Number(source.start_line) || 0;
+		var end = Number(source.end_line) || start;
+		return source.path + (start ? ':' + start + (end > start ? '–' + end : '') : '');
+	}
+
+	function renderSourceEpisodeSources(sources) {
+		var authorized = (Array.isArray(sources) ? sources : []).filter(sourceEpisodeSourceAvailable);
+		if (!authorized.length) return null;
+		var actions = el('div', 'rm-source-episode__sources');
+		authorized.forEach(function (source) {
+			var button = txt('button', 'rm-source-episode__source', sourceEpisodeSourceLabel(source));
+			button.type = 'button';
+			button.setAttribute('aria-label', 'Inspect exact source ' + sourceEpisodeSourceLabel(source));
+			button.onclick = function () {
+				if (!sourceEpisodeSourceAvailable(source)) return;
+				openSourceLocation({ path: source.path, line: Number(source.start_line) || 0 });
+			};
+			actions.appendChild(button);
+		});
+		return actions;
+	}
+
+	function renderSourceEpisodeClaim(claim, index) {
+		if (!claim || !sourceEpisodeStateLabel(claim.state)) return null;
+		var card = el('article', 'rm-source-episode__claim');
+		card.appendChild(txt('span', 'rm-source-episode__order', String(index + 1)));
+		var body = el('div', 'rm-source-episode__claim-body');
+		var heading = el('div', 'rm-source-episode__claim-heading');
+		var badge = renderSourceEpisodeState(claim.state);
+		if (badge) heading.appendChild(badge);
+		heading.appendChild(txt('h3', '', claim.title || 'Explanation'));
+		body.appendChild(heading);
+		body.appendChild(txt('p', 'rm-source-episode__statement', claim.statement || ''));
+		var sources = renderSourceEpisodeSources(claim.sources);
+		if (sources) body.appendChild(sources);
+		var limits = Array.isArray(claim.limits) ? claim.limits.filter(Boolean) : [];
+		if (limits.length) {
+			var boundary = el('div', 'rm-source-episode__limits');
+			boundary.appendChild(txt('span', '', limits.length === 1 ? 'Boundary' : 'Boundaries'));
+			var list = el('ul', '');
+			limits.forEach(function (limit) { list.appendChild(txt('li', '', limit)); });
+			boundary.appendChild(list);
+			body.appendChild(boundary);
+		}
+		card.appendChild(body);
+		return card;
+	}
+
+	function renderSourceEpisode(episode) {
+		if (!episode || !episode.question || !Array.isArray(episode.claims) || !episode.claims.length) return null;
+		var section = el('section', 'rm-source-episode');
+		section.setAttribute('data-source-episode-id', episode.episode_id || '');
+		var hero = el('div', 'rm-source-episode__hero');
+		hero.appendChild(txt('div', 'rm-view-kicker', 'How this works'));
+		hero.appendChild(txt('h2', '', episode.question));
+		hero.appendChild(txt('p', 'rm-source-episode__intro', 'Follow the causal explanation below. Evidence status stays visible on every step; unknowns remain part of the answer.'));
+		var provenance = [episode.repository, episode.revision && String(episode.revision).slice(0, 12)]
+			.filter(Boolean).join(' · ');
+		if (provenance) hero.appendChild(txt('p', 'rm-source-episode__provenance', provenance));
+		section.appendChild(hero);
+
+		var claims = el('div', 'rm-source-episode__claims');
+		episode.claims.forEach(function (claim, index) {
+			var card = renderSourceEpisodeClaim(claim, index);
+			if (card) claims.appendChild(card);
+		});
+		if (!claims.childNodes.length) return null;
+		section.appendChild(claims);
+
+		var uncertainties = Array.isArray(episode.uncertainties)
+			? episode.uncertainties.filter(function (item) {
+				return item && item.statement && sourceEpisodeStateLabel(item.state);
+			})
+			: [];
+		if (uncertainties.length) {
+			var frontier = el('section', 'rm-source-episode__uncertainties');
+			frontier.appendChild(txt('h3', '', 'What remains uncertain'));
+			frontier.appendChild(txt('p', 'rm-source-episode__uncertainty-intro', 'These boundaries stay visible because they change how the explanation should be used.'));
+			var list = el('div', 'rm-source-episode__uncertainty-list');
+			uncertainties.forEach(function (item) {
+				var card = el('article', 'rm-source-episode__uncertainty');
+				var badge = renderSourceEpisodeState(item.state);
+				if (badge) card.appendChild(badge);
+				card.appendChild(txt('p', '', item.statement));
+				var sources = renderSourceEpisodeSources(item.sources);
+				if (sources) card.appendChild(sources);
+				list.appendChild(card);
+			});
+			frontier.appendChild(list);
+			section.appendChild(frontier);
+		}
+		return section;
+	}
+// repomap-source-episode:end
+
 	function renderStudyMapOverview(root) {
+// repomap-source-episode:start
+		var episode = renderSourceEpisode(SOURCE_EPISODE);
+		if (episode) root.appendChild(episode);
+// repomap-source-episode:end
+
 		var brief = STUDY_MAP && STUDY_MAP.brief || {};
 		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
 		hero.appendChild(txt('div', 'rm-view-kicker', 'Repository brief'));
@@ -4562,6 +4693,11 @@
 			renderStudyMapOverview(root);
 			return;
 		}
+
+// repomap-source-episode:start
+		var sourceEpisode = renderSourceEpisode(SOURCE_EPISODE);
+		if (sourceEpisode) root.appendChild(sourceEpisode);
+// repomap-source-episode:end
 
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
@@ -6200,6 +6336,12 @@
       renderUserMechanismCard: renderUserMechanismCard,
       renderImplementationDetails: renderImplementationDetails,
       renderOverviewWorkspace: renderOverviewWorkspace,
+// repomap-source-episode:start
+			renderSourceEpisode: renderSourceEpisode,
+			renderSourceEpisodeClaim: renderSourceEpisodeClaim,
+			sourceEpisodeStateLabel: sourceEpisodeStateLabel,
+			sourceEpisodeSourceAvailable: sourceEpisodeSourceAvailable,
+// repomap-source-episode:end
 			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,
 		renderStudyDetailWorkspace: renderStudyDetailWorkspace,
