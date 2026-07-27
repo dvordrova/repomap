@@ -1,0 +1,140 @@
+{
+  "case_id": "beets-configured-plugin-command",
+  "repository": {
+    "name": "beets",
+    "revision": "9acb1ecff6c7ee0a1e83e3b983c94792345712c5"
+  },
+  "question": "How does a Beets plugin named in configuration become an executable CLI command?",
+  "observations": [
+    {
+      "id": "obs-01",
+      "state": "extracted",
+      "text": "Configured pluginpath values are expanded to absolute paths, prepended to beetsplug.__path__, and appended to sys.path.",
+      "source": {
+        "path": "beets/plugins.py",
+        "start_line": 372,
+        "end_line": 385
+      }
+    },
+    {
+      "id": "obs-02",
+      "state": "extracted",
+      "text": "Configured plugin names are deduplicated, configured disabled names are collected, and the returned names exclude disabled plugins.",
+      "source": {
+        "path": "beets/plugins.py",
+        "start_line": 386,
+        "end_line": 403
+      }
+    },
+    {
+      "id": "obs-03",
+      "state": "extracted",
+      "text": "_get_plugin imports beetsplug.<name>, scans the namespace for a concrete BeetsPlugin subclass defined by that module or a submodule, and instantiates the first matching class.",
+      "source": {
+        "path": "beets/plugins.py",
+        "start_line": 419,
+        "end_line": 438
+      }
+    },
+    {
+      "id": "obs-04",
+      "state": "extracted",
+      "text": "An exception while loading a plugin is logged as a warning and _get_plugin returns None.",
+      "source": {
+        "path": "beets/plugins.py",
+        "start_line": 440,
+        "end_line": 443
+      }
+    },
+    {
+      "id": "obs-05",
+      "state": "extracted",
+      "text": "When the global plugin instance list is empty, load_plugins obtains configured names, maps _get_plugin over them, removes None results, stores the instances, and emits pluginload.",
+      "source": {
+        "path": "beets/plugins.py",
+        "start_line": 449,
+        "end_line": 461
+      }
+    },
+    {
+      "id": "obs-06",
+      "state": "extracted",
+      "text": "plugins.commands iterates the loaded plugin instances and appends the Subcommand values returned by each plugin.",
+      "source": {
+        "path": "beets/plugins.py",
+        "start_line": 464,
+        "end_line": 476
+      }
+    },
+    {
+      "id": "obs-07",
+      "state": "extracted",
+      "text": "add_subcommand assigns each command's root parser and appends it to the parser's subcommands list.",
+      "source": {
+        "path": "beets/ui/__init__.py",
+        "start_line": 643,
+        "end_line": 647
+      }
+    },
+    {
+      "id": "obs-08",
+      "state": "extracted",
+      "text": "Command lookup compares the requested string with every registered command's primary name and aliases.",
+      "source": {
+        "path": "beets/ui/__init__.py",
+        "start_line": 702,
+        "end_line": 710
+      }
+    },
+    {
+      "id": "obs-09",
+      "state": "extracted",
+      "text": "Subcommand parsing takes the first remaining argument as the command name, rejects an unknown name, and parses the selected command's remaining arguments.",
+      "source": {
+        "path": "beets/ui/__init__.py",
+        "start_line": 725,
+        "end_line": 740
+      }
+    },
+    {
+      "id": "obs-10",
+      "state": "extracted",
+      "text": "_setup loads plugins, copies the built-in default commands, extends that list with plugins.commands(), opens the library, emits library_opened, and returns the command list and library.",
+      "source": {
+        "path": "beets/ui/__init__.py",
+        "start_line": 749,
+        "end_line": 766
+      }
+    },
+    {
+      "id": "obs-11",
+      "state": "extracted",
+      "text": "_raw_main parses global options, applies configuration and logging bootstrap, registers the commands returned by _setup, parses one subcommand, and calls its func with the library, parsed options, and remaining arguments.",
+      "source": {
+        "path": "beets/ui/__init__.py",
+        "start_line": 869,
+        "end_line": 900
+      }
+    },
+    {
+      "id": "obs-12",
+      "state": "extracted",
+      "text": "Configuration bootstrap reads configuration, applies a --config file overlay when present, falls back to defaults after a read error, and applies parsed CLI options with config.set_args.",
+      "source": {
+        "path": "beets/ui/__init__.py",
+        "start_line": 907,
+        "end_line": 930
+      }
+    },
+    {
+      "id": "obs-13",
+      "state": "extracted",
+      "text": "A test writes a configuration containing a test plugin path and plugins: test, invokes the CLI with that configuration and the plugin command, and asserts that one test-plugin instance was loaded.",
+      "source": {
+        "path": "test/ui/test_ui.py",
+        "start_line": 248,
+        "end_line": 257
+      }
+    }
+  ]
+}
