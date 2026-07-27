@@ -81,9 +81,45 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	return buildHTML(data)
 }
 
+// RenderHTMLWithSourceEpisode adds one approved, SHA-pinned source episode to
+// the rendered Study surface. The projection exists only in this HTML
+// response: it is not added to ReportData or persisted in report.json.
+func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, error) {
+	if data == nil {
+		return nil, fmt.Errorf("report: data is required")
+	}
+	episode, err := projectApprovedSourceEpisode(data, episodeJSON)
+	if err != nil {
+		return nil, err
+	}
+	return buildHTMLWithSourceEpisode(data, episode)
+}
+
 func buildHTML(data *ReportData) ([]byte, error) {
+	return buildHTMLWithSourceEpisode(data, nil)
+}
+
+func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjection) ([]byte, error) {
 	rendered := reportDataForRendering(data)
-	dataJSON, err := json.Marshal(rendered)
+	css := styleCSS
+	js := scriptJS
+	if episode == nil {
+		css = withoutSourceEpisodeAssetBlocks(css)
+		js = withoutSourceEpisodeAssetBlocks(js)
+	}
+	var dataJSON []byte
+	var err error
+	if episode == nil {
+		dataJSON, err = json.Marshal(rendered)
+	} else {
+		dataJSON, err = json.Marshal(struct {
+			*ReportData
+			SourceEpisode *sourceEpisodeProjection `json:"source_episode"`
+		}{
+			ReportData:    rendered,
+			SourceEpisode: episode,
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +132,7 @@ func buildHTML(data *ReportData) ([]byte, error) {
 	var buf bytes.Buffer
 	err = reportTmpl.Execute(&buf, map[string]any{
 		"Title":                 title,
-		"CSS":                   template.CSS(styleCSS),
+		"CSS":                   template.CSS(css),
 		"HasArchitectureCanvas": data.ArchitectureCanvas != nil,
 		"ArchitectureCanvasCSS": template.CSS(architectureCanvasCSS),
 		"ELKJS":                 template.JS(elkJSBundledJS),
@@ -108,13 +144,47 @@ func buildHTML(data *ReportData) ([]byte, error) {
 		"SemanticSearchCSS":     template.CSS(semanticSearchCSS),
 		"SemanticSearchJS":      template.JS(semanticSearchJS),
 		"DataJSON":              template.JS(dataJSON),
-		"JS":                    template.JS(scriptJS),
+		"JS":                    template.JS(js),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
+}
+
+func withoutSourceEpisodeAssetBlocks(asset string) string {
+	const (
+		startMarker = "repomap-source-episode:start"
+		endMarker   = "repomap-source-episode:end"
+	)
+	for {
+		start := strings.Index(asset, startMarker)
+		if start < 0 {
+			return asset
+		}
+		lineStart := strings.LastIndex(asset[:start], "\n")
+		if lineStart < 0 {
+			lineStart = 0
+		}
+		endOffset := strings.Index(asset[start:], endMarker)
+		if endOffset < 0 {
+			return asset
+		}
+		lineEnd := strings.Index(asset[start+endOffset:], "\n")
+		if lineEnd < 0 {
+			asset = asset[:lineStart]
+			continue
+		}
+		lineEnd += start + endOffset
+		left := asset[:lineStart]
+		right := asset[lineEnd+1:]
+		separator := "\n"
+		if strings.HasSuffix(left, "\n") || strings.HasPrefix(right, "\n") {
+			separator = ""
+		}
+		asset = left + separator + right
+	}
 }
 
 func reportDataForRendering(data *ReportData) *ReportData {
