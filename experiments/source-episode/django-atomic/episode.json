@@ -1,0 +1,521 @@
+{
+  "artifact_kind": "source-episode-microexperiment",
+  "artifact_version": "1",
+  "episode_id": "django-nested-atomic",
+  "repository": {
+    "name": "django/django",
+    "revision": "3e389b7ddaf08109900da5415ddaac5a355a170f",
+    "web_base": "https://github.com/django/django/tree/3e389b7ddaf08109900da5415ddaac5a355a170f"
+  },
+  "question": "When nested transaction.atomic() blocks exit, what has actually committed, what can still roll back, and when do transaction.on_commit() callbacks run?",
+  "trust_states": [
+    "extracted",
+    "corroborated",
+    "inferred",
+    "unknown"
+  ],
+  "scope": {
+    "included": [
+      "One Django database connection and alias on the ordinary path where autocommit is initially enabled.",
+      "Outermost and nested transaction.atomic() entry and exit.",
+      "Default savepoint behavior and the savepoint=False branch.",
+      "Connection-local transaction.on_commit() registration, pruning, and execution.",
+      "Django tests that compare committed rows with callback execution."
+    ],
+    "excluded": [
+      "Documentation prose, provider output, and target execution.",
+      "Manual transaction management with autocommit already disabled.",
+      "Durable-block nesting, broken connections, commit failures, and backend-specific SQL.",
+      "Cross-database atomicity, two-phase commit, replication, and task-queue delivery.",
+      "A guarantee about filesystem, controller, or device persistence."
+    ]
+  },
+  "anchors": [
+    {
+      "id": "anchor-atomic-enter",
+      "path": "django/db/transaction.py",
+      "start_line": 194,
+      "end_line": 219,
+      "blob_oid": "0c2eee8e736408af3838cdd55aed3c7ddff3bcde",
+      "line_sha256": "c0197c0baa058f0dc034283eda2e486db63c1aa36b785f28c9711d7f1b38d671",
+      "needle": "connection.savepoint_ids.append(None)",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/transaction.py#L194-L219"
+    },
+    {
+      "id": "anchor-atomic-clean-exit",
+      "path": "django/db/transaction.py",
+      "start_line": 242,
+      "end_line": 271,
+      "blob_oid": "0c2eee8e736408af3838cdd55aed3c7ddff3bcde",
+      "line_sha256": "ef2bd4160e3562f9d08f2ade136636bfc50aeb1fc44c14e164004b125ebcb1ad",
+      "needle": "connection.commit()",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/transaction.py#L242-L271"
+    },
+    {
+      "id": "anchor-atomic-rollback-exit",
+      "path": "django/db/transaction.py",
+      "start_line": 272,
+      "end_line": 299,
+      "blob_oid": "0c2eee8e736408af3838cdd55aed3c7ddff3bcde",
+      "line_sha256": "49aae473f99974a7a37728ed7749ef0dd97dea8de9b7d9391befc8da65e70a28",
+      "needle": "connection.savepoint_rollback(sid)",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/transaction.py#L272-L299"
+    },
+    {
+      "id": "anchor-outer-cleanup",
+      "path": "django/db/transaction.py",
+      "start_line": 301,
+      "end_line": 313,
+      "blob_oid": "0c2eee8e736408af3838cdd55aed3c7ddff3bcde",
+      "line_sha256": "35d226cfcd33c5e283e1f5d9fe92053598bead9f36c7a106b9562c50cb17c56a",
+      "needle": "connection.set_autocommit(True)",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/transaction.py#L301-L313"
+    },
+    {
+      "id": "anchor-connection-commit-rollback",
+      "path": "django/db/backends/base/base.py",
+      "start_line": 323,
+      "end_line": 341,
+      "blob_oid": "aa9cdb5748793535b84e364b04cdd553e8ac379a",
+      "line_sha256": "a42e6af4cfefe1e50671eb53bd3c3625f9ae6d09a323100fb73ffc3601cdd939",
+      "needle": "self.run_on_commit = []",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/backends/base/base.py#L323-L341"
+    },
+    {
+      "id": "anchor-savepoint-callback-discard",
+      "path": "django/db/backends/base/base.py",
+      "start_line": 405,
+      "end_line": 431,
+      "blob_oid": "aa9cdb5748793535b84e364b04cdd553e8ac379a",
+      "line_sha256": "f45a456d19cbe80a5c9cd9b774fbbf4990775edcf98fbeab7e8c699a5ef38fb3",
+      "needle": "if sid not in sids",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/backends/base/base.py#L405-L431"
+    },
+    {
+      "id": "anchor-autocommit-runs-hooks",
+      "path": "django/db/backends/base/base.py",
+      "start_line": 470,
+      "end_line": 492,
+      "blob_oid": "aa9cdb5748793535b84e364b04cdd553e8ac379a",
+      "line_sha256": "73b3b54f113574556a79c9437df4c447595b350369e6d76d404bee0bc8927aae",
+      "needle": "self.run_and_clear_commit_hooks()",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/backends/base/base.py#L470-L492"
+    },
+    {
+      "id": "anchor-oncommit-queue-or-immediate",
+      "path": "django/db/backends/base/base.py",
+      "start_line": 727,
+      "end_line": 750,
+      "blob_oid": "aa9cdb5748793535b84e364b04cdd553e8ac379a",
+      "line_sha256": "3eb44439e2c553cb3f3525f689018a5f3189638c07f77aeff74c158e44b5f706",
+      "needle": "self.run_on_commit.append((set(self.savepoint_ids), func, robust))",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/backends/base/base.py#L727-L750"
+    },
+    {
+      "id": "anchor-hook-runner",
+      "path": "django/db/backends/base/base.py",
+      "start_line": 752,
+      "end_line": 769,
+      "blob_oid": "aa9cdb5748793535b84e364b04cdd553e8ac379a",
+      "line_sha256": "1da159e7e8c8cf20c3bf1dcc6bce66634c2ac5f949eca4546f964eccccef4c37",
+      "needle": "current_run_on_commit.pop(0)",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/django/db/backends/base/base.py#L752-L769"
+    },
+    {
+      "id": "anchor-test-helper",
+      "path": "tests/transaction_hooks/tests.py",
+      "start_line": 25,
+      "end_line": 40,
+      "blob_oid": "938e92575f0c796da36918a2b25a17d528db8a36",
+      "line_sha256": "5c7f114270a64cbd4920016c00bf7558bdf56fa3eb1d7f89199ebe1037644327",
+      "needle": "transaction.on_commit(lambda: self.notify(num))",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/tests/transaction_hooks/tests.py#L25-L40"
+    },
+    {
+      "id": "anchor-test-delayed-through-nesting",
+      "path": "tests/transaction_hooks/tests.py",
+      "start_line": 87,
+      "end_line": 109,
+      "blob_oid": "938e92575f0c796da36918a2b25a17d528db8a36",
+      "line_sha256": "9b80cc5c491ea2076071250758ead927f2657bbaf1a22fca2b99644c09caeb63",
+      "needle": "self.assertNotified([])",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/tests/transaction_hooks/tests.py#L87-L109"
+    },
+    {
+      "id": "anchor-test-rollback-scopes",
+      "path": "tests/transaction_hooks/tests.py",
+      "start_line": 111,
+      "end_line": 177,
+      "blob_oid": "938e92575f0c796da36918a2b25a17d528db8a36",
+      "line_sha256": "f2259de8396224eb9c856529f6e64a03cc63735844238507a9a17a1b6665bd53",
+      "needle": "self.assertDone([1, 3])",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/tests/transaction_hooks/tests.py#L111-L177"
+    },
+    {
+      "id": "anchor-test-order-and-clear",
+      "path": "tests/transaction_hooks/tests.py",
+      "start_line": 179,
+      "end_line": 207,
+      "blob_oid": "938e92575f0c796da36918a2b25a17d528db8a36",
+      "line_sha256": "0d6fe7fd568c701bec8d4d2b13ea16156f3055173ae020f5f52b1f68512f655d",
+      "needle": "self.assertDone([1, 2, 3])",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/tests/transaction_hooks/tests.py#L179-L207"
+    },
+    {
+      "id": "anchor-test-postcommit-context",
+      "path": "tests/transaction_hooks/tests.py",
+      "start_line": 234,
+      "end_line": 266,
+      "blob_oid": "938e92575f0c796da36918a2b25a17d528db8a36",
+      "line_sha256": "4f42ad733d4cbb37faa609b956bda1880c72e075740b946bb5f5aaaf5aa59904",
+      "needle": "self.assertDone([1, 11, 2, 12])",
+      "url": "https://github.com/django/django/blob/3e389b7ddaf08109900da5415ddaac5a355a170f/tests/transaction_hooks/tests.py#L234-L266"
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact-entry-chooses-transaction-or-savepoint",
+      "state": "extracted",
+      "statement": "With autocommit initially enabled, the outer block disables autocommit; a nested default block creates a savepoint while savepoint=False records no local savepoint.",
+      "anchor_ids": [
+        "anchor-atomic-enter"
+      ]
+    },
+    {
+      "id": "fact-clean-exit-releases-or-commits",
+      "state": "extracted",
+      "statement": "When block bodies exit without error, nested __exit__ releases its savepoint while outer __exit__ calls connection.commit() before cleanup and callback execution.",
+      "anchor_ids": [
+        "anchor-atomic-clean-exit"
+      ]
+    },
+    {
+      "id": "fact-error-uses-nearest-real-boundary",
+      "state": "extracted",
+      "statement": "An error rolls back a real savepoint when present; without one the inner exit marks the enclosing atomic scope for rollback, and rollback waits for the nearest real enclosing boundary.",
+      "anchor_ids": [
+        "anchor-atomic-rollback-exit"
+      ]
+    },
+    {
+      "id": "fact-outer-exit-restores-autocommit",
+      "state": "extracted",
+      "statement": "The ordinary outermost cleanup restores autocommit after the commit or rollback branch.",
+      "anchor_ids": [
+        "anchor-outer-cleanup"
+      ]
+    },
+    {
+      "id": "fact-commit-arms-hooks-rollback-clears",
+      "state": "extracted",
+      "statement": "A successful connection commit arms queued hooks for the later autocommit transition; rollback clears the whole queue.",
+      "anchor_ids": [
+        "anchor-connection-commit-rollback"
+      ]
+    },
+    {
+      "id": "fact-savepoint-rollback-prunes-hooks",
+      "state": "extracted",
+      "statement": "Rolling back a savepoint removes callbacks whose registration snapshot contains that savepoint ID; releasing a savepoint does not run them.",
+      "anchor_ids": [
+        "anchor-savepoint-callback-discard"
+      ]
+    },
+    {
+      "id": "fact-oncommit-captures-savepoint-scope",
+      "state": "extracted",
+      "statement": "Inside an atomic block, on_commit stores the callback with the set of active savepoint IDs; outside a transaction in autocommit mode, it executes immediately.",
+      "anchor_ids": [
+        "anchor-oncommit-queue-or-immediate"
+      ]
+    },
+    {
+      "id": "fact-hooks-run-after-autocommit-restored",
+      "state": "extracted",
+      "statement": "set_autocommit(True) updates backend and connection state before running and clearing the armed callback queue.",
+      "anchor_ids": [
+        "anchor-autocommit-runs-hooks",
+        "anchor-hook-runner"
+      ]
+    },
+    {
+      "id": "fact-tests-delay-until-outer-commit",
+      "state": "corroborated",
+      "statement": "Django tests keep callbacks silent through nested success and observe them only after the outer block commits.",
+      "anchor_ids": [
+        "anchor-test-helper",
+        "anchor-test-delayed-through-nesting"
+      ]
+    },
+    {
+      "id": "fact-tests-separate-rollback-scopes",
+      "state": "corroborated",
+      "statement": "Django tests discard callbacks and rows from rolled-back savepoints, preserve successful siblings, discard everything on outer rollback, and show savepoint=False failure dooming its enclosing transaction scope.",
+      "anchor_ids": [
+        "anchor-test-helper",
+        "anchor-test-rollback-scopes"
+      ]
+    },
+    {
+      "id": "fact-tests-postcommit-order-and-context",
+      "state": "corroborated",
+      "statement": "Surviving callbacks run in registration order, are cleared after commit or rollback, and can issue queries or open a fresh atomic block.",
+      "anchor_ids": [
+        "anchor-test-order-and-clear",
+        "anchor-test-postcommit-context"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-outermost-owns-commit-boundary",
+      "state": "extracted",
+      "strength": "strong",
+      "title": "The ordinary outer block owns the transaction commit",
+      "statement": "With autocommit initially enabled, entering the outermost atomic block starts Django's transaction boundary and only its no-error __exit__ branch calls connection.commit().",
+      "support_fact_ids": [
+        "fact-entry-chooses-transaction-or-savepoint",
+        "fact-clean-exit-releases-or-commits"
+      ],
+      "anchor_ids": [
+        "anchor-atomic-enter",
+        "anchor-atomic-clean-exit"
+      ],
+      "limits": [
+        "Manual transaction management with autocommit already disabled follows a different ownership path.",
+        "The call boundary does not establish backend-specific physical durability."
+      ]
+    },
+    {
+      "id": "claim-nested-block-is-savepoint-not-commit",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "A nested atomic block is usually a savepoint, not a nested commit",
+      "statement": "A default nested block creates a savepoint, and successful exit releases that savepoint without committing the database transaction.",
+      "support_fact_ids": [
+        "fact-entry-chooses-transaction-or-savepoint",
+        "fact-clean-exit-releases-or-commits",
+        "fact-tests-delay-until-outer-commit"
+      ],
+      "anchor_ids": [
+        "anchor-atomic-enter",
+        "anchor-atomic-clean-exit",
+        "anchor-test-delayed-through-nesting"
+      ],
+      "limits": [
+        "Backends without usable savepoints are outside this episode.",
+        "The method name savepoint_commit means release here, not database transaction commit."
+      ]
+    },
+    {
+      "id": "claim-inner-success-remains-rollbackable",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "Inner success remains provisional until outer success",
+      "statement": "Rows written and callbacks registered by a successful inner block can still be removed by a later rollback of an enclosing savepoint or the outer transaction.",
+      "support_fact_ids": [
+        "fact-clean-exit-releases-or-commits",
+        "fact-tests-delay-until-outer-commit",
+        "fact-tests-separate-rollback-scopes"
+      ],
+      "anchor_ids": [
+        "anchor-atomic-clean-exit",
+        "anchor-test-delayed-through-nesting",
+        "anchor-test-rollback-scopes"
+      ],
+      "limits": [
+        "This statement is scoped to one connection and alias."
+      ]
+    },
+    {
+      "id": "claim-inner-failure-uses-nearest-real-boundary",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "A failed inner savepoint can be isolated",
+      "statement": "When a real inner savepoint exists, Django rolls back that scope and discards its callbacks; if the exception is handled outside that block, earlier outer work can continue and commit.",
+      "support_fact_ids": [
+        "fact-error-uses-nearest-real-boundary",
+        "fact-savepoint-rollback-prunes-hooks",
+        "fact-tests-separate-rollback-scopes"
+      ],
+      "anchor_ids": [
+        "anchor-atomic-rollback-exit",
+        "anchor-savepoint-callback-discard",
+        "anchor-test-rollback-scopes"
+      ],
+      "limits": [
+        "The exception must be handled outside the failed atomic block without masking a broken transaction state."
+      ]
+    },
+    {
+      "id": "claim-savepoint-false-removes-local-recovery",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "`savepoint=False` removes a recovery boundary, not just overhead",
+      "statement": "A nested savepoint=False block neither commits nor owns a local rollback point; its failed exit performs no rollback there and propagates needs_rollback until the nearest enclosing real savepoint or outer transaction rolls back.",
+      "support_fact_ids": [
+        "fact-entry-chooses-transaction-or-savepoint",
+        "fact-error-uses-nearest-real-boundary",
+        "fact-tests-separate-rollback-scopes"
+      ],
+      "anchor_ids": [
+        "anchor-atomic-enter",
+        "anchor-atomic-rollback-exit",
+        "anchor-test-rollback-scopes"
+      ],
+      "limits": [
+        "Callbacks may remain queued until that enclosing boundary actually rolls back; this claim does not say they are removed immediately."
+      ]
+    },
+    {
+      "id": "claim-oncommit-follows-savepoint-scope",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "`on_commit()` callbacks follow their rollback scope",
+      "statement": "Registration captures active savepoint IDs, so rollback prunes callbacks from that scope while callbacks from surviving sibling or outer scopes remain queued.",
+      "support_fact_ids": [
+        "fact-oncommit-captures-savepoint-scope",
+        "fact-savepoint-rollback-prunes-hooks",
+        "fact-tests-separate-rollback-scopes"
+      ],
+      "anchor_ids": [
+        "anchor-oncommit-queue-or-immediate",
+        "anchor-savepoint-callback-discard",
+        "anchor-test-rollback-scopes"
+      ],
+      "limits": [
+        "The queue is connection-local and does not coordinate separate database aliases."
+      ]
+    },
+    {
+      "id": "claim-callbacks-run-after-commit-and-autocommit",
+      "state": "corroborated",
+      "strength": "strong",
+      "title": "Surviving callbacks run after commit and autocommit restoration",
+      "statement": "After the outer body exits without error and commit succeeds, __exit__ restores autocommit and drains surviving callbacks in registration order before returning; callback code can therefore query or start a new transaction.",
+      "support_fact_ids": [
+        "fact-commit-arms-hooks-rollback-clears",
+        "fact-outer-exit-restores-autocommit",
+        "fact-hooks-run-after-autocommit-restored",
+        "fact-tests-postcommit-order-and-context"
+      ],
+      "anchor_ids": [
+        "anchor-connection-commit-rollback",
+        "anchor-autocommit-runs-hooks",
+        "anchor-test-postcommit-context"
+      ],
+      "limits": [
+        "A non-robust callback exception can stop the remaining local drain, but cannot undo the already successful commit.",
+        "Outside a transaction under ordinary autocommit, on_commit executes immediately."
+      ]
+    },
+    {
+      "id": "claim-oncommit-is-handoff-not-delivery",
+      "state": "inferred",
+      "strength": "weak",
+      "title": "Treat `on_commit()` as a post-commit handoff, not a delivery guarantee",
+      "statement": "The useful design signal is to place side effects after transaction success, while recognizing that this in-process queue supplies no durable retry or crash-recovery contract.",
+      "support_fact_ids": [
+        "fact-commit-arms-hooks-rollback-clears",
+        "fact-hooks-run-after-autocommit-restored",
+        "fact-tests-postcommit-order-and-context"
+      ],
+      "anchor_ids": [
+        "anchor-connection-commit-rollback",
+        "anchor-hook-runner",
+        "anchor-test-postcommit-context"
+      ],
+      "limits": [
+        "The handoff framing is an engineering interpretation, not a named Django abstraction.",
+        "The inspected code does not prove delivery after process failure."
+      ]
+    }
+  ],
+  "branch_map": [
+    {
+      "id": "branch-inner-success",
+      "state": "corroborated",
+      "trigger": "A default nested block exits without error.",
+      "transaction_effect": "Its savepoint is released; all inner and outer writes remain part of the outer transaction.",
+      "callback_effect": "Callbacks remain queued.",
+      "claim_ids": [
+        "claim-nested-block-is-savepoint-not-commit",
+        "claim-inner-success-remains-rollbackable"
+      ]
+    },
+    {
+      "id": "branch-inner-savepoint-rollback",
+      "state": "corroborated",
+      "trigger": "A nested block with a real savepoint exits through an error.",
+      "transaction_effect": "That savepoint is rolled back; earlier outer writes remain provisional.",
+      "callback_effect": "Callbacks registered under that savepoint are discarded.",
+      "claim_ids": [
+        "claim-inner-failure-uses-nearest-real-boundary",
+        "claim-oncommit-follows-savepoint-scope"
+      ]
+    },
+    {
+      "id": "branch-inner-no-savepoint-failure",
+      "state": "corroborated",
+      "trigger": "A nested savepoint=False block exits through an error.",
+      "transaction_effect": "No rollback occurs at this inner exit; needs_rollback propagates until the nearest real enclosing boundary rolls back.",
+      "callback_effect": "Callbacks cannot run if that enclosing scope rolls back, but they need not be pruned at the inner exit itself.",
+      "claim_ids": [
+        "claim-savepoint-false-removes-local-recovery"
+      ]
+    },
+    {
+      "id": "branch-outer-success",
+      "state": "corroborated",
+      "trigger": "The ordinary outer block body exits without error and connection.commit() succeeds.",
+      "transaction_effect": "Django restores autocommit inside __exit__ after commit returns.",
+      "callback_effect": "Surviving callbacks drain before __exit__ returns; a non-robust callback can still make the with statement raise.",
+      "claim_ids": [
+        "claim-outermost-owns-commit-boundary",
+        "claim-callbacks-run-after-commit-and-autocommit"
+      ]
+    },
+    {
+      "id": "branch-outer-rollback",
+      "state": "corroborated",
+      "trigger": "The outer transaction rolls back.",
+      "transaction_effect": "All work in that transaction is rolled back.",
+      "callback_effect": "The connection callback queue is cleared.",
+      "claim_ids": [
+        "claim-inner-success-remains-rollbackable",
+        "claim-oncommit-follows-savepoint-scope"
+      ]
+    },
+    {
+      "id": "branch-no-active-transaction",
+      "state": "extracted",
+      "trigger": "on_commit is called with no atomic block and autocommit enabled.",
+      "transaction_effect": "There is no pending transaction boundary.",
+      "callback_effect": "The callback runs immediately.",
+      "claim_ids": [
+        "claim-callbacks-run-after-commit-and-autocommit"
+      ]
+    }
+  ],
+  "uncertainties": [
+    {
+      "id": "uncertainty-physical-durability",
+      "state": "unknown",
+      "statement": "The inspected Django boundary does not establish when a specific database makes the commit physically durable or externally replicated.",
+      "anchor_ids": [
+        "anchor-atomic-clean-exit",
+        "anchor-connection-commit-rollback"
+      ],
+      "next_check": "Pin one database backend and inspect its driver and server durability contract only if that becomes the user's question."
+    },
+    {
+      "id": "uncertainty-callback-delivery-after-crash",
+      "state": "unknown",
+      "statement": "The in-memory callback queue does not establish delivery if the process exits after database commit but before or during callback execution.",
+      "anchor_ids": [
+        "anchor-hook-runner"
+      ],
+      "next_check": "Inspect an application-level outbox or task delivery path rather than promoting this callback queue into a durable guarantee."
+    }
+  ]
+}
