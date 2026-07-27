@@ -30,6 +30,7 @@
 	var STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
 // repomap-source-episode:start
 	var SOURCE_EPISODE = DATA.source_episode || null;
+	if (SOURCE_EPISODE) DATA.semantic_search = null;
 // repomap-source-episode:end
 	var OPERATIONS = DATA.operations || null;
 	var PAVED_PATHS = OPERATIONS && Array.isArray(OPERATIONS.paths) ? OPERATIONS.paths : [];
@@ -3919,7 +3920,6 @@
 		var hero = el('div', 'rm-source-episode__hero');
 		hero.appendChild(txt('div', 'rm-view-kicker', 'How this works'));
 		hero.appendChild(txt('h2', '', episode.question));
-		hero.appendChild(txt('p', 'rm-source-episode__intro', 'Follow the causal explanation below. Evidence status stays visible on every step; unknowns remain part of the answer.'));
 		var provenance = [episode.repository, episode.revision && String(episode.revision).slice(0, 12)]
 			.filter(Boolean).join(' · ');
 		if (provenance) hero.appendChild(txt('p', 'rm-source-episode__provenance', provenance));

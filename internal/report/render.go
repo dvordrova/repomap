@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"html/template"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -43,6 +45,10 @@ var semanticSearchJS string
 var scriptJS string
 
 var reportTmpl *template.Template
+
+// MaxSourceEpisodeBytes is the maximum approved source-episode artifact that
+// the transient report renderer will inspect.
+const MaxSourceEpisodeBytes = maxSourceEpisodeBytes
 
 func init() {
 	reportTmpl = template.Must(template.New("report").Parse(templateHTML))
@@ -95,12 +101,29 @@ func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, 
 	return buildHTMLWithSourceEpisode(data, episode)
 }
 
+// ValidateSourceEpisodeForRevision rejects an unapproved artifact or revision
+// mismatch before a caller spends time on repository orientation. It performs
+// the same bounded validation as rendering without persisting the input.
+func ValidateSourceEpisodeForRevision(episodeJSON []byte, revision string) error {
+	_, err := projectApprovedSourceEpisode(
+		&ReportData{CapturedRevision: revision},
+		episodeJSON,
+	)
+	return err
+}
+
 func buildHTML(data *ReportData) ([]byte, error) {
 	return buildHTMLWithSourceEpisode(data, nil)
 }
 
 func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjection) ([]byte, error) {
 	rendered := reportDataForRendering(data)
+	if episode != nil {
+		// The source-first answer is the complete destination for this bounded
+		// experiment. Keep the legacy search index persisted in report.json,
+		// but do not serialize or ship its UI/assets in the projected HTML.
+		rendered.SemanticSearch = nil
+	}
 	css := styleCSS
 	js := scriptJS
 	if episode == nil {
@@ -204,16 +227,37 @@ func reportDataForRendering(data *ReportData) *ReportData {
 }
 
 func Generate(runDir string) error {
-	return generate(runDir, nil)
+	return generate(runDir, nil, nil)
 }
 
 // GenerateAuthorized renders a report and binds its exact generated JSON to
 // repository authority confirmed stable across orientation.
 func GenerateAuthorized(runDir string, authority RunAuthority) error {
-	return generate(runDir, &authority)
+	return generate(runDir, &authority, nil)
 }
 
-func generate(runDir string, authority *RunAuthority) error {
+// GenerateAuthorizedWithSourceEpisode generates the same persisted report and
+// manifest as GenerateAuthorized, while placing one approved, SHA-pinned
+// source episode only in the static report.html review surface.
+func GenerateAuthorizedWithSourceEpisode(
+	runDir string,
+	authority RunAuthority,
+	episodeJSON []byte,
+) error {
+	if err := authority.validate(); err != nil {
+		return err
+	}
+	if len(episodeJSON) == 0 || len(episodeJSON) > MaxSourceEpisodeBytes {
+		return fmt.Errorf("report: source episode input is outside the byte budget")
+	}
+	episodeJSON = append([]byte(nil), episodeJSON...)
+	if err := ValidateSourceEpisodeForRevision(episodeJSON, authority.repository.Head); err != nil {
+		return err
+	}
+	return generate(runDir, &authority, episodeJSON)
+}
+
+func generate(runDir string, authority *RunAuthority, sourceEpisodeJSON []byte) error {
 	if err := RemoveRunManifest(runDir); err != nil {
 		return err
 	}
@@ -245,6 +289,11 @@ func generate(runDir string, authority *RunAuthority) error {
 	data, err := readRunDir(runDir, studyDocumentSourceRoot, authority)
 	if err != nil {
 		return err
+	}
+	if sourceEpisodeJSON != nil && authority != nil {
+		if err := retainSourceEpisodeRegularOpenablePaths(data, *authority); err != nil {
+			return err
+		}
 	}
 	if err := writePavedPathPublicationDiagnostics(runDir); err != nil {
 		return err
@@ -304,14 +353,63 @@ func generate(runDir string, authority *RunAuthority) error {
 	}
 
 	htmlPath := runDir + "/report.html"
-	if err := WriteReportHTML(data, htmlPath); err != nil {
-		return err
+	if sourceEpisodeJSON == nil {
+		if err := WriteReportHTML(data, htmlPath); err != nil {
+			return err
+		}
+	} else {
+		html, err := RenderHTMLWithSourceEpisode(data, sourceEpisodeJSON)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(htmlPath, html, 0o644); err != nil {
+			return err
+		}
 	}
 	if authority != nil {
 		if err := writeAuthorizedRunManifest(runDir, data, reportJSON, *authority); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func retainSourceEpisodeRegularOpenablePaths(data *ReportData, authority RunAuthority) error {
+	if data == nil || authority.inputs == nil {
+		return nil
+	}
+	analysisRelative, err := filepath.Rel(authority.repository.Identity, authority.analysisRoot)
+	if err != nil || analysisRelative == ".." ||
+		strings.HasPrefix(analysisRelative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("report: source episode analysis root is outside repository")
+	}
+	analysisPrefix := ""
+	if analysisRelative != "." {
+		analysisPrefix = filepath.ToSlash(analysisRelative)
+	}
+	capturedByPath := make(map[string]freshness.CapturedInput, len(authority.inputs))
+	for _, input := range authority.inputs {
+		if _, duplicate := capturedByPath[input.Path]; duplicate {
+			return fmt.Errorf("report: source episode captured authority has duplicate paths")
+		}
+		capturedByPath[input.Path] = input
+	}
+	retained := make([]string, 0, min(len(data.OpenablePaths), maxManifestOpenablePaths))
+	for _, sourcePath := range data.OpenablePaths {
+		if err := validateManifestPath(sourcePath); err != nil {
+			return err
+		}
+		repositoryPath := sourcePath
+		if analysisPrefix != "" {
+			repositoryPath = path.Join(analysisPrefix, sourcePath)
+		}
+		input, ok := capturedByPath[repositoryPath]
+		if ok && input.Kind == freshness.FileSymlink {
+			continue
+		}
+		retained = append(retained, sourcePath)
+	}
+	data.OpenablePaths = retained
 	return nil
 }
 

@@ -2,12 +2,15 @@ package report
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/freshness"
 )
 
 func TestSourceEpisodeProjectionRendersAcceptedGoAndPythonFixtures(t *testing.T) {
@@ -110,6 +113,189 @@ func TestSourceEpisodeProjectionRendersAcceptedGoAndPythonFixtures(t *testing.T)
 				}
 			}
 		})
+	}
+}
+
+func TestGenerateAuthorizedWithSourceEpisodeKeepsPersistedAuthorityOrdinary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "go etcd",
+			path: filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+		},
+		{
+			name: "python django",
+			path: filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw, episode := readSourceEpisodeFixture(t, test.path)
+			runDir, authority := sourceEpisodeGenerationFixture(t, episode)
+			if err := GenerateAuthorized(runDir, authority); err != nil {
+				t.Fatalf("generate ordinary authorized report: %v", err)
+			}
+			ordinaryJSON := readSourceEpisodeGeneratedFile(t, runDir, "report.json")
+			ordinaryManifest := readSourceEpisodeGeneratedFile(t, runDir, RunManifestFilename)
+			ordinaryHTML := readSourceEpisodeGeneratedFile(t, runDir, "report.html")
+
+			if err := GenerateAuthorizedWithSourceEpisode(runDir, authority, raw); err != nil {
+				t.Fatalf("generate authorized source episode: %v", err)
+			}
+			episodeJSON := readSourceEpisodeGeneratedFile(t, runDir, "report.json")
+			episodeManifest := readSourceEpisodeGeneratedFile(t, runDir, RunManifestFilename)
+			episodeHTML := readSourceEpisodeGeneratedFile(t, runDir, "report.html")
+
+			if !bytes.Equal(episodeJSON, ordinaryJSON) {
+				t.Fatal("source episode changed persisted report.json")
+			}
+			if !bytes.Equal(episodeManifest, ordinaryManifest) {
+				t.Fatal("source episode changed the report manifest")
+			}
+			if bytes.Equal(episodeHTML, ordinaryHTML) {
+				t.Fatal("source episode did not change transient report.html")
+			}
+			for _, required := range []string{
+				`"source_episode":`,
+				episode.EpisodeID,
+				episode.Question,
+				episode.Claims[0].Statement,
+			} {
+				if !bytes.Contains(episodeHTML, []byte(required)) {
+					t.Fatalf("transient report.html is missing %q", required)
+				}
+			}
+			for _, forbidden := range []string{
+				`"semantic_search":`,
+				`id="rm-semantic-search-css"`,
+				`id="rm-semantic-search-js"`,
+				`id="rm-semantic-search-entry"`,
+			} {
+				if bytes.Contains(episodeHTML, []byte(forbidden)) {
+					t.Fatalf("transient report.html retained Search payload %q", forbidden)
+				}
+			}
+			for _, forbidden := range []string{
+				`"source_episode":`,
+				episode.EpisodeID,
+				episode.Question,
+			} {
+				if bytes.Contains(episodeJSON, []byte(forbidden)) {
+					t.Fatalf("persisted report.json contains transient token %q", forbidden)
+				}
+				if bytes.Contains(episodeManifest, []byte(forbidden)) {
+					t.Fatalf("report manifest contains transient token %q", forbidden)
+				}
+			}
+			manifest, err := ReadRunManifest(runDir)
+			if err != nil {
+				t.Fatalf("read generated manifest: %v", err)
+			}
+			if err := manifest.VerifyReportJSON(episodeJSON); err != nil {
+				t.Fatalf("verify ordinary report binding: %v", err)
+			}
+
+			if err := GenerateAuthorized(runDir, authority); err != nil {
+				t.Fatalf("regenerate ordinary authorized report: %v", err)
+			}
+			if regenerated := readSourceEpisodeGeneratedFile(t, runDir, "report.html"); !bytes.Equal(regenerated, ordinaryHTML) {
+				t.Fatal("ordinary GenerateAuthorized HTML changed after transient generation")
+			}
+		})
+	}
+}
+
+func TestSourceEpisodeAuthorityOmitsOnlyCapturedSymlinkPath(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	analysisRoot := filepath.Join(repository, "service")
+	if err := os.Mkdir(analysisRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := &ReportData{OpenablePaths: []string{"linked.go", "regular.go"}}
+	authority := RunAuthority{
+		analysisRoot: analysisRoot,
+		repository: freshness.RepositoryState{
+			Version:  freshness.RepositoryStateVersion,
+			Identity: repository,
+			Head:     strings.Repeat("a", 40),
+		},
+		inputs: []freshness.CapturedInput{
+			{
+				Version: freshness.CapturedInputVersion, ID: strings.Repeat("b", 64),
+				Path: "service/linked.go", Kind: freshness.FileSymlink,
+				Mode: "120000", ContentSHA256: strings.Repeat("c", 64),
+				Stages: []string{"report_evidence"},
+			},
+			{
+				Version: freshness.CapturedInputVersion, ID: strings.Repeat("d", 64),
+				Path: "service/regular.go", Kind: freshness.FileRegular,
+				Mode: "100644", ContentSHA256: strings.Repeat("e", 64),
+				Stages: []string{"report_evidence"},
+			},
+		},
+	}
+
+	if err := retainSourceEpisodeRegularOpenablePaths(data, authority); err != nil {
+		t.Fatalf("retain regular source episode paths: %v", err)
+	}
+	if len(data.OpenablePaths) != 1 || data.OpenablePaths[0] != "regular.go" {
+		t.Fatalf("retained openable paths = %#v, want regular.go only", data.OpenablePaths)
+	}
+	if authority.inputs[0].Kind != freshness.FileSymlink || len(authority.inputs) != 2 {
+		t.Fatalf("source episode filtering mutated captured authority: %#v", authority.inputs)
+	}
+	catalog, available, err := authorizedExactSearchCatalog(data, authority)
+	if err != nil || !available {
+		t.Fatalf("regular subset catalog available=%t err=%v", available, err)
+	}
+	if catalog.Len() != 1 {
+		t.Fatalf("regular subset catalog length = %d, want 1", catalog.Len())
+	}
+	if _, ok := catalog.Lookup("regular.go"); !ok {
+		t.Fatal("regular captured path is missing from source episode catalog")
+	}
+	if _, ok := catalog.Lookup("linked.go"); ok {
+		t.Fatal("tracked symlink reached source episode catalog")
+	}
+}
+
+func TestGenerateAuthorizedWithSourceEpisodeRejectsCrossRevisionBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	raw, episode := readSourceEpisodeFixture(
+		t,
+		filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+	)
+	runDir, authority := sourceEpisodeGenerationFixture(t, episode)
+	if err := GenerateAuthorized(runDir, authority); err != nil {
+		t.Fatalf("generate ordinary authorized report: %v", err)
+	}
+	beforeJSON := readSourceEpisodeGeneratedFile(t, runDir, "report.json")
+	beforeHTML := readSourceEpisodeGeneratedFile(t, runDir, "report.html")
+	beforeManifest := readSourceEpisodeGeneratedFile(t, runDir, RunManifestFilename)
+
+	mismatched := authority
+	mismatched.repository.Head = strings.Repeat("0", 40)
+	if err := GenerateAuthorizedWithSourceEpisode(runDir, mismatched, raw); err == nil {
+		t.Fatal("cross-revision source episode was accepted")
+	}
+	if got := readSourceEpisodeGeneratedFile(t, runDir, "report.json"); !bytes.Equal(got, beforeJSON) {
+		t.Fatal("cross-revision rejection changed report.json")
+	}
+	if got := readSourceEpisodeGeneratedFile(t, runDir, "report.html"); !bytes.Equal(got, beforeHTML) {
+		t.Fatal("cross-revision rejection changed report.html")
+	}
+	if got := readSourceEpisodeGeneratedFile(t, runDir, RunManifestFilename); !bytes.Equal(got, beforeManifest) {
+		t.Fatal("cross-revision rejection changed the report manifest")
 	}
 }
 
@@ -282,14 +468,23 @@ class Element {
   }
   get childNodes() { return this.children; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name] || null; }
+  removeAttribute(name) { delete this.attributes[name]; }
   appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
   append(...children) { children.forEach((child) => this.appendChild(child)); }
   replaceChildren(...children) { this.children = []; this.append(...children); }
 }
 const report = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const listeners = {};
+const elements = {
+  "rm-overview": new Element("section"),
+  "rm-tabs": new Element("nav"),
+};
 const window = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  __REPOMAP_WORKSPACE_TEST__: {},
+  RepomapSemanticSearch: { mount() { return { destroy() {} }; } },
+  addEventListener(name, callback) { listeners[name] = callback; },
 };
 window.history = {
   state: null,
@@ -301,7 +496,7 @@ const document = {
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return null;
+    return elements[id] || null;
   },
   querySelector() { return null; },
   querySelectorAll() { return []; },
@@ -310,6 +505,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
+if (listeners.DOMContentLoaded) listeners.DOMContentLoaded();
 function walk(root) {
   const result = [];
   (function visit(node) {
@@ -338,6 +534,11 @@ report.source_episode.uncertainties.forEach((uncertainty) => { uncertainty.sourc
 const withoutAuthority = api.renderSourceEpisode(report.source_episode);
 const withoutAuthorityButtons = walk(withoutAuthority)
   .filter((node) => String(node.className).split(/\s+/).includes("rm-source-episode__source"));
+const overviewSearchDestinations = walk(elements["rm-overview"]).filter((node) =>
+  node.tagName === "BUTTON" && text(node).trim() === "Search").length;
+const tabSearchDestinations = elements["rm-tabs"].children.filter((node) =>
+  node.attributes["data-workspace-view"] === "search").length;
+const directSearch = api.parseWorkspaceHash("#/search", [], null);
 process.stdout.write(JSON.stringify({
   text: text(root),
   claimTitles,
@@ -346,6 +547,10 @@ process.stdout.write(JSON.stringify({
   sourceButtonsAreDirect: sourceButtons.every((node) => typeof node.onclick === "function"),
   openedSourcePath: openedSource && openedSource.path || "",
   withoutAuthorityButtonCount: withoutAuthorityButtons.length,
+  overviewSearchDestinations,
+  tabSearchDestinations,
+  directSearchValid: directSearch.valid,
+  directSearchCanonicalHash: directSearch.canonicalHash,
   preCount: nodes.filter((node) => node.tagName === "PRE").length,
   route: window.location.hash,
 }));
@@ -390,15 +595,19 @@ process.stdout.write(JSON.stringify({
 			}
 			firstAnchor := episode.Anchors[0]
 			reportJSON, err := json.Marshal(struct {
-				RepoName      string                   `json:"repo_name"`
-				OpenablePaths []string                 `json:"openable_paths"`
-				SourceIDs     map[string]string        `json:"source_ids"`
-				UserSources   []map[string]any         `json:"user_sources"`
-				SourceEpisode *sourceEpisodeProjection `json:"source_episode"`
+				RepoName       string                   `json:"repo_name"`
+				OpenablePaths  []string                 `json:"openable_paths"`
+				SourceIDs      map[string]string        `json:"source_ids"`
+				UserSources    []map[string]any         `json:"user_sources"`
+				SemanticSearch map[string]any           `json:"semantic_search"`
+				SourceEpisode  *sourceEpisodeProjection `json:"source_episode"`
 			}{
 				RepoName:      episode.Repository.Name,
 				OpenablePaths: data.OpenablePaths,
 				SourceIDs:     data.SourceIDs,
+				SemanticSearch: map[string]any{
+					"version": 1,
+				},
 				UserSources: []map[string]any{{
 					"path":       firstAnchor.Path,
 					"start_line": firstAnchor.StartLine,
@@ -434,6 +643,10 @@ process.stdout.write(JSON.stringify({
 				SourceButtonsAreDirect      bool     `json:"sourceButtonsAreDirect"`
 				OpenedSourcePath            string   `json:"openedSourcePath"`
 				WithoutAuthorityButtonCount int      `json:"withoutAuthorityButtonCount"`
+				OverviewSearchDestinations  int      `json:"overviewSearchDestinations"`
+				TabSearchDestinations       int      `json:"tabSearchDestinations"`
+				DirectSearchValid           bool     `json:"directSearchValid"`
+				DirectSearchCanonicalHash   string   `json:"directSearchCanonicalHash"`
 				PreCount                    int      `json:"preCount"`
 				Route                       string   `json:"route"`
 			}
@@ -466,6 +679,20 @@ process.stdout.write(JSON.stringify({
 			}
 			if got.WithoutAuthorityButtonCount != 0 {
 				t.Fatalf("missing SourceIDs left %d broken source controls", got.WithoutAuthorityButtonCount)
+			}
+			if got.OverviewSearchDestinations != 0 || got.TabSearchDestinations != 0 {
+				t.Fatalf(
+					"source episode retained Search destinations: overview=%d tabs=%d",
+					got.OverviewSearchDestinations,
+					got.TabSearchDestinations,
+				)
+			}
+			if got.DirectSearchValid || got.DirectSearchCanonicalHash != "#/overview" {
+				t.Fatalf(
+					"source episode direct Search route = valid %t canonical %q",
+					got.DirectSearchValid,
+					got.DirectSearchCanonicalHash,
+				)
 			}
 			if got.PreCount != 0 {
 				t.Fatal("source code was placed on first paint")
@@ -532,6 +759,56 @@ func readSourceEpisodeFixture(t *testing.T, fixturePath string) ([]byte, sourceE
 		t.Fatal(err)
 	}
 	return raw, episode
+}
+
+func sourceEpisodeGenerationFixture(
+	t *testing.T,
+	episode sourceEpisodeInput,
+) (string, RunAuthority) {
+	t.Helper()
+
+	repository := newRunManifestRepository(t)
+	initial, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := ConfirmRunAuthority(repository, initial, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pinned fixtures name immutable external revisions. This local
+	// generation fixture exercises report assembly without reading or running
+	// either target repository.
+	authority.repository.Head = episode.Repository.Revision
+
+	runDir := t.TempDir()
+	writeRunManifestMetadata(t, runDir, repository)
+	snapshot, err := json.Marshal(map[string]any{
+		"repo_name": episode.Repository.Name,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, runDir, "snapshot.json", string(snapshot))
+	writeTestFile(t, runDir, "orientation_report.json", `{
+		"project_guess":"source episode generation fixture",
+		"candidate_flows":[],
+		"warnings":[]
+	}`)
+	return runDir, authority
+}
+
+func readSourceEpisodeGeneratedFile(t *testing.T, runDir, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(runDir, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func authorizedSourceEpisodeReport(episode sourceEpisodeInput) *ReportData {

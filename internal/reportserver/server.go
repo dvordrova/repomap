@@ -52,8 +52,12 @@ type Options struct {
 	CaptureRepository   CaptureRepositoryFunc
 	CaptureFactContext  CaptureFactContextFunc
 	AnalysisTimeout     time.Duration
-	Logf                func(string, ...any)
-	OnReady             func(url string) error
+	// SourceEpisodeJSON is one optional, approved source-episode artifact for
+	// InitialRunID. It is copied into memory, never persisted, and cannot affect
+	// any other saved run served by this handler.
+	SourceEpisodeJSON []byte
+	Logf              func(string, ...any)
+	OnReady           func(url string) error
 }
 
 type RunSummary struct {
@@ -109,18 +113,20 @@ type runIndex struct {
 }
 
 type handler struct {
-	runsDir      string
-	initialRunID string
-	urlPrefix    string
-	openFile     OpenFileFunc
-	openSlot     chan struct{}
-	sourceSlot   chan struct{}
-	analysis     *symbolAnalysis
-	captureRepo  CaptureRepositoryFunc
-	logf         func(string, ...any)
-	runsMu       sync.RWMutex
-	reloadMu     sync.Mutex
-	runIndex     *runIndex
+	runsDir            string
+	initialRunID       string
+	urlPrefix          string
+	openFile           OpenFileFunc
+	openSlot           chan struct{}
+	sourceSlot         chan struct{}
+	analysis           *symbolAnalysis
+	captureRepo        CaptureRepositoryFunc
+	sourceEpisodeRunID string
+	sourceEpisodeJSON  []byte
+	logf               func(string, ...any)
+	runsMu             sync.RWMutex
+	reloadMu           sync.Mutex
+	runIndex           *runIndex
 }
 
 type metadata struct {
@@ -213,6 +219,16 @@ func NewHandler(opts Options) (http.Handler, error) {
 	if strings.TrimSpace(opts.RunsDir) == "" {
 		return nil, fmt.Errorf("report server: runs directory is required")
 	}
+	var sourceEpisodeJSON []byte
+	if len(opts.SourceEpisodeJSON) > 0 {
+		if strings.TrimSpace(opts.InitialRunID) == "" {
+			return nil, fmt.Errorf("report server: source episode requires an initial run")
+		}
+		if len(opts.SourceEpisodeJSON) > report.MaxSourceEpisodeBytes {
+			return nil, fmt.Errorf("report server: source episode exceeds %d bytes", report.MaxSourceEpisodeBytes)
+		}
+		sourceEpisodeJSON = append([]byte(nil), opts.SourceEpisodeJSON...)
+	}
 	runsDir, err := filepath.Abs(opts.RunsDir)
 	if err != nil {
 		return nil, fmt.Errorf("report server: resolve runs directory: %w", err)
@@ -264,8 +280,19 @@ func NewHandler(opts Options) (http.Handler, error) {
 		if !validRunID(opts.InitialRunID) {
 			return nil, fmt.Errorf("report server: invalid initial run id")
 		}
-		if _, findErr := h.findRunCached(opts.InitialRunID); findErr != nil {
+		initialRun, findErr := h.findRunCached(opts.InitialRunID)
+		if findErr != nil {
 			return nil, fmt.Errorf("report server: initial run not found: %s", opts.InitialRunID)
+		}
+		if len(sourceEpisodeJSON) > 0 {
+			if initialRun.Manifest == nil || initialRun.Report == nil {
+				return nil, fmt.Errorf("report server: source episode requires a verified initial run")
+			}
+			if _, renderErr := report.RenderHTMLWithSourceEpisode(initialRun.Report, sourceEpisodeJSON); renderErr != nil {
+				return nil, fmt.Errorf("report server: validate source episode for initial run: %w", renderErr)
+			}
+			h.sourceEpisodeRunID = opts.InitialRunID
+			h.sourceEpisodeJSON = sourceEpisodeJSON
 		}
 	}
 
@@ -330,7 +357,12 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 	run.Report = &reportData
 	h.refreshRunFreshness(r.Context(), &run)
 	renderStarted := time.Now()
-	rendered, err := report.RenderHTML(run.Report)
+	var rendered []byte
+	if runID == h.sourceEpisodeRunID && len(h.sourceEpisodeJSON) > 0 {
+		rendered, err = report.RenderHTMLWithSourceEpisode(run.Report, h.sourceEpisodeJSON)
+	} else {
+		rendered, err = report.RenderHTML(run.Report)
+	}
 	if err != nil {
 		http.Error(w, "could not render report", http.StatusInternalServerError)
 		return
