@@ -8,22 +8,57 @@ import (
 	"strings"
 )
 
+type Listing struct {
+	Paths        []string
+	RegularPaths []string
+}
+
 func List(repoPath string) ([]string, error) {
-	if err := verifyGitRepo(repoPath); err != nil {
+	listing, err := ListWithModes(repoPath)
+	if err != nil {
 		return nil, err
 	}
+	return listing.Paths, nil
+}
 
-	cmd := safeCommand(repoPath, "ls-files", "-z")
+// ListWithModes separates visible tracked paths from stage-0 regular files
+// that may be used as analysis inputs.
+func ListWithModes(repoPath string) (Listing, error) {
+	if err := verifyGitRepo(repoPath); err != nil {
+		return Listing{}, err
+	}
+
+	cmd := safeCommand(repoPath, "ls-files", "--stage", "-z")
 	cmd.Env = isolatedEnvironment(os.Environ())
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("git ls-files failed: %s", strings.TrimSpace(string(ee.Stderr)))
+			return Listing{}, fmt.Errorf("git ls-files failed: %s", strings.TrimSpace(string(ee.Stderr)))
 		}
-		return nil, fmt.Errorf("git ls-files failed: %w", err)
+		return Listing{}, fmt.Errorf("git ls-files failed: %w", err)
 	}
 
-	return splitNull(out), nil
+	return parseIndexListing(out)
+}
+
+func parseIndexListing(data []byte) (Listing, error) {
+	result := Listing{}
+	seen := make(map[string]struct{})
+	for _, record := range splitNull(data) {
+		header, filePath, found := strings.Cut(record, "\t")
+		fields := strings.Fields(header)
+		if !found || filePath == "" || len(fields) != 3 {
+			return Listing{}, fmt.Errorf("git ls-files returned a malformed index record")
+		}
+		if _, duplicate := seen[filePath]; !duplicate {
+			seen[filePath] = struct{}{}
+			result.Paths = append(result.Paths, filePath)
+		}
+		if fields[2] == "0" && (fields[0] == "100644" || fields[0] == "100755") {
+			result.RegularPaths = append(result.RegularPaths, filePath)
+		}
+	}
+	return result, nil
 }
 
 func verifyGitRepo(repoPath string) error {

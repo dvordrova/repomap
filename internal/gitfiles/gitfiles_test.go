@@ -31,6 +31,28 @@ func TestSplitNull(t *testing.T) {
 	}
 }
 
+func TestParseIndexListingSeparatesRegularStageZeroPaths(t *testing.T) {
+	listing, err := parseIndexListing([]byte(
+		"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tmain.go\x00" +
+			"100755 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tscript.sh\x00" +
+			"120000 cccccccccccccccccccccccccccccccccccccccc 0\tlinked.go\x00" +
+			"160000 dddddddddddddddddddddddddddddddddddddddd 0\tvendor/submodule\x00" +
+			"100644 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee 1\tconflict.go\x00" +
+			"100644 ffffffffffffffffffffffffffffffffffffffff 2\tconflict.go\x00",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(listing.Paths, []string{
+		"main.go", "script.sh", "linked.go", "vendor/submodule", "conflict.go",
+	}) {
+		t.Fatalf("paths = %#v", listing.Paths)
+	}
+	if !reflect.DeepEqual(listing.RegularPaths, []string{"main.go", "script.sh"}) {
+		t.Fatalf("regular paths = %#v", listing.RegularPaths)
+	}
+}
+
 func TestIsolatedEnvironmentDropsGitConfigInjectionAndNeutralizesGlobalConfig(t *testing.T) {
 	got := strings.Join(isolatedEnvironment([]string{
 		"PATH=/usr/bin",

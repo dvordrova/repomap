@@ -126,12 +126,18 @@ func Build(opts Options) (Snapshot, error) {
 		opts.MaxGoEdges = 500
 	}
 
-	files, err := gitfiles.List(opts.RepoPath)
+	listing, err := gitfiles.ListWithModes(opts.RepoPath)
 	if err != nil {
 		return Snapshot{}, err
 	}
+	files := listing.Paths
+	regular := make(map[string]struct{}, len(listing.RegularPaths))
+	for _, filePath := range listing.RegularPaths {
+		regular[filePath] = struct{}{}
+	}
 
 	filtered := make([]string, 0, len(files))
+	analysisFiles := make([]string, 0, len(listing.RegularPaths))
 	skippedSamples := make([]string, 0, 20)
 	for _, f := range files {
 		if shouldSkipPath(f) {
@@ -141,10 +147,14 @@ func Build(opts Options) (Snapshot, error) {
 			continue
 		}
 		filtered = append(filtered, f)
+		if _, ok := regular[f]; ok {
+			analysisFiles = append(analysisFiles, f)
+		}
 	}
 
 	sort.Strings(filtered)
-	goMetadata := goHints(opts.RepoPath, filtered)
+	sort.Strings(analysisFiles)
+	goMetadata := goHints(opts.RepoPath, analysisFiles)
 	s := Snapshot{
 		RepoName:           repositoryIdentity(opts.RepoPath, filtered, goMetadata),
 		DisplayName:        repositoryDisplayName(opts.RepoPath),
@@ -155,14 +165,14 @@ func Build(opts Options) (Snapshot, error) {
 		FilesConsidered:    len(filtered),
 		FilesSkipped:       len(files) - len(filtered),
 		SkippedPathSamples: skippedSamples,
-		FilteredFiles:      filtered,
+		FilteredFiles:      analysisFiles,
 		Go:                 goMetadata,
 	}
 
-	s.Readme = readReadme(opts.RepoPath, filtered, opts.MaxReadmeBytes)
+	s.Readme = readReadme(opts.RepoPath, analysisFiles, opts.MaxReadmeBytes)
 
-	if s.Go.GoModExists || hasGoFiles(filtered) {
-		facts, err := gofacts.Load(context.Background(), opts.RepoPath, filtered, opts.MaxGoPkgs, opts.MaxGoEdges)
+	if s.Go.GoModExists || hasGoFiles(analysisFiles) {
+		facts, err := gofacts.Load(context.Background(), opts.RepoPath, analysisFiles, opts.MaxGoPkgs, opts.MaxGoEdges)
 		if err != nil {
 			s.GoFacts = &gofacts.Facts{
 				Warnings: []string{fmt.Sprintf("go facts load failed: %v", err)},

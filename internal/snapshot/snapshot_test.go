@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -240,6 +241,31 @@ func TestBuildDoesNotReadTrackedReadmeSymlinkEscape(t *testing.T) {
 	}
 	if got.Readme != "" {
 		t.Fatalf("readme = %q, want empty", got.Readme)
+	}
+}
+
+func TestBuildKeepsTrackedSymlinkVisibleButNotAnalyzable(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "regular.go"), []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("regular.go", filepath.Join(repo, "linked.go")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	trackSnapshotFiles(t, repo, "regular.go", "linked.go")
+
+	got, err := Build(Options{RepoPath: repo, MaxTreeLines: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(got.FileTree, "linked.go") ||
+		!slices.Contains(got.FileTree, "regular.go") {
+		t.Fatalf("file tree = %#v, want visible regular and symlink paths", got.FileTree)
+	}
+	if !slices.Equal(got.FilteredFiles, []string{"regular.go"}) {
+		t.Fatalf("analysis files = %#v, want only regular.go", got.FilteredFiles)
 	}
 }
 
