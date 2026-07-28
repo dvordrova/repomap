@@ -49,7 +49,7 @@ const (
 	goSelectionMaxSourceFileBytes = 4 << 20
 	goSelectionMaxSliceLines      = 201
 	goSelectionMaxPathBytes       = 240
-	goSelectionCommandTimeout     = 30 * time.Second
+	goSelectionCommandTimeout     = gopls.DefaultCommandTimeout
 	goSelectionGitTimeout         = 10 * time.Second
 )
 

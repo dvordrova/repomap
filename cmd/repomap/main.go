@@ -923,7 +923,7 @@ func newReportAnalyzer() *goplsanalyzer.Analyzer {
 		MaxSymbols:     20,
 		MaxCallers:     30,
 		MaxCallees:     30,
-		CommandTimeout: 30 * time.Second,
+		CommandTimeout: goplsanalyzer.DefaultCommandTimeout,
 	})
 }
 

@@ -18,6 +18,18 @@ type fakeRunner struct {
 	outputs map[string]string
 }
 
+func TestCommandTimeoutDefaultAndOverride(t *testing.T) {
+	if got := newWithRunner(Options{}, fakeRunner{}).opts.CommandTimeout; got != DefaultCommandTimeout {
+		t.Fatalf("default command timeout = %s, want %s", got, DefaultCommandTimeout)
+	}
+	if got := newWithRunner(
+		Options{CommandTimeout: time.Second},
+		fakeRunner{},
+	).opts.CommandTimeout; got != time.Second {
+		t.Fatalf("explicit command timeout = %s, want %s", got, time.Second)
+	}
+}
+
 func (f fakeRunner) Run(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 	key := strings.Join(args, " ")
 	output, ok := f.outputs[key]

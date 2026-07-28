@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultAnalysisTimeout = 45 * time.Second
+	defaultAnalysisTimeout = 180 * time.Second
 	maxCandidateSets       = 32
 	maxRankTerms           = 16
 )
