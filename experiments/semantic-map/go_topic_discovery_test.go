@@ -62,7 +62,18 @@ func TestGoTopicInventoryIsCallableOnlyRoundRobinAndDeterministic(t *testing.T) 
 			}
 		}
 	}
-	wantPrefix := []string{"rootOne", "alphaOne", "zetaOne", "rootTwo", "Put", "zetaTwo"}
+	wantPrefix := []string{
+		"rootOne",
+		"alphaOne",
+		"zetaOne",
+		"rootTwo",
+		"deepOne",
+		"zetaTwo",
+		"otherOne",
+		"Put",
+		"deepTwo",
+		"otherTwo",
+	}
 	if len(gotNames) < len(wantPrefix) ||
 		!reflect.DeepEqual(gotNames[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("round-robin names = %v, want prefix %v", gotNames, wantPrefix)
@@ -77,6 +88,24 @@ func TestGoTopicInventoryIsCallableOnlyRoundRobinAndDeterministic(t *testing.T) 
 		first.Stats.GeneratedFilesExcluded != 1 ||
 		first.Stats.RetainedDeclarations != len(first.Declarations) {
 		t.Fatalf("inventory stats = %#v", first.Stats)
+	}
+}
+
+func TestGoTopicRoundRobinInterleavesFilesWithinDirectory(t *testing.T) {
+	candidates := []goTopicDeclarationCandidate{
+		{path: "flat/alpha.go", line: 10, name: "alphaOne"},
+		{path: "flat/alpha.go", line: 20, name: "alphaTwo"},
+		{path: "flat/beta.go", line: 10, name: "betaOne"},
+		{path: "flat/beta.go", line: 20, name: "betaTwo"},
+	}
+	got := goTopicRoundRobinFiles(candidates)
+	gotNames := make([]string, 0, len(got))
+	for _, candidate := range got {
+		gotNames = append(gotNames, candidate.name)
+	}
+	want := []string{"alphaOne", "betaOne", "alphaTwo", "betaTwo"}
+	if !reflect.DeepEqual(gotNames, want) {
+		t.Fatalf("file round-robin = %v, want %v", gotNames, want)
 	}
 }
 
@@ -613,6 +642,16 @@ type Box[T any] struct{}
 func (box *Box[T]) Put(value T) error {
 	return nil
 }
+`,
+		"alpha/deep/deep.go": `package deep
+
+func deepOne() {}
+func deepTwo() {}
+`,
+		"alpha/other/other.go": `package other
+
+func otherOne() {}
+func otherTwo() {}
 `,
 		"zeta/zeta.go": `package zeta
 
