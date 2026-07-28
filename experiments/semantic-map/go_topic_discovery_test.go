@@ -196,6 +196,7 @@ func TestGoTopicPromptAndShelfContract(t *testing.T) {
 
 	validWithNaturalSlash := makeValidGoTopicShelf(inventory)
 	validWithNaturalSlash.Topics[0].Why = "Useful for debugging startup/shutdown behavior."
+	validWithNaturalSlash.Topics[0].Label = "Startup/shutdown lifecycle"
 	validJSON, err := json.Marshal(validWithNaturalSlash)
 	if err != nil {
 		t.Fatal(err)

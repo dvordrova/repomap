@@ -651,8 +651,7 @@ func ValidateGoTopicShelf(shelf GoTopicShelf, inventory GoTopicInventory) error 
 			}
 		}
 		lowerLabel := strings.ToLower(topic.Label)
-		if strings.Contains(lowerLabel, "/") ||
-			strings.Contains(lowerLabel, ".go") ||
+		if strings.Contains(lowerLabel, ".go") ||
 			strings.HasPrefix(lowerLabel, "package ") ||
 			strings.HasSuffix(lowerLabel, " package") ||
 			strings.HasPrefix(lowerLabel, "imports ") {
