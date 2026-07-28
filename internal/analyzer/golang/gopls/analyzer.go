@@ -69,6 +69,8 @@ type callEdge struct {
 
 const activeBuildScenarioID = "gopls-active-build"
 
+const DefaultCommandTimeout = 120 * time.Second
+
 // CollectorVersion identifies the adapter semantics used to turn gopls CLI
 // output into evidence. Bump it when parsing or evidence construction changes.
 const CollectorVersion = 2
@@ -101,7 +103,7 @@ func newWithRunner(opts Options, runner commandRunner) *Analyzer {
 		opts.MaxImplementationRoots = 2
 	}
 	if opts.CommandTimeout <= 0 {
-		opts.CommandTimeout = 30 * time.Second
+		opts.CommandTimeout = DefaultCommandTimeout
 	}
 	return &Analyzer{opts: opts, runner: runner}
 }
