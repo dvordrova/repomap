@@ -20,6 +20,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/goldenmechanism"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/reporead"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
@@ -269,22 +270,28 @@ func prepareFreshRepoMechanism(
 	if err != nil {
 		return result, err
 	}
-	if savedSourceErr != nil && len(centralSources) == 0 {
+	sources := mergeFreshSourceFunctions(
+		savedSources,
+		centralSources,
+		freshRepoOnboardingMaxPlanningFacts,
+	)
+	discoverySources := freshSavedDiscoverySources(absRunDir, data, sources)
+	if savedSourceErr != nil && len(sources) == 0 && len(discoverySources) == 0 {
 		if errors.Is(savedSourceErr, os.ErrNotExist) {
 			status.State = "no_publishable_candidate"
-			status.FailureReason = "saved_source_windows_unavailable"
+			status.FailureReason = "no_exact_discovery_anchors"
 			return result, nil
 		}
 		if errors.Is(savedSourceErr, errFreshNoUsableSourceWindows) {
 			status.State = "no_publishable_candidate"
-			status.FailureReason = "no_usable_non_truncated_source_windows"
+			status.FailureReason = "no_exact_discovery_anchors"
 			return result, nil
 		}
 		return result, savedSourceErr
 	}
-	sources := mergeFreshSourceFunctions(
-		savedSources,
-		centralSources,
+	sources = appendFreshDiscoverySources(
+		sources,
+		discoverySources,
 		freshRepoOnboardingMaxPlanningFacts,
 	)
 	status.SourceWindows = windowCount
@@ -298,9 +305,9 @@ func prepareFreshRepoMechanism(
 	}); err != nil {
 		return result, err
 	}
-	if len(sources) < 3 {
+	if len(sources) == 0 {
 		status.State = "no_publishable_candidate"
-		status.FailureReason = "fewer_than_three_bounded_source_functions"
+		status.FailureReason = "no_exact_discovery_anchors"
 		return result, nil
 	}
 
@@ -354,7 +361,7 @@ func prepareFreshRepoMechanism(
 	}
 
 	selectionStarted := time.Now()
-	works := selectFreshPrimaryCandidates(absRepoRoot, data, proposal, sources)
+	works := selectFreshDiscoveryCandidates(absRepoRoot, data, proposal, sources)
 	status.CandidateSelectionMS = time.Since(selectionStarted).Milliseconds()
 	status.CandidatesSelected = len(works)
 	plans := make([]freshRepoCandidatePlan, 0, len(works))
@@ -530,6 +537,197 @@ func freshSourceFunctions(
 		result = append(result, freshSourceFunction{Function: function, Fact: fact})
 	}
 	return result, len(windows), functionCount, nil
+}
+
+func freshSavedDiscoverySources(
+	runDir string,
+	data *report.ReportData,
+	represented []freshSourceFunction,
+) []freshSourceFunction {
+	if data == nil {
+		return nil
+	}
+	state, err := modelresearch.ReadState(runDir)
+	if err != nil {
+		return nil
+	}
+	openable := make(map[string]struct{}, len(data.OpenablePaths))
+	for _, sourcePath := range data.OpenablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	representedAnchors := make(map[string]struct{}, len(represented))
+	for _, source := range represented {
+		if !freshSourceUsesGoProofAdapter(source) {
+			continue
+		}
+		for _, symbol := range freshRepresentedGoSymbols(source.Function.Symbol) {
+			representedAnchors[freshDiscoveryAnchorKey(
+				source.Function.Path,
+				"go",
+				symbol,
+				source.Function.StartLine,
+			)] = struct{}{}
+		}
+	}
+	result := make([]freshSourceFunction, 0, freshRepoDemoMaxSourceFacts)
+	seen := make(map[string]struct{}, freshRepoDemoMaxSourceFacts)
+	for _, item := range state.Theory.GroundedFacts {
+		if item.Kind != modelresearch.EvidenceSource || item.Location == nil ||
+			item.Window == nil || !item.Window.CodeBearing || item.Window.Truncated ||
+			item.Location.Path == "" || item.Location.Line != item.Window.StartLine ||
+			item.Window.StartLine <= 0 || item.Window.EndLine < item.Window.StartLine ||
+			len(item.Window.Lines) != item.Window.EndLine-item.Window.StartLine+1 {
+			continue
+		}
+		if _, allowed := openable[item.Location.Path]; !allowed {
+			continue
+		}
+		if !freshSavedWindowHasMatchingProvenance(item) {
+			continue
+		}
+		for _, anchor := range report.ExactDiscoveryAnchors(
+			item.Location.Path,
+			item.Window.StartLine,
+			item.Window.Lines,
+		) {
+			key := freshDiscoveryAnchorKey(
+				anchor.Path,
+				anchor.Language,
+				anchor.Symbol,
+				anchor.Line,
+			)
+			// Preserve existing Go request bytes only when the exact
+			// declaration is already represented by the established Go
+			// collector. Declaration-only Go anchors must remain discoverable.
+			if _, alreadyRepresented := representedAnchors[key]; alreadyRepresented {
+				continue
+			}
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			lineIndex := anchor.Line - item.Window.StartLine
+			lineText := item.Window.Lines[lineIndex]
+			evidenceID := goldenStableID(
+				"frde",
+				item.ID,
+				anchor.Path,
+				anchor.Symbol,
+				fmt.Sprint(anchor.Line),
+			)
+			factID := goldenStableID(
+				"frdf",
+				anchor.Path,
+				anchor.Language,
+				anchor.Symbol,
+				fmt.Sprint(anchor.Line),
+				anchor.ContentSHA256,
+			)
+			result = append(result, freshSourceFunction{
+				Function: sourcewindowfacts.Function{
+					Path:          anchor.Path,
+					Symbol:        anchor.Symbol,
+					StartLine:     anchor.Line,
+					EndLine:       anchor.Line,
+					Lines:         []string{lineText},
+					ContentSHA256: anchor.ContentSHA256,
+				},
+				Fact: semanticdiscovery.Fact{
+					ID:          factID,
+					Kind:        semanticdiscovery.FactSourceSignal,
+					Statement:   anchor.Statement,
+					Keywords:    sortedGoldenStrings([]string{"exact declaration", anchor.Language, anchor.Symbol}),
+					SourceGroup: goldenStableID("frdg", factID),
+					// Behavior means the code-bearing saved window can ground
+					// an investigation question. It does not assert a call,
+					// effect, order, or completed mechanism; those remain
+					// unavailable without the proof adapter below.
+					Capabilities: []semanticdiscovery.Capability{
+						semanticdiscovery.CapabilityStatic,
+						semanticdiscovery.CapabilityBehavior,
+					},
+					Scope: semanticdiscovery.FactScopeLocal,
+					Source: &semanticdiscovery.FactSource{
+						Path:            anchor.Path,
+						StartLine:       anchor.Line,
+						EndLine:         anchor.Line,
+						EnclosingSymbol: anchor.Symbol,
+						ContentSHA256:   anchor.ContentSHA256,
+					},
+					Evidence: []semanticdiscovery.EvidenceRef{{
+						ID: evidenceID, Kind: "exact_source_declaration",
+						Label: anchor.Language + " declaration",
+						Path:  anchor.Path, Line: anchor.Line,
+					}},
+				},
+			})
+			if len(result) == freshRepoDemoMaxSourceFacts {
+				return result
+			}
+		}
+	}
+	return result
+}
+
+func freshDiscoveryAnchorKey(
+	sourcePath string,
+	language string,
+	symbol string,
+	line int,
+) string {
+	return sourcePath + "\x00" + language + "\x00" + symbol + "\x00" + fmt.Sprint(line)
+}
+
+func freshRepresentedGoSymbols(symbol string) []string {
+	result := []string{symbol}
+	if separator := strings.LastIndex(symbol, "."); separator >= 0 &&
+		separator+1 < len(symbol) {
+		result = append(result, symbol[separator+1:])
+	}
+	return result
+}
+
+func freshSavedWindowHasMatchingProvenance(item modelresearch.EvidenceItem) bool {
+	if item.Location == nil {
+		return false
+	}
+	for _, provenance := range item.Provenance {
+		if provenance.Location != nil &&
+			provenance.Location.Path == item.Location.Path &&
+			provenance.Location.Line == item.Location.Line {
+			return true
+		}
+	}
+	return false
+}
+
+func appendFreshDiscoverySources(
+	sources []freshSourceFunction,
+	discovery []freshSourceFunction,
+	limit int,
+) []freshSourceFunction {
+	if limit <= 0 {
+		return nil
+	}
+	result := append([]freshSourceFunction(nil), sources...)
+	if len(result) >= limit {
+		return result[:limit]
+	}
+	seen := make(map[string]struct{}, len(result)+len(discovery))
+	for _, source := range result {
+		seen[source.Fact.ID] = struct{}{}
+	}
+	for _, source := range discovery {
+		if _, duplicate := seen[source.Fact.ID]; duplicate {
+			continue
+		}
+		seen[source.Fact.ID] = struct{}{}
+		result = append(result, source)
+		if len(result) == limit {
+			break
+		}
+	}
+	return result
 }
 
 func freshWindowFunctionBetter(left, right sourcewindowfacts.Function) bool {
@@ -880,6 +1078,161 @@ func capFreshProposal(
 		}
 	}
 	return result
+}
+
+func selectFreshDiscoveryCandidates(
+	repoRoot string,
+	data *report.ReportData,
+	proposal semanticdiscovery.OpportunityProposal,
+	sources []freshSourceFunction,
+) []freshCandidateWork {
+	candidates := proposal.Candidates
+	if len(candidates) > freshRepoDemoMaxCandidates {
+		candidates = candidates[:freshRepoDemoMaxCandidates]
+	}
+	works := make([]freshCandidateWork, 0, len(candidates))
+	for _, candidate := range candidates {
+		anchors := freshCandidateDiscoveryAnchors(candidate, sources)
+		if len(anchors) > 0 && !freshSourcesUseGoProofAdapter(anchors) {
+			works = append(works, freshUnsupportedProofCandidate(data, candidate, sources, anchors))
+			continue
+		}
+		works = append(works, planFreshPrimaryCandidate(repoRoot, data, candidate, sources))
+	}
+	freshMarkPrimaryIntentCollisions(works)
+	sort.SliceStable(works, func(i, j int) bool {
+		leftCentral := freshCandidateIsEligibleFirstContact(works[i])
+		rightCentral := freshCandidateIsEligibleFirstContact(works[j])
+		if leftCentral != rightCentral {
+			return leftCentral
+		}
+		leftReady := works[i].Plan.Primary != nil && works[i].Plan.Primary.Status == freshPrimaryPlanReady
+		rightReady := works[j].Plan.Primary != nil && works[j].Plan.Primary.Status == freshPrimaryPlanReady
+		if leftReady != rightReady {
+			return leftReady
+		}
+		if comparison := compareFreshCandidateCentrality(
+			works[i].Plan.Centrality,
+			works[j].Plan.Centrality,
+		); comparison != 0 {
+			return comparison > 0
+		}
+		return works[i].Candidate.ID < works[j].Candidate.ID
+	})
+	if len(works) > freshRepoDemoMaxCandidates {
+		works = works[:freshRepoDemoMaxCandidates]
+	}
+	return works
+}
+
+func freshCandidateDiscoveryAnchors(
+	candidate semanticdiscovery.OpportunityCandidate,
+	sources []freshSourceFunction,
+) []freshSourceFunction {
+	byFact := make(map[string]freshSourceFunction, len(sources))
+	for _, source := range sources {
+		byFact[source.Fact.ID] = source
+	}
+	result := make([]freshSourceFunction, 0, freshRepoDemoMaxSeedFuncs)
+	seen := make(map[string]struct{}, freshRepoDemoMaxSeedFuncs)
+	for _, factID := range freshCandidatePlanningAnchorIDs(candidate) {
+		source, exists := byFact[factID]
+		if !exists {
+			continue
+		}
+		key := source.Function.Path + "\x00" + source.Function.Symbol
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, source)
+		if len(result) == freshRepoDemoMaxSeedFuncs {
+			break
+		}
+	}
+	return result
+}
+
+func freshSourcesUseGoProofAdapter(sources []freshSourceFunction) bool {
+	if len(sources) == 0 {
+		return false
+	}
+	for _, source := range sources {
+		if !freshSourceUsesGoProofAdapter(source) {
+			return false
+		}
+	}
+	return true
+}
+
+func freshSourceUsesGoProofAdapter(source freshSourceFunction) bool {
+	return strings.EqualFold(filepath.Ext(source.Function.Path), ".go")
+}
+
+func freshUnsupportedProofCandidate(
+	data *report.ReportData,
+	candidate semanticdiscovery.OpportunityCandidate,
+	sources []freshSourceFunction,
+	anchors []freshSourceFunction,
+) freshCandidateWork {
+	const reason = "proof_adapter_unavailable"
+	rootAnchors := make([]freshPrimaryAnchor, 0, len(anchors))
+	distinctSymbols := make([]string, 0, len(anchors))
+	distinctFiles := make([]string, 0, len(anchors))
+	seenFiles := make(map[string]struct{}, len(anchors))
+	for _, anchor := range anchors {
+		if len(anchor.Fact.Evidence) == 0 {
+			continue
+		}
+		rootAnchors = append(rootAnchors, freshPrimaryAnchor{
+			ID: goldenStableID(
+				"fpa",
+				anchor.Function.Path,
+				anchor.Function.Symbol,
+				anchor.Function.ContentSHA256,
+			),
+			OriginFactID:     anchor.Fact.ID,
+			OriginEvidenceID: anchor.Fact.Evidence[0].ID,
+			Path:             anchor.Function.Path,
+			Symbol:           anchor.Function.Symbol,
+			ContentSHA256:    anchor.Function.ContentSHA256,
+		})
+		distinctSymbols = append(
+			distinctSymbols,
+			anchor.Function.Path+"\x00"+anchor.Function.Symbol,
+		)
+		if _, duplicate := seenFiles[anchor.Function.Path]; !duplicate {
+			seenFiles[anchor.Function.Path] = struct{}{}
+			distinctFiles = append(distinctFiles, anchor.Function.Path)
+		}
+	}
+	primary := &freshPrimaryProbePlan{
+		Version:       freshPrimaryPlanVersion,
+		CandidateID:   candidate.ID,
+		Question:      candidate.QuestionAnswered,
+		Status:        freshPrimaryPlanInsufficient,
+		StatusReasons: []string{reason},
+		RootAnchors:   rootAnchors,
+		Aspects:       freshPrimaryAspects(candidate.QuestionAnswered),
+		StopConditions: []string{
+			reason,
+		},
+		EffectResolution: reason,
+		Eligibility: freshPrimaryEligibility{
+			Status:          freshPrimaryPlanInsufficient,
+			Reasons:         []string{reason},
+			DistinctSymbols: distinctSymbols,
+			DistinctFiles:   distinctFiles,
+		},
+		AnchorFacts: freshFacts(anchors),
+	}
+	work := freshCandidateWork{
+		Candidate:      candidate,
+		Seeds:          anchors,
+		InitialSources: sources,
+	}
+	work.Plan = freshPrimaryCandidatePlan(data, candidate, sources, anchors, primary)
+	return work
 }
 
 func selectFreshCandidates(

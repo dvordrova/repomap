@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -966,6 +967,469 @@ func TestFreshSourceFunctionsReturnsClearFallbackWhenAllWindowsAreTruncated(t *t
 	}
 	if windows != 0 || functions != 0 {
 		t.Fatalf("freshSourceFunctions() counts = %d/%d, want 0/0", windows, functions)
+	}
+}
+
+func TestFreshSavedDiscoverySourcesPreservePythonAnchorsAndSkipGoProof(t *testing.T) {
+	runDir := t.TempDir()
+	location := evidence.Location{Path: "src/tool/service.py", Line: 10}
+	state := modelresearch.NewState(
+		modelresearch.DefaultPolicy(),
+		modelresearch.RepositoryContext{
+			Identity: "tiny-python",
+			Revision: "fixture",
+			Scenario: "default",
+		},
+	)
+	state.Theory.GroundedFacts = []modelresearch.EvidenceItem{{
+		ID:        "python-source-window",
+		Kind:      modelresearch.EvidenceSource,
+		Statement: "bounded source window selected locally for the research question",
+		Location:  &location,
+		Certainty: evidence.CertaintyStatic,
+		Window: &modelresearch.SourceWindow{
+			StartLine: 10,
+			EndLine:   13,
+			Lines: []string{
+				"# bounded saved source",
+				"def run() -> None:",
+				"    print('hello')",
+				"async def stop() -> None:",
+			},
+			CodeBearing: true,
+		},
+		Provenance: []evidence.Provenance{{
+			Provider: "reporead", Operation: "read_bounded_source_window",
+			Location: &location,
+		}},
+	}}
+	if err := modelresearch.WriteState(runDir, state); err != nil {
+		t.Fatal(err)
+	}
+	data := &report.ReportData{OpenablePaths: []string{"src/tool/service.py"}}
+	sources := freshSavedDiscoverySources(runDir, data, nil)
+	if len(sources) != 2 {
+		t.Fatalf("sources = %#v, want two Python declarations", sources)
+	}
+	if sources[0].Function.Symbol != "run" || sources[0].Function.StartLine != 11 ||
+		sources[1].Function.Symbol != "stop" || sources[1].Function.StartLine != 13 {
+		t.Fatalf("sources = %#v, want saved declaration order and exact lines", sources)
+	}
+	for _, source := range sources {
+		if len(source.Function.Observations) != 0 ||
+			source.Fact.Source == nil ||
+			source.Fact.Source.Path != "src/tool/service.py" ||
+			source.Fact.Evidence[0].Line != source.Function.StartLine {
+			t.Fatalf("source is not an exact declaration-only anchor: %#v", source)
+		}
+	}
+
+	candidate := semanticdiscovery.OpportunityCandidate{
+		ID:               "candidate-python-service",
+		Kind:             semanticdiscovery.ArtifactMechanism,
+		Title:            "Service execution",
+		QuestionAnswered: "How does the service execute its main operation?",
+		SupportIDs:       []string{sources[0].Fact.ID, sources[1].Fact.ID},
+		ExpectedValue:    semanticdiscovery.ExpectedValueHigh,
+		Confidence:       semanticdiscovery.ConfidenceMedium,
+	}
+	works := selectFreshDiscoveryCandidates(
+		filepath.Join(runDir, "missing-repository"),
+		data,
+		semanticdiscovery.OpportunityProposal{
+			Version:    semanticdiscovery.OpportunityProposalVersion,
+			Candidates: []semanticdiscovery.OpportunityCandidate{candidate},
+		},
+		sources,
+	)
+	if len(works) != 1 || works[0].Plan.Primary == nil {
+		t.Fatalf("works = %#v, want one persisted incomplete candidate", works)
+	}
+	primary := works[0].Plan.Primary
+	if primary.Status != freshPrimaryPlanInsufficient ||
+		!reflect.DeepEqual(primary.StatusReasons, []string{"proof_adapter_unavailable"}) ||
+		len(primary.RootAnchors) != 2 ||
+		len(primary.AnchorFacts) != 2 {
+		t.Fatalf("primary = %#v, want exact unsupported-proof topic", primary)
+	}
+	provider := &semanticDiscoveryEditorStub{calls: make(map[string]int)}
+	attempt, _, _, err := attemptFreshCandidate(
+		context.Background(),
+		runDir,
+		filepath.Join(runDir, "missing-repository"),
+		data,
+		works[0],
+		provider,
+	)
+	if !errors.Is(err, errFreshPrimaryEvidenceInsufficient) ||
+		attempt.State != string(freshPrimaryPlanInsufficient) ||
+		attempt.FailureStage != "eligibility" ||
+		provider.calls[semanticdiscovery.OpportunityPromptVersion] != 0 {
+		t.Fatalf("attempt = %#v, err = %v, calls = %#v", attempt, err, provider.calls)
+	}
+
+	goWindow, err := sourcewindowfacts.NewWindow(
+		"observed-go-window",
+		"worker.go",
+		1,
+		[]string{"package worker", "func work() { helper() }"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goFunctions, err := sourcewindowfacts.ExtractGoFunctions(goWindow)
+	if err != nil || len(goFunctions) != 1 {
+		t.Fatalf("Go functions = %#v, err = %v", goFunctions, err)
+	}
+	goFact, err := freshWindowFunctionFact(goFunctions[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixedSources := []freshSourceFunction{
+		{Function: goFunctions[0], Fact: goFact},
+		sources[0],
+	}
+	mixedCandidate := candidate
+	mixedCandidate.ID = "candidate-mixed-service"
+	mixedCandidate.SupportIDs = []string{goFact.ID, sources[0].Fact.ID}
+	mixedWorks := selectFreshDiscoveryCandidates(
+		filepath.Join(runDir, "missing-repository"),
+		&report.ReportData{OpenablePaths: []string{"worker.go", "src/tool/service.py"}},
+		semanticdiscovery.OpportunityProposal{
+			Version:    semanticdiscovery.OpportunityProposalVersion,
+			Candidates: []semanticdiscovery.OpportunityCandidate{mixedCandidate},
+		},
+		mixedSources,
+	)
+	if len(mixedWorks) != 1 || mixedWorks[0].Plan.Primary == nil ||
+		!reflect.DeepEqual(
+			mixedWorks[0].Plan.Primary.StatusReasons,
+			[]string{"proof_adapter_unavailable"},
+		) {
+		t.Fatalf("mixed-language work = %#v, want fail-closed proof routing", mixedWorks)
+	}
+}
+
+func TestPrepareFreshRepoMechanismScansExactlyOnceWithTwoGoAnchors(t *testing.T) {
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	sourceLines := []string{
+		"package tiny",
+		"",
+		"func first() { helper() }",
+		"func second() { helper() }",
+	}
+	writeFile(t, filepath.Join(repoRoot, "tiny.go"), joinLines(sourceLines))
+	location := evidence.Location{Path: "tiny.go", Line: 1}
+	bundle := modelresearch.EvidenceBundle{
+		Version: modelresearch.ContractVersion,
+		RoundID: "research-two-go-anchors",
+		Evidence: []modelresearch.EvidenceItem{{
+			ID:        "two-go-source-window",
+			Kind:      modelresearch.EvidenceSource,
+			Statement: "bounded source window selected locally for the research question",
+			Location:  &location,
+			Certainty: evidence.CertaintyStatic,
+			Window: &modelresearch.SourceWindow{
+				StartLine: 1, EndLine: len(sourceLines), Lines: sourceLines, CodeBearing: true,
+			},
+			Provenance: []evidence.Provenance{{
+				Provider: "reporead", Operation: "read_bounded_source_window",
+				Location: &location,
+			}},
+		}},
+	}
+	writeFreshResearchBundle(t, runDir, bundle)
+	writeFile(t, filepath.Join(runDir, "snapshot.json"), `{
+		"repo_name":"tiny",
+		"go_facts":{
+			"modules":[{"id":"module-tiny","module_path":"example.com/tiny","module_dir":".","display_name":"."}],
+			"packages":[{
+				"canonical_package_path":"example.com/tiny",
+				"name":"tiny",
+				"owning_module_id":"module-tiny",
+				"module_path":"example.com/tiny",
+				"package_directory":".",
+				"module_relative_path":".",
+				"display_path":".",
+				"locality":"local",
+				"files":["tiny.go"]
+			}]
+		}
+	}`)
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{"allowed_paths":["tiny.go"]}`)
+
+	sources, _, _, err := freshSourceFunctions(runDir, repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 2 {
+		t.Fatalf("sources = %#v, want exactly two Go anchors", sources)
+	}
+	provider := &semanticDiscoveryEditorStub{
+		calls: make(map[string]int),
+		opportunity: semanticdiscovery.OpportunityProposal{
+			Version: semanticdiscovery.OpportunityProposalVersion,
+			Candidates: []semanticdiscovery.OpportunityCandidate{{
+				Kind:             semanticdiscovery.ArtifactMechanism,
+				Title:            "Tiny execution",
+				QuestionAnswered: "How does the tiny operation execute its work?",
+				SupportIDs:       []string{sources[0].Fact.ID, sources[1].Fact.ID},
+				ExpectedValue:    semanticdiscovery.ExpectedValueHigh,
+				Confidence:       semanticdiscovery.ConfidenceMedium,
+			}},
+		},
+	}
+	result, err := prepareFreshRepoMechanism(
+		context.Background(),
+		runDir,
+		repoRoot,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls[semanticdiscovery.OpportunityPromptVersion] != 1 {
+		t.Fatalf("opportunity calls = %#v, want exactly one", provider.calls)
+	}
+	if result.Status.SourceFunctions != 2 ||
+		result.Status.FailureReason == "fewer_than_three_bounded_source_functions" ||
+		len(result.Status.Attempts) != 1 ||
+		result.Status.Attempts[0].FailureReason == "proof_adapter_unavailable" {
+		t.Fatalf("status = %#v, want two-anchor Go to enter the existing proof path", result.Status)
+	}
+}
+
+func TestPrepareFreshRepoMechanismScansDeclarationOnlyGoAnchor(t *testing.T) {
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	sourceLines := []string{
+		"package tiny",
+		"",
+		"func marker() {}",
+	}
+	writeFile(t, filepath.Join(repoRoot, "tiny.go"), joinLines(sourceLines))
+	location := evidence.Location{Path: "tiny.go", Line: 1}
+	state := modelresearch.NewState(
+		modelresearch.DefaultPolicy(),
+		modelresearch.RepositoryContext{
+			Identity: "tiny-declaration-only",
+			Revision: "fixture",
+			Scenario: "default",
+		},
+	)
+	state.Theory.GroundedFacts = []modelresearch.EvidenceItem{{
+		ID:        "declaration-only-go-window",
+		Kind:      modelresearch.EvidenceSource,
+		Statement: "bounded source window selected locally for the research question",
+		Location:  &location,
+		Certainty: evidence.CertaintyStatic,
+		Window: &modelresearch.SourceWindow{
+			StartLine: 1, EndLine: len(sourceLines), Lines: sourceLines, CodeBearing: true,
+		},
+		Provenance: []evidence.Provenance{{
+			Provider: "reporead", Operation: "read_bounded_source_window",
+			Location: &location,
+		}},
+	}}
+	if err := modelresearch.WriteState(runDir, state); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(runDir, "snapshot.json"), `{
+		"repo_name":"tiny-declaration-only",
+		"go_facts":{
+			"modules":[{"id":"module-tiny","module_path":"example.com/tiny","module_dir":".","display_name":"."}],
+			"packages":[{
+				"canonical_package_path":"example.com/tiny",
+				"name":"tiny",
+				"owning_module_id":"module-tiny",
+				"module_path":"example.com/tiny",
+				"package_directory":".",
+				"module_relative_path":".",
+				"display_path":".",
+				"locality":"local",
+				"files":["tiny.go"]
+			}]
+		}
+	}`)
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{"allowed_paths":["tiny.go"]}`)
+
+	data, err := report.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery := freshSavedDiscoverySources(runDir, data, nil)
+	if len(discovery) != 1 || discovery[0].Function.Symbol != "marker" {
+		t.Fatalf("declaration-only discovery = %#v, want exact marker anchor", discovery)
+	}
+	provider := &semanticDiscoveryEditorStub{
+		calls: make(map[string]int),
+		opportunity: semanticdiscovery.OpportunityProposal{
+			Version: semanticdiscovery.OpportunityProposalVersion,
+			Candidates: []semanticdiscovery.OpportunityCandidate{{
+				Kind:             semanticdiscovery.ArtifactMechanism,
+				Title:            "Marker execution",
+				QuestionAnswered: "What role does the marker play in this package?",
+				SupportIDs:       []string{discovery[0].Fact.ID},
+				ExpectedValue:    semanticdiscovery.ExpectedValueMedium,
+				Confidence:       semanticdiscovery.ConfidenceLow,
+			}},
+		},
+	}
+	result, err := prepareFreshRepoMechanism(
+		context.Background(),
+		runDir,
+		repoRoot,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls[semanticdiscovery.OpportunityPromptVersion] != 1 ||
+		result.Status.FailureReason == "no_exact_discovery_anchors" {
+		t.Fatalf("status = %#v, calls = %#v, want one declaration-only scan", result.Status, provider.calls)
+	}
+	if len(result.Status.Attempts) != 1 ||
+		result.Status.Attempts[0].FailureReason == "proof_adapter_unavailable" {
+		t.Fatalf("status = %#v, want declaration-only Go to enter the Go proof path", result.Status)
+	}
+}
+
+func TestFreshGoOpportunityPromptIsByteIdenticalWhenAlreadyEligible(t *testing.T) {
+	runDir := t.TempDir()
+	sourceLines := []string{
+		"package tiny",
+		"",
+		"func (worker) first() { helper() }",
+		"func second() { helper() }",
+		"func third() { helper() }",
+	}
+	window, err := sourcewindowfacts.NewWindow("go-window", "tiny.go", 1, sourceLines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	functions, err := sourcewindowfacts.ExtractGoFunctions(window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := make([]freshSourceFunction, 0, len(functions))
+	for _, function := range functions {
+		fact, factErr := freshWindowFunctionFact(function)
+		if factErr != nil {
+			t.Fatal(factErr)
+		}
+		sources = append(sources, freshSourceFunction{Function: function, Fact: fact})
+	}
+	if len(sources) != 3 {
+		t.Fatalf("sources = %#v, want existing eligible three-function input", sources)
+	}
+
+	location := evidence.Location{Path: "tiny.go", Line: 1}
+	state := modelresearch.NewState(
+		modelresearch.DefaultPolicy(),
+		modelresearch.RepositoryContext{Identity: "tiny", Revision: "fixture", Scenario: "default"},
+	)
+	state.Theory.GroundedFacts = []modelresearch.EvidenceItem{{
+		ID:        "saved-go-window",
+		Kind:      modelresearch.EvidenceSource,
+		Statement: "bounded source window selected locally for the research question",
+		Location:  &location,
+		Certainty: evidence.CertaintyStatic,
+		Window: &modelresearch.SourceWindow{
+			StartLine: 1, EndLine: len(sourceLines), Lines: sourceLines, CodeBearing: true,
+		},
+		Provenance: []evidence.Provenance{{
+			Provider: "reporead", Operation: "read_bounded_source_window",
+			Location: &location,
+		}},
+	}}
+	if err := modelresearch.WriteState(runDir, state); err != nil {
+		t.Fatal(err)
+	}
+	data := &report.ReportData{
+		RepoName:      "tiny",
+		OpenablePaths: []string{"tiny.go"},
+	}
+	data.SemanticSupplementalFacts = freshFacts(sources)
+	beforeBundle, err := report.BuildSemanticDiscoveryBundle(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforePrompt, err := semanticdiscovery.BuildOpportunityPrompt(beforeBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeBytes, err := json.Marshal(beforePrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	discovery := freshSavedDiscoverySources(runDir, data, sources)
+	if len(discovery) != 0 {
+		t.Fatalf("language-neutral collector duplicated Go facts: %#v", discovery)
+	}
+	afterSources := appendFreshDiscoverySources(
+		sources,
+		discovery,
+		freshRepoOnboardingMaxPlanningFacts,
+	)
+	data.SemanticSupplementalFacts = freshFacts(afterSources)
+	afterBundle, err := report.BuildSemanticDiscoveryBundle(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterPrompt, err := semanticdiscovery.BuildOpportunityPrompt(afterBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterBytes, err := json.Marshal(afterPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterBytes, beforeBytes) {
+		t.Fatalf("eligible Go opportunity request changed\nbefore: %s\nafter:  %s", beforeBytes, afterBytes)
+	}
+}
+
+func TestPrepareFreshRepoMechanismSkipsOnlyWhenNoExactAnchorsExist(t *testing.T) {
+	runDir := t.TempDir()
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(runDir, "snapshot.json"), `{"repo_name":"empty"}`)
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{"allowed_paths":[]}`)
+	provider := &semanticDiscoveryEditorStub{calls: make(map[string]int)}
+
+	result, err := prepareFreshRepoMechanism(
+		context.Background(),
+		runDir,
+		repoRoot,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status.State != "no_publishable_candidate" ||
+		result.Status.FailureReason != "no_exact_discovery_anchors" ||
+		provider.calls[semanticdiscovery.OpportunityPromptVersion] != 0 {
+		t.Fatalf("status = %#v, calls = %#v", result.Status, provider.calls)
+	}
+}
+
+func writeFreshResearchBundle(
+	t *testing.T,
+	runDir string,
+	bundle modelresearch.EvidenceBundle,
+) {
+	t.Helper()
+	raw, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleDir := filepath.Join(runDir, "research", bundle.RoundID)
+	if err := os.MkdirAll(bundleDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundleDir, "evidence_bundle.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

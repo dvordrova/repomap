@@ -23,6 +23,73 @@ import (
 
 const CurrentFormatVersion = 26
 
+const maxExactDiscoveryDeclarations = 16
+
+// ExactDiscoveryAnchor is a deterministic declaration found inside one
+// already-saved, authorized source window. It is deliberately weaker than a
+// behavior fact: it says where study can start, not what the code does.
+type ExactDiscoveryAnchor struct {
+	Path          string
+	Language      string
+	Symbol        string
+	Line          int
+	Statement     string
+	ContentSHA256 string
+}
+
+// ExactDiscoveryAnchors returns bounded declaration anchors in saved line
+// order. Callers remain responsible for proving that the supplied window came
+// from the authorized source catalog and has matching local provenance.
+func ExactDiscoveryAnchors(
+	sourcePath string,
+	startLine int,
+	lines []string,
+) []ExactDiscoveryAnchor {
+	if !validUserTopicPath(sourcePath) || startLine <= 0 ||
+		len(lines) == 0 || len(lines) > maxFullFunctionSourceLines {
+		return nil
+	}
+	language := sourceLanguage(sourcePath)
+	if language == "text" {
+		return nil
+	}
+	for _, line := range lines {
+		if len(line) > 64<<10 {
+			return nil
+		}
+	}
+	result := make([]ExactDiscoveryAnchor, 0, min(len(lines), maxExactDiscoveryDeclarations))
+	seen := make(map[string]struct{}, cap(result))
+	for index, text := range lines {
+		symbol, _, _, ok := boundedSourceDeclaration(sourcePath, text)
+		if !ok || !boundedUserTopicText(symbol, maxUserTopicSymbolBytes) {
+			continue
+		}
+		line := startLine + index
+		key := sourcePath + "\x00" + language + "\x00" + symbol + "\x00" + fmt.Sprint(line)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, ExactDiscoveryAnchor{
+			Path:     sourcePath,
+			Language: language,
+			Symbol:   symbol,
+			Line:     line,
+			Statement: fmt.Sprintf(
+				"The %s declaration is present in an exact %s source window available for local behavior investigation.",
+				symbol,
+				language,
+			),
+			ContentSHA256: sourceLinesSHA256([]string{text}),
+		})
+		if len(result) == maxExactDiscoveryDeclarations {
+			break
+		}
+	}
+	return result
+}
+
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
@@ -802,6 +869,8 @@ func userTopicUncertainty(reasons []string) (string, bool) {
 			messages = append(messages, "Only one exact starting symbol is available, so no ordered mechanism is claimed.")
 		case "bounded_static_analysis_limit":
 			messages = append(messages, "The local evidence stops before the remaining behavior can be established.")
+		case "proof_adapter_unavailable":
+			messages = append(messages, "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism.")
 		default:
 			return "", false
 		}

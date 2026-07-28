@@ -399,12 +399,20 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 			"confidence":        0.85,
 		}},
 		"important_domain_words": []any{}, "questions_for_human": []any{},
+		"research_questions": []any{map[string]any{
+			"id":                  "service-execution",
+			"purpose":             "find a useful exact service behavior starting point",
+			"question":            "How does the Python service execute its main operation?",
+			"candidate_ids":       []string{},
+			"evidence_categories": []string{"source_window"},
+		}},
 		"unverified_paths": []any{}, "warnings": []any{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	requestCount := 0
+	opportunityCount := 0
 	var requestBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requestCount++
@@ -417,9 +425,69 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 			t.Errorf("read request: %v", err)
 			return
 		}
+		responseContent := orientationJSON
+		if strings.Contains(string(body), "Propose central mechanism questions") {
+			opportunityCount++
+			var chatRequest struct {
+				Messages []struct {
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if decodeErr := json.Unmarshal(body, &chatRequest); decodeErr != nil {
+				t.Errorf("decode opportunity request: %v", decodeErr)
+				return
+			}
+			factID := ""
+			for _, message := range chatRequest.Messages {
+				_, payload, found := strings.Cut(
+					message.Content,
+					"\n\nVariable canonical saved-fact bundle JSON:\n",
+				)
+				if !found {
+					continue
+				}
+				var bundle struct {
+					Facts []struct {
+						ID string `json:"id"`
+					} `json:"facts"`
+				}
+				if decodeErr := json.Unmarshal([]byte(payload), &bundle); decodeErr != nil {
+					t.Errorf("decode opportunity bundle: %v", decodeErr)
+					return
+				}
+				for _, fact := range bundle.Facts {
+					if strings.HasPrefix(fact.ID, "frdf-") {
+						factID = fact.ID
+						break
+					}
+				}
+			}
+			if factID == "" {
+				t.Errorf("opportunity request has no exact Python declaration fact: %s", body)
+				return
+			}
+			responseContent, err = json.Marshal(map[string]any{
+				"version": 1,
+				"candidates": []any{map[string]any{
+					"kind":              "mechanism",
+					"title":             "Service execution",
+					"question_answered": "How does the service execute its main operation?",
+					"support_ids":       []string{factID},
+					"missing_information": []string{
+						"complete local proof is not available",
+					},
+					"expected_value": "high",
+					"confidence":     "medium",
+				}},
+			})
+			if err != nil {
+				t.Errorf("encode opportunity response: %v", err)
+				return
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{"message": map[string]any{
-				"role": "assistant", "content": string(orientationJSON),
+				"role": "assistant", "content": string(responseContent),
 			}}},
 		})
 	}))
@@ -438,8 +506,11 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
-	if requestCount != 1 {
-		t.Fatalf("provider request count = %d, want 1; model-only orientation is not semantic evidence", requestCount)
+	if requestCount < 3 {
+		t.Fatalf("provider request count = %d, want orientation, targeted research, and discovery", requestCount)
+	}
+	if opportunityCount != 1 {
+		t.Fatalf("opportunity request count = %d, want exactly one", opportunityCount)
 	}
 	requestText := string(requestBody)
 	for _, want := range []string{`\"language\":\"Python\"`, "src/tool/__main__.py", "src/tool/service.py", "tests/test_service.py"} {
@@ -472,10 +543,35 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"tiny Python service", "CLI startup", "src/tool/__main__.py"} {
+	for _, want := range []string{
+		"tiny Python service",
+		"CLI startup",
+		"src/tool/__main__.py",
+		"Service execution",
+		"proof adapter is not available",
+	} {
 		if !strings.Contains(string(reportJSON), want) {
-			t.Fatalf("report missing %q: %s", want, reportJSON)
+			t.Fatalf("report missing %q\nstderr: %s\nreport: %s", want, stderr.String(), reportJSON)
 		}
+	}
+	var generated report.ReportData
+	if err := json.Unmarshal(reportJSON, &generated); err != nil {
+		t.Fatal(err)
+	}
+	if len(generated.UserMechanisms) != 0 || len(generated.UserTopics) != 1 {
+		t.Fatalf(
+			"Python learning shelf = %d mechanisms / %d topics, want 0 / 1",
+			len(generated.UserMechanisms),
+			len(generated.UserTopics),
+		)
+	}
+	topic := generated.UserTopics[0]
+	if len(topic.StartingSymbols) != 1 ||
+		topic.StartingSymbols[0].Path != "src/tool/service.py" ||
+		topic.StartingSymbols[0].Symbol != "run" ||
+		topic.StartingSymbols[0].Line != 1 ||
+		filepath.IsAbs(topic.StartingSymbols[0].Path) {
+		t.Fatalf("Python topic = %#v, want one exact repository-relative run anchor", topic)
 	}
 }
 
@@ -1215,13 +1311,14 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 	if !reflect.DeepEqual(withoutSearch, withSearch) {
 		t.Fatalf("--no-search changed model request plan\nwith search: %q\nwithout search: %q", withSearch, withoutSearch)
 	}
-	if len(withSearch) != 4 {
-		t.Fatalf("model request count = %d, want orientation, architecture, guided tour, and repository study map", len(withSearch))
+	if len(withSearch) != 5 {
+		t.Fatalf("model request count = %d, want orientation, architecture, guided tour, opportunity scan, and repository study map", len(withSearch))
 	}
 	wantStageMarkers := []string{
 		"senior software engineer helping orient",
 		"compact conceptual architecture landscape",
 		"optional editorial guide for one bounded repository tour",
+		"Propose central mechanism questions",
 		"editorial onboarding planner for one bounded repository model",
 	}
 	for index, marker := range wantStageMarkers {
