@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -243,19 +244,7 @@ func BuildGoTopicInventory(
 		byTopLevel[topLevel] = append(byTopLevel[topLevel], candidates...)
 	}
 	for group := range byTopLevel {
-		sort.Slice(byTopLevel[group], func(i, j int) bool {
-			left, right := byTopLevel[group][i], byTopLevel[group][j]
-			if left.path != right.path {
-				return left.path < right.path
-			}
-			if left.line != right.line {
-				return left.line < right.line
-			}
-			if left.kind != right.kind {
-				return left.kind < right.kind
-			}
-			return left.name < right.name
-		})
+		byTopLevel[group] = goTopicRoundRobinDirectories(byTopLevel[group])
 	}
 	selected := goTopicRoundRobin(byTopLevel, goTopicMaxDeclarations)
 	if len(selected) < stats.CandidateDeclarations {
@@ -468,11 +457,11 @@ func goTopicTopLevel(sourcePath string) string {
 }
 
 func goTopicRoundRobin(
-	byTopLevel map[string][]goTopicDeclarationCandidate,
+	byDirectory map[string][]goTopicDeclarationCandidate,
 	limit int,
 ) []goTopicDeclarationCandidate {
-	groups := make([]string, 0, len(byTopLevel))
-	for group := range byTopLevel {
+	groups := make([]string, 0, len(byDirectory))
+	for group := range byDirectory {
 		groups = append(groups, group)
 	}
 	sort.Strings(groups)
@@ -482,10 +471,10 @@ func goTopicRoundRobin(
 		progress := false
 		for _, group := range groups {
 			position := positions[group]
-			if position >= len(byTopLevel[group]) {
+			if position >= len(byDirectory[group]) {
 				continue
 			}
-			result = append(result, byTopLevel[group][position])
+			result = append(result, byDirectory[group][position])
 			positions[group] = position + 1
 			progress = true
 			if len(result) == limit {
@@ -497,6 +486,42 @@ func goTopicRoundRobin(
 		}
 	}
 	return result
+}
+
+func goTopicRoundRobinDirectories(
+	candidates []goTopicDeclarationCandidate,
+) []goTopicDeclarationCandidate {
+	byDirectory := make(map[string][]goTopicDeclarationCandidate)
+	for _, candidate := range candidates {
+		directory := path.Dir(candidate.path)
+		byDirectory[directory] = append(byDirectory[directory], candidate)
+	}
+	for directory := range byDirectory {
+		byDirectory[directory] = goTopicRoundRobinFiles(byDirectory[directory])
+	}
+	return goTopicRoundRobin(byDirectory, len(candidates))
+}
+
+func goTopicRoundRobinFiles(
+	candidates []goTopicDeclarationCandidate,
+) []goTopicDeclarationCandidate {
+	byFile := make(map[string][]goTopicDeclarationCandidate)
+	for _, candidate := range candidates {
+		byFile[candidate.path] = append(byFile[candidate.path], candidate)
+	}
+	for file := range byFile {
+		sort.Slice(byFile[file], func(i, j int) bool {
+			left, right := byFile[file][i], byFile[file][j]
+			if left.line != right.line {
+				return left.line < right.line
+			}
+			if left.kind != right.kind {
+				return left.kind < right.kind
+			}
+			return left.name < right.name
+		})
+	}
+	return goTopicRoundRobin(byFile, len(candidates))
 }
 
 func ValidateGoTopicInventory(inventory GoTopicInventory) error {
