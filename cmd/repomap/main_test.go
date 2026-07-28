@@ -319,8 +319,8 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
 		}
 	}
-	if strings.Contains(stderr.String(), "discovering local Go runtime surfaces") {
-		t.Fatalf("default run unexpectedly enabled slow runtime-surface discovery:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "discovering local Go runtime surfaces") {
+		t.Fatalf("default run did not enable runtime-surface discovery:\n%s", stderr.String())
 	}
 	if openedReport == "" {
 		t.Fatal("generated report was not opened")
@@ -531,7 +531,7 @@ func TestRunDefaultNoServeSuppressesServer(t *testing.T) {
 	}
 }
 
-func TestRunDefaultSurfaceDiscoveryIsOptIn(t *testing.T) {
+func TestRunDefaultSurfaceDiscoveryIsOnWithOptOut(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/surface-opt-in\n\ngo 1.24\n")
@@ -545,8 +545,8 @@ func TestRunDefaultSurfaceDiscoveryIsOptIn(t *testing.T) {
 		args []string
 		want bool
 	}{
-		{name: "default disabled", want: false},
-		{name: "explicit opt-in", args: []string{"--discover-surfaces=true"}, want: true},
+		{name: "default enabled", want: true},
+		{name: "explicit opt-out", args: []string{"--discover-surfaces=false"}, want: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			debugDir := t.TempDir()
