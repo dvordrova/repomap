@@ -106,7 +106,9 @@ func NormalizeOpportunityProposal(
 				CandidateIndex: index, Code: "invalid_product_intent",
 				Detail: boundedNormalizationDetail(err.Error()),
 			})
-			continue
+			// ProductIntent is optional planning metadata. Discard the whole
+			// invalid object without discarding an otherwise grounded candidate.
+			candidate.ProductIntent = nil
 		}
 
 		missing := make([]string, 0, len(candidate.MissingInformation))

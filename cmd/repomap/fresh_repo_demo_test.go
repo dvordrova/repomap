@@ -213,6 +213,31 @@ func TestFreshRepoCandidatePipelineStaysBoundedAndLocallyVerifiable(t *testing.T
 	}
 }
 
+func TestCapFreshProposalRetainsMechanismWithoutProductIntent(t *testing.T) {
+	withoutIntent := semanticdiscovery.OpportunityCandidate{
+		ID: "without-intent", Kind: semanticdiscovery.ArtifactMechanism,
+	}
+	withIntent := semanticdiscovery.OpportunityCandidate{
+		ID: "with-intent", Kind: semanticdiscovery.ArtifactMechanism,
+		ProductIntent: &semanticdiscovery.OpportunityProductIntent{},
+	}
+	otherKind := semanticdiscovery.OpportunityCandidate{
+		ID: "other-kind", Kind: semanticdiscovery.ArtifactDependencyUsage,
+	}
+
+	got := capFreshProposal(semanticdiscovery.OpportunityProposal{
+		Version: semanticdiscovery.OpportunityProposalVersion,
+		Candidates: []semanticdiscovery.OpportunityCandidate{
+			withoutIntent, otherKind, withIntent,
+		},
+	})
+	if len(got.Candidates) != 2 ||
+		got.Candidates[0].ID != withoutIntent.ID ||
+		got.Candidates[1].ID != withIntent.ID {
+		t.Fatalf("capFreshProposal() = %#v", got.Candidates)
+	}
+}
+
 func TestFreshExpansionFrontierRetrievesExactLocalCalleeFromAnotherFile(t *testing.T) {
 	repoRoot := t.TempDir()
 	entryLines := []string{

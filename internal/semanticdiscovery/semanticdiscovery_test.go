@@ -130,15 +130,57 @@ func TestOpportunityProductIntentIsLocallyValidated(t *testing.T) {
 		t.Fatalf("ValidateOpportunityProposal() error = %v", err)
 	}
 
-	invalid := candidate
-	invalid.ProductIntent = cloneJSON(t, candidate.ProductIntent)
-	invalid.ProductIntent.CentralAnchorIDs = []string{"unknown-fact"}
-	dropped, invalidReport := NormalizeOpportunityProposal(bundle, OpportunityProposal{
-		Version: OpportunityProposalVersion, Candidates: []OpportunityCandidate{invalid},
-	})
-	if len(dropped.Candidates) != 0 || len(invalidReport.Issues) != 1 ||
-		invalidReport.Issues[0].Code != "invalid_product_intent" {
-		t.Fatalf("invalid product intent survived = %#v, %#v", dropped, invalidReport)
+	tests := []struct {
+		name      string
+		discarded string
+		mutate    func(*OpportunityProductIntent)
+	}{
+		{
+			name:      "repository-bearing description",
+			discarded: "etcdmain.main",
+			mutate: func(intent *OpportunityProductIntent) {
+				intent.ExpectedPath.InputTrigger.Description =
+					"The server entry delegates to etcdmain.main."
+			},
+		},
+		{
+			name: "missing required capability",
+			mutate: func(intent *OpportunityProductIntent) {
+				intent.ExpectedPath.InputTrigger.RequiredCapabilities = nil
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := candidate
+			invalid.ProductIntent = cloneJSON(t, candidate.ProductIntent)
+			test.mutate(invalid.ProductIntent)
+			retained, invalidReport := NormalizeOpportunityProposal(bundle, OpportunityProposal{
+				Version: OpportunityProposalVersion, Candidates: []OpportunityCandidate{invalid},
+			})
+			if len(retained.Candidates) != 1 || retained.Candidates[0].ProductIntent != nil ||
+				len(invalidReport.Issues) != 1 ||
+				invalidReport.Issues[0].Code != "invalid_product_intent" {
+				t.Fatalf("invalid product intent handling = %#v, %#v", retained, invalidReport)
+			}
+			if err := ValidateOpportunityProposal(bundle, retained); err != nil {
+				t.Fatalf("retained candidate is invalid: %v", err)
+			}
+			encoded, err := json.Marshal(retained)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reportEncoded, err := json.Marshal(invalidReport)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.discarded != "" &&
+				(strings.Contains(string(encoded), test.discarded) ||
+					strings.Contains(string(reportEncoded), test.discarded)) {
+				t.Fatalf("discarded product intent leaked: normalized=%s report=%s",
+					encoded, reportEncoded)
+			}
+		})
 	}
 }
 
