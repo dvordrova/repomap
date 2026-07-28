@@ -17,40 +17,32 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 )
 
-func TestTrackedSymlinkDefaultPublishesViewOnly(t *testing.T) {
+func TestTrackedSymlinkDefaultPublishesRegularSourceSubset(t *testing.T) {
 	result := runTrackedSymlinkPublication(t, false)
-	assertTrackedSymlinkViewOnly(t, result, false)
+	assertTrackedSymlinkRegularSubset(t, result, false)
 }
 
-func TestTrackedSymlinkNoSearchPublishesViewOnly(t *testing.T) {
+func TestTrackedSymlinkNoSearchPublishesRegularSourceSubset(t *testing.T) {
 	result := runTrackedSymlinkPublication(t, true)
-	assertTrackedSymlinkViewOnly(t, result, true)
+	assertTrackedSymlinkRegularSubset(t, result, true)
 }
 
-func TestEarlyCatalogIncompatibilitySkipsOptionalModelStages(t *testing.T) {
+func TestEarlyCatalogRegularSubsetReachesOptionalModelStages(t *testing.T) {
 	result := runTrackedSymlinkPublication(t, false)
-	if result.providerRequests != 1 {
+	if result.providerRequests < 2 {
 		t.Fatalf(
-			"provider requests = %d, want the initial orientation call only",
+			"provider requests = %d, want orientation plus an optional stage",
 			result.providerRequests,
 		)
 	}
-	for _, unexpected := range []string{
-		"repomap: synthesizing bounded architecture grouping",
-		"repomap: editing one bounded onboarding story from saved facts",
-		"repomap: selecting bounded source-backed onboarding paths from saved facts",
-		"repomap: editing a bounded repository brief and study map",
-		"repomap: collecting exact repository-owned ways to run and verify",
-	} {
-		if strings.Contains(result.stderr, unexpected) {
-			t.Fatalf("early catalog incompatibility reached optional stage %q:\n%s", unexpected, result.stderr)
-		}
+	if !strings.Contains(result.stderr, "repomap: synthesizing bounded architecture grouping") {
+		t.Fatalf("regular source subset did not reach an optional stage:\n%s", result.stderr)
 	}
-	if !strings.Contains(
+	if strings.Contains(
 		result.stderr,
 		"authorized source catalog is unavailable; skipping optional model stages and publishing a view-only report",
 	) {
-		t.Fatalf("missing bounded early-preflight diagnostic:\n%s", result.stderr)
+		t.Fatalf("tracked symlink disabled the regular source subset:\n%s", result.stderr)
 	}
 }
 
@@ -303,7 +295,7 @@ func runTrackedSymlinkPublication(t *testing.T, noSearch bool) trackedSymlinkPub
 	}
 }
 
-func assertTrackedSymlinkViewOnly(
+func assertTrackedSymlinkRegularSubset(
 	t *testing.T,
 	result trackedSymlinkPublication,
 	noSearch bool,
@@ -311,14 +303,14 @@ func assertTrackedSymlinkViewOnly(
 	t.Helper()
 	const linkPath = "client/v3/example_lease_test.go"
 
-	if result.providerRequests != 1 {
-		t.Fatalf("provider requests = %d, want 1", result.providerRequests)
+	if result.providerRequests < 2 {
+		t.Fatalf("provider requests = %d, want at least 2", result.providerRequests)
 	}
-	if !bytes.Contains(result.requestBody, []byte(linkPath)) {
-		t.Fatalf("tracked symlink did not reach the initial bounded allowed scope: %s", result.requestBody)
+	if bytes.Contains(result.requestBody, []byte(linkPath)) {
+		t.Fatalf("tracked symlink reached the initial bounded allowed scope: %s", result.requestBody)
 	}
 	if !strings.Contains(result.stderr, "Report: ") {
-		t.Fatalf("view-only report was not published:\n%s", result.stderr)
+		t.Fatalf("regular-subset report was not published:\n%s", result.stderr)
 	}
 	for _, name := range []string{"report.json", "report.html", report.RunManifestFilename} {
 		info, err := os.Stat(filepath.Join(result.runDir, name))
@@ -335,17 +327,11 @@ func assertTrackedSymlinkViewOnly(
 	if err := json.Unmarshal(reportJSON, &generated); err != nil {
 		t.Fatal(err)
 	}
-	if generated.FormatVersion != report.CurrentFormatVersion ||
-		generated.SourceIDs != nil || generated.SourceContextIDs != nil {
-		t.Fatalf(
-			"view-only report versions/capabilities = version %d source_ids=%v context_ids=%v",
-			generated.FormatVersion,
-			generated.SourceIDs,
-			generated.SourceContextIDs,
-		)
+	if generated.FormatVersion != report.CurrentFormatVersion {
+		t.Fatalf("report format version = %d", generated.FormatVersion)
 	}
-	if !trackedSymlinkContains(generated.OpenablePaths, linkPath) {
-		t.Fatalf("view-only publication silently pruned tracked symlink authority: %#v", generated.OpenablePaths)
+	if trackedSymlinkContains(generated.OpenablePaths, linkPath) {
+		t.Fatalf("tracked symlink reached openable paths: %#v", generated.OpenablePaths)
 	}
 	if generated.SemanticSearchDisabled != noSearch {
 		t.Fatalf(
@@ -373,12 +359,15 @@ func assertTrackedSymlinkViewOnly(
 			manifest.ReportFormatVersion,
 		)
 	}
-	if _, err := manifest.SourceCatalog(); err == nil ||
-		!strings.Contains(err.Error(), "is not a regular file") {
-		t.Fatalf("view-only run unexpectedly exposed source capabilities: %v", err)
+	catalog, err := manifest.SourceCatalog()
+	if err != nil {
+		t.Fatalf("regular source catalog is unavailable: %v", err)
 	}
-	if _, err := manifest.WorkspaceSnapshot(); err == nil {
-		t.Fatalf("view-only run unexpectedly exposed local analysis: %v", err)
+	if _, ok := catalog.Lookup(linkPath); ok {
+		t.Fatal("tracked symlink reached the source catalog")
+	}
+	if _, err := manifest.WorkspaceSnapshot(); err != nil {
+		t.Fatalf("regular workspace snapshot is unavailable: %v", err)
 	}
 }
 
