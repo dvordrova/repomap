@@ -241,6 +241,14 @@ func selectPythonQuestionSources(
 			err,
 		)
 	}
+	queries, contentTerms, queryWarnings, err := retainPythonSelectionQueriesWithHits(
+		queries,
+		contentTerms,
+		discovery.Hits,
+	)
+	if err != nil {
+		return PythonSourceSelectionTrace{}, PythonSourceSelectionPacket{}, err
+	}
 	candidates, candidateWarnings, err := buildPythonSelectionCandidates(
 		discovery.Hits,
 		queries,
@@ -310,6 +318,7 @@ func selectPythonQuestionSources(
 		return PythonSourceSelectionTrace{}, PythonSourceSelectionPacket{}, err
 	}
 	warnings := append([]string(nil), discovery.Warnings...)
+	warnings = append(warnings, queryWarnings...)
 	warnings = append(warnings, candidateWarnings...)
 	warnings = append(warnings, analysisWarnings...)
 	warnings = append(warnings, rangeWarnings...)
@@ -438,6 +447,59 @@ func normalizePythonSelectionTerm(value string) string {
 		normalized = strings.TrimSuffix(normalized, "s")
 	}
 	return normalized
+}
+
+func retainPythonSelectionQueriesWithHits(
+	queries []PythonSelectionQuery,
+	contentTerms []string,
+	hits []pyrightWorkspaceHit,
+) ([]PythonSelectionQuery, []string, []string, error) {
+	if len(queries) == 0 ||
+		len(queries) > pythonSelectionMaxQueryTerms ||
+		len(contentTerms) != len(queries) ||
+		len(hits) > pythonSelectionMaxHitUnion {
+		return nil, nil, nil, fmt.Errorf(
+			"python source selection: query activation input exceeds the processing budget",
+		)
+	}
+	known := make(map[string]struct{}, pythonSelectionMaxQueryTerms)
+	for _, query := range queries {
+		known[query.ID] = struct{}{}
+	}
+	active := make(map[string]struct{}, pythonSelectionMaxQueryTerms)
+	for _, hit := range hits {
+		if _, ok := known[hit.QueryID]; ok {
+			active[hit.QueryID] = struct{}{}
+		}
+	}
+	retainedQueries := make(
+		[]PythonSelectionQuery,
+		0,
+		pythonSelectionMaxQueryTerms,
+	)
+	retainedTerms := make([]string, 0, pythonSelectionMaxQueryTerms)
+	warnings := make([]string, 0, pythonSelectionMaxQueryTerms)
+	for index, query := range queries {
+		if _, ok := active[query.ID]; !ok {
+			warnings = append(
+				warnings,
+				fmt.Sprintf(
+					"question term %s (%q) had no callable tracked workspace candidate and was omitted",
+					query.ID,
+					query.Text,
+				),
+			)
+			continue
+		}
+		retainedQueries = append(retainedQueries, query)
+		retainedTerms = append(retainedTerms, contentTerms[index])
+	}
+	if len(retainedQueries) == 0 {
+		return nil, nil, nil, fmt.Errorf(
+			"python source selection: no question term produced a callable tracked workspace candidate",
+		)
+	}
+	return retainedQueries, retainedTerms, warnings, nil
 }
 
 func buildPythonSelectionCandidates(

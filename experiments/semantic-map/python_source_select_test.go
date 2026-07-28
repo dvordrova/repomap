@@ -23,6 +23,9 @@ const (
 	dotenvPythonSelectionRevision     = "36004e0e34be7665ff2b11a8a4005144f76f176d"
 	dotenvPythonSelectionQuestion     = "How do _walk_to_root() and find_dotenv() choose the starting directory and walk upward until they find a .env file or FIFO?"
 	dotenvPythonSelectionArtifactBase = "python-dotenv"
+	tomliPythonSelectionRevision      = "c5f44690c68c5ed29534faa8f9df18882113728c"
+	tomliPythonSelectionQuestion      = "How does loads() route TOML statements to key_value_rule(), create_dict_rule(), or create_list_rule(), and enforce a newline after each statement?"
+	tomliPythonSelectionArtifactBase  = "tomli"
 )
 
 func TestPythonSelectionQueriesRemoveRepositoryAndRelationalFiller(t *testing.T) {
@@ -131,51 +134,294 @@ func TestPythonSelectionRejectsUnsafeWorkspacePathBeforeExactAnalysis(t *testing
 	}
 }
 
-func TestPyrightWorkspaceReadinessUsesFirstNonemptyBoundedSample(t *testing.T) {
-	hitA := []pyrightWorkspaceHit{{QueryID: "q1", Name: "alpha", Path: "a.py"}}
-	hitB := []pyrightWorkspaceHit{{QueryID: "q1", Name: "beta", Path: "b.py"}}
-	samples := [][]pyrightWorkspaceHit{nil, hitA, hitB}
-	calls := 0
-	hits, err := awaitPyrightWorkspaceCandidates(
+func TestPyrightWorkspaceQuerySamplesKeepAllNonemptyBehavior(t *testing.T) {
+	queries := []pyrightWorkspaceQuery{
+		{ID: "q1", Text: "plugin"},
+		{ID: "q2", Text: "config"},
+		{ID: "q3", Text: "command"},
+	}
+	calls := make([]string, 0, len(queries))
+	samples, err := collectPyrightWorkspaceQuerySamples(
 		context.Background(),
-		pyrightWorkspaceQuery{ID: "q1", Text: "plugin"},
-		len(samples),
-		0,
-		func(context.Context) ([]pyrightWorkspaceHit, error) {
-			sample := samples[calls]
-			calls++
-			return sample, nil
+		queries,
+		func(
+			_ context.Context,
+			query pyrightWorkspaceQuery,
+		) ([]pyrightWorkspaceHit, error) {
+			calls = append(calls, query.ID)
+			return []pyrightWorkspaceHit{{
+				QueryID: query.ID,
+				Name:    query.Text,
+				Path:    query.ID + ".py",
+			}}, nil
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(hits, hitA) || calls != 2 {
-		t.Fatalf("first nonempty readiness = %#v after %d calls", hits, calls)
+	if len(samples) != len(queries) ||
+		!reflect.DeepEqual(calls, []string{"q1", "q2", "q3"}) {
+		t.Fatalf("all-nonempty samples=%#v calls=%#v", samples, calls)
 	}
 }
 
-func TestPyrightWorkspaceReadinessFailsClosed(t *testing.T) {
-	t.Run("request error", func(t *testing.T) {
-		sampleErr := errors.New("sample failed")
-		hits, err := awaitPyrightWorkspaceCandidates(
+func TestPyrightWorkspaceQuerySamplesAllowSuccessfulEmptyTerms(t *testing.T) {
+	tests := []struct {
+		name        string
+		queries     []pyrightWorkspaceQuery
+		nonempty    map[string]pyrightWorkspaceHit
+		wantSamples []string
+	}{
+		{
+			name: "middle empty",
+			queries: []pyrightWorkspaceQuery{
+				{ID: "q1", Text: "load"},
+				{ID: "q2", Text: "route"},
+				{ID: "q3", Text: "toml"},
+			},
+			nonempty: map[string]pyrightWorkspaceHit{
+				"q1": {QueryID: "q1", Name: "loads", Path: "parser.py"},
+				"q3": {QueryID: "q3", Name: "TOMLDecodeError", Path: "parser.py"},
+			},
+			wantSamples: []string{"q1", "q3"},
+		},
+		{
+			name: "leading empty",
+			queries: []pyrightWorkspaceQuery{
+				{ID: "q1", Text: "route"},
+				{ID: "q2", Text: "load"},
+			},
+			nonempty: map[string]pyrightWorkspaceHit{
+				"q2": {QueryID: "q2", Name: "loads", Path: "parser.py"},
+			},
+			wantSamples: []string{"q2"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := make([]string, 0, len(test.queries))
+			samples, err := collectPyrightWorkspaceQuerySamples(
+				context.Background(),
+				test.queries,
+				func(
+					_ context.Context,
+					query pyrightWorkspaceQuery,
+				) ([]pyrightWorkspaceHit, error) {
+					calls = append(calls, query.ID)
+					if hit, ok := test.nonempty[query.ID]; ok {
+						return []pyrightWorkspaceHit{hit}, nil
+					}
+					return nil, fmt.Errorf(
+						"%w: %s",
+						errPyrightWorkspaceQueryEmpty,
+						query.ID,
+					)
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCalls := make([]string, len(test.queries))
+			for index, query := range test.queries {
+				wantCalls[index] = query.ID
+			}
+			if !reflect.DeepEqual(calls, wantCalls) {
+				t.Fatalf("query calls = %#v, want %#v", calls, wantCalls)
+			}
+			gotSamples := make([]string, 0, len(samples))
+			for _, query := range test.queries {
+				if len(samples[query.ID]) > 0 {
+					gotSamples = append(gotSamples, query.ID)
+				}
+			}
+			if !reflect.DeepEqual(gotSamples, test.wantSamples) {
+				t.Fatalf(
+					"query samples = %#v, want %#v",
+					gotSamples,
+					test.wantSamples,
+				)
+			}
+		})
+	}
+}
+
+func TestPyrightWorkspaceQuerySamplesFailClosed(t *testing.T) {
+	queries := []pyrightWorkspaceQuery{
+		{ID: "q1", Text: "load"},
+		{ID: "q2", Text: "route"},
+	}
+	t.Run("all empty", func(t *testing.T) {
+		calls := make([]string, 0, len(queries))
+		samples, err := collectPyrightWorkspaceQuerySamples(
 			context.Background(),
-			pyrightWorkspaceQuery{ID: "q1", Text: "plugin"},
-			3,
-			0,
-			func(context.Context) ([]pyrightWorkspaceHit, error) {
-				return nil, sampleErr
+			queries,
+			func(
+				_ context.Context,
+				query pyrightWorkspaceQuery,
+			) ([]pyrightWorkspaceHit, error) {
+				calls = append(calls, query.ID)
+				return nil, errPyrightWorkspaceQueryEmpty
 			},
 		)
-		if !errors.Is(err, sampleErr) || hits != nil {
-			t.Fatalf("request failure returned hits=%#v err=%v", hits, err)
+		if err == nil ||
+			!strings.Contains(err.Error(), "no query returned") ||
+			samples != nil ||
+			!reflect.DeepEqual(calls, []string{"q1", "q2"}) {
+			t.Fatalf(
+				"all-empty samples=%#v err=%v calls=%#v",
+				samples,
+				err,
+				calls,
+			)
 		}
 	})
-	t.Run("all empty", func(t *testing.T) {
-		calls := 0
-		hits, err := awaitPyrightWorkspaceCandidates(
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "deadline", err: context.DeadlineExceeded},
+		{name: "request error", err: errors.New("sample failed")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			samples, err := collectPyrightWorkspaceQuerySamples(
+				context.Background(),
+				queries,
+				func(
+					_ context.Context,
+					query pyrightWorkspaceQuery,
+				) ([]pyrightWorkspaceHit, error) {
+					if query.ID == "q2" {
+						return nil, test.err
+					}
+					return []pyrightWorkspaceHit{{
+						QueryID: query.ID,
+						Name:    "loads",
+						Path:    "parser.py",
+					}}, nil
+				},
+			)
+			if !errors.Is(err, test.err) || samples != nil {
+				t.Fatalf("query error returned samples=%#v err=%v", samples, err)
+			}
+		})
+	}
+	t.Run("candidate overflow", func(t *testing.T) {
+		overflow := make(
+			[]pyrightWorkspaceHit,
+			pyrightWorkspaceMaxRawResults+1,
+		)
+		samples, err := collectPyrightWorkspaceQuerySamples(
 			context.Background(),
-			pyrightWorkspaceQuery{ID: "q1", Text: "plugin"},
+			queries[:1],
+			func(
+				context.Context,
+				pyrightWorkspaceQuery,
+			) ([]pyrightWorkspaceHit, error) {
+				return overflow, nil
+			},
+		)
+		if err == nil ||
+			!strings.Contains(err.Error(), "limit is 512") ||
+			samples != nil {
+			t.Fatalf("overflow returned samples=%#v err=%v", samples, err)
+		}
+	})
+	t.Run("external cancellation after retained sample", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		samples, err := collectPyrightWorkspaceQuerySamples(
+			ctx,
+			queries,
+			func(
+				_ context.Context,
+				query pyrightWorkspaceQuery,
+			) ([]pyrightWorkspaceHit, error) {
+				if query.ID == "q1" {
+					cancel()
+					return []pyrightWorkspaceHit{{
+						QueryID: query.ID,
+						Name:    "loads",
+						Path:    "parser.py",
+					}}, nil
+				}
+				return nil, errPyrightWorkspaceQueryEmpty
+			},
+		)
+		if !errors.Is(err, context.Canceled) || samples != nil {
+			t.Fatalf("cancellation returned samples=%#v err=%v", samples, err)
+		}
+	})
+	t.Run("external cancellation in final query", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		samples, err := collectPyrightWorkspaceQuerySamples(
+			ctx,
+			queries[:1],
+			func(
+				_ context.Context,
+				query pyrightWorkspaceQuery,
+			) ([]pyrightWorkspaceHit, error) {
+				cancel()
+				return []pyrightWorkspaceHit{{
+					QueryID: query.ID,
+					Name:    "loads",
+					Path:    "parser.py",
+				}}, nil
+			},
+		)
+		if !errors.Is(err, context.Canceled) || samples != nil {
+			t.Fatalf(
+				"final-query cancellation returned samples=%#v err=%v",
+				samples,
+				err,
+			)
+		}
+	})
+}
+
+func TestPyrightWorkspaceCandidatesKeepFirstNonemptySample(t *testing.T) {
+	query := pyrightWorkspaceQuery{ID: "q1", Text: "plugin"}
+	hitA := []pyrightWorkspaceHit{{
+		QueryID: "q1",
+		Name:    "alpha",
+		Path:    "a.py",
+	}}
+	hitB := []pyrightWorkspaceHit{{
+		QueryID: "q1",
+		Name:    "changed",
+		Path:    "b.py",
+	}}
+	calls := 0
+	sample, err := awaitPyrightWorkspaceCandidates(
+		context.Background(),
+		query,
+		3,
+		0,
+		func(context.Context) ([]pyrightWorkspaceHit, error) {
+			calls++
+			switch calls {
+			case 1:
+				return nil, nil
+			case 2:
+				return hitA, nil
+			default:
+				return hitB, nil
+			}
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sample, hitA) || calls != 2 {
+		t.Fatalf("first nonempty sample=%#v calls=%d", sample, calls)
+	}
+}
+
+func TestPyrightWorkspaceCandidatesClassifyOnlyCompletedEmptyWarmup(t *testing.T) {
+	query := pyrightWorkspaceQuery{ID: "q1", Text: "route"}
+	t.Run("attempts exhausted", func(t *testing.T) {
+		calls := 0
+		sample, err := awaitPyrightWorkspaceCandidates(
+			context.Background(),
+			query,
 			3,
 			0,
 			func(context.Context) ([]pyrightWorkspaceHit, error) {
@@ -183,13 +429,336 @@ func TestPyrightWorkspaceReadinessFailsClosed(t *testing.T) {
 				return nil, nil
 			},
 		)
-		if err == nil ||
-			!strings.Contains(err.Error(), "nonempty candidate sample") ||
-			hits != nil ||
+		if !errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil ||
 			calls != 3 {
-			t.Fatalf("empty readiness returned hits=%#v err=%v calls=%d", hits, err, calls)
+			t.Fatalf(
+				"empty warmup returned sample=%#v err=%v calls=%d",
+				sample,
+				err,
+				calls,
+			)
 		}
 	})
+	t.Run("internal expiry between responses", func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(context.Background())
+		calls := 0
+		sample, err := awaitPyrightWorkspaceCandidates(
+			ctx,
+			query,
+			3,
+			0,
+			func(context.Context) ([]pyrightWorkspaceHit, error) {
+				calls++
+				cancel(errPyrightWorkspaceWarmupExpired)
+				return nil, nil
+			},
+		)
+		if !errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil ||
+			calls != 1 {
+			t.Fatalf(
+				"internal expiry returned sample=%#v err=%v calls=%d",
+				sample,
+				err,
+				calls,
+			)
+		}
+	})
+	t.Run("external cancellation remains fatal", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		sample, err := awaitPyrightWorkspaceCandidates(
+			ctx,
+			query,
+			3,
+			0,
+			func(context.Context) ([]pyrightWorkspaceHit, error) {
+				cancel()
+				return nil, nil
+			},
+		)
+		if !errors.Is(err, context.Canceled) ||
+			errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil {
+			t.Fatalf("external cancellation returned sample=%#v err=%v", sample, err)
+		}
+	})
+	t.Run("request deadline after empty remains fatal", func(t *testing.T) {
+		calls := 0
+		sample, err := awaitPyrightWorkspaceCandidates(
+			context.Background(),
+			query,
+			3,
+			0,
+			func(context.Context) ([]pyrightWorkspaceHit, error) {
+				calls++
+				if calls == 1 {
+					return nil, nil
+				}
+				return nil, fmt.Errorf(
+					"workspace request: %w",
+					context.DeadlineExceeded,
+				)
+			},
+		)
+		if !errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil ||
+			calls != 2 {
+			t.Fatalf(
+				"request deadline returned sample=%#v err=%v calls=%d",
+				sample,
+				err,
+				calls,
+			)
+		}
+	})
+	t.Run("request error after empty remains fatal", func(t *testing.T) {
+		requestErr := errors.New("workspace request failed")
+		calls := 0
+		sample, err := awaitPyrightWorkspaceCandidates(
+			context.Background(),
+			query,
+			3,
+			0,
+			func(context.Context) ([]pyrightWorkspaceHit, error) {
+				calls++
+				if calls == 1 {
+					return nil, nil
+				}
+				return nil, requestErr
+			},
+		)
+		if !errors.Is(err, requestErr) ||
+			errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil ||
+			calls != 2 {
+			t.Fatalf(
+				"request error returned sample=%#v err=%v calls=%d",
+				sample,
+				err,
+				calls,
+			)
+		}
+	})
+	t.Run("real error racing expiry remains fatal", func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(context.Background())
+		requestErr := errors.New("workspace response exceeds raw budget")
+		sample, err := awaitPyrightWorkspaceCandidates(
+			ctx,
+			query,
+			3,
+			0,
+			func(context.Context) ([]pyrightWorkspaceHit, error) {
+				cancel(errPyrightWorkspaceWarmupExpired)
+				return nil, requestErr
+			},
+		)
+		if !errors.Is(err, requestErr) ||
+			errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil {
+			t.Fatalf("racing request error returned sample=%#v err=%v", sample, err)
+		}
+	})
+	t.Run("candidate overflow remains fatal", func(t *testing.T) {
+		overflow := make(
+			[]pyrightWorkspaceHit,
+			pyrightWorkspaceMaxRawResults+1,
+		)
+		sample, err := awaitPyrightWorkspaceCandidates(
+			context.Background(),
+			query,
+			1,
+			0,
+			func(context.Context) ([]pyrightWorkspaceHit, error) {
+				return overflow, nil
+			},
+		)
+		if err == nil ||
+			!strings.Contains(err.Error(), "limit is 512") ||
+			errors.Is(err, errPyrightWorkspaceQueryEmpty) ||
+			sample != nil {
+			t.Fatalf("overflow returned sample=%#v err=%v", sample, err)
+		}
+	})
+}
+
+func TestPythonSelectionPrunesOnlyQueriesWithoutWorkspaceHits(t *testing.T) {
+	queries, terms, warnings, err := retainPythonSelectionQueriesWithHits(
+		[]PythonSelectionQuery{
+			{ID: "q1", Text: "load"},
+			{ID: "q2", Text: "route"},
+			{ID: "q3", Text: "toml"},
+		},
+		[]string{"load", "route", "toml"},
+		[]pyrightWorkspaceHit{
+			{QueryID: "q1", Name: "loads"},
+			{QueryID: "q3", Name: "TOMLDecodeError"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(
+		queries,
+		[]PythonSelectionQuery{
+			{ID: "q1", Text: "load"},
+			{ID: "q3", Text: "toml"},
+		},
+	) || !reflect.DeepEqual(terms, []string{"load", "toml"}) {
+		t.Fatalf("active queries=%#v terms=%#v", queries, terms)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], `q2 ("route")`) {
+		t.Fatalf("inactive-query warnings = %#v", warnings)
+	}
+}
+
+func TestPythonSelectionAnchorChecksUseOnlySurvivingQueries(t *testing.T) {
+	repoPath, revision, entities := makePythonSelectionFixture(t)
+	trace, _, err := selectPythonQuestionSources(
+		context.Background(),
+		PythonSourceSelectionOptions{
+			RepositoryPath:   repoPath,
+			ExpectedRevision: revision,
+			Question:         "plugin route command",
+		},
+		fakePythonWorkspaceFinder{hits: []pyrightWorkspaceHit{
+			workspaceHit("q1", entities["load_plugins"]),
+			workspaceHit("q3", entities["commands"]),
+		}},
+		newFakePythonSelectionAnalyzer(entities),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(
+		trace.QueryTerms,
+		[]PythonSelectionQuery{
+			{ID: "q1", Text: "plugin"},
+			{ID: "q3", Text: "comman"},
+		},
+	) {
+		t.Fatalf("surviving query terms = %#v", trace.QueryTerms)
+	}
+	if !pythonSelectionTraceHasNamedCall(trace, "setup", "load_plugins") ||
+		!pythonSelectionTraceHasNamedCall(trace, "setup", "commands") {
+		t.Fatal("surviving query anchors were not joined")
+	}
+	if !strings.Contains(strings.Join(trace.Warnings, "\n"), `q2 ("route")`) {
+		t.Fatalf("inactive query warning missing: %#v", trace.Warnings)
+	}
+}
+
+func TestPythonSourceSelectionZeroEvidenceInvariance(t *testing.T) {
+	repoPath, revision, entities := makePythonSelectionFixture(t)
+	controlAnalyzer := newFakePythonSelectionAnalyzer(entities)
+	controlTrace, controlPacket, err := selectPythonQuestionSources(
+		context.Background(),
+		PythonSourceSelectionOptions{
+			RepositoryPath:   repoPath,
+			ExpectedRevision: revision,
+			Question:         "plugin command",
+		},
+		fakePythonWorkspaceFinder{hits: []pyrightWorkspaceHit{
+			workspaceHit("q1", entities["load_plugins"]),
+			workspaceHit("q2", entities["commands"]),
+		}},
+		controlAnalyzer,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	variantAnalyzer := newFakePythonSelectionAnalyzer(entities)
+	variantTrace, variantPacket, err := selectPythonQuestionSources(
+		context.Background(),
+		PythonSourceSelectionOptions{
+			RepositoryPath:   repoPath,
+			ExpectedRevision: revision,
+			Question:         "plugin route command",
+		},
+		fakePythonWorkspaceFinder{hits: []pyrightWorkspaceHit{
+			workspaceHit("q1", entities["load_plugins"]),
+			workspaceHit("q3", entities["commands"]),
+		}},
+		variantAnalyzer,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(
+		strings.Join(variantTrace.Warnings, "\n"),
+		`q2 ("route")`,
+	) {
+		t.Fatalf("zero-hit query warning missing: %#v", variantTrace.Warnings)
+	}
+	normalize := func(
+		trace *PythonSourceSelectionTrace,
+		packet *PythonSourceSelectionPacket,
+	) {
+		stripQueryReasons := func(values []string) []string {
+			retained := make([]string, 0, len(values))
+			for _, value := range values {
+				if !strings.HasPrefix(value, "q") {
+					retained = append(retained, value)
+				}
+			}
+			return retained
+		}
+		trace.Question = ""
+		trace.QueryTerms = nil
+		for index := range trace.Candidates {
+			trace.Candidates[index].QueryTermIDs = nil
+		}
+		for index := range trace.SelectedSymbols {
+			trace.SelectedSymbols[index].SelectionReasonIDs =
+				stripQueryReasons(
+					trace.SelectedSymbols[index].SelectionReasonIDs,
+				)
+		}
+		retainedWarnings := make([]string, 0, len(trace.Warnings))
+		for _, warning := range trace.Warnings {
+			if !strings.HasPrefix(warning, "question term q") {
+				retainedWarnings = append(retainedWarnings, warning)
+			}
+		}
+		trace.Warnings = retainedWarnings
+		packet.Question = ""
+		for index := range packet.SourceSlices {
+			packet.SourceSlices[index].SelectionReasonIDs =
+				stripQueryReasons(
+					packet.SourceSlices[index].SelectionReasonIDs,
+				)
+		}
+	}
+	normalize(&controlTrace, &controlPacket)
+	normalize(&variantTrace, &variantPacket)
+	controlTraceJSON := mustEncodePythonSelection(t, controlTrace)
+	variantTraceJSON := mustEncodePythonSelection(t, variantTrace)
+	controlPacketJSON := mustEncodePythonSelection(t, controlPacket)
+	variantPacketJSON := mustEncodePythonSelection(t, variantPacket)
+	if !bytes.Equal(controlTraceJSON, variantTraceJSON) ||
+		!bytes.Equal(controlPacketJSON, variantPacketJSON) {
+		t.Fatalf(
+			"successful empty query changed surviving evidence\ncontrol trace:\n%s\nvariant trace:\n%s\ncontrol packet:\n%s\nvariant packet:\n%s",
+			controlTraceJSON,
+			variantTraceJSON,
+			controlPacketJSON,
+			variantPacketJSON,
+		)
+	}
+	if controlAnalyzer.resolveCalls != variantAnalyzer.resolveCalls ||
+		!reflect.DeepEqual(
+			controlAnalyzer.exactCalls,
+			variantAnalyzer.exactCalls,
+		) {
+		t.Fatalf(
+			"successful empty query changed analyzer calls: control resolve=%d exact=%#v; variant resolve=%d exact=%#v",
+			controlAnalyzer.resolveCalls,
+			controlAnalyzer.exactCalls,
+			variantAnalyzer.resolveCalls,
+			variantAnalyzer.exactCalls,
+		)
+	}
 }
 
 func TestPyrightWorkspaceTruncationKeepsRelevantLateHit(t *testing.T) {
@@ -822,6 +1391,46 @@ func TestLivePythonDotenvSelection(t *testing.T) {
 		}
 		if err := os.WriteFile(
 			filepath.Join(outputDir, dotenvPythonSelectionArtifactBase+".python-auto-source-slices.json"),
+			packetJSON,
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLiveTomliPythonSelection(t *testing.T) {
+	repoPath := os.Getenv("REPOMAP_TOMLI_REPO")
+	if repoPath == "" {
+		t.Skip("set REPOMAP_TOMLI_REPO to replay the pinned live selector")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	trace, packet, err := SelectPythonQuestionSources(ctx, PythonSourceSelectionOptions{
+		RepositoryPath:   repoPath,
+		ExpectedRevision: tomliPythonSelectionRevision,
+		Question:         tomliPythonSelectionQuestion,
+		PyrightBinary:    os.Getenv("REPOMAP_PYRIGHT_BINARY"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceJSON := mustEncodePythonSelection(t, trace)
+	packetJSON := mustEncodePythonSelection(t, packet)
+	validatePythonSelectionArtifacts(t, traceJSON, packetJSON)
+	if outputDir := os.Getenv("REPOMAP_PYTHON_SELECTION_OUTPUT_DIR"); outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(outputDir, tomliPythonSelectionArtifactBase+".python-selection.json"),
+			traceJSON,
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(outputDir, tomliPythonSelectionArtifactBase+".python-auto-source-slices.json"),
 			packetJSON,
 			0o644,
 		); err != nil {

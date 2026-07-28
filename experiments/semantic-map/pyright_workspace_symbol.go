@@ -37,6 +37,15 @@ const (
 	pyrightWorkspaceTruncationFormat = "Pyright workspace/symbol query %s truncated from %d to %d callable repository hits"
 )
 
+var (
+	errPyrightWorkspaceQueryEmpty = errors.New(
+		"pyright workspace-symbol query completed without candidates",
+	)
+	errPyrightWorkspaceWarmupExpired = errors.New(
+		"pyright workspace-symbol warmup expired",
+	)
+)
+
 type pyrightWorkspaceQuery struct {
 	ID   string
 	Text string
@@ -226,21 +235,22 @@ func (finder *pyrightWorkspaceSymbolFinder) Find(
 		)
 	}
 
+	querySamples, err := pyrightWorkspaceFindQueries(
+		ctx,
+		client,
+		repoPath,
+		queries,
+	)
+	if err != nil {
+		return pyrightWorkspaceResult{}, err
+	}
 	result.Hits = make(
 		[]pyrightWorkspaceHit,
 		0,
 		pyrightWorkspaceMaxQueries*pyrightWorkspaceMaxHitsPerQuery,
 	)
 	for _, query := range queries {
-		hits, err := pyrightWorkspaceFindQuery(
-			ctx,
-			client,
-			repoPath,
-			query,
-		)
-		if err != nil {
-			return pyrightWorkspaceResult{}, err
-		}
+		hits := querySamples[query.ID]
 		hits, discarded, err := filterPyrightWorkspaceTrackedHits(repoPath, hits)
 		if err != nil {
 			return pyrightWorkspaceResult{}, fmt.Errorf(
@@ -311,13 +321,103 @@ func validatePyrightWorkspaceQueries(queries []pyrightWorkspaceQuery) error {
 	return nil
 }
 
+func pyrightWorkspaceFindQueries(
+	ctx context.Context,
+	client *lspclient.Client,
+	repoPath string,
+	queries []pyrightWorkspaceQuery,
+) (map[string][]pyrightWorkspaceHit, error) {
+	return collectPyrightWorkspaceQuerySamples(
+		ctx,
+		queries,
+		func(
+			sampleCtx context.Context,
+			query pyrightWorkspaceQuery,
+		) ([]pyrightWorkspaceHit, error) {
+			return pyrightWorkspaceFindQuery(
+				sampleCtx,
+				client,
+				repoPath,
+				query,
+			)
+		},
+	)
+}
+
+func collectPyrightWorkspaceQuerySamples(
+	ctx context.Context,
+	queries []pyrightWorkspaceQuery,
+	findQuery func(
+		context.Context,
+		pyrightWorkspaceQuery,
+	) ([]pyrightWorkspaceHit, error),
+) (map[string][]pyrightWorkspaceHit, error) {
+	if len(queries) == 0 || len(queries) > pyrightWorkspaceMaxQueries {
+		return nil, fmt.Errorf(
+			"pyright workspace symbols: query collection input exceeds the processing budget",
+		)
+	}
+	samples := make(
+		map[string][]pyrightWorkspaceHit,
+		pyrightWorkspaceMaxQueries,
+	)
+	for _, query := range queries {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf(
+				"pyright workspace symbols: query collection context: %w",
+				ctx.Err(),
+			)
+		}
+		current, err := findQuery(ctx, query)
+		if err != nil && !errors.Is(err, errPyrightWorkspaceQueryEmpty) {
+			return nil, err
+		}
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf(
+				"pyright workspace symbols: query collection context: %w",
+				ctx.Err(),
+			)
+		}
+		if errors.Is(err, errPyrightWorkspaceQueryEmpty) {
+			continue
+		}
+		if len(current) > pyrightWorkspaceMaxRawResults {
+			return nil, fmt.Errorf(
+				"pyright workspace symbols: query %s returned %d candidate results; limit is %d",
+				query.ID,
+				len(current),
+				pyrightWorkspaceMaxRawResults,
+			)
+		}
+		if len(current) > 0 {
+			samples[query.ID] = current
+		}
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf(
+			"pyright workspace symbols: query collection context: %w",
+			ctx.Err(),
+		)
+	}
+	if len(samples) == 0 {
+		return nil, fmt.Errorf(
+			"pyright workspace symbols: no query returned a nonempty candidate sample within its bounded warmup",
+		)
+	}
+	return samples, nil
+}
+
 func pyrightWorkspaceFindQuery(
 	ctx context.Context,
 	client *lspclient.Client,
 	repoPath string,
 	query pyrightWorkspaceQuery,
 ) ([]pyrightWorkspaceHit, error) {
-	warmupCtx, cancel := context.WithTimeout(ctx, pyrightWorkspaceWarmupTimeout)
+	warmupCtx, cancel := context.WithTimeoutCause(
+		ctx,
+		pyrightWorkspaceWarmupTimeout,
+		errPyrightWorkspaceWarmupExpired,
+	)
 	defer cancel()
 	return awaitPyrightWorkspaceCandidates(
 		warmupCtx,
@@ -342,14 +442,36 @@ func awaitPyrightWorkspaceCandidates(
 	delay time.Duration,
 	queryOnce func(context.Context) ([]pyrightWorkspaceHit, error),
 ) ([]pyrightWorkspaceHit, error) {
+	if attempts <= 0 {
+		return nil, fmt.Errorf(
+			"pyright workspace symbols: query warmup input exceeds the processing budget",
+		)
+	}
+	completedEmptyRequests := 0
 	for attempt := 0; attempt < attempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, finishPyrightWorkspaceQueryWait(
+				ctx,
+				query,
+				completedEmptyRequests,
+			)
+		}
 		current, err := queryOnce(ctx)
 		if err != nil {
 			return nil, err
 		}
+		if len(current) > pyrightWorkspaceMaxRawResults {
+			return nil, fmt.Errorf(
+				"pyright workspace symbols: query %s returned %d candidate results; limit is %d",
+				query.ID,
+				len(current),
+				pyrightWorkspaceMaxRawResults,
+			)
+		}
 		if len(current) > 0 {
 			return current, nil
 		}
+		completedEmptyRequests++
 		if attempt+1 == attempts {
 			break
 		}
@@ -360,17 +482,44 @@ func awaitPyrightWorkspaceCandidates(
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, fmt.Errorf(
-				"pyright workspace symbols: query %s did not return a nonempty candidate sample within the bounded warmup: %w",
-				query.ID,
-				ctx.Err(),
+			return nil, finishPyrightWorkspaceQueryWait(
+				ctx,
+				query,
+				completedEmptyRequests,
 			)
 		case <-timer.C:
 		}
 	}
 	return nil, fmt.Errorf(
-		"pyright workspace symbols: query %s did not return a nonempty candidate sample within the bounded warmup",
+		"%w: query %s returned only empty samples after %d completed request(s)",
+		errPyrightWorkspaceQueryEmpty,
 		query.ID,
+		completedEmptyRequests,
+	)
+}
+
+func finishPyrightWorkspaceQueryWait(
+	ctx context.Context,
+	query pyrightWorkspaceQuery,
+	completedEmptyRequests int,
+) error {
+	cause := context.Cause(ctx)
+	if completedEmptyRequests > 0 &&
+		errors.Is(cause, errPyrightWorkspaceWarmupExpired) {
+		return fmt.Errorf(
+			"%w: query %s returned only empty samples before its bounded warmup expired after %d completed request(s)",
+			errPyrightWorkspaceQueryEmpty,
+			query.ID,
+			completedEmptyRequests,
+		)
+	}
+	if cause == nil {
+		cause = ctx.Err()
+	}
+	return fmt.Errorf(
+		"pyright workspace symbols: query %s warmup context: %w",
+		query.ID,
+		cause,
 	)
 }
 
