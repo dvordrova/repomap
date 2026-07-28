@@ -1,0 +1,142 @@
+{
+  "case_id": "caddy-reload-handoff",
+  "repository": {
+    "name": "caddy",
+    "revision": "873fac5fc094fe538d0c477509127bb321d51a32"
+  },
+  "question": "How does Caddy replace a running configuration without discarding the old one before the new applications are ready, and where can the handoff fail?",
+  "observations": [
+    {
+      "id": "obs-01",
+      "state": "extracted",
+      "text": "The API handler marshals the new config to JSON only after applying the mutation, and if unchanged it returns early without reload.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 168,
+          "end_line": 223
+        }
+      ]
+    },
+    {
+      "id": "obs-02",
+      "state": "extracted",
+      "text": "After marshalling, the handler indexes config objects. If indexing fails, it restores rawCfg from rawCfgJSON and returns an error.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 225,
+          "end_line": 274
+        }
+      ]
+    },
+    {
+      "id": "obs-03",
+      "state": "inferred",
+      "text": "The handoff function unsyncedDecodeAndRun is called with the new config JSON; on success it swaps the current context and then stops the old apps.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 337,
+          "end_line": 375
+        }
+      ]
+    },
+    {
+      "id": "obs-04",
+      "state": "extracted",
+      "text": "In unsyncedDecodeAndRun, the new config is unmarshaled and then run via run(newCfg, true) which provisions and starts all apps.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 337,
+          "end_line": 375
+        }
+      ]
+    },
+    {
+      "id": "obs-05",
+      "state": "extracted",
+      "text": "If run fails, unsyncedDecodeAndRun returns an error, and the caller restores the old config from rawCfgJSON.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 225,
+          "end_line": 274
+        }
+      ]
+    },
+    {
+      "id": "obs-06",
+      "state": "extracted",
+      "text": "The run function starts apps one by one; if any app fails to start, it stops all already started apps and returns an error.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 419,
+          "end_line": 476
+        }
+      ]
+    },
+    {
+      "id": "obs-07",
+      "state": "inferred",
+      "text": "Old config remains running until the new config's apps are fully started and the context is swapped, ensuring no downtime from discarded old config.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 337,
+          "end_line": 375
+        }
+      ]
+    },
+    {
+      "id": "obs-08",
+      "state": "extracted",
+      "text": "After successful start, the run function calls finishSettingUp which may fail; if so, run returns an error and old config is restored.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 419,
+          "end_line": 476
+        }
+      ]
+    },
+    {
+      "id": "obs-09",
+      "state": "extracted",
+      "text": "In provisionContext, the admin server is replaced before provisioning apps; failure here causes run to return error.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 564,
+          "end_line": 581
+        }
+      ]
+    },
+    {
+      "id": "obs-10",
+      "state": "extracted",
+      "text": "The unsyncedStop function stops each app and cancels the old context, but is only called after the new context is swapped.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 724,
+          "end_line": 742
+        }
+      ]
+    },
+    {
+      "id": "obs-11",
+      "state": "extracted",
+      "text": "If unsyncedDecodeAndRun fails, the API handler restores rawCfg to the old config and returns an error, preserving the running old config.",
+      "sources": [
+        {
+          "path": "caddy.go",
+          "start_line": 225,
+          "end_line": 274
+        }
+      ]
+    }
+  ]
+}

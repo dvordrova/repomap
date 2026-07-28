@@ -1,0 +1,102 @@
+{
+  "nodes": [
+    {
+      "id": "nc",
+      "label": "new-config",
+      "responsibility": "holds the new configuration after mutation",
+      "state": "supported",
+      "observation_ids": ["obs-01"]
+    },
+    {
+      "id": "idx",
+      "label": "indexing",
+      "responsibility": "validates and indexes config objects; on failure restores old config",
+      "state": "supported",
+      "observation_ids": ["obs-02"]
+    },
+    {
+      "id": "ho",
+      "label": "handoff",
+      "responsibility": "initiates replacement by decoding new config and running it",
+      "state": "inferred",
+      "observation_ids": ["obs-03", "obs-04"]
+    },
+    {
+      "id": "rna",
+      "label": "run-new-apps",
+      "responsibility": "provisions and starts all apps from new config; on failure stops started apps and returns error",
+      "state": "supported",
+      "observation_ids": ["obs-04", "obs-06"]
+    },
+    {
+      "id": "ocr",
+      "label": "old-config-running",
+      "responsibility": "maintains old configuration active until handoff succeeds",
+      "state": "inferred",
+      "observation_ids": ["obs-07"]
+    },
+    {
+      "id": "ro",
+      "label": "restore-old",
+      "responsibility": "restores old config on failure and returns error",
+      "state": "supported",
+      "observation_ids": ["obs-05", "obs-11"]
+    }
+  ],
+  "edges": [
+    {
+      "id": "nc-idx",
+      "from": "nc",
+      "to": "idx",
+      "verb": "validates via",
+      "state": "supported",
+      "observation_ids": ["obs-02"]
+    },
+    {
+      "id": "idx-ho",
+      "from": "idx",
+      "to": "ho",
+      "verb": "on success triggers",
+      "state": "inferred",
+      "observation_ids": ["obs-03"]
+    },
+    {
+      "id": "ho-rna",
+      "from": "ho",
+      "to": "rna",
+      "verb": "decodes and runs",
+      "state": "supported",
+      "observation_ids": ["obs-04"]
+    },
+    {
+      "id": "rna-ocr",
+      "from": "rna",
+      "to": "ocr",
+      "verb": "replaces after success",
+      "state": "inferred",
+      "observation_ids": ["obs-07"]
+    },
+    {
+      "id": "rna-ro",
+      "from": "rna",
+      "to": "ro",
+      "verb": "on failure triggers",
+      "state": "supported",
+      "observation_ids": ["obs-05", "obs-08"]
+    },
+    {
+      "id": "idx-ro",
+      "from": "idx",
+      "to": "ro",
+      "verb": "on failure triggers",
+      "state": "supported",
+      "observation_ids": ["obs-02"]
+    }
+  ],
+  "question_overlay": {
+    "summary": "Caddy preserves the old configuration until the new applications are fully started. The handoff process first validates and indexes the new config (indexing), then decodes and runs it (handoff). If indexing or running the new applications fails, the old config is restored and remains active. Handoff can fail during indexing, during application provisioning/start, or during the finishSettingUp step after start.",
+    "node_ids": ["nc", "idx", "ho", "rna", "ocr", "ro"],
+    "edge_ids": ["nc-idx", "idx-ho", "ho-rna", "rna-ocr", "rna-ro", "idx-ro"],
+    "unknowns": ["whether there is a timeout for application startup", "whether partial failures of individual apps are handled beyond stopping already-started ones"]
+  }
+}
