@@ -1,8 +1,14 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -55,6 +61,11 @@ type ReportData struct {
 	// replayed canonical Mechanisms. Raw artifacts remain available for replay
 	// and provenance, but default onboarding renders this narrower projection.
 	UserMechanisms []UserMechanism `json:"user_mechanisms,omitempty"`
+	// UserTopics exposes locally grounded questions that did not pass the
+	// unchanged Mechanism publication gate. Topics contain exact starting
+	// symbols and a bounded explanation of missing proof, never an answer,
+	// ordered steps, an effect, or a claimed path.
+	UserTopics []UserTopic `json:"user_topics,omitempty"`
 	// RepositoryThesis is a presentation-only overview assembled exclusively
 	// from bounded documented purpose and already validated report navigation
 	// targets. It does not participate in semantic identity or evidence.
@@ -114,6 +125,100 @@ type ReportData struct {
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// UserTopic is a presentation-only projection of one rejected-but-grounded
+// fresh-repository candidate. Its deliberately narrow shape prevents a topic
+// from being confused with a published Mechanism.
+type UserTopic struct {
+	CandidateID     string            `json:"candidate_id"`
+	Title           string            `json:"title"`
+	Question        string            `json:"question"`
+	StartingSymbols []UserTopicSymbol `json:"starting_symbols"`
+	Uncertainty     string            `json:"uncertainty"`
+}
+
+// UserTopicSymbol is one exact repository-owned place from which a reader can
+// continue through the existing authorized source navigation.
+type UserTopicSymbol struct {
+	Path   string `json:"path"`
+	Symbol string `json:"symbol"`
+	Line   int    `json:"line,omitempty"`
+	Column int    `json:"column,omitempty"`
+}
+
+const (
+	freshRepoDemoStatusFileForTopics     = "fresh_repo_demo_status.json"
+	freshRepoDemoCandidatesFileForTopics = "fresh_repo_candidates.json"
+	freshRepoOpportunityFileForTopics    = "fresh_repo_opportunity_attempt.json"
+
+	maxUserTopicArtifactBytes         = 1 << 20
+	maxUserTopicOpportunityCandidates = 20
+	maxUserTopics                     = 3
+	maxUserTopicSymbols               = 4
+	maxUserTopicAnchors               = 8
+	maxUserTopicReasons               = 8
+	maxUserTopicIDBytes               = 256
+	maxUserTopicTitleBytes            = 240
+	maxUserTopicQuestionBytes         = 800
+	maxUserTopicPathBytes             = 4096
+	maxUserTopicSymbolBytes           = 512
+	maxUserTopicReasonBytes           = 128
+)
+
+type userTopicOpportunityArtifact struct {
+	ValidationState    string `json:"validation_state"`
+	NormalizedProposal struct {
+		Candidates []struct {
+			ID               string `json:"id"`
+			Title            string `json:"title"`
+			QuestionAnswered string `json:"question_answered"`
+		} `json:"candidates"`
+	} `json:"normalized_proposal"`
+}
+
+type userTopicEligibility struct {
+	Status          string   `json:"status"`
+	Reasons         []string `json:"reasons"`
+	DistinctSymbols []string `json:"distinct_symbols"`
+}
+
+type userTopicCandidatesArtifact struct {
+	Selected []struct {
+		CandidateID string `json:"candidate_id"`
+		Question    string `json:"question"`
+		Primary     *struct {
+			Status      string                `json:"status"`
+			RootAnchors []userTopicRootAnchor `json:"root_anchors"`
+			Eligibility userTopicEligibility  `json:"eligibility"`
+			AnchorFacts []userTopicAnchorFact `json:"anchor_facts"`
+		} `json:"primary_path"`
+	} `json:"selected"`
+}
+
+type userTopicRootAnchor struct {
+	OriginFactID string `json:"origin_fact_id"`
+	Path         string `json:"path"`
+	Symbol       string `json:"symbol"`
+}
+
+type userTopicAnchorFact struct {
+	ID     string `json:"id"`
+	Source *struct {
+		Path            string `json:"path"`
+		StartLine       int    `json:"start_line"`
+		EnclosingSymbol string `json:"enclosing_symbol"`
+	} `json:"source"`
+}
+
+type userTopicStatusArtifact struct {
+	Attempts []struct {
+		CandidateID        string                `json:"candidate_id"`
+		Question           string                `json:"question"`
+		State              string                `json:"state"`
+		FailureStage       string                `json:"failure_stage"`
+		PrimaryEligibility *userTopicEligibility `json:"primary_eligibility"`
+	} `json:"attempts"`
 }
 
 // SemanticCoverageSummary keeps the publication funnel visible beside a
@@ -389,6 +494,17 @@ func findBestFlow(flows []FlowData) string {
 func enrich(data *ReportData) {
 	data.FormatVersion = CurrentFormatVersion
 	data.FlowCount = len(data.Flows)
+	if topics, warning := projectFreshRepoTopics(data); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	} else {
+		data.UserTopics = topics
+		for _, topic := range topics {
+			for _, location := range topic.StartingSymbols {
+				data.OpenablePaths = appendUniqueString(data.OpenablePaths, location.Path)
+			}
+		}
+		sort.Strings(data.OpenablePaths)
+	}
 	acceptedDirections := 0
 	rejectedDirections := 0
 	flowTypes := make(map[string]string, len(data.CandidateDirections))
@@ -424,6 +540,292 @@ func enrich(data *ReportData) {
 		}
 		refreshProductCounts(data)
 	}
+}
+
+func projectFreshRepoTopics(data *ReportData) ([]UserTopic, string) {
+	if data == nil || data.ArtifactsDir == "" {
+		return nil, ""
+	}
+
+	var opportunity userTopicOpportunityArtifact
+	var candidates userTopicCandidatesArtifact
+	var status userTopicStatusArtifact
+	for _, input := range []struct {
+		name   string
+		target any
+	}{
+		{freshRepoOpportunityFileForTopics, &opportunity},
+		{freshRepoDemoCandidatesFileForTopics, &candidates},
+		{freshRepoDemoStatusFileForTopics, &status},
+	} {
+		present, err := readBoundedUserTopicArtifact(
+			filepath.Join(data.ArtifactsDir, input.name),
+			input.target,
+		)
+		if err != nil {
+			return nil, fmt.Sprintf("topic shelf unavailable: %v", err)
+		}
+		if !present {
+			return nil, ""
+		}
+	}
+
+	if opportunity.ValidationState != "accepted" ||
+		len(opportunity.NormalizedProposal.Candidates) == 0 ||
+		len(opportunity.NormalizedProposal.Candidates) > maxUserTopicOpportunityCandidates ||
+		len(candidates.Selected) == 0 || len(candidates.Selected) > maxUserTopics ||
+		len(status.Attempts) == 0 || len(status.Attempts) > maxUserTopics ||
+		len(candidates.Selected) != len(status.Attempts) {
+		return nil, "topic shelf unavailable: saved candidate collections are outside the projection contract"
+	}
+
+	opportunityByID := make(map[string]struct {
+		Title    string
+		Question string
+	}, len(opportunity.NormalizedProposal.Candidates))
+	for _, candidate := range opportunity.NormalizedProposal.Candidates {
+		if !boundedUserTopicText(candidate.ID, maxUserTopicIDBytes) ||
+			!boundedUserTopicText(candidate.Title, maxUserTopicTitleBytes) ||
+			!boundedUserTopicText(candidate.QuestionAnswered, maxUserTopicQuestionBytes) {
+			return nil, "topic shelf unavailable: opportunity metadata is invalid"
+		}
+		if _, exists := opportunityByID[candidate.ID]; exists {
+			return nil, "topic shelf unavailable: opportunity candidate IDs are not unique"
+		}
+		opportunityByID[candidate.ID] = struct {
+			Title    string
+			Question string
+		}{Title: candidate.Title, Question: candidate.QuestionAnswered}
+	}
+
+	selectedByID := make(map[string]int, len(candidates.Selected))
+	for index, candidate := range candidates.Selected {
+		if !boundedUserTopicText(candidate.CandidateID, maxUserTopicIDBytes) {
+			return nil, "topic shelf unavailable: selected candidate ID is invalid"
+		}
+		if _, exists := selectedByID[candidate.CandidateID]; exists {
+			return nil, "topic shelf unavailable: selected candidate IDs are not unique"
+		}
+		selectedByID[candidate.CandidateID] = index
+	}
+
+	topics := make([]UserTopic, 0, min(len(status.Attempts), maxUserTopics))
+	seenAttempts := make(map[string]struct{}, len(status.Attempts))
+	for _, attempt := range status.Attempts {
+		if !boundedUserTopicText(attempt.CandidateID, maxUserTopicIDBytes) {
+			return nil, "topic shelf unavailable: attempt candidate ID is invalid"
+		}
+		if _, exists := seenAttempts[attempt.CandidateID]; exists {
+			return nil, "topic shelf unavailable: attempt candidate IDs are not unique"
+		}
+		seenAttempts[attempt.CandidateID] = struct{}{}
+
+		opportunityCandidate, exists := opportunityByID[attempt.CandidateID]
+		selectedIndex, selected := selectedByID[attempt.CandidateID]
+		if !exists || !selected {
+			return nil, "topic shelf unavailable: saved candidate IDs do not join uniquely"
+		}
+		selectedCandidate := candidates.Selected[selectedIndex]
+		if selectedCandidate.Primary == nil ||
+			selectedCandidate.Question != opportunityCandidate.Question ||
+			attempt.Question != opportunityCandidate.Question {
+			return nil, "topic shelf unavailable: saved candidate questions do not agree"
+		}
+
+		if attempt.State != "insufficient_primary_evidence" {
+			continue
+		}
+		if attempt.FailureStage != "eligibility" ||
+			attempt.PrimaryEligibility == nil ||
+			selectedCandidate.Primary.Status != "insufficient_primary_evidence" ||
+			!equalUserTopicEligibility(selectedCandidate.Primary.Eligibility, *attempt.PrimaryEligibility) {
+			return nil, "topic shelf unavailable: rejected candidate eligibility does not agree"
+		}
+
+		uncertainty, ok := userTopicUncertainty(attempt.PrimaryEligibility.Reasons)
+		if !ok {
+			return nil, "topic shelf unavailable: rejected candidate reason is unsupported"
+		}
+		startingSymbols, ok := projectUserTopicSymbols(selectedCandidate.Primary)
+		if !ok {
+			return nil, "topic shelf unavailable: rejected candidate symbols are invalid"
+		}
+		topics = append(topics, UserTopic{
+			CandidateID:     attempt.CandidateID,
+			Title:           opportunityCandidate.Title,
+			Question:        opportunityCandidate.Question,
+			StartingSymbols: startingSymbols,
+			Uncertainty:     uncertainty,
+		})
+	}
+	if len(topics) == 0 {
+		return nil, ""
+	}
+	return topics, ""
+}
+
+func readBoundedUserTopicArtifact(filePath string, target any) (bool, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%s: %w", filepath.Base(filePath), err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", filepath.Base(filePath), err)
+	}
+	if info.Size() <= 0 || info.Size() > maxUserTopicArtifactBytes {
+		return false, fmt.Errorf("%s exceeds the byte budget", filepath.Base(filePath))
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxUserTopicArtifactBytes+1))
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", filepath.Base(filePath), err)
+	}
+	if len(raw) > maxUserTopicArtifactBytes {
+		return false, fmt.Errorf("%s exceeds the byte budget", filepath.Base(filePath))
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return false, fmt.Errorf("%s is invalid JSON", filepath.Base(filePath))
+	}
+	return true, nil
+}
+
+func projectUserTopicSymbols(
+	primary *struct {
+		Status      string                `json:"status"`
+		RootAnchors []userTopicRootAnchor `json:"root_anchors"`
+		Eligibility userTopicEligibility  `json:"eligibility"`
+		AnchorFacts []userTopicAnchorFact `json:"anchor_facts"`
+	},
+) ([]UserTopicSymbol, bool) {
+	if primary == nil ||
+		len(primary.Eligibility.DistinctSymbols) == 0 ||
+		len(primary.Eligibility.DistinctSymbols) > maxUserTopicSymbols ||
+		len(primary.RootAnchors) == 0 || len(primary.RootAnchors) > maxUserTopicAnchors ||
+		len(primary.AnchorFacts) == 0 || len(primary.AnchorFacts) > maxUserTopicAnchors {
+		return nil, false
+	}
+	factsByID := make(map[string]userTopicAnchorFact, len(primary.AnchorFacts))
+	for _, fact := range primary.AnchorFacts {
+		if fact.Source == nil || !boundedUserTopicText(fact.ID, maxUserTopicIDBytes) {
+			return nil, false
+		}
+		if _, exists := factsByID[fact.ID]; exists {
+			return nil, false
+		}
+		factsByID[fact.ID] = fact
+	}
+	anchorsBySymbol := make(map[string]userTopicRootAnchor, len(primary.RootAnchors))
+	for _, anchor := range primary.RootAnchors {
+		if !boundedUserTopicText(anchor.OriginFactID, maxUserTopicIDBytes) ||
+			!validUserTopicPath(anchor.Path) ||
+			!boundedUserTopicText(anchor.Symbol, maxUserTopicSymbolBytes) {
+			return nil, false
+		}
+		key := anchor.Path + "\x00" + anchor.Symbol
+		if _, exists := anchorsBySymbol[key]; exists {
+			return nil, false
+		}
+		anchorsBySymbol[key] = anchor
+	}
+
+	result := make([]UserTopicSymbol, 0, min(len(primary.Eligibility.DistinctSymbols), maxUserTopicSymbols))
+	seen := make(map[string]struct{}, len(primary.Eligibility.DistinctSymbols))
+	for _, key := range primary.Eligibility.DistinctSymbols {
+		if len(key) == 0 || len(key) > maxUserTopicPathBytes+maxUserTopicSymbolBytes+1 {
+			return nil, false
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return nil, false
+		}
+		seen[key] = struct{}{}
+		sourcePath, symbol, found := strings.Cut(key, "\x00")
+		if !found || !validUserTopicPath(sourcePath) ||
+			!boundedUserTopicText(symbol, maxUserTopicSymbolBytes) {
+			return nil, false
+		}
+		anchor, exists := anchorsBySymbol[key]
+		if !exists {
+			return nil, false
+		}
+		fact, exists := factsByID[anchor.OriginFactID]
+		if !exists || fact.Source.Path != sourcePath ||
+			fact.Source.EnclosingSymbol != symbol || fact.Source.StartLine <= 0 {
+			return nil, false
+		}
+		result = append(result, UserTopicSymbol{
+			Path: sourcePath, Symbol: symbol, Line: fact.Source.StartLine,
+		})
+	}
+	return result, len(result) > 0
+}
+
+func equalUserTopicEligibility(left, right userTopicEligibility) bool {
+	return left.Status == right.Status &&
+		equalUserTopicStrings(left.Reasons, right.Reasons) &&
+		equalUserTopicStrings(left.DistinctSymbols, right.DistinctSymbols)
+}
+
+func equalUserTopicStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func userTopicUncertainty(reasons []string) (string, bool) {
+	if len(reasons) == 0 || len(reasons) > maxUserTopicReasons {
+		return "", false
+	}
+	messages := make([]string, 0, len(reasons))
+	seen := make(map[string]struct{}, len(reasons))
+	for _, reason := range reasons {
+		if !boundedUserTopicText(reason, maxUserTopicReasonBytes) {
+			return "", false
+		}
+		if _, duplicate := seen[reason]; duplicate {
+			return "", false
+		}
+		seen[reason] = struct{}{}
+		switch reason {
+		case "observable_effect_fact_missing":
+			messages = append(messages, "The observable result is not yet supported by exact local evidence.")
+		case "fewer_than_two_exact_symbols":
+			messages = append(messages, "Only one exact starting symbol is available, so no ordered mechanism is claimed.")
+		case "bounded_static_analysis_limit":
+			messages = append(messages, "The local evidence stops before the remaining behavior can be established.")
+		default:
+			return "", false
+		}
+	}
+	return strings.Join(messages, " "), true
+}
+
+func boundedUserTopicText(value string, limit int) bool {
+	return len(value) > 0 && len(value) <= limit && strings.TrimSpace(value) == value
+}
+
+func validUserTopicPath(value string) bool {
+	if !boundedUserTopicText(value, maxUserTopicPathBytes) ||
+		path.IsAbs(value) || path.Clean(value) != value ||
+		value == "." || value == ".." || strings.HasPrefix(value, "../") ||
+		strings.Contains(value, `\`) {
+		return false
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func refreshProductCounts(data *ReportData) {

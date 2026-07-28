@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -155,6 +156,79 @@ func TestEnrich(t *testing.T) {
 	}
 	if data.Flows[0].BundleStatsLabel != "10 source, 3 test, 2 doc" {
 		t.Errorf("flow a stats label = %q", data.Flows[0].BundleStatsLabel)
+	}
+}
+
+func TestMixedTopicShelfRendererIsPrimaryAndLive(t *testing.T) {
+	t.Parallel()
+
+	overviewStart := strings.Index(scriptJS, "function renderOverviewWorkspace()")
+	if overviewStart < 0 {
+		t.Fatal("renderOverviewWorkspace is missing")
+	}
+	overviewScript := scriptJS[overviewStart:]
+	mixedIndex := strings.Index(overviewScript, "if (renderMixedLearningShelf(root)) return;")
+	studyIndex := strings.Index(overviewScript, "if (STUDY_MAP)")
+	if mixedIndex < 0 || studyIndex < 0 || mixedIndex >= studyIndex {
+		t.Fatalf("mixed shelf / Study Map order = %d / %d", mixedIndex, studyIndex)
+	}
+	for _, liveControl := range []string{
+		"card.onclick = function () {\n\t\t\tactiveOverviewTopicID = topic.candidate_id;",
+		"button.onclick = function () { openSourceLocation(location); };",
+		"card.onclick = function () { openUserMechanism(mechanism.artifact_id, 0); };",
+	} {
+		if !strings.Contains(scriptJS, liveControl) {
+			t.Errorf("renderer lacks live control %q", liveControl)
+		}
+	}
+	if !strings.Contains(
+		scriptJS,
+		"if (!mixedShelfAvailable() && DATA.semantic_search && window.RepomapSemanticSearch)",
+	) {
+		t.Error("Search remains in primary navigation while the mixed shelf is present")
+	}
+
+	data := &ReportData{
+		RepoName:      "go.etcd.io/etcd/v3",
+		OpenablePaths: []string{"server/etcdserver/api/v3rpc/quota.go"},
+		StudyMap:      &RepositoryStudyMap{},
+		UserMechanisms: []UserMechanism{{
+			ArtifactID: "semantic-artifact-003a27952d61f4735635a018",
+			Title:      "Snapshot delivery",
+			Question:   "How is a snapshot delivered?",
+			Answer:     "The accepted path opens and sends the snapshot.",
+			Steps: []UserMechanismStep{
+				{Title: "Open", Locations: []UserCodeLocation{{Path: "server/etcdserver/api/v3rpc/quota.go", Line: 10}}},
+				{Title: "Send", Locations: []UserCodeLocation{{Path: "server/etcdserver/api/v3rpc/quota.go", Line: 20}}},
+			},
+			Files: []UserCodeLocation{{Path: "server/etcdserver/api/v3rpc/quota.go", Line: 10}},
+		}},
+		UserTopics: []UserTopic{{
+			CandidateID: "semantic-candidate-7d19808e04b2b7c7e49e02e3",
+			Title:       "Storage Quota Enforcement on Writes",
+			Question:    "How does the etcd server enforce storage quota?",
+			StartingSymbols: []UserTopicSymbol{{
+				Path: "server/etcdserver/api/v3rpc/quota.go", Symbol: "quotaKVServer.Txn", Line: 42,
+			}},
+			Uncertainty: "The observable result is not yet supported by exact local evidence.",
+		}},
+	}
+	html, err := RenderHTML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(html)
+	for _, want := range []string{
+		`"user_topics":[`,
+		`"candidate_id":"semantic-candidate-7d19808e04b2b7c7e49e02e3"`,
+		`"starting_symbols":[`,
+		`"artifact_id":"semantic-artifact-003a27952d61f4735635a018"`,
+		"Pick a path worth following.",
+		"Open exact symbol",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("rendered report lacks %q", want)
+		}
 	}
 }
 

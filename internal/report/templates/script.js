@@ -24,6 +24,7 @@
   var maxTestReferences = 5;
   var DEBUG_MODE = /^(1|true)$/i.test(new URLSearchParams(window.location.search).get('debug') || '');
 	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
+	var USER_TOPICS = Array.isArray(DATA.user_topics) ? DATA.user_topics : [];
 	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
@@ -50,6 +51,7 @@
   var architectureCanvasHost = null;
   var architectureReady = null;
   var architectureAppliedFocus = null;
+	var activeOverviewTopicID = '';
 
   var LABELS = {
     purpose: 'Project purpose · model orientation',
@@ -112,6 +114,19 @@
     }
     return null;
   }
+
+	function userTopicByID(candidateID) {
+		for (var index = 0; index < USER_TOPICS.length; index++) {
+			if (USER_TOPICS[index] && USER_TOPICS[index].candidate_id === candidateID) {
+				return USER_TOPICS[index];
+			}
+		}
+		return null;
+	}
+
+	function mixedShelfAvailable() {
+		return !!(USER_MECHANISMS.length || USER_TOPICS.length);
+	}
 
 	function studyDirectionByID(directionID) {
 		for (var index = 0; index < STUDY_DIRECTIONS.length; index++) {
@@ -3644,11 +3659,11 @@
     return result;
   }
 
-  function renderUserMechanismCard(mechanism) {
+  function renderUserMechanismCard(mechanism, statusLabel) {
     var card = el('button', 'rm-mechanism-card');
     if (mechanismIsPrimary(mechanism)) card.className += ' is-primary';
     card.type = 'button';
-    card.appendChild(txt('span', 'rm-mechanism-card__label', mechanismRoleLabel(mechanism)));
+    card.appendChild(txt('span', 'rm-mechanism-card__label', statusLabel || mechanismRoleLabel(mechanism)));
     card.appendChild(txt('strong', '', mechanismPresentationTitle(mechanism)));
     var titleQuestion = mechanismPresentationTitle(mechanism).replace(/[?.!]+$/, '').toLowerCase();
     var question = String(mechanism.question || '').trim();
@@ -3677,6 +3692,142 @@
     card.onclick = function () { openUserMechanism(mechanism.artifact_id, 0); };
     return card;
   }
+
+	function renderTopicCard(topic) {
+		var card = el('button', 'rm-mechanism-card');
+		card.type = 'button';
+		card.appendChild(txt('span', 'rm-mechanism-card__label', 'Topic · incomplete'));
+		card.appendChild(txt('strong', '', topic.title || topic.question || 'Question worth exploring'));
+		if (topic.question) card.appendChild(txt('p', 'rm-mechanism-card__question', topic.question));
+		var symbols = Array.isArray(topic.starting_symbols) ? topic.starting_symbols.slice(0, 4) : [];
+		if (symbols.length) {
+			var files = el('span', 'rm-mechanism-card__files');
+			symbols.forEach(function (location) {
+				files.appendChild(txt('code', '', String(location.path || '') + ' · ' + String(location.symbol || '')));
+			});
+			card.appendChild(files);
+		}
+		if (topic.uncertainty) {
+			card.appendChild(txt('p', 'rm-mechanism-card__answer', topic.uncertainty));
+		}
+		card.appendChild(txt('span', 'rm-mechanism-card__action', 'Inspect starting points →'));
+		card.onclick = function () {
+			activeOverviewTopicID = topic.candidate_id;
+			renderOverviewWorkspace();
+		};
+		return card;
+	}
+
+	function renderTopicDetail(root, topic) {
+		var back = txt('button', 'rm-secondary-action', '← All paths');
+		back.type = 'button';
+		back.onclick = function () {
+			activeOverviewTopicID = '';
+			renderOverviewWorkspace();
+		};
+		root.appendChild(back);
+
+		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
+		hero.appendChild(txt('div', 'rm-view-kicker', 'Topic · incomplete'));
+		hero.appendChild(txt('h2', '', topic.title || topic.question || 'Question worth exploring'));
+		if (topic.question) hero.appendChild(txt('p', '', topic.question));
+		root.appendChild(hero);
+
+		if (topic.uncertainty) {
+			var uncertainty = el('section', 'rm-workspace-section');
+			uncertainty.appendChild(renderViewHeading(
+				'Current boundary',
+				'Why this is not a mechanism',
+				topic.uncertainty
+			));
+			root.appendChild(uncertainty);
+		}
+
+		var locations = Array.isArray(topic.starting_symbols) ? topic.starting_symbols.slice(0, 4) : [];
+		if (!locations.length) return;
+		var section = el('section', 'rm-workspace-section');
+		section.appendChild(renderViewHeading(
+			'Exact places to start',
+			'Continue in the repository',
+			'These exact symbols are grounded starting points, not an ordered path.'
+		));
+		var grid = el('div', 'rm-read-next-grid');
+		locations.forEach(function (location) {
+			if (!location || !location.path || !location.symbol) return;
+			if (repositoryLocationAvailable(location)) {
+				var button = el('button', 'rm-read-next-target');
+				button.type = 'button';
+				button.appendChild(txt('strong', '', location.symbol));
+				button.appendChild(txt('code', '', formatCodeLocation(location)));
+				button.appendChild(txt('span', '', 'Open exact symbol →'));
+				button.onclick = function () { openSourceLocation(location); };
+				grid.appendChild(button);
+				return;
+			}
+			var exact = el('div', 'rm-read-next-target');
+			exact.appendChild(txt('strong', '', location.symbol));
+			exact.appendChild(txt('code', '', formatCodeLocation(location)));
+			grid.appendChild(exact);
+		});
+		if (grid.children && grid.children.length) {
+			section.appendChild(grid);
+			root.appendChild(section);
+		}
+	}
+
+	function renderMixedLearningShelf(root) {
+		if (!mixedShelfAvailable()) return false;
+		var activeTopic = userTopicByID(activeOverviewTopicID);
+		if (activeTopic) {
+			renderTopicDetail(root, activeTopic);
+			return true;
+		}
+
+		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
+		hero.appendChild(txt('div', 'rm-view-kicker', 'Understand the repository'));
+		hero.appendChild(txt('h2', '', 'Pick a path worth following.'));
+		hero.appendChild(txt(
+			'p',
+			'',
+			'Complete mechanisms explain a source-backed path. Topics are honest starting points when the evidence is useful but the path is not closed yet.'
+		));
+		root.appendChild(hero);
+
+		if (USER_MECHANISMS.length) {
+			var mechanismSection = el('section', 'rm-workspace-section rm-primary-path-section');
+			mechanismSection.appendChild(renderViewHeading(
+				'Complete mechanisms',
+				'Source-backed paths',
+				'Open a complete explanation, then continue to an exact source step.'
+			));
+			var mechanismGrid = el('div', 'rm-mechanism-grid');
+			USER_MECHANISMS.slice(0, 4).forEach(function (mechanism) {
+				var stepCount = mechanismNarrativeItems(mechanism).length;
+				mechanismGrid.appendChild(renderUserMechanismCard(
+					mechanism,
+					'Full mechanism · ' + stepCount + ' source-backed ' + (stepCount === 1 ? 'step' : 'steps')
+				));
+			});
+			mechanismSection.appendChild(mechanismGrid);
+			root.appendChild(mechanismSection);
+		}
+
+		if (USER_TOPICS.length) {
+			var topicSection = el('section', 'rm-workspace-section');
+			topicSection.appendChild(renderViewHeading(
+				'Questions worth exploring',
+				'Grounded starting points',
+				'Each topic shows what is known, where to start, and why no complete path is claimed.'
+			));
+			var topicGrid = el('div', 'rm-mechanism-grid');
+			USER_TOPICS.slice(0, 3).forEach(function (topic) {
+				topicGrid.appendChild(renderTopicCard(topic));
+			});
+			topicSection.appendChild(topicGrid);
+			root.appendChild(topicSection);
+		}
+		return true;
+	}
 
   function repositoryLocationAvailable(location) {
     if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
@@ -4689,6 +4840,7 @@
     var root = document.getElementById('rm-overview');
     if (!root) return;
     root.replaceChildren();
+		if (renderMixedLearningShelf(root)) return;
 		if (STUDY_MAP) {
 			renderStudyMapOverview(root);
 			return;
@@ -5490,6 +5642,7 @@
       commitWorkspaceState(emptyWorkspaceState());
       return;
     }
+		activeOverviewTopicID = '';
     var next = reduceWorkspaceState(workspaceState, {
       type: 'open_mechanism', artifactID: artifactID, stepIndex: stepIndex,
     }, USER_MECHANISMS);
@@ -6290,7 +6443,9 @@
 			} else {
 				addWorkspaceTab('Overview', 'overview');
 				if (USER_MECHANISMS.length) addWorkspaceTab('Mechanisms', 'mechanisms');
-				if (DATA.semantic_search && window.RepomapSemanticSearch) addWorkspaceTab('Search', 'search');
+				if (!mixedShelfAvailable() && DATA.semantic_search && window.RepomapSemanticSearch) {
+					addWorkspaceTab('Search', 'search');
+				}
 				if (userArchitectureAvailable()) addWorkspaceTab('Architecture', 'architecture');
 			}
       if (DEBUG_MODE) addWorkspaceTab('Provenance', 'provenance');

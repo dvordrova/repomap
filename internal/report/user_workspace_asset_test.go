@@ -279,10 +279,29 @@ const returned = api.reduceWorkspaceState({
   sourceLocation: null, mapReturn: { directionID: "study-routing" }, mapTarget: { kind: "component", component_id: "router" },
 }, { type: "return_from_map" }, [mechanism]);
 api.renderOverviewWorkspace();
+const shelfOverviewText = text(roots["rm-overview"]);
+report.user_mechanisms.length = 0;
+const emptyRoots = { "rm-overview": new Element("section") };
+const emptyWindow = {
+  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const emptyDocument = {
+  createElement(tag) { return new Element(tag); },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
+    return emptyRoots[id] || null;
+  },
+  querySelectorAll() { return []; },
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window: emptyWindow, document: emptyDocument, URLSearchParams, Set, Map, AbortController,
+});
+emptyWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
 const card = api.renderStudyDirectionCard(reading, 0);
 process.stdout.write(JSON.stringify({
   route, attachedRoute, invalidRoute, sourceState, closedState, returned,
-  overviewText: text(roots["rm-overview"]), cardText: text(card),
+  shelfOverviewText, emptyShelfOverviewText: text(emptyRoots["rm-overview"]), cardText: text(card),
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "study-map-workspace-test.js")
@@ -327,8 +346,9 @@ process.stdout.write(JSON.stringify({
 			View        string `json:"view"`
 			DirectionID string `json:"directionID"`
 		} `json:"returned"`
-		OverviewText string `json:"overviewText"`
-		CardText     string `json:"cardText"`
+		ShelfOverviewText      string `json:"shelfOverviewText"`
+		EmptyShelfOverviewText string `json:"emptyShelfOverviewText"`
+		CardText               string `json:"cardText"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Study Map workspace smoke: %v\n%s", err, output)
@@ -351,9 +371,26 @@ process.stdout.write(JSON.stringify({
 	if got.Returned.View != "study" || got.Returned.DirectionID != "study-routing" {
 		t.Fatalf("map return = %#v", got.Returned)
 	}
-	for _, token := range []string{"Repository brief", "What to study", "Fixture is an HTTP routing library.", "How should I study request routing?"} {
-		if !strings.Contains(got.OverviewText, token) {
-			t.Errorf("Study Map overview is missing %q: %q", token, got.OverviewText)
+	for _, token := range []string{
+		"Pick a path worth following.",
+		"Full mechanism · 1 source-backed step",
+		"How this code works",
+	} {
+		if !strings.Contains(got.ShelfOverviewText, token) {
+			t.Errorf("mixed shelf is missing %q: %q", token, got.ShelfOverviewText)
+		}
+	}
+	if strings.Contains(got.ShelfOverviewText, "Repository brief") {
+		t.Fatalf("non-empty mixed shelf fell through to Study Map: %q", got.ShelfOverviewText)
+	}
+	for _, token := range []string{
+		"Repository brief",
+		"What to study",
+		"Fixture is an HTTP routing library.",
+		"How should I study request routing?",
+	} {
+		if !strings.Contains(got.EmptyShelfOverviewText, token) {
+			t.Errorf("empty-shelf Study Map fallback is missing %q: %q", token, got.EmptyShelfOverviewText)
 		}
 	}
 	if !strings.Contains(got.CardText, "Explore this direction →") || strings.Contains(got.CardText, "runtime") {
@@ -861,7 +898,12 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode onboarding renderer result: %v\n%s", err, output)
 	}
-	ordered := []string{"Purpose", "Repository shape", "Primary path", "Extension paths", "Read next", "System story", "Explore"}
+	ordered := []string{
+		"Understand the repository",
+		"Pick a path worth following.",
+		"Complete mechanisms",
+		"Source-backed paths",
+	}
 	previous := -1
 	for _, token := range ordered {
 		index := strings.Index(got.OverviewText, token)
@@ -870,8 +912,24 @@ process.stdout.write(JSON.stringify({
 		}
 		previous = index
 	}
-	if got.AreaCards != 3 || got.MechanismCards != 2 {
+	if got.AreaCards != 0 || got.MechanismCards != 2 {
 		t.Fatalf("overview cards = %d areas, %d mechanisms", got.AreaCards, got.MechanismCards)
+	}
+	for _, token := range []string{
+		"How does Fixture handle an input?",
+		"Full mechanism · 3 source-backed steps",
+		"Open code path →",
+	} {
+		if !strings.Contains(got.OverviewText, token) {
+			t.Errorf("mixed shelf is missing %q: %q", token, got.OverviewText)
+		}
+	}
+	for _, obsolete := range []string{
+		"Purpose", "Repository shape", "Primary path", "Extension paths", "Read next", "System story", "Explore",
+	} {
+		if strings.Contains(got.OverviewText, obsolete) {
+			t.Errorf("mixed shelf retained obsolete Overview heading %q: %q", obsolete, got.OverviewText)
+		}
 	}
 	for _, token := range []string{
 		"Main code path", "Fixture receives an input", "Accept the input", "Perform the core work", "Publish the result",
