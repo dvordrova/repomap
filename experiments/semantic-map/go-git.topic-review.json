@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "repository": {
+    "name": "go-git",
+    "revision": "9b81545704e806f3e745a18617e240ce01a1d3b8"
+  },
+  "shelf_response_sha256": "837880944203ee63dc028161d3790de6ee8c6db03ddcb6dbd4c33eea459f5241",
+  "topic_experiment_sha256": "2d1395f5ab01075ea450c3b616ea97067edf6451b7cf383cedc8637fbf8594a7",
+  "topic_reviews": [
+    {
+      "topic_id": "t1",
+      "observation_symbol_ids": [
+        "d0037",
+        "d0047",
+        "d0056",
+        "d0065",
+        "d0074",
+        "d0083"
+      ],
+      "status": "corroborated",
+      "note": "Example-heavy seeds are corroborated by the production clone orchestration.",
+      "verifications": [
+        {
+          "selection_ref": "t1/how",
+          "relation": "supports",
+          "usefulness": "useful",
+          "note": "The trail reaches production clone, fetch/update, checkout, and submodule setup."
+        },
+        {
+          "selection_ref": "t1/change",
+          "relation": "unresolved",
+          "usefulness": "not_useful",
+          "note": "The trail misses the transport client registration seam required by the exact change question."
+        }
+      ]
+    },
+    {
+      "topic_id": "t2",
+      "observation_symbol_ids": [
+        "d0430",
+        "d0438",
+        "d0519",
+        "d0585"
+      ],
+      "status": "corroborated",
+      "note": "Push validation and production push anchors directly ground the concern.",
+      "verifications": [
+        {
+          "selection_ref": "t2/how",
+          "relation": "supports",
+          "usefulness": "useful",
+          "note": "Production push anchors survive, although secondary expansion is test-heavy."
+        }
+      ]
+    },
+    {
+      "topic_id": "t3",
+      "observation_symbol_ids": [
+        "d0342",
+        "d0353",
+        "d0515"
+      ],
+      "status": "unknown",
+      "note": "No selected trail or Remote.Fetch integration anchor establishes the full fetch flow.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t4",
+      "observation_symbol_ids": [
+        "d0172",
+        "d0310",
+        "d0406",
+        "d0561",
+        "d0627"
+      ],
+      "status": "corroborated",
+      "note": "Worktree status entrypoints and diff/ignore helpers are directly observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t5",
+      "observation_symbol_ids": [
+        "d0127",
+        "d0478",
+        "d0549",
+        "d0615"
+      ],
+      "status": "corroborated",
+      "note": "Commit, HEAD update, object construction, and signature anchors are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t6",
+      "observation_symbol_ids": [
+        "d0050",
+        "d0193",
+        "d0307",
+        "d0489"
+      ],
+      "status": "corroborated",
+      "note": "Reference expansion, storage, and iteration anchors are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t7",
+      "observation_symbol_ids": [
+        "d0227",
+        "d0298",
+        "d0427",
+        "d0595",
+        "d0613"
+      ],
+      "status": "corroborated",
+      "note": "Filesystem and memory object-storage anchors are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t8",
+      "observation_symbol_ids": [
+        "d0243",
+        "d0403",
+        "d0517",
+        "d0577"
+      ],
+      "status": "corroborated",
+      "note": "Pack scanner, lookup, and object retrieval anchors are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t9",
+      "observation_symbol_ids": [
+        "d0503",
+        "d0510",
+        "d0522",
+        "d0249"
+      ],
+      "status": "corroborated",
+      "note": "Multiple transport handshakes and capability negotiation are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t10",
+      "observation_symbol_ids": [
+        "d0175",
+        "d0224",
+        "d0264",
+        "d0445",
+        "d0277"
+      ],
+      "status": "corroborated",
+      "note": "Configuration read, load, path, and merge anchors are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t11",
+      "observation_symbol_ids": [
+        "d0278",
+        "d0374",
+        "d0462",
+        "d0537",
+        "d0603"
+      ],
+      "status": "corroborated",
+      "note": "Submodule initialization, status, repository, and remote anchors are observed.",
+      "verifications": []
+    },
+    {
+      "topic_id": "t12",
+      "observation_symbol_ids": [
+        "d0010",
+        "d0214",
+        "d0326",
+        "d0414",
+        "d0499",
+        "d0567"
+      ],
+      "status": "corroborated",
+      "note": "Public blame and line-propagation helpers are observed.",
+      "verifications": []
+    }
+  ]
+}
