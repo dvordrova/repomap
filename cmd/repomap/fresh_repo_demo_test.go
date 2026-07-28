@@ -1142,3 +1142,159 @@ func TestFreshPreferredArtifactID(t *testing.T) {
 		t.Fatalf("preferred artifact = %q", got)
 	}
 }
+
+func TestFreshRejectedCandidatesProjectAsBoundedTopics(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{
+		"allowed_paths":[
+			"server/etcdserver/api/v3rpc/quota.go",
+			"server/etcdmain/etcd.go",
+			"server/etcdserver/api/rafthttp/snapshot_sender.go"
+		]
+	}`)
+
+	type fixture struct {
+		id       string
+		title    string
+		question string
+		reasons  []string
+		symbols  []string
+		lines    []int
+	}
+	fixtures := []fixture{
+		{
+			id:       "semantic-candidate-7d19808e04b2b7c7e49e02e3",
+			title:    "Storage Quota Enforcement on Writes",
+			question: "How does the etcd server enforce storage quota on key-value put and transaction requests?",
+			reasons:  []string{"observable_effect_fact_missing", "bounded_static_analysis_limit"},
+			symbols: []string{
+				"server/etcdserver/api/v3rpc/quota.go\x00quotaKVServer.Txn",
+				"server/etcdserver/api/v3rpc/quota.go\x00quotaLeaseServer.LeaseGrant",
+			},
+			lines: []int{42, 79},
+		},
+		{
+			id:       "semantic-candidate-63047fbc9907baa6339e9ff0",
+			title:    "Server Startup and Initialization",
+			question: "How does the etcd server start and become ready to serve client requests?",
+			reasons:  []string{"fewer_than_two_exact_symbols"},
+			symbols:  []string{"server/etcdmain/etcd.go\x00startEtcdOrProxyV2"},
+			lines:    []int{43},
+		},
+		{
+			id:       "semantic-candidate-99f7e8e18fa7bbba005bcb55",
+			title:    "Snapshot Transmission to Followers",
+			question: "How does the etcd server transmit a Raft snapshot to a slow follower?",
+			reasons: []string{
+				"observable_effect_fact_missing",
+				"fewer_than_two_exact_symbols",
+				"bounded_static_analysis_limit",
+			},
+			symbols: []string{"server/etcdserver/api/rafthttp/snapshot_sender.go\x00snapshotSender.send"},
+			lines:   []int{67},
+		},
+	}
+
+	opportunity := freshRepoOpportunityAttemptArtifact{ValidationState: "accepted"}
+	candidates := freshRepoCandidatesArtifact{}
+	status := freshRepoDemoStatus{}
+	for _, fixture := range fixtures {
+		opportunity.NormalizedProposal.Candidates = append(
+			opportunity.NormalizedProposal.Candidates,
+			semanticdiscovery.OpportunityCandidate{
+				ID: fixture.id, Title: fixture.title, QuestionAnswered: fixture.question,
+			},
+		)
+		primary := &freshPrimaryProbePlan{
+			Status: freshPrimaryPlanInsufficient,
+			Eligibility: freshPrimaryEligibility{
+				Status: freshPrimaryPlanInsufficient, Reasons: fixture.reasons,
+				DistinctSymbols: fixture.symbols,
+			},
+		}
+		for index, joined := range fixture.symbols {
+			sourcePath, symbol, found := strings.Cut(joined, "\x00")
+			if !found {
+				t.Fatalf("invalid fixture symbol %q", joined)
+			}
+			factID := fmt.Sprintf("%s-anchor-%d", fixture.id, index)
+			primary.RootAnchors = append(primary.RootAnchors, freshPrimaryAnchor{
+				OriginFactID: factID, Path: sourcePath, Symbol: symbol,
+			})
+			primary.AnchorFacts = append(primary.AnchorFacts, semanticdiscovery.Fact{
+				ID: factID,
+				Source: &semanticdiscovery.FactSource{
+					Path: sourcePath, StartLine: fixture.lines[index], EndLine: fixture.lines[index] + 3,
+					EnclosingSymbol: symbol,
+				},
+			})
+		}
+		candidates.Selected = append(candidates.Selected, freshRepoCandidatePlan{
+			CandidateID: fixture.id, Question: fixture.question, Primary: primary,
+		})
+		eligibility := primary.Eligibility
+		status.Attempts = append(status.Attempts, freshRepoCandidateAttempt{
+			CandidateID: fixture.id, Question: fixture.question,
+			State: "insufficient_primary_evidence", FailureStage: "eligibility",
+			PrimaryEligibility: &eligibility,
+		})
+	}
+	writeFreshTopicFixtureJSON(t, runDir, freshRepoOpportunityFile, opportunity)
+	writeFreshTopicFixtureJSON(t, runDir, freshRepoDemoCandidatesFile, candidates)
+	writeFreshTopicFixtureJSON(t, runDir, freshRepoDemoStatusFile, status)
+
+	data, err := report.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.UserTopics) != 3 {
+		t.Fatalf("topics = %#v, want exactly three", data.UserTopics)
+	}
+	wantSymbols := [][]string{
+		{"quotaKVServer.Txn", "quotaLeaseServer.LeaseGrant"},
+		{"startEtcdOrProxyV2"},
+		{"snapshotSender.send"},
+	}
+	for index, topic := range data.UserTopics {
+		if topic.CandidateID != fixtures[index].id ||
+			topic.Title != fixtures[index].title ||
+			topic.Question != fixtures[index].question {
+			t.Errorf("topic %d = %#v, want fixture %#v", index, topic, fixtures[index])
+		}
+		if len(topic.StartingSymbols) != len(wantSymbols[index]) {
+			t.Fatalf("topic %d symbols = %#v", index, topic.StartingSymbols)
+		}
+		for symbolIndex, location := range topic.StartingSymbols {
+			if location.Symbol != wantSymbols[index][symbolIndex] ||
+				location.Line <= 0 || filepath.IsAbs(location.Path) {
+				t.Errorf("topic %d location %d = %#v", index, symbolIndex, location)
+			}
+		}
+		if strings.Contains(topic.Uncertainty, "bounded_static_analysis") ||
+			strings.Contains(strings.ToLower(topic.Uncertainty), "bounded static analysis") {
+			t.Errorf("topic %d leaked internal rejection vocabulary: %q", index, topic.Uncertainty)
+		}
+	}
+	encoded, err := json.Marshal(data.UserTopics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"answer"`, `"steps"`, `"effect"`, `"order"`} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Errorf("topic JSON contains mechanism claim field %s: %s", forbidden, encoded)
+		}
+	}
+}
+
+func writeFreshTopicFixtureJSON(t *testing.T, runDir, name string, value any) {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, name), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
