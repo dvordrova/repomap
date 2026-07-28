@@ -47,6 +47,19 @@ Rules:
 - Produce 3 to 8 nodes and 2 to 12 edges.
 - Use only supplied observation IDs. Every node and edge must cite at least one.
 - Every edge endpoint must name a returned node.
+- `supported` means the complete node responsibility or edge relation is a
+  close restatement of one or more `extracted` observations. Merely citing an
+  observation is not support.
+- Use `inferred` when a node groups source subjects into a conceptual
+  responsibility, an edge connects facts from separate observations, or any
+  cited observation is `inferred`. Do not promote an inferred input to
+  `supported`.
+- Use `unknown` only when the supplied observations leave the item unresolved;
+  check all observations before declaring a gap.
+- Do not add architectural roles, atomicity or concurrency guarantees, or
+  deterministic ordering unless an observation states them. Distinguish
+  aborting a candidate while current state remains unchanged from reverting
+  state that was already changed.
 - Keep labels under 60 characters and responsibilities under 240 characters.
 - Edge verbs must be concrete and directional, preferably 2 to 5 words.
 - Never use `package import`, `imports`, or a generic dependency graph as an

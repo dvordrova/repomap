@@ -1,0 +1,46 @@
+{
+  "case_id": "caddy-reload-handoff",
+  "repository": {
+    "name": "caddy",
+    "revision": "873fac5fc094fe538d0c477509127bb321d51a32"
+  },
+  "question": "How does Caddy replace a running configuration without discarding the old one before the new applications are ready, and where can the handoff fail?",
+  "source_slices": [
+    {
+      "path": "caddy.go",
+      "start_line": 168,
+      "end_line": 223,
+      "text": "\trawCfgMu.Lock()\n\tdefer rawCfgMu.Unlock()\n\n\tif ifMatchHeader != \"\" {\n\t\t// expect the first and last character to be quotes\n\t\tif len(ifMatchHeader) \u003c 2 || ifMatchHeader[0] != '\"' || ifMatchHeader[len(ifMatchHeader)-1] != '\"' {\n\t\t\treturn APIError{\n\t\t\t\tHTTPStatus: http.StatusBadRequest,\n\t\t\t\tErr:        fmt.Errorf(\"malformed If-Match header; expect quoted string\"),\n\t\t\t}\n\t\t}\n\n\t\t// read out the parts\n\t\tparts := strings.Fields(ifMatchHeader[1 : len(ifMatchHeader)-1])\n\t\tif len(parts) != 2 {\n\t\t\treturn APIError{\n\t\t\t\tHTTPStatus: http.StatusBadRequest,\n\t\t\t\tErr:        fmt.Errorf(\"malformed If-Match header; expect format \\\"\u003cpath\u003e \u003chash\u003e\\\"\"),\n\t\t\t}\n\t\t}\n\n\t\t// get the current hash of the config\n\t\t// at the given path\n\t\thash := etagHasher()\n\t\terr := unsyncedConfigAccess(http.MethodGet, parts[0], nil, hash)\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\n\t\tif hex.EncodeToString(hash.Sum(nil)) != parts[1] {\n\t\t\treturn APIError{\n\t\t\t\tHTTPStatus: http.StatusPreconditionFailed,\n\t\t\t\tErr:        fmt.Errorf(\"If-Match header did not match current config hash\"),\n\t\t\t}\n\t\t}\n\t}\n\n\terr := unsyncedConfigAccess(method, path, input, nil)\n\tif err != nil {\n\t\treturn err\n\t}\n\n\t// the mutation is complete, so encode the entire config as JSON\n\tnewCfg, err := json.Marshal(rawCfg[rawConfigKey])\n\tif err != nil {\n\t\treturn APIError{\n\t\t\tHTTPStatus: http.StatusBadRequest,\n\t\t\tErr:        fmt.Errorf(\"encoding new config: %v\", err),\n\t\t}\n\t}\n\n\t// if nothing changed, no need to do a whole reload unless the client forces it\n\tif !forceReload \u0026\u0026 bytes.Equal(rawCfgJSON, newCfg) {\n\t\tLog().Info(\"config is unchanged\")\n\t\treturn errSameConfig\n\t}\n"
+    },
+    {
+      "path": "caddy.go",
+      "start_line": 225,
+      "end_line": 274,
+      "text": "\t// find any IDs in this config and index them\n\tidx := make(map[string]string)\n\terr = indexConfigObjects(rawCfg[rawConfigKey], \"/\"+rawConfigKey, idx)\n\tif err != nil {\n\t\tif len(rawCfgJSON) \u003e 0 {\n\t\t\tvar oldCfg any\n\t\t\terr2 := json.Unmarshal(rawCfgJSON, \u0026oldCfg)\n\t\t\tif err2 != nil {\n\t\t\t\terr = fmt.Errorf(\"%v; additionally, restoring old config: %v\", err, err2)\n\t\t\t}\n\t\t\trawCfg[rawConfigKey] = oldCfg\n\t\t} else {\n\t\t\trawCfg[rawConfigKey] = nil\n\t\t}\n\t\treturn APIError{\n\t\t\tHTTPStatus: http.StatusBadRequest,\n\t\t\tErr:        fmt.Errorf(\"indexing config: %v\", err),\n\t\t}\n\t}\n\n\t// load this new config; if it fails, we need to revert to\n\t// our old representation of caddy's actual config\n\terr = unsyncedDecodeAndRun(newCfg, true)\n\tif err != nil {\n\t\tif len(rawCfgJSON) \u003e 0 {\n\t\t\t// restore old config state to keep it consistent\n\t\t\t// with what caddy is still running; we need to\n\t\t\t// unmarshal it again because it's likely that\n\t\t\t// pointers deep in our rawCfg map were modified\n\t\t\tvar oldCfg any\n\t\t\terr2 := json.Unmarshal(rawCfgJSON, \u0026oldCfg)\n\t\t\tif err2 != nil {\n\t\t\t\terr = fmt.Errorf(\"%v; additionally, restoring old config: %v\", err, err2)\n\t\t\t}\n\t\t\trawCfg[rawConfigKey] = oldCfg\n\t\t} else {\n\t\t\trawCfg[rawConfigKey] = nil\n\t\t}\n\n\t\treturn fmt.Errorf(\"loading new config: %v\", err)\n\t}\n\n\t// success, so update our stored copy of the encoded\n\t// config to keep it consistent with what caddy is now\n\t// running (storing an encoded copy is not strictly\n\t// necessary, but avoids an extra json.Marshal for\n\t// each config change)\n\trawCfgJSON = newCfg\n\trawCfgIndex = idx\n\n"
+    },
+    {
+      "path": "caddy.go",
+      "start_line": 337,
+      "end_line": 375,
+      "text": "func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {\n\t// remove any @id fields from the JSON, which would cause\n\t// loading to break since the field wouldn't be recognized\n\tstrippedCfgJSON := RemoveMetaFields(cfgJSON)\n\n\tvar newCfg *Config\n\terr := StrictUnmarshalJSON(strippedCfgJSON, \u0026newCfg)\n\tif err != nil {\n\t\treturn err\n\t}\n\n\t// prevent recursive config loads; that is a user error, and\n\t// although frequent config loads should be safe, we cannot\n\t// guarantee that in the presence of third party plugins, nor\n\t// do we want this error to go unnoticed (we assume it was a\n\t// pulled config if we're not allowed to persist it)\n\tif !allowPersist \u0026\u0026\n\t\tnewCfg != nil \u0026\u0026\n\t\tnewCfg.Admin != nil \u0026\u0026\n\t\tnewCfg.Admin.Config != nil \u0026\u0026\n\t\tnewCfg.Admin.Config.LoadRaw != nil \u0026\u0026\n\t\tnewCfg.Admin.Config.LoadDelay \u003c= 0 {\n\t\treturn fmt.Errorf(\"recursive config loading detected: pulled configs cannot pull other configs without positive load_delay\")\n\t}\n\n\t// run the new config and start all its apps\n\tctx, err := run(newCfg, true)\n\tif err != nil {\n\t\treturn err\n\t}\n\n\t// swap old context (including its config) with the new one\n\tcurrentCtxMu.Lock()\n\toldCtx := currentCtx\n\tcurrentCtx = ctx\n\tcurrentCtxMu.Unlock()\n\n\t// Stop, Cleanup each old app\n\tunsyncedStop(oldCtx)\n"
+    },
+    {
+      "path": "caddy.go",
+      "start_line": 419,
+      "end_line": 476,
+      "text": "func run(newCfg *Config, start bool) (Context, error) {\n\tctx, err := provisionContext(newCfg, start)\n\tif err != nil {\n\t\tglobalMetrics.configSuccess.Set(0)\n\t\treturn ctx, err\n\t}\n\n\tif !start {\n\t\treturn ctx, nil\n\t}\n\n\tdefer func() {\n\t\t// if newCfg fails to start completely, clean up the already provisioned modules\n\t\t// partially copied from provisionContext\n\t\tif err != nil {\n\t\t\tglobalMetrics.configSuccess.Set(0)\n\t\t\tctx.cfg.cancelFunc(fmt.Errorf(\"configuration start error: %w\", err))\n\n\t\t\tif currentCtx.cfg != nil {\n\t\t\t\tcertmagic.Default.Storage = currentCtx.cfg.storage\n\t\t\t}\n\t\t}\n\t}()\n\n\t// Start\n\terr = func() error {\n\t\tstarted := make([]string, 0, len(ctx.cfg.apps))\n\t\tfor name, a := range ctx.cfg.apps {\n\t\t\terr := a.Start()\n\t\t\tif err != nil {\n\t\t\t\t// an app failed to start, so we need to stop\n\t\t\t\t// all other apps that were already started\n\t\t\t\tfor _, otherAppName := range started {\n\t\t\t\t\terr2 := ctx.cfg.apps[otherAppName].Stop()\n\t\t\t\t\tif err2 != nil {\n\t\t\t\t\t\terr = fmt.Errorf(\"%v; additionally, aborting app %s: %v\",\n\t\t\t\t\t\t\terr, otherAppName, err2)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\treturn fmt.Errorf(\"%s app module: start: %v\", name, err)\n\t\t\t}\n\t\t\tstarted = append(started, name)\n\t\t}\n\t\treturn nil\n\t}()\n\tif err != nil {\n\t\treturn ctx, err\n\t}\n\tglobalMetrics.configSuccess.Set(1)\n\tglobalMetrics.configSuccessTime.SetToCurrentTime()\n\n\t// TODO: This event is experimental and subject to change.\n\tctx.emitEvent(\"started\", nil)\n\n\t// now that the user's config is running, finish setting up anything else,\n\t// such as remote admin endpoint, config loader, etc.\n\terr = finishSettingUp(ctx, ctx.cfg)\n\treturn ctx, err\n"
+    },
+    {
+      "path": "caddy.go",
+      "start_line": 564,
+      "end_line": 581,
+      "text": "\t// start the admin endpoint (and stop any prior one)\n\tif replaceAdminServer {\n\t\terr = replaceLocalAdminServer(newCfg, ctx)\n\t\tif err != nil {\n\t\t\treturn ctx, fmt.Errorf(\"starting caddy administration endpoint: %v\", err)\n\t\t}\n\t}\n\n\t// Load and Provision each app and their submodules\n\terr = func() error {\n\t\tfor appName := range newCfg.AppsRaw {\n\t\t\tif _, err := ctx.App(appName); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t\treturn nil\n\t}()\n\treturn ctx, err\n"
+    },
+    {
+      "path": "caddy.go",
+      "start_line": 724,
+      "end_line": 742,
+      "text": "func unsyncedStop(ctx Context) {\n\tif ctx.cfg == nil {\n\t\treturn\n\t}\n\n\t// TODO: This event is experimental and subject to change.\n\tctx.emitEvent(\"stopping\", nil)\n\n\t// stop each app\n\tfor name, a := range ctx.cfg.apps {\n\t\terr := a.Stop()\n\t\tif err != nil {\n\t\t\tlog.Printf(\"[ERROR] stop %s: %v\", name, err)\n\t\t}\n\t}\n\n\t// clean up all modules\n\tctx.cfg.cancelFunc(fmt.Errorf(\"stopping apps\"))\n}\n"
+    }
+  ]
+}
