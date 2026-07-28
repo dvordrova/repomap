@@ -871,7 +871,7 @@ func capFreshProposal(
 ) semanticdiscovery.OpportunityProposal {
 	result := semanticdiscovery.OpportunityProposal{Version: proposal.Version}
 	for _, candidate := range proposal.Candidates {
-		if candidate.Kind != semanticdiscovery.ArtifactMechanism || candidate.ProductIntent == nil {
+		if candidate.Kind != semanticdiscovery.ArtifactMechanism {
 			continue
 		}
 		result.Candidates = append(result.Candidates, candidate)
