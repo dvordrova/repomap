@@ -1,0 +1,434 @@
+[
+  {
+    "id": "r1",
+    "path": "beets/plugins.py",
+    "start_line": 372,
+    "end_line": 375,
+    "kind": "assign",
+    "subject": "paths",
+    "object": "[str(Path(p).expanduser().absolute()) for p in beets.config['pluginpath'].as_str_seq(split=False)]"
+  },
+  {
+    "id": "r2",
+    "path": "beets/plugins.py",
+    "start_line": 385,
+    "end_line": 385,
+    "kind": "assign",
+    "subject": "sys.path",
+    "object": "sys.path += paths"
+  },
+  {
+    "id": "r3",
+    "path": "beets/plugins.py",
+    "start_line": 386,
+    "end_line": 386,
+    "kind": "assign",
+    "subject": "plugins",
+    "object": "unique_list(beets.config['plugins'].as_str_seq())"
+  },
+  {
+    "id": "r4",
+    "path": "beets/plugins.py",
+    "start_line": 388,
+    "end_line": 388,
+    "kind": "assign",
+    "subject": "disabled_plugins",
+    "object": "set(beets.config['disabled_plugins'].as_str_seq())"
+  },
+  {
+    "id": "r5",
+    "path": "beets/plugins.py",
+    "start_line": 390,
+    "end_line": 390,
+    "kind": "assign",
+    "subject": "mb_enabled",
+    "object": "beets.config['musicbrainz'].flatten().get('enabled')"
+  },
+  {
+    "id": "r6",
+    "path": "beets/plugins.py",
+    "start_line": 392,
+    "end_line": 396,
+    "kind": "call",
+    "subject": "deprecate_for_user",
+    "object": "log, \"'musicbrainz.enabled' configuration option\", \"'plugins' configuration to explicitly add 'musicbrainz'\""
+  },
+  {
+    "id": "r7",
+    "path": "beets/plugins.py",
+    "start_line": 397,
+    "end_line": 398,
+    "kind": "branch",
+    "subject": "if",
+    "object": "'musicbrainz' not in plugins"
+  },
+  {
+    "id": "r8",
+    "path": "beets/plugins.py",
+    "start_line": 401,
+    "end_line": 401,
+    "kind": "call",
+    "subject": "disabled_plugins.add",
+    "object": "'musicbrainz'"
+  },
+  {
+    "id": "r9",
+    "path": "beets/plugins.py",
+    "start_line": 403,
+    "end_line": 403,
+    "kind": "return",
+    "subject": "return",
+    "object": "[p for p in plugins if p not in disabled_plugins]"
+  },
+  {
+    "id": "r10",
+    "path": "beets/plugins.py",
+    "start_line": 421,
+    "end_line": 421,
+    "kind": "assign",
+    "subject": "namespace",
+    "object": "import_module(f'{PLUGIN_NAMESPACE}.{name}')"
+  },
+  {
+    "id": "r11",
+    "path": "beets/plugins.py",
+    "start_line": 426,
+    "end_line": 438,
+    "kind": "branch",
+    "subject": "if",
+    "object": "inspect.isclass(obj) and issubclass(obj, BeetsPlugin) and (obj != BeetsPlugin) and (not inspect.isabstract(obj)) and (obj.__module__ == namespace.__name__ or obj.__module__.startswith(f'{namespace.__name__}.'))"
+  },
+  {
+    "id": "r12",
+    "path": "beets/plugins.py",
+    "start_line": 438,
+    "end_line": 438,
+    "kind": "return",
+    "subject": "return",
+    "object": "obj()"
+  },
+  {
+    "id": "r13",
+    "path": "beets/plugins.py",
+    "start_line": 441,
+    "end_line": 441,
+    "kind": "call",
+    "subject": "log.warning",
+    "object": "'** error loading plugin {}', name, exc_info=True"
+  },
+  {
+    "id": "r14",
+    "path": "beets/plugins.py",
+    "start_line": 456,
+    "end_line": 461,
+    "kind": "branch",
+    "subject": "if",
+    "object": "not _instances"
+  },
+  {
+    "id": "r15",
+    "path": "beets/plugins.py",
+    "start_line": 457,
+    "end_line": 457,
+    "kind": "assign",
+    "subject": "names",
+    "object": "get_plugin_names()"
+  },
+  {
+    "id": "r16",
+    "path": "beets/plugins.py",
+    "start_line": 459,
+    "end_line": 459,
+    "kind": "call",
+    "subject": "_instances.extend",
+    "object": "filter(None, map(_get_plugin, names))"
+  },
+  {
+    "id": "r17",
+    "path": "beets/plugins.py",
+    "start_line": 465,
+    "end_line": 465,
+    "kind": "return",
+    "subject": "return",
+    "object": "_instances"
+  },
+  {
+    "id": "r18",
+    "path": "beets/plugins.py",
+    "start_line": 475,
+    "end_line": 475,
+    "kind": "assign",
+    "subject": "out",
+    "object": "out += plugin.commands()"
+  },
+  {
+    "id": "r19",
+    "path": "beets/plugins.py",
+    "start_line": 476,
+    "end_line": 476,
+    "kind": "return",
+    "subject": "return",
+    "object": "out"
+  },
+  {
+    "id": "r20",
+    "path": "beets/ui/__init__.py",
+    "start_line": 646,
+    "end_line": 646,
+    "kind": "assign",
+    "subject": "cmd.root_parser",
+    "object": "self"
+  },
+  {
+    "id": "r21",
+    "path": "beets/ui/__init__.py",
+    "start_line": 647,
+    "end_line": 647,
+    "kind": "call",
+    "subject": "self.subcommands.append",
+    "object": "cmd"
+  },
+  {
+    "id": "r22",
+    "path": "beets/ui/__init__.py",
+    "start_line": 707,
+    "end_line": 709,
+    "kind": "loop",
+    "subject": "subcommand",
+    "object": "self.subcommands"
+  },
+  {
+    "id": "r23",
+    "path": "beets/ui/__init__.py",
+    "start_line": 709,
+    "end_line": 709,
+    "kind": "return",
+    "subject": "return",
+    "object": "subcommand"
+  },
+  {
+    "id": "r24",
+    "path": "beets/ui/__init__.py",
+    "start_line": 720,
+    "end_line": 720,
+    "kind": "assign",
+    "subject": "subargs",
+    "object": "['help']"
+  },
+  {
+    "id": "r25",
+    "path": "beets/ui/__init__.py",
+    "start_line": 721,
+    "end_line": 722,
+    "kind": "branch",
+    "subject": "if",
+    "object": "options.version"
+  },
+  {
+    "id": "r26",
+    "path": "beets/ui/__init__.py",
+    "start_line": 723,
+    "end_line": 723,
+    "kind": "return",
+    "subject": "return",
+    "object": "(options, subargs)"
+  },
+  {
+    "id": "r27",
+    "path": "beets/ui/__init__.py",
+    "start_line": 732,
+    "end_line": 732,
+    "kind": "assign",
+    "subject": "args",
+    "object": "['help']"
+  },
+  {
+    "id": "r28",
+    "path": "beets/ui/__init__.py",
+    "start_line": 735,
+    "end_line": 735,
+    "kind": "assign",
+    "subject": "subcommand",
+    "object": "self._subcommand_for_name(cmdname)"
+  },
+  {
+    "id": "r29",
+    "path": "beets/ui/__init__.py",
+    "start_line": 736,
+    "end_line": 737,
+    "kind": "branch",
+    "subject": "if",
+    "object": "not subcommand"
+  },
+  {
+    "id": "r30",
+    "path": "beets/ui/__init__.py",
+    "start_line": 740,
+    "end_line": 740,
+    "kind": "return",
+    "subject": "return",
+    "object": "(subcommand, suboptions, subargs)"
+  },
+  {
+    "id": "r31",
+    "path": "beets/ui/__init__.py",
+    "start_line": 755,
+    "end_line": 755,
+    "kind": "call",
+    "subject": "plugins.load_plugins",
+    "object": "()"
+  },
+  {
+    "id": "r32",
+    "path": "beets/ui/__init__.py",
+    "start_line": 761,
+    "end_line": 761,
+    "kind": "call",
+    "subject": "subcommands.extend",
+    "object": "plugins.commands()"
+  },
+  {
+    "id": "r33",
+    "path": "beets/ui/__init__.py",
+    "start_line": 766,
+    "end_line": 766,
+    "kind": "return",
+    "subject": "return",
+    "object": "(subcommands, lib)"
+  },
+  {
+    "id": "r34",
+    "path": "beets/ui/__init__.py",
+    "start_line": 839,
+    "end_line": 846,
+    "kind": "call",
+    "subject": "parser.add_option",
+    "object": "'-p', '--plugins', dest='plugins', action='callback', callback=parse_csl_callback, help='a comma-separated list of plugins to load'"
+  },
+  {
+    "id": "r35",
+    "path": "beets/ui/__init__.py",
+    "start_line": 869,
+    "end_line": 869,
+    "kind": "assign",
+    "subject": "(options, subargs)",
+    "object": "parser.parse_global_options(args)"
+  },
+  {
+    "id": "r36",
+    "path": "beets/ui/__init__.py",
+    "start_line": 874,
+    "end_line": 874,
+    "kind": "call",
+    "subject": "_bootstrap_logging",
+    "object": "()"
+  },
+  {
+    "id": "r37",
+    "path": "beets/ui/__init__.py",
+    "start_line": 885,
+    "end_line": 891,
+    "kind": "branch",
+    "subject": "if",
+    "object": "'AppData\\\\Local\\\\Microsoft\\\\WindowsApps' in sys.exec_prefix"
+  },
+  {
+    "id": "r38",
+    "path": "beets/ui/__init__.py",
+    "start_line": 896,
+    "end_line": 896,
+    "kind": "assign",
+    "subject": "(subcommands, lib)",
+    "object": "_setup()"
+  },
+  {
+    "id": "r39",
+    "path": "beets/ui/__init__.py",
+    "start_line": 897,
+    "end_line": 897,
+    "kind": "call",
+    "subject": "parser.add_subcommand",
+    "object": "*subcommands"
+  },
+  {
+    "id": "r40",
+    "path": "beets/ui/__init__.py",
+    "start_line": 900,
+    "end_line": 900,
+    "kind": "call",
+    "subject": "subcommand.func",
+    "object": "lib, suboptions, subargs"
+  },
+  {
+    "id": "r41",
+    "path": "beets/ui/__init__.py",
+    "start_line": 903,
+    "end_line": 903,
+    "kind": "call",
+    "subject": "lib._close",
+    "object": "()"
+  },
+  {
+    "id": "r42",
+    "path": "test/rsrc/beetsplug/test.py",
+    "start_line": 8,
+    "end_line": 8,
+    "kind": "assign",
+    "subject": "self.is_test_plugin",
+    "object": "True"
+  },
+  {
+    "id": "r43",
+    "path": "test/rsrc/beetsplug/test.py",
+    "start_line": 11,
+    "end_line": 11,
+    "kind": "assign",
+    "subject": "test",
+    "object": "ui.Subcommand('test')"
+  },
+  {
+    "id": "r44",
+    "path": "test/rsrc/beetsplug/test.py",
+    "start_line": 15,
+    "end_line": 15,
+    "kind": "call",
+    "subject": "test.parser.add_option",
+    "object": "'-o', '--option', dest='my_opt'"
+  },
+  {
+    "id": "r45",
+    "path": "test/rsrc/beetsplug/test.py",
+    "start_line": 19,
+    "end_line": 19,
+    "kind": "return",
+    "subject": "return",
+    "object": "[test, plugin]"
+  },
+  {
+    "id": "r46",
+    "path": "test/ui/test_ui.py",
+    "start_line": 250,
+    "end_line": 250,
+    "kind": "call",
+    "subject": "file.write",
+    "object": "f'pluginpath: {_common.PLUGINPATH}\\n'"
+  },
+  {
+    "id": "r47",
+    "path": "test/ui/test_ui.py",
+    "start_line": 253,
+    "end_line": 253,
+    "kind": "call",
+    "subject": "self.run_command",
+    "object": "'--config', self.cli_config_path, 'plugin'"
+  },
+  {
+    "id": "r48",
+    "path": "test/ui/test_ui.py",
+    "start_line": 257,
+    "end_line": 257,
+    "kind": "call",
+    "subject": "self.unload_plugins",
+    "object": "()"
+  }
+]
