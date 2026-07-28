@@ -128,13 +128,21 @@ func (bundle Bundle) Validate() error {
 		}
 		seen[fact.ID] = struct{}{}
 		for _, reference := range fact.Evidence {
-			if existing, exists := evidenceByID[reference.ID]; exists && existing != reference {
+			if existing, exists := evidenceByID[reference.ID]; exists &&
+				!sameEvidenceNavigation(existing, reference) {
 				return fmt.Errorf("semantic discovery: evidence id %q has conflicting local navigation", reference.ID)
 			}
 			evidenceByID[reference.ID] = reference
 		}
 	}
 	return nil
+}
+
+func sameEvidenceNavigation(left, right EvidenceRef) bool {
+	return left.Kind == right.Kind &&
+		left.Path == right.Path &&
+		left.Line == right.Line &&
+		left.Column == right.Column
 }
 
 // Validate checks that planner-only prose is bounded and cannot carry a

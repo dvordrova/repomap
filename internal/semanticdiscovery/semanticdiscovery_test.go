@@ -17,6 +17,65 @@ const (
 	testGroupValidate = "group-validation"
 )
 
+func TestBundleEvidenceIdentityUsesLocalNavigationNotLabel(t *testing.T) {
+	t.Parallel()
+
+	shared := EvidenceRef{
+		ID: "evidence-shared-surface", Kind: "runtime_surface", Label: "HTTP server",
+		Path: "contrib/raftexample/main.go", Line: 24, Column: 6,
+	}
+	bundle := Bundle{
+		Version:  BundleVersion,
+		RepoName: "sample",
+		Facts: []Fact{
+			{
+				ID: "fact-http-server", Kind: FactSourceSignal,
+				Statement:    "A bounded runtime surface identifies the server.",
+				SourceGroup:  "group-http-server",
+				Capabilities: []Capability{CapabilityStatic},
+				Scope:        FactScopeLocal,
+				Evidence:     []EvidenceRef{shared},
+			},
+			{
+				ID: "fact-raft-route", Kind: FactSourceSignal,
+				Statement:    "A bounded runtime surface identifies a route.",
+				SourceGroup:  "group-raft-route",
+				Capabilities: []Capability{CapabilityStatic},
+				Scope:        FactScopeLocal,
+				Evidence: []EvidenceRef{{
+					ID: shared.ID, Kind: shared.Kind, Label: "Raft stream route",
+					Path: shared.Path, Line: shared.Line, Column: shared.Column,
+				}},
+			},
+		},
+	}
+	if _, _, err := BundleHash(bundle); err != nil {
+		t.Fatalf("BundleHash() rejected contextual labels on shared navigation: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*EvidenceRef)
+	}{
+		{name: "kind", mutate: func(reference *EvidenceRef) { reference.Kind = "flow_step" }},
+		{name: "path", mutate: func(reference *EvidenceRef) { reference.Path = "internal/other.go" }},
+		{name: "line", mutate: func(reference *EvidenceRef) { reference.Line++ }},
+		{name: "column", mutate: func(reference *EvidenceRef) { reference.Column++ }},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			conflicting := cloneJSON(t, bundle)
+			test.mutate(&conflicting.Facts[1].Evidence[0])
+			if _, _, err := BundleHash(conflicting); err == nil ||
+				!strings.Contains(err.Error(), "conflicting local navigation") {
+				t.Fatalf("BundleHash() conflict error = %v", err)
+			}
+		})
+	}
+}
+
 func TestOpportunityNormalizationSelectionAndStrictJSON(t *testing.T) {
 	bundle := semanticTestBundle()
 	base := semanticTestOpportunity(bundle)
