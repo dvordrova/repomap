@@ -18,8 +18,11 @@ import (
 )
 
 const (
-	beetsPythonSelectionRevision = "9acb1ecff6c7ee0a1e83e3b983c94792345712c5"
-	beetsPythonSelectionQuestion = "How does a Beets plugin named in configuration become an executable CLI command?"
+	beetsPythonSelectionRevision      = "9acb1ecff6c7ee0a1e83e3b983c94792345712c5"
+	beetsPythonSelectionQuestion      = "How does a Beets plugin named in configuration become an executable CLI command?"
+	dotenvPythonSelectionRevision     = "36004e0e34be7665ff2b11a8a4005144f76f176d"
+	dotenvPythonSelectionQuestion     = "How do _walk_to_root() and find_dotenv() choose the starting directory and walk upward until they find a .env file or FIFO?"
+	dotenvPythonSelectionArtifactBase = "python-dotenv"
 )
 
 func TestPythonSelectionQueriesRemoveRepositoryAndRelationalFiller(t *testing.T) {
@@ -679,6 +682,51 @@ func TestRecordedBeetsPythonSelection(t *testing.T) {
 	}
 }
 
+func TestRecordedPythonDotenvSelection(t *testing.T) {
+	traceJSON := readBoundedFile(
+		t,
+		dotenvPythonSelectionArtifactBase+".python-selection.json",
+		96<<10,
+	)
+	packetJSON := readBoundedFile(
+		t,
+		dotenvPythonSelectionArtifactBase+".python-auto-source-slices.json",
+		48<<10,
+	)
+	trace := decodeStrict[PythonSourceSelectionTrace](t, traceJSON)
+	packet := decodeStrict[PythonSourceSelectionPacket](t, packetJSON)
+	if got := mustEncodePythonSelection(t, trace); !bytes.Equal(got, traceJSON) {
+		t.Fatal("recorded python-dotenv trace is not canonically encoded")
+	}
+	if got := mustEncodePythonSelection(t, packet); !bytes.Equal(got, packetJSON) {
+		t.Fatal("recorded python-dotenv packet is not canonically encoded")
+	}
+	validatePythonSelectionArtifacts(t, traceJSON, packetJSON)
+	if trace.Repository.Revision != dotenvPythonSelectionRevision ||
+		trace.Question != dotenvPythonSelectionQuestion {
+		t.Fatal("recorded python-dotenv selector input changed")
+	}
+	for _, name := range []string{"_walk_to_root", "find_dotenv"} {
+		assertPythonSelectionName(t, trace, name)
+	}
+	if !pythonSelectionTraceHasNamedCall(trace, "find_dotenv", "_walk_to_root") {
+		t.Fatal("recorded exact calls omit find_dotenv -> _walk_to_root")
+	}
+	if len(packet.SourceSlices) != 2 {
+		t.Fatalf("recorded packet has %d slices, want 2", len(packet.SourceSlices))
+	}
+	packetText := pythonSelectionPacketText(packet)
+	for _, source := range []string{
+		"while last_dir != current_dir",
+		"for dirname in _walk_to_root(path)",
+		"_is_file_or_fifo(check_path)",
+	} {
+		if !strings.Contains(packetText, source) {
+			t.Errorf("packet omits exact source evidence %q", source)
+		}
+	}
+}
+
 func TestPythonSelectorImplementationHasNoBeetsOracle(t *testing.T) {
 	var source []byte
 	for _, name := range []string{"python_source_select.go", "pyright_workspace_symbol.go"} {
@@ -734,6 +782,46 @@ func TestLiveBeetsPythonSelection(t *testing.T) {
 		}
 		if err := os.WriteFile(
 			filepath.Join(outputDir, "beets.python-auto-source-slices.json"),
+			packetJSON,
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLivePythonDotenvSelection(t *testing.T) {
+	repoPath := os.Getenv("REPOMAP_PYTHON_DOTENV_REPO")
+	if repoPath == "" {
+		t.Skip("set REPOMAP_PYTHON_DOTENV_REPO to replay the pinned live selector")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	trace, packet, err := SelectPythonQuestionSources(ctx, PythonSourceSelectionOptions{
+		RepositoryPath:   repoPath,
+		ExpectedRevision: dotenvPythonSelectionRevision,
+		Question:         dotenvPythonSelectionQuestion,
+		PyrightBinary:    os.Getenv("REPOMAP_PYRIGHT_BINARY"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceJSON := mustEncodePythonSelection(t, trace)
+	packetJSON := mustEncodePythonSelection(t, packet)
+	validatePythonSelectionArtifacts(t, traceJSON, packetJSON)
+	if outputDir := os.Getenv("REPOMAP_PYTHON_SELECTION_OUTPUT_DIR"); outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(outputDir, dotenvPythonSelectionArtifactBase+".python-selection.json"),
+			traceJSON,
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(outputDir, dotenvPythonSelectionArtifactBase+".python-auto-source-slices.json"),
 			packetJSON,
 			0o644,
 		); err != nil {
