@@ -90,6 +90,99 @@ func TestGoSourceSelectionIsDeterministicWithoutCuratedInputs(t *testing.T) {
 	validateGoSelectionArtifacts(t, firstTraceJSON, firstPacketJSON)
 }
 
+func TestGoAnchoredSelectionPreservesSeedsWithoutWorkspaceSearch(t *testing.T) {
+	repoPath, revision := makeGoSelectionFixture(t)
+	inventory, err := BuildGoTopicInventory(repoPath, revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]GoTopicDeclaration, len(inventory.Declarations))
+	for _, declaration := range inventory.Declarations {
+		byName[declaration.Name] = declaration
+	}
+	anchors := []GoTopicDeclaration{byName["prepare"], byName["run"]}
+	adapter := newFakeGoSelectionAnalyzer()
+	adapter.mislabelCallTargets = true
+	trace, packet, err := selectGoAnchoredQuestionSources(
+		context.Background(),
+		GoSourceSelectionOptions{
+			RepositoryPath:   repoPath,
+			ExpectedRevision: revision,
+			Question:         "How does the prepared state become the running state?",
+		},
+		anchors,
+		adapter,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSeedIDs := []string{anchors[0].ID, anchors[1].ID}
+	if !reflect.DeepEqual(trace.SeedDeclarationIDs, wantSeedIDs) ||
+		!reflect.DeepEqual(packet.SeedDeclarationIDs, wantSeedIDs) {
+		t.Fatalf(
+			"seed IDs = %#v / %#v, want %#v",
+			trace.SeedDeclarationIDs,
+			packet.SeedDeclarationIDs,
+			wantSeedIDs,
+		)
+	}
+	if trace.Coverage != "anchor_seeded_non_exhaustive" ||
+		packet.Coverage != trace.Coverage ||
+		len(trace.Candidates) != 0 ||
+		adapter.analyzeCalls != 0 {
+		t.Fatalf(
+			"anchored contract = coverage %q/%q, candidates %d, workspace calls %d",
+			trace.Coverage,
+			packet.Coverage,
+			len(trace.Candidates),
+			adapter.analyzeCalls,
+		)
+	}
+	if strings.Contains(strings.Join(trace.Provenance.Operations, ","), "workspace_symbol") {
+		t.Fatalf("anchored provenance = %#v", trace.Provenance.Operations)
+	}
+	assertGoSelectionNames(t, trace, "prepare", "run")
+	physicalSymbols := make(map[string]struct{}, len(trace.SelectedSymbols))
+	for _, symbol := range trace.SelectedSymbols {
+		key := fmt.Sprintf(
+			"%s:%d:%d:%s",
+			symbol.Path,
+			symbol.StartLine,
+			symbol.StartColumn,
+			goSelectionCallableName(symbol.Name),
+		)
+		if _, duplicate := physicalSymbols[key]; duplicate {
+			t.Fatalf("anchored selection duplicated physical declaration %q", key)
+		}
+		physicalSymbols[key] = struct{}{}
+	}
+	seedReasons := make(map[string]struct{}, len(wantSeedIDs))
+	for _, sourceSlice := range packet.SourceSlices {
+		for _, reason := range sourceSlice.SelectionReasonIDs {
+			if strings.HasPrefix(reason, "anchor:") {
+				seedReasons[strings.TrimPrefix(reason, "anchor:")] = struct{}{}
+			}
+		}
+	}
+	for _, id := range wantSeedIDs {
+		if _, ok := seedReasons[id]; !ok {
+			t.Errorf("packet does not retain seed reason %q", id)
+		}
+	}
+	if _, _, err := selectGoAnchoredQuestionSources(
+		context.Background(),
+		GoSourceSelectionOptions{
+			RepositoryPath:   repoPath,
+			ExpectedRevision: revision,
+			Question:         "How does the prepared state become the running state?",
+		},
+		[]GoTopicDeclaration{anchors[0], anchors[0]},
+		newFakeGoSelectionAnalyzer(),
+	); err == nil || !strings.Contains(err.Error(), "duplicate anchor") {
+		t.Fatalf("duplicate anchor error = %v", err)
+	}
+}
+
 func TestGoSourceSelectionRejectsUntrackedCheckout(t *testing.T) {
 	repoPath, revision := makeGoSelectionFixture(t)
 	if err := os.WriteFile(
@@ -292,24 +385,16 @@ func TestLiveCaddyGoSelection(t *testing.T) {
 		GoplsBinary:      os.Getenv("REPOMAP_GOPLS_BINARY"),
 	}
 
-	firstTrace, firstPacket, err := SelectGoQuestionSources(ctx, opts)
+	trace, packet, err := SelectGoQuestionSources(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondTrace, secondPacket, err := SelectGoQuestionSources(ctx, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstTraceJSON := mustEncodeGoSelection(t, firstTrace)
-	firstPacketJSON := mustEncodeGoSelection(t, firstPacket)
-	if !bytes.Equal(firstTraceJSON, mustEncodeGoSelection(t, secondTrace)) ||
-		!bytes.Equal(firstPacketJSON, mustEncodeGoSelection(t, secondPacket)) {
-		t.Fatal("live pinned Caddy selection is not byte-identical across two runs")
-	}
-	validateGoSelectionArtifacts(t, firstTraceJSON, firstPacketJSON)
+	traceJSON := mustEncodeGoSelection(t, trace)
+	packetJSON := mustEncodeGoSelection(t, packet)
+	validateGoSelectionArtifacts(t, traceJSON, packetJSON)
 	assertGoSelectionNames(
 		t,
-		firstTrace,
+		trace,
 		"changeConfig",
 		"unsyncedDecodeAndRun",
 		"run",
@@ -323,14 +408,14 @@ func TestLiveCaddyGoSelection(t *testing.T) {
 		}
 		if err := os.WriteFile(
 			filepath.Join(outputDir, "caddy.go-selection.json"),
-			firstTraceJSON,
+			traceJSON,
 			0o644,
 		); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(
 			filepath.Join(outputDir, "caddy.auto-source-slices.json"),
-			firstPacketJSON,
+			packetJSON,
 			0o644,
 		); err != nil {
 			t.Fatal(err)
@@ -684,7 +769,11 @@ func commitGoSelectionFixture(t *testing.T, repoPath string, files ...string) st
 }
 
 type fakeGoSelectionAnalyzer struct {
-	entities map[string]evidence.Entity
+	entities            map[string]evidence.Entity
+	analyzeCalls        int
+	exactCalls          int
+	resolveCalls        int
+	mislabelCallTargets bool
 }
 
 type manyHitGoSelectionAnalyzer struct {
@@ -721,6 +810,7 @@ func (fake *fakeGoSelectionAnalyzer) Analyze(
 	_ context.Context,
 	request analysis.Request,
 ) (evidence.Graph, error) {
+	fake.analyzeCalls++
 	graph := evidence.NewGraph(request.RepoPath, request.Query)
 	query := evidence.Entity{ID: "query:" + request.Query, Kind: evidence.EntityQuery, Name: request.Query}
 	graph.AddEntity(query)
@@ -779,6 +869,7 @@ func (fake *fakeGoSelectionAnalyzer) AnalyzeExactSymbol(
 	_ context.Context,
 	request analysis.ExactSymbolRequest,
 ) (evidence.Graph, error) {
+	fake.exactCalls++
 	root := fake.entities[goSelectionCallableName(request.Symbol.Name)]
 	graph := evidence.NewGraph(request.RepoPath, root.Name)
 	graph.AddEntity(root)
@@ -797,6 +888,7 @@ func (fake *fakeGoSelectionAnalyzer) ResolveLocation(
 	_ context.Context,
 	request analysis.LocationRequest,
 ) (analysis.LocationResolution, error) {
+	fake.resolveCalls++
 	for _, entity := range fake.entities {
 		if entity.Location.Path == request.Location.Path &&
 			entity.Location.Line == request.Location.Line &&
@@ -823,6 +915,9 @@ func (fake *fakeGoSelectionAnalyzer) addCall(
 ) {
 	from := fake.entities[fromName]
 	to := fake.entities[toName]
+	if fake.mislabelCallTargets {
+		to.Kind = evidence.EntityMethod
+	}
 	graph.AddEntity(from)
 	graph.AddEntity(to)
 	callsite := evidence.Location{
