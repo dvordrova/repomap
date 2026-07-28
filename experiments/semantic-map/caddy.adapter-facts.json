@@ -1,0 +1,434 @@
+[
+  {
+    "id": "r1",
+    "path": "caddy.go",
+    "start_line": 168,
+    "end_line": 168,
+    "kind": "call",
+    "subject": "rawCfgMu.Lock",
+    "object": "()"
+  },
+  {
+    "id": "r2",
+    "path": "caddy.go",
+    "start_line": 169,
+    "end_line": 169,
+    "kind": "defer",
+    "subject": "rawCfgMu.Unlock",
+    "object": "()"
+  },
+  {
+    "id": "r3",
+    "path": "caddy.go",
+    "start_line": 181,
+    "end_line": 181,
+    "kind": "assign",
+    "subject": "parts",
+    "object": "strings.Fields(ifMatchHeader[1 : len(ifMatchHeader)-1])"
+  },
+  {
+    "id": "r4",
+    "path": "caddy.go",
+    "start_line": 191,
+    "end_line": 191,
+    "kind": "assign",
+    "subject": "hash",
+    "object": "etagHasher()"
+  },
+  {
+    "id": "r5",
+    "path": "caddy.go",
+    "start_line": 192,
+    "end_line": 192,
+    "kind": "assign",
+    "subject": "err",
+    "object": "unsyncedConfigAccess(http.MethodGet, parts[0], nil, hash)"
+  },
+  {
+    "id": "r6",
+    "path": "caddy.go",
+    "start_line": 197,
+    "end_line": 197,
+    "kind": "branch",
+    "subject": "if",
+    "object": "hex.EncodeToString(hash.Sum(nil)) != parts[1]"
+  },
+  {
+    "id": "r7",
+    "path": "caddy.go",
+    "start_line": 205,
+    "end_line": 205,
+    "kind": "assign",
+    "subject": "err",
+    "object": "unsyncedConfigAccess(method, path, input, nil)"
+  },
+  {
+    "id": "r8",
+    "path": "caddy.go",
+    "start_line": 211,
+    "end_line": 211,
+    "kind": "assign",
+    "subject": "newCfg, err",
+    "object": "json.Marshal(rawCfg[rawConfigKey])"
+  },
+  {
+    "id": "r9",
+    "path": "caddy.go",
+    "start_line": 221,
+    "end_line": 221,
+    "kind": "call",
+    "subject": "Log().Info",
+    "object": "\"config is unchanged\""
+  },
+  {
+    "id": "r10",
+    "path": "caddy.go",
+    "start_line": 222,
+    "end_line": 222,
+    "kind": "return",
+    "subject": "return",
+    "object": "errSameConfig"
+  },
+  {
+    "id": "r11",
+    "path": "caddy.go",
+    "start_line": 226,
+    "end_line": 226,
+    "kind": "assign",
+    "subject": "idx",
+    "object": "make(map[string]string)"
+  },
+  {
+    "id": "r12",
+    "path": "caddy.go",
+    "start_line": 227,
+    "end_line": 227,
+    "kind": "assign",
+    "subject": "err",
+    "object": "indexConfigObjects(rawCfg[rawConfigKey], \"/\"+rawConfigKey, idx)"
+  },
+  {
+    "id": "r13",
+    "path": "caddy.go",
+    "start_line": 233,
+    "end_line": 233,
+    "kind": "assign",
+    "subject": "err",
+    "object": "fmt.Errorf(\"%v; additionally, restoring old config: %v\", err, err2)"
+  },
+  {
+    "id": "r14",
+    "path": "caddy.go",
+    "start_line": 235,
+    "end_line": 235,
+    "kind": "assign",
+    "subject": "rawCfg[rawConfigKey]",
+    "object": "oldCfg"
+  },
+  {
+    "id": "r15",
+    "path": "caddy.go",
+    "start_line": 247,
+    "end_line": 247,
+    "kind": "assign",
+    "subject": "err",
+    "object": "unsyncedDecodeAndRun(newCfg, true)"
+  },
+  {
+    "id": "r16",
+    "path": "caddy.go",
+    "start_line": 248,
+    "end_line": 248,
+    "kind": "branch",
+    "subject": "if",
+    "object": "err != nil"
+  },
+  {
+    "id": "r17",
+    "path": "caddy.go",
+    "start_line": 257,
+    "end_line": 257,
+    "kind": "assign",
+    "subject": "err",
+    "object": "fmt.Errorf(\"%v; additionally, restoring old config: %v\", err, err2)"
+  },
+  {
+    "id": "r18",
+    "path": "caddy.go",
+    "start_line": 259,
+    "end_line": 259,
+    "kind": "assign",
+    "subject": "rawCfg[rawConfigKey]",
+    "object": "oldCfg"
+  },
+  {
+    "id": "r19",
+    "path": "caddy.go",
+    "start_line": 273,
+    "end_line": 273,
+    "kind": "assign",
+    "subject": "rawCfgIndex",
+    "object": "idx"
+  },
+  {
+    "id": "r20",
+    "path": "caddy.go",
+    "start_line": 340,
+    "end_line": 340,
+    "kind": "assign",
+    "subject": "strippedCfgJSON",
+    "object": "RemoveMetaFields(cfgJSON)"
+  },
+  {
+    "id": "r21",
+    "path": "caddy.go",
+    "start_line": 353,
+    "end_line": 358,
+    "kind": "branch",
+    "subject": "if",
+    "object": "!allowPersist \u0026\u0026 newCfg != nil \u0026\u0026 newCfg.Admin != nil \u0026\u0026 newCfg.Admin.Config != nil \u0026\u0026 newCfg.Admin.Config.LoadRaw != nil \u0026\u0026 newCfg.Admin.Config.LoadDelay \u003c= 0"
+  },
+  {
+    "id": "r22",
+    "path": "caddy.go",
+    "start_line": 363,
+    "end_line": 363,
+    "kind": "assign",
+    "subject": "ctx, err",
+    "object": "run(newCfg, true)"
+  },
+  {
+    "id": "r23",
+    "path": "caddy.go",
+    "start_line": 370,
+    "end_line": 370,
+    "kind": "assign",
+    "subject": "oldCtx",
+    "object": "currentCtx"
+  },
+  {
+    "id": "r24",
+    "path": "caddy.go",
+    "start_line": 371,
+    "end_line": 371,
+    "kind": "assign",
+    "subject": "currentCtx",
+    "object": "ctx"
+  },
+  {
+    "id": "r25",
+    "path": "caddy.go",
+    "start_line": 375,
+    "end_line": 375,
+    "kind": "call",
+    "subject": "unsyncedStop",
+    "object": "oldCtx"
+  },
+  {
+    "id": "r26",
+    "path": "caddy.go",
+    "start_line": 420,
+    "end_line": 420,
+    "kind": "assign",
+    "subject": "ctx, err",
+    "object": "provisionContext(newCfg, start)"
+  },
+  {
+    "id": "r27",
+    "path": "caddy.go",
+    "start_line": 422,
+    "end_line": 422,
+    "kind": "call",
+    "subject": "globalMetrics.configSuccess.Set",
+    "object": "0"
+  },
+  {
+    "id": "r28",
+    "path": "caddy.go",
+    "start_line": 426,
+    "end_line": 426,
+    "kind": "branch",
+    "subject": "if",
+    "object": "!start"
+  },
+  {
+    "id": "r29",
+    "path": "caddy.go",
+    "start_line": 434,
+    "end_line": 434,
+    "kind": "call",
+    "subject": "globalMetrics.configSuccess.Set",
+    "object": "0"
+  },
+  {
+    "id": "r30",
+    "path": "caddy.go",
+    "start_line": 435,
+    "end_line": 435,
+    "kind": "call",
+    "subject": "ctx.cfg.cancelFunc",
+    "object": "fmt.Errorf(\"configuration start error: %w\", err)"
+  },
+  {
+    "id": "r31",
+    "path": "caddy.go",
+    "start_line": 437,
+    "end_line": 437,
+    "kind": "branch",
+    "subject": "if",
+    "object": "currentCtx.cfg != nil"
+  },
+  {
+    "id": "r32",
+    "path": "caddy.go",
+    "start_line": 445,
+    "end_line": 445,
+    "kind": "assign",
+    "subject": "started",
+    "object": "make([]string, 0, len(ctx.cfg.apps))"
+  },
+  {
+    "id": "r33",
+    "path": "caddy.go",
+    "start_line": 447,
+    "end_line": 447,
+    "kind": "assign",
+    "subject": "err",
+    "object": "a.Start()"
+  },
+  {
+    "id": "r34",
+    "path": "caddy.go",
+    "start_line": 451,
+    "end_line": 451,
+    "kind": "loop",
+    "subject": "_, otherAppName",
+    "object": "started"
+  },
+  {
+    "id": "r35",
+    "path": "caddy.go",
+    "start_line": 452,
+    "end_line": 452,
+    "kind": "assign",
+    "subject": "err2",
+    "object": "ctx.cfg.apps[otherAppName].Stop()"
+  },
+  {
+    "id": "r36",
+    "path": "caddy.go",
+    "start_line": 460,
+    "end_line": 460,
+    "kind": "assign",
+    "subject": "started",
+    "object": "append(started, name)"
+  },
+  {
+    "id": "r37",
+    "path": "caddy.go",
+    "start_line": 468,
+    "end_line": 468,
+    "kind": "call",
+    "subject": "globalMetrics.configSuccessTime.SetToCurrentTime",
+    "object": "()"
+  },
+  {
+    "id": "r38",
+    "path": "caddy.go",
+    "start_line": 475,
+    "end_line": 475,
+    "kind": "assign",
+    "subject": "err",
+    "object": "finishSettingUp(ctx, ctx.cfg)"
+  },
+  {
+    "id": "r39",
+    "path": "caddy.go",
+    "start_line": 476,
+    "end_line": 476,
+    "kind": "return",
+    "subject": "return",
+    "object": "ctx, err"
+  },
+  {
+    "id": "r40",
+    "path": "caddy.go",
+    "start_line": 566,
+    "end_line": 566,
+    "kind": "assign",
+    "subject": "err",
+    "object": "replaceLocalAdminServer(newCfg, ctx)"
+  },
+  {
+    "id": "r41",
+    "path": "caddy.go",
+    "start_line": 567,
+    "end_line": 567,
+    "kind": "branch",
+    "subject": "if",
+    "object": "err != nil"
+  },
+  {
+    "id": "r42",
+    "path": "caddy.go",
+    "start_line": 575,
+    "end_line": 575,
+    "kind": "assign",
+    "subject": "_, err",
+    "object": "ctx.App(appName)"
+  },
+  {
+    "id": "r43",
+    "path": "caddy.go",
+    "start_line": 575,
+    "end_line": 575,
+    "kind": "branch",
+    "subject": "if",
+    "object": "err != nil"
+  },
+  {
+    "id": "r44",
+    "path": "caddy.go",
+    "start_line": 581,
+    "end_line": 581,
+    "kind": "return",
+    "subject": "return",
+    "object": "ctx, err"
+  },
+  {
+    "id": "r45",
+    "path": "caddy.go",
+    "start_line": 730,
+    "end_line": 730,
+    "kind": "call",
+    "subject": "ctx.emitEvent",
+    "object": "\"stopping\", nil"
+  },
+  {
+    "id": "r46",
+    "path": "caddy.go",
+    "start_line": 733,
+    "end_line": 733,
+    "kind": "loop",
+    "subject": "name, a",
+    "object": "ctx.cfg.apps"
+  },
+  {
+    "id": "r47",
+    "path": "caddy.go",
+    "start_line": 736,
+    "end_line": 736,
+    "kind": "call",
+    "subject": "log.Printf",
+    "object": "\"[ERROR] stop %s: %v\", name, err"
+  },
+  {
+    "id": "r48",
+    "path": "caddy.go",
+    "start_line": 741,
+    "end_line": 741,
+    "kind": "call",
+    "subject": "ctx.cfg.cancelFunc",
+    "object": "fmt.Errorf(\"stopping apps\")"
+  }
+]
