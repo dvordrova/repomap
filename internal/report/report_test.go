@@ -12,6 +12,68 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 )
 
+func TestExactDiscoveryAnchorsPreserveSavedDeclarationOrder(t *testing.T) {
+	t.Parallel()
+
+	anchors := ExactDiscoveryAnchors(
+		"src/tool/service.py",
+		40,
+		[]string{
+			"# bounded saved source",
+			"def run() -> None:",
+			"    print('hello')",
+			"async def stop() -> None:",
+		},
+	)
+	if len(anchors) != 2 {
+		t.Fatalf("anchors = %#v, want two exact declarations", anchors)
+	}
+	if anchors[0].Path != "src/tool/service.py" ||
+		anchors[0].Language != "python" ||
+		anchors[0].Symbol != "run" ||
+		anchors[0].Line != 41 ||
+		anchors[1].Symbol != "stop" ||
+		anchors[1].Line != 43 {
+		t.Fatalf("anchors = %#v, want saved declaration order and exact lines", anchors)
+	}
+	for _, anchor := range anchors {
+		if len(anchor.Statement) == 0 || len(anchor.ContentSHA256) != 64 {
+			t.Fatalf("anchor is not bounded and content-addressed: %#v", anchor)
+		}
+	}
+}
+
+func TestExactDiscoveryAnchorsRejectUnboundedOrUnauthorizedInputs(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name  string
+		path  string
+		start int
+		lines []string
+	}{
+		{name: "absolute path", path: "/tmp/service.py", start: 1, lines: []string{"def run():"}},
+		{name: "invalid start", path: "service.py", start: 0, lines: []string{"def run():"}},
+		{name: "unknown language", path: "service.txt", start: 1, lines: []string{"def run():"}},
+		{name: "oversized line", path: "service.py", start: 1, lines: []string{strings.Repeat("x", (64<<10)+1)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ExactDiscoveryAnchors(test.path, test.start, test.lines); len(got) != 0 {
+				t.Fatalf("ExactDiscoveryAnchors() = %#v, want no anchors", got)
+			}
+		})
+	}
+}
+
+func TestUserTopicUncertaintyExplainsUnavailableProofAdapter(t *testing.T) {
+	t.Parallel()
+
+	got, ok := userTopicUncertainty([]string{"proof_adapter_unavailable"})
+	if !ok || got != "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism." {
+		t.Fatalf("userTopicUncertainty() = %q, %v", got, ok)
+	}
+}
+
 func TestParseSnapshotPreservesExactPackageIdentity(t *testing.T) {
 	t.Parallel()
 
