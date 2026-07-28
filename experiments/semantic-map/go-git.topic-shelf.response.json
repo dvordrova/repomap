@@ -1,0 +1,101 @@
+{
+  "coverage": "candidate_non_exhaustive",
+  "topics": [
+    {
+      "id": "t1",
+      "label": "Clone repository from remote",
+      "why": "Clone is the primary entry point for obtaining a repository; understanding its flow reveals transport, storage, and reference setup.",
+      "how_question": "How does the clone operation fetch objects and references from a remote and initialize local storage?",
+      "change_question": "Where and how should an engineer modify clone to support a new transport protocol or authentication method?",
+      "support_symbol_ids": ["d0037", "d0047", "d0056", "d0065", "d0074", "d0083"]
+    },
+    {
+      "id": "t2",
+      "label": "Push commits to remote",
+      "why": "Push is a core write operation; understanding it reveals pack generation, reference updates, and error handling.",
+      "how_question": "How does the push operation select objects, generate a packfile, and update remote references?",
+      "change_question": "Where and how should an engineer change push to support a new refspec or atomic push?",
+      "support_symbol_ids": ["d0430", "d0438", "d0519", "d0585"]
+    },
+    {
+      "id": "t3",
+      "label": "Fetch objects from remote",
+      "why": "Fetch is essential for incremental updates; understanding it reveals negotiation, packfile reception, and object storage.",
+      "how_question": "How does the fetch operation negotiate with the remote, receive a packfile, and integrate objects into local storage?",
+      "change_question": "Where and how should an engineer change fetch to support shallow or partial fetch?",
+      "support_symbol_ids": ["d0342", "d0353", "d0515"]
+    },
+    {
+      "id": "t4",
+      "label": "Worktree status computation",
+      "why": "Status is the most user-visible diff operation; understanding it reveals how the working tree, index, and HEAD are compared.",
+      "how_question": "How does the worktree compute status by comparing the index, HEAD tree, and working directory?",
+      "change_question": "Where and how should an engineer change status to support new ignore patterns or untracked file detection?",
+      "support_symbol_ids": ["d0172", "d0310", "d0406", "d0561", "d0627"]
+    },
+    {
+      "id": "t5",
+      "label": "Commit creation in worktree",
+      "why": "Commit is the fundamental write operation; understanding it reveals tree building, object writing, and reference update.",
+      "how_question": "How does the worktree create a commit by building a tree from the index, writing objects, and updating HEAD?",
+      "change_question": "Where and how should an engineer change commit to support signing or custom author information?",
+      "support_symbol_ids": ["d0127", "d0478", "d0549", "d0615"]
+    },
+    {
+      "id": "t6",
+      "label": "Reference resolution and expansion",
+      "why": "References are central to all Git operations; understanding resolution reveals how symbolic refs, peeled refs, and HEAD are handled.",
+      "how_question": "How does the repository resolve a reference name to an object hash, including symbolic and peeled references?",
+      "change_question": "Where and how should an engineer change reference resolution to support new ref backends or caching?",
+      "support_symbol_ids": ["d0050", "d0193", "d0307", "d0489"]
+    },
+    {
+      "id": "t7",
+      "label": "Object storage and retrieval",
+      "why": "Object storage is the backbone of Git; understanding it reveals how objects are read, written, cached, and packed.",
+      "how_question": "How does the storage layer read, write, and cache Git objects across loose and packed formats?",
+      "change_question": "Where and how should an engineer change object storage to support a new object format or compression?",
+      "support_symbol_ids": ["d0227", "d0298", "d0427", "d0595", "d0613"]
+    },
+    {
+      "id": "t8",
+      "label": "Packfile scanning and indexing",
+      "why": "Packfiles are the efficient storage format; understanding scanning reveals how objects are located and decompressed.",
+      "how_question": "How does the pack scanner locate and decompress objects using pack, index, and reverse index files?",
+      "change_question": "Where and how should an engineer change pack scanning to support multi-pack index or new delta formats?",
+      "support_symbol_ids": ["d0243", "d0403", "d0517", "d0577"]
+    },
+    {
+      "id": "t9",
+      "label": "Remote protocol handshake",
+      "why": "The handshake establishes capabilities and authentication; understanding it reveals protocol version negotiation and transport abstraction.",
+      "how_question": "How does the transport layer perform a handshake with a remote, negotiate capabilities, and authenticate?",
+      "change_question": "Where and how should an engineer change the handshake to support a new protocol version or authentication method?",
+      "support_symbol_ids": ["d0503", "d0510", "d0522", "d0249"]
+    },
+    {
+      "id": "t10",
+      "label": "Configuration loading and merging",
+      "why": "Configuration affects all operations; understanding loading reveals how system, global, and local configs are merged.",
+      "how_question": "How does the library load and merge configuration from system, global, and local files?",
+      "change_question": "Where and how should an engineer change configuration loading to support new config scopes or file formats?",
+      "support_symbol_ids": ["d0175", "d0224", "d0264", "d0445", "d0277"]
+    },
+    {
+      "id": "t11",
+      "label": "Submodule initialization and status",
+      "why": "Submodules are a common but complex feature; understanding them reveals recursive repository handling.",
+      "how_question": "How does the submodule operation initialize a submodule and compute its status relative to the parent repository?",
+      "change_question": "Where and how should an engineer change submodule handling to support recursive operations or new URL schemes?",
+      "support_symbol_ids": ["d0278", "d0374", "d0462", "d0537", "d0603"]
+    },
+    {
+      "id": "t12",
+      "label": "Blame annotation computation",
+      "why": "Blame is a performance-sensitive feature; understanding it reveals how history traversal and line mapping work.",
+      "how_question": "How does the blame algorithm traverse commits and map lines to their origin?",
+      "change_question": "Where and how should an engineer change blame to support rename detection or performance optimization?",
+      "support_symbol_ids": ["d0010", "d0214", "d0326", "d0414", "d0499", "d0567"]
+    }
+  ]
+}
