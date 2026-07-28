@@ -82,7 +82,7 @@ Implementation is limited to:
 - `cmd/repomap/fresh_repo_demo.go`
 - `cmd/repomap/fresh_repo_demo_test.go`
 - `internal/report/report.go`
-- `internal/report/html.go`
+- `internal/report/templates/script.js`
 - `internal/report/report_test.go`
 
 ## Acceptance evidence
