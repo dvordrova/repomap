@@ -81,6 +81,23 @@ type BriefShapeProposal struct {
 	ShapeAreaIDs   []string       `json:"shape_area_ids"`
 }
 
+type briefShapeProviderResponse struct {
+	Version        int                   `json:"version"`
+	RepositoryType RepositoryType        `json:"repository_type"`
+	Brief          briefProviderResponse `json:"brief"`
+	ShapeAreaIDs   []string              `json:"shape_area_ids"`
+	DomainTerms    json.RawMessage       `json:"domain_terms,omitempty"`
+}
+
+type briefProviderResponse struct {
+	WhatItIs              BriefStatement  `json:"what_it_is"`
+	Problem               BriefStatement  `json:"problem"`
+	MainInput             BriefStatement  `json:"main_input"`
+	CentralResponsibility BriefStatement  `json:"central_responsibility"`
+	ObservableResult      BriefStatement  `json:"observable_result"`
+	DomainTerms           json.RawMessage `json:"domain_terms,omitempty"`
+}
+
 // DirectionProposal contains bounded direction drafts. Direction IDs are
 // fixed before review so independently saved review artifacts cannot drift
 // between candidates.
@@ -186,14 +203,64 @@ type ReviewReduction struct {
 }
 
 func DecodeBriefShapeProposal(raw []byte) (BriefShapeProposal, error) {
-	var proposal BriefShapeProposal
-	if err := decodeEditingJSON(raw, maxEditingArtifactBytes, "brief and shape proposal", &proposal); err != nil {
+	var response briefShapeProviderResponse
+	if err := decodeEditingJSON(
+		raw,
+		maxEditingArtifactBytes,
+		"brief and shape proposal",
+		&response,
+	); err != nil {
 		return BriefShapeProposal{}, err
+	}
+	if len(response.DomainTerms) > 0 && len(response.Brief.DomainTerms) > 0 {
+		return BriefShapeProposal{},
+			fmt.Errorf("study map: brief domain terms are present in both accepted locations")
+	}
+	domainTermsRaw := response.Brief.DomainTerms
+	if len(response.DomainTerms) > 0 {
+		domainTermsRaw = response.DomainTerms
+	}
+	domainTerms, err := decodeBriefProviderDomainTerms(domainTermsRaw)
+	if err != nil {
+		return BriefShapeProposal{}, err
+	}
+	proposal := BriefShapeProposal{
+		Version:        response.Version,
+		RepositoryType: response.RepositoryType,
+		Brief: Brief{
+			WhatItIs:              response.Brief.WhatItIs,
+			Problem:               response.Brief.Problem,
+			MainInput:             response.Brief.MainInput,
+			CentralResponsibility: response.Brief.CentralResponsibility,
+			ObservableResult:      response.Brief.ObservableResult,
+			DomainTerms:           domainTerms,
+		},
+		ShapeAreaIDs: response.ShapeAreaIDs,
 	}
 	if err := validateBriefShapeStructure(proposal); err != nil {
 		return BriefShapeProposal{}, err
 	}
 	return proposal, nil
+}
+
+func decodeBriefProviderDomainTerms(raw json.RawMessage) ([]BriefDomainTerm, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, fmt.Errorf("study map: brief domain terms must be an array")
+	}
+	var terms []BriefDomainTerm
+	if err := decodeEditingJSON(
+		raw,
+		maxEditingArtifactBytes,
+		"brief domain terms",
+		&terms,
+	); err != nil {
+		return nil, err
+	}
+	return terms, nil
 }
 
 func DecodeDirectionProposal(raw []byte) (DirectionProposal, error) {
