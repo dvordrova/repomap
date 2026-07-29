@@ -22,14 +22,15 @@ import (
 )
 
 const (
-	BundleVersion   = 1
-	ProposalVersion = 1
-	RecordVersion   = 1
-	PromptVersion   = "repository-study-map-json-v1"
-	RecordFile      = "repository_study_map.json"
-	BundleFile      = "repository_study_map_bundle.json"
-	AttemptFile     = "repository_study_map_attempt.json"
-	StatusFile      = "repository_study_map_status.json"
+	BundleVersion         = 1
+	ProposalVersion       = 1
+	RecordVersion         = 1
+	PromptVersion         = "repository-study-map-json-v1"
+	RecordFile            = "repository_study_map.json"
+	BundleFile            = "repository_study_map_bundle.json"
+	AttemptFile           = "repository_study_map_attempt.json"
+	DirectionsAttemptFile = "study_direction_candidates_attempt.json"
+	StatusFile            = "repository_study_map_status.json"
 
 	MaxCandidates = 12
 	MinDirections = 3
@@ -308,6 +309,28 @@ func DecodeRecord(raw []byte) (Record, error) {
 		return Record{}, err
 	}
 	return record, nil
+}
+
+// DecodeBundle decodes one saved local Study bundle. Unlike PromptBundle, this
+// artifact may contain bounded source functions used for local presentation.
+func DecodeBundle(raw []byte) (Bundle, error) {
+	if len(raw) == 0 || len(raw) > maxRecordBytes {
+		return Bundle{}, fmt.Errorf("study map: bundle is outside bounds")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var bundle Bundle
+	if err := decoder.Decode(&bundle); err != nil {
+		return Bundle{}, fmt.Errorf("study map: decode bundle: %w", err)
+	}
+	if err := requireEOF(decoder); err != nil {
+		return Bundle{}, err
+	}
+	bundle = canonicalBundle(bundle)
+	if err := bundle.Validate(); err != nil {
+		return Bundle{}, err
+	}
+	return bundle, nil
 }
 
 func BundleHash(bundle Bundle) (string, error) {

@@ -146,6 +146,10 @@ type ReportData struct {
 	// guide over exact, locally validated code anchors. Its order is editorial,
 	// not a runtime sequence; canonical Mechanisms remain separate authority.
 	StudyMap *RepositoryStudyMap `json:"study_map,omitempty"`
+	// IncompleteStudy retains bounded provider questions that have exact saved
+	// reading starts but did not satisfy the unchanged complete Reading Pack
+	// contract. It is navigation only and never claims an ordered path.
+	IncompleteStudy *RepositoryIncompleteStudy `json:"incomplete_study,omitempty"`
 	// Operations is a presentation-only operating guide over exact, bounded
 	// repository-owned commands, configuration, endpoints, and documentation.
 	// It never authorizes command execution; CopyText is present only after

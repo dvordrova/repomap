@@ -143,6 +143,34 @@ type DirectionCandidate struct {
 	SearchQueries   []string        `json:"search_queries,omitempty"`
 }
 
+// IncompleteDirection retains one bounded editorial question with only the
+// exact reading entries that the provider actually supplied and the saved
+// bundle authorizes. It is not a complete Reading Pack.
+type IncompleteDirection struct {
+	DirectionID     string          `json:"direction_id"`
+	Question        string          `json:"question"`
+	WhyItMatters    string          `json:"why_it_matters"`
+	LearningOutcome string          `json:"learning_outcome"`
+	TargetJob       TargetJob       `json:"target_user_job"`
+	LearningStage   LearningStage   `json:"learning_stage"`
+	ReadingAnchors  []ReadingAnchor `json:"reading_anchors"`
+}
+
+type incompleteDirectionCandidate struct {
+	DirectionID     string          `json:"direction_id,omitempty"`
+	Question        string          `json:"question"`
+	WhyItMatters    string          `json:"why_it_matters"`
+	LearningOutcome string          `json:"learning_outcome"`
+	TargetJob       TargetJob       `json:"target_user_job"`
+	LearningStage   LearningStage   `json:"learning_stage"`
+	AnchorIDs       json.RawMessage `json:"anchor_ids"`
+	DocumentIDs     json.RawMessage `json:"document_ids,omitempty"`
+	AreaIDs         json.RawMessage `json:"area_ids,omitempty"`
+	MechanismID     json.RawMessage `json:"mechanism_id,omitempty"`
+	ReadingAnchors  json.RawMessage `json:"reading_anchors"`
+	SearchQueries   json.RawMessage `json:"search_queries,omitempty"`
+}
+
 // ReviewBundle is one fixed direction plus only its selected source anchors.
 // It is suitable for one independent, bounded semantic-fit call.
 type ReviewBundle struct {
@@ -360,6 +388,182 @@ func DecodeDirectionProposalWithDiagnostics(
 		Version:    envelope.Version,
 		Directions: directions,
 	}, diagnostics, nil
+}
+
+// DecodeIncompleteDirections projects independently useful weak Study signals
+// without weakening DecodeDirectionProposal. The raw envelope and item count
+// stay unchanged; one invalid item never authorizes or discards a sibling.
+func DecodeIncompleteDirections(
+	raw []byte,
+	bundle Bundle,
+) ([]IncompleteDirection, DirectionProposalDiagnostics, error) {
+	bundle = canonicalBundle(bundle)
+	if err := bundle.Validate(); err != nil {
+		return nil, DirectionProposalDiagnostics{}, err
+	}
+	var envelope directionProposalProviderResponse
+	if err := decodeEditingJSON(
+		raw,
+		maxEditingArtifactBytes,
+		"incomplete direction projection",
+		&envelope,
+	); err != nil {
+		return nil, DirectionProposalDiagnostics{}, err
+	}
+	if envelope.Version != DirectionProposalVersion {
+		return nil, DirectionProposalDiagnostics{}, fmt.Errorf(
+			"study map: unsupported direction proposal version %d",
+			envelope.Version,
+		)
+	}
+	items, err := decodeBoundedDirectionItems(envelope.Directions)
+	if err != nil {
+		return nil, DirectionProposalDiagnostics{}, err
+	}
+	anchors := make(map[string]struct{}, len(bundle.Anchors))
+	for _, anchor := range bundle.Anchors {
+		anchors[anchor.ID] = struct{}{}
+	}
+	diagnostics := DirectionProposalDiagnostics{Received: len(items)}
+	result := make([]IncompleteDirection, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	reject := func(position int, code string) {
+		diagnostics.Issues = append(diagnostics.Issues, DirectionProposalIssue{
+			Position: position,
+			Code:     code,
+		})
+	}
+	for position, item := range items {
+		var candidate incompleteDirectionCandidate
+		if err := decodeEditingJSON(
+			item,
+			maxEditingArtifactBytes,
+			"incomplete direction candidate",
+			&candidate,
+		); err != nil {
+			reject(position, "decode_candidate")
+			continue
+		}
+		if len(candidate.DirectionID) > 256 ||
+			strings.TrimSpace(candidate.DirectionID) != "" {
+			reject(position, "model_direction_id")
+			continue
+		}
+		if !validIncompleteDirectionScalars(candidate) {
+			reject(position, "invalid_candidate")
+			continue
+		}
+		reading, err := decodeIncompleteReadingAnchors(candidate.ReadingAnchors, anchors)
+		if err != nil {
+			reject(position, "invalid_reading_anchors")
+			continue
+		}
+		anchorIDs := make([]string, 0, len(reading))
+		for _, item := range reading {
+			anchorIDs = append(anchorIDs, item.AnchorID)
+		}
+		directionID := localDirectionID(DirectionCandidate{
+			Question:  candidate.Question,
+			AnchorIDs: anchorIDs,
+		})
+		if _, duplicate := seen[directionID]; duplicate {
+			reject(position, "duplicate_direction_id")
+			continue
+		}
+		seen[directionID] = struct{}{}
+		result = append(result, IncompleteDirection{
+			DirectionID:     directionID,
+			Question:        strings.TrimSpace(candidate.Question),
+			WhyItMatters:    strings.TrimSpace(candidate.WhyItMatters),
+			LearningOutcome: strings.TrimSpace(candidate.LearningOutcome),
+			TargetJob:       candidate.TargetJob,
+			LearningStage:   candidate.LearningStage,
+			ReadingAnchors:  reading,
+		})
+	}
+	diagnostics.Accepted = len(result)
+	diagnostics.Rejected = len(diagnostics.Issues)
+	return result, diagnostics, nil
+}
+
+func validIncompleteDirectionScalars(candidate incompleteDirectionCandidate) bool {
+	if len(candidate.Question) > 512 ||
+		len(candidate.WhyItMatters) > 1024 ||
+		len(candidate.LearningOutcome) > 1024 {
+		return false
+	}
+	return naturalQuestion(candidate.Question) &&
+		validText(candidate.WhyItMatters, 1024, true) &&
+		!impliesRuntimeOrder(candidate.WhyItMatters) &&
+		validText(candidate.LearningOutcome, 1024, true) &&
+		!impliesRuntimeOrder(candidate.LearningOutcome) &&
+		validTargetJob(candidate.TargetJob) &&
+		validLearningStage(candidate.LearningStage)
+}
+
+func decodeIncompleteReadingAnchors(
+	raw json.RawMessage,
+	allowed map[string]struct{},
+) ([]ReadingAnchor, error) {
+	if len(raw) == 0 || len(raw) > maxEditingArtifactBytes {
+		return nil, fmt.Errorf("study map: incomplete reading anchors are outside bounds")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	start, ok := token.(json.Delim)
+	if !ok || start != '[' {
+		return nil, fmt.Errorf("study map: incomplete reading anchors must be an array")
+	}
+	result := make([]ReadingAnchor, 0, 5)
+	seen := make(map[string]struct{}, 5)
+	for decoder.More() {
+		if len(result) == 5 {
+			return nil, fmt.Errorf("study map: incomplete reading anchor count is outside bounds")
+		}
+		var reading ReadingAnchor
+		if err := decoder.Decode(&reading); err != nil {
+			return nil, err
+		}
+		if len(reading.AnchorID) > 256 ||
+			len(reading.Label) > 64 ||
+			len(reading.WhatToLookFor) > 768 ||
+			!validOpaque(reading.AnchorID) ||
+			!validReadingLabel(reading.Label) ||
+			!validText(reading.WhatToLookFor, 768, true) ||
+			impliesRuntimeOrder(reading.WhatToLookFor) {
+			return nil, fmt.Errorf("study map: invalid incomplete reading anchor")
+		}
+		if _, ok := allowed[reading.AnchorID]; !ok {
+			return nil, fmt.Errorf("study map: unresolved incomplete reading anchor")
+		}
+		if _, duplicate := seen[reading.AnchorID]; duplicate {
+			return nil, fmt.Errorf("study map: duplicate incomplete reading anchor")
+		}
+		seen[reading.AnchorID] = struct{}{}
+		result = append(result, ReadingAnchor{
+			AnchorID:      strings.TrimSpace(reading.AnchorID),
+			Label:         strings.TrimSpace(reading.Label),
+			WhatToLookFor: strings.TrimSpace(reading.WhatToLookFor),
+		})
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delim, ok := end.(json.Delim); !ok || delim != ']' {
+		return nil, fmt.Errorf("study map: invalid incomplete reading anchor closure")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("study map: invalid trailing incomplete reading anchors")
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("study map: incomplete reading anchor count is outside bounds")
+	}
+	return result, nil
 }
 
 func decodeBoundedDirectionItems(raw json.RawMessage) ([]json.RawMessage, error) {

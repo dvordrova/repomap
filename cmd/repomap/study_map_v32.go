@@ -21,7 +21,7 @@ const (
 	studyMapBriefShapeFile        = "repository_brief_shape.json"
 	studyMapBriefShapeAttempt     = "repository_brief_shape_attempt.json"
 	studyMapDirectionsFile        = "study_direction_candidates.json"
-	studyMapDirectionsAttempt     = "study_direction_candidates_attempt.json"
+	studyMapDirectionsAttempt     = studymap.DirectionsAttemptFile
 	studyMapReviewsFile           = "reading_pack_reviews.json"
 	studyMapReviewAttemptsDir     = "reading_pack_review_attempts"
 	studyMapSourceAttemptFile     = "repository_study_map_source_attempt.json"

@@ -227,6 +227,14 @@ const attached = {
   mechanism_id: "mechanism-dispatch", principal_anchors: reading.principal_anchors,
   reading_anchors: reading.reading_anchors,
 };
+const incomplete = {
+  id: "study-incomplete",
+  question: "Where should I begin examining request admission?",
+  why_it_matters: "Admission decides which requests enter the core.",
+  learning_outcome: "You can locate the exact saved admission declaration.",
+  principal_anchors: [reading.principal_anchors[0]],
+  reading_anchors: [reading.reading_anchors[0]],
+};
 const mechanism = { artifact_id: "mechanism-dispatch", steps: [{ title: "Dispatch" }] };
 const topics = [
   {
@@ -265,8 +273,13 @@ const report = {
     shape: reading.areas,
     directions: [reading, attached],
   },
+  incomplete_study: { version: 1, directions: [incomplete] },
 };
-const roots = { "rm-overview": new Element("section") };
+const roots = {
+  "rm-overview": new Element("section"),
+  "rm-study-overview": new Element("section"),
+  "rm-study-detail": new Element("section"),
+};
 const window = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
@@ -277,6 +290,7 @@ const document = {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return roots[id] || null;
   },
+  querySelector() { return null; },
   querySelectorAll() { return []; },
 };
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
@@ -285,6 +299,8 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 function text(node) { return String(node.textContent || "") + (node.children || []).map(text).join(""); }
 const route = api.parseWorkspaceHash("#/study/study-routing", [mechanism], null);
+const incompleteOverviewRoute = api.parseWorkspaceHash("#/study", [mechanism], null);
+const incompleteRoute = api.parseWorkspaceHash("#/study/study-incomplete", [mechanism], null);
 const attachedRoute = api.parseWorkspaceHash("#/study/study-dispatch", [mechanism], null);
 const invalidRoute = api.parseWorkspaceHash("#/study/missing", [mechanism], null);
 let state = api.reduceWorkspaceState({
@@ -303,6 +319,11 @@ const returned = api.reduceWorkspaceState({
 }, { type: "return_from_map" }, [mechanism]);
 api.renderOverviewWorkspace();
 const shelfOverviewText = text(roots["rm-overview"]);
+api.renderIncompleteStudyOverview();
+const incompleteOverviewText = text(roots["rm-study-overview"]);
+api.openStudyDirection("study-incomplete");
+const incompleteDetailText = text(roots["rm-study-detail"]);
+delete report.incomplete_study;
 report.user_mechanisms.length = 0;
 const topicRoots = { "rm-overview": new Element("section") };
 const topicWindow = {
@@ -341,9 +362,11 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 emptyWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
 const card = api.renderStudyDirectionCard(reading, 0);
 process.stdout.write(JSON.stringify({
-  route, attachedRoute, invalidRoute, sourceState, closedState, returned,
+  route, incompleteOverviewRoute, incompleteRoute, attachedRoute, invalidRoute,
+  sourceState, closedState, returned,
   shelfOverviewText, topicOverviewText: text(topicRoots["rm-overview"]),
   emptyShelfOverviewText: text(emptyRoots["rm-overview"]), cardText: text(card),
+  incompleteOverviewText, incompleteDetailText,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "study-map-workspace-test.js")
@@ -370,6 +393,21 @@ process.stdout.write(JSON.stringify({
 				ArtifactID string `json:"artifactID"`
 			} `json:"state"`
 		} `json:"attachedRoute"`
+		IncompleteOverviewRoute struct {
+			Valid         bool   `json:"valid"`
+			CanonicalHash string `json:"canonicalHash"`
+			State         struct {
+				View string `json:"view"`
+			} `json:"state"`
+		} `json:"incompleteOverviewRoute"`
+		IncompleteRoute struct {
+			Valid         bool   `json:"valid"`
+			CanonicalHash string `json:"canonicalHash"`
+			State         struct {
+				View        string `json:"view"`
+				DirectionID string `json:"directionID"`
+			} `json:"state"`
+		} `json:"incompleteRoute"`
 		InvalidRoute struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
@@ -392,6 +430,8 @@ process.stdout.write(JSON.stringify({
 		TopicOverviewText      string `json:"topicOverviewText"`
 		EmptyShelfOverviewText string `json:"emptyShelfOverviewText"`
 		CardText               string `json:"cardText"`
+		IncompleteOverviewText string `json:"incompleteOverviewText"`
+		IncompleteDetailText   string `json:"incompleteDetailText"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Study Map workspace smoke: %v\n%s", err, output)
@@ -403,6 +443,17 @@ process.stdout.write(JSON.stringify({
 	if got.AttachedRoute.CanonicalHash != "#/mechanism/mechanism-dispatch" ||
 		got.AttachedRoute.State.View != "mechanism" || got.AttachedRoute.State.ArtifactID != "mechanism-dispatch" {
 		t.Fatalf("attached route = %#v", got.AttachedRoute)
+	}
+	if !got.IncompleteOverviewRoute.Valid ||
+		got.IncompleteOverviewRoute.CanonicalHash != "#/study" ||
+		got.IncompleteOverviewRoute.State.View != "study_overview" {
+		t.Fatalf("incomplete Study overview route = %#v", got.IncompleteOverviewRoute)
+	}
+	if !got.IncompleteRoute.Valid ||
+		got.IncompleteRoute.CanonicalHash != "#/study/study-incomplete" ||
+		got.IncompleteRoute.State.View != "study" ||
+		got.IncompleteRoute.State.DirectionID != "study-incomplete" {
+		t.Fatalf("incomplete Study detail route = %#v", got.IncompleteRoute)
 	}
 	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/overview" {
 		t.Fatalf("invalid route = %#v", got.InvalidRoute)
@@ -457,6 +508,30 @@ process.stdout.write(JSON.stringify({
 	}
 	if !strings.Contains(got.CardText, "Explore this direction →") || strings.Contains(got.CardText, "runtime") {
 		t.Fatalf("Study Direction card = %q", got.CardText)
+	}
+	for _, token := range []string{
+		"What is worth understanding next?",
+		"Where should I begin examining request admission?",
+		"Inspect starting point →",
+	} {
+		if !strings.Contains(got.IncompleteOverviewText, token) {
+			t.Errorf("incomplete Study overview is missing %q: %q", token, got.IncompleteOverviewText)
+		}
+	}
+	for _, token := range []string{
+		"Incomplete Study direction",
+		"What you can learn",
+		"one exact place to begin",
+		"It does not yet explain the complete reading path.",
+		"router.go:11",
+		"Open exact source",
+	} {
+		if !strings.Contains(got.IncompleteDetailText, token) {
+			t.Errorf("incomplete Study detail is missing %q: %q", token, got.IncompleteDetailText)
+		}
+	}
+	if strings.Contains(got.IncompleteOverviewText+got.IncompleteDetailText, "Search") {
+		t.Fatalf("incomplete Study reintroduced Search: %q / %q", got.IncompleteOverviewText, got.IncompleteDetailText)
 	}
 }
 
