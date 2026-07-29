@@ -106,6 +106,25 @@ type DirectionProposal struct {
 	Directions []DirectionCandidate `json:"directions"`
 }
 
+// DirectionProposalDiagnostics records bounded provider-item losses without
+// copying provider prose into a saved diagnostic.
+type DirectionProposalDiagnostics struct {
+	Received int                      `json:"received"`
+	Accepted int                      `json:"accepted"`
+	Rejected int                      `json:"rejected"`
+	Issues   []DirectionProposalIssue `json:"issues,omitempty"`
+}
+
+type DirectionProposalIssue struct {
+	Position int    `json:"position"`
+	Code     string `json:"code"`
+}
+
+type directionProposalProviderResponse struct {
+	Version    int             `json:"version"`
+	Directions json.RawMessage `json:"directions"`
+}
+
 // DirectionCandidate is a Study Direction before its reading anchors have
 // been checked against exact source. Confidence is intentionally absent: the
 // local reducer ranks reviewed directions instead of trusting model confidence.
@@ -264,16 +283,134 @@ func decodeBriefProviderDomainTerms(raw json.RawMessage) ([]BriefDomainTerm, err
 }
 
 func DecodeDirectionProposal(raw []byte) (DirectionProposal, error) {
-	var proposal DirectionProposal
-	if err := decodeEditingJSON(raw, maxEditingArtifactBytes, "direction proposal", &proposal); err != nil {
-		return DirectionProposal{}, err
+	proposal, _, err := DecodeDirectionProposalWithDiagnostics(raw)
+	return proposal, err
+}
+
+// DecodeDirectionProposalWithDiagnostics keeps the bounded provider envelope
+// strict while making independently proposed directions independently
+// rejectable. Canonical saved proposals still contain only normalized valid
+// directions.
+func DecodeDirectionProposalWithDiagnostics(
+	raw []byte,
+) (DirectionProposal, DirectionProposalDiagnostics, error) {
+	var envelope directionProposalProviderResponse
+	if err := decodeEditingJSON(
+		raw,
+		maxEditingArtifactBytes,
+		"direction proposal",
+		&envelope,
+	); err != nil {
+		return DirectionProposal{}, DirectionProposalDiagnostics{}, err
 	}
-	for _, direction := range proposal.Directions {
-		if strings.TrimSpace(direction.DirectionID) != "" {
-			return DirectionProposal{}, fmt.Errorf("study map: model-supplied direction id is not allowed")
+	if envelope.Version != DirectionProposalVersion {
+		return DirectionProposal{}, DirectionProposalDiagnostics{}, fmt.Errorf(
+			"study map: unsupported direction proposal version %d",
+			envelope.Version,
+		)
+	}
+	items, err := decodeBoundedDirectionItems(envelope.Directions)
+	if err != nil {
+		return DirectionProposal{}, DirectionProposalDiagnostics{}, err
+	}
+	diagnostics := DirectionProposalDiagnostics{Received: len(items)}
+	directions := make([]DirectionCandidate, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	reject := func(position int, code string) {
+		diagnostics.Issues = append(diagnostics.Issues, DirectionProposalIssue{
+			Position: position,
+			Code:     code,
+		})
+	}
+	for position, item := range items {
+		var direction DirectionCandidate
+		if err := decodeEditingJSON(
+			item,
+			maxEditingArtifactBytes,
+			"direction candidate",
+			&direction,
+		); err != nil {
+			reject(position, "decode_candidate")
+			continue
 		}
+		if strings.TrimSpace(direction.DirectionID) != "" {
+			reject(position, "model_direction_id")
+			continue
+		}
+		direction.DirectionID = ""
+		normalized, err := normalizeDirectionCandidate(direction)
+		if err != nil {
+			reject(position, directionCandidateValidationCode(err))
+			continue
+		}
+		if _, duplicate := seen[normalized.DirectionID]; duplicate {
+			reject(position, "duplicate_direction_id")
+			continue
+		}
+		seen[normalized.DirectionID] = struct{}{}
+		directions = append(directions, normalized)
 	}
-	return NormalizeDirectionProposal(proposal)
+	diagnostics.Accepted = len(directions)
+	diagnostics.Rejected = len(diagnostics.Issues)
+	if diagnostics.Accepted == 0 {
+		return DirectionProposal{}, diagnostics,
+			fmt.Errorf("study map: direction proposal has no valid candidates")
+	}
+	return DirectionProposal{
+		Version:    envelope.Version,
+		Directions: directions,
+	}, diagnostics, nil
+}
+
+func decodeBoundedDirectionItems(raw json.RawMessage) ([]json.RawMessage, error) {
+	if len(raw) == 0 || len(raw) > maxEditingArtifactBytes {
+		return nil, fmt.Errorf("study map: direction candidates are outside bounds")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, fmt.Errorf("study map: decode direction candidates: %w", err)
+	}
+	start, ok := token.(json.Delim)
+	if !ok || start != '[' {
+		return nil, fmt.Errorf("study map: direction candidates must be an array")
+	}
+	items := make([]json.RawMessage, 0, MaxCandidates)
+	for decoder.More() {
+		if len(items) == MaxCandidates {
+			return nil, fmt.Errorf(
+				"study map: direction count must be between 1 and %d",
+				MaxCandidates,
+			)
+		}
+		var item json.RawMessage
+		if err := decoder.Decode(&item); err != nil {
+			return nil, fmt.Errorf("study map: decode direction candidate: %w", err)
+		}
+		items = append(items, item)
+	}
+	token, err = decoder.Token()
+	if err != nil {
+		return nil, fmt.Errorf("study map: decode direction candidates: %w", err)
+	}
+	end, ok := token.(json.Delim)
+	if !ok || end != ']' {
+		return nil, fmt.Errorf("study map: direction candidates must end with an array")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("study map: trailing JSON in direction candidates")
+		}
+		return nil, fmt.Errorf("study map: invalid trailing JSON in direction candidates: %w", err)
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf(
+			"study map: direction count must be between 1 and %d",
+			MaxCandidates,
+		)
+	}
+	return items, nil
 }
 
 // DecodeNormalizedDirectionProposal validates a saved local projection. Unlike
@@ -1075,39 +1212,99 @@ func validateDirectionCandidateContent(direction DirectionCandidate) error {
 		!validText(direction.WhyItMatters, 1024, true) || impliesRuntimeOrder(direction.WhyItMatters) ||
 		!validText(direction.LearningOutcome, 1024, true) || impliesRuntimeOrder(direction.LearningOutcome) ||
 		!validTargetJob(direction.TargetJob) || !validLearningStage(direction.LearningStage) {
-		return fmt.Errorf("study map: invalid direction candidate %q", direction.DirectionID)
+		return newDirectionCandidateValidationError(
+			"invalid_candidate",
+			"study map: invalid direction candidate %q",
+			direction.DirectionID,
+		)
 	}
 	if len(direction.AnchorIDs) < 3 || len(direction.AnchorIDs) > 5 ||
 		len(uniqueStrings(direction.AnchorIDs)) != len(direction.AnchorIDs) || !allOpaque(direction.AnchorIDs) {
-		return fmt.Errorf("study map: direction %q must select three to five unique anchors", direction.DirectionID)
+		return newDirectionCandidateValidationError(
+			"invalid_anchor_selection",
+			"study map: direction %q must select three to five unique anchors",
+			direction.DirectionID,
+		)
 	}
 	if len(direction.ReadingAnchors) != len(direction.AnchorIDs) {
-		return fmt.Errorf("study map: direction %q must describe every selected anchor", direction.DirectionID)
+		return newDirectionCandidateValidationError(
+			"invalid_reading_anchor_count",
+			"study map: direction %q must describe every selected anchor",
+			direction.DirectionID,
+		)
 	}
 	readingIDs := make([]string, 0, len(direction.ReadingAnchors))
 	for _, reading := range direction.ReadingAnchors {
 		if !validOpaque(reading.AnchorID) || !validReadingLabel(reading.Label) ||
 			!validText(reading.WhatToLookFor, 768, true) || impliesRuntimeOrder(reading.WhatToLookFor) {
-			return fmt.Errorf("study map: direction %q has invalid reading copy", direction.DirectionID)
+			return newDirectionCandidateValidationError(
+				"invalid_reading_copy",
+				"study map: direction %q has invalid reading copy",
+				direction.DirectionID,
+			)
 		}
 		readingIDs = append(readingIDs, reading.AnchorID)
 	}
 	if !slices.Equal(uniqueStrings(readingIDs), uniqueStrings(direction.AnchorIDs)) {
-		return fmt.Errorf("study map: direction %q reading anchors do not match selected anchors", direction.DirectionID)
+		return newDirectionCandidateValidationError(
+			"reading_anchor_mismatch",
+			"study map: direction %q reading anchors do not match selected anchors",
+			direction.DirectionID,
+		)
 	}
 	if !uniqueOpaque(direction.DocumentIDs) || !uniqueOpaque(direction.AreaIDs) ||
 		(direction.MechanismID != "" && !validOpaque(direction.MechanismID)) {
-		return fmt.Errorf("study map: direction %q contains invalid object ids", direction.DirectionID)
+		return newDirectionCandidateValidationError(
+			"invalid_object_ids",
+			"study map: direction %q contains invalid object ids",
+			direction.DirectionID,
+		)
 	}
 	if len(direction.SearchQueries) > 8 {
-		return fmt.Errorf("study map: direction %q contains too many search queries", direction.DirectionID)
+		return newDirectionCandidateValidationError(
+			"too_many_search_queries",
+			"study map: direction %q contains too many search queries",
+			direction.DirectionID,
+		)
 	}
 	for _, query := range direction.SearchQueries {
 		if !validText(query, 256, true) {
-			return fmt.Errorf("study map: direction %q contains invalid search query", direction.DirectionID)
+			return newDirectionCandidateValidationError(
+				"invalid_search_query",
+				"study map: direction %q contains invalid search query",
+				direction.DirectionID,
+			)
 		}
 	}
 	return nil
+}
+
+type directionCandidateValidationError struct {
+	code    string
+	message string
+}
+
+func (err *directionCandidateValidationError) Error() string {
+	return err.message
+}
+
+func newDirectionCandidateValidationError(
+	code string,
+	format string,
+	args ...any,
+) error {
+	return &directionCandidateValidationError{
+		code:    code,
+		message: fmt.Sprintf(format, args...),
+	}
+}
+
+func directionCandidateValidationCode(err error) string {
+	validationErr, ok := err.(*directionCandidateValidationError)
+	if !ok || validationErr.code == "" {
+		return "invalid_candidate"
+	}
+	return validationErr.code
 }
 
 func normalizeDirectionCandidate(direction DirectionCandidate) (DirectionCandidate, error) {

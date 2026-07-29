@@ -111,14 +111,15 @@ Fixed bounded review bundle JSON:
 `
 
 type studyMapV32StageAttempt struct {
-	Version         int                           `json:"version"`
-	PromptVersion   string                        `json:"prompt_version"`
-	BundleSHA256    string                        `json:"bundle_sha256"`
-	ValidationState string                        `json:"validation_state"`
-	FailureReason   string                        `json:"failure_reason,omitempty"`
-	Metrics         semanticDiscoveryStageMetrics `json:"metrics"`
-	Response        json.RawMessage               `json:"response,omitempty"`
-	RawResponse     string                        `json:"raw_response,omitempty"`
+	Version              int                                    `json:"version"`
+	PromptVersion        string                                 `json:"prompt_version"`
+	BundleSHA256         string                                 `json:"bundle_sha256"`
+	ValidationState      string                                 `json:"validation_state"`
+	FailureReason        string                                 `json:"failure_reason,omitempty"`
+	Metrics              semanticDiscoveryStageMetrics          `json:"metrics"`
+	DirectionDiagnostics *studymap.DirectionProposalDiagnostics `json:"direction_diagnostics,omitempty"`
+	Response             json.RawMessage                        `json:"response,omitempty"`
+	RawResponse          string                                 `json:"raw_response,omitempty"`
 }
 
 type studyMapReviewAttempt struct {
@@ -366,7 +367,11 @@ func prepareStudyMapV32(
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
-	directions, err := studymap.DecodeDirectionProposal(directionRaw)
+	directions, directionDiagnostics, err :=
+		studymap.DecodeDirectionProposalWithDiagnostics(directionRaw)
+	if directionDiagnostics.Received > 0 {
+		directionAttempt.DirectionDiagnostics = &directionDiagnostics
+	}
 	if err != nil {
 		directionMetrics.Status = "rejected"
 		directionAttempt.Metrics = directionMetrics

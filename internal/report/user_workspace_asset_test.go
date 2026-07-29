@@ -228,8 +228,31 @@ const attached = {
   reading_anchors: reading.reading_anchors,
 };
 const mechanism = { artifact_id: "mechanism-dispatch", steps: [{ title: "Dispatch" }] };
+const topics = [
+  {
+    candidate_id: "topic-message",
+    title: "Message creation and real-time delivery",
+    question: "How does a chat message get created and delivered to recipients in real time?",
+    starting_symbols: [{ path: "router.go", symbol: "Route", line: 11 }],
+    uncertainty: "The local evidence stops before the observable result.",
+  },
+  {
+    candidate_id: "topic-upload",
+    title: "Asset upload and storage",
+    question: "How does the server persist an uploaded asset?",
+    starting_symbols: [{ path: "tree.go", symbol: "Find", line: 21 }],
+    uncertainty: "The local evidence stops before the observable result.",
+  },
+  {
+    candidate_id: "topic-startup",
+    title: "Server initialization and bootstrap",
+    question: "How does the server initialize its core components?",
+    starting_symbols: [{ path: "context.go", symbol: "Reset", line: 31 }],
+    uncertainty: "The local evidence stops before the observable result.",
+  },
+];
 const report = {
-  repo_name: "fixture", user_mechanisms: [mechanism], user_sources: [],
+  repo_name: "fixture", user_mechanisms: [mechanism], user_topics: topics, user_sources: [],
   openable_paths: ["README.md", "router.go", "tree.go", "context.go"], source_ids: {},
   study_map: {
     brief: {
@@ -281,6 +304,24 @@ const returned = api.reduceWorkspaceState({
 api.renderOverviewWorkspace();
 const shelfOverviewText = text(roots["rm-overview"]);
 report.user_mechanisms.length = 0;
+const topicRoots = { "rm-overview": new Element("section") };
+const topicWindow = {
+  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const topicDocument = {
+  createElement(tag) { return new Element(tag); },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
+    return topicRoots[id] || null;
+  },
+  querySelectorAll() { return []; },
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window: topicWindow, document: topicDocument, URLSearchParams, Set, Map, AbortController,
+});
+topicWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
+report.user_topics.length = 0;
 const emptyRoots = { "rm-overview": new Element("section") };
 const emptyWindow = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
@@ -301,7 +342,8 @@ emptyWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
 const card = api.renderStudyDirectionCard(reading, 0);
 process.stdout.write(JSON.stringify({
   route, attachedRoute, invalidRoute, sourceState, closedState, returned,
-  shelfOverviewText, emptyShelfOverviewText: text(emptyRoots["rm-overview"]), cardText: text(card),
+  shelfOverviewText, topicOverviewText: text(topicRoots["rm-overview"]),
+  emptyShelfOverviewText: text(emptyRoots["rm-overview"]), cardText: text(card),
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "study-map-workspace-test.js")
@@ -347,6 +389,7 @@ process.stdout.write(JSON.stringify({
 			DirectionID string `json:"directionID"`
 		} `json:"returned"`
 		ShelfOverviewText      string `json:"shelfOverviewText"`
+		TopicOverviewText      string `json:"topicOverviewText"`
 		EmptyShelfOverviewText string `json:"emptyShelfOverviewText"`
 		CardText               string `json:"cardText"`
 	}
@@ -382,6 +425,25 @@ process.stdout.write(JSON.stringify({
 	}
 	if strings.Contains(got.ShelfOverviewText, "Repository brief") {
 		t.Fatalf("non-empty mixed shelf fell through to Study Map: %q", got.ShelfOverviewText)
+	}
+	for _, token := range []string{
+		"Questions worth exploring",
+		"Message creation and real-time delivery",
+		"Asset upload and storage",
+		"Server initialization and bootstrap",
+	} {
+		if !strings.Contains(got.TopicOverviewText, token) {
+			t.Errorf("topic and Study coexistence is missing %q: %q", token, got.TopicOverviewText)
+		}
+	}
+	for _, forbidden := range []string{"Repository brief", "Search"} {
+		if strings.Contains(got.TopicOverviewText, forbidden) {
+			t.Fatalf(
+				"topic Overview exposed fallback %q while Study remains routable: %q",
+				forbidden,
+				got.TopicOverviewText,
+			)
+		}
 	}
 	for _, token := range []string{
 		"Repository brief",

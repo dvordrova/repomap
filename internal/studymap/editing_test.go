@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -101,9 +102,13 @@ func TestEditingContractsDecodeStrictIndependentArtifacts(t *testing.T) {
 	) {
 		t.Fatal("normalized direction IDs changed during replay")
 	}
-	if _, err := DecodeDirectionProposal(normalizedRaw); err == nil ||
-		!strings.Contains(err.Error(), "model-supplied direction id") {
-		t.Fatalf("raw direction decoder accepted normalized artifact: %v", err)
+	if _, diagnostics, err := DecodeDirectionProposalWithDiagnostics(normalizedRaw); err == nil ||
+		len(diagnostics.Issues) == 0 || diagnostics.Issues[0].Code != "model_direction_id" {
+		t.Fatalf(
+			"raw direction decoder accepted normalized artifact: diagnostics=%#v error=%v",
+			diagnostics,
+			err,
+		)
 	}
 	missingLocalID := decodedDirections
 	missingLocalID.Directions = append([]DirectionCandidate(nil), decodedDirections.Directions...)
@@ -114,9 +119,16 @@ func TestEditingContractsDecodeStrictIndependentArtifacts(t *testing.T) {
 	suppliedID := rawDirections
 	suppliedID.Directions = append([]DirectionCandidate(nil), rawDirections.Directions...)
 	suppliedID.Directions[0].DirectionID = "model-direction"
-	if _, err := DecodeDirectionProposal(mustEditingJSON(t, suppliedID)); err == nil ||
-		!strings.Contains(err.Error(), "model-supplied direction id") {
-		t.Fatalf("DecodeDirectionProposal(model id) error = %v", err)
+	if _, diagnostics, err := DecodeDirectionProposalWithDiagnostics(
+		mustEditingJSON(t, suppliedID),
+	); err != nil || diagnostics.Accepted != len(suppliedID.Directions)-1 ||
+		len(diagnostics.Issues) != 1 ||
+		diagnostics.Issues[0].Code != "model_direction_id" {
+		t.Fatalf(
+			"DecodeDirectionProposal(model id) diagnostics=%#v error=%v",
+			diagnostics,
+			err,
+		)
 	}
 	reordered := rawDirections.Directions[0]
 	reordered.Question = "  " + strings.ToUpper(reordered.Question) + "  "
@@ -279,6 +291,176 @@ func TestDecodeBriefShapeProposalCompatibilityFailsClosed(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDecodeDirectionProposalRetainsValidChattoCandidateSiblings(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	base := rawDirectionsFromLegacy(legacy).Directions
+	questions := []string{
+		"How is the Chatto server initialized and started?",
+		"What happens when NewChattoCore is called and how does it set up the event store?",
+		"How does Chatto validate its configuration and environment variables?",
+		"How does Chatto handle administrative commands like user creation and diagnostics?",
+		"How are push notifications set up and filtered in Chatto?",
+		"How does Chatto handle image assets, including GIF transformation and caching?",
+		"How does Chatto use NATS JetStream for event storage and projections?",
+		"How does Chatto manage user encryption keys and data encryption key store?",
+		"How does Chatto's Connect API handle account updates and message service clients?",
+		"How does Chatto manage background runtime units like search and push?",
+		"How does Chatto extract credentials from the request context?",
+	}
+	raw := DirectionProposal{Version: DirectionProposalVersion}
+	for index, question := range questions {
+		candidate := base[index%len(base)]
+		candidate.Question = question
+		candidate.DirectionID = ""
+		candidate.AnchorIDs = append([]string(nil), candidate.AnchorIDs...)
+		candidate.ReadingAnchors = append([]ReadingAnchor(nil), candidate.ReadingAnchors...)
+		if index == 8 || index == 10 {
+			candidate.AnchorIDs = candidate.AnchorIDs[:2]
+			candidate.ReadingAnchors = candidate.ReadingAnchors[:2]
+		}
+		raw.Directions = append(raw.Directions, candidate)
+	}
+
+	decoded, diagnostics, err := DecodeDirectionProposalWithDiagnostics(
+		mustEditingJSON(t, raw),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnostics.Received != 11 || diagnostics.Accepted != 9 ||
+		diagnostics.Rejected != 2 || len(decoded.Directions) != 9 {
+		t.Fatalf(
+			"Chatto cardinality = directions %d, diagnostics %#v",
+			len(decoded.Directions),
+			diagnostics,
+		)
+	}
+	wantIssues := []DirectionProposalIssue{
+		{Position: 8, Code: "invalid_anchor_selection"},
+		{Position: 10, Code: "invalid_anchor_selection"},
+	}
+	if !slices.Equal(diagnostics.Issues, wantIssues) {
+		t.Fatalf("Chatto issues = %#v, want %#v", diagnostics.Issues, wantIssues)
+	}
+	wantQuestions := append([]string(nil), questions[:8]...)
+	wantQuestions = append(wantQuestions, questions[9])
+	for index, direction := range decoded.Directions {
+		if direction.Question != wantQuestions[index] ||
+			direction.DirectionID != localDirectionID(direction) {
+			t.Fatalf("accepted direction %d changed: %#v", index, direction)
+		}
+	}
+}
+
+func TestDecodeDirectionProposalRejectsItemsIndependentlyAndEnvelopeAtomically(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	raw := rawDirectionsFromLegacy(legacy)
+	raw.Directions = append([]DirectionCandidate(nil), raw.Directions[:3]...)
+	raw.Directions[0].Question = "How does the first valid direction work?"
+	raw.Directions[1].Question = "How does the malformed direction work?"
+	raw.Directions[2].Question = "How does the final valid direction work?"
+
+	var envelope struct {
+		Version    int               `json:"version"`
+		Directions []json.RawMessage `json:"directions"`
+	}
+	if err := json.Unmarshal(mustEditingJSON(t, raw), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	envelope.Directions[1] = append(
+		[]byte(`{"unexpected":true,`),
+		envelope.Directions[1][1:]...,
+	)
+	decoded, diagnostics, err := DecodeDirectionProposalWithDiagnostics(
+		mustEditingJSON(t, envelope),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Directions) != 2 ||
+		decoded.Directions[0].Question != raw.Directions[0].Question ||
+		decoded.Directions[1].Question != raw.Directions[2].Question ||
+		!slices.Equal(diagnostics.Issues, []DirectionProposalIssue{{
+			Position: 1,
+			Code:     "decode_candidate",
+		}}) {
+		t.Fatalf("item-local decode = %#v, diagnostics %#v", decoded, diagnostics)
+	}
+
+	duplicate := raw.Directions[0]
+	raw.Directions = []DirectionCandidate{raw.Directions[0], duplicate, raw.Directions[2]}
+	decoded, diagnostics, err = DecodeDirectionProposalWithDiagnostics(mustEditingJSON(t, raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Directions) != 2 ||
+		!slices.Equal(diagnostics.Issues, []DirectionProposalIssue{{
+			Position: 1,
+			Code:     "duplicate_direction_id",
+		}}) {
+		t.Fatalf("duplicate reduction = %#v, diagnostics %#v", decoded, diagnostics)
+	}
+
+	whitespaceID := raw.Directions[0]
+	whitespaceID.DirectionID = " \t\n "
+	raw.Directions = []DirectionCandidate{whitespaceID}
+	decoded, diagnostics, err = DecodeDirectionProposalWithDiagnostics(mustEditingJSON(t, raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutModelID := whitespaceID
+	withoutModelID.DirectionID = ""
+	normalizedWhitespaceID, err := normalizeDirectionCandidate(withoutModelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Directions) != 1 ||
+		!reflect.DeepEqual(decoded.Directions[0], normalizedWhitespaceID) ||
+		decoded.Directions[0].DirectionID != localDirectionID(decoded.Directions[0]) ||
+		diagnostics.Accepted != 1 || diagnostics.Rejected != 0 {
+		t.Fatalf(
+			"whitespace direction id = %#v, diagnostics %#v",
+			decoded,
+			diagnostics,
+		)
+	}
+
+	raw.Directions = []DirectionCandidate{raw.Directions[0]}
+	raw.Directions[0].AnchorIDs = raw.Directions[0].AnchorIDs[:2]
+	raw.Directions[0].ReadingAnchors = raw.Directions[0].ReadingAnchors[:2]
+	if _, diagnostics, err = DecodeDirectionProposalWithDiagnostics(
+		mustEditingJSON(t, raw),
+	); err == nil || diagnostics.Accepted != 0 || diagnostics.Rejected != 1 ||
+		diagnostics.Issues[0].Code != "invalid_anchor_selection" {
+		t.Fatalf("zero survivors diagnostics=%#v error=%v", diagnostics, err)
+	}
+
+	tooMany := rawDirectionsFromLegacy(legacy)
+	for len(tooMany.Directions) <= MaxCandidates {
+		candidate := tooMany.Directions[len(tooMany.Directions)%len(baseDirections(legacy))]
+		candidate.Question = fmt.Sprintf(
+			"How does excessive direction %d work?",
+			len(tooMany.Directions),
+		)
+		tooMany.Directions = append(tooMany.Directions, candidate)
+	}
+	if _, diagnostics, err = DecodeDirectionProposalWithDiagnostics(
+		mustEditingJSON(t, tooMany),
+	); err == nil || diagnostics.Received != 0 {
+		t.Fatalf("excessive envelope diagnostics=%#v error=%v", diagnostics, err)
+	}
+}
+
+func baseDirections(proposal Proposal) []DirectionCandidate {
+	return rawDirectionsFromLegacy(proposal).Directions
 }
 
 func briefShapeTopLevelTermsJSON(
