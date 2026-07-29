@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/137-incomplete-study-production-integration.md
+    decisions/138-beets-current-pipeline-acceptance-run.md
 
 Status:
-    Completed bounded production integration
+    Decision 138 complete; local checkpoint authorized
 
 Approved by:
     Product supervisor and repository owner in the current session
 
 Notes:
+    Decision 138 completed exactly one normal `beets --no-search` run using
+    the verified Decision 137 checkpoint and stable PATH binary. The run
+    published three honest incomplete Python topics and exact editor starts,
+    but its General Study stage failed because Study anchors accepted only the
+    Go-specific sourcewindowfacts.Function contract. After the authorized
+    two-file assembly fallback proved impossible and was fully reverted, the
+    product supervisor authorized one six-file tagged Study-anchor contract:
+    unchanged Go Function validation or a bounded, hash-verified, explicit
+    non-Go ExactSource, never both. No provider or repository rerun is allowed
+    before focused/full checks and concrete supervisor review. Those checks and
+    the saved Beets provider-free assembly/review replay passed; the supervisor
+    confirmed the real `import_files` anchor at line 50, zero complete
+    mechanisms, no blocker, and authorized the local checkpoint.
     Decision 137 integrates only the supervisor-approved incomplete Study
     projection and detail route. It replays the saved bounded candidate
     response against the exact saved anchor catalog, preserves provider order,

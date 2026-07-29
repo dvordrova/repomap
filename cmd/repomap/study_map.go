@@ -292,10 +292,14 @@ func buildStudyMapBundle(
 		savedSources = studyMapRecoverSavedSourceFunctions(runDir, repoRoot)
 	}
 	centralSources, _, centralErr := freshCentralSourceFunctions(runDir, repoRoot, data)
-	if centralErr != nil && len(savedSources) == 0 {
+	var exactSources []freshSourceFunction
+	if len(savedSources) == 0 && len(centralSources) == 0 {
+		exactSources = freshSavedDiscoverySources(runDir, data, nil)
+	}
+	if centralErr != nil && len(savedSources) == 0 && len(exactSources) == 0 {
 		return studymap.Bundle{}, fmt.Errorf("study map: collect central source: %w", centralErr)
 	}
-	if savedErr != nil && len(savedSources) == 0 && len(centralSources) == 0 {
+	if savedErr != nil && len(savedSources) == 0 && len(centralSources) == 0 && len(exactSources) == 0 {
 		return studymap.Bundle{}, fmt.Errorf("study map: no bounded source functions: %w", savedErr)
 	}
 	diverseSources := studyMapDiverseSourceFunctions(repoRoot, data, append(savedSources, centralSources...))
@@ -317,7 +321,7 @@ func buildStudyMapBundle(
 		}
 	}
 	areas, areaPaths := studyMapAreas(data, openable)
-	anchors := make([]studymap.Anchor, 0, len(sources))
+	anchors := make([]studymap.Anchor, 0, len(sources)+len(exactSources))
 	for _, source := range sources {
 		if _, ok := openable[source.Function.Path]; !ok {
 			continue
@@ -334,6 +338,34 @@ func buildStudyMapBundle(
 			Capabilities: append([]semanticdiscovery.Capability(nil), source.Fact.Capabilities...),
 			AreaIDs:      areaIDs, Function: source.Function,
 		})
+	}
+	if len(sources) == 0 {
+		for _, source := range exactSources {
+			language := studyMapExactSourceLanguage(source.Function.Path)
+			if language == "" {
+				continue
+			}
+			if _, ok := openable[source.Function.Path]; !ok {
+				continue
+			}
+			line := source.Function.StartLine
+			if len(source.Fact.Evidence) > 0 && source.Fact.Evidence[0].Line > 0 {
+				line = source.Fact.Evidence[0].Line
+			}
+			exact := &studymap.ExactSource{
+				Path: source.Function.Path, Language: language, Symbol: source.Function.Symbol,
+				Line: line, StartLine: source.Function.StartLine, EndLine: source.Function.EndLine,
+				Lines: append([]string(nil), source.Function.Lines...), ContentSHA256: source.Function.ContentSHA256,
+			}
+			anchors = append(anchors, studymap.Anchor{
+				ID: source.Fact.ID, Path: exact.Path, Symbol: exact.Symbol, Line: exact.Line,
+				Role:      artifactrole.Classify(exact.Path, artifactrole.Hints{}),
+				Statement: source.Fact.Statement, Capabilities: append(
+					[]semanticdiscovery.Capability(nil), source.Fact.Capabilities...,
+				),
+				AreaIDs: studyMapAreasForPath(exact.Path, areas, areaPaths), ExactSource: exact,
+			})
+		}
 	}
 	if len(anchors) == 0 {
 		return studymap.Bundle{}, fmt.Errorf("study map: no locally authorized code anchors")
@@ -368,6 +400,21 @@ func buildStudyMapBundle(
 		return studymap.Bundle{}, err
 	}
 	return bundle, nil
+}
+
+func studyMapExactSourceLanguage(sourcePath string) string {
+	switch strings.ToLower(path.Ext(sourcePath)) {
+	case ".js", ".mjs", ".cjs":
+		return "javascript"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	default:
+		return ""
+	}
 }
 
 func studyMapAllowedPaths(

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
@@ -41,6 +42,10 @@ const (
 	MaxMechanisms = 12
 
 	maxRecordBytes = 4 << 20
+
+	maxExactSourceLines     = 512
+	maxExactSourceLineBytes = 64 << 10
+	maxExactSourceBytes     = 1 << 20
 )
 
 type RepositoryType string
@@ -115,6 +120,22 @@ type Anchor struct {
 	Capabilities []semanticdiscovery.Capability `json:"capabilities,omitempty"`
 	AreaIDs      []string                       `json:"area_ids,omitempty"`
 	Function     sourcewindowfacts.Function     `json:"function"`
+	ExactSource  *ExactSource                   `json:"exact_source,omitempty"`
+}
+
+// ExactSource is a bounded, hash-verified declaration window for a non-Go
+// language. It is deliberately weaker than sourcewindowfacts.Function: the
+// saved lines provide an exact reading anchor but make no syntax or behavior
+// claim. Anchor selects exactly one of Function or ExactSource.
+type ExactSource struct {
+	Path          string   `json:"path"`
+	Language      string   `json:"language"`
+	Symbol        string   `json:"symbol"`
+	Line          int      `json:"line"`
+	StartLine     int      `json:"start_line"`
+	EndLine       int      `json:"end_line"`
+	Lines         []string `json:"lines"`
+	ContentSHA256 string   `json:"content_sha256"`
 }
 
 type Document struct {
@@ -465,9 +486,7 @@ func (bundle Bundle) Validate() error {
 			return fmt.Errorf("study map: duplicate anchor id %q", anchor.ID)
 		}
 		anchors[anchor.ID] = struct{}{}
-		if err := anchor.Function.Validate(); err != nil || anchor.Function.Path != anchor.Path ||
-			anchor.Function.Symbol != anchor.Symbol || anchor.Line < anchor.Function.StartLine ||
-			anchor.Line > anchor.Function.EndLine {
+		if err := anchor.validateSource(); err != nil {
 			return fmt.Errorf("study map: anchor source is invalid")
 		}
 		for _, areaID := range anchor.AreaIDs {
@@ -923,6 +942,11 @@ func canonicalBundle(bundle Bundle) Bundle {
 	for index := range bundle.Anchors {
 		bundle.Anchors[index].AreaIDs = uniqueStrings(bundle.Anchors[index].AreaIDs)
 		bundle.Anchors[index].Capabilities = uniqueCapabilities(bundle.Anchors[index].Capabilities)
+		if bundle.Anchors[index].ExactSource != nil {
+			exact := *bundle.Anchors[index].ExactSource
+			exact.Lines = append([]string(nil), exact.Lines...)
+			bundle.Anchors[index].ExactSource = &exact
+		}
 	}
 	sort.Slice(bundle.Anchors, func(i, j int) bool { return bundle.Anchors[i].ID < bundle.Anchors[j].ID })
 	sort.Slice(bundle.Documents, func(i, j int) bool { return bundle.Documents[i].ID < bundle.Documents[j].ID })
@@ -932,6 +956,92 @@ func canonicalBundle(bundle Bundle) Bundle {
 	}
 	sort.Slice(bundle.Mechanisms, func(i, j int) bool { return bundle.Mechanisms[i].ID < bundle.Mechanisms[j].ID })
 	return bundle
+}
+
+func (anchor Anchor) validateSource() error {
+	hasFunction := sourceFunctionPresent(anchor.Function)
+	hasExact := anchor.ExactSource != nil
+	if hasFunction == hasExact {
+		return fmt.Errorf("study map: anchor must select exactly one source arm")
+	}
+	if hasFunction {
+		if err := anchor.Function.Validate(); err != nil || anchor.Function.Path != anchor.Path ||
+			anchor.Function.Symbol != anchor.Symbol || anchor.Line < anchor.Function.StartLine ||
+			anchor.Line > anchor.Function.EndLine {
+			return fmt.Errorf("study map: Go anchor source does not match anchor")
+		}
+		return nil
+	}
+	if err := anchor.ExactSource.Validate(); err != nil ||
+		anchor.ExactSource.Path != anchor.Path || anchor.ExactSource.Symbol != anchor.Symbol ||
+		anchor.ExactSource.Line != anchor.Line {
+		return fmt.Errorf("study map: exact anchor source does not match anchor")
+	}
+	return nil
+}
+
+func (anchor Anchor) sourceLines() (int, []string, error) {
+	if err := anchor.validateSource(); err != nil {
+		return 0, nil, err
+	}
+	if anchor.ExactSource != nil {
+		return anchor.ExactSource.StartLine, anchor.ExactSource.Lines, nil
+	}
+	return anchor.Function.StartLine, anchor.Function.Lines, nil
+}
+
+func sourceFunctionPresent(function sourcewindowfacts.Function) bool {
+	return function.Symbol != "" || function.Path != "" || function.StartLine != 0 ||
+		function.EndLine != 0 || len(function.Lines) != 0 || function.ContentSHA256 != "" ||
+		function.Partial || len(function.Observations) != 0
+}
+
+// Validate checks the bounded non-Go source arm without interpreting its
+// syntax. Catalog resolution and repository freshness remain assembly-time
+// responsibilities; this contract protects exact path, line, and saved bytes.
+func (source ExactSource) Validate() error {
+	if !validPath(source.Path) || !validText(source.Symbol, 256, true) ||
+		source.Language != exactSourceLanguage(source.Path) || source.Language == "" {
+		return fmt.Errorf("study map: invalid exact source identity")
+	}
+	if source.Line <= 0 || source.StartLine <= 0 || source.EndLine < source.StartLine ||
+		source.Line < source.StartLine || source.Line > source.EndLine ||
+		len(source.Lines) == 0 || len(source.Lines) > maxExactSourceLines ||
+		len(source.Lines) != source.EndLine-source.StartLine+1 {
+		return fmt.Errorf("study map: invalid exact source bounds")
+	}
+	totalBytes := 0
+	for _, line := range source.Lines {
+		if !utf8.ValidString(line) || len(line) > maxExactSourceLineBytes ||
+			strings.ContainsAny(line, "\x00\r\n") {
+			return fmt.Errorf("study map: invalid exact source line")
+		}
+		totalBytes += len(line)
+		if totalBytes > maxExactSourceBytes {
+			return fmt.Errorf("study map: exact source exceeds byte budget")
+		}
+	}
+	raw, _ := json.Marshal(source.Lines)
+	digest := sha256.Sum256(raw)
+	if source.ContentSHA256 != hex.EncodeToString(digest[:]) {
+		return fmt.Errorf("study map: exact source content hash mismatch")
+	}
+	return nil
+}
+
+func exactSourceLanguage(sourcePath string) string {
+	switch strings.ToLower(path.Ext(sourcePath)) {
+	case ".js", ".mjs", ".cjs":
+		return "javascript"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	default:
+		return ""
+	}
 }
 
 func defaultShapeAreaIDs(areas []Area) []string {
