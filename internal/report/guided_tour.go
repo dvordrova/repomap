@@ -1,6 +1,7 @@
 package report
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -13,6 +14,8 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 )
+
+var ErrNoGuidedTourCandidates = errors.New("guided tour has no eligible candidates")
 
 const (
 	GuidedStoryFile = "guided_story.json"
@@ -174,7 +177,8 @@ func BuildGuidedTourBundle(data *ReportData) (guidedtour.Bundle, error) {
 
 	if len(candidates) == 0 {
 		return guidedtour.Bundle{}, fmt.Errorf(
-			"guided tour build: no candidate has at least %d exact beats",
+			"%w: no candidate has at least %d exact beats",
+			ErrNoGuidedTourCandidates,
 			minGuidedTourCandidateExactBeats,
 		)
 	}

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestCollectRejectsRootEscape(t *testing.T) {
+func TestCollectRejectsRootEscapeAndSkipsUnsafeSymlinks(t *testing.T) {
 	t.Parallel()
 
 	repo := t.TempDir()
@@ -23,8 +23,50 @@ func TestCollectRejectsRootEscape(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(repo, "README.md")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Collect(repo, "fixture", []string{"README.md"}); err == nil {
-		t.Fatal("Collect followed an allowed symlink outside the repository root")
+	writeCollectorFixture(t, filepath.Join(repo, "Makefile"), "verify:\n\tgo test ./...\n", 0o644)
+	bundle, err := Collect(repo, "fixture", []string{"README.md", "Makefile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Stats.ReadFiles != 1 || len(bundle.Evidence) == 0 {
+		t.Fatalf("outside symlink erased unrelated evidence: %#v", bundle)
+	}
+	if evidenceWithCommand(t, bundle, "make verify").Path != "Makefile" {
+		t.Fatalf("unexpected evidence after skipped symlink: %#v", bundle.Evidence)
+	}
+}
+
+func TestCollectFollowsOnlyAuthorizedInRepositorySymlink(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	writeCollectorFixture(
+		t,
+		filepath.Join(repo, "AGENTS.md"),
+		"# Verify\n\n```sh\ngo test ./...\n```\n",
+		0o644,
+	)
+	if err := os.Symlink("AGENTS.md", filepath.Join(repo, "CLAUDE.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle, err := Collect(repo, "fixture", []string{"AGENTS.md", "CLAUDE.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Stats.ReadFiles != 1 {
+		t.Fatalf("read files = %d, want one deduplicated tracked target", bundle.Stats.ReadFiles)
+	}
+	if len(bundle.Evidence) == 0 {
+		t.Fatal("authorized in-repository symlink produced no evidence")
+	}
+
+	unauthorized, err := Collect(repo, "fixture", []string{"CLAUDE.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unauthorized.Stats.ReadFiles != 0 || len(unauthorized.Evidence) != 0 {
+		t.Fatalf("unauthorized symlink target was read: %#v", unauthorized)
 	}
 }
 

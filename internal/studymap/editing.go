@@ -29,6 +29,10 @@ const (
 	maxReviewBundleBytes    = 64 << 10
 	maxReviewSourceBytes    = 16 << 10
 	maxReviewSourceLines    = 60
+
+	// Provider recovery examines only a bounded number of object starts before
+	// the existing strict envelope and semantic validators take over.
+	maxProviderEnvelopeCandidates = 16
 )
 
 // AnchorFit describes how closely one exact source window answers a fixed
@@ -290,6 +294,25 @@ func DecodeBriefShapeProposal(raw []byte) (BriefShapeProposal, error) {
 	return proposal, nil
 }
 
+// RecoverBriefShapeProviderJSON extracts one unambiguous strict brief envelope
+// from bounded provider prose. It does not normalize fields or weaken any
+// subsequent Study validation.
+func RecoverBriefShapeProviderJSON(raw []byte) ([]byte, error) {
+	return recoverEditingProviderJSON(
+		raw,
+		"brief and shape proposal",
+		func(candidate []byte) error {
+			var response briefShapeProviderResponse
+			return decodeEditingJSON(
+				candidate,
+				maxEditingArtifactBytes,
+				"brief and shape proposal",
+				&response,
+			)
+		},
+	)
+}
+
 func decodeBriefProviderDomainTerms(raw json.RawMessage) ([]BriefDomainTerm, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -313,6 +336,25 @@ func decodeBriefProviderDomainTerms(raw json.RawMessage) ([]BriefDomainTerm, err
 func DecodeDirectionProposal(raw []byte) (DirectionProposal, error) {
 	proposal, _, err := DecodeDirectionProposalWithDiagnostics(raw)
 	return proposal, err
+}
+
+// RecoverDirectionProviderJSON extracts one unambiguous strict direction
+// envelope from bounded provider prose. Candidate-level rejection, opaque-ID
+// validation, and canonical saved-artifact decoding remain unchanged.
+func RecoverDirectionProviderJSON(raw []byte) ([]byte, error) {
+	return recoverEditingProviderJSON(
+		raw,
+		"direction proposal",
+		func(candidate []byte) error {
+			var response directionProposalProviderResponse
+			return decodeEditingJSON(
+				candidate,
+				maxEditingArtifactBytes,
+				"direction proposal",
+				&response,
+			)
+		},
+	)
 }
 
 // DecodeDirectionProposalWithDiagnostics keeps the bounded provider envelope
@@ -1926,4 +1968,54 @@ func decodeEditingJSON(raw []byte, limit int, label string, target any) error {
 		return fmt.Errorf("study map: invalid trailing JSON in %s: %w", label, err)
 	}
 	return nil
+}
+
+func recoverEditingProviderJSON(
+	raw []byte,
+	label string,
+	validate func([]byte) error,
+) ([]byte, error) {
+	if len(raw) == 0 || len(raw) > maxEditingArtifactBytes {
+		return nil, fmt.Errorf("study map: %s is outside bounds", label)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if validate(trimmed) == nil {
+		return append([]byte(nil), trimmed...), nil
+	}
+
+	var accepted []byte
+	starts := 0
+	for cursor := 0; cursor < len(raw) && starts < maxProviderEnvelopeCandidates; {
+		offset := bytes.IndexByte(raw[cursor:], '{')
+		if offset < 0 {
+			break
+		}
+		start := cursor + offset
+		starts++
+		decoder := json.NewDecoder(bytes.NewReader(raw[start:]))
+		var candidate json.RawMessage
+		if err := decoder.Decode(&candidate); err != nil ||
+			len(candidate) == 0 || candidate[0] != '{' {
+			cursor = start + 1
+			continue
+		}
+		if validate(candidate) == nil {
+			if accepted != nil {
+				return nil, fmt.Errorf(
+					"study map: ambiguous recoverable %s",
+					label,
+				)
+			}
+			accepted = append([]byte(nil), candidate...)
+		}
+		consumed := int(decoder.InputOffset())
+		if consumed <= 0 {
+			consumed = 1
+		}
+		cursor = start + consumed
+	}
+	if accepted == nil {
+		return nil, fmt.Errorf("study map: no recoverable %s", label)
+	}
+	return accepted, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -61,17 +62,23 @@ func main() {
 }
 
 func TestSurfaceDiscoveryInputPreservesExactEntrypointAnchors(t *testing.T) {
-	input := surfaceDiscoveryInput("fixture", &gofacts.Facts{EntrypointPackages: []gofacts.Entrypoint{{
-		ImportPath: "example.com/fixture/cmd/fixture", PackageDir: "cmd/fixture", Kind: "unknown",
-		Anchors: []gofacts.EntrypointAnchor{{
-			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-			Path: "cmd/fixture/main.go", Line: 23,
+	input := surfaceDiscoveryInput("fixture", &gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{ModuleDir: "service"}},
+		EntrypointPackages: []gofacts.Entrypoint{{
+			ImportPath: "example.com/fixture/cmd/fixture", PackageDir: "service/cmd/fixture",
+			ModuleDir: "service", Kind: "unknown",
+			Anchors: []gofacts.EntrypointAnchor{{
+				Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
+				Path: "service/cmd/fixture/main.go", Line: 23,
+			}},
 		}},
-	}}})
+	})
 	if input.RepositoryName != "fixture" || len(input.Entrypoints) != 1 ||
+		!reflect.DeepEqual(input.ModuleDirs, []string{"service"}) ||
 		len(input.Entrypoints[0].Anchors) != 1 ||
 		input.Entrypoints[0].Anchors[0].Kind != "go_main_function" ||
-		input.Entrypoints[0].Anchors[0].Path != "cmd/fixture/main.go" ||
+		input.Entrypoints[0].ModuleDir != "service" ||
+		input.Entrypoints[0].Anchors[0].Path != "service/cmd/fixture/main.go" ||
 		input.Entrypoints[0].Anchors[0].Line != 23 {
 		t.Fatalf("surface discovery input = %#v", input)
 	}

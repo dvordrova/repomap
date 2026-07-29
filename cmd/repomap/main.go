@@ -644,7 +644,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
-			fmt.Fprintln(deps.stderr, "repomap: editing one bounded onboarding story from saved facts")
 			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
@@ -656,6 +655,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					guidedErr,
 					time.Since(guidedStarted).Milliseconds(),
 				)
+			} else if outcome.Skipped {
+				// No saved flow or direction currently satisfies the Guided
+				// Tour publication contract. This is an expected no-call
+				// presentation outcome, not a product warning.
 			} else if outcome.Cached {
 				fmt.Fprintf(
 					deps.stderr,
