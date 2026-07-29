@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -145,13 +146,26 @@ func TestNormalizedDirectionArtifactRoundTripsWithoutRewritingRawAttempt(t *test
 	for index := range rawProposal.Directions {
 		rawProposal.Directions[index].DirectionID = ""
 	}
+	rejectedPosition := len(rawProposal.Directions) - 1
+	rawProposal.Directions[rejectedPosition].AnchorIDs =
+		rawProposal.Directions[rejectedPosition].AnchorIDs[:2]
+	rawProposal.Directions[rejectedPosition].ReadingAnchors =
+		rawProposal.Directions[rejectedPosition].ReadingAnchors[:2]
 	raw, err := json.Marshal(rawProposal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := studymap.DecodeDirectionProposal(raw)
+	decoded, diagnostics, err := studymap.DecodeDirectionProposalWithDiagnostics(raw)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if diagnostics.Received != len(rawProposal.Directions) ||
+		diagnostics.Accepted != len(rawProposal.Directions)-1 ||
+		diagnostics.Rejected != 1 ||
+		len(diagnostics.Issues) != 1 ||
+		diagnostics.Issues[0].Position != rejectedPosition ||
+		diagnostics.Issues[0].Code != "invalid_anchor_selection" {
+		t.Fatalf("direction diagnostics = %#v", diagnostics)
 	}
 	runDir := t.TempDir()
 	if err := writeNormalizedDirectionProposal(filepath.Join(runDir, studyMapDirectionsFile), decoded); err != nil {
@@ -159,7 +173,9 @@ func TestNormalizedDirectionArtifactRoundTripsWithoutRewritingRawAttempt(t *test
 	}
 	attempt := studyMapV32StageAttempt{
 		Version: 1, PromptVersion: semanticdiscovery.StudyCandidatesPromptVersion,
-		ValidationState: "accepted", Response: append(json.RawMessage(nil), raw...),
+		ValidationState:      "accepted",
+		DirectionDiagnostics: &diagnostics,
+		Response:             append(json.RawMessage(nil), raw...),
 	}
 	if err := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), attempt); err != nil {
 		t.Fatal(err)
@@ -196,6 +212,14 @@ func TestNormalizedDirectionArtifactRoundTripsWithoutRewritingRawAttempt(t *test
 	}
 	if replayedRaw.Directions[0].DirectionID != "" {
 		t.Fatal("raw attempt gained a locally derived direction ID")
+	}
+	if savedAttempt.DirectionDiagnostics == nil ||
+		!reflect.DeepEqual(*savedAttempt.DirectionDiagnostics, diagnostics) {
+		t.Fatalf(
+			"saved direction diagnostics = %#v, want %#v",
+			savedAttempt.DirectionDiagnostics,
+			diagnostics,
+		)
 	}
 }
 
