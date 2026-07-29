@@ -174,7 +174,13 @@ func PlanTargetedRounds(ctx context.Context, input PlanningInput) (PlanResult, e
 		return plans[i].Question.ID < plans[j].Question.ID
 	})
 	result := PlanResult{Selected: make([]PlannedRound, 0, input.Policy.MaxTargetedRounds)}
-	for _, plan := range plans {
+	for len(plans) > 0 {
+		index := 0
+		if len(result.Selected) > 0 && len(result.Selected) < input.Policy.MaxTargetedRounds {
+			index = nextDiversePlanIndex(plans, result.Selected)
+		}
+		plan := plans[index]
+		plans = append(plans[:index], plans[index+1:]...)
 		if !plan.Gate.Selected {
 			result.Skipped = append(result.Skipped, plan)
 			continue
@@ -204,6 +210,71 @@ func PlanTargetedRounds(ctx context.Context, input PlanningInput) (PlanResult, e
 		}
 	}
 	return result, nil
+}
+
+func nextDiversePlanIndex(plans, selected []PlannedRound) int {
+	// Eligibility and the strongest first round are decided before this point.
+	// Later slots use only the already bounded provider-visible paths so two
+	// nearby questions do not consume the entire targeted-research budget.
+	best := -1
+	for index, plan := range plans {
+		if !plan.Gate.Selected {
+			continue
+		}
+		if best == -1 || planPathOverlapLess(plan, plans[best], selected) {
+			best = index
+		}
+	}
+	if best == -1 {
+		return 0
+	}
+	return best
+}
+
+func planPathOverlapLess(left, right PlannedRound, selected []PlannedRound) bool {
+	leftSum, leftPairs := planPathOverlap(left, selected)
+	rightSum, rightPairs := planPathOverlap(right, selected)
+	if leftSum*rightPairs != rightSum*leftPairs {
+		return leftSum*rightPairs < rightSum*leftPairs
+	}
+	if left.Score != right.Score {
+		return left.Score > right.Score
+	}
+	return left.Question.ID < right.Question.ID
+}
+
+func planPathOverlap(candidate PlannedRound, selected []PlannedRound) (sum int, pairs int) {
+	for _, existing := range selected {
+		for _, left := range candidate.Bundle.ProviderAllowedPaths {
+			for _, right := range existing.Bundle.ProviderAllowedPaths {
+				sum += sharedDirectoryPrefixDepth(left, right)
+				pairs++
+			}
+		}
+	}
+	if pairs == 0 {
+		return 0, 1
+	}
+	return sum, pairs
+}
+
+func sharedDirectoryPrefixDepth(left, right string) int {
+	leftParts := pathDirectoryParts(left)
+	rightParts := pathDirectoryParts(right)
+	limit := min(len(leftParts), len(rightParts))
+	shared := 0
+	for shared < limit && leftParts[shared] == rightParts[shared] {
+		shared++
+	}
+	return shared
+}
+
+func pathDirectoryParts(path string) []string {
+	directory := filepath.ToSlash(filepath.Dir(path))
+	if directory == "." || directory == "" {
+		return nil
+	}
+	return strings.Split(strings.Trim(directory, "/"), "/")
 }
 
 func assembleEvidenceBundle(

@@ -261,6 +261,68 @@ func TestPlanTargetedRoundsHardCapsTwoRounds(t *testing.T) {
 	}
 }
 
+func TestPlanTargetedRoundsDiversifiesSecondRound(t *testing.T) {
+	repo := t.TempDir()
+	writeResearchFile(t, repo, "beets/__main__.py", "from .ui import main\n\nmain([])\n")
+	writeResearchFile(t, repo, "beets/ui/commands/__init__.py", "def dispatch():\n    return True\n")
+	writeResearchFile(t, repo, "beets/ui/commands/import_/__init__.py", "def import_files():\n    return True\n")
+	writeResearchFile(t, repo, "beets/importer/__init__.py", "class ImportSession:\n    pass\n")
+	writeResearchFile(t, repo, "beets/plugins.py", "class BeetsPlugin:\n    pass\n")
+
+	questions := []ProposedQuestion{
+		{
+			ID: "cli-dispatch", Purpose: "Clarify how argparse or similar is wired to subcommand modules, enabling trace of any CLI flow.",
+			Question:     "How does beets/ui/commands/__init__.py register subcommands, and what is the dispatch mechanism from beets/__main__.py?",
+			CandidateIDs: []string{"main", "commands"},
+		},
+		{
+			ID: "plugin-api", Purpose: "Understand the plugin interface (base class, hooks) to know how plugins integrate.",
+			Question:     "What base class or protocol do plugins in beetsplug/ follow, and how are they loaded by beets/plugins.py?",
+			CandidateIDs: []string{"plugins"},
+		},
+		{
+			ID: "import-pipeline-start", Purpose: "Trace the first steps of import to map the flow from CLI command to importer session.",
+			Question:     "How does beets/ui/commands/import_/__init__.py invoke the importer subsystem (beets/importer), and what is the initial call?",
+			CandidateIDs: []string{"import-command", "importer"},
+		},
+	}
+	candidates := []FileCandidate{
+		{ID: "main", Path: "beets/__main__.py", Score: 180},
+		{ID: "commands", Path: "beets/ui/commands/__init__.py", Score: 50},
+		{ID: "plugins", Path: "beets/plugins.py", Score: 50},
+		{ID: "import-command", Path: "beets/ui/commands/import_/__init__.py", Score: 50},
+		{ID: "importer", Path: "beets/importer/__init__.py", Score: 50},
+	}
+	authorized := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		authorized = append(authorized, candidate.Path)
+	}
+
+	result, err := PlanTargetedRounds(context.Background(), PlanningInput{
+		RepoPath: repo, Questions: questions, Candidates: candidates,
+		InitialProviderPaths: authorized,
+		Universe:             LocalRepositoryUniverse{AuthorizedPaths: authorized},
+		Policy:               DefaultPolicy(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(plannedQuestionIDs(result.Selected), ","); got != "cli-dispatch,plugin-api" {
+		t.Fatalf("selected rounds = %v, want diverse CLI and plugin rounds", result.Selected)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].Question.ID != "import-pipeline-start" ||
+		result.Skipped[0].Gate.Reason != "targeted_round_limit" {
+		t.Fatalf("skipped rounds = %#v, want overlapping import round at targeted limit", result.Skipped)
+	}
+	scores := make(map[string]int, len(result.Selected)+len(result.Skipped))
+	for _, plan := range append(append([]PlannedRound(nil), result.Selected...), result.Skipped...) {
+		scores[plan.Question.ID] = plan.Score
+	}
+	if scores["cli-dispatch"] != 8 || scores["import-pipeline-start"] != 8 || scores["plugin-api"] != 4 {
+		t.Fatalf("planner scores = %v, want cli=8 import=8 plugin=4", scores)
+	}
+}
+
 func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 	input := basicPlanningInput(t)
 	planResult, err := PlanTargetedRounds(context.Background(), input)
@@ -463,6 +525,14 @@ func writeResearchFile(t *testing.T, repo, path, content string) {
 	if err := os.WriteFile(absolute, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func plannedQuestionIDs(plans []PlannedRound) []string {
+	ids := make([]string, 0, len(plans))
+	for _, plan := range plans {
+		ids = append(ids, plan.Question.ID)
+	}
+	return ids
 }
 
 func repoIdentity(t *testing.T) string {
