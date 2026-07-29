@@ -25,6 +25,7 @@ type guidedTourEditor interface {
 }
 
 type guidedTourOutcome struct {
+	Skipped               bool
 	Cached                bool
 	Attempted             bool
 	SemanticCalls         int
@@ -47,6 +48,13 @@ type guidedTourOutcome struct {
 }
 
 func editGuidedTourForRun(ctx context.Context, runDir string, stderr io.Writer) (guidedTourOutcome, error) {
+	bundle, err := guidedTourBundleForRun(runDir)
+	if errors.Is(err, report.ErrNoGuidedTourCandidates) {
+		return guidedTourOutcome{Skipped: true}, nil
+	}
+	if err != nil {
+		return guidedTourOutcome{}, err
+	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return guidedTourOutcome{}, fmt.Errorf("guided tour: provider configuration: %w", err)
@@ -59,9 +67,9 @@ func editGuidedTourForRun(ctx context.Context, runDir string, stderr io.Writer) 
 			progress.Elapsed.Round(time.Second),
 		)
 	}
-	return prepareGuidedTour(
-		ctx,
-		runDir,
+	fmt.Fprintln(stderr, "repomap: editing one bounded onboarding story from saved facts")
+	return ensureGuidedTour(
+		ctx, bundle, runDir,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
@@ -75,15 +83,26 @@ func prepareGuidedTour(
 	model string,
 	provider guidedTourEditor,
 ) (guidedTourOutcome, error) {
+	bundle, err := guidedTourBundleForRun(runDir)
+	if err != nil {
+		return guidedTourOutcome{}, err
+	}
+	return ensureGuidedTour(ctx, bundle, runDir, profile, model, provider)
+}
+
+func guidedTourBundleForRun(runDir string) (guidedtour.Bundle, error) {
 	data, err := report.ReadRunDir(runDir)
 	if err != nil {
-		return guidedTourOutcome{}, fmt.Errorf("guided tour: read saved run: %w", err)
+		return guidedtour.Bundle{}, fmt.Errorf("guided tour: read saved run: %w", err)
 	}
 	bundle, err := report.BuildGuidedTourBundle(data)
 	if err != nil {
-		return guidedTourOutcome{}, fmt.Errorf("guided tour: build bounded story candidates: %w", err)
+		if errors.Is(err, report.ErrNoGuidedTourCandidates) {
+			return guidedtour.Bundle{}, err
+		}
+		return guidedtour.Bundle{}, fmt.Errorf("guided tour: build bounded story candidates: %w", err)
 	}
-	return ensureGuidedTour(ctx, bundle, runDir, profile, model, provider)
+	return bundle, nil
 }
 
 func ensureGuidedTour(

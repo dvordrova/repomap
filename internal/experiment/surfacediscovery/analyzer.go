@@ -44,6 +44,7 @@ type analyzer struct {
 	callTargets               map[ssa.CallInstruction][]*ssa.Function
 	root                      string
 	modulePath                string
+	modulePaths               map[string]bool
 	scenario                  Scenario
 	result                    Result
 	tasks                     int
@@ -72,15 +73,21 @@ type analyzer struct {
 	parameterBindingAmbiguous map[*ssa.Parameter]bool
 	uniqueStoreValues         map[ssa.Value]ssa.Value
 	storeValueAmbiguous       map[ssa.Value]bool
+	valueEvalActive           map[ssa.Value]bool
+	valueReturnActive         map[*ssa.Function]bool
+	valueEvalSteps            int
 	detachedWalk              bool
 	currentPhase              string
 	currentPhaseStarted       time.Time
 }
 
 const (
-	defaultMaxDepth   = 16
-	defaultMaxTasks   = 1500
-	defaultMaxTargets = 8
+	defaultMaxDepth          = 16
+	defaultMaxTasks          = 1500
+	defaultMaxTargets        = 8
+	maxValueEvalSteps        = 20_000
+	maxValueAlternatives     = 32
+	maxValueDescriptionBytes = 4 * 1024
 )
 
 type environment map[ssa.Value]Value
@@ -143,6 +150,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		summaryByID:               map[string]SemanticSummary{},
 		fileDigests:               map[string]SourceDigest{},
 		packageFacts:              map[string]*packages.Package{},
+		modulePaths:               map[string]bool{},
 		callTargets:               map[ssa.CallInstruction][]*ssa.Function{},
 		functionByID:              map[string]*ssa.Function{},
 		loopCache:                 map[*ssa.Function][]loopDescriptor{},
@@ -162,6 +170,8 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		parameterBindingAmbiguous: map[*ssa.Parameter]bool{},
 		uniqueStoreValues:         map[ssa.Value]ssa.Value{},
 		storeValueAmbiguous:       map[ssa.Value]bool{},
+		valueEvalActive:           map[ssa.Value]bool{},
+		valueReturnActive:         map[*ssa.Function]bool{},
 		scenario: Scenario{
 			ID:   scenarioID(runtime.GOOS, runtime.GOARCH, opts.BuildTags),
 			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
@@ -197,6 +207,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		if err := ctx.Err(); err != nil {
 			return Result{}, fmt.Errorf("surface discovery: %w", err)
 		}
+		a.resetValueEvaluation()
 		a.result.Coverage.EntrypointsConsidered = append(
 			a.result.Coverage.EntrypointsConsidered,
 			a.symbol(entrypoint),
@@ -283,31 +294,52 @@ func (a *analyzer) emitProgress(progress PhaseProgress) {
 }
 
 func (a *analyzer) load() error {
-	if err := checkSurfaceGoVersion(a.root); err != nil {
-		return err
+	moduleRoots := make([]string, 0, len(a.input.ModuleDirs))
+	for _, moduleDir := range a.input.ModuleDirs {
+		moduleRoot := filepath.Join(a.root, filepath.FromSlash(moduleDir))
+		if err := checkSurfaceGoVersion(moduleRoot); err != nil {
+			return err
+		}
+		moduleRoots = append(moduleRoots, moduleRoot)
 	}
 	buildFlags := []string{}
 	if len(a.opts.BuildTags) > 0 {
 		buildFlags = append(buildFlags, "-tags="+strings.Join(a.opts.BuildTags, ","))
 	}
-	config := &packages.Config{
-		Context: a.ctx,
-		Dir:     a.root,
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedDeps | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes |
-			packages.NeedModule,
-		BuildFlags: buildFlags,
-		Tests:      false,
-	}
 	finishLoad := a.startPhase("package_load", "loading build-selected packages and dependency type information")
-	loaded, err := packages.Load(config, "./...")
+	var loaded []*packages.Package
+	fileSet := token.NewFileSet()
+	for _, moduleRoot := range moduleRoots {
+		config := &packages.Config{
+			Context: a.ctx,
+			Dir:     moduleRoot,
+			Fset:    fileSet,
+			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+				packages.NeedImports | packages.NeedDeps | packages.NeedSyntax |
+				packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes |
+				packages.NeedModule,
+			BuildFlags: buildFlags,
+			Tests:      false,
+		}
+		modulePackages, err := packages.Load(config, "./...")
+		if ctxErr := a.ctx.Err(); ctxErr != nil {
+			finishLoad(len(loaded), len(loaded))
+			return fmt.Errorf("surface discovery: %w", ctxErr)
+		}
+		if err != nil {
+			finishLoad(len(loaded), len(loaded))
+			return fmt.Errorf(
+				"surface discovery: load packages from %s: %w",
+				repositoryRelativeModuleDir(a.root, moduleRoot),
+				err,
+			)
+		}
+		loaded = append(loaded, modulePackages...)
+		a.emitPhaseProgress(len(loaded), len(loaded), "loaded package roots")
+	}
 	finishLoad(len(loaded), len(loaded))
 	if ctxErr := a.ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("surface discovery: %w", ctxErr)
-	}
-	if err != nil {
-		return fmt.Errorf("surface discovery: load packages: %w", err)
 	}
 	if len(loaded) == 0 {
 		return fmt.Errorf("surface discovery: no build-selected Go packages")
@@ -325,8 +357,10 @@ func (a *analyzer) load() error {
 	a.recordPackageLoadOutcomes(allPackages)
 	for _, pkg := range loaded {
 		if pkg.Module != nil && pkg.Module.Main {
-			a.modulePath = pkg.Module.Path
-			break
+			a.modulePaths[pkg.Module.Path] = true
+			if a.modulePath == "" {
+				a.modulePath = pkg.Module.Path
+			}
 		}
 	}
 	safeLoaded := make([]*packages.Package, 0, len(loaded))
@@ -379,6 +413,14 @@ func (a *analyzer) load() error {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
 	return nil
+}
+
+func repositoryRelativeModuleDir(root, moduleRoot string) string {
+	relative, err := filepath.Rel(root, moduleRoot)
+	if err != nil || relative == "" {
+		return "."
+	}
+	return filepath.ToSlash(relative)
 }
 
 func ssaPackagePath(pkg *ssa.Package) string {
@@ -681,6 +723,7 @@ func (a *analyzer) walkDisconnectedRelevant(entrypoints []*ssa.Function) {
 			triggerStart := len(a.result.Catalog.Triggers)
 			serverStart := len(a.starts)
 			a.detachedWalk = true
+			a.resetValueEvaluation()
 			a.walk(root, a.closureEnvironment(root), nil, candidates[root], 0, false, "")
 			a.detachedWalk = false
 			if a.ctx.Err() != nil {
@@ -1864,7 +1907,7 @@ func (a *analyzer) recordAssignment(store *ssa.Store, env environment) {
 		return
 	}
 	if previous, exists := a.valuesByAddress[key]; exists {
-		a.valuesByAddress[key] = mergeValues([]Value{previous, value})
+		a.valuesByAddress[key] = a.mergeValues([]Value{previous, value})
 		return
 	}
 	a.valuesByAddress[key] = value
@@ -2027,12 +2070,30 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 	if value == nil {
 		return dynamicValue("nil")
 	}
+	if a.ctx != nil && a.ctx.Err() != nil {
+		return dynamicValue("value evaluation canceled")
+	}
 	if depth > a.opts.MaxDepth {
-		return dynamicValue("value depth budget")
+		a.addBudget("value_depth")
+		return dynamicValue("unresolved value")
 	}
 	if resolved, ok := env[value]; ok {
 		return resolved
 	}
+	if a.valueEvalSteps >= maxValueEvalSteps {
+		a.addBudget("value_evaluation")
+		return dynamicValue("unresolved value")
+	}
+	a.valueEvalSteps++
+	if a.valueEvalActive == nil {
+		a.valueEvalActive = map[ssa.Value]bool{}
+	}
+	if a.valueEvalActive[value] {
+		a.addBudget("value_evaluation_cycle")
+		return dynamicValue("unresolved value")
+	}
+	a.valueEvalActive[value] = true
+	defer delete(a.valueEvalActive, value)
 	switch current := value.(type) {
 	case *ssa.Const:
 		if current.Value == nil || current.IsNil() {
@@ -2061,6 +2122,12 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 			left := a.eval(current.X, env, depth+1)
 			right := a.eval(current.Y, env, depth+1)
 			if left.Known && right.Known {
+				if len(left.Text) > maxValueDescriptionBytes ||
+					len(right.Text) > maxValueDescriptionBytes ||
+					len(left.Text)+len(right.Text) > maxValueDescriptionBytes {
+					a.addBudget("value_description")
+					return dynamicValue("unresolved value")
+				}
 				return knownValue("concatenation", left.Text+right.Text)
 			}
 			return dynamicValue(strings.TrimSpace(left.Text + " + " + right.Text))
@@ -2100,11 +2167,16 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 		}
 		return dynamicValue(base.Text + "." + fieldName(current.X.Type(), current.Field))
 	case *ssa.Phi:
-		values := []Value{}
-		for _, edge := range current.Edges {
+		edgeCount := len(current.Edges)
+		if edgeCount > maxValueAlternatives {
+			a.addBudget("value_alternatives")
+			edgeCount = maxValueAlternatives
+		}
+		values := make([]Value, 0, edgeCount)
+		for _, edge := range current.Edges[:edgeCount] {
 			values = append(values, a.eval(edge, env, depth+1))
 		}
-		return mergeValues(values)
+		return a.mergeValues(values)
 	case *ssa.Call:
 		return a.evalCall(current, env, depth+1)
 	}
@@ -2117,8 +2189,13 @@ func (a *analyzer) evalCall(call *ssa.Call, env environment, depth int) Value {
 		targets = a.targets(call)
 	}
 	if len(targets) != 1 {
-		candidates := make([]string, 0, len(targets))
-		for _, target := range targets {
+		targetCount := len(targets)
+		if targetCount > maxValueAlternatives {
+			a.addBudget("value_alternatives")
+			targetCount = maxValueAlternatives
+		}
+		candidates := make([]string, 0, targetCount)
+		for _, target := range targets[:targetCount] {
 			candidates = append(candidates, a.functionID(target))
 		}
 		sort.Strings(candidates)
@@ -2158,6 +2235,12 @@ func (a *analyzer) evalCall(call *ssa.Call, env environment, depth int) Value {
 	return dynamicValue("result of " + a.functionID(target))
 }
 
+func (a *analyzer) resetValueEvaluation() {
+	a.valueEvalSteps = 0
+	a.valueEvalActive = map[ssa.Value]bool{}
+	a.valueReturnActive = map[*ssa.Function]bool{}
+}
+
 func (a *analyzer) evalReturn(
 	target *ssa.Function,
 	args []ssa.Value,
@@ -2167,8 +2250,17 @@ func (a *analyzer) evalReturn(
 	if target == nil || target.Blocks == nil || depth > a.opts.MaxDepth || a.active[target] {
 		return Value{}, false
 	}
+	if a.valueReturnActive == nil {
+		a.valueReturnActive = map[*ssa.Function]bool{}
+	}
+	if a.valueReturnActive[target] {
+		a.addBudget("value_evaluation_cycle")
+		return Value{}, false
+	}
+	a.valueReturnActive[target] = true
+	defer delete(a.valueReturnActive, target)
 	env := a.bind(target, args, caller, depth+1)
-	values := []Value{}
+	values := make([]Value, 0, maxValueAlternatives)
 	for _, block := range target.Blocks {
 		for _, instruction := range block.Instrs {
 			if store, ok := instruction.(*ssa.Store); ok {
@@ -2178,13 +2270,17 @@ func (a *analyzer) evalReturn(
 			if !ok || len(returned.Results) == 0 {
 				continue
 			}
+			if len(values) >= maxValueAlternatives {
+				a.addBudget("value_alternatives")
+				return a.mergeValues(values), true
+			}
 			values = append(values, a.eval(returned.Results[0], env, depth+1))
 		}
 	}
 	if len(values) == 0 {
 		return Value{}, false
 	}
-	return mergeValues(values), true
+	return a.mergeValues(values), true
 }
 
 func (a *analyzer) targets(call ssa.CallInstruction) []*ssa.Function {
@@ -3199,8 +3295,13 @@ func (a *analyzer) wrapperOrigin(function *ssa.Function) string {
 }
 
 func (a *analyzer) isRepositoryFunction(function *ssa.Function) bool {
-	path := functionPackagePath(function)
-	return a.modulePath != "" && (path == a.modulePath || strings.HasPrefix(path, a.modulePath+"/"))
+	packagePath := functionPackagePath(function)
+	for modulePath := range a.modulePaths {
+		if packagePath == modulePath || strings.HasPrefix(packagePath, modulePath+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *analyzer) addBudget(name string) {
@@ -3253,13 +3354,21 @@ func dynamicValue(text string) Value {
 	return Value{Kind: "unknown", Text: text, Known: false, Candidates: []string{}}
 }
 
-func mergeValues(values []Value) Value {
+func (a *analyzer) mergeValues(values []Value) Value {
 	if len(values) == 0 {
 		return dynamicValue("no values")
 	}
+	if len(values) > maxValueAlternatives {
+		a.addBudget("value_alternatives")
+		values = values[:maxValueAlternatives]
+	}
 	first := values[0]
-	candidates := []string{}
+	candidates := make([]string, 0, len(values))
 	for _, value := range values {
+		if len(value.Text) > maxValueDescriptionBytes {
+			a.addBudget("value_description")
+			return dynamicValue("unresolved value")
+		}
 		if value.Text != "" {
 			candidates = append(candidates, value.Text)
 		}
@@ -3274,7 +3383,12 @@ func mergeValues(values []Value) Value {
 	sort.Strings(candidates)
 	first.Candidates = compactStrings(candidates)
 	if len(first.Candidates) > 1 {
-		first.Text = strings.Join(first.Candidates, " | ")
+		joined := strings.Join(first.Candidates, " | ")
+		if len(joined) > maxValueDescriptionBytes {
+			a.addBudget("value_description")
+			return dynamicValue("unresolved value")
+		}
+		first.Text = joined
 	}
 	return first
 }

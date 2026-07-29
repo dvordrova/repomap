@@ -334,7 +334,15 @@ func prepareStudyMapV32(
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
-	brief, err := studymap.DecodeBriefShapeProposal(briefRaw)
+	recoveredBrief, recoveryErr := studymap.RecoverBriefShapeProviderJSON(briefRaw)
+	var brief studymap.BriefShapeProposal
+	if recoveryErr != nil {
+		err = recoveryErr
+	} else {
+		briefAttempt.RawResponse = ""
+		briefAttempt.Response = append(json.RawMessage(nil), recoveredBrief...)
+		brief, err = studymap.DecodeBriefShapeProposal(recoveredBrief)
+	}
 	if err != nil {
 		briefMetrics.Status = "rejected"
 		briefAttempt.Metrics = briefMetrics
@@ -367,8 +375,17 @@ func prepareStudyMapV32(
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
-	directions, directionDiagnostics, err :=
-		studymap.DecodeDirectionProposalWithDiagnostics(directionRaw)
+	recoveredDirections, recoveryErr := studymap.RecoverDirectionProviderJSON(directionRaw)
+	var directions studymap.DirectionProposal
+	var directionDiagnostics studymap.DirectionProposalDiagnostics
+	if recoveryErr != nil {
+		err = recoveryErr
+	} else {
+		directionAttempt.RawResponse = ""
+		directionAttempt.Response = append(json.RawMessage(nil), recoveredDirections...)
+		directions, directionDiagnostics, err =
+			studymap.DecodeDirectionProposalWithDiagnostics(recoveredDirections)
+	}
 	if directionDiagnostics.Received > 0 {
 		directionAttempt.DirectionDiagnostics = &directionDiagnostics
 	}
@@ -496,8 +513,6 @@ func executeStudyMapV32Stage(
 	}
 	if json.Valid(result.Content) {
 		attempt.Response = append(json.RawMessage(nil), result.Content...)
-	} else {
-		attempt.RawResponse = string(result.Content)
 	}
 	metrics.Status = "accepted_transport"
 	attempt.Metrics = metrics

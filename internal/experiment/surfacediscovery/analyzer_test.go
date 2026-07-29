@@ -5,13 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/constant"
+	"go/types"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/tools/go/ssa"
 )
 
 func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
@@ -21,6 +26,46 @@ func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
 	_, err := AnalyzeContext(ctx, DefaultOptions(filepath.Join("testdata", "cli")))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("AnalyzeContext() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
+	value := ssa.NewConst(constant.MakeString("bounded"), types.Typ[types.String])
+	analyzer := &analyzer{
+		ctx:               context.Background(),
+		opts:              normalizeOptions(Options{}),
+		valueEvalActive:   map[ssa.Value]bool{},
+		valueReturnActive: map[*ssa.Function]bool{},
+	}
+	analyzer.valueEvalSteps = maxValueEvalSteps - 1
+
+	if got := analyzer.eval(value, environment{}, 0); got.Text != "bounded" {
+		t.Fatalf("last admitted value = %#v", got)
+	}
+	if got := analyzer.eval(value, environment{}, 0); got.Text != "unresolved value" {
+		t.Fatalf("value beyond step budget = %#v", got)
+	}
+	if analyzer.valueEvalSteps != maxValueEvalSteps ||
+		!slices.Contains(analyzer.result.Coverage.BudgetsReached, "value_evaluation") {
+		t.Fatalf(
+			"value budget was not visible: steps=%d budgets=%v",
+			analyzer.valueEvalSteps,
+			analyzer.result.Coverage.BudgetsReached,
+		)
+	}
+	analyzer.resetValueEvaluation()
+	if got := analyzer.eval(value, environment{}, 0); got.Text != "bounded" {
+		t.Fatalf("next root did not receive an independent value budget: %#v", got)
+	}
+
+	values := make([]Value, maxValueAlternatives+10)
+	for index := range values {
+		values[index] = knownValue("constant", fmt.Sprintf("value-%03d", index))
+	}
+	merged := analyzer.mergeValues(values)
+	if len(merged.Candidates) != maxValueAlternatives ||
+		!slices.Contains(analyzer.result.Coverage.BudgetsReached, "value_alternatives") {
+		t.Fatalf("alternative budget was not applied: %#v / %v", merged, analyzer.result.Coverage.BudgetsReached)
 	}
 }
 

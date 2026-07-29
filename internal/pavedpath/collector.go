@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -23,6 +24,7 @@ const (
 	collectorMaxFileBytes = 32 << 10
 	collectorMaxExcerpt   = 20
 	collectorMaxPerFile   = 16
+	collectorMaxLinkDepth = 16
 )
 
 type operationalFileKind uint8
@@ -83,6 +85,10 @@ func Collect(repoRoot, repoName string, allowedPaths []string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
+	authorizedPaths := make(map[string]struct{}, len(allowedPaths))
+	for _, filePath := range allowedPaths {
+		authorizedPaths[filePath] = struct{}{}
+	}
 	root, err := os.OpenRoot(repoRoot)
 	if err != nil {
 		return Bundle{}, fmt.Errorf("paved paths: open repository root: %w", err)
@@ -99,6 +105,7 @@ func Collect(repoRoot, repoName string, allowedPaths []string) (Bundle, error) {
 		},
 	}
 	collected := make([]Evidence, 0, MaxEvidence*2)
+	readTargets := make(map[string]struct{}, len(candidates))
 	if len(candidates) > collectorMaxFiles {
 		bundle.Stats.Truncated = true
 	}
@@ -111,16 +118,25 @@ func Collect(repoRoot, repoName string, allowedPaths []string) (Bundle, error) {
 		}
 		remaining := collectorMaxBytes - bundle.Stats.ReadBytes
 		limit := min(collectorMaxFileBytes, remaining)
-		data, mode, truncated, err := readOperationalFile(root, candidate.path, limit)
+		data, mode, truncated, resolvedPath, err := readOperationalFile(
+			root,
+			candidate.path,
+			limit,
+			authorizedPaths,
+		)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return Bundle{}, fmt.Errorf("paved paths: read %q: %w", candidate.path, err)
 		}
-		if !mode.IsRegular() {
+		if resolvedPath == "" || !mode.IsRegular() {
 			continue
 		}
+		if _, duplicate := readTargets[resolvedPath]; duplicate {
+			continue
+		}
+		readTargets[resolvedPath] = struct{}{}
 		bundle.Stats.ReadFiles++
 		bundle.Stats.ReadBytes += len(data)
 		bundle.Stats.Truncated = bundle.Stats.Truncated || truncated
@@ -333,35 +349,89 @@ func isOperationalConfiguration(filePath, base string) bool {
 		strings.Contains(base, ".sample.")
 }
 
-func readOperationalFile(root *os.Root, filePath string, limit int) ([]byte, os.FileMode, bool, error) {
-	linkInfo, err := root.Lstat(filePath)
-	if err != nil {
-		return nil, 0, false, err
+func readOperationalFile(
+	root *os.Root,
+	filePath string,
+	limit int,
+	authorizedPaths map[string]struct{},
+) ([]byte, os.FileMode, bool, string, error) {
+	resolvedPath, eligible, err := resolveOperationalPath(root, filePath, authorizedPaths)
+	if err != nil || !eligible {
+		return nil, 0, false, "", err
 	}
-	if linkInfo.Mode()&os.ModeSymlink != 0 {
-		return nil, 0, false, fmt.Errorf("symbolic links are not eligible operational files")
-	}
-	info, err := root.Stat(filePath)
+	info, err := root.Stat(resolvedPath)
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, false, "", err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, info.Mode(), false, nil
+		return nil, info.Mode(), false, resolvedPath, nil
 	}
-	file, err := root.Open(filePath)
+	file, err := root.Open(resolvedPath)
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, false, "", err
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, false, "", err
 	}
 	truncated := len(data) > limit || info.Size() > int64(limit)
 	if len(data) > limit {
 		data = data[:limit]
 	}
-	return data, info.Mode(), truncated, nil
+	return data, info.Mode(), truncated, resolvedPath, nil
+}
+
+// resolveOperationalPath permits a tracked relative file alias without
+// widening the caller's inventory authority. os.Root confines every lookup to
+// the repository; the explicit inventory check also prevents a tracked link
+// from exposing an untracked or otherwise unauthorized in-repository target.
+// Ineligible links are skipped so one optional alias cannot erase unrelated
+// operational evidence.
+func resolveOperationalPath(
+	root *os.Root,
+	filePath string,
+	authorizedPaths map[string]struct{},
+) (string, bool, error) {
+	current := filePath
+	seen := make(map[string]struct{}, collectorMaxLinkDepth)
+	for range collectorMaxLinkDepth {
+		if _, duplicate := seen[current]; duplicate {
+			return "", false, nil
+		}
+		seen[current] = struct{}{}
+
+		info, err := root.Lstat(current)
+		if err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			if _, authorized := authorizedPaths[current]; !authorized {
+				return "", false, nil
+			}
+			return current, true, nil
+		}
+
+		target, err := root.Readlink(current)
+		if err != nil {
+			return "", false, err
+		}
+		if filepath.IsAbs(target) {
+			return "", false, nil
+		}
+		target = filepath.ToSlash(target)
+		if path.IsAbs(target) {
+			return "", false, nil
+		}
+		current = path.Clean(path.Join(path.Dir(current), target))
+		if !validPath(current) {
+			return "", false, nil
+		}
+		if _, authorized := authorizedPaths[current]; !authorized {
+			return "", false, nil
+		}
+	}
+	return "", false, nil
 }
 
 func prepareLines(data []byte, redactEveryAssignment bool) ([]collectedLine, int) {

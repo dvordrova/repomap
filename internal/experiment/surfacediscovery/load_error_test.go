@@ -88,6 +88,141 @@ func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing
 	}
 }
 
+func TestAnalyzeLoadsNestedModuleFromDeterministicInput(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	moduleRoot := filepath.Join(repository, "service")
+	if err := os.MkdirAll(moduleRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(moduleRoot, "go.mod"),
+		[]byte("module example.com/nested\n\ngo 1.26\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(moduleRoot, "main.go"),
+		[]byte(`package main
+
+import "net/http"
+
+func health(http.ResponseWriter, *http.Request) {}
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", health)
+}
+`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := AnalyzeWithInput(DefaultOptions(repository), Input{
+		RepositoryName: "nested",
+		ModuleDirs:     []string{"service"},
+		Entrypoints: []EntrypointInput{{
+			Package: "example.com/nested", PackageDir: "service", ModuleDir: "service",
+			Anchors: []EntrypointAnchorInput{{
+				Kind: ProcessEntryAnchorGoMain, Path: "service/main.go", Line: 7,
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := onlyTriggerOfKind(t, result, "http_route")
+	if route.Identity.Path.Text != "/health" ||
+		route.RegistrationSite.Path != "service/main.go" {
+		t.Fatalf("nested route = %#v", route)
+	}
+	if result.Coverage.PackagesInspected == 0 ||
+		result.Coverage.FunctionsInspected == 0 ||
+		result.Coverage.AvailableProcessEntries != 1 ||
+		result.Coverage.UnavailableProcessEntries != 0 {
+		t.Fatalf("nested module coverage = %#v", result.Coverage)
+	}
+}
+
+func TestAnalyzeLoadsTwoIndependentModules(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	for _, fixture := range []struct {
+		dir        string
+		modulePath string
+		route      string
+	}{
+		{dir: "alpha", modulePath: "example.com/alpha", route: "/alpha"},
+		{dir: "beta", modulePath: "example.com/beta", route: "/beta"},
+	} {
+		moduleRoot := filepath.Join(repository, fixture.dir)
+		if err := os.MkdirAll(moduleRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(moduleRoot, "go.mod"),
+			[]byte("module "+fixture.modulePath+"\n\ngo 1.26\n"),
+			0o600,
+		); err != nil {
+			t.Fatal(err)
+		}
+		source := `package main
+
+import "net/http"
+
+func handler(http.ResponseWriter, *http.Request) {}
+
+func main() {
+	http.HandleFunc("` + fixture.route + `", handler)
+}
+`
+		if err := os.WriteFile(filepath.Join(moduleRoot, "main.go"), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := AnalyzeWithInput(DefaultOptions(repository), Input{
+		RepositoryName: "multi",
+		ModuleDirs:     []string{"alpha", "beta"},
+		Entrypoints: []EntrypointInput{
+			{
+				Package: "example.com/alpha", PackageDir: "alpha", ModuleDir: "alpha",
+				Anchors: []EntrypointAnchorInput{{
+					Kind: ProcessEntryAnchorGoMain, Path: "alpha/main.go", Line: 7,
+				}},
+			},
+			{
+				Package: "example.com/beta", PackageDir: "beta", ModuleDir: "beta",
+				Anchors: []EntrypointAnchorInput{{
+					Kind: ProcessEntryAnchorGoMain, Path: "beta/main.go", Line: 7,
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	routes := triggersOfKind(result, "http_route")
+	if len(routes) != 2 {
+		t.Fatalf("multi-module route count = %d, want 2: %#v", len(routes), routes)
+	}
+	got := map[string]string{}
+	for _, route := range routes {
+		got[route.Identity.Path.Text] = route.RegistrationSite.Path
+	}
+	if got["/alpha"] != "alpha/main.go" || got["/beta"] != "beta/main.go" {
+		t.Fatalf("multi-module routes = %#v", got)
+	}
+	if result.Coverage.AvailableProcessEntries != 2 {
+		t.Fatalf("available multi-module process entries = %d, want 2", result.Coverage.AvailableProcessEntries)
+	}
+}
+
 func TestClassifyExecutableRoleUsesRepositoryStructureWithoutNamingExecutables(t *testing.T) {
 	tests := []struct {
 		name       string

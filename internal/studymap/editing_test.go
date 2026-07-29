@@ -170,6 +170,55 @@ func TestEditingContractsDecodeStrictIndependentArtifacts(t *testing.T) {
 	}
 }
 
+func TestRecoverStudyProviderJSONBeforeStrictValidation(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	briefJSON := mustEditingJSON(t, briefShapeFromLegacy(legacy))
+	directionJSON := mustEditingJSON(t, rawDirectionsFromLegacy(legacy))
+
+	leakedBrief := append(
+		[]byte("I will now write the result.<｜end▁of▁thinking｜>\n"),
+		briefJSON...,
+	)
+	recoveredBrief, err := RecoverBriefShapeProviderJSON(leakedBrief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(recoveredBrief, briefJSON) {
+		t.Fatalf("recovered brief changed:\n%s", recoveredBrief)
+	}
+	if _, err := DecodeBriefShapeProposal(recoveredBrief); err != nil {
+		t.Fatalf("strict brief validation after recovery: %v", err)
+	}
+
+	leakedDirections := append(
+		[]byte("{\n\"version\":1,\n\"directions\":[\n// direction objects...\n]\n}\n"+
+			"Will use proper quotes and commas.\n"+
+			"Let's write.<｜end▁of▁thinking｜>"),
+		directionJSON...,
+	)
+	if _, err := DecodeDirectionProposal(leakedDirections); err == nil {
+		t.Fatal("strict direction decoder accepted provider prose directly")
+	}
+	recoveredDirections, err := RecoverDirectionProviderJSON(leakedDirections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(recoveredDirections, directionJSON) {
+		t.Fatalf("recovered directions changed:\n%s", recoveredDirections)
+	}
+	if _, err := DecodeDirectionProposal(recoveredDirections); err != nil {
+		t.Fatalf("strict direction validation after recovery: %v", err)
+	}
+
+	ambiguous := append(append([]byte(nil), directionJSON...), directionJSON...)
+	if _, err := RecoverDirectionProviderJSON(ambiguous); err == nil ||
+		!strings.Contains(err.Error(), "ambiguous recoverable direction proposal") {
+		t.Fatalf("ambiguous recovery error = %v", err)
+	}
+}
+
 func TestBuildReviewBundleProjectsExactNonGoSource(t *testing.T) {
 	t.Parallel()
 

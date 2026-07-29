@@ -1,15 +1,26 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/139-targeted-round-selection-diversity.md
+    decisions/141-chatto-pipeline-reliability-corrective.md
 
 Status:
-    Decision 139 complete; local checkpoint authorized
+    Decision 141 active; Chatto pipeline reliability corrective authorized
 
 Approved by:
-    Product supervisor and repository owner in the current session
+    Repository owner in the current session
 
 Notes:
+    Decision 141 corrects four concrete failures observed in the completed
+    Decision 140 review and the fresh Chatto run: nested Go modules must reach
+    typed surface analysis; safe tracked in-repository symlinks must not erase
+    paved-path evidence; one unambiguous JSON object may be recovered from
+    provider prose before strict Study validation; and an empty Guided Tour
+    preflight is an expected quiet no-call outcome. It adds no new provider
+    request, language adapter, proof claim, Search surface, or report format.
+    Decision 140 runs the verified D139 stable binary exactly once on Beets
+    with `--no-search`. It records stage durations but does not stop because of
+    elapsed time. No retry, code change, second repository, or timeout change
+    is authorized before terminal artifact and product review.
     Decision 139 changes only the deterministic selection of the second
     targeted research round. The highest-scoring eligible round remains first;
     when a second slot is available, the planner uses existing bounded

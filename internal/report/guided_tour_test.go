@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,18 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 )
+
+func TestBuildGuidedTourBundleClassifiesNoCandidateAsExpectedSkip(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildGuidedTourBundle(&ReportData{
+		RepoName:           "fixture",
+		ArchitectureCanvas: &ArchitectureCanvas{Version: 1},
+	})
+	if !errors.Is(err, ErrNoGuidedTourCandidates) {
+		t.Fatalf("BuildGuidedTourBundle() error = %v, want expected skip", err)
+	}
+}
 
 func TestBuildGuidedTourBundleUsesExactTraceAndLegacyDirectionEvidence(t *testing.T) {
 	t.Parallel()

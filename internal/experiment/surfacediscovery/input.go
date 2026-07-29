@@ -36,12 +36,14 @@ const (
 // Entrypoint anchors remain authoritative even when their package is ill-typed.
 type Input struct {
 	RepositoryName string
+	ModuleDirs     []string
 	Entrypoints    []EntrypointInput
 }
 
 type EntrypointInput struct {
 	Package    string
 	PackageDir string
+	ModuleDir  string
 	Kind       string
 	Anchors    []EntrypointAnchorInput
 }
@@ -69,6 +71,10 @@ func normalizeInput(root string, input Input) (Input, []processEntrypoint) {
 	if input.RepositoryName == "" {
 		input.RepositoryName = filepath.Base(root)
 	}
+	for _, entrypoint := range input.Entrypoints {
+		input.ModuleDirs = append(input.ModuleDirs, entrypoint.ModuleDir)
+	}
+	input.ModuleDirs = normalizeModuleDirs(input.ModuleDirs)
 
 	var result []processEntrypoint
 	for _, entrypoint := range input.Entrypoints {
@@ -111,6 +117,26 @@ func normalizeInput(root string, input Input) (Input, []processEntrypoint) {
 		result[index].role = classifyExecutableRole(input.RepositoryName, result[index])
 	}
 	return input, result
+}
+
+func normalizeModuleDirs(values []string) []string {
+	unique := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = cleanRepositoryPath(value)
+		if value == "" {
+			continue
+		}
+		unique[value] = struct{}{}
+	}
+	if len(unique) == 0 {
+		return []string{"."}
+	}
+	result := make([]string, 0, len(unique))
+	for value := range unique {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func compactProcessEntrypoints(input []processEntrypoint) []processEntrypoint {
