@@ -284,6 +284,70 @@ func TestStudyMapRecoverySkipsOnlySyntacticallyIncompleteWindow(t *testing.T) {
 	}
 }
 
+func TestBuildStudyMapBundleUsesExactPythonDeclarationFallback(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	filePath := "beets/ui/commands/import_/__init__.py"
+	lines := []string{
+		"# bounded saved source",
+		"def import_files(session) -> None:",
+		"    session.run()",
+	}
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(repoRoot, filePath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repoRoot, filePath), strings.Join(lines, "\n")+"\n")
+	location := evidence.Location{Path: filePath, Line: 40}
+	state := modelresearch.NewState(
+		modelresearch.DefaultPolicy(),
+		modelresearch.RepositoryContext{Identity: "beets-fixture", Revision: "fixture", Scenario: "default"},
+	)
+	state.Theory.GroundedFacts = []modelresearch.EvidenceItem{{
+		ID: "python-import-window", Kind: modelresearch.EvidenceSource,
+		Statement: "bounded source window selected locally for the research question",
+		Location:  &location, Certainty: evidence.CertaintyStatic,
+		Window: &modelresearch.SourceWindow{
+			StartLine: 40, EndLine: 42, Lines: lines, CodeBearing: true,
+		},
+		Provenance: []evidence.Provenance{{
+			Provider: "reporead", Operation: "read_bounded_source_window", Location: &location,
+		}},
+	}}
+	if err := modelresearch.WriteState(runDir, state); err != nil {
+		t.Fatal(err)
+	}
+	data := &report.ReportData{
+		RepoName: "beets-fixture", OpenablePaths: []string{filePath},
+	}
+	bundle, err := buildStudyMapBundle(runDir, repoRoot, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Anchors) != 1 {
+		t.Fatalf("anchors = %#v", bundle.Anchors)
+	}
+	anchor := bundle.Anchors[0]
+	if anchor.Path != filePath || anchor.Symbol != "import_files" || anchor.Line != 41 ||
+		anchor.ExactSource == nil || anchor.ExactSource.Language != "python" ||
+		anchor.ExactSource.Path != filePath || anchor.ExactSource.Symbol != "import_files" ||
+		anchor.ExactSource.Line != 41 || !slices.Equal(anchor.ExactSource.Lines, []string{lines[1]}) ||
+		anchor.Function.Path != "" {
+		t.Fatalf("Python anchor = %#v", anchor)
+	}
+	if _, err := studymap.BundleHash(bundle); err != nil {
+		t.Fatalf("BundleHash() error = %v", err)
+	}
+	promptRaw, err := json.Marshal(bundle.PromptBundle())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(promptRaw), lines[1]) || len(bundle.Mechanisms) != 0 {
+		t.Fatalf("Python fallback invented source or a complete mechanism: %s %#v", promptRaw, bundle.Mechanisms)
+	}
+}
+
 func TestBuildStudyMapBundleFromSavedRun(t *testing.T) {
 	runDir := os.Getenv("REPOMAP_STUDY_MAP_TEST_RUN")
 	repoRoot := os.Getenv("REPOMAP_STUDY_MAP_TEST_REPO")

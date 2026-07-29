@@ -170,6 +170,49 @@ func TestEditingContractsDecodeStrictIndependentArtifacts(t *testing.T) {
 	}
 }
 
+func TestBuildReviewBundleProjectsExactNonGoSource(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	for index := 0; index < 3; index++ {
+		filePath := fmt.Sprintf("src/part%d.py", index+1)
+		symbol := fmt.Sprintf("part_%d", index+1)
+		line := 20 + index*10
+		exactBundle := exactSourceBundleForTest(
+			filePath,
+			symbol,
+			line,
+			[]string{fmt.Sprintf("def %s() -> None:", symbol)},
+		)
+		bundle.Anchors[index].Path = filePath
+		bundle.Anchors[index].Symbol = symbol
+		bundle.Anchors[index].Line = line
+		bundle.Anchors[index].Function = sourcewindowfacts.Function{}
+		bundle.Anchors[index].ExactSource = exactBundle.Anchors[0].ExactSource
+		bundle.AllowedPaths = append(bundle.AllowedPaths, filePath)
+	}
+	directions, err := NormalizeDirectionProposal(rawDirectionsFromLegacy(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, err := BuildReviewBundle(bundle, directions.Directions[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(review.Anchors) != 3 {
+		t.Fatalf("review anchors = %#v", review.Anchors)
+	}
+	for index, anchor := range review.Anchors {
+		wantLine := 20 + index*10
+		wantText := fmt.Sprintf("def part_%d() -> None:", index+1)
+		if anchor.Path != fmt.Sprintf("src/part%d.py", index+1) ||
+			anchor.Line != wantLine || anchor.Symbol != fmt.Sprintf("part_%d", index+1) ||
+			!reflect.DeepEqual(anchor.SourceFragment, []ReviewSourceLine{{Line: wantLine, Text: wantText}}) {
+			t.Fatalf("exact review anchor[%d] = %#v", index, anchor)
+		}
+	}
+}
+
 func TestDecodeBriefShapeProposalNormalizesRetainedChattoResponse(t *testing.T) {
 	t.Parallel()
 

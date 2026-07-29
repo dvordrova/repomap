@@ -1678,20 +1678,21 @@ type reviewFragment struct {
 }
 
 func fullReviewFragment(anchor Anchor) (reviewFragment, error) {
-	if err := anchor.Function.Validate(); err != nil {
+	startLine, lines, err := anchor.sourceLines()
+	if err != nil {
 		return reviewFragment{}, fmt.Errorf("study map: invalid source for review anchor %q", anchor.ID)
 	}
-	center := anchor.Line - anchor.Function.StartLine
-	if center < 0 || center >= len(anchor.Function.Lines) {
+	center := anchor.Line - startLine
+	if center < 0 || center >= len(lines) {
 		return reviewFragment{}, fmt.Errorf("study map: review anchor line is outside source")
 	}
 	start := max(0, center-maxReviewSourceLines/2)
-	end := min(len(anchor.Function.Lines), start+maxReviewSourceLines)
+	end := min(len(lines), start+maxReviewSourceLines)
 	start = max(0, end-maxReviewSourceLines)
 	fragment := reviewFragment{anchorID: anchor.ID, anchorLine: anchor.Line}
 	for index := start; index < end; index++ {
 		fragment.lines = append(fragment.lines, ReviewSourceLine{
-			Line: anchor.Function.StartLine + index, Text: anchor.Function.Lines[index],
+			Line: startLine + index, Text: lines[index],
 		})
 	}
 	return fragment, nil

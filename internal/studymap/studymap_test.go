@@ -1,14 +1,107 @@
 package studymap
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
 )
+
+func TestAnchorSourceUnionPreservesGoAndValidatesExactNonGoSource(t *testing.T) {
+	t.Parallel()
+
+	goBundle, _ := studyMapFixture(t)
+	goAnchor := goBundle.Anchors[0]
+	legacyRaw, err := json.Marshal(struct {
+		ID           string                         `json:"id"`
+		Path         string                         `json:"path"`
+		Symbol       string                         `json:"symbol"`
+		Line         int                            `json:"line"`
+		Role         artifactrole.Role              `json:"role"`
+		Statement    string                         `json:"statement"`
+		Capabilities []semanticdiscovery.Capability `json:"capabilities,omitempty"`
+		AreaIDs      []string                       `json:"area_ids,omitempty"`
+		Function     sourcewindowfacts.Function     `json:"function"`
+	}{
+		ID: goAnchor.ID, Path: goAnchor.Path, Symbol: goAnchor.Symbol,
+		Line: goAnchor.Line, Role: goAnchor.Role, Statement: goAnchor.Statement,
+		Capabilities: goAnchor.Capabilities, AreaIDs: goAnchor.AreaIDs, Function: goAnchor.Function,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentRaw, err := json.Marshal(goAnchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(currentRaw, legacyRaw) {
+		t.Fatalf("Go anchor JSON changed:\n got %s\nwant %s", currentRaw, legacyRaw)
+	}
+	if _, err := BundleHash(goBundle); err != nil {
+		t.Fatalf("existing Go bundle: %v", err)
+	}
+
+	valid := exactSourceBundleForTest("src/service.py", "run", 12, []string{"def run() -> None:"})
+	hash, err := BundleHash(valid)
+	if err != nil || hash == "" {
+		t.Fatalf("exact Python bundle hash = %q, error = %v", hash, err)
+	}
+	raw, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeBundle(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Anchors[0].ExactSource == nil || decoded.Anchors[0].ExactSource.Language != "python" {
+		t.Fatalf("decoded exact source = %#v", decoded.Anchors[0].ExactSource)
+	}
+	goExact := *valid.Anchors[0].ExactSource
+	goExact.Path = "src/service.go"
+	goExact.Language = "go"
+	if err := goExact.Validate(); err == nil {
+		t.Fatal("ExactSource accepted Go data")
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Anchor)
+	}{
+		{name: "neither arm", mutate: func(anchor *Anchor) { anchor.ExactSource = nil }},
+		{name: "both arms", mutate: func(anchor *Anchor) {
+			anchor.Function = testFunction(t, "src/service.go", "run", 12)
+		}},
+		{name: "path mismatch", mutate: func(anchor *Anchor) { anchor.ExactSource.Path = "src/other.py" }},
+		{name: "symbol mismatch", mutate: func(anchor *Anchor) { anchor.ExactSource.Symbol = "other" }},
+		{name: "line mismatch", mutate: func(anchor *Anchor) { anchor.ExactSource.Line++ }},
+		{name: "line outside source", mutate: func(anchor *Anchor) {
+			anchor.Line = 13
+			anchor.ExactSource.Line = 13
+		}},
+		{name: "malformed source", mutate: func(anchor *Anchor) {
+			anchor.ExactSource.Lines[0] = "def run():\n    pass"
+		}},
+		{name: "hash mismatch", mutate: func(anchor *Anchor) { anchor.ExactSource.ContentSHA256 = strings.Repeat("0", 64) }},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			bundle := exactSourceBundleForTest("src/service.py", "run", 12, []string{"def run() -> None:"})
+			test.mutate(&bundle.Anchors[0])
+			if _, err := BundleHash(bundle); err == nil {
+				t.Fatal("BundleHash accepted invalid source union")
+			}
+		})
+	}
+}
 
 func TestPromptBundleRetainsOpaqueAnchorsWithoutSourceBodies(t *testing.T) {
 	t.Parallel()
@@ -321,6 +414,30 @@ func testFunction(t *testing.T, filePath, symbol string, startLine int) sourcewi
 		t.Fatal(err)
 	}
 	return function
+}
+
+func exactSourceBundleForTest(
+	filePath string,
+	symbol string,
+	line int,
+	lines []string,
+) Bundle {
+	raw, _ := json.Marshal(lines)
+	digest := sha256.Sum256(raw)
+	exact := &ExactSource{
+		Path: filePath, Language: "python", Symbol: symbol, Line: line,
+		StartLine: line, EndLine: line + len(lines) - 1,
+		Lines: append([]string(nil), lines...), ContentSHA256: hex.EncodeToString(digest[:]),
+	}
+	return Bundle{
+		Version: BundleVersion, RepoName: "exact-source-fixture",
+		Anchors: []Anchor{{
+			ID: "fact-exact", Path: filePath, Symbol: symbol, Line: line,
+			Role: artifactrole.RoleProductionCore, Statement: "An exact declaration is available for study.",
+			ExactSource: exact,
+		}},
+		AllowedPaths: []string{filePath},
+	}
 }
 
 func hasReductionIssue(reduction Reduction, code string) bool {
