@@ -459,6 +459,90 @@ func TestDecodeDirectionProposalRejectsItemsIndependentlyAndEnvelopeAtomically(
 	}
 }
 
+func TestDecodeIncompleteDirectionsRetainsResolvedStartsInProviderOrder(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	base := rawDirectionsFromLegacy(legacy).Directions[0]
+	raw := DirectionProposal{Version: DirectionProposalVersion}
+	for index := 0; index < MaxCandidates; index++ {
+		candidate := base
+		candidate.DirectionID = ""
+		candidate.Question = fmt.Sprintf(
+			"How does retained incomplete direction %d help a new contributor?",
+			index+1,
+		)
+		candidate.AnchorIDs = []string{"not-used-by-incomplete-projection"}
+		candidate.ReadingAnchors = []ReadingAnchor{{
+			AnchorID:      bundle.Anchors[index%len(bundle.Anchors)].ID,
+			Label:         "Start here",
+			WhatToLookFor: "Inspect the exact saved declaration and its local responsibility.",
+		}}
+		raw.Directions = append(raw.Directions, candidate)
+	}
+
+	got, diagnostics, err := DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != MaxCandidates ||
+		diagnostics.Received != MaxCandidates ||
+		diagnostics.Accepted != MaxCandidates ||
+		diagnostics.Rejected != 0 {
+		t.Fatalf("incomplete directions = %d, diagnostics %#v", len(got), diagnostics)
+	}
+	for index, direction := range got {
+		if direction.Question != raw.Directions[index].Question ||
+			len(direction.ReadingAnchors) != 1 ||
+			direction.ReadingAnchors[0].AnchorID !=
+				bundle.Anchors[index%len(bundle.Anchors)].ID {
+			t.Fatalf("direction %d changed provider order or exact start: %#v", index, direction)
+		}
+	}
+}
+
+func TestDecodeIncompleteDirectionsRejectsUnsafeCandidatesIndependently(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	base := rawDirectionsFromLegacy(legacy).Directions[0]
+	valid := func(question, anchorID string) DirectionCandidate {
+		candidate := base
+		candidate.DirectionID = ""
+		candidate.Question = question
+		candidate.ReadingAnchors = []ReadingAnchor{{
+			AnchorID:      anchorID,
+			Label:         "Start here",
+			WhatToLookFor: "Inspect the exact saved declaration.",
+		}}
+		return candidate
+	}
+	raw := DirectionProposal{
+		Version: DirectionProposalVersion,
+		Directions: []DirectionCandidate{
+			valid("How does the first incomplete direction help contributors?", bundle.Anchors[0].ID),
+			valid("How does "+strings.Repeat("oversized ", 128)+"metadata help?", bundle.Anchors[0].ID),
+			valid("How does an unresolved incomplete direction help contributors?", "unknown-anchor"),
+			valid("How does the final incomplete direction help contributors?", bundle.Anchors[1].ID),
+		},
+	}
+	raw.Directions[2].ReadingAnchors[0].WhatToLookFor = "Then the system executes an unsupported runtime step."
+
+	got, diagnostics, err := DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 ||
+		got[0].Question != raw.Directions[0].Question ||
+		got[1].Question != raw.Directions[3].Question ||
+		!slices.Equal(diagnostics.Issues, []DirectionProposalIssue{
+			{Position: 1, Code: "invalid_candidate"},
+			{Position: 2, Code: "invalid_reading_anchors"},
+		}) {
+		t.Fatalf("item-local incomplete projection = %#v, diagnostics %#v", got, diagnostics)
+	}
+}
+
 func baseDirections(proposal Proposal) []DirectionCandidate {
 	return rawDirectionsFromLegacy(proposal).Directions
 }

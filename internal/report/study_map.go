@@ -1,6 +1,8 @@
 package report
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +33,11 @@ type RepositoryStudyMap struct {
 	Shape            []RepositoryStudyArea   `json:"shape"`
 	Directions       []StudyDirection        `json:"directions"`
 	HiddenDirections []StudyDirection        `json:"hidden_directions,omitempty"`
+}
+
+type RepositoryIncompleteStudy struct {
+	Version    int              `json:"version"`
+	Directions []StudyDirection `json:"directions"`
 }
 
 type RepositoryBrief struct {
@@ -155,6 +162,181 @@ func replaySavedStudyMap(data *ReportData, recordPath string) string {
 	}
 	data.StudyMap = projected
 	return ""
+}
+
+type incompleteStudyAttempt struct {
+	Version              int                                    `json:"version"`
+	PromptVersion        string                                 `json:"prompt_version"`
+	BundleSHA256         string                                 `json:"bundle_sha256"`
+	ValidationState      string                                 `json:"validation_state"`
+	FailureReason        string                                 `json:"failure_reason,omitempty"`
+	Metrics              json.RawMessage                        `json:"metrics"`
+	DirectionDiagnostics *studymap.DirectionProposalDiagnostics `json:"direction_diagnostics,omitempty"`
+	Response             json.RawMessage                        `json:"response,omitempty"`
+	RawResponse          string                                 `json:"raw_response,omitempty"`
+}
+
+func replaySavedIncompleteStudy(
+	data *ReportData,
+	bundlePath string,
+	attemptPath string,
+) string {
+	if data == nil {
+		return "incomplete study unavailable: report data is required"
+	}
+	data.IncompleteStudy = nil
+	bundleRaw, exists, err := readBoundedStudyArtifact(bundlePath)
+	if err != nil {
+		return fmt.Sprintf("incomplete study unavailable: %v", err)
+	}
+	if !exists {
+		return ""
+	}
+	attemptRaw, exists, err := readBoundedStudyArtifact(attemptPath)
+	if err != nil {
+		return fmt.Sprintf("incomplete study unavailable: %v", err)
+	}
+	if !exists {
+		return ""
+	}
+	bundle, err := studymap.DecodeBundle(bundleRaw)
+	if err != nil {
+		return fmt.Sprintf("incomplete study unavailable: %v", err)
+	}
+	var attempt incompleteStudyAttempt
+	decoder := json.NewDecoder(bytes.NewReader(attemptRaw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&attempt); err != nil {
+		return fmt.Sprintf("incomplete study unavailable: decode attempt: %v", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "incomplete study unavailable: attempt has trailing JSON"
+	}
+	if attempt.Version != 1 ||
+		attempt.PromptVersion != semanticdiscovery.StudyCandidatesPromptVersion ||
+		(attempt.ValidationState != "accepted" && attempt.ValidationState != "rejected") ||
+		len(attempt.Response) == 0 {
+		return "incomplete study unavailable: attempt has no transport-valid bounded response"
+	}
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil || bundleSHA != attempt.BundleSHA256 {
+		return "incomplete study unavailable: attempt bundle hash mismatch"
+	}
+	directions, _, err := studymap.DecodeIncompleteDirections(attempt.Response, bundle)
+	if err != nil {
+		return fmt.Sprintf("incomplete study unavailable: %v", err)
+	}
+	tracked, err := readOperationalTrackedPaths(
+		filepath.Join(filepath.Dir(bundlePath), "snapshot.json"),
+		bundle.AllowedPaths,
+	)
+	if err != nil {
+		return fmt.Sprintf("incomplete study unavailable: %v", err)
+	}
+	projected := projectIncompleteStudy(data, bundle, directions, tracked)
+	if len(projected) > 0 {
+		data.IncompleteStudy = &RepositoryIncompleteStudy{
+			Version:    1,
+			Directions: projected,
+		}
+	}
+	return ""
+}
+
+func readBoundedStudyArtifact(filePath string) ([]byte, bool, error) {
+	info, err := os.Lstat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("cannot inspect saved artifact")
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxSavedStudyMapBytes {
+		return nil, false, fmt.Errorf("saved artifact is not a bounded regular file")
+	}
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, false, fmt.Errorf("cannot read saved artifact")
+	}
+	return raw, true, nil
+}
+
+func projectIncompleteStudy(
+	data *ReportData,
+	bundle studymap.Bundle,
+	directions []studymap.IncompleteDirection,
+	trackedPaths []string,
+) []StudyDirection {
+	openable := make(map[string]struct{}, len(data.OpenablePaths)+len(trackedPaths))
+	for _, filePath := range data.OpenablePaths {
+		openable[filePath] = struct{}{}
+	}
+	for _, filePath := range trackedPaths {
+		openable[filePath] = struct{}{}
+	}
+	complete := make(map[string]struct{})
+	if data.StudyMap != nil {
+		for _, direction := range data.StudyMap.Directions {
+			complete[direction.ID] = struct{}{}
+		}
+		for _, direction := range data.StudyMap.HiddenDirections {
+			complete[direction.ID] = struct{}{}
+		}
+	}
+	anchorByID := make(map[string]studymap.Anchor, len(bundle.Anchors))
+	for _, anchor := range bundle.Anchors {
+		anchorByID[anchor.ID] = anchor
+	}
+	result := make([]StudyDirection, 0, len(directions))
+	for _, direction := range directions {
+		if _, duplicate := complete[direction.DirectionID]; duplicate {
+			continue
+		}
+		projected := StudyDirection{
+			ID:              direction.DirectionID,
+			Question:        direction.Question,
+			WhyItMatters:    direction.WhyItMatters,
+			LearningOutcome: direction.LearningOutcome,
+			TargetUserJob:   direction.TargetJob,
+			LearningStage:   direction.LearningStage,
+		}
+		valid := true
+		candidatePaths := make([]string, 0, len(direction.ReadingAnchors))
+		for _, reading := range direction.ReadingAnchors {
+			anchor, ok := anchorByID[reading.AnchorID]
+			if !ok {
+				valid = false
+				break
+			}
+			if _, ok := openable[anchor.Path]; !ok {
+				valid = false
+				break
+			}
+			source, ok := projectStudyAnchorSource(data, anchor)
+			if !ok {
+				valid = false
+				break
+			}
+			projected.PrincipalAnchors = append(projected.PrincipalAnchors, StudyCodeAnchor{
+				Path: anchor.Path, Symbol: anchor.Symbol, Line: anchor.Line,
+			})
+			projected.ReadingAnchors = append(projected.ReadingAnchors, StudyReadingAnchor{
+				Label: reading.Label, WhatToLookFor: reading.WhatToLookFor,
+				Location: UserCodeLocation{Path: anchor.Path, Line: anchor.Line},
+				Source:   source,
+			})
+			candidatePaths = append(candidatePaths, anchor.Path)
+		}
+		if valid && len(projected.ReadingAnchors) > 0 {
+			for _, filePath := range candidatePaths {
+				data.OpenablePaths = appendUniqueString(data.OpenablePaths, filePath)
+			}
+			result = append(result, projected)
+		}
+	}
+	sort.Strings(data.OpenablePaths)
+	return result
 }
 
 func projectRepositoryStudyMap(

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
 	"github.com/dvordrova/repomap/internal/studymap"
 )
@@ -91,6 +92,136 @@ func TestProjectRepositoryStudyMapKeepsEditorialDirectionsCodeFirst(t *testing.T
 	}
 	if projected.Brief.WhatItIs == "" || projected.Brief.CentralResponsibility == "" {
 		t.Fatalf("Repository Brief was not projected: %#v", projected.Brief)
+	}
+}
+
+func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *testing.T) {
+	t.Parallel()
+
+	record := studyMapReportFixture(t)
+	bundle := record.Bundle
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseRaw, err := json.Marshal(studymap.DirectionProposal{
+		Version: studymap.DirectionProposalVersion,
+		Directions: []studymap.DirectionCandidate{{
+			Question:        "How can a contributor begin examining the fixture output?",
+			WhyItMatters:    "This identifies an exact production declaration worth examining.",
+			LearningOutcome: "The reader can locate the saved output implementation.",
+			TargetJob:       studymap.JobFirstContact,
+			LearningStage:   studymap.StageOrientation,
+			AnchorIDs:       []string{bundle.Anchors[2].ID},
+			ReadingAnchors: []studymap.ReadingAnchor{{
+				AnchorID:      bundle.Anchors[2].ID,
+				Label:         "Start here",
+				WhatToLookFor: "Inspect the declaration and its local responsibility.",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptRaw, err := json.Marshal(incompleteStudyAttempt{
+		Version:         1,
+		PromptVersion:   semanticdiscovery.StudyCandidatesPromptVersion,
+		BundleSHA256:    bundleSHA,
+		ValidationState: "rejected",
+		FailureReason:   "complete Reading Pack validation rejected the response",
+		Metrics:         json.RawMessage(`{"provider_call":true}`),
+		Response:        responseRaw,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleRaw, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotRaw, err := json.Marshal(map[string]any{
+		"file_tree":        bundle.AllowedPaths,
+		"files_considered": len(bundle.AllowedPaths),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runDir := t.TempDir()
+	writeTestFile(t, runDir, studymap.BundleFile, string(bundleRaw))
+	writeTestFile(t, runDir, studymap.DirectionsAttemptFile, string(attemptRaw))
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotRaw))
+	data := &ReportData{RepoName: "fixture", CapturedRevision: "deadbeef"}
+	if warning := replaySavedIncompleteStudy(
+		data,
+		filepath.Join(runDir, studymap.BundleFile),
+		filepath.Join(runDir, studymap.DirectionsAttemptFile),
+	); warning != "" {
+		t.Fatal(warning)
+	}
+	if data.IncompleteStudy == nil || len(data.IncompleteStudy.Directions) != 1 {
+		t.Fatalf("incomplete Study = %#v", data.IncompleteStudy)
+	}
+	direction := data.IncompleteStudy.Directions[0]
+	if direction.Question != "How can a contributor begin examining the fixture output?" ||
+		len(direction.ReadingAnchors) != 1 ||
+		direction.ReadingAnchors[0].Location.Path != bundle.Anchors[2].Path ||
+		direction.ReadingAnchors[0].Location.Line != bundle.Anchors[2].Line ||
+		!containsString(data.OpenablePaths, bundle.Anchors[2].Path) {
+		t.Fatalf("projected incomplete Study direction = %#v, openable=%#v", direction, data.OpenablePaths)
+	}
+	if err := direction.ReadingAnchors[0].Source.Validate(); err != nil {
+		t.Fatalf("projected exact source: %v", err)
+	}
+}
+
+func TestProjectIncompleteStudySkipsCompleteAndUnresolvedDirectionsAtomically(t *testing.T) {
+	t.Parallel()
+
+	record := studyMapReportFixture(t)
+	valid := studymap.IncompleteDirection{
+		DirectionID:     "incomplete-valid",
+		Question:        "How can I inspect the bounded fixture core?",
+		WhyItMatters:    "This provides exact production declarations worth examining.",
+		LearningOutcome: "The reader can locate the relevant bounded implementation.",
+		TargetJob:       studymap.JobFirstContact,
+		LearningStage:   studymap.StageOrientation,
+		ReadingAnchors: []studymap.ReadingAnchor{{
+			AnchorID:      record.Bundle.Anchors[0].ID,
+			Label:         "Start here",
+			WhatToLookFor: "Inspect the exact saved declaration.",
+		}},
+	}
+	unresolved := valid
+	unresolved.DirectionID = "incomplete-unresolved"
+	unresolved.Question = "How can I inspect an unresolved fixture path?"
+	unresolved.ReadingAnchors = append(
+		append([]studymap.ReadingAnchor(nil), valid.ReadingAnchors...),
+		studymap.ReadingAnchor{
+			AnchorID:      "missing-anchor",
+			Label:         "Related implementation",
+			WhatToLookFor: "Inspect an unavailable declaration.",
+		},
+	)
+	duplicate := valid
+	duplicate.DirectionID = "already-complete"
+	data := &ReportData{
+		RepoName: "fixture",
+		StudyMap: &RepositoryStudyMap{
+			Directions: []StudyDirection{{ID: duplicate.DirectionID}},
+		},
+	}
+	got := projectIncompleteStudy(
+		data,
+		record.Bundle,
+		[]studymap.IncompleteDirection{unresolved, duplicate, valid},
+		record.Bundle.AllowedPaths,
+	)
+	if len(got) != 1 || got[0].ID != valid.DirectionID {
+		t.Fatalf("projected incomplete directions = %#v", got)
+	}
+	if len(data.OpenablePaths) != 1 || data.OpenablePaths[0] != record.Bundle.Anchors[0].Path {
+		t.Fatalf("invalid or duplicate direction mutated openable paths: %#v", data.OpenablePaths)
 	}
 }
 

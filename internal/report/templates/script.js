@@ -28,7 +28,14 @@
 	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
-	var STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
+	var COMPLETE_STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
+	var INCOMPLETE_STUDY = DATA.incomplete_study || null;
+	var INCOMPLETE_STUDY_DIRECTIONS = INCOMPLETE_STUDY && Array.isArray(INCOMPLETE_STUDY.directions)
+		? INCOMPLETE_STUDY.directions.map(function (direction) {
+			return Object.assign({}, direction, { incomplete: true });
+		})
+		: [];
+	var STUDY_DIRECTIONS = COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
 // repomap-source-episode:start
 	var SOURCE_EPISODE = DATA.source_episode || null;
 	if (SOURCE_EPISODE) DATA.semantic_search = null;
@@ -125,7 +132,7 @@
 	}
 
 	function mixedShelfAvailable() {
-		return !!(USER_MECHANISMS.length || USER_TOPICS.length);
+		return !!(USER_MECHANISMS.length || USER_TOPICS.length || INCOMPLETE_STUDY_DIRECTIONS.length);
 	}
 
 	function studyDirectionByID(directionID) {
@@ -274,6 +281,7 @@
 			return defaultWorkspaceHash();
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
+    if (state.view === 'study_overview' && INCOMPLETE_STUDY_DIRECTIONS.length) return '#/study';
     if (state.view === 'search') return '#/overview';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
@@ -304,6 +312,7 @@
 		if (state.view === 'study' && state.directionID) {
 			return 'study:' + state.directionID;
 		}
+		if (state.view === 'study_overview') return 'view:study_overview';
 		if (state.view === 'operate' && state.operationID) {
 			return 'operate:' + state.operationID;
 		}
@@ -345,6 +354,10 @@
       state.view = mechanisms && mechanisms.length ? 'mechanisms' : 'overview';
       valid = state.view === 'mechanisms';
       canonicalHash = valid ? '#/mechanisms' : '#/overview';
+		} else if (segments.length === 1 && segments[0] === 'study') {
+			state.view = INCOMPLETE_STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
+			valid = state.view === 'study_overview';
+			canonicalHash = valid ? '#/study' : '#/overview';
     } else if (segments.length === 1 && segments[0] === 'search') {
       valid = false;
     } else if (segments.length === 1 && segments[0] === 'architecture') {
@@ -3420,6 +3433,7 @@
 		if (view === 'investigate') return 'rm-task-investigation';
     if (view === 'mechanisms') return 'rm-mechanisms';
     if (view === 'mechanism') return 'rm-mechanism-detail';
+		if (view === 'study_overview') return 'rm-study-overview';
 		if (view === 'study') return 'rm-study-detail';
 		if (view === 'operate') return 'rm-operate-detail';
     if (view === 'search') return 'rm-search-view';
@@ -3770,6 +3784,25 @@
 		}
 	}
 
+	function appendIncompleteStudyEntry(root) {
+		if (!INCOMPLETE_STUDY_DIRECTIONS.length) return;
+		var section = el('section', 'rm-workspace-section rm-study-map-section');
+		section.appendChild(renderViewHeading(
+			'Study',
+			'Explore more grounded questions',
+			'Each question has an exact place to begin, but not yet a complete reading path.'
+		));
+		var open = txt(
+			'button',
+			'rm-secondary-action',
+			'Review ' + INCOMPLETE_STUDY_DIRECTIONS.length + ' incomplete Study directions →'
+		);
+		open.type = 'button';
+		open.onclick = function () { navigateWorkspace('study_overview'); };
+		section.appendChild(open);
+		root.appendChild(section);
+	}
+
 	function renderMixedLearningShelf(root) {
 		if (!mixedShelfAvailable()) return false;
 		var activeTopic = userTopicByID(activeOverviewTopicID);
@@ -3821,6 +3854,7 @@
 			topicSection.appendChild(topicGrid);
 			root.appendChild(topicSection);
 		}
+		appendIncompleteStudyEntry(root);
 		return true;
 	}
 
@@ -3965,6 +3999,13 @@
 		card.type = 'button';
 		card.appendChild(txt('span', 'rm-study-direction-card__order', String(index + 1)));
 		var body = el('span', 'rm-study-direction-card__body');
+		if (direction.incomplete) {
+			body.appendChild(txt(
+				'span',
+				'rm-study-reading-anchor__label',
+				studyStageLabel(direction.learning_stage) + ' · incomplete'
+			));
+		}
 		body.appendChild(txt('strong', '', direction.question || 'Explore this code area'));
 		if (direction.why_it_matters) body.appendChild(txt('span', 'rm-study-direction-card__reason', direction.why_it_matters));
 		if (direction.learning_outcome) body.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
@@ -3976,11 +4017,37 @@
 		body.appendChild(txt(
 			'span',
 			'rm-study-direction-card__action',
-			direction.mechanism_id ? 'Open ready deep dive →' : 'Explore this direction →'
+			direction.mechanism_id
+				? 'Open ready deep dive →'
+				: direction.incomplete
+					? 'Inspect starting point →'
+					: 'Explore this direction →'
 		));
 		card.appendChild(body);
 		card.onclick = function () { openStudyDirection(direction.id); };
 		return card;
+	}
+
+	function studyStageLabel(stage) {
+		return String(stage || 'study').replace(/_/g, ' ').replace(/\b\w/g, function (letter) {
+			return letter.toUpperCase();
+		});
+	}
+
+	function renderIncompleteStudyOverview() {
+		var root = document.getElementById('rm-study-overview');
+		if (!root) return;
+		root.replaceChildren();
+		root.appendChild(renderViewHeading(
+			'Study · incomplete directions',
+			'What is worth understanding next?',
+			'Questions backed by exact starting points. They are places to begin, not answers or ordered mechanisms.'
+		));
+		var directionList = el('div', 'rm-study-direction-list');
+		INCOMPLETE_STUDY_DIRECTIONS.forEach(function (direction, index) {
+			directionList.appendChild(renderStudyDirectionCard(direction, index));
+		});
+		root.appendChild(directionList);
 	}
 
 // repomap-source-episode:start
@@ -4153,11 +4220,11 @@
 			root.appendChild(shapeSection);
 		}
 
-		if (STUDY_DIRECTIONS.length) {
+		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			var studySection = el('section', 'rm-workspace-section rm-study-map-section');
 			studySection.appendChild(renderViewHeading('What to study', 'A useful path through the repository', 'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.'));
 			var directionList = el('div', 'rm-study-direction-list');
-			STUDY_DIRECTIONS.forEach(function (direction, index) {
+			COMPLETE_STUDY_DIRECTIONS.forEach(function (direction, index) {
 				directionList.appendChild(renderStudyDirectionCard(direction, index));
 			});
 			studySection.appendChild(directionList);
@@ -4195,18 +4262,39 @@
 		root.replaceChildren();
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
-		var back = txt('button', 'rm-secondary-action rm-study-back', '← Repository overview');
+		var incomplete = !!direction.incomplete;
+		var back = txt(
+			'button',
+			'rm-secondary-action rm-study-back',
+			incomplete ? '← All Study directions' : '← Repository overview'
+		);
 		back.type = 'button';
-		back.onclick = function () { navigateWorkspace('overview'); };
+		back.onclick = function () { navigateWorkspace(incomplete ? 'study_overview' : 'overview'); };
 		root.appendChild(back);
-		root.appendChild(renderViewHeading('Reading path', direction.question, direction.why_it_matters));
+		root.appendChild(renderViewHeading(
+			incomplete ? 'Incomplete Study direction' : 'Reading path',
+			direction.question,
+			direction.why_it_matters
+		));
 		if (direction.learning_outcome) {
 			var outcome = el('aside', 'rm-study-outcome');
-			outcome.appendChild(txt('span', '', 'After this reading path'));
+			outcome.appendChild(txt('span', '', incomplete ? 'What you can learn' : 'After this reading path'));
 			outcome.appendChild(txt('strong', '', direction.learning_outcome));
 			root.appendChild(outcome);
 		}
-		root.appendChild(txt('p', 'rm-study-order-note', 'These anchors are ordered for learning. They do not claim runtime execution order.'));
+		if (incomplete) {
+			var incompleteAnchorCount = Array.isArray(direction.reading_anchors) ? direction.reading_anchors.length : 0;
+			root.appendChild(txt(
+				'p',
+				'rm-study-order-note',
+				'This gives you ' + (incompleteAnchorCount === 1
+					? 'one exact place'
+					: incompleteAnchorCount + ' exact places') +
+					' to begin. It does not yet explain the complete reading path.'
+			));
+		} else {
+			root.appendChild(txt('p', 'rm-study-order-note', 'These anchors are ordered for learning. They do not claim runtime execution order.'));
+		}
 		var start = studyStartReference(direction);
 		if (start) {
 			var startActions = el('div', 'rm-study-start-actions');
@@ -4218,7 +4306,13 @@
 			startActions.appendChild(startButton);
 			root.appendChild(startActions);
 		}
-		root.appendChild(renderViewHeading('', 'You will inspect', 'Open an anchor to reveal its exact saved source.'));
+		root.appendChild(renderViewHeading(
+			'',
+			incomplete
+				? ((direction.reading_anchors || []).length === 1 ? 'Exact place to start' : 'Exact places to start')
+				: 'You will inspect',
+			'Open an anchor to reveal its exact saved source.'
+		));
 		var anchors = el('div', 'rm-study-reading-list');
 		(direction.reading_anchors || []).forEach(function (reading, index) {
 			var card = renderStudyReadingAnchor(reading, index);
@@ -4818,7 +4912,7 @@
 		root.appendChild(details);
 	}
 
-	function renderOverviewWorkspace() {
+  function renderOverviewWorkspace() {
     var root = document.getElementById('rm-overview');
     if (!root) return;
     root.replaceChildren();
@@ -6319,12 +6413,20 @@
     surfaceCatalogView = window.RepomapSurfaceCatalog.mount(host, DATA.discovered_surfaces, options);
   }
 
-  function activateWorkspaceView(view) {
+	function activateWorkspaceView(view) {
     var sectionID = viewSectionID(view);
     document.querySelectorAll('.rm-main-content > .rm-tab-content').forEach(function (section) {
       section.classList.toggle('rm-active', section.id === sectionID);
     });
-		var navView = view === 'mechanism' ? 'mechanisms' : (view === 'study' || view === 'operate') ? 'overview' : view;
+		var navView = view === 'mechanism'
+			? 'mechanisms'
+			: view === 'study'
+				? (INCOMPLETE_STUDY_DIRECTIONS.some(function (direction) {
+					return direction.id === workspaceState.directionID;
+				}) ? 'study_overview' : 'overview')
+				: view === 'operate'
+					? 'overview'
+					: view;
     document.querySelectorAll('[data-workspace-view]').forEach(function (button) {
       var active = button.getAttribute('data-workspace-view') === navView;
       button.classList.toggle('rm-active', active);
@@ -6336,6 +6438,7 @@
   function renderWorkspaceState() {
 		if (workspaceState.view === 'investigate') renderTaskInvestigationWorkspace();
     if (workspaceState.view === 'mechanism') renderMechanismDetailWorkspace();
+		if (workspaceState.view === 'study_overview') renderIncompleteStudyOverview();
 		if (workspaceState.view === 'study') renderStudyDetailWorkspace();
 		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
     if (workspaceState.view === 'architecture') {
@@ -6418,6 +6521,7 @@
 			} else {
 				addWorkspaceTab('Overview', 'overview');
 				if (USER_MECHANISMS.length) addWorkspaceTab('Mechanisms', 'mechanisms');
+				if (INCOMPLETE_STUDY_DIRECTIONS.length) addWorkspaceTab('Study', 'study_overview');
 				if (userArchitectureAvailable()) addWorkspaceTab('Architecture', 'architecture');
 			}
       if (DEBUG_MODE) addWorkspaceTab('Provenance', 'provenance');
@@ -6429,6 +6533,7 @@
 			renderOverviewWorkspace();
 			renderMechanismsWorkspace();
 			renderMechanismDetailWorkspace();
+			renderIncompleteStudyOverview();
 			renderStudyDetailWorkspace();
 			renderOperateDetailWorkspace();
 		}
@@ -6470,7 +6575,8 @@
 // repomap-source-episode:end
 			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,
-		renderStudyDetailWorkspace: renderStudyDetailWorkspace,
+      renderStudyDetailWorkspace: renderStudyDetailWorkspace,
+      renderIncompleteStudyOverview: renderIncompleteStudyOverview,
 		renderStudyDirectionCard: renderStudyDirectionCard,
 		renderStudyReadingAnchor: renderStudyReadingAnchor,
 		studyStartReference: studyStartReference,

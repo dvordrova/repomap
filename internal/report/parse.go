@@ -512,6 +512,13 @@ func readRunDir(
 	if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
 		data.Warnings = append(data.Warnings, warning)
 	}
+	if warning := replaySavedIncompleteStudy(
+		data,
+		filepath.Join(absDir, studymap.BundleFile),
+		filepath.Join(absDir, studymap.DirectionsAttemptFile),
+	); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
 	if warning := replaySavedPavedPaths(data, pavedPathRecordPath(absDir)); warning != "" {
 		data.Warnings = append(data.Warnings, warning)
 	}

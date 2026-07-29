@@ -1,15 +1,38 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/134-chatto-study-candidate-partial-acceptance.md
+    decisions/137-incomplete-study-production-integration.md
 
 Status:
-    Completed implementation; a new decision is required before further changes
+    Completed bounded production integration
 
 Approved by:
     Product supervisor and repository owner in the current session
 
 Notes:
+    Decision 137 integrates only the supervisor-approved incomplete Study
+    projection and detail route. It replays the saved bounded candidate
+    response against the exact saved anchor catalog, preserves provider order,
+    publishes only catalog-resolved exact starts, keeps the three existing
+    topics on Overview, and exposes the incomplete directions through one
+    Study route. The complete three-to-five-anchor pack gate and provider
+    prompt remain unchanged.
+    Decision 137 is complete: an authorized provider-free replay of the saved
+    Chatto run published all twelve incomplete directions in provider order,
+    preserved the three existing Overview topics, opened one exact saved source
+    through the verified local server, exposed no Search navigation, and kept
+    complete Study empty. The product supervisor reviewed production Overview,
+    Study, detail, and source screenshots and accepted the slice with no
+    blocker. Focused tests, the complete repository check, vet, offline quality
+    replays, and diff checks passed.
+    Decision 136 is complete: provider-free validation projected all twelve
+    retained Chatto questions in provider order with twelve catalog-resolved
+    exact starts, no unresolved or invented starts, and no complete-pack
+    claim. Overview, Study, and direction detail were browser-inspected; the
+    product supervisor reviewed all three screenshots plus validation.json
+    and approved the narrow production integration with no blocker.
+    Decision 135 completed one fresh normal Chatto acceptance run using the
+    verified Decision 134 checkpoint and stable PATH binary.
     Decision 134 changes only the provider-facing Study candidate failure unit.
     The exact Decision 133 Chatto response contained eleven ordered candidates:
     nine satisfy the existing contract and two contain only two anchors. The
