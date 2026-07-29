@@ -1,6 +1,7 @@
 package studymap
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -155,6 +156,156 @@ func TestEditingContractsDecodeStrictIndependentArtifacts(t *testing.T) {
 	if _, err := DecodeReviewProposal(mustEditingJSON(t, invalidReason)); err == nil {
 		t.Fatal("review decoder accepted none alongside an overclaim")
 	}
+}
+
+func TestDecodeBriefShapeProposalNormalizesRetainedChattoResponse(t *testing.T) {
+	t.Parallel()
+
+	const retainedChattoResponse = `{"version":1,"repository_type":"service_application","brief":{"what_it_is":{"text":"A self-hostable team chat application with Go backend and TypeScript frontend, using NATS JetStream for event sourcing and real-time delivery.","support_ids":["component-86cdd5ad86c8","component-71c3eb525cb1","frf-9807c3c6d44b41288c7f19a2","doc-ff21b6b9a3a33e9d"]},"problem":{"text":"Need for a free, easy-to-self-host chat application for teams and communities, with optional cloud hosting.","support_ids":["doc-b335630551682c19","component-c6795f39bafe"]},"main_input":{"text":"HTTP/gRPC and WebSocket connections from client applications.","support_ids":["component-73ab7b1c8726","doc-098e7e9855c52e2b"]},"central_responsibility":{"text":"Manage chat rooms, messages, users, and real-time delivery via event-sourced architecture using NATS JetStream.","support_ids":["component-86cdd5ad86c8","component-2f8003d96eb0","doc-2210862128dcaa74"]},"observable_result":{"text":"Real-time message delivery and comprehensive HTTP/gRPC APIs for chat operations.","support_ids":["doc-098e7e9855c52e2b","doc-7e859f8ebb73d9e3","component-73ab7b1c8726"]}},"domain_terms":[{"term":"snapshot","meaning":"Point-in-time backup of a JetStream stream for disaster recovery.","support_ids":["component-c6795f39bafe","doc-ed8c2a13788a337c"]},{"term":"bootstrap","meaning":"Initial setup process to create the first server configuration and admin users.","support_ids":["component-c6795f39bafe","frf-28575782464925918e8fd01d"]},{"term":"projection","meaning":"Event-sourced view built from the event stream, possibly cached for real-time delivery.","support_ids":["doc-2210862128dcaa74","component-86cdd5ad86c8"]},{"term":"realtime","meaning":"WebSocket or SSE-based real-time message delivery to clients.","support_ids":["doc-098e7e9855c52e2b","component-73ab7b1c8726"]},{"term":"connect","meaning":"Buf Connect RPC framework used for HTTP/gRPC API.","support_ids":["doc-7e859f8ebb73d9e3","component-73ab7b1c8726"]}],"shape_area_ids":["component-71c3eb525cb1","component-86cdd5ad86c8","component-73ab7b1c8726","component-2f8003d96eb0","component-f6a477f4b5b6","component-c6795f39bafe"]}`
+
+	normalized, err := DecodeBriefShapeProposal([]byte(retainedChattoResponse))
+	if err != nil {
+		t.Fatalf("decode retained Chatto response: %v", err)
+	}
+	if got, want := len(normalized.Brief.DomainTerms), 5; got != want {
+		t.Fatalf("domain term count = %d, want %d", got, want)
+	}
+	if got := normalized.Brief.DomainTerms[0].Term; got != "snapshot" {
+		t.Fatalf("first domain term = %q, want snapshot", got)
+	}
+
+	canonical := mustEditingJSON(t, normalized)
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(canonical, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := envelope["domain_terms"]; exists {
+		t.Fatal("canonical proposal retained top-level domain_terms")
+	}
+	var brief map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["brief"], &brief); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := brief["domain_terms"]; !exists {
+		t.Fatal("canonical proposal omitted nested brief.domain_terms")
+	}
+
+	control, err := DecodeBriefShapeProposal(canonical)
+	if err != nil {
+		t.Fatalf("decode prompt-conformant nested control: %v", err)
+	}
+	if got := string(mustEditingJSON(t, control)); got != string(canonical) {
+		t.Fatalf("normalized response differs from nested control:\n got: %s\nwant: %s", got, canonical)
+	}
+}
+
+func TestDecodeBriefShapeProposalCompatibilityFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	brief := briefShapeFromLegacy(legacy)
+	brief.Brief.DomainTerms = []BriefDomainTerm{{
+		Term:       "fixture term",
+		Meaning:    "A bounded fixture meaning.",
+		SupportIDs: []string{brief.Brief.WhatItIs.SupportIDs[0]},
+	}}
+	canonical := mustEditingJSON(t, brief)
+	topLevel := briefShapeTopLevelTermsJSON(t, canonical, false)
+
+	var invalidSupport map[string]json.RawMessage
+	if err := json.Unmarshal(topLevel, &invalidSupport); err != nil {
+		t.Fatal(err)
+	}
+	var terms []BriefDomainTerm
+	if err := json.Unmarshal(invalidSupport["domain_terms"], &terms); err != nil {
+		t.Fatal(err)
+	}
+	terms[0].SupportIDs = nil
+	invalidSupport["domain_terms"] = mustEditingJSON(t, terms)
+
+	var nullTerms map[string]json.RawMessage
+	if err := json.Unmarshal(topLevel, &nullTerms); err != nil {
+		t.Fatal(err)
+	}
+	nullTerms["domain_terms"] = json.RawMessage(`null`)
+
+	var objectTerms map[string]json.RawMessage
+	if err := json.Unmarshal(topLevel, &objectTerms); err != nil {
+		t.Fatal(err)
+	}
+	objectTerms["domain_terms"] = json.RawMessage(`{}`)
+
+	var bothEmptyEnvelope map[string]json.RawMessage
+	if err := json.Unmarshal(canonical, &bothEmptyEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	bothEmptyEnvelope["domain_terms"] = json.RawMessage(`[]`)
+	var bothEmptyBrief map[string]json.RawMessage
+	if err := json.Unmarshal(bothEmptyEnvelope["brief"], &bothEmptyBrief); err != nil {
+		t.Fatal(err)
+	}
+	bothEmptyBrief["domain_terms"] = json.RawMessage(`[]`)
+	bothEmptyEnvelope["brief"] = mustEditingJSON(t, bothEmptyBrief)
+
+	tests := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "both populated", raw: briefShapeTopLevelTermsJSON(t, canonical, true)},
+		{name: "both empty", raw: mustEditingJSON(t, bothEmptyEnvelope)},
+		{name: "null", raw: mustEditingJSON(t, nullTerms)},
+		{name: "object", raw: mustEditingJSON(t, objectTerms)},
+		{
+			name: "unknown term field",
+			raw: []byte(strings.Replace(
+				string(topLevel),
+				`{"term":`,
+				`{"unexpected":true,"term":`,
+				1,
+			)),
+		},
+		{name: "invalid support", raw: mustEditingJSON(t, invalidSupport)},
+		{
+			name: "outside byte budget",
+			raw:  bytes.Repeat([]byte("x"), maxEditingArtifactBytes+1),
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := DecodeBriefShapeProposal(test.raw); err == nil {
+				t.Fatal("decoder accepted invalid provider response")
+			}
+		})
+	}
+}
+
+func briefShapeTopLevelTermsJSON(
+	t *testing.T,
+	canonical []byte,
+	keepNested bool,
+) []byte {
+	t.Helper()
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(canonical, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var brief map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["brief"], &brief); err != nil {
+		t.Fatal(err)
+	}
+	terms, exists := brief["domain_terms"]
+	if !exists {
+		t.Fatal("canonical fixture has no nested domain terms")
+	}
+	envelope["domain_terms"] = terms
+	if !keepNested {
+		delete(brief, "domain_terms")
+	}
+	envelope["brief"] = mustEditingJSON(t, brief)
+	return mustEditingJSON(t, envelope)
 }
 
 func TestBuildReviewBundleBoundsExactLineNumberedSource(t *testing.T) {
