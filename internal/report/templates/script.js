@@ -274,7 +274,7 @@
 			return defaultWorkspaceHash();
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
-    if (state.view === 'search') return '#/search';
+    if (state.view === 'search') return '#/overview';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
@@ -346,12 +346,7 @@
       valid = state.view === 'mechanisms';
       canonicalHash = valid ? '#/mechanisms' : '#/overview';
     } else if (segments.length === 1 && segments[0] === 'search') {
-      if (DATA.semantic_search && window.RepomapSemanticSearch) {
-        state.view = 'search';
-        canonicalHash = '#/search';
-      } else {
-        valid = false;
-      }
+      valid = false;
     } else if (segments.length === 1 && segments[0] === 'architecture') {
       state.view = 'architecture';
       var focus = new URLSearchParams(query).get('focus') || '';
@@ -432,7 +427,7 @@
     var mechanism;
     switch (action.type) {
     case 'view':
-      next.view = action.view || 'overview';
+      next.view = action.view === 'search' ? 'overview' : action.view || 'overview';
       if (next.view !== 'architecture') {
         next.mapTarget = null;
         if (!action.keepReturn) next.mapReturn = null;
@@ -4178,18 +4173,11 @@
 			root.appendChild(deepDiveSection);
 		}
 
-		var hasSearch = DATA.semantic_search && window.RepomapSemanticSearch;
 		var hasArchitecture = userArchitectureAvailable();
-		if (hasSearch || hasArchitecture) {
+		if (hasArchitecture) {
 			var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
-			exploreSection.appendChild(renderViewHeading('Explore', 'Search or open the full architecture', 'Use the study map as a starting point, then branch into a symbol, file, or architecture area.'));
+			exploreSection.appendChild(renderViewHeading('Explore', 'Open the full architecture', 'Use the study map as a starting point, then inspect the wider repository map.'));
 			var actions = el('div', 'rm-overview-actions');
-			if (hasSearch) {
-				var search = txt('button', 'rm-secondary-action', 'Search');
-				search.type = 'button';
-				search.onclick = function () { navigateWorkspace('search'); };
-				actions.appendChild(search);
-			}
 			if (hasArchitecture) {
 				var architecture = txt('button', 'rm-secondary-action', 'Full architecture');
 				architecture.type = 'button';
@@ -4239,7 +4227,7 @@
 		root.appendChild(anchors);
 
 		var related = el('section', 'rm-workspace-section rm-study-related');
-		related.appendChild(renderViewHeading('Continue exploring', 'Related repository context', 'Open a referenced document, search for a nearby concept, or inspect the full architecture.'));
+		related.appendChild(renderViewHeading('Continue exploring', 'Related repository context', 'Open a referenced document or inspect the full architecture.'));
 		var actions = el('div', 'rm-overview-actions');
 		(direction.documents || []).forEach(function (document) {
 			if (!document || !repositoryLocationAvailable(document.location)) return;
@@ -4251,12 +4239,6 @@
 			};
 			actions.appendChild(button);
 		});
-		if (DATA.semantic_search && window.RepomapSemanticSearch) {
-			var search = txt('button', 'rm-secondary-action', 'Search');
-			search.type = 'button';
-			search.onclick = function () { navigateWorkspace('search'); };
-			actions.appendChild(search);
-		}
 		if (userArchitectureAvailable()) {
 			var areaTarget = null;
 			(direction.areas || []).some(function (area) {
@@ -4933,18 +4915,11 @@
       root.appendChild(filesSection);
     }
 
-    var hasSearch = DATA.semantic_search && window.RepomapSemanticSearch;
 		var hasArchitecture = userArchitectureAvailable();
-    if (hasSearch || hasArchitecture) {
+    if (hasArchitecture) {
       var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
-      exploreSection.appendChild(renderViewHeading('Explore', 'Find another way in', 'Search for a behavior, symbol, or file, or inspect the repository map.'));
+      exploreSection.appendChild(renderViewHeading('Explore', 'Inspect the wider repository', 'Open the repository map for additional context.'));
       var actions = el('div', 'rm-overview-actions');
-      if (hasSearch) {
-        var search = txt('button', 'rm-secondary-action', 'Search');
-        search.type = 'button';
-        search.onclick = function () { navigateWorkspace('search'); };
-        actions.appendChild(search);
-      }
       if (hasArchitecture) {
         var architecture = txt('button', 'rm-secondary-action', 'Explore architecture');
         architecture.type = 'button';
@@ -4968,8 +4943,8 @@
     if (!USER_MECHANISMS.length) {
       var empty = el('div', 'rm-empty-state');
 		empty.appendChild(txt('p', '', userArchitectureAvailable()
-			? 'Search for a symbol or file, or explore the architecture map.'
-			: 'Search for a symbol or file to continue.'));
+			? 'Explore the architecture map for additional context.'
+			: 'No source-backed code path is available yet.'));
       root.appendChild(empty);
       return;
     }
@@ -6181,7 +6156,7 @@
     } else {
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
-      else root.appendChild(txt('p', 'rm-empty-state', 'Search for a symbol or open one of the suggested source files.'));
+      else root.appendChild(txt('p', 'rm-empty-state', 'Open one of the suggested source files.'));
     }
     renderArchitectureReturn();
   }
@@ -6443,9 +6418,6 @@
 			} else {
 				addWorkspaceTab('Overview', 'overview');
 				if (USER_MECHANISMS.length) addWorkspaceTab('Mechanisms', 'mechanisms');
-				if (!mixedShelfAvailable() && DATA.semantic_search && window.RepomapSemanticSearch) {
-					addWorkspaceTab('Search', 'search');
-				}
 				if (userArchitectureAvailable()) addWorkspaceTab('Architecture', 'architecture');
 			}
       if (DEBUG_MODE) addWorkspaceTab('Provenance', 'provenance');
@@ -6461,7 +6433,6 @@
 			renderOperateDetailWorkspace();
 		}
     renderProvenanceWorkspace();
-		if (!TASK_INVESTIGATION) mountSemanticSearch();
     restoreWorkspaceFromRoute();
     if (DEBUG_MODE) resumeLatestInvestigation();
   }

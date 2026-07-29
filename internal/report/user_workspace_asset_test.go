@@ -640,11 +640,12 @@ const snippet = {
 const report = {
   repo_name: "fixture", user_mechanisms: [], user_sources: [snippet],
   openable_paths: ["api/public.go"], source_ids: {},
+  semantic_search: { version: 1, items: [], suggestions: [] },
 };
 const roots = { "rm-overview": new Element("section") };
 const window = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  RepomapSemanticSearch: {}, __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const document = {
   createElement(tag) { return new Element(tag); },
@@ -706,6 +707,9 @@ process.stdout.write(JSON.stringify({
 	}
 	if got.Snapshots != 0 || strings.Contains(got.OverviewText, "saved snapshot") {
 		t.Fatalf("overview exposed snapshot metadata: %q", got.OverviewText)
+	}
+	if strings.Contains(got.OverviewText, "Search") {
+		t.Fatalf("empty-shelf overview exposed Search fallback: %q", got.OverviewText)
 	}
 	if !strings.Contains(got.MechanismCardText, "Open code path →") ||
 		strings.Contains(got.MechanismCardText, "Open a code path") {
@@ -925,7 +929,7 @@ process.stdout.write(JSON.stringify({
 		}
 	}
 	for _, obsolete := range []string{
-		"Purpose", "Repository shape", "Primary path", "Extension paths", "Read next", "System story", "Explore",
+		"Purpose", "Repository shape", "Primary path", "Extension paths", "Read next", "System story", "Explore", "Search",
 	} {
 		if strings.Contains(got.OverviewText, obsolete) {
 			t.Errorf("mixed shelf retained obsolete Overview heading %q: %q", obsolete, got.OverviewText)
@@ -1011,6 +1015,7 @@ const parsed = {};
 [
   "#/overview",
   "#/mechanisms",
+  "#/search",
   "#/mechanism/mechanism%2Fone",
   "#/mechanism/mechanism%2Fone/step/4",
   "#/mechanism/missing/step/2",
@@ -1083,6 +1088,10 @@ process.stdout.write(JSON.stringify({
 	missing := got.Parsed["#/mechanism/missing/step/2"]
 	if missing.Valid || missing.State.View != "overview" || missing.CanonicalHash != "#/overview" {
 		t.Fatalf("invalid mechanism route = %#v", missing)
+	}
+	search := got.Parsed["#/search"]
+	if search.Valid || search.State.View != "overview" || search.CanonicalHash != "#/overview" {
+		t.Fatalf("Search route = %#v, want normal-report Overview canonicalization", search)
 	}
 	bounded := got.Parsed["#/mechanism/mechanism%2Fone/step/99"]
 	if !bounded.Valid || bounded.State.StepIndex != 3 || bounded.CanonicalHash != "#/mechanism/mechanism%2Fone/step/4" {
@@ -1280,7 +1289,7 @@ process.stdout.write(JSON.stringify({
 	assertSnapshot("close source drawer", got.ClosedDrawer, "#/study/study-b", "study", 320, 2)
 	assertSnapshot("open Mechanism", got.Mechanism, "#/mechanism/mechanism-1", "mechanism", 0, 3)
 	assertSnapshot("select Mechanism step", got.MechanismStep, "#/mechanism/mechanism-1/step/2", "mechanism", 275, 3)
-	assertSnapshot("open Search", got.Search, "#/search", "search", 0, 4)
+	assertSnapshot("Search canonicalizes to Overview", got.Search, "#/overview", "overview", 0, 4)
 	assertSnapshot("Search to Study", got.SearchStudy, "#/study/study-a", "study", 0, 5)
 }
 
@@ -1453,9 +1462,9 @@ process.stdout.write(JSON.stringify({
 	if got.Closed.View != "mechanism" || got.Closed.StepIndex != 3 || string(got.Closed.SourceLocation) != "null" {
 		t.Fatalf("closed drawer state = %#v", got.Closed)
 	}
-	if got.SearchHash != "#/search" || got.SearchDrawer.View != "search" ||
+	if got.SearchHash != "#/overview" || got.SearchDrawer.View != "overview" ||
 		got.SearchDrawer.SourceLocation == nil || got.SearchDrawerHasMechanism {
-		t.Fatalf("search source drawer leaked mechanism context: hash %q, state %#v, has mechanism %t",
+		t.Fatalf("Search fallback did not canonicalize to Overview: hash %q, state %#v, has mechanism %t",
 			got.SearchHash, got.SearchDrawer, got.SearchDrawerHasMechanism)
 	}
 	if got.MapHash != "#/architecture?focus=component%3Arouter" ||

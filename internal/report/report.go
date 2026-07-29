@@ -865,10 +865,14 @@ func userTopicUncertainty(reasons []string) (string, bool) {
 		switch reason {
 		case "observable_effect_fact_missing":
 			messages = append(messages, "The observable result is not yet supported by exact local evidence.")
+		case "core_work_fact_missing":
+			messages = append(messages, "The exact starting point is known, but exact source evidence does not yet establish the core behavior.")
 		case "fewer_than_two_exact_symbols":
 			messages = append(messages, "Only one exact starting symbol is available, so no ordered mechanism is claimed.")
 		case "bounded_static_analysis_limit":
 			messages = append(messages, "The local evidence stops before the remaining behavior can be established.")
+		case "unresolved_dynamic_dispatch":
+			messages = append(messages, "Exact local evidence is available, but dynamic dispatch prevents proving the next target.")
 		case "proof_adapter_unavailable":
 			messages = append(messages, "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism.")
 		default:

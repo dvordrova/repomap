@@ -65,12 +65,181 @@ func TestExactDiscoveryAnchorsRejectUnboundedOrUnauthorizedInputs(t *testing.T) 
 	}
 }
 
-func TestUserTopicUncertaintyExplainsUnavailableProofAdapter(t *testing.T) {
+func TestUserTopicUncertaintyExplainsSupportedIncompleteReasons(t *testing.T) {
 	t.Parallel()
 
-	got, ok := userTopicUncertainty([]string{"proof_adapter_unavailable"})
-	if !ok || got != "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism." {
-		t.Fatalf("userTopicUncertainty() = %q, %v", got, ok)
+	for _, test := range []struct {
+		reason string
+		want   string
+	}{
+		{
+			reason: "core_work_fact_missing",
+			want:   "The exact starting point is known, but exact source evidence does not yet establish the core behavior.",
+		},
+		{
+			reason: "unresolved_dynamic_dispatch",
+			want:   "Exact local evidence is available, but dynamic dispatch prevents proving the next target.",
+		},
+		{
+			reason: "proof_adapter_unavailable",
+			want:   "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism.",
+		},
+	} {
+		t.Run(test.reason, func(t *testing.T) {
+			got, ok := userTopicUncertainty([]string{test.reason})
+			if !ok || got != test.want {
+				t.Fatalf("userTopicUncertainty() = %q, %v, want %q, true", got, ok, test.want)
+			}
+		})
+	}
+}
+
+type topicProjectionFixture struct {
+	id       string
+	title    string
+	question string
+	path     string
+	symbol   string
+	line     int
+	reasons  []string
+}
+
+func TestProjectFreshRepoTopicsPreservesChattoRejectionReasons(t *testing.T) {
+	t.Parallel()
+
+	fixtures := []topicProjectionFixture{
+		{
+			id:       "presence",
+			title:    "Real-time presence projection",
+			question: "How are user presences aggregated for real-time delivery?",
+			path:     "cli/internal/connectapi/realtime_projection.go",
+			symbol:   "API.BuildRealtimeProjectionPresences",
+			line:     82,
+			reasons:  []string{"core_work_fact_missing", "unresolved_dynamic_dispatch"},
+		},
+		{
+			id:       "message",
+			title:    "Message creation process",
+			question: "How does the server process a new chat message and persist it?",
+			path:     "cli/internal/connectapi/messages.go",
+			symbol:   "messageService.CreateMessage",
+			line:     45,
+			reasons:  []string{"observable_effect_fact_missing", "bounded_static_analysis_limit"},
+		},
+		{
+			id:       "upload",
+			title:    "Asset upload initiation",
+			question: "How are file uploads initiated and validated in the asset upload service?",
+			path:     "cli/internal/connectapi/asset_uploads.go",
+			symbol:   "assetUploadService.CreateUpload",
+			line:     17,
+			reasons:  []string{"observable_effect_fact_missing", "unresolved_dynamic_dispatch"},
+		},
+	}
+	runDir := t.TempDir()
+	writeTopicProjectionArtifacts(t, runDir, fixtures)
+
+	topics, warning := projectFreshRepoTopics(&ReportData{ArtifactsDir: runDir})
+	if warning != "" {
+		t.Fatalf("projectFreshRepoTopics() warning = %q", warning)
+	}
+	if len(topics) != len(fixtures) {
+		t.Fatalf("topics = %#v, want %d", topics, len(fixtures))
+	}
+	for index, topic := range topics {
+		fixture := fixtures[index]
+		if topic.CandidateID != fixture.id || topic.Title != fixture.title ||
+			topic.Question != fixture.question || len(topic.StartingSymbols) != 1 {
+			t.Fatalf("topic %d = %#v, want fixture %#v", index, topic, fixture)
+		}
+		location := topic.StartingSymbols[0]
+		if location.Path != fixture.path || location.Symbol != fixture.symbol || location.Line != fixture.line {
+			t.Errorf("topic %d location = %#v, want %s:%d %s", index, location, fixture.path, fixture.line, fixture.symbol)
+		}
+		if strings.TrimSpace(topic.Uncertainty) == "" {
+			t.Errorf("topic %d has empty uncertainty", index)
+		}
+	}
+	encoded, err := json.Marshal(topics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"answer"`, `"steps"`, `"effect"`, `"order"`} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Errorf("topic JSON contains mechanism claim field %s: %s", forbidden, encoded)
+		}
+	}
+}
+
+func TestProjectFreshRepoTopicsStillFailsClosedForUnknownReason(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writeTopicProjectionArtifacts(t, runDir, []topicProjectionFixture{{
+		id: "unknown", title: "Unknown", question: "What happens?", path: "main.go",
+		symbol: "main", line: 1, reasons: []string{"future_unreviewed_reason"},
+	}})
+
+	topics, warning := projectFreshRepoTopics(&ReportData{ArtifactsDir: runDir})
+	if len(topics) != 0 || !strings.Contains(warning, "rejected candidate reason is unsupported") {
+		t.Fatalf("projectFreshRepoTopics() = %#v, %q, want fail-closed warning", topics, warning)
+	}
+}
+
+func writeTopicProjectionArtifacts(t *testing.T, runDir string, fixtures []topicProjectionFixture) {
+	t.Helper()
+
+	opportunityCandidates := make([]any, 0, len(fixtures))
+	selected := make([]any, 0, len(fixtures))
+	attempts := make([]any, 0, len(fixtures))
+	for _, fixture := range fixtures {
+		factID := fixture.id + "-fact"
+		eligibility := map[string]any{
+			"status":           "insufficient_primary_evidence",
+			"reasons":          fixture.reasons,
+			"distinct_symbols": []string{fixture.path + "\x00" + fixture.symbol},
+		}
+		opportunityCandidates = append(opportunityCandidates, map[string]any{
+			"id": fixture.id, "title": fixture.title, "question_answered": fixture.question,
+		})
+		selected = append(selected, map[string]any{
+			"candidate_id": fixture.id,
+			"question":     fixture.question,
+			"primary_path": map[string]any{
+				"status":      "insufficient_primary_evidence",
+				"eligibility": eligibility,
+				"root_anchors": []any{map[string]any{
+					"origin_fact_id": factID, "path": fixture.path, "symbol": fixture.symbol,
+				}},
+				"anchor_facts": []any{map[string]any{
+					"id": factID,
+					"source": map[string]any{
+						"path": fixture.path, "start_line": fixture.line, "enclosing_symbol": fixture.symbol,
+					},
+				}},
+			},
+		})
+		attempts = append(attempts, map[string]any{
+			"candidate_id": fixture.id, "question": fixture.question,
+			"state": "insufficient_primary_evidence", "failure_stage": "eligibility",
+			"primary_eligibility": eligibility,
+		})
+	}
+	for name, value := range map[string]any{
+		freshRepoOpportunityFileForTopics: map[string]any{
+			"validation_state":    "accepted",
+			"normalized_proposal": map[string]any{"candidates": opportunityCandidates},
+		},
+		freshRepoDemoCandidatesFileForTopics: map[string]any{"selected": selected},
+		freshRepoDemoStatusFileForTopics:     map[string]any{"attempts": attempts},
+	} {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runDir, name), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -243,17 +412,27 @@ func TestMixedTopicShelfRendererIsPrimaryAndLive(t *testing.T) {
 			t.Errorf("renderer lacks live control %q", liveControl)
 		}
 	}
-	if !strings.Contains(
-		scriptJS,
-		"if (!mixedShelfAvailable() && DATA.semantic_search && window.RepomapSemanticSearch)",
-	) {
-		t.Error("Search remains in primary navigation while the mixed shelf is present")
+	for _, forbidden := range []string{
+		"addWorkspaceTab('Search'",
+		"navigateWorkspace('search')",
+		"if (!TASK_INVESTIGATION) mountSemanticSearch();",
+	} {
+		if strings.Contains(scriptJS, forbidden) {
+			t.Errorf("normal report retains Search surface %q", forbidden)
+		}
+	}
+	if !strings.Contains(scriptJS, "segments[0] === 'search') {\n      valid = false;") {
+		t.Error("direct Search route does not fail closed to the default workspace")
 	}
 
 	data := &ReportData{
 		RepoName:      "go.etcd.io/etcd/v3",
 		OpenablePaths: []string{"server/etcdserver/api/v3rpc/quota.go"},
 		StudyMap:      &RepositoryStudyMap{},
+		SemanticSearch: &SemanticSearchIndex{
+			Version: 1,
+			Items:   []SemanticSearchItem{},
+		},
 		UserMechanisms: []UserMechanism{{
 			ArtifactID: "semantic-artifact-003a27952d61f4735635a018",
 			Title:      "Snapshot delivery",
@@ -285,6 +464,7 @@ func TestMixedTopicShelfRendererIsPrimaryAndLive(t *testing.T) {
 		`"candidate_id":"semantic-candidate-7d19808e04b2b7c7e49e02e3"`,
 		`"starting_symbols":[`,
 		`"artifact_id":"semantic-artifact-003a27952d61f4735635a018"`,
+		`"semantic_search":`,
 		"Pick a path worth following.",
 		"Open exact symbol",
 	} {
