@@ -1,15 +1,27 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/138-beets-current-pipeline-acceptance-run.md
+    decisions/139-targeted-round-selection-diversity.md
 
 Status:
-    Decision 138 complete; local checkpoint authorized
+    Decision 139 complete; local checkpoint authorized
 
 Approved by:
     Product supervisor and repository owner in the current session
 
 Notes:
+    Decision 139 changes only the deterministic selection of the second
+    targeted research round. The highest-scoring eligible round remains first;
+    when a second slot is available, the planner uses existing bounded
+    ProviderAllowedPaths to prefer the eligible round with the least average
+    shared directory prefix, with score and stable ID order as tie-breakers.
+    It does not change eligibility, evidence collection, provider inputs,
+    prompts, round count, Search, Study, Architecture, or report presentation.
+    The product supervisor accepted the provider-free Beets-shaped
+    microexperiment and authorized this integration plus focused/full checks.
+    The completed implementation passed those checks and the nearby etcd
+    validation. The product supervisor accepted D139 with no blocker and
+    authorized exactly one local checkpoint plus stable PATH-binary rebuild.
     Decision 138 completed exactly one normal `beets --no-search` run using
     the verified Decision 137 checkpoint and stable PATH binary. The run
     published three honest incomplete Python topics and exact editor starts,
