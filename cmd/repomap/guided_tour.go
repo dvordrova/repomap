@@ -51,6 +51,7 @@ func editGuidedTourForRun(
 	ctx context.Context,
 	runDir string,
 	stderr io.Writer,
+	noCache bool,
 	outputLanguage ...string,
 ) (guidedTourOutcome, error) {
 	bundle, err := guidedTourBundleForRun(runDir)
@@ -74,11 +75,12 @@ func editGuidedTourForRun(
 		)
 	}
 	fmt.Fprintln(stderr, "repomap: editing one bounded onboarding story from saved facts")
-	return ensureGuidedTour(
+	return ensureGuidedTourWithOptions(
 		ctx, bundle, runDir,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
+		guidedTourRunOptions{disableCache: noCache},
 	)
 }
 
@@ -132,6 +134,7 @@ func ensureGuidedTour(
 
 type guidedTourRunOptions struct {
 	independentExperiment bool
+	disableCache          bool
 	outputFile            string
 }
 
@@ -204,30 +207,32 @@ func ensureGuidedTourWithOptions(
 		},
 		Request: request, EvidenceBundleHash: bundleSHA,
 	}
-	if cached, found, cacheErr := modelresearch.LoadStageResponse(cacheInput); cacheErr != nil {
-		outcome.ValidationState = "invalid_cache"
-		return outcome, fmt.Errorf("guided tour: reject optional cache without another provider call: %w", cacheErr)
-	} else if found {
-		outcome.Cached = true
-		outcome.CacheHits = 1
-		outcome.ResponseBytes = cached.ResponseBytes
-		outcome.InputTokens = cached.InputTokens
-		outcome.OutputTokens = cached.OutputTokens
-		outcome.PromptCacheHitTokens = cached.PromptCacheHitTokens
-		outcome.PromptCacheMissTokens = cached.PromptCacheMissTokens
-		outcome.UnsupportedClaims = countGuidedTourProposalUnsupportedClaims(bundle, cached.Content)
-		outcome.LatencyMillis = cached.LatencyMillis
-		if err := saveGuidedTourRecordTo(bundle, cached.Content, runDir, options.outputFile); err != nil {
-			outcome.ValidationState = "invalid_cached_response"
-			return outcome, fmt.Errorf("guided tour: reject cached response: %w", err)
-		}
-		outcome.ValidationState = "cached"
-		if !options.independentExperiment {
-			if err := recordGuidedTourResearch(runDir, outcome, policy, usage); err != nil {
-				return outcome, err
+	if !options.disableCache {
+		if cached, found, cacheErr := modelresearch.LoadStageResponse(cacheInput); cacheErr != nil {
+			outcome.ValidationState = "invalid_cache"
+			return outcome, fmt.Errorf("guided tour: reject optional cache without another provider call: %w", cacheErr)
+		} else if found {
+			outcome.Cached = true
+			outcome.CacheHits = 1
+			outcome.ResponseBytes = cached.ResponseBytes
+			outcome.InputTokens = cached.InputTokens
+			outcome.OutputTokens = cached.OutputTokens
+			outcome.PromptCacheHitTokens = cached.PromptCacheHitTokens
+			outcome.PromptCacheMissTokens = cached.PromptCacheMissTokens
+			outcome.UnsupportedClaims = countGuidedTourProposalUnsupportedClaims(bundle, cached.Content)
+			outcome.LatencyMillis = cached.LatencyMillis
+			if err := saveGuidedTourRecordTo(bundle, cached.Content, runDir, options.outputFile); err != nil {
+				outcome.ValidationState = "invalid_cached_response"
+				return outcome, fmt.Errorf("guided tour: reject cached response: %w", err)
 			}
+			outcome.ValidationState = "cached"
+			if !options.independentExperiment {
+				if err := recordGuidedTourResearch(runDir, outcome, policy, usage); err != nil {
+					return outcome, err
+				}
+			}
+			return outcome, nil
 		}
-		return outcome, nil
 	}
 	if allowed, reason := policy.Allows(policy.GuidedTour, usage, len(request)); !allowed {
 		outcome.ValidationState = "skipped_" + reason
@@ -275,14 +280,16 @@ func ensureGuidedTourWithOptions(
 		}
 		return outcome, validationErr
 	}
-	if _, err := modelresearch.SaveStageResponse(cacheInput, modelresearch.StageResponse{
-		Content:     providerResult.Content,
-		InputTokens: providerResult.InputTokens, OutputTokens: providerResult.OutputTokens,
-		PromptCacheHitTokens:  providerResult.PromptCacheHitTokens,
-		PromptCacheMissTokens: providerResult.PromptCacheMissTokens,
-		LatencyMillis:         outcome.LatencyMillis,
-	}); err != nil {
-		return outcome, fmt.Errorf("guided tour: save validated cache: %w", err)
+	if !options.disableCache {
+		if _, err := modelresearch.SaveStageResponse(cacheInput, modelresearch.StageResponse{
+			Content:     providerResult.Content,
+			InputTokens: providerResult.InputTokens, OutputTokens: providerResult.OutputTokens,
+			PromptCacheHitTokens:  providerResult.PromptCacheHitTokens,
+			PromptCacheMissTokens: providerResult.PromptCacheMissTokens,
+			LatencyMillis:         outcome.LatencyMillis,
+		}); err != nil {
+			return outcome, fmt.Errorf("guided tour: save validated cache: %w", err)
+		}
 	}
 	if err := saveGuidedTourRecordTo(bundle, providerResult.Content, runDir, options.outputFile); err != nil {
 		return outcome, err

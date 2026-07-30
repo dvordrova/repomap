@@ -1158,6 +1158,7 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 		"--offline",
 		"--discover-surfaces=false",
 		"--no-search",
+		"--no-cache",
 		"--no-open",
 		"--no-serve",
 		"--debug-dir", debugDir,
@@ -1181,6 +1182,7 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 	var metadata struct {
 		EffectiveOptions struct {
 			NoSearch bool `json:"no_search"`
+			NoCache  bool `json:"no_cache"`
 		} `json:"effective_options"`
 	}
 	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
@@ -1188,6 +1190,9 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 	}
 	if !metadata.EffectiveOptions.NoSearch {
 		t.Fatalf("metadata effective options did not retain --no-search: %s", metadataJSON)
+	}
+	if !metadata.EffectiveOptions.NoCache {
+		t.Fatalf("metadata effective options did not retain --no-cache: %s", metadataJSON)
 	}
 
 	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))

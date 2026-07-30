@@ -394,6 +394,39 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	}
 }
 
+func TestExecuteRoundWithoutRunsDirDoesNotReuseOrPopulateCache(t *testing.T) {
+	input := basicPlanningInput(t)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceID := planResult.Selected[0].Bundle.Evidence[0].ID
+	response, err := json.Marshal(researchResponse{Findings: []RawFinding{{
+		ID: "finding-1", Interpretation: "backup is coordinated here",
+		HypothesisAssessment: "supported", EvidenceIDs: []string{evidenceID},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &savedProvider{response: response}
+	repository := RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"}
+	for range 2 {
+		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
+			Plan: planResult.Selected[0], Policy: input.Policy, Repository: repository,
+			Profile: "test", Model: "saved", Provider: provider,
+		})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		if round.Cached || round.Status != RoundCompleted {
+			t.Fatalf("uncached round = %#v", round)
+		}
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one call per round", provider.calls)
+	}
+}
+
 func TestExecuteRoundRefetchesInvalidCachedInput(t *testing.T) {
 	input := basicPlanningInput(t)
 	planResult, err := PlanTargetedRounds(context.Background(), input)
@@ -492,7 +525,7 @@ func TestStageResponseCacheReplaysLegacyRecordWithoutPromptCacheTokens(t *testin
 		t.Fatal(err)
 	}
 	if err := saveCache(runsDir, cacheRecord{
-		Version: ContractVersion, CacheKey: cacheKey,
+		Version: cacheRecordVersion, CacheKey: cacheKey,
 		RequestSHA256: requestHash(request), BundleSHA256: bundleHash,
 		ResponseSHA256: requestHash(responseContent), Response: responseContent,
 		RequestBytes: len(request), ResponseBytes: len(responseContent),

@@ -70,7 +70,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 
 	call, err := obtainOrientation(
-		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON,
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, true,
 	)
 	if err != nil {
 		t.Fatalf("obtainOrientation() error = %v", err)
@@ -82,13 +82,26 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	replayed, err := obtainOrientation(
-		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON,
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, true,
 	)
 	if err != nil {
 		t.Fatalf("cached obtainOrientation() error = %v", err)
 	}
 	if requests != 1 || !replayed.Metrics.CacheHit || string(replayed.Raw) != `{"fresh":true}` {
 		t.Fatalf("replayed orientation = requests %d, cache hit %t, raw %q", requests, replayed.Metrics.CacheHit, replayed.Raw)
+	}
+
+	uncached, err := obtainOrientation(
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, false,
+	)
+	if err != nil {
+		t.Fatalf("uncached obtainOrientation() error = %v", err)
+	}
+	if requests != 2 || uncached.Metrics.CacheHit || uncached.SaveCache || string(uncached.Raw) != `{"fresh":true}` {
+		t.Fatalf(
+			"uncached orientation = requests %d, cache hit %t, save cache %t, raw %q",
+			requests, uncached.Metrics.CacheHit, uncached.SaveCache, uncached.Raw,
+		)
 	}
 }
 

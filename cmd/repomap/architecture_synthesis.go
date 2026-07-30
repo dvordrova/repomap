@@ -49,6 +49,7 @@ func synthesizeArchitectureForRun(
 	ctx context.Context,
 	runDir string,
 	stderr io.Writer,
+	noCache bool,
 	outputLanguage ...string,
 ) (architectureSynthesisOutcome, error) {
 	client, err := deepseek.NewFromEnv()
@@ -64,13 +65,14 @@ func synthesizeArchitectureForRun(
 			progress.Elapsed.Round(time.Second),
 		)
 	}
-	outcome, err := prepareArchitectureSynthesis(
+	outcome, err := prepareArchitectureSynthesisWithOptions(
 		ctx,
 		runDir,
 		architectureSynthesisRevision,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
+		architectureSynthesisOptions{disableCache: noCache},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
@@ -118,6 +120,24 @@ func prepareArchitectureSynthesis(
 	model string,
 	provider componentLandscapeSynthesizer,
 ) (architectureSynthesisOutcome, error) {
+	return prepareArchitectureSynthesisWithOptions(
+		ctx, runDir, repositoryRevision, profile, model, provider, architectureSynthesisOptions{},
+	)
+}
+
+type architectureSynthesisOptions struct {
+	disableCache bool
+}
+
+func prepareArchitectureSynthesisWithOptions(
+	ctx context.Context,
+	runDir string,
+	repositoryRevision string,
+	profile string,
+	model string,
+	provider componentLandscapeSynthesizer,
+	options architectureSynthesisOptions,
+) (architectureSynthesisOutcome, error) {
 	data, err := report.ReadRunDir(runDir)
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: read saved run: %w", err)
@@ -143,7 +163,7 @@ func prepareArchitectureSynthesis(
 			return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: insufficient package evidence for a useful landscape")
 		}
 	}
-	return ensureArchitectureSynthesis(
+	return ensureArchitectureSynthesisWithOptions(
 		ctx,
 		input.CandidateBundle,
 		runDir,
@@ -151,6 +171,7 @@ func prepareArchitectureSynthesis(
 		profile,
 		model,
 		provider,
+		options,
 	)
 }
 
@@ -162,6 +183,21 @@ func ensureArchitectureSynthesis(
 	profile string,
 	model string,
 	provider componentLandscapeSynthesizer,
+) (architectureSynthesisOutcome, error) {
+	return ensureArchitectureSynthesisWithOptions(
+		ctx, bundle, runDir, repositoryRevision, profile, model, provider, architectureSynthesisOptions{},
+	)
+}
+
+func ensureArchitectureSynthesisWithOptions(
+	ctx context.Context,
+	bundle componentmap.CandidateBundle,
+	runDir string,
+	repositoryRevision string,
+	profile string,
+	model string,
+	provider componentLandscapeSynthesizer,
+	options architectureSynthesisOptions,
 ) (architectureSynthesisOutcome, error) {
 	if provider == nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider is required")
@@ -202,45 +238,43 @@ func ensureArchitectureSynthesis(
 		cacheKey+".json",
 	)
 
-	for _, candidate := range []struct {
-		path      string
-		copyToRun bool
-	}{{path: runPath}, {path: cachePath, copyToRun: true}} {
-		saved, readErr := os.ReadFile(candidate.path)
-		if readErr == nil {
-			cachedOutcome, replayErr := replayArchitectureSynthesisOutcome(bundle, repositoryRevision, saved)
-			if replayErr != nil {
-				return architectureSynthesisOutcome{}, fmt.Errorf(
-					"architecture synthesis: reject saved record %s without another provider call: %w",
-					candidate.path,
-					replayErr,
-				)
-			}
-			cachedOutcome.Cached = true
-			cachedOutcome.InputBytes = len(requestJSON)
-			if candidate.copyToRun {
-				if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
+	if !options.disableCache {
+		for _, candidate := range []struct {
+			path      string
+			copyToRun bool
+		}{{path: runPath}, {path: cachePath, copyToRun: true}} {
+			saved, readErr := os.ReadFile(candidate.path)
+			if readErr == nil {
+				cachedOutcome, replayErr := replayArchitectureSynthesisOutcome(bundle, repositoryRevision, saved)
+				if replayErr != nil {
+					continue
+				}
+				cachedOutcome.Cached = true
+				cachedOutcome.InputBytes = len(requestJSON)
+				if candidate.copyToRun {
+					if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
+						return architectureSynthesisOutcome{}, err
+					}
+				}
+				if err := recordArchitectureResearch(
+					runDir,
+					cachedOutcome,
+					architectureResearchStatus(cachedOutcome),
+					true,
+					policy,
+					usage,
+				); err != nil {
 					return architectureSynthesisOutcome{}, err
 				}
+				return cachedOutcome, nil
 			}
-			if err := recordArchitectureResearch(
-				runDir,
-				cachedOutcome,
-				architectureResearchStatus(cachedOutcome),
-				true,
-				policy,
-				usage,
-			); err != nil {
-				return architectureSynthesisOutcome{}, err
+			if !errors.Is(readErr, os.ErrNotExist) {
+				return architectureSynthesisOutcome{}, fmt.Errorf(
+					"architecture synthesis: read saved record %s: %w",
+					candidate.path,
+					readErr,
+				)
 			}
-			return cachedOutcome, nil
-		}
-		if !errors.Is(readErr, os.ErrNotExist) {
-			return architectureSynthesisOutcome{}, fmt.Errorf(
-				"architecture synthesis: read saved record %s: %w",
-				candidate.path,
-				readErr,
-			)
 		}
 	}
 
@@ -301,8 +335,10 @@ func ensureArchitectureSynthesis(
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: encode record: %w", err)
 	}
 	saved = append(saved, '\n')
-	if err := writeArchitectureSynthesisRecord(cachePath, saved); err != nil {
-		return architectureSynthesisOutcome{}, err
+	if !options.disableCache {
+		if err := writeArchitectureSynthesisRecord(cachePath, saved); err != nil {
+			return architectureSynthesisOutcome{}, err
+		}
 	}
 	if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
 		return architectureSynthesisOutcome{}, err
