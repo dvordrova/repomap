@@ -71,7 +71,6 @@ type runMetadataJSON struct {
 	SurfaceDiscoveryMillis  *int64   `json:"surface_discovery_ms"`
 	Warnings                []string `json:"warnings"`
 	EffectiveOptions        struct {
-		NoSearch       bool   `json:"no_search"`
 		ReportLanguage string `json:"report_language"`
 	} `json:"effective_options"`
 }
@@ -534,9 +533,6 @@ func readRunDir(
 		data.Warnings = append(data.Warnings, warning)
 	}
 	data.UserSources = projectOverviewSourceSnippets(data)
-	if err := attachSemanticSearchIndex(data); err != nil {
-		data.Warnings = append(data.Warnings, fmt.Sprintf("semantic search unavailable: %v", err))
-	}
 	return data, nil
 }
 
@@ -761,7 +757,6 @@ func parseRunMetadata(path string, data *ReportData) string {
 		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
 		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
 	}
-	data.SemanticSearchDisabled = metadata.EffectiveOptions.NoSearch
 	data.ReportLanguage = storedReportLanguage(metadata.EffectiveOptions.ReportLanguage)
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""

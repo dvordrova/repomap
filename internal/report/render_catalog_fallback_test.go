@@ -95,9 +95,6 @@ func testLateCatalogIncompatibilityPublishesViewOnly(
 	if err != nil {
 		t.Fatalf("ReadRunDir before generation: %v", err)
 	}
-	if before.SemanticSearch == nil {
-		t.Fatal("fixture is missing its coherent legacy search projection")
-	}
 	var authority RunAuthority
 	if scoped {
 		authority, err = ConfirmRunAuthorityScoped(
@@ -189,20 +186,8 @@ func testLateCatalogIncompatibilityPublishesViewOnly(
 			generated.OpenablePaths,
 		)
 	}
-	beforeSearchJSON, err := json.Marshal(before.SemanticSearch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	generatedSearchJSON, err := json.Marshal(generated.SemanticSearch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(generatedSearchJSON, beforeSearchJSON) {
-		t.Fatalf(
-			"catalog-unavailable publication changed the coherent legacy search:\nbefore: %s\nafter:  %s",
-			beforeSearchJSON,
-			generatedSearchJSON,
-		)
+	if generated.SemanticSearch != nil {
+		t.Fatalf("catalog-unavailable publication retained removed Search data: %#v", generated.SemanticSearch)
 	}
 
 	manifest, err := ReadRunManifest(runDir)

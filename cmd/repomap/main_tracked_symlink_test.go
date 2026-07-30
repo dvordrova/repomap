@@ -18,17 +18,12 @@ import (
 )
 
 func TestTrackedSymlinkDefaultPublishesRegularSourceSubset(t *testing.T) {
-	result := runTrackedSymlinkPublication(t, false)
-	assertTrackedSymlinkRegularSubset(t, result, false)
-}
-
-func TestTrackedSymlinkNoSearchPublishesRegularSourceSubset(t *testing.T) {
-	result := runTrackedSymlinkPublication(t, true)
-	assertTrackedSymlinkRegularSubset(t, result, true)
+	result := runTrackedSymlinkPublication(t)
+	assertTrackedSymlinkRegularSubset(t, result)
 }
 
 func TestEarlyCatalogRegularSubsetReachesOptionalModelStages(t *testing.T) {
-	result := runTrackedSymlinkPublication(t, false)
+	result := runTrackedSymlinkPublication(t)
 	if result.providerRequests < 2 {
 		t.Fatalf(
 			"provider requests = %d, want orientation plus an optional stage",
@@ -169,7 +164,7 @@ type trackedSymlinkPublication struct {
 	requestBody      []byte
 }
 
-func runTrackedSymlinkPublication(t *testing.T, noSearch bool) trackedSymlinkPublication {
+func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 	t.Helper()
 	clearLLMEnv(t)
 
@@ -271,9 +266,6 @@ func runTrackedSymlinkPublication(t *testing.T, noSearch bool) trackedSymlinkPub
 		"--no-open",
 		"--no-serve",
 	}
-	if noSearch {
-		args = append(args, "--no-search")
-	}
 	var stderr bytes.Buffer
 	if err := runDefaultWithDeps(repository, args, defaultRunDeps{
 		ctx:    context.Background(),
@@ -298,7 +290,6 @@ func runTrackedSymlinkPublication(t *testing.T, noSearch bool) trackedSymlinkPub
 func assertTrackedSymlinkRegularSubset(
 	t *testing.T,
 	result trackedSymlinkPublication,
-	noSearch bool,
 ) {
 	t.Helper()
 	const linkPath = "client/v3/example_lease_test.go"
@@ -333,18 +324,8 @@ func assertTrackedSymlinkRegularSubset(
 	if trackedSymlinkContains(generated.OpenablePaths, linkPath) {
 		t.Fatalf("tracked symlink reached openable paths: %#v", generated.OpenablePaths)
 	}
-	if generated.SemanticSearchDisabled != noSearch {
-		t.Fatalf(
-			"semantic_search_disabled = %t, want %t",
-			generated.SemanticSearchDisabled,
-			noSearch,
-		)
-	}
-	if noSearch && generated.SemanticSearch != nil {
-		t.Fatalf("--no-search view-only report retained semantic search: %#v", generated.SemanticSearch)
-	}
-	if !noSearch && generated.SemanticSearch == nil {
-		t.Fatal("default view-only report lost its coherent legacy search")
+	if generated.SemanticSearch != nil {
+		t.Fatalf("default view-only report retained semantic search: %#v", generated.SemanticSearch)
 	}
 
 	manifest, err := report.ReadRunManifest(result.runDir)

@@ -722,53 +722,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 </style>
 
 
-  <style id="rm-semantic-search-css">.rm-semantic-search { background: linear-gradient(135deg, #eff6ff, #f8fafc); border: 1px solid #bfdbfe; border-radius: 12px; margin-bottom: 1rem; padding: 1rem; }
-.rm-semantic-search__label { display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; margin-bottom: .35rem; text-transform: uppercase; color: #1d4ed8; }
-.rm-semantic-search__field { position: relative; }
-.rm-semantic-search__field::before { content: '🔎'; font-size: 1rem; left: .85rem; pointer-events: none; position: absolute; top: 50%; transform: translateY(-50%); }
-.rm-semantic-search__entry { background: #fff; border: 1px solid #93c5fd; border-radius: 9px; box-sizing: border-box; color: var(--rm-fg); font: inherit; font-size: 1rem; padding: .72rem 5.3rem .72rem 2.55rem; width: 100%; }
-.rm-semantic-search__entry:focus { border-color: var(--rm-accent); box-shadow: 0 0 0 3px rgba(37,99,235,.13); outline: none; }
-.rm-semantic-search__shortcut { color: var(--rm-dim); font-size: .7rem; pointer-events: none; position: absolute; right: .75rem; top: 50%; transform: translateY(-50%); }
-.rm-semantic-search__shortcut kbd { background: var(--rm-card); border: 1px solid var(--rm-border); border-bottom-width: 2px; border-radius: 5px; font: inherit; padding: .08rem .3rem; }
-.rm-semantic-search__suggestions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .65rem; }
-.rm-semantic-search__suggestion { background: rgba(255,255,255,.84); border: 1px solid #bfdbfe; border-radius: 999px; color: #1d4ed8; cursor: pointer; font: inherit; font-size: .72rem; padding: .32rem .65rem; text-align: left; }
-.rm-semantic-search__suggestion:hover, .rm-semantic-search__suggestion:focus-visible { background: #fff; border-color: var(--rm-accent); outline: none; }
-
-body.rm-search-open { overflow: hidden; }
-.rm-search-modal { inset: 0; position: fixed; z-index: 1000; }
-.rm-search-modal[hidden] { display: none; }
-.rm-search-modal__backdrop { background: rgba(15,23,42,.62); border: 0; cursor: default; inset: 0; padding: 0; position: absolute; width: 100%; }
-.rm-search-modal__dialog { background: var(--rm-bg); border: 1px solid var(--rm-border); border-radius: 13px; box-shadow: 0 22px 65px rgba(15,23,42,.32); box-sizing: border-box; left: 50%; max-height: min(760px, calc(100vh - 3rem)); max-width: 760px; overflow: hidden; position: absolute; top: 1.5rem; transform: translateX(-50%); width: calc(100% - 2rem); }
-.rm-search-modal__header { align-items: flex-start; background: var(--rm-bg); color: var(--rm-fg); display: flex; gap: 1rem; justify-content: space-between; padding: 1rem 1rem .7rem; }
-.rm-search-modal__header h2 { font-size: 1.08rem; margin: 0; }
-.rm-search-modal__header p { color: var(--rm-dim); font-size: .72rem; margin: .15rem 0 0; }
-.rm-search-modal__close { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 6px; color: var(--rm-dim); cursor: pointer; font: inherit; font-size: .68rem; padding: .28rem .45rem; }
-.rm-search-modal__input { border: 1px solid var(--rm-border); border-radius: 8px; box-sizing: border-box; display: block; font: inherit; font-size: .96rem; margin: 0 1rem; padding: .7rem .8rem; width: calc(100% - 2rem); }
-.rm-search-modal__input:focus { border-color: var(--rm-accent); box-shadow: 0 0 0 3px rgba(37,99,235,.12); outline: none; }
-.rm-search-modal__status { color: var(--rm-dim); font-size: .7rem; margin: .55rem 1rem .25rem; }
-.rm-search-modal__results { max-height: calc(min(760px, 100vh - 3rem) - 12.2rem); overflow: auto; padding: 0 1rem .8rem; }
-.rm-search-modal__group { color: var(--rm-dim); font-size: .64rem; letter-spacing: .05em; margin: .8rem 0 .3rem; text-transform: uppercase; }
-.rm-search-modal__result { background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--rm-fg); cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: .18rem; padding: .68rem .75rem; text-align: left; width: 100%; }
-.rm-search-modal__result:hover, .rm-search-modal__result.is-active { background: var(--rm-card); border-color: var(--rm-border); outline: none; }
-.rm-search-modal__result.is-active { border-color: #93c5fd; box-shadow: inset 3px 0 0 var(--rm-accent); }
-.rm-search-modal__result-top { align-items: baseline; display: flex; gap: .5rem; justify-content: space-between; }
-.rm-search-modal__result-top strong { font-size: .82rem; overflow-wrap: anywhere; }
-.rm-search-modal__kind { color: var(--rm-accent); flex: 0 0 auto; font-size: .6rem; font-weight: 650; text-transform: uppercase; }
-.rm-search-modal__summary { color: var(--rm-dim); display: -webkit-box; font-size: .72rem; line-height: 1.42; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.rm-search-modal__action { color: var(--rm-accent); font-size: .65rem; font-weight: 600; }
-.rm-search-modal__empty { border: 1px dashed var(--rm-border); border-radius: 8px; margin-top: .65rem; padding: 1rem; }
-.rm-search-modal__empty strong { font-size: .8rem; }
-.rm-search-modal__empty p { color: var(--rm-dim); font-size: .72rem; margin: .3rem 0 0; }
-.rm-search-modal__footer { border-top: 1px solid var(--rm-border); color: var(--rm-dim); display: flex; font-size: .62rem; gap: .8rem; padding: .55rem 1rem; }
-
-@media (max-width: 640px) {
-  .rm-semantic-search { border-radius: 9px; padding: .75rem; }
-  .rm-semantic-search__entry { font-size: .9rem; padding-right: 2.7rem; }
-  .rm-semantic-search__shortcut span { display: none; }
-  .rm-search-modal__dialog { border-radius: 0; inset: 0; max-height: none; max-width: none; transform: none; width: 100%; }
-  .rm-search-modal__results { max-height: calc(100vh - 12rem); }
-}
-</style>
 </head>
 <body>
   <header>
@@ -807,25 +760,6 @@ body.rm-search-open { overflow: hidden; }
       <section id="rm-study-overview" class="rm-tab-content"></section>
       <section id="rm-study-detail" class="rm-tab-content"></section>
       <section id="rm-operate-detail" class="rm-tab-content"></section>
-      <section id="rm-search-view" class="rm-tab-content">
-        <section class="rm-semantic-search" id="rm-semantic-search" aria-label="Repository search">
-          <label class="rm-semantic-search__label" for="rm-semantic-search-entry">Search the repository model</label>
-          <p class="rm-semantic-search__intro">Find a code path, component, symbol, or exact source file.</p>
-          <div class="rm-semantic-search__field">
-            <input
-              class="rm-semantic-search__entry"
-              id="rm-semantic-search-entry"
-              data-semantic-search-entry
-              type="search"
-              placeholder="What do you want to understand?"
-              autocomplete="off"
-              aria-haspopup="dialog"
-            >
-            <span class="rm-semantic-search__shortcut"><span>Open </span><kbd>⌘/Ctrl K</kbd></span>
-          </div>
-          <div class="rm-semantic-search__suggestions" data-semantic-search-suggestions aria-label="Suggested questions"></div>
-        </section>
-      </section>
       <section id="rm-architecture" class="rm-tab-content"></section>
       <section id="rm-provenance" class="rm-tab-content"></section>
       <div id="rm-flows-container"></div>
@@ -837,615 +771,9 @@ body.rm-search-open { overflow: hidden; }
   </div>
   <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":26,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"semantic_search":{"version":5,"items":[{"id":"map:8c85885333b7e477aca7c3690e0942fe081828d1f59245565ceb0960ba96b5f4","kind":"map","title":"testrepo","summary":"test project","aliases":["architecture map","main components","главные компоненты","карта архитектуры"],"stability":"run_stable","target":{"kind":"map"}}],"suggestions":["map:8c85885333b7e477aca7c3690e0942fe081828d1f59245565ceb0960ba96b5f4"]},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":26,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
 
 
-  <script id="rm-semantic-search-js">(function (global) {
-  "use strict";
-
-  const MAX_RESULTS = 20;
-  const STOP_WORDS = new Set([
-    "a", "an", "and", "are", "as", "at", "be", "by", "does", "for", "from",
-    "here", "how", "i", "in", "is", "it", "of", "on", "or", "the", "this",
-    "to", "used", "uses", "using", "what", "where", "which", "with", "work", "works",
-    "а", "в", "где", "для", "здесь", "и", "из", "как", "какие", "какой", "на",
-    "по", "при", "с", "тут", "что", "эта", "это", "этот", "использовать", "используется",
-  ]);
-  const KIND_PRIORITY = Object.freeze({
-    repository_story: 225,
-			study_direction: 223,
-		paved_path: 222,
-    mechanism: 220,
-    dependency_usage: 216,
-    repository_pattern: 212,
-    contribution_guide: 208,
-    go_learning: 204,
-    guided_tour: 190,
-    guided_step: 180,
-    direction: 165,
-    map: 155,
-    subsystem: 125,
-    component: 145,
-    member: 35,
-    flow: 135,
-    surface: 130,
-    domain_term: 105,
-    behavior_anchor: 100,
-    unknown: 70,
-    warning: 65,
-    flow_step: 55,
-    location: 25,
-  });
-  const KIND_LABELS = Object.freeze({
-    repository_story: "Repository story",
-			study_direction: "Study direction",
-		paved_path: "How to run and verify",
-    mechanism: "Mechanism",
-    dependency_usage: "Dependency usage",
-    repository_pattern: "Repository pattern",
-    contribution_guide: "Contribution guide",
-    go_learning: "Go in practice",
-    guided_tour: "Story",
-    guided_step: "Story step",
-    direction: "Code path",
-    map: "Map",
-    subsystem: "Subsystem",
-    component: "Component",
-    member: "Package / symbol",
-    flow: "Flow",
-    surface: "Runtime entry",
-    domain_term: "Domain term",
-    behavior_anchor: "Behavior anchor",
-    unknown: "Source note",
-    warning: "Source note",
-    flow_step: "Symbol / step",
-    location: "Source",
-  });
-  const TOKEN_WEIGHT = Object.freeze({
-    verify: 3.2,
-    response: 1.6,
-    cache: 2.2,
-    build: 1.8,
-    report: 1.6,
-    surface: 1.6,
-    analyzer: 1.4,
-    extend: 1.4,
-    model: 1.1,
-    component: 1.1,
-  });
-
-  function array(value) {
-    return Array.isArray(value) ? value : [];
-  }
-
-  function text(value) {
-    return value == null ? "" : String(value).trim();
-  }
-
-  function fold(value) {
-    value = text(value);
-    if (!value) return "";
-    if (typeof value.normalize === "function") value = value.normalize("NFKC");
-    return value.toLocaleLowerCase().replaceAll("ё", "е").replace(/\s+/g, " ").trim();
-  }
-
-  function protectedTechnicalTerms(value) {
-    return fold(value)
-      .replace(/golang\.org\s*\/\s*x\s*\/\s*tools\s*\/\s*go\s*\/\s*packages/g, " go_packages ")
-      .replace(/\bgo\s*\/\s*packages\b/g, " go_packages ")
-      .replace(/\bpackages\s*\.\s*load\b/g, " packages_load ");
-  }
-
-  function canonicalToken(token) {
-    token = fold(token).replace(/^_+|_+$/g, "");
-    if (!token || STOP_WORDS.has(token)) return "";
-    if (token === "go_packages" || token === "packages_load") return token;
-    if (/^(отчет|отчёт|report|reporting|html)$/.test(token)) return "report";
-    if (/^(стро|собир|генер|build|built|generate|generated|render|rendered|produce|produces|assemble)/.test(token)) return "build";
-    if (/^(deepseek)$/.test(token)) return "deepseek";
-    if (/^(llm|model|models|модел)/.test(token)) return "model";
-    if (/^(ответ|response|responses|output|outputs|result|results)$/.test(token)) return "response";
-    if (/^(провер|валид|verify|verified|validation|validate|validated|allowlist|normalize)/.test(token)) return "verify";
-    if (/^(runtime|рантайм|surface|surfaces|trigger|triggers|registration|registrations|route|routes|worker|workers|async|discovery)$/.test(token)) return "surface";
-    if (/^(кеш|кэш)/.test(token) || /^(cache|cached|caching|replay)$/.test(token)) return "cache";
-    if (/^(компон|component|components|subsystem|subsystems)$/.test(token)) return "component";
-    if (/^(главн|основн|main|primary)$/.test(token)) return "main";
-    if (/^(архитект|architecture|landscape|map|карта)$/.test(token)) return "architecture";
-    if (/^(анализ|analyzer|analyzers|analysis|engine)$/.test(token)) return "analyzer";
-    if (/^(добав|расшир|нов)/.test(token) || /^(add|added|adding|extend|extension|new)$/.test(token)) return "extend";
-    if (/^(пакет|package|packages)$/.test(token)) return "package";
-    if (/^(поток|flow|flows|trace|traces)$/.test(token)) return "flow";
-    if (/^(go|golang)$/.test(token)) return "go";
-    return token;
-  }
-
-  function tokenize(value) {
-    const prepared = protectedTechnicalTerms(value)
-      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-      .replace(/[^\p{L}\p{N}_]+/gu, " ");
-    const tokens = [];
-    const seen = new Set();
-    prepared.split(/\s+/).forEach((raw) => {
-      const token = canonicalToken(raw);
-      if (!token || seen.has(token)) return;
-      seen.add(token);
-      tokens.push(token);
-    });
-    return tokens;
-  }
-
-  function exactCandidate(value) {
-    return protectedTechnicalTerms(value)
-      .replace(/[^\p{L}\p{N}_./:-]+/gu, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  function searchableItem(item) {
-    const title = text(item && item.title);
-    const question = text(item && item.question);
-    const summary = text(item && item.summary);
-    const aliases = array(item && item.aliases).map(text).filter(Boolean);
-    const titleTokens = new Set(tokenize(title));
-    const questionTokens = new Set(tokenize(question));
-    const aliasTokens = new Set(tokenize(aliases.join(" ")));
-    const summaryTokens = new Set(tokenize(summary));
-    const exactCandidates = [title, question].concat(aliases).map(exactCandidate).filter(Boolean);
-    return { item: item, title: title, question: question, summary: summary, aliases: aliases,
-      titleTokens: titleTokens, questionTokens: questionTokens, aliasTokens: aliasTokens, summaryTokens: summaryTokens,
-      exactCandidates: exactCandidates };
-  }
-
-  function exactMatch(candidates, query) {
-    const wanted = exactCandidate(query);
-    if (!wanted) return false;
-    return candidates.some((candidate) => {
-      if (candidate === wanted) return true;
-      const segments = candidate.split(/[\/.:#-]+/).filter(Boolean);
-      return segments.length > 0 && segments[segments.length - 1] === wanted;
-    });
-  }
-
-  function rankSemanticSearchItems(items, query, limit) {
-    limit = Math.max(1, Number(limit) || MAX_RESULTS);
-    const queryTokens = tokenize(query);
-    if (queryTokens.length === 0) return [];
-    const foldedQuery = exactCandidate(query);
-    const ranked = [];
-
-    array(items).forEach((item) => {
-      if (!item || !item.id || !item.target) return;
-      const searchable = searchableItem(item);
-      const isExact = exactMatch(searchable.exactCandidates, query);
-      let score = Number(KIND_PRIORITY[item.kind] || 0);
-      let matched = 0;
-      const matchedTokens = [];
-
-      queryTokens.forEach((token) => {
-        let fieldWeight = 0;
-        if (searchable.titleTokens.has(token)) fieldWeight = 80;
-        else if (searchable.questionTokens.has(token)) fieldWeight = 55;
-        else if (searchable.aliasTokens.has(token)) fieldWeight = 38;
-        else if (searchable.summaryTokens.has(token)) fieldWeight = 28;
-        if (!fieldWeight) return;
-        matched++;
-        matchedTokens.push(token);
-        score += fieldWeight * Number(TOKEN_WEIGHT[token] || 1);
-      });
-      if (matched === 0 && !isExact) return;
-
-      const titlePhrase = exactCandidate(searchable.title).includes(foldedQuery);
-      const questionPhrase = exactCandidate(searchable.question).includes(foldedQuery);
-      const aliasPhrase = searchable.exactCandidates.some((candidate) => candidate.includes(foldedQuery));
-      const summaryPhrase = exactCandidate(searchable.summary).includes(foldedQuery);
-      if (isExact) score += 4000;
-      else if (titlePhrase) score += 900;
-      else if (questionPhrase) score += 780;
-      else if (aliasPhrase) score += 720;
-      else if (summaryPhrase) score += 360;
-
-      const coverage = matched / queryTokens.length;
-      score += Math.round(coverage * 260);
-      if (coverage === 1) score += 420;
-      else score -= Math.round((1 - coverage) * 180);
-      if ((item.kind === "location" || item.kind === "flow_step") && !isExact) score -= 120;
-      const queryNamesExample = /\b(example|playground|пример)\b/.test(fold(query));
-      if (!queryNamesExample && /\b(example|playground)\b/.test(fold(item.title))) score -= 180;
-
-      ranked.push({
-        item: item,
-        score: Math.round(score),
-        exact: isExact,
-        complete: coverage === 1,
-        coverage: coverage,
-        matched_tokens: matchedTokens,
-        query_tokens: queryTokens,
-      });
-    });
-
-    ranked.sort((left, right) => {
-      if (left.complete !== right.complete) return left.complete ? -1 : 1;
-      if (left.score !== right.score) return right.score - left.score;
-      const leftKind = Number(KIND_PRIORITY[left.item.kind] || 0);
-      const rightKind = Number(KIND_PRIORITY[right.item.kind] || 0);
-      if (leftKind !== rightKind) return rightKind - leftKind;
-      const titleOrder = fold(left.item.title).localeCompare(fold(right.item.title));
-      if (titleOrder !== 0) return titleOrder;
-      return text(left.item.id).localeCompare(text(right.item.id));
-    });
-    return ranked.slice(0, limit);
-  }
-
-  function nextSearchIndex(current, delta, count) {
-    count = Math.max(0, Number(count) || 0);
-    if (count === 0) return -1;
-    current = Number.isFinite(Number(current)) ? Number(current) : 0;
-    return (current + Number(delta || 0) + count) % count;
-  }
-
-  function resultGroup(result) {
-    const kind = text(result && result.item && result.item.kind);
-    if ([
-				"repository_story", "study_direction", "paved_path", "mechanism", "dependency_usage", "repository_pattern",
-      "contribution_guide", "go_learning", "guided_tour", "guided_step",
-    ].includes(kind)) return "Ready explanations";
-    if (result && result.exact) return "Exact names and references";
-    if (result && !result.complete) return "Related results";
-    if (kind === "location" || kind === "flow_step" || kind === "member") return "Source code";
-    if (kind === "unknown" || kind === "warning") return "Source code";
-    return "Repository concepts";
-  }
-
-  function createElement(tag, className, content) {
-    const node = global.document.createElement(tag);
-    if (className) node.className = className;
-    if (content != null) node.textContent = String(content);
-    return node;
-  }
-
-  class SemanticSearchView {
-    constructor(root, index, options) {
-      this.root = root;
-      this.index = index || {};
-      this.options = options || {};
-      this.items = array(this.index.items).filter((item) => {
-        return typeof this.options.targetAvailable !== "function" ||
-          this.options.targetAvailable(item && item.target, item);
-      });
-      this.itemByID = new Map(this.items.map((item) => [text(item.id), item]));
-      this.results = [];
-      this.activeIndex = -1;
-      this.restoreFocus = null;
-      this.restoringFocus = false;
-      this.abort = new AbortController();
-    }
-
-    listen(target, type, handler, options) {
-      const settings = Object.assign({}, options || {}, { signal: this.abort.signal });
-      target.addEventListener(type, handler, settings);
-    }
-
-    presentationTitle(item) {
-      if (typeof this.options.presentationTitle === "function") {
-        const projected = text(this.options.presentationTitle(item));
-        if (projected) return projected;
-      }
-      return text(item && item.title);
-    }
-
-    start() {
-      if (!this.root || this.items.length === 0) {
-        if (this.root) this.root.hidden = true;
-        return this;
-      }
-      this.entry = this.root.querySelector("[data-semantic-search-entry]");
-      this.suggestions = this.root.querySelector("[data-semantic-search-suggestions]");
-      this.renderSuggestions();
-      this.buildModal();
-      if (this.entry) {
-        this.listen(this.entry, "focus", () => {
-          if (!this.restoringFocus) this.open(this.entry.value);
-        });
-        this.listen(this.entry, "click", () => this.open(this.entry.value));
-        this.listen(this.entry, "keydown", (event) => {
-          if (event.key === "Enter" || event.key === "ArrowDown") {
-            event.preventDefault();
-            this.open(this.entry.value);
-          }
-        });
-      }
-      this.listen(global, "keydown", (event) => {
-        if (event.isComposing || event.altKey) return;
-        if ((event.metaKey || event.ctrlKey) && fold(event.key) === "k") {
-          event.preventDefault();
-          this.open("");
-        }
-      });
-      return this;
-    }
-
-    renderSuggestions() {
-      if (!this.suggestions) return;
-      this.suggestions.replaceChildren();
-      array(this.index.suggestions).slice(0, 8).forEach((suggestion) => {
-        const itemID = typeof suggestion === "string" ? suggestion : suggestion && suggestion.item_id;
-        const item = this.itemByID.get(text(itemID));
-        if (!item) return;
-        const question = typeof suggestion === "object" && suggestion.question
-          ? suggestion.question : this.suggestionQuestion(item);
-        const button = createElement("button", "rm-semantic-search__suggestion", question);
-        button.type = "button";
-        button.title = "Open: " + this.presentationTitle(item);
-        button.dataset.semanticSearchItem = text(item.id);
-        this.listen(button, "click", () => this.activateItem(item));
-        this.suggestions.appendChild(button);
-      });
-      this.suggestions.hidden = this.suggestions.childElementCount === 0;
-    }
-
-    suggestionQuestion(item) {
-      if (text(item && item.question)) return text(item.question);
-      const title = this.presentationTitle(item);
-      switch (text(item && item.kind)) {
-		case "paved_path": return "How do I use “" + title + "”?";
-      case "guided_tour": return "Where should I start with “" + title + "”?";
-      case "flow": return "How does “" + title + "” work?";
-      case "surface": return "Where does “" + title + "” begin?";
-      case "map": return "What are the main components?";
-      case "direction": return "How does “" + title + "” work?";
-      case "domain_term": return "What does “" + title + "” mean here?";
-      case "component": return "What is “" + title + "” responsible for?";
-      case "subsystem": return "What belongs to “" + title + "”?";
-      case "flow_step": return "Where is “" + title + "” used?";
-      case "location": return "What does “" + title + "” show?";
-      default: return "Open “" + title + "”?";
-      }
-    }
-
-    buildModal() {
-      this.modal = createElement("div", "rm-search-modal");
-      this.modal.hidden = true;
-      this.backdrop = createElement("button", "rm-search-modal__backdrop");
-      this.backdrop.type = "button";
-      this.backdrop.tabIndex = -1;
-      this.backdrop.setAttribute("aria-label", "Close search");
-      this.dialog = createElement("section", "rm-search-modal__dialog");
-      this.dialog.setAttribute("role", "dialog");
-      this.dialog.setAttribute("aria-modal", "true");
-      this.dialog.setAttribute("aria-labelledby", "rm-semantic-search-title");
-      const header = createElement("header", "rm-search-modal__header");
-      const heading = createElement("div");
-      const title = createElement("h2", null, "What do you want to understand?");
-      title.id = "rm-semantic-search-title";
-      heading.appendChild(title);
-      heading.appendChild(createElement("p", null, "Search saved explanations, the architecture map, and source references."));
-      this.closeButton = createElement("button", "rm-search-modal__close", "Esc");
-      this.closeButton.type = "button";
-      this.closeButton.setAttribute("aria-label", "Close search");
-      header.append(heading, this.closeButton);
-
-      this.input = createElement("input", "rm-search-modal__input");
-      this.input.type = "search";
-      this.input.placeholder = "For example: request dispatch, report building, runtime surfaces";
-      this.input.setAttribute("role", "combobox");
-      this.input.setAttribute("aria-autocomplete", "list");
-      this.input.setAttribute("aria-controls", "rm-semantic-search-results");
-      this.input.setAttribute("aria-expanded", "true");
-      this.status = createElement("p", "rm-search-modal__status");
-      this.status.setAttribute("aria-live", "polite");
-      this.resultHost = createElement("div", "rm-search-modal__results");
-      this.resultHost.id = "rm-semantic-search-results";
-      this.resultHost.tabIndex = -1;
-      this.resultHost.setAttribute("role", "listbox");
-      const footer = createElement("footer", "rm-search-modal__footer");
-      footer.append(
-        createElement("span", null, "↑↓ select"),
-        createElement("span", null, "Enter open"),
-        createElement("span", null, "Esc close")
-      );
-      this.dialog.append(header, this.input, this.status, this.resultHost, footer);
-      this.modal.append(this.backdrop, this.dialog);
-      global.document.body.appendChild(this.modal);
-
-      this.listen(this.backdrop, "click", () => this.close(true));
-      this.listen(this.closeButton, "click", () => this.close(true));
-      this.listen(this.input, "input", () => {
-        if (this.entry) this.entry.value = this.input.value;
-        this.renderResults(this.input.value);
-      });
-      this.listen(this.input, "keydown", (event) => this.handleInputKey(event));
-      this.listen(this.modal, "keydown", (event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.close(true);
-        } else if (event.key === "Tab") {
-          event.preventDefault();
-          (global.document.activeElement === this.input ? this.closeButton : this.input).focus();
-        }
-      });
-    }
-
-    open(query) {
-      if (!this.modal || this.items.length === 0) return;
-      if (this.modal.hidden) this.restoreFocus = global.document.activeElement;
-      this.modal.hidden = false;
-      global.document.body.classList.add("rm-search-open");
-      this.input.value = text(query);
-      if (this.entry) this.entry.value = this.input.value;
-      this.renderResults(this.input.value);
-      global.requestAnimationFrame(() => {
-        this.input.focus();
-        this.input.select();
-      });
-    }
-
-    close(restore) {
-      if (!this.modal || this.modal.hidden) return;
-      this.modal.hidden = true;
-      global.document.body.classList.remove("rm-search-open");
-      this.input.removeAttribute("aria-activedescendant");
-      if (restore && this.restoreFocus && typeof this.restoreFocus.focus === "function") {
-        this.restoringFocus = true;
-        this.restoreFocus.focus();
-        this.restoringFocus = false;
-      }
-      this.restoreFocus = null;
-    }
-
-    initialResults() {
-      const seen = new Set();
-      const results = [];
-      array(this.index.suggestions).forEach((suggestion) => {
-        const itemID = typeof suggestion === "string" ? suggestion : suggestion && suggestion.item_id;
-        const item = this.itemByID.get(text(itemID));
-        if (!item || seen.has(item.id)) return;
-        seen.add(item.id);
-        results.push({ item: item, score: 0, exact: false, complete: true, coverage: 1 });
-      });
-      return results.slice(0, 8);
-    }
-
-    renderResults(query) {
-      this.results = text(query) ? rankSemanticSearchItems(this.items, query, MAX_RESULTS) : this.initialResults();
-      this.activeIndex = this.results.length > 0 ? 0 : -1;
-      this.resultHost.replaceChildren();
-      if (this.results.length === 0) {
-        this.input.removeAttribute("aria-activedescendant");
-        this.status.textContent = "No matches.";
-        const empty = createElement("div", "rm-search-modal__empty");
-        empty.appendChild(createElement("strong", null, "No matches"));
-        empty.appendChild(createElement(
-          "p", null,
-          "Try an exact component, flow, runtime entry, package, symbol, or file name."
-        ));
-        this.resultHost.appendChild(empty);
-        return;
-      }
-      this.status.textContent = text(query)
-        ? "Found: " + this.results.length
-        : "Suggested starting points";
-      let currentGroup = "";
-      this.results.forEach((result, index) => {
-        const group = resultGroup(result);
-        if (group !== currentGroup) {
-          currentGroup = group;
-          this.resultHost.appendChild(createElement("h3", "rm-search-modal__group", group));
-        }
-        const button = createElement("button", "rm-search-modal__result");
-        button.type = "button";
-        button.id = "rm-semantic-search-option-" + index;
-        button.setAttribute("role", "option");
-        button.setAttribute("aria-selected", index === this.activeIndex ? "true" : "false");
-        button.tabIndex = -1;
-        const top = createElement("span", "rm-search-modal__result-top");
-        top.appendChild(createElement("strong", null, this.presentationTitle(result.item)));
-        top.appendChild(createElement("span", "rm-search-modal__kind", KIND_LABELS[result.item.kind] || result.item.kind));
-        button.appendChild(top);
-        if (result.item.question && result.item.question !== result.item.title) {
-          button.appendChild(createElement("span", "rm-search-modal__summary", result.item.question));
-        }
-        if (result.item.summary) button.appendChild(createElement("span", "rm-search-modal__summary", result.item.summary));
-        const action = createElement("span", "rm-search-modal__action", this.actionLabel(result.item.target));
-        button.appendChild(action);
-        this.listen(button, "click", () => this.activateIndex(index));
-        this.resultHost.appendChild(button);
-      });
-      this.syncActiveResult(false);
-    }
-
-    actionLabel(target) {
-      switch (text(target && target.kind)) {
-      case "semantic_artifact": return "Open explanation →";
-			case "study_direction": return "Open reading path →";
-		case "paved_path": return "Open instructions →";
-      case "guided_step": return "Go to step →";
-      case "component": return "Show component on map →";
-      case "flow": return "Open flow →";
-      case "flow_step": return "Open exact step →";
-      case "surface": return "Open runtime entry →";
-      case "location": return "Open source →";
-      default: return "Open full map →";
-      }
-    }
-
-    handleInputKey(event) {
-      if (event.isComposing) return;
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        this.activeIndex = nextSearchIndex(this.activeIndex, 1, this.results.length);
-        this.syncActiveResult(true);
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        this.activeIndex = nextSearchIndex(this.activeIndex, -1, this.results.length);
-        this.syncActiveResult(true);
-      } else if (event.key === "Home" && this.results.length > 0) {
-        event.preventDefault();
-        this.activeIndex = 0;
-        this.syncActiveResult(true);
-      } else if (event.key === "End" && this.results.length > 0) {
-        event.preventDefault();
-        this.activeIndex = this.results.length - 1;
-        this.syncActiveResult(true);
-      } else if (event.key === "Enter" && this.activeIndex >= 0) {
-        event.preventDefault();
-        this.activateIndex(this.activeIndex);
-      }
-    }
-
-    resultButtons() {
-      return Array.from(this.resultHost.querySelectorAll(".rm-search-modal__result"));
-    }
-
-    syncActiveResult(scroll) {
-      const buttons = this.resultButtons();
-      buttons.forEach((button, index) => {
-        const active = index === this.activeIndex;
-        button.classList.toggle("is-active", active);
-        button.setAttribute("aria-selected", active ? "true" : "false");
-      });
-      const active = buttons[this.activeIndex];
-      if (!active) {
-        this.input.removeAttribute("aria-activedescendant");
-        return;
-      }
-      this.input.setAttribute("aria-activedescendant", active.id);
-      if (scroll && typeof active.scrollIntoView === "function") active.scrollIntoView({ block: "nearest" });
-    }
-
-    activateIndex(index) {
-      const result = this.results[index];
-      if (result) this.activateItem(result.item);
-    }
-
-    activateItem(item) {
-      if (!item || !item.target) return;
-      this.close(false);
-      if (typeof this.options.openTarget === "function") this.options.openTarget(item.target, item);
-    }
-
-    destroy() {
-      this.abort.abort();
-      if (this.modal) this.modal.remove();
-    }
-  }
-
-  function mount(root, index, options) {
-    return new SemanticSearchView(root, index, options).start();
-  }
-
-  global.RepomapSemanticSearch = Object.freeze({ mount: mount });
-  if (global.__REPOMAP_SEARCH_TEST__ && typeof global.__REPOMAP_SEARCH_TEST__ === "object") {
-    Object.assign(global.__REPOMAP_SEARCH_TEST__, {
-      canonicalToken: canonicalToken,
-      tokenize: tokenize,
-      rankSemanticSearchItems: rankSemanticSearchItems,
-      nextSearchIndex: nextSearchIndex,
-      resultGroup: resultGroup,
-    });
-  }
-})(window);
-</script>
   <script>(function () {
   'use strict';
 
@@ -1461,16 +789,10 @@ body.rm-search-open { overflow: hidden; }
     'Overview': 'Обзор',
     'Study': 'Изучение',
     'Operate': 'Запуск',
-    'Search': 'Поиск',
     'Architecture': 'Архитектура',
     'Source': 'Исходники',
     'Provenance': 'Происхождение данных',
-    'Repository search': 'Поиск по репозиторию',
-    'Search the repository model': 'Поиск по модели репозитория',
-    'Find a code path, component, symbol, or exact source file.': 'Найдите путь выполнения, компонент, символ или точный исходный файл.',
-    'What do you want to understand?': 'В чём вы хотите разобраться?',
     'Open': 'Открыть',
-    'Suggested questions': 'Предлагаемые вопросы',
     'Source locations': 'Исходные позиции',
     'Close source drawer': 'Закрыть панель исходников',
     'This report requires JavaScript. The raw data is available in report.json.': 'Для этого отчёта нужен JavaScript. Исходные данные доступны в report.json.',
@@ -1556,6 +878,14 @@ body.rm-search-open { overflow: hidden; }
     'Repository shape': 'Структура репозитория',
     'Code areas to know': 'Важные области кода',
     'A compact map of the production areas worth recognizing first.': 'Компактная карта production-областей, которые стоит узнать в первую очередь.',
+    'Open a concrete source location or continue on the architecture map.': 'Откройте конкретную позицию в исходниках или перейдите к карте архитектуры.',
+    'System story': 'Как устроена система',
+    'How the parts fit together': 'Как связаны основные части',
+    'A compact orientation assembled from repository documentation and existing code areas.': 'Краткая ориентация, собранная из материалов репозитория и найденных областей кода.',
+    'Inspect the wider repository': 'Изучить репозиторий шире',
+    'Open the repository map for additional context.': 'Откройте карту репозитория, чтобы увидеть дополнительный контекст.',
+    'Explore architecture': 'Исследовать архитектуру',
+    'Explore how this repository is organized and implemented.': 'Разберитесь, как организован и реализован этот репозиторий.',
     'What to study': 'Что изучать',
     'Ready deep dives': 'Готовые разборы',
     'These directions already have a validated step-by-step implementation explanation.': 'Для этих направлений уже есть проверенное пошаговое объяснение реализации.',
@@ -1713,8 +1043,6 @@ body.rm-search-open { overflow: hidden; }
     'Packages inspected': 'Проверено пакетов',
     'Functions inspected': 'Проверено функций',
     'Configured seeds matched': 'Совпавшие настроенные seeds',
-    'Close search': 'Закрыть поиск',
-    'Search saved explanations, the architecture map, and source references.': 'Ищите по сохранённым объяснениям, карте архитектуры и ссылкам на исходники.',
     'For example: request dispatch, report building, runtime surfaces': 'Например: request dispatch, построение отчёта, runtime surfaces',
     'No matches.': 'Совпадений нет.'
   };
@@ -1843,7 +1171,6 @@ body.rm-search-open { overflow: hidden; }
   var componentSelectionViews = {};
   var architectureCanvasView = null;
   var surfaceCatalogView = null;
-  var semanticSearchView = null;
   var resumeInvestigationStarted = false;
   var maxSymbolCandidates = 8;
   var maxStaticCalls = 5;
@@ -2107,7 +1434,6 @@ body.rm-search-open { overflow: hidden; }
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
     if (state.view === 'study_overview' && STUDY_DIRECTIONS.length) return '#/study';
-    if (state.view === 'search') return '#/overview';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
@@ -2183,8 +1509,6 @@ body.rm-search-open { overflow: hidden; }
 			state.view = STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
-    } else if (segments.length === 1 && segments[0] === 'search') {
-      valid = false;
     } else if (segments.length === 1 && segments[0] === 'architecture') {
       state.view = 'architecture';
       var focus = new URLSearchParams(query).get('focus') || '';
@@ -2265,7 +1589,7 @@ body.rm-search-open { overflow: hidden; }
     var mechanism;
     switch (action.type) {
     case 'view':
-      next.view = action.view === 'search' ? 'overview' : action.view || 'overview';
+      next.view = action.view || 'overview';
       if (next.view !== 'architecture') {
         next.mapTarget = null;
         if (!action.keepReturn) next.mapReturn = null;
@@ -3327,7 +2651,7 @@ body.rm-search-open { overflow: hidden; }
     if (meta.childElementCount) button.appendChild(meta);
     button.appendChild(txt('span', 'rm-explore-artifact__action', 'Open explanation on the map →'));
     button.addEventListener('click', function () {
-      openSemanticSearchTarget({ kind: 'semantic_artifact', artifact_id: artifact.id });
+      openReportTarget({ kind: 'semantic_artifact', artifact_id: artifact.id });
     });
     return button;
   }
@@ -4132,7 +3456,7 @@ body.rm-search-open { overflow: hidden; }
     });
   }
 
-  function showArchitectureFromSearch() {
+  function showArchitectureTarget() {
     showTab('rm-overview');
     var target = document.querySelector('.rm-architecture-canvas-card') ||
       document.querySelector('.rm-orientation-map') || document.getElementById('rm-overview');
@@ -4141,15 +3465,15 @@ body.rm-search-open { overflow: hidden; }
     }
   }
 
-  function openSemanticSearchTarget(target) {
+  function openReportTarget(target) {
     target = target || {};
     var kind = String(target.kind || 'map');
     if (kind === 'semantic_artifact') {
       var hasArtifactStep = target.step_index != null || target.index != null;
       var artifactStepIndex = Number(target.step_index != null ? target.step_index : target.index);
-      var searchMechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
-      var narrativeStepIndex = Number.isFinite(artifactStepIndex) && searchMechanism
-        ? narrativeIndexForImplementationStep(searchMechanism, artifactStepIndex)
+      var targetMechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
+      var narrativeStepIndex = Number.isFinite(artifactStepIndex) && targetMechanism
+        ? narrativeIndexForImplementationStep(targetMechanism, artifactStepIndex)
         : 0;
       openUserMechanism(
         target.artifact_id || target.id,
@@ -4189,7 +3513,7 @@ body.rm-search-open { overflow: hidden; }
     if (kind === 'guided_step' && DEBUG_MODE && architectureCanvasView) {
       var stepIndex = Number(target.step_index != null ? target.step_index : target.index);
       architectureCanvasView.openGuidedTourStep(Number.isFinite(stepIndex) ? stepIndex : 0);
-      showArchitectureFromSearch();
+      showArchitectureTarget();
       return;
     }
     var location = target.location || target;
@@ -4200,7 +3524,7 @@ body.rm-search-open { overflow: hidden; }
     openArchitectureTarget(null, null);
   }
 
-  function semanticSearchTargetAvailable(target) {
+  function reportTargetAvailable(target) {
     target = target || {};
     var kind = target ? String(target.kind || '') : '';
     if (kind === 'map' || kind === 'component' || kind === 'flow' || kind === 'flow_step' || kind === 'surface') {
@@ -5262,7 +4586,6 @@ body.rm-search-open { overflow: hidden; }
 		if (view === 'study_overview') return 'rm-study-overview';
 		if (view === 'study') return 'rm-study-detail';
 		if (view === 'operate') return 'rm-operate-detail';
-    if (view === 'search') return 'rm-search-view';
     if (view === 'architecture') return 'rm-architecture';
     if (view === 'provenance') return 'rm-provenance';
     return 'rm-overview';
@@ -6650,10 +5973,13 @@ body.rm-search-open { overflow: hidden; }
 		}
 
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+		var overviewPurpose = REPORT_LANGUAGE === 'ru'
+			? (DATA.project_guess || thesis.purpose)
+			: (thesis.purpose || DATA.project_guess);
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
     hero.appendChild(txt('div', 'rm-view-kicker', 'Purpose'));
     hero.appendChild(txt('h2', '', DATA.repo_name || 'Repository overview'));
-    hero.appendChild(txt('p', '', thesis.purpose || DATA.project_guess || 'Explore how this repository is organized and implemented.'));
+    hero.appendChild(txt('p', '', overviewPurpose || 'Explore how this repository is organized and implemented.'));
     root.appendChild(hero);
 
     var areas = Array.isArray(thesis.areas) ? thesis.areas.slice(0, 7) : [];
@@ -6711,25 +6037,6 @@ body.rm-search-open { overflow: hidden; }
 			storySection.appendChild(story);
 			root.appendChild(storySection);
 		}
-
-    if (USER_SOURCES.length && !USER_MECHANISMS.length) {
-      var filesSection = el('section', 'rm-workspace-section');
-      filesSection.appendChild(renderViewHeading('Code', 'Where to start', 'Ranked landmarks from the source captured with this report.'));
-      var landmarks = USER_SOURCES.filter(sourceSnippetHasCode).slice(0, 6);
-      var strongPrimary = landmarks.length && overviewSourceIsStrong(landmarks[0]);
-      var landmarkList = el('div', 'rm-overview-landmark-list');
-      landmarks.forEach(function (snippet, index) {
-        landmarkList.appendChild(renderSourceSnippetCard(snippet, {
-          primary: !!strongPrimary && index === 0,
-          overviewLandmark: true,
-          roleLabel: overviewSourceRoleLabel(snippet),
-          reason: overviewSourceReason(snippet),
-          location: sourceSnippetLocation(snippet),
-        }));
-      });
-      filesSection.appendChild(landmarkList);
-      root.appendChild(filesSection);
-    }
 
 		var hasArchitecture = userArchitectureAvailable();
     if (hasArchitecture) {
@@ -7873,13 +7180,18 @@ body.rm-search-open { overflow: hidden; }
 				packagePaths.push(packagePath);
 			});
 			packagePaths.sort();
-			if (!packagePaths.length) return;
 
-			var packageFiles = {};
+			var componentFiles = {};
 			packagePaths.forEach(function (packagePath) {
 				(packageByPath[packagePath].files || []).forEach(function (filePath) {
 					filePath = String(filePath || '');
-					if (filePath) packageFiles[filePath] = true;
+					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
+				});
+			});
+			(component.members || []).forEach(function (member) {
+				(member && member.facts || []).forEach(function (fact) {
+					var filePath = String(fact && fact.location && fact.location.path || '');
+					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
 				});
 			});
 
@@ -7891,7 +7203,7 @@ body.rm-search-open { overflow: hidden; }
 						path: anchor.source.path,
 						line: anchor.source.start_line,
 					}));
-					return !!(location && packageFiles[String(location.path || '')]);
+					return !!(location && componentFiles[String(location.path || '')]);
 				});
 				if (!matchedAnchors.length) return;
 				matches.push({ direction: direction, directionIndex: directionIndex, anchors: matchedAnchors });
@@ -7920,6 +7232,22 @@ body.rm-search-open { overflow: hidden; }
 					});
 				});
 			});
+			if (!sources.length) {
+				packagePaths.some(function (packagePath) {
+					var files = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
+						return !!(filePath && OPENABLE_PATH_SET[filePath]);
+					}).sort();
+					if (!files.length) return false;
+					var filePath = files[0];
+					sourceSeen[filePath + '\u0000' + '0'] = true;
+					sources.push({
+						label: filePath,
+						detail: filePath,
+						location: { path: filePath, line: 0 },
+					});
+					return true;
+				});
+			}
 			sources.sort(function (left, right) {
 				var leftLine = Number(left && left.location && left.location.line) || 0;
 				var rightLine = Number(right && right.location && right.location.line) || 0;
@@ -7945,9 +7273,10 @@ body.rm-search-open { overflow: hidden; }
 				});
 			});
 
+			if (!packagePaths.length && !sources.length && !matches.length) return;
 			contexts[String(component.id)] = {
 				package_paths: packagePaths,
-				file_count: Object.keys(packageFiles).length,
+				file_count: Object.keys(componentFiles).length,
 				sources: sources,
 				studies: matches.map(function (match) {
 					return {
@@ -8047,6 +7376,7 @@ body.rm-search-open { overflow: hidden; }
     architectureAppliedFocus = null;
     var options = {
       userMode: !DEBUG_MODE,
+      translateUI: translateUIString,
       candidateDirections: DEBUG_MODE ? candidateDirections() : [],
       savedFlows: DEBUG_MODE ? (DATA.flows || []) : [],
       guidedTour: DEBUG_MODE ? (DATA.guided_tour || null) : null,
@@ -8233,34 +7563,6 @@ body.rm-search-open { overflow: hidden; }
     }
   }
 
-  function mountSemanticSearch() {
-    if (semanticSearchView) {
-      semanticSearchView.destroy();
-      semanticSearchView = null;
-    }
-    var view = document.getElementById('rm-search-view');
-    var root = document.getElementById('rm-semantic-search');
-    if (!view || !root || !DATA.semantic_search || !window.RepomapSemanticSearch) return;
-    if (!view.querySelector('.rm-view-heading')) {
-      view.insertBefore(renderViewHeading(
-        'Search',
-        'Find the code you need',
-        'Search by behavior, symbol, component, or source path.'
-      ), root);
-    }
-    root.hidden = false;
-    semanticSearchView = window.RepomapSemanticSearch.mount(root, DATA.semantic_search, {
-      openTarget: openSemanticSearchTarget,
-      targetAvailable: semanticSearchTargetAvailable,
-      presentationTitle: function (item) {
-        var target = item && item.target || {};
-        if (target.kind !== 'semantic_artifact') return '';
-        var mechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
-        return mechanism ? mechanismPresentationTitle(mechanism) : '';
-      },
-    });
-  }
-
   function render() {
     DATA.flows = DATA.flows || [];
     componentSelectionViews = {};
@@ -8358,8 +7660,8 @@ body.rm-search-open { overflow: hidden; }
       userMechanismByID: userMechanismByID,
 		pavedPathByID: pavedPathByID,
       viewSectionID: viewSectionID,
-		openSemanticSearchTarget: openSemanticSearchTarget,
-      semanticSearchTargetAvailable: semanticSearchTargetAvailable,
+		openReportTarget: openReportTarget,
+      reportTargetAvailable: reportTargetAvailable,
       translateUIString: translateUIString,
       txt: txt,
     });

@@ -834,7 +834,7 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-func TestUserWorkspaceOverviewRendersExplicitCTAAndRankedCodeLandmarks(t *testing.T) {
+func TestUserWorkspaceOverviewDoesNotSubstituteSavedCodeLandmarks(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -930,16 +930,14 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode overview renderer result: %v\n%s", err, output)
 	}
-	for _, token := range []string{"Where to start", "Public API", "Exported API: Serve.", "func Serve() {"} {
-		if !strings.Contains(got.OverviewText, token) {
-			t.Errorf("overview is missing %q: %q", token, got.OverviewText)
+	for _, token := range []string{"Where to start", "Public API", "Exported API: Serve.", "func Serve() {", "saved snapshot"} {
+		if strings.Contains(got.OverviewText, token) {
+			t.Errorf("overview unexpectedly rendered saved-source fallback %q: %q", token, got.OverviewText)
 		}
 	}
-	if got.SourceCards != 1 || got.CodeBlocks != 1 {
-		t.Fatalf("overview source rendering = %d cards, %d code blocks", got.SourceCards, got.CodeBlocks)
-	}
-	if got.Snapshots != 0 || strings.Contains(got.OverviewText, "saved snapshot") {
-		t.Fatalf("overview exposed snapshot metadata: %q", got.OverviewText)
+	if got.SourceCards != 0 || got.CodeBlocks != 0 || got.Snapshots != 0 {
+		t.Fatalf("overview source rendering = %d cards, %d code blocks, %d snapshots; want none",
+			got.SourceCards, got.CodeBlocks, got.Snapshots)
 	}
 	if strings.Contains(got.OverviewText, "Search") {
 		t.Fatalf("empty-shelf overview exposed Search fallback: %q", got.OverviewText)
@@ -1467,15 +1465,13 @@ window.scrollY = 275;
 api.selectUserMechanismStep(1);
 const mechanismStep = snapshot();
 
-api.navigateWorkspace("search");
-const search = snapshot();
 window.scrollY = 430;
 api.openStudyDirection("study-a");
-const searchStudy = snapshot();
+const mechanismStudy = snapshot();
 
 process.stdout.write(JSON.stringify({
   studyA, studyB, back, forward, drawer, closedDrawer,
-  mechanism, mechanismStep, search, searchStudy,
+  mechanism, mechanismStep, mechanismStudy,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "user-workspace-scroll-test.js")
@@ -1493,16 +1489,15 @@ process.stdout.write(JSON.stringify({
 		View        string `json:"view"`
 	}
 	var got struct {
-		StudyA        snapshot `json:"studyA"`
-		StudyB        snapshot `json:"studyB"`
-		Back          snapshot `json:"back"`
-		Forward       snapshot `json:"forward"`
-		Drawer        snapshot `json:"drawer"`
-		ClosedDrawer  snapshot `json:"closedDrawer"`
-		Mechanism     snapshot `json:"mechanism"`
-		MechanismStep snapshot `json:"mechanismStep"`
-		Search        snapshot `json:"search"`
-		SearchStudy   snapshot `json:"searchStudy"`
+		StudyA         snapshot `json:"studyA"`
+		StudyB         snapshot `json:"studyB"`
+		Back           snapshot `json:"back"`
+		Forward        snapshot `json:"forward"`
+		Drawer         snapshot `json:"drawer"`
+		ClosedDrawer   snapshot `json:"closedDrawer"`
+		Mechanism      snapshot `json:"mechanism"`
+		MechanismStep  snapshot `json:"mechanismStep"`
+		MechanismStudy snapshot `json:"mechanismStudy"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode workspace scroll result: %v\n%s", err, output)
@@ -1522,8 +1517,7 @@ process.stdout.write(JSON.stringify({
 	assertSnapshot("close source drawer", got.ClosedDrawer, "#/study/study-b", "study", 320, 2)
 	assertSnapshot("open Mechanism", got.Mechanism, "#/mechanism/mechanism-1", "mechanism", 0, 3)
 	assertSnapshot("select Mechanism step", got.MechanismStep, "#/mechanism/mechanism-1/step/2", "mechanism", 275, 3)
-	assertSnapshot("Search canonicalizes to Overview", got.Search, "#/overview", "overview", 0, 4)
-	assertSnapshot("Search to Study", got.SearchStudy, "#/study/study-a", "study", 0, 5)
+	assertSnapshot("Mechanism to Study", got.MechanismStudy, "#/study/study-a", "study", 0, 4)
 }
 
 func TestUserWorkspaceNavigationWritesAndRestoresHistory(t *testing.T) {
@@ -1620,11 +1614,11 @@ const drawerState = window.history.state;
 api.closeSourceDrawer();
 api.restoreWorkspaceFromRoute();
 const closed = api.workspaceStateSnapshot();
-api.navigateWorkspace("search");
+api.navigateWorkspace("overview");
 api.openSourceSnippet(snippet, { path: "router.go", line: 41 });
-const searchDrawer = api.workspaceStateSnapshot();
-const searchDrawerHasMechanism = !!api.activeSourceDrawerMechanism();
-const searchHash = window.location.hash;
+const overviewDrawer = api.workspaceStateSnapshot();
+const overviewDrawerHasMechanism = !!api.activeSourceDrawerMechanism();
+const overviewHash = window.location.hash;
 api.openUserMechanism("mechanism-1", 1, true);
 api.showMechanismStepOnMap({ kind: "component", component_id: "router" });
 const mapHash = window.location.hash;
@@ -1636,7 +1630,7 @@ process.stdout.write(JSON.stringify({
   openedHash, stepHash, reloaded, backed, drawerHash,
   historyCountBeforeSameStep, historyCountAfterSameStep,
   drawerHistory: !!(drawerState && drawerState.sourceDrawer), closed,
-  searchDrawer, searchDrawerHasMechanism, searchHash,
+  overviewDrawer, overviewDrawerHasMechanism, overviewHash,
   mapHash, mapReturnHash, mapReturned,
   explicitMapReturnBackCalls: backCalls - backCallsBeforeMapReturn,
 }));
@@ -1663,9 +1657,9 @@ process.stdout.write(JSON.stringify({
 		DrawerHash                 string `json:"drawerHash"`
 		DrawerHistory              bool   `json:"drawerHistory"`
 		Closed                     state  `json:"closed"`
-		SearchDrawer               state  `json:"searchDrawer"`
-		SearchHash                 string `json:"searchHash"`
-		SearchDrawerHasMechanism   bool   `json:"searchDrawerHasMechanism"`
+		OverviewDrawer             state  `json:"overviewDrawer"`
+		OverviewHash               string `json:"overviewHash"`
+		OverviewDrawerHasMechanism bool   `json:"overviewDrawerHasMechanism"`
 		MapHash                    string `json:"mapHash"`
 		MapReturnHash              string `json:"mapReturnHash"`
 		MapReturned                state  `json:"mapReturned"`
@@ -1695,10 +1689,10 @@ process.stdout.write(JSON.stringify({
 	if got.Closed.View != "mechanism" || got.Closed.StepIndex != 3 || string(got.Closed.SourceLocation) != "null" {
 		t.Fatalf("closed drawer state = %#v", got.Closed)
 	}
-	if got.SearchHash != "#/overview" || got.SearchDrawer.View != "overview" ||
-		got.SearchDrawer.SourceLocation == nil || got.SearchDrawerHasMechanism {
-		t.Fatalf("Search fallback did not canonicalize to Overview: hash %q, state %#v, has mechanism %t",
-			got.SearchHash, got.SearchDrawer, got.SearchDrawerHasMechanism)
+	if got.OverviewHash != "#/overview" || got.OverviewDrawer.View != "overview" ||
+		got.OverviewDrawer.SourceLocation == nil || got.OverviewDrawerHasMechanism {
+		t.Fatalf("Overview navigation did not clear mechanism ownership: hash %q, state %#v, has mechanism %t",
+			got.OverviewHash, got.OverviewDrawer, got.OverviewDrawerHasMechanism)
 	}
 	if got.MapHash != "#/architecture?focus=component%3Arouter" ||
 		got.MapReturnHash != "#/mechanism/mechanism-1/step/2" ||
@@ -1752,10 +1746,10 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 process.stdout.write(JSON.stringify({
-  path: api.semanticSearchTargetAvailable({ kind: "location", location: { path: "router.go" } }),
-  exact: api.semanticSearchTargetAvailable({ kind: "location", location: { path: "router.go", line: 41 } }),
-  outsideSnippet: api.semanticSearchTargetAvailable({ kind: "location", location: { path: "router.go", line: 99 } }),
-  noCode: api.semanticSearchTargetAvailable({ kind: "location", location: { path: "other.go" } }),
+  path: api.reportTargetAvailable({ kind: "location", location: { path: "router.go" } }),
+  exact: api.reportTargetAvailable({ kind: "location", location: { path: "router.go", line: 41 } }),
+  outsideSnippet: api.reportTargetAvailable({ kind: "location", location: { path: "router.go", line: 99 } }),
+  noCode: api.reportTargetAvailable({ kind: "location", location: { path: "other.go" } }),
   outsideSnippetResolved: !!api.embeddedSourceForLocation({ path: "router.go", line: 99 }),
 }));
 `

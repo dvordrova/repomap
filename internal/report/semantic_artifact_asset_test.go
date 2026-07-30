@@ -68,7 +68,7 @@ func TestSemanticSearchArtifactTargetOpensDetailWithoutMap(t *testing.T) {
 	for _, forbidden := range []string{
 		"architectureCanvasView",
 		"openArchitectureTarget",
-		"showArchitectureFromSearch",
+		"showArchitectureTarget",
 		"scrollIntoView",
 	} {
 		if strings.Contains(branch, forbidden) {

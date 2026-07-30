@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/150-small-library-product-corrections.md
+    decisions/151-real-run-product-corrections.md
 
 Status:
-    Decision 150 active; small-library product corrections authorized
+    Decision 151 active; real-run product corrections authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 151 corrects fresh uncached Russian product review of lambroll and
+    wireguard-ui. Runtime selector assignments no longer masquerade as literal
+    credentials; exact file/symbol Architecture components remain inspectable
+    without a package member; and a failed Study no longer causes Overview to
+    substitute saved code snapshots. Russian fallback presentation copy and
+    purpose selection now follow the report language while exact technical
+    identifiers remain unchanged.
     Decision 150 corrects fresh uncached Russian product runs of pglogrepl and
     WAL. One-package libraries now reach bounded architecture synthesis; Study
     shape adapts to one through seven supplied areas; targeted research can

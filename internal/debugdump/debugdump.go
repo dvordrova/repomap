@@ -49,7 +49,7 @@ type EffectiveOptions struct {
 	FlowCount        int    `json:"flows"`
 	DiscoverSurfaces bool   `json:"discover_surfaces"`
 	GuidedTour       bool   `json:"guided_tour"`
-	NoSearch         bool   `json:"no_search"`
+	NoSecrets        bool   `json:"no_secrets,omitempty"`
 	ReportLanguage   string `json:"report_language,omitempty"`
 	DumpLLM          bool   `json:"dump_llm"`
 	OutputJSON       bool   `json:"json_output"`

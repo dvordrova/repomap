@@ -8,7 +8,6 @@
   <style>{{.CSS}}</style>
 {{if .HasArchitectureCanvas}}  <style id="rm-architecture-canvas-css">{{.ArchitectureCanvasCSS}}</style>{{end}}
 {{if .HasDiscoveredSurfaces}}  <style id="rm-surface-catalog-css">{{.SurfaceCatalogCSS}}</style>{{end}}
-{{if .HasSemanticSearch}}  <style id="rm-semantic-search-css">{{.SemanticSearchCSS}}</style>{{end}}
 </head>
 <body>
   <header>
@@ -47,25 +46,6 @@
       <section id="rm-study-overview" class="rm-tab-content"></section>
       <section id="rm-study-detail" class="rm-tab-content"></section>
       <section id="rm-operate-detail" class="rm-tab-content"></section>
-      <section id="rm-search-view" class="rm-tab-content">
-{{if .HasSemanticSearch}}        <section class="rm-semantic-search" id="rm-semantic-search" aria-label="Repository search">
-          <label class="rm-semantic-search__label" for="rm-semantic-search-entry">Search the repository model</label>
-          <p class="rm-semantic-search__intro">Find a code path, component, symbol, or exact source file.</p>
-          <div class="rm-semantic-search__field">
-            <input
-              class="rm-semantic-search__entry"
-              id="rm-semantic-search-entry"
-              data-semantic-search-entry
-              type="search"
-              placeholder="What do you want to understand?"
-              autocomplete="off"
-              aria-haspopup="dialog"
-            >
-            <span class="rm-semantic-search__shortcut"><span>Open </span><kbd>⌘/Ctrl K</kbd></span>
-          </div>
-          <div class="rm-semantic-search__suggestions" data-semantic-search-suggestions aria-label="Suggested questions"></div>
-        </section>{{end}}
-      </section>
       <section id="rm-architecture" class="rm-tab-content"></section>
       <section id="rm-provenance" class="rm-tab-content"></section>
       <div id="rm-flows-container"></div>
@@ -81,7 +61,6 @@
 {{if .HasArchitectureCanvas}}  <script id="rm-elkjs">{{.ELKJS}}</script>
   <script id="rm-architecture-canvas-js">{{.ArchitectureCanvasJS}}</script>{{end}}
 {{if .HasDiscoveredSurfaces}}  <script id="rm-surface-catalog-js">{{.SurfaceCatalogJS}}</script>{{end}}
-{{if .HasSemanticSearch}}  <script id="rm-semantic-search-js">{{.SemanticSearchJS}}</script>{{end}}
   <script>{{.JS}}</script>
 </body>
 </html>

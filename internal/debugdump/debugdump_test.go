@@ -85,7 +85,6 @@ func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
 		EffectiveOptions: EffectiveOptions{
 			FlowCount:        3,
 			DiscoverSurfaces: true,
-			NoSearch:         true,
 			NoOpen:           true,
 			DebugEnabled:     true,
 		},
@@ -103,7 +102,6 @@ func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
 		`"stage":"orientation"`,
 		`"state":"failed"`,
 		`"flows":3`,
-		`"no_search":true`,
 		`"no_open":true`,
 	} {
 		if !strings.Contains(text, want) {

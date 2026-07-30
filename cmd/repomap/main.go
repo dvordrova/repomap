@@ -28,6 +28,7 @@ import (
 	"github.com/dvordrova/repomap/internal/pavedpath"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
@@ -464,8 +465,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	flows := fs.Int("flows", 0, "number of top candidate directions to expand after orientation")
 	discoverSurfaces := fs.Bool("discover-surfaces", true, "discover bounded Go runtime surfaces for the report")
 	guidedTour := fs.Bool("guided-tour", true, "add an optional model-edited guided tour to the existing architecture map")
-	noSearch := fs.Bool("no-search", false, "omit Super Search from the generated report")
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
+	noSecrets := fs.Bool("no-secrets", false, "disable credential detection for this run (unsafe)")
 	language := fs.String("lang", "en", "report language: en or ru")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
@@ -486,6 +487,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			return fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
 		}
 		repo = fs.Arg(0)
+	}
+	restoreSecretScan := secretscan.SetDisabled(*noSecrets)
+	defer restoreSecretScan()
+	if *noSecrets {
+		fmt.Fprintln(deps.stderr, "warning: --no-secrets disables credential detection; selected tracked source may reach the model provider and debug artifacts")
 	}
 	if *flows < 0 {
 		return fmt.Errorf("--flows cannot be negative")
@@ -597,7 +603,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			FlowCount:        *flows,
 			DiscoverSurfaces: *discoverSurfaces && artifactRun,
 			GuidedTour:       *guidedTour && !*offline,
-			NoSearch:         *noSearch,
+			NoSecrets:        *noSecrets,
 			ReportLanguage:   storedReportLanguage(reportLanguage),
 			DumpLLM:          *dumpLLM,
 			OutputJSON:       *jsonOut,
@@ -1319,8 +1325,8 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --flows N       expand top N directions after orientation (default 0)\n")
 	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default true)\n")
 	fmt.Fprintf(os.Stderr, "  --guided-tour   add an optional guided tour to the architecture map (default true)\n")
-	fmt.Fprintf(os.Stderr, "  --no-search     omit Super Search from the generated report\n")
 	fmt.Fprintf(os.Stderr, "  --no-cache      disable cross-run model response caches\n")
+	fmt.Fprintf(os.Stderr, "  --no-secrets    disable credential detection for this run (unsafe)\n")
 	fmt.Fprintf(os.Stderr, "  --lang LANG     report language: en or ru (default: en)\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")

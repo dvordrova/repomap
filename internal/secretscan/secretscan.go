@@ -6,6 +6,7 @@ package secretscan
 import (
 	"regexp"
 	"strings"
+	"sync/atomic"
 )
 
 var patterns = []struct {
@@ -22,8 +23,24 @@ var patterns = []struct {
 	{kind: "credential assignment", pattern: regexp.MustCompile(`(?i)["']?(?:api[_-]?key|client[_-]?secret|token|password|passwd|secret|private[_-]?key|access[_-]?key|refresh[_-]?token)["']?\s*:\s*["']?[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,}`)},
 }
 
+var dynamicCredentialReference = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
+var disabled atomic.Bool
+
+// SetDisabled changes credential detection for the current process and returns
+// a restore function. It exists for the explicitly unsafe CLI override; normal
+// callers must leave detection enabled.
+func SetDisabled(value bool) func() {
+	previous := disabled.Swap(value)
+	return func() {
+		disabled.Store(previous)
+	}
+}
+
 // Detect returns the credential kind without returning the matched value.
 func Detect(text string) (string, bool) {
+	if disabled.Load() {
+		return "", false
+	}
 	for _, candidate := range patterns {
 		for _, match := range candidate.pattern.FindAllString(text, -1) {
 			if candidate.kind == "credential assignment" {
@@ -42,6 +59,9 @@ func looksLikeCredentialAssignment(match string) bool {
 	if value == "" {
 		return false
 	}
+	if !credentialAssignmentValueIsQuoted(match) && dynamicCredentialReference.MatchString(value) {
+		return false
+	}
 	valueStart := strings.Index(match, value)
 	if valueStart < 0 {
 		return false
@@ -58,6 +78,19 @@ func looksLikeCredentialAssignment(match string) bool {
 		}
 	}
 	return false
+}
+
+func credentialAssignmentValueIsQuoted(match string) bool {
+	separator := strings.IndexAny(match, "=:")
+	if separator < 0 || separator+1 >= len(match) {
+		return false
+	}
+	valueStart := separator + 1
+	if match[separator] == ':' && valueStart < len(match) && match[valueStart] == '=' {
+		valueStart++
+	}
+	tail := strings.TrimSpace(match[valueStart:])
+	return tail != "" && strings.ContainsRune("\"'`", rune(tail[0]))
 }
 
 func credentialAssignmentValue(match string) string {

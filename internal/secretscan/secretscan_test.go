@@ -70,3 +70,27 @@ func TestDetectDoesNotTreatMixedNumericCredentialAsPlaceholder(t *testing.T) {
 		t.Fatalf("Detect(%q) = %q, %v, want credential assignment", input, kind, found)
 	}
 }
+
+func TestDetectIgnoresRuntimeSelectorAssignments(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{
+		"server.Password = options.password",
+		"client.PrivateKey = key.String",
+		"telegram.Token = flags.telegramToken",
+		"apiKey := config.Sendgrid.ApiKey",
+	} {
+		if kind, found := Detect(input); found {
+			t.Errorf("Detect(%q) = %q, true; want runtime selector ignored", input, kind)
+		}
+	}
+}
+
+func TestDetectKeepsQuotedDottedCredentialLiteralFailClosed(t *testing.T) {
+	t.Parallel()
+
+	const input = `password: "company.prod.secret"`
+	if kind, found := Detect(input); !found || kind != "credential assignment" {
+		t.Fatalf("Detect(%q) = %q, %v, want credential assignment", input, kind, found)
+	}
+}

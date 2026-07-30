@@ -149,7 +149,6 @@ func ApplyProductCoherence(data *ReportData) {
 	refreshProductCounts(data)
 	data.RepositoryThesis = DeriveRepositoryThesis(data)
 	data.RepositoryGuide = DeriveRepositoryGuide(data)
-	_ = attachSemanticSearchIndex(data)
 }
 
 func buildArchitectureOwnershipIndex(canvas ArchitectureCanvas, graph *RepositoryGraph) architectureOwnershipIndex {

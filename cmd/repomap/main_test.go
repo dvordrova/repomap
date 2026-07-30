@@ -25,6 +25,7 @@ import (
 	"github.com/dvordrova/repomap/internal/pavedpath"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
@@ -1133,7 +1134,7 @@ func TestRunDefaultAcceptsRepositoryAfterFlags(t *testing.T) {
 	runGit(t, repo, "add", "--", "go.mod", "main.go")
 
 	var stdout bytes.Buffer
-	if err := runDefaultWithDeps(".", []string{"--offline", "--no-search", "--no-debug", repo}, defaultRunDeps{
+	if err := runDefaultWithDeps(".", []string{"--offline", "--no-debug", repo}, defaultRunDeps{
 		stdout: &stdout,
 		stderr: io.Discard,
 	}); err != nil {
@@ -1144,7 +1145,7 @@ func TestRunDefaultAcceptsRepositoryAfterFlags(t *testing.T) {
 	}
 }
 
-func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
+func TestRunDefaultOmitsSearchFromSavedReport(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/no-search\n\ngo 1.24\n")
@@ -1157,7 +1158,6 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 	if err := runDefaultWithDeps(".", []string{
 		"--offline",
 		"--discover-surfaces=false",
-		"--no-search",
 		"--no-cache",
 		"--no-open",
 		"--no-serve",
@@ -1181,15 +1181,14 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 	}
 	var metadata struct {
 		EffectiveOptions struct {
-			NoSearch bool `json:"no_search"`
-			NoCache  bool `json:"no_cache"`
+			NoCache bool `json:"no_cache"`
 		} `json:"effective_options"`
 	}
 	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if !metadata.EffectiveOptions.NoSearch {
-		t.Fatalf("metadata effective options did not retain --no-search: %s", metadataJSON)
+	if bytes.Contains(metadataJSON, []byte(`"no_search"`)) {
+		t.Fatalf("metadata retained the removed Search option: %s", metadataJSON)
 	}
 	if !metadata.EffectiveOptions.NoCache {
 		t.Fatalf("metadata effective options did not retain --no-cache: %s", metadataJSON)
@@ -1199,10 +1198,10 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(reportJSON, []byte(`"semantic_search_disabled": true`)) ||
+	if bytes.Contains(reportJSON, []byte(`"semantic_search_disabled":`)) ||
 		bytes.Contains(reportJSON, []byte(`"semantic_search":`)) ||
 		bytes.Contains(reportJSON, []byte(`"report_language":`)) {
-		t.Fatalf("saved report does not honor --no-search: %s", reportJSON)
+		t.Fatalf("saved report retained Search: %s", reportJSON)
 	}
 	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
 	if err != nil {
@@ -1215,8 +1214,61 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 		[]byte(`<kbd>⌘/Ctrl K</kbd>`),
 	} {
 		if bytes.Contains(reportHTML, marker) {
-			t.Fatalf("--no-search report unexpectedly contains %q", marker)
+			t.Fatalf("ordinary report unexpectedly contains Search marker %q", marker)
 		}
+	}
+}
+
+func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/no-secrets\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repo, "README.md"), "API_KEY=actual-secret-value\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go", "README.md")
+	commitTestRepository(t, repo)
+
+	debugDir := t.TempDir()
+	var stderr bytes.Buffer
+	if err := runDefaultWithDeps(repo, []string{
+		"--offline",
+		"--discover-surfaces=false",
+		"--no-secrets",
+		"--no-open",
+		"--no-serve",
+		"--debug-dir", debugDir,
+	}, defaultRunDeps{
+		ctx:    context.Background(),
+		stdout: io.Discard,
+		stderr: &stderr,
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "--no-secrets disables credential detection") {
+		t.Fatalf("unsafe override warning is absent:\n%s", stderr.String())
+	}
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataJSON, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		EffectiveOptions struct {
+			NoSecrets bool `json:"no_secrets"`
+		} `json:"effective_options"`
+	}
+	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !metadata.EffectiveOptions.NoSecrets {
+		t.Fatalf("metadata does not retain --no-secrets: %s", metadataJSON)
+	}
+	if kind, found := secretscan.Detect("API_KEY=actual-secret-value"); !found || kind != "credential assignment" {
+		t.Fatalf("credential detection was not restored after run: %q, %v", kind, found)
 	}
 }
 
@@ -1233,7 +1285,6 @@ func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
 	if err := runDefaultWithDeps(repo, []string{
 		"--offline",
 		"--discover-surfaces=false",
-		"--no-search",
 		"--lang", "ru",
 		"--no-open",
 		"--no-serve",
@@ -1278,7 +1329,7 @@ func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
 	}
 }
 
-func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
+func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, "internal/a"), 0o700); err != nil {
@@ -1326,7 +1377,7 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	run := func(noSearch bool) [][]byte {
+	run := func() [][]byte {
 		t.Helper()
 		var mu sync.Mutex
 		var requests [][]byte
@@ -1357,13 +1408,10 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 			"--no-serve",
 			"--debug-dir", t.TempDir(),
 		}
-		if noSearch {
-			args = append(args, "--no-search")
-		}
 		if err := runDefaultWithDeps(repo, args, defaultRunDeps{
 			ctx: context.Background(), stdout: io.Discard, stderr: io.Discard,
 		}); err != nil {
-			t.Fatalf("runDefaultWithDeps(noSearch=%t) error = %v", noSearch, err)
+			t.Fatalf("runDefaultWithDeps() error = %v", err)
 		}
 
 		mu.Lock()
@@ -1371,13 +1419,9 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 		return append([][]byte(nil), requests...)
 	}
 
-	withSearch := run(false)
-	withoutSearch := run(true)
-	if !reflect.DeepEqual(withoutSearch, withSearch) {
-		t.Fatalf("--no-search changed model request plan\nwith search: %q\nwithout search: %q", withSearch, withoutSearch)
-	}
-	if len(withSearch) != 5 {
-		t.Fatalf("model request count = %d, want orientation, architecture, two rejected guided tour attempts, and repository study map", len(withSearch))
+	requests := run()
+	if len(requests) != 5 {
+		t.Fatalf("model request count = %d, want orientation, architecture, two rejected guided tour attempts, and repository study map", len(requests))
 	}
 	wantStageMarkers := []string{
 		"senior software engineer helping orient",
@@ -1387,15 +1431,15 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 		"editorial onboarding planner for one bounded repository model",
 	}
 	for index, marker := range wantStageMarkers {
-		if !bytes.Contains(withSearch[index], []byte(marker)) {
-			t.Fatalf("model request %d does not contain stage marker %q: %s", index, marker, withSearch[index])
+		if !bytes.Contains(requests[index], []byte(marker)) {
+			t.Fatalf("model request %d does not contain stage marker %q: %s", index, marker, requests[index])
 		}
 	}
 	forbiddenStageMarkers := []string{
 		"Propose central mechanism questions",
 		"repository-owned ways to build, run, test, and operate",
 	}
-	for index, request := range withSearch {
+	for index, request := range requests {
 		for _, marker := range forbiddenStageMarkers {
 			if bytes.Contains(request, []byte(marker)) {
 				t.Fatalf("ordinary model request %d unexpectedly scheduled %q: %s", index, marker, request)

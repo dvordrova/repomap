@@ -29,7 +29,7 @@ function snippet(path, symbol, line) {
 }
 const report = {
   user_mechanisms: [], user_sources: [], source_ids: {},
-  openable_paths: ["core/a.go", "core/b.go", "other.go"],
+  openable_paths: ["core/a.go", "core/b.go", "other.go", "worker/a.go", "worker/b.go"],
   architecture_canvas: {
     components: [
       { id: "core", members: [
@@ -49,12 +49,29 @@ const report = {
       { id: "same-name-only", members: [{
         id: { kind: "package", value: "opaque-package-id-2" }, name: "core", facts: [],
       }] },
+      { id: "exact-member-only", members: [{
+        id: { kind: "symbol", value: "opaque-symbol-id" }, name: "ValidateFunctionURL",
+        facts: [{
+          kind: "declaration", value: "ValidateFunctionURL",
+          location: { path: "other.go", line: 41 },
+        }],
+      }] },
+      { id: "package-only", members: [{
+        id: { kind: "package", value: "opaque-package-id-3" }, name: "worker",
+        facts: [{ kind: "declaration", value: "example.test/project/worker" }],
+      }] },
     ],
   },
-  repository_graph: { packages: [{
-    canonical_package_path: "example.test/project/core",
-    files: ["core/a.go", "core/b.go"],
-  }] },
+  repository_graph: { packages: [
+    {
+      canonical_package_path: "example.test/project/core",
+      files: ["core/a.go", "core/b.go"],
+    },
+    {
+      canonical_package_path: "example.test/project/worker",
+      files: ["worker/b.go", "worker/a.go"],
+    },
+  ] },
   study_map: { directions: [
     {
       id: "study-one", question: "How does core work?",
@@ -128,6 +145,24 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	if _, ok := contexts["same-name-only"]; ok {
 		t.Fatalf("package-name similarity created a non-exact join: %#v", contexts["same-name-only"])
 	}
+	memberOnly, ok := contexts["exact-member-only"]
+	if !ok {
+		t.Fatalf("exact member-only component context is absent: %#v", contexts)
+	}
+	if len(memberOnly.PackagePaths) != 0 || memberOnly.FileCount != 1 ||
+		len(memberOnly.Sources) != 2 ||
+		memberOnly.Sources[0].Location.Path != "other.go" ||
+		memberOnly.Sources[0].Location.Line != 41 ||
+		len(memberOnly.Studies) != 1 || memberOnly.Studies[0].ID != "study-other" {
+		t.Fatalf("exact member-only context = %#v", memberOnly)
+	}
+	packageOnly, ok := contexts["package-only"]
+	if !ok || strings.Join(packageOnly.PackagePaths, "|") != "example.test/project/worker" ||
+		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 1 ||
+		packageOnly.Sources[0].Location.Path != "worker/a.go" ||
+		packageOnly.Sources[0].Location.Line != 0 {
+		t.Fatalf("package-only context = %#v, present %v", packageOnly, ok)
+	}
 }
 
 func TestRejectedArchitectureFallbackIsDiagnosticOnly(t *testing.T) {
@@ -198,8 +233,10 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 
 	for _, token := range []string{
 		"architecturePackagePathForMember(member, packageByPath)",
-		"packageFiles[String(location.path || '')]",
+		"componentFiles[String(location.path || '')]",
 		"options.componentContexts = architectureComponentContexts()",
+		"translateUI: translateUIString",
+		"this.translateUI(",
 		"userComponentActions(component)",
 		"return actions.slice(0, 3)",
 		"array(context.package_paths).length > 0",
