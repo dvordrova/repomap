@@ -578,6 +578,69 @@ func TestDecodeDirectionProposalRetainsValidChattoCandidateSiblings(t *testing.T
 	}
 }
 
+func TestDecodeDirectionProposalCanonicalizesProviderReadingLabels(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	raw := rawDirectionsFromLegacy(legacy)
+	raw.Directions = append([]DirectionCandidate(nil), raw.Directions[:1]...)
+	raw.Directions[0].ReadingAnchors = append(
+		[]ReadingAnchor(nil),
+		raw.Directions[0].ReadingAnchors...,
+	)
+	raw.Directions[0].ReadingAnchors[0].Label = "С чего начать"
+	raw.Directions[0].ReadingAnchors[1].Label = "Затем изучите"
+	raw.Directions[0].ReadingAnchors[2].Label = "Связанная реализация"
+
+	decoded, diagnostics, err := DecodeDirectionProposalWithDiagnostics(
+		mustEditingJSON(t, raw),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnostics.Accepted != 1 || diagnostics.Rejected != 0 ||
+		len(decoded.Directions) != 1 {
+		t.Fatalf("decoded/diagnostics = %#v/%#v", decoded, diagnostics)
+	}
+	got := decoded.Directions[0].ReadingAnchors
+	want := []string{"Start here", "Then inspect", "Related implementation"}
+	for index := range want {
+		if got[index].Label != want[index] {
+			t.Fatalf("reading label %d = %q, want %q", index, got[index].Label, want[index])
+		}
+	}
+	if _, err := DecodeNormalizedDirectionProposal(mustEditingJSON(t, decoded)); err != nil {
+		t.Fatalf("canonical normalized proposal: %v", err)
+	}
+
+	raw.Directions[0].ReadingAnchors[0].Label = "Platform-specific"
+	_, diagnostics, err = DecodeDirectionProposalWithDiagnostics(mustEditingJSON(t, raw))
+	if err == nil || diagnostics.Accepted != 0 || diagnostics.Rejected != 1 ||
+		diagnostics.Issues[0].Code != "invalid_reading_copy" {
+		t.Fatalf("unknown label diagnostics=%#v error=%v", diagnostics, err)
+	}
+}
+
+func TestNormalizeDirectionProposalPreservesCanonicalEnglishBytes(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	canonical := directionsFromLegacy(t, legacy)
+	before := mustEditingJSON(t, canonical)
+	normalized, err := NormalizeDirectionProposal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := mustEditingJSON(t, normalized)
+	if !bytes.Equal(after, before) {
+		t.Fatalf(
+			"ordinary canonical English proposal changed:\nbefore: %s\nafter:  %s",
+			before,
+			after,
+		)
+	}
+}
+
 func TestDecodeDirectionProposalRejectsItemsIndependentlyAndEnvelopeAtomically(
 	t *testing.T,
 ) {
@@ -720,6 +783,45 @@ func TestDecodeIncompleteDirectionsRetainsResolvedStartsInProviderOrder(t *testi
 				bundle.Anchors[index%len(bundle.Anchors)].ID {
 			t.Fatalf("direction %d changed provider order or exact start: %#v", index, direction)
 		}
+	}
+}
+
+func TestDecodeIncompleteDirectionsCanonicalizesLocalizedReadingLabel(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	candidate := rawDirectionsFromLegacy(legacy).Directions[0]
+	candidate.DirectionID = ""
+	candidate.ReadingAnchors = []ReadingAnchor{{
+		AnchorID:      bundle.Anchors[0].ID,
+		Label:         "С чего начать",
+		WhatToLookFor: "Изучите точное сохранённое объявление.",
+	}}
+	raw := DirectionProposal{
+		Version:    DirectionProposalVersion,
+		Directions: []DirectionCandidate{candidate},
+	}
+
+	got, diagnostics, err := DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnostics.Accepted != 1 || diagnostics.Rejected != 0 ||
+		len(got) != 1 || got[0].ReadingAnchors[0].Label != "Start here" {
+		t.Fatalf("incomplete directions/diagnostics = %#v/%#v", got, diagnostics)
+	}
+
+	raw.Directions[0].ReadingAnchors[0].Label = "Platform-specific"
+	got, diagnostics, err = DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 || diagnostics.Accepted != 0 || diagnostics.Rejected != 1 ||
+		!slices.Equal(diagnostics.Issues, []DirectionProposalIssue{{
+			Position: 0,
+			Code:     "invalid_reading_anchors",
+		}}) {
+		t.Fatalf("unknown incomplete label was not rejected: %#v/%#v", got, diagnostics)
 	}
 }
 
@@ -969,6 +1071,14 @@ func TestApplyReviewsRejectsDirectionLevelQualityFailures(t *testing.T) {
 			wantCode: "unsupported_runtime_order",
 		},
 		{
+			name: "unsupported Russian order remains in the question",
+			prepare: func(_ *Bundle, direction *DirectionCandidate, review *ReviewProposal) {
+				direction.Question = "В каком порядке выполняются вызовы этого кода?"
+				review.Reviews[0].OverclaimReasons = []OverclaimReason{OverclaimUnsupportedRuntimeOrder}
+			},
+			wantCode: "unsupported_runtime_order",
+		},
+		{
 			name: "unknown anchor",
 			prepare: func(_ *Bundle, _ *DirectionCandidate, review *ReviewProposal) {
 				review.Reviews[2].AnchorID = "fact-8"
@@ -1073,6 +1183,59 @@ func TestApplyReviewsScoresQuestionFitFromLocalSources(t *testing.T) {
 	}
 }
 
+func TestQuestionFitIgnoresLocalizedProseAndKeepsTechnicalTerms(t *testing.T) {
+	t.Parallel()
+
+	english := questionFitTerms(
+		"How do storage backends expose a common interface?",
+		"fixture",
+	)
+	if !slices.Equal(english, []string{
+		"storage",
+		"backend",
+		"expose",
+		"common",
+		"interface",
+	}) {
+		t.Fatalf("English question-fit terms changed: %#v", english)
+	}
+	if terms := questionFitTerms(
+		"Как система обрабатывает входящий запрос?",
+		"fixture",
+	); len(terms) != 0 {
+		t.Fatalf("localized prose became negative-fit terms: %#v", terms)
+	}
+	if terms := questionFitTerms(
+		"Как storage backend предоставляет общий interface?",
+		"fixture",
+	); !slices.Equal(terms, []string{"storage", "backend", "interface"}) {
+		t.Fatalf("technical terms in localized question = %#v", terms)
+	}
+
+	bundle, directions := questionFitFixture(t)
+	for index := range directions.Directions {
+		directions.Directions[index].Question =
+			"Как storage backend предоставляет общий interface?"
+	}
+	directions, err := NormalizeDirectionProposal(directions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := make([]ReviewProposal, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		reviews = append(reviews, directReview(direction))
+	}
+	reduction, err := ApplyReviews(bundle, directions, reviews)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reduction.Directions) != 2 ||
+		reduction.Directions[0].QuestionFitScore <= 0 ||
+		reduction.Directions[0].QuestionFitScore <= reduction.Directions[1].QuestionFitScore {
+		t.Fatalf("localized technical question fit = %#v", reduction.Directions)
+	}
+}
+
 func TestCompressReviewedDirectionsPrefersQuestionFitOnTies(t *testing.T) {
 	t.Parallel()
 
@@ -1169,6 +1332,52 @@ func TestComposeReviewedRecordCompressesDuplicatesAndKeepsV1Contract(t *testing.
 	}
 	if err := record.Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestComposeReviewedRecordPublishesOneAcceptedDirection(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	brief := briefShapeFromLegacy(legacy)
+	directions := directionsFromLegacy(t, legacy)
+	directions.Directions = directions.Directions[:1]
+	reviews := []ReviewProposal{directReview(directions.Directions[0])}
+
+	proposal, reduction, err := ComposeReviewedProposal(bundle, brief, directions, reviews)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proposal.Candidates) != 1 || reduction.Selected != 1 {
+		t.Fatalf("proposal/reduction = %d/%#v", len(proposal.Candidates), reduction)
+	}
+
+	record, recordReduction, err := BuildReviewedRecord(bundle, brief, directions, reviews)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Directions) != 1 || recordReduction.Selected != 1 {
+		t.Fatalf("record/reduction = %d/%#v", len(record.Directions), recordReduction)
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestComposeReviewedProposalRejectsZeroAcceptedDirections(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	brief := briefShapeFromLegacy(legacy)
+	directions := directionsFromLegacy(t, legacy)
+	directions.Directions = directions.Directions[:1]
+
+	_, reduction, err := ComposeReviewedProposal(bundle, brief, directions, nil)
+	if err == nil || !strings.Contains(err.Error(), "reviewed selection has 0 directions; need at least 1") {
+		t.Fatalf("ComposeReviewedProposal() error = %v", err)
+	}
+	if reduction.Selected != 0 || reduction.Reviewed != 0 {
+		t.Fatalf("reduction = %#v", reduction)
 	}
 }
 

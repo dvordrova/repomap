@@ -212,6 +212,31 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	if changedRequestKey == firstKey {
 		t.Fatalf("cache key %q did not bind the exact synthesis request", firstKey)
 	}
+
+	defaultLanguageKey, err := SynthesisCacheKeyForProvider(
+		"revision-a", firstBundle, "deepseek-compatible", "deepseek-v4-flash",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	englishKey, err := SynthesisCacheKeyForProviderAndLanguage(
+		"revision-a", firstBundle, "deepseek-compatible", "deepseek-v4-flash", "en",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	russianKey, err := SynthesisCacheKeyForProviderAndLanguage(
+		"revision-a", firstBundle, "deepseek-compatible", "deepseek-v4-flash", "ru",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultLanguageKey != englishKey {
+		t.Fatalf("default/English cache keys = %q/%q, want path compatibility", defaultLanguageKey, englishKey)
+	}
+	if russianKey == englishKey {
+		t.Fatalf("Russian cache key %q reused English identity", russianKey)
+	}
 }
 
 func TestBuildSynthesisRequestRejectsObviousCredentialWithoutEcho(t *testing.T) {
@@ -252,6 +277,7 @@ func TestRecordSynthesisResponseReplaysDeterministically(t *testing.T) {
 	if metadata.PromptVersion != SynthesisPromptVersion ||
 		metadata.Profile != "deepseek-compatible" ||
 		metadata.Model != "deepseek-v4-flash" ||
+		metadata.OutputLanguage != "en" ||
 		metadata.InputBytes <= 0 || metadata.LatencyMillis != 1450 ||
 		len(metadata.ValidationWarnings) != 0 || metadata.FallbackReason != "" {
 		t.Fatalf("metadata = %#v", metadata)
@@ -270,6 +296,18 @@ func TestRecordSynthesisResponseReplaysDeterministically(t *testing.T) {
 	}
 	if !reflect.DeepEqual(replayed, result.Landscape) {
 		t.Fatalf("replayed landscape differs:\nrecorded: %#v\nreplayed: %#v", result.Landscape, replayed)
+	}
+
+	legacyUnknownLanguage := bytes.Replace(saved, []byte(`,"output_language":"en"`), nil, 1)
+	if bytes.Equal(legacyUnknownLanguage, saved) {
+		t.Fatalf("saved record did not contain explicit output language: %s", saved)
+	}
+	legacyReplayed, err := ReplaySynthesis(bundle, "revision-a", legacyUnknownLanguage)
+	if err != nil {
+		t.Fatalf("ReplaySynthesis() rejected historical language-unknown record: %v", err)
+	}
+	if !reflect.DeepEqual(legacyReplayed, result.Landscape) {
+		t.Fatalf("historical language-unknown replay differs:\nrecorded: %#v\nreplayed: %#v", result.Landscape, legacyReplayed)
 	}
 }
 

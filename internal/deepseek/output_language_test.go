@@ -37,6 +37,9 @@ func TestRussianOutputLanguageReinforcesEveryModelMessage(t *testing.T) {
 			"human-readable prose value in Russian",
 			"repository paths",
 			"code identifiers",
+			"exact schema literal values",
+			"allowed literals remains structural",
+			"exact protocol and format tags",
 			"API",
 		} {
 			if !strings.Contains(system, want) {
@@ -48,6 +51,8 @@ func TestRussianOutputLanguageReinforcesEveryModelMessage(t *testing.T) {
 			"OUTPUT LANGUAGE CONTRACT",
 			"human-readable prose value in Russian",
 			"protected technical identifiers",
+			"closed lists of allowed literals",
+			"exact protocol and format tags",
 		} {
 			if !strings.Contains(user, want) {
 				t.Fatalf("%s user prompt is missing %q: %s", name, want, user)

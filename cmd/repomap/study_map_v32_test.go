@@ -20,6 +20,21 @@ import (
 	"github.com/dvordrova/repomap/internal/studymap"
 )
 
+func TestStudyPromptsKeepReadingLabelsCanonicalUnderLocalization(t *testing.T) {
+	t.Parallel()
+
+	const want = "reading_anchors.label is a closed schema value"
+	for name, prompt := range map[string]string{
+		"legacy":    studyMapUserPrompt,
+		"split-v32": studyMapDirectionTask,
+	} {
+		if !strings.Contains(prompt, want) ||
+			!strings.Contains(prompt, "the report localizes it later") {
+			t.Fatalf("%s Study prompt does not protect reading labels", name)
+		}
+	}
+}
+
 type studyMapV32ReviewProviderStub struct {
 	mu         sync.Mutex
 	failPlanID string

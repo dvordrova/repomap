@@ -69,6 +69,77 @@ func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
 	}
 }
 
+func TestEnsureGuidedTourCachesEnglishAndRussianSeparately(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle := guidedTourTestBundle()
+	english := guidedTourTestProposal(t, bundle, false)
+	var russianProposal guidedtour.Proposal
+	if err := json.Unmarshal(english, &russianProposal); err != nil {
+		t.Fatal(err)
+	}
+	russianProposal.Title = "Изучение сохранённого направления"
+	russian, err := json.Marshal(russianProposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &guidedTourEditorStub{responses: [][]byte{english, russian}}
+
+	run := func(name, language string) (guidedTourOutcome, guidedtour.Story) {
+		t.Helper()
+		runDir := filepath.Join(runsDir, name)
+		outcome, runErr := ensureGuidedTourWithOptions(
+			context.Background(),
+			bundle,
+			runDir,
+			"test",
+			"fixture-model",
+			provider,
+			guidedTourRunOptions{outputLanguage: language},
+		)
+		if runErr != nil {
+			t.Fatal(runErr)
+		}
+		saved, readErr := os.ReadFile(filepath.Join(runDir, report.GuidedStoryFile))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		story, replayErr := guidedtour.ReplayRecord(bundle, saved)
+		if replayErr != nil {
+			t.Fatal(replayErr)
+		}
+		return outcome, story
+	}
+
+	firstEnglish, englishStory := run("en-first", "en")
+	firstRussian, russianStory := run("ru-first", "ru")
+	replayedEnglish, replayedEnglishStory := run("en-replay", "en")
+	replayedRussian, replayedRussianStory := run("ru-replay", "ru")
+
+	if firstEnglish.Cached || firstRussian.Cached ||
+		!replayedEnglish.Cached || !replayedRussian.Cached ||
+		provider.calls != 2 {
+		t.Fatalf(
+			"cache hits = %t/%t/%t/%t, provider calls = %d",
+			firstEnglish.Cached,
+			firstRussian.Cached,
+			replayedEnglish.Cached,
+			replayedRussian.Cached,
+			provider.calls,
+		)
+	}
+	if replayedEnglishStory.Title != englishStory.Title ||
+		replayedRussianStory.Title != russianStory.Title ||
+		englishStory.Title == russianStory.Title {
+		t.Fatalf(
+			"cached story titles = %q/%q, originals = %q/%q",
+			replayedEnglishStory.Title,
+			replayedRussianStory.Title,
+			englishStory.Title,
+			russianStory.Title,
+		)
+	}
+}
+
 func TestEnsureGuidedTourNoCacheCallsProviderPerRun(t *testing.T) {
 	runsDir := t.TempDir()
 	bundle := guidedTourTestBundle()

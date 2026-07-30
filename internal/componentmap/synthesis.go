@@ -92,6 +92,7 @@ type SynthesisMetadata struct {
 	PromptVersion          string                   `json:"prompt_version"`
 	Profile                string                   `json:"profile"`
 	Model                  string                   `json:"model"`
+	OutputLanguage         string                   `json:"output_language"`
 	InputBytes             int                      `json:"input_bytes"`
 	LatencyMillis          int64                    `json:"latency_ms"`
 	InputTokens            int                      `json:"input_tokens,omitempty"`
@@ -275,6 +276,37 @@ func SynthesisCacheKey(repositoryRevision string, bundle CandidateBundle) (strin
 // provider profile and model. ResearchPolicyVersion is part of the canonical
 // request whenever a normal adaptive run builds the bundle.
 func SynthesisCacheKeyForProvider(repositoryRevision string, bundle CandidateBundle, profile, model string) (string, error) {
+	return synthesisCacheKeyForProvider(repositoryRevision, bundle, profile, model, "")
+}
+
+// SynthesisCacheKeyForProviderAndLanguage additionally isolates provider
+// responses whose human-readable prose was requested in another language.
+// English intentionally retains the pre-language cache key so current English
+// records remain path-compatible.
+func SynthesisCacheKeyForProviderAndLanguage(
+	repositoryRevision string,
+	bundle CandidateBundle,
+	profile string,
+	model string,
+	outputLanguage string,
+) (string, error) {
+	language, err := normalizeSynthesisOutputLanguage(outputLanguage)
+	if err != nil {
+		return "", err
+	}
+	if language == "en" {
+		language = ""
+	}
+	return synthesisCacheKeyForProvider(repositoryRevision, bundle, profile, model, language)
+}
+
+func synthesisCacheKeyForProvider(
+	repositoryRevision string,
+	bundle CandidateBundle,
+	profile string,
+	model string,
+	outputLanguage string,
+) (string, error) {
 	if err := validateSynthesisRevision(repositoryRevision); err != nil {
 		return "", err
 	}
@@ -283,16 +315,12 @@ func SynthesisCacheKeyForProvider(repositoryRevision string, bundle CandidateBun
 		return "", err
 	}
 	hash := sha256.New()
-	fmt.Fprintf(
-		hash,
-		"componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\nprofile=%s\nmodel=%s\nrequest=%s\n",
-		repositoryRevision,
-		ContractVersion,
-		SynthesisPromptVersion,
-		profile,
-		model,
-		sha256String(requestJSON),
-	)
+	fmt.Fprintf(hash, "componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\nprofile=%s\nmodel=%s\n",
+		repositoryRevision, ContractVersion, SynthesisPromptVersion, profile, model)
+	if outputLanguage != "" {
+		fmt.Fprintf(hash, "language=%s\n", outputLanguage)
+	}
+	fmt.Fprintf(hash, "request=%s\n", sha256String(requestJSON))
 	return "component-synthesis-" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
@@ -307,6 +335,29 @@ func RecordSynthesisResponse(
 	latency time.Duration,
 	rawResponse []byte,
 ) (SynthesisResult, error) {
+	return RecordSynthesisResponseForLanguage(
+		bundle,
+		repositoryRevision,
+		profile,
+		model,
+		"en",
+		latency,
+		rawResponse,
+	)
+}
+
+// RecordSynthesisResponseForLanguage records the language identity that shaped
+// provider prose. Historical records without this field remain replayable, but
+// active cache selection can distinguish them from explicitly authored output.
+func RecordSynthesisResponseForLanguage(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	profile string,
+	model string,
+	outputLanguage string,
+	latency time.Duration,
+	rawResponse []byte,
+) (SynthesisResult, error) {
 	if latency < 0 {
 		return SynthesisResult{}, fmt.Errorf("componentmap: synthesis latency cannot be negative")
 	}
@@ -314,6 +365,10 @@ func RecordSynthesisResponse(
 		return SynthesisResult{}, err
 	}
 	if err := validateSynthesisLabel("model", model, maxModelBytes); err != nil {
+		return SynthesisResult{}, err
+	}
+	language, err := normalizeSynthesisOutputLanguage(outputLanguage)
+	if err != nil {
 		return SynthesisResult{}, err
 	}
 	_, requestJSON, err := BuildSynthesisRequest(bundle)
@@ -324,7 +379,7 @@ func RecordSynthesisResponse(
 	if err != nil {
 		return SynthesisResult{}, err
 	}
-	cacheKey, err := SynthesisCacheKeyForProvider(repositoryRevision, bundle, profile, model)
+	cacheKey, err := SynthesisCacheKeyForProviderAndLanguage(repositoryRevision, bundle, profile, model, language)
 	if err != nil {
 		return SynthesisResult{}, err
 	}
@@ -351,7 +406,8 @@ func RecordSynthesisResponse(
 			Metadata: SynthesisMetadata{
 				PromptVersion: SynthesisPromptVersion,
 				Profile:       profile, Model: model,
-				InputBytes: synthesisPromptSize(prompt), LatencyMillis: latency.Milliseconds(),
+				OutputLanguage: language,
+				InputBytes:     synthesisPromptSize(prompt), LatencyMillis: latency.Milliseconds(),
 				ValidationWarnings:     cloneDiagnostics(landscape.Diagnostics),
 				ValidationOutcome:      landscape.ValidationOutcome,
 				ArchitectureSource:     landscape.Source,
@@ -500,7 +556,25 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 		return fmt.Errorf("componentmap: synthesis record has no represented call")
 	}
 	metadata := record.Call.Metadata
-	expectedCacheKey, err := SynthesisCacheKeyForProvider(repositoryRevision, bundle, metadata.Profile, metadata.Model)
+	var expectedCacheKey string
+	if metadata.OutputLanguage == "" {
+		// Records written before output-language identity existed are still
+		// valid historical report artifacts. After bounded replay validation,
+		// active cache selection rejects their unknown language.
+		expectedCacheKey, err = SynthesisCacheKeyForProvider(repositoryRevision, bundle, metadata.Profile, metadata.Model)
+	} else {
+		language, languageErr := normalizeSynthesisOutputLanguage(metadata.OutputLanguage)
+		if languageErr != nil || language != metadata.OutputLanguage {
+			return fmt.Errorf("componentmap: synthesis record output language is invalid")
+		}
+		expectedCacheKey, err = SynthesisCacheKeyForProviderAndLanguage(
+			repositoryRevision,
+			bundle,
+			metadata.Profile,
+			metadata.Model,
+			language,
+		)
+	}
 	if err != nil {
 		return err
 	}
@@ -568,6 +642,17 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 		return fmt.Errorf("componentmap: invalid synthesis response state %q", record.Call.ResponseState)
 	}
 	return nil
+}
+
+func normalizeSynthesisOutputLanguage(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "en":
+		return "en", nil
+	case "ru":
+		return "ru", nil
+	default:
+		return "", fmt.Errorf("componentmap: synthesis output language must be \"en\" or \"ru\"")
+	}
 }
 
 func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, response []byte) (Landscape, error) {

@@ -76,12 +76,19 @@ func editGuidedTourForRun(
 		)
 	}
 	fmt.Fprintln(stderr, "repomap: editing one bounded onboarding story from saved facts")
+	language := ""
+	if len(outputLanguage) > 0 {
+		language = outputLanguage[0]
+	}
 	return ensureGuidedTourWithOptions(
 		ctx, bundle, runDir,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
-		guidedTourRunOptions{disableCache: noCache},
+		guidedTourRunOptions{
+			disableCache:   noCache,
+			outputLanguage: language,
+		},
 	)
 }
 
@@ -137,6 +144,7 @@ type guidedTourRunOptions struct {
 	independentExperiment bool
 	disableCache          bool
 	outputFile            string
+	outputLanguage        string
 }
 
 func ensureGuidedTourWithOptions(
@@ -205,6 +213,9 @@ func ensureGuidedTourWithOptions(
 			PromptVersion: guidedtour.PromptVersion,
 			Profile:       profile, Model: model,
 			EvidenceBundleHash: bundleSHA, PolicyVersion: policy.Version,
+			OutputLanguage: modelresearch.CacheOutputLanguage(
+				options.outputLanguage,
+			),
 		},
 		Request: request, EvidenceBundleHash: bundleSHA,
 	}

@@ -889,9 +889,23 @@ func localGateSignals(items []EvidenceItem, initialPaths map[string]struct{}) []
 func questionImpactScore(question ProposedQuestion) int {
 	text := strings.ToLower(question.Purpose + " " + question.Question)
 	score := len(question.CandidateIDs) * 2
-	for _, term := range []string{"backup", "config", "admin", "request", "runtime", "server", "repository", "security", "lifecycle", "user"} {
-		if strings.Contains(text, term) {
-			score += 3
+	for _, equivalents := range [][]string{
+		{"backup", "резервн"},
+		{"config", "конфигурац", "настройк"},
+		{"admin", "админист"},
+		{"request", "запрос"},
+		{"runtime", "время выполнения"},
+		{"server", "сервер"},
+		{"repository", "репозитор"},
+		{"security", "безопасност"},
+		{"lifecycle", "жизненный цикл", "жизненного цикла"},
+		{"user", "пользовател"},
+	} {
+		for _, term := range equivalents {
+			if strings.Contains(text, term) {
+				score += 3
+				break
+			}
 		}
 	}
 	return score
@@ -899,7 +913,18 @@ func questionImpactScore(question ProposedQuestion) int {
 
 func isRuntimeOnlyQuestion(question string) bool {
 	text := strings.ToLower(question)
-	for _, phrase := range []string{"runtime observation only", "requires runtime observation", "dynamic runtime value", "production traffic only"} {
+	for _, phrase := range []string{
+		"runtime observation only",
+		"requires runtime observation",
+		"dynamic runtime value",
+		"production traffic only",
+		"только наблюдение во время выполнения",
+		"наблюдение только во время выполнения",
+		"требует наблюдения во время выполнения",
+		"требуется наблюдение во время выполнения",
+		"динамическое значение времени выполнения",
+		"только производственный трафик",
+	} {
 		if strings.Contains(text, phrase) {
 			return true
 		}

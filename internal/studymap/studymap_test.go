@@ -209,6 +209,13 @@ func TestBuildRecordRejectsUnverifiableCandidatesLocally(t *testing.T) {
 			wantCode: "learning_outcome_missing",
 		},
 		{
+			name: "Russian runtime order copy",
+			mutate: func(_ *Bundle, candidate *Candidate) {
+				candidate.LearningOutcome = "Читатель видит порядок выполнения до возврата результата."
+			},
+			wantCode: "learning_outcome_missing",
+		},
+		{
 			name: "reading anchor outside selection",
 			mutate: func(_ *Bundle, candidate *Candidate) {
 				candidate.ReadingAnchors[0].AnchorID = "fact-6"
@@ -263,14 +270,126 @@ func TestBuildRecordAttachesOnlyOverlappingCanonicalMechanism(t *testing.T) {
 	}
 }
 
-func TestBuildRecordRejectsSelectionBelowPublicationMinimum(t *testing.T) {
+func TestBuildRecordAcceptsOneDirectionAndRecordRejectsEmptySelection(t *testing.T) {
 	t.Parallel()
 
 	bundle, proposal := studyMapFixture(t)
-	proposal.Candidates = proposal.Candidates[:MinDirections-1]
-	if _, err := BuildRecord(bundle, proposal); err == nil ||
+	proposal.Candidates = proposal.Candidates[:1]
+	record, err := BuildRecord(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Directions) != 1 {
+		t.Fatalf("directions = %d", len(record.Directions))
+	}
+	record.Directions = nil
+	if err := record.Validate(); err == nil ||
 		!strings.Contains(err.Error(), "invalid canonical selection") {
-		t.Fatalf("BuildRecord() error = %v", err)
+		t.Fatalf("Record.Validate() error = %v", err)
+	}
+}
+
+func TestBuildRecordCanonicalizesProviderReadingLabels(t *testing.T) {
+	t.Parallel()
+
+	bundle, proposal := studyMapFixture(t)
+	proposal.Candidates = proposal.Candidates[:1]
+	proposal.Candidates[0].ReadingAnchors = append(
+		[]ReadingAnchor(nil),
+		proposal.Candidates[0].ReadingAnchors...,
+	)
+	proposal.Candidates[0].ReadingAnchors[0].Label = "С чего начать"
+	proposal.Candidates[0].ReadingAnchors[1].Label = "Затем изучите"
+	proposal.Candidates[0].ReadingAnchors[2].Label = "Связанная реализация"
+
+	record, err := BuildRecord(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := record.Directions[0].ReadingAnchors
+	want := []string{"Start here", "Then inspect", "Related implementation"}
+	for index := range want {
+		if got[index].Label != want[index] {
+			t.Fatalf("reading label %d = %q, want %q", index, got[index].Label, want[index])
+		}
+	}
+
+	proposal.Candidates[0].ReadingAnchors[0].Label = "Platform-specific"
+	if _, err := BuildRecord(bundle, proposal); err == nil {
+		t.Fatal("BuildRecord accepted an unknown provider reading label")
+	}
+}
+
+func TestCanonicalProviderReadingLabelAcceptsOnlyOwnedTranslations(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"Start here":             "Start here",
+		"С чего начать":          "Start here",
+		"Then inspect":           "Then inspect",
+		"Затем изучите":          "Then inspect",
+		"Related implementation": "Related implementation",
+		"Связанная реализация":   "Related implementation",
+		"Public boundary":        "Public boundary",
+		"Публичная граница":      "Public boundary",
+		"Core data type":         "Core data type",
+		"Основной тип данных":    "Core data type",
+	}
+	for input, want := range tests {
+		got, ok := canonicalProviderReadingLabel(input)
+		if !ok || got != want {
+			t.Fatalf(
+				"canonicalProviderReadingLabel(%q) = %q, %t; want %q, true",
+				input,
+				got,
+				ok,
+				want,
+			)
+		}
+	}
+	for _, input := range []string{
+		"start here",
+		"START HERE",
+		"с чего начать",
+		"Core operation",
+		"Data transformation",
+		"Integration point",
+		"Platform-specific",
+	} {
+		if got, ok := canonicalProviderReadingLabel(input); ok {
+			t.Fatalf(
+				"canonicalProviderReadingLabel(%q) = %q, true; want rejection",
+				input,
+				got,
+			)
+		}
+	}
+}
+
+func TestRuntimeOrderDetectionCoversEnglishAndRussian(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{
+		"Then the system executes the next operation.",
+		"The reader sees the execution order.",
+		"Затем система выполняет следующую операцию.",
+		"Система сначала открывает файл, потом записывает данные.",
+		"Читатель видит порядок выполнения.",
+		"Это доказанная последовательность операций.",
+	} {
+		if !impliesRuntimeOrder(value) {
+			t.Fatalf("impliesRuntimeOrder(%q) = false", value)
+		}
+	}
+	for _, value := range []string{
+		"How does this code preserve the execution order?",
+		"Как код сохраняет порядок выполнения?",
+		"В каком порядке выполняются вызовы?",
+		"Какова последовательность операций в этом коде?",
+	} {
+		if !asksForRuntimeOrder(value) {
+			t.Fatalf("asksForRuntimeOrder(%q) = false", value)
+		}
 	}
 }
 
