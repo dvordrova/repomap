@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/142-canonical-study-ordinary-publication-corrective.md
+    decisions/143-unverified-path-normalization-corrective.md
 
 Status:
-    Decision 142 active; canonical Study ordinary-publication corrective authorized
+    Decision 143 active; optional unverified-path normalization corrective authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 143 corrects one ordinary-run terminal failure where optional
+    model uncertainty metadata contained the safe directory-like value
+    `a/b/c/`. Because unverified paths cannot authorize navigation or establish
+    evidence, ordinary normalization now canonicalizes safe trailing-slash
+    drift, drops unsafe values with deterministic warnings, deduplicates the
+    result, and leaves strict validation unchanged for retained values and all
+    grounded fields.
     Decision 142 corrects one ordinary provider-backed etcd run where semantic
     opportunity discovery and paved-path editing consumed about 124 seconds
     while publishing zero primary content, and report replay exposed eight
