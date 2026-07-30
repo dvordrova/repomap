@@ -1,6 +1,8 @@
 package flowexplain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -151,7 +153,8 @@ func GenerateFlowID(name string) string {
 	slug = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(slug, "-")
 	slug = strings.Trim(slug, "-")
 	if slug == "" {
-		slug = "unknown-flow"
+		digest := sha256.Sum256([]byte(name))
+		slug = "flow-" + hex.EncodeToString(digest[:6])
 	}
 	return slug
 }

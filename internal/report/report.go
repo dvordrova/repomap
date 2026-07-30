@@ -92,6 +92,9 @@ func ExactDiscoveryAnchors(
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
+	// ReportLanguage changes only human-facing presentation and model prose.
+	// Repository-owned identifiers, paths, symbols, and evidence remain exact.
+	ReportLanguage string `json:"report_language,omitempty"`
 
 	RepoName     string `json:"repo_name"`
 	ProjectGuess string `json:"project_guess"`

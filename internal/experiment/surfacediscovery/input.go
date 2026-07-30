@@ -389,8 +389,11 @@ func (a *analyzer) packageErrorLocation(pkg *packages.Package, position string) 
 	if filename == "" || line <= 0 {
 		return nil
 	}
-	if !filepath.IsAbs(filename) && pkg != nil && pkg.Dir != "" {
-		filename = filepath.Join(pkg.Dir, filename)
+	if !filepath.IsAbs(filename) {
+		filename = loadedPackageFilename(pkg, filename)
+		if filename == "" {
+			return nil
+		}
 	}
 	relative, err := filepath.Rel(a.root, filename)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
@@ -401,6 +404,48 @@ func (a *analyzer) packageErrorLocation(pkg *packages.Package, position string) 
 		return nil
 	}
 	return &Location{Path: relative, Line: line, Column: column}
+}
+
+func loadedPackageFilename(pkg *packages.Package, filename string) string {
+	if pkg == nil {
+		return ""
+	}
+	filename = filepath.Clean(filename)
+	files := make([]string, 0, len(pkg.GoFiles)+len(pkg.CompiledGoFiles)+len(pkg.OtherFiles))
+	files = append(files, pkg.GoFiles...)
+	files = append(files, pkg.CompiledGoFiles...)
+	files = append(files, pkg.OtherFiles...)
+	sort.Strings(files)
+	for _, candidate := range files {
+		candidate = filepath.Clean(candidate)
+		if !filepath.IsAbs(candidate) && pkg.Dir != "" {
+			candidate = filepath.Join(pkg.Dir, candidate)
+		}
+		if packageFilenameMatches(pkg, candidate, filename) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func packageFilenameMatches(pkg *packages.Package, candidate, filename string) bool {
+	for _, root := range []string{pkg.Dir, packageModuleDir(pkg)} {
+		if root == "" {
+			continue
+		}
+		relative, err := filepath.Rel(root, candidate)
+		if err == nil && filepath.Clean(relative) == filename {
+			return true
+		}
+	}
+	return false
+}
+
+func packageModuleDir(pkg *packages.Package) string {
+	if pkg == nil || pkg.Module == nil {
+		return ""
+	}
+	return pkg.Module.Dir
 }
 
 func parsePackageErrorPosition(position string) (string, int, int) {

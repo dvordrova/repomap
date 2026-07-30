@@ -465,6 +465,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	discoverSurfaces := fs.Bool("discover-surfaces", true, "discover bounded Go runtime surfaces for the report")
 	guidedTour := fs.Bool("guided-tour", true, "add an optional model-edited guided tour to the existing architecture map")
 	noSearch := fs.Bool("no-search", false, "omit Super Search from the generated report")
+	language := fs.String("lang", "en", "report language: en or ru")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
@@ -490,6 +491,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	}
 	if *port < 0 || *port > 65535 {
 		return fmt.Errorf("--port must be between 0 and 65535")
+	}
+	reportLanguage, err := normalizeReportLanguage(*language)
+	if err != nil {
+		return err
 	}
 	absRepo, err := filepath.Abs(repo)
 	if err != nil {
@@ -580,12 +585,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		MaxGoEdges:                1000,
 		ResearchPolicy:            researchPolicy,
 		RepositoryContext:         researchRepositoryContext(initialState, repo),
+		OutputLanguage:            reportLanguage,
 		EffectiveOptions: debugdump.EffectiveOptions{
 			Offline:          *offline,
 			FlowCount:        *flows,
 			DiscoverSurfaces: *discoverSurfaces && artifactRun,
 			GuidedTour:       *guidedTour && !*offline,
 			NoSearch:         *noSearch,
+			ReportLanguage:   storedReportLanguage(reportLanguage),
 			DumpLLM:          *dumpLLM,
 			OutputJSON:       *jsonOut,
 			PreviewRequest:   *previewRequest,
@@ -635,7 +642,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if runOptionalModelStages {
 			architectureStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: synthesizing bounded architecture grouping")
-			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr); err != nil {
+			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr, reportLanguage); err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
@@ -644,7 +651,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
-			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr)
+			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, reportLanguage)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
@@ -680,7 +687,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if runOptionalModelStages {
 			studyStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: editing a bounded repository brief and study map")
-			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr)
+			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr, reportLanguage)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
@@ -1301,6 +1308,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default true)\n")
 	fmt.Fprintf(os.Stderr, "  --guided-tour   add an optional guided tour to the architecture map (default true)\n")
 	fmt.Fprintf(os.Stderr, "  --no-search     omit Super Search from the generated report\n")
+	fmt.Fprintf(os.Stderr, "  --lang LANG     report language: en or ru (default: en)\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")
 	fmt.Fprintf(os.Stderr, "  --no-serve      generate a static report without starting the local server\n")

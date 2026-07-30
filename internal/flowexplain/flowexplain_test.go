@@ -24,6 +24,24 @@ func TestGenerateFlowID(t *testing.T) {
 	}
 }
 
+func TestGenerateFlowIDUsesStableDistinctFallbackForNonASCIIName(t *testing.T) {
+	first := GenerateFlowID("Запуск сервера и фоновые циклы")
+	second := GenerateFlowID("Резервное копирование и восстановление")
+
+	if first != GenerateFlowID("Запуск сервера и фоновые циклы") {
+		t.Fatalf("first ID = %q, want deterministic fallback", first)
+	}
+	if !strings.HasPrefix(first, "flow-") || len(first) != len("flow-")+12 {
+		t.Fatalf("first ID = %q, want bounded hash fallback", first)
+	}
+	if !strings.HasPrefix(second, "flow-") || len(second) != len("flow-")+12 {
+		t.Fatalf("second ID = %q, want bounded hash fallback", second)
+	}
+	if first == second {
+		t.Fatalf("distinct non-ASCII names collided as %q", first)
+	}
+}
+
 func TestExtractTermsRemovesIgnoredWords(t *testing.T) {
 	query, alias := ExtractTerms("Raft write path", "", "", nil)
 

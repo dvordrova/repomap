@@ -56,6 +56,10 @@ type Client struct {
 	MaxTokens  int
 	Endpoint   string
 	Auth       string
+	// OutputLanguage applies only to human-readable prose in model responses.
+	// JSON keys, enum values, opaque IDs, source text, and repository-owned
+	// identifiers remain unchanged.
+	OutputLanguage string
 	// OnWait is called from a heartbeat goroutine during long semantic stages.
 	// Set it before starting a request; it must be concurrency-safe, return
 	// promptly, and never log prompt, response, source, or credential content.
@@ -270,7 +274,7 @@ func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 		Messages: []chatMessage{
 			{
 				Role:    "system",
-				Content: "You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
+				Content: c.withOutputLanguage("You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only."),
 			},
 			{
 				Role: "user",
@@ -379,7 +383,7 @@ func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode 
 	request := chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: systemContent},
+			{Role: "system", Content: c.withOutputLanguage(systemContent)},
 			{Role: "user", Content: userContent},
 		},
 		Temperature: float64Pointer(0.1),
@@ -389,6 +393,18 @@ func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode 
 		request.ResponseFormat = &jsonFormat{Type: "json_object"}
 	}
 	return request
+}
+
+func (c *Client) withOutputLanguage(systemContent string) string {
+	if c == nil || strings.ToLower(strings.TrimSpace(c.OutputLanguage)) != "ru" {
+		return systemContent
+	}
+	return systemContent + `
+
+Write every human-readable prose value in Russian. Keep JSON keys, enum values,
+opaque IDs, repository paths, code identifiers, package and module names, API
+and protocol names, product and library names, and quoted source text unchanged.
+Return exactly the requested JSON shape.`
 }
 
 func float64Pointer(value float64) *float64 {

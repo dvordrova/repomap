@@ -49,11 +49,13 @@ func synthesizeArchitectureForRun(
 	ctx context.Context,
 	runDir string,
 	stderr io.Writer,
+	outputLanguage ...string,
 ) (architectureSynthesisOutcome, error) {
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
 	}
+	configureClientOutputLanguage(client, outputLanguage)
 	client.OnWait = func(progress deepseek.WaitProgress) {
 		fmt.Fprintf(
 			stderr,

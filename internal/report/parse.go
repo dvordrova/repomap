@@ -71,7 +71,8 @@ type runMetadataJSON struct {
 	SurfaceDiscoveryMillis  *int64   `json:"surface_discovery_ms"`
 	Warnings                []string `json:"warnings"`
 	EffectiveOptions        struct {
-		NoSearch bool `json:"no_search"`
+		NoSearch       bool   `json:"no_search"`
+		ReportLanguage string `json:"report_language"`
 	} `json:"effective_options"`
 }
 
@@ -752,6 +753,7 @@ func parseRunMetadata(path string, data *ReportData) string {
 		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
 	}
 	data.SemanticSearchDisabled = metadata.EffectiveOptions.NoSearch
+	data.ReportLanguage = storedReportLanguage(metadata.EffectiveOptions.ReportLanguage)
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""
 }
