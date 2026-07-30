@@ -116,6 +116,12 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 	if err := data.GitLabSourceLinks.validate(); err != nil {
 		return nil, err
 	}
+	if err := data.GitHubSourceLinks.validate(); err != nil {
+		return nil, err
+	}
+	if data.GitLabSourceLinks != nil && data.GitHubSourceLinks != nil {
+		return nil, fmt.Errorf("report: multiple external source hosts are not allowed")
+	}
 	rendered := reportDataForRendering(data)
 	css := styleCSS
 	js := scriptJS
@@ -135,7 +141,10 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 			SourceEpisode: episode,
 		}
 	}
-	dataJSON, err := marshalHTMLPayload(payload, rendered.GitLabSourceLinks != nil)
+	dataJSON, err := marshalHTMLPayload(
+		payload,
+		rendered.GitLabSourceLinks != nil || rendered.GitHubSourceLinks != nil,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -215,17 +224,23 @@ func reportDataForPersistence(data *ReportData) *ReportData {
 	// Static source routing belongs only to the generated standalone HTML.
 	// Canonical report.json and its manifest binding remain host-neutral.
 	rendered.GitLabSourceLinks = nil
+	rendered.GitHubSourceLinks = nil
 	return &rendered
 }
 
 func Generate(runDir string) error {
-	return generate(runDir, nil, nil, "")
+	return generate(runDir, nil, nil, nil)
 }
 
 // GenerateAuthorized renders a report and binds its exact generated JSON to
 // repository authority confirmed stable across orientation.
 func GenerateAuthorized(runDir string, authority RunAuthority) error {
-	return generate(runDir, &authority, nil, "")
+	return generate(runDir, &authority, nil, nil)
+}
+
+type standaloneSourceConfig struct {
+	hostName      string
+	repositoryURL string
 }
 
 // GenerateAuthorizedGitLab emits the ordinary persisted report and manifest
@@ -246,7 +261,34 @@ func GenerateAuthorizedGitLab(
 	if err := validateGitLabAuthority(authority); err != nil {
 		return err
 	}
-	return generate(runDir, &authority, nil, normalizedURL)
+	return generate(runDir, &authority, nil, &standaloneSourceConfig{
+		hostName:      "GitLab",
+		repositoryURL: normalizedURL,
+	})
+}
+
+// GenerateAuthorizedGitHub emits the ordinary persisted report and manifest
+// plus one standalone HTML report whose source actions target the exact
+// captured revision on the supplied GitHub repository.
+func GenerateAuthorizedGitHub(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) error {
+	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
+	if normalizedURL == "" {
+		return fmt.Errorf("report: GitHub repository URL is required")
+	}
+	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
+		return err
+	}
+	return generate(runDir, &authority, nil, &standaloneSourceConfig{
+		hostName:      "GitHub",
+		repositoryURL: normalizedURL,
+	})
 }
 
 // GenerateAuthorizedWithSourceEpisode generates the same persisted report and
@@ -267,23 +309,23 @@ func GenerateAuthorizedWithSourceEpisode(
 	if err := ValidateSourceEpisodeForRevision(episodeJSON, authority.repository.Head); err != nil {
 		return err
 	}
-	return generate(runDir, &authority, episodeJSON, "")
+	return generate(runDir, &authority, episodeJSON, nil)
 }
 
 func generate(
 	runDir string,
 	authority *RunAuthority,
 	sourceEpisodeJSON []byte,
-	gitLabRepositoryURL string,
+	standaloneSource *standaloneSourceConfig,
 ) error {
-	if gitLabRepositoryURL != "" && sourceEpisodeJSON != nil {
-		return fmt.Errorf("report: standalone GitLab reports cannot embed a source episode")
+	if standaloneSource != nil && sourceEpisodeJSON != nil {
+		return fmt.Errorf("report: standalone external-source reports cannot embed a source episode")
 	}
-	if gitLabRepositoryURL != "" {
+	if standaloneSource != nil {
 		if authority == nil {
-			return fmt.Errorf("report: standalone GitLab report requires confirmed repository authority")
+			return fmt.Errorf("report: standalone external-source report requires confirmed repository authority")
 		}
-		if err := validateGitLabAuthority(*authority); err != nil {
+		if err := validateStandaloneSourceAuthority(*authority, standaloneSource.hostName); err != nil {
 			return err
 		}
 	}
@@ -348,29 +390,50 @@ func generate(
 	}
 	data.FeedbackPath = feedbackPath
 	var gitLabSourceLinks *GitLabSourceLinks
+	var gitHubSourceLinks *GitHubSourceLinks
 	if authority != nil {
 		freshnessResult := authority.freshness
 		data.Freshness = &freshnessResult
 		data.CapturedRevision = authority.repository.Head
-		if gitLabRepositoryURL != "" {
-			pathPrefix, err := gitLabSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
+		if standaloneSource != nil {
+			pathPrefix, err := standaloneSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
 			if err != nil {
 				return err
 			}
-			gitLabSourceLinks, err = newGitLabSourceLinks(
-				gitLabRepositoryURL,
-				data.CapturedRevision,
-				pathPrefix,
-			)
-			if err != nil {
-				return err
+			switch standaloneSource.hostName {
+			case "GitLab":
+				gitLabSourceLinks, err = newGitLabSourceLinks(
+					standaloneSource.repositoryURL,
+					data.CapturedRevision,
+					pathPrefix,
+				)
+				if err != nil {
+					return err
+				}
+				gitLabSourceLinks.WorkingTreeDirty = len(authority.repository.Dirty) != 0
+				gitLabSourceLinks.WorkingTreePaths = gitLabWorkingTreePaths(
+					pathPrefix,
+					authority.repository.Dirty,
+					data.OpenablePaths,
+				)
+			case "GitHub":
+				gitHubSourceLinks, err = newGitHubSourceLinks(
+					standaloneSource.repositoryURL,
+					data.CapturedRevision,
+					pathPrefix,
+				)
+				if err != nil {
+					return err
+				}
+				gitHubSourceLinks.WorkingTreeDirty = len(authority.repository.Dirty) != 0
+				gitHubSourceLinks.WorkingTreePaths = gitLabWorkingTreePaths(
+					pathPrefix,
+					authority.repository.Dirty,
+					data.OpenablePaths,
+				)
+			default:
+				return fmt.Errorf("report: unsupported external source host %q", standaloneSource.hostName)
 			}
-			gitLabSourceLinks.WorkingTreeDirty = len(authority.repository.Dirty) != 0
-			gitLabSourceLinks.WorkingTreePaths = gitLabWorkingTreePaths(
-				pathPrefix,
-				authority.repository.Dirty,
-				data.OpenablePaths,
-			)
 			data.standaloneLocalRoots = []string{
 				data.ArtifactsDir,
 				authority.analysisRoot,
@@ -399,6 +462,7 @@ func generate(
 
 	htmlPath := runDir + "/report.html"
 	data.GitLabSourceLinks = gitLabSourceLinks
+	data.GitHubSourceLinks = gitHubSourceLinks
 	if sourceEpisodeJSON == nil {
 		if err := WriteReportHTML(data, htmlPath); err != nil {
 			return err
@@ -420,18 +484,18 @@ func generate(
 	return nil
 }
 
-func gitLabSourcePathPrefix(repositoryRoot, analysisRoot string) (string, error) {
+func standaloneSourcePathPrefix(repositoryRoot, analysisRoot string) (string, error) {
 	relative, err := filepath.Rel(repositoryRoot, analysisRoot)
 	if err != nil || filepath.IsAbs(relative) || relative == ".." ||
 		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("report: GitLab source analysis root is outside repository")
+		return "", fmt.Errorf("report: external source analysis root is outside repository")
 	}
 	if relative == "." {
 		return "", nil
 	}
 	prefix := filepath.ToSlash(relative)
 	if err := validateManifestPath(prefix); err != nil {
-		return "", fmt.Errorf("report: GitLab source analysis path is invalid")
+		return "", fmt.Errorf("report: external source analysis path is invalid")
 	}
 	return prefix, nil
 }

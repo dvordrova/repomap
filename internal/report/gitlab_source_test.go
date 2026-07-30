@@ -301,12 +301,12 @@ func TestGitLabSourcePathPrefix(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := gitLabSourcePathPrefix(root, test.analysisRoot)
+			got, err := standaloneSourcePathPrefix(root, test.analysisRoot)
 			if (err != nil) != test.wantErr {
-				t.Fatalf("gitLabSourcePathPrefix() error = %v, wantErr %t", err, test.wantErr)
+				t.Fatalf("standaloneSourcePathPrefix() error = %v, wantErr %t", err, test.wantErr)
 			}
 			if got != test.want {
-				t.Fatalf("gitLabSourcePathPrefix() = %q, want %q", got, test.want)
+				t.Fatalf("standaloneSourcePathPrefix() = %q, want %q", got, test.want)
 			}
 		})
 	}

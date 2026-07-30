@@ -146,19 +146,31 @@ func (links *GitLabSourceLinks) validate() error {
 		normalized.PathPrefix != links.PathPrefix {
 		return fmt.Errorf("report: GitLab source links are not canonical")
 	}
-	if len(links.WorkingTreePaths) > 10_000 {
-		return fmt.Errorf("report: GitLab working-tree path list exceeds bounds")
+	return validateWorkingTreeSourceLinks(
+		links.WorkingTreeDirty,
+		links.WorkingTreePaths,
+		"GitLab",
+	)
+}
+
+func validateWorkingTreeSourceLinks(
+	workingTreeDirty bool,
+	workingTreePaths []string,
+	hostName string,
+) error {
+	if len(workingTreePaths) > 10_000 {
+		return fmt.Errorf("report: %s working-tree path list exceeds bounds", hostName)
 	}
-	if len(links.WorkingTreePaths) != 0 && !links.WorkingTreeDirty {
-		return fmt.Errorf("report: GitLab working-tree paths require a dirty working-tree marker")
+	if len(workingTreePaths) != 0 && !workingTreeDirty {
+		return fmt.Errorf("report: %s working-tree paths require a dirty working-tree marker", hostName)
 	}
 	previous := ""
-	for _, workingTreePath := range links.WorkingTreePaths {
+	for _, workingTreePath := range workingTreePaths {
 		if err := validateManifestPath(workingTreePath); err != nil {
-			return fmt.Errorf("report: GitLab working-tree path is invalid")
+			return fmt.Errorf("report: %s working-tree path is invalid", hostName)
 		}
 		if previous != "" && workingTreePath <= previous {
-			return fmt.Errorf("report: GitLab working-tree paths must be uniquely sorted")
+			return fmt.Errorf("report: %s working-tree paths must be uniquely sorted", hostName)
 		}
 		previous = workingTreePath
 	}
@@ -174,15 +186,25 @@ func validGitRevision(revision string) bool {
 }
 
 func validateGitLabAuthority(authority RunAuthority) error {
+	return validateStandaloneSourceAuthority(authority, "GitLab")
+}
+
+func validateStandaloneSourceAuthority(authority RunAuthority, hostName string) error {
 	if err := authority.validate(); err != nil {
 		return err
 	}
 	if authority.freshness.State != freshness.FreshnessFresh {
-		return fmt.Errorf("report: standalone GitLab report requires the captured working tree to remain unchanged")
+		return fmt.Errorf(
+			"report: standalone %s report requires the captured working tree to remain unchanged",
+			hostName,
+		)
 	}
 	for _, submodule := range authority.repository.Submodules {
 		if submodule.IncludedInAnalysis {
-			return fmt.Errorf("report: standalone GitLab report does not support analyzed submodule source")
+			return fmt.Errorf(
+				"report: standalone %s report does not support analyzed submodule source",
+				hostName,
+			)
 		}
 	}
 	return nil

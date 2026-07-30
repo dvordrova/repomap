@@ -99,6 +99,9 @@ type ReportData struct {
 	// standalone shareable artifact. Source actions then target the exact
 	// captured revision instead of the localhost editor/source APIs.
 	GitLabSourceLinks *GitLabSourceLinks `json:"gitlab_source_links,omitempty"`
+	// GitHubSourceLinks is the GitHub-hosted equivalent of GitLabSourceLinks.
+	// At most one external source host is present in a rendered report.
+	GitHubSourceLinks *GitHubSourceLinks `json:"github_source_links,omitempty"`
 
 	RepoName     string `json:"repo_name"`
 	ProjectGuess string `json:"project_guess"`
