@@ -137,11 +137,18 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   monolithic editor and final fan-in planner receive `reasoning_effort:"max"`.
   Thinking mode ignores temperature, so determinism comes from strict JSON
   contracts, opaque-ID validation, canonical inputs, and replayable caches.
-- The final guided fan-in uses a minimum 12,000-token response envelope on the
-  official endpoint. The 6,000-token default remains unchanged for bounded
-  leaves and existing stages, and a larger explicit user configuration is
-  preserved. The self experiment showed `thinking/max` consuming the ordinary
-  envelope before completing the strict fan-in JSON wrapper.
+- The monolithic guided editor and final guided fan-in use a minimum
+  12,000-token response envelope on the official endpoint. Bounded leaves keep
+  the configured default, and larger explicit user configuration is preserved.
+  Real Chatto and self-experiment runs showed `thinking/max` consuming the
+  ordinary 6,000-token envelope before completing the strict JSON wrapper. If
+  the provider explicitly ends a partial JSON response with
+  `finish_reason=length`, the guided editor retries exactly once with twice the
+  first attempt's output headroom. Retryable network failures, malformed
+  response envelopes, and incomplete JSON receive one bounded replay of the
+  same request. A syntactically valid proposal rejected by local Guided Tour
+  validation also receives one fresh bounded proposal attempt. Only a locally
+  accepted proposal can be cached or published.
 - Semantic discovery always uses JSON mode. On the official DeepSeek endpoint,
   the opportunity scan, fan-in synthesis, and monolithic comparison use
   `"thinking":{"type":"enabled"}` with `reasoning_effort:"max"`; bounded
