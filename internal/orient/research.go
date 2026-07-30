@@ -3,6 +3,7 @@ package orient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -73,7 +74,10 @@ func obtainOrientation(
 		}
 		cached, found, err := modelresearch.LoadStageResponse(call.CacheInput)
 		if err != nil {
-			return call, fmt.Errorf("orientation cache: %w", err)
+			if !errors.Is(err, modelresearch.ErrInvalidCachedRound) {
+				return call, fmt.Errorf("orientation cache: %w", err)
+			}
+			found = false
 		}
 		if found {
 			call.Raw = cached.Content

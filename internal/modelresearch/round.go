@@ -3,6 +3,7 @@ package modelresearch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -162,9 +163,12 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	if input.RunsDir != "" {
 		record, found, loadErr := loadCache(input.RunsDir, cacheKey, round.ProviderRequestSHA256, bundleSHA)
 		if loadErr != nil {
-			round.Status = RoundRejected
-			round.StopReason = "invalid_cached_record"
-			return round, loadErr
+			if !errors.Is(loadErr, ErrInvalidCachedRound) {
+				round.Status = RoundRejected
+				round.StopReason = "invalid_cached_record"
+				return round, loadErr
+			}
+			found = false
 		}
 		if found {
 			round.Cached = true

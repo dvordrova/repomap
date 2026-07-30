@@ -1,9 +1,17 @@
 package orient
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
@@ -13,6 +21,76 @@ import (
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
+
+func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"fresh\":true}"}}]}`)
+	}))
+	defer server.Close()
+
+	client := &deepseek.Client{
+		HTTPClient: server.Client(),
+		Model:      "fixture-model",
+		MaxTokens:  128,
+		Endpoint:   server.URL,
+		Auth:       "none",
+	}
+	baseDir := t.TempDir()
+	writer, err := debugdump.NewWriter(baseDir, "invalid-cache", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	repository := modelresearch.RepositoryContext{
+		Identity: "fixture", Revision: "abc", Scenario: "go-default",
+	}
+	policy := modelresearch.DefaultPolicy()
+	bundleJSON := []byte(`{"bounded":"evidence"}`)
+	requestJSON := []byte(`{"provider":"request"}`)
+	bundleHash := modelresearch.SHA256(bundleJSON)
+	fingerprint := modelresearch.FingerprintInput{
+		Repository: repository, Stage: "orientation",
+		PromptVersion: deepseek.OrientationPromptVersionJSON,
+		Profile:       "test", Model: client.Model,
+		EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+	}
+	cacheKey, err := modelresearch.CacheKey(fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(baseDir, ".model-research")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, cacheKey+".json"), []byte(`{"version":0}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	call, err := obtainOrientation(
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON,
+	)
+	if err != nil {
+		t.Fatalf("obtainOrientation() error = %v", err)
+	}
+	if requests != 1 || call.Metrics.CacheHit || string(call.Raw) != `{"fresh":true}` {
+		t.Fatalf("refetched orientation = requests %d, cache hit %t, raw %q", requests, call.Metrics.CacheHit, call.Raw)
+	}
+	if err := saveOrientationResponse(call); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := obtainOrientation(
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON,
+	)
+	if err != nil {
+		t.Fatalf("cached obtainOrientation() error = %v", err)
+	}
+	if requests != 1 || !replayed.Metrics.CacheHit || string(replayed.Raw) != `{"fresh":true}` {
+		t.Fatalf("replayed orientation = requests %d, cache hit %t, raw %q", requests, replayed.Metrics.CacheHit, replayed.Raw)
+	}
+}
 
 func TestAddResearchFocusLocationsUsesLocalEvidencePriority(t *testing.T) {
 	t.Parallel()

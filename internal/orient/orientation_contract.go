@@ -414,6 +414,33 @@ func normalizeOrientationGrounding(
 		normalizedFlows = append(normalizedFlows, flow)
 	}
 	report.CandidateFlows = normalizedFlows
+	normalizeCandidateFlowIDs(report)
+}
+
+func normalizeCandidateFlowIDs(report *orientationPart) {
+	used := make(map[string]struct{}, len(report.CandidateFlows))
+	for index := range report.CandidateFlows {
+		flow := &report.CandidateFlows[index]
+		originalName := flow.Name
+		flowID := flowexplain.GenerateFlowID(originalName)
+		if _, exists := used[flowID]; !exists {
+			used[flowID] = struct{}{}
+			continue
+		}
+		for suffix := 2; ; suffix++ {
+			flow.Name = fmt.Sprintf("%s (%d)", originalName, suffix)
+			flowID = flowexplain.GenerateFlowID(flow.Name)
+			if _, exists := used[flowID]; exists {
+				continue
+			}
+			used[flowID] = struct{}{}
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser disambiguated candidate_flows[%d].name because its local id collided with an earlier direction",
+				index,
+			))
+			break
+		}
+	}
 }
 
 func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoints []string) error {
