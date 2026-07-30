@@ -10,7 +10,7 @@ const (
 	ProposalVersion = 1
 	StoryVersion    = 1
 	RecordVersion   = 1
-	PromptVersion   = "guided-tour-editor-json-v4"
+	PromptVersion   = "guided-tour-editor-json-v5"
 )
 
 type CandidateKind string

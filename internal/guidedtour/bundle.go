@@ -88,7 +88,7 @@ func BuildPrompt(bundle Bundle) (Prompt, error) {
 	if err != nil {
 		return Prompt{}, err
 	}
-	system := `You are an optional editorial guide for one bounded repository tour. Choose exactly one supplied candidate and organize only its supplied beats and gaps. Local code remains authoritative for components, surfaces, traces, steps, evidence, locations, ordering constraints, and runtime claims. Return valid JSON only. Never invent or quote a repository path, file name, symbol, relation, transition, ID, certainty, or runtime fact.`
+	system := `You are an optional editorial guide for one bounded repository tour. Choose exactly one supplied candidate and organize only its supplied beats and gaps. Local code remains authoritative for components, surfaces, traces, steps, evidence, locations, ordering constraints, and proven runtime claims. Return valid JSON only. Never invent or quote a repository path, file name, symbol, relation, transition, ID, or certainty. For suggested_direction candidates, clearly present behavioral interpretation as an investigation hypothesis rather than a proven runtime fact.`
 	user := `Choose one candidate from the supplied canonical bundle and return exactly this JSON shape:
 {
   "version": 1,
@@ -117,10 +117,10 @@ Rules:
 - For a saved_trace candidate, beat sequence values must never decrease across the returned steps.
 - An editorial candidate may reorder beats for teaching; that order is not runtime order.
 - Use only proposal fields shown in the schema. Do not add components, surfaces, flows, steps, evidence, locations, or references.
-- Do not mention .go file names, slash paths, symbols, or source locations in any prose.
+- Do not mention .go file names, slash paths, symbols, or source locations in any prose. The exact supplied candidate name may be reused unchanged as the title.
 - Gaps are limitations, not invitations to invent missing runtime behavior.
-- For suggested_direction, write an editorial investigation guide, not a runtime narration. Use instructions such as "inspect the static evidence" or explicitly hedged statements such as "the candidate suggests" and "runtime order is unproven".
-- In suggested_direction prose, do not assert behavior, including execution, routing, scheduling, reading, persistence, processing, responses, or handoffs. Behavioral words are allowed only when the same local clause explicitly negates the claim or says it is unproven.
+- For suggested_direction, write an editorial investigation guide, not a proven runtime narration. Clearly qualify interpretations with language such as "the candidate suggests", "may", "might", "could", or "runtime order is unproven".
+- Static imports may be described as structural connections, never as runtime execution.
 
 Canonical guided-tour bundle JSON:
 ` + string(encoded)

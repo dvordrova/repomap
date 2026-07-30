@@ -51,7 +51,10 @@ func DecodeRecord(raw []byte) (Record, error) {
 	if !validSHA256(record.BundleSHA256) {
 		return Record{}, fmt.Errorf("guided tour: record bundle hash is malformed")
 	}
-	if err := validateProposalShape(record.Proposal); err != nil {
+	// The record does not carry the candidate name. Defer the title's
+	// repository-reference comparison to ReplayRecord, which has the exact
+	// bundle; every other proposal field is still checked here.
+	if err := validateProposalShape(record.Proposal, true); err != nil {
 		return Record{}, fmt.Errorf("guided tour: record proposal is invalid: %w", err)
 	}
 	return record, nil

@@ -1,15 +1,21 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/148-ordinary-run-compatibility-corrections.md
+    decisions/149-guided-direction-prose-boundary.md
 
 Status:
-    Decision 148 active; real-run compatibility corrections authorized
+    Decision 149 active; Guided direction prose boundary authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 149 corrects the real Chatto Guided Tour failure where structurally
+    valid editorial hypotheses were rejected by a behavioral-word regex and an
+    exact candidate title with a natural slash was mistaken for a repository
+    path. Suggested-direction prose is now explicitly non-authoritative while
+    exact IDs, gaps, evidence, locations, and model-authored repository
+    references remain locally validated. The classifier remains diagnostic.
     Decision 148 corrects two ordinary-run failures found during real
     Decision 147 validation. Nested-module `go/packages` diagnostics now
     resolve only against actual loaded package files, so a module-relative
