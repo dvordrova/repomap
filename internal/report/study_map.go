@@ -19,9 +19,83 @@ import (
 
 const (
 	maxSavedStudyMapBytes                 = 4 << 20
+	maxSavedStudyStatusBytes              = 64 << 10
 	maxStudyDocumentPresentationReadBytes = 16 << 10
 	maxStudyDocumentPresentationExcerpt   = 1200
 )
+
+// StudyPublicationStatus is the bounded product-facing outcome of the
+// independent Study editing stage. FailureReason is retained for run
+// diagnostics; default UI copy does not present it as repository content.
+type StudyPublicationStatus struct {
+	Version       int    `json:"version"`
+	State         string `json:"state"`
+	FailureReason string `json:"failure_reason,omitempty"`
+	Candidates    int    `json:"candidates,omitempty"`
+	Selected      int    `json:"selected_directions,omitempty"`
+	WallMillis    int64  `json:"wall_ms,omitempty"`
+}
+
+func readStudyPublicationStatus(statusPath string) (*StudyPublicationStatus, string) {
+	file, err := os.Open(statusPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ""
+		}
+		return nil, fmt.Sprintf("study publication status: %v", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Sprintf("study publication status: %v", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxSavedStudyStatusBytes {
+		return nil, "study publication status: invalid artifact size"
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxSavedStudyStatusBytes+1))
+	if err != nil {
+		return nil, fmt.Sprintf("study publication status: %v", err)
+	}
+	var status StudyPublicationStatus
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return nil, "study publication status: invalid json"
+	}
+	if status.Version != 1 {
+		return nil, fmt.Sprintf("study publication status: unsupported version %d", status.Version)
+	}
+	switch status.State {
+	case "started":
+		if status.Selected != 0 {
+			return nil, "study publication status: unfinished stage cannot contain published directions"
+		}
+	case "failed":
+		if strings.TrimSpace(status.FailureReason) == "" || status.Selected != 0 {
+			return nil, "study publication status: failed stage has inconsistent outcome"
+		}
+	case "published":
+		if status.Selected < studymap.MinDirections || status.Selected > studymap.MaxDirections ||
+			strings.TrimSpace(status.FailureReason) != "" {
+			return nil, "study publication status: published stage has inconsistent outcome"
+		}
+	default:
+		return nil, fmt.Sprintf("study publication status: unsupported state %q", status.State)
+	}
+	if status.Candidates < 0 || status.Candidates > studymap.MaxCandidates ||
+		status.WallMillis < 0 {
+		return nil, "study publication status: invalid metrics"
+	}
+	return &status, ""
+}
+
+func studyPublicationUserWarning(status *StudyPublicationStatus) string {
+	if status == nil || status.State == "published" {
+		return ""
+	}
+	if status.State == "started" {
+		return "Study was not published because the editing stage did not finish."
+	}
+	return "Study was not published because the proposed directions did not pass the required checks."
+}
 
 // RepositoryStudyMap is the user-facing projection of a locally reduced
 // editorial record. Support IDs, confidence, reduction diagnostics, and full
@@ -496,36 +570,14 @@ func studyDirectionCoverage(direction StudyDirection) *StudyDirectionCoverage {
 }
 
 func splitStudyDirectionsForVisibleCoverage(directions []StudyDirection) ([]StudyDirection, []StudyDirection) {
-	visible := make([]StudyDirection, 0, len(directions))
-	hidden := make([]StudyDirection, 0)
-	for _, direction := range directions {
-		if weakVisibleStudyDirection(direction) {
-			hidden = append(hidden, direction)
-			continue
-		}
-		visible = append(visible, direction)
+	// Question-term coverage remains useful diagnostics, but it is not strong
+	// enough to suppress a source-reviewed direction. Natural-language wording,
+	// translations, and repository terminology routinely differ from exact code
+	// tokens even when every published reading anchor is valid.
+	for index := range directions {
+		markStudyDirectionUserVisible(&directions[index], true, "")
 	}
-	if len(hidden) == 0 || len(visible) < studymap.MinDirections {
-		for index := range directions {
-			markStudyDirectionUserVisible(&directions[index], true, "")
-		}
-		return directions, nil
-	}
-	for index := range visible {
-		markStudyDirectionUserVisible(&visible[index], true, "")
-	}
-	for index := range hidden {
-		markStudyDirectionUserVisible(&hidden[index], false, "weak_visible_question_coverage")
-	}
-	return visible, hidden
-}
-
-func weakVisibleStudyDirection(direction StudyDirection) bool {
-	if direction.DebugCoverage == nil || direction.DebugCoverage.TotalQuestionTerms < 3 {
-		return false
-	}
-	coverage := direction.DebugCoverage
-	return coverage.MatchedQuestionTerms*2 < coverage.TotalQuestionTerms
+	return directions, nil
 }
 
 func markStudyDirectionUserVisible(direction *StudyDirection, visible bool, reason string) {

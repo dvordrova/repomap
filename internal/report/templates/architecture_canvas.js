@@ -388,7 +388,9 @@
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
    this.structuralEdges = array(this.data.structural_edges);
-     this.flows = array(this.data.flows);
+     this.flows = array(this.data.flows).filter((flow) => (
+      !this.userMode || array(flow && flow.steps).length >= 2
+     ));
      this.surfaces = array(this.data.surfaces);
      this.suggestions = this.userMode ? [] : array(this.data.suggested_investigations);
     this.candidateDirections = this.userMode ? [] : array(this.options.candidateDirections);
@@ -533,6 +535,23 @@
      flowNav.appendChild(this.guidedTourButton);
     }
     if (this.flows.length > 0) {
+     if (this.userMode) {
+      this.pathList = element("div", "rm-arch__path-list");
+      this.pathList.appendChild(element("span", "rm-arch__path-list-label", "Code paths"));
+      this.flows.forEach((flow) => {
+       const button = element(
+        "button",
+        "rm-arch__flow-button rm-arch__path-button",
+        flow.name || "Code path"
+       );
+       button.type = "button";
+       if (flow.why_inspect) button.title = flow.why_inspect;
+       this.listen(button, "click", () => this.openTrace(flow.id));
+       this.flowButtons.set(text(flow.id), button);
+       this.pathList.appendChild(button);
+      });
+      flowNav.appendChild(this.pathList);
+     } else {
      this.traceMenu = element("div", "rm-arch__trace-menu");
      this.traceMenuSummary = element(
       "button",
@@ -578,6 +597,7 @@
       this.traceList.appendChild(button);
      });
      flowNav.appendChild(this.traceMenu);
+     }
     }
    toolbar.appendChild(flowNav);
 
@@ -3225,14 +3245,18 @@
   }
 
   userComponentHasInspector(component) {
-   return this.userComponentActions(component).length > 0;
+   const context = this.userComponentContext(component);
+   return !!(context && (
+    this.userComponentActions(component).length > 0 ||
+    array(context.package_paths).length > 0
+   ));
   }
 
   inspectUserComponent(component) {
    const subsystem = this.subsystemByID.get(text(component.subsystem_id));
    const context = this.userComponentContext(component);
    const actions = this.userComponentActions(component);
-   if (!context || actions.length === 0) return;
+   if (!context) return;
    this.inspectorHeading("Code area", component.name || "Repository component", component.description);
 
    if (subsystem && subsystem.name) {

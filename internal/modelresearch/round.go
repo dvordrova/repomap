@@ -92,6 +92,7 @@ Rules:
 - Every finding and frontier must cite supplied evidence IDs.
 - Do not emit paths, symbols, relations, or IDs absent from the bundle.
 - Do not upgrade static evidence to observed execution or guaranteed runtime order.
+- A source_window is a bounded lexical excerpt, not a complete file or call graph. Missing text cannot prove that an operation, call, or relation is absent. Describe only what the supplied windows show and record the rest as an unresolved frontier.
 - Unsupported hypotheses are useful; say unsupported rather than inventing support.
 - Suggest at most one distinct bounded frontier. Do not request a repeated wording pass.
 

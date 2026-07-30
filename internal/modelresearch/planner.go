@@ -27,6 +27,7 @@ const (
 	maxSourceLineBytes  = 512
 	minWindowLines      = 40
 	maxWindowLines      = 80
+	maxWindowsPerFile   = 2
 	requestFramingBytes = 16 << 10
 )
 
@@ -294,7 +295,7 @@ func assembleEvidenceBundle(
 		Purpose: question.Purpose, Question: question.Question,
 	}
 	selectedPaths := make(map[string]int)
-	focusLines := make(map[string]int)
+	focusLines := make(map[string][]int)
 	unknownCandidates := 0
 	for _, candidateID := range sortedUnique(question.CandidateIDs) {
 		candidate, ok := candidates[candidateID]
@@ -307,7 +308,7 @@ func assembleEvidenceBundle(
 			continue
 		}
 		selectedPaths[candidate.Path] = 0
-		focusLines[candidate.Path] = candidateFocusLine(candidate)
+		focusLines[candidate.Path] = candidateFocusLines(candidate)
 		bundle.Evidence = append(bundle.Evidence, EvidenceItem{
 			ID: stableID("evidence", "file\x00"+candidate.Path), Kind: EvidenceFileSummary,
 			Statement: "provider file summary selected for focused local expansion",
@@ -319,7 +320,7 @@ func assembleEvidenceBundle(
 	if len(selectedPaths) == 0 {
 		for _, candidate := range bestQuestionCandidates(question, candidates, authorized, 3) {
 			selectedPaths[candidate.Path] = 0
-			focusLines[candidate.Path] = candidateFocusLine(candidate)
+			focusLines[candidate.Path] = candidateFocusLines(candidate)
 		}
 	}
 
@@ -359,24 +360,41 @@ func assembleEvidenceBundle(
 	if len(paths) > budget.MaxFiles {
 		paths = paths[:budget.MaxFiles]
 	}
+	windowLimit := budget.MaxSourceWindows
+	if windowLimit <= 0 {
+		windowLimit = max(1, budget.MaxFiles)
+	}
+	windowCount := 0
 	for _, path := range paths {
 		if err := ctx.Err(); err != nil {
 			return EvidenceBundle{}, FocusedInvestigationScope{}, 0, err
 		}
-		line := focusLines[path]
-		window, ok := readSourceWindow(reader, path, line)
-		if !ok {
-			continue
+		lines := focusLines[path]
+		if len(lines) == 0 {
+			lines = []int{0}
 		}
-		location := evidence.Location{Path: path, Line: window.StartLine}
-		item := EvidenceItem{
-			ID:   stableID("evidence", strings.Join([]string{"source", path, strconv.Itoa(window.StartLine), strconv.Itoa(window.EndLine)}, "\x00")),
-			Kind: EvidenceSource, Statement: "bounded source window selected locally for the research question",
-			Location: &location, Certainty: evidence.CertaintyStatic, Window: &window,
-			Provenance: []evidence.Provenance{{Provider: "reporead", Version: PolicyVersion, Operation: "read_bounded_source_window", Location: &location}},
-			Visibility: []EvidenceVisibility{VisibilityLocalAfter},
+		for _, line := range lines {
+			if windowCount >= windowLimit {
+				break
+			}
+			window, ok := readSourceWindow(reader, path, line)
+			if !ok {
+				continue
+			}
+			location := evidence.Location{Path: path, Line: window.StartLine}
+			item := EvidenceItem{
+				ID:   stableID("evidence", strings.Join([]string{"source", path, strconv.Itoa(window.StartLine), strconv.Itoa(window.EndLine)}, "\x00")),
+				Kind: EvidenceSource, Statement: "bounded source window selected locally for the research question",
+				Location: &location, Certainty: evidence.CertaintyStatic, Window: &window,
+				Provenance: []evidence.Provenance{{Provider: "reporead", Version: PolicyVersion, Operation: "read_bounded_source_window", Location: &location}},
+				Visibility: []EvidenceVisibility{VisibilityLocalAfter},
+			}
+			bundle.Evidence = append(bundle.Evidence, item)
+			windowCount++
 		}
-		bundle.Evidence = append(bundle.Evidence, item)
+		if windowCount >= windowLimit {
+			break
+		}
 	}
 	localEvidence := deduplicateEvidence(bundle.Evidence)
 	providerEvidence := prioritizedProviderEvidence(localEvidence)
@@ -697,13 +715,22 @@ func prioritizedProviderEvidence(items []EvidenceItem) []EvidenceItem {
 	return result
 }
 
-func candidateFocusLine(candidate FileCandidate) int {
+func candidateFocusLines(candidate FileCandidate) []int {
+	var lines []int
 	for _, location := range candidate.FocusLocations {
 		if location.Path == candidate.Path && location.Line > 0 {
-			return location.Line
+			if len(lines) == 0 {
+				lines = append(lines, location.Line)
+			} else if location.Line != lines[0] {
+				if len(lines) == 1 {
+					lines = append(lines, location.Line)
+				} else {
+					lines[1] = location.Line
+				}
+			}
 		}
 	}
-	return 0
+	return lines
 }
 
 func matchingCommandTraces(question string, traces []gofacts.CommandTrace) []gofacts.CommandTrace {
@@ -810,7 +837,7 @@ func rankedPaths(paths map[string]int) []string {
 
 func addTraceLocation(
 	paths map[string]int,
-	focusLines map[string]int,
+	focusLines map[string][]int,
 	authorized map[string]struct{},
 	location evidence.Location,
 ) {
@@ -823,8 +850,14 @@ func addTraceLocation(
 	if current, exists := paths[location.Path]; !exists || current == 0 {
 		paths[location.Path] = location.Line
 	}
-	if current, exists := focusLines[location.Path]; !exists || current == 0 {
-		focusLines[location.Path] = location.Line
+	lines := focusLines[location.Path]
+	if location.Line > 0 && len(lines) < maxWindowsPerFile {
+		for _, line := range lines {
+			if line == location.Line {
+				return
+			}
+		}
+		focusLines[location.Path] = append(lines, location.Line)
 	}
 }
 

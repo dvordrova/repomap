@@ -32,10 +32,20 @@ const report = {
   openable_paths: ["core/a.go", "core/b.go", "other.go"],
   architecture_canvas: {
     components: [
-      { id: "core", members: [{
-        id: { kind: "package", value: "opaque-package-id" },
-        facts: [{ kind: "declaration", value: "example.test/project/core" }],
-      }] },
+      { id: "core", members: [
+        {
+          id: { kind: "package", value: "opaque-package-id" },
+          facts: [{ kind: "declaration", value: "example.test/project/core" }],
+        },
+        {
+          name: "example.test/project/core.A",
+          facts: [{ kind: "declaration", value: "example.test/project/core.A", location: { path: "core/a.go", line: 7 } }],
+        },
+        {
+          name: "core/a.go",
+          facts: [{ kind: "repository_path", value: "core/a.go", location: { path: "core/a.go" } }],
+        },
+      ] },
       { id: "same-name-only", members: [{
         id: { kind: "package", value: "opaque-package-id-2" }, name: "core", facts: [],
       }] },
@@ -86,8 +96,10 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		PackagePaths []string `json:"package_paths"`
 		FileCount    int      `json:"file_count"`
 		Sources      []struct {
+			Detail   string `json:"detail"`
 			Location struct {
 				Path string `json:"path"`
+				Line int    `json:"line"`
 			} `json:"location"`
 		} `json:"sources"`
 		Studies []struct {
@@ -104,7 +116,10 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	if strings.Join(core.PackagePaths, "|") != "example.test/project/core" || core.FileCount != 2 {
 		t.Fatalf("package projection = %#v, file count = %d", core.PackagePaths, core.FileCount)
 	}
-	if len(core.Sources) != 2 || core.Sources[0].Location.Path != "core/a.go" || core.Sources[1].Location.Path != "core/b.go" {
+	if len(core.Sources) != 4 || core.Sources[0].Detail != "example.test/project/core.A" ||
+		core.Sources[0].Location.Path != "core/a.go" || core.Sources[0].Location.Line != 7 ||
+		core.Sources[1].Location.Path != "core/a.go" || core.Sources[1].Location.Line != 0 ||
+		core.Sources[2].Location.Path != "core/a.go" || core.Sources[3].Location.Path != "core/b.go" {
 		t.Fatalf("source joins = %#v", core.Sources)
 	}
 	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
@@ -112,6 +127,67 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 	if _, ok := contexts["same-name-only"]; ok {
 		t.Fatalf("package-name similarity created a non-exact join: %#v", contexts["same-name-only"])
+	}
+}
+
+func TestRejectedArchitectureFallbackIsDiagnosticOnly(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+const script = fs.readFileSync(process.argv[2], "utf8");
+function available(architectureSynthesis, search) {
+  const report = {
+    user_mechanisms: [], user_sources: [], openable_paths: [], source_ids: {},
+    architecture_canvas: { components: [{ id: "core" }] },
+    architecture_synthesis: architectureSynthesis,
+  };
+  const window = {
+    location: { search: search || "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+    __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  };
+  const document = {
+    getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
+    querySelectorAll() { return []; },
+  };
+  vm.runInNewContext(script, { window, document, URLSearchParams, Set, Map, AbortController });
+  return window.__REPOMAP_WORKSPACE_TEST__.userArchitectureAvailable();
+}
+process.stdout.write(JSON.stringify({
+  accepted: available({ state: "succeeded", proposal_accepted: true }, ""),
+  rejected: available({ state: "succeeded", proposal_rejected: true, fallback_selected: true }, ""),
+  failed: available({ state: "failed" }, ""),
+  diagnostic: available({ state: "succeeded", proposal_rejected: true, fallback_selected: true }, "?debug=1"),
+  localOnly: available(null, ""),
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "architecture-publication-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run architecture publication contract: %v\n%s", err, output)
+	}
+	var got struct {
+		Accepted   bool `json:"accepted"`
+		Rejected   bool `json:"rejected"`
+		Failed     bool `json:"failed"`
+		Diagnostic bool `json:"diagnostic"`
+		LocalOnly  bool `json:"localOnly"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode architecture publication contract: %v\n%s", err, output)
+	}
+	if !got.Accepted || got.Rejected || got.Failed || !got.Diagnostic || !got.LocalOnly {
+		t.Fatalf("architecture publication contract = %#v", got)
 	}
 }
 
@@ -126,6 +202,9 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"options.componentContexts = architectureComponentContexts()",
 		"userComponentActions(component)",
 		"return actions.slice(0, 3)",
+		"array(context.package_paths).length > 0",
+		"(component.members || []).forEach(function (member)",
+		"detail: member.name || filePath",
 		"lowInformationComponent",
 		"has-user-compact-inspector",
 	} {

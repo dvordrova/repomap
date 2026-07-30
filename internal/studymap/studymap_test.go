@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -118,6 +119,23 @@ func TestPromptBundleRetainsOpaqueAnchorsWithoutSourceBodies(t *testing.T) {
 	if strings.Contains(string(raw), "value := 1") || strings.Contains(string(raw), "content_sha256") ||
 		strings.Contains(string(raw), "observations") {
 		t.Fatalf("model-visible Study Map bundle contains source-function internals: %s", raw)
+	}
+}
+
+func TestBuildRecordRetainsOneAreaShapeForSmallLibrary(t *testing.T) {
+	t.Parallel()
+
+	bundle, proposal := studyMapFixture(t)
+	proposal.ShapeAreaIDs = proposal.ShapeAreaIDs[:1]
+	record, err := BuildRecord(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(record.ShapeAreaIDs, proposal.ShapeAreaIDs) {
+		t.Fatalf("shape areas = %v, want %v", record.ShapeAreaIDs, proposal.ShapeAreaIDs)
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 

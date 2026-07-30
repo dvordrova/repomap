@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRussianOutputLanguageChangesOnlySystemInstruction(t *testing.T) {
+func TestRussianOutputLanguageReinforcesEveryModelMessage(t *testing.T) {
 	client := &Client{Model: "test", MaxTokens: 1000, OutputLanguage: "ru"}
 
 	orientationJSON, err := client.OrientPromptJSON([]byte(`{"allowed_paths":["cmd/server/main.go"]}`))
@@ -43,6 +43,16 @@ func TestRussianOutputLanguageChangesOnlySystemInstruction(t *testing.T) {
 				t.Fatalf("%s system prompt is missing %q: %s", name, want, system)
 			}
 		}
+		user := request.Messages[1].Content
+		for _, want := range []string{
+			"OUTPUT LANGUAGE CONTRACT",
+			"human-readable prose value in Russian",
+			"protected technical identifiers",
+		} {
+			if !strings.Contains(user, want) {
+				t.Fatalf("%s user prompt is missing %q: %s", name, want, user)
+			}
+		}
 	}
 
 	if !strings.Contains(string(orientationJSON), `cmd/server/main.go`) {
@@ -52,9 +62,13 @@ func TestRussianOutputLanguageChangesOnlySystemInstruction(t *testing.T) {
 	if err := json.Unmarshal(flowJSON, &flowRequest); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := flowRequest.Messages[1].Content,
-		`{"opaque_id":"direction-1","path":"cmd/server/main.go"}`; got != want {
-		t.Fatalf("flow user input = %q, want %q", got, want)
+	for _, want := range []string{
+		`{"opaque_id":"direction-1","path":"cmd/server/main.go"}`,
+		"Do not return English explanatory sentences",
+	} {
+		if !strings.Contains(flowRequest.Messages[1].Content, want) {
+			t.Fatalf("flow user input is missing %q: %q", want, flowRequest.Messages[1].Content)
+		}
 	}
 }
 

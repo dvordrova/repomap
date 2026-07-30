@@ -152,17 +152,6 @@ func prepareArchitectureSynthesisWithOptions(
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: build candidates: %w", err)
 	}
-	if input.CandidateBundle.GroundingMode == componentmap.GroundingPackages {
-		packageCount := 0
-		for _, candidate := range input.CandidateBundle.Candidates {
-			if candidate.ID.Kind == componentmap.MemberPackage {
-				packageCount++
-			}
-		}
-		if packageCount < 2 {
-			return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: insufficient package evidence for a useful landscape")
-		}
-	}
 	return ensureArchitectureSynthesisWithOptions(
 		ctx,
 		input.CandidateBundle,

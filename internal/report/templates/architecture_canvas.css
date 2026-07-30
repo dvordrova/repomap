@@ -155,6 +155,28 @@
  position: relative;
 }
 
+.rm-arch__path-list {
+ align-items: center;
+ display: flex;
+ flex-wrap: wrap;
+ gap: 6px;
+}
+
+.rm-arch__path-list-label {
+ color: var(--rm-arch-muted);
+ font-size: .72rem;
+ font-weight: 800;
+ letter-spacing: .04em;
+ text-transform: uppercase;
+}
+
+.rm-arch__path-button {
+ max-width: 320px;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+
 .rm-arch__trace-menu > .rm-arch__flow-button::after {
  content: " ▾";
 }

@@ -49,7 +49,7 @@ Task: produce only the repository Brief and Shape. Return exactly:
     "observable_result": {"text": "observable result", "support_ids": ["exact supplied ids"]},
     "domain_terms": [{"term": "term", "meaning": "short meaning", "support_ids": ["exact supplied ids"]}]
   },
-  "shape_area_ids": ["three to seven exact supplied area ids"]
+  "shape_area_ids": ["one to seven exact supplied area ids"]
 }
 
 Use only supplied IDs. Keep every sentence short and independently useful. Leave out a domain term rather than guessing, but provide all five Brief statements from supported repository objects.`
@@ -389,6 +389,16 @@ func prepareStudyMapV32(
 	if directionDiagnostics.Received > 0 {
 		directionAttempt.DirectionDiagnostics = &directionDiagnostics
 	}
+	if err != nil {
+		directionMetrics.Status = "rejected"
+		directionAttempt.Metrics = directionMetrics
+		directionAttempt.ValidationState = directionMetrics.Status
+		directionAttempt.FailureReason = semanticDiscoveryReason(err.Error())
+		stages[len(stages)-1] = directionMetrics
+		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	directions, err = studymap.ResolveDirectionProposalReferences(bundle, directions)
 	if err != nil {
 		directionMetrics.Status = "rejected"
 		directionAttempt.Metrics = directionMetrics

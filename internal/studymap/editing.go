@@ -33,6 +33,11 @@ const (
 	// Provider recovery examines only a bounded number of object starts before
 	// the existing strict envelope and semantic validators take over.
 	maxProviderEnvelopeCandidates = 16
+
+	// A provider sometimes preserves the distinguishing hash prefix while
+	// shortening an opaque bundle reference. Only a sufficiently long prefix
+	// that resolves to exactly one supplied ID can be restored locally.
+	minUniqueBundleReferencePrefixBytes = 12
 )
 
 // AnchorFit describes how closely one exact source window answers a fixed
@@ -275,6 +280,19 @@ func DecodeBriefShapeProposal(raw []byte) (BriefShapeProposal, error) {
 	if err != nil {
 		return BriefShapeProposal{}, err
 	}
+	// Domain terms are optional editorial context. Keep malformed terms local
+	// instead of discarding an otherwise complete, supported repository brief.
+	validTerms := make([]BriefDomainTerm, 0, min(len(domainTerms), 8))
+	for _, term := range domainTerms {
+		if len(validTerms) == 8 {
+			break
+		}
+		if !validText(term.Term, 128, true) || !validText(term.Meaning, 512, true) ||
+			len(term.SupportIDs) == 0 || !allOpaque(term.SupportIDs) {
+			continue
+		}
+		validTerms = append(validTerms, term)
+	}
 	proposal := BriefShapeProposal{
 		Version:        response.Version,
 		RepositoryType: response.RepositoryType,
@@ -284,7 +302,7 @@ func DecodeBriefShapeProposal(raw []byte) (BriefShapeProposal, error) {
 			MainInput:             response.Brief.MainInput,
 			CentralResponsibility: response.Brief.CentralResponsibility,
 			ObservableResult:      response.Brief.ObservableResult,
-			DomainTerms:           domainTerms,
+			DomainTerms:           validTerms,
 		},
 		ShapeAreaIDs: response.ShapeAreaIDs,
 	}
@@ -707,6 +725,110 @@ func NormalizeDirectionProposal(proposal DirectionProposal) (DirectionProposal, 
 		seen[derivedID] = struct{}{}
 	}
 	return proposal, nil
+}
+
+// ResolveDirectionProposalReferences restores uniquely identifiable shortened
+// bundle references before source review. It never guesses: an unknown, short,
+// or ambiguous prefix remains invalid.
+func ResolveDirectionProposalReferences(
+	bundle Bundle,
+	proposal DirectionProposal,
+) (DirectionProposal, error) {
+	bundle = canonicalBundle(bundle)
+	if err := bundle.Validate(); err != nil {
+		return DirectionProposal{}, err
+	}
+	if err := validateDirectionProposalBounds(proposal); err != nil {
+		return DirectionProposal{}, err
+	}
+	anchorIDs := make([]string, 0, len(bundle.Anchors))
+	for _, anchor := range bundle.Anchors {
+		anchorIDs = append(anchorIDs, anchor.ID)
+	}
+	documentIDs := make([]string, 0, len(bundle.Documents))
+	for _, document := range bundle.Documents {
+		documentIDs = append(documentIDs, document.ID)
+	}
+	areaIDs := make([]string, 0, len(bundle.Areas))
+	for _, area := range bundle.Areas {
+		areaIDs = append(areaIDs, area.ID)
+	}
+	mechanismIDs := make([]string, 0, len(bundle.Mechanisms))
+	for _, mechanism := range bundle.Mechanisms {
+		mechanismIDs = append(mechanismIDs, mechanism.ID)
+	}
+
+	proposal.Directions = append([]DirectionCandidate(nil), proposal.Directions...)
+	for directionIndex := range proposal.Directions {
+		direction := &proposal.Directions[directionIndex]
+		direction.DirectionID = ""
+		direction.AnchorIDs = append([]string(nil), direction.AnchorIDs...)
+		direction.DocumentIDs = append([]string(nil), direction.DocumentIDs...)
+		direction.AreaIDs = append([]string(nil), direction.AreaIDs...)
+		direction.ReadingAnchors = append([]ReadingAnchor(nil), direction.ReadingAnchors...)
+
+		for index, reference := range direction.AnchorIDs {
+			resolved, err := resolveUniqueBundleReference(reference, anchorIDs)
+			if err != nil {
+				return DirectionProposal{}, fmt.Errorf("study map: anchor reference: %w", err)
+			}
+			direction.AnchorIDs[index] = resolved
+		}
+		for index, reading := range direction.ReadingAnchors {
+			resolved, err := resolveUniqueBundleReference(reading.AnchorID, anchorIDs)
+			if err != nil {
+				return DirectionProposal{}, fmt.Errorf("study map: reading anchor reference: %w", err)
+			}
+			direction.ReadingAnchors[index].AnchorID = resolved
+		}
+		for index, reference := range direction.DocumentIDs {
+			resolved, err := resolveUniqueBundleReference(reference, documentIDs)
+			if err != nil {
+				return DirectionProposal{}, fmt.Errorf("study map: document reference: %w", err)
+			}
+			direction.DocumentIDs[index] = resolved
+		}
+		for index, reference := range direction.AreaIDs {
+			resolved, err := resolveUniqueBundleReference(reference, areaIDs)
+			if err != nil {
+				return DirectionProposal{}, fmt.Errorf("study map: area reference: %w", err)
+			}
+			direction.AreaIDs[index] = resolved
+		}
+		if direction.MechanismID != "" {
+			resolved, err := resolveUniqueBundleReference(direction.MechanismID, mechanismIDs)
+			if err != nil {
+				return DirectionProposal{}, fmt.Errorf("study map: mechanism reference: %w", err)
+			}
+			direction.MechanismID = resolved
+		}
+	}
+	return NormalizeDirectionProposal(proposal)
+}
+
+func resolveUniqueBundleReference(reference string, allowed []string) (string, error) {
+	for _, candidate := range allowed {
+		if reference == candidate {
+			return reference, nil
+		}
+	}
+	if len(reference) < minUniqueBundleReferencePrefixBytes {
+		return "", fmt.Errorf("reference %q is not exact and its prefix is too short", reference)
+	}
+	match := ""
+	for _, candidate := range allowed {
+		if !strings.HasPrefix(candidate, reference) {
+			continue
+		}
+		if match != "" {
+			return "", fmt.Errorf("reference %q has an ambiguous prefix", reference)
+		}
+		match = candidate
+	}
+	if match == "" {
+		return "", fmt.Errorf("reference %q is not supplied by the bundle", reference)
+	}
+	return match, nil
 }
 
 func DecodeReviewBundle(raw []byte) (ReviewBundle, error) {
@@ -1283,7 +1405,8 @@ func ComposeReviewedProposal(
 	if err := bundle.Validate(); err != nil {
 		return Proposal{}, ReviewReduction{}, err
 	}
-	if err := validateBriefShapeAgainstBundle(brief, bundle); err != nil {
+	brief, err := validateBriefShapeAgainstBundle(brief, bundle)
+	if err != nil {
 		return Proposal{}, ReviewReduction{}, err
 	}
 	reduction, err := ApplyReviews(bundle, directions, reviews)
@@ -1351,9 +1474,9 @@ func validateBriefShapeStructure(proposal BriefShapeProposal) error {
 	if !validRepositoryType(proposal.RepositoryType) || !completeBrief(proposal.Brief) {
 		return fmt.Errorf("study map: invalid brief and shape proposal")
 	}
-	if len(proposal.ShapeAreaIDs) < 3 || len(proposal.ShapeAreaIDs) > 7 ||
+	if len(proposal.ShapeAreaIDs) < 1 || len(proposal.ShapeAreaIDs) > 7 ||
 		len(uniqueStrings(proposal.ShapeAreaIDs)) != len(proposal.ShapeAreaIDs) {
-		return fmt.Errorf("study map: shape must contain three to seven unique areas")
+		return fmt.Errorf("study map: shape must contain one to seven unique areas")
 	}
 	for _, areaID := range proposal.ShapeAreaIDs {
 		if !validOpaque(areaID) {
@@ -1380,9 +1503,12 @@ func validateBriefShapeStructure(proposal BriefShapeProposal) error {
 	return nil
 }
 
-func validateBriefShapeAgainstBundle(proposal BriefShapeProposal, bundle Bundle) error {
+func validateBriefShapeAgainstBundle(
+	proposal BriefShapeProposal,
+	bundle Bundle,
+) (BriefShapeProposal, error) {
 	if err := validateBriefShapeStructure(proposal); err != nil {
-		return err
+		return BriefShapeProposal{}, err
 	}
 	index := newBundleIndex(bundle)
 	reduction := Reduction{}
@@ -1392,15 +1518,20 @@ func validateBriefShapeAgainstBundle(proposal BriefShapeProposal, bundle Bundle)
 	// support into an "unsupported objects" failure.
 	comparable := proposal.Brief
 	normalizeBriefSupportIDs(&comparable)
+	// Required statements remain fail-closed. Domain terms are optional: the
+	// canonical reducer may drop only the unsupported terms while preserving
+	// the supported brief and shape.
+	comparable.DomainTerms = normalized.DomainTerms
 	if len(reduction.Issues) > 0 || !briefEqual(comparable, normalized) || !completeBrief(normalized) {
-		return fmt.Errorf("study map: brief references unsupported objects")
+		return BriefShapeProposal{}, fmt.Errorf("study map: brief references unsupported objects")
 	}
+	proposal.Brief = normalized
 	for _, areaID := range proposal.ShapeAreaIDs {
 		if _, ok := index.areas[areaID]; !ok {
-			return fmt.Errorf("study map: shape references unknown area %q", areaID)
+			return BriefShapeProposal{}, fmt.Errorf("study map: shape references unknown area %q", areaID)
 		}
 	}
-	return nil
+	return proposal, nil
 }
 
 func normalizeBriefSupportIDs(brief *Brief) {

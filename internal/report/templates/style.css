@@ -34,6 +34,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-hero { background: linear-gradient(145deg, #f8fbff, #f5f3ff); border: 1px solid #cbd5e1; border-radius: 12px; padding: clamp(1.25rem, 3vw, 2rem); }
 .rm-overview-hero h2 { font-size: clamp(1.6rem, 3vw, 2.35rem); line-height: 1.15; margin: .35rem 0 .8rem; }
 .rm-overview-hero p { color: #475569; font-size: .95rem; max-width: 54rem; }
+.rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
+.rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
+.rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
 .rm-brief-lead { color: #1e293b !important; font-size: 1.05rem !important; line-height: 1.65; }
 .rm-brief-facts { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin-top: 1.25rem; }
 .rm-brief-fact { background: rgba(255,255,255,.78); border: 1px solid #dbeafe; border-radius: 8px; display: grid; gap: .3rem; padding: .75rem; }

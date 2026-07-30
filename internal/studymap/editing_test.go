@@ -170,6 +170,84 @@ func TestEditingContractsDecodeStrictIndependentArtifacts(t *testing.T) {
 	}
 }
 
+func TestBriefShapeAcceptsOneExactAreaForSmallLibrary(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	proposal := briefShapeFromLegacy(legacy)
+	proposal.ShapeAreaIDs = proposal.ShapeAreaIDs[:1]
+	decoded, err := DecodeBriefShapeProposal(mustEditingJSON(t, proposal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded.ShapeAreaIDs, proposal.ShapeAreaIDs) {
+		t.Fatalf("shape areas = %v, want %v", decoded.ShapeAreaIDs, proposal.ShapeAreaIDs)
+	}
+}
+
+func TestResolveDirectionProposalReferencesExpandsOnlyUniquePrefixes(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	raw := rawDirectionsFromLegacy(legacy)
+	direction := raw.Directions[0]
+	oldAnchorID := direction.AnchorIDs[0]
+	fullAnchorID := "fact-12345678aaaaaaaa"
+	for index := range bundle.Anchors {
+		if bundle.Anchors[index].ID == oldAnchorID {
+			bundle.Anchors[index].ID = fullAnchorID
+		}
+	}
+	direction.AnchorIDs = append([]string(nil), direction.AnchorIDs...)
+	for index := range direction.AnchorIDs {
+		if direction.AnchorIDs[index] == oldAnchorID {
+			direction.AnchorIDs[index] = fullAnchorID
+		}
+	}
+	direction.ReadingAnchors = append([]ReadingAnchor(nil), direction.ReadingAnchors...)
+	for index := range direction.ReadingAnchors {
+		if direction.ReadingAnchors[index].AnchorID == oldAnchorID {
+			direction.ReadingAnchors[index].AnchorID = fullAnchorID
+		}
+	}
+	shortAnchorID := fullAnchorID[:minUniqueBundleReferencePrefixBytes]
+	direction.AnchorIDs[0] = shortAnchorID
+	for index := range direction.ReadingAnchors {
+		if direction.ReadingAnchors[index].AnchorID == fullAnchorID {
+			direction.ReadingAnchors[index].AnchorID = shortAnchorID
+		}
+	}
+
+	resolved, err := ResolveDirectionProposalReferences(bundle, DirectionProposal{
+		Version: DirectionProposalVersion, Directions: []DirectionCandidate{direction},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resolved.Directions[0]
+	if got.AnchorIDs[0] != fullAnchorID {
+		t.Fatalf("anchor id = %q, want %q", got.AnchorIDs[0], fullAnchorID)
+	}
+	for _, reading := range got.ReadingAnchors {
+		if reading.AnchorID == shortAnchorID {
+			t.Fatalf("short reading anchor survived: %#v", reading)
+		}
+	}
+	if got.DirectionID == "" {
+		t.Fatal("resolved direction did not receive a local ID")
+	}
+
+	if _, err := resolveUniqueBundleReference(
+		"frf-12345678",
+		[]string{"frf-12345678aaaaaaaa", "frf-12345678bbbbbbbb"},
+	); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("ambiguous prefix error = %v", err)
+	}
+	if _, err := resolveUniqueBundleReference("frf-short", []string{"frf-short-and-valid"}); err == nil {
+		t.Fatal("short prefix was accepted")
+	}
+}
+
 func TestRecoverStudyProviderJSONBeforeStrictValidation(t *testing.T) {
 	t.Parallel()
 
@@ -368,7 +446,6 @@ func TestDecodeBriefShapeProposalCompatibilityFailsClosed(t *testing.T) {
 				1,
 			)),
 		},
-		{name: "invalid support", raw: mustEditingJSON(t, invalidSupport)},
 		{
 			name: "outside byte budget",
 			raw:  bytes.Repeat([]byte("x"), maxEditingArtifactBytes+1),
@@ -382,6 +459,59 @@ func TestDecodeBriefShapeProposalCompatibilityFailsClosed(t *testing.T) {
 				t.Fatal("decoder accepted invalid provider response")
 			}
 		})
+	}
+}
+
+func TestDecodeBriefShapeProposalDropsInvalidOptionalDomainTerm(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	brief := briefShapeFromLegacy(legacy)
+	brief.Brief.DomainTerms = []BriefDomainTerm{
+		{
+			Term:       "supported",
+			Meaning:    "A bounded supported term.",
+			SupportIDs: []string{brief.Brief.WhatItIs.SupportIDs[0]},
+		},
+		{
+			Term:    "unsupported",
+			Meaning: "A term without evidence.",
+		},
+	}
+	decoded, err := DecodeBriefShapeProposal(mustEditingJSON(t, brief))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Brief.DomainTerms) != 1 ||
+		decoded.Brief.DomainTerms[0].Term != "supported" {
+		t.Fatalf("domain terms = %#v", decoded.Brief.DomainTerms)
+	}
+}
+
+func TestBriefShapeValidationDropsUnsupportedOptionalDomainTerm(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	brief := briefShapeFromLegacy(legacy)
+	brief.Brief.DomainTerms = []BriefDomainTerm{
+		{
+			Term:       "supported",
+			Meaning:    "A bounded supported term.",
+			SupportIDs: []string{brief.Brief.WhatItIs.SupportIDs[0]},
+		},
+		{
+			Term:       "unknown",
+			Meaning:    "A term with a structurally valid but unknown support ID.",
+			SupportIDs: []string{"unknown-support"},
+		},
+	}
+	normalized, err := validateBriefShapeAgainstBundle(brief, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(normalized.Brief.DomainTerms) != 1 ||
+		normalized.Brief.DomainTerms[0].Term != "supported" {
+		t.Fatalf("domain terms = %#v", normalized.Brief.DomainTerms)
 	}
 }
 

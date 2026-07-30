@@ -861,6 +861,45 @@ func TestAnalyzeGroundsModularServerFromEntrypointComposition(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTreatsExampleEntrypointsAsSecondaryLibraryEvidence(t *testing.T) {
+	root := filepath.Join("testdata", "library_examples")
+	result, err := AnalyzeWithInput(DefaultOptions(root), Input{
+		RepositoryName: "library_examples",
+		Entrypoints: []EntrypointInput{
+			{
+				Package: "example.com/library-examples/example/logical", PackageDir: "example/logical", Kind: "example",
+				Anchors: []EntrypointAnchorInput{{
+					Kind: ProcessEntryAnchorGoMain, Path: "example/logical/main.go", Line: 5,
+				}},
+			},
+			{
+				Package: "example.com/library-examples/example/physical", PackageDir: "example/physical", Kind: "example",
+				Anchors: []EntrypointAnchorInput{{
+					Kind: ProcessEntryAnchorGoMain, Path: "example/physical/main.go", Line: 5,
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Grounding.RepositoryArchetype.Selected != "library_framework" {
+		t.Fatalf("archetype = %#v", result.Grounding.RepositoryArchetype)
+	}
+	if !strings.Contains(strings.Join(result.Grounding.RepositoryArchetype.Evidence, "\n"), "examples or test helpers") {
+		t.Fatalf("library evidence = %#v", result.Grounding.RepositoryArchetype.Evidence)
+	}
+	processAnchors := 0
+	for _, anchor := range result.Grounding.Anchors {
+		if anchor.Kind == "process_entry" {
+			processAnchors++
+		}
+	}
+	if processAnchors != 2 {
+		t.Fatalf("process anchors = %d, want both example entrypoints retained", processAnchors)
+	}
+}
+
 func TestDeduplicateArchitectureSymbolsNormalizesReceiverWrappers(t *testing.T) {
 	t.Parallel()
 

@@ -95,6 +95,47 @@ func TestProjectRepositoryStudyMapKeepsEditorialDirectionsCodeFirst(t *testing.T
 	}
 }
 
+func TestReadStudyPublicationStatusKeepsFailedStageExplicit(t *testing.T) {
+	t.Parallel()
+
+	statusPath := filepath.Join(t.TempDir(), studymap.StatusFile)
+	writeTestFileFullPath(t, statusPath, `{
+		"version": 1,
+		"state": "failed",
+		"failure_reason": "reviewed selection has 0 directions; need at least 3",
+		"candidates": 8,
+		"wall_ms": 170625
+	}`)
+
+	status, warning := readStudyPublicationStatus(statusPath)
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	if status == nil || status.State != "failed" || status.Candidates != 8 {
+		t.Fatalf("status = %#v", status)
+	}
+	if got := studyPublicationUserWarning(status); !strings.Contains(got, "not published") {
+		t.Fatalf("user warning = %q", got)
+	}
+}
+
+func TestReadStudyPublicationStatusRejectsFailedStageWithPublishedDirections(t *testing.T) {
+	t.Parallel()
+
+	statusPath := filepath.Join(t.TempDir(), studymap.StatusFile)
+	writeTestFileFullPath(t, statusPath, `{
+		"version": 1,
+		"state": "failed",
+		"failure_reason": "rejected",
+		"selected_directions": 3
+	}`)
+
+	status, warning := readStudyPublicationStatus(statusPath)
+	if status != nil || !strings.Contains(warning, "inconsistent outcome") {
+		t.Fatalf("status = %#v, warning = %q", status, warning)
+	}
+}
+
 func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -548,7 +589,7 @@ func TestStudyDirectionCoverageFlagsUnmatchedQuestionTerms(t *testing.T) {
 	}
 }
 
-func TestSplitStudyDirectionsForVisibleCoverageHidesWeakDirections(t *testing.T) {
+func TestSplitStudyDirectionsForVisibleCoverageKeepsReviewedDirectionsVisible(t *testing.T) {
 	t.Parallel()
 
 	directions := []StudyDirection{
@@ -559,23 +600,18 @@ func TestSplitStudyDirectionsForVisibleCoverageHidesWeakDirections(t *testing.T)
 	}
 
 	visible, hidden := splitStudyDirectionsForVisibleCoverage(directions)
-	if len(visible) != 3 || len(hidden) != 1 {
+	if len(visible) != 4 || len(hidden) != 0 {
 		t.Fatalf("visible/hidden = %d/%d", len(visible), len(hidden))
 	}
-	if hidden[0].Question != directions[3].Question ||
-		hidden[0].DebugCoverage == nil ||
-		hidden[0].DebugCoverage.UserVisible ||
-		!containsString(hidden[0].DebugCoverage.Reasons, "weak_visible_question_coverage") {
-		t.Fatalf("hidden direction = %#v", hidden[0])
-	}
 	for _, direction := range visible {
-		if direction.DebugCoverage == nil || !direction.DebugCoverage.UserVisible {
+		if direction.DebugCoverage == nil || !direction.DebugCoverage.UserVisible ||
+			containsString(direction.DebugCoverage.Reasons, "weak_visible_question_coverage") {
 			t.Fatalf("visible direction lost visibility: %#v", direction)
 		}
 	}
 }
 
-func TestSplitStudyDirectionsForVisibleCoverageKeepsMinimumFallback(t *testing.T) {
+func TestSplitStudyDirectionsForVisibleCoverageKeepsSmallSetsVisible(t *testing.T) {
 	t.Parallel()
 
 	directions := []StudyDirection{
@@ -591,7 +627,7 @@ func TestSplitStudyDirectionsForVisibleCoverageKeepsMinimumFallback(t *testing.T
 	for _, direction := range visible {
 		if direction.DebugCoverage == nil || !direction.DebugCoverage.UserVisible ||
 			containsString(direction.DebugCoverage.Reasons, "weak_visible_question_coverage") {
-			t.Fatalf("minimum fallback direction = %#v", direction)
+			t.Fatalf("visible direction = %#v", direction)
 		}
 	}
 }
