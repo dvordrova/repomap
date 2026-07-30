@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/143-unverified-path-normalization-corrective.md
+    decisions/144-python-focus-study-bridge-discriminator.md
 
 Status:
-    Decision 143 active; optional unverified-path normalization corrective authorized
+    Decision 144 active; Python focus-to-Study bridge discriminator authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 144 adds only one provider-free discriminator for the real Beets
+    failure observed after Decision 142. It must route the already recorded
+    Pyright `_get_plugin:406` focus through the existing targeted research
+    window planner and real Study bundle assembler, retain the exact
+    `plugins.py:366-445` window, publish the exact Python declaration anchor,
+    and invent no complete Mechanism. Production integration remains held
+    pending concrete review of that result.
     Decision 143 corrects one ordinary-run terminal failure where optional
     model uncertainty metadata contained the safe directory-like value
     `a/b/c/`. Because unverified paths cannot authorize navigation or establish
