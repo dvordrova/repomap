@@ -73,20 +73,13 @@ func ValidateProposal(bundle Bundle, proposal Proposal) error {
 	if err := bundle.Validate(); err != nil {
 		return err
 	}
-	if err := validateProposalShape(proposal); err != nil {
-		return err
-	}
 	candidate, exists := findCandidate(bundle, proposal.CandidateID)
 	if !exists {
 		return fmt.Errorf("guided tour: proposal references unknown candidate id %q", proposal.CandidateID)
 	}
-	if unsupported := UnsupportedBehaviorClaimCount(bundle, proposal); unsupported > 0 {
-		return fmt.Errorf(
-			"guided tour: suggested direction contains %d unsupported behavioral assertion clauses",
-			unsupported,
-		)
+	if err := validateProposalShape(proposal, proposal.Title == candidate.Name); err != nil {
+		return err
 	}
-
 	beats := make(map[string]Beat, len(candidate.Beats))
 	for _, beat := range candidate.Beats {
 		beats[beat.ID] = beat
@@ -155,9 +148,11 @@ func ValidateProposal(bundle Bundle, proposal Proposal) error {
 	return nil
 }
 
-// UnsupportedBehaviorClaimCount returns the number of unqualified behavioral
-// clauses in a suggested-direction proposal. Saved traces and unknown
-// candidates return zero because this editorial-only guard does not apply.
+// UnsupportedBehaviorClaimCount reports a diagnostic count of unqualified
+// behavioral clauses in a suggested-direction proposal. It is not publication
+// authority: suggested-direction prose is explicitly hypothetical, while
+// repository references and opaque IDs remain locally validated. Saved traces
+// and unknown candidates return zero.
 func UnsupportedBehaviorClaimCount(bundle Bundle, proposal Proposal) int {
 	candidate, exists := findCandidate(bundle, proposal.CandidateID)
 	if !exists || candidate.Kind != CandidateSuggestedDirection {
@@ -238,15 +233,21 @@ func MaterializeStory(bundle Bundle, proposal Proposal) (Story, error) {
 	return story, nil
 }
 
-func validateProposalShape(proposal Proposal) error {
+func validateProposalShape(proposal Proposal, allowRepositoryBearingTitle bool) error {
 	if proposal.Version != ProposalVersion {
 		return fmt.Errorf("guided tour: unsupported proposal version %d", proposal.Version)
 	}
 	if err := validateOpaque("proposal candidate id", proposal.CandidateID); err != nil {
 		return fmt.Errorf("guided tour: %w", err)
 	}
-	if err := validateModelProse("proposal title", proposal.Title, maxProposalTitleBytes); err != nil {
-		return err
+	if allowRepositoryBearingTitle {
+		if err := validateText("proposal title", proposal.Title, maxProposalTitleBytes, true); err != nil {
+			return err
+		}
+	} else {
+		if err := validateModelProse("proposal title", proposal.Title, maxProposalTitleBytes); err != nil {
+			return err
+		}
 	}
 	if err := validateModelProse("proposal summary", proposal.Summary, maxProposalSummaryBytes); err != nil {
 		return err

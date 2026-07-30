@@ -62,8 +62,16 @@ func TestBuildPromptUsesCanonicalBundle(t *testing.T) {
 	if !strings.HasSuffix(prompt.User, string(canonical)) {
 		t.Fatalf("BuildPrompt() does not end with canonical bundle")
 	}
-	for _, required := range []string{"candidate_id", "beat_ids", "gap_ids", "saved_trace", "trace_order"} {
-		if !strings.Contains(prompt.User, required) {
+	for _, required := range []string{
+		"candidate_id",
+		"beat_ids",
+		"gap_ids",
+		"saved_trace",
+		"trace_order",
+		"investigation hypothesis",
+		"exact supplied candidate name",
+	} {
+		if !strings.Contains(prompt.System+"\n"+prompt.User, required) {
 			t.Errorf("BuildPrompt() missing %q", required)
 		}
 	}
@@ -262,7 +270,7 @@ func TestValidateProposal(t *testing.T) {
 	}
 }
 
-func TestValidateProposalRejectsUnsupportedSuggestedDirectionBehavior(t *testing.T) {
+func TestValidateProposalTreatsSuggestedDirectionProseAsNonAuthoritative(t *testing.T) {
 	t.Parallel()
 
 	bundle := testBundle(t)
@@ -277,44 +285,45 @@ func TestValidateProposalRejectsUnsupportedSuggestedDirectionBehavior(t *testing
 	if err := ValidateProposal(bundle, proposal); err != nil {
 		t.Fatalf("safe editorial proposal error = %v", err)
 	}
+	if got := UnsupportedBehaviorClaimCount(bundle, proposal); got != 0 {
+		t.Fatalf("safe editorial claim count = %d, want 0", got)
+	}
 
 	unsafe := proposal
 	unsafe.Steps = append([]ProposedStep{}, proposal.Steps...)
 	unsafe.Steps[0].Explanation = "Execution begins here and calls the orientation layer."
-	if err := ValidateProposal(bundle, unsafe); err == nil ||
-		!strings.Contains(err.Error(), "unsupported behavioral assertion") {
-		t.Fatalf("unsafe editorial proposal error = %v", err)
+	if err := ValidateProposal(bundle, unsafe); err != nil {
+		t.Fatalf("unqualified editorial prose became publication authority: %v", err)
+	}
+	if got := UnsupportedBehaviorClaimCount(bundle, unsafe); got != 2 {
+		t.Fatalf("unqualified editorial claim count = %d, want 2", got)
 	}
 
 	mixed := proposal
 	mixed.Steps = append([]ProposedStep{}, proposal.Steps...)
 	mixed.Steps[0].Explanation = "The static evidence does not establish entry behavior and dispatches work."
-	if err := ValidateProposal(bundle, mixed); err == nil ||
-		!strings.Contains(err.Error(), "unsupported behavioral assertion") {
+	if err := ValidateProposal(bundle, mixed); err != nil {
 		t.Fatalf("mixed-negation editorial proposal error = %v", err)
 	}
 
 	causal := proposal
 	causal.Steps = append([]ProposedStep{}, proposal.Steps...)
 	causal.Steps[0].Explanation = "The static evidence does not establish entry behavior because it dispatches work."
-	if err := ValidateProposal(bundle, causal); err == nil ||
-		!strings.Contains(err.Error(), "unsupported behavioral assertion") {
+	if err := ValidateProposal(bundle, causal); err != nil {
 		t.Fatalf("causal-negation editorial proposal error = %v", err)
 	}
 
 	routed := proposal
 	routed.Steps = append([]ProposedStep{}, proposal.Steps...)
 	routed.Steps[0].Explanation = "The entry routes requests into analysis."
-	if err := ValidateProposal(bundle, routed); err == nil ||
-		!strings.Contains(err.Error(), "unsupported behavioral assertion") {
+	if err := ValidateProposal(bundle, routed); err != nil {
 		t.Fatalf("routing editorial proposal error = %v", err)
 	}
 
 	asBoundary := proposal
 	asBoundary.Steps = append([]ProposedStep{}, proposal.Steps...)
 	asBoundary.Steps[0].Explanation = "This does not call work as it dispatches another request."
-	if err := ValidateProposal(bundle, asBoundary); err == nil ||
-		!strings.Contains(err.Error(), "unsupported behavioral assertion") {
+	if err := ValidateProposal(bundle, asBoundary); err != nil {
 		t.Fatalf("as-boundary editorial proposal error = %v", err)
 	}
 
@@ -323,6 +332,48 @@ func TestValidateProposalRejectsUnsupportedSuggestedDirectionBehavior(t *testing
 	negated.Steps[0].Explanation = "The static evidence does not establish runtime calls."
 	if err := ValidateProposal(bundle, negated); err != nil {
 		t.Fatalf("explicitly negated editorial proposal error = %v", err)
+	}
+}
+
+func TestValidateProposalAllowsExactCandidateNameWithNaturalSlashOnlyAsTitle(t *testing.T) {
+	t.Parallel()
+
+	bundle := testBundle(t)
+	bundle.Candidates[0].Name = "Administrative backup/restore"
+	proposal := testProposal()
+	proposal.Title = bundle.Candidates[0].Name
+	if err := ValidateProposal(bundle, proposal); err != nil {
+		t.Fatalf("exact candidate title error = %v", err)
+	}
+	encoded, err := EncodeRecord(bundle, proposal)
+	if err != nil {
+		t.Fatalf("EncodeRecord() error = %v", err)
+	}
+	if _, err := DecodeRecord(encoded); err != nil {
+		t.Fatalf("DecodeRecord() error = %v", err)
+	}
+	if _, err := ReplayRecord(bundle, encoded); err != nil {
+		t.Fatalf("ReplayRecord() error = %v", err)
+	}
+
+	proposal.Summary = bundle.Candidates[0].Name
+	if err := ValidateProposal(bundle, proposal); err == nil ||
+		!strings.Contains(err.Error(), "path-like reference") {
+		t.Fatalf("slash summary error = %v", err)
+	}
+
+	var record Record
+	if err := json.Unmarshal(encoded, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.Proposal.Title = "cmd/server.go"
+	tampered, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplayRecord(bundle, tampered); err == nil ||
+		!strings.Contains(err.Error(), "path-like reference") {
+		t.Fatalf("ReplayRecord(path-like title) error = %v", err)
 	}
 }
 
