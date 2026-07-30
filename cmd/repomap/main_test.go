@@ -1376,12 +1376,13 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 	if !reflect.DeepEqual(withoutSearch, withSearch) {
 		t.Fatalf("--no-search changed model request plan\nwith search: %q\nwithout search: %q", withSearch, withoutSearch)
 	}
-	if len(withSearch) != 4 {
-		t.Fatalf("model request count = %d, want orientation, architecture, guided tour, and repository study map", len(withSearch))
+	if len(withSearch) != 5 {
+		t.Fatalf("model request count = %d, want orientation, architecture, two rejected guided tour attempts, and repository study map", len(withSearch))
 	}
 	wantStageMarkers := []string{
 		"senior software engineer helping orient",
 		"compact conceptual architecture landscape",
+		"optional editorial guide for one bounded repository tour",
 		"optional editorial guide for one bounded repository tour",
 		"editorial onboarding planner for one bounded repository model",
 	}

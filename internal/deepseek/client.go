@@ -268,6 +268,12 @@ const maxProviderErrorBytes = 8 * 1024
 
 const maxProviderResponseBytes = 16 * 1024 * 1024
 
+var (
+	errJSONCompletionInvalid     = errors.New("llm response content is not valid JSON")
+	errJSONCompletionTruncated   = errors.New("llm JSON completion was truncated")
+	errResponseEnvelopeMalformed = errors.New("llm response envelope is malformed")
+)
+
 func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 	return chatRequest{
 		Model: c.Model,
@@ -670,7 +676,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return chatCompletion{}, false, fmt.Errorf("parse llm response envelope: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
 	}
 	completion := chatCompletion{
 		InputTokens:           parsed.Usage.PromptTokens,
@@ -699,6 +705,13 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		} else if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 			details = append(details, "reasoning_content_present")
 		}
+		if choice.FinishReason == "length" {
+			return completion, false, fmt.Errorf(
+				"llm response content is empty: %w (%s)",
+				errJSONCompletionTruncated,
+				strings.Join(details, ", "),
+			)
+		}
 		if len(details) > 0 {
 			return completion, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
 		}
@@ -708,7 +721,15 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	if validateJSON {
 		var validate json.RawMessage
 		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			return completion, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
+			if choice.FinishReason == "length" {
+				return completion, false, fmt.Errorf(
+					"%w (finish_reason=length, completion_tokens=%d): %v",
+					errJSONCompletionTruncated,
+					parsed.Usage.CompletionTokens,
+					err,
+				)
+			}
+			return completion, false, fmt.Errorf("%w: %v", errJSONCompletionInvalid, err)
 		}
 	}
 

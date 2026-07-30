@@ -13,8 +13,9 @@ import (
 )
 
 type guidedTourEditorStub struct {
-	response []byte
-	calls    int
+	response  []byte
+	responses [][]byte
+	calls     int
 }
 
 func (s *guidedTourEditorStub) GuidedTourPromptJSON(prompt guidedtour.Prompt) ([]byte, error) {
@@ -26,8 +27,12 @@ func (s *guidedTourEditorStub) EditGuidedTourMeasured(
 	_ guidedtour.Prompt,
 ) (modelresearch.ProviderResult, error) {
 	s.calls++
+	response := s.response
+	if len(s.responses) >= s.calls {
+		response = s.responses[s.calls-1]
+	}
 	return modelresearch.ProviderResult{
-		Content: s.response, InputTokens: 120, OutputTokens: 80, Attempts: 1,
+		Content: response, InputTokens: 120, OutputTokens: 80, Attempts: 1,
 	}, nil
 }
 
@@ -116,6 +121,39 @@ func TestEnsureGuidedTourRejectsInventedReferenceWithoutSavingIt(t *testing.T) {
 	}
 	if len(cacheFiles) != 0 {
 		t.Fatalf("invalid proposal populated cache: %v", cacheFiles)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one bounded validation retry", provider.calls)
+	}
+}
+
+func TestEnsureGuidedTourRetriesRejectedProposalAndPublishesOnlyValidResult(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	provider := &guidedTourEditorStub{responses: [][]byte{
+		guidedTourTestProposal(t, bundle, true),
+		guidedTourTestProposal(t, bundle, false),
+	}}
+
+	outcome, err := ensureGuidedTour(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 || outcome.RetryCount != 1 || outcome.ValidationState != "accepted" {
+		t.Fatalf("provider calls = %d, outcome = %#v", provider.calls, outcome)
+	}
+	saved, err := os.ReadFile(filepath.Join(runDir, report.GuidedStoryFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	story, err := guidedtour.ReplayRecord(bundle, saved)
+	if err != nil {
+		t.Fatalf("saved retry result is not valid: %v", err)
+	}
+	if story.CandidateID != bundle.Candidates[0].ID {
+		t.Fatalf("story = %#v", story)
 	}
 }
 

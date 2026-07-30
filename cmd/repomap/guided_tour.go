@@ -37,6 +37,7 @@ type guidedTourOutcome struct {
 	OutputTokens          int
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
+	RetryCount            int
 	UnsupportedClaims     int
 	LatencyMillis         int64
 	WallMillis            int64
@@ -219,6 +220,7 @@ func ensureGuidedTourWithOptions(
 			outcome.OutputTokens = cached.OutputTokens
 			outcome.PromptCacheHitTokens = cached.PromptCacheHitTokens
 			outcome.PromptCacheMissTokens = cached.PromptCacheMissTokens
+			outcome.RetryCount = cached.RetryCount
 			outcome.UnsupportedClaims = countGuidedTourProposalUnsupportedClaims(bundle, cached.Content)
 			outcome.LatencyMillis = cached.LatencyMillis
 			if err := saveGuidedTourRecordTo(bundle, cached.Content, runDir, options.outputFile); err != nil {
@@ -249,14 +251,38 @@ func ensureGuidedTourWithOptions(
 	outcome.SemanticCalls = 1
 	outcome.AttemptedBytes = len(request)
 	providerStarted := time.Now()
-	providerResult, callErr := provider.EditGuidedTourMeasured(ctx, prompt)
+	var (
+		providerResult modelresearch.ProviderResult
+		callErr        error
+		validationErr  error
+	)
+	for proposalAttempt := 1; proposalAttempt <= 2; proposalAttempt++ {
+		current, currentCallErr := provider.EditGuidedTourMeasured(ctx, prompt)
+		providerResult.Content = current.Content
+		providerResult.Attempts += max(1, current.Attempts)
+		providerResult.InputTokens += current.InputTokens
+		providerResult.OutputTokens += current.OutputTokens
+		providerResult.PromptCacheHitTokens += current.PromptCacheHitTokens
+		providerResult.PromptCacheMissTokens += current.PromptCacheMissTokens
+		outcome.UnsupportedClaims += countGuidedTourProposalUnsupportedClaims(bundle, current.Content)
+		if currentCallErr != nil {
+			callErr = currentCallErr
+			break
+		}
+		validationErr = validateGuidedTourResponse(bundle, current.Content)
+		if validationErr == nil || proposalAttempt == 2 {
+			break
+		}
+	}
 	outcome.LatencyMillis = time.Since(providerStarted).Milliseconds()
 	outcome.ResponseBytes = len(providerResult.Content)
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
 	outcome.PromptCacheHitTokens = providerResult.PromptCacheHitTokens
 	outcome.PromptCacheMissTokens = providerResult.PromptCacheMissTokens
-	outcome.UnsupportedClaims = countGuidedTourProposalUnsupportedClaims(bundle, providerResult.Content)
+	if providerResult.Attempts > 1 {
+		outcome.RetryCount = providerResult.Attempts - 1
+	}
 	if err := ctx.Err(); err != nil {
 		return outcome, err
 	}
@@ -270,9 +296,10 @@ func ensureGuidedTourWithOptions(
 		}
 		return outcome, err
 	}
-	if err := validateGuidedTourResponse(bundle, providerResult.Content); err != nil {
+	if validationErr != nil {
 		outcome.ValidationState = "rejected"
-		validationErr := fmt.Errorf("guided tour: validate response: %w", err)
+		validationErr = fmt.Errorf("guided tour: validate response after %d provider attempt(s): %w",
+			providerResult.Attempts, validationErr)
 		if !options.independentExperiment {
 			if recordErr := recordGuidedTourResearch(runDir, outcome, policy, usage); recordErr != nil {
 				return outcome, errors.Join(validationErr, recordErr)
@@ -287,6 +314,7 @@ func ensureGuidedTourWithOptions(
 			PromptCacheHitTokens:  providerResult.PromptCacheHitTokens,
 			PromptCacheMissTokens: providerResult.PromptCacheMissTokens,
 			LatencyMillis:         outcome.LatencyMillis,
+			RetryCount:            outcome.RetryCount,
 		}); err != nil {
 			return outcome, fmt.Errorf("guided tour: save validated cache: %w", err)
 		}
@@ -360,7 +388,8 @@ func recordGuidedTourResearch(
 		InputTokens: outcome.InputTokens, OutputTokens: outcome.OutputTokens,
 		PromptCacheHitTokens:  outcome.PromptCacheHitTokens,
 		PromptCacheMissTokens: outcome.PromptCacheMissTokens,
-		LatencyMillis:         outcome.LatencyMillis, CacheHit: outcome.Cached,
+		LatencyMillis:         outcome.LatencyMillis, RetryCount: outcome.RetryCount,
+		CacheHit: outcome.Cached,
 	}
 	if outcome.SemanticCalls > 0 {
 		state.GuidedTour.SemanticCalls = outcome.SemanticCalls

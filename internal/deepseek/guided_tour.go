@@ -3,20 +3,32 @@ package deepseek
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
-const guidedTourFanInMinMaxTokens = 12_000
+const guidedTourGlobalMinMaxTokens = 12_000
+
+const guidedTourFanInMinMaxTokens = guidedTourGlobalMinMaxTokens
 
 // GuidedTourPromptJSON returns the exact OpenAI-compatible request used by
 // EditGuidedTourMeasured without making a provider call.
 func (c *Client) GuidedTourPromptJSON(prompt guidedtour.Prompt) ([]byte, error) {
-	if err := validateGuidedTourPrompt(prompt); err != nil {
+	request, err := c.guidedTourRequest(prompt)
+	if err != nil {
 		return nil, err
+	}
+	return json.Marshal(request)
+}
+
+func (c *Client) guidedTourRequest(prompt guidedtour.Prompt) (chatRequest, error) {
+	if err := validateGuidedTourPrompt(prompt); err != nil {
+		return chatRequest{}, err
 	}
 	request := c.flowExplainRequest(prompt.User, prompt.System, true)
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
@@ -29,11 +41,12 @@ func (c *Client) GuidedTourPromptJSON(prompt guidedtour.Prompt) ([]byte, error) 
 		} else {
 			request.ReasoningEffort = "max"
 		}
-		if prompt.Version == guidedtour.FanInPromptVersion && request.MaxTokens < guidedTourFanInMinMaxTokens {
-			request.MaxTokens = guidedTourFanInMinMaxTokens
+		if (prompt.Version == guidedtour.PromptVersion || prompt.Version == guidedtour.FanInPromptVersion) &&
+			request.MaxTokens < guidedTourGlobalMinMaxTokens {
+			request.MaxTokens = guidedTourGlobalMinMaxTokens
 		}
 	}
-	return json.Marshal(request)
+	return request, nil
 }
 
 // EditGuidedTourMeasured asks for one bounded guided-tour semantic response.
@@ -44,25 +57,54 @@ func (c *Client) EditGuidedTourMeasured(
 ) (modelresearch.ProviderResult, error) {
 	stopWaiting := c.startWaitProgress(ctx, "guided tour editing")
 	defer stopWaiting()
-	body, err := c.GuidedTourPromptJSON(prompt)
+	request, err := c.guidedTourRequest(prompt)
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
 	}
-	result, _, err := doChatMeasured(
-		ctx,
-		c.HTTPClient,
-		c.Endpoint,
-		c.APIKey,
-		c.Auth,
-		body,
-		false,
-	)
-	return modelresearch.ProviderResult{
-		Content: result.Content, Attempts: 1,
-		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-		PromptCacheHitTokens:  result.PromptCacheHitTokens,
-		PromptCacheMissTokens: result.PromptCacheMissTokens,
-	}, err
+	var measured modelresearch.ProviderResult
+	for attempt := 1; attempt <= 2; attempt++ {
+		body, marshalErr := json.Marshal(request)
+		if marshalErr != nil {
+			return measured, fmt.Errorf("llm: encode guided tour request: %w", marshalErr)
+		}
+		result, retryableTransport, callErr := doChatMeasured(
+			ctx,
+			c.HTTPClient,
+			c.Endpoint,
+			c.APIKey,
+			c.Auth,
+			body,
+			true,
+		)
+		measured.Attempts = attempt
+		measured.InputTokens += result.InputTokens
+		measured.OutputTokens += result.OutputTokens
+		measured.PromptCacheHitTokens += result.PromptCacheHitTokens
+		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
+		if callErr == nil {
+			measured.Content = result.Content
+			return measured, nil
+		}
+		retryableResponse := errors.Is(callErr, errJSONCompletionTruncated) ||
+			errors.Is(callErr, errJSONCompletionInvalid) ||
+			errors.Is(callErr, errResponseEnvelopeMalformed)
+		if (!retryableTransport && !retryableResponse) || attempt == 2 {
+			return measured, callErr
+		}
+		if errors.Is(callErr, errJSONCompletionTruncated) {
+			maxInt := int(^uint(0) >> 1)
+			if request.MaxTokens > maxInt/2 {
+				return measured, callErr
+			}
+			request.MaxTokens *= 2
+		}
+		select {
+		case <-ctx.Done():
+			return measured, ctx.Err()
+		case <-time.After(backoffDuration(attempt)):
+		}
+	}
+	return measured, fmt.Errorf("llm: guided tour retry loop ended unexpectedly")
 }
 
 func validateGuidedTourPrompt(prompt guidedtour.Prompt) error {

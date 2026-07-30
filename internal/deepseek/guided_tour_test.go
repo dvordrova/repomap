@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -86,7 +87,7 @@ func TestGuidedTourPromptJSONUsesPurposeSpecificDeepSeekThinkingEffort(t *testin
 		wantEffort string
 		wantTokens int
 	}{
-		{name: "monolithic global planning", version: guidedtour.PromptVersion, wantEffort: "max", wantTokens: 6000},
+		{name: "monolithic global planning", version: guidedtour.PromptVersion, wantEffort: "max", wantTokens: guidedTourGlobalMinMaxTokens},
 		{name: "bounded semantic leaf", version: guidedtour.LeafPromptVersion, wantEffort: "high", wantTokens: 6000},
 		{name: "fan-in global planning", version: guidedtour.FanInPromptVersion, wantEffort: "max", wantTokens: guidedTourFanInMinMaxTokens},
 	}
@@ -202,9 +203,120 @@ func TestEditGuidedTourMeasuredPreservesUsageWhenThinkingExhaustsContent(t *test
 	if err == nil || !strings.Contains(err.Error(), "content is empty") {
 		t.Fatalf("EditGuidedTourMeasured() error = %v", err)
 	}
-	if len(result.Content) != 0 || result.Attempts != 1 ||
-		result.InputTokens != 120 || result.OutputTokens != 6000 ||
-		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 {
+	if len(result.Content) != 0 || result.Attempts != 2 ||
+		result.InputTokens != 240 || result.OutputTokens != 12000 ||
+		result.PromptCacheHitTokens != 192 || result.PromptCacheMissTokens != 48 {
 		t.Fatalf("EditGuidedTourMeasured() failed-call metrics = %#v", result)
+	}
+}
+
+func TestEditGuidedTourMeasuredRetriesMalformedJSONOnce(t *testing.T) {
+	t.Parallel()
+
+	maxTokens := make([]int, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		maxTokens = append(maxTokens, request.MaxTokens)
+		w.Header().Set("Content-Type", "application/json")
+		content := `{"version":1`
+		if len(maxTokens) == 2 {
+			content = `{"version":1}`
+		}
+		encodedContent, err := json.Marshal(content)
+		if err != nil {
+			t.Errorf("encode content: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = fmt.Fprintf(
+			w,
+			`{"choices":[{"finish_reason":"stop","message":{"content":%s}}],"usage":{}}`,
+			encodedContent,
+		)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   server.URL,
+		Auth:       authNone,
+	}
+	result, err := client.EditGuidedTourMeasured(context.Background(), guidedtour.Prompt{
+		Version: guidedtour.PromptVersion,
+		System:  "return valid JSON",
+		User:    "bounded guided-tour task",
+	})
+	if err != nil {
+		t.Fatalf("EditGuidedTourMeasured() error = %v", err)
+	}
+	if string(result.Content) != `{"version":1}` || result.Attempts != 2 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(maxTokens) != 2 || maxTokens[0] != 6000 || maxTokens[1] != 6000 {
+		t.Fatalf("max_tokens by attempt = %v, want [6000 6000]", maxTokens)
+	}
+}
+
+func TestEditGuidedTourMeasuredRetriesTruncatedJSONWithMoreHeadroom(t *testing.T) {
+	t.Parallel()
+
+	maxTokens := make([]int, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		maxTokens = append(maxTokens, request.MaxTokens)
+		w.Header().Set("Content-Type", "application/json")
+		if len(maxTokens) == 1 {
+			_, _ = io.WriteString(w, `{
+				"choices":[{
+					"finish_reason":"length",
+					"message":{"content":"{\"version\":1"}
+				}],
+				"usage":{"prompt_tokens":120,"completion_tokens":6000}
+			}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{
+			"choices":[{
+				"finish_reason":"stop",
+				"message":{"content":"{\"version\":1}"}
+			}],
+			"usage":{"prompt_tokens":120,"completion_tokens":10}
+		}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   server.URL,
+		Auth:       authNone,
+	}
+	result, err := client.EditGuidedTourMeasured(context.Background(), guidedtour.Prompt{
+		Version: guidedtour.PromptVersion,
+		System:  "return valid JSON",
+		User:    "bounded guided-tour task",
+	})
+	if err != nil {
+		t.Fatalf("EditGuidedTourMeasured() error = %v", err)
+	}
+	if string(result.Content) != `{"version":1}` || result.Attempts != 2 ||
+		result.InputTokens != 240 || result.OutputTokens != 6010 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(maxTokens) != 2 || maxTokens[0] != 6000 || maxTokens[1] != 12000 {
+		t.Fatalf("max_tokens by attempt = %v, want [6000 12000]", maxTokens)
 	}
 }

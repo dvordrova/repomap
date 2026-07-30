@@ -682,11 +682,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			} else {
 				fmt.Fprintf(
 					deps.stderr,
-					"repomap: guided tour accepted %d response bytes from a %d-byte request in %d ms (%s)\n",
+					"repomap: guided tour accepted %d response bytes from a %d-byte request in %d ms (%s; %d provider attempt(s))\n",
 					outcome.ResponseBytes,
 					outcome.RequestBytes,
 					outcome.LatencyMillis,
 					formatTokenUsage(outcome.InputTokens, outcome.OutputTokens),
+					outcome.RetryCount+1,
 				)
 			}
 		}
@@ -1295,7 +1296,12 @@ func runGuidedTour(runDir string, stderr io.Writer) error {
 	if outcome.Cached {
 		fmt.Fprintf(stderr, "repomap: reused cached guided tour (%d response bytes)\n", outcome.ResponseBytes)
 	} else {
-		fmt.Fprintf(stderr, "repomap: guided tour accepted in %d ms\n", outcome.LatencyMillis)
+		fmt.Fprintf(
+			stderr,
+			"repomap: guided tour accepted in %d ms (%d provider attempt(s))\n",
+			outcome.LatencyMillis,
+			outcome.RetryCount+1,
+		)
 	}
 	fmt.Printf("Report: %s/report.html\n", absDir)
 	return nil
