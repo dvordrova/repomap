@@ -80,6 +80,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
 const translate = sandbox.window.__REPOMAP_WORKSPACE_TEST__.translateUIString;
 process.stdout.write(JSON.stringify([
   translate("What to study"),
+  translate("Purpose"),
   translate("Start with runServer →"),
   translate("cli/cmd/run.go · runServer"),
   translate("NATS JetStream handler"),
@@ -104,6 +105,7 @@ process.stdout.write(JSON.stringify([
 	}
 	want := []string{
 		"Что изучать",
+		"Назначение",
 		"Начать с runServer →",
 		"cli/cmd/run.go · runServer",
 		"NATS JetStream handler",
