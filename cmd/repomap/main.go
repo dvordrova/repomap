@@ -341,21 +341,23 @@ func writeProgress(writer io.Writer, event orient.ProgressEvent) {
 		if event.Cached {
 			fmt.Fprintf(
 				writer,
-				"repomap: reused cached orientation response of %d bytes (original call: %d ms, %s); validated %d candidate direction(s)\n",
+				"repomap: reused cached orientation response of %d bytes (original call: %d ms, %s); %d candidate direction(s) accepted, %d rejected\n",
 				event.ResponseBytes,
 				event.LatencyMillis,
 				formatTokenUsage(event.InputTokens, event.OutputTokens),
 				event.CandidateCount,
+				event.RejectedCount,
 			)
 			break
 		}
 		fmt.Fprintf(
 			writer,
-			"repomap: orientation received %d bytes in %d ms (%s); validated %d candidate direction(s)\n",
+			"repomap: orientation received %d bytes in %d ms (%s); %d candidate direction(s) accepted, %d rejected\n",
 			event.ResponseBytes,
 			event.LatencyMillis,
 			formatTokenUsage(event.InputTokens, event.OutputTokens),
 			event.CandidateCount,
+			event.RejectedCount,
 		)
 	case orient.ProgressResearchPrepared:
 		fmt.Fprintf(
@@ -700,9 +702,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					time.Since(guidedStarted).Milliseconds(),
 				)
 			} else if outcome.Skipped {
-				// No saved flow or direction currently satisfies the Guided
-				// Tour publication contract. This is an expected no-call
-				// presentation outcome, not a product warning.
+				fmt.Fprintln(
+					deps.stderr,
+					"repomap: decision guided tour: published=0 provider_calls=0 reason=no_eligible_candidate",
+				)
 			} else if outcome.Cached {
 				fmt.Fprintf(
 					deps.stderr,
@@ -783,6 +786,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			return fmt.Errorf("generate authorized browser report: %w", generateErr)
 		}
 		fmt.Fprintf(deps.stderr, "repomap: generated authorized report in %d ms\n", time.Since(reportStarted).Milliseconds())
+		if showProgress {
+			authorityMode := "local"
+			if gitLabURL != "" {
+				authorityMode = "gitlab_static"
+			}
+			publishedData := readPublishedReportData(runDir, reportData)
+			writePublicationTrace(deps.stderr, runDir, publishedData, *noCache, authorityMode, *flows)
+		}
 		reportPath = filepath.Join(runDir, "report.html")
 		fmt.Fprintf(deps.stderr, "Report: %s\n", reportPath)
 		if gitLabURL != "" {

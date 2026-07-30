@@ -3239,18 +3239,19 @@
     if (source) actions.push({ kind: "source", value: source });
    }
    if (typeof this.options.openStudyDirection === "function") {
-    array(context.studies).forEach((study) => {
-     if (actions.length >= 3 || !study || !text(study.id) || !text(study.question)) return;
+    array(context.studies).slice(0, 3).forEach((study) => {
+     if (!study || !text(study.id) || !text(study.question)) return;
      actions.push({ kind: "study", value: study });
     });
    }
-   return actions.slice(0, 3);
+   return actions;
   }
 
   userComponentHasInspector(component) {
    const context = this.userComponentContext(component);
    return !!(context && (
     this.userComponentActions(component).length > 0 ||
+    array(context.surface_starts).length > 0 ||
     array(context.package_paths).length > 0
    ));
   }
@@ -3269,7 +3270,16 @@
 
    if (array(context.package_paths).length > 0) {
     const packages = this.inspectorSection("Package");
-    array(context.package_paths).slice(0, 2).forEach((packagePath) => {
+    const packageTargets = new Map(array(context.package_targets).map((target) => [text(target && target.path), target]));
+    array(context.package_paths).forEach((packagePath) => {
+     const target = packageTargets.get(text(packagePath));
+     if (target && target.actionable && locationLabel(target.location) && typeof this.options.openSourceLocation === "function") {
+      const button = element("button", "rm-arch__compact-package rm-arch__compact-package-action", packagePath);
+      button.type = "button";
+      this.listen(button, "click", () => this.options.openSourceLocation(target.location));
+      packages.appendChild(button);
+      return;
+     }
      packages.appendChild(element("code", "rm-arch__compact-package", packagePath));
     });
     if (Number(context.file_count) > 0) {
@@ -3279,6 +3289,28 @@
       context.file_count + " repository file" + (Number(context.file_count) === 1 ? "" : "s")
      ));
     }
+   }
+
+   const surfaceStarts = array(context.surface_starts).filter((start) => (
+    start && locationLabel(start.location)
+   ));
+   if (surfaceStarts.length > 0) {
+    const surfaceSection = this.inspectorSection("Launch points");
+    surfaceStarts.forEach((start) => {
+     if (!start.actionable || typeof this.options.openSourceLocation !== "function") {
+      const reference = element("div", "rm-arch__compact-reference");
+      reference.appendChild(element("strong", null, start.label || "Runtime surface"));
+      reference.appendChild(element("span", null, locationLabel(start.location)));
+      surfaceSection.appendChild(reference);
+      return;
+     }
+     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+     button.type = "button";
+     button.appendChild(element("strong", null, start.label || "Open launch point"));
+     button.appendChild(element("span", null, locationLabel(start.location)));
+     this.listen(button, "click", () => this.options.openSourceLocation(start.location));
+     surfaceSection.appendChild(button);
+    });
    }
 
    const sourceActions = actions.filter((action) => action.kind === "source");

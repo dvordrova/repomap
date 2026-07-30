@@ -1553,6 +1553,25 @@
  overflow-wrap: anywhere;
 }
 
+.rm-arch__compact-package-action {
+ background: none;
+ border: 0;
+ cursor: pointer;
+ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+ padding: 0;
+ text-align: left;
+ text-decoration: underline;
+ text-decoration-color: #bfdbfe;
+ text-underline-offset: 3px;
+ width: 100%;
+}
+
+.rm-arch__compact-package-action:hover,
+.rm-arch__compact-package-action:focus-visible {
+ color: var(--rm-arch-accent);
+ text-decoration-color: currentColor;
+}
+
 .rm-arch__compact-package + .rm-arch__compact-package {
  margin-top: 6px;
 }
@@ -1561,6 +1580,24 @@
  color: var(--rm-arch-muted);
  font-size: .7rem;
  margin: 7px 0 0;
+}
+
+.rm-arch__compact-reference {
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 9px;
+ display: grid;
+ gap: 3px;
+ padding: 9px 10px;
+}
+
+.rm-arch__compact-reference + .rm-arch__compact-reference {
+ margin-top: 7px;
+}
+
+.rm-arch__compact-reference span {
+ color: var(--rm-arch-muted);
+ font-size: .72rem;
+ overflow-wrap: anywhere;
 }
 
 .rm-arch__compact-action {

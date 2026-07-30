@@ -89,7 +89,7 @@ func TestWriteProgressShowsWaitsAndProviderMeasurements(t *testing.T) {
 		{
 			Stage: orient.ProgressOrientationDone, ResponseBytes: 4096,
 			LatencyMillis: 12_500, InputTokens: 900, OutputTokens: 120,
-			CandidateCount: 3, Cached: true,
+			CandidateCount: 3, RejectedCount: 1, Cached: true,
 		},
 		{
 			Stage: orient.ProgressResearchDone, Activity: "completed",
@@ -107,7 +107,7 @@ func TestWriteProgressShowsWaitsAndProviderMeasurements(t *testing.T) {
 		"surface discovery phase ssa_build completed in 12500 ms (120/120)",
 		"orientation from fixture-model still running after 10s (Ctrl-C to cancel)",
 		"reused cached orientation response of 4096 bytes (original call: 12500 ms, 900 input / 120 output tokens)",
-		"validated 3 candidate direction(s)",
+		"3 candidate direction(s) accepted, 1 rejected",
 		"targeted research completed: received 2048 bytes from a 8192-byte request",
 		"2 validated, 1 rejected, 2 new grounded fact(s)",
 	} {
@@ -314,7 +314,7 @@ func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
 		"repomap: repository facts ready: ",
 		"repomap: compact local context ",
 		fmt.Sprintf("repomap: prepared %d-byte orientation request for deepseek-v4-flash", len(requestBody)),
-		"validated 1 candidate direction(s)",
+		"1 candidate direction(s) accepted, 0 rejected",
 		"Report: ",
 	} {
 		if !strings.Contains(stderr.String(), want) {
