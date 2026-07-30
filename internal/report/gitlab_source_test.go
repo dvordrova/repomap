@@ -78,6 +78,89 @@ func TestNormalizeGitLabRepositoryURLRejectsUnsafeOrIncompleteURLs(t *testing.T)
 	}
 }
 
+func TestResolveGitLabRepositoryURLInfersProjectFromRemoteIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		raw            string
+		remoteIdentity string
+		want           string
+	}{
+		{
+			name:           "host only",
+			raw:            "https://gitlab.example.test",
+			remoteIdentity: "gitlab.example.test/team/project",
+			want:           "https://gitlab.example.test/team/project",
+		},
+		{
+			name:           "host only with web port and subgroup",
+			raw:            "https://gitlab.example.test:8443/",
+			remoteIdentity: "gitlab.example.test/platform/services/project",
+			want:           "https://gitlab.example.test:8443/platform/services/project",
+		},
+		{
+			name:           "complete URL does not need remote",
+			raw:            "https://gitlab.example.test/other/project.git",
+			remoteIdentity: "",
+			want:           "https://gitlab.example.test/other/project",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ResolveGitLabRepositoryURL(test.raw, test.remoteIdentity)
+			if err != nil {
+				t.Fatalf("ResolveGitLabRepositoryURL(%q): %v", test.raw, err)
+			}
+			if got != test.want {
+				t.Fatalf("ResolveGitLabRepositoryURL(%q) = %q, want %q", test.raw, got, test.want)
+			}
+		})
+	}
+}
+
+func TestResolveGitLabRepositoryURLRejectsMissingOrMismatchedRemote(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name           string
+		remoteIdentity string
+		want           string
+	}{
+		{name: "missing", want: "repository-local origin remote"},
+		{
+			name:           "different host",
+			remoteIdentity: "github.com/team/project",
+			want:           "does not match repository remote host",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ResolveGitLabRepositoryURL("https://gitlab.example.test", test.remoteIdentity)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ResolveGitLabRepositoryURL() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestResolveGitLabRepositoryURLErrorDoesNotEchoRemoteCredentials(t *testing.T) {
+	t.Parallel()
+
+	const credential = "secret-token"
+	_, err := ResolveGitLabRepositoryURL(
+		"https://gitlab.example.test",
+		credential+"@attacker.example/team/project",
+	)
+	if err == nil {
+		t.Fatal("ResolveGitLabRepositoryURL() unexpectedly accepted unsafe remote identity")
+	}
+	if strings.Contains(err.Error(), credential) || strings.Contains(err.Error(), "attacker.example") {
+		t.Fatalf("ResolveGitLabRepositoryURL() echoed remote identity: %v", err)
+	}
+}
+
 func TestNewGitLabSourceLinksValidatesRevisionAndPathPrefix(t *testing.T) {
 	t.Parallel()
 
@@ -114,7 +197,24 @@ func TestNewGitLabSourceLinksValidatesRevisionAndPathPrefix(t *testing.T) {
 	}
 }
 
-func TestGenerateAuthorizedGitLabRejectsDirtyOrNonFreshAuthority(t *testing.T) {
+func TestGitLabSourceLinksAllowsGlobalDirtyMarkerWithoutOpenableDirtyPaths(t *testing.T) {
+	t.Parallel()
+
+	links, err := newGitLabSourceLinks(
+		"https://gitlab.example.test/team/project",
+		strings.Repeat("a", 40),
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	links.WorkingTreeDirty = true
+	if err := links.validate(); err != nil {
+		t.Fatalf("global dirty marker without openable dirty paths rejected: %v", err)
+	}
+}
+
+func TestGenerateAuthorizedGitLabAcceptsStableDirtyAuthorityAndRejectsNonFresh(t *testing.T) {
 	repository := newRunManifestRepository(t)
 	writeTestFile(t, repository, "batch.go", "package fixture\n\nfunc Commit() { panic(\"dirty\") }\n")
 	dirty, err := freshness.CaptureRepository(context.Background(), repository)
@@ -125,12 +225,8 @@ func TestGenerateAuthorizedGitLabRejectsDirtyOrNonFreshAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := GenerateAuthorizedGitLab(
-		t.TempDir(),
-		dirtyAuthority,
-		"https://gitlab.example.test/team/project",
-	); err == nil || !strings.Contains(err.Error(), "clean, unchanged repository") {
-		t.Fatalf("dirty authority error = %v", err)
+	if err := validateGitLabAuthority(dirtyAuthority); err != nil {
+		t.Fatalf("stable dirty authority rejected: %v", err)
 	}
 
 	cleanRepository := newRunManifestRepository(t)
@@ -147,7 +243,7 @@ func TestGenerateAuthorizedGitLabRejectsDirtyOrNonFreshAuthority(t *testing.T) {
 		t.TempDir(),
 		nonFreshAuthority,
 		"https://gitlab.example.test/team/project",
-	); err == nil || !strings.Contains(err.Error(), "clean, unchanged repository") {
+	); err == nil || !strings.Contains(err.Error(), "working tree to remain unchanged") {
 		t.Fatalf("non-fresh authority error = %v", err)
 	}
 
@@ -168,6 +264,24 @@ func TestGenerateAuthorizedGitLabRejectsDirtyOrNonFreshAuthority(t *testing.T) {
 		"https://gitlab.example.test/team/project",
 	); err == nil || !strings.Contains(err.Error(), "does not support analyzed submodule source") {
 		t.Fatalf("analyzed submodule authority error = %v", err)
+	}
+}
+
+func TestGitLabWorkingTreePathsAreAnalysisRelativeAndBoundedToOpenableSource(t *testing.T) {
+	t.Parallel()
+
+	got := gitLabWorkingTreePaths(
+		"services/api",
+		[]freshness.DirtyFile{
+			{Path: "README.md"},
+			{Path: "services/api/new.go", FromPath: "services/api/old.go"},
+			{Path: "services/other/ignored.go"},
+		},
+		[]string{"clean.go", "new.go", "old.go"},
+	)
+	want := []string{"new.go", "old.go"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("gitLabWorkingTreePaths() = %#v, want %#v", got, want)
 	}
 }
 

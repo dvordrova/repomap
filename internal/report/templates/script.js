@@ -158,6 +158,9 @@
     'Open in GitLab': 'Открыть в GitLab',
     'Open the captured revision in GitLab': 'Открыть зафиксированную версию в GitLab',
     'Code links open the captured revision in GitLab ↗': 'Ссылки на код открывают зафиксированную версию в GitLab ↗',
+    'This report includes stable local changes. Unchanged code links open the captured GitLab revision; changed source paths stay unlinked.': 'Этот отчёт учитывает стабильные локальные изменения. Ссылки для неизменённых исходников открывают зафиксированную версию GitLab; изменённые пути остаются без внешней ссылки.',
+    'Local-only source': 'Только локальный исходник',
+    'This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.': 'Этот исходник содержит локальные изменения и не совпадает с зафиксированным commit в GitLab; внешняя ссылка на код недоступна.',
     'Show more context': 'Показать больше контекста',
     'Show full function': 'Показать всю функцию',
     'Copy file:line': 'Скопировать файл:строку',
@@ -393,6 +396,10 @@
 	var SOURCE_IDS = DATA.source_ids || {};
 	var SOURCE_CONTEXT_IDS = DATA.source_context_ids || {};
   var GITLAB_SOURCE_LINKS = DATA.gitlab_source_links || null;
+  var GITLAB_WORKING_TREE_PATH_SET = {};
+  ((GITLAB_SOURCE_LINKS && GITLAB_SOURCE_LINKS.working_tree_paths) || []).forEach(function (path) {
+    GITLAB_WORKING_TREE_PATH_SET[path] = true;
+  });
   var toastTimer = null;
   var symbolLookupStates = {};
   var symbolLookupViews = {};
@@ -976,8 +983,19 @@
     });
   }
 
+  function gitLabWorkingTreePath(filePath) {
+    return !!(filePath && GITLAB_WORKING_TREE_PATH_SET[filePath]);
+  }
+
+  function gitLabSourceLocationAvailable(filePath, line, endLine) {
+    return !!(
+      gitLabSourceURL(filePath, line, endLine) ||
+      gitLabSourceMode() && OPENABLE_PATH_SET[filePath] && gitLabWorkingTreePath(filePath)
+    );
+  }
+
   function gitLabSourceURL(filePath, line, endLine) {
-    if (!gitLabSourceMode() || !filePath || !OPENABLE_PATH_SET[filePath]) return '';
+    if (!gitLabSourceMode() || !filePath || !OPENABLE_PATH_SET[filePath] || gitLabWorkingTreePath(filePath)) return '';
     var segments = [];
     var prefix = String(GITLAB_SOURCE_LINKS.path_prefix || '').replace(/^\/+|\/+$/g, '');
     if (prefix) segments = segments.concat(prefix.split('/'));
@@ -1009,6 +1027,10 @@
   }
 
   function openGitLabSource(location, endLine) {
+    if (gitLabSourceMode() && gitLabWorkingTreePath(location && location.path)) {
+      showToast('This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.', true);
+      return true;
+    }
     var url = gitLabSourceURL(location && location.path, location && location.line, endLine);
     if (!url) return false;
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -1018,6 +1040,18 @@
   function sourceActionElement(label, cls, location, endLine, action) {
     var link = gitLabSourceLink(label, cls, location, endLine);
     if (link) return link;
+    if (gitLabSourceMode() && gitLabWorkingTreePath(location && location.path)) {
+      var localOnly = txt('button', cls || '', 'Local-only source');
+      localOnly.type = 'button';
+      localOnly.setAttribute(
+        'title',
+        translateUIString('This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.')
+      );
+      localOnly.onclick = function () {
+        showToast('This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.', true);
+      };
+      return localOnly;
+    }
     var button = txt('button', cls || '', label);
     button.type = 'button';
     button.onclick = action;
@@ -1121,6 +1155,13 @@
       { path: filePath, line: line || 0 }
     );
     if (gitLabLink) return gitLabLink;
+    if (gitLabSourceMode() && gitLabWorkingTreePath(filePath)) {
+      var localReference = txt('span', cls + ' rm-file-link--stale', text);
+      localReference.title = translateUIString(
+        'This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.'
+      );
+      return localReference;
+    }
     if (!serverMode() || !OPENABLE_PATH_SET[filePath]) {
       var reference = txt('span', cls + (stale ? ' rm-file-link--stale' : ''), text);
       if (stale) reference.title = 'This source changed after the report was generated.';
@@ -1235,7 +1276,11 @@
     if (gitLabSourceMode()) {
       var gitLabHint = document.getElementById('rm-editor-hint');
       if (gitLabHint) {
-        gitLabHint.textContent = translateUIString('Code links open the captured revision in GitLab ↗');
+        gitLabHint.textContent = translateUIString(
+          GITLAB_SOURCE_LINKS.working_tree_dirty
+            ? 'This report includes stable local changes. Unchanged code links open the captured GitLab revision; changed source paths stay unlinked.'
+            : 'Code links open the captured revision in GitLab ↗'
+        );
         gitLabHint.hidden = false;
       }
       return;
@@ -2843,7 +2888,7 @@
     if (kind !== 'location') return true;
     var location = target.location || target;
     if (!location.path || !OPENABLE_PATH_SET[location.path]) return false;
-    if (gitLabSourceURL(location.path, location.line)) return true;
+    if (gitLabSourceLocationAvailable(location.path, location.line)) return true;
     if (embeddedSourceForLocation(location)) return true;
     return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
@@ -4334,7 +4379,7 @@
 
   function repositoryLocationAvailable(location) {
     if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
-    if (gitLabSourceURL(location.path, location.line)) return true;
+    if (gitLabSourceLocationAvailable(location.path, location.line)) return true;
     if (embeddedSourceForLocation(location)) return true;
     return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
@@ -5599,7 +5644,7 @@
 
   function sourceSnippetAvailable(snippet) {
     if (!snippet || !snippet.path) return false;
-    if (gitLabSourceURL(snippet.path, snippet.start_line, snippet.end_line)) return true;
+    if (gitLabSourceLocationAvailable(snippet.path, snippet.start_line, snippet.end_line)) return true;
     return sourceSnippetHasCode(snippet);
   }
 
@@ -6070,12 +6115,13 @@
   function renderSourceActions(snippet, location, options) {
     options = options || {};
     var actions = el('div', 'rm-source-actions');
-    var gitLabOpen = gitLabSourceLink(
+    var gitLabOpen = gitLabSourceMode() ? sourceActionElement(
       'Open in GitLab',
       'rm-primary-action rm-source-action-link',
       location,
-      Number(snippet && snippet.end_line) || 0
-    );
+      Number(snippet && snippet.end_line) || 0,
+      function () { openGitLabSource(location, Number(snippet && snippet.end_line) || 0); }
+    ) : null;
     if (gitLabOpen) {
       actions.appendChild(gitLabOpen);
     }

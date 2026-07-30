@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -364,6 +365,12 @@ func generate(
 			if err != nil {
 				return err
 			}
+			gitLabSourceLinks.WorkingTreeDirty = len(authority.repository.Dirty) != 0
+			gitLabSourceLinks.WorkingTreePaths = gitLabWorkingTreePaths(
+				pathPrefix,
+				authority.repository.Dirty,
+				data.OpenablePaths,
+			)
 			data.standaloneLocalRoots = []string{
 				data.ArtifactsDir,
 				authority.analysisRoot,
@@ -427,6 +434,32 @@ func gitLabSourcePathPrefix(repositoryRoot, analysisRoot string) (string, error)
 		return "", fmt.Errorf("report: GitLab source analysis path is invalid")
 	}
 	return prefix, nil
+}
+
+func gitLabWorkingTreePaths(
+	pathPrefix string,
+	dirty []freshness.DirtyFile,
+	openablePaths []string,
+) []string {
+	dirtyPaths := make(map[string]struct{}, len(dirty)*2)
+	for _, file := range dirty {
+		dirtyPaths[file.Path] = struct{}{}
+		if file.FromPath != "" {
+			dirtyPaths[file.FromPath] = struct{}{}
+		}
+	}
+	result := make([]string, 0, min(len(openablePaths), len(dirtyPaths)))
+	for _, openablePath := range openablePaths {
+		repositoryPath := openablePath
+		if pathPrefix != "" {
+			repositoryPath = path.Join(pathPrefix, openablePath)
+		}
+		if _, exists := dirtyPaths[repositoryPath]; exists {
+			result = append(result, openablePath)
+		}
+	}
+	sort.Strings(result)
+	return slices.Compact(result)
 }
 
 func marshalHTMLPayload(payload any, standalone bool) ([]byte, error) {

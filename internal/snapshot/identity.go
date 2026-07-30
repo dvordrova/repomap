@@ -56,6 +56,13 @@ func repositoryDisplayName(repoPath string) string {
 	return name
 }
 
+// RepositoryOriginIdentity returns the credential-free host/path identity of
+// the repository-local origin remote. It never guesses among other remotes.
+func RepositoryOriginIdentity(repoPath string) string {
+	origin, _ := localGitConfigValue(repoPath, "remote.origin.url")
+	return normalizeRemoteIdentity(origin)
+}
+
 func repositoryRemoteIdentity(repoPath string) string {
 	origin, _ := localGitConfigValue(repoPath, "remote.origin.url")
 	if identity := normalizeRemoteIdentity(origin); identity != "" {

@@ -121,6 +121,24 @@ func TestNormalizeRemoteIdentity(t *testing.T) {
 	}
 }
 
+func TestRepositoryOriginIdentityDoesNotGuessAmongOtherRemotes(t *testing.T) {
+	t.Parallel()
+
+	repo := filepath.Join(t.TempDir(), "multiple-remotes")
+	writeSnapshotFile(t, repo, "README.md", "# Repository\n")
+	trackSnapshotFiles(t, repo, "README.md")
+	runSnapshotGit(t, "-C", repo, "remote", "add", "alpha", "git@gitlab.example.test:alpha/project.git")
+	runSnapshotGit(t, "-C", repo, "remote", "add", "beta", "git@gitlab.example.test:beta/project.git")
+
+	if got := RepositoryOriginIdentity(repo); got != "" {
+		t.Fatalf("RepositoryOriginIdentity() guessed %q without origin", got)
+	}
+	runSnapshotGit(t, "-C", repo, "remote", "add", "origin", "https://token@gitlab.example.test/team/project.git")
+	if got := RepositoryOriginIdentity(repo); got != "gitlab.example.test/team/project" {
+		t.Fatalf("RepositoryOriginIdentity() = %q", got)
+	}
+}
+
 func TestBuildIdentityIgnoresAmbientGitConfigOverrides(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "ambient-config-checkout")
 	writeSnapshotFile(t, repo, "README.md", "# Repository\n")

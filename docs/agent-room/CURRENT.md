@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/152-standalone-gitlab-report.md
+    decisions/153-standalone-gitlab-dirty-and-inference.md
 
 Status:
-    Decision 152 active; standalone GitLab report authorized
+    Decision 153 active; standalone GitLab product correction authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 153 removes two unnecessary static-sharing restrictions exposed
+    by product use. A stable dirty checkout may publish, with unchanged source
+    paths linked to the captured GitLab commit and dirty source paths marked
+    local-only rather than falsely linked. A host-only `--gitlab-url` derives
+    namespace/project from sanitized repository-local `origin` identity. No
+    source contents, credentials, synthetic commit, GitLab request, or
+    canonical report/manifest change is introduced.
     Decision 152 adds one explicit static-sharing mode. `--gitlab-url`
     produces a self-contained no-server report whose source actions open the
     exact captured commit and line in GitLab. The HTML omits saved source

@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -83,16 +85,19 @@ class Element {
 const elements = {
   "rm-report-data": new Element("script"),
   "rm-editor-hint": new Element("span"),
+  "rm-toast": new Element("div"),
   "rm-architecture": new Element("section"),
   "rm-task-investigation": new Element("section"),
 };
 elements["rm-report-data"].textContent = JSON.stringify({
   report_language: "ru",
-  openable_paths: ["dir/space #.go"],
+  openable_paths: ["dir/space #.go", "local/changed.go"],
   gitlab_source_links: {
     repository_url: "https://gitlab.example/team/sub/project",
     revision: "0123456789abcdef0123456789abcdef01234567",
     path_prefix: "nested worktree",
+    working_tree_dirty: true,
+    working_tree_paths: ["local/changed.go"],
   },
   architecture_canvas: {
     groups: [],
@@ -211,6 +216,22 @@ const snippet = {
   lines: [],
 };
 const directURL = api.gitLabSourceURL(location.path, 12, 18);
+const dirtyLocation = { path: "local/changed.go", line: 7 };
+const dirtySnippet = {
+  path: dirtyLocation.path,
+  start_line: 7,
+  end_line: 11,
+  enclosing_symbol: "Changed",
+  lines: [],
+};
+const dirtyURL = api.gitLabSourceURL(dirtyLocation.path, 7, 11);
+const dirtyReference = api.renderFileReference(
+  dirtyLocation.path,
+  "source-ref",
+  7,
+  dirtyLocation.path + ":7"
+);
+const dirtyCard = api.renderSourceSnippetCard(dirtySnippet, { location: dirtyLocation });
 const reference = api.renderFileReference(location.path, "source-ref", 12, location.path + ":12");
 const card = api.renderSourceSnippetCard(snippet, { location });
 const studyCard = api.renderStudyReadingAnchor({
@@ -237,6 +258,10 @@ function text(node) {
 }
 
 api.setupServerFeatures();
+const dirtyCardNodes = walk(dirtyCard);
+const dirtyAction = dirtyCardNodes.find((node) => node.tagName === "BUTTON");
+if (dirtyAction && typeof dirtyAction.onclick === "function") dirtyAction.onclick();
+const dirtyToast = elements["rm-toast"].textContent;
 api.openSourceLocation(location);
 api.openReportTarget({ kind: "location", location });
 api.renderTaskInvestigationWorkspace();
@@ -254,6 +279,16 @@ api.renderArchitectureWorkspace();
     .map((candidate) => candidate.attributes.href);
   process.stdout.write(JSON.stringify({
     directURL,
+    dirtyURL,
+    dirtyReference: {
+      tagName: dirtyReference.tagName,
+      href: dirtyReference.attributes.href,
+      title: dirtyReference.attributes.title,
+    },
+    dirtySnippetAvailable: api.sourceSnippetAvailable(dirtySnippet),
+    dirtyCardLinks: dirtyCardNodes.filter((node) => node.tagName === "A").map((node) => node.attributes.href),
+    dirtyCardButtonTexts: dirtyCardNodes.filter((node) => node.tagName === "BUTTON").map(text),
+    dirtyToast,
     mode: api.gitLabSourceMode(),
     serverMode: api.serverMode(),
     reference: {
@@ -297,10 +332,20 @@ api.renderArchitectureWorkspace();
 	}
 	var got struct {
 		DirectURL        string `json:"directURL"`
+		DirtyURL         string `json:"dirtyURL"`
 		Mode             bool   `json:"mode"`
 		ServerMode       bool   `json:"serverMode"`
 		SnippetAvailable bool   `json:"snippetAvailable"`
-		Reference        struct {
+		DirtyReference   struct {
+			TagName string `json:"tagName"`
+			Href    string `json:"href"`
+			Title   string `json:"title"`
+		} `json:"dirtyReference"`
+		DirtySnippetAvailable bool     `json:"dirtySnippetAvailable"`
+		DirtyCardLinks        []string `json:"dirtyCardLinks"`
+		DirtyCardButtonTexts  []string `json:"dirtyCardButtonTexts"`
+		DirtyToast            string   `json:"dirtyToast"`
+		Reference             struct {
 			TagName string `json:"tagName"`
 			Href    string `json:"href"`
 			Target  string `json:"target"`
@@ -346,6 +391,22 @@ api.renderArchitectureWorkspace();
 	wantRange := "https://gitlab.example/team/sub/project/-/blob/0123456789abcdef0123456789abcdef01234567/nested%20worktree/dir/space%20%23.go#L12-18"
 	if got.DirectURL != wantRange {
 		t.Fatalf("GitLab URL = %q, want %q", got.DirectURL, wantRange)
+	}
+	if got.DirtyURL != "" || got.DirtyReference.TagName != "SPAN" || got.DirtyReference.Href != "" {
+		t.Fatalf("dirty source exposed a GitLab link: URL %q reference %#v", got.DirtyURL, got.DirtyReference)
+	}
+	if !got.DirtySnippetAvailable || len(got.DirtyCardLinks) != 0 {
+		t.Fatalf(
+			"dirty source presentation = available %t links %#v",
+			got.DirtySnippetAvailable,
+			got.DirtyCardLinks,
+		)
+	}
+	if !slices.Contains(got.DirtyCardButtonTexts, "Только локальный исходник") {
+		t.Fatalf("dirty source actions = %#v", got.DirtyCardButtonTexts)
+	}
+	if !strings.Contains(got.DirtyToast, "не совпадает с зафиксированным commit") {
+		t.Fatalf("dirty source toast = %q", got.DirtyToast)
 	}
 	if !got.Mode || got.ServerMode {
 		t.Fatalf("mode = GitLab %v, server %v; want true, false", got.Mode, got.ServerMode)
@@ -403,7 +464,7 @@ api.renderArchitectureWorkspace();
 			t.Fatalf("static source card retained local action %q", label)
 		}
 	}
-	if got.Hint.Hidden || got.Hint.Text != "Ссылки на код открывают зафиксированную версию в GitLab ↗" {
+	if got.Hint.Hidden || !strings.Contains(got.Hint.Text, "стабильные локальные изменения") {
 		t.Fatalf("GitLab hint = %#v", got.Hint)
 	}
 	if got.FetchCount != 0 {
