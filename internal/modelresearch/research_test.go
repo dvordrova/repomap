@@ -394,6 +394,51 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	}
 }
 
+func TestExecuteRoundRefetchesInvalidCachedInput(t *testing.T) {
+	input := basicPlanningInput(t)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceID := planResult.Selected[0].Bundle.Evidence[0].ID
+	response, err := json.Marshal(researchResponse{Findings: []RawFinding{{
+		ID: "finding-1", Interpretation: "backup is coordinated here",
+		HypothesisAssessment: "supported", EvidenceIDs: []string{evidenceID},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &savedProvider{response: response}
+	runsDir := t.TempDir()
+	execute := func() ResearchRound {
+		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
+			Plan: planResult.Selected[0], Policy: input.Policy,
+			Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
+			RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+		})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		return round
+	}
+	if round := execute(); round.Status != RoundCompleted {
+		t.Fatalf("first round = %#v", round)
+	}
+	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, cacheDirectory, "*.json"))
+	if err != nil || len(cacheFiles) != 1 {
+		t.Fatalf("cache files = %v, err = %v", cacheFiles, err)
+	}
+	if err := os.WriteFile(cacheFiles[0], []byte(`{"version":0}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if round := execute(); round.Status != RoundCompleted || round.Cached {
+		t.Fatalf("refetched round = %#v", round)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want invalid cache to trigger a refetch", provider.calls)
+	}
+}
+
 func TestStageResponseCachePreservesPromptCacheTokens(t *testing.T) {
 	t.Parallel()
 

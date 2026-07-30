@@ -17,6 +17,8 @@ import (
 
 const cacheDirectory = ".model-research"
 
+var ErrInvalidCachedRound = errors.New("model research: reject invalid cached round")
+
 type FingerprintInput struct {
 	Repository         RepositoryContext `json:"repository"`
 	Stage              string            `json:"stage"`
@@ -157,12 +159,12 @@ func loadCache(runsDir, cacheKey, requestSHA, bundleSHA string) (cacheRecord, bo
 	}
 	var record cacheRecord
 	if err := json.Unmarshal(data, &record); err != nil {
-		return cacheRecord{}, false, fmt.Errorf("model research: decode cache: %w", err)
+		return cacheRecord{}, false, fmt.Errorf("%w: decode: %v", ErrInvalidCachedRound, err)
 	}
 	if record.Version != ContractVersion || record.CacheKey != cacheKey ||
 		record.RequestSHA256 != requestSHA || record.BundleSHA256 != bundleSHA ||
 		record.ResponseSHA256 != requestHash(record.Response) || record.ResponseBytes != len(record.Response) {
-		return cacheRecord{}, false, fmt.Errorf("model research: reject invalid cached round")
+		return cacheRecord{}, false, ErrInvalidCachedRound
 	}
 	return record, true, nil
 }

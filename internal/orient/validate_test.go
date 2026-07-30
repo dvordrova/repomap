@@ -420,6 +420,44 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	}
 }
 
+func TestNormalizeOrientationGroundingDisambiguatesCollidingFlowIDs(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "service",
+		Confidence:   0.7,
+		CandidateFlows: []flowexplain.CandidateFlow{
+			{
+				Name: "Server startup", Trigger: "process starts",
+				LikelyEntrypoint: "server/main.go", LikelyFiles: []string{"server/main.go"},
+				Evidence: []string{"server/main.go"}, Confidence: 0.7,
+			},
+			{
+				Name: "server-startup", Trigger: "configuration is loaded",
+				LikelyEntrypoint: "server/main.go", LikelyFiles: []string{"server/main.go"},
+				Evidence: []string{"server/main.go"}, Confidence: 0.6,
+			},
+		},
+	}
+
+	normalizeOrientationGrounding(&report, []string{"server/main.go"}, nil, nil)
+
+	if len(report.CandidateFlows) != 2 {
+		t.Fatalf("candidate flows = %#v", report.CandidateFlows)
+	}
+	firstID := flowexplain.GenerateFlowID(report.CandidateFlows[0].Name)
+	secondID := flowexplain.GenerateFlowID(report.CandidateFlows[1].Name)
+	if firstID == secondID || report.CandidateFlows[1].Name != "server-startup (2)" {
+		t.Fatalf("normalized names/ids = %q/%q, %q/%q", report.CandidateFlows[0].Name, firstID, report.CandidateFlows[1].Name, secondID)
+	}
+	if err := validateOrientation(report, []string{"server/main.go"}, nil); err != nil {
+		t.Fatalf("validateOrientation() error = %v", err)
+	}
+	if warnings := strings.Join(report.Warnings, "\n"); !strings.Contains(warnings, "disambiguated candidate_flows[1].name") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
 func TestNormalizeOrientationGroundingCanonicalizesVerifiedSourceLines(t *testing.T) {
 	t.Parallel()
 
