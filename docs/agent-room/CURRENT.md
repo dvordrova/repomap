@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/151-real-run-product-corrections.md
+    decisions/152-standalone-gitlab-report.md
 
 Status:
-    Decision 151 active; real-run product corrections authorized
+    Decision 152 active; standalone GitLab report authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 152 adds one explicit static-sharing mode. `--gitlab-url`
+    produces a self-contained no-server report whose source actions open the
+    exact captured commit and line in GitLab. The HTML omits saved source
+    bodies and local-only authority metadata while canonical report JSON and
+    manifest formats remain unchanged. A clean checkout is required, analyzed
+    submodules and the source-episode combination are rejected, and link
+    construction adds no provider request or network lookup.
     Decision 151 corrects fresh uncached Russian product review of lambroll and
     wireguard-ui. Runtime selector assignments no longer masquerade as literal
     credentials; exact file/symbol Architecture components remain inspectable

@@ -95,6 +95,10 @@ type ReportData struct {
 	// ReportLanguage changes only human-facing presentation and model prose.
 	// Repository-owned identifiers, paths, symbols, and evidence remain exact.
 	ReportLanguage string `json:"report_language,omitempty"`
+	// GitLabSourceLinks is present only when the report is intended to be a
+	// standalone shareable artifact. Source actions then target the exact
+	// captured revision instead of the localhost editor/source APIs.
+	GitLabSourceLinks *GitLabSourceLinks `json:"gitlab_source_links,omitempty"`
 
 	RepoName     string `json:"repo_name"`
 	ProjectGuess string `json:"project_guess"`
@@ -195,6 +199,7 @@ type ReportData struct {
 	evidenceLocations         []evidence.Location
 	sourceSignals             []SourceSignal
 	studyDocumentSourceRoot   string
+	standaloneLocalRoots      []string
 	externalImports           []externalImportUsage
 	repositoryGoFacts         *gofacts.Facts
 	repositoryEntrypointFacts *gofacts.Facts

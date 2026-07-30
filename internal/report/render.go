@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -52,7 +53,7 @@ func WriteReportJSON(data *ReportData, path string) error {
 	if data == nil {
 		return fmt.Errorf("report: data is required")
 	}
-	persisted := reportDataForRendering(data)
+	persisted := reportDataForPersistence(data)
 	// SourceIDs are issued by the local report server after manifest
 	// verification. They are session navigation IDs, not persistent evidence.
 	persisted.SourceIDs = nil
@@ -111,6 +112,9 @@ func buildHTML(data *ReportData) ([]byte, error) {
 }
 
 func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjection) ([]byte, error) {
+	if err := data.GitLabSourceLinks.validate(); err != nil {
+		return nil, err
+	}
 	rendered := reportDataForRendering(data)
 	css := styleCSS
 	js := scriptJS
@@ -118,19 +122,19 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 		css = withoutSourceEpisodeAssetBlocks(css)
 		js = withoutSourceEpisodeAssetBlocks(js)
 	}
-	var dataJSON []byte
-	var err error
+	var payload any
 	if episode == nil {
-		dataJSON, err = json.Marshal(rendered)
+		payload = rendered
 	} else {
-		dataJSON, err = json.Marshal(struct {
+		payload = struct {
 			*ReportData
 			SourceEpisode *sourceEpisodeProjection `json:"source_episode"`
 		}{
 			ReportData:    rendered,
 			SourceEpisode: episode,
-		})
+		}
 	}
+	dataJSON, err := marshalHTMLPayload(payload, rendered.GitLabSourceLinks != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -203,14 +207,45 @@ func reportDataForRendering(data *ReportData) *ReportData {
 	return &rendered
 }
 
+func reportDataForPersistence(data *ReportData) *ReportData {
+	rendered := *data
+	rendered.SemanticSearch = nil
+	rendered.SemanticSearchDisabled = false
+	// Static source routing belongs only to the generated standalone HTML.
+	// Canonical report.json and its manifest binding remain host-neutral.
+	rendered.GitLabSourceLinks = nil
+	return &rendered
+}
+
 func Generate(runDir string) error {
-	return generate(runDir, nil, nil)
+	return generate(runDir, nil, nil, "")
 }
 
 // GenerateAuthorized renders a report and binds its exact generated JSON to
 // repository authority confirmed stable across orientation.
 func GenerateAuthorized(runDir string, authority RunAuthority) error {
-	return generate(runDir, &authority, nil)
+	return generate(runDir, &authority, nil, "")
+}
+
+// GenerateAuthorizedGitLab emits the ordinary persisted report and manifest
+// plus one standalone HTML report whose source actions target the exact
+// captured revision on the supplied GitLab project.
+func GenerateAuthorizedGitLab(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) error {
+	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
+	if normalizedURL == "" {
+		return fmt.Errorf("report: GitLab repository URL is required")
+	}
+	if err := validateGitLabAuthority(authority); err != nil {
+		return err
+	}
+	return generate(runDir, &authority, nil, normalizedURL)
 }
 
 // GenerateAuthorizedWithSourceEpisode generates the same persisted report and
@@ -231,10 +266,26 @@ func GenerateAuthorizedWithSourceEpisode(
 	if err := ValidateSourceEpisodeForRevision(episodeJSON, authority.repository.Head); err != nil {
 		return err
 	}
-	return generate(runDir, &authority, episodeJSON)
+	return generate(runDir, &authority, episodeJSON, "")
 }
 
-func generate(runDir string, authority *RunAuthority, sourceEpisodeJSON []byte) error {
+func generate(
+	runDir string,
+	authority *RunAuthority,
+	sourceEpisodeJSON []byte,
+	gitLabRepositoryURL string,
+) error {
+	if gitLabRepositoryURL != "" && sourceEpisodeJSON != nil {
+		return fmt.Errorf("report: standalone GitLab reports cannot embed a source episode")
+	}
+	if gitLabRepositoryURL != "" {
+		if authority == nil {
+			return fmt.Errorf("report: standalone GitLab report requires confirmed repository authority")
+		}
+		if err := validateGitLabAuthority(*authority); err != nil {
+			return err
+		}
+	}
 	if err := RemoveRunManifest(runDir); err != nil {
 		return err
 	}
@@ -295,10 +346,30 @@ func generate(runDir string, authority *RunAuthority, sourceEpisodeJSON []byte) 
 		return err
 	}
 	data.FeedbackPath = feedbackPath
+	var gitLabSourceLinks *GitLabSourceLinks
 	if authority != nil {
 		freshnessResult := authority.freshness
 		data.Freshness = &freshnessResult
 		data.CapturedRevision = authority.repository.Head
+		if gitLabRepositoryURL != "" {
+			pathPrefix, err := gitLabSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
+			if err != nil {
+				return err
+			}
+			gitLabSourceLinks, err = newGitLabSourceLinks(
+				gitLabRepositoryURL,
+				data.CapturedRevision,
+				pathPrefix,
+			)
+			if err != nil {
+				return err
+			}
+			data.standaloneLocalRoots = []string{
+				data.ArtifactsDir,
+				authority.analysisRoot,
+				authority.repository.Identity,
+			}
+		}
 		bindOperationalRevision(data.Operations, data.CapturedRevision)
 		if err := bindTaskInvestigationAuthority(data.TaskInvestigation, authority.repository); err != nil {
 			return err
@@ -320,6 +391,7 @@ func generate(runDir string, authority *RunAuthority, sourceEpisodeJSON []byte) 
 	}
 
 	htmlPath := runDir + "/report.html"
+	data.GitLabSourceLinks = gitLabSourceLinks
 	if sourceEpisodeJSON == nil {
 		if err := WriteReportHTML(data, htmlPath); err != nil {
 			return err
@@ -339,6 +411,133 @@ func generate(runDir string, authority *RunAuthority, sourceEpisodeJSON []byte) 
 		}
 	}
 	return nil
+}
+
+func gitLabSourcePathPrefix(repositoryRoot, analysisRoot string) (string, error) {
+	relative, err := filepath.Rel(repositoryRoot, analysisRoot)
+	if err != nil || filepath.IsAbs(relative) || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("report: GitLab source analysis root is outside repository")
+	}
+	if relative == "." {
+		return "", nil
+	}
+	prefix := filepath.ToSlash(relative)
+	if err := validateManifestPath(prefix); err != nil {
+		return "", fmt.Errorf("report: GitLab source analysis path is invalid")
+	}
+	return prefix, nil
+}
+
+func marshalHTMLPayload(payload any, standalone bool) ([]byte, error) {
+	var localRoots []string
+	if reportData, ok := payload.(*ReportData); ok && reportData != nil {
+		localRoots = reportData.standaloneLocalRoots
+	}
+	data, err := json.Marshal(payload)
+	if err != nil || !standalone {
+		return data, err
+	}
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil, fmt.Errorf("report: decode standalone HTML projection: %w", err)
+	}
+	stripStandaloneSourceContent(decoded)
+	stripStandaloneLocalPaths(decoded, localRoots)
+	data, err = json.Marshal(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("report: encode standalone HTML projection: %w", err)
+	}
+	return data, nil
+}
+
+func stripStandaloneSourceContent(value any) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			stripStandaloneSourceContent(item)
+		}
+	case map[string]any:
+		// These fields are useful only to the local debug/server experience and
+		// would either leak a workstation path or retain exact source bytes.
+		delete(typed, "model_research")
+		delete(typed, "artifacts_dir")
+		delete(typed, "feedback_path")
+		delete(typed, "source_ids")
+		delete(typed, "source_context_ids")
+		if _, hasPath := typed["path"]; hasPath {
+			// SourceSignal snippets are exact scanner excerpts. They are useful
+			// in the localhost report, but the standalone artifact keeps only
+			// their repository location and explanation.
+			delete(typed, "snippet")
+			if _, isSnippet := typed["content"]; isSnippet {
+				delete(typed, "content")
+				delete(typed, "lines")
+				delete(typed, "full_function_lines")
+				delete(typed, "full_function_start_line")
+				delete(typed, "full_function_end_line")
+				delete(typed, "content_sha256")
+				delete(typed, "presentation_sha256")
+			}
+		}
+		if _, codeBearing := typed["code_bearing"]; codeBearing {
+			delete(typed, "lines")
+		}
+		for _, child := range typed {
+			stripStandaloneSourceContent(child)
+		}
+	}
+}
+
+func stripStandaloneLocalPaths(value any, roots []string) {
+	normalized := make([]string, 0, len(roots))
+	seen := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		if !filepath.IsAbs(root) || root == string(filepath.Separator) {
+			continue
+		}
+		if _, duplicate := seen[root]; duplicate {
+			continue
+		}
+		seen[root] = struct{}{}
+		normalized = append(normalized, root)
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return len(normalized[i]) > len(normalized[j])
+	})
+	if len(normalized) == 0 {
+		return
+	}
+
+	var scrub func(any)
+	scrub = func(current any) {
+		switch typed := current.(type) {
+		case []any:
+			for index, child := range typed {
+				if text, ok := child.(string); ok {
+					for _, root := range normalized {
+						text = strings.ReplaceAll(text, root, "[local path]")
+					}
+					typed[index] = text
+					continue
+				}
+				scrub(child)
+			}
+		case map[string]any:
+			for key, child := range typed {
+				if text, ok := child.(string); ok {
+					for _, root := range normalized {
+						text = strings.ReplaceAll(text, root, "[local path]")
+					}
+					typed[key] = text
+					continue
+				}
+				scrub(child)
+			}
+		}
+	}
+	scrub(value)
 }
 
 func retainSourceEpisodeRegularOpenablePaths(data *ReportData, authority RunAuthority) error {

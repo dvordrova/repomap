@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
@@ -626,6 +627,147 @@ func TestRunDefaultNoServeSuppressesServer(t *testing.T) {
 	}
 	if served {
 		t.Fatal("report server was started with --no-serve")
+	}
+}
+
+func TestRunDefaultGitLabURLCreatesStandalonePinnedReport(t *testing.T) {
+	clearLLMEnv(t)
+	repository := t.TempDir()
+	analysisRoot := filepath.Join(repository, "service")
+	if err := os.Mkdir(analysisRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/static-gitlab\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(analysisRoot, "main.go"), "package service\n\nfunc Start() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "service/main.go")
+	commitTestRepository(t, repository)
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	debugDir := t.TempDir()
+	var openedPath string
+	served := false
+	var stderr bytes.Buffer
+	if err := runDefaultWithDeps(analysisRoot, []string{
+		"--offline",
+		"--discover-surfaces=false",
+		"--debug-dir", debugDir,
+		"--gitlab-url", "https://gitlab.example.test/group/project.git",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: &stderr,
+		openReport: func(path string) error {
+			openedPath = path
+			return nil
+		},
+		serveReport: func(context.Context, reportserver.Options) error {
+			served = true
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v\nstderr:\n%s", err, stderr.String())
+	}
+	if served {
+		t.Fatal("--gitlab-url started the local report server")
+	}
+
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(runDir, "report.html")
+	resolvedOpenedPath, err := filepath.EvalSymlinks(openedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolvedOpenedPath != reportPath {
+		t.Fatalf("opened path = %q, want %q", resolvedOpenedPath, reportPath)
+	}
+	html, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"repository_url":"https://gitlab.example.test/group/project"`,
+		`"revision":"` + state.Head + `"`,
+		`"path_prefix":"service"`,
+	} {
+		if !strings.Contains(string(html), want) {
+			t.Fatalf("standalone report missing %q", want)
+		}
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reportJSON), "gitlab_source_links") {
+		t.Fatalf("canonical report contains HTML-only GitLab config: %s", reportJSON)
+	}
+	metadataJSON, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		EffectiveOptions debugdump.EffectiveOptions `json:"effective_options"`
+	}
+	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !metadata.EffectiveOptions.NoServe ||
+		metadata.EffectiveOptions.GitLabURL != "https://gitlab.example.test/group/project" {
+		t.Fatalf("effective GitLab options = %#v", metadata.EffectiveOptions)
+	}
+	if !strings.Contains(stderr.String(), "standalone GitLab report pinned to "+state.Head) {
+		t.Fatalf("stderr missing pinned revision:\n%s", stderr.String())
+	}
+}
+
+func TestRunDefaultGitLabURLRejectsInvalidURLBeforeRepositoryCapture(t *testing.T) {
+	clearLLMEnv(t)
+	captured := false
+	err := runDefaultWithDeps(t.TempDir(), []string{
+		"--offline",
+		"--gitlab-url", "ssh://git@gitlab.example.test/group/project.git",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: io.Discard,
+		captureRepo: func(context.Context, string) (freshness.RepositoryState, error) {
+			captured = true
+			return freshness.RepositoryState{}, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "absolute http(s) project URL") {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	if captured {
+		t.Fatal("invalid --gitlab-url reached repository capture")
+	}
+}
+
+func TestRunDefaultGitLabURLRejectsDirtyRepositoryBeforeAnalysis(t *testing.T) {
+	clearLLMEnv(t)
+	repository := t.TempDir()
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/dirty-static\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repository)
+	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() { println(\"dirty\") }\n")
+
+	err := runDefaultWithDeps(repository, []string{
+		"--offline",
+		"--no-open",
+		"--debug-dir", t.TempDir(),
+		"--gitlab-url", "https://gitlab.example.test/group/project",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: io.Discard,
+	})
+	if err == nil || !strings.Contains(err.Error(), "--gitlab-url requires a clean repository") {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
 }
 

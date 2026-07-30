@@ -46,6 +46,19 @@ file references can open in VS Code; press Ctrl-C when finished. Use `--no-open`
 to keep the browser closed, `--port` to choose a port, or `--no-serve` for a
 standalone static report.
 
+To share a standalone report through S3 or another static host, point repomap
+at the matching GitLab project:
+
+```bash
+./repomap /path/to/repo --gitlab-url https://gitlab.example/group/project
+```
+
+This mode does not start the local server. It creates a self-contained
+`report.html` whose source links open the exact captured commit and line in
+GitLab, and it omits saved source bodies from that HTML. The checkout must stay
+clean during the run, the captured commit must already be available in GitLab,
+and private-project authentication remains the reader's browser responsibility.
+
 Go orientation also groups bounded source signals into operational-flow
 candidates for background loops, maintenance, thresholds, consensus state, and
 storage durability. They stay in the same flow list as request-driven work and

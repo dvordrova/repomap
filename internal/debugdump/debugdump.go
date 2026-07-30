@@ -51,6 +51,7 @@ type EffectiveOptions struct {
 	GuidedTour       bool   `json:"guided_tour"`
 	NoSecrets        bool   `json:"no_secrets,omitempty"`
 	ReportLanguage   string `json:"report_language,omitempty"`
+	GitLabURL        string `json:"gitlab_url,omitempty"`
 	DumpLLM          bool   `json:"dump_llm"`
 	OutputJSON       bool   `json:"json_output"`
 	PreviewRequest   bool   `json:"preview_request"`

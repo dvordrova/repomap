@@ -468,6 +468,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
 	noSecrets := fs.Bool("no-secrets", false, "disable credential detection for this run (unsafe)")
 	language := fs.String("lang", "en", "report language: en or ru")
+	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report linked to this GitLab project")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
@@ -503,6 +504,16 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	if err != nil {
 		return err
 	}
+	gitLabURL, err := report.NormalizeGitLabRepositoryURL(*gitLabURLFlag)
+	if err != nil {
+		return err
+	}
+	if gitLabURL != "" {
+		*noServe = true
+		if *sourceEpisodePath != "" {
+			return fmt.Errorf("--gitlab-url cannot be combined with --source-episode because standalone reports do not embed source")
+		}
+	}
 	if *noCache && !*offline {
 		fmt.Fprintln(deps.stderr, "repomap: cross-run model response caches disabled")
 	}
@@ -519,6 +530,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 
 	var runID string
 	artifactRun := dDir != "" && !*previewRequest
+	if gitLabURL != "" && !artifactRun {
+		return fmt.Errorf("--gitlab-url requires report artifacts; remove --no-debug or --preview-request")
+	}
 	var sourceEpisodeJSON []byte
 	if *sourceEpisodePath != "" {
 		if !artifactRun {
@@ -558,6 +572,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		initialState, err = captureRepo(ctx, repo)
 		if err != nil {
 			return fmt.Errorf("capture repository state before orientation: %w", err)
+		}
+		if gitLabURL != "" && !repositoryStateCanLinkToGitLab(initialState) {
+			return fmt.Errorf("--gitlab-url requires a clean repository and does not support analyzed submodule source because one project URL cannot address it")
 		}
 		if sourceEpisodeJSON != nil {
 			if err := report.ValidateSourceEpisodeForRevision(sourceEpisodeJSON, initialState.Head); err != nil {
@@ -605,6 +622,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			GuidedTour:       *guidedTour && !*offline,
 			NoSecrets:        *noSecrets,
 			ReportLanguage:   storedReportLanguage(reportLanguage),
+			GitLabURL:        gitLabURL,
 			DumpLLM:          *dumpLLM,
 			OutputJSON:       *jsonOut,
 			PreviewRequest:   *previewRequest,
@@ -731,6 +749,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if err != nil {
 			return fmt.Errorf("capture repository state after analysis: %w", err)
 		}
+		if gitLabURL != "" &&
+			(currentState.Head != initialState.Head || !repositoryStateCanLinkToGitLab(currentState)) {
+			return fmt.Errorf("--gitlab-url requires the repository to remain clean at the captured commit until report publication")
+		}
 		authority, err := report.ConfirmRunAuthorityScoped(
 			ctx, analysisRoot, initialState, currentState, report.CapturedInputPaths(reportData), *strictSnapshot,
 		)
@@ -746,6 +768,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		var generateErr error
 		if sourceEpisodeJSON != nil {
 			generateErr = report.GenerateAuthorizedWithSourceEpisode(runDir, authority, sourceEpisodeJSON)
+		} else if gitLabURL != "" {
+			generateErr = report.GenerateAuthorizedGitLab(runDir, authority, gitLabURL)
 		} else {
 			generateErr = report.GenerateAuthorized(runDir, authority)
 		}
@@ -755,6 +779,17 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		fmt.Fprintf(deps.stderr, "repomap: generated authorized report in %d ms\n", time.Since(reportStarted).Milliseconds())
 		reportPath = filepath.Join(runDir, "report.html")
 		fmt.Fprintf(deps.stderr, "Report: %s\n", reportPath)
+		if gitLabURL != "" {
+			fmt.Fprintf(
+				deps.stderr,
+				"repomap: standalone GitLab report pinned to %s\n",
+				initialState.Head,
+			)
+			fmt.Fprintln(
+				deps.stderr,
+				"repomap: GitLab availability is not checked; ensure the captured commit is pushed before sharing",
+			)
+		}
 		linkLatest(dDir, runDir, deps.stderr)
 	}
 
@@ -801,6 +836,18 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 	}
 	return nil
+}
+
+func repositoryStateCanLinkToGitLab(state freshness.RepositoryState) bool {
+	if len(state.Dirty) != 0 {
+		return false
+	}
+	for _, submodule := range state.Submodules {
+		if submodule.IncludedInAnalysis {
+			return false
+		}
+	}
+	return true
 }
 
 func runServe(args []string) error {
@@ -1328,6 +1375,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --no-cache      disable cross-run model response caches\n")
 	fmt.Fprintf(os.Stderr, "  --no-secrets    disable credential detection for this run (unsafe)\n")
 	fmt.Fprintf(os.Stderr, "  --lang LANG     report language: en or ru (default: en)\n")
+	fmt.Fprintf(os.Stderr, "  --gitlab-url URL create a standalone report whose source links open this GitLab project\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")
 	fmt.Fprintf(os.Stderr, "  --no-serve      generate a static report without starting the local server\n")
