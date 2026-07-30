@@ -265,6 +265,39 @@ func normalizeOrientationGrounding(
 	}
 	report.FirstFilesToOpen = normalizedFirstFiles
 
+	normalizedUnverifiedPaths := make(
+		unverifiedPathList,
+		0,
+		len(report.UnverifiedPaths),
+	)
+	seenUnverifiedPaths := make(map[string]struct{}, len(report.UnverifiedPaths))
+	for index, item := range report.UnverifiedPaths {
+		candidate := strings.TrimSpace(item.Path)
+		candidate = strings.TrimRight(candidate, "/")
+		if !validRepoRelativePath(candidate) {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser dropped unverified_paths[%d] with invalid path: %q",
+				index,
+				item.Path,
+			))
+			continue
+		}
+		if candidate != item.Path {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser normalized unverified_paths[%d] to %q",
+				index,
+				candidate,
+			))
+		}
+		if _, duplicate := seenUnverifiedPaths[candidate]; duplicate {
+			continue
+		}
+		seenUnverifiedPaths[candidate] = struct{}{}
+		item.Path = candidate
+		normalizedUnverifiedPaths = append(normalizedUnverifiedPaths, item)
+	}
+	report.UnverifiedPaths = normalizedUnverifiedPaths
+
 	for index := range report.HighLevelMap {
 		report.HighLevelMap[index].Evidence = filterEvidence(
 			fmt.Sprintf("high_level_map[%d].evidence", index),

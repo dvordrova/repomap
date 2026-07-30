@@ -380,6 +380,11 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 			Guess:    "configuration reload",
 			Evidence: []string{"main.go", "config/reload.go"},
 		}},
+		UnverifiedPaths: unverifiedPathList{
+			{Path: "a/b/c/", Reason: "model returned a directory-like path"},
+			{Path: "../secret", Reason: "unsafe"},
+			{Path: "a/b/c", Reason: "duplicate canonical path"},
+		},
 	}
 	allowed := []string{"cmd/server/main.go", "config/config.go", "config/reload.go"}
 
@@ -399,10 +404,15 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 			report.ImportantDomainWords[0].Evidence,
 		)
 	}
+	if len(report.UnverifiedPaths) != 1 || report.UnverifiedPaths[0].Path != "a/b/c" {
+		t.Fatalf("normalized unverified paths = %#v, want one canonical path", report.UnverifiedPaths)
+	}
 	warnings := strings.Join(report.Warnings, "\n")
 	if !strings.Contains(warnings, "dropped ungrounded path-like evidence") ||
 		!strings.Contains(warnings, "replaced ungrounded") ||
-		!strings.Contains(warnings, `dropped first_files_to_open[1] outside allowed_paths: "internal/deepseek/deepseek.go"`) {
+		!strings.Contains(warnings, `dropped first_files_to_open[1] outside allowed_paths: "internal/deepseek/deepseek.go"`) ||
+		!strings.Contains(warnings, `normalized unverified_paths[0] to "a/b/c"`) ||
+		!strings.Contains(warnings, `dropped unverified_paths[1] with invalid path: "../secret"`) {
 		t.Fatalf("warnings = %q, want evidence, entrypoint, and first-file warnings", report.Warnings)
 	}
 	if err := validateOrientation(report, allowed, nil); err != nil {
