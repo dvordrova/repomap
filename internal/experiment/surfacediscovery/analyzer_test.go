@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"go/constant"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -66,6 +68,70 @@ func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
 	if len(merged.Candidates) != maxValueAlternatives ||
 		!slices.Contains(analyzer.result.Coverage.BudgetsReached, "value_alternatives") {
 		t.Fatalf("alternative budget was not applied: %#v / %v", merged, analyzer.result.Coverage.BudgetsReached)
+	}
+}
+
+func TestBoundedCallTargetsCapBeforeSorting(t *testing.T) {
+	program := ssa.NewProgram(token.NewFileSet(), ssa.SanityCheckFunctions)
+	signature := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(), false)
+	a := &analyzer{
+		ctx:                       context.Background(),
+		opts:                      normalizeOptions(Options{MaxTargets: 3}),
+		functionIDs:               map[*ssa.Function]string{},
+		functionImplementationIDs: map[*ssa.Function]string{},
+	}
+	retained := make(map[string]boundedCallTarget, a.opts.MaxTargets+1)
+	for index := 999; index >= 0; index-- {
+		function := program.NewFunction(fmt.Sprintf("candidate%04d", index), signature, "test")
+		a.retainBoundedCallTarget(
+			retained,
+			a.newBoundedCallTarget(nil, function),
+			a.opts.MaxTargets+1,
+		)
+	}
+	if len(retained) != a.opts.MaxTargets+1 {
+		t.Fatalf("retained target count = %d, want %d", len(retained), a.opts.MaxTargets+1)
+	}
+	var got []string
+	for _, target := range retained {
+		got = append(got, target.function.Name())
+	}
+	sort.Strings(got)
+	want := []string{"candidate0000", "candidate0001", "candidate0002", "candidate0003"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained targets = %v, want %v", got, want)
+	}
+
+	wrapped := program.NewFunction("same", signature, "wrapper")
+	concrete := program.NewFunction("same", signature, "")
+	duplicate := make(map[string]boundedCallTarget, 1)
+	a.retainBoundedCallTarget(duplicate, a.newBoundedCallTarget(nil, wrapped), 1)
+	a.retainBoundedCallTarget(duplicate, a.newBoundedCallTarget(nil, concrete), 1)
+	for _, target := range duplicate {
+		if target.function != concrete {
+			t.Fatalf("retained duplicate = %q, want concrete function", target.function.Synthetic)
+		}
+	}
+}
+
+func TestLocalSourcePatternsDoNotReloadKnownModuleRoots(t *testing.T) {
+	root := t.TempDir()
+	appRoot := filepath.Join(root, "app")
+	knownRoot := filepath.Join(root, "known")
+	if err := os.MkdirAll(appRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Join(appRoot, "go.mod"), `module example.com/app
+
+go 1.25
+
+replace example.com/known => ../known
+replace example.com/external => ../external
+`)
+	got := localSourcePatterns(appRoot, []string{appRoot, knownRoot})
+	want := []string{"./...", "example.com/external/..."}
+	if !slices.Equal(got, want) {
+		t.Fatalf("local source patterns = %v, want %v", got, want)
 	}
 }
 
@@ -958,7 +1024,14 @@ func onlyTriggerOfKind(t *testing.T, result Result, kind string) TriggerRecord {
 	t.Helper()
 	triggers := triggersOfKind(result, kind)
 	if len(triggers) != 1 {
-		t.Fatalf("%s trigger count = %d, want 1: %#v", kind, len(triggers), result.Catalog.Triggers)
+		t.Fatalf(
+			"%s trigger count = %d, want 1: triggers=%#v diagnostics=%#v unavailable=%#v",
+			kind,
+			len(triggers),
+			result.Catalog.Triggers,
+			result.Coverage.PackageDiagnostics,
+			result.Coverage.UnavailablePackages,
+		)
 	}
 	return triggers[0]
 }

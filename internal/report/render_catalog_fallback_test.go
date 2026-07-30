@@ -127,9 +127,9 @@ func testLateCatalogIncompatibilityPublishesViewOnly(
 		if captureErr != nil {
 			t.Fatal(captureErr)
 		}
-		if len(captured) != 1 || captured[0].Kind != freshness.FileRegular {
+		if len(captured) != 1 || captured[0].Kind != freshness.FileSymlink {
 			t.Fatalf(
-				"fixture did not exercise pathspec-sensitive misclassification for %q: %#v",
+				"literal captured-input lookup did not retain the symlink for %q: %#v",
 				repositoryLinkPath,
 				captured,
 			)
@@ -147,9 +147,9 @@ func testLateCatalogIncompatibilityPublishesViewOnly(
 	if analysisDirectory == "" && linkName == "batch_link.go" && !symlinkCaptured {
 		t.Fatalf("authority did not retain the tracked symlink: %#v", authority.inputs)
 	}
-	if scoped && strings.HasPrefix(linkName, ":") && capturedKind != freshness.FileRegular {
+	if scoped && strings.HasPrefix(linkName, ":") && capturedKind != freshness.FileSymlink {
 		t.Fatalf(
-			"fixture did not exercise pathspec-sensitive misclassification for %q: %#v",
+			"literal scoped authority did not retain the symlink for %q: %#v",
 			repositoryLinkPath,
 			authority.inputs,
 		)

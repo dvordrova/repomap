@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/semantics/catalog"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/packages"
@@ -56,6 +57,8 @@ type analyzer struct {
 	summaryByID               map[string]SemanticSummary
 	fileDigests               map[string]SourceDigest
 	functionByID              map[string]*ssa.Function
+	functionIDs               map[*ssa.Function]string
+	functionImplementationIDs map[*ssa.Function]string
 	loopCache                 map[*ssa.Function][]loopDescriptor
 	loopSeen                  map[string]bool
 	compositionVisited        map[*ssa.Function]bool
@@ -153,6 +156,8 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		modulePaths:               map[string]bool{},
 		callTargets:               map[ssa.CallInstruction][]*ssa.Function{},
 		functionByID:              map[string]*ssa.Function{},
+		functionIDs:               map[*ssa.Function]string{},
+		functionImplementationIDs: map[*ssa.Function]string{},
 		loopCache:                 map[*ssa.Function][]loopDescriptor{},
 		loopSeen:                  map[string]bool{},
 		compositionVisited:        map[*ssa.Function]bool{},
@@ -315,13 +320,13 @@ func (a *analyzer) load() error {
 			Dir:     moduleRoot,
 			Fset:    fileSet,
 			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-				packages.NeedImports | packages.NeedDeps | packages.NeedSyntax |
+				packages.NeedImports | packages.NeedExportFile | packages.NeedSyntax |
 				packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes |
 				packages.NeedModule,
 			BuildFlags: buildFlags,
 			Tests:      false,
 		}
-		modulePackages, err := packages.Load(config, "./...")
+		modulePackages, err := packages.Load(config, localSourcePatterns(moduleRoot, moduleRoots)...)
 		if ctxErr := a.ctx.Err(); ctxErr != nil {
 			finishLoad(len(loaded), len(loaded))
 			return fmt.Errorf("surface discovery: %w", ctxErr)
@@ -377,12 +382,12 @@ func (a *analyzer) load() error {
 	if len(safeLoaded) == 0 {
 		return nil
 	}
-	finishSSA := a.startPhase("ssa_build", "building SSA once for the loaded package dependency closure")
-	a.program, a.packages = ssautil.AllPackages(safeLoaded, ssa.InstantiateGenerics)
+	finishSSA := a.startPhase("ssa_build", "building SSA for repository packages with dependency type information")
+	a.program, a.packages = buildSurfaceSSAProgram(fileSet, safeLoaded)
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
-	ssaPackages := a.program.AllPackages()
+	ssaPackages := append([]*ssa.Package(nil), a.packages...)
 	sort.Slice(ssaPackages, func(i, j int) bool {
 		return ssaPackagePath(ssaPackages[i]) < ssaPackagePath(ssaPackages[j])
 	})
@@ -413,6 +418,96 @@ func (a *analyzer) load() error {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
 	return nil
+}
+
+func localSourcePatterns(moduleRoot string, moduleRoots []string) []string {
+	patterns := []string{"./..."}
+	data, err := os.ReadFile(filepath.Join(moduleRoot, "go.mod"))
+	if err != nil {
+		return patterns
+	}
+	parsed, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return patterns
+	}
+	unique := make(map[string]struct{})
+	for _, replacement := range parsed.Replace {
+		if replacement.New.Version != "" || replacement.New.Path == "" || replacement.Old.Path == "" {
+			continue
+		}
+		replacementRoot := filepath.FromSlash(replacement.New.Path)
+		if !filepath.IsAbs(replacementRoot) {
+			replacementRoot = filepath.Join(moduleRoot, replacementRoot)
+		}
+		replacementRoot = filepath.Clean(replacementRoot)
+		alreadyLoaded := false
+		for _, root := range moduleRoots {
+			if filepath.Clean(root) == replacementRoot {
+				alreadyLoaded = true
+				break
+			}
+		}
+		if alreadyLoaded {
+			continue
+		}
+		unique[replacement.Old.Path+"/..."] = struct{}{}
+	}
+	for pattern := range unique {
+		patterns = append(patterns, pattern)
+	}
+	sort.Strings(patterns[1:])
+	return patterns
+}
+
+func buildSurfaceSSAProgram(
+	fileSet *token.FileSet,
+	loaded []*packages.Package,
+) (*ssa.Program, []*ssa.Package) {
+	program := ssa.NewProgram(fileSet, ssa.InstantiateGenerics)
+	sourceByTypes := make(map[*types.Package]*packages.Package, len(loaded))
+	for _, pkg := range loaded {
+		if packageSafeForSSA(pkg) {
+			sourceByTypes[pkg.Types] = pkg
+		}
+	}
+	created := make(map[*types.Package]*ssa.Package)
+	active := make(map[*types.Package]bool)
+	var create func(*types.Package) *ssa.Package
+	create = func(typePackage *types.Package) *ssa.Package {
+		if typePackage == nil {
+			return nil
+		}
+		if pkg, exists := created[typePackage]; exists {
+			return pkg
+		}
+		if active[typePackage] {
+			return nil
+		}
+		active[typePackage] = true
+		imports := append([]*types.Package(nil), typePackage.Imports()...)
+		sort.Slice(imports, func(i, j int) bool { return imports[i].Path() < imports[j].Path() })
+		for _, imported := range imports {
+			create(imported)
+		}
+		delete(active, typePackage)
+		source := sourceByTypes[typePackage]
+		var files []*ast.File
+		var info *types.Info
+		if source != nil {
+			files = source.Syntax
+			info = source.TypesInfo
+		}
+		created[typePackage] = program.CreatePackage(typePackage, files, info, true)
+		return created[typePackage]
+	}
+	result := make([]*ssa.Package, 0, len(loaded))
+	for _, pkg := range loaded {
+		if !packageSafeForSSA(pkg) {
+			continue
+		}
+		result = append(result, create(pkg.Types))
+	}
+	return program, result
 }
 
 func repositoryRelativeModuleDir(root, moduleRoot string) string {
@@ -2296,18 +2391,33 @@ func (a *analyzer) targets(call ssa.CallInstruction) []*ssa.Function {
 			seen[function] = true
 		}
 	}
-	if node := a.graph.Nodes[call.Parent()]; node != nil {
-		for _, edge := range node.Out {
-			if edge.Site != call || edge.Callee == nil || edge.Callee.Func == nil || seen[edge.Callee.Func] {
-				continue
+	graphLimit := a.opts.MaxTargets + 1 - len(result)
+	if graphLimit < 0 {
+		graphLimit = 0
+	}
+	graphTargets := make(map[string]boundedCallTarget, graphLimit)
+	if a.graph != nil {
+		if node := a.graph.Nodes[call.Parent()]; node != nil {
+			for edgeIndex, edge := range node.Out {
+				if edgeIndex%1024 == 0 && a.ctx.Err() != nil {
+					break
+				}
+				if edge.Site != call || edge.Callee == nil || edge.Callee.Func == nil || seen[edge.Callee.Func] {
+					continue
+				}
+				a.retainBoundedCallTarget(graphTargets, a.newBoundedCallTarget(call, edge.Callee.Func), graphLimit)
 			}
-			result = append(result, edge.Callee.Func)
-			seen[edge.Callee.Func] = true
 		}
 	}
-	byImplementation := map[string]*ssa.Function{}
+	for _, target := range graphTargets {
+		if !seen[target.function] {
+			result = append(result, target.function)
+			seen[target.function] = true
+		}
+	}
+	byImplementation := make(map[string]*ssa.Function, len(result))
 	for _, function := range result {
-		key := functionPackagePath(function) + "\x00" + function.Name() + "\x00" + strconv.Itoa(int(function.Pos()))
+		key := a.functionImplementationID(function)
 		previous, exists := byImplementation[key]
 		if !exists || (previous.Synthetic != "" && function.Synthetic == "") {
 			byImplementation[key] = function
@@ -2317,8 +2427,107 @@ func (a *analyzer) targets(call ssa.CallInstruction) []*ssa.Function {
 	for _, function := range byImplementation {
 		result = append(result, function)
 	}
-	sort.Slice(result, func(i, j int) bool { return a.functionID(result[i]) < a.functionID(result[j]) })
+	sort.Slice(result, func(i, j int) bool {
+		leftID := a.functionID(result[i])
+		rightID := a.functionID(result[j])
+		if leftID != rightID {
+			return leftID < rightID
+		}
+		if result[i].Synthetic != result[j].Synthetic {
+			return result[i].Synthetic < result[j].Synthetic
+		}
+		return result[i].Pos() < result[j].Pos()
+	})
 	return result
+}
+
+type boundedCallTarget struct {
+	function       *ssa.Function
+	implementation string
+	terminalSeed   bool
+	repository     bool
+	concrete       bool
+	order          string
+}
+
+func (a *analyzer) newBoundedCallTarget(
+	call ssa.CallInstruction,
+	function *ssa.Function,
+) boundedCallTarget {
+	seed, matched := a.callSeed(function)
+	return boundedCallTarget{
+		function:       function,
+		implementation: a.functionImplementationID(function),
+		terminalSeed:   matched && a.terminalSeedEligible(seed, call, function),
+		repository:     a.isRepositoryFunction(function),
+		concrete:       function != nil && function.Synthetic == "",
+		order:          a.functionID(function),
+	}
+}
+
+func (a *analyzer) retainBoundedCallTarget(
+	retained map[string]boundedCallTarget,
+	candidate boundedCallTarget,
+	limit int,
+) {
+	if candidate.function == nil || limit <= 0 {
+		return
+	}
+	if previous, exists := retained[candidate.implementation]; exists {
+		if boundedCallTargetLess(candidate, previous) {
+			retained[candidate.implementation] = candidate
+		}
+		return
+	}
+	if len(retained) < limit {
+		retained[candidate.implementation] = candidate
+		return
+	}
+	var worstKey string
+	var worst boundedCallTarget
+	first := true
+	for key, current := range retained {
+		if first || boundedCallTargetLess(worst, current) {
+			worstKey = key
+			worst = current
+			first = false
+		}
+	}
+	if boundedCallTargetLess(candidate, worst) {
+		delete(retained, worstKey)
+		retained[candidate.implementation] = candidate
+	}
+}
+
+func boundedCallTargetLess(left, right boundedCallTarget) bool {
+	if left.terminalSeed != right.terminalSeed {
+		return left.terminalSeed
+	}
+	if left.repository != right.repository {
+		return left.repository
+	}
+	if left.concrete != right.concrete {
+		return left.concrete
+	}
+	if left.order != right.order {
+		return left.order < right.order
+	}
+	return left.implementation < right.implementation
+}
+
+func (a *analyzer) functionImplementationID(function *ssa.Function) string {
+	if function == nil {
+		return "unknown"
+	}
+	if a.functionImplementationIDs == nil {
+		a.functionImplementationIDs = map[*ssa.Function]string{}
+	}
+	if id, found := a.functionImplementationIDs[function]; found {
+		return id
+	}
+	id := functionPackagePath(function) + "\x00" + function.Name() + "\x00" + strconv.Itoa(int(function.Pos()))
+	a.functionImplementationIDs[function] = id
+	return id
 }
 
 func (a *analyzer) arguments(call ssa.CallInstruction) []ssa.Value {
@@ -3251,15 +3460,25 @@ func (a *analyzer) functionID(function *ssa.Function) string {
 	if function == nil {
 		return "unknown"
 	}
+	if a.functionIDs == nil {
+		a.functionIDs = map[*ssa.Function]string{}
+	}
+	if id, found := a.functionIDs[function]; found {
+		return id
+	}
 	path := functionPackagePath(function)
 	if path == "" {
 		path = "synthetic"
 	}
 	receiver := receiverName(function.Signature)
+	var id string
 	if receiver != "" {
-		return path + ".(" + receiver + ")." + function.Name()
+		id = path + ".(" + receiver + ")." + function.Name()
+	} else {
+		id = path + "." + function.Name()
 	}
-	return path + "." + function.Name()
+	a.functionIDs[function] = id
+	return id
 }
 
 func (a *analyzer) location(position token.Pos) Location {
