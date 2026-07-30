@@ -27,6 +27,7 @@
     'Close source drawer': 'Закрыть панель исходников',
     'This report requires JavaScript. The raw data is available in report.json.': 'Для этого отчёта нужен JavaScript. Исходные данные доступны в report.json.',
     'Project purpose · model orientation': 'Назначение проекта · ориентация модели',
+    'Purpose': 'Назначение',
     'Explore this repository': 'Исследовать репозиторий',
     'Components · model orientation': 'Компоненты · ориентация модели',
     'Start here': 'С чего начать',
