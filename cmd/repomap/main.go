@@ -465,6 +465,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	discoverSurfaces := fs.Bool("discover-surfaces", true, "discover bounded Go runtime surfaces for the report")
 	guidedTour := fs.Bool("guided-tour", true, "add an optional model-edited guided tour to the existing architecture map")
 	noSearch := fs.Bool("no-search", false, "omit Super Search from the generated report")
+	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
 	language := fs.String("lang", "en", "report language: en or ru")
 	noDebug := fs.Bool("no-debug", false, "disable debug artifact writing")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
@@ -495,6 +496,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	reportLanguage, err := normalizeReportLanguage(*language)
 	if err != nil {
 		return err
+	}
+	if *noCache && !*offline {
+		fmt.Fprintln(deps.stderr, "repomap: cross-run model response caches disabled")
 	}
 	absRepo, err := filepath.Abs(repo)
 	if err != nil {
@@ -562,6 +566,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		LLMRequestOnly:            *previewRequest,
 		OutputJSON:                *jsonOut,
 		Offline:                   *offline,
+		NoCache:                   *noCache,
 		FlowCount:                 *flows,
 		RunID:                     runID,
 		DebugDir:                  dDir,
@@ -588,6 +593,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		OutputLanguage:            reportLanguage,
 		EffectiveOptions: debugdump.EffectiveOptions{
 			Offline:          *offline,
+			NoCache:          *noCache,
 			FlowCount:        *flows,
 			DiscoverSurfaces: *discoverSurfaces && artifactRun,
 			GuidedTour:       *guidedTour && !*offline,
@@ -642,7 +648,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if runOptionalModelStages {
 			architectureStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: synthesizing bounded architecture grouping")
-			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr, reportLanguage); err != nil {
+			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr, *noCache, reportLanguage); err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
@@ -651,7 +657,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
-			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, reportLanguage)
+			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache, reportLanguage)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
@@ -971,7 +977,7 @@ func runOrient(args []string) error {
 	}
 
 	if reportArtifacts {
-		if _, err := synthesizeArchitectureForRun(ctx, runDir, os.Stderr); err != nil {
+		if _, err := synthesizeArchitectureForRun(ctx, runDir, os.Stderr, false); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: %v; architecture map will be unavailable\n", err)
 		}
 		reportData, err := report.ReadRunDir(runDir)
@@ -1279,7 +1285,7 @@ func runGuidedTour(runDir string, stderr io.Writer) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	outcome, err := editGuidedTourForRun(ctx, absDir, stderr)
+	outcome, err := editGuidedTourForRun(ctx, absDir, stderr, false)
 	if err != nil {
 		return err
 	}
@@ -1308,6 +1314,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default true)\n")
 	fmt.Fprintf(os.Stderr, "  --guided-tour   add an optional guided tour to the architecture map (default true)\n")
 	fmt.Fprintf(os.Stderr, "  --no-search     omit Super Search from the generated report\n")
+	fmt.Fprintf(os.Stderr, "  --no-cache      disable cross-run model response caches\n")
 	fmt.Fprintf(os.Stderr, "  --lang LANG     report language: en or ru (default: en)\n")
 	fmt.Fprintf(os.Stderr, "  --no-debug      disable debug artifact writing\n")
 	fmt.Fprintf(os.Stderr, "  --no-open       do not open the generated HTML report\n")

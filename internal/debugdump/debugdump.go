@@ -45,6 +45,7 @@ type RunMeta struct {
 
 type EffectiveOptions struct {
 	Offline          bool   `json:"offline"`
+	NoCache          bool   `json:"no_cache"`
 	FlowCount        int    `json:"flows"`
 	DiscoverSurfaces bool   `json:"discover_surfaces"`
 	GuidedTour       bool   `json:"guided_tour"`

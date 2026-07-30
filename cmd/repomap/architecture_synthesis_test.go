@@ -82,6 +82,45 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 }
 
+func TestEnsureArchitectureSynthesisNoCacheCallsProviderPerRun(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
+	runsDir := t.TempDir()
+	firstRun := filepath.Join(runsDir, "run-one")
+	secondRun := filepath.Join(runsDir, "run-two")
+	for _, dir := range []string{firstRun, secondRun} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		outcome, err := ensureArchitectureSynthesisWithOptions(
+			context.Background(), bundle, dir, "revision-one",
+			"openai-compatible/bearer", "test-model", provider,
+			architectureSynthesisOptions{disableCache: true},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome.Cached {
+			t.Fatalf("no-cache outcome = %#v", outcome)
+		}
+		if _, err := os.Stat(filepath.Join(dir, report.ArchitectureSynthesisFile)); err != nil {
+			t.Fatalf("per-run architecture artifact: %v", err)
+		}
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one call per run", provider.calls)
+	}
+	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, architectureSynthesisCacheDirectory, "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cacheFiles) != 0 {
+		t.Fatalf("no-cache populated shared architecture cache: %v", cacheFiles)
+	}
+}
+
 func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutput(t *testing.T) {
 	t.Parallel()
 
@@ -195,11 +234,11 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 	}
 }
 
-func TestEnsureArchitectureSynthesisDoesNotRetryCorruptSavedRecord(t *testing.T) {
+func TestEnsureArchitectureSynthesisRefetchesCorruptSavedRecord(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
-	provider := &architectureSynthesisStub{err: errors.New("must not be called")}
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
 	runsDir := t.TempDir()
 	runDir := filepath.Join(runsDir, "run")
 	if err := os.Mkdir(runDir, 0o700); err != nil {
@@ -219,15 +258,22 @@ func TestEnsureArchitectureSynthesisDoesNotRetryCorruptSavedRecord(t *testing.T)
 		t.Fatal(err)
 	}
 
-	_, err = ensureArchitectureSynthesis(
+	outcome, err := ensureArchitectureSynthesis(
 		context.Background(), bundle, runDir, "revision-corrupt",
 		"openai-compatible/bearer", "test-model", provider,
 	)
-	if err == nil || !strings.Contains(err.Error(), "without another provider call") {
-		t.Fatalf("error = %v", err)
+	if err != nil {
+		t.Fatalf("ensureArchitectureSynthesis() error = %v", err)
 	}
-	if provider.calls != 0 {
-		t.Fatalf("provider calls = %d, want 0", provider.calls)
+	if provider.calls != 1 || outcome.Cached {
+		t.Fatalf("provider calls/outcome = %d/%#v, want one replacement call", provider.calls, outcome)
+	}
+	saved, err := os.ReadFile(filepath.Join(cacheDir, cacheKey+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := componentmap.ReplaySynthesis(bundle, "revision-corrupt", saved); err != nil {
+		t.Fatalf("replacement cache does not replay: %v", err)
 	}
 }
 

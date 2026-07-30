@@ -15,7 +15,13 @@ import (
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
-const cacheDirectory = ".model-research"
+const (
+	cacheDirectory = ".model-research"
+	// cacheRecordVersion is independent from the persisted research contract.
+	// Increment it whenever a previously validated provider response is no
+	// longer guaranteed to replay under current stage validators.
+	cacheRecordVersion = 2
+)
 
 var ErrInvalidCachedRound = errors.New("model research: reject invalid cached round")
 
@@ -78,6 +84,9 @@ func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
 		return StageResponse{}, false, err
 	}
 	record, found, err := loadCache(input.RunsDir, cacheKey, requestHash(input.Request), input.EvidenceBundleHash)
+	if errors.Is(err, ErrInvalidCachedRound) {
+		return StageResponse{}, false, nil
+	}
 	if err != nil || !found {
 		return StageResponse{}, found, err
 	}
@@ -97,7 +106,7 @@ func SaveStageResponse(input StageCacheInput, response StageResponse) (StageResp
 		return StageResponse{}, err
 	}
 	record := cacheRecord{
-		Version: ContractVersion, CacheKey: cacheKey,
+		Version: cacheRecordVersion, CacheKey: cacheKey,
 		RequestSHA256: requestHash(input.Request), BundleSHA256: input.EvidenceBundleHash,
 		ResponseSHA256: requestHash(response.Content), Response: append([]byte(nil), response.Content...),
 		RequestBytes: len(input.Request), ResponseBytes: len(response.Content),
@@ -161,7 +170,7 @@ func loadCache(runsDir, cacheKey, requestSHA, bundleSHA string) (cacheRecord, bo
 	if err := json.Unmarshal(data, &record); err != nil {
 		return cacheRecord{}, false, fmt.Errorf("%w: decode: %v", ErrInvalidCachedRound, err)
 	}
-	if record.Version != ContractVersion || record.CacheKey != cacheKey ||
+	if record.Version != cacheRecordVersion || record.CacheKey != cacheKey ||
 		record.RequestSHA256 != requestSHA || record.BundleSHA256 != bundleSHA ||
 		record.ResponseSHA256 != requestHash(record.Response) || record.ResponseBytes != len(record.Response) {
 		return cacheRecord{}, false, ErrInvalidCachedRound

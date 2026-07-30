@@ -25,6 +25,7 @@ type Options struct {
 	LLMRequestOnly            bool
 	OutputJSON                bool
 	Offline                   bool
+	NoCache                   bool
 	FlowCount                 int
 	FlowBundlesOnly           bool
 	MaxReadmeBytes            int
@@ -368,7 +369,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 		call, err := obtainOrientation(
 			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
-			modelBundleJSON, requestJSON,
+			modelBundleJSON, requestJSON, !opts.NoCache,
 		)
 		raw := call.Raw
 		providerLatency := call.Metrics.LatencyMillis

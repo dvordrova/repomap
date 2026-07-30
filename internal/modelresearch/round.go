@@ -214,7 +214,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	}
 	if input.RunsDir != "" {
 		record := cacheRecord{
-			Version: ContractVersion, CacheKey: cacheKey,
+			Version: cacheRecordVersion, CacheKey: cacheKey,
 			RequestSHA256: round.ProviderRequestSHA256, BundleSHA256: bundleSHA,
 			ResponseSHA256: requestHash(result.Content), Response: append([]byte(nil), result.Content...),
 			RequestBytes: len(request), ResponseBytes: len(result.Content),

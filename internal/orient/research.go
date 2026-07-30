@@ -3,7 +3,6 @@ package orient
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -56,12 +55,13 @@ func obtainOrientation(
 	profile string,
 	bundleJSON []byte,
 	requestJSON []byte,
+	useCache bool,
 ) (orientationCall, error) {
 	call := orientationCall{Metrics: modelresearch.StageMetrics{
 		Stage: "orientation", Status: "prepared", RequestBytes: len(requestJSON),
 	}}
 	bundleHash := modelresearch.SHA256(bundleJSON)
-	if dw != nil {
+	if dw != nil && useCache {
 		call.CacheInput = modelresearch.StageCacheInput{
 			RunsDir: dw.BaseDir,
 			Fingerprint: modelresearch.FingerprintInput{
@@ -74,10 +74,7 @@ func obtainOrientation(
 		}
 		cached, found, err := modelresearch.LoadStageResponse(call.CacheInput)
 		if err != nil {
-			if !errors.Is(err, modelresearch.ErrInvalidCachedRound) {
-				return call, fmt.Errorf("orientation cache: %w", err)
-			}
-			found = false
+			return call, fmt.Errorf("orientation cache: %w", err)
 		}
 		if found {
 			call.Raw = cached.Content
@@ -183,9 +180,13 @@ func runTargetedResearch(
 			Activity: "targeted research", FileCount: len(planned.Scope.LocallyInspected),
 			EvidenceCount: len(planned.Bundle.Evidence),
 		})
+		runsDir := dw.BaseDir
+		if opts.NoCache {
+			runsDir = ""
+		}
 		round, callErr := modelresearch.ExecuteRound(ctx, modelresearch.ExecuteInput{
 			Plan: planned, Policy: state.Policy, Usage: state.Usage, Repository: state.Repository,
-			RunsDir: dw.BaseDir, RunDir: dw.RunDir(),
+			RunsDir: runsDir, RunDir: dw.RunDir(),
 			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
 		})
 		if err := ctx.Err(); err != nil {

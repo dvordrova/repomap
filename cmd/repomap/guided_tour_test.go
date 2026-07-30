@@ -64,6 +64,39 @@ func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
 	}
 }
 
+func TestEnsureGuidedTourNoCacheCallsProviderPerRun(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle := guidedTourTestBundle()
+	provider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, false)}
+
+	for _, name := range []string{"run-one", "run-two"} {
+		runDir := filepath.Join(runsDir, name)
+		outcome, err := ensureGuidedTourWithOptions(
+			context.Background(), bundle, runDir, "test", "fixture-model", provider,
+			guidedTourRunOptions{disableCache: true},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome.Cached {
+			t.Fatalf("no-cache outcome = %#v", outcome)
+		}
+		if _, err := os.Stat(filepath.Join(runDir, report.GuidedStoryFile)); err != nil {
+			t.Fatalf("per-run guided story: %v", err)
+		}
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one call per run", provider.calls)
+	}
+	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, ".model-research", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cacheFiles) != 0 {
+		t.Fatalf("no-cache populated shared model cache: %v", cacheFiles)
+	}
+}
+
 func TestEnsureGuidedTourRejectsInventedReferenceWithoutSavingIt(t *testing.T) {
 	runDir := filepath.Join(t.TempDir(), "run")
 	bundle := guidedTourTestBundle()
