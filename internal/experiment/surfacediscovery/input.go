@@ -585,6 +585,18 @@ func (a *analyzer) annotateTriggerOwnership(trigger *TriggerRecord) {
 	if trigger.Availability == "" {
 		trigger.Availability = AvailabilityAvailable
 	}
+	if trigger.ProcessEntrypoint.ID == "" &&
+		trigger.ProcessEntrypoint.Package == "" &&
+		trigger.ProcessEntrypoint.Location.Path == "" {
+		// A shallow descriptor or binding is repository-owned source evidence,
+		// not executable ownership evidence. In particular, classifying the
+		// zero process location would treat path.Dir("") as the repository
+		// root and incorrectly promote every such record to primary_application.
+		if trigger.ExecutableRole == "" {
+			trigger.ExecutableRole = ExecutableRoleUnknown
+		}
+		return
+	}
 	if trigger.OwningExecutable == "" {
 		locationDir := cleanRepositoryPath(path.Dir(trigger.ProcessEntrypoint.Location.Path))
 		if locationDir == "" || locationDir == "." {

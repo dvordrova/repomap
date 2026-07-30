@@ -71,6 +71,26 @@ func surfaceRoleAndReadiness(trigger TriggerRecord, quality SurfaceQuality) (str
 			"dependency behavior remains supporting evidence and is not an application-owned trace seed"
 	}
 	switch trigger.Kind {
+	case "cli_command":
+		switch trigger.DiscoveryBasis {
+		case "build_selected_typed_cobra_activation":
+			return SurfaceRoleEntrySurface, TraceReadinessPartial,
+				"exact direct command activation can seed a partial path; child dispatch and downstream effects remain unresolved"
+		case "build_selected_typed_cobra_binding":
+			return SurfaceRoleEntrySurface, TraceReadinessPartial,
+				"exact direct command binding can seed a partial path; process activation and downstream effects remain unresolved"
+		case "build_selected_typed_cobra_descriptor":
+			return SurfaceRoleDescriptor, TraceReadinessPartial,
+				"exact typed command descriptor is a useful starting point; registration and activation remain unresolved"
+		}
+		if quality.Identity == SurfaceQualityExact && quality.RegistrationStart == SurfaceQualityExact &&
+			quality.HandlerCallback == SurfaceQualityExact && quality.Reachability == SurfaceQualityStatic &&
+			trigger.Resolution == "exact" {
+			return SurfaceRoleEntrySurface, TraceReadinessReady,
+				"exact command identity, registration, callback, and static process reachability can seed a command trace"
+		}
+		return SurfaceRoleEntrySurface, TraceReadinessPartial,
+			"command evidence can seed only a partial path because registration, activation, callback, or reachability evidence is incomplete"
 	case "http_route":
 		if quality.Identity == SurfaceQualityExact && quality.RegistrationStart == SurfaceQualityExact &&
 			quality.HandlerCallback == SurfaceQualityExact && quality.Reachability == SurfaceQualityStatic &&

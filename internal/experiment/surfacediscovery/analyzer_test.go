@@ -146,7 +146,7 @@ func TestAnalyzeRecordsNamedDiscoveryPhases(t *testing.T) {
 	}
 	want := []string{
 		"package_load", "ssa_build", "call_graph", "candidate_index",
-		"architecture_anchors", "entrypoint_walk", "detached_walk",
+		"cobra_inventory", "architecture_anchors", "entrypoint_walk", "detached_walk",
 		"catalog_finalize", "grounding_finalize",
 	}
 	if !reflect.DeepEqual(names, want) {

@@ -62,13 +62,25 @@ func projectedSurfaceRoleAndReadiness(trigger DiscoveredTrigger, quality Surface
 		return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
 			"exact process entry can seed a partial trace; downstream runtime handoff remains unresolved"
 	case "cli_command":
+		switch trigger.DiscoveryBasis {
+		case "build_selected_typed_cobra_activation":
+			return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
+				"exact direct command activation can seed a partial path; child dispatch and downstream effects remain unresolved"
+		case "build_selected_typed_cobra_binding":
+			return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
+				"exact direct command binding can seed a partial path; process activation and downstream effects remain unresolved"
+		case "build_selected_typed_cobra_descriptor":
+			return SurfaceRoleDescriptor, SurfaceTracePartialReady,
+				"exact typed command descriptor is a useful starting point; registration and activation remain unresolved"
+		}
 		if quality.Identity == surfaceQualityExact && quality.RegistrationStart == surfaceQualityExact &&
-			quality.HandlerCallback == surfaceQualityExact && trigger.Resolution == "exact" {
+			quality.HandlerCallback == surfaceQualityExact && quality.Reachability == surfaceQualityStatic &&
+			trigger.Resolution == "exact" {
 			return SurfaceRoleEntrySurface, SurfaceTraceReady,
-				"exact command registration and callback can seed a command trace"
+				"exact command identity, registration, callback, and static process reachability can seed a command trace"
 		}
 		return SurfaceRoleEntrySurface, SurfaceTracePartialReady,
-			"command evidence can seed only a partial trace because registration or callback evidence is incomplete"
+			"command evidence can seed only a partial path because registration, activation, callback, or reachability evidence is incomplete"
 	case "http_route":
 		if quality.Identity == surfaceQualityExact && quality.RegistrationStart == surfaceQualityExact &&
 			quality.HandlerCallback == surfaceQualityExact && quality.Reachability == surfaceQualityStatic &&
