@@ -747,7 +747,7 @@ func TestRunDefaultGitLabURLRejectsInvalidURLBeforeRepositoryCapture(t *testing.
 	}
 }
 
-func TestRunDefaultGitLabURLRejectsDirtyRepositoryBeforeAnalysis(t *testing.T) {
+func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *testing.T) {
 	clearLLMEnv(t)
 	repository := t.TempDir()
 	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/dirty-static\n\ngo 1.24\n")
@@ -755,19 +755,221 @@ func TestRunDefaultGitLabURLRejectsDirtyRepositoryBeforeAnalysis(t *testing.T) {
 	runGit(t, repository, "init", "--quiet")
 	runGit(t, repository, "add", "--", "go.mod", "main.go")
 	commitTestRepository(t, repository)
-	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() { println(\"dirty\") }\n")
+	committed, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const dirtySourceMarker = "repomap-dirty-source-must-not-be-embedded-4f764179"
+	writeFile(
+		t,
+		filepath.Join(repository, "main.go"),
+		"package main\n\nfunc main() { println(\""+dirtySourceMarker+"\") }\n",
+	)
 
-	err := runDefaultWithDeps(repository, []string{
+	debugDir := t.TempDir()
+	var stderr bytes.Buffer
+	err = runDefaultWithDeps(repository, []string{
 		"--offline",
 		"--no-open",
-		"--debug-dir", t.TempDir(),
+		"--discover-surfaces=false",
+		"--debug-dir", debugDir,
 		"--gitlab-url", "https://gitlab.example.test/group/project",
 	}, defaultRunDeps{
 		stdout: io.Discard,
-		stderr: io.Discard,
+		stderr: &stderr,
 	})
-	if err == nil || !strings.Contains(err.Error(), "--gitlab-url requires a clean repository") {
+	if err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v\nstderr:\n%s", err, stderr.String())
+	}
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(html, []byte(`"working_tree_paths":["main.go"]`)) {
+		t.Fatalf("standalone report did not mark dirty source as local-only")
+	}
+	if !bytes.Contains(html, []byte(`"working_tree_dirty":true`)) {
+		t.Fatalf("standalone report did not disclose the stable dirty checkout")
+	}
+	if !bytes.Contains(html, []byte(`"revision":"`+committed.Head+`"`)) {
+		t.Fatalf("standalone report is not pinned to the captured HEAD")
+	}
+	if bytes.Contains(html, []byte(dirtySourceMarker)) {
+		t.Fatalf("standalone report embedded dirty source content")
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"gitlab_source_links",
+		"working_tree_dirty",
+		"working_tree_paths",
+		dirtySourceMarker,
+	} {
+		if bytes.Contains(reportJSON, []byte(forbidden)) {
+			t.Fatalf("canonical report contains HTML-only or source data %q", forbidden)
+		}
+	}
+	manifest, err := report.ReadRunManifest(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.RepositoryState.Dirty) != 1 ||
+		manifest.RepositoryState.Dirty[0].Path != "main.go" {
+		t.Fatalf("manifest dirty repository state = %#v", manifest.RepositoryState.Dirty)
+	}
+	if !strings.Contains(stderr.String(), "report includes 1 stable local change(s)") {
+		t.Fatalf("stderr missing dirty report explanation:\n%s", stderr.String())
+	}
+}
+
+func TestRunDefaultGitLabURLRejectsWorkingTreeChangesDuringAnalysis(t *testing.T) {
+	clearLLMEnv(t)
+	repository := t.TempDir()
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/moving-static\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repository)
+	initial, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name string
+		path string
+	}{
+		{name: "analyzed source", path: "main.go"},
+		{name: "unrelated file", path: "notes.txt"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			changed := initial
+			changed.Dirty = []freshness.DirtyFile{{
+				Status: "modified", Path: test.path, Kind: freshness.FileRegular,
+				ContentSHA256: strings.Repeat("f", 64),
+			}}
+			captures := []freshness.RepositoryState{initial, changed}
+			captureCount := 0
+			debugDir := t.TempDir()
+			err := runDefaultWithDeps(repository, []string{
+				"--offline",
+				"--no-open",
+				"--discover-surfaces=false",
+				"--debug-dir", debugDir,
+				"--gitlab-url", "https://gitlab.example.test/group/project",
+			}, defaultRunDeps{
+				stdout: io.Discard,
+				stderr: io.Discard,
+				captureRepo: func(context.Context, string) (freshness.RepositoryState, error) {
+					if captureCount >= len(captures) {
+						t.Fatalf("unexpected repository capture %d", captureCount+1)
+					}
+					state := captures[captureCount]
+					captureCount++
+					return state, nil
+				},
+			})
+			if err == nil || !strings.Contains(err.Error(), "working tree to remain unchanged") {
+				t.Fatalf("runDefaultWithDeps() error = %v", err)
+			}
+			if captureCount != 2 {
+				t.Fatalf("repository capture count = %d, want 2", captureCount)
+			}
+			entries, readErr := os.ReadDir(debugDir)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				html, readErr := os.ReadFile(filepath.Join(debugDir, entry.Name(), "report.html"))
+				if os.IsNotExist(readErr) {
+					continue
+				}
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if bytes.Contains(html, []byte(`"gitlab_source_links"`)) {
+					t.Fatal("failed run published standalone GitLab routing")
+				}
+			}
+		})
+	}
+}
+
+func TestRunDefaultGitLabHostOnlyURLUsesRepositoryOrigin(t *testing.T) {
+	clearLLMEnv(t)
+	repository := t.TempDir()
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/static-gitlab\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repository)
+	runGit(t, repository, "remote", "add", "origin", "git@gitlab.example.test:group/subgroup/project.git")
+
+	debugDir := t.TempDir()
+	if err := runDefaultWithDeps(repository, []string{
+		"--offline",
+		"--no-open",
+		"--discover-surfaces=false",
+		"--debug-dir", debugDir,
+		"--gitlab-url", "https://gitlab.example.test",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: io.Discard,
+	}); err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(html, []byte(
+		`"repository_url":"https://gitlab.example.test/group/subgroup/project"`,
+	)) {
+		t.Fatal("standalone report did not infer the GitLab project from origin")
+	}
+}
+
+func TestRunDefaultGitLabHostOnlyURLDoesNotGuessWithoutOrigin(t *testing.T) {
+	clearLLMEnv(t)
+	repository := t.TempDir()
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/static-gitlab\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repository)
+	runGit(t, repository, "remote", "add", "alpha", "git@gitlab.example.test:alpha/project.git")
+	runGit(t, repository, "remote", "add", "beta", "git@gitlab.example.test:beta/project.git")
+
+	captured := false
+	err := runDefaultWithDeps(repository, []string{
+		"--offline",
+		"--gitlab-url", "https://gitlab.example.test",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: io.Discard,
+		captureRepo: func(context.Context, string) (freshness.RepositoryState, error) {
+			captured = true
+			return freshness.RepositoryState{}, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "origin remote") {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	if captured {
+		t.Fatal("ambiguous host-only URL reached repository capture")
 	}
 }
 

@@ -53,11 +53,21 @@ at the matching GitLab project:
 ./repomap /path/to/repo --gitlab-url https://gitlab.example/group/project
 ```
 
+When the repository `origin` remote already points at that GitLab host, the shorter
+host-only form infers the namespace/project:
+
+```bash
+./repomap /path/to/repo --gitlab-url https://gitlab.example
+```
+
 This mode does not start the local server. It creates a self-contained
 `report.html` whose source links open the exact captured commit and line in
-GitLab, and it omits saved source bodies from that HTML. The checkout must stay
-clean during the run, the captured commit must already be available in GitLab,
-and private-project authentication remains the reader's browser responsibility.
+GitLab, and it omits saved source bodies from that HTML. Stable local changes
+are allowed: changed source paths are marked local-only because they cannot
+truthfully link to the captured commit until committed and pushed. The checkout
+must not change during the run, the captured commit must already be available
+in GitLab, and private-project authentication remains the reader's browser
+responsibility.
 
 Go orientation also groups bounded source signals into operational-flow
 candidates for background loops, maintenance, thresholds, consensus state, and

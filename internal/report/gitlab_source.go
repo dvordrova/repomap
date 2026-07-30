@@ -15,9 +15,47 @@ import (
 // ordinary links to the exact analyzed Git revision. RepositoryURL never
 // contains credentials, query parameters, or a fragment.
 type GitLabSourceLinks struct {
-	RepositoryURL string `json:"repository_url"`
-	Revision      string `json:"revision"`
-	PathPrefix    string `json:"path_prefix,omitempty"`
+	RepositoryURL    string   `json:"repository_url"`
+	Revision         string   `json:"revision"`
+	PathPrefix       string   `json:"path_prefix,omitempty"`
+	WorkingTreeDirty bool     `json:"working_tree_dirty,omitempty"`
+	WorkingTreePaths []string `json:"working_tree_paths,omitempty"`
+}
+
+// ResolveGitLabRepositoryURL accepts either a complete GitLab project URL or a
+// host-only URL. A host-only URL is completed from the credential-free
+// repository remote identity captured from repository-local Git config.
+func ResolveGitLabRepositoryURL(raw, remoteIdentity string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil ||
+		(parsed.Scheme != "https" && parsed.Scheme != "http") ||
+		parsed.Host == "" ||
+		parsed.User != nil ||
+		parsed.RawQuery != "" ||
+		parsed.Fragment != "" {
+		return NormalizeGitLabRepositoryURL(raw)
+	}
+	if strings.Trim(parsed.EscapedPath(), "/") != "" {
+		return NormalizeGitLabRepositoryURL(raw)
+	}
+
+	remoteHost, remoteProject, found := strings.Cut(strings.TrimSpace(remoteIdentity), "/")
+	if !found || remoteHost == "" || remoteProject == "" {
+		return "", fmt.Errorf("--gitlab-url host-only form requires a repository-local origin remote with a project path")
+	}
+	if !strings.EqualFold(parsed.Hostname(), remoteHost) {
+		return "", fmt.Errorf(
+			"--gitlab-url host %q does not match repository remote host; supply the complete GitLab project URL",
+			parsed.Hostname(),
+		)
+	}
+	parsed.Path = "/" + remoteProject
+	parsed.RawPath = ""
+	return NormalizeGitLabRepositoryURL(parsed.String())
 }
 
 // NormalizeGitLabRepositoryURL accepts a GitLab project URL, removes the
@@ -108,6 +146,22 @@ func (links *GitLabSourceLinks) validate() error {
 		normalized.PathPrefix != links.PathPrefix {
 		return fmt.Errorf("report: GitLab source links are not canonical")
 	}
+	if len(links.WorkingTreePaths) > 10_000 {
+		return fmt.Errorf("report: GitLab working-tree path list exceeds bounds")
+	}
+	if len(links.WorkingTreePaths) != 0 && !links.WorkingTreeDirty {
+		return fmt.Errorf("report: GitLab working-tree paths require a dirty working-tree marker")
+	}
+	previous := ""
+	for _, workingTreePath := range links.WorkingTreePaths {
+		if err := validateManifestPath(workingTreePath); err != nil {
+			return fmt.Errorf("report: GitLab working-tree path is invalid")
+		}
+		if previous != "" && workingTreePath <= previous {
+			return fmt.Errorf("report: GitLab working-tree paths must be uniquely sorted")
+		}
+		previous = workingTreePath
+	}
 	return nil
 }
 
@@ -123,9 +177,8 @@ func validateGitLabAuthority(authority RunAuthority) error {
 	if err := authority.validate(); err != nil {
 		return err
 	}
-	if len(authority.repository.Dirty) != 0 ||
-		authority.freshness.State != freshness.FreshnessFresh {
-		return fmt.Errorf("report: standalone GitLab report requires a clean, unchanged repository")
+	if authority.freshness.State != freshness.FreshnessFresh {
+		return fmt.Errorf("report: standalone GitLab report requires the captured working tree to remain unchanged")
 	}
 	for _, submodule := range authority.repository.Submodules {
 		if submodule.IncludedInAnalysis {
