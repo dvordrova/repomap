@@ -235,6 +235,23 @@ const incomplete = {
   principal_anchors: [reading.principal_anchors[0]],
   reading_anchors: [reading.reading_anchors[0]],
 };
+const rejected = {
+  id: "study-rejected",
+  question: "How do integration test utilities launch clusters?",
+  why_it_matters: "This proposal was not selected by the canonical reducer.",
+  learning_outcome: "This raw proposal must not be published.",
+  principal_anchors: [reading.principal_anchors[0]],
+  reading_anchors: [reading.reading_anchors[0]],
+};
+const selected = [reading, attached].concat([
+  "How are Raft proposals applied to replicated state?",
+  "How does etcd grant, renew, and revoke leases?",
+  "How does etcd persist and recover durable state?",
+  "How do etcdctl and clientv3 send requests to an etcd server?",
+].map((question, index) => Object.assign({}, reading, {
+  id: "study-selected-" + String(index + 3),
+  question,
+})));
 const mechanism = { artifact_id: "mechanism-dispatch", steps: [{ title: "Dispatch" }] };
 const topics = [
   {
@@ -271,9 +288,9 @@ const report = {
       observable_result: "Invoke a handler.",
     },
     shape: reading.areas,
-    directions: [reading, attached],
+    directions: selected,
   },
-  incomplete_study: { version: 1, directions: [incomplete] },
+  incomplete_study: { version: 1, directions: [incomplete, rejected] },
 };
 const roots = {
   "rm-overview": new Element("section"),
@@ -323,7 +340,9 @@ api.renderIncompleteStudyOverview();
 const incompleteOverviewText = text(roots["rm-study-overview"]);
 api.openStudyDirection("study-incomplete");
 const incompleteDetailText = text(roots["rm-study-detail"]);
+const canonicalStudyMap = report.study_map;
 delete report.incomplete_study;
+delete report.study_map;
 report.user_mechanisms.length = 0;
 const topicRoots = { "rm-overview": new Element("section") };
 const topicWindow = {
@@ -343,6 +362,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 topicWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
 report.user_topics.length = 0;
+report.study_map = canonicalStudyMap;
 const emptyRoots = { "rm-overview": new Element("section") };
 const emptyWindow = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
@@ -466,16 +486,23 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("map return = %#v", got.Returned)
 	}
 	for _, token := range []string{
-		"Pick a path worth following.",
-		"Full mechanism · 1 source-backed step",
-		"How this code works",
+		"Repository brief",
+		"A useful path through the repository",
+		"How should I study request routing?",
+		"How does dispatch reach a handler?",
 	} {
 		if !strings.Contains(got.ShelfOverviewText, token) {
-			t.Errorf("mixed shelf is missing %q: %q", token, got.ShelfOverviewText)
+			t.Errorf("canonical Study Overview is missing %q: %q", token, got.ShelfOverviewText)
 		}
 	}
-	if strings.Contains(got.ShelfOverviewText, "Repository brief") {
-		t.Fatalf("non-empty mixed shelf fell through to Study Map: %q", got.ShelfOverviewText)
+	for _, forbidden := range []string{
+		"Pick a path worth following.",
+		"Message creation and real-time delivery",
+		"Where should I begin examining request admission?",
+	} {
+		if strings.Contains(got.ShelfOverviewText, forbidden) {
+			t.Fatalf("canonical Study Overview exposed fallback %q: %q", forbidden, got.ShelfOverviewText)
+		}
 	}
 	for _, token := range []string{
 		"Questions worth exploring",
@@ -510,12 +537,40 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("Study Direction card = %q", got.CardText)
 	}
 	for _, token := range []string{
-		"What is worth understanding next?",
-		"Where should I begin examining request admission?",
-		"Inspect starting point →",
+		"A useful path through the repository",
+		"How should I study request routing?",
+		"How does dispatch reach a handler?",
+		"How are Raft proposals applied to replicated state?",
+		"How does etcd grant, renew, and revoke leases?",
+		"How does etcd persist and recover durable state?",
+		"How do etcdctl and clientv3 send requests to an etcd server?",
 	} {
 		if !strings.Contains(got.IncompleteOverviewText, token) {
-			t.Errorf("incomplete Study overview is missing %q: %q", token, got.IncompleteOverviewText)
+			t.Errorf("canonical Study overview is missing %q: %q", token, got.IncompleteOverviewText)
+		}
+	}
+	studyDirectionActions := func(text string) int {
+		return strings.Count(text, "Explore this direction →") +
+			strings.Count(text, "Open ready deep dive →")
+	}
+	if count := studyDirectionActions(got.IncompleteOverviewText); count != 6 {
+		t.Fatalf("canonical Study rendered %d directions, want 6: %q", count, got.IncompleteOverviewText)
+	}
+	if count := studyDirectionActions(got.EmptyShelfOverviewText); count != 6 {
+		t.Fatalf("canonical Overview rendered %d directions, want 6: %q", count, got.EmptyShelfOverviewText)
+	}
+	if count := studyDirectionActions(got.ShelfOverviewText); count != 6 {
+		t.Fatalf("canonical Overview with a ready Mechanism rendered %d directions, want 6: %q", count, got.ShelfOverviewText)
+	}
+	for _, forbidden := range []string{
+		"Where should I begin examining request admission?",
+		"How do integration test utilities launch clusters?",
+		"Message creation and real-time delivery",
+		"Asset upload and storage",
+		"Server initialization and bootstrap",
+	} {
+		if strings.Contains(got.IncompleteOverviewText+got.EmptyShelfOverviewText, forbidden) {
+			t.Fatalf("canonical Study publication exposed rejected or ineligible %q: %q / %q", forbidden, got.IncompleteOverviewText, got.EmptyShelfOverviewText)
 		}
 	}
 	for _, token := range []string{

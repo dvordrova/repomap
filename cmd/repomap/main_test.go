@@ -506,11 +506,11 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
-	if requestCount < 3 {
-		t.Fatalf("provider request count = %d, want orientation, targeted research, and discovery", requestCount)
+	if requestCount < 2 {
+		t.Fatalf("provider request count = %d, want orientation and downstream evidence/editor calls", requestCount)
 	}
-	if opportunityCount != 1 {
-		t.Fatalf("opportunity request count = %d, want exactly one", opportunityCount)
+	if opportunityCount != 0 {
+		t.Fatalf("ordinary Python journey scheduled %d semantic opportunity request(s), want none", opportunityCount)
 	}
 	requestText := string(requestBody)
 	for _, want := range []string{`\"language\":\"Python\"`, "src/tool/__main__.py", "src/tool/service.py", "tests/test_service.py"} {
@@ -547,8 +547,7 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 		"tiny Python service",
 		"CLI startup",
 		"src/tool/__main__.py",
-		"Service execution",
-		"proof adapter is not available",
+		"src/tool/service.py",
 	} {
 		if !strings.Contains(string(reportJSON), want) {
 			t.Fatalf("report missing %q\nstderr: %s\nreport: %s", want, stderr.String(), reportJSON)
@@ -558,20 +557,22 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 	if err := json.Unmarshal(reportJSON, &generated); err != nil {
 		t.Fatal(err)
 	}
-	if len(generated.UserMechanisms) != 0 || len(generated.UserTopics) != 1 {
+	if len(generated.UserMechanisms) != 0 || len(generated.UserTopics) != 0 {
 		t.Fatalf(
-			"Python learning shelf = %d mechanisms / %d topics, want 0 / 1",
+			"Python learning shelf = %d mechanisms / %d topics, want 0 / 0 without an accepted Study response",
 			len(generated.UserMechanisms),
 			len(generated.UserTopics),
 		)
 	}
-	topic := generated.UserTopics[0]
-	if len(topic.StartingSymbols) != 1 ||
-		topic.StartingSymbols[0].Path != "src/tool/service.py" ||
-		topic.StartingSymbols[0].Symbol != "run" ||
-		topic.StartingSymbols[0].Line != 1 ||
-		filepath.IsAbs(topic.StartingSymbols[0].Path) {
-		t.Fatalf("Python topic = %#v, want one exact repository-relative run anchor", topic)
+	foundServiceSource := false
+	for _, source := range generated.UserSources {
+		if source.Path == "src/tool/service.py" && source.EnclosingSymbol == "run" && source.StartLine == 1 {
+			foundServiceSource = true
+			break
+		}
+	}
+	if !foundServiceSource {
+		t.Fatalf("Python exact sources = %#v, want repository-relative src/tool/service.py run anchor", generated.UserSources)
 	}
 }
 
@@ -1311,19 +1312,29 @@ func TestRunDefaultNoSearchPreservesModelCallPlan(t *testing.T) {
 	if !reflect.DeepEqual(withoutSearch, withSearch) {
 		t.Fatalf("--no-search changed model request plan\nwith search: %q\nwithout search: %q", withSearch, withoutSearch)
 	}
-	if len(withSearch) != 5 {
-		t.Fatalf("model request count = %d, want orientation, architecture, guided tour, opportunity scan, and repository study map", len(withSearch))
+	if len(withSearch) != 4 {
+		t.Fatalf("model request count = %d, want orientation, architecture, guided tour, and repository study map", len(withSearch))
 	}
 	wantStageMarkers := []string{
 		"senior software engineer helping orient",
 		"compact conceptual architecture landscape",
 		"optional editorial guide for one bounded repository tour",
-		"Propose central mechanism questions",
 		"editorial onboarding planner for one bounded repository model",
 	}
 	for index, marker := range wantStageMarkers {
 		if !bytes.Contains(withSearch[index], []byte(marker)) {
 			t.Fatalf("model request %d does not contain stage marker %q: %s", index, marker, withSearch[index])
+		}
+	}
+	forbiddenStageMarkers := []string{
+		"Propose central mechanism questions",
+		"repository-owned ways to build, run, test, and operate",
+	}
+	for index, request := range withSearch {
+		for _, marker := range forbiddenStageMarkers {
+			if bytes.Contains(request, []byte(marker)) {
+				t.Fatalf("ordinary model request %d unexpectedly scheduled %q: %s", index, marker, request)
+			}
 		}
 	}
 }
