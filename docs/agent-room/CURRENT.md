@@ -1,15 +1,21 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/144-python-focus-study-bridge-discriminator.md
+    decisions/146-untracked-nested-repository-freshness.md
 
 Status:
-    Decision 144 active; Python focus-to-Study bridge discriminator authorized
+    Decision 146 active; untracked nested repository freshness correction authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 146 corrects an ordinary-run failure where Git represented an
+    untracked nested checkout as one directory. Because that checkout is
+    outside the parent repository's tracked snapshot, freshness now detects
+    and excludes exactly that case without recursion or reading ignored
+    contents. Tracked submodules and ordinary dirty files retain their current
+    behavior, while non-repository directory entries still fail closed.
     Decision 144 adds only one provider-free discriminator for the real Beets
     failure observed after Decision 142. It must route the already recorded
     Pyright `_get_plugin:406` focus through the existing targeted research

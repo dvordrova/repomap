@@ -89,6 +89,13 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 		if entry.submodule != "" {
 			continue
 		}
+		excluded, err := excludedUntrackedRepository(ctx, rootHandle, root, entry)
+		if err != nil {
+			return RepositoryState{}, err
+		}
+		if excluded {
+			continue
+		}
 		file, err := fingerprintDirtyFile(rootHandle, entry)
 		if err != nil {
 			return RepositoryState{}, err
@@ -239,6 +246,40 @@ func captureSubmodules(ctx context.Context, root string, entries []statusEntry) 
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
 	return result, nil
+}
+
+// Git reports an untracked nested checkout as one directory even with
+// --untracked-files=all. It is outside the superproject's tracked snapshot, so
+// do not recurse into it or let its private/ignored contents block a report.
+func excludedUntrackedRepository(
+	ctx context.Context,
+	rootHandle *os.Root,
+	root string,
+	entry statusEntry,
+) (bool, error) {
+	if entry.xy != "??" {
+		return false, nil
+	}
+	info, err := rootHandle.Lstat(filepath.FromSlash(entry.path))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("freshness: inspect dirty path %q: %w", entry.path, err)
+	}
+	if !info.IsDir() {
+		return false, nil
+	}
+	nestedPath := filepath.Join(root, filepath.FromSlash(entry.path))
+	topLevel, err := gitOutput(ctx, nestedPath, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false, nil
+	}
+	nestedRoot, err := canonicalRoot(strings.TrimSpace(string(topLevel)))
+	if err != nil {
+		return false, nil
+	}
+	return nestedRoot == nestedPath, nil
 }
 
 func parseIgnoredBuildInputs(data []byte) ([]statusEntry, error) {

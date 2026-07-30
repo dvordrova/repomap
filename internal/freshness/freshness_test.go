@@ -101,6 +101,33 @@ func TestCaptureRepositoryHashesIgnoredBuildInputsButNotIgnoredSecrets(t *testin
 	assertReason(t, CompareRepository(second, third), ReasonRepositoryDirty, "generated.go")
 }
 
+func TestCaptureRepositoryIgnoresUntrackedNestedRepository(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	nested := filepath.Join(repo, "scratch", "tool")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, nested, "init", "--quiet")
+	writeFile(t, filepath.Join(nested, "main.go"), "package nested\n")
+	writeFile(t, filepath.Join(nested, ".env"), "SECRET=must-not-be-read\n")
+	gitCommand(t, nested, "add", "main.go")
+	gitCommand(t, nested, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "nested")
+
+	first := capture(t, repo)
+	if len(first.Dirty) != 0 || len(first.Submodules) != 0 {
+		t.Fatalf("nested untracked repository affected parent state: %#v", first)
+	}
+
+	writeFile(t, filepath.Join(nested, "main.go"), "package nested\n\nconst changed = true\n")
+	writeFile(t, filepath.Join(nested, ".env"), "SECRET=changed-but-still-not-read\n")
+	second := capture(t, repo)
+	if differences := CompareRepository(first, second); len(differences) != 0 {
+		t.Fatalf("nested untracked repository affected parent freshness: %#v", differences)
+	}
+}
+
 func TestCaptureRepositoryTreatsExcludedSubmoduleDirtAsInformational(t *testing.T) {
 	root, submodule := repositoryWithSubmodule(t)
 	clean := capture(t, root)
