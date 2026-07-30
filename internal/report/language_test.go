@@ -89,6 +89,7 @@ process.stdout.write(JSON.stringify([
   translate("cli/cmd/run.go · lines 85–144"),
   translate("1 surface · 1 code path · 2 exact anchors"),
   translate("1 exact member"),
+  translate("Code paths (1)"),
   translate("Code paths (1) ▾"),
   translate("Production package github.com/example/project/v0/pkg/service."),
 ]));
@@ -112,6 +113,7 @@ process.stdout.write(JSON.stringify([
 		"cli/cmd/run.go · строки 85–144",
 		"1 surface · 1 путь в коде · 2 точные опоры",
 		"1 точный элемент",
+		"Пути в коде (1)",
 		"Пути в коде (1) ▾",
 		"Пакет production-кода github.com/example/project/v0/pkg/service.",
 	}
