@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/160-standalone-github-report.md
+    decisions/161-localization-characterization-contracts.md
 
 Status:
-    Decision 160 active; standalone GitHub report authorized
+    Decision 161 active; isolated localization contracts authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 161 records the actual current English/Russian locale and cache
+    behavior, including the safe-miss correction that makes part of the draft
+    roadmap stale. It authorizes only one isolated provider-free
+    `internal/localization` contract slice: allowlisted stable field IDs,
+    canonical English identity, protected placeholders, deterministic hashes,
+    and canonical fallback for invalid supplied projections. Ordinary CLI and
+    report wiring, persisted localization artifacts, cache v2, provider calls,
+    DOM localization replacement, and the attributable dirty Python-focus WIP
+    remain held. The useful current comparison is English to Russian;
+    EN-to-RU-to-EN is deferred until a locale-projection cache exists.
     Decision 160 adds `--github-url` as the GitHub-hosted equivalent of the
     existing standalone GitLab report. A complete repository URL or a
     host-only URL inferred from sanitized `origin` identity produces one
