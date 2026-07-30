@@ -2,6 +2,7 @@ package freshness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -248,6 +249,63 @@ func TestCaptureInputsIgnoresAmbientAlternateGitIdentity(t *testing.T) {
 	if len(inputs) != 1 || inputs[0].Path != "main.go" ||
 		inputs[0].ContentSHA256 != sha256Hex([]byte(wantedContent)) {
 		t.Fatalf("captured inputs = %#v", inputs)
+	}
+}
+
+func TestCaptureInputsBatchesRegularSymlinkAndMissingPaths(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	if err := os.MkdirAll(filepath.Join(repo, "batch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{"missing.go"}
+	for index := 0; index < 64; index++ {
+		path := fmt.Sprintf("batch/file-%02d.go", index)
+		writeFile(t, filepath.Join(repo, path), fmt.Sprintf("package batch\n\nconst Value%02d = %d\n", index, index))
+		paths = append(paths, path)
+	}
+	writeFile(t, filepath.Join(repo, ":literal.go"), "package fixture\n\nconst Literal = true\n")
+	paths = append(paths, ":literal.go")
+	if err := os.Symlink("batch/file-00.go", filepath.Join(repo, "batch-link")); err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, "batch-link")
+	gitCommand(t, repo, "add", "--", "batch", "batch-link", ":(literal):literal.go")
+	gitCommand(
+		t,
+		repo,
+		"-c", "user.name=repomap test",
+		"-c", "user.email=repomap@example.invalid",
+		"commit", "--quiet", "-m", "batch inputs",
+	)
+
+	inputs, err := CaptureInputs(context.Background(), capture(t, repo), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != len(paths) {
+		t.Fatalf("captured input count = %d, want %d", len(inputs), len(paths))
+	}
+	byPath := make(map[string]CapturedInput, len(inputs))
+	for _, input := range inputs {
+		byPath[input.Path] = input
+	}
+	if input := byPath["batch/file-00.go"]; input.Kind != FileRegular || input.Mode != "100644" ||
+		input.ContentSHA256 != sha256Hex([]byte("package batch\n\nconst Value00 = 0\n")) {
+		t.Fatalf("regular input = %#v", input)
+	}
+	if input := byPath["batch-link"]; input.Kind != FileSymlink || input.Mode != "120000" ||
+		input.ContentSHA256 != sha256Hex([]byte("batch/file-00.go")) {
+		t.Fatalf("symlink input = %#v", input)
+	}
+	if input := byPath[":literal.go"]; input.Kind != FileRegular ||
+		input.ContentSHA256 != sha256Hex([]byte("package fixture\n\nconst Literal = true\n")) {
+		t.Fatalf("literal-path input = %#v", input)
+	}
+	if input := byPath["missing.go"]; input.Kind != FileMissing || input.Mode != "" ||
+		input.ContentSHA256 != "" {
+		t.Fatalf("missing input = %#v", input)
 	}
 }
 

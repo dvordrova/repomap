@@ -64,11 +64,13 @@ func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing
 		if diagnostic.Package != "example.com/partial_load/cmd/broken" {
 			continue
 		}
-		foundDiagnostic = diagnostic.OwningExecutable == "cmd/broken" &&
+		if diagnostic.OwningExecutable == "cmd/broken" &&
 			diagnostic.ExecutableRole == ExecutableRoleSecondaryService &&
 			diagnostic.Availability == AvailabilityUnavailable &&
 			diagnostic.Location != nil && diagnostic.Location.Path == "cmd/broken/main.go" &&
-			strings.Contains(diagnostic.Message, "undefined: missingGeneratedAsset")
+			strings.Contains(diagnostic.Message, "undefined: missingGeneratedAsset") {
+			foundDiagnostic = true
+		}
 	}
 	if !foundDiagnostic {
 		t.Fatalf("owned repository-relative diagnostic not found: %#v", result.Coverage.PackageDiagnostics)
