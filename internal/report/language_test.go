@@ -70,6 +70,7 @@ const sandbox = {
     addEventListener() {},
   },
   document: {
+    createElement(tag) { return {tagName: tag.toUpperCase(), className: "", textContent: ""}; },
     getElementById(id) {
       if (id === "rm-report-data") return {textContent: JSON.stringify({report_language: "ru"})};
       return null;
@@ -78,6 +79,7 @@ const sandbox = {
 };
 vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
 const translate = sandbox.window.__REPOMAP_WORKSPACE_TEST__.translateUIString;
+const txt = sandbox.window.__REPOMAP_WORKSPACE_TEST__.txt;
 process.stdout.write(JSON.stringify([
   translate("What to study"),
   translate("Purpose"),
@@ -93,6 +95,16 @@ process.stdout.write(JSON.stringify([
   translate("Code paths (1)"),
   translate("Code paths (1) ▾"),
   translate("Production package github.com/example/project/v0/pkg/service."),
+  translate("Open an anchor at its exact repository location."),
+  translate("Core data type"),
+  translate("Public boundary"),
+  translate("Surfaces"),
+  translate("1 surface · 1 exact anchor"),
+  translate("← Back to reading path"),
+  translate("Opened pglogrepl.go:74 in VS Code"),
+  translate("Map context for “Как работает репликация?”"),
+  txt("code", "", "Open").textContent,
+  txt("span", "", "Open").textContent,
 ]));
 `
 	output, err := exec.Command(node, "-e", runner, assetPath).CombinedOutput()
@@ -113,11 +125,21 @@ process.stdout.write(JSON.stringify([
 		"2 точные опоры",
 		"5 точных опор",
 		"cli/cmd/run.go · строки 85–144",
-		"1 surface · 1 путь в коде · 2 точные опоры",
+		"1 точка запуска · 1 путь в коде · 2 точные опоры",
 		"1 точный элемент",
 		"Пути в коде (1)",
 		"Пути в коде (1) ▾",
 		"Пакет production-кода github.com/example/project/v0/pkg/service.",
+		"Откройте опору в её точной позиции в репозитории.",
+		"Основной тип данных",
+		"Публичная граница",
+		"Точки запуска",
+		"1 точка запуска · 1 точная опора",
+		"← Назад к пути изучения",
+		"Открыто в VS Code: pglogrepl.go:74",
+		"Контекст на карте: «Как работает репликация?»",
+		"Open",
+		"Открыть",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("translations = %#v", got)

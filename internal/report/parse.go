@@ -513,6 +513,15 @@ func readRunDir(
 	if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
 		data.Warnings = append(data.Warnings, warning)
 	}
+	data.StudyPublication, warning = readStudyPublicationStatus(
+		filepath.Join(absDir, studymap.StatusFile),
+	)
+	if warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
+	if warning = studyPublicationUserWarning(data.StudyPublication); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	}
 	if warning := replaySavedIncompleteStudy(
 		data,
 		filepath.Join(absDir, studymap.BundleFile),

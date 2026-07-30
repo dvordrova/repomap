@@ -3021,6 +3021,10 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	)}
 	alternatives := []string{}
 	switch {
+	case a.hasOnlyAuxiliaryProcessEntrypoints(processEntryCount) && a.hasBuildSelectedLibraryPackage():
+		archetype = "library_framework"
+		evidenceItems = append(evidenceItems, "all exact process entrypoints are examples or test helpers; a non-main library package is build-selected")
+		alternatives = append(alternatives, "application")
 	case (kinds["registry_write"] || kinds["extension_family"]) &&
 		(kinds["request_dispatch_root"] || kinds["admin_control_plane"]):
 		archetype = "modular_platform_server"
@@ -3053,6 +3057,27 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		return
 	}
 	a.result.normalize()
+}
+
+func (a *analyzer) hasOnlyAuxiliaryProcessEntrypoints(processEntryCount int) bool {
+	if processEntryCount == 0 || len(a.processEntrypoints) != processEntryCount {
+		return false
+	}
+	for _, entrypoint := range a.processEntrypoints {
+		if entrypoint.role != ExecutableRoleTestOrHelper {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *analyzer) hasBuildSelectedLibraryPackage() bool {
+	for _, pkg := range a.packages {
+		if pkg != nil && pkg.Pkg != nil && pkg.Pkg.Name() != "main" {
+			return true
+		}
+	}
+	return false
 }
 
 const (

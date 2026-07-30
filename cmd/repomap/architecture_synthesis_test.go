@@ -349,6 +349,69 @@ func TestPrepareArchitectureSynthesisSupportsLandscapeWithoutFlowProof(t *testin
 	}
 }
 
+func TestPrepareArchitectureSynthesisSupportsOnePackageLibrary(t *testing.T) {
+	t.Parallel()
+
+	runDir := filepath.Join(t.TempDir(), "run")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureSynthesisFixture(t, runDir, "snapshot.json", `{
+		"repo_name":"fixture",
+		"filtered_files":["wal.go"],
+		"go_facts":{
+			"modules":[{
+				"id":"module-one","module_path":"example.com/wal","module_dir":".",
+				"go_mod":"go.mod","main":true,"display_name":".","packages_count":1
+			}],
+			"packages":[{
+				"canonical_package_path":"example.com/wal","name":"wal",
+				"owning_module_id":"module-one","module_path":"example.com/wal",
+				"package_directory":".","module_relative_path":".",
+				"display_path":"wal","locality":"local","files":["wal.go"]
+			}],
+			"packages_count":1
+		}
+	}`)
+	writeArchitectureSynthesisFixture(t, runDir, "orientation_report.json", `{"project_guess":"fixture library"}`)
+	writeArchitectureSynthesisFixture(t, runDir, "llm_bundle.json", `{
+		"repo_name":"example.com/wal",
+		"go":{
+			"modules_count":1,"packages_count":1,
+			"module_summaries":[{
+				"module_path":"example.com/wal","module_dir":".",
+				"packages_count":1,"entrypoints_count":0,"role_guess":"repository_root"
+			}]
+		}
+	}`)
+
+	data, err := report.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := report.BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.CandidateBundle.Candidates) != 1 ||
+		input.CandidateBundle.RepositoryArchetype != componentmap.ArchetypeLibraryFramework {
+		t.Fatalf("one-package library bundle = %#v", input.CandidateBundle)
+	}
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, input.CandidateBundle)}
+	outcome, err := prepareArchitectureSynthesisWithOptions(
+		context.Background(), runDir, "revision-one-package",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{disableCache: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || !outcome.ProviderCallSucceeded ||
+		outcome.ValidationOutcome != componentmap.ValidationAccepted {
+		t.Fatalf("provider calls/outcome = %d / %#v", provider.calls, outcome)
+	}
+}
+
 func writeArchitectureSynthesisFixture(t *testing.T, dir, name, contents string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600); err != nil {

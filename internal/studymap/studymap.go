@@ -393,7 +393,7 @@ func BuildRecord(bundle Bundle, proposal Proposal) (Record, error) {
 		repositoryType = RepositoryMixed
 	}
 	shape := validShapeAreaIDs(proposal.ShapeAreaIDs, index)
-	if len(shape) < 3 {
+	if len(shape) == 0 {
 		shape = defaultShapeAreaIDs(bundle.Areas)
 	}
 
@@ -558,8 +558,8 @@ func (record Record) Validate() error {
 		!completeBrief(record.Brief) {
 		return fmt.Errorf("study map: saved repository brief is invalid")
 	}
-	if len(record.ShapeAreaIDs) < 3 || len(record.ShapeAreaIDs) > 7 {
-		return fmt.Errorf("study map: repository shape must contain three to seven areas")
+	if len(record.ShapeAreaIDs) < 1 || len(record.ShapeAreaIDs) > 7 {
+		return fmt.Errorf("study map: repository shape must contain one to seven areas")
 	}
 	for _, areaID := range record.ShapeAreaIDs {
 		if _, ok := index.areas[areaID]; !ok {

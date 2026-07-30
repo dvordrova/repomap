@@ -149,6 +149,10 @@ type ReportData struct {
 	// guide over exact, locally validated code anchors. Its order is editorial,
 	// not a runtime sequence; canonical Mechanisms remain separate authority.
 	StudyMap *RepositoryStudyMap `json:"study_map,omitempty"`
+	// StudyPublication records whether the independent Study editing stage
+	// published a usable result. A failed stage remains explicit in the product
+	// report instead of being silently replaced by the remaining Overview.
+	StudyPublication *StudyPublicationStatus `json:"study_publication,omitempty"`
 	// IncompleteStudy retains bounded provider questions that have exact saved
 	// reading starts but did not satisfy the unchanged complete Reading Pack
 	// contract. It is navigation only and never claims an ordered path.

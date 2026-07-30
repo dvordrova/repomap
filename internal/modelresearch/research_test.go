@@ -171,6 +171,75 @@ func TestReadSourceWindowWithoutFocusStartsAtCodeInsteadOfLineOne(t *testing.T) 
 	}
 }
 
+func TestPlanTargetedRoundsRetainsDistantWindowsInOneFile(t *testing.T) {
+	repo := t.TempDir()
+	var source strings.Builder
+	source.WriteString("package wal\n\n")
+	for line := 3; line <= 600; line++ {
+		switch line {
+		case 100:
+			source.WriteString("func Close() { syncFile() }\n")
+		case 500:
+			source.WriteString("func writeBatch() { syncFile() }\n")
+		default:
+			fmt.Fprintf(&source, "var line%d = %d\n", line, line)
+		}
+	}
+	writeResearchFile(t, repo, "wal.go", source.String())
+	input := PlanningInput{
+		RepoPath: repo,
+		Questions: []ProposedQuestion{{
+			ID: "durability", Purpose: "understand durability",
+			Question: "How does writeBatch synchronize writes?", CandidateIDs: []string{"wal"},
+		}},
+		Candidates: []FileCandidate{{
+			ID: "wal", Path: "wal.go", Score: 100,
+			FocusLocations: []evidence.Location{
+				{Path: "wal.go", Line: 100},
+				{Path: "wal.go", Line: 300},
+				{Path: "wal.go", Line: 500},
+			},
+		}},
+		InitialProviderPaths: []string{"wal.go"},
+		Universe:             LocalRepositoryUniverse{AuthorizedPaths: []string{"wal.go"}},
+		Policy:               DefaultPolicy(),
+	}
+	plan, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Selected) != 1 {
+		t.Fatalf("selected rounds = %#v", plan)
+	}
+	var windows []SourceWindow
+	for _, item := range plan.Selected[0].Bundle.Evidence {
+		if item.Kind == EvidenceSource && item.Window != nil {
+			windows = append(windows, *item.Window)
+		}
+	}
+	if len(windows) != 2 {
+		t.Fatalf("source windows = %#v, want two bounded distant windows", windows)
+	}
+	foundClose, foundWriteBatch := false, false
+	for _, window := range windows {
+		for _, line := range window.Lines {
+			foundClose = foundClose || strings.Contains(line, "func Close")
+			foundWriteBatch = foundWriteBatch || strings.Contains(line, "func writeBatch")
+		}
+	}
+	if !foundClose || !foundWriteBatch {
+		t.Fatalf("distant focus coverage: Close=%t writeBatch=%t windows=%#v", foundClose, foundWriteBatch, windows)
+	}
+	prompt, err := BuildPrompt(plan.Selected[0].Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt.User, "Missing text cannot prove") ||
+		!strings.Contains(prompt.User, "unresolved frontier") {
+		t.Fatalf("targeted research prompt lacks bounded absence contract:\n%s", prompt.User)
+	}
+}
+
 func TestPlanTargetedRoundsSkipsHeaderOnlyGoWithoutProviderCall(t *testing.T) {
 	repo := t.TempDir()
 	writeResearchFile(t, repo, "header.go", "// package header\npackage header\n\nimport \"fmt\"\n")

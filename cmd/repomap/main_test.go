@@ -181,7 +181,7 @@ func TestRunDefaultStopsWhenOrientationIsCanceled(t *testing.T) {
 	}
 }
 
-func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
+func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/friend-trial\n\ngo 1.24\n")
@@ -291,8 +291,8 @@ func TestRunDefaultCompletesOneRequestOrientationJourney(t *testing.T) {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
 
-	if requestCount != 1 {
-		t.Fatalf("provider request count = %d, want 1; model-only orientation is not semantic evidence", requestCount)
+	if requestCount != 2 {
+		t.Fatalf("provider request count = %d, want orientation plus one-package architecture grouping", requestCount)
 	}
 	if !bytes.Equal(preview.Bytes(), requestBody) {
 		t.Fatalf("preview differs from outbound request\npreview: %s\nrequest: %s", preview.Bytes(), requestBody)

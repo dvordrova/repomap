@@ -214,6 +214,21 @@ func TestProjectArchitectureCanvasLabelsPackageFallbackHonestly(t *testing.T) {
 	}
 }
 
+func TestProjectArchitectureCanvasLabelsAcceptedPackageGroupingHonestly(t *testing.T) {
+	t.Parallel()
+
+	input, _ := architectureCanvasInput(t, architectureResticProof(), nil)
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canvas.ArchitectureSource != componentmap.SourceValidatedModel ||
+		canvas.Title != "Conceptual architecture" ||
+		canvas.Subtitle != "Model-assisted grouping of exact local repository members" {
+		t.Fatalf("accepted package grouping presentation = %#v", canvas)
+	}
+}
+
 func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testing.T) {
 	t.Parallel()
 

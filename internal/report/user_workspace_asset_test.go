@@ -9,6 +9,26 @@ import (
 	"testing"
 )
 
+func TestUserWorkspaceMakesFailedStudyPublicationVisible(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, marker := range []string{
+		"renderStudyPublicationNotice(root);",
+		"Study unavailable for this run",
+		"it is not a substitute Study result",
+		"label + ' · ' + path",
+	} {
+		if !strings.Contains(script, marker) {
+			t.Fatalf("workspace script does not expose failed Study stage marker %q", marker)
+		}
+	}
+}
+
 func TestUserWorkspaceReducerPreservesMechanismContext(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -338,6 +358,8 @@ api.renderOverviewWorkspace();
 const shelfOverviewText = text(roots["rm-overview"]);
 api.renderIncompleteStudyOverview();
 const incompleteOverviewText = text(roots["rm-study-overview"]);
+api.openStudyDirection("study-routing");
+const completeDetailText = text(roots["rm-study-detail"]);
 api.openStudyDirection("study-incomplete");
 const incompleteDetailText = text(roots["rm-study-detail"]);
 const canonicalStudyMap = report.study_map;
@@ -379,14 +401,16 @@ const emptyDocument = {
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window: emptyWindow, document: emptyDocument, URLSearchParams, Set, Map, AbortController,
 });
-emptyWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
+const emptyAPI = emptyWindow.__REPOMAP_WORKSPACE_TEST__;
+emptyAPI.renderOverviewWorkspace();
+const completeOverviewRoute = emptyAPI.parseWorkspaceHash("#/study", [], null);
 const card = api.renderStudyDirectionCard(reading, 0);
 process.stdout.write(JSON.stringify({
-  route, incompleteOverviewRoute, incompleteRoute, attachedRoute, invalidRoute,
+  route, incompleteOverviewRoute, completeOverviewRoute, incompleteRoute, attachedRoute, invalidRoute,
   sourceState, closedState, returned,
   shelfOverviewText, topicOverviewText: text(topicRoots["rm-overview"]),
   emptyShelfOverviewText: text(emptyRoots["rm-overview"]), cardText: text(card),
-  incompleteOverviewText, incompleteDetailText,
+  incompleteOverviewText, completeDetailText, incompleteDetailText,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "study-map-workspace-test.js")
@@ -420,6 +444,13 @@ process.stdout.write(JSON.stringify({
 				View string `json:"view"`
 			} `json:"state"`
 		} `json:"incompleteOverviewRoute"`
+		CompleteOverviewRoute struct {
+			Valid         bool   `json:"valid"`
+			CanonicalHash string `json:"canonicalHash"`
+			State         struct {
+				View string `json:"view"`
+			} `json:"state"`
+		} `json:"completeOverviewRoute"`
 		IncompleteRoute struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
@@ -451,6 +482,7 @@ process.stdout.write(JSON.stringify({
 		EmptyShelfOverviewText string `json:"emptyShelfOverviewText"`
 		CardText               string `json:"cardText"`
 		IncompleteOverviewText string `json:"incompleteOverviewText"`
+		CompleteDetailText     string `json:"completeDetailText"`
 		IncompleteDetailText   string `json:"incompleteDetailText"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
@@ -467,7 +499,12 @@ process.stdout.write(JSON.stringify({
 	if !got.IncompleteOverviewRoute.Valid ||
 		got.IncompleteOverviewRoute.CanonicalHash != "#/study" ||
 		got.IncompleteOverviewRoute.State.View != "study_overview" {
-		t.Fatalf("incomplete Study overview route = %#v", got.IncompleteOverviewRoute)
+		t.Fatalf("Study overview route = %#v", got.IncompleteOverviewRoute)
+	}
+	if !got.CompleteOverviewRoute.Valid ||
+		got.CompleteOverviewRoute.CanonicalHash != "#/study" ||
+		got.CompleteOverviewRoute.State.View != "study_overview" {
+		t.Fatalf("complete-only Study overview route = %#v", got.CompleteOverviewRoute)
 	}
 	if !got.IncompleteRoute.Valid ||
 		got.IncompleteRoute.CanonicalHash != "#/study/study-incomplete" ||
@@ -484,6 +521,10 @@ process.stdout.write(JSON.stringify({
 	}
 	if got.Returned.View != "study" || got.Returned.DirectionID != "study-routing" {
 		t.Fatalf("map return = %#v", got.Returned)
+	}
+	if !strings.Contains(got.CompleteDetailText, "← All Study directions") ||
+		strings.Contains(got.CompleteDetailText, "← Repository overview") {
+		t.Fatalf("complete Study detail has inconsistent return action: %q", got.CompleteDetailText)
 	}
 	for _, token := range []string{
 		"Repository brief",

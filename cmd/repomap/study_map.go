@@ -50,7 +50,7 @@ const studyMapUserPrompt = `Return exactly this JSON shape:
     "observable_result": {"text": "observable result, or empty when unavailable", "support_ids": ["exact supplied ids"]},
     "domain_terms": [{"term": "term", "meaning": "short meaning", "support_ids": ["exact supplied ids"]}]
   },
-  "shape_area_ids": ["three to seven exact supplied area ids"],
+  "shape_area_ids": ["one to seven exact supplied area ids"],
   "candidates": [
     {
       "question": "natural developer question ending in ?",
@@ -372,7 +372,7 @@ func buildStudyMapBundle(
 	if len(anchors) == 0 {
 		return studymap.Bundle{}, fmt.Errorf("study map: no locally authorized code anchors")
 	}
-	areas, areaPaths = ensureStudyMapAreas(areas, areaPaths, anchors)
+	areas, areaPaths = ensureStudyMapAreas(areas, areaPaths, anchors, data.ReportLanguage)
 	for index := range anchors {
 		anchors[index].AreaIDs = studyMapAreasForPath(anchors[index].Path, areas, areaPaths)
 	}
@@ -875,9 +875,13 @@ func studyMapAreas(
 				name = repositoryPackage.Name
 			}
 			name = studyMapHumanName(name)
+			responsibility := "Production package " + repositoryPackage.CanonicalPath + "."
+			if strings.EqualFold(strings.TrimSpace(data.ReportLanguage), "ru") {
+				responsibility = "Основной пакет " + repositoryPackage.CanonicalPath + "."
+			}
 			addArea(studymap.Area{
 				ID:   studyMapOpaqueID("package-area", repositoryPackage.CanonicalPath),
-				Name: name, Responsibility: "Production package " + repositoryPackage.CanonicalPath + ".",
+				Name: name, Responsibility: responsibility,
 				Path: selectedPath,
 			}, packagePaths)
 		}
@@ -1021,13 +1025,14 @@ func ensureStudyMapAreas(
 	areas []studymap.Area,
 	areaPaths map[string][]string,
 	anchors []studymap.Anchor,
+	reportLanguage string,
 ) ([]studymap.Area, map[string][]string) {
 	seen := make(map[string]struct{}, len(areas))
 	for _, area := range areas {
 		seen[area.ID] = struct{}{}
 	}
 	for _, anchor := range anchors {
-		if len(areas) >= 3 {
+		if len(areas) >= 1 {
 			break
 		}
 		directory := path.Dir(anchor.Path)
@@ -1039,9 +1044,17 @@ func ensureStudyMapAreas(
 			continue
 		}
 		seen[id] = struct{}{}
+		name := strings.TrimSpace(anchor.Symbol)
+		if name == "" {
+			name = studyMapHumanName(directory)
+		}
+		responsibility := "Exact code area for inspecting behavior around " + name + "."
+		if strings.EqualFold(strings.TrimSpace(reportLanguage), "ru") {
+			responsibility = "Точная область кода для изучения поведения вокруг " + name + "."
+		}
 		areas = append(areas, studymap.Area{
-			ID: id, Name: studyMapHumanName(directory),
-			Responsibility: "A concrete production area to inspect in the repository.",
+			ID: id, Name: name,
+			Responsibility: responsibility,
 			Path:           anchor.Path, Line: anchor.Line,
 		})
 		areaPaths[id] = []string{anchor.Path}

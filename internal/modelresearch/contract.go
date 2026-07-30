@@ -9,7 +9,7 @@ import (
 
 const (
 	ContractVersion = 1
-	PromptVersion   = "targeted-research-json-v1"
+	PromptVersion   = "targeted-research-json-v2"
 	StateFile       = "model_research.json"
 )
 

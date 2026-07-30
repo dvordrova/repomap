@@ -62,6 +62,10 @@
     'Unverified paths': 'Непроверенные пути',
     'Unknowns': 'Неизвестные',
     'Warnings': 'Предупреждения',
+    'Study unavailable for this run': 'Раздел «Изучение» недоступен для этого запуска',
+    'No Study directions were published because the editing stage did not pass its required checks. The Overview below uses independently accepted inputs; it is not a substitute Study result.': 'Направления изучения не опубликованы: этап редактирования не прошёл обязательные проверки. Overview ниже использует независимо принятые данные и не подменяет результат Study.',
+    'Study stage did not finish, so no Study directions were published. The Overview below uses independently accepted inputs; it is not a substitute Study result.': 'Этап Study не завершился, поэтому направления изучения не опубликованы. Overview ниже использует независимо принятые данные и не подменяет результат Study.',
+    '← Back to reading path': '← Назад к пути изучения',
     'Retrieval details': 'Детали извлечения',
     'No candidate directions were produced.': 'Не удалось получить ни одного направления.',
     'Suggested start': 'Предлагаемое начало',
@@ -85,6 +89,7 @@
     'Question worth exploring': 'Вопрос для исследования',
     'Inspect starting points →': 'Изучить точки входа →',
     '← All paths': '← Все пути',
+    '← All Study directions': '← Все направления изучения',
     'What remains unresolved': 'Что осталось неясным',
     'Exact places to start': 'Точные точки входа',
     'Open exact symbol →': 'Открыть точный символ →',
@@ -117,8 +122,11 @@
     'Reading path': 'Путь чтения',
     'You will inspect': 'Что вы изучите',
     'Open an anchor to reveal its exact saved source.': 'Откройте опору, чтобы увидеть точный сохранённый исходник.',
+    'Open an anchor at its exact repository location.': 'Откройте опору в её точной позиции в репозитории.',
     'Then inspect': 'Затем изучите',
     'Related implementation': 'Связанная реализация',
+    'Public boundary': 'Публичная граница',
+    'Core data type': 'Основной тип данных',
     'Continue exploring': 'Продолжить исследование',
     'Related repository context': 'Связанный контекст репозитория',
     'Open a referenced document or inspect the full architecture.': 'Откройте связанный документ или изучите полную архитектуру.',
@@ -175,12 +183,37 @@
     'Close inspector': 'Закрыть инспектор',
     'Architecture inspector': 'Инспектор архитектуры',
     'Explore the repository map': 'Исследуйте карту репозитория',
-    'Select a component, runtime surface, or code path to inspect its implementation context.': 'Выберите компонент, runtime surface или путь в коде, чтобы изучить контекст реализации.',
+    'Select a component, runtime surface, or code path to inspect its implementation context.': 'Выберите компонент, точку запуска или путь в коде, чтобы изучить контекст реализации.',
+    'Code area': 'Область кода',
+    'Repository component': 'Компонент репозитория',
+    'Repository area': 'Область репозитория',
+    'Package': 'Пакет',
+    'Start in code': 'С чего начать в коде',
+    'Reading paths': 'Пути изучения',
+    'Open reading path': 'Открыть путь изучения',
+    'Runtime surface': 'Точка запуска',
+    'Where the repository exposes this entry point.': 'Где репозиторий предоставляет эту точку входа.',
+    'Code areas': 'Области кода',
+    'Source-linked sequence': 'Последовательность по исходному коду',
+    'Implementation steps': 'Шаги реализации',
+    'Implementation step': 'Шаг реализации',
+    'Code step': 'Шаг в коде',
+    'Binding code': 'Связующий код',
+    'Exact saved anchor': 'Точная сохранённая опора',
+    'Code transition': 'Переход в коде',
+    'Call site': 'Место вызова',
+    'From': 'Откуда',
+    'To': 'Куда',
+    'Source': 'Исходник',
+    'Exact source': 'Точный исходник',
+    'Exact local member': 'Точный локальный элемент',
     'Zoom out': 'Уменьшить масштаб',
     'Fit architecture at readable scale': 'Вместить архитектуру в читаемом масштабе',
     'Fit': 'Вместить',
     'Zoom in': 'Увеличить масштаб',
-    'Surfaces': 'Surfaces',
+    'Surfaces': 'Точки запуска',
+    'Choose a source-backed path and walk through its implementation one step at a time.': 'Выберите путь по исходникам и последовательно разберите его реализацию.',
+    'Explore the architecture map for additional context.': 'Откройте карту архитектуры, чтобы увидеть дополнительный контекст.',
     'unresolved value': 'неразрешённое значение',
     'Code path': 'Путь в коде',
     'Code paths': 'Пути в коде',
@@ -270,17 +303,19 @@
       match = trimmed.match(/^(\d+) (step|steps)$/);
       if (!translated && match) translated = russianCount(match[1], 'шаг', 'шага', 'шагов');
       match = trimmed.match(/^Showing (\d+) of (\d+) surfaces\.$/);
-      if (!translated && match) translated = 'Показано surfaces: ' + match[1] + ' из ' + match[2] + '.';
+      if (!translated && match) translated = 'Показано точек запуска: ' + match[1] + ' из ' + match[2] + '.';
       match = trimmed.match(/^(\d+) components?$/);
       if (!translated && match) translated = russianCount(match[1], 'компонент', 'компонента', 'компонентов');
+      match = trimmed.match(/^(\d+) repository files?$/);
+      if (!translated && match) translated = russianCount(match[1], 'файл репозитория', 'файла репозитория', 'файлов репозитория');
       match = trimmed.match(/^(\d+) exact anchors?$/);
       if (!translated && match) translated = russianCount(match[1], 'точная опора', 'точные опоры', 'точных опор');
-      match = trimmed.match(/^(\d+) surfaces · (\d+) exact anchors?$/);
-      if (!translated && match) translated = match[1] + ' surfaces · ' +
+      match = trimmed.match(/^(\d+) surfaces? · (\d+) exact anchors?$/);
+      if (!translated && match) translated = russianCount(match[1], 'точка запуска', 'точки запуска', 'точек запуска') + ' · ' +
         russianCount(match[2], 'точная опора', 'точные опоры', 'точных опор');
       match = trimmed.match(/^(\d+) surfaces? · (\d+) code paths? · (\d+) exact anchors?$/);
       if (!translated && match) translated =
-        russianCount(match[1], 'surface', 'surfaces', 'surfaces') + ' · ' +
+        russianCount(match[1], 'точка запуска', 'точки запуска', 'точек запуска') + ' · ' +
         russianCount(match[2], 'путь в коде', 'пути в коде', 'путей в коде') + ' · ' +
         russianCount(match[3], 'точная опора', 'точные опоры', 'точных опор');
       match = trimmed.match(/^(\d+) exact members?$/);
@@ -297,6 +332,10 @@
       if (!translated && match) translated = 'Изучить переход ' + match[1];
       match = trimmed.match(/^(.+) · lines (\d+)[–-](\d+)$/);
       if (!translated && match) translated = match[1] + ' · строки ' + match[2] + '–' + match[3];
+      match = trimmed.match(/^Opened (.+) in VS Code$/);
+      if (!translated && match) translated = 'Открыто в VS Code: ' + match[1];
+      match = trimmed.match(/^Map context for “(.+)”$/);
+      if (!translated && match) translated = 'Контекст на карте: «' + match[1] + '»';
     }
     if (!translated) return value;
     return value.slice(0, value.indexOf(trimmed)) + translated +
@@ -369,6 +408,7 @@
 	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
+	var STUDY_PUBLICATION = DATA.study_publication || null;
 	var COMPLETE_STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
 	var INCOMPLETE_STUDY = DATA.incomplete_study || null;
 	var INCOMPLETE_STUDY_DIRECTIONS = INCOMPLETE_STUDY && Array.isArray(INCOMPLETE_STUDY.directions)
@@ -622,7 +662,7 @@
 			return defaultWorkspaceHash();
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
-    if (state.view === 'study_overview' && INCOMPLETE_STUDY_DIRECTIONS.length) return '#/study';
+    if (state.view === 'study_overview' && STUDY_DIRECTIONS.length) return '#/study';
     if (state.view === 'search') return '#/overview';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
@@ -696,7 +736,7 @@
       valid = state.view === 'mechanisms';
       canonicalHash = valid ? '#/mechanisms' : '#/overview';
 		} else if (segments.length === 1 && segments[0] === 'study') {
-			state.view = INCOMPLETE_STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
+			state.view = STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
     } else if (segments.length === 1 && segments[0] === 'search') {
@@ -910,7 +950,8 @@
 
   function txt(tag, cls, text) {
     var e = el(tag, cls);
-    e.textContent = translateUIString(text || '');
+    var value = text == null ? '' : String(text);
+    e.textContent = /^(code|pre|kbd)$/i.test(tag) ? value : translateUIString(value);
     return e;
   }
 
@@ -3953,6 +3994,14 @@
 
 	function userArchitectureAvailable() {
 		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		var synthesis = DATA.architecture_synthesis || null;
+		if (synthesis && (
+			synthesis.state === 'failed' ||
+			synthesis.proposal_rejected ||
+			synthesis.fallback_selected
+		)) {
+			return false;
+		}
 		if (STUDY_MAP) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
 		if (REPOSITORY_GUIDE) {
 			return !!(REPOSITORY_GUIDE.architecture_useful && DATA.architecture_canvas);
@@ -4612,13 +4661,9 @@
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
 		var incomplete = !!direction.incomplete;
-		var back = txt(
-			'button',
-			'rm-secondary-action rm-study-back',
-			incomplete ? '← All Study directions' : '← Repository overview'
-		);
+		var back = txt('button', 'rm-secondary-action rm-study-back', '← All Study directions');
 		back.type = 'button';
-		back.onclick = function () { navigateWorkspace(incomplete ? 'study_overview' : 'overview'); };
+		back.onclick = function () { navigateWorkspace('study_overview'); };
 		root.appendChild(back);
 		root.appendChild(renderViewHeading(
 			incomplete ? 'Incomplete Study direction' : 'Reading path',
@@ -4650,7 +4695,7 @@
 			var startButton = txt('button', 'rm-primary-action', 'Start with ' + start.label + ' →');
 			startButton.type = 'button';
 			startButton.onclick = function () {
-				openSourceSnippet(start.source, start.location);
+				openSourceLocation(start.location);
 			};
 			startActions.appendChild(startButton);
 			root.appendChild(startActions);
@@ -4660,7 +4705,7 @@
 			incomplete
 				? ((direction.reading_anchors || []).length === 1 ? 'Exact place to start' : 'Exact places to start')
 				: 'You will inspect',
-			'Open an anchor to reveal its exact saved source.'
+			'Open an anchor at its exact repository location.'
 		));
 		var anchors = el('div', 'rm-study-reading-list');
 		(direction.reading_anchors || []).forEach(function (reading, index) {
@@ -4674,11 +4719,14 @@
 		var actions = el('div', 'rm-overview-actions');
 		(direction.documents || []).forEach(function (document) {
 			if (!document || !repositoryLocationAvailable(document.location)) return;
-			var button = txt('button', 'rm-secondary-action', document.label || 'Open documentation');
+			var button = txt(
+				'button',
+				'rm-secondary-action',
+				studyDocumentActionLabel(document)
+			);
 			button.type = 'button';
 			button.onclick = function () {
-				if (document.source) openSourceSnippet(document.source, document.location);
-				else openSourceLocation(document.location);
+				openSourceLocation(document.location);
 			};
 			actions.appendChild(button);
 		});
@@ -4707,6 +4755,14 @@
 		return null;
 	}
 
+	function studyDocumentActionLabel(document) {
+		if (!document) return 'Open documentation';
+		var location = document.location || sourceSnippetLocation(document.source);
+		var path = location && location.path || '';
+		var label = document.label || 'Open documentation';
+		return path ? label + ' · ' + path : label;
+	}
+
 	function firstSourcedStudyAnchor(direction) {
 		var anchors = direction && Array.isArray(direction.reading_anchors) ? direction.reading_anchors : [];
 		for (var index = 0; index < anchors.length; index++) {
@@ -4723,7 +4779,7 @@
 		if (documentReference) {
 			return {
 				kind: 'document',
-				label: documentReference.label || documentReference.location.path,
+				label: studyDocumentActionLabel(documentReference),
 				location: documentReference.location || sourceSnippetLocation(documentReference.source),
 				source: documentReference.source,
 			};
@@ -4751,7 +4807,7 @@
 		card.appendChild(copy);
 		var open = txt('button', 'rm-secondary-action rm-study-reading-anchor__open', 'Open exact source');
 		open.type = 'button';
-		open.onclick = function () { openSourceSnippet(reading.source, location); };
+		open.onclick = function () { openSourceLocation(location); };
 		card.appendChild(open);
 		return card;
 	}
@@ -5265,6 +5321,7 @@
     var root = document.getElementById('rm-overview');
     if (!root) return;
     root.replaceChildren();
+		renderStudyPublicationNotice(root);
 		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
 			renderStudyMapOverview(root);
 			return;
@@ -5377,6 +5434,20 @@
       root.appendChild(exploreSection);
     }
   }
+
+	function renderStudyPublicationNotice(root) {
+		if (!root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
+		var notice = el('section', 'rm-study-publication-notice');
+		notice.appendChild(txt('h2', '', 'Study unavailable for this run'));
+		notice.appendChild(txt(
+			'p',
+			'',
+			STUDY_PUBLICATION.state === 'started'
+				? 'Study stage did not finish, so no Study directions were published. The Overview below uses independently accepted inputs; it is not a substitute Study result.'
+				: 'No Study directions were published because the editing stage did not pass its required checks. The Overview below uses independently accepted inputs; it is not a substitute Study result.'
+		));
+		root.appendChild(notice);
+	}
 
   function renderMechanismsWorkspace() {
     var root = document.getElementById('rm-mechanisms');
@@ -6291,17 +6362,17 @@
     }
   }
 
-  function openSourceLocation(location) {
-    if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
-    var snippet = embeddedSourceForLocation(location);
-    if (snippet) {
-      openSourceSnippet(snippet, location);
-      return;
-    }
-    if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
-      requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
-    }
-  }
+	function openSourceLocation(location) {
+		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
+		if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
+			requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
+			return;
+		}
+		var snippet = embeddedSourceForLocation(location);
+		if (snippet) {
+			openSourceSnippet(snippet, location);
+		}
+	}
 
   function openSourceSnippet(snippet, location, expanded) {
     if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
@@ -6521,6 +6592,31 @@
 
 			var sourceSeen = {};
 			var sources = [];
+			(component.members || []).forEach(function (member) {
+				(member && member.facts || []).forEach(function (fact) {
+					var location = fact && fact.location;
+					var filePath = String(location && location.path || '');
+					if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
+					var line = Number(location.line) || 0;
+					var key = filePath + '\u0000' + String(line);
+					if (sourceSeen[key]) return;
+					sourceSeen[key] = true;
+					sources.push({
+						label: member.name || filePath,
+						detail: member.name || filePath,
+						location: { path: filePath, line: line },
+					});
+				});
+			});
+			sources.sort(function (left, right) {
+				var leftLine = Number(left && left.location && left.location.line) || 0;
+				var rightLine = Number(right && right.location && right.location.line) || 0;
+				return Number(rightLine > 0) - Number(leftLine > 0) ||
+					String(left && left.location && left.location.path || '').localeCompare(
+						String(right && right.location && right.location.path || '')
+					) ||
+					leftLine - rightLine;
+			});
 			matches.forEach(function (match) {
 				match.anchors.forEach(function (anchor) {
 					var source = anchor && anchor.source;
@@ -6906,6 +7002,7 @@
       parseWorkspaceHash: parseWorkspaceHash,
       workspaceHashForState: workspaceHashForState,
 			workspaceRouteFamily: workspaceRouteFamily,
+      userArchitectureAvailable: userArchitectureAvailable,
       reduceWorkspaceState: reduceWorkspaceState,
       renderExactReferences: renderExactReferences,
       renderSourceCode: renderSourceCode,
@@ -6958,6 +7055,7 @@
 		openSemanticSearchTarget: openSemanticSearchTarget,
       semanticSearchTargetAvailable: semanticSearchTargetAvailable,
       translateUIString: translateUIString,
+      txt: txt,
     });
   }
 

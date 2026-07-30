@@ -376,7 +376,7 @@ func architectureGroundingWording(source componentmap.ArchitectureSource, mode c
 	case componentmap.GroundingMixed:
 		return "Architecture hypotheses and grounded behavior", "Some areas remain package-derived"
 	default:
-		return "Package landscape", "Behavioral grounding was insufficient or the architecture proposal was rejected"
+		return "Conceptual architecture", "Model-assisted grouping of exact local repository members"
 	}
 }
 

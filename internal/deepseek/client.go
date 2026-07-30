@@ -284,7 +284,7 @@ func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 			},
 			{
 				Role: "user",
-				Content: `Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
+				Content: c.withOutputLanguageUser(`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
 Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
 
@@ -361,7 +361,7 @@ Important rules:
 - Use only the provided facts bundle. Do not imagine files you cannot see.
 
 Facts bundle JSON:
-` + string(bundleJSON),
+` + string(bundleJSON)),
 			},
 		},
 		Temperature:    float64Pointer(0.1),
@@ -390,7 +390,7 @@ func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode 
 		Model: c.Model,
 		Messages: []chatMessage{
 			{Role: "system", Content: c.withOutputLanguage(systemContent)},
-			{Role: "user", Content: userContent},
+			{Role: "user", Content: c.withOutputLanguageUser(userContent)},
 		},
 		Temperature: float64Pointer(0.1),
 		MaxTokens:   c.MaxTokens,
@@ -410,7 +410,21 @@ func (c *Client) withOutputLanguage(systemContent string) string {
 Write every human-readable prose value in Russian. Keep JSON keys, enum values,
 opaque IDs, repository paths, code identifiers, package and module names, API
 and protocol names, product and library names, and quoted source text unchanged.
-Return exactly the requested JSON shape.`
+	Return exactly the requested JSON shape.`
+}
+
+func (c *Client) withOutputLanguageUser(userContent string) string {
+	if c == nil || strings.ToLower(strings.TrimSpace(c.OutputLanguage)) != "ru" {
+		return userContent
+	}
+	return `OUTPUT LANGUAGE CONTRACT:
+- Write every title, description, explanation, question, reason, warning, summary, and other human-readable prose value in Russian.
+- Keep repository paths, code identifiers, opaque IDs, JSON keys, enum values, package/module names, API/protocol/product/library names, and quoted source text unchanged.
+- Do not return English explanatory sentences or English prose headings.
+
+` + userContent + `
+
+Before returning JSON, verify again that every human-readable prose value is Russian while protected technical identifiers remain unchanged.`
 }
 
 func float64Pointer(value float64) *float64 {

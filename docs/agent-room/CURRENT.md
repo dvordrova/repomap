@@ -1,15 +1,26 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/149-guided-direction-prose-boundary.md
+    decisions/150-small-library-product-corrections.md
 
 Status:
-    Decision 149 active; Guided direction prose boundary authorized
+    Decision 150 active; small-library product corrections authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 150 corrects fresh uncached Russian product runs of pglogrepl and
+    WAL. One-package libraries now reach bounded architecture synthesis; Study
+    shape adapts to one through seven supplied areas; targeted research can
+    retain two distant windows from one file and explicitly forbids absence
+    claims from lexical-window omissions; exact component member locations
+    make visible architecture cards inspectable; example-only executables no
+    longer turn a library into an application; one-step partial traces are not
+    advertised as code paths; local source actions prefer the editor; Russian
+    prose is reinforced in every model message; and accepted package-grounded
+    synthesis is labelled honestly. No new runtime relation, language adapter,
+    Search surface, or source snapshot is introduced.
     Decision 149 corrects the real Chatto Guided Tour failure where structurally
     valid editorial hypotheses were rejected by a behavioral-word regex and an
     exact candidate title with a natural slash was mistaken for a repository

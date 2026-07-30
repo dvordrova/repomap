@@ -86,6 +86,7 @@ func TestStudyMapAreasPreferExactProductionShape(t *testing.T) {
 		"core.go": {}, "tree.go": {}, "middleware/chain.go": {}, "_examples/demo/main.go": {},
 	}
 	data := &report.ReportData{
+		ReportLanguage: "ru",
 		Components: []report.Component{{
 			ID: "component-core", Name: "Core Router", ModelPurpose: "Matches requests.",
 			AnchorGroups: []report.AnchorGroup{{ID: "anchor-core", Path: "core.go"}},
@@ -104,6 +105,35 @@ func TestStudyMapAreasPreferExactProductionShape(t *testing.T) {
 		if studyMapPeripheralArea(area.Name) || len(areaPaths[area.ID]) == 0 || !studyMapPathProduction(area.Path) {
 			t.Fatalf("non-production or non-navigable area = %#v paths=%v", area, areaPaths[area.ID])
 		}
+		if strings.HasPrefix(area.ID, "package-area-") &&
+			!strings.HasPrefix(area.Responsibility, "Основной пакет ") {
+			t.Fatalf("Russian package area was not localized: %#v", area)
+		}
+	}
+}
+
+func TestEnsureStudyMapAreasUsesOneLocalizedExactSymbol(t *testing.T) {
+	t.Parallel()
+
+	areas, paths := ensureStudyMapAreas(
+		nil,
+		make(map[string][]string),
+		[]studymap.Anchor{
+			{ID: "write-batch", Path: "wal.go", Symbol: "Log.writeBatch", Line: 458},
+			{ID: "sync", Path: "wal.go", Symbol: "Log.Sync", Line: 319},
+		},
+		"ru",
+	)
+	if len(areas) != 1 {
+		t.Fatalf("areas = %#v, want one honest area without three-area padding", areas)
+	}
+	if areas[0].Name != "Log.writeBatch" ||
+		areas[0].Responsibility != "Точная область кода для изучения поведения вокруг Log.writeBatch." ||
+		areas[0].Path != "wal.go" || areas[0].Line != 458 {
+		t.Fatalf("localized exact area = %#v", areas[0])
+	}
+	if !slices.Equal(paths[areas[0].ID], []string{"wal.go"}) {
+		t.Fatalf("area paths = %#v", paths)
 	}
 }
 
