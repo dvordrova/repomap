@@ -339,6 +339,15 @@ func TestFieldIDsAreAllowlistedAndStable(t *testing.T) {
 	if id != "component:component-01.summary" {
 		t.Fatalf("FieldID = %q", id)
 	}
+	if _, err := FieldID(OwnerSubsystem, "subsystem-01", FieldDescription); err != nil {
+		t.Fatalf("subsystem description is not allowlisted: %v", err)
+	}
+	if _, err := FieldID(OwnerSubsystem, "subsystem-01", FieldWhyItMatters); err != nil {
+		t.Fatalf("existing subsystem why_it_matters field was removed: %v", err)
+	}
+	if _, err := FieldID(OwnerComponent, "component-01", FieldDescription); err != nil {
+		t.Fatalf("component description is not allowlisted: %v", err)
+	}
 	if _, err := FieldID(OwnerComponent, "component-01", FieldQuestion); err == nil {
 		t.Fatal("component question unexpectedly entered the localization allowlist")
 	}

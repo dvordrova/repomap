@@ -1,15 +1,24 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/161-localization-characterization-contracts.md
+    decisions/162-architecture-localization-adapter.md
 
 Status:
-    Decision 161 active; isolated localization contracts authorized
+    Decision 162 active; provider-free Architecture localization adapter authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 162 connects the isolated localization contract to exactly one
+    real semantic shape: Architecture Canvas subsystem and component names and
+    descriptions. Their identities come from validated local member sets and
+    do not depend on localized prose. English identity must preserve the full
+    canvas byte-for-byte; a supplied Russian projection may change only those
+    allowlisted fields while paths, symbols, packages, members, relations,
+    enums, evidence, order, and all other data remain exact. This decision
+    adds no run artifacts, provider call, cache change, ordinary CLI wiring,
+    report/HTTP/manifest change, DOM rewrite, or Russian-to-English translation.
     Decision 161 records the actual current English/Russian locale and cache
     behavior, including the safe-miss correction that makes part of the draft
     roadmap stale. It authorizes only one isolated provider-free

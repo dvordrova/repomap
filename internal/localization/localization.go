@@ -45,6 +45,7 @@ const (
 	FieldNameText          FieldName = "name"
 	FieldTitle             FieldName = "title"
 	FieldSummary           FieldName = "summary"
+	FieldDescription       FieldName = "description"
 	FieldResponsibility    FieldName = "responsibility"
 	FieldExplanation       FieldName = "explanation"
 	FieldWhyItMatters      FieldName = "why_it_matters"
@@ -96,11 +97,13 @@ var allowedFields = map[OwnerKind]map[FieldName]struct{}{
 	},
 	OwnerSubsystem: {
 		FieldNameText:     {},
+		FieldDescription:  {},
 		FieldWhyItMatters: {},
 	},
 	OwnerComponent: {
 		FieldNameText:       {},
 		FieldSummary:        {},
+		FieldDescription:    {},
 		FieldResponsibility: {},
 		FieldExplanation:    {},
 	},

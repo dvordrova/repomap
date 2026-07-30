@@ -199,3 +199,19 @@ UI actions actually performed: none; this package has no production consumer
 Not run and why: no provider call, no external repository, no etcd run, and no EN->RU->EN round trip; no product path or locale-projection cache changed
 Remaining blocker or next checkpoint: a new numbered decision is required before adapting one real model-authored artifact into canonical English plus a Russian projection
 ```
+
+## Checkpoint B2 handoff
+
+```text
+Checkpoint: B2 — provider-free Architecture Canvas adapter
+Changed contract: Decision 162 adapts only validated Architecture Canvas subsystem/component names and descriptions; ordinary CLI, providers, caches, persisted artifacts, reports, manifests, HTTP, and browser behavior remain unchanged
+J0/J1 evidence: English identity preserves both the complete serialized Canvas and the containing report.json byte-for-byte; a decoded current canonical/input/projection round trip remains exact
+Focused tests: go test ./internal/localization -count=1, go test ./internal/report -run ArchitectureLocalization -count=1, focused race tests, focused vet, and git diff --check passed
+Provider-free replay: a supplied Russian projection changed only the four allowlisted Architecture prose fields; structured symbols, paths, packages, flow/surface/investigation/anchor/source IDs, Unicode, and CJK text were restored byte-for-byte
+Failure behavior: a stale canonical artifact with matching owner IDs is rejected before mutation; invalid individual translations retain canonical English only for that field, with deterministic diagnostics
+Adversarial review: passed after binding canonical/input bytes to the current Canvas, preserving the prior subsystem why_it_matters allowlist, completing typed structured protection, and documenting the validated ProjectArchitectureCanvas precondition
+Full checks: scripts/check.sh passed, including go test, go vet, and six offline quality tasks, real 47.30s
+UI actions actually performed: none; the adapter has no production consumer
+Not run and why: no provider call, no external repository, no etcd run, no product binary rebuild, and no EN->RU->EN round trip; no ordinary product path or locale-projection cache changed
+Remaining blocker or next checkpoint: persisted canonical/input/identity sidecars require a new numbered decision and a root-confined atomic writer; they must remain non-consumable until bound to verified run state
+```
