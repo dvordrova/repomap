@@ -6,7 +6,6 @@
 
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
 
 const runDirArg = process.argv[2];
 const specArg = process.argv[3];
@@ -263,7 +262,6 @@ if (report && startHereID) {
 requireCondition(Boolean(mechanism) && Boolean(semanticArtifact), "canonical_primary_mechanism_missing",
   `artifact=${JSON.stringify(startHereID)} user_mechanism=${Boolean(mechanism)} semantic_artifact=${Boolean(semanticArtifact)}`);
 
-let naturalSearchTargetOK = false;
 let effectDefaultSourceOK = false;
 if (mechanism) {
   requireCondition(mechanism.role === requiredRole, "user_mechanism_role_mismatch",
@@ -329,32 +327,10 @@ if (mechanism) {
   requireCondition(effectDefaultSourceOK, "observable_effect_default_source_missing",
     `effect aspect ${JSON.stringify(effectAspect)} is not bound to a primary default step and phase excerpt`);
 
-  const index = report.semantic_search;
-  if (index && Array.isArray(index.items)) {
-    try {
-      const assetPath = path.resolve(__dirname, "../internal/report/templates/semantic_search.js");
-      const window = { __REPOMAP_SEARCH_TEST__: {} };
-      vm.runInNewContext(fs.readFileSync(assetPath, "utf8"), { window });
-      const ranked = window.__REPOMAP_SEARCH_TEST__.rankSemanticSearchItems(index.items, question, 12);
-      const first = ranked[0];
-      const target = first && first.item && first.item.target;
-      naturalSearchTargetOK = Boolean(first) && first.complete === true &&
-        target && target.kind === "semantic_artifact" && target.artifact_id === startHereID;
-      if (!naturalSearchTargetOK) {
-        fail("natural_behavior_search_target_missing",
-          `question=${JSON.stringify(question)} target=${JSON.stringify(target || null)}, want artifact ${startHereID}`);
-      }
-    } catch (error) {
-      fail("semantic_search_evaluation_failed", error.message);
-    }
-  } else {
-    fail("semantic_search_missing", "report.semantic_search.items is unavailable");
-  }
 }
 
 if (!mechanism) {
   fail("visible_phase_count_out_of_range", `visible phases=0, want ${minimumPhases}..${maximumPhases}`);
-  fail("natural_behavior_search_target_missing", "no canonical primary Mechanism question can route through Search");
 }
 
 if (semanticArtifact) {
@@ -382,5 +358,4 @@ process.stdout.write(JSON.stringify({
   core_facts: attempt.primary_eligibility.core_fact_ids.length,
   effect_facts: attempt.primary_eligibility.effect_fact_ids.length,
   observable_effect_default_source: effectDefaultSourceOK,
-  natural_question_search_target: naturalSearchTargetOK ? startHereID : "",
 }, null, 2) + "\n");

@@ -103,6 +103,11 @@ process.stdout.write(JSON.stringify([
   translate("← Back to reading path"),
   translate("Opened pglogrepl.go:74 in VS Code"),
   translate("Map context for “Как работает репликация?”"),
+  translate("Open a concrete source location or continue on the architecture map."),
+  translate("System story"),
+  translate("How the parts fit together"),
+  translate("Inspect the wider repository"),
+  translate("Explore architecture"),
   txt("code", "", "Open").textContent,
   txt("span", "", "Open").textContent,
 ]));
@@ -138,6 +143,11 @@ process.stdout.write(JSON.stringify([
 		"← Назад к пути изучения",
 		"Открыто в VS Code: pglogrepl.go:74",
 		"Контекст на карте: «Как работает репликация?»",
+		"Откройте конкретную позицию в исходниках или перейдите к карте архитектуры.",
+		"Как устроена система",
+		"Как связаны основные части",
+		"Изучить репозиторий шире",
+		"Исследовать архитектуру",
 		"Open",
 		"Открыть",
 	}

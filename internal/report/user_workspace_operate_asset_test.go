@@ -196,7 +196,7 @@ const relatedButton = descendants(roots["rm-operate-detail"]).find((node) =>
 );
 if (relatedButton) relatedButton.onclick();
 const relatedHash = window.location.hash;
-api.openSemanticSearchTarget({ kind: "paved_path", paved_path_id: "operate/server" });
+api.openReportTarget({ kind: "paved_path", paved_path_id: "operate/server" });
 
 process.stdout.write(JSON.stringify({
   validRoute, invalidRoute, overviewText, openedHash, openedState, detailText,

@@ -365,6 +365,7 @@
    this.host = host;
    this.data = data && typeof data === "object" ? data : {};
    this.options = options && typeof options === "object" ? options : {};
+   this.translateUI = typeof this.options.translateUI === "function" ? this.options.translateUI : text;
    this.userMode = this.options.userMode === true;
    this.componentContexts = this.options.componentContexts && typeof this.options.componentContexts === "object"
     ? this.options.componentContexts
@@ -670,7 +671,7 @@
      const target = event.target;
      if (!target || this.inspector.contains(target)) return;
      if (target === this.drawerBackdrop) return;
-     if (typeof target.closest === "function" && target.closest(".rm-semantic-search, .rm-search-modal, .rm-explore")) return;
+     if (typeof target.closest === "function" && target.closest(".rm-explore")) return;
      if (typeof target.closest === "function" && target.closest(".rm-arch__component-card")) return;
      this.closeInspector();
     }, { capture: true });
@@ -2893,7 +2894,9 @@
     (this.hasInspectorSelection(this.selection) && !lowInformationComponent);
     this.inspector.setAttribute(
      "aria-label",
-     semanticArtifactActive ? "Repository explanation" : (this.guidedTour.active ? "Guided tour" : "Architecture inspector")
+     this.translateUI(
+      semanticArtifactActive ? "Repository explanation" : (this.guidedTour.active ? "Guided tour" : "Architecture inspector")
+     )
     );
     this.root.classList.toggle("has-detail-inspector", visible);
     this.root.classList.toggle(

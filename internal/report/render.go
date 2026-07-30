@@ -35,12 +35,6 @@ var surfaceCatalogCSS string
 //go:embed templates/surface_catalog.js
 var surfaceCatalogJS string
 
-//go:embed templates/semantic_search.css
-var semanticSearchCSS string
-
-//go:embed templates/semantic_search.js
-var semanticSearchJS string
-
 //go:embed templates/script.js
 var scriptJS string
 
@@ -118,12 +112,6 @@ func buildHTML(data *ReportData) ([]byte, error) {
 
 func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjection) ([]byte, error) {
 	rendered := reportDataForRendering(data)
-	if episode != nil {
-		// The source-first answer is the complete destination for this bounded
-		// experiment. Keep the legacy search index persisted in report.json,
-		// but do not serialize or ship its UI/assets in the projected HTML.
-		rendered.SemanticSearch = nil
-	}
 	css := styleCSS
 	js := scriptJS
 	if episode == nil {
@@ -164,9 +152,6 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 		"HasDiscoveredSurfaces": data.DiscoveredSurfaces != nil,
 		"SurfaceCatalogCSS":     template.CSS(surfaceCatalogCSS),
 		"SurfaceCatalogJS":      template.JS(surfaceCatalogJS),
-		"HasSemanticSearch":     rendered.SemanticSearch != nil && !rendered.SemanticSearchDisabled,
-		"SemanticSearchCSS":     template.CSS(semanticSearchCSS),
-		"SemanticSearchJS":      template.JS(semanticSearchJS),
 		"DataJSON":              template.JS(dataJSON),
 		"JS":                    template.JS(js),
 	})
@@ -213,17 +198,8 @@ func withoutSourceEpisodeAssetBlocks(asset string) string {
 
 func reportDataForRendering(data *ReportData) *ReportData {
 	rendered := *data
-	if rendered.SemanticSearchDisabled {
-		rendered.SemanticSearch = nil
-		return &rendered
-	}
-	if rendered.SemanticSearch != nil {
-		if err := rendered.SemanticSearch.Validate(&rendered); err == nil {
-			return &rendered
-		}
-	}
 	rendered.SemanticSearch = nil
-	_ = attachSemanticSearchIndex(&rendered)
+	rendered.SemanticSearchDisabled = false
 	return &rendered
 }
 
@@ -329,16 +305,6 @@ func generate(runDir string, authority *RunAuthority, sourceEpisodeJSON []byte) 
 		}
 		data.CapturedInputCount = len(authority.inputs)
 		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
-		catalog, available, catalogErr := authorizedExactSearchCatalog(data, *authority)
-		// Source-backed actions are optional capabilities. A manifest may still
-		// bind a coherent view-only report when its captured scope cannot form a
-		// regular-file catalog; reportserver will reconstruct the same failure
-		// and withhold source IDs and local analysis.
-		if catalogErr == nil && available {
-			if err := AttachExactWorkspaceSearch(data, catalog); err != nil {
-				return err
-			}
-		}
 	}
 
 	jsonPath := runDir + "/report.json"

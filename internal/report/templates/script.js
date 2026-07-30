@@ -13,16 +13,10 @@
     'Overview': 'Обзор',
     'Study': 'Изучение',
     'Operate': 'Запуск',
-    'Search': 'Поиск',
     'Architecture': 'Архитектура',
     'Source': 'Исходники',
     'Provenance': 'Происхождение данных',
-    'Repository search': 'Поиск по репозиторию',
-    'Search the repository model': 'Поиск по модели репозитория',
-    'Find a code path, component, symbol, or exact source file.': 'Найдите путь выполнения, компонент, символ или точный исходный файл.',
-    'What do you want to understand?': 'В чём вы хотите разобраться?',
     'Open': 'Открыть',
-    'Suggested questions': 'Предлагаемые вопросы',
     'Source locations': 'Исходные позиции',
     'Close source drawer': 'Закрыть панель исходников',
     'This report requires JavaScript. The raw data is available in report.json.': 'Для этого отчёта нужен JavaScript. Исходные данные доступны в report.json.',
@@ -108,6 +102,14 @@
     'Repository shape': 'Структура репозитория',
     'Code areas to know': 'Важные области кода',
     'A compact map of the production areas worth recognizing first.': 'Компактная карта production-областей, которые стоит узнать в первую очередь.',
+    'Open a concrete source location or continue on the architecture map.': 'Откройте конкретную позицию в исходниках или перейдите к карте архитектуры.',
+    'System story': 'Как устроена система',
+    'How the parts fit together': 'Как связаны основные части',
+    'A compact orientation assembled from repository documentation and existing code areas.': 'Краткая ориентация, собранная из материалов репозитория и найденных областей кода.',
+    'Inspect the wider repository': 'Изучить репозиторий шире',
+    'Open the repository map for additional context.': 'Откройте карту репозитория, чтобы увидеть дополнительный контекст.',
+    'Explore architecture': 'Исследовать архитектуру',
+    'Explore how this repository is organized and implemented.': 'Разберитесь, как организован и реализован этот репозиторий.',
     'What to study': 'Что изучать',
     'Ready deep dives': 'Готовые разборы',
     'These directions already have a validated step-by-step implementation explanation.': 'Для этих направлений уже есть проверенное пошаговое объяснение реализации.',
@@ -265,8 +267,6 @@
     'Packages inspected': 'Проверено пакетов',
     'Functions inspected': 'Проверено функций',
     'Configured seeds matched': 'Совпавшие настроенные seeds',
-    'Close search': 'Закрыть поиск',
-    'Search saved explanations, the architecture map, and source references.': 'Ищите по сохранённым объяснениям, карте архитектуры и ссылкам на исходники.',
     'For example: request dispatch, report building, runtime surfaces': 'Например: request dispatch, построение отчёта, runtime surfaces',
     'No matches.': 'Совпадений нет.'
   };
@@ -395,7 +395,6 @@
   var componentSelectionViews = {};
   var architectureCanvasView = null;
   var surfaceCatalogView = null;
-  var semanticSearchView = null;
   var resumeInvestigationStarted = false;
   var maxSymbolCandidates = 8;
   var maxStaticCalls = 5;
@@ -419,7 +418,6 @@
 	var STUDY_DIRECTIONS = COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
 // repomap-source-episode:start
 	var SOURCE_EPISODE = DATA.source_episode || null;
-	if (SOURCE_EPISODE) DATA.semantic_search = null;
 // repomap-source-episode:end
 	var OPERATIONS = DATA.operations || null;
 	var PAVED_PATHS = OPERATIONS && Array.isArray(OPERATIONS.paths) ? OPERATIONS.paths : [];
@@ -663,7 +661,6 @@
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
     if (state.view === 'study_overview' && STUDY_DIRECTIONS.length) return '#/study';
-    if (state.view === 'search') return '#/overview';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
@@ -739,8 +736,6 @@
 			state.view = STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
-    } else if (segments.length === 1 && segments[0] === 'search') {
-      valid = false;
     } else if (segments.length === 1 && segments[0] === 'architecture') {
       state.view = 'architecture';
       var focus = new URLSearchParams(query).get('focus') || '';
@@ -821,7 +816,7 @@
     var mechanism;
     switch (action.type) {
     case 'view':
-      next.view = action.view === 'search' ? 'overview' : action.view || 'overview';
+      next.view = action.view || 'overview';
       if (next.view !== 'architecture') {
         next.mapTarget = null;
         if (!action.keepReturn) next.mapReturn = null;
@@ -1883,7 +1878,7 @@
     if (meta.childElementCount) button.appendChild(meta);
     button.appendChild(txt('span', 'rm-explore-artifact__action', 'Open explanation on the map →'));
     button.addEventListener('click', function () {
-      openSemanticSearchTarget({ kind: 'semantic_artifact', artifact_id: artifact.id });
+      openReportTarget({ kind: 'semantic_artifact', artifact_id: artifact.id });
     });
     return button;
   }
@@ -2688,7 +2683,7 @@
     });
   }
 
-  function showArchitectureFromSearch() {
+  function showArchitectureTarget() {
     showTab('rm-overview');
     var target = document.querySelector('.rm-architecture-canvas-card') ||
       document.querySelector('.rm-orientation-map') || document.getElementById('rm-overview');
@@ -2697,15 +2692,15 @@
     }
   }
 
-  function openSemanticSearchTarget(target) {
+  function openReportTarget(target) {
     target = target || {};
     var kind = String(target.kind || 'map');
     if (kind === 'semantic_artifact') {
       var hasArtifactStep = target.step_index != null || target.index != null;
       var artifactStepIndex = Number(target.step_index != null ? target.step_index : target.index);
-      var searchMechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
-      var narrativeStepIndex = Number.isFinite(artifactStepIndex) && searchMechanism
-        ? narrativeIndexForImplementationStep(searchMechanism, artifactStepIndex)
+      var targetMechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
+      var narrativeStepIndex = Number.isFinite(artifactStepIndex) && targetMechanism
+        ? narrativeIndexForImplementationStep(targetMechanism, artifactStepIndex)
         : 0;
       openUserMechanism(
         target.artifact_id || target.id,
@@ -2745,7 +2740,7 @@
     if (kind === 'guided_step' && DEBUG_MODE && architectureCanvasView) {
       var stepIndex = Number(target.step_index != null ? target.step_index : target.index);
       architectureCanvasView.openGuidedTourStep(Number.isFinite(stepIndex) ? stepIndex : 0);
-      showArchitectureFromSearch();
+      showArchitectureTarget();
       return;
     }
     var location = target.location || target;
@@ -2756,7 +2751,7 @@
     openArchitectureTarget(null, null);
   }
 
-  function semanticSearchTargetAvailable(target) {
+  function reportTargetAvailable(target) {
     target = target || {};
     var kind = target ? String(target.kind || '') : '';
     if (kind === 'map' || kind === 'component' || kind === 'flow' || kind === 'flow_step' || kind === 'surface') {
@@ -3818,7 +3813,6 @@
 		if (view === 'study_overview') return 'rm-study-overview';
 		if (view === 'study') return 'rm-study-detail';
 		if (view === 'operate') return 'rm-operate-detail';
-    if (view === 'search') return 'rm-search-view';
     if (view === 'architecture') return 'rm-architecture';
     if (view === 'provenance') return 'rm-provenance';
     return 'rm-overview';
@@ -5338,10 +5332,13 @@
 // repomap-source-episode:end
 
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+		var overviewPurpose = REPORT_LANGUAGE === 'ru'
+			? (DATA.project_guess || thesis.purpose)
+			: (thesis.purpose || DATA.project_guess);
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
     hero.appendChild(txt('div', 'rm-view-kicker', 'Purpose'));
     hero.appendChild(txt('h2', '', DATA.repo_name || 'Repository overview'));
-    hero.appendChild(txt('p', '', thesis.purpose || DATA.project_guess || 'Explore how this repository is organized and implemented.'));
+    hero.appendChild(txt('p', '', overviewPurpose || 'Explore how this repository is organized and implemented.'));
     root.appendChild(hero);
 
     var areas = Array.isArray(thesis.areas) ? thesis.areas.slice(0, 7) : [];
@@ -5399,25 +5396,6 @@
 			storySection.appendChild(story);
 			root.appendChild(storySection);
 		}
-
-    if (USER_SOURCES.length && !USER_MECHANISMS.length) {
-      var filesSection = el('section', 'rm-workspace-section');
-      filesSection.appendChild(renderViewHeading('Code', 'Where to start', 'Ranked landmarks from the source captured with this report.'));
-      var landmarks = USER_SOURCES.filter(sourceSnippetHasCode).slice(0, 6);
-      var strongPrimary = landmarks.length && overviewSourceIsStrong(landmarks[0]);
-      var landmarkList = el('div', 'rm-overview-landmark-list');
-      landmarks.forEach(function (snippet, index) {
-        landmarkList.appendChild(renderSourceSnippetCard(snippet, {
-          primary: !!strongPrimary && index === 0,
-          overviewLandmark: true,
-          roleLabel: overviewSourceRoleLabel(snippet),
-          reason: overviewSourceReason(snippet),
-          location: sourceSnippetLocation(snippet),
-        }));
-      });
-      filesSection.appendChild(landmarkList);
-      root.appendChild(filesSection);
-    }
 
 		var hasArchitecture = userArchitectureAvailable();
     if (hasArchitecture) {
@@ -6561,13 +6539,18 @@
 				packagePaths.push(packagePath);
 			});
 			packagePaths.sort();
-			if (!packagePaths.length) return;
 
-			var packageFiles = {};
+			var componentFiles = {};
 			packagePaths.forEach(function (packagePath) {
 				(packageByPath[packagePath].files || []).forEach(function (filePath) {
 					filePath = String(filePath || '');
-					if (filePath) packageFiles[filePath] = true;
+					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
+				});
+			});
+			(component.members || []).forEach(function (member) {
+				(member && member.facts || []).forEach(function (fact) {
+					var filePath = String(fact && fact.location && fact.location.path || '');
+					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
 				});
 			});
 
@@ -6579,7 +6562,7 @@
 						path: anchor.source.path,
 						line: anchor.source.start_line,
 					}));
-					return !!(location && packageFiles[String(location.path || '')]);
+					return !!(location && componentFiles[String(location.path || '')]);
 				});
 				if (!matchedAnchors.length) return;
 				matches.push({ direction: direction, directionIndex: directionIndex, anchors: matchedAnchors });
@@ -6608,6 +6591,22 @@
 					});
 				});
 			});
+			if (!sources.length) {
+				packagePaths.some(function (packagePath) {
+					var files = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
+						return !!(filePath && OPENABLE_PATH_SET[filePath]);
+					}).sort();
+					if (!files.length) return false;
+					var filePath = files[0];
+					sourceSeen[filePath + '\u0000' + '0'] = true;
+					sources.push({
+						label: filePath,
+						detail: filePath,
+						location: { path: filePath, line: 0 },
+					});
+					return true;
+				});
+			}
 			sources.sort(function (left, right) {
 				var leftLine = Number(left && left.location && left.location.line) || 0;
 				var rightLine = Number(right && right.location && right.location.line) || 0;
@@ -6633,9 +6632,10 @@
 				});
 			});
 
+			if (!packagePaths.length && !sources.length && !matches.length) return;
 			contexts[String(component.id)] = {
 				package_paths: packagePaths,
-				file_count: Object.keys(packageFiles).length,
+				file_count: Object.keys(componentFiles).length,
 				sources: sources,
 				studies: matches.map(function (match) {
 					return {
@@ -6735,6 +6735,7 @@
     architectureAppliedFocus = null;
     var options = {
       userMode: !DEBUG_MODE,
+      translateUI: translateUIString,
       candidateDirections: DEBUG_MODE ? candidateDirections() : [],
       savedFlows: DEBUG_MODE ? (DATA.flows || []) : [],
       guidedTour: DEBUG_MODE ? (DATA.guided_tour || null) : null,
@@ -6921,34 +6922,6 @@
     }
   }
 
-  function mountSemanticSearch() {
-    if (semanticSearchView) {
-      semanticSearchView.destroy();
-      semanticSearchView = null;
-    }
-    var view = document.getElementById('rm-search-view');
-    var root = document.getElementById('rm-semantic-search');
-    if (!view || !root || !DATA.semantic_search || !window.RepomapSemanticSearch) return;
-    if (!view.querySelector('.rm-view-heading')) {
-      view.insertBefore(renderViewHeading(
-        'Search',
-        'Find the code you need',
-        'Search by behavior, symbol, component, or source path.'
-      ), root);
-    }
-    root.hidden = false;
-    semanticSearchView = window.RepomapSemanticSearch.mount(root, DATA.semantic_search, {
-      openTarget: openSemanticSearchTarget,
-      targetAvailable: semanticSearchTargetAvailable,
-      presentationTitle: function (item) {
-        var target = item && item.target || {};
-        if (target.kind !== 'semantic_artifact') return '';
-        var mechanism = userMechanismByID(USER_MECHANISMS, target.artifact_id || target.id);
-        return mechanism ? mechanismPresentationTitle(mechanism) : '';
-      },
-    });
-  }
-
   function render() {
     DATA.flows = DATA.flows || [];
     componentSelectionViews = {};
@@ -7052,8 +7025,8 @@
       userMechanismByID: userMechanismByID,
 		pavedPathByID: pavedPathByID,
       viewSectionID: viewSectionID,
-		openSemanticSearchTarget: openSemanticSearchTarget,
-      semanticSearchTargetAvailable: semanticSearchTargetAvailable,
+		openReportTarget: openReportTarget,
+      reportTargetAvailable: reportTargetAvailable,
       translateUIString: translateUIString,
       txt: txt,
     });

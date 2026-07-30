@@ -49,18 +49,9 @@ build: ## Build binary into .bin/
 CANVAS_FIXTURE ?= internal/report/testdata/canvas/restic-backup-v2.json
 CANVAS_PORT ?= 0
 
-.PHONY: canvas-preview semantic-search-check semantic-search-eval v31-product-gate-check
+.PHONY: canvas-preview v31-product-gate-check
 canvas-preview: ## Serve a saved architecture canvas fixture without analysis or provider access
 	go run ./cmd/canvas-preview --fixture "$(CANVAS_FIXTURE)" --port "$(CANVAS_PORT)"
-
-semantic-search-check: ## Check the offline report search projection and scorer
-	node --check internal/report/templates/semantic_search.js
-	node --check internal/report/templates/script.js
-	go test ./internal/report -run 'SemanticSearch|ArchitectureCanvasAssetContract'
-
-SEARCH_REPORT ?= $(TMP_DIR)/guided-self-20260715/report.json
-semantic-search-eval: ## Evaluate the eight product queries against a saved report
-	node scripts/semantic_search_eval.js "$(SEARCH_REPORT)"
 
 V31_RUN ?=
 V31_SPEC ?= scripts/testdata/v31_litestream_gate.json

@@ -421,18 +421,21 @@ func TestMixedTopicShelfRendererIsPrimaryAndLive(t *testing.T) {
 			t.Errorf("normal report retains Search surface %q", forbidden)
 		}
 	}
-	if !strings.Contains(scriptJS, "segments[0] === 'search') {\n      valid = false;") {
-		t.Error("direct Search route does not fail closed to the default workspace")
+	for _, removed := range []string{
+		"rm-search-view",
+		"mountSemanticSearch",
+		"RepomapSemanticSearch",
+		"DATA.semantic_search",
+	} {
+		if strings.Contains(scriptJS, removed) {
+			t.Errorf("compiled report script retains removed Search code %q", removed)
+		}
 	}
 
 	data := &ReportData{
 		RepoName:      "go.etcd.io/etcd/v3",
 		OpenablePaths: []string{"server/etcdserver/api/v3rpc/quota.go"},
 		StudyMap:      &RepositoryStudyMap{},
-		SemanticSearch: &SemanticSearchIndex{
-			Version: 1,
-			Items:   []SemanticSearchItem{},
-		},
 		UserMechanisms: []UserMechanism{{
 			ArtifactID: "semantic-artifact-003a27952d61f4735635a018",
 			Title:      "Snapshot delivery",
@@ -464,12 +467,16 @@ func TestMixedTopicShelfRendererIsPrimaryAndLive(t *testing.T) {
 		`"candidate_id":"semantic-candidate-7d19808e04b2b7c7e49e02e3"`,
 		`"starting_symbols":[`,
 		`"artifact_id":"semantic-artifact-003a27952d61f4735635a018"`,
-		`"semantic_search":`,
 		"Pick a path worth following.",
 		"Open exact symbol",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("rendered report lacks %q", want)
+		}
+	}
+	for _, forbidden := range []string{"semantic_search", "rm-search-view", "RepomapSemanticSearch"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Errorf("rendered report retains removed Search code %q", forbidden)
 		}
 	}
 }

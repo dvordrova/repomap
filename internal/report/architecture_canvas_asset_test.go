@@ -293,7 +293,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"toggleTraceMenu(open)",
 				"positionTraceMenu()",
 				"position: fixed",
-				`target.closest(".rm-semantic-search, .rm-search-modal, .rm-explore")`,
+				`target.closest(".rm-explore")`,
 				`target.closest(".rm-arch__component-card")`,
 				"pointer-events: none",
 				"rm-arch__inspector-close",
