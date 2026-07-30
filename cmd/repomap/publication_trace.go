@@ -53,6 +53,9 @@ var knownStudyDecisionReasons = map[string]struct{}{
 	"duplicate_direction_id":                        {},
 	"fewer_than_three_direct_or_supporting_anchors": {},
 	"invalid_anchor_selection":                      {},
+	"invalid_anchor_count":                          {},
+	"duplicate_anchor_ids":                          {},
+	"invalid_anchor_id":                             {},
 	"invalid_candidate":                             {},
 	"invalid_object_ids":                            {},
 	"invalid_reading_anchor_count":                  {},
@@ -584,6 +587,7 @@ func studyFailureCode(value string) string {
 		fragment string
 		code     string
 	}{
+		{"insufficient code anchors", "insufficient_code_anchors"},
 		{"reviewed selection has", "insufficient_reviewed_directions"},
 		{"invalid reading copy", "invalid_reading_copy"},
 		{"invalid anchor", "invalid_anchor_selection"},

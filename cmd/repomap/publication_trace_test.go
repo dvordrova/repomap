@@ -200,6 +200,30 @@ func TestWritePublicationTraceExplainsFailedStudyWithoutEchoingFailure(t *testin
 	}
 }
 
+func TestWritePublicationTraceExplainsSparseStudyWithoutEchoingFailure(t *testing.T) {
+	t.Parallel()
+
+	data := &report.ReportData{
+		StudyPublication: &report.StudyPublicationStatus{
+			Version:       1,
+			State:         "failed",
+			FailureReason: "study map: insufficient code anchors for complete directions: have 2, need at least 3 /private/repository/path",
+		},
+	}
+	var output bytes.Buffer
+	writePublicationTrace(&output, t.TempDir(), data, false, "local", 0)
+	got := output.String()
+	if !strings.Contains(
+		got,
+		"decision study publication: state=failed failure=insufficient_code_anchors candidates=0 selected=0 not_selected=0 published=0 hidden=0 projection=none",
+	) {
+		t.Fatalf("sparse Study trace is missing the stable reason:\n%s", got)
+	}
+	if strings.Contains(got, "/private/") || strings.Contains(got, "insufficient code anchors") {
+		t.Fatalf("sparse Study trace leaked raw failure text:\n%s", got)
+	}
+}
+
 func TestStudyDecisionArtifactsFailClosedOnInvalidCountsAndUnknownCodes(t *testing.T) {
 	t.Parallel()
 

@@ -35,15 +35,33 @@ func TestStudyPromptsKeepReadingLabelsCanonicalUnderLocalization(t *testing.T) {
 	}
 }
 
+func TestStudyDirectionPromptExampleMatchesCompleteAnchorContract(t *testing.T) {
+	t.Parallel()
+
+	for _, suffix := range []string{"A", "B", "C"} {
+		placeholder := "exact supplied code anchor id " + suffix
+		if strings.Count(studyMapDirectionTask, placeholder) != 2 {
+			t.Fatalf("Study prompt placeholder %q must appear once in anchor_ids and once in reading_anchors", placeholder)
+		}
+	}
+	if got := strings.Count(studyMapDirectionTask, `{"anchor_id":`); got != 3 {
+		t.Fatalf("Study prompt reading-anchor examples = %d, want 3", got)
+	}
+}
+
 type studyMapV32ReviewProviderStub struct {
 	mu         sync.Mutex
 	failPlanID string
+	plans      []string
 	calls      []string
 }
 
 func (stub *studyMapV32ReviewProviderStub) SemanticDiscoveryPromptJSON(
 	prompt semanticdiscovery.Prompt,
 ) ([]byte, error) {
+	stub.mu.Lock()
+	stub.plans = append(stub.plans, prompt.Version)
+	stub.mu.Unlock()
 	if stub.failPlanID != "" && strings.Contains(prompt.User, stub.failPlanID) {
 		return nil, errors.New("fixture request planning failure")
 	}
@@ -87,6 +105,52 @@ func (stub *studyMapV32ReviewProviderStub) DiscoverSemanticsMeasured(
 	return modelresearch.ProviderResult{
 		Content: raw, Attempts: 1, InputTokens: 20, OutputTokens: 10,
 	}, err
+}
+
+func TestPrepareStudyMapV32SkipsImpossibleCompletePackBeforeProviderCall(t *testing.T) {
+	t.Parallel()
+
+	bundle, _ := studyMapV32ReviewFixture(t)
+	bundle.Anchors = bundle.Anchors[:2]
+	bundle.AllowedPaths = bundle.AllowedPaths[:2]
+	provider := &studyMapV32ReviewProviderStub{}
+
+	_, _, stages, err := prepareStudyMapV32(
+		context.Background(),
+		t.TempDir(),
+		bundle,
+		provider,
+	)
+	if err == nil || !strings.Contains(err.Error(), "insufficient code anchors") {
+		t.Fatalf("sparse Study preflight error = %v", err)
+	}
+	provider.mu.Lock()
+	plans := len(provider.plans)
+	calls := len(provider.calls)
+	provider.mu.Unlock()
+	if plans != 0 || calls != 0 || len(stages) != 0 {
+		t.Fatalf("sparse Study invoked provider: plans=%d calls=%d stages=%#v", plans, calls, stages)
+	}
+}
+
+func TestStudyDirectionExampleShapeRetainsTwelveValidCandidates(t *testing.T) {
+	t.Parallel()
+
+	_, proposal := studyMapV32ReviewFixture(t)
+	for index := range proposal.Directions {
+		proposal.Directions[index].DirectionID = ""
+	}
+	decoded, diagnostics, err := studymap.DecodeDirectionProposalWithDiagnostics(
+		mustJSON(t, proposal),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Directions) != studymap.MaxCandidates ||
+		diagnostics.Accepted != studymap.MaxCandidates ||
+		diagnostics.Rejected != 0 {
+		t.Fatalf("complete example-shaped directions = %d, diagnostics %#v", len(decoded.Directions), diagnostics)
+	}
 }
 
 func TestReviewStudyMapDirectionsReviewsEveryCandidateAndRecordsPreparationFailures(
@@ -179,7 +243,7 @@ func TestNormalizedDirectionArtifactRoundTripsWithoutRewritingRawAttempt(t *test
 		diagnostics.Rejected != 1 ||
 		len(diagnostics.Issues) != 1 ||
 		diagnostics.Issues[0].Position != rejectedPosition ||
-		diagnostics.Issues[0].Code != "invalid_anchor_selection" {
+		diagnostics.Issues[0].Code != "invalid_anchor_count" {
 		t.Fatalf("direction diagnostics = %#v", diagnostics)
 	}
 	runDir := t.TempDir()

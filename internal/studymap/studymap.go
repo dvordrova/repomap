@@ -1204,8 +1204,8 @@ func naturalQuestion(value string) bool {
 }
 
 func validOpaque(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" || len(value) > 256 {
+	trimmed := strings.TrimSpace(value)
+	if value != trimmed || value == "" || len(value) > 256 {
 		return false
 	}
 	for _, char := range value {
