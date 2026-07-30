@@ -155,6 +155,7 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 	var buf bytes.Buffer
 	err = reportTmpl.Execute(&buf, map[string]any{
 		"Title":                 title,
+		"Language":              normalizedReportLanguage(data.ReportLanguage),
 		"CSS":                   template.CSS(css),
 		"HasArchitectureCanvas": data.ArchitectureCanvas != nil,
 		"ArchitectureCanvasCSS": template.CSS(architectureCanvasCSS),

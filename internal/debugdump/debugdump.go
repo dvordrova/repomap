@@ -44,18 +44,19 @@ type RunMeta struct {
 }
 
 type EffectiveOptions struct {
-	Offline          bool `json:"offline"`
-	FlowCount        int  `json:"flows"`
-	DiscoverSurfaces bool `json:"discover_surfaces"`
-	GuidedTour       bool `json:"guided_tour"`
-	NoSearch         bool `json:"no_search"`
-	DumpLLM          bool `json:"dump_llm"`
-	OutputJSON       bool `json:"json_output"`
-	PreviewRequest   bool `json:"preview_request"`
-	NoOpen           bool `json:"no_open"`
-	NoServe          bool `json:"no_serve"`
-	Port             int  `json:"port"`
-	DebugEnabled     bool `json:"debug_enabled"`
+	Offline          bool   `json:"offline"`
+	FlowCount        int    `json:"flows"`
+	DiscoverSurfaces bool   `json:"discover_surfaces"`
+	GuidedTour       bool   `json:"guided_tour"`
+	NoSearch         bool   `json:"no_search"`
+	ReportLanguage   string `json:"report_language,omitempty"`
+	DumpLLM          bool   `json:"dump_llm"`
+	OutputJSON       bool   `json:"json_output"`
+	PreviewRequest   bool   `json:"preview_request"`
+	NoOpen           bool   `json:"no_open"`
+	NoServe          bool   `json:"no_serve"`
+	Port             int    `json:"port"`
+	DebugEnabled     bool   `json:"debug_enabled"`
 }
 
 type RequestAttempt struct {

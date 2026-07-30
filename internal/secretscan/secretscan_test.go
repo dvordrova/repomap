@@ -54,9 +54,19 @@ func TestDetectIgnoresDocumentedPlaceholders(t *testing.T) {
 		`{"api_key":"placeholder-value"}`,
 		"password: change-me-please",
 		"password: authentication",
+		"ClientSecret: 00000000000000000000000000000000",
 	} {
 		if kind, found := Detect(input); found {
 			t.Errorf("Detect(%q) = %q, true; want placeholder ignored", input, kind)
 		}
+	}
+}
+
+func TestDetectDoesNotTreatMixedNumericCredentialAsPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	const input = "ClientSecret: 00000000000000000000000000000001"
+	if kind, found := Detect(input); !found || kind != "credential assignment" {
+		t.Fatalf("Detect(%q) = %q, %v, want credential assignment", input, kind, found)
 	}
 }

@@ -1,15 +1,29 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/146-untracked-nested-repository-freshness.md
+    decisions/148-ordinary-run-compatibility-corrections.md
 
 Status:
-    Decision 146 active; untracked nested repository freshness correction authorized
+    Decision 148 active; real-run compatibility corrections authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 148 corrects two ordinary-run failures found during real
+    Decision 147 validation. Nested-module `go/packages` diagnostics now
+    resolve only against actual loaded package files, so a module-relative
+    position cannot invent a doubled non-existent path and disable the source
+    catalog. The secret scanner recognizes only an all-zero credential value
+    as a documented placeholder while keeping mixed values fail-closed.
+    A live `github.com/devodev/go-office365/v0` run retains `/v0` in module,
+    package, symbol, surface, and report identities.
+    Decision 147 adds one product-wide `--lang en|ru` selection. Russian mode
+    localizes ordinary model prose and the report UI while preserving exact
+    paths, symbols, packages, protocols, product/library names, structured
+    keys, enums, IDs, and quoted source. English remains byte-compatible when
+    the option is absent, and the report format adds only an optional language
+    marker.
     Decision 146 corrects an ordinary-run failure where Git represented an
     untracked nested checkout as one directory. Because that checkout is
     outside the parent repository's tracked snapshot, freshness now detects

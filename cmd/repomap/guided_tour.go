@@ -47,7 +47,12 @@ type guidedTourOutcome struct {
 	ValidationState       string
 }
 
-func editGuidedTourForRun(ctx context.Context, runDir string, stderr io.Writer) (guidedTourOutcome, error) {
+func editGuidedTourForRun(
+	ctx context.Context,
+	runDir string,
+	stderr io.Writer,
+	outputLanguage ...string,
+) (guidedTourOutcome, error) {
 	bundle, err := guidedTourBundleForRun(runDir)
 	if errors.Is(err, report.ErrNoGuidedTourCandidates) {
 		return guidedTourOutcome{Skipped: true}, nil
@@ -59,6 +64,7 @@ func editGuidedTourForRun(ctx context.Context, runDir string, stderr io.Writer) 
 	if err != nil {
 		return guidedTourOutcome{}, fmt.Errorf("guided tour: provider configuration: %w", err)
 	}
+	configureClientOutputLanguage(client, outputLanguage)
 	client.OnWait = func(progress deepseek.WaitProgress) {
 		fmt.Fprintf(
 			stderr,

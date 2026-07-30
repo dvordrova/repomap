@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing.T) {
@@ -87,6 +89,28 @@ func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing
 	if processAnchors != 2 || result.Grounding.RepositoryArchetype.Selected == "library_framework" ||
 		!strings.Contains(result.Grounding.RepositoryArchetype.Evidence[0], "2 exact build-selected") {
 		t.Fatalf("degraded process grounding = %#v", result.Grounding)
+	}
+}
+
+func TestPackageErrorLocationResolvesModuleRelativeFilenameOnce(t *testing.T) {
+	root := t.TempDir()
+	moduleDir := filepath.Join(root, "cli")
+	packageDir := filepath.Join(moduleDir, "cmd")
+	sourcePath := filepath.Join(packageDir, "license.go")
+	pkg := &packages.Package{
+		Dir:     packageDir,
+		GoFiles: []string{sourcePath},
+		Module:  &packages.Module{Dir: moduleDir},
+	}
+	analyzer := analyzer{root: root}
+
+	location := analyzer.packageErrorLocation(pkg, "cmd/license.go:12:12")
+	if location == nil || location.Path != "cli/cmd/license.go" ||
+		location.Line != 12 || location.Column != 12 {
+		t.Fatalf("module-relative diagnostic location = %#v", location)
+	}
+	if unknown := analyzer.packageErrorLocation(pkg, "cmd/missing.go:3:1"); unknown != nil {
+		t.Fatalf("unknown diagnostic source became openable: %#v", unknown)
 	}
 }
 

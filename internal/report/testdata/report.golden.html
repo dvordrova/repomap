@@ -1447,6 +1447,345 @@ body.rm-search-open { overflow: hidden; }
   'use strict';
 
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
+  var REPORT_LANGUAGE = DATA.report_language === 'ru' ? 'ru' : 'en';
+  var RU_UI = {
+    'Repository onboarding': 'Знакомство с репозиторием',
+    'Saved report': 'Сохранённый отчёт',
+    'File paths open in VS Code ↗': 'Пути к файлам открываются в VS Code ↗',
+    'Run details': 'Детали запуска',
+    'Repository navigation': 'Навигация по репозиторию',
+    'Repository workspace': 'Навигация по репозиторию',
+    'Overview': 'Обзор',
+    'Study': 'Изучение',
+    'Operate': 'Запуск',
+    'Search': 'Поиск',
+    'Architecture': 'Архитектура',
+    'Source': 'Исходники',
+    'Provenance': 'Происхождение данных',
+    'Repository search': 'Поиск по репозиторию',
+    'Search the repository model': 'Поиск по модели репозитория',
+    'Find a code path, component, symbol, or exact source file.': 'Найдите путь выполнения, компонент, символ или точный исходный файл.',
+    'What do you want to understand?': 'В чём вы хотите разобраться?',
+    'Open': 'Открыть',
+    'Suggested questions': 'Предлагаемые вопросы',
+    'Source locations': 'Исходные позиции',
+    'Close source drawer': 'Закрыть панель исходников',
+    'This report requires JavaScript. The raw data is available in report.json.': 'Для этого отчёта нужен JavaScript. Исходные данные доступны в report.json.',
+    'Project purpose · model orientation': 'Назначение проекта · ориентация модели',
+    'Explore this repository': 'Исследовать репозиторий',
+    'Components · model orientation': 'Компоненты · ориентация модели',
+    'Start here': 'С чего начать',
+    'Important terms': 'Важные термины',
+    'Questions for a teammate': 'Вопросы коллеге',
+    'Model': 'Модель',
+    'Compact local context': 'Компактный локальный контекст',
+    'Provider request bodies': 'Тела запросов к провайдеру',
+    'Provider requests': 'Запросы к провайдеру',
+    'Orientation latency': 'Время ориентации',
+    'Generic surface scan': 'Общий поиск runtime surfaces',
+    'Architecture anchors': 'Архитектурные опоры',
+    'Analyzed-input freshness': 'Актуальность проанализированных входов',
+    'Architecture grouping': 'Архитектурная группировка',
+    'Suggested investigations': 'Предлагаемые направления',
+    'Rejected suggestions': 'Отклонённые предложения',
+    'Saved traces': 'Сохранённые трассы',
+    'Choose a direction to get a focused starting point in the repository.': 'Выберите направление, чтобы получить конкретную точку входа в репозиторий.',
+    'Starts when': 'Начинается, когда',
+    'Likely entrypoint': 'Вероятная точка входа',
+    'Likely files': 'Вероятные файлы',
+    'Why the model suggested this': 'Почему модель это предложила',
+    'Locally verified': 'Проверено локально',
+    'Missing evidence': 'Недостающие свидетельства',
+    'Evidence-backed flow': 'Путь, подтверждённый свидетельствами',
+    'Proof coverage': 'Покрытие свидетельствами',
+    'Current proof boundary': 'Текущая граница подтверждения',
+    'Read order — open these files in sequence': 'Порядок чтения — открывайте файлы последовательно',
+    'Tests': 'Тесты',
+    'Execution chain': 'Цепочка выполнения',
+    'Known unknowns': 'Известные неизвестные',
+    'Unverified paths': 'Непроверенные пути',
+    'Unknowns': 'Неизвестные',
+    'Warnings': 'Предупреждения',
+    'Retrieval details': 'Детали извлечения',
+    'No candidate directions were produced.': 'Не удалось получить ни одного направления.',
+    'Suggested start': 'Предлагаемое начало',
+    'Quick start': 'Быстрый старт',
+    'Analysis unavailable': 'Анализ недоступен',
+    'Explore this direction →': 'Исследовать направление →',
+    'Suggested files are selected from repository facts. Treat them as a starting point, not a verified runtime trace.': 'Файлы выбраны из фактов репозитория. Это точка входа, а не подтверждённая runtime-трасса.',
+    'Suggested files come from a saved repository snapshot. Treat them as a starting point, not a verified runtime trace.': 'Файлы взяты из сохранённого снимка репозитория. Это точка входа, а не подтверждённая runtime-трасса.',
+    'Suggested files to inspect': 'Файлы для изучения',
+    'Evidence files': 'Файлы-свидетельства',
+    'Show less': 'Показать меньше',
+    'Understand the repository': 'Разобраться в репозитории',
+    'Pick a path worth following.': 'Выберите полезный путь.',
+    'Complete mechanisms explain a source-backed path. Topics are honest starting points when the evidence is useful but the path is not closed yet.': 'Полные механизмы объясняют путь по исходникам. Темы — честные точки входа, когда свидетельства полезны, но путь ещё не замкнут.',
+    'Source-backed code paths': 'Пути по исходному коду',
+    'Complete explanations': 'Полные объяснения',
+    'Questions worth exploring': 'Вопросы, которые стоит исследовать',
+    'Grounded starting points': 'Точные точки входа',
+    'Each topic shows what is known, where to start, and why no complete path is claimed.': 'Каждая тема показывает, что уже известно, с чего начать и почему полный путь пока не заявлен.',
+    'Topic · incomplete': 'Тема · пока неполная',
+    'Question worth exploring': 'Вопрос для исследования',
+    'Inspect starting points →': 'Изучить точки входа →',
+    '← All paths': '← Все пути',
+    'What remains unresolved': 'Что осталось неясным',
+    'Exact places to start': 'Точные точки входа',
+    'Open exact symbol →': 'Открыть точный символ →',
+    'Explore more grounded questions': 'Исследовать другие подтверждённые вопросы',
+    'Each question has an exact place to begin, but not yet a complete reading path.': 'У каждого вопроса есть точное место для начала, но полного пути чтения пока нет.',
+    'Study · incomplete directions': 'Изучение · неполные направления',
+    'What is worth understanding next?': 'В чём стоит разобраться дальше?',
+    'Questions backed by exact starting points. They are places to begin, not answers or ordered mechanisms.': 'Вопросы с точными точками входа. Это места для начала, а не готовые ответы или упорядоченные механизмы.',
+    'A useful path through the repository': 'Полезный путь по репозиторию',
+    'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.': 'Выберите вопрос и начните с конкретных опор в исходниках. Порядок предназначен для изучения, а не изображает runtime-трассу.',
+    'Repository brief': 'Кратко о репозитории',
+    'Repository overview': 'Обзор репозитория',
+    'Main input': 'Основной вход',
+    'Central responsibility': 'Главная ответственность',
+    'Observable result': 'Наблюдаемый результат',
+    'Repository shape': 'Структура репозитория',
+    'Code areas to know': 'Важные области кода',
+    'A compact map of the production areas worth recognizing first.': 'Компактная карта production-областей, которые стоит узнать в первую очередь.',
+    'What to study': 'Что изучать',
+    'Ready deep dives': 'Готовые разборы',
+    'These directions already have a validated step-by-step implementation explanation.': 'Для этих направлений уже есть проверенное пошаговое объяснение реализации.',
+    'Explore': 'Исследование',
+    'Open the full architecture': 'Открыть полную архитектуру',
+    'Use the study map as a starting point, then inspect the wider repository map.': 'Начните с карты изучения, затем переходите к полной карте репозитория.',
+    'Full architecture': 'Полная архитектура',
+    '← Repository overview': '← Обзор репозитория',
+    'What you can learn': 'Что можно узнать',
+    'After this reading path': 'После этого пути чтения',
+    'These anchors are ordered for learning. They do not claim runtime execution order.': 'Опоры упорядочены для изучения и не заявляют порядок выполнения во время работы.',
+    'Reading path': 'Путь чтения',
+    'You will inspect': 'Что вы изучите',
+    'Open an anchor to reveal its exact saved source.': 'Откройте опору, чтобы увидеть точный сохранённый исходник.',
+    'Then inspect': 'Затем изучите',
+    'Related implementation': 'Связанная реализация',
+    'Continue exploring': 'Продолжить исследование',
+    'Related repository context': 'Связанный контекст репозитория',
+    'Open a referenced document or inspect the full architecture.': 'Откройте связанный документ или изучите полную архитектуру.',
+    'Open documentation': 'Открыть документацию',
+    'Open exact source': 'Открыть точный исходник',
+    'Run and verify': 'Запустить и проверить',
+    'Repository-backed operating paths': 'Инструкции из репозитория',
+    'Use exact commands, endpoints, and checks saved from this repository, with their source beside them.': 'Используйте точные команды, endpoints и проверки из репозитория; рядом указан определяющий их источник.',
+    'Repository operation': 'Операция репозитория',
+    'Open instructions →': 'Открыть инструкцию →',
+    'Repository reference': 'Ссылка из репозитория',
+    'Operational reference': 'Операционная ссылка',
+    'Copy command': 'Скопировать команду',
+    'Show source': 'Показать источник',
+    'How to run and verify': 'Как запустить и проверить',
+    'Actions': 'Действия',
+    'Each action keeps its exact command or endpoint beside the repository source that defines it.': 'Для каждого действия точная команда или endpoint показаны рядом с определяющим их источником в репозитории.',
+    'Expected result': 'Ожидаемый результат',
+    'Exact output or generated paths retained from this repository.': 'Точный вывод или создаваемые пути, сохранённые из этого репозитория.',
+    'Study the implementation': 'Изучить реализацию',
+    'Related reading paths': 'Связанные пути чтения',
+    'Follow the code behind this operation without losing this page from browser history.': 'Проследите код этой операции, не теряя текущую страницу из истории браузера.',
+    'Copy repository-relative path': 'Скопировать путь относительно репозитория',
+    'Copy path:line:column': 'Скопировать путь:строку:столбец',
+    'VS Code is not available': 'VS Code недоступен',
+    'Open in editor': 'Открыть в редакторе',
+    'Show more context': 'Показать больше контекста',
+    'Show full function': 'Показать всю функцию',
+    'Copy file:line': 'Скопировать файл:строку',
+    'Copy path': 'Скопировать путь',
+    'Saved source': 'Сохранённый исходник',
+    'Source code': 'Исходный код',
+    'saved snapshot': 'сохранённый снимок',
+    'Source in this code path': 'Исходник в этом пути по коду',
+    'Source in this reading path': 'Исходник в этом пути чтения',
+    'Source in this operating path': 'Исходник в этой инструкции запуска',
+    'Source in this task investigation': 'Исходник в этом исследовании задачи',
+    'Show raw exact source': 'Показать точный исходник без обработки',
+    'Show readable document': 'Показать документ для чтения',
+    'Component inspector': 'Инспектор компонента',
+    'Recommended start': 'Рекомендуемое начало',
+    'Related flows': 'Связанные пути',
+    'Packages': 'Пакеты',
+    'This source changed after the report was generated.': 'Этот исходник изменился после создания отчёта.',
+    'Open code →': 'Открыть код →',
+    'View on map →': 'Показать на карте →',
+    'Open code path →': 'Открыть путь в коде →',
+    'Implementation': 'Реализация',
+    'How this works': 'Как это работает',
+    'What remains uncertain': 'Что остаётся неопределённым',
+    'These boundaries stay visible because they change how the explanation should be used.': 'Эти границы показаны, потому что они влияют на то, как следует использовать объяснение.',
+    'Boundary': 'Граница',
+    'Boundaries': 'Границы',
+    'Close inspector': 'Закрыть инспектор',
+    'Architecture inspector': 'Инспектор архитектуры',
+    'Explore the repository map': 'Исследуйте карту репозитория',
+    'Select a component, runtime surface, or code path to inspect its implementation context.': 'Выберите компонент, runtime surface или путь в коде, чтобы изучить контекст реализации.',
+    'Zoom out': 'Уменьшить масштаб',
+    'Fit architecture at readable scale': 'Вместить архитектуру в читаемом масштабе',
+    'Fit': 'Вместить',
+    'Zoom in': 'Увеличить масштаб',
+    'Surfaces': 'Surfaces',
+    'unresolved value': 'неразрешённое значение',
+    'Code path': 'Путь в коде',
+    'Code paths': 'Пути в коде',
+    'Source-backed code path': 'Путь по исходному коду',
+    '← Back to architecture': '← Назад к архитектуре',
+    'All': 'Все',
+    'All evidence': 'Все свидетельства',
+    'Direct': 'Прямые',
+    'Through wrapper': 'Через wrapper',
+    'Dynamic / unresolved': 'Динамические / неразрешённые',
+    'Process entries': 'Точки входа процесса',
+    'CLI commands': 'CLI-команды',
+    'HTTP registrations': 'HTTP-регистрации',
+    'Route descriptors': 'Дескрипторы маршрутов',
+    'Route frontiers': 'Границы маршрутов',
+    'Server start sites': 'Места запуска сервера',
+    'Workers': 'Workers',
+    'Non-worker tasks': 'Фоновые задачи не-worker',
+    'Application': 'Приложение',
+    'Secondary services': 'Вторичные сервисы',
+    'Tooling': 'Инструменты',
+    'Tests/helpers': 'Тесты/helpers',
+    'Unassigned': 'Без группы',
+    'Dynamic/unresolved': 'Динамические/неразрешённые',
+    'Unavailable': 'Недоступные',
+    'No surfaces match these filters.': 'Ни одна surface не соответствует фильтрам.',
+    'Kind': 'Тип',
+    'Framework': 'Framework',
+    'Executable role': 'Роль executable',
+    'Availability': 'Доступность',
+    'Application ownership': 'Принадлежность приложению',
+    'Terminal source': 'Конечный источник',
+    'Promotion basis': 'Основание включения',
+    'Unavailable reason': 'Причина недоступности',
+    'Trace readiness reason': 'Готовность трассировки',
+    'Transport': 'Transport',
+    'Handler / callback': 'Handler / callback',
+    'Constructor': 'Constructor',
+    'Scenario': 'Сценарий',
+    'Analyzer': 'Анализатор',
+    'Catalog surfaces': 'Surfaces в каталоге',
+    'Surfaces embedded': 'Встроенные surfaces',
+    'Direct surfaces': 'Прямые surfaces',
+    'Wrapper-derived': 'Полученные через wrapper',
+    'Unavailable process entries': 'Недоступные точки входа процесса',
+    'Unavailable packages': 'Недоступные пакеты',
+    'Package diagnostics': 'Диагностика пакетов',
+    'Projection bound': 'Граница проекции',
+    'Packages inspected': 'Проверено пакетов',
+    'Functions inspected': 'Проверено функций',
+    'Configured seeds matched': 'Совпавшие настроенные seeds',
+    'Close search': 'Закрыть поиск',
+    'Search saved explanations, the architecture map, and source references.': 'Ищите по сохранённым объяснениям, карте архитектуры и ссылкам на исходники.',
+    'For example: request dispatch, report building, runtime surfaces': 'Например: request dispatch, построение отчёта, runtime surfaces',
+    'No matches.': 'Совпадений нет.'
+  };
+
+  function russianCount(value, one, few, many) {
+    var number = Number(value);
+    var mod100 = number % 100;
+    var mod10 = number % 10;
+    var form = mod10 === 1 && mod100 !== 11
+      ? one
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+        ? few
+        : many;
+    return value + ' ' + form;
+  }
+
+  function translateUIString(value) {
+    if (REPORT_LANGUAGE !== 'ru' || typeof value !== 'string' || value === '') return value;
+    var trimmed = value.trim();
+    var translated = RU_UI[trimmed];
+    if (!translated) {
+      var match = trimmed.match(/^Review (\d+) incomplete Study directions →$/);
+      if (match) translated = 'Посмотреть неполные направления Study: ' + match[1] + ' →';
+      match = match || trimmed.match(/^Show (\d+) more$/);
+      if (!translated && match) translated = 'Показать ещё: ' + match[1];
+      match = trimmed.match(/^Show all \((\d+)\)$/);
+      if (!translated && match) translated = 'Показать все (' + match[1] + ')';
+      match = trimmed.match(/^Start with (.+) →$/);
+      if (!translated && match) translated = 'Начать с ' + match[1] + ' →';
+      match = trimmed.match(/^Copied (.+)$/);
+      if (!translated && match) translated = 'Скопировано: ' + match[1];
+      match = trimmed.match(/^After action (\d+)$/);
+      if (!translated && match) translated = 'После действия ' + match[1];
+      match = trimmed.match(/^(\d+) (step|steps)$/);
+      if (!translated && match) translated = russianCount(match[1], 'шаг', 'шага', 'шагов');
+      match = trimmed.match(/^Showing (\d+) of (\d+) surfaces\.$/);
+      if (!translated && match) translated = 'Показано surfaces: ' + match[1] + ' из ' + match[2] + '.';
+      match = trimmed.match(/^(\d+) components?$/);
+      if (!translated && match) translated = russianCount(match[1], 'компонент', 'компонента', 'компонентов');
+      match = trimmed.match(/^(\d+) exact anchors?$/);
+      if (!translated && match) translated = russianCount(match[1], 'точная опора', 'точные опоры', 'точных опор');
+      match = trimmed.match(/^(\d+) surfaces · (\d+) exact anchors?$/);
+      if (!translated && match) translated = match[1] + ' surfaces · ' +
+        russianCount(match[2], 'точная опора', 'точные опоры', 'точных опор');
+      match = trimmed.match(/^(\d+) surfaces? · (\d+) code paths? · (\d+) exact anchors?$/);
+      if (!translated && match) translated =
+        russianCount(match[1], 'surface', 'surfaces', 'surfaces') + ' · ' +
+        russianCount(match[2], 'путь в коде', 'пути в коде', 'путей в коде') + ' · ' +
+        russianCount(match[3], 'точная опора', 'точные опоры', 'точных опор');
+      match = trimmed.match(/^(\d+) exact members?$/);
+      if (!translated && match) translated =
+        russianCount(match[1], 'точный элемент', 'точных элемента', 'точных элементов');
+      match = trimmed.match(/^Code paths \((\d+)\) ([▾▴])$/);
+      if (!translated && match) translated = 'Пути в коде (' + match[1] + ') ' + match[2];
+      match = trimmed.match(/^Production package (.+)\.$/);
+      if (!translated && match) translated = 'Пакет production-кода ' + match[1] + '.';
+      match = trimmed.match(/^Drag to explore · (\d+) architecture groups · Fit keeps labels readable$/);
+      if (!translated && match) translated = 'Перетаскивайте карту · архитектурных групп: ' + match[1] + ' · кнопка «Вместить» сохраняет читаемость';
+      match = trimmed.match(/^Inspect (.+) transition$/);
+      if (!translated && match) translated = 'Изучить переход ' + match[1];
+      match = trimmed.match(/^(.+) · lines (\d+)[–-](\d+)$/);
+      if (!translated && match) translated = match[1] + ' · строки ' + match[2] + '–' + match[3];
+    }
+    if (!translated) return value;
+    return value.slice(0, value.indexOf(trimmed)) + translated +
+      value.slice(value.indexOf(trimmed) + trimmed.length);
+  }
+
+  function translatableElement(node) {
+    if (!node || !node.parentElement) return false;
+    return !/^(CODE|PRE|SCRIPT|STYLE|TEXTAREA|KBD)$/i.test(node.parentElement.tagName);
+  }
+
+  function translateUIRoot(root) {
+    if (REPORT_LANGUAGE !== 'ru' || !root) return;
+    if (root.nodeType === Node.TEXT_NODE && translatableElement(root)) {
+      root.nodeValue = translateUIString(root.nodeValue);
+      return;
+    }
+    if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    var node;
+    while ((node = walker.nextNode())) {
+      if (translatableElement(node)) node.nodeValue = translateUIString(node.nodeValue);
+    }
+    var elements = [];
+    if (root.nodeType === Node.ELEMENT_NODE) elements.push(root);
+    Array.prototype.push.apply(elements, root.querySelectorAll ? root.querySelectorAll('[aria-label], [placeholder], [title]') : []);
+    elements.forEach(function (element) {
+      ['aria-label', 'placeholder', 'title'].forEach(function (attribute) {
+        if (element.hasAttribute(attribute)) {
+          element.setAttribute(attribute, translateUIString(element.getAttribute(attribute)));
+        }
+      });
+    });
+  }
+
+  function installReportLocale() {
+    if (REPORT_LANGUAGE !== 'ru') return;
+    document.documentElement.lang = 'ru';
+    translateUIRoot(document.body);
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        Array.prototype.forEach.call(mutation.addedNodes || [], translateUIRoot);
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
   var OPENABLE_PATHS = (DATA.openable_paths || []).slice().sort(function (a, b) {
     return b.length - a.length;
   });
@@ -2010,7 +2349,7 @@ body.rm-search-open { overflow: hidden; }
 
   function txt(tag, cls, text) {
     var e = el(tag, cls);
-    e.textContent = text || '';
+    e.textContent = translateUIString(text || '');
     return e;
   }
 
@@ -2035,7 +2374,7 @@ body.rm-search-open { overflow: hidden; }
   function showToast(message, isError) {
     var toast = document.getElementById('rm-toast');
     if (!toast) return;
-    toast.textContent = message;
+    toast.textContent = translateUIString(message);
     toast.className = 'rm-toast' + (isError ? ' rm-toast--error' : '');
     toast.hidden = false;
     if (toastTimer) window.clearTimeout(toastTimer);
@@ -7919,12 +8258,16 @@ body.rm-search-open { overflow: hidden; }
       viewSectionID: viewSectionID,
 		openSemanticSearchTarget: openSemanticSearchTarget,
       semanticSearchTargetAvailable: semanticSearchTargetAvailable,
+      translateUIString: translateUIString,
     });
   }
 
   window.addEventListener('hashchange', scheduleWorkspaceRouteRestore);
   window.addEventListener('popstate', scheduleWorkspaceRouteRestore);
-  window.addEventListener('DOMContentLoaded', render);
+  window.addEventListener('DOMContentLoaded', function () {
+    installReportLocale();
+    render();
+  });
 })();
 </script>
 </body>

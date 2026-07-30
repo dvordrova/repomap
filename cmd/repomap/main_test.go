@@ -1195,7 +1195,8 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(reportJSON, []byte(`"semantic_search_disabled": true`)) ||
-		bytes.Contains(reportJSON, []byte(`"semantic_search":`)) {
+		bytes.Contains(reportJSON, []byte(`"semantic_search":`)) ||
+		bytes.Contains(reportJSON, []byte(`"report_language":`)) {
 		t.Fatalf("saved report does not honor --no-search: %s", reportJSON)
 	}
 	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
@@ -1210,6 +1211,64 @@ func TestRunDefaultNoSearchOmitsSearchFromSavedReport(t *testing.T) {
 	} {
 		if bytes.Contains(reportHTML, marker) {
 			t.Fatalf("--no-search report unexpectedly contains %q", marker)
+		}
+	}
+}
+
+func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/russian-report\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	debugDir := t.TempDir()
+	if err := runDefaultWithDeps(repo, []string{
+		"--offline",
+		"--discover-surfaces=false",
+		"--no-search",
+		"--lang", "ru",
+		"--no-open",
+		"--no-serve",
+		"--debug-dir", debugDir,
+	}, defaultRunDeps{
+		ctx:    context.Background(),
+		stdout: io.Discard,
+		stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataJSON, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(metadataJSON, []byte(`"report_language": "ru"`)) {
+		t.Fatalf("metadata did not retain --lang ru: %s", metadataJSON)
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(reportJSON, []byte(`"report_language": "ru"`)) {
+		t.Fatalf("report did not retain --lang ru: %s", reportJSON)
+	}
+	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range [][]byte{
+		[]byte(`<html lang="ru">`),
+		[]byte(`'What to study': 'Что изучать'`),
+	} {
+		if !bytes.Contains(reportHTML, marker) {
+			t.Fatalf("Russian report HTML is missing %q", marker)
 		}
 	}
 }

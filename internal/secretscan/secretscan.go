@@ -38,15 +38,14 @@ func Detect(text string) (string, bool) {
 }
 
 func looksLikeCredentialAssignment(match string) bool {
-	separator := strings.IndexAny(match, "=:")
-	if separator < 0 || separator+1 >= len(match) {
+	value := credentialAssignmentValue(match)
+	if value == "" {
 		return false
 	}
-	valueStart := separator + 1
-	if match[separator] == ':' && valueStart < len(match) && match[valueStart] == '=' {
-		valueStart++
+	valueStart := strings.Index(match, value)
+	if valueStart < 0 {
+		return false
 	}
-	value := strings.Trim(strings.TrimSpace(match[valueStart:]), "\"'`")
 	if strings.ContainsAny(match[valueStart:], "\"'`") || len(value) >= 16 {
 		return true
 	}
@@ -61,8 +60,20 @@ func looksLikeCredentialAssignment(match string) bool {
 	return false
 }
 
-func looksLikePlaceholder(value string) bool {
-	lower := strings.ToLower(value)
+func credentialAssignmentValue(match string) string {
+	separator := strings.IndexAny(match, "=:")
+	if separator < 0 || separator+1 >= len(match) {
+		return ""
+	}
+	valueStart := separator + 1
+	if match[separator] == ':' && valueStart < len(match) && match[valueStart] == '=' {
+		valueStart++
+	}
+	return strings.Trim(strings.TrimSpace(match[valueStart:]), "\"'`")
+}
+
+func looksLikePlaceholder(match string) bool {
+	lower := strings.ToLower(match)
 	for _, marker := range []string{
 		"<your", "${", "placeholder", "redacted", "replace-me", "replace_me",
 		"your-api", "your_api", "example", "dummy", "changeme", "change-me",
@@ -71,5 +82,6 @@ func looksLikePlaceholder(value string) bool {
 			return true
 		}
 	}
-	return false
+	value := credentialAssignmentValue(match)
+	return len(value) >= 8 && strings.Trim(value, "0") == ""
 }

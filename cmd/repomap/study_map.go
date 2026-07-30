@@ -121,11 +121,13 @@ func editStudyMapForRun(
 	runDir string,
 	repoRoot string,
 	stderr io.Writer,
+	outputLanguage ...string,
 ) (studyMapStatus, error) {
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return studyMapStatus{}, fmt.Errorf("study map: provider configuration: %w", err)
 	}
+	configureClientOutputLanguage(client, outputLanguage)
 	var progressMu sync.Mutex
 	client.OnWait = func(progress deepseek.WaitProgress) {
 		progressMu.Lock()
