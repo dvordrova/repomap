@@ -111,6 +111,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-purpose-hero p { font-size: 1rem; line-height: 1.65; margin-bottom: 0; }
 .rm-overview-actions, .rm-mechanism-actions, .rm-step-actions, .rm-map-return { display: flex; flex-wrap: wrap; gap: .55rem; }
 .rm-primary-action, .rm-secondary-action, .rm-quiet-action { border: 1px solid var(--rm-accent); border-radius: 7px; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 650; padding: .5rem .75rem; }
+.rm-source-action-link { align-items: center; box-sizing: border-box; display: inline-flex; justify-content: center; text-decoration: none; }
+.rm-source-target-link { box-sizing: border-box; text-decoration: none; }
 .rm-primary-action { background: var(--rm-accent); color: #fff; }
 .rm-secondary-action { background: #fff; color: var(--rm-accent); }
 .rm-quiet-action { background: transparent; border-color: var(--rm-border); color: var(--rm-dim); }
@@ -229,10 +231,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-related-source strong { font-size: .72rem; overflow-wrap: anywhere; }
 .rm-related-source code { color: #475569; font-size: .61rem; overflow-wrap: anywhere; }
 .rm-related-source__reason { color: #475569; font-size: .65rem; line-height: 1.35; }
+.rm-related-source__location, .rm-exact-reference { color: var(--rm-code); font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .62rem; overflow-wrap: anywhere; text-decoration: none; }
 .rm-exact-references { border-top: 1px solid var(--rm-border); margin: 1rem 0 0; padding-top: .7rem; }
 .rm-exact-references summary { color: #475569; cursor: pointer; font-size: .68rem; font-weight: 650; }
 .rm-exact-references__list { display: grid; gap: .3rem; margin-top: .55rem; }
-.rm-exact-references__list code { background: #f8fafc; border-radius: 5px; font-size: .62rem; overflow-wrap: anywhere; padding: .35rem .45rem; }
+.rm-exact-references__list code, .rm-exact-references__list .rm-exact-reference { background: #f8fafc; border-radius: 5px; font-size: .62rem; overflow-wrap: anywhere; padding: .35rem .45rem; }
 .rm-overview-source-heading { font-size: .82rem; margin: 1.1rem 0 .55rem; }
 .rm-mechanism-files { margin-top: 1rem; }
 .rm-mechanism-files > summary { color: var(--rm-accent); cursor: pointer; font-size: .78rem; font-weight: 700; }
@@ -931,6 +934,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     'Copy path:line:column': 'Скопировать путь:строку:столбец',
     'VS Code is not available': 'VS Code недоступен',
     'Open in editor': 'Открыть в редакторе',
+    'Open in GitLab': 'Открыть в GitLab',
+    'Open the captured revision in GitLab': 'Открыть зафиксированную версию в GitLab',
+    'Code links open the captured revision in GitLab ↗': 'Ссылки на код открывают зафиксированную версию в GitLab ↗',
     'Show more context': 'Показать больше контекста',
     'Show full function': 'Показать всю функцию',
     'Copy file:line': 'Скопировать файл:строку',
@@ -1165,6 +1171,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   OPENABLE_PATHS.forEach(function (path) { OPENABLE_PATH_SET[path] = true; });
 	var SOURCE_IDS = DATA.source_ids || {};
 	var SOURCE_CONTEXT_IDS = DATA.source_context_ids || {};
+  var GITLAB_SOURCE_LINKS = DATA.gitlab_source_links || null;
   var toastTimer = null;
   var symbolLookupStates = {};
   var symbolLookupViews = {};
@@ -1724,10 +1731,73 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
   function serverMode() {
+    if (gitLabSourceMode()) return false;
     var loopback = window.location.hostname === '127.0.0.1' ||
       window.location.hostname === 'localhost' ||
       window.location.hostname === '::1';
     return loopback && window.location.protocol === 'http:' && serverBasePath() !== '';
+  }
+
+  function gitLabSourceMode() {
+    return !!(
+      GITLAB_SOURCE_LINKS &&
+      /^https?:\/\/[^/]+\/.+/i.test(String(GITLAB_SOURCE_LINKS.repository_url || '')) &&
+      /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(String(GITLAB_SOURCE_LINKS.revision || ''))
+    );
+  }
+
+  function encodeGitLabPathSegment(value) {
+    return encodeURIComponent(value).replace(/[!'()*]/g, function (character) {
+      return '%' + character.charCodeAt(0).toString(16).toUpperCase();
+    });
+  }
+
+  function gitLabSourceURL(filePath, line, endLine) {
+    if (!gitLabSourceMode() || !filePath || !OPENABLE_PATH_SET[filePath]) return '';
+    var segments = [];
+    var prefix = String(GITLAB_SOURCE_LINKS.path_prefix || '').replace(/^\/+|\/+$/g, '');
+    if (prefix) segments = segments.concat(prefix.split('/'));
+    segments = segments.concat(String(filePath).split('/'));
+    if (segments.some(function (segment) { return !segment || segment === '.' || segment === '..'; })) return '';
+    var url = String(GITLAB_SOURCE_LINKS.repository_url).replace(/\/+$/g, '') +
+      '/-/blob/' + encodeGitLabPathSegment(String(GITLAB_SOURCE_LINKS.revision)) + '/' +
+      segments.map(encodeGitLabPathSegment).join('/');
+    var start = Math.floor(Number(line) || 0);
+    var end = Math.floor(Number(endLine) || 0);
+    if (start > 0) url += '#L' + start + (end > start ? '-' + end : '');
+    return url;
+  }
+
+  function gitLabSourceLink(label, cls, location, endLine) {
+    var link = txt('a', cls || '', label);
+    return configureGitLabSourceLink(link, location || {}, endLine);
+  }
+
+  function configureGitLabSourceLink(link, location, endLine) {
+    if (!link) return null;
+    var url = gitLabSourceURL(location && location.path, location && location.line, endLine);
+    if (!url) return null;
+    link.setAttribute('href', url);
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+    link.setAttribute('title', translateUIString('Open the captured revision in GitLab'));
+    return link;
+  }
+
+  function openGitLabSource(location, endLine) {
+    var url = gitLabSourceURL(location && location.path, location && location.line, endLine);
+    if (!url) return false;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+
+  function sourceActionElement(label, cls, location, endLine, action) {
+    var link = gitLabSourceLink(label, cls, location, endLine);
+    if (link) return link;
+    var button = txt('button', cls || '', label);
+    button.type = 'button';
+    button.onclick = action;
+    return button;
   }
 
   function serverBasePath() {
@@ -1821,6 +1891,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function renderFileReference(filePath, cls, line, label) {
     var text = label || filePath;
     var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
+    var gitLabLink = gitLabSourceLink(
+      text,
+      cls + ' rm-file-link' + (stale ? ' rm-file-link--stale' : ''),
+      { path: filePath, line: line || 0 }
+    );
+    if (gitLabLink) return gitLabLink;
     if (!serverMode() || !OPENABLE_PATH_SET[filePath]) {
       var reference = txt('span', cls + (stale ? ' rm-file-link--stale' : ''), text);
       if (stale) reference.title = 'This source changed after the report was generated.';
@@ -1888,7 +1964,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
   function appendLinkifiedText(container, statement) {
-    if (!serverMode() || !statement || OPENABLE_PATHS.length === 0) {
+    if ((!serverMode() && !gitLabSourceMode()) || !statement || OPENABLE_PATHS.length === 0) {
       container.textContent = statement || '';
       return;
     }
@@ -1932,6 +2008,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
   function setupServerFeatures() {
+    if (gitLabSourceMode()) {
+      var gitLabHint = document.getElementById('rm-editor-hint');
+      if (gitLabHint) {
+        gitLabHint.textContent = translateUIString('Code links open the captured revision in GitLab ↗');
+        gitLabHint.hidden = false;
+      }
+      return;
+    }
     if (!serverMode()) return;
     var hint = document.getElementById('rm-editor-hint');
     if (hint) hint.hidden = false;
@@ -3535,6 +3619,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     if (kind !== 'location') return true;
     var location = target.location || target;
     if (!location.path || !OPENABLE_PATH_SET[location.path]) return false;
+    if (gitLabSourceURL(location.path, location.line)) return true;
     if (embeddedSourceForLocation(location)) return true;
     return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
@@ -3700,7 +3785,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       var hasSymbolAnchors = component.files.some(function (group) {
         return group.id && group.can_list_symbols;
       });
-      if (hasSymbolAnchors && !serverMode()) {
+      if (hasSymbolAnchors && !serverMode() && !gitLabSourceMode()) {
         inspector.appendChild(txt('p', 'rm-symbol-static-hint', 'Run repomap serve to find Go symbols near these anchors.'));
       }
       var files = el('div', 'rm-component-inspector-list');
@@ -4921,13 +5006,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		locations.forEach(function (location) {
 			if (!location || !location.path || !location.symbol) return;
 			if (repositoryLocationAvailable(location)) {
-				var button = el('button', 'rm-read-next-target');
-				button.type = 'button';
-				button.appendChild(txt('strong', '', location.symbol));
-				button.appendChild(txt('code', '', formatCodeLocation(location)));
-				button.appendChild(txt('span', '', 'Open exact symbol →'));
-				button.onclick = function () { openSourceLocation(location); };
-				grid.appendChild(button);
+				var remoteTarget = gitLabSourceLink('', 'rm-read-next-target rm-source-target-link', location);
+				if (remoteTarget) {
+					remoteTarget.appendChild(txt('strong', '', location.symbol));
+					remoteTarget.appendChild(txt('code', '', formatCodeLocation(location)));
+					remoteTarget.appendChild(txt('span', '', 'Open exact symbol →'));
+					grid.appendChild(remoteTarget);
+				} else {
+					var button = el('button', 'rm-read-next-target');
+					button.type = 'button';
+					button.appendChild(txt('strong', '', location.symbol));
+					button.appendChild(txt('code', '', formatCodeLocation(location)));
+					button.appendChild(txt('span', '', 'Open exact symbol →'));
+					button.onclick = function () { openSourceLocation(location); };
+					grid.appendChild(button);
+				}
 				return;
 			}
 			var exact = el('div', 'rm-read-next-target');
@@ -5017,6 +5110,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function repositoryLocationAvailable(location) {
     if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
+    if (gitLabSourceURL(location.path, location.line)) return true;
     if (embeddedSourceForLocation(location)) return true;
     return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
@@ -5030,14 +5124,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function renderRepositoryArea(area) {
     var action = repositoryAreaAction(area);
     if (!action) return null;
-    var card = el('button', 'rm-repository-area');
-    card.type = 'button';
+    var remoteCard = action === 'code'
+      ? gitLabSourceLink('', 'rm-repository-area rm-source-target-link', area.code_location)
+      : null;
+    var card = remoteCard;
+    if (!card) {
+      card = el('button', 'rm-repository-area');
+      card.type = 'button';
+    }
     card.appendChild(txt('strong', '', area.label || area.name || 'Code area'));
     if (area.responsibility) card.appendChild(txt('span', 'rm-repository-area__responsibility', area.responsibility));
     if (action === 'code') {
       card.appendChild(txt('code', '', formatCodeLocation(area.code_location)));
       card.appendChild(txt('span', 'rm-repository-area__action', 'Open code →'));
-      card.onclick = function () { openSourceLocation(area.code_location); };
+      if (!remoteCard) {
+        card.onclick = function () { openSourceLocation(area.code_location); };
+      }
     } else {
       card.appendChild(txt('span', 'rm-repository-area__action', 'View on map →'));
       card.onclick = function () { openArchitectureTarget(area.map_target, null); };
@@ -5117,12 +5219,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			copy.onclick = function () { copyText(landmark.copy_text); };
 			actions.appendChild(copy);
 		}
-		if (landmark.reference && !landmark.reference.redacted && sourceSnippetHasCode(landmark.reference.source)) {
-			var source = txt('button', 'rm-quiet-action', 'Show source');
-			source.type = 'button';
-			source.onclick = function () {
-				openSourceSnippet(landmark.reference.source, landmark.reference.location, false);
-			};
+		if (landmark.reference && !landmark.reference.redacted && sourceSnippetAvailable(landmark.reference.source)) {
+			var source = sourceActionElement(
+				gitLabSourceMode() ? 'Open in GitLab' : 'Show source',
+				'rm-quiet-action rm-source-action-link',
+				landmark.reference.location || sourceSnippetLocation(landmark.reference.source),
+				Number(landmark.reference.source.end_line) || 0,
+				function () {
+					openSourceSnippet(landmark.reference.source, landmark.reference.location, false);
+				}
+			);
 			actions.appendChild(source);
 		}
 		if (actions.childNodes.length) card.appendChild(actions);
@@ -5332,11 +5438,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var start = studyStartReference(direction);
 		if (start) {
 			var startActions = el('div', 'rm-study-start-actions');
-			var startButton = txt('button', 'rm-primary-action', 'Start with ' + start.label + ' →');
-			startButton.type = 'button';
-			startButton.onclick = function () {
-				openSourceLocation(start.location);
-			};
+			var startButton = sourceActionElement(
+				'Start with ' + start.label + ' →',
+				'rm-primary-action rm-source-action-link',
+				start.location,
+				0,
+				function () { openSourceLocation(start.location); }
+			);
 			startActions.appendChild(startButton);
 			root.appendChild(startActions);
 		}
@@ -5358,16 +5466,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		related.appendChild(renderViewHeading('Continue exploring', 'Related repository context', 'Open a referenced document or inspect the full architecture.'));
 		var actions = el('div', 'rm-overview-actions');
 		(direction.documents || []).forEach(function (document) {
-			if (!document || !repositoryLocationAvailable(document.location)) return;
-			var button = txt(
-				'button',
-				'rm-secondary-action',
-				studyDocumentActionLabel(document)
+			var documentLocation = document && (document.location || sourceSnippetLocation(document.source));
+			if (!document || !repositoryLocationAvailable(documentLocation)) return;
+			var button = sourceActionElement(
+				studyDocumentActionLabel(document),
+				'rm-secondary-action rm-source-action-link',
+				documentLocation,
+				0,
+				function () { openSourceLocation(documentLocation); }
 			);
-			button.type = 'button';
-			button.onclick = function () {
-				openSourceLocation(document.location);
-			};
 			actions.appendChild(button);
 		});
 		if (userArchitectureAvailable()) {
@@ -5390,7 +5497,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	function firstSourcedStudyDocument(direction) {
 		var documents = direction && Array.isArray(direction.documents) ? direction.documents : [];
 		for (var index = 0; index < documents.length; index++) {
-			if (documents[index] && sourceSnippetHasCode(documents[index].source)) return documents[index];
+			if (documents[index] && sourceSnippetAvailable(documents[index].source)) return documents[index];
 		}
 		return null;
 	}
@@ -5406,7 +5513,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	function firstSourcedStudyAnchor(direction) {
 		var anchors = direction && Array.isArray(direction.reading_anchors) ? direction.reading_anchors : [];
 		for (var index = 0; index < anchors.length; index++) {
-			if (anchors[index] && sourceSnippetHasCode(anchors[index].source)) return anchors[index];
+			if (anchors[index] && sourceSnippetAvailable(anchors[index].source)) return anchors[index];
 		}
 		return null;
 	}
@@ -5435,19 +5542,28 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
 	function renderStudyReadingAnchor(reading, index) {
-		if (!reading || !sourceSnippetHasCode(reading.source)) return null;
+		if (!reading || !sourceSnippetAvailable(reading.source)) return null;
 		var location = reading.location || sourceSnippetLocation(reading.source);
 		var card = el('article', 'rm-study-reading-anchor');
 		card.appendChild(txt('span', 'rm-study-reading-anchor__order', String(index + 1)));
 		var copy = el('div', 'rm-study-reading-anchor__copy');
 		if (reading.label) copy.appendChild(txt('span', 'rm-study-reading-anchor__label', reading.label));
 		copy.appendChild(txt('strong', '', reading.source.enclosing_symbol || location.path));
-		copy.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
+		copy.appendChild(renderFileReference(
+			location.path,
+			'rm-study-reading-anchor__location',
+			location.line || 0,
+			formatCodeLocation(location)
+		));
 		if (reading.what_to_look_for) copy.appendChild(txt('p', '', reading.what_to_look_for));
 		card.appendChild(copy);
-		var open = txt('button', 'rm-secondary-action rm-study-reading-anchor__open', 'Open exact source');
-		open.type = 'button';
-		open.onclick = function () { openSourceLocation(location); };
+		var open = sourceActionElement(
+			gitLabSourceMode() ? 'Open in GitLab' : 'Open exact source',
+			'rm-secondary-action rm-study-reading-anchor__open rm-source-action-link',
+			location,
+			Number(reading.source.end_line) || 0,
+			function () { openSourceLocation(location); }
+		);
 		card.appendChild(open);
 		return card;
 	}
@@ -5469,7 +5585,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var section = el('section', 'rm-workspace-section rm-operation-references');
 		section.appendChild(renderViewHeading('', title, copy));
 			references.forEach(function (reference) {
-			if (!reference || !sourceSnippetHasCode(reference.source)) return;
+			if (!reference || !sourceSnippetAvailable(reference.source)) return;
 			section.appendChild(renderSourceSnippetCard(reference.source, {
 				roleLabel: reference.label || title,
 				reason: reference.label || '',
@@ -5504,7 +5620,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}
 		heading.appendChild(copy);
 		section.appendChild(heading);
-		if (action.reference && sourceSnippetHasCode(action.reference.source)) {
+		if (action.reference && sourceSnippetAvailable(action.reference.source)) {
 			section.appendChild(renderSourceSnippetCard(action.reference.source, {
 				primary: index === 0,
 				roleLabel: action.reference.label || 'Repository source',
@@ -5529,7 +5645,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				var afterAction = Number(result && result.after_action) || 0;
 				return !!(result && operationalResultLabel(result.kind) && String(result.value || '').trim() &&
 					afterAction > 0 && afterAction <= actionCount && result.reference &&
-					!result.reference.redacted && sourceSnippetHasCode(result.reference.source));
+					!result.reference.redacted && sourceSnippetAvailable(result.reference.source));
 			})
 			: [];
 		if (!results.length) return null;
@@ -5550,11 +5666,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			} else {
 				card.appendChild(txt('code', 'rm-operation-result__value', result.value));
 			}
-			var source = txt('button', 'rm-quiet-action', 'Show source');
-			source.type = 'button';
-			source.onclick = function () {
-				openSourceSnippet(result.reference.source, result.reference.location, false);
-			};
+			var source = sourceActionElement(
+				gitLabSourceMode() ? 'Open in GitLab' : 'Show source',
+				'rm-quiet-action rm-source-action-link',
+				result.reference.location || sourceSnippetLocation(result.reference.source),
+				Number(result.reference.source.end_line) || 0,
+				function () {
+					openSourceSnippet(result.reference.source, result.reference.location, false);
+				}
+			);
 			card.appendChild(source);
 			list.appendChild(card);
 		});
@@ -5854,15 +5974,23 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(anchor)));
 				title.appendChild(taskLensSupportBadge(anchor.role));
 				heading.appendChild(title);
-				var showSource = txt('button', 'rm-secondary-action', 'Show source');
-				showSource.type = 'button';
-				showSource.onclick = function () {
-					openSourceSnippet(anchor.source, { path: anchor.path, line: anchor.start_line });
-				};
+				var showSource = sourceActionElement(
+					gitLabSourceMode() ? 'Open in GitLab' : 'Show source',
+					'rm-secondary-action rm-source-action-link',
+					{ path: anchor.path, line: anchor.start_line },
+					anchor.end_line,
+					function () {
+						openSourceSnippet(anchor.source, { path: anchor.path, line: anchor.start_line });
+					}
+				);
 				heading.appendChild(showSource);
 				card.appendChild(heading);
-				card.appendChild(txt('code', 'rm-task-anchor__location',
-					anchor.path + ':' + anchor.start_line + '–' + anchor.end_line));
+				card.appendChild(renderFileReference(
+					anchor.path,
+					'rm-task-anchor__location',
+					anchor.start_line,
+					anchor.path + ':' + anchor.start_line + '–' + anchor.end_line
+				));
 				card.appendChild(txt('p', '', anchor.why || ''));
 				anchorList.appendChild(card);
 			});
@@ -6108,6 +6236,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     return !!(snippet && snippet.path && Array.isArray(snippet.lines) && snippet.lines.length);
   }
 
+  function sourceSnippetAvailable(snippet) {
+    if (!snippet || !snippet.path) return false;
+    if (gitLabSourceURL(snippet.path, snippet.start_line, snippet.end_line)) return true;
+    return sourceSnippetHasCode(snippet);
+  }
+
   function sourceSnippetIdentity(snippet) {
     if (!snippet) return '';
     return String(snippet.path || '') + '\u0000' + String(snippet.enclosing_symbol || '');
@@ -6118,7 +6252,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var seen = {};
     Object.keys(excluded || {}).forEach(function (key) { seen[key] = true; });
     (Array.isArray(snippets) ? snippets : []).forEach(function (snippet) {
-      if (!sourceSnippetHasCode(snippet) || result.length >= limit) return;
+      if (!sourceSnippetAvailable(snippet) || result.length >= limit) return;
       var key = byPath ? String(snippet.path || '') : sourceSnippetIdentity(snippet);
       if (!key || seen[key]) return;
       seen[key] = true;
@@ -6263,7 +6397,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function remainingExactReferences(locations, primary) {
     if (!Array.isArray(locations)) return [];
-    if (!sourceSnippetHasCode(primary)) return locations.slice();
+    if (!sourceSnippetAvailable(primary)) return locations.slice();
     var ranges = sourceHighlightRanges(primary);
     return locations.filter(function (location) {
       if (!location || location.path !== primary.path) return true;
@@ -6575,6 +6709,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function renderSourceActions(snippet, location, options) {
     options = options || {};
     var actions = el('div', 'rm-source-actions');
+    var gitLabOpen = gitLabSourceLink(
+      'Open in GitLab',
+      'rm-primary-action rm-source-action-link',
+      location,
+      Number(snippet && snippet.end_line) || 0
+    );
+    if (gitLabOpen) {
+      actions.appendChild(gitLabOpen);
+    }
     if (serverMode() && currentRunID() && SOURCE_IDS[snippet.path]) {
       var open = txt('button', 'rm-primary-action', 'Open in editor');
       open.type = 'button';
@@ -6680,29 +6823,35 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       options.roleLabel || (options.primary ? 'Primary implementation' : 'Source code')
     ));
     title.appendChild(txt('strong', '', snippet.enclosing_symbol || snippet.path));
-    var locationLabel = txt(
-      'code', 'rm-source-card__location',
-      snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line
-    );
+    var locationText = snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line;
+    var locationLabel = gitLabSourceLink(
+      locationText,
+      'rm-source-card__location rm-file-link',
+      { path: snippet.path, line: snippet.start_line },
+      snippet.end_line
+    ) || txt('code', 'rm-source-card__location', locationText);
     title.appendChild(locationLabel);
     heading.appendChild(title);
-    if (snippet.revision && (DEBUG_MODE || options.showSnapshot)) {
+    if (!gitLabSourceMode() && snippet.revision && (DEBUG_MODE || options.showSnapshot)) {
       heading.appendChild(txt('span', 'rm-source-card__snapshot', 'saved snapshot'));
     }
     card.appendChild(heading);
     if (String(options.reason || '').trim()) {
       card.appendChild(txt('p', 'rm-source-card__reason', String(options.reason).trim()));
     }
-    var notices = renderSourceNotices(options.notices, snippet, card);
-    if (notices) card.appendChild(notices);
-    var codeHost = el('div', 'rm-source-card__code');
-    codeHost.appendChild(renderSourceCode(snippet));
-    card.appendChild(codeHost);
     var location = sourceSnippetLocation(snippet, options.location);
+    var codeHost = null;
+    if (!gitLabSourceMode()) {
+      var notices = renderSourceNotices(options.notices, snippet, card);
+      if (notices) card.appendChild(notices);
+      codeHost = el('div', 'rm-source-card__code');
+      codeHost.appendChild(renderSourceCode(snippet));
+      card.appendChild(codeHost);
+    }
     var fullLines = Array.isArray(snippet.full_function_lines) ? snippet.full_function_lines : [];
     var showingFullFunction = false;
     var toggleFullFunction = null;
-    if (fullLines.length) {
+    if (fullLines.length && codeHost) {
       toggleFullFunction = function (button) {
         showingFullFunction = !showingFullFunction;
         codeHost.replaceChildren(renderSourceCode(snippet, showingFullFunction ? fullLines : snippet.lines));
@@ -6725,13 +6874,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var card = el('article', 'rm-related-source');
     var meta = el('div', '');
     meta.appendChild(txt('strong', '', snippet.enclosing_symbol || snippet.path));
-    meta.appendChild(txt('code', '', snippet.path + ':' + snippet.start_line + '–' + snippet.end_line));
+    meta.appendChild(renderFileReference(
+      snippet.path,
+      'rm-related-source__location',
+      snippet.start_line,
+      snippet.path + ':' + snippet.start_line + '–' + snippet.end_line
+    ));
     var reason = overviewSourceReason(snippet);
     if (reason) meta.appendChild(txt('span', 'rm-related-source__reason', reason));
     card.appendChild(meta);
-    var show = txt('button', 'rm-secondary-action', 'Show code');
-    show.type = 'button';
-    show.onclick = function () { openSourceSnippet(snippet, sourceSnippetLocation(snippet)); };
+    var show = sourceActionElement(
+      gitLabSourceMode() ? 'Open in GitLab' : 'Show code',
+      'rm-secondary-action rm-source-action-link',
+      sourceSnippetLocation(snippet),
+      snippet.end_line,
+      function () { openSourceSnippet(snippet, sourceSnippetLocation(snippet)); }
+    );
     card.appendChild(show);
     return card;
   }
@@ -6742,7 +6900,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     details.appendChild(txt('summary', '', 'Show ' + locations.length + ' exact references'));
     var list = el('div', 'rm-exact-references__list');
     locations.forEach(function (location) {
-      list.appendChild(txt('code', '', formatCodeLocation(location)));
+      list.appendChild(renderFileReference(
+        location.path,
+        'rm-exact-reference',
+        Number(location.line || location.start_line) || 0,
+        formatCodeLocation(location)
+      ));
     });
     details.appendChild(list);
     return details;
@@ -6787,13 +6950,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     context.forEach(function (item) {
       var action = repositoryAreaAction(item);
       if (!action) return;
-      var button = el('button', 'rm-context-item');
-      button.type = 'button';
+      var remoteContext = action === 'code'
+        ? gitLabSourceLink('', 'rm-context-item rm-source-target-link', item.code_location)
+        : null;
+      var button = remoteContext || el('button', 'rm-context-item');
+      if (!remoteContext) button.type = 'button';
       button.appendChild(txt('strong', '', item.label || 'Related code area'));
       if (item.responsibility) button.appendChild(txt('span', '', item.responsibility));
       if (action === 'code') {
         button.appendChild(txt('code', '', formatCodeLocation(item.code_location)));
-        button.onclick = function () { openSourceLocation(item.code_location); };
+        if (!remoteContext) button.onclick = function () { openSourceLocation(item.code_location); };
       } else {
         button.appendChild(txt('span', 'rm-context-item__action', 'View on map →'));
         button.onclick = function () {
@@ -6938,7 +7104,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     current.appendChild(txt('h3', '', step.title));
     current.appendChild(txt('p', 'rm-step-explanation', step.explanation));
     current.appendChild(renderStepButtons(mechanism, step, 'rm-step-actions is-before', false));
-    var sources = Array.isArray(step.sources) ? step.sources.filter(sourceSnippetHasCode) : [];
+    var sources = Array.isArray(step.sources) ? step.sources.filter(sourceSnippetAvailable) : [];
 		if (sources.length) {
 			var remainingLocations = (step.locations || []).slice();
 			sources.forEach(function (snippet, sourceIndex) {
@@ -6983,6 +7149,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function openSourceLocation(location) {
 		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
+		if (openGitLabSource(location, location.end_line)) return;
 		if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
 			requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
 			return;
@@ -6994,8 +7161,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
   function openSourceSnippet(snippet, location, expanded) {
-    if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
     var resolved = sourceSnippetLocation(snippet, location);
+    if (openGitLabSource(resolved, snippet && snippet.end_line)) return;
+    if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
     var next = reduceWorkspaceState(workspaceState, {
       type: 'open_source',
       selection: {
@@ -7049,6 +7217,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var content = document.getElementById('rm-source-drawer-content');
     var close = document.getElementById('rm-source-drawer-close');
     if (!workspace || !drawer || !content) return;
+    if (gitLabSourceMode()) {
+      workspaceState.sourceLocation = null;
+      drawer.hidden = true;
+      workspace.classList.remove('has-source-drawer');
+      content.replaceChildren();
+      return;
+    }
     if (!workspaceState.sourceLocation) {
       drawer.hidden = true;
       workspace.classList.remove('has-source-drawer');
@@ -7163,13 +7338,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var graph = DATA.repository_graph || {};
 		var graphPackages = Array.isArray(graph.packages) ? graph.packages : [];
 		var packageByPath = {};
-		graphPackages.forEach(function (pkg) {
-			var packagePath = String(pkg && pkg.canonical_package_path || '');
-			if (packagePath) packageByPath[packagePath] = pkg;
-		});
+			graphPackages.forEach(function (pkg) {
+				var packagePath = String(pkg && pkg.canonical_package_path || '');
+				if (packagePath) packageByPath[packagePath] = pkg;
+			});
+			var behaviorAnchorByID = {};
+			(canvas.behavior_anchors || []).forEach(function (anchor) {
+				var anchorID = String(anchor && anchor.id || '');
+				if (anchorID) behaviorAnchorByID[anchorID] = anchor;
+			});
 
-		var contexts = {};
-		(canvas.components || []).forEach(function (component) {
+			var contexts = {};
+			(canvas.components || []).forEach(function (component) {
 			if (!component || !component.id) return;
 			var packagePaths = [];
 			var packageSeen = {};
@@ -7188,12 +7368,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
 				});
 			});
-			(component.members || []).forEach(function (member) {
-				(member && member.facts || []).forEach(function (fact) {
-					var filePath = String(fact && fact.location && fact.location.path || '');
+				(component.members || []).forEach(function (member) {
+					(member && member.facts || []).forEach(function (fact) {
+						var filePath = String(fact && fact.location && fact.location.path || '');
+						if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
+					});
+				});
+				(component.anchor_ids || []).forEach(function (anchorID) {
+					var anchor = behaviorAnchorByID[String(anchorID || '')];
+					var filePath = String(anchor && anchor.location && anchor.location.path || '');
 					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
 				});
-			});
 
 			var matches = [];
 			STUDY_DIRECTIONS.forEach(function (direction, directionIndex) {
@@ -7214,9 +7399,28 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 					String(left.direction.id).localeCompare(String(right.direction.id));
 			});
 
-			var sourceSeen = {};
-			var sources = [];
-			(component.members || []).forEach(function (member) {
+				var sourceSeen = {};
+				var sources = [];
+				(component.anchor_ids || []).forEach(function (anchorID) {
+					var anchor = behaviorAnchorByID[String(anchorID || '')];
+					var location = anchor && anchor.location;
+					var filePath = String(location && location.path || '');
+					if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
+					var line = Number(location.line) || 0;
+					var key = filePath + '\u0000' + String(line);
+					if (sourceSeen[key]) return;
+					sourceSeen[key] = true;
+					sources.push({
+						label: anchor.label || filePath,
+						detail: anchor.label || filePath,
+						location: {
+							path: filePath,
+							line: line,
+							column: Number(location.column) || 0,
+						},
+					});
+				});
+				(component.members || []).forEach(function (member) {
 				(member && member.facts || []).forEach(function (fact) {
 					var location = fact && fact.location;
 					var filePath = String(location && location.path || '');
@@ -7261,7 +7465,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				match.anchors.forEach(function (anchor) {
 					var source = anchor && anchor.source;
 					var location = anchor && anchor.location;
-					if (!sourceSnippetHasCode(source) || !location || !OPENABLE_PATH_SET[location.path]) return;
+					if (!sourceSnippetAvailable(source) || !location || !OPENABLE_PATH_SET[location.path]) return;
 					var key = String(location.path) + '\u0000' + String(Number(location.line) || 0);
 					if (sourceSeen[key]) return;
 					sourceSeen[key] = true;
@@ -7389,7 +7593,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			options.openStudyDirection = openStudyDirection;
 			options.openSourceLocation = openSourceLocation;
 		}
-    if (serverMode() && currentRunID()) {
+    if (gitLabSourceMode()) {
+      options.openLocation = function (filePath, line) {
+        return openGitLabSource({ path: filePath, line: line || 0 });
+      };
+    } else if (serverMode() && currentRunID()) {
       options.openLocation = function (filePath, line, column) {
         if (!OPENABLE_PATH_SET[filePath]) return;
         return requestOpenFile(filePath, line || 0, column || 0);
@@ -7495,7 +7703,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         openArchitectureTarget({ kind: 'component', component_id: componentID }, null);
       },
     };
-    if (serverMode() && currentRunID()) {
+    if (gitLabSourceMode()) {
+      options.openLocation = function (location) {
+        if (!location) return false;
+        return openGitLabSource(location, location.end_line);
+      };
+    } else if (serverMode() && currentRunID()) {
       options.openLocation = function (location) {
         if (!location || !OPENABLE_PATH_SET[location.path]) return;
         return requestOpenFile(location.path, location.line || 0, location.column || 0);
@@ -7662,6 +7875,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       viewSectionID: viewSectionID,
 		openReportTarget: openReportTarget,
       reportTargetAvailable: reportTargetAvailable,
+      gitLabSourceMode: gitLabSourceMode,
+      gitLabSourceURL: gitLabSourceURL,
+      renderFileReference: renderFileReference,
+      openSourceLocation: openSourceLocation,
+      sourceSnippetAvailable: sourceSnippetAvailable,
+      renderRepositoryArea: renderRepositoryArea,
+      renderOperationalLandmark: renderOperationalLandmark,
+      serverMode: serverMode,
+      setupServerFeatures: setupServerFeatures,
+      renderArchitectureWorkspace: renderArchitectureWorkspace,
+      mountArchitectureCanvas: mountArchitectureCanvas,
+      mountDebugSurfaceCatalog: mountDebugSurfaceCatalog,
       translateUIString: translateUIString,
       txt: txt,
     });

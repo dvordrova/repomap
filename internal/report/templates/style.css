@@ -135,6 +135,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-purpose-hero p { font-size: 1rem; line-height: 1.65; margin-bottom: 0; }
 .rm-overview-actions, .rm-mechanism-actions, .rm-step-actions, .rm-map-return { display: flex; flex-wrap: wrap; gap: .55rem; }
 .rm-primary-action, .rm-secondary-action, .rm-quiet-action { border: 1px solid var(--rm-accent); border-radius: 7px; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 650; padding: .5rem .75rem; }
+.rm-source-action-link { align-items: center; box-sizing: border-box; display: inline-flex; justify-content: center; text-decoration: none; }
+.rm-source-target-link { box-sizing: border-box; text-decoration: none; }
 .rm-primary-action { background: var(--rm-accent); color: #fff; }
 .rm-secondary-action { background: #fff; color: var(--rm-accent); }
 .rm-quiet-action { background: transparent; border-color: var(--rm-border); color: var(--rm-dim); }
@@ -253,10 +255,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-related-source strong { font-size: .72rem; overflow-wrap: anywhere; }
 .rm-related-source code { color: #475569; font-size: .61rem; overflow-wrap: anywhere; }
 .rm-related-source__reason { color: #475569; font-size: .65rem; line-height: 1.35; }
+.rm-related-source__location, .rm-exact-reference { color: var(--rm-code); font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .62rem; overflow-wrap: anywhere; text-decoration: none; }
 .rm-exact-references { border-top: 1px solid var(--rm-border); margin: 1rem 0 0; padding-top: .7rem; }
 .rm-exact-references summary { color: #475569; cursor: pointer; font-size: .68rem; font-weight: 650; }
 .rm-exact-references__list { display: grid; gap: .3rem; margin-top: .55rem; }
-.rm-exact-references__list code { background: #f8fafc; border-radius: 5px; font-size: .62rem; overflow-wrap: anywhere; padding: .35rem .45rem; }
+.rm-exact-references__list code, .rm-exact-references__list .rm-exact-reference { background: #f8fafc; border-radius: 5px; font-size: .62rem; overflow-wrap: anywhere; padding: .35rem .45rem; }
 .rm-overview-source-heading { font-size: .82rem; margin: 1.1rem 0 .55rem; }
 .rm-mechanism-files { margin-top: 1rem; }
 .rm-mechanism-files > summary { color: var(--rm-accent); cursor: pointer; font-size: .78rem; font-weight: 700; }
