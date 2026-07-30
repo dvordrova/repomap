@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/156-observable-publication-and-component-navigation.md
+    decisions/157-study-anchor-contract-reliability.md
 
 Status:
-    Decision 156 active; observable publication and complete component starts authorized
+    Decision 157 active; reliable Study anchor contract authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 157 corrects the provider-facing Study candidate contract after
+    another ordinary run rejected ten of twelve drafts for anchor selection.
+    The prose requires three to five anchors, while the JSON example visibly
+    teaches one. The example now demonstrates three matching anchors and
+    readings, the prompt version changes, diagnostics separate count,
+    duplicate, and malformed-ID failures, and a bundle with fewer than three
+    exact code anchors skips the impossible complete-pack request explicitly.
+    Complete-pack validation, incomplete topics, IDs, source authority, report
+    formats, HTTP behavior, Cobra discovery, lifecycle evidence, and Mechanism
+    semantics remain unchanged.
     Decision 156 corrects two real product-observability failures. Architecture
     components already retain several bounded exact handler and entry anchors,
     but the inspector hides them behind one generic code start and renders

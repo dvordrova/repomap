@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	studyMapV32ReviewConcurrency = 3
+	studyMapV32ReviewConcurrency   = 3
+	studyMapMinimumCompleteAnchors = 3
 
 	studyMapBriefShapeFile        = "repository_brief_shape.json"
 	studyMapBriefShapeAttempt     = "repository_brief_shape_attempt.json"
@@ -66,12 +67,18 @@ Task: produce only bounded Study Direction drafts. Return exactly:
       "learning_outcome": "what the reader will understand",
       "target_user_job": "first_contact | use_or_operate | extend_or_integrate | contribute | debug_or_maintain",
       "learning_stage": "orientation | central_operation | core_model | integration | operations | contribution",
-      "anchor_ids": ["three to five exact supplied code anchor ids"],
+      "anchor_ids": [
+        "exact supplied code anchor id A",
+        "exact supplied code anchor id B",
+        "exact supplied code anchor id C"
+      ],
       "document_ids": ["zero or more exact supplied document ids"],
       "area_ids": ["one or more exact supplied area ids"],
       "mechanism_id": "exact supplied canonical mechanism id or empty",
       "reading_anchors": [
-        {"anchor_id": "one selected anchor id", "label": "Start here | Then inspect | Related implementation | Public boundary | Core data type", "what_to_look_for": "bounded editorial reading instruction"}
+        {"anchor_id": "exact supplied code anchor id A", "label": "Start here", "what_to_look_for": "bounded editorial reading instruction for A"},
+        {"anchor_id": "exact supplied code anchor id B", "label": "Then inspect", "what_to_look_for": "bounded editorial reading instruction for B"},
+        {"anchor_id": "exact supplied code anchor id C", "label": "Related implementation", "what_to_look_for": "bounded editorial reading instruction for C"}
       ],
       "search_queries": ["natural search wording"]
     }
@@ -311,6 +318,13 @@ func prepareStudyMapV32(
 	if ctx == nil || provider == nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, nil,
 			fmt.Errorf("study map: context and provider are required")
+	}
+	if len(bundle.Anchors) < studyMapMinimumCompleteAnchors {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, fmt.Errorf(
+			"study map: insufficient code anchors for complete directions: have %d, need at least %d",
+			len(bundle.Anchors),
+			studyMapMinimumCompleteAnchors,
+		)
 	}
 	bundleSHA, err := studymap.BundleHash(bundle)
 	if err != nil {

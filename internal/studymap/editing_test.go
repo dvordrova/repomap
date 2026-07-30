@@ -562,8 +562,8 @@ func TestDecodeDirectionProposalRetainsValidChattoCandidateSiblings(t *testing.T
 		)
 	}
 	wantIssues := []DirectionProposalIssue{
-		{Position: 8, Code: "invalid_anchor_selection"},
-		{Position: 10, Code: "invalid_anchor_selection"},
+		{Position: 8, Code: "invalid_anchor_count"},
+		{Position: 10, Code: "invalid_anchor_count"},
 	}
 	if !slices.Equal(diagnostics.Issues, wantIssues) {
 		t.Fatalf("Chatto issues = %#v, want %#v", diagnostics.Issues, wantIssues)
@@ -575,6 +575,51 @@ func TestDecodeDirectionProposalRetainsValidChattoCandidateSiblings(t *testing.T
 			direction.DirectionID != localDirectionID(direction) {
 			t.Fatalf("accepted direction %d changed: %#v", index, direction)
 		}
+	}
+}
+
+func TestDecodeDirectionProposalDistinguishesAnchorSelectionFailures(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	base := rawDirectionsFromLegacy(legacy).Directions[0]
+	valid := base
+	valid.Question = "How does the valid anchor selection work?"
+	valid.DirectionID = ""
+
+	count := base
+	count.Question = "How does the short anchor selection work?"
+	count.DirectionID = ""
+	count.AnchorIDs = count.AnchorIDs[:2]
+	count.ReadingAnchors = count.ReadingAnchors[:2]
+
+	duplicate := base
+	duplicate.Question = "How does the repeated anchor selection work?"
+	duplicate.DirectionID = ""
+	duplicate.AnchorIDs = append([]string(nil), duplicate.AnchorIDs...)
+	duplicate.AnchorIDs[1] = duplicate.AnchorIDs[0]
+
+	malformed := base
+	malformed.Question = "How does the malformed anchor selection work?"
+	malformed.DirectionID = ""
+	malformed.AnchorIDs = append([]string(nil), malformed.AnchorIDs...)
+	malformed.AnchorIDs[1] = " " + malformed.AnchorIDs[1] + " "
+
+	raw := DirectionProposal{
+		Version:    DirectionProposalVersion,
+		Directions: []DirectionCandidate{count, duplicate, malformed, valid},
+	}
+	decoded, diagnostics, err := DecodeDirectionProposalWithDiagnostics(mustEditingJSON(t, raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Directions) != 1 ||
+		!slices.Equal(diagnostics.Issues, []DirectionProposalIssue{
+			{Position: 0, Code: "invalid_anchor_count"},
+			{Position: 1, Code: "duplicate_anchor_ids"},
+			{Position: 2, Code: "invalid_anchor_id"},
+		}) {
+		t.Fatalf("anchor diagnostics = %#v, directions %#v", diagnostics, decoded.Directions)
 	}
 }
 
@@ -724,7 +769,7 @@ func TestDecodeDirectionProposalRejectsItemsIndependentlyAndEnvelopeAtomically(
 	if _, diagnostics, err = DecodeDirectionProposalWithDiagnostics(
 		mustEditingJSON(t, raw),
 	); err == nil || diagnostics.Accepted != 0 || diagnostics.Rejected != 1 ||
-		diagnostics.Issues[0].Code != "invalid_anchor_selection" {
+		diagnostics.Issues[0].Code != "invalid_anchor_count" {
 		t.Fatalf("zero survivors diagnostics=%#v error=%v", diagnostics, err)
 	}
 

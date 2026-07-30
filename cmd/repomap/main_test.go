@@ -1764,15 +1764,14 @@ func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 	}
 
 	requests := run()
-	if len(requests) != 5 {
-		t.Fatalf("model request count = %d, want orientation, architecture, two rejected guided tour attempts, and repository study map", len(requests))
+	if len(requests) != 4 {
+		t.Fatalf("model request count = %d, want orientation, architecture, and two rejected guided tour attempts; sparse Study must stop before its provider call", len(requests))
 	}
 	wantStageMarkers := []string{
 		"senior software engineer helping orient",
 		"compact conceptual architecture landscape",
 		"optional editorial guide for one bounded repository tour",
 		"optional editorial guide for one bounded repository tour",
-		"editorial onboarding planner for one bounded repository model",
 	}
 	for index, marker := range wantStageMarkers {
 		if !bytes.Contains(requests[index], []byte(marker)) {

@@ -1611,11 +1611,24 @@ func validateDirectionCandidateContent(direction DirectionCandidate) error {
 			direction.DirectionID,
 		)
 	}
-	if len(direction.AnchorIDs) < 3 || len(direction.AnchorIDs) > 5 ||
-		len(uniqueStrings(direction.AnchorIDs)) != len(direction.AnchorIDs) || !allOpaque(direction.AnchorIDs) {
+	if len(direction.AnchorIDs) < 3 || len(direction.AnchorIDs) > 5 {
 		return newDirectionCandidateValidationError(
-			"invalid_anchor_selection",
-			"study map: direction %q must select three to five unique anchors",
+			"invalid_anchor_count",
+			"study map: direction %q must select three to five anchors",
+			direction.DirectionID,
+		)
+	}
+	if len(uniqueStrings(direction.AnchorIDs)) != len(direction.AnchorIDs) {
+		return newDirectionCandidateValidationError(
+			"duplicate_anchor_ids",
+			"study map: direction %q repeats an anchor",
+			direction.DirectionID,
+		)
+	}
+	if !allOpaque(direction.AnchorIDs) {
+		return newDirectionCandidateValidationError(
+			"invalid_anchor_id",
+			"study map: direction %q contains an invalid anchor id",
 			direction.DirectionID,
 		)
 	}
