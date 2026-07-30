@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v9"
-	TriggerCatalogVersion        = 6
-	CoverageVersion              = 6
+	AnalyzerVersion              = "surface-ssa-v10"
+	TriggerCatalogVersion        = 7
+	CoverageVersion              = 7
 	CatalogVersion               = 1
 	ArchitectureGroundingVersion = 3
 )
@@ -80,15 +80,18 @@ type TriggerRecord struct {
 	ID                   string         `json:"id"`
 	ProvisionalID        bool           `json:"provisional_id"`
 	Kind                 string         `json:"kind"`
+	Producer             string         `json:"producer,omitempty"`
 	Identity             Identity       `json:"identity"`
 	Transport            string         `json:"transport"`
 	Framework            string         `json:"framework"`
 	ProcessEntrypoint    Symbol         `json:"process_entrypoint"`
 	Dispatcher           Value          `json:"dispatcher"`
+	Constructor          Symbol         `json:"constructor,omitempty"`
 	RegistrationSite     Location       `json:"registration_site"`
 	DescriptorSite       *Location      `json:"descriptor_site,omitempty"`
 	ServerStartSite      *Location      `json:"server_start_site,omitempty"`
 	Handler              Value          `json:"handler"`
+	HandlerLocation      *Location      `json:"handler_location,omitempty"`
 	Middleware           []Value        `json:"middleware"`
 	WrapperChain         []Wrapper      `json:"wrapper_chain"`
 	FinalSeed            string         `json:"final_seed"`
@@ -197,39 +200,46 @@ type SourceDigest struct {
 }
 
 type SurfaceCoverage struct {
-	Version                   int                   `json:"version"`
-	Repository                Repository            `json:"repository"`
-	Scenario                  Scenario              `json:"scenario"`
-	EntrypointsConsidered     []Symbol              `json:"entrypoints_considered"`
-	DispatchRootsFound        int                   `json:"dispatch_roots_found"`
-	ConfiguredSeedsMatched    []string              `json:"configured_seeds_matched"`
-	PackagesInspected         int                   `json:"packages_inspected"`
-	FunctionsInspected        int                   `json:"functions_inspected"`
-	DirectTriggers            int                   `json:"direct_triggers"`
-	WrapperDerivedTriggers    int                   `json:"wrapper_derived_triggers"`
-	UnresolvedHandlers        int                   `json:"unresolved_handlers"`
-	PossibleRegistrations     int                   `json:"possible_registrations"`
-	Workers                   int                   `json:"workers"`
-	AsyncTasks                int                   `json:"async_tasks"`
-	ProcessEntries            int                   `json:"process_entries"`
-	AvailableProcessEntries   int                   `json:"available_process_entries"`
-	UnavailableProcessEntries int                   `json:"unavailable_process_entries"`
-	PackageDiagnosticCount    int                   `json:"package_diagnostic_count"`
-	UnavailablePackageCount   int                   `json:"unavailable_package_count"`
-	PackageDiagnostics        []PackageDiagnostic   `json:"package_diagnostics"`
-	UnavailablePackages       []PackageAvailability `json:"unavailable_packages"`
-	LoopSignals               []LoopSignal          `json:"loop_signals"`
-	DynamicFrontiers          []Frontier            `json:"dynamic_frontiers"`
-	UnsupportedDispatch       []Frontier            `json:"unsupported_dispatch_mechanisms"`
-	BuildConstraints          []string              `json:"build_constraints"`
-	FilesSkipped              []string              `json:"files_skipped"`
-	PackagesSkipped           []string              `json:"packages_skipped"`
-	BudgetsReached            []string              `json:"budgets_reached"`
-	ColdLatencyMillis         int64                 `json:"cold_latency_ms"`
-	WarmLatencyMillis         *int64                `json:"warm_latency_ms,omitempty"`
-	CacheReuse                bool                  `json:"cache_reuse"`
-	Phases                    []PhaseMetric         `json:"phases,omitempty"`
-	ScopeStatement            string                `json:"scope_statement"`
+	Version                     int                   `json:"version"`
+	Repository                  Repository            `json:"repository"`
+	Scenario                    Scenario              `json:"scenario"`
+	EntrypointsConsidered       []Symbol              `json:"entrypoints_considered"`
+	DispatchRootsFound          int                   `json:"dispatch_roots_found"`
+	ConfiguredSeedsMatched      []string              `json:"configured_seeds_matched"`
+	PackagesInspected           int                   `json:"packages_inspected"`
+	FunctionsInspected          int                   `json:"functions_inspected"`
+	DirectTriggers              int                   `json:"direct_triggers"`
+	WrapperDerivedTriggers      int                   `json:"wrapper_derived_triggers"`
+	UnresolvedHandlers          int                   `json:"unresolved_handlers"`
+	PossibleRegistrations       int                   `json:"possible_registrations"`
+	Workers                     int                   `json:"workers"`
+	AsyncTasks                  int                   `json:"async_tasks"`
+	ProcessEntries              int                   `json:"process_entries"`
+	CobraDescriptorCount        int                   `json:"cobra_descriptor_count"`
+	CobraExactBindingCount      int                   `json:"cobra_exact_binding_count"`
+	CobraExactActivationCount   int                   `json:"cobra_exact_activation_count"`
+	CobraPartialRelationCount   int                   `json:"cobra_partial_relation_count"`
+	CobraDuplicateRelationCount int                   `json:"cobra_duplicate_relation_count"`
+	CobraRecordCount            int                   `json:"cobra_record_count"`
+	CobraDroppedRecordCount     int                   `json:"cobra_dropped_record_count"`
+	AvailableProcessEntries     int                   `json:"available_process_entries"`
+	UnavailableProcessEntries   int                   `json:"unavailable_process_entries"`
+	PackageDiagnosticCount      int                   `json:"package_diagnostic_count"`
+	UnavailablePackageCount     int                   `json:"unavailable_package_count"`
+	PackageDiagnostics          []PackageDiagnostic   `json:"package_diagnostics"`
+	UnavailablePackages         []PackageAvailability `json:"unavailable_packages"`
+	LoopSignals                 []LoopSignal          `json:"loop_signals"`
+	DynamicFrontiers            []Frontier            `json:"dynamic_frontiers"`
+	UnsupportedDispatch         []Frontier            `json:"unsupported_dispatch_mechanisms"`
+	BuildConstraints            []string              `json:"build_constraints"`
+	FilesSkipped                []string              `json:"files_skipped"`
+	PackagesSkipped             []string              `json:"packages_skipped"`
+	BudgetsReached              []string              `json:"budgets_reached"`
+	ColdLatencyMillis           int64                 `json:"cold_latency_ms"`
+	WarmLatencyMillis           *int64                `json:"warm_latency_ms,omitempty"`
+	CacheReuse                  bool                  `json:"cache_reuse"`
+	Phases                      []PhaseMetric         `json:"phases,omitempty"`
+	ScopeStatement              string                `json:"scope_statement"`
 }
 
 type PackageDiagnostic struct {

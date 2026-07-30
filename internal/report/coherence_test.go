@@ -567,6 +567,40 @@ func TestRepositoryNamedMainClassifiesPrimaryWithoutArchitectureCanvas(t *testin
 	}
 }
 
+func TestShallowCobraDescriptorKeepsSourceOwnershipWithoutRuntimeRole(t *testing.T) {
+	t.Parallel()
+
+	trigger := DiscoveredTrigger{
+		Kind:      "cli_command",
+		Producer:  SurfaceProducerCobra,
+		Framework: "cobra",
+		Constructor: SurfaceSymbol{
+			Package: "example.com/app/command",
+			Name:    "newServeCommand",
+			Location: &SurfaceLocation{
+				Path: "command/serve.go",
+				Line: 20,
+			},
+		},
+		DescriptorSite: &SurfaceLocation{
+			Path: "command/serve.go",
+			Line: 21,
+		},
+	}
+
+	classifySurfaceExecutable(nil, &trigger)
+
+	if trigger.OwningExecutable != "example.com/app/command" {
+		t.Fatalf("shallow descriptor owner = %q", trigger.OwningExecutable)
+	}
+	if trigger.ExecutableRole != ExecutableRoleUnknown {
+		t.Fatalf("shallow descriptor role = %q, want unknown", trigger.ExecutableRole)
+	}
+	if trigger.ProcessEntrypoint.Location != nil || trigger.ProcessEntrypoint.Package != "" {
+		t.Fatalf("shallow descriptor invented process reachability: %#v", trigger.ProcessEntrypoint)
+	}
+}
+
 func TestCommandSurfaceIDIgnoresRegistrationLineMovement(t *testing.T) {
 	t.Parallel()
 

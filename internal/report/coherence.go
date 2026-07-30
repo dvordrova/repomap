@@ -1165,6 +1165,19 @@ func classifySurfaceExecutable(data *ReportData, trigger *DiscoveredTrigger) {
 		if trigger.OwningExecutable == "." || trigger.OwningExecutable == "" {
 			trigger.OwningExecutable = surfaceExecutableForPackage(data, trigger.ProcessEntrypoint.Package)
 		}
+		if trigger.Producer == SurfaceProducerCobra &&
+			(trigger.OwningExecutable == "." || trigger.OwningExecutable == "") {
+			// A shallow descriptor is useful even when no process activation was
+			// proven. Keep it grouped with its exact source package without
+			// upgrading that package to a runtime executable role.
+			trigger.OwningExecutable = surfaceExecutableForPackage(data, trigger.Constructor.Package)
+			if trigger.OwningExecutable == "" && trigger.Constructor.Location != nil {
+				trigger.OwningExecutable = cleanSurfacePath(path.Dir(trigger.Constructor.Location.Path))
+			}
+			if trigger.OwningExecutable == "" && trigger.DescriptorSite != nil {
+				trigger.OwningExecutable = cleanSurfacePath(path.Dir(trigger.DescriptorSite.Path))
+			}
+		}
 	}
 	if trigger.Availability == "" || trigger.Availability == SurfaceAvailabilityUnknown {
 		trigger.Availability = SurfaceAvailabilityAvailable

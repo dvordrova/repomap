@@ -194,6 +194,12 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		finishPhase := a.startPhase("candidate_index", "indexing call targets and bounded wrapper candidates")
 		a.prepare()
 		finishPhase(len(a.allFunctions), len(a.allFunctions))
+		limits := defaultCobraLimits()
+		finishCobra := a.startPhase("cobra_inventory", "inventorying build-selected typed Cobra descriptors and direct relationships")
+		before := len(a.result.Catalog.Triggers)
+		a.discoverCobraCommandInventory(limits)
+		discovered := len(a.result.Catalog.Triggers) - before
+		finishCobra(discovered, a.result.Coverage.CobraDescriptorCount)
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
@@ -3254,7 +3260,7 @@ func (a *analyzer) finish(latency time.Duration) {
 	a.result.Coverage.DispatchRootsFound = len(a.starts)
 	a.result.Coverage.ColdLatencyMillis = latency.Milliseconds()
 	a.result.Coverage.BuildConstraints = append([]string{}, a.opts.BuildTags...)
-	a.result.Coverage.ScopeStatement = "exact build-selected process entries plus runtime registrations and starts found through safe typed package closures and bounded wrapper propagation under the recorded build scenario, subject to listed diagnostics and frontiers"
+	a.result.Coverage.ScopeStatement = "exact build-selected process entries, typed Cobra commands, and runtime registrations and starts found through safe typed package closures and bounded wrapper propagation under the recorded build scenario, subject to listed diagnostics and frontiers"
 	for _, trigger := range a.result.Catalog.Triggers {
 		if len(trigger.WrapperChain) == 0 {
 			a.result.Coverage.DirectTriggers++

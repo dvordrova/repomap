@@ -68,6 +68,19 @@ func Markdown(result Result) string {
 		result.Coverage.DirectTriggers,
 		result.Coverage.WrapperDerivedTriggers,
 	)
+	if result.Coverage.CobraDescriptorCount > 0 {
+		fmt.Fprintf(
+			&builder,
+			"Cobra inventory: %d descriptor(s), %d exact binding(s), %d exact activation(s), %d partial relation(s), %d duplicate relation(s), %d retained record(s), %d dropped record(s).\n\n",
+			result.Coverage.CobraDescriptorCount,
+			result.Coverage.CobraExactBindingCount,
+			result.Coverage.CobraExactActivationCount,
+			result.Coverage.CobraPartialRelationCount,
+			result.Coverage.CobraDuplicateRelationCount,
+			result.Coverage.CobraRecordCount,
+			result.Coverage.CobraDroppedRecordCount,
+		)
+	}
 	builder.WriteString("This is not a runtime trace. " + result.Coverage.ScopeStatement + ".\n\n")
 	if len(result.Coverage.Phases) > 0 {
 		builder.WriteString("## Discovery phases\n\n")
@@ -96,13 +109,21 @@ func Markdown(result Result) string {
 		fmt.Fprintf(&builder, "- Status: `%s`; certainty `%s`; resolution `%s`\n", trigger.Status, trigger.Certainty, trigger.Resolution)
 		fmt.Fprintf(&builder, "- Surface role: `%s`; trace readiness `%s`\n", trigger.SurfaceRole, trigger.TraceReadiness)
 		fmt.Fprintf(&builder, "- Trace readiness reason: %s\n", trigger.TraceReadinessReason)
-		fmt.Fprintf(&builder, "- Executable: `%s`; role `%s`; availability `%s`\n", trigger.OwningExecutable, trigger.ExecutableRole, trigger.Availability)
+		if trigger.OwningExecutable == "" {
+			fmt.Fprintf(&builder, "- Executable: unresolved; role `%s`; availability `%s`\n", trigger.ExecutableRole, trigger.Availability)
+		} else {
+			fmt.Fprintf(&builder, "- Executable: `%s`; role `%s`; availability `%s`\n", trigger.OwningExecutable, trigger.ExecutableRole, trigger.Availability)
+		}
 		if trigger.UnavailableReason != "" {
 			fmt.Fprintf(&builder, "- Unavailable reason: %s\n", trigger.UnavailableReason)
 		}
 		fmt.Fprintf(&builder, "- Handler: `%s`\n", displayValue(trigger.Handler))
 		fmt.Fprintf(&builder, "- Dispatcher: `%s`\n", displayValue(trigger.Dispatcher))
-		fmt.Fprintf(&builder, "- Registration: `%s:%d` via `%s`\n", trigger.RegistrationSite.Path, trigger.RegistrationSite.Line, trigger.FinalSeed)
+		if trigger.RegistrationSite.Path != "" && trigger.RegistrationSite.Line > 0 {
+			fmt.Fprintf(&builder, "- Registration: `%s:%d` via `%s`\n", trigger.RegistrationSite.Path, trigger.RegistrationSite.Line, trigger.FinalSeed)
+		} else {
+			fmt.Fprintf(&builder, "- Registration: unresolved via `%s`\n", trigger.FinalSeed)
+		}
 		if trigger.ServerStartSite != nil {
 			fmt.Fprintf(&builder, "- Server start: `%s:%d`\n", trigger.ServerStartSite.Path, trigger.ServerStartSite.Line)
 		}

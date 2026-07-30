@@ -1,15 +1,31 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/157-study-anchor-contract-reliability.md
+    decisions/159-shallow-entrypoint-surface-inventory.md
 
 Status:
-    Decision 157 active; reliable Study anchor contract authorized
+    Decision 159 active; generic shallow entrypoint inventory authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 159 replaces the held Decision 158 exact-tree attempt with a
+    generic shallow inventory. Framework adapters emit neutral Descriptor,
+    Binding, and Activation facts: every build-selected typed descriptor is
+    useful even when a complete route from process startup is unavailable,
+    while only direct unambiguous bindings and activations enrich it with
+    stronger structure. Cobra is the first adapter, not the product data model.
+    Dynamic aliases and instance flow remain explicit partial frontiers instead
+    of being interpreted, guessed, or hidden. Outbound clients and integrations
+    may later use the same neutral contract, but no client adapter is authorized
+    by this decision. Partial reading paths, lifecycle pairing, and ordinary
+    Mechanism composition remain separate following slices.
+    Decision 158 is preserved as a held and superseded exact Cobra tree
+    reconstruction attempt. Its implementation review found that reconstructing
+    global instance identity, mutation order, wrapper reachability, and command
+    hierarchy required a fragile miniature interpreter. None of its deep
+    reconstruction claims are active scope.
     Decision 157 corrects the provider-facing Study candidate contract after
     another ordinary run rejected ten of twelve drafts for anchor selection.
     The prose requires three to five anchors, while the JSON example visibly
