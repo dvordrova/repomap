@@ -1730,8 +1730,9 @@ body.rm-search-open { overflow: hidden; }
       match = trimmed.match(/^(\d+) exact members?$/);
       if (!translated && match) translated =
         russianCount(match[1], 'точный элемент', 'точных элемента', 'точных элементов');
-      match = trimmed.match(/^Code paths \((\d+)\) ([▾▴])$/);
-      if (!translated && match) translated = 'Пути в коде (' + match[1] + ') ' + match[2];
+      match = trimmed.match(/^Code paths \((\d+)\)(?: ([▾▴]))?$/);
+      if (!translated && match) translated =
+        'Пути в коде (' + match[1] + ')' + (match[2] ? ' ' + match[2] : '');
       match = trimmed.match(/^Production package (.+)\.$/);
       if (!translated && match) translated = 'Пакет production-кода ' + match[1] + '.';
       match = trimmed.match(/^Drag to explore · (\d+) architecture groups · Fit keeps labels readable$/);
