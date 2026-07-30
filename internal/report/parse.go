@@ -519,6 +519,7 @@ func readRunDir(
 	); warning != "" {
 		data.Warnings = append(data.Warnings, warning)
 	}
+	applyCanonicalStudyPublication(data)
 	if warning := replaySavedPavedPaths(data, pavedPathRecordPath(absDir)); warning != "" {
 		data.Warnings = append(data.Warnings, warning)
 	}
@@ -527,6 +528,18 @@ func readRunDir(
 		data.Warnings = append(data.Warnings, fmt.Sprintf("semantic search unavailable: %v", err))
 	}
 	return data, nil
+}
+
+// applyCanonicalStudyPublication makes the locally reduced Study record the
+// sole publication projection when it exists. Raw candidate attempts and
+// pre-eligibility semantic topics remain useful debug artifacts, but must not
+// compete with accepted reducer output in the ordinary report.
+func applyCanonicalStudyPublication(data *ReportData) {
+	if data == nil || data.StudyMap == nil || len(data.StudyMap.Directions) == 0 {
+		return
+	}
+	data.IncompleteStudy = nil
+	data.UserTopics = nil
 }
 
 func parseLLMBundle(path string, data *ReportData) string {

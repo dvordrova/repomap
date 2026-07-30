@@ -175,6 +175,55 @@ func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *test
 	}
 }
 
+func TestCanonicalStudyPublicationExcludesEtcdRejectedCandidatesAndTopics(t *testing.T) {
+	t.Parallel()
+
+	selectedQuestions := []string{
+		"How is etcd organized into major subsystems and entry points?",
+		"How does an etcd server start and become ready to serve requests?",
+		"How are Raft proposals applied to replicated state?",
+		"How does etcd grant, renew, and revoke leases?",
+		"How does etcd persist and recover durable state?",
+		"How do etcdctl and clientv3 send requests to an etcd server?",
+	}
+	data := &ReportData{
+		StudyMap:        &RepositoryStudyMap{},
+		IncompleteStudy: &RepositoryIncompleteStudy{Version: 1},
+		UserTopics: []UserTopic{
+			{Title: "Storage Quota Enforcement on Writes"},
+			{Title: "Server Startup and Initialization"},
+			{Title: "Snapshot Transmission to Followers"},
+		},
+	}
+	for index, question := range selectedQuestions {
+		data.StudyMap.Directions = append(data.StudyMap.Directions, StudyDirection{
+			ID:       fmt.Sprintf("selected-%d", index+1),
+			Question: question,
+		})
+	}
+	data.IncompleteStudy.Directions = []StudyDirection{
+		{ID: "rejected-1", Question: "How are metrics and profiling exposed?"},
+		{ID: "rejected-2", Question: "How do integration test utilities launch clusters?"},
+	}
+
+	applyCanonicalStudyPublication(data)
+
+	if len(data.StudyMap.Directions) != 6 {
+		t.Fatalf("canonical Study directions = %d, want 6", len(data.StudyMap.Directions))
+	}
+	if data.IncompleteStudy != nil {
+		t.Fatalf("pre-reduction Study candidates remain published: %#v", data.IncompleteStudy)
+	}
+	if len(data.UserTopics) != 0 {
+		t.Fatalf("locally ineligible semantic topics remain published: %#v", data.UserTopics)
+	}
+	for index, question := range selectedQuestions {
+		if data.StudyMap.Directions[index].Question != question {
+			t.Fatalf("canonical direction %d = %q, want %q", index, data.StudyMap.Directions[index].Question, question)
+		}
+	}
+}
+
 func TestProjectIncompleteStudySkipsCompleteAndUnresolvedDirectionsAtomically(t *testing.T) {
 	t.Parallel()
 

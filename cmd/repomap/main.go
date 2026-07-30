@@ -678,42 +678,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			}
 		}
 		if runOptionalModelStages {
-			semanticStarted := time.Now()
-			fmt.Fprintln(deps.stderr, "repomap: selecting bounded source-backed onboarding paths from saved facts")
-			freshResult, semanticErr := editFreshRepoMechanismForRun(
-				ctx,
-				runDir,
-				repo,
-				deps.stderr,
-			)
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if semanticErr != nil {
-				fmt.Fprintf(
-					deps.stderr,
-					"warning: %v; report will keep its code-first fallback (after %d ms)\n",
-					semanticErr,
-					time.Since(semanticStarted).Milliseconds(),
-				)
-			} else if freshResult.Status.State == "published" {
-				fmt.Fprintf(
-					deps.stderr,
-					"repomap: published %d canonical onboarding path(s) from %d proposed question(s) and %d candidate probe(s) in %d ms\n",
-					len(freshResult.Status.PublishedMechanisms),
-					freshResult.Status.QuestionsProposed,
-					len(freshResult.Status.Attempts),
-					time.Since(semanticStarted).Milliseconds(),
-				)
-			} else {
-				fmt.Fprintf(
-					deps.stderr,
-					"repomap: no bounded mechanism passed local publication checks; keeping the code-first fallback (after %d ms)\n",
-					time.Since(semanticStarted).Milliseconds(),
-				)
-			}
-		}
-		if runOptionalModelStages {
 			studyStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: editing a bounded repository brief and study map")
 			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr)
@@ -735,33 +699,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					studyStatus.Candidates,
 					time.Since(studyStarted).Milliseconds(),
 					formatTokenUsage(studyStatus.Metrics.InputTokens, studyStatus.Metrics.OutputTokens),
-				)
-			}
-		}
-		if runOptionalModelStages {
-			operateStarted := time.Now()
-			fmt.Fprintln(deps.stderr, "repomap: collecting exact repository-owned ways to run and verify")
-			operateStatus, operateErr := editPavedPathsForRun(ctx, runDir, repo, deps.stderr)
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if operateErr != nil {
-				fmt.Fprintf(
-					deps.stderr,
-					"warning: %v; report will keep %d exact operational landmark(s) when available (after %d ms)\n",
-					operateErr,
-					operateStatus.Landmarks,
-					time.Since(operateStarted).Milliseconds(),
-				)
-			} else {
-				fmt.Fprintf(
-					deps.stderr,
-					"repomap: published %d paved path(s) and %d exact operational landmark(s) from %d bounded item(s) in %d ms (%s)\n",
-					operateStatus.Paths,
-					operateStatus.Landmarks,
-					operateStatus.Evidence,
-					time.Since(operateStarted).Milliseconds(),
-					formatTokenUsage(operateStatus.Metrics.InputTokens, operateStatus.Metrics.OutputTokens),
 				)
 			}
 		}

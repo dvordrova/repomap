@@ -4038,13 +4038,21 @@
 		var root = document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
-		root.appendChild(renderViewHeading(
-			'Study · incomplete directions',
-			'What is worth understanding next?',
-			'Questions backed by exact starting points. They are places to begin, not answers or ordered mechanisms.'
-		));
+		var canonical = COMPLETE_STUDY_DIRECTIONS.length > 0;
+		var directions = canonical ? COMPLETE_STUDY_DIRECTIONS : INCOMPLETE_STUDY_DIRECTIONS;
+		root.appendChild(canonical
+			? renderViewHeading(
+				'Study',
+				'A useful path through the repository',
+				'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.'
+			)
+			: renderViewHeading(
+				'Study · incomplete directions',
+				'What is worth understanding next?',
+				'Questions backed by exact starting points. They are places to begin, not answers or ordered mechanisms.'
+			));
 		var directionList = el('div', 'rm-study-direction-list');
-		INCOMPLETE_STUDY_DIRECTIONS.forEach(function (direction, index) {
+		directions.forEach(function (direction, index) {
 			directionList.appendChild(renderStudyDirectionCard(direction, index));
 		});
 		root.appendChild(directionList);
@@ -4916,6 +4924,10 @@
     var root = document.getElementById('rm-overview');
     if (!root) return;
     root.replaceChildren();
+		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
+			renderStudyMapOverview(root);
+			return;
+		}
 		if (renderMixedLearningShelf(root)) return;
 		if (STUDY_MAP) {
 			renderStudyMapOverview(root);
@@ -6421,9 +6433,7 @@
 		var navView = view === 'mechanism'
 			? 'mechanisms'
 			: view === 'study'
-				? (INCOMPLETE_STUDY_DIRECTIONS.some(function (direction) {
-					return direction.id === workspaceState.directionID;
-				}) ? 'study_overview' : 'overview')
+				? (STUDY_DIRECTIONS.length ? 'study_overview' : 'overview')
 				: view === 'operate'
 					? 'overview'
 					: view;
@@ -6521,7 +6531,7 @@
 			} else {
 				addWorkspaceTab('Overview', 'overview');
 				if (USER_MECHANISMS.length) addWorkspaceTab('Mechanisms', 'mechanisms');
-				if (INCOMPLETE_STUDY_DIRECTIONS.length) addWorkspaceTab('Study', 'study_overview');
+				if (STUDY_DIRECTIONS.length) addWorkspaceTab('Study', 'study_overview');
 				if (userArchitectureAvailable()) addWorkspaceTab('Architecture', 'architecture');
 			}
       if (DEBUG_MODE) addWorkspaceTab('Provenance', 'provenance');

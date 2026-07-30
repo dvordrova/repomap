@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/141-chatto-pipeline-reliability-corrective.md
+    decisions/142-canonical-study-ordinary-publication-corrective.md
 
 Status:
-    Decision 141 active; Chatto pipeline reliability corrective authorized
+    Decision 142 active; canonical Study ordinary-publication corrective authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 142 corrects one ordinary provider-backed etcd run where semantic
+    opportunity discovery and paved-path editing consumed about 124 seconds
+    while publishing zero primary content, and report replay exposed eight
+    pre-reduction Study proposals plus three locally ineligible semantic topics
+    instead of the reducer-selected six canonical directions. A non-empty
+    canonical Study Map becomes the sole Study publication projection for both
+    Overview and Study; incomplete exact-start directions remain only as the
+    no-canonical-map fallback. Ordinary mode stops eagerly scheduling semantic
+    opportunity and paved-path editors while preserving their explicit
+    developer entrypoints and saved-artifact replay.
     Decision 141 corrects four concrete failures observed in the completed
     Decision 140 review and the fresh Chatto run: nested Go modules must reach
     typed surface analysis; safe tracked in-repository symlinks must not erase
