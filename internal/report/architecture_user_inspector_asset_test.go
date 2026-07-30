@@ -42,7 +42,9 @@ const report = {
       },
     ],
     components: [
-      { id: "core", anchor_ids: ["shared-anchor"], members: [
+      {
+        id: "core", anchor_ids: ["shared-anchor"],
+        owned_surface_ids: ["http-get-widgets", "http-post-widgets"], members: [
         {
           id: { kind: "package", value: "opaque-package-id" },
           facts: [{ kind: "declaration", value: "example.test/project/core" }],
@@ -71,6 +73,39 @@ const report = {
         facts: [{ kind: "declaration", value: "example.test/project/worker" }],
       }] },
       { id: "anchor-only", anchor_ids: ["shared-anchor", "second-anchor"], members: [] },
+    ],
+    surfaces: [
+      {
+        id: "http-get-widgets", name: "GET /widgets",
+        evidence: [
+          { path: "core/a.go", line: 15 },
+          { path: "core/b.go", line: 33 },
+        ],
+      },
+      {
+        id: "http-post-widgets", name: "POST /widgets",
+        evidence: [{ path: "core/a.go", line: 27 }],
+      },
+    ],
+  },
+  discovered_surfaces: {
+    total_count: 1,
+    triggers: [
+      {
+        id: "http-get-widgets",
+        identity: { method: "GET", path: { text: "/widgets", known: true } },
+        handler: { text: "ServeWidget", known: true },
+        handler_location: { path: "core/b.go", line: 33, column: 4 },
+        registration_site: { path: "core/a.go", line: 15, column: 2 },
+        process_entrypoint: { name: "main", location: { path: "core/a.go", line: 7 } },
+      },
+      {
+        id: "http-post-widgets",
+        identity: { method: "POST", path: { text: "/widgets", known: true } },
+        handler: { text: "CreateWidget", known: true },
+        registration_site: { path: "core/a.go", line: 27, column: 6 },
+        process_entrypoint: { name: "main", location: { path: "core/a.go", line: 7 } },
+      },
     ],
   },
   repository_graph: { packages: [
@@ -110,6 +145,14 @@ const report = {
       ],
     },
   ] },
+  incomplete_study: { directions: [
+    {
+      id: "incomplete-study-one", question: "How does core work?",
+      reading_anchors: [
+        { label: "Start here", location: { path: "core/a.go", line: 11 }, source: snippet("core/a.go", "A", 11) },
+      ],
+    },
+  ] },
 };
 const window = {
   location: { search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
@@ -133,9 +176,17 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		t.Fatalf("run architecture context projection: %v\n%s", err, output)
 	}
 	var contexts map[string]struct {
-		PackagePaths []string `json:"package_paths"`
-		FileCount    int      `json:"file_count"`
-		Sources      []struct {
+		PackagePaths   []string `json:"package_paths"`
+		PackageTargets []struct {
+			Path       string `json:"path"`
+			Actionable bool   `json:"actionable"`
+			Location   struct {
+				Path string `json:"path"`
+				Line int    `json:"line"`
+			} `json:"location"`
+		} `json:"package_targets"`
+		FileCount int `json:"file_count"`
+		Sources   []struct {
 			Detail   string `json:"detail"`
 			Location struct {
 				Path   string `json:"path"`
@@ -143,6 +194,15 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 				Column int    `json:"column"`
 			} `json:"location"`
 		} `json:"sources"`
+		SurfaceStarts []struct {
+			Label      string `json:"label"`
+			Actionable bool   `json:"actionable"`
+			Location   struct {
+				Path   string `json:"path"`
+				Line   int    `json:"line"`
+				Column int    `json:"column"`
+			} `json:"location"`
+		} `json:"surface_starts"`
 		Studies []struct {
 			ID string `json:"id"`
 		} `json:"studies"`
@@ -157,13 +217,30 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	if strings.Join(core.PackagePaths, "|") != "example.test/project/core" || core.FileCount != 2 {
 		t.Fatalf("package projection = %#v, file count = %d", core.PackagePaths, core.FileCount)
 	}
-	if len(core.Sources) != 4 || core.Sources[0].Detail != "example.test/project/core.A" ||
+	if len(core.PackageTargets) != 1 ||
+		core.PackageTargets[0].Path != "example.test/project/core" ||
+		core.PackageTargets[0].Location.Path != "core/a.go" ||
+		core.PackageTargets[0].Location.Line != 7 ||
+		core.PackageTargets[0].Actionable {
+		t.Fatalf("package targets = %#v", core.PackageTargets)
+	}
+	if len(core.Sources) != 1 || core.Sources[0].Detail != "example.test/project/core.A" ||
 		core.Sources[0].Location.Path != "core/a.go" || core.Sources[0].Location.Line != 7 ||
-		core.Sources[0].Location.Column != 9 ||
-		core.Sources[1].Location.Path != "core/a.go" || core.Sources[1].Location.Line != 11 ||
-		core.Sources[2].Location.Path != "core/b.go" || core.Sources[2].Location.Line != 21 ||
-		core.Sources[3].Location.Path != "core/a.go" || core.Sources[3].Location.Line != 0 {
+		core.Sources[0].Location.Column != 9 {
 		t.Fatalf("source joins = %#v", core.Sources)
+	}
+	if len(core.SurfaceStarts) != 2 ||
+		core.SurfaceStarts[0].Label != "GET /widgets → ServeWidget" ||
+		core.SurfaceStarts[0].Location.Path != "core/b.go" ||
+		core.SurfaceStarts[0].Location.Line != 33 ||
+		core.SurfaceStarts[0].Location.Column != 4 ||
+		core.SurfaceStarts[0].Actionable ||
+		core.SurfaceStarts[1].Label != "POST /widgets → CreateWidget · registration" ||
+		core.SurfaceStarts[1].Location.Path != "core/a.go" ||
+		core.SurfaceStarts[1].Location.Line != 27 ||
+		core.SurfaceStarts[1].Location.Column != 6 ||
+		core.SurfaceStarts[1].Actionable {
+		t.Fatalf("surface starts = %#v", core.SurfaceStarts)
 	}
 	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
 		t.Fatalf("Study joins = %#v", core.Studies)
@@ -176,7 +253,7 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		t.Fatalf("exact member-only component context is absent: %#v", contexts)
 	}
 	if len(memberOnly.PackagePaths) != 0 || memberOnly.FileCount != 1 ||
-		len(memberOnly.Sources) != 2 ||
+		len(memberOnly.Sources) != 1 ||
 		memberOnly.Sources[0].Location.Path != "other.go" ||
 		memberOnly.Sources[0].Location.Line != 41 ||
 		len(memberOnly.Studies) != 1 || memberOnly.Studies[0].ID != "study-other" {
@@ -184,11 +261,12 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 	packageOnly, ok := contexts["package-only"]
 	if !ok || strings.Join(packageOnly.PackagePaths, "|") != "example.test/project/worker" ||
-		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 2 ||
-		packageOnly.Sources[0].Location.Path != "worker/b.go" ||
-		packageOnly.Sources[0].Location.Line != 21 ||
-		packageOnly.Sources[1].Location.Path != "worker/a.go" ||
-		packageOnly.Sources[1].Location.Line != 0 ||
+		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 0 ||
+		len(packageOnly.PackageTargets) != 1 ||
+		packageOnly.PackageTargets[0].Path != "example.test/project/worker" ||
+		packageOnly.PackageTargets[0].Location.Path != "worker/a.go" ||
+		packageOnly.PackageTargets[0].Location.Line != 0 ||
+		packageOnly.PackageTargets[0].Actionable ||
 		len(packageOnly.Studies) != 1 || packageOnly.Studies[0].ID != "study-worker" {
 		t.Fatalf("package-only context = %#v, present %v", packageOnly, ok)
 	}
@@ -200,6 +278,151 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		anchorOnly.Sources[1].Location.Line != 8 ||
 		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].ID != "study-shared" {
 		t.Fatalf("anchor-only context = %#v, present %v", anchorOnly, ok)
+	}
+}
+
+func TestPackageSourceTargetUsesExactGraphMembership(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+const report = {
+  user_mechanisms: [], user_sources: [], source_ids: {},
+  openable_paths: ["alpha/z.go", "alpha/a.go", "beta/main.go"],
+  repository_graph: { packages: [
+    { canonical_package_path: "example.test/alpha", files: ["alpha/z.go", "alpha/a.go"] },
+    { canonical_package_path: "example.test/beta", files: ["beta/main.go"] },
+  ] },
+};
+const window = {
+  location: { search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const document = {
+  getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
+  querySelectorAll() { return []; },
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window, document, URLSearchParams, Set, Map, AbortController,
+});
+const target = window.__REPOMAP_WORKSPACE_TEST__.packageSourceTarget;
+process.stdout.write(JSON.stringify({
+  alpha: target("example.test/alpha"),
+  beta: target("example.test/beta"),
+  unknown: target("example.test/unknown"),
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "package-target-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run package target projection: %v\n%s", err, output)
+	}
+	var got struct {
+		Alpha   string `json:"alpha"`
+		Beta    string `json:"beta"`
+		Unknown string `json:"unknown"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode package targets: %v\n%s", err, output)
+	}
+	if got.Alpha != "alpha/a.go" || got.Beta != "beta/main.go" || got.Unknown != "" {
+		t.Fatalf("package targets = %#v", got)
+	}
+}
+
+func TestSourceLocationActionAvailabilityMatchesReportAuthority(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+const script = fs.readFileSync(process.argv[2], "utf8");
+const revision = "0123456789abcdef0123456789abcdef01234567";
+function available(location, report, browserLocation) {
+  const window = {
+    location: browserLocation,
+    __REPOMAP_WORKSPACE_TEST__: {},
+    addEventListener() {},
+  };
+  const document = {
+    getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
+    querySelectorAll() { return []; },
+  };
+  vm.runInNewContext(script, {
+    window, document, URLSearchParams, Set, Map, AbortController,
+  });
+  return window.__REPOMAP_WORKSPACE_TEST__.sourceLocationActionAvailable(location);
+}
+const base = {
+  user_mechanisms: [], user_sources: [],
+  openable_paths: ["pkg/file.go"], source_ids: {},
+};
+process.stdout.write(JSON.stringify({
+  staticFile: available(
+    {path: "pkg/file.go", line: 8}, base,
+    {search: "", hostname: "", protocol: "file:", pathname: "/report.html"}
+  ),
+  localServer: available(
+    {path: "pkg/file.go", line: 8},
+    {...base, source_ids: {"pkg/file.go": "opaque-source"}},
+    {
+      search: "", hostname: "127.0.0.1", protocol: "http:",
+      pathname: "/_repomap/token/runs/run/report.html",
+    }
+  ),
+  cleanGitLab: available(
+    {path: "pkg/file.go", line: 8},
+    {...base, gitlab_source_links: {
+      repository_url: "https://gitlab.example/team/project", revision,
+      working_tree_paths: [],
+    }},
+    {search: "", hostname: "", protocol: "file:", pathname: "/report.html"}
+  ),
+  dirtyGitLab: available(
+    {path: "pkg/file.go", line: 8},
+    {...base, gitlab_source_links: {
+      repository_url: "https://gitlab.example/team/project", revision,
+      working_tree_dirty: true, working_tree_paths: ["pkg/file.go"],
+    }},
+    {search: "", hostname: "", protocol: "file:", pathname: "/report.html"}
+  ),
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "source-authority-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run source authority projection: %v\n%s", err, output)
+	}
+	var got struct {
+		StaticFile  bool `json:"staticFile"`
+		LocalServer bool `json:"localServer"`
+		CleanGitLab bool `json:"cleanGitLab"`
+		DirtyGitLab bool `json:"dirtyGitLab"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode source authority projection: %v\n%s", err, output)
+	}
+	if got.StaticFile || !got.LocalServer || !got.CleanGitLab || got.DirtyGitLab {
+		t.Fatalf("source authority projection = %#v", got)
 	}
 }
 
@@ -276,9 +499,22 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"translateUI: translateUIString",
 		"this.translateUI(",
 		"userComponentActions(component)",
-		"return actions.slice(0, 3)",
+		"array(context.sources).find((candidate)",
+		"array(context.studies).slice(0, 3)",
+		"package_targets: packageTargets",
+		"surface_starts: surfaceStarts",
+		"function packageSourceTarget(pkg)",
+		"var reference = renderFileReference(filePath, 'rm-component-package-link', 0, label)",
+		"function sourceLocationActionAvailable(location)",
+		"rm-arch__compact-package-action",
+		"this.inspectorSection(\"Launch points\")",
+		"this.options.openSourceLocation(target.location)",
 		"array(context.package_paths).length > 0",
 		"(component.members || []).forEach(function (member)",
+		"(component.owned_surface_ids || []).forEach(function (surfaceID)",
+		"var handlerLocation = trigger.handler_location",
+		"trigger.registration_site",
+		"surfaceName + ' → ' + handlerName",
 		"detail: member.name || filePath",
 		"lowInformationComponent",
 		"has-user-compact-inspector",

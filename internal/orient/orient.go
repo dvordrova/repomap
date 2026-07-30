@@ -496,6 +496,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RepoName:       s.RepoName,
 			Model:          client.Model,
 			CandidateCount: len(acceptedFlows),
+			RejectedCount:  len(or.CandidateFlows) - len(acceptedFlows),
 			LatencyMillis:  providerLatency,
 			ResponseBytes:  call.Metrics.ResponseBytes,
 			InputTokens:    call.Metrics.InputTokens,

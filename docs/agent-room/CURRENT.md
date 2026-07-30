@@ -1,15 +1,26 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/155-architecture-inspector-source-ownership.md
+    decisions/156-observable-publication-and-component-navigation.md
 
 Status:
-    Decision 155 active; component-owned Architecture code starts authorized
+    Decision 156 active; observable publication and complete component starts authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 156 corrects two real product-observability failures. Architecture
+    components already retain several bounded exact handler and entry anchors,
+    but the inspector hides them behind one generic code start and renders
+    exact package identities as inert text. The inspector now keeps component
+    code, Study navigation, and one exact handler/registration target per
+    owned runtime surface distinct, and routes package labels through a
+    package-owned file when the existing local or pinned-GitLab authority can
+    open it. Successful ordinary runs also gain one bounded publication
+    summary for the stage counts and locally issued reason codes already
+    available without provider prose, source contents, credentials, wire
+    changes, new analysis, or cache changes.
     Decision 155 corrects a real Architecture inspector failure where a broad
     behavior-family anchor representative could outrank a selected component's
     own exact member location, send unrelated components to the same file, and

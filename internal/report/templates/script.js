@@ -196,6 +196,7 @@
     'Repository component': 'Компонент репозитория',
     'Repository area': 'Область репозитория',
     'Package': 'Пакет',
+    'Launch points': 'Точки запуска',
     'Start in code': 'С чего начать в коде',
     'Reading paths': 'Пути изучения',
     'Open reading path': 'Открыть путь изучения',
@@ -1179,11 +1180,6 @@
     return button;
   }
 
-  function githubPackageURL(pkg) {
-    // Import paths are canonical identities, not verified repository URLs.
-    return '';
-  }
-
   function packageDisplayName(pkg) {
     var packages = ((DATA.repository_graph || {}).packages || []);
     for (var packageIndex = 0; packageIndex < packages.length; packageIndex++) {
@@ -1202,30 +1198,30 @@
     return pkg;
   }
 
+  function packageSourceTarget(pkg) {
+    var packages = ((DATA.repository_graph || {}).packages || []);
+    for (var packageIndex = 0; packageIndex < packages.length; packageIndex++) {
+      var candidate = packages[packageIndex];
+      if (!candidate || candidate.canonical_package_path !== pkg) continue;
+      var files = (candidate.files || []).map(String).filter(function (filePath) {
+        return !!(filePath && OPENABLE_PATH_SET[filePath]);
+      }).sort();
+      return files.length ? files[0] : '';
+    }
+    return '';
+  }
+
   function renderPackageReference(pkg) {
-    var url = githubPackageURL(pkg);
     var label = packageDisplayName(pkg);
-    if (!url) {
+    var filePath = packageSourceTarget(pkg);
+    if (!filePath) {
       var code = txt('code', '', label);
       code.title = pkg;
       return code;
     }
-    var link = el('a', 'rm-component-package-link', {
-      href: url,
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      title: pkg,
-    });
-    var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('viewBox', '0 0 24 24');
-    icon.setAttribute('aria-hidden', 'true');
-    var mark = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    mark.setAttribute('fill', 'currentColor');
-    mark.setAttribute('d', 'M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.5v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.4-1.3-5.4-5.6 0-1.2.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.7.8 1.2 1.9 1.2 3.1 0 4.3-2.8 5.3-5.4 5.6.4.4.8 1.1.8 2.2v3.2c0 .3.2.6.8.5A11.3 11.3 0 0 0 12 .7Z');
-    icon.appendChild(mark);
-    link.appendChild(icon);
-    link.appendChild(txt('code', '', label));
-    return link;
+    var reference = renderFileReference(filePath, 'rm-component-package-link', 0, label);
+    if (!reference.title) reference.title = pkg;
+    return reference;
   }
 
   function appendLinkifiedText(container, statement) {
@@ -6554,6 +6550,19 @@
     }
   }
 
+	function sourceLocationActionAvailable(location) {
+		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
+		if (gitLabSourceMode()) {
+			return !!gitLabSourceURL(
+				location.path,
+				Number(location.line) || 0,
+				Number(location.end_line) || 0
+			);
+		}
+		if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) return true;
+		return !!embeddedSourceForLocation(location);
+	}
+
 	function openSourceLocation(location) {
 		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
 		if (openGitLabSource(location, location.end_line)) return;
@@ -6754,6 +6763,16 @@
 				var anchorID = String(anchor && anchor.id || '');
 				if (anchorID) behaviorAnchorByID[anchorID] = anchor;
 			});
+			var architectureSurfaceByID = {};
+			(canvas.surfaces || []).forEach(function (surface) {
+				var surfaceID = String(surface && surface.id || '');
+				if (surfaceID) architectureSurfaceByID[surfaceID] = surface;
+			});
+			var discoveredTriggerByID = {};
+			(((DATA.discovered_surfaces || {}).triggers) || []).forEach(function (trigger) {
+				var triggerID = String(trigger && trigger.id || '');
+				if (triggerID) discoveredTriggerByID[triggerID] = trigger;
+			});
 
 			var contexts = {};
 			(canvas.components || []).forEach(function (component) {
@@ -6791,7 +6810,10 @@
 				});
 
 			var matches = [];
-			STUDY_DIRECTIONS.forEach(function (direction, directionIndex) {
+			var componentStudyDirections = COMPLETE_STUDY_DIRECTIONS.length
+				? COMPLETE_STUDY_DIRECTIONS
+				: INCOMPLETE_STUDY_DIRECTIONS;
+			componentStudyDirections.forEach(function (direction, directionIndex) {
 				if (!direction || !direction.id) return;
 				var matchedAnchors = (direction.reading_anchors || []).filter(function (anchor) {
 					var location = anchor && (anchor.location || (anchor.source && {
@@ -6818,10 +6840,11 @@
 						var filePath = String(location && location.path || '');
 						if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
 						var line = Number(location.line) || 0;
+						if (line <= 0) return;
 						var key = filePath + '\u0000' + String(line);
 						if (sourceSeen[key]) return;
 						sourceSeen[key] = true;
-						if (line > 0) hasPreciseMemberSource = true;
+						hasPreciseMemberSource = true;
 						sources.push({
 							label: member.name || filePath,
 							detail: member.name || filePath,
@@ -6833,6 +6856,52 @@
 							priority: line > 0 ? 0 : 3,
 						});
 					});
+				});
+				var surfaceStarts = [];
+				(component.owned_surface_ids || []).forEach(function (surfaceID) {
+					surfaceID = String(surfaceID || '');
+					var surface = architectureSurfaceByID[surfaceID];
+					var trigger = discoveredTriggerByID[surfaceID];
+					if (!trigger) return;
+					var handlerLocation = trigger.handler_location;
+					var registrationLocation = trigger.registration_site || trigger.descriptor_site ||
+						trigger.server_start_site;
+					var entryLocation = trigger.process_entrypoint && trigger.process_entrypoint.location;
+					var location = handlerLocation || registrationLocation || entryLocation;
+					var filePath = String(location && location.path || '');
+					var line = Number(location && location.line) || 0;
+					if (!filePath || !OPENABLE_PATH_SET[filePath] || line <= 0) return;
+					var surfaceName = String(surface && surface.name || trigger.identity && trigger.identity.name || '');
+					var handlerName = String(trigger.handler && trigger.handler.known && trigger.handler.text || '');
+					var label = surfaceName || handlerName ||
+						String(trigger.process_entrypoint && trigger.process_entrypoint.name || filePath);
+					if (handlerName && handlerName !== surfaceName) {
+						label = surfaceName ? surfaceName + ' → ' + handlerName : handlerName;
+					}
+					if (!handlerLocation && registrationLocation) {
+						label += ' · registration';
+					} else if (!handlerLocation && !registrationLocation && entryLocation) {
+						label += ' · process entry';
+					}
+					var projectedLocation = {
+						path: filePath,
+						line: line,
+						column: Number(location.column) || 0,
+					};
+					surfaceStarts.push({
+						id: surfaceID,
+						label: label,
+						location: projectedLocation,
+						actionable: sourceLocationActionAvailable(projectedLocation),
+					});
+				});
+				surfaceStarts.sort(function (left, right) {
+					return String(left && left.label || '').localeCompare(String(right && right.label || '')) ||
+						String(left && left.location && left.location.path || '').localeCompare(
+							String(right && right.location && right.location.path || '')
+						) ||
+						Number(left && left.location && left.location.line) -
+							Number(right && right.location && right.location.line);
 				});
 				(component.anchor_ids || []).forEach(function (anchorID) {
 					var anchor = behaviorAnchorByID[String(anchorID || '')];
@@ -6856,39 +6925,6 @@
 						priority: 1,
 					});
 				});
-			if (!sources.length) {
-				packagePaths.some(function (packagePath) {
-					var files = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
-						return !!(filePath && OPENABLE_PATH_SET[filePath]);
-					}).sort();
-					if (!files.length) return false;
-					var filePath = files[0];
-					sourceSeen[filePath + '\u0000' + '0'] = true;
-					sources.push({
-						label: filePath,
-						detail: filePath,
-						location: { path: filePath, line: 0 },
-						priority: 4,
-					});
-					return true;
-				});
-			}
-			matches.forEach(function (match) {
-				match.anchors.forEach(function (anchor) {
-					var source = anchor && anchor.source;
-					var location = anchor && anchor.location;
-					if (!sourceSnippetAvailable(source) || !location || !OPENABLE_PATH_SET[location.path]) return;
-					var key = String(location.path) + '\u0000' + String(Number(location.line) || 0);
-					if (sourceSeen[key]) return;
-					sourceSeen[key] = true;
-					sources.push({
-						label: anchor.label || source.enclosing_symbol || location.path,
-						detail: anchor.what_to_look_for || '',
-						location: location,
-						priority: 2,
-					});
-				});
-			});
 			sources.sort(function (left, right) {
 				var leftLine = Number(left && left.location && left.location.line) || 0;
 				var rightLine = Number(right && right.location && right.location.line) || 0;
@@ -6902,11 +6938,35 @@
 				delete source.priority;
 			});
 
-			if (!packagePaths.length && !sources.length && !matches.length) return;
+			var packageTargets = packagePaths.map(function (packagePath) {
+				var packageFileSet = {};
+				var packageFiles = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
+					if (!filePath || !OPENABLE_PATH_SET[filePath]) return false;
+					packageFileSet[filePath] = true;
+					return true;
+				}).sort();
+				var source = sources.find(function (candidate) {
+					var filePath = String(candidate && candidate.location && candidate.location.path || '');
+					return !!packageFileSet[filePath];
+				});
+				var location = source && source.location ? source.location : (
+					packageFiles.length ? { path: packageFiles[0], line: 0 } : null
+				);
+				return {
+					path: packagePath,
+					file_count: packageFiles.length,
+					location: location,
+					actionable: sourceLocationActionAvailable(location),
+				};
+			});
+
+			if (!packagePaths.length && !sources.length && !surfaceStarts.length && !matches.length) return;
 			contexts[String(component.id)] = {
 				package_paths: packagePaths,
+				package_targets: packageTargets,
 				file_count: Object.keys(componentFiles).length,
 				sources: sources,
+				surface_starts: surfaceStarts,
 				studies: matches.map(function (match) {
 					return {
 						id: match.direction.id,
@@ -7251,6 +7311,7 @@
       architectureFocusNeedsReset: architectureFocusNeedsReset,
       architectureTargetFromFocus: architectureTargetFromFocus,
 		architectureComponentContexts: architectureComponentContexts,
+      packageSourceTarget: packageSourceTarget,
       parseWorkspaceHash: parseWorkspaceHash,
       workspaceHashForState: workspaceHashForState,
 			workspaceRouteFamily: workspaceRouteFamily,
@@ -7310,6 +7371,7 @@
       gitLabSourceURL: gitLabSourceURL,
       renderFileReference: renderFileReference,
       openSourceLocation: openSourceLocation,
+      sourceLocationActionAvailable: sourceLocationActionAvailable,
       sourceSnippetAvailable: sourceSnippetAvailable,
       renderRepositoryArea: renderRepositoryArea,
       renderOperationalLandmark: renderOperationalLandmark,
