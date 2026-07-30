@@ -725,6 +725,99 @@ func TestRunDefaultGitLabURLCreatesStandalonePinnedReport(t *testing.T) {
 	}
 }
 
+func TestRunDefaultGitHubURLCreatesStandalonePinnedReport(t *testing.T) {
+	clearLLMEnv(t)
+	repository := t.TempDir()
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/static-github\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repository, "main.go"), "package main\n\nfunc main() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repository)
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	debugDir := t.TempDir()
+	served := false
+	var stderr bytes.Buffer
+	if err := runDefaultWithDeps(repository, []string{
+		"--offline",
+		"--discover-surfaces=false",
+		"--no-open",
+		"--debug-dir", debugDir,
+		"--github-url", "https://github.com/example/static-github.git",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: &stderr,
+		serveReport: func(context.Context, reportserver.Options) error {
+			served = true
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v\nstderr:\n%s", err, stderr.String())
+	}
+	if served {
+		t.Fatal("--github-url started the local report server")
+	}
+
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"github_source_links"`,
+		`"repository_url":"https://github.com/example/static-github"`,
+		`"revision":"` + state.Head + `"`,
+	} {
+		if !strings.Contains(string(html), want) {
+			t.Fatalf("standalone report missing %q", want)
+		}
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reportJSON), "github_source_links") {
+		t.Fatalf("canonical report contains HTML-only GitHub config: %s", reportJSON)
+	}
+	metadataJSON, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		EffectiveOptions debugdump.EffectiveOptions `json:"effective_options"`
+	}
+	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !metadata.EffectiveOptions.NoServe ||
+		metadata.EffectiveOptions.GitHubURL != "https://github.com/example/static-github" {
+		t.Fatalf("effective GitHub options = %#v", metadata.EffectiveOptions)
+	}
+	if !strings.Contains(stderr.String(), "standalone GitHub report pinned to "+state.Head) {
+		t.Fatalf("stderr missing pinned revision:\n%s", stderr.String())
+	}
+}
+
+func TestRunDefaultRejectsMultipleStandaloneSourceHosts(t *testing.T) {
+	err := runDefaultWithDeps(t.TempDir(), []string{
+		"--offline",
+		"--gitlab-url", "https://gitlab.example.test/team/project",
+		"--github-url", "https://github.com/team/project",
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: io.Discard,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("multiple source hosts error = %v", err)
+	}
+}
+
 func TestRunDefaultGitLabURLRejectsInvalidURLBeforeRepositoryCapture(t *testing.T) {
 	clearLLMEnv(t)
 	captured := false

@@ -1,15 +1,24 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/159-shallow-entrypoint-surface-inventory.md
+    decisions/160-standalone-github-report.md
 
 Status:
-    Decision 159 active; generic shallow entrypoint inventory authorized
+    Decision 160 active; standalone GitHub report authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 160 adds `--github-url` as the GitHub-hosted equivalent of the
+    existing standalone GitLab report. A complete repository URL or a
+    host-only URL inferred from sanitized `origin` identity produces one
+    self-contained no-server HTML artifact whose source actions open the exact
+    captured GitHub commit and line. GitHub and GitLab remain mutually
+    exclusive host adapters over the same static source authority; their blob
+    paths and line-range fragments remain host-correct. Stable dirty paths stay
+    local-only, no remote request is made, and canonical report JSON and
+    manifest formats remain host-neutral.
     Decision 159 replaces the held Decision 158 exact-tree attempt with a
     generic shallow inventory. Framework adapters emit neutral Descriptor,
     Binding, and Activation facts: every build-selected typed descriptor is

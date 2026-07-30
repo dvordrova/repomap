@@ -161,6 +161,11 @@
     'This report includes stable local changes. Unchanged code links open the captured GitLab revision; changed source paths stay unlinked.': 'Этот отчёт учитывает стабильные локальные изменения. Ссылки для неизменённых исходников открывают зафиксированную версию GitLab; изменённые пути остаются без внешней ссылки.',
     'Local-only source': 'Только локальный исходник',
     'This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.': 'Этот исходник содержит локальные изменения и не совпадает с зафиксированным commit в GitLab; внешняя ссылка на код недоступна.',
+    'Open in GitHub': 'Открыть в GitHub',
+    'Open the captured revision in GitHub': 'Открыть зафиксированную версию в GitHub',
+    'Code links open the captured revision in GitHub ↗': 'Ссылки на код открывают зафиксированную версию в GitHub ↗',
+    'This report includes stable local changes. Unchanged code links open the captured GitHub revision; changed source paths stay unlinked.': 'Этот отчёт учитывает стабильные локальные изменения. Ссылки для неизменённых исходников открывают зафиксированную версию GitHub; изменённые пути остаются без внешней ссылки.',
+    'This source has local changes and does not exactly match the captured GitHub commit; its external code link is unavailable.': 'Этот исходник содержит локальные изменения и не совпадает с зафиксированным commit в GitHub; внешняя ссылка на код недоступна.',
     'Show more context': 'Показать больше контекста',
     'Show full function': 'Показать всю функцию',
     'Copy file:line': 'Скопировать файл:строку',
@@ -396,10 +401,11 @@
   OPENABLE_PATHS.forEach(function (path) { OPENABLE_PATH_SET[path] = true; });
 	var SOURCE_IDS = DATA.source_ids || {};
 	var SOURCE_CONTEXT_IDS = DATA.source_context_ids || {};
-  var GITLAB_SOURCE_LINKS = DATA.gitlab_source_links || null;
-  var GITLAB_WORKING_TREE_PATH_SET = {};
-  ((GITLAB_SOURCE_LINKS && GITLAB_SOURCE_LINKS.working_tree_paths) || []).forEach(function (path) {
-    GITLAB_WORKING_TREE_PATH_SET[path] = true;
+  var STATIC_SOURCE_HOST = DATA.github_source_links ? 'GitHub' : 'GitLab';
+  var STATIC_SOURCE_LINKS = DATA.github_source_links || DATA.gitlab_source_links || null;
+  var STATIC_WORKING_TREE_PATH_SET = {};
+  ((STATIC_SOURCE_LINKS && STATIC_SOURCE_LINKS.working_tree_paths) || []).forEach(function (path) {
+    STATIC_WORKING_TREE_PATH_SET[path] = true;
   });
   var toastTimer = null;
   var symbolLookupStates = {};
@@ -963,93 +969,118 @@
   }
 
   function serverMode() {
-    if (gitLabSourceMode()) return false;
+    if (staticSourceMode()) return false;
     var loopback = window.location.hostname === '127.0.0.1' ||
       window.location.hostname === 'localhost' ||
       window.location.hostname === '::1';
     return loopback && window.location.protocol === 'http:' && serverBasePath() !== '';
   }
 
-  function gitLabSourceMode() {
+  function staticSourceMode() {
     return !!(
-      GITLAB_SOURCE_LINKS &&
-      /^https?:\/\/[^/]+\/.+/i.test(String(GITLAB_SOURCE_LINKS.repository_url || '')) &&
-      /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(String(GITLAB_SOURCE_LINKS.revision || ''))
+      STATIC_SOURCE_LINKS &&
+      /^https?:\/\/[^/]+\/.+/i.test(String(STATIC_SOURCE_LINKS.repository_url || '')) &&
+      /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(String(STATIC_SOURCE_LINKS.revision || ''))
     );
   }
 
-  function encodeGitLabPathSegment(value) {
+  function staticSourceOpenLabel() {
+    return 'Open in ' + STATIC_SOURCE_HOST;
+  }
+
+  function staticSourceCapturedRevisionTitle() {
+    return 'Open the captured revision in ' + STATIC_SOURCE_HOST;
+  }
+
+  function staticSourceDirtyMessage() {
+    return 'This source has local changes and does not exactly match the captured ' +
+      STATIC_SOURCE_HOST + ' commit; its external code link is unavailable.';
+  }
+
+  function staticSourceHintMessage() {
+    if (STATIC_SOURCE_LINKS && STATIC_SOURCE_LINKS.working_tree_dirty) {
+      return 'This report includes stable local changes. Unchanged code links open the captured ' +
+        STATIC_SOURCE_HOST + ' revision; changed source paths stay unlinked.';
+    }
+    return 'Code links open the captured revision in ' + STATIC_SOURCE_HOST + ' ↗';
+  }
+
+  function encodeStaticSourcePathSegment(value) {
     return encodeURIComponent(value).replace(/[!'()*]/g, function (character) {
       return '%' + character.charCodeAt(0).toString(16).toUpperCase();
     });
   }
 
-  function gitLabWorkingTreePath(filePath) {
-    return !!(filePath && GITLAB_WORKING_TREE_PATH_SET[filePath]);
+  function staticWorkingTreePath(filePath) {
+    return !!(filePath && STATIC_WORKING_TREE_PATH_SET[filePath]);
   }
 
-  function gitLabSourceLocationAvailable(filePath, line, endLine) {
+  function staticSourceLocationAvailable(filePath, line, endLine) {
     return !!(
-      gitLabSourceURL(filePath, line, endLine) ||
-      gitLabSourceMode() && OPENABLE_PATH_SET[filePath] && gitLabWorkingTreePath(filePath)
+      staticSourceURL(filePath, line, endLine) ||
+      staticSourceMode() && OPENABLE_PATH_SET[filePath] && staticWorkingTreePath(filePath)
     );
   }
 
-  function gitLabSourceURL(filePath, line, endLine) {
-    if (!gitLabSourceMode() || !filePath || !OPENABLE_PATH_SET[filePath] || gitLabWorkingTreePath(filePath)) return '';
+  function staticSourceURL(filePath, line, endLine) {
+    if (!staticSourceMode() || !filePath || !OPENABLE_PATH_SET[filePath] || staticWorkingTreePath(filePath)) return '';
     var segments = [];
-    var prefix = String(GITLAB_SOURCE_LINKS.path_prefix || '').replace(/^\/+|\/+$/g, '');
+    var prefix = String(STATIC_SOURCE_LINKS.path_prefix || '').replace(/^\/+|\/+$/g, '');
     if (prefix) segments = segments.concat(prefix.split('/'));
     segments = segments.concat(String(filePath).split('/'));
     if (segments.some(function (segment) { return !segment || segment === '.' || segment === '..'; })) return '';
-    var url = String(GITLAB_SOURCE_LINKS.repository_url).replace(/\/+$/g, '') +
-      '/-/blob/' + encodeGitLabPathSegment(String(GITLAB_SOURCE_LINKS.revision)) + '/' +
-      segments.map(encodeGitLabPathSegment).join('/');
+    var blobPrefix = STATIC_SOURCE_HOST === 'GitHub' ? '/blob/' : '/-/blob/';
+    var url = String(STATIC_SOURCE_LINKS.repository_url).replace(/\/+$/g, '') +
+      blobPrefix + encodeStaticSourcePathSegment(String(STATIC_SOURCE_LINKS.revision)) + '/' +
+      segments.map(encodeStaticSourcePathSegment).join('/');
     var start = Math.floor(Number(line) || 0);
     var end = Math.floor(Number(endLine) || 0);
-    if (start > 0) url += '#L' + start + (end > start ? '-' + end : '');
+    if (start > 0) {
+      var rangeSeparator = STATIC_SOURCE_HOST === 'GitHub' ? '-L' : '-';
+      url += '#L' + start + (end > start ? rangeSeparator + end : '');
+    }
     return url;
   }
 
-  function gitLabSourceLink(label, cls, location, endLine) {
+  function staticSourceLink(label, cls, location, endLine) {
     var link = txt('a', cls || '', label);
-    return configureGitLabSourceLink(link, location || {}, endLine);
+    return configureStaticSourceLink(link, location || {}, endLine);
   }
 
-  function configureGitLabSourceLink(link, location, endLine) {
+  function configureStaticSourceLink(link, location, endLine) {
     if (!link) return null;
-    var url = gitLabSourceURL(location && location.path, location && location.line, endLine);
+    var url = staticSourceURL(location && location.path, location && location.line, endLine);
     if (!url) return null;
     link.setAttribute('href', url);
     link.setAttribute('target', '_blank');
     link.setAttribute('rel', 'noopener noreferrer');
-    link.setAttribute('title', translateUIString('Open the captured revision in GitLab'));
+    link.setAttribute('title', translateUIString(staticSourceCapturedRevisionTitle()));
     return link;
   }
 
-  function openGitLabSource(location, endLine) {
-    if (gitLabSourceMode() && gitLabWorkingTreePath(location && location.path)) {
-      showToast('This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.', true);
+  function openStaticSource(location, endLine) {
+    if (staticSourceMode() && staticWorkingTreePath(location && location.path)) {
+      showToast(staticSourceDirtyMessage(), true);
       return true;
     }
-    var url = gitLabSourceURL(location && location.path, location && location.line, endLine);
+    var url = staticSourceURL(location && location.path, location && location.line, endLine);
     if (!url) return false;
     window.open(url, '_blank', 'noopener,noreferrer');
     return true;
   }
 
   function sourceActionElement(label, cls, location, endLine, action) {
-    var link = gitLabSourceLink(label, cls, location, endLine);
+    var link = staticSourceLink(label, cls, location, endLine);
     if (link) return link;
-    if (gitLabSourceMode() && gitLabWorkingTreePath(location && location.path)) {
+    if (staticSourceMode() && staticWorkingTreePath(location && location.path)) {
       var localOnly = txt('button', cls || '', 'Local-only source');
       localOnly.type = 'button';
       localOnly.setAttribute(
         'title',
-        translateUIString('This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.')
+        translateUIString(staticSourceDirtyMessage())
       );
       localOnly.onclick = function () {
-        showToast('This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.', true);
+        showToast(staticSourceDirtyMessage(), true);
       };
       return localOnly;
     }
@@ -1150,17 +1181,15 @@
   function renderFileReference(filePath, cls, line, label) {
     var text = label || filePath;
     var stale = DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
-    var gitLabLink = gitLabSourceLink(
+    var staticSourceLinkNode = staticSourceLink(
       text,
       cls + ' rm-file-link' + (stale ? ' rm-file-link--stale' : ''),
       { path: filePath, line: line || 0 }
     );
-    if (gitLabLink) return gitLabLink;
-    if (gitLabSourceMode() && gitLabWorkingTreePath(filePath)) {
+    if (staticSourceLinkNode) return staticSourceLinkNode;
+    if (staticSourceMode() && staticWorkingTreePath(filePath)) {
       var localReference = txt('span', cls + ' rm-file-link--stale', text);
-      localReference.title = translateUIString(
-        'This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.'
-      );
+      localReference.title = translateUIString(staticSourceDirtyMessage());
       return localReference;
     }
     if (!serverMode() || !OPENABLE_PATH_SET[filePath]) {
@@ -1225,7 +1254,7 @@
   }
 
   function appendLinkifiedText(container, statement) {
-    if ((!serverMode() && !gitLabSourceMode()) || !statement || OPENABLE_PATHS.length === 0) {
+    if ((!serverMode() && !staticSourceMode()) || !statement || OPENABLE_PATHS.length === 0) {
       container.textContent = statement || '';
       return;
     }
@@ -1269,15 +1298,11 @@
   }
 
   function setupServerFeatures() {
-    if (gitLabSourceMode()) {
-      var gitLabHint = document.getElementById('rm-editor-hint');
-      if (gitLabHint) {
-        gitLabHint.textContent = translateUIString(
-          GITLAB_SOURCE_LINKS.working_tree_dirty
-            ? 'This report includes stable local changes. Unchanged code links open the captured GitLab revision; changed source paths stay unlinked.'
-            : 'Code links open the captured revision in GitLab ↗'
-        );
-        gitLabHint.hidden = false;
+    if (staticSourceMode()) {
+      var staticSourceHintNode = document.getElementById('rm-editor-hint');
+      if (staticSourceHintNode) {
+        staticSourceHintNode.textContent = translateUIString(staticSourceHintMessage());
+        staticSourceHintNode.hidden = false;
       }
       return;
     }
@@ -2884,7 +2909,7 @@
     if (kind !== 'location') return true;
     var location = target.location || target;
     if (!location.path || !OPENABLE_PATH_SET[location.path]) return false;
-    if (gitLabSourceLocationAvailable(location.path, location.line)) return true;
+    if (staticSourceLocationAvailable(location.path, location.line)) return true;
     if (embeddedSourceForLocation(location)) return true;
     return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
@@ -3050,7 +3075,7 @@
       var hasSymbolAnchors = component.files.some(function (group) {
         return group.id && group.can_list_symbols;
       });
-      if (hasSymbolAnchors && !serverMode() && !gitLabSourceMode()) {
+      if (hasSymbolAnchors && !serverMode() && !staticSourceMode()) {
         inspector.appendChild(txt('p', 'rm-symbol-static-hint', 'Run repomap serve to find Go symbols near these anchors.'));
       }
       var files = el('div', 'rm-component-inspector-list');
@@ -4271,7 +4296,7 @@
 		locations.forEach(function (location) {
 			if (!location || !location.path || !location.symbol) return;
 			if (repositoryLocationAvailable(location)) {
-				var remoteTarget = gitLabSourceLink('', 'rm-read-next-target rm-source-target-link', location);
+				var remoteTarget = staticSourceLink('', 'rm-read-next-target rm-source-target-link', location);
 				if (remoteTarget) {
 					remoteTarget.appendChild(txt('strong', '', location.symbol));
 					remoteTarget.appendChild(txt('code', '', formatCodeLocation(location)));
@@ -4375,7 +4400,7 @@
 
   function repositoryLocationAvailable(location) {
     if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
-    if (gitLabSourceLocationAvailable(location.path, location.line)) return true;
+    if (staticSourceLocationAvailable(location.path, location.line)) return true;
     if (embeddedSourceForLocation(location)) return true;
     return !!(serverMode() && currentRunID() && SOURCE_IDS[location.path]);
   }
@@ -4390,7 +4415,7 @@
     var action = repositoryAreaAction(area);
     if (!action) return null;
     var remoteCard = action === 'code'
-      ? gitLabSourceLink('', 'rm-repository-area rm-source-target-link', area.code_location)
+      ? staticSourceLink('', 'rm-repository-area rm-source-target-link', area.code_location)
       : null;
     var card = remoteCard;
     if (!card) {
@@ -4486,7 +4511,7 @@
 		}
 		if (landmark.reference && !landmark.reference.redacted && sourceSnippetAvailable(landmark.reference.source)) {
 			var source = sourceActionElement(
-				gitLabSourceMode() ? 'Open in GitLab' : 'Show source',
+				staticSourceMode() ? staticSourceOpenLabel() : 'Show source',
 				'rm-quiet-action rm-source-action-link',
 				landmark.reference.location || sourceSnippetLocation(landmark.reference.source),
 				Number(landmark.reference.source.end_line) || 0,
@@ -4608,7 +4633,7 @@
 	function sourceEpisodeSourceAvailable(source) {
 		return !!(
 			source && source.path && OPENABLE_PATH_SET[source.path] &&
-			(gitLabSourceURL(source.path, source.start_line, source.end_line) ||
+			(staticSourceURL(source.path, source.start_line, source.end_line) ||
 				typeof SOURCE_IDS[source.path] === 'string' && SOURCE_IDS[source.path])
 		);
 	}
@@ -4955,7 +4980,7 @@
 		if (reading.what_to_look_for) copy.appendChild(txt('p', '', reading.what_to_look_for));
 		card.appendChild(copy);
 		var open = sourceActionElement(
-			gitLabSourceMode() ? 'Open in GitLab' : 'Open exact source',
+			staticSourceMode() ? staticSourceOpenLabel() : 'Open exact source',
 			'rm-secondary-action rm-study-reading-anchor__open rm-source-action-link',
 			location,
 			Number(reading.source.end_line) || 0,
@@ -5064,7 +5089,7 @@
 				card.appendChild(txt('code', 'rm-operation-result__value', result.value));
 			}
 			var source = sourceActionElement(
-				gitLabSourceMode() ? 'Open in GitLab' : 'Show source',
+				staticSourceMode() ? staticSourceOpenLabel() : 'Show source',
 				'rm-quiet-action rm-source-action-link',
 				result.reference.location || sourceSnippetLocation(result.reference.source),
 				Number(result.reference.source.end_line) || 0,
@@ -5372,7 +5397,7 @@
 				title.appendChild(taskLensSupportBadge(anchor.role));
 				heading.appendChild(title);
 				var showSource = sourceActionElement(
-					gitLabSourceMode() ? 'Open in GitLab' : 'Show source',
+					staticSourceMode() ? staticSourceOpenLabel() : 'Show source',
 					'rm-secondary-action rm-source-action-link',
 					{ path: anchor.path, line: anchor.start_line },
 					anchor.end_line,
@@ -5640,7 +5665,7 @@
 
   function sourceSnippetAvailable(snippet) {
     if (!snippet || !snippet.path) return false;
-    if (gitLabSourceLocationAvailable(snippet.path, snippet.start_line, snippet.end_line)) return true;
+    if (staticSourceLocationAvailable(snippet.path, snippet.start_line, snippet.end_line)) return true;
     return sourceSnippetHasCode(snippet);
   }
 
@@ -6111,15 +6136,15 @@
   function renderSourceActions(snippet, location, options) {
     options = options || {};
     var actions = el('div', 'rm-source-actions');
-    var gitLabOpen = gitLabSourceMode() ? sourceActionElement(
-      'Open in GitLab',
+    var staticSourceOpen = staticSourceMode() ? sourceActionElement(
+      staticSourceOpenLabel(),
       'rm-primary-action rm-source-action-link',
       location,
       Number(snippet && snippet.end_line) || 0,
-      function () { openGitLabSource(location, Number(snippet && snippet.end_line) || 0); }
+      function () { openStaticSource(location, Number(snippet && snippet.end_line) || 0); }
     ) : null;
-    if (gitLabOpen) {
-      actions.appendChild(gitLabOpen);
+    if (staticSourceOpen) {
+      actions.appendChild(staticSourceOpen);
     }
     if (serverMode() && currentRunID() && SOURCE_IDS[snippet.path]) {
       var open = txt('button', 'rm-primary-action', 'Open in editor');
@@ -6227,7 +6252,7 @@
     ));
     title.appendChild(txt('strong', '', snippet.enclosing_symbol || snippet.path));
     var locationText = snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line;
-    var locationLabel = gitLabSourceLink(
+    var locationLabel = staticSourceLink(
       locationText,
       'rm-source-card__location rm-file-link',
       { path: snippet.path, line: snippet.start_line },
@@ -6235,7 +6260,7 @@
     ) || txt('code', 'rm-source-card__location', locationText);
     title.appendChild(locationLabel);
     heading.appendChild(title);
-    if (!gitLabSourceMode() && snippet.revision && (DEBUG_MODE || options.showSnapshot)) {
+    if (!staticSourceMode() && snippet.revision && (DEBUG_MODE || options.showSnapshot)) {
       heading.appendChild(txt('span', 'rm-source-card__snapshot', 'saved snapshot'));
     }
     card.appendChild(heading);
@@ -6244,7 +6269,7 @@
     }
     var location = sourceSnippetLocation(snippet, options.location);
     var codeHost = null;
-    if (!gitLabSourceMode()) {
+    if (!staticSourceMode()) {
       var notices = renderSourceNotices(options.notices, snippet, card);
       if (notices) card.appendChild(notices);
       codeHost = el('div', 'rm-source-card__code');
@@ -6287,7 +6312,7 @@
     if (reason) meta.appendChild(txt('span', 'rm-related-source__reason', reason));
     card.appendChild(meta);
     var show = sourceActionElement(
-      gitLabSourceMode() ? 'Open in GitLab' : 'Show code',
+      staticSourceMode() ? staticSourceOpenLabel() : 'Show code',
       'rm-secondary-action rm-source-action-link',
       sourceSnippetLocation(snippet),
       snippet.end_line,
@@ -6354,7 +6379,7 @@
       var action = repositoryAreaAction(item);
       if (!action) return;
       var remoteContext = action === 'code'
-        ? gitLabSourceLink('', 'rm-context-item rm-source-target-link', item.code_location)
+        ? staticSourceLink('', 'rm-context-item rm-source-target-link', item.code_location)
         : null;
       var button = remoteContext || el('button', 'rm-context-item');
       if (!remoteContext) button.type = 'button';
@@ -6552,8 +6577,8 @@
 
 	function sourceLocationActionAvailable(location) {
 		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return false;
-		if (gitLabSourceMode()) {
-			return !!gitLabSourceURL(
+		if (staticSourceMode()) {
+			return !!staticSourceURL(
 				location.path,
 				Number(location.line) || 0,
 				Number(location.end_line) || 0
@@ -6565,7 +6590,7 @@
 
 	function openSourceLocation(location) {
 		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
-		if (openGitLabSource(location, location.end_line)) return;
+		if (openStaticSource(location, location.end_line)) return;
 		if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
 			requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
 			return;
@@ -6578,7 +6603,7 @@
 
   function openSourceSnippet(snippet, location, expanded) {
     var resolved = sourceSnippetLocation(snippet, location);
-    if (openGitLabSource(resolved, snippet && snippet.end_line)) return;
+    if (openStaticSource(resolved, snippet && snippet.end_line)) return;
     if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
     var next = reduceWorkspaceState(workspaceState, {
       type: 'open_source',
@@ -6633,7 +6658,7 @@
     var content = document.getElementById('rm-source-drawer-content');
     var close = document.getElementById('rm-source-drawer-close');
     if (!workspace || !drawer || !content) return;
-    if (gitLabSourceMode()) {
+    if (staticSourceMode()) {
       workspaceState.sourceLocation = null;
       drawer.hidden = true;
       workspace.classList.remove('has-source-drawer');
@@ -7078,9 +7103,9 @@
 			options.openStudyDirection = openStudyDirection;
 			options.openSourceLocation = openSourceLocation;
 		}
-    if (gitLabSourceMode()) {
+    if (staticSourceMode()) {
       options.openLocation = function (filePath, line) {
-        return openGitLabSource({ path: filePath, line: line || 0 });
+        return openStaticSource({ path: filePath, line: line || 0 });
       };
     } else if (serverMode() && currentRunID()) {
       options.openLocation = function (filePath, line, column) {
@@ -7188,10 +7213,10 @@
         openArchitectureTarget({ kind: 'component', component_id: componentID }, null);
       },
     };
-    if (gitLabSourceMode()) {
+    if (staticSourceMode()) {
       options.openLocation = function (location) {
         if (!location) return false;
-        return openGitLabSource(location, location.end_line);
+        return openStaticSource(location, location.end_line);
       };
     } else if (serverMode() && currentRunID()) {
       options.openLocation = function (location) {
@@ -7367,8 +7392,10 @@
       viewSectionID: viewSectionID,
 		openReportTarget: openReportTarget,
       reportTargetAvailable: reportTargetAvailable,
-      gitLabSourceMode: gitLabSourceMode,
-      gitLabSourceURL: gitLabSourceURL,
+      staticSourceMode: staticSourceMode,
+      staticSourceURL: staticSourceURL,
+      gitLabSourceMode: staticSourceMode,
+      gitLabSourceURL: staticSourceURL,
       renderFileReference: renderFileReference,
       openSourceLocation: openSourceLocation,
       sourceLocationActionAvailable: sourceLocationActionAvailable,

@@ -489,4 +489,50 @@ api.renderArchitectureWorkspace();
 	if got.ArchitectureCallback != "function" || got.SurfaceCallback != "function" {
 		t.Fatalf("callbacks = architecture %q, surface %q", got.ArchitectureCallback, got.SurfaceCallback)
 	}
+
+	gitHubRunner := strings.Replace(runner, "gitlab_source_links:", "github_source_links:", 1)
+	gitHubRunner = strings.ReplaceAll(
+		gitHubRunner,
+		"https://gitlab.example/team/sub/project",
+		"https://github.example/team/project",
+	)
+	if err := os.WriteFile(runnerPath, []byte(gitHubRunner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitHubOutput, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run static GitHub asset test: %v\n%s", err, gitHubOutput)
+	}
+	gitHubGot := got
+	if err := json.Unmarshal(gitHubOutput, &gitHubGot); err != nil {
+		t.Fatalf("decode GitHub node output: %v\n%s", err, gitHubOutput)
+	}
+	gitHubRange := "https://github.example/team/project/blob/0123456789abcdef0123456789abcdef01234567/nested%20worktree/dir/space%20%23.go#L12-L18"
+	if gitHubGot.DirectURL != gitHubRange {
+		t.Fatalf("GitHub URL = %q, want %q", gitHubGot.DirectURL, gitHubRange)
+	}
+	if gitHubGot.DirtyURL != "" || gitHubGot.DirtyReference.TagName != "SPAN" {
+		t.Fatalf("dirty source exposed a GitHub link: URL %q reference %#v", gitHubGot.DirtyURL, gitHubGot.DirtyReference)
+	}
+	hasRussianGitHubAction := false
+	for _, link := range gitHubGot.CardLinks {
+		if link.Text == "Открыть в GitHub" {
+			hasRussianGitHubAction = true
+		}
+	}
+	if !hasRussianGitHubAction {
+		t.Fatalf("source card links = %#v, want localized GitHub action", gitHubGot.CardLinks)
+	}
+	if gitHubGot.FetchCount != 0 || gitHubGot.ServerMode || !gitHubGot.Mode {
+		t.Fatalf(
+			"GitHub static mode = mode %t server %t fetches %d",
+			gitHubGot.Mode,
+			gitHubGot.ServerMode,
+			gitHubGot.FetchCount,
+		)
+	}
+	if !strings.Contains(gitHubGot.DirtyToast, "GitHub") ||
+		!strings.Contains(gitHubGot.Hint.Text, "GitHub") {
+		t.Fatalf("GitHub localized state = toast %q hint %q", gitHubGot.DirtyToast, gitHubGot.Hint.Text)
+	}
 }
