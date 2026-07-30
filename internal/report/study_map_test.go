@@ -119,6 +119,44 @@ func TestReadStudyPublicationStatusKeepsFailedStageExplicit(t *testing.T) {
 	}
 }
 
+func TestReadStudyPublicationStatusAcceptsOnePublishedDirection(t *testing.T) {
+	t.Parallel()
+
+	statusPath := filepath.Join(t.TempDir(), studymap.StatusFile)
+	writeTestFileFullPath(t, statusPath, `{
+		"version": 1,
+		"state": "published",
+		"candidates": 4,
+		"selected_directions": 1,
+		"wall_ms": 170625
+	}`)
+
+	status, warning := readStudyPublicationStatus(statusPath)
+	if warning != "" {
+		t.Fatalf("warning = %q", warning)
+	}
+	if status == nil || status.State != "published" || status.Selected != 1 {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestReadStudyPublicationStatusRejectsPublishedZeroDirections(t *testing.T) {
+	t.Parallel()
+
+	statusPath := filepath.Join(t.TempDir(), studymap.StatusFile)
+	writeTestFileFullPath(t, statusPath, `{
+		"version": 1,
+		"state": "published",
+		"candidates": 4,
+		"wall_ms": 170625
+	}`)
+
+	status, warning := readStudyPublicationStatus(statusPath)
+	if status != nil || !strings.Contains(warning, "inconsistent outcome") {
+		t.Fatalf("status = %#v, warning = %q", status, warning)
+	}
+}
+
 func TestReadStudyPublicationStatusRejectsFailedStageWithPublishedDirections(t *testing.T) {
 	t.Parallel()
 
@@ -148,16 +186,16 @@ func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *test
 	responseRaw, err := json.Marshal(studymap.DirectionProposal{
 		Version: studymap.DirectionProposalVersion,
 		Directions: []studymap.DirectionCandidate{{
-			Question:        "How can a contributor begin examining the fixture output?",
-			WhyItMatters:    "This identifies an exact production declaration worth examining.",
-			LearningOutcome: "The reader can locate the saved output implementation.",
+			Question:        "Как участнику начать изучение результата fixture?",
+			WhyItMatters:    "Это указывает на точное объявление production-кода для изучения.",
+			LearningOutcome: "Читатель сможет найти сохранённую реализацию результата.",
 			TargetJob:       studymap.JobFirstContact,
 			LearningStage:   studymap.StageOrientation,
 			AnchorIDs:       []string{bundle.Anchors[2].ID},
 			ReadingAnchors: []studymap.ReadingAnchor{{
 				AnchorID:      bundle.Anchors[2].ID,
-				Label:         "Start here",
-				WhatToLookFor: "Inspect the declaration and its local responsibility.",
+				Label:         "С чего начать",
+				WhatToLookFor: "Изучите объявление и его локальную ответственность.",
 			}},
 		}},
 	})
@@ -204,8 +242,9 @@ func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *test
 		t.Fatalf("incomplete Study = %#v", data.IncompleteStudy)
 	}
 	direction := data.IncompleteStudy.Directions[0]
-	if direction.Question != "How can a contributor begin examining the fixture output?" ||
+	if direction.Question != "Как участнику начать изучение результата fixture?" ||
 		len(direction.ReadingAnchors) != 1 ||
+		direction.ReadingAnchors[0].Label != "Start here" ||
 		direction.ReadingAnchors[0].Location.Path != bundle.Anchors[2].Path ||
 		direction.ReadingAnchors[0].Location.Line != bundle.Anchors[2].Line ||
 		!containsString(data.OpenablePaths, bundle.Anchors[2].Path) {

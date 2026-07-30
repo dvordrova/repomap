@@ -105,6 +105,95 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 }
 
+func TestObtainOrientationCachesEnglishAndRussianSeparately(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		language := "en"
+		if requests == 2 {
+			language = "ru"
+		}
+		_, _ = io.WriteString(
+			w,
+			`{"choices":[{"message":{"content":"{\"language\":\"`+language+`\"}"}}]}`,
+		)
+	}))
+	defer server.Close()
+
+	client := &deepseek.Client{
+		HTTPClient: server.Client(),
+		Model:      "fixture-model",
+		MaxTokens:  128,
+		Endpoint:   server.URL,
+		Auth:       "none",
+	}
+	baseDir := t.TempDir()
+	writer, err := debugdump.NewWriter(baseDir, "language-cache", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	repository := modelresearch.RepositoryContext{
+		Identity: "fixture", Revision: "abc", Scenario: "go-default",
+	}
+	policy := modelresearch.DefaultPolicy()
+	bundleJSON := []byte(`{"bounded":"evidence"}`)
+
+	run := func(language string, requestJSON []byte) orientationCall {
+		t.Helper()
+		client.OutputLanguage = language
+		call, callErr := obtainOrientation(
+			context.Background(),
+			client,
+			writer,
+			policy,
+			repository,
+			"test",
+			bundleJSON,
+			requestJSON,
+			true,
+		)
+		if callErr != nil {
+			t.Fatal(callErr)
+		}
+		if call.SaveCache {
+			if saveErr := saveOrientationResponse(call); saveErr != nil {
+				t.Fatal(saveErr)
+			}
+		}
+		return call
+	}
+
+	englishRequest := []byte(`{"provider":"request","language":"en"}`)
+	russianRequest := []byte(`{"provider":"request","language":"ru"}`)
+	firstEnglish := run("en", englishRequest)
+	firstRussian := run("ru", russianRequest)
+	replayedEnglish := run("en", englishRequest)
+	replayedRussian := run("ru", russianRequest)
+
+	if firstEnglish.Metrics.CacheHit || firstRussian.Metrics.CacheHit ||
+		!replayedEnglish.Metrics.CacheHit || !replayedRussian.Metrics.CacheHit ||
+		requests != 2 {
+		t.Fatalf(
+			"cache hits = %t/%t/%t/%t, requests = %d",
+			firstEnglish.Metrics.CacheHit,
+			firstRussian.Metrics.CacheHit,
+			replayedEnglish.Metrics.CacheHit,
+			replayedRussian.Metrics.CacheHit,
+			requests,
+		)
+	}
+	if string(replayedEnglish.Raw) != `{"language":"en"}` ||
+		string(replayedRussian.Raw) != `{"language":"ru"}` {
+		t.Fatalf(
+			"replayed language responses = %q / %q",
+			replayedEnglish.Raw,
+			replayedRussian.Raw,
+		)
+	}
+}
+
 func TestAddResearchFocusLocationsUsesLocalEvidencePriority(t *testing.T) {
 	t.Parallel()
 

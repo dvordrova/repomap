@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/153-standalone-gitlab-dirty-and-inference.md
+    decisions/154-single-direction-study-publication-corrective.md
 
 Status:
-    Decision 153 active; standalone GitLab product correction authorized
+    Decision 154 active; localized Study direction preservation authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 154 removes the residual all-or-nothing Study publication floor
+    and the reading-label localization mismatch exposed by a real run. One
+    through seven independently reviewed directions may publish canonically;
+    zero still fails closed. Closed schema literals remain canonical under
+    `--lang ru`, and bounded model-authored Study labels reduce to existing UI
+    labels without changing anchors, reading instructions, ordering, IDs, wire
+    formats, or report behavior. Active orientation, targeted research, Guided
+    Tour, and architecture synthesis caches isolate Russian output from
+    English; language-unknown historical architecture records remain
+    replayable but are not reused as active cache hits. Study ranking no longer
+    penalizes Russian prose that cannot match code identifiers, and
+    runtime-order and targeted-research certainty validation retain their
+    safety boundaries in both supported report languages.
     Decision 153 removes two unnecessary static-sharing restrictions exposed
     by product use. A stable dirty checkout may publish, with unchanged source
     paths linked to the captured GitLab commit and dirty source paths marked

@@ -82,6 +82,7 @@ Rules:
 - Return eight to twelve candidates when supported, never more than twelve. Do not create direction IDs; local code assigns them.
 - Every repository object ID must be copied exactly from the bundle.
 - Use three to five code anchors and describe each exactly once in reading_anchors.
+- reading_anchors.label is a closed schema value. Copy one of the five listed English literals exactly; the report localizes it later.
 - Favor central responsibilities and role-diverse packs over narrow helpers, duplicate questions, tests, examples, fixtures, or similarly named implementations.
 - Questions may ask about behavior, but reading copy must not assert execution order, causality, or behavior outside the supplied bounded facts.
 - Attach a canonical Mechanism only when supplied anchors overlap it.

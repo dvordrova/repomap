@@ -33,6 +33,7 @@ type FingerprintInput struct {
 	Model              string            `json:"model"`
 	EvidenceBundleHash string            `json:"evidence_bundle_sha256"`
 	PolicyVersion      string            `json:"policy_version"`
+	OutputLanguage     string            `json:"output_language,omitempty"`
 }
 
 type cacheRecord struct {
@@ -76,6 +77,16 @@ type StageResponse struct {
 func SHA256(data []byte) string {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])
+}
+
+// CacheOutputLanguage keeps the historical default-English fingerprint while
+// isolating provider responses whose human-readable prose is requested in
+// Russian.
+func CacheOutputLanguage(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "ru") {
+		return "ru"
+	}
+	return ""
 }
 
 func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {

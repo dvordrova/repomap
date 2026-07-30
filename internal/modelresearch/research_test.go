@@ -48,6 +48,58 @@ func (p *savedProvider) Research(context.Context, Prompt) (ProviderResult, error
 	}, p.err
 }
 
+func TestCacheKeyIsolatesRussianOutputWithoutChangingDefaultEnglish(t *testing.T) {
+	t.Parallel()
+
+	input := FingerprintInput{
+		Repository: RepositoryContext{
+			Identity: "fixture", Revision: "abc", Scenario: "go-default",
+		},
+		Stage: "orientation", PromptVersion: "orientation-json-v1",
+		Profile: "test", Model: "fixture-model",
+		EvidenceBundleHash: strings.Repeat("a", 64), PolicyVersion: "policy-v1",
+	}
+	defaultKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const historicalDefaultKey = "research-c0aa33c71345f8524a8f386026817d07eadaea76c5a1d990a1b13d8eadfd7c46"
+	if defaultKey != historicalDefaultKey {
+		t.Fatalf(
+			"default cache key = %q, want historical %q",
+			defaultKey,
+			historicalDefaultKey,
+		)
+	}
+	input.OutputLanguage = CacheOutputLanguage("en")
+	englishKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultKey != englishKey || input.OutputLanguage != "" {
+		t.Fatalf(
+			"default/English cache identity changed: %q / %q, language %q",
+			defaultKey,
+			englishKey,
+			input.OutputLanguage,
+		)
+	}
+
+	input.OutputLanguage = CacheOutputLanguage(" RU ")
+	russianKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.OutputLanguage != "ru" || russianKey == defaultKey {
+		t.Fatalf(
+			"Russian cache identity = %q, language %q; default = %q",
+			russianKey,
+			input.OutputLanguage,
+			defaultKey,
+		)
+	}
+}
+
 func TestPlanTargetedRoundsSelectsOnlyFocusedExactEvidence(t *testing.T) {
 	repo := researchFixtureRepo(t)
 	policy := DefaultPolicy()
@@ -109,14 +161,39 @@ func TestPlanTargetedRoundsSkipsWithoutNewExactEvidence(t *testing.T) {
 }
 
 func TestPlanTargetedRoundsSkipsRuntimeOnlyFrontier(t *testing.T) {
-	input := basicPlanningInput(t)
-	input.Questions[0].Question = "This requires runtime observation only: which production backend is chosen?"
-	result, err := PlanTargetedRounds(context.Background(), input)
-	if err != nil {
-		t.Fatal(err)
+	for name, question := range map[string]string{
+		"english": "This requires runtime observation only: which production backend is chosen?",
+		"russian": "Требуется наблюдение во время выполнения: какой production backend выбран?",
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := basicPlanningInput(t)
+			input.Questions[0].Question = question
+			result, err := PlanTargetedRounds(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Selected) != 0 || len(result.Skipped) != 1 ||
+				result.Skipped[0].Gate.Reason != "runtime_only_frontier" {
+				t.Fatalf("runtime-only plan = %#v", result)
+			}
+		})
 	}
-	if len(result.Selected) != 0 || len(result.Skipped) != 1 || result.Skipped[0].Gate.Reason != "runtime_only_frontier" {
-		t.Fatalf("runtime-only plan = %#v", result)
+}
+
+func TestQuestionImpactScoreRecognizesEnglishAndRussianEquivalents(t *testing.T) {
+	for name, question := range map[string]ProposedQuestion{
+		"english": {
+			Purpose: "backup config admin request runtime server repository security lifecycle user",
+		},
+		"russian": {
+			Purpose: "резервное копирование конфигурация администрирование запрос время выполнения сервер репозиторий безопасность жизненный цикл пользователь",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if score := questionImpactScore(question); score != 30 {
+				t.Fatalf("questionImpactScore() = %d, want 30", score)
+			}
+		})
 	}
 }
 
@@ -416,6 +493,39 @@ func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 	}
 }
 
+func TestValidateFindingRejectsEnglishAndRussianCertaintyUpgrades(t *testing.T) {
+	known := map[string]EvidenceItem{"evidence-1": {ID: "evidence-1"}}
+	for name, interpretation := range map[string]string{
+		"english observed":   "The backend was observed at runtime.",
+		"english guaranteed": "The backend is guaranteed.",
+		"russian observed":   "Backend наблюдается во время выполнения.",
+		"russian guaranteed": "Backend гарантированно выполняется.",
+		"russian always":     "Backend всегда выполняется.",
+		"russian order":      "Это доказывает порядок выполнения.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			reason := validateFinding(RawFinding{
+				ID:                   "finding-1",
+				Interpretation:       interpretation,
+				HypothesisAssessment: "supported",
+				EvidenceIDs:          []string{"evidence-1"},
+			}, known, map[string]struct{}{})
+			if reason != "unsupported_certainty_upgrade" {
+				t.Fatalf("validateFinding() reason = %q", reason)
+			}
+		})
+	}
+
+	if reason := validateFinding(RawFinding{
+		ID:                   "finding-safe",
+		Interpretation:       "Фрагмент показывает вызов backend.",
+		HypothesisAssessment: "supported",
+		EvidenceIDs:          []string{"evidence-1"},
+	}, known, map[string]struct{}{}); reason != "" {
+		t.Fatalf("safe Russian finding rejected with %q", reason)
+	}
+}
+
 func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	input := basicPlanningInput(t)
 	planResult, err := PlanTargetedRounds(context.Background(), input)
@@ -460,6 +570,71 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 			round.PromptCacheHitTokens != 96 || round.PromptCacheMissTokens != 24 {
 			t.Fatalf("round token usage = %#v", round)
 		}
+	}
+}
+
+func TestExecuteRoundCachesTargetedResearchPerOutputLanguage(t *testing.T) {
+	input := basicPlanningInput(t)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceID := planResult.Selected[0].Bundle.Evidence[0].ID
+	response, err := json.Marshal(researchResponse{Findings: []RawFinding{{
+		ID: "finding-1", Interpretation: "backup is coordinated here",
+		HypothesisAssessment: "supported", EvidenceIDs: []string{evidenceID},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &savedProvider{response: response}
+	runsDir := t.TempDir()
+	repository := RepositoryContext{
+		Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default",
+	}
+	execute := func(language string) ResearchRound {
+		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
+			Plan: planResult.Selected[0], Policy: input.Policy,
+			Repository: repository, OutputLanguage: language,
+			RunsDir: runsDir, Profile: "test", Model: "saved", Provider: provider,
+		})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		return round
+	}
+
+	englishFirst := execute("")
+	russianFirst := execute("ru")
+	englishReplay := execute("en")
+	russianReplay := execute(" RU ")
+	if englishFirst.Status != RoundCompleted || russianFirst.Status != RoundCompleted {
+		t.Fatalf(
+			"first statuses = %q/%q, want completed",
+			englishFirst.Status,
+			russianFirst.Status,
+		)
+	}
+	if englishReplay.Status != RoundCached || russianReplay.Status != RoundCached {
+		t.Fatalf(
+			"replay statuses = %q/%q, want cached",
+			englishReplay.Status,
+			russianReplay.Status,
+		)
+	}
+	if englishFirst.CacheKey != englishReplay.CacheKey ||
+		russianFirst.CacheKey != russianReplay.CacheKey ||
+		englishFirst.CacheKey == russianFirst.CacheKey {
+		t.Fatalf(
+			"language cache keys = en %q/%q, ru %q/%q",
+			englishFirst.CacheKey,
+			englishReplay.CacheKey,
+			russianFirst.CacheKey,
+			russianReplay.CacheKey,
+		)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one per output language", provider.calls)
 	}
 }
 

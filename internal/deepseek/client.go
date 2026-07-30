@@ -408,9 +408,12 @@ func (c *Client) withOutputLanguage(systemContent string) string {
 	return systemContent + `
 
 Write every human-readable prose value in Russian. Keep JSON keys, enum values,
-opaque IDs, repository paths, code identifiers, package and module names, API
-and protocol names, product and library names, and quoted source text unchanged.
-	Return exactly the requested JSON shape.`
+exact schema literal values, opaque IDs, repository paths, code identifiers,
+package and module names, API and protocol names, product and library names,
+exact protocol and format tags, and quoted source text unchanged. Any value
+presented as a closed list of allowed literals remains structural even when
+its words look human-readable.
+Return exactly the requested JSON shape.`
 }
 
 func (c *Client) withOutputLanguageUser(userContent string) string {
@@ -419,7 +422,8 @@ func (c *Client) withOutputLanguageUser(userContent string) string {
 	}
 	return `OUTPUT LANGUAGE CONTRACT:
 - Write every title, description, explanation, question, reason, warning, summary, and other human-readable prose value in Russian.
-- Keep repository paths, code identifiers, opaque IDs, JSON keys, enum values, package/module names, API/protocol/product/library names, and quoted source text unchanged.
+- Keep repository paths, code identifiers, opaque IDs, JSON keys, enum values, exact schema literal values, package/module names, API/protocol/product/library names, exact protocol and format tags, and quoted source text unchanged.
+- Copy values from closed lists of allowed literals exactly; do not translate them even when their words look human-readable.
 - Do not return English explanatory sentences or English prose headings.
 
 ` + userContent + `

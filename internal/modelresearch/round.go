@@ -39,11 +39,14 @@ type ExecuteInput struct {
 	Policy     Policy
 	Usage      Usage
 	Repository RepositoryContext
-	RunsDir    string
-	RunDir     string
-	Profile    string
-	Model      string
-	Provider   Provider
+	// OutputLanguage participates only in cache identity. The provider owns
+	// the actual prompt contract.
+	OutputLanguage string
+	RunsDir        string
+	RunDir         string
+	Profile        string
+	Model          string
+	Provider       Provider
 }
 
 type researchResponse struct {
@@ -155,7 +158,8 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	cacheKey, err := CacheKey(FingerprintInput{
 		Repository: input.Repository, Stage: "targeted_research", PromptVersion: PromptVersion,
 		Profile: input.Profile, Model: input.Model, EvidenceBundleHash: bundleSHA,
-		PolicyVersion: input.Policy.Version,
+		PolicyVersion:  input.Policy.Version,
+		OutputLanguage: CacheOutputLanguage(input.OutputLanguage),
 	})
 	if err != nil {
 		return round, err
@@ -340,7 +344,19 @@ func validateFinding(finding RawFinding, known map[string]EvidenceItem, seen map
 		return "unknown_evidence_id"
 	}
 	text := strings.ToLower(finding.Interpretation + " " + finding.Explanation)
-	for _, certaintyUpgrade := range []string{"observed at runtime", "guaranteed", "always executes", "proves runtime order"} {
+	for _, certaintyUpgrade := range []string{
+		"observed at runtime",
+		"guaranteed",
+		"always executes",
+		"proves runtime order",
+		"наблюдается во время выполнения",
+		"наблюдалось во время выполнения",
+		"гарантирован",
+		"всегда выполняется",
+		"всегда исполняется",
+		"доказывает порядок выполнения",
+		"доказывает порядок исполнения",
+	} {
 		if strings.Contains(text, certaintyUpgrade) {
 			return "unsupported_certainty_upgrade"
 		}

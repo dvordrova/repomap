@@ -34,7 +34,7 @@ const (
 	StatusFile            = "repository_study_map_status.json"
 
 	MaxCandidates = 12
-	MinDirections = 3
+	MinDirections = 1
 	MaxDirections = 7
 	MaxAnchors    = 32
 	MaxAreas      = 12
@@ -399,6 +399,7 @@ func BuildRecord(bundle Bundle, proposal Proposal) (Record, error) {
 
 	valid := make([]Direction, 0, len(proposal.Candidates))
 	for candidateIndex, candidate := range proposal.Candidates {
+		candidate.ReadingAnchors = canonicalProviderReadingAnchors(candidate.ReadingAnchors)
 		direction, issues := validateCandidate(candidate, candidateIndex, index)
 		if len(issues) > 0 {
 			reduction.Issues = append(reduction.Issues, issues...)
@@ -1119,6 +1120,46 @@ func validReadingLabel(value string) bool {
 	}
 }
 
+// canonicalProviderReadingLabel keeps localized presentation labels out of the
+// saved contract. Only the canonical labels and their report-owned Russian
+// equivalents are accepted; unknown model-authored labels remain invalid.
+func canonicalProviderReadingLabel(value string) (string, bool) {
+	if len(value) > 64 {
+		return "", false
+	}
+	switch strings.TrimSpace(value) {
+	case "Start here", "С чего начать":
+		return "Start here", true
+	case "Then inspect", "Затем изучите":
+		return "Then inspect", true
+	case "Related implementation", "Связанная реализация":
+		return "Related implementation", true
+	case "Public boundary", "Публичная граница":
+		return "Public boundary", true
+	case "Core data type", "Основной тип данных":
+		return "Core data type", true
+	default:
+		return "", false
+	}
+}
+
+func canonicalProviderReadingAnchors(reading []ReadingAnchor) []ReadingAnchor {
+	// Candidate validation accepts at most five anchors. Leave an oversized
+	// provider collection untouched so the validator can reject it without a
+	// second allocation proportional to untrusted input.
+	if len(reading) > 5 {
+		return reading
+	}
+	result := make([]ReadingAnchor, len(reading))
+	copy(result, reading)
+	for index := range result {
+		if label, ok := canonicalProviderReadingLabel(result[index].Label); ok {
+			result[index].Label = label
+		}
+	}
+	return result
+}
+
 func impliesRuntimeOrder(value string) bool {
 	value = strings.ToLower(value)
 	for _, phrase := range []string{
@@ -1126,9 +1167,28 @@ func impliesRuntimeOrder(value string) bool {
 		"then it executes", "next it executes", "after it executes",
 		"runtime step", "runtime order", "execution order", "proven sequence",
 		"executes after", "executes before", "subsequently executes",
+		"затем система", "далее система", "сначала система",
+		"затем выполняется", "далее выполняется", "после этого выполняется",
+		"шаг выполнения", "порядок выполнения", "порядок исполнения",
+		"доказанная последовательность", "выполняется после",
+		"выполняется до", "впоследствии выполняется",
 	} {
 		if strings.Contains(value, phrase) {
 			return true
+		}
+	}
+	// Russian permits the temporal marker on either side of the runtime
+	// subject. Cover that ordinary inflection/order without treating general
+	// editorial instructions such as "сначала изучите" as runtime claims.
+	for _, subject := range []string{
+		"система", "код", "функция", "метод", "сервис", "обработчик",
+		"процесс", "приложение",
+	} {
+		for _, marker := range []string{"сначала", "затем", "потом", "далее"} {
+			if strings.Contains(value, subject+" "+marker) ||
+				strings.Contains(value, marker+" "+subject) {
+				return true
+			}
 		}
 	}
 	return false

@@ -591,9 +591,12 @@ func decodeIncompleteReadingAnchors(
 			len(reading.Label) > 64 ||
 			len(reading.WhatToLookFor) > 768 ||
 			!validOpaque(reading.AnchorID) ||
-			!validReadingLabel(reading.Label) ||
 			!validText(reading.WhatToLookFor, 768, true) ||
 			impliesRuntimeOrder(reading.WhatToLookFor) {
+			return nil, fmt.Errorf("study map: invalid incomplete reading anchor")
+		}
+		label, ok := canonicalProviderReadingLabel(reading.Label)
+		if !ok {
 			return nil, fmt.Errorf("study map: invalid incomplete reading anchor")
 		}
 		if _, ok := allowed[reading.AnchorID]; !ok {
@@ -605,7 +608,7 @@ func decodeIncompleteReadingAnchors(
 		seen[reading.AnchorID] = struct{}{}
 		result = append(result, ReadingAnchor{
 			AnchorID:      strings.TrimSpace(reading.AnchorID),
-			Label:         strings.TrimSpace(reading.Label),
+			Label:         label,
 			WhatToLookFor: strings.TrimSpace(reading.WhatToLookFor),
 		})
 	}
@@ -708,21 +711,15 @@ func NormalizeDirectionProposal(proposal DirectionProposal) (DirectionProposal, 
 	seen := make(map[string]struct{}, len(proposal.Directions))
 	for index := range proposal.Directions {
 		direction := &proposal.Directions[index]
-		if err := validateDirectionCandidateContent(*direction); err != nil {
+		normalized, err := normalizeDirectionCandidate(*direction)
+		if err != nil {
 			return DirectionProposal{}, err
 		}
-		derivedID := localDirectionID(*direction)
-		if direction.DirectionID != "" && direction.DirectionID != derivedID {
-			return DirectionProposal{}, fmt.Errorf(
-				"study map: direction id %q is not locally derived",
-				direction.DirectionID,
-			)
+		*direction = normalized
+		if _, duplicate := seen[direction.DirectionID]; duplicate {
+			return DirectionProposal{}, fmt.Errorf("study map: duplicate direction id %q", direction.DirectionID)
 		}
-		direction.DirectionID = derivedID
-		if _, duplicate := seen[derivedID]; duplicate {
-			return DirectionProposal{}, fmt.Errorf("study map: duplicate direction id %q", derivedID)
-		}
-		seen[derivedID] = struct{}{}
+		seen[direction.DirectionID] = struct{}{}
 	}
 	return proposal, nil
 }
@@ -1112,6 +1109,13 @@ func questionFitTerms(question, repoName string) []string {
 	seen := make(map[string]struct{})
 	var terms []string
 	for _, token := range questionFitTokens(question) {
+		// Local source facts are predominantly technical identifiers and source
+		// prose. Keep ASCII terms (including identifiers embedded in localized
+		// questions), but do not penalize a localized question merely because
+		// its natural-language words cannot occur in those source facts.
+		if !asciiQuestionFitToken(token) {
+			continue
+		}
 		if len(token) < 4 {
 			continue
 		}
@@ -1135,6 +1139,18 @@ func questionFitTerms(question, repoName string) []string {
 		}
 	}
 	return terms
+}
+
+func asciiQuestionFitToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
 }
 
 func questionFitTermMatched(
@@ -1304,7 +1320,7 @@ func questionFitStem(token string) string {
 	}
 }
 
-// CompressReviewedDirections selects three through six strong, distinct packs.
+// CompressReviewedDirections selects one through six strong, distinct packs.
 // It uses local fit/role scores and deterministic text/anchor overlap only.
 // A reviewed first-contact pack owns one slot when present: losing the only
 // onboarding question to several higher-scoring contributor topics makes the
@@ -1685,6 +1701,7 @@ func directionCandidateValidationCode(err error) string {
 }
 
 func normalizeDirectionCandidate(direction DirectionCandidate) (DirectionCandidate, error) {
+	direction.ReadingAnchors = canonicalProviderReadingAnchors(direction.ReadingAnchors)
 	if err := validateDirectionCandidateContent(direction); err != nil {
 		return DirectionCandidate{}, err
 	}
@@ -1837,11 +1854,27 @@ func asksForRuntimeOrder(value string) bool {
 	for _, term := range strings.FieldsFunc(strings.ToLower(value), func(char rune) bool {
 		return !unicode.IsLetter(char) && !unicode.IsDigit(char)
 	}) {
-		if term == "order" || term == "ordering" || term == "sequence" || term == "sequencing" {
+		if isRuntimeOrderTerm(term) {
 			return true
 		}
 	}
 	return false
+}
+
+func isRuntimeOrderTerm(term string) bool {
+	switch term {
+	case "order", "ordering", "sequence", "sequencing",
+		"порядок", "порядка", "порядке", "порядку", "порядком",
+		"порядки", "порядков", "порядках", "порядкам", "порядками",
+		"последовательность", "последовательности", "последовательностью",
+		"последовательностей", "последовательностях", "последовательностям",
+		"последовательностями",
+		"очередность", "очередности", "очередностью", "очередностей",
+		"очередностях", "очередностям", "очередностями":
+		return true
+	default:
+		return false
+	}
 }
 
 type reviewFragment struct {

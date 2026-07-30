@@ -75,6 +75,7 @@ Rules:
 - Return eight to twelve diverse candidates when the supplied repository objects support them; never exceed twelve.
 - Every support, area, document, anchor, and mechanism ID must be copied exactly from the supplied bundle.
 - Every candidate must use three to five production-relevant code anchors and list those anchors exactly once in reading_anchors.
+- reading_anchors.label is a closed schema value. Copy one of the five listed English literals exactly; the report localizes it later.
 - Favor central repository responsibilities over easy helpers, examples, fixtures, previews, evaluators, generated code, and isolated declarations.
 - Use repository_type only to diversify coverage. Do not force a generic checklist unsupported by the repository.
 - Brief documentation support describes intended purpose, not proven runtime behavior. Leave a brief field empty instead of guessing.

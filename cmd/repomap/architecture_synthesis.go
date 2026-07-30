@@ -52,11 +52,19 @@ func synthesizeArchitectureForRun(
 	noCache bool,
 	outputLanguage ...string,
 ) (architectureSynthesisOutcome, error) {
+	language := ""
+	if len(outputLanguage) > 0 {
+		language = outputLanguage[0]
+	}
+	language, err := normalizeReportLanguage(language)
+	if err != nil {
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: %w", err)
+	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
 	}
-	configureClientOutputLanguage(client, outputLanguage)
+	configureClientOutputLanguage(client, []string{language})
 	client.OnWait = func(progress deepseek.WaitProgress) {
 		fmt.Fprintf(
 			stderr,
@@ -72,7 +80,7 @@ func synthesizeArchitectureForRun(
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
-		architectureSynthesisOptions{disableCache: noCache},
+		architectureSynthesisOptions{disableCache: noCache, outputLanguage: language},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
@@ -126,7 +134,8 @@ func prepareArchitectureSynthesis(
 }
 
 type architectureSynthesisOptions struct {
-	disableCache bool
+	disableCache   bool
+	outputLanguage string
 }
 
 func prepareArchitectureSynthesisWithOptions(
@@ -191,6 +200,10 @@ func ensureArchitectureSynthesisWithOptions(
 	if provider == nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider is required")
 	}
+	outputLanguage, err := normalizeReportLanguage(options.outputLanguage)
+	if err != nil {
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: %w", err)
+	}
 	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
@@ -216,7 +229,13 @@ func ensureArchitectureSynthesisWithOptions(
 		}
 		return outcome, budgetErr
 	}
-	cacheKey, err := componentmap.SynthesisCacheKeyForProvider(repositoryRevision, bundle, profile, model)
+	cacheKey, err := componentmap.SynthesisCacheKeyForProviderAndLanguage(
+		repositoryRevision,
+		bundle,
+		profile,
+		model,
+		outputLanguage,
+	)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
@@ -234,7 +253,12 @@ func ensureArchitectureSynthesisWithOptions(
 		}{{path: runPath}, {path: cachePath, copyToRun: true}} {
 			saved, readErr := os.ReadFile(candidate.path)
 			if readErr == nil {
-				cachedOutcome, replayErr := replayArchitectureSynthesisOutcome(bundle, repositoryRevision, saved)
+				cachedOutcome, replayErr := replayArchitectureSynthesisOutcome(
+					bundle,
+					repositoryRevision,
+					outputLanguage,
+					saved,
+				)
 				if replayErr != nil {
 					continue
 				}
@@ -286,11 +310,12 @@ func ensureArchitectureSynthesisWithOptions(
 		}
 		return outcome, callErr
 	}
-	result, err := componentmap.RecordSynthesisResponse(
+	result, err := componentmap.RecordSynthesisResponseForLanguage(
 		bundle,
 		repositoryRevision,
 		profile,
 		model,
+		outputLanguage,
 		latency,
 		raw,
 	)
@@ -421,6 +446,7 @@ func architectureResponseParsed(landscape componentmap.Landscape) bool {
 func replayArchitectureSynthesisOutcome(
 	bundle componentmap.CandidateBundle,
 	repositoryRevision string,
+	outputLanguage string,
 	saved []byte,
 ) (architectureSynthesisOutcome, error) {
 	landscape, err := componentmap.ReplaySynthesis(bundle, repositoryRevision, saved)
@@ -430,6 +456,11 @@ func replayArchitectureSynthesisOutcome(
 	var record componentmap.SynthesisRecord
 	if err := json.Unmarshal(saved, &record); err != nil {
 		return architectureSynthesisOutcome{}, err
+	}
+	if record.Call == nil || record.Call.Metadata.OutputLanguage != outputLanguage {
+		return architectureSynthesisOutcome{}, fmt.Errorf(
+			"architecture synthesis: saved record output language does not match active request",
+		)
 	}
 	return architectureSynthesisOutcome{
 		InputBytes:            record.Call.Metadata.InputBytes,

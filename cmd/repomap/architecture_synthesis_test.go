@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -79,6 +80,60 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 	if landscape.Fallback || landscape.Subsystems[0].Components[0].Name != "Runtime" {
 		t.Fatalf("cached landscape = %#v", landscape)
+	}
+}
+
+func TestEnsureArchitectureSynthesisIsolatesCacheByOutputLanguage(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
+	runsDir := t.TempDir()
+	run := func(name, language string) architectureSynthesisOutcome {
+		t.Helper()
+		runDir := filepath.Join(runsDir, name)
+		if err := os.Mkdir(runDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		outcome, err := ensureArchitectureSynthesisWithOptions(
+			context.Background(),
+			bundle,
+			runDir,
+			"revision-language",
+			"openai-compatible/bearer",
+			"test-model",
+			provider,
+			architectureSynthesisOptions{outputLanguage: language},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return outcome
+	}
+
+	if outcome := run("english", "en"); outcome.Cached {
+		t.Fatalf("first English outcome = %#v, want provider call", outcome)
+	}
+	if outcome := run("russian", "ru"); outcome.Cached {
+		t.Fatalf("first Russian outcome = %#v, want language-isolated provider call", outcome)
+	}
+	if outcome := run("russian-replay", "ru"); !outcome.Cached {
+		t.Fatalf("second Russian outcome = %#v, want same-language cache replay", outcome)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one English and one Russian call", provider.calls)
+	}
+
+	saved, err := os.ReadFile(filepath.Join(runsDir, "russian-replay", report.ArchitectureSynthesisFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record componentmap.SynthesisRecord
+	if err := json.Unmarshal(saved, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Call == nil || record.Call.Metadata.OutputLanguage != "ru" {
+		t.Fatalf("Russian cached record metadata = %#v", record.Call)
 	}
 }
 
@@ -274,6 +329,83 @@ func TestEnsureArchitectureSynthesisRefetchesCorruptSavedRecord(t *testing.T) {
 	}
 	if _, err := componentmap.ReplaySynthesis(bundle, "revision-corrupt", saved); err != nil {
 		t.Fatalf("replacement cache does not replay: %v", err)
+	}
+}
+
+func TestEnsureArchitectureSynthesisRefetchesLanguageUnknownActiveCache(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	response := architectureSynthesisTestResponse(t, bundle)
+	legacy, err := componentmap.RecordSynthesisResponse(
+		bundle,
+		"revision-language-unknown",
+		"openai-compatible/bearer",
+		"test-model",
+		0,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := json.Marshal(legacy.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved = bytes.Replace(saved, []byte(`,"output_language":"en"`), nil, 1)
+	if bytes.Contains(saved, []byte(`"output_language"`)) {
+		t.Fatalf("test fixture still has an explicit language: %s", saved)
+	}
+
+	runsDir := t.TempDir()
+	runDir := filepath.Join(runsDir, "run")
+	cacheDir := filepath.Join(runsDir, architectureSynthesisCacheDirectory)
+	for _, dir := range []string{runDir, cacheDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cacheKey, err := componentmap.SynthesisCacheKeyForProvider(
+		"revision-language-unknown",
+		bundle,
+		"openai-compatible/bearer",
+		"test-model",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, cacheKey+".json"), saved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &architectureSynthesisStub{response: response}
+	outcome, err := ensureArchitectureSynthesisWithOptions(
+		context.Background(),
+		bundle,
+		runDir,
+		"revision-language-unknown",
+		"openai-compatible/bearer",
+		"test-model",
+		provider,
+		architectureSynthesisOptions{outputLanguage: "en"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Cached || provider.calls != 1 {
+		t.Fatalf("outcome/calls = %#v/%d, want refetch for unknown active language", outcome, provider.calls)
+	}
+
+	replacement, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record componentmap.SynthesisRecord
+	if err := json.Unmarshal(replacement, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Call == nil || record.Call.Metadata.OutputLanguage != "en" {
+		t.Fatalf("replacement record metadata = %#v, want explicit English", record.Call)
 	}
 }
 
