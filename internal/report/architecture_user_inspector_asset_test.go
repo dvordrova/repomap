@@ -29,17 +29,27 @@ function snippet(path, symbol, line) {
 }
 const report = {
   user_mechanisms: [], user_sources: [], source_ids: {},
-  openable_paths: ["core/a.go", "core/b.go", "other.go", "worker/a.go", "worker/b.go"],
+  openable_paths: ["core/a.go", "core/b.go", "other.go", "shared.go", "shared2.go", "worker/a.go", "worker/b.go"],
   architecture_canvas: {
+    behavior_anchors: [
+      {
+        id: "shared-anchor", label: "Shared behavior family",
+        location: { path: "shared.go", line: 3 },
+      },
+      {
+        id: "second-anchor", label: "Second anchor-only behavior",
+        location: { path: "shared2.go", line: 8 },
+      },
+    ],
     components: [
-      { id: "core", members: [
+      { id: "core", anchor_ids: ["shared-anchor"], members: [
         {
           id: { kind: "package", value: "opaque-package-id" },
           facts: [{ kind: "declaration", value: "example.test/project/core" }],
         },
         {
           name: "example.test/project/core.A",
-          facts: [{ kind: "declaration", value: "example.test/project/core.A", location: { path: "core/a.go", line: 7 } }],
+          facts: [{ kind: "declaration", value: "example.test/project/core.A", location: { path: "core/a.go", line: 7, column: 9 } }],
         },
         {
           name: "core/a.go",
@@ -49,7 +59,7 @@ const report = {
       { id: "same-name-only", members: [{
         id: { kind: "package", value: "opaque-package-id-2" }, name: "core", facts: [],
       }] },
-      { id: "exact-member-only", members: [{
+      { id: "exact-member-only", anchor_ids: ["shared-anchor"], members: [{
         id: { kind: "symbol", value: "opaque-symbol-id" }, name: "ValidateFunctionURL",
         facts: [{
           kind: "declaration", value: "ValidateFunctionURL",
@@ -60,6 +70,7 @@ const report = {
         id: { kind: "package", value: "opaque-package-id-3" }, name: "worker",
         facts: [{ kind: "declaration", value: "example.test/project/worker" }],
       }] },
+      { id: "anchor-only", anchor_ids: ["shared-anchor", "second-anchor"], members: [] },
     ],
   },
   repository_graph: { packages: [
@@ -84,6 +95,18 @@ const report = {
       id: "study-other", question: "How does another package work?",
       reading_anchors: [
         { label: "Start here", location: { path: "other.go", line: 31 }, source: snippet("other.go", "Other", 31) },
+      ],
+    },
+    {
+      id: "study-shared", question: "How does the shared family work?",
+      reading_anchors: [
+        { label: "Start here", location: { path: "shared.go", line: 3 }, source: snippet("shared.go", "Shared", 3) },
+      ],
+    },
+    {
+      id: "study-worker", question: "How does the worker run?",
+      reading_anchors: [
+        { label: "Start here", location: { path: "worker/b.go", line: 21 }, source: snippet("worker/b.go", "Worker", 21) },
       ],
     },
   ] },
@@ -115,8 +138,9 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		Sources      []struct {
 			Detail   string `json:"detail"`
 			Location struct {
-				Path string `json:"path"`
-				Line int    `json:"line"`
+				Path   string `json:"path"`
+				Line   int    `json:"line"`
+				Column int    `json:"column"`
 			} `json:"location"`
 		} `json:"sources"`
 		Studies []struct {
@@ -135,8 +159,10 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 	if len(core.Sources) != 4 || core.Sources[0].Detail != "example.test/project/core.A" ||
 		core.Sources[0].Location.Path != "core/a.go" || core.Sources[0].Location.Line != 7 ||
-		core.Sources[1].Location.Path != "core/a.go" || core.Sources[1].Location.Line != 0 ||
-		core.Sources[2].Location.Path != "core/a.go" || core.Sources[3].Location.Path != "core/b.go" {
+		core.Sources[0].Location.Column != 9 ||
+		core.Sources[1].Location.Path != "core/a.go" || core.Sources[1].Location.Line != 11 ||
+		core.Sources[2].Location.Path != "core/b.go" || core.Sources[2].Location.Line != 21 ||
+		core.Sources[3].Location.Path != "core/a.go" || core.Sources[3].Location.Line != 0 {
 		t.Fatalf("source joins = %#v", core.Sources)
 	}
 	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
@@ -158,10 +184,22 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 	packageOnly, ok := contexts["package-only"]
 	if !ok || strings.Join(packageOnly.PackagePaths, "|") != "example.test/project/worker" ||
-		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 1 ||
-		packageOnly.Sources[0].Location.Path != "worker/a.go" ||
-		packageOnly.Sources[0].Location.Line != 0 {
+		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 2 ||
+		packageOnly.Sources[0].Location.Path != "worker/b.go" ||
+		packageOnly.Sources[0].Location.Line != 21 ||
+		packageOnly.Sources[1].Location.Path != "worker/a.go" ||
+		packageOnly.Sources[1].Location.Line != 0 ||
+		len(packageOnly.Studies) != 1 || packageOnly.Studies[0].ID != "study-worker" {
 		t.Fatalf("package-only context = %#v, present %v", packageOnly, ok)
+	}
+	anchorOnly, ok := contexts["anchor-only"]
+	if !ok || anchorOnly.FileCount != 2 || len(anchorOnly.Sources) != 2 ||
+		anchorOnly.Sources[0].Location.Path != "shared.go" ||
+		anchorOnly.Sources[0].Location.Line != 3 ||
+		anchorOnly.Sources[1].Location.Path != "shared2.go" ||
+		anchorOnly.Sources[1].Location.Line != 8 ||
+		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].ID != "study-shared" {
+		t.Fatalf("anchor-only context = %#v, present %v", anchorOnly, ok)
 	}
 }
 

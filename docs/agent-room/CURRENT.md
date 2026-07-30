@@ -1,15 +1,20 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/154-single-direction-study-publication-corrective.md
+    decisions/155-architecture-inspector-source-ownership.md
 
 Status:
-    Decision 154 active; localized Study direction preservation authorized
+    Decision 155 active; component-owned Architecture code starts authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 155 corrects a real Architecture inspector failure where a broad
+    behavior-family anchor representative could outrank a selected component's
+    own exact member location, send unrelated components to the same file, and
+    create foreign file-level Study joins. Exact located members now own the
+    code start; package/file-bound and anchor-only fallbacks remain available.
     Decision 154 removes the residual all-or-nothing Study publication floor
     and the reading-label localization mismatch exposed by a real run. One
     through seven independently reviewed directions may publish canonically;

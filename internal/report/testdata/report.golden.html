@@ -7420,10 +7420,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 						if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
 					});
 				});
+				var hasExactComponentFiles = Object.keys(componentFiles).length > 0;
 				(component.anchor_ids || []).forEach(function (anchorID) {
 					var anchor = behaviorAnchorByID[String(anchorID || '')];
 					var filePath = String(anchor && anchor.location && anchor.location.path || '');
-					if (filePath && OPENABLE_PATH_SET[filePath]) componentFiles[filePath] = true;
+					if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
+					if (hasExactComponentFiles && !componentFiles[filePath]) return;
+					componentFiles[filePath] = true;
 				});
 
 			var matches = [];
@@ -7447,11 +7450,36 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 				var sourceSeen = {};
 				var sources = [];
+				var hasPreciseMemberSource = false;
+				(component.members || []).forEach(function (member) {
+					(member && member.facts || []).forEach(function (fact) {
+						var location = fact && fact.location;
+						var filePath = String(location && location.path || '');
+						if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
+						var line = Number(location.line) || 0;
+						var key = filePath + '\u0000' + String(line);
+						if (sourceSeen[key]) return;
+						sourceSeen[key] = true;
+						if (line > 0) hasPreciseMemberSource = true;
+						sources.push({
+							label: member.name || filePath,
+							detail: member.name || filePath,
+							location: {
+								path: filePath,
+								line: line,
+								column: Number(location.column) || 0,
+							},
+							priority: line > 0 ? 0 : 3,
+						});
+					});
+				});
 				(component.anchor_ids || []).forEach(function (anchorID) {
 					var anchor = behaviorAnchorByID[String(anchorID || '')];
 					var location = anchor && anchor.location;
 					var filePath = String(location && location.path || '');
 					if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
+					if (hasPreciseMemberSource) return;
+					if (hasExactComponentFiles && !componentFiles[filePath]) return;
 					var line = Number(location.line) || 0;
 					var key = filePath + '\u0000' + String(line);
 					if (sourceSeen[key]) return;
@@ -7464,24 +7492,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 							line: line,
 							column: Number(location.column) || 0,
 						},
+						priority: 1,
 					});
 				});
-				(component.members || []).forEach(function (member) {
-				(member && member.facts || []).forEach(function (fact) {
-					var location = fact && fact.location;
-					var filePath = String(location && location.path || '');
-					if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
-					var line = Number(location.line) || 0;
-					var key = filePath + '\u0000' + String(line);
-					if (sourceSeen[key]) return;
-					sourceSeen[key] = true;
-					sources.push({
-						label: member.name || filePath,
-						detail: member.name || filePath,
-						location: { path: filePath, line: line },
-					});
-				});
-			});
 			if (!sources.length) {
 				packagePaths.some(function (packagePath) {
 					var files = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
@@ -7494,19 +7507,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 						label: filePath,
 						detail: filePath,
 						location: { path: filePath, line: 0 },
+						priority: 4,
 					});
 					return true;
 				});
 			}
-			sources.sort(function (left, right) {
-				var leftLine = Number(left && left.location && left.location.line) || 0;
-				var rightLine = Number(right && right.location && right.location.line) || 0;
-				return Number(rightLine > 0) - Number(leftLine > 0) ||
-					String(left && left.location && left.location.path || '').localeCompare(
-						String(right && right.location && right.location.path || '')
-					) ||
-					leftLine - rightLine;
-			});
 			matches.forEach(function (match) {
 				match.anchors.forEach(function (anchor) {
 					var source = anchor && anchor.source;
@@ -7519,8 +7524,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 						label: anchor.label || source.enclosing_symbol || location.path,
 						detail: anchor.what_to_look_for || '',
 						location: location,
+						priority: 2,
 					});
 				});
+			});
+			sources.sort(function (left, right) {
+				var leftLine = Number(left && left.location && left.location.line) || 0;
+				var rightLine = Number(right && right.location && right.location.line) || 0;
+				return Number(left && left.priority) - Number(right && right.priority) ||
+					String(left && left.location && left.location.path || '').localeCompare(
+						String(right && right.location && right.location.path || '')
+					) ||
+					leftLine - rightLine;
+			});
+			sources.forEach(function (source) {
+				delete source.priority;
 			});
 
 			if (!packagePaths.length && !sources.length && !matches.length) return;
