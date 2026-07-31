@@ -187,8 +187,7 @@ func WritePresentationLocalizationSuccess(
 ) error {
 	result, err := localization.Apply(prepared.Canonical, prepared.Input, projection)
 	if err != nil || result.Fallback || len(result.Diagnostics) != 0 ||
-		result.Locale != localization.LocaleRussian ||
-		!presentationLocalizationChanged(prepared.Canonical, result) {
+		result.Locale != localization.LocaleRussian {
 		return fmt.Errorf("report localization: cannot save a rejected projection")
 	}
 	record := PresentationLocalizationProjectionRecord{

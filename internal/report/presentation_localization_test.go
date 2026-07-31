@@ -331,7 +331,7 @@ func TestPresentationTextInventoryLocalizesSavedDirectionProofProse(t *testing.T
 	}
 }
 
-func TestPresentationLocalizationRejectsCanonicalEnglishEchoAsRussian(t *testing.T) {
+func TestPresentationLocalizationAcceptsCanonicalEnglishEchoStructurally(t *testing.T) {
 	t.Parallel()
 
 	canonical := presentationLocalizationFixture()
@@ -354,14 +354,17 @@ func TestPresentationLocalizationRejectsCanonicalEnglishEchoAsRussian(t *testing
 		prepared,
 		projection,
 	)
-	if err == nil || projected != nil ||
-		!result.Fallback || len(result.Diagnostics) == 0 {
+	if err != nil || projected == nil ||
+		result.Fallback || len(result.Diagnostics) != 0 {
 		t.Fatalf(
-			"English echo was accepted as Russian: projected=%#v result=%#v err=%v",
+			"structurally valid English echo was rejected: projected=%#v result=%#v err=%v",
 			projected,
 			result,
 			err,
 		)
+	}
+	if projected.ReportLanguage != localization.LocaleRussian {
+		t.Fatalf("report language = %q", projected.ReportLanguage)
 	}
 	if err := WritePresentationLocalizationSuccess(
 		t.TempDir(),
@@ -370,12 +373,12 @@ func TestPresentationLocalizationRejectsCanonicalEnglishEchoAsRussian(t *testing
 		false,
 		"request-sha",
 		"cache-key",
-	); err == nil {
-		t.Fatal("English echo was persisted as a successful Russian projection")
+	); err != nil {
+		t.Fatalf("persist structurally valid English echo: %v", err)
 	}
 }
 
-func TestPresentationLocalizationRejectsPartiallyEnglishRussianProjection(t *testing.T) {
+func TestPresentationLocalizationAcceptsPartiallyEnglishProjectionStructurally(t *testing.T) {
 	t.Parallel()
 
 	canonical := presentationLocalizationFixture()
@@ -402,10 +405,10 @@ func TestPresentationLocalizationRejectsPartiallyEnglishRussianProjection(t *tes
 		prepared,
 		projection,
 	)
-	if err == nil || projected != nil ||
-		!result.Fallback || len(result.Diagnostics) == 0 {
+	if err != nil || projected == nil ||
+		result.Fallback || len(result.Diagnostics) != 0 {
 		t.Fatalf(
-			"partially English RU projection was accepted: projected=%#v result=%#v err=%v",
+			"structurally valid partially English projection was rejected: projected=%#v result=%#v err=%v",
 			projected,
 			result,
 			err,
@@ -418,8 +421,8 @@ func TestPresentationLocalizationRejectsPartiallyEnglishRussianProjection(t *tes
 		false,
 		"request-sha",
 		"cache-key",
-	); err == nil {
-		t.Fatal("partially English RU projection was persisted as successful")
+	); err != nil {
+		t.Fatalf("persist structurally valid partially English projection: %v", err)
 	}
 }
 

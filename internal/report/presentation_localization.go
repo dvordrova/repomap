@@ -205,11 +205,6 @@ func ApplyPresentationLocalization(
 		result.Locale != localization.LocaleRussian {
 		return nil, result, fmt.Errorf("report localization: projection was not fully accepted")
 	}
-	if !presentationLocalizationChanged(prepared.Canonical, result) {
-		return nil, result, fmt.Errorf(
-			"report localization: Russian projection repeated canonical English",
-		)
-	}
 
 	projected, err := cloneReportData(data)
 	if err != nil {
@@ -238,25 +233,6 @@ func ApplyPresentationLocalization(
 	projected.presentationLocalizationMessageID = "main.localization.ru_active"
 	return projected, result, nil
 }
-
-func presentationLocalizationChanged(
-	canonical localization.CanonicalArtifact,
-	result localization.Result,
-) bool {
-	if len(result.Fields) != len(canonical.Fields) {
-		return false
-	}
-	for index := range canonical.Fields {
-		if result.Fields[index].ID != canonical.Fields[index].ID {
-			return false
-		}
-		if result.Fields[index].Text != canonical.Fields[index].Text {
-			return true
-		}
-	}
-	return false
-}
-
 func buildPresentationLocalizationBindings(
 	data *ReportData,
 ) (*presentationLocalizationBindings, error) {
