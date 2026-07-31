@@ -481,7 +481,25 @@ func TestPresentationLocalizationCacheWriteErrorRetainsValidRunProjection(t *tes
 }
 
 func TestPresentationLocalizationCacheHitDoesNotRequireAPIKey(t *testing.T) {
-	data, prepared := presentationLocalizationFixture(t)
+	data, _ := presentationLocalizationFixture(t)
+	seedRunDir := t.TempDir()
+	if err := report.WriteReportJSON(
+		data,
+		filepath.Join(seedRunDir, "report.json"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	seedData, err := report.PrepareRunPresentation(seedRunDir, data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := report.PreparePresentationLocalization(
+		seedData,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	response := presentationLocalizationProjectionJSON(t, prepared)
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
 	seedProvider := newFakePresentationLocalizationProvider(
@@ -492,10 +510,10 @@ func TestPresentationLocalizationCacheHitDoesNotRequireAPIKey(t *testing.T) {
 	seedProvider.client.Auth = "bearer"
 	if _, err := executePresentationLocalization(
 		context.Background(),
-		t.TempDir(),
+		seedRunDir,
 		cacheRoot,
 		false,
-		data,
+		seedData,
 		prepared,
 		seedProvider,
 	); err != nil {

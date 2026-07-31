@@ -677,14 +677,24 @@ func (h *handler) reloadRuns() error {
 	byID := make(map[string]runRecord, len(runs))
 	for index := range runs {
 		run := &runs[index]
-		report.ApplyProductCoherence(run.Report)
 		if run.WorkspaceSnapshot != nil {
 			catalog := run.WorkspaceSnapshot.Catalog()
 			run.SourceCatalog = &catalog
 		}
+		preparedReport, preparationErr := report.PrepareRunPresentation(
+			filepath.Join(h.runsDir, run.ID),
+			run.Report,
+			nil,
+		)
+		if preparedReport != nil {
+			run.Report = preparedReport
+		}
+		if preparationErr != nil {
+			h.log("report %s presentation preparation unavailable: %v", run.ID, preparationErr)
+		}
 		if run.SourceCatalog != nil {
-			if err := report.AttachExactWorkspaceSearch(run.Report, *run.SourceCatalog); err != nil {
-				h.log("report %s exact workspace search unavailable: %v", run.ID, err)
+			if searchErr := report.AttachExactWorkspaceSearch(run.Report, *run.SourceCatalog); searchErr != nil {
+				h.log("report %s exact workspace search unavailable: %v", run.ID, searchErr)
 			}
 		}
 		if run.Manifest != nil && run.Report != nil {
@@ -995,14 +1005,6 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 						run.Report.Freshness = &legacy
 					}
 				}
-			}
-		}
-		if run.Manifest != nil {
-			if err := report.HydrateRunPresentationMetadata(
-				filepath.Join(h.runsDir, entry.Name()),
-				&reportData,
-			); err != nil {
-				h.log("report %s presentation metadata unavailable: %v", entry.Name(), err)
 			}
 		}
 		// Task Lens is an evidence-backed workspace, not a legacy view-only

@@ -178,7 +178,11 @@ func localizePresentationForRun(
 	stderr io.Writer,
 	sourceEpisodeJSON ...[]byte,
 ) (presentationLocalizationOutcome, error) {
-	data, err := readCanonicalReportForLocalization(runDir)
+	var episodeJSON []byte
+	if len(sourceEpisodeJSON) > 0 {
+		episodeJSON = sourceEpisodeJSON[0]
+	}
+	data, err := readCanonicalReportForLocalization(runDir, episodeJSON)
 	if err != nil {
 		if writeErr := report.WritePresentationLocalizationFailure(
 			runDir, report.LocalizationFailurePreparation, "",
@@ -189,22 +193,6 @@ func localizePresentationForRun(
 			State:      report.PresentationLocalizationFailed,
 			ReasonCode: report.LocalizationFailurePreparation,
 		}, nil
-	}
-	if len(sourceEpisodeJSON) > 0 && len(sourceEpisodeJSON[0]) > 0 {
-		if err := report.AttachSourceEpisodePresentation(
-			data,
-			sourceEpisodeJSON[0],
-		); err != nil {
-			if writeErr := report.WritePresentationLocalizationFailure(
-				runDir, report.LocalizationFailurePreparation, "",
-			); writeErr != nil {
-				return presentationLocalizationOutcome{}, errors.Join(err, writeErr)
-			}
-			return presentationLocalizationOutcome{
-				State:      report.PresentationLocalizationFailed,
-				ReasonCode: report.LocalizationFailurePreparation,
-			}, nil
-		}
 	}
 	prepared, err := report.PreparePresentationLocalization(data, localization.LocaleRussian)
 	if err != nil {
@@ -258,8 +246,13 @@ func localizePresentationForRun(
 func markPresentationLocalizationUnavailable(
 	runDir,
 	reasonCode string,
+	sourceEpisodeJSON ...[]byte,
 ) error {
-	data, err := readCanonicalReportForLocalization(runDir)
+	var episodeJSON []byte
+	if len(sourceEpisodeJSON) > 0 {
+		episodeJSON = sourceEpisodeJSON[0]
+	}
+	data, err := readCanonicalReportForLocalization(runDir, episodeJSON)
 	if err != nil {
 		return report.WritePresentationLocalizationFailure(runDir, reasonCode, "")
 	}
@@ -277,7 +270,10 @@ func markPresentationLocalizationUnavailable(
 	)
 }
 
-func readCanonicalReportForLocalization(runDir string) (*report.ReportData, error) {
+func readCanonicalReportForLocalization(
+	runDir string,
+	sourceEpisodeJSON ...[]byte,
+) (*report.ReportData, error) {
 	raw, err := readBoundedRegularFile(
 		filepath.Join(runDir, "report.json"),
 		maxDecisionTraceReportBytes,
@@ -301,10 +297,27 @@ func readCanonicalReportForLocalization(runDir string) (*report.ReportData, erro
 		data.GitHubSourceLinks != nil {
 		return nil, fmt.Errorf("localization: report is not canonical English")
 	}
-	if err := report.HydrateRunPresentationMetadata(runDir, &data); err != nil {
-		return nil, fmt.Errorf("localization: hydrate presentation metadata: %w", err)
+	manifestPath := filepath.Join(runDir, report.RunManifestFilename)
+	if _, err := os.Lstat(manifestPath); err == nil {
+		manifest, err := report.ReadRunManifest(runDir)
+		if err != nil {
+			return nil, fmt.Errorf("localization: verify current run authority: %w", err)
+		}
+		if manifest.Version != report.CurrentRunManifestVersion {
+			return nil, fmt.Errorf("localization: current run manifest is required")
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("localization: inspect current run authority: %w", err)
 	}
-	return &data, nil
+	var episodeJSON []byte
+	if len(sourceEpisodeJSON) > 0 {
+		episodeJSON = sourceEpisodeJSON[0]
+	}
+	prepared, err := report.PrepareRunPresentation(runDir, &data, episodeJSON)
+	if err != nil {
+		return nil, fmt.Errorf("localization: prepare run presentation: %w", err)
+	}
+	return prepared, nil
 }
 
 func executePresentationLocalization(
