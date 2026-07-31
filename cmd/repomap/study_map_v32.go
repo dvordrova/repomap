@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/studymap"
 )
@@ -176,6 +177,7 @@ type studyMapReviewCompletion struct {
 	proposal    studymap.ReviewProposal
 	issue       studymap.ReviewIssue
 	valid       bool
+	unsafeKind  string
 }
 
 type studyMapReviewPreparationFailure struct {
@@ -683,6 +685,12 @@ func reviewStudyMapDirections(
 	stages := make([]semanticDiscoveryStageMetrics, 0, len(ordered))
 	issues := make([]studymap.ReviewIssue, 0, len(ordered))
 	for _, completion := range ordered {
+		if completion.unsafeKind != "" {
+			return nil, nil, stages, issues, fmt.Errorf(
+				"study map: review provider response contains an obvious %s",
+				completion.unsafeKind,
+			)
+		}
 		attemptPath := filepath.Join(runDir, studyMapReviewAttemptsDir, completion.directionID+".json")
 		if err := writeGoldenJSON(attemptPath, completion.attempt); err != nil {
 			return nil, nil, stages, issues, err
@@ -816,6 +824,14 @@ func executeStudyMapReview(
 		completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
 		return completion
 	}
+	if kind, found := secretscan.DetectAlways(string(result.Content)); found {
+		metrics.Status = "rejected"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		completion.attempt.FailureReason = "review_response_contains_obvious_credential"
+		completion.unsafeKind = kind
+		return completion
+	}
 	if json.Valid(result.Content) {
 		completion.attempt.Response = append(json.RawMessage(nil), result.Content...)
 	} else {
@@ -845,6 +861,7 @@ func executeStudyMapReview(
 	) {
 		if cache, ok := provider.(studyReviewCacheReplay); ok {
 			cache.storeStudyReview(
+				ctx,
 				task.plan.prompt,
 				task.plan.request,
 				sourceBundle,
