@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/170-complete-terminal-localization-and-smoke-correctives.md
+    decisions/171-content-addressed-study-review-cache.md
 
 Status:
-    Decision 170 active; complete terminal localization and smoke correctives authorized
+    Decision 171 active; content-addressed Study reading-pack review cache authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 171 adds only a content-addressed persistent cache for the
+    existing bounded canonical-English Study reading-pack review requests. It
+    does not change candidates, scheduling, review validation, publication,
+    canonical artifacts, DTOs, or UI. Identity binds exact provider request
+    bytes, endpoint/model/profile, prompt/generation/output contracts, and
+    exact review/source hashes while excluding repository revision, run ID,
+    timestamps, and credentials. Hits replay through current local validation
+    without an API key or HTTP request; --no-cache bypasses reads and writes;
+    corrupt, unsafe, failed, canceled, partial, or invalid results are never
+    applied or cached. Other model stages remain unmigrated.
     Decision 170 expands the owner-approved localization slice to one complete
     typed terminal PresentationTextInventory, one atomic EN-to-RU request on a
     cache miss, and explicit degradation for any incomplete or oversized

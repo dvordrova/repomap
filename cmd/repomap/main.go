@@ -772,7 +772,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if runOptionalModelStages {
 			studyStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: editing a bounded repository brief and study map")
-			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr)
+			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr, *noCache)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}

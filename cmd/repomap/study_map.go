@@ -170,25 +170,44 @@ func editStudyMapForRun(
 	runDir string,
 	repoRoot string,
 	stderr io.Writer,
+	noCache bool,
 ) (studyMapStatus, error) {
-	return prepareStudyMapWithProviderFactory(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
-		client, err := deepseek.NewFromEnv()
+	var cacheEditor *studyReviewCachingEditor
+	status, err := prepareStudyMapWithProviderFactory(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
+		promptClient, err := deepseek.NewPromptFromEnv()
 		if err != nil {
 			return nil, fmt.Errorf("study map: provider configuration: %w", err)
 		}
-		var progressMu sync.Mutex
-		client.OnWait = func(progress deepseek.WaitProgress) {
-			progressMu.Lock()
-			defer progressMu.Unlock()
-			fmt.Fprintf(
-				stderr,
-				"repomap: %s still running after %s (Ctrl-C to cancel)\n",
-				progress.Stage,
-				progress.Elapsed.Round(time.Second),
-			)
-		}
-		return client, nil
+		cacheEditor = newStudyReviewCachingEditor(
+			promptClient,
+			func() (semanticDiscoveryEditor, error) {
+				client, liveErr := deepseek.NewFromEnv()
+				if liveErr != nil {
+					return nil, fmt.Errorf("study map: provider configuration: %w", liveErr)
+				}
+				var progressMu sync.Mutex
+				client.OnWait = func(progress deepseek.WaitProgress) {
+					progressMu.Lock()
+					defer progressMu.Unlock()
+					fmt.Fprintf(
+						stderr,
+						"repomap: %s still running after %s (Ctrl-C to cancel)\n",
+						progress.Stage,
+						progress.Elapsed.Round(time.Second),
+					)
+				}
+				return client, nil
+			},
+			filepath.Dir(runDir),
+			noCache,
+			stderr,
+		)
+		return cacheEditor, nil
 	})
+	if cacheEditor != nil {
+		cacheEditor.writeSummary(stderr)
+	}
+	return status, err
 }
 
 // prepareStudyMapMonolithic is retained only so saved v3.1 attempt fixtures
