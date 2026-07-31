@@ -143,11 +143,11 @@ func TestArchitectureLocalizationRecordRejectsResponseWithoutRecord(t *testing.T
 			want: "invalid provider response",
 		},
 		{
-			name: "field fallback",
+			name: "placeholder mismatch",
 			response: func(t *testing.T, runDir string) []byte {
 				_, canonical, input := architectureLocalizationRussianContext(t, runDir)
 				projection := architectureLocalizationRussianProjection(t, canonical, input)
-				projection.Translations[input.Fields[0].ID] = input.Fields[0].Text
+				projection.Translations[input.Fields[0].ID] += " {{term_99}}"
 				return architectureLocalizationProviderResponse(t, canonical, input, projection)
 			},
 			want: "not fully accepted",
