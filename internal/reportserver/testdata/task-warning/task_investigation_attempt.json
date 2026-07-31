@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "bundle_sha256": "27ef1cacc94c084f89b5ceb1850e49a526beec391958ee8cf1a41b368500d345",
+  "prompt_version": "task-investigation-pack-json-v2",
+  "prompt_sha256": "2afe1af2c4718a3be48eb129448fdedc30b587ba7e8062348bc408e5f9464aaa",
+  "state": "accepted_with_rejections",
+  "response_sha256": "882be3c14819e6b841982237a2c9dc60aeb7803cf5665ccfac648a6c23c4bbaf",
+  "raw_response": "{\"version\":1,\"task_interpretation\":{\"restatement\":\"Trace validation from the request boundary.\",\"task_kind\":\"bug\",\"observable_or_outcome\":\"The request path validates without the reported failure.\"},\"likely_areas\":[{\"label\":\"Request validation\",\"why\":\"The selected anchors bound the request validation path.\",\"target_ids\":[\"anchor-2e8bd13976e95aab1a42\",\"anchor-cd6ed011bcd4e5333200\",\"anchor-dbf6609b644e97fdf1f5\"]}],\"anchors\":[{\"anchor_id\":\"anchor-2e8bd13976e95aab1a42\",\"role\":\"representative_implementation\",\"why\":\"\"},{\"anchor_id\":\"anchor-cd6ed011bcd4e5333200\",\"role\":\"symptom_site\",\"why\":\"This exact retained anchor is relevant to request validation.\"},{\"anchor_id\":\"anchor-dbf6609b644e97fdf1f5\",\"role\":\"verification_anchor\",\"why\":\"This exact retained anchor is relevant to request validation.\"}],\"evidence_joins\":[{\"left_anchor_id\":\"anchor-2e8bd13976e95aab1a42\",\"right_anchor_id\":\"anchor-cd6ed011bcd4e5333200\",\"relation_id\":\"relation-1ab78752d33f6af5ab01\",\"relation_kind\":\"direct_call\",\"support_type\":\"locally_observed\",\"support_ids\":[\"evidence-3a68ae597cd4d4218f64\",\"evidence-a9d5ac2ef6adb4921d74\"],\"explanation\":\"The retained left-anchor excerpt contains an unqualified call expression named by the retained right anchor.\",\"scope_non_guarantees\":\"A direct call expression is present in the retained caller excerpt; this does not prove runtime reachability, order, or callee behavior.\"}],\"working_hypothesis\":[{\"status\":\"supported\",\"text\":\"The retained left-anchor excerpt contains an unqualified call expression named by the retained right anchor.\",\"support_ids\":[\"evidence-3a68ae597cd4d4218f64\",\"evidence-a9d5ac2ef6adb4921d74\"],\"relation_ids\":[\"relation-1ab78752d33f6af5ab01\"]}],\"reproduce_or_observe\":[{\"text\":\"Use the task-provided failing request.\",\"authority\":\"task_provided\",\"evidence_ids\":[\"evidence-3542b55b60956fc1bec0\"]}],\"verify\":{\"effect_to_observe\":\"The request returns the intended result.\",\"steps\":[{\"text\":\"Inspect the focused validation test.\",\"authority\":\"repository_test_or_example\",\"evidence_ids\":[\"evidence-73de9feec3f18ff427e8\"]}]},\"next_probes\":[{\"action\":\"resolve_reference\",\"anchor_ids\":[\"anchor-cd6ed011bcd4e5333200\"],\"text\":\"Resolve callers outside the retained source window.\"}]}",
+  "warnings": [
+    "Anchor 1 explanation was replaced with local wording because its presentation text was not grounded."
+  ],
+  "provider": {
+    "calls": 1,
+    "transport_attempts": 1,
+    "request_bytes": 128,
+    "response_bytes": 2211,
+    "input_tokens": 30,
+    "output_tokens": 20,
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 0,
+    "latency_millis": 12
+  }
+}

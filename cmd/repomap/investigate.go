@@ -234,8 +234,9 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 			attempt.State = "skipped_offline"
 		} else {
 			attempt.State = "skipped_insufficient_evidence"
+			warning, _ := tasklens.AttemptStateWarningEmission(attempt.State)
 			attempt.Warnings = append(attempt.Warnings,
-				tasklens.AttemptWarningSparseEvidence)
+				warning.Raw)
 		}
 		if !localComplete {
 			packState = "partial_local"
@@ -262,7 +263,8 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 		if callErr != nil {
 			attempt.State = "provider_failed"
 			attempt.ReductionError = tasklens.ReductionErrorProviderFailed
-			attempt.Warnings = append(attempt.Warnings, tasklens.AttemptWarningProviderFailed)
+			warning, _ := tasklens.AttemptStateWarningEmission(attempt.State)
+			attempt.Warnings = append(attempt.Warnings, warning.Raw)
 			packState = "partial_local"
 			proposal, err = tasklens.LocalProposal(bundle)
 		} else {
@@ -290,7 +292,8 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 			if err != nil {
 				attempt.State = "rejected"
 				attempt.ReductionError = err.Error()
-				attempt.Warnings = append(attempt.Warnings, tasklens.AttemptWarningResponseRejected)
+				warning, _ := tasklens.AttemptStateWarningEmission(attempt.State)
+				attempt.Warnings = append(attempt.Warnings, warning.Raw)
 				packState = "partial_local"
 				proposal, err = tasklens.LocalProposal(bundle)
 			}
@@ -502,10 +505,12 @@ func recordTaskResponse(attempt *tasklens.Attempt, content []byte) {
 	switch {
 	case len(content) > tasklens.MaxSavedRawResponseBytes:
 		attempt.RawResponseOmittedReason = tasklens.RawResponseOmittedSize
-		attempt.Warnings = append(attempt.Warnings, tasklens.AttemptWarningResponseSize)
+		warning, _ := tasklens.RawResponseOmissionEmission(attempt.RawResponseOmittedReason)
+		attempt.Warnings = append(attempt.Warnings, warning.Raw)
 	case func() bool { _, found := secretscan.Detect(string(content)); return found }():
 		attempt.RawResponseOmittedReason = tasklens.RawResponseOmittedSecret
-		attempt.Warnings = append(attempt.Warnings, tasklens.AttemptWarningResponseSecret)
+		warning, _ := tasklens.RawResponseOmissionEmission(attempt.RawResponseOmittedReason)
+		attempt.Warnings = append(attempt.Warnings, warning.Raw)
 	default:
 		attempt.RawResponse = string(content)
 	}

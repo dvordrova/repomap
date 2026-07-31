@@ -116,15 +116,19 @@ func (w *Writer) WriteFile(name string, data []byte) error {
 }
 
 func (w *Writer) writeRootFile(name string, data []byte) error {
+	if w != nil && w.Redacted {
+		data = redactJSON(data)
+	}
+	return w.writePreparedRootFile(name, data)
+}
+
+func (w *Writer) writePreparedRootFile(name string, data []byte) error {
 	if w == nil || w.root == nil {
 		return fmt.Errorf("debug writer is closed")
 	}
 	localName := filepath.FromSlash(name)
 	if name == "" || !filepath.IsLocal(localName) || filepath.Clean(localName) != localName {
 		return fmt.Errorf("invalid debug artifact path %q", name)
-	}
-	if w.Redacted {
-		data = redactJSON(data)
 	}
 	tmpName := localName + ".tmp"
 	file, err := w.root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -174,6 +178,38 @@ func (w *Writer) WriteLLMResponse(responseJSON []byte) error {
 
 func (w *Writer) WriteOrientationReport(reportJSON []byte) error {
 	return w.WriteFile("orientation_report.json", reportJSON)
+}
+
+// WriteOrientationReportWithSidecar writes the exact report bytes and then a
+// producer-built sidecar derived from those same bytes. The callback observes
+// the post-redaction payload that is actually persisted, so a sidecar hash can
+// never accidentally bind the pre-redaction input.
+func (w *Writer) WriteOrientationReportWithSidecar(
+	reportJSON []byte,
+	sidecarName string,
+	buildSidecar func([]byte) ([]byte, error),
+) error {
+	if w == nil || w.root == nil {
+		return fmt.Errorf("debug writer is closed")
+	}
+	if buildSidecar == nil {
+		return fmt.Errorf("debug orientation sidecar builder is required")
+	}
+	preparedReport := reportJSON
+	if w.Redacted {
+		preparedReport = redactJSON(preparedReport)
+	}
+	sidecar, err := buildSidecar(preparedReport)
+	if err != nil {
+		return fmt.Errorf("build %s: %w", sidecarName, err)
+	}
+	if w.Redacted {
+		sidecar = redactJSON(sidecar)
+	}
+	if err := w.writePreparedRootFile("orientation_report.json", preparedReport); err != nil {
+		return err
+	}
+	return w.writePreparedRootFile(sidecarName, sidecar)
 }
 
 func (w *Writer) WriteOrientationValidation(validationJSON []byte) error {

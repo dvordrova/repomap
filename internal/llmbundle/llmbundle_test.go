@@ -1135,6 +1135,13 @@ func TestDetectFileKind(t *testing.T) {
 		want string
 	}{
 		{"server/main.go", "source"},
+		{"src/widget.ts", "source"},
+		{"web/client.js", "source"},
+		{"tool/worker.py", "source"},
+		{"src/Worker.java", "source"},
+		{"engine/lib.rs", "source"},
+		{"native/hash.c", "source"},
+		{"native/hash.cpp", "source"},
 		{"server/etcdserver_impl_test.go", "test"},
 		{"docs/design.md", "doc"},
 		{"docs/operator-guide.rst", "doc"},
@@ -1149,6 +1156,27 @@ func TestDetectFileKind(t *testing.T) {
 		got := detectFileKind(tc.path)
 		if got != tc.want {
 			t.Errorf("detectFileKind(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestBuildFileIndexKeepsSmallRepositorySourcesWithoutConventionalNames(t *testing.T) {
+	t.Parallel()
+
+	sourcePaths := []string{
+		"src/widget.ts",
+		"web/client.js",
+		"tool/worker.py",
+		"src/Worker.java",
+		"engine/lib.rs",
+		"native/hash.c",
+		"native/hash.cpp",
+	}
+	files := append(append([]string(nil), sourcePaths...), "README.md", "package.json")
+	index := buildFileIndex(files, nil, nil, nil)
+	for _, filePath := range sourcePaths {
+		if !containsFileIndexPath(index, filePath) {
+			t.Errorf("small repository source %q disappeared from candidate_file_index: %#v", filePath, index)
 		}
 	}
 }

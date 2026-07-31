@@ -4,7 +4,7 @@
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
   var REPORT_LANGUAGE = DATA.report_language === 'ru' ? 'ru' : 'en';
   var UI = window.RepomapUI;
-  if (!UI || typeof UI.message !== 'function') {
+  if (!UI || typeof UI.message !== 'function' || typeof UI.hasMessage !== 'function') {
     throw new Error('repomap UI message catalog is unavailable');
   }
 
@@ -45,7 +45,6 @@
   var maxSymbolCandidates = 8;
   var maxStaticCalls = 5;
   var maxSourceLines = 20;
-  var maxInspectionWarnings = 8;
   var maxTestReferences = 5;
   var DEBUG_MODE = /^(1|true)$/i.test(new URLSearchParams(window.location.search).get('debug') || '');
 	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
@@ -788,7 +787,7 @@
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) {
-          var error = new Error(body.error || msg('main.error.editor_action_failed'));
+          var error = new Error(msg('main.error.editor_action_failed'));
           error.code = body.code || '';
           throw error;
         }
@@ -807,7 +806,7 @@
         showEditorUnavailable(filePath, line || 0, column || 0);
         return;
       }
-      showToast(error.message || msg('main.toast.could_not_open_vscode'), true);
+      showToast(msg('main.toast.could_not_open_vscode'), true);
     });
   }
 
@@ -932,6 +931,64 @@
     return node;
   }
 
+  function runPickerDate(run) {
+    var parsed = new Date(String(run && run.created_at || ''));
+    if (Number.isNaN(parsed.getTime())) {
+      var runID = String(run && run.id || '');
+      var match = runID.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+      if (match) {
+        parsed = new Date(Date.UTC(
+          Number(match[1]),
+          Number(match[2]) - 1,
+          Number(match[3]),
+          Number(match[4]),
+          Number(match[5]),
+          Number(match[6])
+        ));
+      }
+    }
+    if (Number.isNaN(parsed.getTime())) {
+      return REPORT_LANGUAGE === 'ru'
+        ? '--.--.----, --:--:--'
+        : '--/--/----, --:--:--';
+    }
+    var locale = REPORT_LANGUAGE === 'ru' ? 'ru-RU' : 'en-US';
+    var date = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(parsed);
+    var time = new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).format(parsed);
+    return date + ', ' + time;
+  }
+
+  function runPickerShortID(run) {
+    var supplied = String(run && run.short_id || '');
+    if (supplied) return supplied;
+    var runID = String(run && run.id || '');
+    var separator = runID.lastIndexOf('-');
+    var value = separator >= 0 ? runID.slice(separator + 1) : runID;
+    return value.length > 12 ? value.slice(-12) : value;
+  }
+
+  function runPickerLabel(run) {
+    var repository = String(run && run.repo_name || '') || msg('main.saved_repository_report');
+    var language = run && run.report_language === 'ru' ? 'ru' : 'en';
+    var cacheMode = run && run.cache_mode === 'no-cache' ? 'no-cache' : 'cache';
+    return [
+      repository,
+      language,
+      cacheMode,
+      runPickerDate(run),
+      runPickerShortID(run),
+    ].join(' · ');
+  }
+
   function setupServerFeatures() {
     if (staticSourceMode()) {
       var staticSourceHintNode = document.getElementById('rm-editor-hint');
@@ -957,13 +1014,7 @@
       runs.forEach(function (run) {
         var option = document.createElement('option');
         option.value = run.id;
-        var label = run.repo_name || msg('main.saved_repository_report');
-        var captured = String(run.created_at || '');
-        var parsed = new Date(captured);
-        if (!Number.isNaN(parsed.getTime())) {
-          label += ' · ' + parsed.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-        }
-        option.textContent = label;
+        option.textContent = runPickerLabel(run);
         option.selected = run.id === selected;
         selector.appendChild(option);
       });
@@ -1153,8 +1204,8 @@
     var row = el('div', 'rm-direction-evidence-item');
     var top = el('div', 'rm-proof-step-top');
     top.appendChild(txt('span', 'rm-proof-symbol', proofAnchorLabel(from, transition.from)));
-    var relation = (transition.relation || 'related').replace(/_/g, ' ');
-    var invocation = (transition.invocation || 'unknown').replace(/_/g, ' ');
+    var relation = transition.relation || 'related';
+    var invocation = transition.invocation || 'unknown';
     top.appendChild(txt('span', 'rm-proof-relation', '→ ' + relation + ' / ' + invocation + ' →'));
     top.appendChild(txt('span', 'rm-proof-symbol', proofAnchorLabel(to, transition.to)));
     row.appendChild(top);
@@ -1162,7 +1213,7 @@
     var semantics = [];
     if (transition.resolution) {
       semantics.push(msg('main.proof.resolution', {
-        resolution: transition.resolution.replace(/_/g, ' '),
+        resolution: transition.resolution,
       }));
     }
     if (transition.certainty) {
@@ -1209,7 +1260,7 @@
 
     var slots = el('div', 'rm-proof-slots');
     (proof.slots || []).forEach(function (slot) {
-      var slotNode = txt('span', 'rm-proof-slot rm-proof-slot--' + (slot.status || 'missing'), slot.kind.replace(/_/g, ' '));
+      var slotNode = txt('span', 'rm-proof-slot rm-proof-slot--' + (slot.status || 'missing'), slot.kind);
       slotNode.title = slot.summary || slot.missing || slot.status;
       slots.appendChild(slotNode);
     });
@@ -1251,7 +1302,7 @@
     if (session.stop && session.stop.reason !== 'complete') {
       var boundary = el('div', 'rm-proof-boundary');
       boundary.appendChild(txt('span', 'rm-proof-boundary-label', LABELS.proofStop + ': '));
-      boundary.appendChild(document.createTextNode(session.stop.reason.replace(/_/g, ' ') + (session.stop.message ? ' — ' + session.stop.message : '')));
+      boundary.appendChild(document.createTextNode(session.stop.reason + (session.stop.message ? ' — ' + session.stop.message : '')));
       box.appendChild(boundary);
     }
     if (proof.current_frontier) {
@@ -1298,8 +1349,12 @@
       if (errorFlowType) eh.appendChild(errorFlowType);
       eh.appendChild(renderPill(LABELS.errorUnavailable, 'error'));
       card.appendChild(eh);
-      if (flow.bundle_stats_label) {
-        var meta = txt('div', 'rm-meta', flow.bundle_stats_label);
+      if (flow.bundle_summary) {
+        var meta = txt('div', 'rm-meta', msg('main.flow.bundle_stats_compact', {
+          source: Number(flow.bundle_summary.selected_files_count) || 0,
+          test: Number(flow.bundle_summary.selected_tests_count) || 0,
+          doc: Number(flow.bundle_summary.selected_docs_count) || 0,
+        }));
         card.appendChild(meta);
       }
       card.onclick = function () { showTab('rm-flow-' + flow.id); };
@@ -1574,7 +1629,7 @@
         addFact(LABELS.surfaceAnalysis, surfaceValue);
       }
       if (DATA.freshness) {
-        var freshnessValue = String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+        var freshnessValue = String(DATA.freshness.state || 'unavailable');
         if ((DATA.freshness.affected_paths || []).length > 0) {
           freshnessValue += ' · ' + msg('main.count.analyzed_inputs_changed', { count: DATA.freshness.affected_paths.length });
         } else if ((DATA.freshness.affected_submodules || []).length > 0) {
@@ -1632,7 +1687,7 @@
       repository_pattern: msg('main.semantic_kind.repository_pattern'),
       contribution_guide: msg('main.semantic_kind.contribution_guide'),
       go_learning: msg('main.semantic_kind.go_learning'),
-    }[kind] || String(kind || msg('main.chrome.explanation')).replace(/_/g, ' ');
+    }[kind] || String(kind || msg('main.chrome.explanation'));
   }
 
   function semanticArtifactBasisCounts(artifact) {
@@ -1680,7 +1735,7 @@
       ));
     }
     if (artifact.verdict) {
-      meta.appendChild(txt('span', 'rm-explore-artifact__verdict', String(artifact.verdict).replace(/_/g, ' ')));
+      meta.appendChild(txt('span', 'rm-explore-artifact__verdict', String(artifact.verdict)));
     }
     if (meta.childElementCount) button.appendChild(meta);
     button.appendChild(txt('span', 'rm-explore-artifact__action', msg('main.chrome.open.explanation.on.the.map')));
@@ -1803,12 +1858,27 @@
   function appendResearchStage(container, label, stage) {
     if (!stage || !stage.status) return;
     var row = el('div', 'rm-model-research-stage');
-    var status = String(stage.status).replaceAll('_', ' ');
+    var status = String(stage.status);
     if (stage.cache_hit) status += ' · ' + msg('main.research.cached');
     if (stage.request_bytes) status += ' · ' + formatBytes(stage.request_bytes);
     row.appendChild(txt('strong', '', label));
     row.appendChild(txt('span', '', status));
     container.appendChild(row);
+  }
+
+  function researchSelectionReasonLabel(reason) {
+    var code = String(reason || '');
+    var messageIDs = {
+      planned: 'main.research.selection_reason.planned',
+      runtime_only_frontier: 'main.research.selection_reason.runtime_only_frontier',
+      unknown_candidate_ids: 'main.research.selection_reason.unknown_candidate_ids',
+      no_code_bearing_bounded_window: 'main.research.selection_reason.no_code_bearing_bounded_window',
+      no_new_exact_evidence: 'main.research.selection_reason.no_new_exact_evidence',
+      no_bounded_local_evidence: 'main.research.selection_reason.no_bounded_local_evidence',
+      new_exact_evidence_and_high_value_frontier: 'main.research.selection_reason.new_exact_evidence_and_high_value_frontier',
+      targeted_round_limit: 'main.research.selection_reason.targeted_round_limit',
+    };
+    return messageIDs[code] ? msg(messageIDs[code]) : code;
   }
 
   function appendResearchRound(container, label, round) {
@@ -1817,7 +1887,7 @@
     var heading = el('div', 'rm-model-research-stage');
     heading.appendChild(txt('strong', '', label));
     var status = round.status
-      ? String(round.status).replaceAll('_', ' ')
+      ? String(round.status)
       : msg('main.research.unknown_status');
     if (round.cached) status += ' · ' + msg('main.research.cached');
     heading.appendChild(txt('span', '', status));
@@ -1825,7 +1895,7 @@
     if (round.question) row.appendChild(txt('div', '', round.question));
     if (round.selection_reason) {
       row.appendChild(txt('div', 'rm-muted', msg('main.research.why', {
-        reason: round.selection_reason.replaceAll('_', ' '),
+        reason: researchSelectionReasonLabel(round.selection_reason),
       })));
     }
     row.appendChild(txt('div', 'rm-muted', msg('main.research.exact_evidence', {
@@ -1843,7 +1913,7 @@
       })));
     } else if (round.stop_reason) {
       row.appendChild(txt('div', 'rm-muted', msg('main.research.result', {
-        result: String(round.stop_reason).replaceAll('_', ' '),
+        result: String(round.stop_reason),
       })));
     }
     container.appendChild(row);
@@ -1949,8 +2019,8 @@
     return value.slice(0, Math.max(0, maxLength - 1)) + '…';
   }
 
-  function humanizeSymbolDetail(value) {
-    return boundedText(value, 80).replace(/_/g, ' ');
+  function exactSymbolDetail(value) {
+    return typeof value === 'string' ? value : '';
   }
 
   function symbolLookupLine(anchor) {
@@ -1982,7 +2052,7 @@
 
     var heading = el('div', 'rm-symbol-candidate-heading');
     heading.appendChild(txt('code', 'rm-symbol-candidate-name', boundedText(candidate.name, 160) || msg('main.chrome.unnamed.go.symbol')));
-    var kind = humanizeSymbolDetail(candidate.kind);
+    var kind = exactSymbolDetail(candidate.kind);
     if (kind) heading.appendChild(txt('span', 'rm-symbol-candidate-kind', kind));
     row.appendChild(heading);
 
@@ -1991,20 +2061,18 @@
     row.appendChild(txt('code', 'rm-symbol-candidate-location', path + (line ? ':' + line : '')));
 
     var details = [];
-    var match = humanizeSymbolDetail(candidate.match);
-    var certainty = humanizeSymbolDetail(candidate.certainty);
+    var match = exactSymbolDetail(candidate.match);
+    var certainty = exactSymbolDetail(candidate.certainty);
     if (match) details.push(match);
     if (certainty) details.push(certainty);
     if (details.length > 0) {
       row.appendChild(txt('div', 'rm-symbol-candidate-meta', details.join(' · ')));
     }
 
-    var reasons = Array.isArray(candidate.rank_reasons) ? candidate.rank_reasons.slice(0, 3).map(function (reason) {
-      return humanizeSymbolDetail(reason);
-    }).filter(Boolean) : [];
-    if (reasons.length > 0) {
+    var reasonCount = Array.isArray(candidate.rank_reasons) ? candidate.rank_reasons.length : 0;
+    if (reasonCount > 0) {
       row.appendChild(txt('div', 'rm-symbol-candidate-reasons', msg('main.symbol.ranked_by', {
-        reasons: reasons.join(' · '),
+        count: reasonCount,
       })));
     }
     if (selected && state.persisted) {
@@ -2050,7 +2118,7 @@
         callsite.appendChild(renderEntityLocation(call.callsite, 'rm-symbol-callsite-location'));
         item.appendChild(callsite);
       }
-      var certainty = humanizeSymbolDetail(call.certainty);
+      var certainty = exactSymbolDetail(call.certainty);
       if (certainty) item.appendChild(txt('div', 'rm-symbol-candidate-meta', msg('main.evidence_suffix', {
         certainty: certainty,
       })));
@@ -2079,7 +2147,7 @@
     }
     if (source.stop_reason) {
       summary.push(msg('main.source.stop_reason', {
-        reason: humanizeSymbolDetail(source.stop_reason),
+        reason: exactSymbolDetail(source.stop_reason),
       }));
     }
     if (source.truncated) summary.push(msg('main.source.truncated'));
@@ -2152,7 +2220,7 @@
       return key !== 'incoming_calls' && key !== 'outgoing_calls' &&
         Number.isInteger(truncated[key]) && truncated[key] > 0;
     }).slice(0, 5).map(function (key) {
-      return humanizeSymbolDetail(key) + ' +' + truncated[key];
+      return exactSymbolDetail(key) + ' +' + truncated[key];
     });
     if (items.length === 0) return null;
     return txt('div', 'rm-symbol-truncation', msg('main.symbol.evidence_omitted', {
@@ -2183,10 +2251,12 @@
       section.appendChild(list);
     }
     section.appendChild(txt('p', 'rm-investigation-caveat', msg('main.chrome.navigation.evidence.only.this.does.not.prove.coverage.or.what.a.test.asserts.test.paths.stay.non.clickable.until.they.are.part.of.saved.run.authority')));
-    var warnings = Array.isArray(response.test_warnings) ? response.test_warnings.slice(0, 4) : [];
-    warnings.forEach(function (warning) {
-      section.appendChild(txt('div', 'rm-investigation-test-warning', boundedText(warning, 180)));
-    });
+    var warningCount = Array.isArray(response.test_warnings) ? response.test_warnings.length : 0;
+    if (warningCount > 0) {
+      section.appendChild(txt('div', 'rm-investigation-test-warning', msg('main.count.warnings', {
+        count: warningCount,
+      })));
+    }
     return section;
   }
 
@@ -2225,7 +2295,7 @@
       return detail;
     }
     if (inspection.status === 'error') {
-      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(inspection.error, 180) || msg('main.chrome.could.not.inspect.this.go.symbol'));
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', msg('main.chrome.could.not.inspect.this.go.symbol'));
       error.setAttribute('role', 'alert');
       detail.appendChild(error);
       return detail;
@@ -2237,12 +2307,12 @@
     detail.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.chrome.exact.symbol')));
     var targetHeading = el('div', 'rm-symbol-detail-heading');
     targetHeading.appendChild(txt('code', 'rm-symbol-detail-name', boundedText(target.name, 160) || msg('main.chrome.unnamed.go.symbol')));
-    var targetKind = humanizeSymbolDetail(target.kind);
+    var targetKind = exactSymbolDetail(target.kind);
     if (targetKind) targetHeading.appendChild(txt('span', 'rm-symbol-candidate-kind', targetKind));
     detail.appendChild(targetHeading);
     detail.appendChild(renderEntityLocation(target, 'rm-symbol-detail-location'));
 
-    var evidenceLevel = humanizeSymbolDetail(response.evidence_level) || 'static';
+    var evidenceLevel = exactSymbolDetail(response.evidence_level) || 'static';
     detail.appendChild(txt('p', 'rm-symbol-static-note', msg('main.symbol.static_hierarchy', {
       level: evidenceLevel,
     })));
@@ -2266,14 +2336,12 @@
     if (truncation) detail.appendChild(truncation);
     var checkpoint = renderInvestigationCheckpoint(response, key);
     if (checkpoint) detail.appendChild(checkpoint);
-    var warnings = Array.isArray(response.warnings) ? response.warnings.slice(0, maxInspectionWarnings) : [];
-    if (warnings.length > 0) {
+    var warningCount = Array.isArray(response.warnings) ? response.warnings.length : 0;
+    if (warningCount > 0) {
       var warningSection = el('section', 'rm-symbol-warnings');
       warningSection.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.warnings')));
       var warningList = el('ul', 'rm-symbol-warning-list');
-      warnings.forEach(function (warning) {
-        warningList.appendChild(txt('li', '', boundedText(warning, 180)));
-      });
+      warningList.appendChild(txt('li', '', msg('main.count.warnings', { count: warningCount })));
       warningSection.appendChild(warningList);
       detail.appendChild(warningSection);
     }
@@ -2300,7 +2368,7 @@
       return;
     }
     if (state.status === 'error') {
-      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(state.error, 180) || msg('main.chrome.could.not.find.go.symbols'));
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', msg('main.chrome.could.not.find.go.symbols'));
       error.setAttribute('role', 'alert');
       view.results.appendChild(error);
       return;
@@ -2362,7 +2430,7 @@
       }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.go_symbol_lookup_failed'));
+        if (!response.ok) throw new Error(msg('main.error.go_symbol_lookup_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -2376,11 +2444,11 @@
         inspection: { status: 'idle' },
       };
       paintSymbolLookup(key);
-    }).catch(function (error) {
+    }).catch(function () {
       symbolLookupStates[key] = {
         status: 'error',
         candidates: [],
-        error: error && error.message ? error.message : msg('main.chrome.could.not.find.go.symbols'),
+        error: msg('main.chrome.could.not.find.go.symbols'),
       };
       paintSymbolLookup(key);
     });
@@ -2418,7 +2486,7 @@
       }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.go_symbol_inspection_failed'));
+        if (!response.ok) throw new Error(msg('main.error.go_symbol_inspection_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -2428,13 +2496,13 @@
       current.persisted = payload.investigation_status === 'source_ready' || payload.investigation_status === 'tests_ready';
       paintSymbolLookup(key);
       revealSymbolInspection(key);
-    }).catch(function (error) {
+    }).catch(function () {
       var current = symbolLookupStates[key];
       if (!current || current.candidateSetID !== candidateSetID) return;
       current.inspection = {
         status: 'error',
         candidateID: candidate.id,
-        error: error && error.message ? error.message : msg('main.chrome.could.not.inspect.this.go.symbol'),
+        error: msg('main.chrome.could.not.inspect.this.go.symbol'),
       };
       paintSymbolLookup(key);
       revealSymbolInspection(key);
@@ -2457,7 +2525,7 @@
       body: JSON.stringify({ run_id: runID }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.related_test_references_failed'));
+        if (!response.ok) throw new Error(msg('main.error.related_test_references_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -2467,11 +2535,11 @@
         if (current) paintSymbolLookup(key);
         throw new Error(msg('main.error.saved_investigation_mismatch'));
       }
-    }).catch(function (error) {
+    }).catch(function () {
       var current = symbolLookupStates[key];
       if (current) current.testStatus = 'idle';
       paintSymbolLookup(key);
-      showToast(error && error.message ? error.message : msg('main.error.related_test_references_failed'), true);
+      showToast(msg('main.error.related_test_references_failed'), true);
       revealSymbolInspection(key);
     });
   }
@@ -2544,13 +2612,13 @@
     }).then(function (response) {
       if (response.status === 204 || response.status === 404) return null;
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.saved_investigation_unavailable'));
+        if (!response.ok) throw new Error(msg('main.error.saved_investigation_unavailable'));
         return body;
       });
     }).then(function (payload) {
       if (payload) applyResumedInvestigation(payload);
-    }).catch(function (error) {
-      showToast(error && error.message ? error.message : msg('main.error.saved_investigation_unavailable'), true);
+    }).catch(function () {
+      showToast(msg('main.error.saved_investigation_unavailable'), true);
     });
   }
 
@@ -3212,8 +3280,9 @@
       body.appendChild(txt('div', 'rm-read-order-reason', msg('main.this.source.changed.after.the.report.was.generated')));
     }
     if (fi.reason) {
-      var reason = linkified('div', 'rm-read-order-reason', humanizeReason(fi.reason));
-      reason.title = fi.reason;
+      var displayedReason = fi.presentation_reason || humanizeReason(fi.reason);
+      var reason = linkified('div', 'rm-read-order-reason', displayedReason);
+      reason.title = displayedReason;
       body.appendChild(reason);
     }
     item.appendChild(body);
@@ -3236,8 +3305,9 @@
         li.appendChild(txt('span', 'rm-file-reason', msg('main.this.source.changed.after.the.report.was.generated')));
       }
       if (f.reason) {
-        var reason = linkified('span', 'rm-file-reason', humanizeReason(f.reason));
-        reason.title = f.reason;
+        var displayedReason = f.presentation_reason || humanizeReason(f.reason);
+        var reason = linkified('span', 'rm-file-reason', displayedReason);
+        reason.title = displayedReason;
         li.appendChild(reason);
       }
       ul.appendChild(li);
@@ -3259,8 +3329,9 @@
         li.appendChild(txt('span', 'rm-file-reason', msg('main.this.source.changed.after.the.report.was.generated')));
       }
       if (file.reason) {
-        var reason = linkified('span', 'rm-file-reason', humanizeReason(file.reason));
-        reason.title = file.reason;
+        var displayedReason = file.presentation_reason || humanizeReason(file.reason);
+        var reason = linkified('span', 'rm-file-reason', displayedReason);
+        reason.title = displayedReason;
         li.appendChild(reason);
       }
       return li;
@@ -3346,58 +3417,63 @@
     return (millis / 1000).toFixed(millis < 10000 ? 1 : 0) + ' s';
   }
 
-  function summarizeRunWarnings(warnings) {
+  function summarizeRunWarnings(warnings, presentationWarnings, presentationWarningKinds, presentationWarningMessages) {
     var primary = [];
-    var modelContext = [];
-    var groundingRepairs = 0;
-    var confidenceAdjustments = 0;
-    var toolchain = null;
-    (warnings || []).forEach(function (warning) {
-      var value = String(warning || '').trim();
-      if (!value) return;
-      var isModelContextWarning =
-        /(truncat|limited|not fully visible).*(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths)/i.test(value) ||
-        /(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths).*(truncat|limited|not fully visible)/i.test(value);
-      if (isModelContextWarning) {
-        modelContext.push(value);
-        return;
-      }
-      if (/^(parser )?(dropped|replaced|removed) ungrounded/.test(value)) {
-        groundingRepairs++;
-        return;
-      }
-      if (value.indexOf('local confidence gate capped') === 0) {
-        confidenceAdjustments++;
-        return;
-      }
-      var isToolchainWarning =
-        value.indexOf('target module requires go') >= 0 ||
-        (value.indexOf('local proof ') === 0 && value.indexOf('requires newer Go version') >= 0);
-      if (isToolchainWarning) {
-        var versions = value.match(/go[0-9]+(?:\.[0-9]+){1,2}/g) || [];
-        toolchain = versions.length >= 2 ?
-          msg('main.warning.go_toolchain_versions', {
-            required: versions[0],
-            current: versions[1],
-          }) :
-          msg('main.warning.go_toolchain_older');
-        return;
-      }
-      primary.push(value);
+    var fixedMessages = new Set([
+      'main.warning.study_editing_did_not_finish',
+      'main.warning.study_checks_failed',
+      'main.warning.study_no_source_adapter',
+      'main.warning.study_no_source_functions',
+      'main.warning.confidence_candidate_capped',
+      'main.warning.confidence_orientation_capped_incomplete',
+    ]);
+    var structuredMessages = new Map();
+    (presentationWarningMessages || []).forEach(function (presentation) {
+      if (!presentation || !Number.isInteger(presentation.warning_index)) return;
+      if (!fixedMessages.has(presentation.message_id)) return;
+      structuredMessages.set(presentation.warning_index, presentation);
     });
-    if (toolchain) primary.unshift(toolchain);
-    var details = [];
-    if (groundingRepairs > 0) {
-      details.push(msg('main.warning.grounding_repairs_hidden', { count: groundingRepairs }));
-    }
-    if (confidenceAdjustments > 0) {
-      details.push(msg('main.warning.confidence_reduced', { count: confidenceAdjustments }));
-    }
-    return { primary: primary, modelContext: modelContext, details: details };
+    (warnings || []).forEach(function (warning, warningIndex) {
+      var value = String(warning || '').trim();
+      var presentationValue = String(
+        presentationWarnings && presentationWarnings[warningIndex] || value
+      ).trim();
+      var presentationMessageID = String(
+        presentationWarningKinds && presentationWarningKinds[warningIndex] || ''
+      );
+      if (!value) return;
+      var structured = structuredMessages.get(warningIndex);
+      if (structured) {
+        if (structured.message_id === 'main.warning.confidence_candidate_capped') {
+          primary.push(msg(structured.message_id, {
+            index: structured.candidate_index,
+            proposed: structured.proposed,
+            capped: structured.capped,
+          }));
+        } else {
+          primary.push(msg(structured.message_id, {
+            proposed: structured.proposed,
+            capped: structured.capped,
+          }));
+        }
+        return;
+      }
+      if (fixedMessages.has(presentationMessageID)) {
+        primary.push(msg(presentationMessageID));
+        return;
+      }
+      primary.push(presentationValue);
+    });
+    return { primary: primary, modelContext: [], details: [] };
   }
 
   function renderRunWarnings(warnings) {
-    var summarized = summarizeRunWarnings(warnings);
+    var summarized = summarizeRunWarnings(
+      warnings,
+      DATA.presentation_warnings,
+      DATA.presentation_warning_kinds,
+      DATA.presentation_warning_messages
+    );
     if (summarized.primary.length === 0 && summarized.modelContext.length === 0 && summarized.details.length === 0) return null;
     var container = el('div', 'rm-run-warning-stack');
     if (summarized.modelContext.length > 0) {
@@ -4331,10 +4407,32 @@
 		return card;
 	}
 
+	var STUDY_STAGE_MESSAGE_IDS = {
+		orientation: 'main.study.stage.orientation',
+		central_operation: 'main.study.stage.central_operation',
+		core_model: 'main.study.stage.core_model',
+		integration: 'main.study.stage.integration',
+		operations: 'main.study.stage.operations',
+		contribution: 'main.study.stage.contribution',
+	};
+
 	function studyStageLabel(stage) {
-		return String(stage || 'study').replace(/_/g, ' ').replace(/\b\w/g, function (letter) {
-			return letter.toUpperCase();
-		});
+		return msg(STUDY_STAGE_MESSAGE_IDS[String(stage || '')] || 'main.study.stage.study');
+	}
+
+	var STUDY_READING_LABEL_MESSAGE_IDS = {
+		'Start here': 'main.study.reading_label.start_here',
+		'Then inspect': 'main.study.reading_label.then_inspect',
+		'Related implementation': 'main.study.reading_label.related_implementation',
+		'Public boundary': 'main.study.reading_label.public_boundary',
+		'Core data type': 'main.study.reading_label.core_data_type',
+	};
+
+	function studyReadingLabel(label) {
+		return msg(
+			STUDY_READING_LABEL_MESSAGE_IDS[String(label || '')] ||
+			'main.study.reading_label.unknown'
+		);
 	}
 
 	function renderIncompleteStudyOverview() {
@@ -4710,7 +4808,8 @@
 		if (!reading) return null;
 		return {
 			kind: 'anchor',
-			label: reading.source.enclosing_symbol || reading.label || reading.location.path,
+			label: reading.source.enclosing_symbol ||
+				(reading.label ? studyReadingLabel(reading.label) : reading.location.path),
 			location: reading.location || sourceSnippetLocation(reading.source),
 			source: reading.source,
 		};
@@ -4722,7 +4821,13 @@
 		var card = el('article', 'rm-study-reading-anchor');
 		card.appendChild(txt('span', 'rm-study-reading-anchor__order', String(index + 1)));
 		var copy = el('div', 'rm-study-reading-anchor__copy');
-		if (reading.label) copy.appendChild(txt('span', 'rm-study-reading-anchor__label', reading.label));
+		if (reading.label) {
+			copy.appendChild(txt(
+				'span',
+				'rm-study-reading-anchor__label',
+				studyReadingLabel(reading.label)
+			));
+		}
 		copy.appendChild(txt('strong', '', reading.source.enclosing_symbol || location.path));
 		copy.appendChild(renderFileReference(
 			location.path,
@@ -4924,10 +5029,103 @@
 		}
 	}
 
-	function taskLensLabel(value) {
-		return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, function (letter) {
-			return letter.toUpperCase();
-		});
+	var TASK_LENS_ENUM_MESSAGE_IDS = {
+		task_kind: {
+			bug: 'main.task_lens.enum.task_kind.bug',
+			feature: 'main.task_lens.enum.task_kind.feature',
+			extension: 'main.task_lens.enum.task_kind.extension',
+			configuration: 'main.task_lens.enum.task_kind.configuration',
+			operational: 'main.task_lens.enum.task_kind.operational',
+			compatibility: 'main.task_lens.enum.task_kind.compatibility',
+			unknown: 'main.task_lens.enum.task_kind.unknown',
+		},
+		locality: {
+			local_exact: 'main.task_lens.enum.locality.local_exact',
+			bounded_cross_file: 'main.task_lens.enum.locality.bounded_cross_file',
+			extension_contribution: 'main.task_lens.enum.locality.extension_contribution',
+			broad_dynamic: 'main.task_lens.enum.locality.broad_dynamic',
+		},
+		anchor_role: {
+			symptom_site: 'main.task_lens.enum.anchor_role.symptom_site',
+			public_or_cli_entry: 'main.task_lens.enum.anchor_role.public_or_cli_entry',
+			state_owner: 'main.task_lens.enum.anchor_role.state_owner',
+			state_mutation: 'main.task_lens.enum.anchor_role.state_mutation',
+			configuration_source: 'main.task_lens.enum.anchor_role.configuration_source',
+			configuration_copy: 'main.task_lens.enum.anchor_role.configuration_copy',
+			error_creation: 'main.task_lens.enum.anchor_role.error_creation',
+			error_mapping: 'main.task_lens.enum.anchor_role.error_mapping',
+			integration_boundary: 'main.task_lens.enum.anchor_role.integration_boundary',
+			representative_implementation: 'main.task_lens.enum.anchor_role.representative_implementation',
+			generated_output: 'main.task_lens.enum.anchor_role.generated_output',
+			reproduction_anchor: 'main.task_lens.enum.anchor_role.reproduction_anchor',
+			verification_anchor: 'main.task_lens.enum.anchor_role.verification_anchor',
+			documentation_contract: 'main.task_lens.enum.anchor_role.documentation_contract',
+		},
+		support_type: {
+			locally_observed: 'main.task_lens.enum.support_type.locally_observed',
+			document_supported: 'main.task_lens.enum.support_type.document_supported',
+			model_hypothesis: 'main.task_lens.enum.support_type.model_hypothesis',
+			unresolved: 'main.task_lens.enum.support_type.unresolved',
+		},
+		hypothesis_status: {
+			supported: 'main.task_lens.enum.hypothesis_status.supported',
+			plausible: 'main.task_lens.enum.hypothesis_status.plausible',
+			unresolved: 'main.task_lens.enum.hypothesis_status.unresolved',
+		},
+		guidance_authority: {
+			task_provided: 'main.task_lens.enum.guidance_authority.task_provided',
+			repository_document: 'main.task_lens.enum.guidance_authority.repository_document',
+			repository_test_or_example: 'main.task_lens.enum.guidance_authority.repository_test_or_example',
+			repository_observation: 'main.task_lens.enum.guidance_authority.repository_observation',
+			missing_evidence: 'main.task_lens.enum.guidance_authority.missing_evidence',
+		},
+		probe_action: {
+			inspect_symbol: 'main.task_lens.enum.probe_action.inspect_symbol',
+			resolve_reference: 'main.task_lens.enum.probe_action.resolve_reference',
+			compare_config_copies: 'main.task_lens.enum.probe_action.compare_config_copies',
+			inspect_fixture: 'main.task_lens.enum.probe_action.inspect_fixture',
+			inspect_sibling_implementation: 'main.task_lens.enum.probe_action.inspect_sibling_implementation',
+			search_task_terms: 'main.task_lens.enum.probe_action.search_task_terms',
+		},
+		relation_kind: {
+			direct_call: 'main.task_lens.enum.relation_kind.direct_call',
+			field_copy: 'main.task_lens.enum.relation_kind.field_copy',
+			field_read: 'main.task_lens.enum.relation_kind.field_read',
+			field_write: 'main.task_lens.enum.relation_kind.field_write',
+			error_created: 'main.task_lens.enum.relation_kind.error_created',
+			error_mapped: 'main.task_lens.enum.relation_kind.error_mapped',
+			error_exposed: 'main.task_lens.enum.relation_kind.error_exposed',
+			value_transformed: 'main.task_lens.enum.relation_kind.value_transformed',
+			type_name_generated: 'main.task_lens.enum.relation_kind.type_name_generated',
+			config_applied: 'main.task_lens.enum.relation_kind.config_applied',
+			script_invokes: 'main.task_lens.enum.relation_kind.script_invokes',
+			test_exercises: 'main.task_lens.enum.relation_kind.test_exercises',
+			fixture_records: 'main.task_lens.enum.relation_kind.fixture_records',
+			documented_uses: 'main.task_lens.enum.relation_kind.documented_uses',
+			shared_state_alias: 'main.task_lens.enum.relation_kind.shared_state_alias',
+			scope_unknown: 'main.task_lens.enum.relation_kind.scope_unknown',
+			document_names_endpoints: 'main.task_lens.enum.relation_kind.document_names_endpoints',
+			model_hypothesis: 'main.task_lens.enum.relation_kind.model_hypothesis',
+			unresolved_relation: 'main.task_lens.enum.relation_kind.unresolved_relation',
+		},
+		stage: {
+			architecture_synthesis: 'main.task_lens.enum.stage.architecture_synthesis',
+			generic_orientation: 'main.task_lens.enum.stage.generic_orientation',
+			guided_tour: 'main.task_lens.enum.stage.guided_tour',
+			mechanism_opportunity: 'main.task_lens.enum.stage.mechanism_opportunity',
+			paved_paths: 'main.task_lens.enum.stage.paved_paths',
+			repository_study_map: 'main.task_lens.enum.stage.repository_study_map',
+			runtime_surface_discovery: 'main.task_lens.enum.stage.runtime_surface_discovery',
+		},
+	};
+
+	function taskLensEnumLabel(family, value) {
+		var normalized = String(value || '');
+		var familyMessages = TASK_LENS_ENUM_MESSAGE_IDS[family] || {};
+		var messageID = familyMessages[normalized];
+		return messageID
+			? msg(messageID)
+			: msg('main.task_lens.enum.unknown', { value: normalized || '—' });
 	}
 
 	function taskLensAnchor(index) {
@@ -4943,13 +5141,17 @@
 		return String(anchor.symbol || anchor.section || anchor.path || msg('main.repository_anchor'));
 	}
 
-	function taskLensSupportBadge(value) {
+	function taskLensBadge(value, label) {
 		var normalized = String(value || 'unresolved');
 		return txt(
 			'span',
 			'rm-task-support rm-task-support--' + normalized.replace(/[^a-z0-9_-]/gi, '-'),
-			taskLensLabel(normalized)
+			label
 		);
+	}
+
+	function taskLensEnumBadge(family, value) {
+		return taskLensBadge(value, taskLensEnumLabel(family, value));
 	}
 
 	function taskLensAnchorElementID(index) {
@@ -5011,7 +5213,7 @@
 	}
 
 	function taskLensJoinConnector(kind) {
-		return kind === 'direct_call_expression' ? ' → ' : ' ↔ ';
+		return kind === 'direct_call' || kind === 'direct_call_expression' ? ' → ' : ' ↔ ';
 	}
 
 	function taskLensGuidanceList(values) {
@@ -5020,7 +5222,7 @@
 			if (!guidance || !guidance.text) return;
 			var item = el('li', 'rm-task-guidance');
 			item.appendChild(txt('p', '', guidance.text));
-			item.appendChild(taskLensSupportBadge(guidance.authority));
+			item.appendChild(taskLensEnumBadge('guidance_authority', guidance.authority));
 			appendTaskLensCitations(item, guidance.support_anchor_indexes, msg('main.chrome.evidence'));
 			list.appendChild(item);
 		});
@@ -5043,13 +5245,14 @@
 		var taskText = linkified('p', 'rm-task-original', TASK_INVESTIGATION.task || '');
 		if (taskText.textContent || taskText.childNodes && taskText.childNodes.length) hero.appendChild(taskText);
 		var classification = el('div', 'rm-task-classification');
-		classification.appendChild(taskLensSupportBadge(interpretation.task_kind));
-		classification.appendChild(taskLensSupportBadge(TASK_INVESTIGATION.locality));
-			classification.appendChild(taskLensSupportBadge(
-				TASK_INVESTIGATION.sufficient
-          ? msg('main.task_lens.bounded_evidence_sufficient')
-          : msg('main.task_lens.partial_bounded_evidence')
-			));
+		classification.appendChild(taskLensEnumBadge('task_kind', interpretation.task_kind));
+		classification.appendChild(taskLensEnumBadge('locality', TASK_INVESTIGATION.locality));
+		classification.appendChild(taskLensBadge(
+			TASK_INVESTIGATION.sufficient ? 'sufficient' : 'partial',
+			TASK_INVESTIGATION.sufficient
+				? msg('main.task_lens.bounded_evidence_sufficient')
+				: msg('main.task_lens.partial_bounded_evidence')
+		));
 		hero.appendChild(classification);
 		var termBoundary = el('div', 'rm-task-term-boundary');
 		var foundTerms = taskLensTermGroup(
@@ -5070,6 +5273,9 @@
 		var warnings = Array.isArray(TASK_INVESTIGATION.warnings)
 			? TASK_INVESTIGATION.warnings.filter(Boolean)
 			: [];
+		var warningPresentations = Array.isArray(TASK_INVESTIGATION.presentation_warnings)
+			? TASK_INVESTIGATION.presentation_warnings
+			: [];
 		if (warnings.length) {
 			var warningSection = el('section', 'rm-workspace-section rm-task-warnings');
 			warningSection.appendChild(renderViewHeading(
@@ -5078,8 +5284,15 @@
 					msg('main.task_lens.cautions_copy')
 			));
 			var warningList = el('ul', 'rm-task-warning-list');
-			warnings.forEach(function (warning) {
-				warningList.appendChild(txt('li', '', warning));
+			warnings.forEach(function (warning, warningIndex) {
+				var presentation = warningPresentations[warningIndex] || null;
+				var renderedWarning = warning;
+				if (presentation && UI.hasMessage(presentation.message_id)) {
+					var params = {};
+					if (Number(presentation.index) > 0) params.index = Number(presentation.index);
+					renderedWarning = msg(presentation.message_id, params);
+				}
+				warningList.appendChild(txt('li', '', renderedWarning));
 			});
 			warningSection.appendChild(warningList);
 			root.appendChild(warningSection);
@@ -5126,7 +5339,7 @@
 			var hypothesisList = el('div', 'rm-task-hypothesis-list');
 				hypotheses.forEach(function (clause) {
 					var item = el('article', 'rm-task-hypothesis-clause');
-					item.appendChild(taskLensSupportBadge(clause.status));
+					item.appendChild(taskLensEnumBadge('hypothesis_status', clause.status));
 					var claim = el('div', 'rm-task-hypothesis-claim');
 					claim.appendChild(txt('p', '', clause.text || ''));
 					appendTaskLensCitations(claim, clause.support_anchor_indexes, msg('main.chrome.evidence'));
@@ -5154,7 +5367,7 @@
 				var title = el('div', '');
 				title.appendChild(txt('span', 'rm-task-anchor__index', String(index + 1)));
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(anchor)));
-				title.appendChild(taskLensSupportBadge(anchor.role));
+				title.appendChild(taskLensEnumBadge('anchor_role', anchor.role));
 				heading.appendChild(title);
 				var showSource = sourceActionElement(
 					staticSourceMode() ? staticSourceOpenLabel() : msg('main.show.source'),
@@ -5199,10 +5412,14 @@
 				var title = el('div', 'rm-task-join__title');
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(left)));
 				var connector = taskLensJoinConnector(join.kind);
-				title.appendChild(txt('span', '', connector + taskLensLabel(join.kind) + connector));
+				title.appendChild(txt(
+					'span',
+					'',
+					connector + taskLensEnumLabel('relation_kind', join.kind) + connector
+				));
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(right)));
 				card.appendChild(title);
-				card.appendChild(taskLensSupportBadge(join.support));
+				card.appendChild(taskLensEnumBadge('support_type', join.support));
 				card.appendChild(txt('p', '', join.explanation || ''));
 				card.appendChild(txt('p', 'rm-task-scope', msg('main.task.scope', {
 	          scope: join.scope_non_guarantees || msg('main.task_lens.bounded_local_evidence_only'),
@@ -5245,7 +5462,7 @@
 				var probeBody = el('div', 'rm-task-probe-body');
 				probeBody.appendChild(txt('span', '', probe.text || ''));
 					appendTaskLensCitations(probeBody, probe.anchor_indexes, msg('main.task_lens.inspect'));
-				item.appendChild(taskLensSupportBadge(probe.action));
+				item.appendChild(taskLensEnumBadge('probe_action', probe.action));
 				item.appendChild(probeBody);
 				probeList.appendChild(item);
 			});
@@ -5267,7 +5484,9 @@
       ));
 		if ((TASK_INVESTIGATION.stages_skipped || []).length) {
 			details.appendChild(txt('p', '', msg('main.task.skipped', {
-        stages: TASK_INVESTIGATION.stages_skipped.map(taskLensLabel).join(', '),
+				stages: TASK_INVESTIGATION.stages_skipped.map(function (stage) {
+					return taskLensEnumLabel('stage', stage);
+				}).join(', '),
       })));
 		}
 		root.appendChild(details);
@@ -5294,9 +5513,7 @@
 // repomap-source-episode:end
 
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
-		var overviewPurpose = REPORT_LANGUAGE === 'ru'
-			? (DATA.project_guess || thesis.purpose)
-			: (thesis.purpose || DATA.project_guess);
+		var overviewPurpose = thesis.purpose || DATA.project_guess;
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
     hero.appendChild(txt('div', 'rm-view-kicker', msg('main.purpose')));
     hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
@@ -5456,7 +5673,13 @@
 
   function overviewSourceReason(snippet) {
     if (!snippet) return '';
-    return String(snippet.reason || snippet.landmark_reason || snippet.selection_reason || '').trim();
+    return String(
+      snippet.reason ||
+      snippet.presentation_landmark_reason ||
+      snippet.landmark_reason ||
+      snippet.selection_reason ||
+      ''
+    ).trim();
   }
 
   function overviewSourceRoleLabel(snippet) {
@@ -5875,7 +6098,7 @@
       body: JSON.stringify({ run_id: runID, context_id: contextID }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.source_context_unavailable'));
+        if (!response.ok) throw new Error(msg('main.error.source_context_unavailable'));
         return body;
       });
     }).then(function (body) {
@@ -5930,9 +6153,9 @@
         requestSourceContext(snippet).then(function (expanded) {
           more.disabled = false;
           if (expanded) openSourceSnippet(expanded, location, true);
-        }).catch(function (error) {
+        }).catch(function () {
           more.disabled = false;
-          showToast(error && error.message ? error.message : msg('main.error.source_context_unavailable'), true);
+          showToast(msg('main.error.source_context_unavailable'), true);
         });
       };
       actions.appendChild(more);
@@ -6902,6 +7125,7 @@
       guidedTour: DEBUG_MODE ? (DATA.guided_tour || null) : null,
       semanticArtifacts: DEBUG_MODE ? (DATA.semantic_artifacts || []) : [],
       startHereArtifactID: DEBUG_MODE ? (DATA.start_here_artifact_id || '') : '',
+      presentationText: DEBUG_MODE ? (DATA.architecture_debug_presentation || {}) : {},
       stalePaths: new Set((DATA.freshness && DATA.freshness.affected_paths) || []),
     };
 		if (!DEBUG_MODE) {
@@ -7095,7 +7319,7 @@
     }
     if (DATA.freshness) {
       document.getElementById('rm-freshness-detail').textContent = msg('main.current_freshness', {
-        state: String(DATA.freshness.state || 'unavailable').replaceAll('_', ' '),
+        state: String(DATA.freshness.state || 'unavailable'),
       });
     }
     var submodules = DATA.repository_submodules || [];
@@ -7180,6 +7404,7 @@
 			sourceEpisodeSourceAvailable: sourceEpisodeSourceAvailable,
 // repomap-source-episode:end
 			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
+			taskLensEnumLabel: taskLensEnumLabel,
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,
       renderStudyDetailWorkspace: renderStudyDetailWorkspace,
       renderIncompleteStudyOverview: renderIncompleteStudyOverview,
@@ -7189,7 +7414,15 @@
 		renderReadableDocument: renderReadableDocument,
 		renderReadableDocumentCard: renderReadableDocumentCard,
 		renderOperateDetailWorkspace: renderOperateDetailWorkspace,
-		renderPavedPathCard: renderPavedPathCard,
+      renderPavedPathCard: renderPavedPathCard,
+      renderProofStaticRelation: renderProofStaticRelation,
+      renderLocalProof: renderLocalProof,
+      renderSemanticArtifactCard: renderSemanticArtifactCard,
+      appendResearchStage: appendResearchStage,
+      appendResearchRound: appendResearchRound,
+      researchSelectionReasonLabel: researchSelectionReasonLabel,
+      exactSymbolDetail: exactSymbolDetail,
+      semanticArtifactKindLabel: semanticArtifactKindLabel,
       sourceNoticeRanges: sourceNoticeRanges,
       embeddedSourceForLocation: embeddedSourceForLocation,
       mechanismPresentationTitle: mechanismPresentationTitle,
@@ -7224,6 +7457,9 @@
       renderOperationalLandmark: renderOperationalLandmark,
       serverMode: serverMode,
       setupServerFeatures: setupServerFeatures,
+      runPickerDate: runPickerDate,
+      runPickerShortID: runPickerShortID,
+      runPickerLabel: runPickerLabel,
       renderArchitectureWorkspace: renderArchitectureWorkspace,
       mountArchitectureCanvas: mountArchitectureCanvas,
       mountDebugSurfaceCatalog: mountDebugSurfaceCatalog,

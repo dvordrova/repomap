@@ -130,7 +130,7 @@ func TestWritePublicationTraceExplainsBoundedReductionsWithoutProse(t *testing.T
 	for _, want := range []string{
 		"publication decision summary (bounded counts only): cache=disabled",
 		"decision orientation: found=3 accepted=2 rejected=1 unresolved=0",
-		"decision direction expansion: requested=0 eligible=2 expanded=0 not_expanded=2 state=not_requested",
+		"decision direction expansion: requested=0 eligible=2 expanded=0 local_bundles=0 not_expanded=2 state=not_requested",
 		"decision targeted research: selected=2 skipped=1 validated_findings=3 rejected_findings=1 new_grounded_facts=4 unresolved_frontiers=2",
 		"outcomes=completed=1,no_new_evidence=1 skip_reasons=targeted_round_limit=1",
 		"decision surfaces: generic_scheduled=false found=12 published=10 hidden=2",
@@ -160,6 +160,54 @@ func TestWritePublicationTraceExplainsBoundedReductionsWithoutProse(t *testing.T
 		if strings.Contains(got, forbidden) {
 			t.Errorf("decision trace leaked %q:\n%s", forbidden, got)
 		}
+	}
+}
+
+func TestWritePublicationTraceDoesNotCountLocalBundleAsModelExpansion(t *testing.T) {
+	t.Parallel()
+
+	data := &report.ReportData{
+		CandidateDirections: []report.CandidateDirection{
+			{Disposition: "accepted"},
+			{Disposition: "accepted"},
+			{Disposition: "accepted"},
+			{Disposition: "accepted"},
+			{Disposition: "accepted"},
+		},
+		Flows: []report.FlowData{
+			{
+				ID:           "local-evidence",
+				EvidenceOnly: true,
+				FlowStatus:   "local_only",
+			},
+			{
+				ID:           "rejected-model-expansion",
+				EvidenceOnly: true,
+				FlowStatus:   "succeeded",
+				Summary:      "A completed model expansion.",
+			},
+			{
+				ID:         "failed-model-expansion",
+				FlowStatus: "failed",
+				Error:      "provider failed",
+			},
+			{
+				ID:         "requested-model-expansion",
+				FlowStatus: "expansion_requested",
+			},
+			{
+				ID:      "legacy-model-expansion",
+				Summary: "A completed report from an older run.",
+			},
+		},
+	}
+
+	var output bytes.Buffer
+	writePublicationTrace(&output, t.TempDir(), data, false, "local", 0)
+	got := output.String()
+	want := "decision direction expansion: requested=0 eligible=5 expanded=2 local_bundles=1 not_expanded=3 state=not_requested"
+	if !strings.Contains(got, want) {
+		t.Fatalf("flow expansion states were counted incorrectly:\n%s", got)
 	}
 }
 
@@ -221,6 +269,27 @@ func TestWritePublicationTraceExplainsSparseStudyWithoutEchoingFailure(t *testin
 	}
 	if strings.Contains(got, "/private/") || strings.Contains(got, "insufficient code anchors") {
 		t.Fatalf("sparse Study trace leaked raw failure text:\n%s", got)
+	}
+}
+
+func TestWritePublicationTraceKeepsTypedLocalStudyOutcomes(t *testing.T) {
+	t.Parallel()
+
+	for _, reason := range []string{
+		"no_supported_source_adapter",
+		"no_eligible_source_functions",
+	} {
+		data := &report.ReportData{
+			StudyPublication: &report.StudyPublicationStatus{
+				Version: 1, State: "failed", FailureReason: reason,
+			},
+		}
+		var output bytes.Buffer
+		writePublicationTrace(&output, t.TempDir(), data, false, "local", 0)
+		want := "decision study publication: state=failed failure=" + reason
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("typed Study outcome %q was reduced:\n%s", reason, output.String())
+		}
 	}
 }
 

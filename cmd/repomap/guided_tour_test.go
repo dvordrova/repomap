@@ -69,22 +69,13 @@ func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
 	}
 }
 
-func TestEnsureGuidedTourCachesEnglishAndRussianSeparately(t *testing.T) {
+func TestEnsureGuidedTourCachesOneCanonicalEnglishStory(t *testing.T) {
 	runsDir := t.TempDir()
 	bundle := guidedTourTestBundle()
 	english := guidedTourTestProposal(t, bundle, false)
-	var russianProposal guidedtour.Proposal
-	if err := json.Unmarshal(english, &russianProposal); err != nil {
-		t.Fatal(err)
-	}
-	russianProposal.Title = "Изучение сохранённого направления"
-	russian, err := json.Marshal(russianProposal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := &guidedTourEditorStub{responses: [][]byte{english, russian}}
+	provider := &guidedTourEditorStub{response: english}
 
-	run := func(name, language string) (guidedTourOutcome, guidedtour.Story) {
+	run := func(name string) (guidedTourOutcome, guidedtour.Story) {
 		t.Helper()
 		runDir := filepath.Join(runsDir, name)
 		outcome, runErr := ensureGuidedTourWithOptions(
@@ -94,7 +85,7 @@ func TestEnsureGuidedTourCachesEnglishAndRussianSeparately(t *testing.T) {
 			"test",
 			"fixture-model",
 			provider,
-			guidedTourRunOptions{outputLanguage: language},
+			guidedTourRunOptions{},
 		)
 		if runErr != nil {
 			t.Fatal(runErr)
@@ -110,32 +101,28 @@ func TestEnsureGuidedTourCachesEnglishAndRussianSeparately(t *testing.T) {
 		return outcome, story
 	}
 
-	firstEnglish, englishStory := run("en-first", "en")
-	firstRussian, russianStory := run("ru-first", "ru")
-	replayedEnglish, replayedEnglishStory := run("en-replay", "en")
-	replayedRussian, replayedRussianStory := run("ru-replay", "ru")
+	first, canonicalStory := run("canonical-first")
+	replayedForEnglish, englishStory := run("en-replay")
+	replayedForRussian, russianPresentationSource := run("ru-replay")
 
-	if firstEnglish.Cached || firstRussian.Cached ||
-		!replayedEnglish.Cached || !replayedRussian.Cached ||
-		provider.calls != 2 {
+	if first.Cached ||
+		!replayedForEnglish.Cached || !replayedForRussian.Cached ||
+		provider.calls != 1 {
 		t.Fatalf(
-			"cache hits = %t/%t/%t/%t, provider calls = %d",
-			firstEnglish.Cached,
-			firstRussian.Cached,
-			replayedEnglish.Cached,
-			replayedRussian.Cached,
+			"cache hits = %t/%t/%t, provider calls = %d",
+			first.Cached,
+			replayedForEnglish.Cached,
+			replayedForRussian.Cached,
 			provider.calls,
 		)
 	}
-	if replayedEnglishStory.Title != englishStory.Title ||
-		replayedRussianStory.Title != russianStory.Title ||
-		englishStory.Title == russianStory.Title {
+	if englishStory.Title != canonicalStory.Title ||
+		russianPresentationSource.Title != canonicalStory.Title {
 		t.Fatalf(
-			"cached story titles = %q/%q, originals = %q/%q",
-			replayedEnglishStory.Title,
-			replayedRussianStory.Title,
+			"cached canonical story titles = %q/%q, original = %q",
 			englishStory.Title,
-			russianStory.Title,
+			russianPresentationSource.Title,
+			canonicalStory.Title,
 		)
 	}
 }

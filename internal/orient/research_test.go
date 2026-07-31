@@ -105,18 +105,14 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 }
 
-func TestObtainOrientationCachesEnglishAndRussianSeparately(t *testing.T) {
+func TestObtainOrientationCacheReusesCanonicalEnglishAcrossPresentationLocales(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests++
 		w.Header().Set("Content-Type", "application/json")
-		language := "en"
-		if requests == 2 {
-			language = "ru"
-		}
 		_, _ = io.WriteString(
 			w,
-			`{"choices":[{"message":{"content":"{\"language\":\"`+language+`\"}"}}]}`,
+			`{"choices":[{"message":{"content":"{\"language\":\"en\"}"}}]}`,
 		)
 	}))
 	defer server.Close()
@@ -140,9 +136,8 @@ func TestObtainOrientationCachesEnglishAndRussianSeparately(t *testing.T) {
 	policy := modelresearch.DefaultPolicy()
 	bundleJSON := []byte(`{"bounded":"evidence"}`)
 
-	run := func(language string, requestJSON []byte) orientationCall {
+	run := func(requestJSON []byte) orientationCall {
 		t.Helper()
-		client.OutputLanguage = language
 		call, callErr := obtainOrientation(
 			context.Background(),
 			client,
@@ -165,31 +160,28 @@ func TestObtainOrientationCachesEnglishAndRussianSeparately(t *testing.T) {
 		return call
 	}
 
-	englishRequest := []byte(`{"provider":"request","language":"en"}`)
-	russianRequest := []byte(`{"provider":"request","language":"ru"}`)
-	firstEnglish := run("en", englishRequest)
-	firstRussian := run("ru", russianRequest)
-	replayedEnglish := run("en", englishRequest)
-	replayedRussian := run("ru", russianRequest)
+	canonicalRequest := []byte(`{"provider":"request","language":"en"}`)
+	first := run(canonicalRequest)
+	replayedForEnglish := run(canonicalRequest)
+	replayedForRussian := run(canonicalRequest)
 
-	if firstEnglish.Metrics.CacheHit || firstRussian.Metrics.CacheHit ||
-		!replayedEnglish.Metrics.CacheHit || !replayedRussian.Metrics.CacheHit ||
-		requests != 2 {
+	if first.Metrics.CacheHit ||
+		!replayedForEnglish.Metrics.CacheHit || !replayedForRussian.Metrics.CacheHit ||
+		requests != 1 {
 		t.Fatalf(
-			"cache hits = %t/%t/%t/%t, requests = %d",
-			firstEnglish.Metrics.CacheHit,
-			firstRussian.Metrics.CacheHit,
-			replayedEnglish.Metrics.CacheHit,
-			replayedRussian.Metrics.CacheHit,
+			"cache hits = %t/%t/%t, requests = %d",
+			first.Metrics.CacheHit,
+			replayedForEnglish.Metrics.CacheHit,
+			replayedForRussian.Metrics.CacheHit,
 			requests,
 		)
 	}
-	if string(replayedEnglish.Raw) != `{"language":"en"}` ||
-		string(replayedRussian.Raw) != `{"language":"ru"}` {
+	if string(replayedForEnglish.Raw) != `{"language":"en"}` ||
+		string(replayedForRussian.Raw) != `{"language":"en"}` {
 		t.Fatalf(
 			"replayed language responses = %q / %q",
-			replayedEnglish.Raw,
-			replayedRussian.Raw,
+			replayedForEnglish.Raw,
+			replayedForRussian.Raw,
 		)
 	}
 }

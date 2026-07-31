@@ -1,15 +1,43 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/168-complete-russian-report-ui-copy.md
+    decisions/170-complete-terminal-localization-and-smoke-correctives.md
 
 Status:
-    Decision 168 active; complete Russian report UI copy authorized
+    Decision 170 active; complete terminal localization and smoke correctives authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 170 expands the owner-approved localization slice to one complete
+    typed terminal PresentationTextInventory, one atomic EN-to-RU request on a
+    cache miss, and explicit degradation for any incomplete or oversized
+    projection. Fixed product copy remains in the typed EN/RU catalog and
+    opaque technical values remain byte-identical. It also authorizes the
+    bounded publication-trace, README sentence-splitter, serve-picker, offline,
+    mixed-source selection, and typed Study diagnostic corrections recorded in
+    the decision. Study scheduling must preserve the complete canonical
+    proposal through review; cost reduction is deferred to a separate
+    cache/batching layer rather than pre-filtering canonical candidates.
+    Canonical report, snapshot, bundle, semantic caches, retrieval, grounding,
+    manifest, source authority, and source routes remain unchanged. Live
+    provider verification and the held Python work remain excluded.
+    Decision 169 makes English the canonical output of every semantic model
+    stage and moves Russian model-authored prose into one optional, separate,
+    complete inventory-driven presentation projection. Fixed product copy remains in the
+    typed EN/RU catalog. A content-addressed translation cache binds the full
+    request, target locale, endpoint, model, and contract version; --no-cache
+    bypasses shared reads and writes. Localization failure preserves the
+    manifest-bound canonical English report, keeps the requested RU
+    product-message catalog active, and explicitly marks canonical English
+    model prose rather than silently labelling it translated. Cache hits are
+    available before live API-key configuration; cache I/O cannot discard a
+    valid per-run projection; provider output is secret-scanned; and
+    repository freshness is re-confirmed after localization. IDs, paths, symbols,
+    packages, source locations, evidence, links, facts, retrieval, ranking,
+    grounding, report/manifest/HTTP formats, and source authority do not
+    change. The held Python/D169 work is excluded.
     Decision 168 replaces every Russian typed-catalog renderer that still
     preserves English product prose. Only three complete opaque values remain
     byte-identical across locales: HTTP, a method/path route identity, and an

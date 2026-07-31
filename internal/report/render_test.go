@@ -164,20 +164,19 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 	}
 }
 
-func TestReportAssetsScopeBundleTruncationAsModelContext(t *testing.T) {
+func TestReportAssetsKeepUntypedWarningsVisible(t *testing.T) {
 	t.Parallel()
 
+	const warning = "Important edges and candidate file index were truncated in the provided bundle."
 	html, err := RenderHTML(&ReportData{
 		RepoName: "bounded",
-		Warnings: []string{"Important edges and candidate file index were truncated in the provided bundle."},
+		Warnings: []string{warning},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"Model context limit", "surface counts", "isModelContextWarning"} {
-		if !strings.Contains(string(html), text) {
-			t.Fatalf("rendered report is missing scoped model-context token %q", text)
-		}
+	if !strings.Contains(string(html), warning) {
+		t.Fatalf("rendered report is missing untyped warning %q", warning)
 	}
 }
 

@@ -29,8 +29,14 @@ func TestComponentSynthesisPromptJSONPreservesExactChatContract(t *testing.T) {
 	want, err := json.Marshal(chatRequest{
 		Model: client.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: prompt.System},
-			{Role: "user", Content: prompt.User},
+			{
+				Role:    "system",
+				Content: prompt.System + "\n\n" + canonicalEnglishSystemContract,
+			},
+			{
+				Role:    "user",
+				Content: canonicalEnglishUserContract + "\n\n" + prompt.User,
+			},
 		},
 		Temperature:    float64Pointer(0.1),
 		MaxTokens:      client.MaxTokens,
@@ -177,8 +183,8 @@ func TestSynthesizeComponentLandscapePreservesInvalidProviderContent(t *testing.
 		t.Fatalf("response_format = %#v", sent.ResponseFormat)
 	}
 	if len(sent.Messages) != 2 ||
-		sent.Messages[0].Content != prompt.System ||
-		sent.Messages[1].Content != prompt.User {
+		sent.Messages[0].Content != prompt.System+"\n\n"+canonicalEnglishSystemContract ||
+		sent.Messages[1].Content != canonicalEnglishUserContract+"\n\n"+prompt.User {
 		t.Fatalf("sent messages = %#v", sent.Messages)
 	}
 }

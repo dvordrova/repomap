@@ -30,8 +30,14 @@ func TestSemanticDiscoveryPromptJSONPreservesExactChatContract(t *testing.T) {
 	want, err := json.Marshal(chatRequest{
 		Model: client.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: prompt.System},
-			{Role: "user", Content: prompt.User},
+			{
+				Role:    "system",
+				Content: prompt.System + "\n\n" + canonicalEnglishSystemContract,
+			},
+			{
+				Role:    "user",
+				Content: canonicalEnglishUserContract + "\n\n" + prompt.User,
+			},
 		},
 		Temperature:    float64Pointer(0.1),
 		MaxTokens:      client.MaxTokens,

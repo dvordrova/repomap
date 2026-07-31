@@ -1027,7 +1027,7 @@ func detectFileKind(path string) string {
 	if strings.HasSuffix(base, ".pb.go") {
 		return "generated"
 	}
-	if strings.HasSuffix(lower, ".go") || strings.HasSuffix(lower, ".py") || strings.HasSuffix(lower, ".pyi") {
+	if artifactrole.IsSourcePath(path) {
 		return "source"
 	}
 	return "unknown"

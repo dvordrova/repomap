@@ -151,7 +151,25 @@ func writeFlowExpansionDecision(
 	if data.Run != nil {
 		eligible = max(eligible, data.Run.AcceptedDirectionCount)
 	}
-	expanded := len(data.Flows)
+	expanded := 0
+	localBundles := 0
+	for _, flow := range data.Flows {
+		switch flow.FlowStatus {
+		case "local_only":
+			localBundles++
+		case "succeeded":
+			expanded++
+		case "":
+			// Older saved runs predate the explicit flow status. Count one as
+			// expanded only when a parsed model report is visibly present.
+			if flow.Error == "" && (flow.Summary != "" ||
+				len(flow.LikelyChain) > 0 ||
+				len(flow.FilesToRead) > 0 ||
+				len(flow.TestsToRead) > 0) {
+				expanded++
+			}
+		}
+	}
 	state := "completed"
 	switch {
 	case requested <= 0:
@@ -165,10 +183,11 @@ func writeFlowExpansionDecision(
 	}
 	fmt.Fprintf(
 		writer,
-		"repomap: decision direction expansion: requested=%d eligible=%d expanded=%d not_expanded=%d state=%s\n",
+		"repomap: decision direction expansion: requested=%d eligible=%d expanded=%d local_bundles=%d not_expanded=%d state=%s\n",
 		max(requested, 0),
 		eligible,
 		expanded,
+		localBundles,
 		max(eligible-expanded, 0),
 		state,
 	)
@@ -587,6 +606,8 @@ func studyFailureCode(value string) string {
 		fragment string
 		code     string
 	}{
+		{"no_supported_source_adapter", "no_supported_source_adapter"},
+		{"no_eligible_source_functions", "no_eligible_source_functions"},
 		{"insufficient code anchors", "insufficient_code_anchors"},
 		{"reviewed selection has", "insufficient_reviewed_directions"},
 		{"invalid reading copy", "invalid_reading_copy"},

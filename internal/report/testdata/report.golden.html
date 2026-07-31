@@ -7,6 +7,11 @@
   <title>repomap — testrepo — test project</title>
   <style>:root { --rm-bg: #fff; --rm-fg: #1a1a1a; --rm-card: #f5f5f5; --rm-border: #e0e0e0; --rm-accent: #2563eb; --rm-dim: #666; --rm-code: #d63384; --rm-good: #16a34a; --rm-warn: #ca8a04; --rm-bad: #dc2626; --rm-info: #0ea5e9; --rm-muted: #9ca3af; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 0; background: var(--rm-bg); color: var(--rm-fg); line-height: 1.5; font-size: 14px; overflow-x: hidden; }
+.rm-localization-status { align-items: baseline; display: flex; gap: .45rem; padding: .55rem 1.5rem; }
+.rm-localization-status strong { font-size: .72rem; }
+.rm-localization-status span { font-size: .76rem; }
+.rm-localization-status--succeeded { background: #ecfdf5; color: #166534; }
+.rm-localization-status--failed { background: #fff7ed; color: #9a3412; }
 header { background: linear-gradient(135deg, #1e293b, #334155); color: #fff; padding: .8rem 1.5rem; }
 .rm-header-inner { max-width: 1240px; margin: 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 header h1 { margin: 0; font-size: 1.3rem; }
@@ -727,6 +732,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 </head>
 <body>
+  <noscript>
+    <style>body > :not(noscript) { display: none !important; }</style>
+    <p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p>
+  </noscript>
+
   <header>
     <div class="rm-header-inner">
       <div>
@@ -772,20 +782,25 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       <div id="rm-source-drawer-content"></div>
     </aside>
   </div>
-  <noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
   <script type="application/json" id="rm-report-data">{"format_version":26,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
-  var VERSION = 1;
+  var VERSION = 9;
   var EN = {
     "main.bundle.docs_selected": { params: ["count"], format: function (params) { return "Docs selected:         " + params.count; } },
     "main.bundle.packages_selected": { params: ["count"], format: function (params) { return "Packages selected:     " + params.count; } },
     "main.bundle.related_import_edges": { params: ["count"], format: function (params) { return "Related import edges:  " + params.count; } },
     "main.bundle.source_files_selected": { params: ["count"], format: function (params) { return "Source files selected: " + params.count; } },
     "main.bundle.test_files_selected": { params: ["count"], format: function (params) { return "Test files selected:   " + params.count; } },
+    "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
+    "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
+    "main.browser_error.report_authority_unavailable": { params: [], text: "The saved report cannot be opened because its verified local authority is unavailable." },
+    "main.browser_error.report_not_found": { params: [], text: "The saved report was not found." },
+    "main.browser_error.report_temporarily_unavailable": { params: [], text: "The saved report could not be opened right now." },
     "main.flow.analysis_unavailable": { params: ["name"], format: function (params) { return params.name + " · analysis unavailable"; } },
+    "main.flow.bundle_stats_compact": { params: ["source","test","doc"], format: function (params) { return englishCount(params.source, "source file", "source files") + " · " + englishCount(params.test, "test file", "test files") + " · " + englishCount(params.doc, "document", "documents"); } },
     "main.flow.docs_selected": { params: [], text: "Docs selected" },
     "main.flow.docs_selected_locally": { params: [], text: "Docs selected locally" },
     "main.flow.files_deterministic": { params: [], text: "Files selected by deterministic retrieval" },
@@ -796,6 +811,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.flow.related_local_files": { params: [], text: "Related files from local retrieval" },
     "main.flow.tests_deterministic": { params: [], text: "Tests selected by deterministic retrieval" },
     "main.flow.tests_selected_locally": { params: [], text: "Tests selected locally" },
+    "main.localization.ru_active": { params: [], text: "Russian localization is active." },
+    "main.localization.ru_unavailable_canonical_en": { params: [], text: "Russian localization is unavailable. Showing the canonical English report." },
+    "main.localization.status_label": { params: [], text: "Localization status" },
     "main.mechanism.complete": { params: [], text: "Complete mechanisms" },
     "main.mechanism.full_status": { params: ["count"], format: function (params) { return "Full mechanism · " + englishCount(params.count, "source-backed step", "source-backed steps"); } },
     "main.mechanism.open_complete_copy": { params: [], text: "Open a complete explanation, then continue to an exact source step." },
@@ -844,16 +862,31 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.incomplete_places_copy": { params: ["count"], format: function (params) { return "This gives you " + (Number(params.count) === 1 ? "one exact place" : params.count + " exact places") + " to begin. It does not yet explain the complete reading path."; } },
     "main.study.inspect_starting_point": { params: [], text: "Inspect starting point →" },
     "main.study.open_ready_deep_dive": { params: [], text: "Open ready deep dive →" },
+    "main.study.reading_label.core_data_type": { params: [], text: "Core data type" },
+    "main.study.reading_label.public_boundary": { params: [], text: "Public boundary" },
+    "main.study.reading_label.related_implementation": { params: [], text: "Related implementation" },
+    "main.study.reading_label.start_here": { params: [], text: "Start here" },
+    "main.study.reading_label.then_inspect": { params: [], text: "Then inspect" },
+    "main.study.reading_label.unknown": { params: [], text: "Reading step" },
+    "main.study.stage.central_operation": { params: [], text: "Central operation" },
+    "main.study.stage.contribution": { params: [], text: "Contribution" },
+    "main.study.stage.core_model": { params: [], text: "Core model" },
+    "main.study.stage.integration": { params: [], text: "Integration" },
+    "main.study.stage.operations": { params: [], text: "Operations" },
+    "main.study.stage.orientation": { params: [], text: "Orientation" },
+    "main.study.stage.study": { params: [], text: "Study" },
     "main.study.stage_incomplete": { params: ["stage"], format: function (params) { return params.stage + " · incomplete"; } },
     "main.task.anchor_citation": { params: ["index", "title"], format: function (params) { return "Anchor " + params.index + " · " + params.title; } },
     "main.topic.continue_repository": { params: [], text: "Continue in the repository" },
     "main.topic.current_boundary": { params: [], text: "Current boundary" },
     "main.topic.grounded_starting_points_copy": { params: [], text: "These exact symbols are grounded starting points, not an ordered path." },
     "main.topic.why_not_mechanism": { params: [], text: "Why this is not a mechanism" },
-    "main.warning.confidence_reduced": { params: ["count"], format: function (params) { return formatCountTemplate("Local verification reduced model confidence in {count} place(s).", params); } },
-    "main.warning.go_toolchain_older": { params: [], text: "Some local Go analysis was skipped because repomap uses an older Go toolchain than the repository." },
-    "main.warning.go_toolchain_versions": { params: ["required", "current"], format: function (params) { return "Some local Go analysis was skipped: the repository requires " + params.required + ", while repomap uses " + params.current + ". Rebuild repomap with " + params.required + " or newer."; } },
-    "main.warning.grounding_repairs_hidden": { params: ["count"], format: function (params) { return formatCountTemplate("{count} model evidence reference(s) could not be grounded and were hidden.", params); } },
+    "main.warning.study_checks_failed": { params: [], text: "Study was not published because the proposed directions did not pass the required checks." },
+    "main.warning.study_editing_did_not_finish": { params: [], text: "Study was not published because the editing stage did not finish." },
+    "main.warning.study_no_source_adapter": { params: [], text: "Study was not published because this repository has no supported source adapter." },
+    "main.warning.study_no_source_functions": { params: [], text: "Study was not published because no eligible source functions were found." },
+    "main.warning.confidence_candidate_capped": { params: ["capped", "index", "proposed"], format: function (params) { return "Local confidence checks capped candidate direction " + params.index + " from " + params.proposed + " to " + params.capped + "."; } },
+    "main.warning.confidence_orientation_capped_incomplete": { params: ["capped", "proposed"], format: function (params) { return "Local confidence checks capped overall orientation from " + params.proposed + " to " + params.capped + " because focused retrieval is incomplete."; } },
     "main.repository.onboarding": { params: [], text: "Repository onboarding" },
     "main.saved.report": { params: [], text: "Saved report" },
     "main.file.paths.open.in.vs.code": { params: [], text: "File paths open in VS Code ↗" },
@@ -1136,12 +1169,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.research.initial_model_summaries": { params: ["count"], format: function (params) { return "Initial model summaries: " + params.count; } },
     "main.research.focused_local_evidence": { params: ["count"], format: function (params) { return "Focused local evidence inspected: " + params.count; } },
     "main.research.targeted_model_windows": { params: ["count"], format: function (params) { return "Targeted model evidence windows: " + params.count; } },
+    "main.research.selection_reason.planned": { params: [], text: "Planned for targeted research" },
+    "main.research.selection_reason.runtime_only_frontier": { params: [], text: "Requires runtime observation" },
+    "main.research.selection_reason.unknown_candidate_ids": { params: [], text: "Candidate identifiers are unavailable" },
+    "main.research.selection_reason.no_code_bearing_bounded_window": { params: [], text: "No code-bearing bounded window was found" },
+    "main.research.selection_reason.no_new_exact_evidence": { params: [], text: "No new exact evidence was found" },
+    "main.research.selection_reason.no_bounded_local_evidence": { params: [], text: "No bounded local evidence was found" },
+    "main.research.selection_reason.new_exact_evidence_and_high_value_frontier": { params: [], text: "New exact evidence addresses a high-value frontier" },
+    "main.research.selection_reason.targeted_round_limit": { params: [], text: "Targeted research round limit reached" },
     "main.research.why": { params: ["reason"], format: function (params) { return "Why: " + params.reason; } },
     "main.research.exact_evidence": { params: ["evidence", "facts"], format: function (params) { return "Exact evidence: " + params.evidence + " · new grounded facts: " + params.facts; } },
     "main.research.rejected_claims": { params: ["count"], format: function (params) { return "Rejected claims: " + params.count; } },
     "main.research.frontier": { params: ["value"], format: function (params) { return "Frontier: " + params.value; } },
     "main.research.result": { params: ["result"], format: function (params) { return "Result: " + params.result; } },
-    "main.symbol.ranked_by": { params: ["reasons"], format: function (params) { return "Ranked by: " + params.reasons; } },
+    "main.symbol.ranked_by": { params: ["count"], format: function (params) { return "Ranked with " + englishCount(params.count, "analyzer signal", "analyzer signals"); } },
     "main.symbol.outside_focused_view": { params: ["count"], format: function (params) { return "+" + params.count + " outside the focused view"; } },
     "main.symbol.evidence_omitted": { params: ["items"], format: function (params) { return "Evidence omitted by bounds: " + params.items; } },
     "main.symbol.static_hierarchy": { params: ["level"], format: function (params) { return "Bounded static call hierarchy · " + params.level + " evidence. Production callers are ranked before tests and benchmarks when the analyzer returns them. This is not observed runtime execution, and the lists are not exhaustive."; } },
@@ -1312,6 +1353,76 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.task_lens.collect_signal": { params: [], text: "Collect the relevant signal" },
     "main.task_lens.evidence_cautions": { params: [], text: "Evidence cautions" },
     "main.task_lens.evidence_joins": { params: [], text: "Evidence joins" },
+    "main.task_lens.enum.anchor_role.configuration_copy": { params: [], text: "Configuration copy" },
+    "main.task_lens.enum.anchor_role.configuration_source": { params: [], text: "Configuration source" },
+    "main.task_lens.enum.anchor_role.documentation_contract": { params: [], text: "Documentation contract" },
+    "main.task_lens.enum.anchor_role.error_creation": { params: [], text: "Error creation" },
+    "main.task_lens.enum.anchor_role.error_mapping": { params: [], text: "Error mapping" },
+    "main.task_lens.enum.anchor_role.generated_output": { params: [], text: "Generated output" },
+    "main.task_lens.enum.anchor_role.integration_boundary": { params: [], text: "Integration boundary" },
+    "main.task_lens.enum.anchor_role.public_or_cli_entry": { params: [], text: "Public or CLI entry" },
+    "main.task_lens.enum.anchor_role.representative_implementation": { params: [], text: "Representative implementation" },
+    "main.task_lens.enum.anchor_role.reproduction_anchor": { params: [], text: "Reproduction anchor" },
+    "main.task_lens.enum.anchor_role.state_mutation": { params: [], text: "State mutation" },
+    "main.task_lens.enum.anchor_role.state_owner": { params: [], text: "State owner" },
+    "main.task_lens.enum.anchor_role.symptom_site": { params: [], text: "Symptom site" },
+    "main.task_lens.enum.anchor_role.verification_anchor": { params: [], text: "Verification anchor" },
+    "main.task_lens.enum.guidance_authority.missing_evidence": { params: [], text: "Missing evidence" },
+    "main.task_lens.enum.guidance_authority.repository_document": { params: [], text: "Repository document" },
+    "main.task_lens.enum.guidance_authority.repository_observation": { params: [], text: "Repository observation" },
+    "main.task_lens.enum.guidance_authority.repository_test_or_example": { params: [], text: "Repository test or example" },
+    "main.task_lens.enum.guidance_authority.task_provided": { params: [], text: "Task-provided" },
+    "main.task_lens.enum.hypothesis_status.plausible": { params: [], text: "Plausible" },
+    "main.task_lens.enum.hypothesis_status.supported": { params: [], text: "Supported" },
+    "main.task_lens.enum.hypothesis_status.unresolved": { params: [], text: "Unresolved" },
+    "main.task_lens.enum.locality.bounded_cross_file": { params: [], text: "Bounded cross-file" },
+    "main.task_lens.enum.locality.broad_dynamic": { params: [], text: "Broad dynamic" },
+    "main.task_lens.enum.locality.extension_contribution": { params: [], text: "Extension contribution" },
+    "main.task_lens.enum.locality.local_exact": { params: [], text: "Local exact" },
+    "main.task_lens.enum.probe_action.compare_config_copies": { params: [], text: "Compare configuration copies" },
+    "main.task_lens.enum.probe_action.inspect_fixture": { params: [], text: "Inspect fixture" },
+    "main.task_lens.enum.probe_action.inspect_sibling_implementation": { params: [], text: "Inspect sibling implementation" },
+    "main.task_lens.enum.probe_action.inspect_symbol": { params: [], text: "Inspect symbol" },
+    "main.task_lens.enum.probe_action.resolve_reference": { params: [], text: "Resolve reference" },
+    "main.task_lens.enum.probe_action.search_task_terms": { params: [], text: "Search task terms" },
+    "main.task_lens.enum.relation_kind.config_applied": { params: [], text: "Configuration applied" },
+    "main.task_lens.enum.relation_kind.direct_call": { params: [], text: "Direct call" },
+    "main.task_lens.enum.relation_kind.document_names_endpoints": { params: [], text: "Document names endpoints" },
+    "main.task_lens.enum.relation_kind.documented_uses": { params: [], text: "Documented use" },
+    "main.task_lens.enum.relation_kind.error_created": { params: [], text: "Error created" },
+    "main.task_lens.enum.relation_kind.error_exposed": { params: [], text: "Error exposed" },
+    "main.task_lens.enum.relation_kind.error_mapped": { params: [], text: "Error mapped" },
+    "main.task_lens.enum.relation_kind.field_copy": { params: [], text: "Field copy" },
+    "main.task_lens.enum.relation_kind.field_read": { params: [], text: "Field read" },
+    "main.task_lens.enum.relation_kind.field_write": { params: [], text: "Field write" },
+    "main.task_lens.enum.relation_kind.fixture_records": { params: [], text: "Fixture records" },
+    "main.task_lens.enum.relation_kind.model_hypothesis": { params: [], text: "Model hypothesis" },
+    "main.task_lens.enum.relation_kind.scope_unknown": { params: [], text: "Scope unknown" },
+    "main.task_lens.enum.relation_kind.script_invokes": { params: [], text: "Script invokes" },
+    "main.task_lens.enum.relation_kind.shared_state_alias": { params: [], text: "Shared state alias" },
+    "main.task_lens.enum.relation_kind.test_exercises": { params: [], text: "Test exercises" },
+    "main.task_lens.enum.relation_kind.type_name_generated": { params: [], text: "Type name generated" },
+    "main.task_lens.enum.relation_kind.unresolved_relation": { params: [], text: "Unresolved relation" },
+    "main.task_lens.enum.relation_kind.value_transformed": { params: [], text: "Value transformed" },
+    "main.task_lens.enum.stage.architecture_synthesis": { params: [], text: "Architecture synthesis" },
+    "main.task_lens.enum.stage.generic_orientation": { params: [], text: "Generic orientation" },
+    "main.task_lens.enum.stage.guided_tour": { params: [], text: "Guided tour" },
+    "main.task_lens.enum.stage.mechanism_opportunity": { params: [], text: "Mechanism opportunity" },
+    "main.task_lens.enum.stage.paved_paths": { params: [], text: "Paved paths" },
+    "main.task_lens.enum.stage.repository_study_map": { params: [], text: "Repository study map" },
+    "main.task_lens.enum.stage.runtime_surface_discovery": { params: [], text: "Runtime surface discovery" },
+    "main.task_lens.enum.support_type.document_supported": { params: [], text: "Document-supported" },
+    "main.task_lens.enum.support_type.locally_observed": { params: [], text: "Locally observed" },
+    "main.task_lens.enum.support_type.model_hypothesis": { params: [], text: "Model hypothesis" },
+    "main.task_lens.enum.support_type.unresolved": { params: [], text: "Unresolved" },
+    "main.task_lens.enum.task_kind.bug": { params: [], text: "Bug" },
+    "main.task_lens.enum.task_kind.compatibility": { params: [], text: "Compatibility" },
+    "main.task_lens.enum.task_kind.configuration": { params: [], text: "Configuration" },
+    "main.task_lens.enum.task_kind.extension": { params: [], text: "Extension" },
+    "main.task_lens.enum.task_kind.feature": { params: [], text: "Feature" },
+    "main.task_lens.enum.task_kind.operational": { params: [], text: "Operational" },
+    "main.task_lens.enum.task_kind.unknown": { params: [], text: "Unknown task kind" },
+    "main.task_lens.enum.unknown": { params: ["value"], format: function (params) { return "Unknown value (" + params.value + ")"; } },
     "main.task_lens.files_and_symbols": { params: [], text: "Files and symbols to inspect" },
     "main.task_lens.found_in_repository_evidence": { params: [], text: "Found in repository evidence" },
     "main.task_lens.how_anchors_connect": { params: [], text: "How the selected anchors connect" },
@@ -1329,6 +1440,42 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.task_lens.what_evidence_supports": { params: [], text: "What the bounded evidence supports" },
     "main.task_lens.where_evidence_points": { params: [], text: "Where the bounded evidence points" },
     "main.task_lens.working_hypothesis": { params: [], text: "Working hypothesis" },
+    "main.task_lens.warning.anchor_omitted_irrelevant": { params: ["index"], format: function (params) { return "Anchor " + params.index + " was omitted because local evidence did not ground it in the task, a required or supporting role, the decisive component, or exact verification."; } },
+    "main.task_lens.warning.anchor_role_replaced": { params: ["index"], format: function (params) { return "Anchor " + params.index + " was assigned an exact locally allowed role and its explanation was replaced with local wording."; } },
+    "main.task_lens.warning.anchor_explanation_replaced": { params: ["index"], format: function (params) { return "Anchor " + params.index + " explanation was replaced with local wording because its presentation text was not grounded."; } },
+    "main.task_lens.warning.area_targets_filtered": { params: ["index"], format: function (params) { return "Likely area " + params.index + " target IDs were filtered to unique selected anchors."; } },
+    "main.task_lens.warning.area_omitted_without_anchor": { params: ["index"], format: function (params) { return "Likely area " + params.index + " was omitted because it did not retain a selected anchor."; } },
+    "main.task_lens.warning.areas_bounded": { params: [], text: "Additional likely areas were omitted at the local presentation bound." },
+    "main.task_lens.warning.area_copy_replaced": { params: ["index"], format: function (params) { return "Likely area " + params.index + " label or explanation was replaced with local wording."; } },
+    "main.task_lens.warning.area_fallback_added": { params: [], text: "A deterministic local likely area was added because no model area retained a selected anchor." },
+    "main.task_lens.warning.joins_bounded": { params: [], text: "Additional evidence joins were omitted at the local presentation bound." },
+    "main.task_lens.warning.join_rejected": { params: ["index"], format: function (params) { return "Evidence join " + params.index + " was rejected because it did not pass local evidence checks."; } },
+    "main.task_lens.warning.hypotheses_bounded": { params: [], text: "Additional hypothesis clauses were omitted at the local presentation bound." },
+    "main.task_lens.warning.hypothesis_rejected": { params: ["index"], format: function (params) { return "Hypothesis clause " + params.index + " was rejected because it did not pass local evidence checks."; } },
+    "main.task_lens.warning.hypothesis_support_completed": { params: ["index"], format: function (params) { return "Hypothesis clause " + params.index + " support was completed from exact local relation evidence."; } },
+    "main.task_lens.warning.hypothesis_copy_replaced": { params: ["index"], format: function (params) { return "Hypothesis clause " + params.index + " prose was replaced with calibrated local wording because its references were not fully grounded."; } },
+    "main.task_lens.warning.hypothesis_fallback_added": { params: [], text: "A bounded exact local hypothesis fallback was added because no substantive model clause passed local reduction." },
+    "main.task_lens.warning.reproduction_bounded": { params: [], text: "Additional reproduction steps were omitted at the local presentation bound." },
+    "main.task_lens.warning.reproduction_rejected": { params: ["index"], format: function (params) { return "Reproduction step " + params.index + " was rejected because it did not pass local evidence checks."; } },
+    "main.task_lens.warning.reproduction_duplicate": { params: ["index"], format: function (params) { return "Reproduction step " + params.index + " was omitted because it duplicates the same locally authoritative guidance."; } },
+    "main.task_lens.warning.reproduction_fallback_added": { params: [], text: "No model reproduction or observation step passed local reduction; a bounded local reproduction or observation fallback was used." },
+    "main.task_lens.warning.verification_bounded": { params: [], text: "Additional verification steps were omitted at the local presentation bound." },
+    "main.task_lens.warning.verification_outside_frontier": { params: ["index"], format: function (params) { return "Verification step " + params.index + " was rejected locally because its evidence is outside the exact verification frontier."; } },
+    "main.task_lens.warning.verification_rejected": { params: ["index"], format: function (params) { return "Verification step " + params.index + " was rejected because it did not pass local evidence checks."; } },
+    "main.task_lens.warning.verification_duplicate": { params: ["index"], format: function (params) { return "Verification step " + params.index + " was omitted because it duplicates the same locally authoritative guidance."; } },
+    "main.task_lens.warning.verification_fallback_added": { params: [], text: "No model verification step passed local reduction; a bounded repository-owned verification or missing-evidence fallback was used." },
+    "main.task_lens.warning.verification_authority_added": { params: [], text: "An exact-frontier repository verification item was added because the surviving model steps had no bound repository authority." },
+    "main.task_lens.warning.verification_test_authority_added": { params: [], text: "A selected repository test or example from the exact verification frontier was added because the surviving model steps had no bound repository authority." },
+    "main.task_lens.warning.next_probes_bounded": { params: [], text: "Additional next probes were omitted at the local presentation bound." },
+    "main.task_lens.warning.next_probe_rejected": { params: ["index"], format: function (params) { return "Next probe " + params.index + " was rejected because it did not pass local evidence checks."; } },
+    "main.task_lens.warning.next_probe_fallback_added": { params: [], text: "No model next probe passed local reduction; a bounded local next probe fallback was used." },
+    "main.task_lens.warning.attempt_response_size": { params: [], text: "The raw response was omitted because it exceeded the bounded diagnostic size." },
+    "main.task_lens.warning.attempt_response_secret": { params: [], text: "The raw response was omitted because secret-like content was detected." },
+    "main.task_lens.warning.attempt_provider_failed": { params: [], text: "The semantic synthesis call failed; no semantic retry was attempted." },
+    "main.task_lens.warning.attempt_response_rejected": { params: [], text: "The substantive response was rejected locally; no semantic retry was attempted." },
+    "main.task_lens.warning.attempt_sparse_evidence": { params: [], text: "Semantic synthesis was skipped because bounded retrieval retained fewer than three source anchors." },
+    "main.task_lens.warning.pack_local_partial": { params: [], text: "This deterministic local pack remains partial because the bounded evidence does not support a complete, actionable task lens." },
+    "main.task_lens.warning.pack_model_partial": { params: [], text: "This model-edited pack remains partial because the bounded evidence does not support a complete, actionable task lens." },
     "main.unit_progress": { params: ["unit", "current", "total"], format: function (params) { return params.unit + " " + params.current + " of " + params.total; } },
     "main.component.role_anchor_count": { params: ["role", "count"], format: function (params) { return params.role + " · " + englishCount(params.count, "anchor", "anchors"); } },
     "main.research.cached": { params: [], text: "cached" },
@@ -1344,6 +1491,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.value.local_anchors": { params: [], text: "local anchors" },
     "architecture.value.package_fallback": { params: [], text: "package fallback" },
     "architecture.value.unspecified": { params: [], text: "unspecified" },
+    "architecture.grounding.local_anchors.title": { params: [], text: "Evidence-backed architecture skeleton" },
+    "architecture.grounding.local_anchors.subtitle": { params: [], text: "Built from exact local architecture anchors" },
+    "architecture.grounding.package_fallback.title": { params: [], text: "Package landscape" },
+    "architecture.grounding.package_fallback.subtitle": { params: [], text: "Behavioral grounding was insufficient or the architecture proposal was rejected" },
+    "architecture.grounding.behavior.title": { params: [], text: "Behavioral architecture" },
+    "architecture.grounding.behavior.subtitle": { params: [], text: "Evidence-backed process and runtime responsibilities" },
+    "architecture.grounding.mixed.title": { params: [], text: "Architecture hypotheses and grounded behavior" },
+    "architecture.grounding.mixed.subtitle": { params: [], text: "Some areas remain package-derived" },
+    "architecture.grounding.conceptual.title": { params: [], text: "Conceptual architecture" },
+    "architecture.grounding.conceptual.subtitle": { params: [], text: "Model-assisted grouping of exact local repository members" },
     "architecture.fallback.unknown_member": { params: [], text: "unknown member" },
     "architecture.fallback.unknown_proof_area": { params: [], text: "Unknown proof area" },
     "architecture.value.saved_cli_trace": { params: [], text: "Saved CLI trace" },
@@ -1374,6 +1531,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.hint.drag_to_explore": { params: [], text: "Drag to explore the architecture" },
     "architecture.aria.close_inspector": { params: [], text: "Close inspector" },
     "architecture.aria.inspector": { params: [], text: "Architecture inspector" },
+    "architecture.error.layout_failed": { params: [], text: "Architecture layout could not be generated." },
     "architecture.error.renderer_unavailable": { params: [], text: "Architecture renderer is unavailable." },
     "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Drag to explore · {count} architecture groups · Fit keeps labels readable", params); } },
     "architecture.fallback.repository_area": { params: [], text: "Repository area" },
@@ -1519,11 +1677,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.action.open_condition": { params: [], text: "Open condition" },
     "architecture.label.code_relation": { params: [], text: "Code relation" },
     "architecture.fallback.source_backed_relation": { params: [], text: "Source-backed relation" },
-    "architecture.copy.explore_repository_map": { params: [], text: "Explore the repository map" },
-    "architecture.copy.select_map_object": { params: [], text: "Select a code area, runtime surface, or source-backed code path." },
-    "architecture.copy.how_to_read_map": { params: [], text: "How to read this map" },
-    "architecture.copy.select_component_surface_trace": { params: [], text: "Select a component, surface, or saved trace." },
-    "architecture.copy.select_component_members": { params: [], text: "Select a component to inspect its exact local members." },
     "architecture.section.evidence_semantics": { params: [], text: "Evidence semantics" },
     "architecture.copy.evidence_semantics": { params: [], text: "Subsystem and component names are conceptual orientation. Quiet lines are witnessed structural relations, not runtime execution." },
     "architecture.label.architecture_source": { params: [], text: "Architecture source" },
@@ -1615,8 +1768,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.copy.source_changed": { params: [], text: "Source changed since this report was generated" },
     "architecture.count.provenance": { params: ["count"], format: function (params) { return formatCountTemplate("Provenance ({count})", params); } },
     "architecture.fallback.unspecified_provenance": { params: [], text: "unspecified provenance" },
+    "architecture.provenance.behavior_anchor_file": { params: [], text: "file containing a deterministic behavior-anchor member" },
+    "architecture.provenance.behavior_anchor_member": { params: [], text: "exact declaration associated with a deterministic behavior anchor" },
+    "architecture.provenance.exact_process_entry_role": { params: [], text: "deterministic executable role joined by exact process-entry declaration ID" },
+    "architecture.provenance.saved_package_import": { params: [], text: "exact saved package endpoints; source import callsite unavailable" },
+    "architecture.provenance.saved_package_member": { params: [], text: "exact endpoint in the saved package-import graph" },
+    "architecture.provenance.saved_proof": { params: [], text: "saved typed flow contract" },
+    "architecture.provenance.saved_flow_member": { params: [], text: "exact identity of the saved typed flow contract" },
+    "architecture.provenance.anchor_file": { params: [], text: "file contains an exact saved flow anchor" },
+    "architecture.provenance.anchor_declaration": { params: [], text: "exact declaration anchor from the saved typed flow contract" },
+    "architecture.provenance.bind_anchor_to_exact_member": { params: [], text: "binding produced directly from the saved typed anchor, not by presentation path matching" },
+    "architecture.provenance.anchor_flow_participation": { params: [], text: "exact saved anchor witnesses participation in this flow" },
     "architecture.count.scenarios": { params: ["count"], format: function (params) { return formatCountTemplate("Scenarios ({count})", params); } },
     "architecture.fallback.scenario": { params: [], text: "scenario" },
+    "architecture.scenario.recorded_go_build": { params: [], text: "Recorded Go build scenario" },
+    "architecture.scenario.saved_package_graph": { params: [], text: "Saved package graph context; exact build values unavailable" },
     "architecture.copy.no_saved_diagnostics": { params: [], text: "No saved diagnostics." },
     "architecture.value.branch_main": { params: [], text: "Main path" },
     "architecture.value.branch_task": { params: [], text: "Background task" },
@@ -1643,6 +1809,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.relation.invokes_cancellation": { params: [], text: "invokes cancellation" },
     "architecture.relation.waits_for_task": { params: [], text: "waits for task" },
     "architecture.relation.waits_for": { params: [], text: "waits for" },
+    "architecture.relation.dispatches_to": { params: [], text: "dispatches to" },
+    "architecture.relation.registers_extension_family": { params: [], text: "registers extension family" },
+    "architecture.relation.loads_or_adapts_config": { params: [], text: "loads or adapts configuration" },
+    "architecture.relation.starts_lifecycle": { params: [], text: "starts lifecycle" },
+    "architecture.relation.exposes_admin_control_plane": { params: [], text: "exposes administrative control plane" },
+    "architecture.relation.dispatches_http_request": { params: [], text: "dispatches HTTP request" },
+    "architecture.relation.configures_security_boundary": { params: [], text: "configures security boundary" },
+    "architecture.relation.static_call_supporting_relation": { params: [], text: "supports through a static call" },
+    "architecture.relation.package_import": { params: [], text: "package import" },
+    "architecture.relation.behavior_handoff": { params: [], text: "behavior handoff" },
     "architecture.relation.continues": { params: [], text: "continues" },
     "architecture.label.unknown": { params: [], text: "unknown" },
     "architecture.value.static": { params: [], text: "static" },
@@ -1839,7 +2015,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.bundle.related_import_edges": { params: ["count"], format: function (params) { return "Связей импорта:           " + params.count; } },
     "main.bundle.source_files_selected": { params: ["count"], format: function (params) { return "Выбрано файлов исходников: " + params.count; } },
     "main.bundle.test_files_selected": { params: ["count"], format: function (params) { return "Выбрано тестовых файлов:   " + params.count; } },
+    "main.browser_error.invalid_report_artifact": { params: [], text: "Сохранённый отчёт повреждён или превышает допустимый размер." },
+    "main.browser_error.no_saved_reports": { params: [], text: "Сохранённых отчётов нет." },
+    "main.browser_error.report_authority_unavailable": { params: [], text: "Сохранённый отчёт нельзя открыть: подтверждённые локальные данные недоступны." },
+    "main.browser_error.report_not_found": { params: [], text: "Сохранённый отчёт не найден." },
+    "main.browser_error.report_temporarily_unavailable": { params: [], text: "Сейчас не удалось открыть сохранённый отчёт." },
     "main.flow.analysis_unavailable": { params: ["name"], format: function (params) { return params.name + " · анализ недоступен"; } },
+    "main.flow.bundle_stats_compact": { params: ["source","test","doc"], format: function (params) { return russianCount(params.source, "файл исходников", "файла исходников", "файлов исходников") + " · " + russianCount(params.test, "тестовый файл", "тестовых файла", "тестовых файлов") + " · " + russianCount(params.doc, "документ", "документа", "документов"); } },
     "main.flow.docs_selected": { params: [], text: "Выбранные документы" },
     "main.flow.docs_selected_locally": { params: [], text: "Документы, выбранные локально" },
     "main.flow.files_deterministic": { params: [], text: "Файлы, выбранные детерминированным поиском" },
@@ -1850,6 +2032,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.flow.related_local_files": { params: [], text: "Связанные файлы из локального поиска" },
     "main.flow.tests_deterministic": { params: [], text: "Тесты, выбранные детерминированным поиском" },
     "main.flow.tests_selected_locally": { params: [], text: "Тесты, выбранные локально" },
+    "main.localization.ru_active": { params: [], text: "Русская локализация включена." },
+    "main.localization.ru_unavailable_canonical_en": { params: [], text: "Русская локализация недоступна. Показан канонический отчёт на английском языке." },
+    "main.localization.status_label": { params: [], text: "Статус локализации" },
     "main.mechanism.complete": { params: [], text: "Полные механизмы" },
     "main.mechanism.full_status": { params: ["count"], format: function (params) { return "Полный механизм · " + russianCount(params.count, "шаг с опорой на исходники", "шага с опорой на исходники", "шагов с опорой на исходники"); } },
     "main.mechanism.open_complete_copy": { params: [], text: "Откройте полное объяснение, а затем перейдите к точному шагу в исходниках." },
@@ -1898,16 +2083,31 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.incomplete_places_copy": { params: ["count"], format: function (params) { return "Для начала доступно " + russianCount(params.count, "точное место", "точных места", "точных мест") + ". Полный путь чтения пока не объяснён."; } },
     "main.study.inspect_starting_point": { params: [], text: "Изучить точку старта →" },
     "main.study.open_ready_deep_dive": { params: [], text: "Открыть готовое подробное объяснение →" },
+    "main.study.reading_label.core_data_type": { params: [], text: "Основной тип данных" },
+    "main.study.reading_label.public_boundary": { params: [], text: "Публичная граница" },
+    "main.study.reading_label.related_implementation": { params: [], text: "Связанная реализация" },
+    "main.study.reading_label.start_here": { params: [], text: "С чего начать" },
+    "main.study.reading_label.then_inspect": { params: [], text: "Затем изучите" },
+    "main.study.reading_label.unknown": { params: [], text: "Шаг изучения" },
+    "main.study.stage.central_operation": { params: [], text: "Центральная операция" },
+    "main.study.stage.contribution": { params: [], text: "Вклад в проект" },
+    "main.study.stage.core_model": { params: [], text: "Основная модель" },
+    "main.study.stage.integration": { params: [], text: "Интеграция" },
+    "main.study.stage.operations": { params: [], text: "Эксплуатация" },
+    "main.study.stage.orientation": { params: [], text: "Ориентация" },
+    "main.study.stage.study": { params: [], text: "Изучение" },
     "main.study.stage_incomplete": { params: ["stage"], format: function (params) { return params.stage + " · не завершено"; } },
     "main.task.anchor_citation": { params: ["index", "title"], format: function (params) { return "Опора " + params.index + " · " + params.title; } },
     "main.topic.continue_repository": { params: [], text: "Продолжить в репозитории" },
     "main.topic.current_boundary": { params: [], text: "Текущая граница" },
     "main.topic.grounded_starting_points_copy": { params: [], text: "Эти точные символы — подтверждённые точки старта, а не упорядоченный путь." },
     "main.topic.why_not_mechanism": { params: [], text: "Почему это ещё не механизм" },
-    "main.warning.confidence_reduced": { params: ["count"], format: function (params) { return "Локальная проверка снизила уверенность модели: " + russianCount(params.count, "случай", "случая", "случаев") + "."; } },
-    "main.warning.go_toolchain_older": { params: [], text: "Часть локального анализа Go пропущена: repomap использует более старую версию Go, чем требуется репозиторию." },
-    "main.warning.go_toolchain_versions": { params: ["required", "current"], format: function (params) { return "Часть локального анализа Go пропущена: репозиторию требуется " + params.required + ", а repomap использует " + params.current + ". Пересоберите repomap с " + params.required + " или новее."; } },
-    "main.warning.grounding_repairs_hidden": { params: ["count"], format: function (params) { return "Не удалось подтвердить и пришлось скрыть " + russianCount(params.count, "ссылку модели на свидетельство", "ссылки модели на свидетельства", "ссылок модели на свидетельства") + "."; } },
+    "main.warning.study_checks_failed": { params: [], text: "Направления Study не опубликованы: предложенные направления не прошли обязательные проверки." },
+    "main.warning.study_editing_did_not_finish": { params: [], text: "Направления Study не опубликованы: этап редактирования не завершился." },
+    "main.warning.study_no_source_adapter": { params: [], text: "Направления Study не опубликованы: для исходников этого репозитория пока нет поддерживаемого адаптера." },
+    "main.warning.study_no_source_functions": { params: [], text: "Направления Study не опубликованы: подходящие функции в исходниках не найдены." },
+    "main.warning.confidence_candidate_capped": { params: ["capped", "index", "proposed"], format: function (params) { return "Локальная проверка уверенности ограничила направление " + params.index + ": с " + params.proposed + " до " + params.capped + "."; } },
+    "main.warning.confidence_orientation_capped_incomplete": { params: ["capped", "proposed"], format: function (params) { return "Локальная проверка уверенности ограничила общую оценку ориентации с " + params.proposed + " до " + params.capped + ", потому что целевой сбор контекста не завершён."; } },
     "main.repository.onboarding": { params: [], text: "Знакомство с репозиторием" },
     "main.saved.report": { params: [], text: "Сохранённый отчёт" },
     "main.file.paths.open.in.vs.code": { params: [], text: "Пути к файлам открываются в VS Code ↗" },
@@ -2190,12 +2390,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.research.initial_model_summaries": { params: ["count"], format: function (params) { return "Начальных сводок модели: " + params.count; } },
     "main.research.focused_local_evidence": { params: ["count"], format: function (params) { return "Изучено фокусных локальных свидетельств: " + params.count; } },
     "main.research.targeted_model_windows": { params: ["count"], format: function (params) { return "Фокусных окон свидетельств модели: " + params.count; } },
+    "main.research.selection_reason.planned": { params: [], text: "Запланировано для целевого исследования" },
+    "main.research.selection_reason.runtime_only_frontier": { params: [], text: "Требует наблюдения во время выполнения" },
+    "main.research.selection_reason.unknown_candidate_ids": { params: [], text: "Идентификаторы кандидатов недоступны" },
+    "main.research.selection_reason.no_code_bearing_bounded_window": { params: [], text: "Не найдено ограниченное окно с кодом" },
+    "main.research.selection_reason.no_new_exact_evidence": { params: [], text: "Новых точных свидетельств не найдено" },
+    "main.research.selection_reason.no_bounded_local_evidence": { params: [], text: "Ограниченные локальные свидетельства не найдены" },
+    "main.research.selection_reason.new_exact_evidence_and_high_value_frontier": { params: [], text: "Новые точные свидетельства относятся к важной границе исследования" },
+    "main.research.selection_reason.targeted_round_limit": { params: [], text: "Достигнут предел раундов целевого исследования" },
     "main.research.why": { params: ["reason"], format: function (params) { return "Причина: " + params.reason; } },
     "main.research.exact_evidence": { params: ["evidence", "facts"], format: function (params) { return "Точные свидетельства: " + params.evidence + " · новых подтверждённых фактов: " + params.facts; } },
     "main.research.rejected_claims": { params: ["count"], format: function (params) { return "Отклонено утверждений: " + params.count; } },
     "main.research.frontier": { params: ["value"], format: function (params) { return "Граница: " + params.value; } },
     "main.research.result": { params: ["result"], format: function (params) { return "Результат: " + params.result; } },
-    "main.symbol.ranked_by": { params: ["reasons"], format: function (params) { return "Причины ранжирования: " + params.reasons; } },
+    "main.symbol.ranked_by": { params: ["count"], format: function (params) { return "При ранжировании учтено " + russianCount(params.count, "сигнал анализатора", "сигнала анализатора", "сигналов анализатора"); } },
     "main.symbol.outside_focused_view": { params: ["count"], format: function (params) { return "+" + params.count + " вне фокусной области"; } },
     "main.symbol.evidence_omitted": { params: ["items"], format: function (params) { return "Свидетельства, скрытые из-за ограничений: " + params.items; } },
     "main.symbol.static_hierarchy": { params: ["level"], format: function (params) { return "Ограниченная статическая иерархия вызовов · свидетельства: " + params.level + ". В ответе анализатора производственные вызовы идут раньше тестов и бенчмарков. Это не наблюдавшееся выполнение; списки неполны."; } },
@@ -2366,6 +2574,76 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.task_lens.collect_signal": { params: [], text: "Собрать подходящий сигнал" },
     "main.task_lens.evidence_cautions": { params: [], text: "Оговорки о свидетельствах" },
     "main.task_lens.evidence_joins": { params: [], text: "Связи свидетельств" },
+    "main.task_lens.enum.anchor_role.configuration_copy": { params: [], text: "Копия конфигурации" },
+    "main.task_lens.enum.anchor_role.configuration_source": { params: [], text: "Источник конфигурации" },
+    "main.task_lens.enum.anchor_role.documentation_contract": { params: [], text: "Контракт документации" },
+    "main.task_lens.enum.anchor_role.error_creation": { params: [], text: "Создание ошибки" },
+    "main.task_lens.enum.anchor_role.error_mapping": { params: [], text: "Преобразование ошибки" },
+    "main.task_lens.enum.anchor_role.generated_output": { params: [], text: "Сгенерированный результат" },
+    "main.task_lens.enum.anchor_role.integration_boundary": { params: [], text: "Граница интеграции" },
+    "main.task_lens.enum.anchor_role.public_or_cli_entry": { params: [], text: "Публичная или CLI-точка входа" },
+    "main.task_lens.enum.anchor_role.representative_implementation": { params: [], text: "Характерная реализация" },
+    "main.task_lens.enum.anchor_role.reproduction_anchor": { params: [], text: "Опора воспроизведения" },
+    "main.task_lens.enum.anchor_role.state_mutation": { params: [], text: "Изменение состояния" },
+    "main.task_lens.enum.anchor_role.state_owner": { params: [], text: "Владелец состояния" },
+    "main.task_lens.enum.anchor_role.symptom_site": { params: [], text: "Место проявления" },
+    "main.task_lens.enum.anchor_role.verification_anchor": { params: [], text: "Опора проверки" },
+    "main.task_lens.enum.guidance_authority.missing_evidence": { params: [], text: "Недостающие свидетельства" },
+    "main.task_lens.enum.guidance_authority.repository_document": { params: [], text: "Документ репозитория" },
+    "main.task_lens.enum.guidance_authority.repository_observation": { params: [], text: "Наблюдение по репозиторию" },
+    "main.task_lens.enum.guidance_authority.repository_test_or_example": { params: [], text: "Тест или пример репозитория" },
+    "main.task_lens.enum.guidance_authority.task_provided": { params: [], text: "Предоставлено в задаче" },
+    "main.task_lens.enum.hypothesis_status.plausible": { params: [], text: "Правдоподобно" },
+    "main.task_lens.enum.hypothesis_status.supported": { params: [], text: "Подтверждено" },
+    "main.task_lens.enum.hypothesis_status.unresolved": { params: [], text: "Не разрешено" },
+    "main.task_lens.enum.locality.bounded_cross_file": { params: [], text: "Ограниченно между файлами" },
+    "main.task_lens.enum.locality.broad_dynamic": { params: [], text: "Широкая динамическая область" },
+    "main.task_lens.enum.locality.extension_contribution": { params: [], text: "Вклад расширения" },
+    "main.task_lens.enum.locality.local_exact": { params: [], text: "Локально и точно" },
+    "main.task_lens.enum.probe_action.compare_config_copies": { params: [], text: "Сравнить копии конфигурации" },
+    "main.task_lens.enum.probe_action.inspect_fixture": { params: [], text: "Изучить фикстуру" },
+    "main.task_lens.enum.probe_action.inspect_sibling_implementation": { params: [], text: "Изучить соседнюю реализацию" },
+    "main.task_lens.enum.probe_action.inspect_symbol": { params: [], text: "Изучить символ" },
+    "main.task_lens.enum.probe_action.resolve_reference": { params: [], text: "Разрешить ссылку" },
+    "main.task_lens.enum.probe_action.search_task_terms": { params: [], text: "Искать термины задачи" },
+    "main.task_lens.enum.relation_kind.config_applied": { params: [], text: "Применение конфигурации" },
+    "main.task_lens.enum.relation_kind.direct_call": { params: [], text: "Прямой вызов" },
+    "main.task_lens.enum.relation_kind.document_names_endpoints": { params: [], text: "Документ называет обе точки" },
+    "main.task_lens.enum.relation_kind.documented_uses": { params: [], text: "Документированное использование" },
+    "main.task_lens.enum.relation_kind.error_created": { params: [], text: "Создание ошибки" },
+    "main.task_lens.enum.relation_kind.error_exposed": { params: [], text: "Передача ошибки наружу" },
+    "main.task_lens.enum.relation_kind.error_mapped": { params: [], text: "Преобразование ошибки" },
+    "main.task_lens.enum.relation_kind.field_copy": { params: [], text: "Копирование поля" },
+    "main.task_lens.enum.relation_kind.field_read": { params: [], text: "Чтение поля" },
+    "main.task_lens.enum.relation_kind.field_write": { params: [], text: "Запись поля" },
+    "main.task_lens.enum.relation_kind.fixture_records": { params: [], text: "Фикстура фиксирует значение" },
+    "main.task_lens.enum.relation_kind.model_hypothesis": { params: [], text: "Гипотеза модели" },
+    "main.task_lens.enum.relation_kind.scope_unknown": { params: [], text: "Область неизвестна" },
+    "main.task_lens.enum.relation_kind.script_invokes": { params: [], text: "Вызов из скрипта" },
+    "main.task_lens.enum.relation_kind.shared_state_alias": { params: [], text: "Общий псевдоним состояния" },
+    "main.task_lens.enum.relation_kind.test_exercises": { params: [], text: "Проверка тестом" },
+    "main.task_lens.enum.relation_kind.type_name_generated": { params: [], text: "Генерация имени типа" },
+    "main.task_lens.enum.relation_kind.unresolved_relation": { params: [], text: "Неразрешённая связь" },
+    "main.task_lens.enum.relation_kind.value_transformed": { params: [], text: "Преобразование значения" },
+    "main.task_lens.enum.stage.architecture_synthesis": { params: [], text: "Синтез архитектуры" },
+    "main.task_lens.enum.stage.generic_orientation": { params: [], text: "Общая ориентация" },
+    "main.task_lens.enum.stage.guided_tour": { params: [], text: "Обзорная экскурсия" },
+    "main.task_lens.enum.stage.mechanism_opportunity": { params: [], text: "Поиск возможности для механизма" },
+    "main.task_lens.enum.stage.paved_paths": { params: [], text: "Готовые пути запуска" },
+    "main.task_lens.enum.stage.repository_study_map": { params: [], text: "Карта изучения репозитория" },
+    "main.task_lens.enum.stage.runtime_surface_discovery": { params: [], text: "Поиск точек запуска" },
+    "main.task_lens.enum.support_type.document_supported": { params: [], text: "Подтверждено документом" },
+    "main.task_lens.enum.support_type.locally_observed": { params: [], text: "Наблюдается локально" },
+    "main.task_lens.enum.support_type.model_hypothesis": { params: [], text: "Гипотеза модели" },
+    "main.task_lens.enum.support_type.unresolved": { params: [], text: "Не разрешено" },
+    "main.task_lens.enum.task_kind.bug": { params: [], text: "Ошибка" },
+    "main.task_lens.enum.task_kind.compatibility": { params: [], text: "Совместимость" },
+    "main.task_lens.enum.task_kind.configuration": { params: [], text: "Конфигурация" },
+    "main.task_lens.enum.task_kind.extension": { params: [], text: "Расширение" },
+    "main.task_lens.enum.task_kind.feature": { params: [], text: "Новая возможность" },
+    "main.task_lens.enum.task_kind.operational": { params: [], text: "Эксплуатация" },
+    "main.task_lens.enum.task_kind.unknown": { params: [], text: "Неизвестный тип задачи" },
+    "main.task_lens.enum.unknown": { params: ["value"], format: function (params) { return "Неизвестное значение (" + params.value + ")"; } },
     "main.task_lens.files_and_symbols": { params: [], text: "Файлы и символы для изучения" },
     "main.task_lens.found_in_repository_evidence": { params: [], text: "Найдено в свидетельствах репозитория" },
     "main.task_lens.how_anchors_connect": { params: [], text: "Как связаны выбранные опоры" },
@@ -2383,6 +2661,42 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.task_lens.what_evidence_supports": { params: [], text: "Что подтверждают ограниченные свидетельства" },
     "main.task_lens.where_evidence_points": { params: [], text: "Куда указывают ограниченные свидетельства" },
     "main.task_lens.working_hypothesis": { params: [], text: "Рабочая гипотеза" },
+    "main.task_lens.warning.anchor_omitted_irrelevant": { params: ["index"], format: function (params) { return "Опора " + params.index + " исключена: локальные свидетельства не связывают её с задачей, обязательной или вспомогательной ролью, решающим компонентом либо точной проверкой."; } },
+    "main.task_lens.warning.anchor_role_replaced": { params: ["index"], format: function (params) { return "Опоре " + params.index + " назначена точная допустимая локальная роль, а её объяснение заменено локальной формулировкой."; } },
+    "main.task_lens.warning.anchor_explanation_replaced": { params: ["index"], format: function (params) { return "Объяснение опоры " + params.index + " заменено локальной формулировкой, потому что исходный текст не был подтверждён."; } },
+    "main.task_lens.warning.area_targets_filtered": { params: ["index"], format: function (params) { return "Целевые ID вероятной области " + params.index + " отфильтрованы до уникальных выбранных опор."; } },
+    "main.task_lens.warning.area_omitted_without_anchor": { params: ["index"], format: function (params) { return "Вероятная область " + params.index + " исключена, потому что в ней не осталось выбранной опоры."; } },
+    "main.task_lens.warning.areas_bounded": { params: [], text: "Дополнительные вероятные области исключены из-за локального ограничения представления." },
+    "main.task_lens.warning.area_copy_replaced": { params: ["index"], format: function (params) { return "Название или объяснение вероятной области " + params.index + " заменено локальной формулировкой."; } },
+    "main.task_lens.warning.area_fallback_added": { params: [], text: "Добавлена детерминированная локальная вероятная область, потому что ни в одной области модели не осталось выбранной опоры." },
+    "main.task_lens.warning.joins_bounded": { params: [], text: "Дополнительные связи свидетельств исключены из-за локального ограничения представления." },
+    "main.task_lens.warning.join_rejected": { params: ["index"], format: function (params) { return "Связь свидетельств " + params.index + " отклонена, потому что не прошла локальные проверки свидетельств."; } },
+    "main.task_lens.warning.hypotheses_bounded": { params: [], text: "Дополнительные тезисы гипотезы исключены из-за локального ограничения представления." },
+    "main.task_lens.warning.hypothesis_rejected": { params: ["index"], format: function (params) { return "Тезис гипотезы " + params.index + " отклонён, потому что не прошёл локальные проверки свидетельств."; } },
+    "main.task_lens.warning.hypothesis_support_completed": { params: ["index"], format: function (params) { return "Подтверждение тезиса гипотезы " + params.index + " дополнено точным локальным свидетельством связи."; } },
+    "main.task_lens.warning.hypothesis_copy_replaced": { params: ["index"], format: function (params) { return "Текст тезиса гипотезы " + params.index + " заменён выверенной локальной формулировкой, потому что его ссылки были подтверждены не полностью."; } },
+    "main.task_lens.warning.hypothesis_fallback_added": { params: [], text: "Добавлена ограниченная точная локальная резервная гипотеза, потому что ни один содержательный тезис модели не прошёл локальную редукцию." },
+    "main.task_lens.warning.reproduction_bounded": { params: [], text: "Дополнительные шаги воспроизведения исключены из-за локального ограничения представления." },
+    "main.task_lens.warning.reproduction_rejected": { params: ["index"], format: function (params) { return "Шаг воспроизведения " + params.index + " отклонён, потому что не прошёл локальные проверки свидетельств."; } },
+    "main.task_lens.warning.reproduction_duplicate": { params: ["index"], format: function (params) { return "Шаг воспроизведения " + params.index + " исключён, потому что дублирует ту же локально авторитетную инструкцию."; } },
+    "main.task_lens.warning.reproduction_fallback_added": { params: [], text: "Ни один шаг воспроизведения или наблюдения от модели не прошёл локальную редукцию; использован ограниченный локальный резервный шаг." },
+    "main.task_lens.warning.verification_bounded": { params: [], text: "Дополнительные шаги проверки исключены из-за локального ограничения представления." },
+    "main.task_lens.warning.verification_outside_frontier": { params: ["index"], format: function (params) { return "Шаг проверки " + params.index + " отклонён локально: его свидетельства находятся за пределами точного фронтира проверки."; } },
+    "main.task_lens.warning.verification_rejected": { params: ["index"], format: function (params) { return "Шаг проверки " + params.index + " отклонён, потому что не прошёл локальные проверки свидетельств."; } },
+    "main.task_lens.warning.verification_duplicate": { params: ["index"], format: function (params) { return "Шаг проверки " + params.index + " исключён, потому что дублирует ту же локально авторитетную инструкцию."; } },
+    "main.task_lens.warning.verification_fallback_added": { params: [], text: "Ни один шаг проверки от модели не прошёл локальную редукцию; использован ограниченный шаг проверки из репозитория или резервный шаг об отсутствующих свидетельствах." },
+    "main.task_lens.warning.verification_authority_added": { params: [], text: "Добавлен элемент проверки из репозитория на точном фронтире, потому что у сохранившихся шагов модели не было связанного авторитетного источника из репозитория." },
+    "main.task_lens.warning.verification_test_authority_added": { params: [], text: "Добавлен выбранный тест или пример из репозитория на точном фронтире проверки, потому что у сохранившихся шагов модели не было связанного авторитетного источника из репозитория." },
+    "main.task_lens.warning.next_probes_bounded": { params: [], text: "Дополнительные следующие проверки исключены из-за локального ограничения представления." },
+    "main.task_lens.warning.next_probe_rejected": { params: ["index"], format: function (params) { return "Следующая проверка " + params.index + " отклонена, потому что не прошла локальные проверки свидетельств."; } },
+    "main.task_lens.warning.next_probe_fallback_added": { params: [], text: "Ни одна следующая проверка от модели не прошла локальную редукцию; использована ограниченная локальная резервная проверка." },
+    "main.task_lens.warning.attempt_response_size": { params: [], text: "Исходный ответ не сохранён, потому что превысил ограниченный размер диагностического материала." },
+    "main.task_lens.warning.attempt_response_secret": { params: [], text: "Исходный ответ не сохранён, потому что в нём обнаружено содержимое, похожее на секрет." },
+    "main.task_lens.warning.attempt_provider_failed": { params: [], text: "Вызов семантического синтеза завершился ошибкой; повторная семантическая попытка не выполнялась." },
+    "main.task_lens.warning.attempt_response_rejected": { params: [], text: "Содержательный ответ отклонён локально; повторная семантическая попытка не выполнялась." },
+    "main.task_lens.warning.attempt_sparse_evidence": { params: [], text: "Семантический синтез пропущен, потому что ограниченный поиск сохранил меньше трёх опор в исходниках." },
+    "main.task_lens.warning.pack_local_partial": { params: [], text: "Этот детерминированный локальный набор остаётся частичным: ограниченных свидетельств недостаточно для полной и применимой линзы задачи." },
+    "main.task_lens.warning.pack_model_partial": { params: [], text: "Этот отредактированный моделью набор остаётся частичным: ограниченных свидетельств недостаточно для полной и применимой линзы задачи." },
     "main.unit_progress": { params: ["unit", "current", "total"], format: function (params) { return params.unit + " " + params.current + " из " + params.total; } },
     "main.component.role_anchor_count": { params: ["role", "count"], format: function (params) { return params.role + " · " + russianCount(params.count, "опора", "опоры", "опор"); } },
     "main.research.cached": { params: [], text: "кэшировано" },
@@ -2398,6 +2712,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.value.local_anchors": { params: [], text: "локальные опоры" },
     "architecture.value.package_fallback": { params: [], text: "резервный вариант по пакетам" },
     "architecture.value.unspecified": { params: [], text: "не указано" },
+    "architecture.grounding.local_anchors.title": { params: [], text: "Каркас архитектуры, подтверждённый свидетельствами" },
+    "architecture.grounding.local_anchors.subtitle": { params: [], text: "Построен по точным локальным архитектурным опорам" },
+    "architecture.grounding.package_fallback.title": { params: [], text: "Карта пакетов" },
+    "architecture.grounding.package_fallback.subtitle": { params: [], text: "Поведенческих свидетельств оказалось недостаточно или архитектурное предложение было отклонено" },
+    "architecture.grounding.behavior.title": { params: [], text: "Поведенческая архитектура" },
+    "architecture.grounding.behavior.subtitle": { params: [], text: "Процессы и runtime-ответственности, подтверждённые свидетельствами" },
+    "architecture.grounding.mixed.title": { params: [], text: "Гипотезы об архитектуре и подтверждённое поведение" },
+    "architecture.grounding.mixed.subtitle": { params: [], text: "Некоторые области по-прежнему выведены из структуры пакетов" },
+    "architecture.grounding.conceptual.title": { params: [], text: "Концептуальная архитектура" },
+    "architecture.grounding.conceptual.subtitle": { params: [], text: "Группировка точных локальных элементов репозитория с помощью модели" },
     "architecture.fallback.unknown_member": { params: [], text: "неизвестный элемент" },
     "architecture.fallback.unknown_proof_area": { params: [], text: "Неизвестная область подтверждения" },
     "architecture.value.saved_cli_trace": { params: [], text: "Сохранённая CLI-трасса" },
@@ -2428,6 +2752,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.hint.drag_to_explore": { params: [], text: "Перетаскивайте карту, чтобы исследовать архитектуру" },
     "architecture.aria.close_inspector": { params: [], text: "Закрыть инспектор" },
     "architecture.aria.inspector": { params: [], text: "Инспектор архитектуры" },
+    "architecture.error.layout_failed": { params: [], text: "Не удалось построить компоновку архитектуры." },
     "architecture.error.renderer_unavailable": { params: [], text: "Средство отрисовки архитектуры недоступно." },
     "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Перетаскивайте карту · архитектурных групп: {count} · кнопка «Вместить» сохраняет читаемость", params); } },
     "architecture.fallback.repository_area": { params: [], text: "Область репозитория" },
@@ -2573,11 +2898,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.action.open_condition": { params: [], text: "Открыть условие" },
     "architecture.label.code_relation": { params: [], text: "Связь в коде" },
     "architecture.fallback.source_backed_relation": { params: [], text: "Связь, подтверждённая исходниками" },
-    "architecture.copy.explore_repository_map": { params: [], text: "Исследуйте карту репозитория" },
-    "architecture.copy.select_map_object": { params: [], text: "Выберите область кода, точку запуска или путь в коде, подтверждённый исходниками." },
-    "architecture.copy.how_to_read_map": { params: [], text: "Как читать эту карту" },
-    "architecture.copy.select_component_surface_trace": { params: [], text: "Выберите компонент, точку запуска или сохранённую трассу." },
-    "architecture.copy.select_component_members": { params: [], text: "Выберите компонент, чтобы изучить его точные локальные элементы." },
     "architecture.section.evidence_semantics": { params: [], text: "Семантика свидетельств" },
     "architecture.copy.evidence_semantics": { params: [], text: "Имена подсистем и компонентов — концептуальная ориентация. Ненавязчивые линии показывают засвидетельствованные структурные связи, а не выполнение." },
     "architecture.label.architecture_source": { params: [], text: "Источник архитектуры" },
@@ -2669,8 +2989,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.copy.source_changed": { params: [], text: "Исходник изменился после создания отчёта" },
     "architecture.count.provenance": { params: ["count"], format: function (params) { return formatCountTemplate("Происхождение данных ({count})", params); } },
     "architecture.fallback.unspecified_provenance": { params: [], text: "происхождение данных не указано" },
+    "architecture.provenance.behavior_anchor_file": { params: [], text: "файл с элементом детерминированной опоры поведения" },
+    "architecture.provenance.behavior_anchor_member": { params: [], text: "точное объявление, связанное с детерминированной опорой поведения" },
+    "architecture.provenance.exact_process_entry_role": { params: [], text: "детерминированная роль исполняемого файла, связанная по точному ID объявления точки входа процесса" },
+    "architecture.provenance.saved_package_import": { params: [], text: "точные сохранённые границы пакетов; место импорта в исходниках недоступно" },
+    "architecture.provenance.saved_package_member": { params: [], text: "точная граница в сохранённом графе импортов пакетов" },
+    "architecture.provenance.saved_proof": { params: [], text: "сохранённый типизированный контракт потока" },
+    "architecture.provenance.saved_flow_member": { params: [], text: "точная идентичность сохранённого типизированного контракта потока" },
+    "architecture.provenance.anchor_file": { params: [], text: "файл содержит точную сохранённую опору потока" },
+    "architecture.provenance.anchor_declaration": { params: [], text: "точная опора объявления из сохранённого типизированного контракта потока" },
+    "architecture.provenance.bind_anchor_to_exact_member": { params: [], text: "привязка создана непосредственно из сохранённой типизированной опоры, а не по совпадению пути на слое представления" },
+    "architecture.provenance.anchor_flow_participation": { params: [], text: "точная сохранённая опора подтверждает участие в этом потоке" },
     "architecture.count.scenarios": { params: ["count"], format: function (params) { return formatCountTemplate("Сценарии ({count})", params); } },
     "architecture.fallback.scenario": { params: [], text: "сценарий" },
+    "architecture.scenario.recorded_go_build": { params: [], text: "Сценарий сохранённой сборки Go" },
+    "architecture.scenario.saved_package_graph": { params: [], text: "Контекст сохранённого графа пакетов; точные параметры сборки недоступны" },
     "architecture.copy.no_saved_diagnostics": { params: [], text: "Сохранённая диагностика отсутствует." },
     "architecture.value.branch_main": { params: [], text: "Основной путь" },
     "architecture.value.branch_task": { params: [], text: "Фоновая задача" },
@@ -2697,6 +3030,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.relation.invokes_cancellation": { params: [], text: "инициирует отмену" },
     "architecture.relation.waits_for_task": { params: [], text: "ожидает задачу" },
     "architecture.relation.waits_for": { params: [], text: "ожидает" },
+    "architecture.relation.dispatches_to": { params: [], text: "передаёт выполнение" },
+    "architecture.relation.registers_extension_family": { params: [], text: "регистрирует семейство расширений" },
+    "architecture.relation.loads_or_adapts_config": { params: [], text: "загружает или адаптирует конфигурацию" },
+    "architecture.relation.starts_lifecycle": { params: [], text: "запускает жизненный цикл" },
+    "architecture.relation.exposes_admin_control_plane": { params: [], text: "открывает административный контур управления" },
+    "architecture.relation.dispatches_http_request": { params: [], text: "направляет HTTP-запрос" },
+    "architecture.relation.configures_security_boundary": { params: [], text: "настраивает границу безопасности" },
+    "architecture.relation.static_call_supporting_relation": { params: [], text: "поддерживает через статический вызов" },
+    "architecture.relation.package_import": { params: [], text: "импорт пакета" },
+    "architecture.relation.behavior_handoff": { params: [], text: "передача поведения" },
     "architecture.relation.continues": { params: [], text: "продолжает" },
     "architecture.label.unknown": { params: [], text: "неизвестно" },
     "architecture.value.static": { params: [], text: "статический анализ" },
@@ -3011,6 +3354,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   global.RepomapUI = Object.freeze({
     version: VERSION,
+    hasMessage: function (id) {
+      return typeof id === 'string' && own(EN, id);
+    },
     message: function (id, params) {
       return messageForLocale(currentLocale(), id, params);
     },
@@ -3030,7 +3376,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
   var REPORT_LANGUAGE = DATA.report_language === 'ru' ? 'ru' : 'en';
   var UI = window.RepomapUI;
-  if (!UI || typeof UI.message !== 'function') {
+  if (!UI || typeof UI.message !== 'function' || typeof UI.hasMessage !== 'function') {
     throw new Error('repomap UI message catalog is unavailable');
   }
 
@@ -3071,7 +3417,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   var maxSymbolCandidates = 8;
   var maxStaticCalls = 5;
   var maxSourceLines = 20;
-  var maxInspectionWarnings = 8;
   var maxTestReferences = 5;
   var DEBUG_MODE = /^(1|true)$/i.test(new URLSearchParams(window.location.search).get('debug') || '');
 	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
@@ -3811,7 +4156,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) {
-          var error = new Error(body.error || msg('main.error.editor_action_failed'));
+          var error = new Error(msg('main.error.editor_action_failed'));
           error.code = body.code || '';
           throw error;
         }
@@ -3830,7 +4175,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         showEditorUnavailable(filePath, line || 0, column || 0);
         return;
       }
-      showToast(error.message || msg('main.toast.could_not_open_vscode'), true);
+      showToast(msg('main.toast.could_not_open_vscode'), true);
     });
   }
 
@@ -3955,6 +4300,64 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     return node;
   }
 
+  function runPickerDate(run) {
+    var parsed = new Date(String(run && run.created_at || ''));
+    if (Number.isNaN(parsed.getTime())) {
+      var runID = String(run && run.id || '');
+      var match = runID.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+      if (match) {
+        parsed = new Date(Date.UTC(
+          Number(match[1]),
+          Number(match[2]) - 1,
+          Number(match[3]),
+          Number(match[4]),
+          Number(match[5]),
+          Number(match[6])
+        ));
+      }
+    }
+    if (Number.isNaN(parsed.getTime())) {
+      return REPORT_LANGUAGE === 'ru'
+        ? '--.--.----, --:--:--'
+        : '--/--/----, --:--:--';
+    }
+    var locale = REPORT_LANGUAGE === 'ru' ? 'ru-RU' : 'en-US';
+    var date = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(parsed);
+    var time = new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).format(parsed);
+    return date + ', ' + time;
+  }
+
+  function runPickerShortID(run) {
+    var supplied = String(run && run.short_id || '');
+    if (supplied) return supplied;
+    var runID = String(run && run.id || '');
+    var separator = runID.lastIndexOf('-');
+    var value = separator >= 0 ? runID.slice(separator + 1) : runID;
+    return value.length > 12 ? value.slice(-12) : value;
+  }
+
+  function runPickerLabel(run) {
+    var repository = String(run && run.repo_name || '') || msg('main.saved_repository_report');
+    var language = run && run.report_language === 'ru' ? 'ru' : 'en';
+    var cacheMode = run && run.cache_mode === 'no-cache' ? 'no-cache' : 'cache';
+    return [
+      repository,
+      language,
+      cacheMode,
+      runPickerDate(run),
+      runPickerShortID(run),
+    ].join(' · ');
+  }
+
   function setupServerFeatures() {
     if (staticSourceMode()) {
       var staticSourceHintNode = document.getElementById('rm-editor-hint');
@@ -3980,13 +4383,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       runs.forEach(function (run) {
         var option = document.createElement('option');
         option.value = run.id;
-        var label = run.repo_name || msg('main.saved_repository_report');
-        var captured = String(run.created_at || '');
-        var parsed = new Date(captured);
-        if (!Number.isNaN(parsed.getTime())) {
-          label += ' · ' + parsed.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-        }
-        option.textContent = label;
+        option.textContent = runPickerLabel(run);
         option.selected = run.id === selected;
         selector.appendChild(option);
       });
@@ -4176,8 +4573,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var row = el('div', 'rm-direction-evidence-item');
     var top = el('div', 'rm-proof-step-top');
     top.appendChild(txt('span', 'rm-proof-symbol', proofAnchorLabel(from, transition.from)));
-    var relation = (transition.relation || 'related').replace(/_/g, ' ');
-    var invocation = (transition.invocation || 'unknown').replace(/_/g, ' ');
+    var relation = transition.relation || 'related';
+    var invocation = transition.invocation || 'unknown';
     top.appendChild(txt('span', 'rm-proof-relation', '→ ' + relation + ' / ' + invocation + ' →'));
     top.appendChild(txt('span', 'rm-proof-symbol', proofAnchorLabel(to, transition.to)));
     row.appendChild(top);
@@ -4185,7 +4582,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var semantics = [];
     if (transition.resolution) {
       semantics.push(msg('main.proof.resolution', {
-        resolution: transition.resolution.replace(/_/g, ' '),
+        resolution: transition.resolution,
       }));
     }
     if (transition.certainty) {
@@ -4232,7 +4629,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
     var slots = el('div', 'rm-proof-slots');
     (proof.slots || []).forEach(function (slot) {
-      var slotNode = txt('span', 'rm-proof-slot rm-proof-slot--' + (slot.status || 'missing'), slot.kind.replace(/_/g, ' '));
+      var slotNode = txt('span', 'rm-proof-slot rm-proof-slot--' + (slot.status || 'missing'), slot.kind);
       slotNode.title = slot.summary || slot.missing || slot.status;
       slots.appendChild(slotNode);
     });
@@ -4274,7 +4671,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     if (session.stop && session.stop.reason !== 'complete') {
       var boundary = el('div', 'rm-proof-boundary');
       boundary.appendChild(txt('span', 'rm-proof-boundary-label', LABELS.proofStop + ': '));
-      boundary.appendChild(document.createTextNode(session.stop.reason.replace(/_/g, ' ') + (session.stop.message ? ' — ' + session.stop.message : '')));
+      boundary.appendChild(document.createTextNode(session.stop.reason + (session.stop.message ? ' — ' + session.stop.message : '')));
       box.appendChild(boundary);
     }
     if (proof.current_frontier) {
@@ -4321,8 +4718,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (errorFlowType) eh.appendChild(errorFlowType);
       eh.appendChild(renderPill(LABELS.errorUnavailable, 'error'));
       card.appendChild(eh);
-      if (flow.bundle_stats_label) {
-        var meta = txt('div', 'rm-meta', flow.bundle_stats_label);
+      if (flow.bundle_summary) {
+        var meta = txt('div', 'rm-meta', msg('main.flow.bundle_stats_compact', {
+          source: Number(flow.bundle_summary.selected_files_count) || 0,
+          test: Number(flow.bundle_summary.selected_tests_count) || 0,
+          doc: Number(flow.bundle_summary.selected_docs_count) || 0,
+        }));
         card.appendChild(meta);
       }
       card.onclick = function () { showTab('rm-flow-' + flow.id); };
@@ -4597,7 +4998,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         addFact(LABELS.surfaceAnalysis, surfaceValue);
       }
       if (DATA.freshness) {
-        var freshnessValue = String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+        var freshnessValue = String(DATA.freshness.state || 'unavailable');
         if ((DATA.freshness.affected_paths || []).length > 0) {
           freshnessValue += ' · ' + msg('main.count.analyzed_inputs_changed', { count: DATA.freshness.affected_paths.length });
         } else if ((DATA.freshness.affected_submodules || []).length > 0) {
@@ -4655,7 +5056,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       repository_pattern: msg('main.semantic_kind.repository_pattern'),
       contribution_guide: msg('main.semantic_kind.contribution_guide'),
       go_learning: msg('main.semantic_kind.go_learning'),
-    }[kind] || String(kind || msg('main.chrome.explanation')).replace(/_/g, ' ');
+    }[kind] || String(kind || msg('main.chrome.explanation'));
   }
 
   function semanticArtifactBasisCounts(artifact) {
@@ -4703,7 +5104,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       ));
     }
     if (artifact.verdict) {
-      meta.appendChild(txt('span', 'rm-explore-artifact__verdict', String(artifact.verdict).replace(/_/g, ' ')));
+      meta.appendChild(txt('span', 'rm-explore-artifact__verdict', String(artifact.verdict)));
     }
     if (meta.childElementCount) button.appendChild(meta);
     button.appendChild(txt('span', 'rm-explore-artifact__action', msg('main.chrome.open.explanation.on.the.map')));
@@ -4826,12 +5227,27 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function appendResearchStage(container, label, stage) {
     if (!stage || !stage.status) return;
     var row = el('div', 'rm-model-research-stage');
-    var status = String(stage.status).replaceAll('_', ' ');
+    var status = String(stage.status);
     if (stage.cache_hit) status += ' · ' + msg('main.research.cached');
     if (stage.request_bytes) status += ' · ' + formatBytes(stage.request_bytes);
     row.appendChild(txt('strong', '', label));
     row.appendChild(txt('span', '', status));
     container.appendChild(row);
+  }
+
+  function researchSelectionReasonLabel(reason) {
+    var code = String(reason || '');
+    var messageIDs = {
+      planned: 'main.research.selection_reason.planned',
+      runtime_only_frontier: 'main.research.selection_reason.runtime_only_frontier',
+      unknown_candidate_ids: 'main.research.selection_reason.unknown_candidate_ids',
+      no_code_bearing_bounded_window: 'main.research.selection_reason.no_code_bearing_bounded_window',
+      no_new_exact_evidence: 'main.research.selection_reason.no_new_exact_evidence',
+      no_bounded_local_evidence: 'main.research.selection_reason.no_bounded_local_evidence',
+      new_exact_evidence_and_high_value_frontier: 'main.research.selection_reason.new_exact_evidence_and_high_value_frontier',
+      targeted_round_limit: 'main.research.selection_reason.targeted_round_limit',
+    };
+    return messageIDs[code] ? msg(messageIDs[code]) : code;
   }
 
   function appendResearchRound(container, label, round) {
@@ -4840,7 +5256,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var heading = el('div', 'rm-model-research-stage');
     heading.appendChild(txt('strong', '', label));
     var status = round.status
-      ? String(round.status).replaceAll('_', ' ')
+      ? String(round.status)
       : msg('main.research.unknown_status');
     if (round.cached) status += ' · ' + msg('main.research.cached');
     heading.appendChild(txt('span', '', status));
@@ -4848,7 +5264,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     if (round.question) row.appendChild(txt('div', '', round.question));
     if (round.selection_reason) {
       row.appendChild(txt('div', 'rm-muted', msg('main.research.why', {
-        reason: round.selection_reason.replaceAll('_', ' '),
+        reason: researchSelectionReasonLabel(round.selection_reason),
       })));
     }
     row.appendChild(txt('div', 'rm-muted', msg('main.research.exact_evidence', {
@@ -4866,7 +5282,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       })));
     } else if (round.stop_reason) {
       row.appendChild(txt('div', 'rm-muted', msg('main.research.result', {
-        result: String(round.stop_reason).replaceAll('_', ' '),
+        result: String(round.stop_reason),
       })));
     }
     container.appendChild(row);
@@ -4972,8 +5388,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     return value.slice(0, Math.max(0, maxLength - 1)) + '…';
   }
 
-  function humanizeSymbolDetail(value) {
-    return boundedText(value, 80).replace(/_/g, ' ');
+  function exactSymbolDetail(value) {
+    return typeof value === 'string' ? value : '';
   }
 
   function symbolLookupLine(anchor) {
@@ -5005,7 +5421,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
     var heading = el('div', 'rm-symbol-candidate-heading');
     heading.appendChild(txt('code', 'rm-symbol-candidate-name', boundedText(candidate.name, 160) || msg('main.chrome.unnamed.go.symbol')));
-    var kind = humanizeSymbolDetail(candidate.kind);
+    var kind = exactSymbolDetail(candidate.kind);
     if (kind) heading.appendChild(txt('span', 'rm-symbol-candidate-kind', kind));
     row.appendChild(heading);
 
@@ -5014,20 +5430,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     row.appendChild(txt('code', 'rm-symbol-candidate-location', path + (line ? ':' + line : '')));
 
     var details = [];
-    var match = humanizeSymbolDetail(candidate.match);
-    var certainty = humanizeSymbolDetail(candidate.certainty);
+    var match = exactSymbolDetail(candidate.match);
+    var certainty = exactSymbolDetail(candidate.certainty);
     if (match) details.push(match);
     if (certainty) details.push(certainty);
     if (details.length > 0) {
       row.appendChild(txt('div', 'rm-symbol-candidate-meta', details.join(' · ')));
     }
 
-    var reasons = Array.isArray(candidate.rank_reasons) ? candidate.rank_reasons.slice(0, 3).map(function (reason) {
-      return humanizeSymbolDetail(reason);
-    }).filter(Boolean) : [];
-    if (reasons.length > 0) {
+    var reasonCount = Array.isArray(candidate.rank_reasons) ? candidate.rank_reasons.length : 0;
+    if (reasonCount > 0) {
       row.appendChild(txt('div', 'rm-symbol-candidate-reasons', msg('main.symbol.ranked_by', {
-        reasons: reasons.join(' · '),
+        count: reasonCount,
       })));
     }
     if (selected && state.persisted) {
@@ -5073,7 +5487,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         callsite.appendChild(renderEntityLocation(call.callsite, 'rm-symbol-callsite-location'));
         item.appendChild(callsite);
       }
-      var certainty = humanizeSymbolDetail(call.certainty);
+      var certainty = exactSymbolDetail(call.certainty);
       if (certainty) item.appendChild(txt('div', 'rm-symbol-candidate-meta', msg('main.evidence_suffix', {
         certainty: certainty,
       })));
@@ -5102,7 +5516,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }
     if (source.stop_reason) {
       summary.push(msg('main.source.stop_reason', {
-        reason: humanizeSymbolDetail(source.stop_reason),
+        reason: exactSymbolDetail(source.stop_reason),
       }));
     }
     if (source.truncated) summary.push(msg('main.source.truncated'));
@@ -5175,7 +5589,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       return key !== 'incoming_calls' && key !== 'outgoing_calls' &&
         Number.isInteger(truncated[key]) && truncated[key] > 0;
     }).slice(0, 5).map(function (key) {
-      return humanizeSymbolDetail(key) + ' +' + truncated[key];
+      return exactSymbolDetail(key) + ' +' + truncated[key];
     });
     if (items.length === 0) return null;
     return txt('div', 'rm-symbol-truncation', msg('main.symbol.evidence_omitted', {
@@ -5206,10 +5620,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       section.appendChild(list);
     }
     section.appendChild(txt('p', 'rm-investigation-caveat', msg('main.chrome.navigation.evidence.only.this.does.not.prove.coverage.or.what.a.test.asserts.test.paths.stay.non.clickable.until.they.are.part.of.saved.run.authority')));
-    var warnings = Array.isArray(response.test_warnings) ? response.test_warnings.slice(0, 4) : [];
-    warnings.forEach(function (warning) {
-      section.appendChild(txt('div', 'rm-investigation-test-warning', boundedText(warning, 180)));
-    });
+    var warningCount = Array.isArray(response.test_warnings) ? response.test_warnings.length : 0;
+    if (warningCount > 0) {
+      section.appendChild(txt('div', 'rm-investigation-test-warning', msg('main.count.warnings', {
+        count: warningCount,
+      })));
+    }
     return section;
   }
 
@@ -5248,7 +5664,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       return detail;
     }
     if (inspection.status === 'error') {
-      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(inspection.error, 180) || msg('main.chrome.could.not.inspect.this.go.symbol'));
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', msg('main.chrome.could.not.inspect.this.go.symbol'));
       error.setAttribute('role', 'alert');
       detail.appendChild(error);
       return detail;
@@ -5260,12 +5676,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     detail.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.chrome.exact.symbol')));
     var targetHeading = el('div', 'rm-symbol-detail-heading');
     targetHeading.appendChild(txt('code', 'rm-symbol-detail-name', boundedText(target.name, 160) || msg('main.chrome.unnamed.go.symbol')));
-    var targetKind = humanizeSymbolDetail(target.kind);
+    var targetKind = exactSymbolDetail(target.kind);
     if (targetKind) targetHeading.appendChild(txt('span', 'rm-symbol-candidate-kind', targetKind));
     detail.appendChild(targetHeading);
     detail.appendChild(renderEntityLocation(target, 'rm-symbol-detail-location'));
 
-    var evidenceLevel = humanizeSymbolDetail(response.evidence_level) || 'static';
+    var evidenceLevel = exactSymbolDetail(response.evidence_level) || 'static';
     detail.appendChild(txt('p', 'rm-symbol-static-note', msg('main.symbol.static_hierarchy', {
       level: evidenceLevel,
     })));
@@ -5289,14 +5705,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     if (truncation) detail.appendChild(truncation);
     var checkpoint = renderInvestigationCheckpoint(response, key);
     if (checkpoint) detail.appendChild(checkpoint);
-    var warnings = Array.isArray(response.warnings) ? response.warnings.slice(0, maxInspectionWarnings) : [];
-    if (warnings.length > 0) {
+    var warningCount = Array.isArray(response.warnings) ? response.warnings.length : 0;
+    if (warningCount > 0) {
       var warningSection = el('section', 'rm-symbol-warnings');
       warningSection.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.warnings')));
       var warningList = el('ul', 'rm-symbol-warning-list');
-      warnings.forEach(function (warning) {
-        warningList.appendChild(txt('li', '', boundedText(warning, 180)));
-      });
+      warningList.appendChild(txt('li', '', msg('main.count.warnings', { count: warningCount })));
       warningSection.appendChild(warningList);
       detail.appendChild(warningSection);
     }
@@ -5323,7 +5737,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       return;
     }
     if (state.status === 'error') {
-      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(state.error, 180) || msg('main.chrome.could.not.find.go.symbols'));
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', msg('main.chrome.could.not.find.go.symbols'));
       error.setAttribute('role', 'alert');
       view.results.appendChild(error);
       return;
@@ -5385,7 +5799,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.go_symbol_lookup_failed'));
+        if (!response.ok) throw new Error(msg('main.error.go_symbol_lookup_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -5399,11 +5813,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         inspection: { status: 'idle' },
       };
       paintSymbolLookup(key);
-    }).catch(function (error) {
+    }).catch(function () {
       symbolLookupStates[key] = {
         status: 'error',
         candidates: [],
-        error: error && error.message ? error.message : msg('main.chrome.could.not.find.go.symbols'),
+        error: msg('main.chrome.could.not.find.go.symbols'),
       };
       paintSymbolLookup(key);
     });
@@ -5441,7 +5855,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.go_symbol_inspection_failed'));
+        if (!response.ok) throw new Error(msg('main.error.go_symbol_inspection_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -5451,13 +5865,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       current.persisted = payload.investigation_status === 'source_ready' || payload.investigation_status === 'tests_ready';
       paintSymbolLookup(key);
       revealSymbolInspection(key);
-    }).catch(function (error) {
+    }).catch(function () {
       var current = symbolLookupStates[key];
       if (!current || current.candidateSetID !== candidateSetID) return;
       current.inspection = {
         status: 'error',
         candidateID: candidate.id,
-        error: error && error.message ? error.message : msg('main.chrome.could.not.inspect.this.go.symbol'),
+        error: msg('main.chrome.could.not.inspect.this.go.symbol'),
       };
       paintSymbolLookup(key);
       revealSymbolInspection(key);
@@ -5480,7 +5894,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       body: JSON.stringify({ run_id: runID }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.related_test_references_failed'));
+        if (!response.ok) throw new Error(msg('main.error.related_test_references_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -5490,11 +5904,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         if (current) paintSymbolLookup(key);
         throw new Error(msg('main.error.saved_investigation_mismatch'));
       }
-    }).catch(function (error) {
+    }).catch(function () {
       var current = symbolLookupStates[key];
       if (current) current.testStatus = 'idle';
       paintSymbolLookup(key);
-      showToast(error && error.message ? error.message : msg('main.error.related_test_references_failed'), true);
+      showToast(msg('main.error.related_test_references_failed'), true);
       revealSymbolInspection(key);
     });
   }
@@ -5567,13 +5981,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }).then(function (response) {
       if (response.status === 204 || response.status === 404) return null;
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.saved_investigation_unavailable'));
+        if (!response.ok) throw new Error(msg('main.error.saved_investigation_unavailable'));
         return body;
       });
     }).then(function (payload) {
       if (payload) applyResumedInvestigation(payload);
-    }).catch(function (error) {
-      showToast(error && error.message ? error.message : msg('main.error.saved_investigation_unavailable'), true);
+    }).catch(function () {
+      showToast(msg('main.error.saved_investigation_unavailable'), true);
     });
   }
 
@@ -6235,8 +6649,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       body.appendChild(txt('div', 'rm-read-order-reason', msg('main.this.source.changed.after.the.report.was.generated')));
     }
     if (fi.reason) {
-      var reason = linkified('div', 'rm-read-order-reason', humanizeReason(fi.reason));
-      reason.title = fi.reason;
+      var displayedReason = fi.presentation_reason || humanizeReason(fi.reason);
+      var reason = linkified('div', 'rm-read-order-reason', displayedReason);
+      reason.title = displayedReason;
       body.appendChild(reason);
     }
     item.appendChild(body);
@@ -6259,8 +6674,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         li.appendChild(txt('span', 'rm-file-reason', msg('main.this.source.changed.after.the.report.was.generated')));
       }
       if (f.reason) {
-        var reason = linkified('span', 'rm-file-reason', humanizeReason(f.reason));
-        reason.title = f.reason;
+        var displayedReason = f.presentation_reason || humanizeReason(f.reason);
+        var reason = linkified('span', 'rm-file-reason', displayedReason);
+        reason.title = displayedReason;
         li.appendChild(reason);
       }
       ul.appendChild(li);
@@ -6282,8 +6698,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         li.appendChild(txt('span', 'rm-file-reason', msg('main.this.source.changed.after.the.report.was.generated')));
       }
       if (file.reason) {
-        var reason = linkified('span', 'rm-file-reason', humanizeReason(file.reason));
-        reason.title = file.reason;
+        var displayedReason = file.presentation_reason || humanizeReason(file.reason);
+        var reason = linkified('span', 'rm-file-reason', displayedReason);
+        reason.title = displayedReason;
         li.appendChild(reason);
       }
       return li;
@@ -6369,58 +6786,63 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     return (millis / 1000).toFixed(millis < 10000 ? 1 : 0) + ' s';
   }
 
-  function summarizeRunWarnings(warnings) {
+  function summarizeRunWarnings(warnings, presentationWarnings, presentationWarningKinds, presentationWarningMessages) {
     var primary = [];
-    var modelContext = [];
-    var groundingRepairs = 0;
-    var confidenceAdjustments = 0;
-    var toolchain = null;
-    (warnings || []).forEach(function (warning) {
-      var value = String(warning || '').trim();
-      if (!value) return;
-      var isModelContextWarning =
-        /(truncat|limited|not fully visible).*(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths)/i.test(value) ||
-        /(important edges|candidate[_ ]file[_ ]index|facts bundle|allowed_paths).*(truncat|limited|not fully visible)/i.test(value);
-      if (isModelContextWarning) {
-        modelContext.push(value);
-        return;
-      }
-      if (/^(parser )?(dropped|replaced|removed) ungrounded/.test(value)) {
-        groundingRepairs++;
-        return;
-      }
-      if (value.indexOf('local confidence gate capped') === 0) {
-        confidenceAdjustments++;
-        return;
-      }
-      var isToolchainWarning =
-        value.indexOf('target module requires go') >= 0 ||
-        (value.indexOf('local proof ') === 0 && value.indexOf('requires newer Go version') >= 0);
-      if (isToolchainWarning) {
-        var versions = value.match(/go[0-9]+(?:\.[0-9]+){1,2}/g) || [];
-        toolchain = versions.length >= 2 ?
-          msg('main.warning.go_toolchain_versions', {
-            required: versions[0],
-            current: versions[1],
-          }) :
-          msg('main.warning.go_toolchain_older');
-        return;
-      }
-      primary.push(value);
+    var fixedMessages = new Set([
+      'main.warning.study_editing_did_not_finish',
+      'main.warning.study_checks_failed',
+      'main.warning.study_no_source_adapter',
+      'main.warning.study_no_source_functions',
+      'main.warning.confidence_candidate_capped',
+      'main.warning.confidence_orientation_capped_incomplete',
+    ]);
+    var structuredMessages = new Map();
+    (presentationWarningMessages || []).forEach(function (presentation) {
+      if (!presentation || !Number.isInteger(presentation.warning_index)) return;
+      if (!fixedMessages.has(presentation.message_id)) return;
+      structuredMessages.set(presentation.warning_index, presentation);
     });
-    if (toolchain) primary.unshift(toolchain);
-    var details = [];
-    if (groundingRepairs > 0) {
-      details.push(msg('main.warning.grounding_repairs_hidden', { count: groundingRepairs }));
-    }
-    if (confidenceAdjustments > 0) {
-      details.push(msg('main.warning.confidence_reduced', { count: confidenceAdjustments }));
-    }
-    return { primary: primary, modelContext: modelContext, details: details };
+    (warnings || []).forEach(function (warning, warningIndex) {
+      var value = String(warning || '').trim();
+      var presentationValue = String(
+        presentationWarnings && presentationWarnings[warningIndex] || value
+      ).trim();
+      var presentationMessageID = String(
+        presentationWarningKinds && presentationWarningKinds[warningIndex] || ''
+      );
+      if (!value) return;
+      var structured = structuredMessages.get(warningIndex);
+      if (structured) {
+        if (structured.message_id === 'main.warning.confidence_candidate_capped') {
+          primary.push(msg(structured.message_id, {
+            index: structured.candidate_index,
+            proposed: structured.proposed,
+            capped: structured.capped,
+          }));
+        } else {
+          primary.push(msg(structured.message_id, {
+            proposed: structured.proposed,
+            capped: structured.capped,
+          }));
+        }
+        return;
+      }
+      if (fixedMessages.has(presentationMessageID)) {
+        primary.push(msg(presentationMessageID));
+        return;
+      }
+      primary.push(presentationValue);
+    });
+    return { primary: primary, modelContext: [], details: [] };
   }
 
   function renderRunWarnings(warnings) {
-    var summarized = summarizeRunWarnings(warnings);
+    var summarized = summarizeRunWarnings(
+      warnings,
+      DATA.presentation_warnings,
+      DATA.presentation_warning_kinds,
+      DATA.presentation_warning_messages
+    );
     if (summarized.primary.length === 0 && summarized.modelContext.length === 0 && summarized.details.length === 0) return null;
     var container = el('div', 'rm-run-warning-stack');
     if (summarized.modelContext.length > 0) {
@@ -7354,10 +7776,32 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return card;
 	}
 
+	var STUDY_STAGE_MESSAGE_IDS = {
+		orientation: 'main.study.stage.orientation',
+		central_operation: 'main.study.stage.central_operation',
+		core_model: 'main.study.stage.core_model',
+		integration: 'main.study.stage.integration',
+		operations: 'main.study.stage.operations',
+		contribution: 'main.study.stage.contribution',
+	};
+
 	function studyStageLabel(stage) {
-		return String(stage || 'study').replace(/_/g, ' ').replace(/\b\w/g, function (letter) {
-			return letter.toUpperCase();
-		});
+		return msg(STUDY_STAGE_MESSAGE_IDS[String(stage || '')] || 'main.study.stage.study');
+	}
+
+	var STUDY_READING_LABEL_MESSAGE_IDS = {
+		'Start here': 'main.study.reading_label.start_here',
+		'Then inspect': 'main.study.reading_label.then_inspect',
+		'Related implementation': 'main.study.reading_label.related_implementation',
+		'Public boundary': 'main.study.reading_label.public_boundary',
+		'Core data type': 'main.study.reading_label.core_data_type',
+	};
+
+	function studyReadingLabel(label) {
+		return msg(
+			STUDY_READING_LABEL_MESSAGE_IDS[String(label || '')] ||
+			'main.study.reading_label.unknown'
+		);
 	}
 
 	function renderIncompleteStudyOverview() {
@@ -7597,7 +8041,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (!reading) return null;
 		return {
 			kind: 'anchor',
-			label: reading.source.enclosing_symbol || reading.label || reading.location.path,
+			label: reading.source.enclosing_symbol ||
+				(reading.label ? studyReadingLabel(reading.label) : reading.location.path),
 			location: reading.location || sourceSnippetLocation(reading.source),
 			source: reading.source,
 		};
@@ -7609,7 +8054,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var card = el('article', 'rm-study-reading-anchor');
 		card.appendChild(txt('span', 'rm-study-reading-anchor__order', String(index + 1)));
 		var copy = el('div', 'rm-study-reading-anchor__copy');
-		if (reading.label) copy.appendChild(txt('span', 'rm-study-reading-anchor__label', reading.label));
+		if (reading.label) {
+			copy.appendChild(txt(
+				'span',
+				'rm-study-reading-anchor__label',
+				studyReadingLabel(reading.label)
+			));
+		}
 		copy.appendChild(txt('strong', '', reading.source.enclosing_symbol || location.path));
 		copy.appendChild(renderFileReference(
 			location.path,
@@ -7811,10 +8262,103 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}
 	}
 
-	function taskLensLabel(value) {
-		return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, function (letter) {
-			return letter.toUpperCase();
-		});
+	var TASK_LENS_ENUM_MESSAGE_IDS = {
+		task_kind: {
+			bug: 'main.task_lens.enum.task_kind.bug',
+			feature: 'main.task_lens.enum.task_kind.feature',
+			extension: 'main.task_lens.enum.task_kind.extension',
+			configuration: 'main.task_lens.enum.task_kind.configuration',
+			operational: 'main.task_lens.enum.task_kind.operational',
+			compatibility: 'main.task_lens.enum.task_kind.compatibility',
+			unknown: 'main.task_lens.enum.task_kind.unknown',
+		},
+		locality: {
+			local_exact: 'main.task_lens.enum.locality.local_exact',
+			bounded_cross_file: 'main.task_lens.enum.locality.bounded_cross_file',
+			extension_contribution: 'main.task_lens.enum.locality.extension_contribution',
+			broad_dynamic: 'main.task_lens.enum.locality.broad_dynamic',
+		},
+		anchor_role: {
+			symptom_site: 'main.task_lens.enum.anchor_role.symptom_site',
+			public_or_cli_entry: 'main.task_lens.enum.anchor_role.public_or_cli_entry',
+			state_owner: 'main.task_lens.enum.anchor_role.state_owner',
+			state_mutation: 'main.task_lens.enum.anchor_role.state_mutation',
+			configuration_source: 'main.task_lens.enum.anchor_role.configuration_source',
+			configuration_copy: 'main.task_lens.enum.anchor_role.configuration_copy',
+			error_creation: 'main.task_lens.enum.anchor_role.error_creation',
+			error_mapping: 'main.task_lens.enum.anchor_role.error_mapping',
+			integration_boundary: 'main.task_lens.enum.anchor_role.integration_boundary',
+			representative_implementation: 'main.task_lens.enum.anchor_role.representative_implementation',
+			generated_output: 'main.task_lens.enum.anchor_role.generated_output',
+			reproduction_anchor: 'main.task_lens.enum.anchor_role.reproduction_anchor',
+			verification_anchor: 'main.task_lens.enum.anchor_role.verification_anchor',
+			documentation_contract: 'main.task_lens.enum.anchor_role.documentation_contract',
+		},
+		support_type: {
+			locally_observed: 'main.task_lens.enum.support_type.locally_observed',
+			document_supported: 'main.task_lens.enum.support_type.document_supported',
+			model_hypothesis: 'main.task_lens.enum.support_type.model_hypothesis',
+			unresolved: 'main.task_lens.enum.support_type.unresolved',
+		},
+		hypothesis_status: {
+			supported: 'main.task_lens.enum.hypothesis_status.supported',
+			plausible: 'main.task_lens.enum.hypothesis_status.plausible',
+			unresolved: 'main.task_lens.enum.hypothesis_status.unresolved',
+		},
+		guidance_authority: {
+			task_provided: 'main.task_lens.enum.guidance_authority.task_provided',
+			repository_document: 'main.task_lens.enum.guidance_authority.repository_document',
+			repository_test_or_example: 'main.task_lens.enum.guidance_authority.repository_test_or_example',
+			repository_observation: 'main.task_lens.enum.guidance_authority.repository_observation',
+			missing_evidence: 'main.task_lens.enum.guidance_authority.missing_evidence',
+		},
+		probe_action: {
+			inspect_symbol: 'main.task_lens.enum.probe_action.inspect_symbol',
+			resolve_reference: 'main.task_lens.enum.probe_action.resolve_reference',
+			compare_config_copies: 'main.task_lens.enum.probe_action.compare_config_copies',
+			inspect_fixture: 'main.task_lens.enum.probe_action.inspect_fixture',
+			inspect_sibling_implementation: 'main.task_lens.enum.probe_action.inspect_sibling_implementation',
+			search_task_terms: 'main.task_lens.enum.probe_action.search_task_terms',
+		},
+		relation_kind: {
+			direct_call: 'main.task_lens.enum.relation_kind.direct_call',
+			field_copy: 'main.task_lens.enum.relation_kind.field_copy',
+			field_read: 'main.task_lens.enum.relation_kind.field_read',
+			field_write: 'main.task_lens.enum.relation_kind.field_write',
+			error_created: 'main.task_lens.enum.relation_kind.error_created',
+			error_mapped: 'main.task_lens.enum.relation_kind.error_mapped',
+			error_exposed: 'main.task_lens.enum.relation_kind.error_exposed',
+			value_transformed: 'main.task_lens.enum.relation_kind.value_transformed',
+			type_name_generated: 'main.task_lens.enum.relation_kind.type_name_generated',
+			config_applied: 'main.task_lens.enum.relation_kind.config_applied',
+			script_invokes: 'main.task_lens.enum.relation_kind.script_invokes',
+			test_exercises: 'main.task_lens.enum.relation_kind.test_exercises',
+			fixture_records: 'main.task_lens.enum.relation_kind.fixture_records',
+			documented_uses: 'main.task_lens.enum.relation_kind.documented_uses',
+			shared_state_alias: 'main.task_lens.enum.relation_kind.shared_state_alias',
+			scope_unknown: 'main.task_lens.enum.relation_kind.scope_unknown',
+			document_names_endpoints: 'main.task_lens.enum.relation_kind.document_names_endpoints',
+			model_hypothesis: 'main.task_lens.enum.relation_kind.model_hypothesis',
+			unresolved_relation: 'main.task_lens.enum.relation_kind.unresolved_relation',
+		},
+		stage: {
+			architecture_synthesis: 'main.task_lens.enum.stage.architecture_synthesis',
+			generic_orientation: 'main.task_lens.enum.stage.generic_orientation',
+			guided_tour: 'main.task_lens.enum.stage.guided_tour',
+			mechanism_opportunity: 'main.task_lens.enum.stage.mechanism_opportunity',
+			paved_paths: 'main.task_lens.enum.stage.paved_paths',
+			repository_study_map: 'main.task_lens.enum.stage.repository_study_map',
+			runtime_surface_discovery: 'main.task_lens.enum.stage.runtime_surface_discovery',
+		},
+	};
+
+	function taskLensEnumLabel(family, value) {
+		var normalized = String(value || '');
+		var familyMessages = TASK_LENS_ENUM_MESSAGE_IDS[family] || {};
+		var messageID = familyMessages[normalized];
+		return messageID
+			? msg(messageID)
+			: msg('main.task_lens.enum.unknown', { value: normalized || '—' });
 	}
 
 	function taskLensAnchor(index) {
@@ -7830,13 +8374,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return String(anchor.symbol || anchor.section || anchor.path || msg('main.repository_anchor'));
 	}
 
-	function taskLensSupportBadge(value) {
+	function taskLensBadge(value, label) {
 		var normalized = String(value || 'unresolved');
 		return txt(
 			'span',
 			'rm-task-support rm-task-support--' + normalized.replace(/[^a-z0-9_-]/gi, '-'),
-			taskLensLabel(normalized)
+			label
 		);
+	}
+
+	function taskLensEnumBadge(family, value) {
+		return taskLensBadge(value, taskLensEnumLabel(family, value));
 	}
 
 	function taskLensAnchorElementID(index) {
@@ -7898,7 +8446,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
 	function taskLensJoinConnector(kind) {
-		return kind === 'direct_call_expression' ? ' → ' : ' ↔ ';
+		return kind === 'direct_call' || kind === 'direct_call_expression' ? ' → ' : ' ↔ ';
 	}
 
 	function taskLensGuidanceList(values) {
@@ -7907,7 +8455,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			if (!guidance || !guidance.text) return;
 			var item = el('li', 'rm-task-guidance');
 			item.appendChild(txt('p', '', guidance.text));
-			item.appendChild(taskLensSupportBadge(guidance.authority));
+			item.appendChild(taskLensEnumBadge('guidance_authority', guidance.authority));
 			appendTaskLensCitations(item, guidance.support_anchor_indexes, msg('main.chrome.evidence'));
 			list.appendChild(item);
 		});
@@ -7930,13 +8478,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var taskText = linkified('p', 'rm-task-original', TASK_INVESTIGATION.task || '');
 		if (taskText.textContent || taskText.childNodes && taskText.childNodes.length) hero.appendChild(taskText);
 		var classification = el('div', 'rm-task-classification');
-		classification.appendChild(taskLensSupportBadge(interpretation.task_kind));
-		classification.appendChild(taskLensSupportBadge(TASK_INVESTIGATION.locality));
-			classification.appendChild(taskLensSupportBadge(
-				TASK_INVESTIGATION.sufficient
-          ? msg('main.task_lens.bounded_evidence_sufficient')
-          : msg('main.task_lens.partial_bounded_evidence')
-			));
+		classification.appendChild(taskLensEnumBadge('task_kind', interpretation.task_kind));
+		classification.appendChild(taskLensEnumBadge('locality', TASK_INVESTIGATION.locality));
+		classification.appendChild(taskLensBadge(
+			TASK_INVESTIGATION.sufficient ? 'sufficient' : 'partial',
+			TASK_INVESTIGATION.sufficient
+				? msg('main.task_lens.bounded_evidence_sufficient')
+				: msg('main.task_lens.partial_bounded_evidence')
+		));
 		hero.appendChild(classification);
 		var termBoundary = el('div', 'rm-task-term-boundary');
 		var foundTerms = taskLensTermGroup(
@@ -7957,6 +8506,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var warnings = Array.isArray(TASK_INVESTIGATION.warnings)
 			? TASK_INVESTIGATION.warnings.filter(Boolean)
 			: [];
+		var warningPresentations = Array.isArray(TASK_INVESTIGATION.presentation_warnings)
+			? TASK_INVESTIGATION.presentation_warnings
+			: [];
 		if (warnings.length) {
 			var warningSection = el('section', 'rm-workspace-section rm-task-warnings');
 			warningSection.appendChild(renderViewHeading(
@@ -7965,8 +8517,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 					msg('main.task_lens.cautions_copy')
 			));
 			var warningList = el('ul', 'rm-task-warning-list');
-			warnings.forEach(function (warning) {
-				warningList.appendChild(txt('li', '', warning));
+			warnings.forEach(function (warning, warningIndex) {
+				var presentation = warningPresentations[warningIndex] || null;
+				var renderedWarning = warning;
+				if (presentation && UI.hasMessage(presentation.message_id)) {
+					var params = {};
+					if (Number(presentation.index) > 0) params.index = Number(presentation.index);
+					renderedWarning = msg(presentation.message_id, params);
+				}
+				warningList.appendChild(txt('li', '', renderedWarning));
 			});
 			warningSection.appendChild(warningList);
 			root.appendChild(warningSection);
@@ -8013,7 +8572,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			var hypothesisList = el('div', 'rm-task-hypothesis-list');
 				hypotheses.forEach(function (clause) {
 					var item = el('article', 'rm-task-hypothesis-clause');
-					item.appendChild(taskLensSupportBadge(clause.status));
+					item.appendChild(taskLensEnumBadge('hypothesis_status', clause.status));
 					var claim = el('div', 'rm-task-hypothesis-claim');
 					claim.appendChild(txt('p', '', clause.text || ''));
 					appendTaskLensCitations(claim, clause.support_anchor_indexes, msg('main.chrome.evidence'));
@@ -8041,7 +8600,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				var title = el('div', '');
 				title.appendChild(txt('span', 'rm-task-anchor__index', String(index + 1)));
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(anchor)));
-				title.appendChild(taskLensSupportBadge(anchor.role));
+				title.appendChild(taskLensEnumBadge('anchor_role', anchor.role));
 				heading.appendChild(title);
 				var showSource = sourceActionElement(
 					staticSourceMode() ? staticSourceOpenLabel() : msg('main.show.source'),
@@ -8086,10 +8645,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				var title = el('div', 'rm-task-join__title');
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(left)));
 				var connector = taskLensJoinConnector(join.kind);
-				title.appendChild(txt('span', '', connector + taskLensLabel(join.kind) + connector));
+				title.appendChild(txt(
+					'span',
+					'',
+					connector + taskLensEnumLabel('relation_kind', join.kind) + connector
+				));
 				title.appendChild(txt('strong', '', taskLensAnchorTitle(right)));
 				card.appendChild(title);
-				card.appendChild(taskLensSupportBadge(join.support));
+				card.appendChild(taskLensEnumBadge('support_type', join.support));
 				card.appendChild(txt('p', '', join.explanation || ''));
 				card.appendChild(txt('p', 'rm-task-scope', msg('main.task.scope', {
 	          scope: join.scope_non_guarantees || msg('main.task_lens.bounded_local_evidence_only'),
@@ -8132,7 +8695,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				var probeBody = el('div', 'rm-task-probe-body');
 				probeBody.appendChild(txt('span', '', probe.text || ''));
 					appendTaskLensCitations(probeBody, probe.anchor_indexes, msg('main.task_lens.inspect'));
-				item.appendChild(taskLensSupportBadge(probe.action));
+				item.appendChild(taskLensEnumBadge('probe_action', probe.action));
 				item.appendChild(probeBody);
 				probeList.appendChild(item);
 			});
@@ -8154,7 +8717,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       ));
 		if ((TASK_INVESTIGATION.stages_skipped || []).length) {
 			details.appendChild(txt('p', '', msg('main.task.skipped', {
-        stages: TASK_INVESTIGATION.stages_skipped.map(taskLensLabel).join(', '),
+				stages: TASK_INVESTIGATION.stages_skipped.map(function (stage) {
+					return taskLensEnumLabel('stage', stage);
+				}).join(', '),
       })));
 		}
 		root.appendChild(details);
@@ -8176,9 +8741,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}
 
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
-		var overviewPurpose = REPORT_LANGUAGE === 'ru'
-			? (DATA.project_guess || thesis.purpose)
-			: (thesis.purpose || DATA.project_guess);
+		var overviewPurpose = thesis.purpose || DATA.project_guess;
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
     hero.appendChild(txt('div', 'rm-view-kicker', msg('main.purpose')));
     hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
@@ -8338,7 +8901,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function overviewSourceReason(snippet) {
     if (!snippet) return '';
-    return String(snippet.reason || snippet.landmark_reason || snippet.selection_reason || '').trim();
+    return String(
+      snippet.reason ||
+      snippet.presentation_landmark_reason ||
+      snippet.landmark_reason ||
+      snippet.selection_reason ||
+      ''
+    ).trim();
   }
 
   function overviewSourceRoleLabel(snippet) {
@@ -8757,7 +9326,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       body: JSON.stringify({ run_id: runID, context_id: contextID }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || msg('main.error.source_context_unavailable'));
+        if (!response.ok) throw new Error(msg('main.error.source_context_unavailable'));
         return body;
       });
     }).then(function (body) {
@@ -8812,9 +9381,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         requestSourceContext(snippet).then(function (expanded) {
           more.disabled = false;
           if (expanded) openSourceSnippet(expanded, location, true);
-        }).catch(function (error) {
+        }).catch(function () {
           more.disabled = false;
-          showToast(error && error.message ? error.message : msg('main.error.source_context_unavailable'), true);
+          showToast(msg('main.error.source_context_unavailable'), true);
         });
       };
       actions.appendChild(more);
@@ -9784,6 +10353,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       guidedTour: DEBUG_MODE ? (DATA.guided_tour || null) : null,
       semanticArtifacts: DEBUG_MODE ? (DATA.semantic_artifacts || []) : [],
       startHereArtifactID: DEBUG_MODE ? (DATA.start_here_artifact_id || '') : '',
+      presentationText: DEBUG_MODE ? (DATA.architecture_debug_presentation || {}) : {},
       stalePaths: new Set((DATA.freshness && DATA.freshness.affected_paths) || []),
     };
 		if (!DEBUG_MODE) {
@@ -9977,7 +10547,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }
     if (DATA.freshness) {
       document.getElementById('rm-freshness-detail').textContent = msg('main.current_freshness', {
-        state: String(DATA.freshness.state || 'unavailable').replaceAll('_', ' '),
+        state: String(DATA.freshness.state || 'unavailable'),
       });
     }
     var submodules = DATA.repository_submodules || [];
@@ -10056,6 +10626,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       renderImplementationDetails: renderImplementationDetails,
       renderOverviewWorkspace: renderOverviewWorkspace,
 			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
+			taskLensEnumLabel: taskLensEnumLabel,
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,
       renderStudyDetailWorkspace: renderStudyDetailWorkspace,
       renderIncompleteStudyOverview: renderIncompleteStudyOverview,
@@ -10065,7 +10636,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		renderReadableDocument: renderReadableDocument,
 		renderReadableDocumentCard: renderReadableDocumentCard,
 		renderOperateDetailWorkspace: renderOperateDetailWorkspace,
-		renderPavedPathCard: renderPavedPathCard,
+      renderPavedPathCard: renderPavedPathCard,
+      renderProofStaticRelation: renderProofStaticRelation,
+      renderLocalProof: renderLocalProof,
+      renderSemanticArtifactCard: renderSemanticArtifactCard,
+      appendResearchStage: appendResearchStage,
+      appendResearchRound: appendResearchRound,
+      researchSelectionReasonLabel: researchSelectionReasonLabel,
+      exactSymbolDetail: exactSymbolDetail,
+      semanticArtifactKindLabel: semanticArtifactKindLabel,
       sourceNoticeRanges: sourceNoticeRanges,
       embeddedSourceForLocation: embeddedSourceForLocation,
       mechanismPresentationTitle: mechanismPresentationTitle,
@@ -10100,6 +10679,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       renderOperationalLandmark: renderOperationalLandmark,
       serverMode: serverMode,
       setupServerFeatures: setupServerFeatures,
+      runPickerDate: runPickerDate,
+      runPickerShortID: runPickerShortID,
+      runPickerLabel: runPickerLabel,
       renderArchitectureWorkspace: renderArchitectureWorkspace,
       mountArchitectureCanvas: mountArchitectureCanvas,
       mountDebugSurfaceCatalog: mountDebugSurfaceCatalog,

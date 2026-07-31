@@ -53,9 +53,12 @@ type SourceSnippet struct {
 	Role                  string              `json:"role"`
 	LandmarkKind          SourceLandmarkKind  `json:"landmark_kind,omitempty"`
 	LandmarkReason        string              `json:"landmark_reason,omitempty"`
-	Revision              string              `json:"revision,omitempty"`
-	SourceComplete        bool                `json:"source_complete,omitempty"`
-	noticeCandidates      []sourceNoticeCandidate
+	// PresentationLandmarkReason is an optional terminal-render overlay. It is
+	// deliberately excluded from PresentationSHA256 and source authority.
+	PresentationLandmarkReason string `json:"presentation_landmark_reason,omitempty"`
+	Revision                   string `json:"revision,omitempty"`
+	SourceComplete             bool   `json:"source_complete,omitempty"`
+	noticeCandidates           []sourceNoticeCandidate
 }
 
 // SourceLandmarkKind is presentation-only navigation context for an Overview
@@ -1628,6 +1631,7 @@ func sourceLinesSHA256(lines []string) string {
 
 func sourceSnippetPresentationSHA(snippet SourceSnippet) string {
 	snippet.PresentationSHA256 = ""
+	snippet.PresentationLandmarkReason = ""
 	raw, _ := json.Marshal(snippet)
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:])

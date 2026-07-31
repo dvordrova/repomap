@@ -1,10 +1,6 @@
 package main
 
-import (
-	"testing"
-
-	"github.com/dvordrova/repomap/internal/deepseek"
-)
+import "testing"
 
 func TestNormalizeReportLanguage(t *testing.T) {
 	t.Parallel()
@@ -28,14 +24,9 @@ func TestNormalizeReportLanguage(t *testing.T) {
 	}
 }
 
-func TestConfigureClientOutputLanguage(t *testing.T) {
+func TestStoredReportLanguageKeepsOnlyRequestedPresentationLocale(t *testing.T) {
 	t.Parallel()
 
-	client := &deepseek.Client{}
-	configureClientOutputLanguage(client, []string{"ru"})
-	if client.OutputLanguage != "ru" {
-		t.Fatalf("OutputLanguage = %q, want ru", client.OutputLanguage)
-	}
 	if storedReportLanguage("en") != "" || storedReportLanguage("ru") != "ru" {
 		t.Fatal("stored report language does not preserve the optional English default")
 	}

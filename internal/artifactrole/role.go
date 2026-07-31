@@ -121,6 +121,26 @@ func IsProduction(role Role) bool {
 	}
 }
 
+// IsSourcePath reports whether a repository path has an ordinary source-code
+// extension understood by the shared bounded selectors. It is classification
+// only: callers must not infer that a parser or deep analyzer exists for the
+// language.
+func IsSourcePath(filePath string) bool {
+	switch strings.ToLower(path.Ext(cleanPath(filePath))) {
+	case ".go",
+		".py", ".pyi",
+		".js", ".jsx", ".mjs", ".cjs",
+		".ts", ".tsx",
+		".java",
+		".rs",
+		".c", ".h",
+		".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx":
+		return true
+	default:
+		return false
+	}
+}
+
 // SortPaths returns a role-aware, production-interleaved copy without mutating
 // the caller's path set. Interleaving prevents a large entrypoint directory
 // from consuming every bounded source-signal slot before core and effect

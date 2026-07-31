@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-const PromptVersion = "localization-projection-json-v1"
+const PromptVersion = "localization-projection-json-v2"
 
 const (
 	maxPromptBytes         = 1 << 20
@@ -15,7 +15,7 @@ const (
 	maxPromptTermsPerField = 64
 )
 
-const russianSystemPrompt = `You translate an allowlisted presentation projection from English to Russian.
+const russianSystemPrompt = `You translate a complete bounded presentation inventory from English to Russian.
 Use only the supplied localization input. Do not add facts, explanations, fields, or identifiers.
 Return valid json only, with exactly the requested projection shape.`
 

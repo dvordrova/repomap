@@ -50,21 +50,11 @@ func synthesizeArchitectureForRun(
 	runDir string,
 	stderr io.Writer,
 	noCache bool,
-	outputLanguage ...string,
 ) (architectureSynthesisOutcome, error) {
-	language := ""
-	if len(outputLanguage) > 0 {
-		language = outputLanguage[0]
-	}
-	language, err := normalizeReportLanguage(language)
-	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: %w", err)
-	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
 	}
-	configureClientOutputLanguage(client, []string{language})
 	client.OnWait = func(progress deepseek.WaitProgress) {
 		fmt.Fprintf(
 			stderr,
@@ -80,7 +70,7 @@ func synthesizeArchitectureForRun(
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
-		architectureSynthesisOptions{disableCache: noCache, outputLanguage: language},
+		architectureSynthesisOptions{disableCache: noCache},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
@@ -134,8 +124,7 @@ func prepareArchitectureSynthesis(
 }
 
 type architectureSynthesisOptions struct {
-	disableCache   bool
-	outputLanguage string
+	disableCache bool
 }
 
 func prepareArchitectureSynthesisWithOptions(
@@ -200,10 +189,7 @@ func ensureArchitectureSynthesisWithOptions(
 	if provider == nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider is required")
 	}
-	outputLanguage, err := normalizeReportLanguage(options.outputLanguage)
-	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: %w", err)
-	}
+	const outputLanguage = "en"
 	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err

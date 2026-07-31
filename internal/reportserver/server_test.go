@@ -422,6 +422,115 @@ func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	}
 }
 
+func TestRunSummariesExposeBoundedPickerMetadata(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	runsDir := t.TempDir()
+	const runID = "20260731-140506-fixture-abcdef012345"
+	writeRun(t, runsDir, runID, repository, "report")
+
+	metadataPath := filepath.Join(runsDir, runID, "metadata.json")
+	metadataJSON, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta metadata
+	if err := json.Unmarshal(metadataJSON, &meta); err != nil {
+		t.Fatal(err)
+	}
+	meta.CreatedAt = "2026-07-31T14:05:06Z"
+	meta.EffectiveOptions.ReportLanguage = "RU"
+	meta.EffectiveOptions.NoCache = true
+	metadataJSON, err = json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metadataPath, metadataJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &handler{runsDir: runsDir}
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/runs", nil)
+	response := httptest.NewRecorder()
+	h.serveRuns(response, request)
+	var payload struct {
+		Runs []RunSummary `json:"runs"`
+	}
+	if response.Code != http.StatusOK ||
+		json.Unmarshal(response.Body.Bytes(), &payload) != nil ||
+		len(payload.Runs) != 1 {
+		t.Fatalf(
+			"run list status=%d payload=%#v body=%s",
+			response.Code,
+			payload,
+			response.Body.String(),
+		)
+	}
+	got := payload.Runs[0]
+	if got.ID != runID ||
+		got.RepoName != filepath.Base(repository) ||
+		got.CreatedAt != meta.CreatedAt ||
+		got.ReportLanguage != "ru" ||
+		got.CacheMode != "no-cache" ||
+		got.ShortID != "abcdef012345" {
+		t.Fatalf("run picker metadata = %#v", got)
+	}
+}
+
+func TestRunPickerMetadataNormalization(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		language string
+		noCache  bool
+		runID    string
+		wantLang string
+		wantMode string
+		wantID   string
+	}{
+		{
+			name:     "Russian no-cache generated run",
+			language: " ru ",
+			noCache:  true,
+			runID:    "20260731-140506-repository-0123456789ab",
+			wantLang: "ru",
+			wantMode: "no-cache",
+			wantID:   "0123456789ab",
+		},
+		{
+			name:     "default English cached legacy run",
+			runID:    "20260731-140506-pebble",
+			wantLang: "en",
+			wantMode: "cache",
+			wantID:   "pebble",
+		},
+		{
+			name:     "bounded long suffix",
+			language: "unknown",
+			runID:    "run-abcdefghijklmnopqrstuvwxyz",
+			wantLang: "en",
+			wantMode: "cache",
+			wantID:   "opqrstuvwxyz",
+		},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := runReportLanguage(test.language); got != test.wantLang {
+				t.Fatalf("language = %q, want %q", got, test.wantLang)
+			}
+			if got := runCacheMode(test.noCache); got != test.wantMode {
+				t.Fatalf("cache mode = %q, want %q", got, test.wantMode)
+			}
+			if got := shortRunID(test.runID); got != test.wantID {
+				t.Fatalf("short run ID = %q, want %q", got, test.wantID)
+			}
+		})
+	}
+}
+
 func TestOpenEndpointUsesStartupAuthorizationIndexAndRejectsRawPath(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
@@ -938,6 +1047,16 @@ func TestHandlerTransportRejectionMatrix(t *testing.T) {
 			name:       "wrong capability",
 			method:     http.MethodPost,
 			path:       capabilityURLPrefix("wrong-capability") + "/api/open",
+			host:       expectedHost,
+			origin:     "http://" + expectedHost,
+			mediaType:  "application/json",
+			action:     "open-file",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "unknown endpoint with valid capability",
+			method:     http.MethodPost,
+			path:       prefix + "/api/not-real",
 			host:       expectedHost,
 			origin:     "http://" + expectedHost,
 			mediaType:  "application/json",

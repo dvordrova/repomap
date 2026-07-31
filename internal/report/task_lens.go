@@ -24,41 +24,54 @@ const maxTaskInvestigationArtifactBytes = 4 << 20
 // bounded indexes so opaque reducer/evidence identifiers are not exposed in
 // the user-facing report.
 type TaskInvestigationWorkspace struct {
-	TaskID                       string                          `json:"task_id"`
-	Repository                   string                          `json:"repository"`
-	Task                         string                          `json:"task"`
-	State                        string                          `json:"state"`
-	Sufficient                   bool                            `json:"sufficient"`
-	Locality                     tasklens.Locality               `json:"locality"`
-	Profile                      tasklens.TaskProfile            `json:"task_profile"`
-	RoleContract                 tasklens.RoleContract           `json:"role_contract"`
-	RoleCoverage                 tasklens.RoleCoverage           `json:"-"`
-	VerificationFrontier         tasklens.VerificationFrontier   `json:"-"`
-	CheapExit                    tasklens.CheapExitDecision      `json:"cheap_exit"`
-	Interpretation               TaskInvestigationInterpretation `json:"interpretation"`
-	LikelyAreas                  []TaskInvestigationArea         `json:"likely_areas"`
-	Anchors                      []TaskInvestigationAnchor       `json:"anchors"`
-	EvidenceJoins                []TaskInvestigationJoin         `json:"evidence_joins,omitempty"`
-	WorkingHypothesis            []TaskInvestigationHypothesis   `json:"working_hypothesis"`
-	ReproduceOrObserve           []TaskInvestigationGuidance     `json:"reproduce_or_observe"`
-	Verify                       TaskInvestigationVerification   `json:"verify"`
-	NextProbes                   []TaskInvestigationProbe        `json:"next_probes,omitempty"`
-	StagesSkipped                []string                        `json:"stages_skipped"`
-	Budget                       tasklens.Budgets                `json:"budget"`
-	Provider                     tasklens.ProviderMetrics        `json:"provider"`
-	CapturedRevision             string                          `json:"captured_revision"`
-	Warnings                     []string                        `json:"warnings,omitempty"`
-	BundleSHA256                 string                          `json:"bundle_sha256"`
-	AttemptSHA256                string                          `json:"attempt_sha256"`
-	PackSHA256                   string                          `json:"pack_sha256"`
-	StatusSHA256                 string                          `json:"status_sha256"`
-	RetrievalTraceSHA256         string                          `json:"retrieval_trace_sha256"`
-	RetrievalTraceMarkdownSHA256 string                          `json:"retrieval_trace_markdown_sha256"`
-	RepositoryStateSHA256        string                          `json:"-"`
+	TaskID               string                          `json:"task_id"`
+	Repository           string                          `json:"repository"`
+	Task                 string                          `json:"task"`
+	State                string                          `json:"state"`
+	Sufficient           bool                            `json:"sufficient"`
+	Locality             tasklens.Locality               `json:"locality"`
+	Profile              tasklens.TaskProfile            `json:"task_profile"`
+	RoleContract         tasklens.RoleContract           `json:"role_contract"`
+	RoleCoverage         tasklens.RoleCoverage           `json:"-"`
+	VerificationFrontier tasklens.VerificationFrontier   `json:"-"`
+	CheapExit            tasklens.CheapExitDecision      `json:"cheap_exit"`
+	Interpretation       TaskInvestigationInterpretation `json:"interpretation"`
+	LikelyAreas          []TaskInvestigationArea         `json:"likely_areas"`
+	Anchors              []TaskInvestigationAnchor       `json:"anchors"`
+	EvidenceJoins        []TaskInvestigationJoin         `json:"evidence_joins,omitempty"`
+	WorkingHypothesis    []TaskInvestigationHypothesis   `json:"working_hypothesis"`
+	ReproduceOrObserve   []TaskInvestigationGuidance     `json:"reproduce_or_observe"`
+	Verify               TaskInvestigationVerification   `json:"verify"`
+	NextProbes           []TaskInvestigationProbe        `json:"next_probes,omitempty"`
+	StagesSkipped        []string                        `json:"stages_skipped"`
+	Budget               tasklens.Budgets                `json:"budget"`
+	Provider             tasklens.ProviderMetrics        `json:"provider"`
+	CapturedRevision     string                          `json:"captured_revision"`
+	Warnings             []string                        `json:"warnings,omitempty"`
+	// PresentationWarnings is populated only on the transient HTML render
+	// copy. Canonical report.json and Task Lens artifacts retain Warnings
+	// byte-for-byte and never persist these catalog addresses.
+	PresentationWarnings         []TaskInvestigationPresentationWarning `json:"presentation_warnings,omitempty"`
+	warningDiagnostics           []tasklens.WarningDiagnostic
+	BundleSHA256                 string `json:"bundle_sha256"`
+	AttemptSHA256                string `json:"attempt_sha256"`
+	PackSHA256                   string `json:"pack_sha256"`
+	StatusSHA256                 string `json:"status_sha256"`
+	RetrievalTraceSHA256         string `json:"retrieval_trace_sha256"`
+	RetrievalTraceMarkdownSHA256 string `json:"retrieval_trace_markdown_sha256"`
+	RepositoryStateSHA256        string `json:"-"`
 	// MaterialPaths retains every bounded source that informed the provider
 	// bundle, including unselected anchors and manifest-derived module facts.
 	// It is authority input, not presentation data.
 	MaterialPaths []string `json:"-"`
+}
+
+// TaskInvestigationPresentationWarning is a report-local catalog projection
+// of a semantic-neutral tasklens warning code. It exists only in the transient
+// HTML render copy; canonical report.json retains the legacy raw warning.
+type TaskInvestigationPresentationWarning struct {
+	MessageID string `json:"message_id"`
+	Index     int    `json:"index,omitempty"`
 }
 
 type TaskInvestigationInterpretation struct {
@@ -951,12 +964,8 @@ func FinalizeTaskInvestigationPack(
 	if sufficient {
 		return pack, true
 	}
-	switch attemptState {
-	case "accepted", "accepted_with_rejections":
-		pack.Warnings = []string{tasklens.PackWarningModelPartial}
-	default:
-		pack.Warnings = []string{tasklens.PackWarningLocalPartial}
-	}
+	warning := tasklens.PartialPackWarningEmission(attemptState)
+	pack.Warnings = []string{warning.Raw}
 	return pack, false
 }
 
@@ -1229,6 +1238,16 @@ func projectTaskInvestigation(
 	// Status is validated above as the exact de-duplicated union of pack and
 	// attempt warnings, so it is the single presentation source.
 	workspace.Warnings = append(workspace.Warnings, status.Warnings...)
+	warningDiagnostics, err := taskInvestigationWarningDiagnostics(
+		bundle,
+		attempt,
+		pack,
+		status,
+	)
+	if err != nil {
+		return nil, err
+	}
+	workspace.warningDiagnostics = warningDiagnostics
 
 	anchorIndexes := make(map[string]int, len(pack.Anchors))
 	for index, anchor := range pack.Anchors {

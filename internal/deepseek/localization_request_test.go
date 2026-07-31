@@ -13,12 +13,11 @@ func TestBuildLocalizationRequestIsExactDeterministicAndUnwrapped(t *testing.T) 
 	t.Parallel()
 
 	client := &Client{
-		Endpoint:       "https://gateway.example.test:8443/v1/chat/%63ompletions",
-		Auth:           authBearer,
-		Model:          "company-model",
-		MaxTokens:      4096,
-		OutputLanguage: localization.LocaleRussian,
-		APIKey:         "must-never-appear",
+		Endpoint:  "https://gateway.example.test:8443/v1/chat/%63ompletions",
+		Auth:      authBearer,
+		Model:     "company-model",
+		MaxTokens: 4096,
+		APIKey:    "must-never-appear",
 	}
 	prompt := localization.Prompt{
 		Version: localization.PromptVersion,

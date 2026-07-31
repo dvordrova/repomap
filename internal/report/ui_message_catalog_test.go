@@ -68,6 +68,42 @@ func TestTypedUIMessageCatalogAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(string(scriptSource), "UI.hasMessage(presentation.message_id)") {
+		t.Error("typed task warning rendering does not resolve message membership through the catalog")
+	}
+	if strings.Contains(string(scriptSource), "body.error") {
+		t.Error("browser actions must not surface raw server error prose")
+	}
+	for _, forbidden := range []string{
+		"error.message",
+		"flow.bundle_stats_label",
+		"humanizeSymbolDetail(reason)",
+		"boundedText(inspection.error",
+		"boundedText(state.error",
+		"boundedText(warning",
+	} {
+		if strings.Contains(string(scriptSource), forbidden) {
+			t.Errorf("browser retains a direct unlocalized runtime-prose channel %q", forbidden)
+		}
+	}
+	if !strings.Contains(string(scriptSource), `msg('main.flow.bundle_stats_compact'`) {
+		t.Error("browser bundle stats do not render through the typed message catalog")
+	}
+	architectureSource, err := os.ReadFile(filepath.Join("templates", "architecture_canvas.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(architectureSource), "error.message") {
+		t.Error("architecture canvas must not surface raw layout-library error prose")
+	}
+	for _, key := range enSourceKeys {
+		if strings.HasPrefix(key, "main.task_lens.warning.") {
+			used[key] = "typed task warning diagnostics"
+		}
+		if strings.HasPrefix(key, "main.browser_error.") {
+			used[key] = "typed browser error presentation"
+		}
+	}
 	for _, forbidden := range []string{
 		`+ ' anchors'`,
 		`' model calls'`,
@@ -86,15 +122,22 @@ func TestTypedUIMessageCatalogAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const noScriptLanguageBranch = `{{if eq .Language "ru"}}`
-	if count := strings.Count(string(reportTemplate), noScriptLanguageBranch); count != 1 {
-		t.Errorf("report.html template-localized branches = %d, want sole noscript exception", count)
+	for _, forbidden := range []string{
+		`{{if eq .Language "ru"}}Localization`,
+	} {
+		if strings.Contains(string(reportTemplate), forbidden) {
+			t.Errorf("report.html bypasses the typed product-copy catalog with %q", forbidden)
+		}
 	}
-	if !strings.Contains(
-		string(reportTemplate),
-		`<noscript><p>{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript.`,
-	) {
-		t.Error("report.html sole template-localized branch is not the bounded noscript notice")
+	for _, required := range []string{
+		`<noscript>`,
+		`{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript.`,
+		`This report requires JavaScript.`,
+		`body > :not(noscript)`,
+	} {
+		if !strings.Contains(string(reportTemplate), required) {
+			t.Errorf("report.html is missing the sole no-JS locale exception %q", required)
+		}
 	}
 	catalogKeys := make(map[string]struct{}, len(enSourceKeys))
 	var orphaned []string
@@ -165,6 +208,12 @@ const rendered = {
   }),
 };
 process.stdout.write(JSON.stringify({
+  version: window.RepomapUI.version,
+  membership: {
+    known: window.RepomapUI.hasMessage("main.task_lens.warning.join_rejected"),
+    unknown: window.RepomapUI.hasMessage("main.not_a_real_message"),
+    nonString: window.RepomapUI.hasMessage(null),
+  },
   idParity: same(enIDs, ruIDs),
   paramParity: enIDs.every((id) => same(en[id].params.slice().sort(), ru[id].params.slice().sort())),
   enCount: enIDs.length,
@@ -197,6 +246,9 @@ process.stdout.write(JSON.stringify({
     architecture: api.messageForLocale("ru", "architecture.action.open_code"),
     surfaces: api.messageForLocale("ru", "surfaces.action.reset_filters"),
     traceReadinessReason: api.messageForLocale("ru", "surfaces.field.trace_readiness_reason"),
+    localizationStatus: api.messageForLocale("ru", "main.localization.status_label"),
+    localizationActive: api.messageForLocale("ru", "main.localization.ru_active"),
+    localizationFallback: api.messageForLocale("ru", "main.localization.ru_unavailable_canonical_en"),
   },
   opaqueTechnical: {
     route: api.messageForLocale("ru", "surfaces.identity.http_route", {
@@ -218,6 +270,11 @@ process.stdout.write(JSON.stringify({
     processEntry: api.messageForLocale("ru", "main.surface.process_entry_suffix"),
     cached: api.messageForLocale("ru", "main.research.cached"),
     unknown: api.messageForLocale("ru", "main.research.unknown_status"),
+    bundleStats: api.messageForLocale("ru", "main.flow.bundle_stats_compact", {
+      source: 21, test: 2, doc: 5,
+    }),
+    ranking: api.messageForLocale("ru", "main.symbol.ranked_by", { count: 3 }),
+    layoutFailure: api.messageForLocale("ru", "architecture.error.layout_failed"),
   },
 }));
 `
@@ -230,6 +287,12 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("evaluate typed UI catalog: %v\n%s", err, output)
 	}
 	var got struct {
+		Version    int `json:"version"`
+		Membership struct {
+			Known     bool `json:"known"`
+			Unknown   bool `json:"unknown"`
+			NonString bool `json:"nonString"`
+		} `json:"membership"`
 		IDParity    bool `json:"idParity"`
 		ParamParity bool `json:"paramParity"`
 		ENCount     int  `json:"enCount"`
@@ -263,6 +326,9 @@ process.stdout.write(JSON.stringify({
 			Architecture         string `json:"architecture"`
 			Surfaces             string `json:"surfaces"`
 			TraceReadinessReason string `json:"traceReadinessReason"`
+			LocalizationStatus   string `json:"localizationStatus"`
+			LocalizationActive   string `json:"localizationActive"`
+			LocalizationFallback string `json:"localizationFallback"`
 		} `json:"russianCopy"`
 		OpaqueTechnical struct {
 			Route    string `json:"route"`
@@ -270,16 +336,25 @@ process.stdout.write(JSON.stringify({
 			Protocol string `json:"protocol"`
 		} `json:"opaqueTechnical"`
 		Dynamic struct {
-			Component    string `json:"component"`
-			Budget       string `json:"budget"`
-			Registration string `json:"registration"`
-			ProcessEntry string `json:"processEntry"`
-			Cached       string `json:"cached"`
-			Unknown      string `json:"unknown"`
+			Component     string `json:"component"`
+			Budget        string `json:"budget"`
+			Registration  string `json:"registration"`
+			ProcessEntry  string `json:"processEntry"`
+			Cached        string `json:"cached"`
+			Unknown       string `json:"unknown"`
+			BundleStats   string `json:"bundleStats"`
+			Ranking       string `json:"ranking"`
+			LayoutFailure string `json:"layoutFailure"`
 		} `json:"dynamic"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
+	}
+	if got.Version != 9 {
+		t.Errorf("catalog version = %d, want 9", got.Version)
+	}
+	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
+		t.Errorf("catalog membership contract = %#v", got.Membership)
 	}
 	if !got.IDParity || !got.ParamParity || got.ENCount != len(enSourceKeys) || got.RUCount != len(ruSourceKeys) {
 		t.Errorf("evaluated catalog parity = IDs %t params %t EN %d RU %d; source EN %d RU %d",
@@ -319,6 +394,9 @@ process.stdout.write(JSON.stringify({
 		Architecture         string
 		Surfaces             string
 		TraceReadinessReason string
+		LocalizationStatus   string
+		LocalizationActive   string
+		LocalizationFallback string
 	}{
 		Chrome:               "На что обратить внимание",
 		Workspace:            "Рабочее пространство репозитория",
@@ -328,6 +406,9 @@ process.stdout.write(JSON.stringify({
 		Architecture:         "Открыть код",
 		Surfaces:             "Сбросить фильтры",
 		TraceReadinessReason: "Причина готовности трассировки",
+		LocalizationStatus:   "Статус локализации",
+		LocalizationActive:   "Русская локализация включена.",
+		LocalizationFallback: "Русская локализация недоступна. Показан канонический отчёт на английском языке.",
 	}
 	if got.RussianCopy.Chrome != wantRussianCopy.Chrome ||
 		got.RussianCopy.Workspace != wantRussianCopy.Workspace ||
@@ -336,7 +417,10 @@ process.stdout.write(JSON.stringify({
 		got.RussianCopy.Progress != wantRussianCopy.Progress ||
 		got.RussianCopy.Architecture != wantRussianCopy.Architecture ||
 		got.RussianCopy.Surfaces != wantRussianCopy.Surfaces ||
-		got.RussianCopy.TraceReadinessReason != wantRussianCopy.TraceReadinessReason {
+		got.RussianCopy.TraceReadinessReason != wantRussianCopy.TraceReadinessReason ||
+		got.RussianCopy.LocalizationStatus != wantRussianCopy.LocalizationStatus ||
+		got.RussianCopy.LocalizationActive != wantRussianCopy.LocalizationActive ||
+		got.RussianCopy.LocalizationFallback != wantRussianCopy.LocalizationFallback {
 		t.Errorf("representative RU product copy = %#v, want %#v", got.RussianCopy, wantRussianCopy)
 	}
 	wantOpaqueTechnical := struct {
@@ -354,26 +438,35 @@ process.stdout.write(JSON.stringify({
 		t.Errorf("opaque technical RU values = %#v, want %#v", got.OpaqueTechnical, wantOpaqueTechnical)
 	}
 	wantDynamic := struct {
-		Component    string
-		Budget       string
-		Registration string
-		ProcessEntry string
-		Cached       string
-		Unknown      string
+		Component     string
+		Budget        string
+		Registration  string
+		ProcessEntry  string
+		Cached        string
+		Unknown       string
+		BundleStats   string
+		Ranking       string
+		LayoutFailure string
 	}{
-		Component:    "Граница · 2 опоры",
-		Budget:       "2 файла · 5 байтов · 11 вызовов модели",
-		Registration: "регистрация",
-		ProcessEntry: "точка входа процесса",
-		Cached:       "кэшировано",
-		Unknown:      "неизвестно",
+		Component:     "Граница · 2 опоры",
+		Budget:        "2 файла · 5 байтов · 11 вызовов модели",
+		Registration:  "регистрация",
+		ProcessEntry:  "точка входа процесса",
+		Cached:        "кэшировано",
+		Unknown:       "неизвестно",
+		BundleStats:   "21 файл исходников · 2 тестовых файла · 5 документов",
+		Ranking:       "При ранжировании учтено 3 сигнала анализатора",
+		LayoutFailure: "Не удалось построить компоновку архитектуры.",
 	}
 	if got.Dynamic.Component != wantDynamic.Component ||
 		got.Dynamic.Budget != wantDynamic.Budget ||
 		got.Dynamic.Registration != wantDynamic.Registration ||
 		got.Dynamic.ProcessEntry != wantDynamic.ProcessEntry ||
 		got.Dynamic.Cached != wantDynamic.Cached ||
-		got.Dynamic.Unknown != wantDynamic.Unknown {
+		got.Dynamic.Unknown != wantDynamic.Unknown ||
+		got.Dynamic.BundleStats != wantDynamic.BundleStats ||
+		got.Dynamic.Ranking != wantDynamic.Ranking ||
+		got.Dynamic.LayoutFailure != wantDynamic.LayoutFailure {
 		t.Errorf("dynamic RU product copy = %#v, want %#v", got.Dynamic, wantDynamic)
 	}
 }

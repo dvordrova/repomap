@@ -1,6 +1,8 @@
 package orient
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -81,6 +83,41 @@ func TestApplyOrientationConfidenceGateCapsIncompleteCLIFlow(t *testing.T) {
 	}
 	if !containsVerification(flow.LocalVerification.Missing, "complete core-package retrieval") {
 		t.Fatalf("missing evidence = %v", flow.LocalVerification.Missing)
+	}
+	expectedWarnings := []string{
+		"local confidence gate capped candidate_flows[0] from 0.90 to 0.60",
+		"local confidence gate capped orientation from 0.95 to 0.60 because focused retrieval is incomplete",
+	}
+	if len(report.confidenceWarningDiagnostics) != len(expectedWarnings) {
+		t.Fatalf(
+			"typed confidence diagnostics = %#v, want %d",
+			report.confidenceWarningDiagnostics,
+			len(expectedWarnings),
+		)
+	}
+	for index, expected := range expectedWarnings {
+		found := false
+		for _, warning := range report.Warnings {
+			if warning == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("canonical warning bytes changed: missing %q in %#v", expected, report.Warnings)
+		}
+		diagnostic := report.confidenceWarningDiagnostics[index]
+		roundTrip, ok := diagnostic.RawWarning()
+		if !ok || roundTrip != expected || diagnostic.WarningIndex != index {
+			t.Fatalf("confidence-warning round trip = %q, %v", roundTrip, ok)
+		}
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("confidence_warning_diagnostics")) {
+		t.Fatalf("confidence presentation metadata changed orientation JSON: %s", encoded)
 	}
 
 	report.CandidateFlows[0].Confidence = 0.9
@@ -201,4 +238,19 @@ func containsVerification(values []string, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func TestConfidenceWarningDiagnosticRejectsInvalidTypedParameters(t *testing.T) {
+	t.Parallel()
+
+	for _, diagnostic := range []ConfidenceWarningDiagnostic{
+		{Code: "unknown", CandidateIndex: 0, Proposed: 0.9, Capped: 0.3},
+		{Code: ConfidenceWarningCandidateCapped, CandidateIndex: -1, Proposed: 0.9, Capped: 0.3},
+		{Code: ConfidenceWarningCandidateCapped, CandidateIndex: 0, Proposed: 0.3, Capped: 0.3},
+		{Code: ConfidenceWarningOrientationCapped, CandidateIndex: -1, Proposed: 1.1, Capped: 0.6},
+	} {
+		if raw, ok := diagnostic.RawWarning(); ok {
+			t.Fatalf("invalid typed diagnostic rendered %q: %#v", raw, diagnostic)
+		}
+	}
 }

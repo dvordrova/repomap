@@ -666,7 +666,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		MaxGoEdges:                1000,
 		ResearchPolicy:            researchPolicy,
 		RepositoryContext:         researchRepositoryContext(initialState, repo),
-		OutputLanguage:            reportLanguage,
 		EffectiveOptions: debugdump.EffectiveOptions{
 			Offline:          *offline,
 			NoCache:          *noCache,
@@ -726,7 +725,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if runOptionalModelStages {
 			architectureStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: synthesizing bounded architecture grouping")
-			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr, *noCache, reportLanguage); err != nil {
+			if _, err := synthesizeArchitectureForRun(ctx, runDir, deps.stderr, *noCache); err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
@@ -735,7 +734,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
-			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache, reportLanguage)
+			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
@@ -773,7 +772,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if runOptionalModelStages {
 			studyStarted := time.Now()
 			fmt.Fprintln(deps.stderr, "repomap: editing a bounded repository brief and study map")
-			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr, reportLanguage)
+			studyStatus, studyErr := editStudyMapForRun(ctx, runDir, repo, deps.stderr)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
@@ -785,13 +784,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					time.Since(studyStarted).Milliseconds(),
 				)
 			} else {
-				fmt.Fprintf(
+				writeStudyMapCompletion(
 					deps.stderr,
-					"repomap: selected %d source-backed study direction(s) from %d proposed candidate(s) in %d ms (%s)\n",
-					studyStatus.Selected,
-					studyStatus.Candidates,
-					time.Since(studyStarted).Milliseconds(),
-					formatTokenUsage(studyStatus.Metrics.InputTokens, studyStatus.Metrics.OutputTokens),
+					studyStatus,
+					time.Since(studyStarted),
 				)
 			}
 		}
@@ -818,19 +814,159 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if authority.Freshness().State != freshness.FreshnessFresh {
 			fmt.Fprintf(deps.stderr, "repomap: snapshot freshness: %s\n", authority.Freshness().State)
 		}
-		reportStarted := time.Now()
-		var generateErr error
-		if sourceEpisodeJSON != nil {
-			generateErr = report.GenerateAuthorizedWithSourceEpisode(runDir, authority, sourceEpisodeJSON)
-		} else if gitLabURL != "" {
-			generateErr = report.GenerateAuthorizedGitLab(runDir, authority, gitLabURL)
-		} else if gitHubURL != "" {
-			generateErr = report.GenerateAuthorizedGitHub(runDir, authority, gitHubURL)
-		} else {
-			generateErr = report.GenerateAuthorized(runDir, authority)
+		generateAuthorizedReport := func() error {
+			if sourceEpisodeJSON != nil {
+				return report.GenerateAuthorizedWithSourceEpisode(
+					runDir,
+					authority,
+					sourceEpisodeJSON,
+				)
+			}
+			if gitLabURL != "" {
+				return report.GenerateAuthorizedGitLab(runDir, authority, gitLabURL)
+			}
+			if gitHubURL != "" {
+				return report.GenerateAuthorizedGitHub(runDir, authority, gitHubURL)
+			}
+			return report.GenerateAuthorized(runDir, authority)
 		}
-		if generateErr != nil {
-			return fmt.Errorf("generate authorized browser report: %w", generateErr)
+		reportStarted := time.Now()
+		reportGenerated := false
+		if reportLanguage == "ru" {
+			// Publish the exact authority-bound canonical English artifact
+			// before the optional provider/cache/sidecar projection. The
+			// localization input is then derived from this same report.json.
+			if err := generateAuthorizedReport(); err != nil {
+				return fmt.Errorf("generate canonical authorized browser report: %w", err)
+			}
+			reportGenerated = true
+			if *offline {
+				if err := markPresentationLocalizationUnavailable(
+					runDir,
+					report.LocalizationFailureOfflineRequested,
+				); err != nil {
+					fmt.Fprintln(
+						deps.stderr,
+						"warning: Russian localization status could not be saved; Russian product UI will retain canonical English model prose",
+					)
+				}
+				fmt.Fprintln(
+					deps.stderr,
+					"warning: Russian localization was requested in offline mode; Russian product UI will show canonical English model prose",
+				)
+			} else {
+				fmt.Fprintln(
+					deps.stderr,
+					"repomap: translating the complete bounded presentation inventory from canonical English to Russian",
+				)
+				localizationStarted := time.Now()
+				localizationOutcome, localizationErr := localizePresentationForRun(
+					ctx,
+					runDir,
+					filepath.Join(dDir, presentationLocalizationCacheDir),
+					*noCache,
+					deps.stderr,
+					sourceEpisodeJSON,
+				)
+				if localizationErr != nil {
+					fmt.Fprintln(
+						deps.stderr,
+						"warning: Russian localization status could not be saved; Russian product UI will retain canonical English model prose",
+					)
+				} else {
+					if localizationOutcome.CacheCorrupt {
+						fmt.Fprintln(
+							deps.stderr,
+							"warning: ignored an invalid localization cache entry and recomputed the projection",
+						)
+					}
+					if localizationOutcome.CacheWriteErr {
+						fmt.Fprintln(
+							deps.stderr,
+							"warning: Russian localization cache entry could not be saved; the valid per-run projection remains available",
+						)
+					}
+					switch localizationOutcome.State {
+					case report.PresentationLocalizationSucceeded:
+						if localizationOutcome.CacheHit {
+							fmt.Fprintf(
+								deps.stderr,
+								"repomap: reused cached Russian presentation translation in %d ms\n",
+								time.Since(localizationStarted).Milliseconds(),
+							)
+						} else {
+							fmt.Fprintf(
+								deps.stderr,
+								"repomap: Russian presentation translation received %d bytes from a %d-byte request in %d ms (%s; %d provider attempt(s))\n",
+								localizationOutcome.ResponseBytes,
+								localizationOutcome.RequestBytes,
+								time.Since(localizationStarted).Milliseconds(),
+								formatTokenUsage(
+									localizationOutcome.InputTokens,
+									localizationOutcome.OutputTokens,
+								),
+								localizationOutcome.Attempts,
+							)
+						}
+					default:
+						fmt.Fprintf(
+							deps.stderr,
+							"warning: Russian localization failed (%s); Russian product UI will show canonical English model prose (after %d ms)\n",
+							localizationOutcome.ReasonCode,
+							time.Since(localizationStarted).Milliseconds(),
+						)
+					}
+				}
+			}
+			if !*offline {
+				// Translation can be a long external call. Reconcile the
+				// captured inputs again before the final render so authority
+				// confirmed before translation is never silently reused after
+				// the repository has changed.
+				localizationReconciliationStarted := time.Now()
+				postLocalizationState, captureErr := captureRepo(ctx, repo)
+				if captureErr != nil {
+					return fmt.Errorf(
+						"capture repository state after presentation localization: %w",
+						captureErr,
+					)
+				}
+				if staticSourceHost != "" &&
+					postLocalizationState.Head != initialState.Head {
+					return fmt.Errorf(
+						"standalone %s reports require HEAD to remain at the captured commit until report publication",
+						staticSourceHost,
+					)
+				}
+				authority, err = report.ConfirmRunAuthorityScoped(
+					ctx,
+					analysisRoot,
+					initialState,
+					postLocalizationState,
+					report.CapturedInputPaths(reportData),
+					*strictSnapshot,
+				)
+				if err != nil {
+					return fmt.Errorf(
+						"confirm browser report authority after presentation localization: %w",
+						err,
+					)
+				}
+				fmt.Fprintf(
+					deps.stderr,
+					"repomap: reconciled %d captured input(s) after presentation localization in %d ms\n",
+					len(report.CapturedInputPaths(reportData)),
+					time.Since(localizationReconciliationStarted).Milliseconds(),
+				)
+				// The first render was canonical pre-translation publication.
+				// Re-render once with the successful or failed live projection.
+				reportGenerated = false
+			}
+		}
+		if !reportGenerated {
+			if err := generateAuthorizedReport(); err != nil {
+				return fmt.Errorf("generate authorized browser report: %w", err)
+			}
 		}
 		fmt.Fprintf(deps.stderr, "repomap: generated authorized report in %d ms\n", time.Since(reportStarted).Milliseconds())
 		if showProgress {
@@ -910,6 +1046,32 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 	}
 	return nil
+}
+
+func writeStudyMapCompletion(
+	writer io.Writer,
+	status studyMapStatus,
+	elapsed time.Duration,
+) {
+	switch status.FailureReason {
+	case string(studyMapNoSupportedSourceAdapter),
+		string(studyMapNoEligibleSourceFunctions):
+		fmt.Fprintf(
+			writer,
+			"repomap: decision study: published=0 provider_calls=0 reason=%s (after %d ms)\n",
+			status.FailureReason,
+			elapsed.Milliseconds(),
+		)
+		return
+	}
+	fmt.Fprintf(
+		writer,
+		"repomap: selected %d source-backed study direction(s) from %d proposed candidate(s) in %d ms (%s)\n",
+		status.Selected,
+		status.Candidates,
+		elapsed.Milliseconds(),
+		formatTokenUsage(status.Metrics.InputTokens, status.Metrics.OutputTokens),
+	)
 }
 
 func repositoryStateHasAnalyzedSubmodule(state freshness.RepositoryState) bool {

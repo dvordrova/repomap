@@ -69,9 +69,6 @@ func obtainOrientation(
 				PromptVersion: deepseek.OrientationPromptVersionJSON,
 				Profile:       profile, Model: client.Model,
 				EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
-				OutputLanguage: modelresearch.CacheOutputLanguage(
-					client.OutputLanguage,
-				),
 			},
 			Request: requestJSON, EvidenceBundleHash: bundleHash,
 		}
@@ -191,7 +188,6 @@ func runTargetedResearch(
 			Plan: planned, Policy: state.Policy, Usage: state.Usage, Repository: state.Repository,
 			RunsDir: runsDir, RunDir: dw.RunDir(),
 			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
-			OutputLanguage: client.OutputLanguage,
 		})
 		if err := ctx.Err(); err != nil {
 			return warnings, err

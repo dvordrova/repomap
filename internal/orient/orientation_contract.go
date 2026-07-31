@@ -33,6 +33,10 @@ type orientationPart struct {
 	ResearchQuestions    []modelresearch.ProposedQuestion `json:"research_questions,omitempty"`
 	UnverifiedPaths      unverifiedPathList               `json:"unverified_paths"`
 	Warnings             []string                         `json:"warnings"`
+	// confidenceWarningDiagnostics is a producer-owned, render-only account of
+	// warnings appended by the local confidence gate. It never enters the
+	// canonical orientation JSON.
+	confidenceWarningDiagnostics []ConfidenceWarningDiagnostic
 }
 
 type orientationMapItem struct {

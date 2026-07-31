@@ -1,0 +1,442 @@
+package reportserver
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/localization"
+	"github.com/dvordrova/repomap/internal/orient"
+	reportpkg "github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/studymap"
+	"github.com/dvordrova/repomap/internal/tasklens"
+)
+
+func TestServeRussianProjectionHydratesStudyAndTaskWarningMetadata(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	runsDir := t.TempDir()
+	const runID = "20260731-140000-localized-warning-hydration"
+	writeRun(t, runsDir, runID, repository, "canonical report")
+	runDir := filepath.Join(runsDir, runID)
+	copyTaskWarningFixture(t, runDir)
+	if err := os.WriteFile(
+		filepath.Join(runDir, "snapshot.json"),
+		[]byte("{}\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	const confidenceWarning = "local confidence gate capped orientation from 0.90 to 0.60 because focused retrieval is incomplete"
+	orientationJSON := []byte(`{"confidence":0.6,"warnings":["` + confidenceWarning + `"]}`)
+	if err := os.WriteFile(
+		filepath.Join(runDir, "orientation_report.json"),
+		orientationJSON,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	warningSidecar, err := orient.EncodeConfidenceWarningDiagnostics(
+		orientationJSON,
+		[]orient.ConfidenceWarningDiagnostic{{
+			WarningIndex:   0,
+			Code:           orient.ConfidenceWarningOrientationCapped,
+			CandidateIndex: -1,
+			Proposed:       0.9,
+			Capped:         0.6,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runDir, orient.ConfidenceWarningDiagnosticsFile),
+		warningSidecar,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runDir, "llm_bundle.json"),
+		[]byte("{}\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runDir, studymap.StatusFile),
+		[]byte(`{
+  "version": 1,
+  "state": "failed",
+  "failure_reason": "no_supported_source_adapter"
+}
+`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	canonical, err := reportpkg.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical.FormatVersion = reportpkg.CurrentFormatVersion
+	canonical.RepoName = "example.test/fuego"
+	reportPath := filepath.Join(runDir, "report.json")
+	if err := reportpkg.WriteReportJSON(canonical, reportPath); err != nil {
+		t.Fatal(err)
+	}
+	reportJSON, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifestPath := filepath.Join(runDir, reportpkg.RunManifestFilename)
+	manifestJSON, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := reportpkg.DecodeRunManifest(manifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Version = 2
+	manifest.ReportSHA256 = fmt.Sprintf("%x", sha256.Sum256(reportJSON))
+	manifest.OpenablePaths = append([]string(nil), canonical.OpenablePaths...)
+	manifest.MaterialInputs.TaskBundleSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		tasklens.BundleFile,
+	)
+	manifest.MaterialInputs.TaskAttemptSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		tasklens.AttemptFile,
+	)
+	manifest.MaterialInputs.TaskPackSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		tasklens.PackFile,
+	)
+	manifest.MaterialInputs.TaskStatusSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		tasklens.StatusFile,
+	)
+	manifest.MaterialInputs.TaskRetrievalTraceSHA256 = ""
+	manifest.MaterialInputs.TaskRetrievalTraceMarkdownSHA256 = ""
+	manifestJSON, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	meta := metadata{
+		RepoName:  canonical.RepoName,
+		RepoPath:  repository,
+		CreatedAt: runID,
+	}
+	meta.EffectiveOptions.ReportLanguage = localization.LocaleRussian
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runDir, "metadata.json"),
+		metaJSON,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := reportpkg.PreparePresentationLocalization(
+		canonical,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	translations := make(map[string]string, len(prepared.Input.Fields))
+	for _, field := range prepared.Input.Fields {
+		parts := []string{"Русский текст"}
+		for _, placeholder := range field.Placeholders {
+			for count := 0; count < placeholder.Count; count++ {
+				parts = append(parts, placeholder.Token)
+			}
+		}
+		translations[field.ID] = strings.Join(parts, " ")
+	}
+	projection := localization.Projection{
+		Version:         localization.ProjectionVersion,
+		CanonicalSHA256: prepared.Canonical.SHA256,
+		Locale:          localization.LocaleRussian,
+		Translations:    translations,
+	}
+	if err := reportpkg.WritePresentationLocalizationSuccess(
+		runDir,
+		prepared,
+		projection,
+		true,
+		"request-sha",
+		"cache-key",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := NewHandler(Options{
+		RunsDir:      runsDir,
+		InitialRunID: runID,
+		Capability:   testCapability,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response, err := server.Client().Get(
+		server.URL + capabilityURLPrefix(testCapability) +
+			"/runs/" + runID + "/report.html",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, readErr := io.ReadAll(response.Body)
+	response.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("serve status = %d: %s", response.StatusCode, body)
+	}
+	for _, required := range []string{
+		`"report_language":"ru"`,
+		`"main.warning.study_no_source_adapter"`,
+		`"main.warning.confidence_orientation_capped_incomplete"`,
+		`"presentation_warnings":[{"message_id":"main.task_lens.warning.anchor_explanation_replaced","index":1}]`,
+		"Русский текст",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("localized report is missing %q", required)
+		}
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(runDir, orient.ConfidenceWarningDiagnosticsFile),
+		[]byte(`{"version":99,"orientation_report_sha256":"","diagnostics":[]}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	degradedResponse, err := server.Client().Get(
+		server.URL + capabilityURLPrefix(testCapability) +
+			"/runs/" + runID + "/report.html",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	degradedBody, readErr := io.ReadAll(degradedResponse.Body)
+	degradedResponse.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if degradedResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"degraded serve status = %d: %s",
+			degradedResponse.StatusCode,
+			degradedBody,
+		)
+	}
+	for _, required := range []string{
+		`"report_language":"ru"`,
+		`rm-localization-status--failed`,
+		`data-rm-message="main.localization.ru_unavailable_canonical_en"`,
+		confidenceWarning,
+	} {
+		if !strings.Contains(string(degradedBody), required) {
+			t.Fatalf("degraded localized report is missing %q", required)
+		}
+	}
+}
+
+func copyTaskWarningFixture(t *testing.T, runDir string) {
+	t.Helper()
+	for _, name := range []string{
+		tasklens.BundleFile,
+		tasklens.AttemptFile,
+		tasklens.PackFile,
+		tasklens.StatusFile,
+		tasklens.TraceJSONFile,
+		tasklens.TraceMarkdownFile,
+	} {
+		raw, err := os.ReadFile(filepath.Join("testdata", "task-warning", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runDir, name), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func taskWarningFixtureSHA256(t *testing.T, runDir, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(runDir, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
+}
+
+func TestLoadRunsKeepsCanonicalRunWithInvalidOptionalLocalizationSidecars(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, runDir string)
+	}{
+		{
+			name: "missing",
+			mutate: func(*testing.T, string) {
+			},
+		},
+		{
+			name: "malformed regular status",
+			mutate: func(t *testing.T, runDir string) {
+				t.Helper()
+				if err := os.WriteFile(
+					filepath.Join(runDir, reportpkg.PresentationLocalizationStatusFile),
+					[]byte("{"),
+					0o600,
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "status is directory",
+			mutate: func(t *testing.T, runDir string) {
+				t.Helper()
+				if err := os.Mkdir(
+					filepath.Join(runDir, reportpkg.PresentationLocalizationStatusFile),
+					0o700,
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "projection is symlink",
+			mutate: func(t *testing.T, runDir string) {
+				t.Helper()
+				target := filepath.Join(t.TempDir(), "projection.json")
+				if err := os.WriteFile(target, []byte(`{"unexpected":"data"}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(
+					target,
+					filepath.Join(runDir, reportpkg.PresentationLocalizationProjectionFile),
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			repository := t.TempDir()
+			if err := os.WriteFile(
+				filepath.Join(repository, "batch.go"),
+				[]byte("package example\n"),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			runsDir := t.TempDir()
+			const runID = "20260731-120000-localization"
+			writeRun(t, runsDir, runID, repository, "canonical report")
+			runDir := filepath.Join(runsDir, runID)
+			metadataPath := filepath.Join(runDir, "metadata.json")
+			meta := metadata{
+				RepoName:  filepath.Base(repository),
+				RepoPath:  repository,
+				CreatedAt: runID,
+			}
+			meta.EffectiveOptions.ReportLanguage = "ru"
+			metadataJSON, err := json.Marshal(meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(metadataPath, metadataJSON, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, runDir)
+
+			runs, err := (&handler{runsDir: runsDir}).loadRuns()
+			if err != nil {
+				t.Fatalf("loadRuns: %v", err)
+			}
+			if len(runs) != 1 || runs[0].ID != runID {
+				t.Fatalf("loaded runs = %#v, want canonical run %q", runs, runID)
+			}
+			if runs[0].Report == nil || runs[0].Manifest == nil {
+				t.Fatalf(
+					"canonical authority missing: report=%v manifest=%v",
+					runs[0].Report != nil,
+					runs[0].Manifest != nil,
+				)
+			}
+			if runs[0].RequestedLocale != "ru" {
+				t.Fatalf("requested locale = %q, want ru", runs[0].RequestedLocale)
+			}
+		})
+	}
+}
+
+func TestRunArtifactSignatureKeepsStrictCanonicalAndAuthorityArtifacts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "report json", path: "report.json"},
+		{name: "run manifest", path: reportpkg.RunManifestFilename},
+		{name: "investigation status", path: "task_investigation_status.json"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			repository := t.TempDir()
+			runsDir := t.TempDir()
+			const runID = "20260731-130000-strict"
+			writeRun(t, runsDir, runID, repository, "canonical report")
+			artifactPath := filepath.Join(runsDir, runID, test.path)
+			if err := os.Remove(artifactPath); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(artifactPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := runArtifactSignature(filepath.Join(runsDir, runID)); err == nil {
+				t.Fatalf("runArtifactSignature accepted non-regular %s", test.path)
+			}
+		})
+	}
+}
