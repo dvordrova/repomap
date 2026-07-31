@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/167-typed-report-ui-message-catalog.md
+    decisions/168-complete-russian-report-ui-copy.md
 
 Status:
-    Decision 167 active; typed English/Russian report UI message catalog authorized
+    Decision 168 active; complete Russian report UI copy authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 168 replaces every Russian typed-catalog renderer that still
+    preserves English product prose. Only three complete opaque values remain
+    byte-identical across locales: HTTP, a method/path route identity, and an
+    exact location link. Technical names may remain inside otherwise Russian
+    copy; repository/model prose and opaque parameters remain exact. No
+    provider, semantic, cache, report/manifest/HTTP, source-authority,
+    navigation, or runtime-translation behavior changes.
     Decision 167 atomically replaces the report's exact-string, regex,
     TreeWalker, and MutationObserver localization path with one explicit
     English/Russian product-message catalog shared by the main renderer,
