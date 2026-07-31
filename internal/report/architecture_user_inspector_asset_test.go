@@ -162,6 +162,9 @@ const document = {
   getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -309,6 +312,9 @@ const document = {
   getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -353,6 +359,7 @@ func TestSourceLocationActionAvailabilityMatchesReportAuthority(t *testing.T) {
 const fs = require("fs");
 const vm = require("vm");
 const script = fs.readFileSync(process.argv[2], "utf8");
+const messages = fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8");
 const revision = "0123456789abcdef0123456789abcdef01234567";
 function available(location, report, browserLocation) {
   const window = {
@@ -364,6 +371,9 @@ function available(location, report, browserLocation) {
     getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
     querySelectorAll() { return []; },
   };
+  document.documentElement = { lang: "en" };
+  window.document = document;
+  vm.runInNewContext(messages, { window });
   vm.runInNewContext(script, {
     window, document, URLSearchParams, Set, Map, AbortController,
   });
@@ -439,6 +449,7 @@ func TestRejectedArchitectureFallbackIsDiagnosticOnly(t *testing.T) {
 const fs = require("fs");
 const vm = require("vm");
 const script = fs.readFileSync(process.argv[2], "utf8");
+const messages = fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8");
 function available(architectureSynthesis, search) {
   const report = {
     user_mechanisms: [], user_sources: [], openable_paths: [], source_ids: {},
@@ -453,6 +464,9 @@ function available(architectureSynthesis, search) {
     getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
     querySelectorAll() { return []; },
   };
+  document.documentElement = { lang: "en" };
+  window.document = document;
+  vm.runInNewContext(messages, { window });
   vm.runInNewContext(script, { window, document, URLSearchParams, Set, Map, AbortController });
   return window.__REPOMAP_WORKSPACE_TEST__.userArchitectureAvailable();
 }
@@ -496,8 +510,8 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"architecturePackagePathForMember(member, packageByPath)",
 		"componentFiles[String(location.path || '')]",
 		"options.componentContexts = architectureComponentContexts()",
-		"translateUI: translateUIString",
-		"this.translateUI(",
+		"message: msg",
+		"this.msg(",
 		"userComponentActions(component)",
 		"array(context.sources).find((candidate)",
 		"array(context.studies).slice(0, 3)",
@@ -507,7 +521,7 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"var reference = renderFileReference(filePath, 'rm-component-package-link', 0, label)",
 		"function sourceLocationActionAvailable(location)",
 		"rm-arch__compact-package-action",
-		"this.inspectorSection(\"Launch points\")",
+		`this.inspectorSection(this.msg("architecture.section.launch_points"))`,
 		"this.options.openSourceLocation(target.location)",
 		"array(context.package_paths).length > 0",
 		"(component.members || []).forEach(function (member)",

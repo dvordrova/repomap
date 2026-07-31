@@ -3,395 +3,23 @@
 
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
   var REPORT_LANGUAGE = DATA.report_language === 'ru' ? 'ru' : 'en';
-  var RU_UI = {
-    'Repository onboarding': 'Знакомство с репозиторием',
-    'Saved report': 'Сохранённый отчёт',
-    'File paths open in VS Code ↗': 'Пути к файлам открываются в VS Code ↗',
-    'Run details': 'Детали запуска',
-    'Repository navigation': 'Навигация по репозиторию',
-    'Repository workspace': 'Навигация по репозиторию',
-    'Overview': 'Обзор',
-    'Study': 'Изучение',
-    'Operate': 'Запуск',
-    'Architecture': 'Архитектура',
-    'Source': 'Исходники',
-    'Provenance': 'Происхождение данных',
-    'Open': 'Открыть',
-    'Source locations': 'Исходные позиции',
-    'Close source drawer': 'Закрыть панель исходников',
-    'This report requires JavaScript. The raw data is available in report.json.': 'Для этого отчёта нужен JavaScript. Исходные данные доступны в report.json.',
-    'Project purpose · model orientation': 'Назначение проекта · ориентация модели',
-    'Purpose': 'Назначение',
-    'Explore this repository': 'Исследовать репозиторий',
-    'Components · model orientation': 'Компоненты · ориентация модели',
-    'Start here': 'С чего начать',
-    'Important terms': 'Важные термины',
-    'Questions for a teammate': 'Вопросы коллеге',
-    'Model': 'Модель',
-    'Compact local context': 'Компактный локальный контекст',
-    'Provider request bodies': 'Тела запросов к провайдеру',
-    'Provider requests': 'Запросы к провайдеру',
-    'Orientation latency': 'Время ориентации',
-    'Generic surface scan': 'Общий поиск runtime surfaces',
-    'Architecture anchors': 'Архитектурные опоры',
-    'Analyzed-input freshness': 'Актуальность проанализированных входов',
-    'Architecture grouping': 'Архитектурная группировка',
-    'Suggested investigations': 'Предлагаемые направления',
-    'Rejected suggestions': 'Отклонённые предложения',
-    'Saved traces': 'Сохранённые трассы',
-    'Choose a direction to get a focused starting point in the repository.': 'Выберите направление, чтобы получить конкретную точку входа в репозиторий.',
-    'Starts when': 'Начинается, когда',
-    'Likely entrypoint': 'Вероятная точка входа',
-    'Likely files': 'Вероятные файлы',
-    'Why the model suggested this': 'Почему модель это предложила',
-    'Locally verified': 'Проверено локально',
-    'Missing evidence': 'Недостающие свидетельства',
-    'Evidence-backed flow': 'Путь, подтверждённый свидетельствами',
-    'Proof coverage': 'Покрытие свидетельствами',
-    'Current proof boundary': 'Текущая граница подтверждения',
-    'Read order — open these files in sequence': 'Порядок чтения — открывайте файлы последовательно',
-    'Tests': 'Тесты',
-    'Execution chain': 'Цепочка выполнения',
-    'Known unknowns': 'Известные неизвестные',
-    'Unverified paths': 'Непроверенные пути',
-    'Unknowns': 'Неизвестные',
-    'Warnings': 'Предупреждения',
-    'Study unavailable for this run': 'Раздел «Изучение» недоступен для этого запуска',
-    'No Study directions were published because the editing stage did not pass its required checks. The Overview below uses independently accepted inputs; it is not a substitute Study result.': 'Направления изучения не опубликованы: этап редактирования не прошёл обязательные проверки. Overview ниже использует независимо принятые данные и не подменяет результат Study.',
-    'Study stage did not finish, so no Study directions were published. The Overview below uses independently accepted inputs; it is not a substitute Study result.': 'Этап Study не завершился, поэтому направления изучения не опубликованы. Overview ниже использует независимо принятые данные и не подменяет результат Study.',
-    '← Back to reading path': '← Назад к пути изучения',
-    'Retrieval details': 'Детали извлечения',
-    'No candidate directions were produced.': 'Не удалось получить ни одного направления.',
-    'Suggested start': 'Предлагаемое начало',
-    'Quick start': 'Быстрый старт',
-    'Analysis unavailable': 'Анализ недоступен',
-    'Explore this direction →': 'Исследовать направление →',
-    'Suggested files are selected from repository facts. Treat them as a starting point, not a verified runtime trace.': 'Файлы выбраны из фактов репозитория. Это точка входа, а не подтверждённая runtime-трасса.',
-    'Suggested files come from a saved repository snapshot. Treat them as a starting point, not a verified runtime trace.': 'Файлы взяты из сохранённого снимка репозитория. Это точка входа, а не подтверждённая runtime-трасса.',
-    'Suggested files to inspect': 'Файлы для изучения',
-    'Evidence files': 'Файлы-свидетельства',
-    'Show less': 'Показать меньше',
-    'Understand the repository': 'Разобраться в репозитории',
-    'Pick a path worth following.': 'Выберите полезный путь.',
-    'Complete mechanisms explain a source-backed path. Topics are honest starting points when the evidence is useful but the path is not closed yet.': 'Полные механизмы объясняют путь по исходникам. Темы — честные точки входа, когда свидетельства полезны, но путь ещё не замкнут.',
-    'Source-backed code paths': 'Пути по исходному коду',
-    'Complete explanations': 'Полные объяснения',
-    'Questions worth exploring': 'Вопросы, которые стоит исследовать',
-    'Grounded starting points': 'Точные точки входа',
-    'Each topic shows what is known, where to start, and why no complete path is claimed.': 'Каждая тема показывает, что уже известно, с чего начать и почему полный путь пока не заявлен.',
-    'Topic · incomplete': 'Тема · пока неполная',
-    'Question worth exploring': 'Вопрос для исследования',
-    'Inspect starting points →': 'Изучить точки входа →',
-    '← All paths': '← Все пути',
-    '← All Study directions': '← Все направления изучения',
-    'What remains unresolved': 'Что осталось неясным',
-    'Exact places to start': 'Точные точки входа',
-    'Open exact symbol →': 'Открыть точный символ →',
-    'Explore more grounded questions': 'Исследовать другие подтверждённые вопросы',
-    'Each question has an exact place to begin, but not yet a complete reading path.': 'У каждого вопроса есть точное место для начала, но полного пути чтения пока нет.',
-    'Study · incomplete directions': 'Изучение · неполные направления',
-    'What is worth understanding next?': 'В чём стоит разобраться дальше?',
-    'Questions backed by exact starting points. They are places to begin, not answers or ordered mechanisms.': 'Вопросы с точными точками входа. Это места для начала, а не готовые ответы или упорядоченные механизмы.',
-    'A useful path through the repository': 'Полезный путь по репозиторию',
-    'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.': 'Выберите вопрос и начните с конкретных опор в исходниках. Порядок предназначен для изучения, а не изображает runtime-трассу.',
-    'Repository brief': 'Кратко о репозитории',
-    'Repository overview': 'Обзор репозитория',
-    'Main input': 'Основной вход',
-    'Central responsibility': 'Главная ответственность',
-    'Observable result': 'Наблюдаемый результат',
-    'Repository shape': 'Структура репозитория',
-    'Code areas to know': 'Важные области кода',
-    'A compact map of the production areas worth recognizing first.': 'Компактная карта production-областей, которые стоит узнать в первую очередь.',
-    'Open a concrete source location or continue on the architecture map.': 'Откройте конкретную позицию в исходниках или перейдите к карте архитектуры.',
-    'System story': 'Как устроена система',
-    'How the parts fit together': 'Как связаны основные части',
-    'A compact orientation assembled from repository documentation and existing code areas.': 'Краткая ориентация, собранная из материалов репозитория и найденных областей кода.',
-    'Inspect the wider repository': 'Изучить репозиторий шире',
-    'Open the repository map for additional context.': 'Откройте карту репозитория, чтобы увидеть дополнительный контекст.',
-    'Explore architecture': 'Исследовать архитектуру',
-    'Explore how this repository is organized and implemented.': 'Разберитесь, как организован и реализован этот репозиторий.',
-    'What to study': 'Что изучать',
-    'Ready deep dives': 'Готовые разборы',
-    'These directions already have a validated step-by-step implementation explanation.': 'Для этих направлений уже есть проверенное пошаговое объяснение реализации.',
-    'Explore': 'Исследование',
-    'Open the full architecture': 'Открыть полную архитектуру',
-    'Use the study map as a starting point, then inspect the wider repository map.': 'Начните с карты изучения, затем переходите к полной карте репозитория.',
-    'Full architecture': 'Полная архитектура',
-    '← Repository overview': '← Обзор репозитория',
-    'What you can learn': 'Что можно узнать',
-    'After this reading path': 'После этого пути чтения',
-    'These anchors are ordered for learning. They do not claim runtime execution order.': 'Опоры упорядочены для изучения и не заявляют порядок выполнения во время работы.',
-    'Reading path': 'Путь чтения',
-    'You will inspect': 'Что вы изучите',
-    'Open an anchor to reveal its exact saved source.': 'Откройте опору, чтобы увидеть точный сохранённый исходник.',
-    'Open an anchor at its exact repository location.': 'Откройте опору в её точной позиции в репозитории.',
-    'Then inspect': 'Затем изучите',
-    'Related implementation': 'Связанная реализация',
-    'Public boundary': 'Публичная граница',
-    'Core data type': 'Основной тип данных',
-    'Continue exploring': 'Продолжить исследование',
-    'Related repository context': 'Связанный контекст репозитория',
-    'Open a referenced document or inspect the full architecture.': 'Откройте связанный документ или изучите полную архитектуру.',
-    'Open documentation': 'Открыть документацию',
-    'Open exact source': 'Открыть точный исходник',
-    'Run and verify': 'Запустить и проверить',
-    'Repository-backed operating paths': 'Инструкции из репозитория',
-    'Use exact commands, endpoints, and checks saved from this repository, with their source beside them.': 'Используйте точные команды, endpoints и проверки из репозитория; рядом указан определяющий их источник.',
-    'Repository operation': 'Операция репозитория',
-    'Open instructions →': 'Открыть инструкцию →',
-    'Repository reference': 'Ссылка из репозитория',
-    'Operational reference': 'Операционная ссылка',
-    'Copy command': 'Скопировать команду',
-    'Show source': 'Показать источник',
-    'How to run and verify': 'Как запустить и проверить',
-    'Actions': 'Действия',
-    'Each action keeps its exact command or endpoint beside the repository source that defines it.': 'Для каждого действия точная команда или endpoint показаны рядом с определяющим их источником в репозитории.',
-    'Expected result': 'Ожидаемый результат',
-    'Exact output or generated paths retained from this repository.': 'Точный вывод или создаваемые пути, сохранённые из этого репозитория.',
-    'Study the implementation': 'Изучить реализацию',
-    'Related reading paths': 'Связанные пути чтения',
-    'Follow the code behind this operation without losing this page from browser history.': 'Проследите код этой операции, не теряя текущую страницу из истории браузера.',
-    'Copy repository-relative path': 'Скопировать путь относительно репозитория',
-    'Copy path:line:column': 'Скопировать путь:строку:столбец',
-    'VS Code is not available': 'VS Code недоступен',
-    'Open in editor': 'Открыть в редакторе',
-    'Open in GitLab': 'Открыть в GitLab',
-    'Open the captured revision in GitLab': 'Открыть зафиксированную версию в GitLab',
-    'Code links open the captured revision in GitLab ↗': 'Ссылки на код открывают зафиксированную версию в GitLab ↗',
-    'This report includes stable local changes. Unchanged code links open the captured GitLab revision; changed source paths stay unlinked.': 'Этот отчёт учитывает стабильные локальные изменения. Ссылки для неизменённых исходников открывают зафиксированную версию GitLab; изменённые пути остаются без внешней ссылки.',
-    'Local-only source': 'Только локальный исходник',
-    'This source has local changes and does not exactly match the captured GitLab commit; its external code link is unavailable.': 'Этот исходник содержит локальные изменения и не совпадает с зафиксированным commit в GitLab; внешняя ссылка на код недоступна.',
-    'Open in GitHub': 'Открыть в GitHub',
-    'Open the captured revision in GitHub': 'Открыть зафиксированную версию в GitHub',
-    'Code links open the captured revision in GitHub ↗': 'Ссылки на код открывают зафиксированную версию в GitHub ↗',
-    'This report includes stable local changes. Unchanged code links open the captured GitHub revision; changed source paths stay unlinked.': 'Этот отчёт учитывает стабильные локальные изменения. Ссылки для неизменённых исходников открывают зафиксированную версию GitHub; изменённые пути остаются без внешней ссылки.',
-    'This source has local changes and does not exactly match the captured GitHub commit; its external code link is unavailable.': 'Этот исходник содержит локальные изменения и не совпадает с зафиксированным commit в GitHub; внешняя ссылка на код недоступна.',
-    'Show more context': 'Показать больше контекста',
-    'Show full function': 'Показать всю функцию',
-    'Copy file:line': 'Скопировать файл:строку',
-    'Copy path': 'Скопировать путь',
-    'Saved source': 'Сохранённый исходник',
-    'Source code': 'Исходный код',
-    'saved snapshot': 'сохранённый снимок',
-    'Source in this code path': 'Исходник в этом пути по коду',
-    'Source in this reading path': 'Исходник в этом пути чтения',
-    'Source in this operating path': 'Исходник в этой инструкции запуска',
-    'Source in this task investigation': 'Исходник в этом исследовании задачи',
-    'Show raw exact source': 'Показать точный исходник без обработки',
-    'Show readable document': 'Показать документ для чтения',
-    'Component inspector': 'Инспектор компонента',
-    'Recommended start': 'Рекомендуемое начало',
-    'Related flows': 'Связанные пути',
-    'Packages': 'Пакеты',
-    'This source changed after the report was generated.': 'Этот исходник изменился после создания отчёта.',
-    'Open code →': 'Открыть код →',
-    'View on map →': 'Показать на карте →',
-    'Open code path →': 'Открыть путь в коде →',
-    'Implementation': 'Реализация',
-    'How this works': 'Как это работает',
-    'What remains uncertain': 'Что остаётся неопределённым',
-    'These boundaries stay visible because they change how the explanation should be used.': 'Эти границы показаны, потому что они влияют на то, как следует использовать объяснение.',
-    'Boundary': 'Граница',
-    'Boundaries': 'Границы',
-    'Close inspector': 'Закрыть инспектор',
-    'Architecture inspector': 'Инспектор архитектуры',
-    'Explore the repository map': 'Исследуйте карту репозитория',
-    'Select a component, runtime surface, or code path to inspect its implementation context.': 'Выберите компонент, точку запуска или путь в коде, чтобы изучить контекст реализации.',
-    'Code area': 'Область кода',
-    'Repository component': 'Компонент репозитория',
-    'Repository area': 'Область репозитория',
-    'Package': 'Пакет',
-    'Launch points': 'Точки запуска',
-    'Start in code': 'С чего начать в коде',
-    'Reading paths': 'Пути изучения',
-    'Open reading path': 'Открыть путь изучения',
-    'Runtime surface': 'Точка запуска',
-    'Where the repository exposes this entry point.': 'Где репозиторий предоставляет эту точку входа.',
-    'Code areas': 'Области кода',
-    'Source-linked sequence': 'Последовательность по исходному коду',
-    'Implementation steps': 'Шаги реализации',
-    'Implementation step': 'Шаг реализации',
-    'Code step': 'Шаг в коде',
-    'Binding code': 'Связующий код',
-    'Exact saved anchor': 'Точная сохранённая опора',
-    'Code transition': 'Переход в коде',
-    'Call site': 'Место вызова',
-    'From': 'Откуда',
-    'To': 'Куда',
-    'Source': 'Исходник',
-    'Exact source': 'Точный исходник',
-    'Exact local member': 'Точный локальный элемент',
-    'Zoom out': 'Уменьшить масштаб',
-    'Fit architecture at readable scale': 'Вместить архитектуру в читаемом масштабе',
-    'Fit': 'Вместить',
-    'Zoom in': 'Увеличить масштаб',
-    'Surfaces': 'Точки запуска',
-    'Choose a source-backed path and walk through its implementation one step at a time.': 'Выберите путь по исходникам и последовательно разберите его реализацию.',
-    'Explore the architecture map for additional context.': 'Откройте карту архитектуры, чтобы увидеть дополнительный контекст.',
-    'unresolved value': 'неразрешённое значение',
-    'Code path': 'Путь в коде',
-    'Code paths': 'Пути в коде',
-    'Source-backed code path': 'Путь по исходному коду',
-    '← Back to architecture': '← Назад к архитектуре',
-    'All': 'Все',
-    'All evidence': 'Все свидетельства',
-    'Direct': 'Прямые',
-    'Through wrapper': 'Через wrapper',
-    'Dynamic / unresolved': 'Динамические / неразрешённые',
-    'Process entries': 'Точки входа процесса',
-    'CLI commands': 'CLI-команды',
-    'HTTP registrations': 'HTTP-регистрации',
-    'Route descriptors': 'Дескрипторы маршрутов',
-    'Route frontiers': 'Границы маршрутов',
-    'Server start sites': 'Места запуска сервера',
-    'Workers': 'Workers',
-    'Non-worker tasks': 'Фоновые задачи не-worker',
-    'Application': 'Приложение',
-    'Secondary services': 'Вторичные сервисы',
-    'Tooling': 'Инструменты',
-    'Tests/helpers': 'Тесты/helpers',
-    'Unassigned': 'Без группы',
-    'Dynamic/unresolved': 'Динамические/неразрешённые',
-    'Unavailable': 'Недоступные',
-    'No surfaces match these filters.': 'Ни одна surface не соответствует фильтрам.',
-    'Kind': 'Тип',
-    'Framework': 'Framework',
-    'Executable role': 'Роль executable',
-    'Availability': 'Доступность',
-    'Application ownership': 'Принадлежность приложению',
-    'Terminal source': 'Конечный источник',
-    'Promotion basis': 'Основание включения',
-    'Unavailable reason': 'Причина недоступности',
-    'Trace readiness reason': 'Готовность трассировки',
-    'Transport': 'Transport',
-    'Handler / callback': 'Handler / callback',
-    'Constructor': 'Constructor',
-    'Scenario': 'Сценарий',
-    'Analyzer': 'Анализатор',
-    'Catalog surfaces': 'Surfaces в каталоге',
-    'Surfaces embedded': 'Встроенные surfaces',
-    'Direct surfaces': 'Прямые surfaces',
-    'Wrapper-derived': 'Полученные через wrapper',
-    'Unavailable process entries': 'Недоступные точки входа процесса',
-    'Unavailable packages': 'Недоступные пакеты',
-    'Package diagnostics': 'Диагностика пакетов',
-    'Projection bound': 'Граница проекции',
-    'Packages inspected': 'Проверено пакетов',
-    'Functions inspected': 'Проверено функций',
-    'Configured seeds matched': 'Совпавшие настроенные seeds',
-    'For example: request dispatch, report building, runtime surfaces': 'Например: request dispatch, построение отчёта, runtime surfaces',
-    'No matches.': 'Совпадений нет.'
-  };
-
-  function russianCount(value, one, few, many) {
-    var number = Number(value);
-    var mod100 = number % 100;
-    var mod10 = number % 10;
-    var form = mod10 === 1 && mod100 !== 11
-      ? one
-      : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
-        ? few
-        : many;
-    return value + ' ' + form;
+  var UI = window.RepomapUI;
+  if (!UI || typeof UI.message !== 'function') {
+    throw new Error('repomap UI message catalog is unavailable');
   }
 
-  function translateUIString(value) {
-    if (REPORT_LANGUAGE !== 'ru' || typeof value !== 'string' || value === '') return value;
-    var trimmed = value.trim();
-    var translated = RU_UI[trimmed];
-    if (!translated) {
-      var match = trimmed.match(/^Review (\d+) incomplete Study directions →$/);
-      if (match) translated = 'Посмотреть неполные направления Study: ' + match[1] + ' →';
-      match = match || trimmed.match(/^Show (\d+) more$/);
-      if (!translated && match) translated = 'Показать ещё: ' + match[1];
-      match = trimmed.match(/^Show all \((\d+)\)$/);
-      if (!translated && match) translated = 'Показать все (' + match[1] + ')';
-      match = trimmed.match(/^Start with (.+) →$/);
-      if (!translated && match) translated = 'Начать с ' + match[1] + ' →';
-      match = trimmed.match(/^Copied (.+)$/);
-      if (!translated && match) translated = 'Скопировано: ' + match[1];
-      match = trimmed.match(/^After action (\d+)$/);
-      if (!translated && match) translated = 'После действия ' + match[1];
-      match = trimmed.match(/^(\d+) (step|steps)$/);
-      if (!translated && match) translated = russianCount(match[1], 'шаг', 'шага', 'шагов');
-      match = trimmed.match(/^Showing (\d+) of (\d+) surfaces\.$/);
-      if (!translated && match) translated = 'Показано точек запуска: ' + match[1] + ' из ' + match[2] + '.';
-      match = trimmed.match(/^(\d+) components?$/);
-      if (!translated && match) translated = russianCount(match[1], 'компонент', 'компонента', 'компонентов');
-      match = trimmed.match(/^(\d+) repository files?$/);
-      if (!translated && match) translated = russianCount(match[1], 'файл репозитория', 'файла репозитория', 'файлов репозитория');
-      match = trimmed.match(/^(\d+) exact anchors?$/);
-      if (!translated && match) translated = russianCount(match[1], 'точная опора', 'точные опоры', 'точных опор');
-      match = trimmed.match(/^(\d+) surfaces? · (\d+) exact anchors?$/);
-      if (!translated && match) translated = russianCount(match[1], 'точка запуска', 'точки запуска', 'точек запуска') + ' · ' +
-        russianCount(match[2], 'точная опора', 'точные опоры', 'точных опор');
-      match = trimmed.match(/^(\d+) surfaces? · (\d+) code paths? · (\d+) exact anchors?$/);
-      if (!translated && match) translated =
-        russianCount(match[1], 'точка запуска', 'точки запуска', 'точек запуска') + ' · ' +
-        russianCount(match[2], 'путь в коде', 'пути в коде', 'путей в коде') + ' · ' +
-        russianCount(match[3], 'точная опора', 'точные опоры', 'точных опор');
-      match = trimmed.match(/^(\d+) exact members?$/);
-      if (!translated && match) translated =
-        russianCount(match[1], 'точный элемент', 'точных элемента', 'точных элементов');
-      match = trimmed.match(/^Code paths \((\d+)\)(?: ([▾▴]))?$/);
-      if (!translated && match) translated =
-        'Пути в коде (' + match[1] + ')' + (match[2] ? ' ' + match[2] : '');
-      match = trimmed.match(/^Production package (.+)\.$/);
-      if (!translated && match) translated = 'Пакет production-кода ' + match[1] + '.';
-      match = trimmed.match(/^Drag to explore · (\d+) architecture groups · Fit keeps labels readable$/);
-      if (!translated && match) translated = 'Перетаскивайте карту · архитектурных групп: ' + match[1] + ' · кнопка «Вместить» сохраняет читаемость';
-      match = trimmed.match(/^Inspect (.+) transition$/);
-      if (!translated && match) translated = 'Изучить переход ' + match[1];
-      match = trimmed.match(/^(.+) · lines (\d+)[–-](\d+)$/);
-      if (!translated && match) translated = match[1] + ' · строки ' + match[2] + '–' + match[3];
-      match = trimmed.match(/^Opened (.+) in VS Code$/);
-      if (!translated && match) translated = 'Открыто в VS Code: ' + match[1];
-      match = trimmed.match(/^Map context for “(.+)”$/);
-      if (!translated && match) translated = 'Контекст на карте: «' + match[1] + '»';
-    }
-    if (!translated) return value;
-    return value.slice(0, value.indexOf(trimmed)) + translated +
-      value.slice(value.indexOf(trimmed) + trimmed.length);
+  function msg(id, params) {
+    return UI.message(id, params);
   }
 
-  function translatableElement(node) {
-    if (!node || !node.parentElement) return false;
-    return !/^(CODE|PRE|SCRIPT|STYLE|TEXTAREA|KBD)$/i.test(node.parentElement.tagName);
-  }
-
-  function translateUIRoot(root) {
-    if (REPORT_LANGUAGE !== 'ru' || !root) return;
-    if (root.nodeType === Node.TEXT_NODE && translatableElement(root)) {
-      root.nodeValue = translateUIString(root.nodeValue);
-      return;
-    }
-    if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    var node;
-    while ((node = walker.nextNode())) {
-      if (translatableElement(node)) node.nodeValue = translateUIString(node.nodeValue);
-    }
-    var elements = [];
-    if (root.nodeType === Node.ELEMENT_NODE) elements.push(root);
-    Array.prototype.push.apply(elements, root.querySelectorAll ? root.querySelectorAll('[aria-label], [placeholder], [title]') : []);
-    elements.forEach(function (element) {
-      ['aria-label', 'placeholder', 'title'].forEach(function (attribute) {
-        if (element.hasAttribute(attribute)) {
-          element.setAttribute(attribute, translateUIString(element.getAttribute(attribute)));
-        }
-      });
+  function bindFixedMessages(root) {
+    var scope = root || document;
+    Array.prototype.forEach.call(scope.querySelectorAll('[data-rm-message]'), function (node) {
+      node.textContent = msg(node.getAttribute('data-rm-message'));
     });
-  }
-
-  function installReportLocale() {
-    if (REPORT_LANGUAGE !== 'ru') return;
-    document.documentElement.lang = 'ru';
-    translateUIRoot(document.body);
-    new MutationObserver(function (mutations) {
-      mutations.forEach(function (mutation) {
-        Array.prototype.forEach.call(mutation.addedNodes || [], translateUIRoot);
-      });
-    }).observe(document.body, { childList: true, subtree: true });
+    Array.prototype.forEach.call(scope.querySelectorAll('[data-rm-aria-message]'), function (node) {
+      node.setAttribute('aria-label', msg(node.getAttribute('data-rm-aria-message')));
+    });
   }
 
   var OPENABLE_PATHS = (DATA.openable_paths || []).slice().sort(function (a, b) {
@@ -458,57 +86,57 @@
 	var activeOverviewTopicID = '';
 
   var LABELS = {
-    purpose: 'Project purpose · model orientation',
-    explore: 'Explore this repository',
-    systemMap: 'Components · model orientation',
-    startFiles: 'Start here',
-    terms: 'Important terms',
-    questions: 'Questions for a teammate',
-    model: 'Model',
-    localContext: 'Compact local context',
-    externalRequest: 'Provider request bodies',
-    providerRequests: 'Provider requests',
-    providerLatency: 'Orientation latency',
-    surfaceAnalysis: 'Generic surface scan',
-    architectureAnchors: 'Architecture anchors',
-    snapshotFreshness: 'Analyzed-input freshness',
-    architectureGrouping: 'Architecture grouping',
-    directionsFound: 'Suggested investigations',
-    rejectedDirections: 'Rejected suggestions',
-    savedFlows: 'Saved traces',
-    candidateFlows: 'Saved traces',
-    candidateDirections: 'Suggested investigations',
-    directionHint: 'Choose a direction to get a focused starting point in the repository.',
-    trigger: 'Starts when',
-    likelyEntrypoint: 'Likely entrypoint',
-    likelyFiles: 'Likely files',
-    orientationEvidence: 'Why the model suggested this',
-    verifiedEvidence: 'Locally verified',
-    missingEvidence: 'Missing evidence',
-    verifiedFlow: 'Evidence-backed flow',
-    proofSlots: 'Proof coverage',
-    proofStop: 'Current proof boundary',
-    filesToRead: 'Read order — open these files in sequence',
-    testsToRead: 'Tests',
-    executionChain: 'Execution chain',
-    knownUnknowns: 'Known unknowns',
-    unverified: 'Unverified paths',
-    unknowns: 'Unknowns',
-    warnings: 'Warnings',
-    retrievalDetails: 'Retrieval details',
-    noFlows: 'No candidate directions were produced.',
-    startHere: 'Start here',
-    suggestedStart: 'Suggested start',
-    quickStart: 'Quick start',
-    errorUnavailable: 'Analysis unavailable',
-    openLocalEvidence: 'Explore this direction →',
-    localEvidenceIntro: 'Suggested files are selected from repository facts. Treat them as a starting point, not a verified runtime trace.',
-    localEvidenceLegacyIntro: 'Suggested files come from a saved repository snapshot. Treat them as a starting point, not a verified runtime trace.',
-    suggestedFiles: 'Suggested files to inspect',
-    evidenceFiles: 'Evidence files',
-    showAll: 'Show all ({count})',
-    showMore: 'Show {count} more',
-    showLess: 'Show less',
+    purpose: msg('main.project.purpose.model.orientation'),
+    explore: msg('main.explore.this.repository'),
+    systemMap: msg('main.components.model.orientation'),
+    startFiles: msg('main.start.here'),
+    terms: msg('main.important.terms'),
+    questions: msg('main.questions.for.a.teammate'),
+    model: msg('main.model'),
+    localContext: msg('main.compact.local.context'),
+    externalRequest: msg('main.provider.request.bodies'),
+    providerRequests: msg('main.provider.requests'),
+    providerLatency: msg('main.orientation.latency'),
+    surfaceAnalysis: msg('main.generic.surface.scan'),
+    architectureAnchors: msg('main.architecture.anchors'),
+    snapshotFreshness: msg('main.analyzed.input.freshness'),
+    architectureGrouping: msg('main.architecture.grouping'),
+    directionsFound: msg('main.suggested.investigations'),
+    rejectedDirections: msg('main.rejected.suggestions'),
+    savedFlows: msg('main.saved.traces'),
+    candidateFlows: msg('main.saved.traces'),
+    candidateDirections: msg('main.suggested.investigations'),
+    directionHint: msg('main.choose.a.direction.to.get.a.focused.starting.point.in.the.repository'),
+    trigger: msg('main.starts.when'),
+    likelyEntrypoint: msg('main.likely.entrypoint'),
+    likelyFiles: msg('main.likely.files'),
+    orientationEvidence: msg('main.why.the.model.suggested.this'),
+    verifiedEvidence: msg('main.locally.verified'),
+    missingEvidence: msg('main.missing.evidence'),
+    verifiedFlow: msg('main.evidence.backed.flow'),
+    proofSlots: msg('main.proof.coverage'),
+    proofStop: msg('main.current.proof.boundary'),
+    filesToRead: msg('main.read.order.open.these.files.in.sequence'),
+    testsToRead: msg('main.tests'),
+    executionChain: msg('main.execution.chain'),
+    knownUnknowns: msg('main.known.unknowns'),
+    unverified: msg('main.unverified.paths'),
+    unknowns: msg('main.unknowns'),
+    warnings: msg('main.warnings'),
+    retrievalDetails: msg('main.retrieval.details'),
+    noFlows: msg('main.no.candidate.directions.were.produced'),
+    startHere: msg('main.start.here'),
+    suggestedStart: msg('main.suggested.start'),
+    quickStart: msg('main.quick.start'),
+    errorUnavailable: msg('main.analysis.unavailable'),
+    openLocalEvidence: msg('main.explore.this.direction'),
+    localEvidenceIntro: msg('main.suggested.files.are.selected.from.repository.facts.treat.them.as.a.starting.point.not.a.verified.runtime.trace'),
+    localEvidenceLegacyIntro: msg('main.suggested.files.come.from.a.saved.repository.snapshot.treat.them.as.a.starting.point.not.a.verified.runtime.trace'),
+    suggestedFiles: msg('main.suggested.files.to.inspect'),
+    evidenceFiles: msg('main.evidence.files'),
+    showAll: function (count) { return msg('main.list.show_all', { count: count }); },
+    showMore: function (count) { return msg('main.list.show_more', { count: count }); },
+    showLess: msg('main.show.less'),
   };
 
   function userMechanismByID(mechanisms, artifactID) {
@@ -933,12 +561,18 @@
     return v >= 0.7 ? 'rm-ev-strong' : v >= 0.4 ? 'rm-ev-medium' : 'rm-ev-weak';
   }
 
-  function evidenceLabel(c) {
+  function evidenceLabel(c, verification) {
     var v = Math.max(0, c || 0);
-    if (v <= 0) return 'Model confidence: not estimated';
-    if (v >= 0.7) return 'Model confidence: high';
-    if (v >= 0.4) return 'Model confidence: medium';
-    return 'Model confidence: low';
+    if (verification) {
+      if (v <= 0) return msg('main.evidence_confidence.not_estimated');
+      if (v >= 0.7) return msg('main.evidence_confidence.high');
+      if (v >= 0.4) return msg('main.evidence_confidence.medium');
+      return msg('main.evidence_confidence.low');
+    }
+    if (v <= 0) return msg('main.model_confidence.not_estimated');
+    if (v >= 0.7) return msg('main.model_confidence.high');
+    if (v >= 0.4) return msg('main.model_confidence.medium');
+    return msg('main.model_confidence.low');
   }
 
   function chainCircleClass(c) {
@@ -964,7 +598,7 @@
   function txt(tag, cls, text) {
     var e = el(tag, cls);
     var value = text == null ? '' : String(text);
-    e.textContent = /^(code|pre|kbd)$/i.test(tag) ? value : translateUIString(value);
+    e.textContent = value;
     return e;
   }
 
@@ -985,24 +619,22 @@
   }
 
   function staticSourceOpenLabel() {
-    return 'Open in ' + STATIC_SOURCE_HOST;
+    return msg('main.source.open_in_host', { host: STATIC_SOURCE_HOST });
   }
 
   function staticSourceCapturedRevisionTitle() {
-    return 'Open the captured revision in ' + STATIC_SOURCE_HOST;
+    return msg('main.source.open_captured_revision', { host: STATIC_SOURCE_HOST });
   }
 
   function staticSourceDirtyMessage() {
-    return 'This source has local changes and does not exactly match the captured ' +
-      STATIC_SOURCE_HOST + ' commit; its external code link is unavailable.';
+    return msg('main.source.dirty_mismatch', { host: STATIC_SOURCE_HOST });
   }
 
   function staticSourceHintMessage() {
     if (STATIC_SOURCE_LINKS && STATIC_SOURCE_LINKS.working_tree_dirty) {
-      return 'This report includes stable local changes. Unchanged code links open the captured ' +
-        STATIC_SOURCE_HOST + ' revision; changed source paths stay unlinked.';
+      return msg('main.source.stable_local_changes', { host: STATIC_SOURCE_HOST });
     }
-    return 'Code links open the captured revision in ' + STATIC_SOURCE_HOST + ' ↗';
+    return msg('main.source.captured_revision_hint', { host: STATIC_SOURCE_HOST });
   }
 
   function encodeStaticSourcePathSegment(value) {
@@ -1054,7 +686,7 @@
     link.setAttribute('href', url);
     link.setAttribute('target', '_blank');
     link.setAttribute('rel', 'noopener noreferrer');
-    link.setAttribute('title', translateUIString(staticSourceCapturedRevisionTitle()));
+    link.setAttribute('title', staticSourceCapturedRevisionTitle());
     return link;
   }
 
@@ -1073,11 +705,11 @@
     var link = staticSourceLink(label, cls, location, endLine);
     if (link) return link;
     if (staticSourceMode() && staticWorkingTreePath(location && location.path)) {
-      var localOnly = txt('button', cls || '', 'Local-only source');
+      var localOnly = txt('button', cls || '', msg('main.local.only.source'));
       localOnly.type = 'button';
       localOnly.setAttribute(
         'title',
-        translateUIString(staticSourceDirtyMessage())
+        staticSourceDirtyMessage()
       );
       localOnly.onclick = function () {
         showToast(staticSourceDirtyMessage(), true);
@@ -1104,7 +736,7 @@
   function showToast(message, isError) {
     var toast = document.getElementById('rm-toast');
     if (!toast) return;
-    toast.textContent = translateUIString(message);
+    toast.textContent = message;
     toast.className = 'rm-toast' + (isError ? ' rm-toast--error' : '');
     toast.hidden = false;
     if (toastTimer) window.clearTimeout(toastTimer);
@@ -1114,7 +746,7 @@
   function copyText(value) {
     if (!navigator.clipboard || !navigator.clipboard.writeText) return;
     navigator.clipboard.writeText(value).then(function () {
-      showToast('Copied ' + value, false);
+      showToast(msg('main.toast.copied', { value: value }), false);
     }).catch(function () {});
   }
 
@@ -1124,12 +756,12 @@
     var location = filePath + (line ? ':' + line : '') + (column ? ':' + column : '');
     toast.replaceChildren();
     toast.className = 'rm-toast rm-toast--error rm-toast--fallback';
-    toast.appendChild(txt('strong', '', 'VS Code is not available'));
+    toast.appendChild(txt('strong', '', msg('main.vs.code.is.not.available')));
     var actions = el('span', 'rm-toast-actions');
-    var relative = txt('button', '', 'Copy repository-relative path');
+    var relative = txt('button', '', msg('main.copy.repository.relative.path'));
     relative.type = 'button';
     relative.onclick = function () { copyText(filePath); };
-    var exact = txt('button', '', 'Copy path:line:column');
+    var exact = txt('button', '', msg('main.copy.path.line.column'));
     exact.type = 'button';
     exact.onclick = function () { copyText(location); };
     actions.append(relative, exact);
@@ -1144,7 +776,7 @@
     var sourceID = SOURCE_IDS[filePath];
     if (!serverMode() || !runID || !sourceID) return Promise.resolve();
     var openingTimer = window.setTimeout(function () {
-      showToast('Opening in VS Code…', false);
+      showToast(msg('main.toast.opening_vscode'), false);
     }, 250);
     return fetch(serverBasePath() + '/api/open', {
       method: 'POST',
@@ -1156,7 +788,7 @@
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) {
-          var error = new Error(body.error || 'editor action failed');
+          var error = new Error(body.error || msg('main.error.editor_action_failed'));
           error.code = body.code || '';
           throw error;
         }
@@ -1165,8 +797,9 @@
     }).then(function (body) {
       window.clearTimeout(openingTimer);
       var stale = body.source_changed || DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(filePath) >= 0;
-      var message = 'Opened ' + filePath + (line ? ':' + line : '') + ' in VS Code';
-      if (stale) message += ' · Source changed since this report was generated';
+      var location = filePath + (line ? ':' + line : '');
+      var message = msg('main.toast.opened_vscode', { location: location });
+      if (stale) message += msg('main.toast.source_changed_suffix');
       showToast(message, false);
     }).catch(function (error) {
       window.clearTimeout(openingTimer);
@@ -1174,7 +807,7 @@
         showEditorUnavailable(filePath, line || 0, column || 0);
         return;
       }
-      showToast(error.message || 'Could not open file in VS Code', true);
+      showToast(error.message || msg('main.toast.could_not_open_vscode'), true);
     });
   }
 
@@ -1189,17 +822,19 @@
     if (staticSourceLinkNode) return staticSourceLinkNode;
     if (staticSourceMode() && staticWorkingTreePath(filePath)) {
       var localReference = txt('span', cls + ' rm-file-link--stale', text);
-      localReference.title = translateUIString(staticSourceDirtyMessage());
+      localReference.title = staticSourceDirtyMessage();
       return localReference;
     }
     if (!serverMode() || !OPENABLE_PATH_SET[filePath]) {
       var reference = txt('span', cls + (stale ? ' rm-file-link--stale' : ''), text);
-      if (stale) reference.title = 'This source changed after the report was generated.';
+      if (stale) reference.title = msg('main.this.source.changed.after.the.report.was.generated');
       return reference;
     }
     var button = txt('button', cls + ' rm-file-link', text);
     button.type = 'button';
-    button.title = stale ? 'This source changed after the report was generated. Open current source.' : 'Open current source in VS Code';
+    button.title = stale
+      ? msg('main.source.changed_open_current')
+      : msg('main.source.open_current_vscode');
     if (stale) button.classList.add('rm-file-link--stale');
     button.onclick = function (event) {
       event.preventDefault();
@@ -1301,7 +936,7 @@
     if (staticSourceMode()) {
       var staticSourceHintNode = document.getElementById('rm-editor-hint');
       if (staticSourceHintNode) {
-        staticSourceHintNode.textContent = translateUIString(staticSourceHintMessage());
+        staticSourceHintNode.textContent = staticSourceHintMessage();
         staticSourceHintNode.hidden = false;
       }
       return;
@@ -1322,7 +957,7 @@
       runs.forEach(function (run) {
         var option = document.createElement('option');
         option.value = run.id;
-        var label = run.repo_name || 'Saved repository report';
+        var label = run.repo_name || msg('main.saved_repository_report');
         var captured = String(run.created_at || '');
         var parsed = new Date(captured);
         if (!Number.isNaN(parsed.getTime())) {
@@ -1351,7 +986,7 @@
   function humanizeReason(reason) {
     if (!reason) return '';
     if (reason === 'likely_file from candidate_flow') {
-      return 'Suggested by initial orientation';
+      return msg('main.reason.initial_orientation');
     }
 
     var retrievalReason = reason.indexOf('exact basename match') >= 0 ||
@@ -1361,21 +996,20 @@
     if (!retrievalReason) return reason;
 
     var lower = reason.toLowerCase();
-    if (lower.indexOf('raft') >= 0) return 'Matches Raft-related repository signals';
-    if (lower.indexOf('grpc') >= 0 || lower.indexOf('rpc') >= 0) return 'Matches RPC-related repository signals';
-    if (lower.indexOf('lease') >= 0) return 'Matches lease-related repository signals';
+    if (lower.indexOf('raft') >= 0) return msg('main.reason.raft_signals');
+    if (lower.indexOf('grpc') >= 0 || lower.indexOf('rpc') >= 0) return msg('main.reason.rpc_signals');
+    if (lower.indexOf('lease') >= 0) return msg('main.reason.lease_signals');
     if (lower.indexOf('wal') >= 0 || lower.indexOf('backend') >= 0 || lower.indexOf('mvcc') >= 0) {
-      return 'Matches storage-related repository signals';
+      return msg('main.reason.storage_signals');
     }
-    return 'Selected from repository signals';
+    return msg('main.reason.repository_signals');
   }
 
   // ── Components ──────────────────────────────────────────────────
 
   function renderEvidenceBadge(confidence, verification) {
     var badge = el('span', 'rm-evidence ' + evidenceClass(confidence));
-    badge.textContent = evidenceLabel(confidence);
-    if (verification) badge.textContent = badge.textContent.replace('Model confidence', 'Evidence confidence');
+    badge.textContent = evidenceLabel(confidence, verification);
     return badge;
   }
 
@@ -1462,7 +1096,11 @@
         if (belongsToTask) assigned[transition.id] = true;
         return belongsToTask;
       });
-      taskGroups.push({ title: 'Task · ' + proofAnchorLabel(anchor, anchor.id), anchor: anchor, relations: taskRelations });
+      taskGroups.push({
+        title: msg('main.proof.task_group', { task: proofAnchorLabel(anchor, anchor.id) }),
+        anchor: anchor,
+        relations: taskRelations,
+      });
     });
 
     var handlerAnchors = {};
@@ -1494,10 +1132,10 @@
 
     var other = transitions.filter(function (transition) { return !assigned[transition.id]; });
     var groups = [];
-    if (commandSetup.length) groups.push({ title: 'Command setup', relations: commandSetup });
-    if (mainHandler.length) groups.push({ title: 'Main handler branch', relations: mainHandler });
+    if (commandSetup.length) groups.push({ title: msg('main.command_setup'), relations: commandSetup });
+    if (mainHandler.length) groups.push({ title: msg('main.main_handler_branch'), relations: mainHandler });
     taskGroups.forEach(function (group) { groups.push(group); });
-    if (other.length) groups.push({ title: 'Other static relations', relations: other });
+    if (other.length) groups.push({ title: msg('main.other_static_relations'), relations: other });
     return groups;
   }
 
@@ -1522,18 +1160,26 @@
     row.appendChild(top);
 
     var semantics = [];
-    if (transition.resolution) semantics.push(transition.resolution.replace(/_/g, ' ') + ' resolution');
-    if (transition.certainty) semantics.push(transition.certainty + ' evidence');
+    if (transition.resolution) {
+      semantics.push(msg('main.proof.resolution', {
+        resolution: transition.resolution.replace(/_/g, ' '),
+      }));
+    }
+    if (transition.certainty) {
+      semantics.push(msg('main.proof.evidence_quality', { certainty: transition.certainty }));
+    }
     if (semantics.length) row.appendChild(txt('div', 'rm-proof-relation', semantics.join(' · ')));
 
-    appendProofNamedLocation(row, 'evidence', transition.evidence, null);
-    appendProofNamedLocation(row, 'from declaration', from && from.location, transition.evidence);
-    appendProofNamedLocation(row, 'target declaration', to && to.location, transition.evidence);
+    appendProofNamedLocation(row, msg('main.proof.evidence'), transition.evidence, null);
+    appendProofNamedLocation(row, msg('main.proof.from_declaration'), from && from.location, transition.evidence);
+    appendProofNamedLocation(row, msg('main.proof.target_declaration'), to && to.location, transition.evidence);
     if (transition.condition) {
       var condition = el('div', 'rm-proof-target');
-      condition.appendChild(document.createTextNode('condition' + (transition.condition.expression ? ' ' + transition.condition.expression : '')));
+      condition.appendChild(document.createTextNode(msg('main.proof.condition', {
+        expression: transition.condition.expression || '',
+      })));
       if (transition.condition.location && transition.condition.location.path) {
-        condition.appendChild(document.createTextNode(' at '));
+        condition.appendChild(document.createTextNode(msg('main.proof.at')));
         condition.appendChild(renderProofLocation(transition.condition.location, 'rm-proof-location'));
       }
       row.appendChild(condition);
@@ -1547,11 +1193,17 @@
     var counts = proofStatusCounts(proof);
     var box = el('section', 'rm-flow-proof' + (compact ? ' rm-flow-proof--compact' : ''));
     var header = el('div', 'rm-proof-header');
-    header.appendChild(txt('div', 'rm-direction-label', LABELS.verifiedFlow + ' · ' + (proof.archetype || 'flow')));
+    header.appendChild(txt('div', 'rm-direction-label', LABELS.verifiedFlow + ' · ' + (
+      proof.archetype || msg('main.proof.flow')
+    )));
     header.appendChild(txt(
       'div',
       'rm-proof-summary',
-      (proof.trace_quality || 'partial') + ' trace · ' + counts.verified + '/' + (proof.slots || []).length + ' slots verified'
+      msg('main.proof.trace_summary', {
+        quality: proof.trace_quality || msg('main.proof.partial'),
+        verified: counts.verified,
+        total: (proof.slots || []).length,
+      })
     ));
     box.appendChild(header);
 
@@ -1567,14 +1219,16 @@
       var anchors = proofAnchorMap(proof);
       var groups = proofStaticRelationGroups(proof);
       if (groups.length) {
-        box.appendChild(txt('div', 'rm-direction-label rm-proof-path-label', 'Static relation groups'));
-        box.appendChild(txt('div', 'rm-direction-hint', 'Grouped by static scope. Runtime order is not inferred.'));
+        box.appendChild(txt('div', 'rm-direction-label rm-proof-path-label', msg('main.chrome.static.relation.groups')));
+        box.appendChild(txt('div', 'rm-direction-hint', msg('main.chrome.grouped.by.static.scope.runtime.order.is.not.inferred')));
         groups.forEach(function (group) {
           var groupNode = el('div', 'rm-direction-field');
           groupNode.appendChild(txt('div', 'rm-direction-label', group.title));
-          if (group.anchor) appendProofNamedLocation(groupNode, 'task anchor', group.anchor.location, null);
+          if (group.anchor) {
+            appendProofNamedLocation(groupNode, msg('main.proof.task_anchor'), group.anchor.location, null);
+          }
           if (!group.relations.length) {
-            groupNode.appendChild(txt('div', 'rm-proof-relation', 'No static relations captured for this task.'));
+            groupNode.appendChild(txt('div', 'rm-proof-relation', msg('main.chrome.no.static.relations.captured.for.this.task')));
           }
           group.relations.forEach(function (transition) {
             groupNode.appendChild(renderProofStaticRelation(transition, anchors));
@@ -1585,10 +1239,12 @@
 
       var stats = session.stats || {};
       var meta = el('div', 'rm-proof-meta');
-      meta.appendChild(txt('span', '', (stats.tasks_completed || 0) + ' tasks'));
-      meta.appendChild(txt('span', '', (stats.files || []).length + ' evidence files'));
-      meta.appendChild(txt('span', '', (stats.symbols || []).length + ' symbols'));
-      if (stats.wall_millis) meta.appendChild(txt('span', '', (stats.wall_millis / 1000).toFixed(1) + ' s local analysis'));
+      meta.appendChild(txt('span', '', msg('main.count.tasks', { count: stats.tasks_completed || 0 })));
+      meta.appendChild(txt('span', '', msg('main.count.evidence_files', { count: (stats.files || []).length })));
+      meta.appendChild(txt('span', '', msg('main.count.symbols', { count: (stats.symbols || []).length })));
+      if (stats.wall_millis) meta.appendChild(txt('span', '', msg('main.local_analysis_seconds', {
+        seconds: (stats.wall_millis / 1000).toFixed(1),
+      })));
       box.appendChild(meta);
     }
 
@@ -1600,7 +1256,9 @@
     }
     if (proof.current_frontier) {
       var frontier = el('div', 'rm-proof-boundary');
-      frontier.appendChild(txt('span', 'rm-proof-boundary-label', 'Current frontier: '));
+      frontier.appendChild(txt('span', 'rm-proof-boundary-label', msg('main.debug.current_frontier', {
+        value: '',
+      })));
       frontier.appendChild(document.createTextNode(proof.current_frontier));
       box.appendChild(frontier);
     }
@@ -1616,7 +1274,7 @@
   function renderFlowTypePill(flow) {
     var flowType = flow && flow.flow_type;
     if (flowType !== 'request' && flowType !== 'operational') return null;
-    var label = flowType === 'operational' ? 'Operational' : 'Request';
+    var label = flowType === 'operational' ? msg('main.operational') : msg('main.request');
     return renderPill(label, flowType);
   }
 
@@ -1678,10 +1336,10 @@
     var footer = el('div', 'rm-ov-flow-footer');
     if (!flow.evidence_only) footer.appendChild(renderEvidenceBadge(flow.confidence));
     if (flow.warnings && flow.warnings.length > 0) {
-      footer.appendChild(txt('span', 'rm-ov-flow-stat', flow.warnings.length + ' warnings'));
+      footer.appendChild(txt('span', 'rm-ov-flow-stat', msg('main.count.warnings', { count: flow.warnings.length })));
     }
     if (flow.tests_to_read && flow.tests_to_read.length > 0) {
-      footer.appendChild(txt('span', 'rm-ov-flow-stat', flow.tests_to_read.length + ' tests'));
+      footer.appendChild(txt('span', 'rm-ov-flow-stat', msg('main.count.tests', { count: flow.tests_to_read.length })));
     }
     card.appendChild(footer);
 
@@ -1704,11 +1362,11 @@
 
   function architectureSourceLabel(value) {
     return {
-      validated_model: 'validated model',
-      normalized_model: 'normalized model',
-      local_anchors: 'local anchors',
-      package_fallback: 'package fallback'
-    }[value] || 'unspecified';
+      validated_model: msg('architecture.value.validated_model'),
+      normalized_model: msg('architecture.value.normalized_model'),
+      local_anchors: msg('architecture.value.local_anchors'),
+      package_fallback: msg('architecture.value.package_fallback')
+    }[value] || msg('architecture.value.unspecified');
   }
 
   function renderDirectionField(label, value, code) {
@@ -1782,7 +1440,7 @@
     var directionFlowType = renderFlowTypePill(direction);
     if (directionFlowType) header.appendChild(directionFlowType);
     if (isSuggestedStart) header.appendChild(renderPill(LABELS.suggestedStart));
-    if (direction.disposition === 'rejected') header.appendChild(renderPill('Not used as a flow'));
+    if (direction.disposition === 'rejected') header.appendChild(renderPill(msg('main.chrome.not.used.as.a.flow')));
     header.appendChild(renderEvidenceBadge(direction.confidence, direction.local_verification));
     card.appendChild(header);
 
@@ -1870,7 +1528,7 @@
     card.appendChild(txt(
       'div',
       DATA.project_guess ? 'rm-summary' : 'rm-placeholder',
-      DATA.project_guess || 'No project purpose was produced.'
+      DATA.project_guess || msg('main.no_project_purpose')
     ));
 
     if (DATA.run) {
@@ -1895,52 +1553,52 @@
       addFact(LABELS.rejectedDirections, String(DATA.run.rejected_direction_count || 0));
       var surfaceTotal = String(DATA.run.discovered_surface_count || 0);
       var surfaceBreakdown = [];
-      if (DATA.run.application_surface_count) surfaceBreakdown.push(DATA.run.application_surface_count + ' application');
-      if (DATA.run.secondary_service_surface_count) surfaceBreakdown.push(DATA.run.secondary_service_surface_count + ' secondary services');
-      if (DATA.run.tooling_surface_count) surfaceBreakdown.push(DATA.run.tooling_surface_count + ' tooling');
-      if (DATA.run.test_helper_surface_count) surfaceBreakdown.push(DATA.run.test_helper_surface_count + ' tests/helpers');
-       if (DATA.run.unavailable_surface_count) surfaceBreakdown.push(DATA.run.unavailable_surface_count + ' unavailable');
-       if (DATA.run.supporting_dependency_surface_count) surfaceBreakdown.push(DATA.run.supporting_dependency_surface_count + ' supporting dependency');
-       if (DATA.run.dependency_only_surface_count) surfaceBreakdown.push(DATA.run.dependency_only_surface_count + ' dependency-only');
-      if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(DATA.run.unassigned_surface_count + ' unassigned');
-      addFact('Discovered surfaces', surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
+      if (DATA.run.application_surface_count) surfaceBreakdown.push(msg('main.count.application_surfaces', { count: DATA.run.application_surface_count }));
+      if (DATA.run.secondary_service_surface_count) surfaceBreakdown.push(msg('main.count.secondary_service_surfaces', { count: DATA.run.secondary_service_surface_count }));
+      if (DATA.run.tooling_surface_count) surfaceBreakdown.push(msg('main.count.tooling_surfaces', { count: DATA.run.tooling_surface_count }));
+      if (DATA.run.test_helper_surface_count) surfaceBreakdown.push(msg('main.count.test_helper_surfaces', { count: DATA.run.test_helper_surface_count }));
+      if (DATA.run.unavailable_surface_count) surfaceBreakdown.push(msg('main.count.unavailable_surfaces', { count: DATA.run.unavailable_surface_count }));
+      if (DATA.run.supporting_dependency_surface_count) surfaceBreakdown.push(msg('main.count.supporting_dependency_surfaces', { count: DATA.run.supporting_dependency_surface_count }));
+      if (DATA.run.dependency_only_surface_count) surfaceBreakdown.push(msg('main.count.dependency_only_surfaces', { count: DATA.run.dependency_only_surface_count }));
+      if (DATA.run.unassigned_surface_count) surfaceBreakdown.push(msg('main.count.unassigned_surfaces', { count: DATA.run.unassigned_surface_count }));
+      addFact(msg('main.discovered_surfaces'), surfaceTotal + (surfaceBreakdown.length ? ' · ' + surfaceBreakdown.join(' · ') : ''));
       addFact(LABELS.savedFlows, String(DATA.run.saved_trace_count || 0));
-      addFact('Evidence bundles', String(DATA.run.evidence_bundle_count || 0));
-      addFact('Complete traces', String(DATA.run.complete_trace_count || 0));
-      addFact('Partial traces', String(DATA.run.partial_trace_count || 0));
-      addFact('Unresolved traces', String(DATA.run.unresolved_trace_count || 0));
-      addFact('Failed trace attempts', String(DATA.run.failed_trace_attempt_count || 0));
+      addFact(msg('main.evidence_bundles'), String(DATA.run.evidence_bundle_count || 0));
+      addFact(msg('main.complete_traces'), String(DATA.run.complete_trace_count || 0));
+      addFact(msg('main.partial_traces'), String(DATA.run.partial_trace_count || 0));
+      addFact(msg('main.unresolved_traces'), String(DATA.run.unresolved_trace_count || 0));
+      addFact(msg('main.failed_trace_attempts'), String(DATA.run.failed_trace_attempt_count || 0));
       if (DATA.run.surface_discovery_ran) {
         var surfaceValue = formatMillis(DATA.run.surface_discovery_ms);
-        surfaceValue += ' · ' + String(DATA.run.surface_discovery_count || 0) + ' found';
+        surfaceValue += ' · ' + msg('main.count.found', { count: DATA.run.surface_discovery_count || 0 });
         addFact(LABELS.surfaceAnalysis, surfaceValue);
       }
       if (DATA.freshness) {
         var freshnessValue = String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
         if ((DATA.freshness.affected_paths || []).length > 0) {
-          freshnessValue += ' · ' + DATA.freshness.affected_paths.length + ' analyzed input(s) changed';
+          freshnessValue += ' · ' + msg('main.count.analyzed_inputs_changed', { count: DATA.freshness.affected_paths.length });
         } else if ((DATA.freshness.affected_submodules || []).length > 0) {
-          freshnessValue += ' · ' + DATA.freshness.affected_submodules.length + ' excluded submodule change(s)';
+          freshnessValue += ' · ' + msg('main.count.excluded_submodule_changes', { count: DATA.freshness.affected_submodules.length });
         }
         addFact(LABELS.snapshotFreshness, freshnessValue);
       }
-      addFact(LABELS.architectureAnchors, String(DATA.run.architecture_anchor_count || 0) + ' static families');
+      addFact(LABELS.architectureAnchors, msg('main.count.static_families', { count: DATA.run.architecture_anchor_count || 0 }));
       if (DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
-        var architectureValue = 'Unavailable';
+        var architectureValue = msg('main.unavailable');
         if (DATA.architecture_synthesis.proposal_normalized) {
-          architectureValue = 'Normalized model';
+          architectureValue = msg('main.normalized_model');
         } else if (DATA.architecture_synthesis.proposal_accepted) {
-          architectureValue = 'Validated model';
+          architectureValue = msg('main.validated_model');
         } else if (DATA.architecture_synthesis.proposal_rejected && DATA.architecture_synthesis.fallback_selected) {
-          architectureValue = 'Proposal rejected · local fallback';
+          architectureValue = msg('main.proposal_rejected_local_fallback');
         } else if (architectureState === 'cached') {
-          architectureValue = 'Cached · outcome unavailable';
+          architectureValue = msg('main.cached_outcome_unavailable');
         } else if (architectureState === 'succeeded') {
-          architectureValue = 'Completed · outcome unavailable';
+          architectureValue = msg('main.completed_outcome_unavailable');
         }
         if (architectureState === 'cached' && DATA.architecture_synthesis.proposal_accepted) {
-          architectureValue += ' · cached response';
+          architectureValue += ' · ' + msg('main.cached_response');
         }
         if (DATA.architecture_synthesis.latency_ms) {
           architectureValue += ' · ' + formatMillis(DATA.architecture_synthesis.latency_ms);
@@ -1959,22 +1617,22 @@
   }
 
   function semanticArtifactGroup(kind) {
-    if (kind === 'contribution_guide') return 'Contribute';
+    if (kind === 'contribution_guide') return msg('main.semantic_group.contribute');
     if (kind === 'dependency_usage' || kind === 'repository_pattern' || kind === 'go_learning') {
-      return 'Learn from the code';
+      return msg('main.semantic_group.learn_from_code');
     }
-    return 'Understand';
+    return msg('main.semantic_group.understand');
   }
 
   function semanticArtifactKindLabel(kind) {
     return {
-      repository_story: 'Repository story',
-      mechanism: 'Mechanism',
-      dependency_usage: 'Dependency usage',
-      repository_pattern: 'Repository pattern',
-      contribution_guide: 'Contribution guide',
-      go_learning: 'Go learning',
-    }[kind] || String(kind || 'Explanation').replace(/_/g, ' ');
+      repository_story: msg('main.semantic_kind.repository_story'),
+      mechanism: msg('main.semantic_kind.mechanism'),
+      dependency_usage: msg('main.semantic_kind.dependency_usage'),
+      repository_pattern: msg('main.semantic_kind.repository_pattern'),
+      contribution_guide: msg('main.semantic_kind.contribution_guide'),
+      go_learning: msg('main.semantic_kind.go_learning'),
+    }[kind] || String(kind || msg('main.chrome.explanation')).replace(/_/g, ' ');
   }
 
   function semanticArtifactBasisCounts(artifact) {
@@ -1992,7 +1650,7 @@
     button.type = 'button';
     button.setAttribute('data-semantic-artifact-id', artifact.id || '');
     button.appendChild(txt('span', 'rm-explore-artifact__kind', semanticArtifactKindLabel(artifact.kind)));
-    button.appendChild(txt('strong', 'rm-explore-artifact__title', artifact.title || artifact.question || 'Repository explanation'));
+    button.appendChild(txt('strong', 'rm-explore-artifact__title', artifact.title || artifact.question || msg('main.chrome.repository.explanation')));
     if (artifact.question && artifact.question !== artifact.title) {
       button.appendChild(txt('span', 'rm-explore-artifact__question', artifact.question));
     }
@@ -2003,27 +1661,29 @@
     var supported = counts.direct + counts.compositional;
     var requiredAspects = artifact.required_answer_aspects || [];
     var coveredAspects = artifact.covered_answer_aspects || [];
-    if (supported) meta.appendChild(txt('span', 'is-supported', supported + ' evidence-linked'));
+    if (supported) meta.appendChild(txt('span', 'is-supported', msg('main.count.evidence_linked', { count: supported })));
     if (requiredAspects.length) {
       meta.appendChild(txt(
         'span',
         'rm-explore-artifact__coverage',
-        coveredAspects.length + '/' + requiredAspects.length + ' aspects'
+        msg('main.covered_aspects', { covered: coveredAspects.length, required: requiredAspects.length })
       ));
     }
-    if (counts.interpretive) meta.appendChild(txt('span', 'is-interpretive', counts.interpretive + ' interpretive'));
+    if (counts.interpretive) meta.appendChild(txt('span', 'is-interpretive', msg('main.count.interpretive', {
+      count: counts.interpretive,
+    })));
     if (counts.unresolved || artifact.verdict === 'insufficient_evidence') {
       meta.appendChild(txt(
         'span',
         'is-unresolved',
-        (counts.unresolved || 1) + (counts.unresolved === 1 ? ' known gap' : ' known gaps')
+        msg('main.count.known_gaps', { count: counts.unresolved || 1 })
       ));
     }
     if (artifact.verdict) {
       meta.appendChild(txt('span', 'rm-explore-artifact__verdict', String(artifact.verdict).replace(/_/g, ' ')));
     }
     if (meta.childElementCount) button.appendChild(meta);
-    button.appendChild(txt('span', 'rm-explore-artifact__action', 'Open explanation on the map →'));
+    button.appendChild(txt('span', 'rm-explore-artifact__action', msg('main.chrome.open.explanation.on.the.map')));
     button.addEventListener('click', function () {
       openReportTarget({ kind: 'semantic_artifact', artifact_id: artifact.id });
     });
@@ -2033,16 +1693,22 @@
   function renderSemanticCoverageSummary(coverage) {
     if (!coverage || typeof coverage !== 'object') return null;
     var summary = el('div', 'rm-semantic-coverage');
-    summary.appendChild(txt('strong', 'rm-semantic-coverage__title', 'Publication coverage'));
+    summary.appendChild(txt('strong', 'rm-semantic-coverage__title', msg('main.chrome.publication.coverage')));
     var items = el('div', 'rm-semantic-coverage__items');
-    items.appendChild(txt('span', '', 'Opportunities attempted: ' + String(coverage.opportunities_attempted || 0)));
-    items.appendChild(txt('span', '', 'Candidates investigated: ' + String(coverage.candidates_investigated || 0)));
-    items.appendChild(txt('span', '', 'Canonical mechanisms published: ' + String(coverage.canonical_mechanisms_published || 0)));
+    items.appendChild(txt('span', '', msg('main.coverage.opportunities_attempted', {
+      count: String(coverage.opportunities_attempted || 0),
+    })));
+    items.appendChild(txt('span', '', msg('main.coverage.candidates_investigated', {
+      count: String(coverage.candidates_investigated || 0),
+    })));
+    items.appendChild(txt('span', '', msg('main.coverage.mechanisms_published', {
+      count: String(coverage.canonical_mechanisms_published || 0),
+    })));
     if (coverage.central_routing_mechanism) {
       items.appendChild(txt(
         'span',
         'rm-semantic-coverage__routing is-' + String(coverage.central_routing_mechanism),
-        'Central routing mechanism: ' + String(coverage.central_routing_mechanism)
+        msg('main.central_routing_mechanism', { value: String(coverage.central_routing_mechanism) })
       ));
     }
     summary.appendChild(items);
@@ -2060,11 +1726,15 @@
     card.appendChild(txt(
       'p',
       'rm-explore__intro',
-      'Evidence-linked explanations generated from this saved repository model. Gaps stay visible.'
+      msg('main.evidence_linked_explanations')
     ));
     var coverage = renderSemanticCoverageSummary(DATA.semantic_coverage);
     if (coverage) card.appendChild(coverage);
-    var order = ['Understand', 'Learn from the code', 'Contribute'];
+    var order = [
+      msg('main.semantic_group.understand'),
+      msg('main.semantic_group.learn_from_code'),
+      msg('main.semantic_group.contribute'),
+    ];
     order.forEach(function (groupName) {
       var groupArtifacts = artifacts.filter(function (artifact) {
         return semanticArtifactGroup(artifact.kind) === groupName;
@@ -2085,33 +1755,47 @@
   function renderModelResearchDetails(research) {
     if (!research || !research.policy) return null;
     var details = el('details', 'rm-analysis-details rm-model-research');
-    details.appendChild(txt('summary', '', 'Model research'));
+    details.appendChild(txt('summary', '', msg('main.chrome.model.research')));
 
     var policy = research.policy;
     var usage = research.usage || {};
     var overview = el('div', 'rm-model-research-overview');
-    overview.appendChild(txt('div', '', 'Provider calls: ' + String(usage.semantic_calls || 0) + ' / ' + String(policy.max_semantic_calls || 0) + ' budget'));
-    overview.appendChild(txt('div', '', 'External request bytes: ' + formatBytes(usage.request_bytes || 0) + ' / ' + formatBytes(policy.max_total_request_bytes || 0) + ' budget'));
+    overview.appendChild(txt('div', '', msg('main.research.provider_calls', {
+      used: String(usage.semantic_calls || 0),
+      limit: String(policy.max_semantic_calls || 0),
+    })));
+    overview.appendChild(txt('div', '', msg('main.research.external_request_bytes', {
+      used: formatBytes(usage.request_bytes || 0),
+      limit: formatBytes(policy.max_total_request_bytes || 0),
+    })));
     details.appendChild(overview);
 
     var stages = el('div', 'rm-model-research-stages');
-    appendResearchStage(stages, 'Orientation', research.orientation);
+    appendResearchStage(stages, msg('main.orientation'), research.orientation);
     (research.targeted_rounds || []).forEach(function (round, index) {
-      appendResearchRound(stages, 'Targeted research ' + String(index + 1), round);
+      appendResearchRound(stages, msg('main.targeted_research_round', { round: String(index + 1) }), round);
     });
     (research.skipped_targeted_rounds || []).forEach(function (round, index) {
-      appendResearchRound(stages, 'Skipped targeted round ' + String(index + 1), round);
+      appendResearchRound(stages, msg('main.skipped_targeted_round', { round: String(index + 1) }), round);
     });
-	appendResearchStage(stages, 'Architecture synthesis', research.architecture_synthesis);
-	appendResearchStage(stages, 'Guided tour editor', research.guided_tour);
+	appendResearchStage(stages, msg('main.architecture_synthesis'), research.architecture_synthesis);
+	appendResearchStage(stages, msg('main.guided_tour_editor'), research.guided_tour);
     details.appendChild(stages);
 
     var coverage = research.coverage || {};
     var coverageList = el('div', 'rm-model-research-coverage');
-    coverageList.appendChild(txt('div', '', 'Local authorized files: ' + String(coverage.local_authorized_files || 0)));
-    coverageList.appendChild(txt('div', '', 'Initial model summaries: ' + String(coverage.initial_model_summaries || 0)));
-    coverageList.appendChild(txt('div', '', 'Focused local evidence inspected: ' + String(coverage.focused_local_evidence_inspected || 0)));
-    coverageList.appendChild(txt('div', '', 'Targeted model evidence windows: ' + String(coverage.targeted_model_evidence_windows || 0)));
+    coverageList.appendChild(txt('div', '', msg('main.research.local_authorized_files', {
+      count: String(coverage.local_authorized_files || 0),
+    })));
+    coverageList.appendChild(txt('div', '', msg('main.research.initial_model_summaries', {
+      count: String(coverage.initial_model_summaries || 0),
+    })));
+    coverageList.appendChild(txt('div', '', msg('main.research.focused_local_evidence', {
+      count: String(coverage.focused_local_evidence_inspected || 0),
+    })));
+    coverageList.appendChild(txt('div', '', msg('main.research.targeted_model_windows', {
+      count: String(coverage.targeted_model_evidence_windows || 0),
+    })));
     details.appendChild(coverageList);
     return details;
   }
@@ -2120,7 +1804,7 @@
     if (!stage || !stage.status) return;
     var row = el('div', 'rm-model-research-stage');
     var status = String(stage.status).replaceAll('_', ' ');
-    if (stage.cache_hit) status += ' · cached';
+    if (stage.cache_hit) status += ' · ' + msg('main.research.cached');
     if (stage.request_bytes) status += ' · ' + formatBytes(stage.request_bytes);
     row.appendChild(txt('strong', '', label));
     row.appendChild(txt('span', '', status));
@@ -2132,20 +1816,35 @@
     var row = el('div', 'rm-model-research-round');
     var heading = el('div', 'rm-model-research-stage');
     heading.appendChild(txt('strong', '', label));
-    var status = String(round.status || 'unknown').replaceAll('_', ' ');
-    if (round.cached) status += ' · cached';
+    var status = round.status
+      ? String(round.status).replaceAll('_', ' ')
+      : msg('main.research.unknown_status');
+    if (round.cached) status += ' · ' + msg('main.research.cached');
     heading.appendChild(txt('span', '', status));
     row.appendChild(heading);
     if (round.question) row.appendChild(txt('div', '', round.question));
-    if (round.selection_reason) row.appendChild(txt('div', 'rm-muted', 'Why: ' + round.selection_reason.replaceAll('_', ' ')));
-    row.appendChild(txt('div', 'rm-muted', 'Exact evidence: ' + String((round.input_evidence_ids || []).length) + ' · new grounded facts: ' + String(round.new_grounded_facts_count || 0)));
+    if (round.selection_reason) {
+      row.appendChild(txt('div', 'rm-muted', msg('main.research.why', {
+        reason: round.selection_reason.replaceAll('_', ' '),
+      })));
+    }
+    row.appendChild(txt('div', 'rm-muted', msg('main.research.exact_evidence', {
+      evidence: String((round.input_evidence_ids || []).length),
+      facts: String(round.new_grounded_facts_count || 0),
+    })));
     if ((round.rejected_findings || []).length) {
-      row.appendChild(txt('div', 'rm-muted', 'Rejected claims: ' + String(round.rejected_findings.length)));
+      row.appendChild(txt('div', 'rm-muted', msg('main.research.rejected_claims', {
+        count: String(round.rejected_findings.length),
+      })));
     }
     if ((round.unresolved_frontiers || []).length) {
-      row.appendChild(txt('div', 'rm-muted', 'Frontier: ' + String(round.unresolved_frontiers[0].question || 'unresolved')));
+      row.appendChild(txt('div', 'rm-muted', msg('main.research.frontier', {
+        value: String(round.unresolved_frontiers[0].question || 'unresolved'),
+      })));
     } else if (round.stop_reason) {
-      row.appendChild(txt('div', 'rm-muted', 'Result: ' + String(round.stop_reason).replaceAll('_', ' ')));
+      row.appendChild(txt('div', 'rm-muted', msg('main.research.result', {
+        result: String(round.stop_reason).replaceAll('_', ' '),
+      })));
     }
     container.appendChild(row);
   }
@@ -2268,7 +1967,7 @@
   }
 
   function renderEntityLocation(entity, cls) {
-    if (!entity || typeof entity.path !== 'string') return txt('code', cls, 'unknown location');
+    if (!entity || typeof entity.path !== 'string') return txt('code', cls, msg('main.unknown_location'));
     var line = Number.isInteger(entity.line) && entity.line > 0 ? entity.line : 0;
     var label = boundedText(entity.path, 320) + (line ? ':' + line : '');
     return renderFileReference(entity.path, cls, line, label);
@@ -2282,12 +1981,12 @@
     if (selected) row.classList.add('rm-symbol-candidate--selected');
 
     var heading = el('div', 'rm-symbol-candidate-heading');
-    heading.appendChild(txt('code', 'rm-symbol-candidate-name', boundedText(candidate.name, 160) || 'Unnamed Go symbol'));
+    heading.appendChild(txt('code', 'rm-symbol-candidate-name', boundedText(candidate.name, 160) || msg('main.chrome.unnamed.go.symbol')));
     var kind = humanizeSymbolDetail(candidate.kind);
     if (kind) heading.appendChild(txt('span', 'rm-symbol-candidate-kind', kind));
     row.appendChild(heading);
 
-    var path = boundedText(candidate.path, 320) || 'unknown location';
+    var path = boundedText(candidate.path, 320) || msg('main.unknown_location');
     var line = Number.isInteger(candidate.line) && candidate.line > 0 ? candidate.line : 0;
     row.appendChild(txt('code', 'rm-symbol-candidate-location', path + (line ? ':' + line : '')));
 
@@ -2304,13 +2003,15 @@
       return humanizeSymbolDetail(reason);
     }).filter(Boolean) : [];
     if (reasons.length > 0) {
-      row.appendChild(txt('div', 'rm-symbol-candidate-reasons', 'Ranked by: ' + reasons.join(' · ')));
+      row.appendChild(txt('div', 'rm-symbol-candidate-reasons', msg('main.symbol.ranked_by', {
+        reasons: reasons.join(' · '),
+      })));
     }
     if (selected && state.persisted) {
-      row.appendChild(txt('div', 'rm-investigation-saved-label', 'Saved selection'));
+      row.appendChild(txt('div', 'rm-investigation-saved-label', msg('main.chrome.saved.selection')));
       return row;
     }
-    var inspect = txt('button', 'rm-symbol-inspect-button', selected && inspection.status === 'loading' ? 'Inspecting…' : 'Inspect symbol');
+    var inspect = txt('button', 'rm-symbol-inspect-button', selected && inspection.status === 'loading' ? msg('main.chrome.inspecting') : msg('main.chrome.inspect.symbol'));
     inspect.type = 'button';
     inspect.disabled = inspection.status === 'loading' || !state.candidateSetID || typeof candidate.id !== 'string' || !candidate.id;
     inspect.setAttribute('aria-pressed', selected && inspection.status === 'ready' ? 'true' : 'false');
@@ -2328,11 +2029,11 @@
 
   function renderStaticCallList(title, calls, omitted) {
     var section = el('section', 'rm-symbol-call-section');
-    var label = title + ' · ' + calls.length + ' shown';
-    if (omitted > 0) label += ' · ' + omitted + ' additional returned calls omitted';
+    var label = msg('main.static_calls_shown', { title: title, count: calls.length });
+    if (omitted > 0) label += ' · ' + msg('main.additional_returned_calls_omitted', { count: omitted });
     section.appendChild(txt('div', 'rm-symbol-detail-label', label));
     if (calls.length === 0) {
-      section.appendChild(txt('div', 'rm-symbol-detail-empty', 'No calls were returned within this bounded static view. This does not prove that none exist.'));
+      section.appendChild(txt('div', 'rm-symbol-detail-empty', msg('main.chrome.no.calls.were.returned.within.this.bounded.static.view.this.does.not.prove.that.none.exist')));
       return section;
     }
     var list = el('div', 'rm-symbol-call-list');
@@ -2341,16 +2042,18 @@
       var item = el('div', 'rm-symbol-call');
       item.setAttribute('role', 'listitem');
       var symbol = call && call.symbol ? call.symbol : {};
-      item.appendChild(txt('code', 'rm-symbol-call-name', boundedText(symbol.name, 160) || 'Unnamed Go symbol'));
+      item.appendChild(txt('code', 'rm-symbol-call-name', boundedText(symbol.name, 160) || msg('main.chrome.unnamed.go.symbol')));
       item.appendChild(renderEntityLocation(symbol, 'rm-symbol-call-location'));
       if (call.callsite && call.callsite.path) {
         var callsite = el('div', 'rm-symbol-callsite');
-        callsite.appendChild(document.createTextNode('Callsite: '));
+        callsite.appendChild(document.createTextNode(msg('main.callsite_prefix')));
         callsite.appendChild(renderEntityLocation(call.callsite, 'rm-symbol-callsite-location'));
         item.appendChild(callsite);
       }
       var certainty = humanizeSymbolDetail(call.certainty);
-      if (certainty) item.appendChild(txt('div', 'rm-symbol-candidate-meta', certainty + ' evidence'));
+      if (certainty) item.appendChild(txt('div', 'rm-symbol-candidate-meta', msg('main.evidence_suffix', {
+        certainty: certainty,
+      })));
       list.appendChild(item);
     });
     section.appendChild(list);
@@ -2359,9 +2062,9 @@
 
   function renderSourceWindow(source) {
     var section = el('section', 'rm-symbol-source');
-    section.appendChild(txt('div', 'rm-symbol-detail-label', 'Bounded source'));
+    section.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.chrome.bounded.source')));
     if (!source || !Array.isArray(source.lines) || source.lines.length === 0) {
-      section.appendChild(txt('div', 'rm-symbol-detail-empty', 'No source lines returned.'));
+      section.appendChild(txt('div', 'rm-symbol-detail-empty', msg('main.chrome.no.source.lines.returned')));
       return section;
     }
     if (source.path) {
@@ -2369,14 +2072,21 @@
     }
     var summary = [];
     if (source.start_line > 0 && source.end_line >= source.start_line) {
-      summary.push('lines ' + source.start_line + '–' + source.end_line);
+      summary.push(msg('main.source.line_range', {
+        start: source.start_line,
+        end: source.end_line,
+      }));
     }
-    if (source.stop_reason) summary.push('stop: ' + humanizeSymbolDetail(source.stop_reason));
-    if (source.truncated) summary.push('truncated');
+    if (source.stop_reason) {
+      summary.push(msg('main.source.stop_reason', {
+        reason: humanizeSymbolDetail(source.stop_reason),
+      }));
+    }
+    if (source.truncated) summary.push(msg('main.source.truncated'));
     if (summary.length > 0) section.appendChild(txt('div', 'rm-symbol-source-summary', summary.join(' · ')));
 
     var lines = el('div', 'rm-symbol-source-lines');
-    lines.setAttribute('aria-label', 'Bounded source lines');
+    lines.setAttribute('aria-label', msg('main.chrome.bounded.source.lines'));
     source.lines.slice(0, maxSourceLines).forEach(function (sourceLine) {
       var row = el('div', 'rm-symbol-source-line');
       var number = Number.isInteger(sourceLine.line) && sourceLine.line > 0 ? String(sourceLine.line) : '·';
@@ -2384,7 +2094,7 @@
       var code = el('code', 'rm-symbol-source-text');
       code.textContent = typeof sourceLine.text === 'string' ? sourceLine.text : '';
       row.appendChild(code);
-      if (sourceLine.truncated) row.appendChild(txt('span', 'rm-symbol-source-line-note', 'line truncated'));
+      if (sourceLine.truncated) row.appendChild(txt('span', 'rm-symbol-source-line-note', msg('main.line_truncated')));
       lines.appendChild(row);
     });
     section.appendChild(lines);
@@ -2393,7 +2103,7 @@
 
 	function renderNeighborhoodEntity(entity, location, basis) {
 	  var card = el('div', 'rm-symbol-neighborhood-node');
-	  card.appendChild(txt('code', 'rm-symbol-neighborhood-name', boundedText(entity && entity.name, 120) || 'Unnamed Go symbol'));
+	  card.appendChild(txt('code', 'rm-symbol-neighborhood-name', boundedText(entity && entity.name, 120) || msg('main.chrome.unnamed.go.symbol')));
 	  card.appendChild(renderEntityLocation(location || entity || {}, 'rm-symbol-neighborhood-location'));
 	  card.appendChild(txt('span', 'rm-symbol-neighborhood-basis', basis));
 	  return card;
@@ -2403,31 +2113,35 @@
 	  var side = el('div', 'rm-symbol-neighborhood-side');
 	  side.appendChild(txt('div', 'rm-symbol-neighborhood-label', label));
 	  if (calls.length === 0) {
-		side.appendChild(txt('div', 'rm-symbol-neighborhood-empty', '? none returned in this bounded view'));
+			side.appendChild(txt('div', 'rm-symbol-neighborhood-empty', msg('main.none_returned_bounded_view')));
 	  } else {
 		calls.slice(0, 2).forEach(function (call) {
 		  var symbol = call && call.symbol ? call.symbol : {};
-		  side.appendChild(renderNeighborhoodEntity(symbol, call.callsite || symbol, 'static active build'));
+			  side.appendChild(renderNeighborhoodEntity(symbol, call.callsite || symbol, msg('main.static_active_build')));
 		});
 	  }
 	  var beyond = Math.max(0, calls.length - 2) + omitted;
-	  if (beyond > 0) side.appendChild(txt('div', 'rm-symbol-neighborhood-frontier', '+' + beyond + ' outside the focused view'));
+	  if (beyond > 0) {
+      side.appendChild(txt('div', 'rm-symbol-neighborhood-frontier', msg('main.symbol.outside_focused_view', {
+        count: beyond,
+      })));
+    }
 	  return side;
 	}
 
 	function renderSymbolNeighborhood(target, incoming, outgoing, incomingOmitted, outgoingOmitted) {
 	  var section = el('section', 'rm-symbol-neighborhood');
-	  section.appendChild(txt('div', 'rm-symbol-detail-label', 'Focused static neighborhood'));
-	  section.appendChild(txt('p', 'rm-symbol-neighborhood-caption', 'A navigation projection for the active build, not observed runtime order.'));
+	  section.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.chrome.focused.static.neighborhood')));
+	  section.appendChild(txt('p', 'rm-symbol-neighborhood-caption', msg('main.chrome.a.navigation.projection.for.the.active.build.not.observed.runtime.order')));
 	  var graph = el('div', 'rm-symbol-neighborhood-graph');
-	  graph.appendChild(renderNeighborhoodSide('Arrives from', incoming, incomingOmitted));
+	  graph.appendChild(renderNeighborhoodSide(msg('main.arrives_from'), incoming, incomingOmitted));
 	  graph.appendChild(txt('div', 'rm-symbol-neighborhood-arrow', '→'));
 	  var center = el('div', 'rm-symbol-neighborhood-center');
-	  center.appendChild(txt('div', 'rm-symbol-neighborhood-label', 'Selected symbol'));
-	  center.appendChild(renderNeighborhoodEntity(target, target, 'static active build'));
+	  center.appendChild(txt('div', 'rm-symbol-neighborhood-label', msg('main.chrome.selected.symbol')));
+	  center.appendChild(renderNeighborhoodEntity(target, target, msg('main.static_active_build')));
 	  graph.appendChild(center);
 	  graph.appendChild(txt('div', 'rm-symbol-neighborhood-arrow', '→'));
-	  graph.appendChild(renderNeighborhoodSide('Calls next', outgoing, outgoingOmitted));
+	  graph.appendChild(renderNeighborhoodSide(msg('main.calls_next'), outgoing, outgoingOmitted));
 	  section.appendChild(graph);
 	  return section;
 	}
@@ -2441,15 +2155,17 @@
       return humanizeSymbolDetail(key) + ' +' + truncated[key];
     });
     if (items.length === 0) return null;
-    return txt('div', 'rm-symbol-truncation', 'Evidence omitted by bounds: ' + items.join(' · '));
+    return txt('div', 'rm-symbol-truncation', msg('main.symbol.evidence_omitted', {
+      items: items.join(' · '),
+    }));
   }
 
   function renderTestReferences(response) {
     var section = el('section', 'rm-investigation-tests');
-    section.appendChild(txt('div', 'rm-symbol-detail-label', 'Related test references'));
+    section.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.chrome.related.test.references')));
     var references = Array.isArray(response.test_references) ? response.test_references.slice(0, maxTestReferences) : [];
     if (references.length === 0) {
-      section.appendChild(txt('div', 'rm-symbol-detail-empty', 'No _test.go references were found in the active build. This does not prove that no relevant tests exist.'));
+      section.appendChild(txt('div', 'rm-symbol-detail-empty', msg('main.chrome.no.test.go.references.were.found.in.the.active.build.this.does.not.prove.that.no.relevant.tests.exist')));
     } else {
       var list = el('div', 'rm-investigation-test-list');
       list.setAttribute('role', 'list');
@@ -2461,12 +2177,12 @@
         var item = el('div', 'rm-investigation-test-reference');
         item.setAttribute('role', 'listitem');
         item.appendChild(txt('code', '', path + ':' + line));
-        item.appendChild(txt('span', '', 'Direct static reference to the exact symbol'));
+        item.appendChild(txt('span', '', msg('main.chrome.direct.static.reference.to.the.exact.symbol')));
         list.appendChild(item);
       });
       section.appendChild(list);
     }
-    section.appendChild(txt('p', 'rm-investigation-caveat', 'Navigation evidence only; this does not prove coverage or what a test asserts. Test paths stay non-clickable until they are part of saved run authority.'));
+    section.appendChild(txt('p', 'rm-investigation-caveat', msg('main.chrome.navigation.evidence.only.this.does.not.prove.coverage.or.what.a.test.asserts.test.paths.stay.non.clickable.until.they.are.part.of.saved.run.authority')));
     var warnings = Array.isArray(response.test_warnings) ? response.test_warnings.slice(0, 4) : [];
     warnings.forEach(function (warning) {
       section.appendChild(txt('div', 'rm-investigation-test-warning', boundedText(warning, 180)));
@@ -2479,20 +2195,20 @@
     if (status !== 'source_ready' && status !== 'tests_ready') return null;
     var section = el('section', 'rm-investigation-checkpoint');
     if (status === 'tests_ready') {
-      section.appendChild(txt('div', 'rm-investigation-checkpoint-status', 'Local checkpoint complete'));
+      section.appendChild(txt('div', 'rm-investigation-checkpoint-status', msg('main.chrome.local.checkpoint.complete')));
       section.appendChild(renderTestReferences(response));
       return section;
     }
-    section.appendChild(txt('div', 'rm-investigation-checkpoint-status', 'Saved locally'));
+    section.appendChild(txt('div', 'rm-investigation-checkpoint-status', msg('main.chrome.saved.locally')));
     if (response.can_find_test_references) {
       var state = symbolLookupStates[key] || {};
       var loading = state.testStatus === 'loading';
-      var button = txt('button', 'rm-investigation-test-button', loading ? 'Finding test references…' : 'Find related test references');
+      var button = txt('button', 'rm-investigation-test-button', loading ? msg('main.chrome.finding.test.references') : msg('main.chrome.find.related.test.references'));
       button.type = 'button';
       button.disabled = loading;
       button.onclick = function () { requestTargetTestReferences(key); };
       section.appendChild(button);
-      section.appendChild(txt('div', 'rm-investigation-local-hint', 'Local gopls only · no model request'));
+      section.appendChild(txt('div', 'rm-investigation-local-hint', msg('main.chrome.local.gopls.only.no.model.request')));
     }
     return section;
   }
@@ -2500,16 +2216,16 @@
   function renderSymbolInspection(inspection, key) {
     var detail = el('section', 'rm-symbol-detail');
     detail.id = symbolInspectionElementID(key);
-    detail.setAttribute('aria-label', 'Exact Go symbol details');
+    detail.setAttribute('aria-label', msg('main.chrome.exact.go.symbol.details'));
     if (inspection.status === 'loading') {
-      var loading = txt('div', 'rm-symbol-status', 'Inspecting exact Go symbol locally…');
+      var loading = txt('div', 'rm-symbol-status', msg('main.chrome.inspecting.exact.go.symbol.locally'));
       loading.setAttribute('role', 'status');
       loading.setAttribute('aria-live', 'polite');
       detail.appendChild(loading);
       return detail;
     }
     if (inspection.status === 'error') {
-      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(inspection.error, 180) || 'Could not inspect this Go symbol.');
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(inspection.error, 180) || msg('main.chrome.could.not.inspect.this.go.symbol'));
       error.setAttribute('role', 'alert');
       detail.appendChild(error);
       return detail;
@@ -2518,16 +2234,18 @@
 
     var response = inspection.detail;
     var target = response.target || {};
-    detail.appendChild(txt('div', 'rm-symbol-detail-label', 'Exact symbol'));
+    detail.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.chrome.exact.symbol')));
     var targetHeading = el('div', 'rm-symbol-detail-heading');
-    targetHeading.appendChild(txt('code', 'rm-symbol-detail-name', boundedText(target.name, 160) || 'Unnamed Go symbol'));
+    targetHeading.appendChild(txt('code', 'rm-symbol-detail-name', boundedText(target.name, 160) || msg('main.chrome.unnamed.go.symbol')));
     var targetKind = humanizeSymbolDetail(target.kind);
     if (targetKind) targetHeading.appendChild(txt('span', 'rm-symbol-candidate-kind', targetKind));
     detail.appendChild(targetHeading);
     detail.appendChild(renderEntityLocation(target, 'rm-symbol-detail-location'));
 
     var evidenceLevel = humanizeSymbolDetail(response.evidence_level) || 'static';
-    detail.appendChild(txt('p', 'rm-symbol-static-note', 'Bounded static call hierarchy · ' + evidenceLevel + ' evidence. Production callers are ranked before tests and benchmarks when the analyzer returns them. This is not observed runtime execution, and the lists are not exhaustive.'));
+    detail.appendChild(txt('p', 'rm-symbol-static-note', msg('main.symbol.static_hierarchy', {
+      level: evidenceLevel,
+    })));
 
     var incoming = Array.isArray(response.incoming_calls) ? response.incoming_calls.slice(0, maxStaticCalls) : [];
     var outgoing = Array.isArray(response.outgoing_calls) ? response.outgoing_calls.slice(0, maxStaticCalls) : [];
@@ -2538,9 +2256,9 @@
 	detail.appendChild(renderSourceWindow(response.source || {}));
 	if (incoming.length > 2 || outgoing.length > 2 || incomingOmitted > 0 || outgoingOmitted > 0) {
 	  var callDetails = el('details', 'rm-symbol-call-details');
-	  callDetails.appendChild(txt('summary', 'rm-symbol-call-details-summary', 'All returned static relations'));
-	  callDetails.appendChild(renderStaticCallList('Incoming static calls', incoming, incomingOmitted));
-	  callDetails.appendChild(renderStaticCallList('Outgoing static calls', outgoing, outgoingOmitted));
+	  callDetails.appendChild(txt('summary', 'rm-symbol-call-details-summary', msg('main.chrome.all.returned.static.relations')));
+		  callDetails.appendChild(renderStaticCallList(msg('main.incoming_static_calls'), incoming, incomingOmitted));
+		  callDetails.appendChild(renderStaticCallList(msg('main.outgoing_static_calls'), outgoing, outgoingOmitted));
 	  detail.appendChild(callDetails);
 	}
 
@@ -2551,7 +2269,7 @@
     var warnings = Array.isArray(response.warnings) ? response.warnings.slice(0, maxInspectionWarnings) : [];
     if (warnings.length > 0) {
       var warningSection = el('section', 'rm-symbol-warnings');
-      warningSection.appendChild(txt('div', 'rm-symbol-detail-label', 'Warnings'));
+      warningSection.appendChild(txt('div', 'rm-symbol-detail-label', msg('main.warnings')));
       var warningList = el('ul', 'rm-symbol-warning-list');
       warnings.forEach(function (warning) {
         warningList.appendChild(txt('li', '', boundedText(warning, 180)));
@@ -2569,20 +2287,20 @@
 
     var inspection = state.inspection || { status: 'idle' };
     view.button.disabled = state.status === 'loading' || inspection.status === 'loading';
-    view.button.textContent = state.status === 'ready' ? 'Refresh Go symbols' : 'Find Go symbols';
+    view.button.textContent = state.status === 'ready' ? msg('main.refresh_go_symbols') : msg('main.chrome.find.go.symbols');
     view.button.setAttribute('aria-expanded', state.status === 'ready' ? 'true' : 'false');
     view.results.setAttribute('aria-busy', state.status === 'loading' || inspection.status === 'loading' ? 'true' : 'false');
     view.results.innerHTML = '';
 
     if (state.status === 'loading') {
-      var loading = txt('div', 'rm-symbol-status', 'Finding Go symbols locally…');
+      var loading = txt('div', 'rm-symbol-status', msg('main.chrome.finding.go.symbols.locally'));
       loading.setAttribute('role', 'status');
       loading.setAttribute('aria-live', 'polite');
       view.results.appendChild(loading);
       return;
     }
     if (state.status === 'error') {
-      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(state.error, 180) || 'Could not find Go symbols.');
+      var error = txt('div', 'rm-symbol-status rm-symbol-status--error', boundedText(state.error, 180) || msg('main.chrome.could.not.find.go.symbols'));
       error.setAttribute('role', 'alert');
       view.results.appendChild(error);
       return;
@@ -2591,13 +2309,15 @@
 
     var candidates = state.candidates.slice(0, maxSymbolCandidates);
     if (candidates.length === 0) {
-      var empty = txt('div', 'rm-symbol-status', 'No Go functions or methods found near this anchor.');
+      var empty = txt('div', 'rm-symbol-status', msg('main.chrome.no.go.functions.or.methods.found.near.this.anchor'));
       empty.setAttribute('role', 'status');
       empty.setAttribute('aria-live', 'polite');
       view.results.appendChild(empty);
       return;
     }
-    var title = txt('div', 'rm-symbol-results-title', 'Go symbols (' + candidates.length + ')');
+    var title = txt('div', 'rm-symbol-results-title', msg('main.symbol.count', {
+      count: candidates.length,
+    }));
     title.setAttribute('role', 'status');
     title.setAttribute('aria-live', 'polite');
     view.results.appendChild(title);
@@ -2621,7 +2341,7 @@
   function requestSymbols(component, anchor, line, key) {
     var runID = currentRunID();
     if (!runID) {
-      symbolLookupStates[key] = { status: 'error', candidates: [], error: 'Saved run is unavailable.' };
+      symbolLookupStates[key] = { status: 'error', candidates: [], error: msg('main.error.saved_run_unavailable') };
       paintSymbolLookup(key);
       return;
     }
@@ -2642,13 +2362,13 @@
       }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || 'Go symbol lookup failed');
+        if (!response.ok) throw new Error(body.error || msg('main.error.go_symbol_lookup_failed'));
         return body;
       });
     }).then(function (payload) {
       var candidates = Array.isArray(payload.candidates) ? payload.candidates.slice(0, maxSymbolCandidates) : [];
       var candidateSetID = typeof payload.candidate_set_id === 'string' ? payload.candidate_set_id : '';
-      if (candidates.length > 0 && !candidateSetID) throw new Error('Go symbol candidates cannot be inspected.');
+      if (candidates.length > 0 && !candidateSetID) throw new Error(msg('main.error.go_symbol_candidates_uninspectable'));
       symbolLookupStates[key] = {
         status: 'ready',
         candidates: candidates,
@@ -2660,7 +2380,7 @@
       symbolLookupStates[key] = {
         status: 'error',
         candidates: [],
-        error: error && error.message ? error.message : 'Could not find Go symbols.',
+        error: error && error.message ? error.message : msg('main.chrome.could.not.find.go.symbols'),
       };
       paintSymbolLookup(key);
     });
@@ -2671,7 +2391,11 @@
     var runID = currentRunID();
     if (!state || state.status !== 'ready' || !runID || !state.candidateSetID || typeof candidate.id !== 'string' || !candidate.id) {
       if (state) {
-        state.inspection = { status: 'error', candidateID: candidate.id, error: 'This symbol candidate is no longer available.' };
+        state.inspection = {
+          status: 'error',
+          candidateID: candidate.id,
+          error: msg('main.error.symbol_candidate_unavailable'),
+        };
         paintSymbolLookup(key);
       }
       return;
@@ -2694,7 +2418,7 @@
       }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || 'Exact Go symbol inspection failed');
+        if (!response.ok) throw new Error(body.error || msg('main.error.go_symbol_inspection_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -2710,7 +2434,7 @@
       current.inspection = {
         status: 'error',
         candidateID: candidate.id,
-        error: error && error.message ? error.message : 'Could not inspect this Go symbol.',
+        error: error && error.message ? error.message : msg('main.chrome.could.not.inspect.this.go.symbol'),
       };
       paintSymbolLookup(key);
       revealSymbolInspection(key);
@@ -2733,7 +2457,7 @@
       body: JSON.stringify({ run_id: runID }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || 'Could not find related test references.');
+        if (!response.ok) throw new Error(body.error || msg('main.error.related_test_references_failed'));
         return body;
       });
     }).then(function (payload) {
@@ -2741,13 +2465,13 @@
       if (current) current.testStatus = 'idle';
       if (!applyResumedInvestigation(payload)) {
         if (current) paintSymbolLookup(key);
-        throw new Error('Saved investigation no longer matches this component.');
+        throw new Error(msg('main.error.saved_investigation_mismatch'));
       }
     }).catch(function (error) {
       var current = symbolLookupStates[key];
       if (current) current.testStatus = 'idle';
       paintSymbolLookup(key);
-      showToast(error && error.message ? error.message : 'Could not find related test references.', true);
+      showToast(error && error.message ? error.message : msg('main.error.related_test_references_failed'), true);
       revealSymbolInspection(key);
     });
   }
@@ -2790,7 +2514,7 @@
         path: boundedText(target.path, 320),
         line: target.line,
         column: target.column,
-        match: 'saved exact selection',
+        match: msg('main.saved_exact_selection'),
         certainty: payload.evidence_level || 'static',
         distance_lines: 0,
         rank_reasons: [],
@@ -2820,13 +2544,13 @@
     }).then(function (response) {
       if (response.status === 204 || response.status === 404) return null;
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || 'Saved investigation is unavailable.');
+        if (!response.ok) throw new Error(body.error || msg('main.error.saved_investigation_unavailable'));
         return body;
       });
     }).then(function (payload) {
       if (payload) applyResumedInvestigation(payload);
     }).catch(function (error) {
-      showToast(error && error.message ? error.message : 'Saved investigation is unavailable.', true);
+      showToast(error && error.message ? error.message : msg('main.error.saved_investigation_unavailable'), true);
     });
   }
 
@@ -2918,7 +2642,7 @@
     var line = symbolLookupLine(anchor);
     var key = symbolLookupKey(component, anchor, line);
     var container = el('div', 'rm-symbol-lookup');
-    var button = txt('button', 'rm-symbol-find-button', 'Find Go symbols');
+    var button = txt('button', 'rm-symbol-find-button', msg('main.chrome.find.go.symbols'));
     button.type = 'button';
     var results = el('div', 'rm-symbol-results');
     results.id = symbolLookupElementID(key);
@@ -2968,7 +2692,7 @@
 
     return {
       id: 'component-' + index,
-      name: item.name || 'Unnamed component',
+      name: item.name || msg('main.unnamed_component'),
 	  role: normalizeComponentRole(item.role),
 	  role_basis: normalizeComponentRole(item.role) === 'unknown' ? 'unknown' : 'hypothesis',
       purpose: item.why_it_matters || '',
@@ -3026,7 +2750,7 @@
     });
     return {
       id: item.id || 'component-' + index,
-      name: item.name || 'Unnamed component',
+      name: item.name || msg('main.unnamed_component'),
 	  role: normalizeComponentRole(item.role),
 	  role_basis: item.role_basis || 'hypothesis',
       purpose: item.model_purpose || '',
@@ -3042,13 +2766,13 @@
 
 	var componentRoleOrder = ['entry', 'boundary', 'coordination', 'domain', 'state', 'support', 'unknown'];
 	var componentRoleLabels = {
-	  entry: 'Entrypoints',
-	  boundary: 'Boundaries',
-	  coordination: 'Coordination',
-	  domain: 'Core domain',
-	  state: 'State',
-	  support: 'Support',
-	  unknown: 'Unclassified',
+	  entry: msg('main.component_role.entrypoints'),
+	  boundary: msg('main.boundaries'),
+	  coordination: msg('main.component_role.coordination'),
+	  domain: msg('main.component_role.core_domain'),
+	  state: msg('main.component_role.state'),
+	  support: msg('main.component_role.support'),
+	  unknown: msg('main.component_role.unclassified'),
 	};
 
 	function normalizeComponentRole(role) {
@@ -3057,26 +2781,26 @@
 	}
 
   function componentAnchorGroundingLabel(grounding) {
-    if (grounding === 'verified_line') return 'Model-cited line · source verified';
-    if (grounding === 'verified_direction_path') return 'Selected from a related guided flow · file verified';
-    if (grounding === 'verified_path') return 'Model-cited path · file verified';
-    return 'Repository anchor';
+    if (grounding === 'verified_line') return msg('main.grounding.verified_line');
+    if (grounding === 'verified_direction_path') return msg('main.grounding.verified_direction_path');
+    if (grounding === 'verified_path') return msg('main.grounding.verified_path');
+    return msg('main.repository_anchor');
   }
 
   function renderComponentInspector(component) {
     var inspector = el('aside', 'rm-component-inspector');
-    inspector.setAttribute('aria-label', 'Selected component details');
-    inspector.appendChild(txt('div', 'rm-direction-label', 'Component inspector'));
+    inspector.setAttribute('aria-label', msg('main.chrome.selected.component.details'));
+    inspector.appendChild(txt('div', 'rm-direction-label', msg('main.component.inspector')));
     inspector.appendChild(txt('h3', '', component.name));
     if (component.purpose) inspector.appendChild(linkified('p', 'rm-component-purpose', component.purpose));
 
     if (component.files.length > 0) {
-      inspector.appendChild(txt('div', 'rm-section-title', 'Start here'));
+      inspector.appendChild(txt('div', 'rm-section-title', msg('main.start.here')));
       var hasSymbolAnchors = component.files.some(function (group) {
         return group.id && group.can_list_symbols;
       });
       if (hasSymbolAnchors && !serverMode() && !staticSourceMode()) {
-        inspector.appendChild(txt('p', 'rm-symbol-static-hint', 'Run repomap serve to find Go symbols near these anchors.'));
+        inspector.appendChild(txt('p', 'rm-symbol-static-hint', msg('main.chrome.run.repomap.serve.to.find.go.symbols.near.these.anchors')));
       }
       var files = el('div', 'rm-component-inspector-list');
       component.files.slice(0, 8).forEach(function (group, index) {
@@ -3084,21 +2808,21 @@
         if (index === 0) row.classList.add('rm-component-inspector-row--recommended');
         var links = el('div', 'rm-component-anchor-links');
         if (index === 0) {
-          links.appendChild(txt('span', 'rm-component-anchor-recommended', 'Recommended start'));
+          links.appendChild(txt('span', 'rm-component-anchor-recommended', msg('main.recommended.start')));
         }
         componentFileLinks(group).forEach(function (ref) {
           links.appendChild(renderFileReference(ref.path, 'rm-component-file', ref.line, ref.label));
         });
         row.appendChild(links);
         if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(group.path) >= 0) {
-          row.appendChild(txt('div', 'rm-component-anchor-context', 'This source changed after the report was generated.'));
+          row.appendChild(txt('div', 'rm-component-anchor-context', msg('main.this.source.changed.after.the.report.was.generated')));
         }
         if (group.grounding) {
           row.appendChild(txt('span', 'rm-component-anchor-grounding', componentAnchorGroundingLabel(group.grounding)));
         }
         if (group.context && group.context.length > 0) {
           var context = group.context[0];
-          var contextText = context.reason || context.category || 'Local source signal';
+          var contextText = context.reason || context.category || msg('main.local_source_signal');
           if (context.snippet) contextText += ': ' + context.snippet;
           row.appendChild(txt('div', 'rm-component-anchor-context', contextText));
         }
@@ -3111,7 +2835,7 @@
     }
 
     if (component.directions.length > 0) {
-      inspector.appendChild(txt('div', 'rm-section-title', 'Related flows'));
+      inspector.appendChild(txt('div', 'rm-section-title', msg('main.related.flows')));
       var directions = el('div', 'rm-component-related-list');
       component.directions.forEach(function (direction) {
         var flow = flowByID(direction.id);
@@ -3133,7 +2857,7 @@
     }
 
     if (component.packages.length > 0) {
-      inspector.appendChild(txt('div', 'rm-section-title', 'Packages'));
+      inspector.appendChild(txt('div', 'rm-section-title', msg('main.packages')));
       var packages = el('div', 'rm-component-packages');
       component.packages.slice(0, 8).forEach(function (pkg) {
         packages.appendChild(renderPackageReference(pkg));
@@ -3142,7 +2866,7 @@
     }
 
     if (component.tests.length > 0) {
-      inspector.appendChild(txt('div', 'rm-section-title', 'Tests'));
+      inspector.appendChild(txt('div', 'rm-section-title', msg('main.tests')));
       var tests = el('div', 'rm-component-inspector-list');
       component.tests.slice(0, 6).forEach(function (test) {
         var row = el('div', 'rm-component-inspector-row');
@@ -3182,8 +2906,8 @@
       'p',
       'rm-orientation-map-hint',
       DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
-        'The interactive architecture map was not generated. Showing the model orientation without a substitute graph.' :
-        'Conceptual orientation from the saved report. No substitute package graph is shown.'
+        msg('main.orientation_map.generation_failed') :
+        msg('main.orientation_map.saved_orientation')
     ));
 
     var grid = el('div', 'rm-orientation-component-grid');
@@ -3208,7 +2932,10 @@
       button.appendChild(txt(
         'small',
         '',
-        (componentRoleLabels[component.role] || componentRoleLabels.unknown) + ' · ' + component.files.length + ' anchors'
+        msg('main.component.role_anchor_count', {
+          role: componentRoleLabels[component.role] || componentRoleLabels.unknown,
+          count: component.files.length,
+        })
       ));
       button.onclick = function () { selectComponent(index); };
       buttons.push(button);
@@ -3390,9 +3117,12 @@
       var body = el('div', 'rm-chain-body');
 
       if (stepName) {
-        body.appendChild(txt('div', 'rm-chain-name', 'Step ' + s.step + ': ' + stepName));
+        body.appendChild(txt('div', 'rm-chain-name', msg('main.flow.step_named', {
+          step: s.step,
+          name: stepName,
+        })));
       } else {
-        body.appendChild(txt('div', 'rm-chain-name', 'Step ' + s.step));
+        body.appendChild(txt('div', 'rm-chain-name', msg('main.flow.step', { step: s.step })));
       }
 
       if (stepWhat) {
@@ -3443,12 +3173,12 @@
     if (hidden.length > 0) {
       var expandDiv = el('div', 'rm-read-order-expand');
       var btn = el('button', 'rm-expand-btn');
-      btn.textContent = LABELS.showMore.replace('{count}', hidden.length);
+      btn.textContent = LABELS.showMore(hidden.length);
       var expanded = false;
       btn.onclick = function () {
         if (expanded) {
           while (ol.children.length > limit) ol.removeChild(ol.lastChild);
-          btn.textContent = LABELS.showMore.replace('{count}', hidden.length);
+          btn.textContent = LABELS.showMore(hidden.length);
         } else {
           hidden.forEach(function (fi, j) {
             ol.appendChild(renderReadOrderItem(fi, limit + j + 1, fi.priority));
@@ -3479,7 +3209,7 @@
     if (fi.kind) pathRow.appendChild(renderKindBadge(fi.kind));
     body.appendChild(pathRow);
     if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(fi.path) >= 0) {
-      body.appendChild(txt('div', 'rm-read-order-reason', 'This source changed after the report was generated.'));
+      body.appendChild(txt('div', 'rm-read-order-reason', msg('main.this.source.changed.after.the.report.was.generated')));
     }
     if (fi.reason) {
       var reason = linkified('div', 'rm-read-order-reason', humanizeReason(fi.reason));
@@ -3503,7 +3233,7 @@
       var pathSpan = renderFileReference(f.path, 'rm-file-path', 0, f.path);
       li.appendChild(pathSpan);
       if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(f.path) >= 0) {
-        li.appendChild(txt('span', 'rm-file-reason', 'This source changed after the report was generated.'));
+        li.appendChild(txt('span', 'rm-file-reason', msg('main.this.source.changed.after.the.report.was.generated')));
       }
       if (f.reason) {
         var reason = linkified('span', 'rm-file-reason', humanizeReason(f.reason));
@@ -3526,7 +3256,7 @@
       var li = el('li', 'rm-file-list-item');
       li.appendChild(renderFileReference(file.path, 'rm-file-path', 0, file.path));
       if (DATA.freshness && (DATA.freshness.affected_paths || []).indexOf(file.path) >= 0) {
-        li.appendChild(txt('span', 'rm-file-reason', 'This source changed after the report was generated.'));
+        li.appendChild(txt('span', 'rm-file-reason', msg('main.this.source.changed.after.the.report.was.generated')));
       }
       if (file.reason) {
         var reason = linkified('span', 'rm-file-reason', humanizeReason(file.reason));
@@ -3539,13 +3269,13 @@
     section.appendChild(list);
     if (files.length > limit) {
       var controls = el('div', 'rm-read-order-expand');
-      var button = txt('button', 'rm-expand-btn', LABELS.showMore.replace('{count}', files.length - limit));
+      var button = txt('button', 'rm-expand-btn', LABELS.showMore(files.length - limit));
       var expanded = false;
       button.type = 'button';
       button.onclick = function () {
         if (expanded) {
           while (list.children.length > limit) list.removeChild(list.lastChild);
-          button.textContent = LABELS.showMore.replace('{count}', files.length - limit);
+          button.textContent = LABELS.showMore(files.length - limit);
         } else {
           files.slice(limit).forEach(function (file) { list.appendChild(renderItem(file)); });
           button.textContent = LABELS.showLess;
@@ -3589,11 +3319,11 @@
       box.appendChild(hiddenDiv);
 
       var btn = el('button', 'rm-expand-btn-inline');
-      btn.textContent = LABELS.showMore.replace('{count}', hidden.length);
+      btn.textContent = LABELS.showMore(hidden.length);
       btn.onclick = function () {
         var showing = hiddenDiv.style.display === 'block';
         hiddenDiv.style.display = showing ? 'none' : 'block';
-        btn.textContent = showing ? LABELS.showMore.replace('{count}', hidden.length) : LABELS.showLess;
+        btn.textContent = showing ? LABELS.showMore(hidden.length) : LABELS.showLess;
       };
       box.appendChild(btn);
     }
@@ -3646,9 +3376,11 @@
       if (isToolchainWarning) {
         var versions = value.match(/go[0-9]+(?:\.[0-9]+){1,2}/g) || [];
         toolchain = versions.length >= 2 ?
-          'Some local Go analysis was skipped: the repository requires ' + versions[0] +
-            ', while repomap uses ' + versions[1] + '. Rebuild repomap with ' + versions[0] + ' or newer.' :
-          'Some local Go analysis was skipped because repomap uses an older Go toolchain than the repository.';
+          msg('main.warning.go_toolchain_versions', {
+            required: versions[0],
+            current: versions[1],
+          }) :
+          msg('main.warning.go_toolchain_older');
         return;
       }
       primary.push(value);
@@ -3656,10 +3388,10 @@
     if (toolchain) primary.unshift(toolchain);
     var details = [];
     if (groundingRepairs > 0) {
-      details.push(groundingRepairs + ' model evidence reference(s) could not be grounded and were hidden.');
+      details.push(msg('main.warning.grounding_repairs_hidden', { count: groundingRepairs }));
     }
     if (confidenceAdjustments > 0) {
-      details.push('Local verification reduced model confidence in ' + confidenceAdjustments + ' place(s).');
+      details.push(msg('main.warning.confidence_reduced', { count: confidenceAdjustments }));
     }
     return { primary: primary, modelContext: modelContext, details: details };
   }
@@ -3670,16 +3402,20 @@
     var container = el('div', 'rm-run-warning-stack');
     if (summarized.modelContext.length > 0) {
       var contextItems = [
-        'The orientation model saw a bounded selection of repository files and dependency edges, so its overview and suggestions may miss areas. Local source links, surface counts, and saved traces still use the saved local evidence available to this report.'
-      ].concat(summarized.modelContext.map(function (warning) { return 'Model-reported note: ' + warning; }));
-      var context = renderExpandableList('Model context limit', contextItems, 'rm-info-box', 1);
+        msg('main.model_context_limit_copy')
+      ].concat(summarized.modelContext.map(function (warning) {
+        return msg('main.model_reported_note', { note: warning });
+      }));
+      var context = renderExpandableList(msg('main.model_context_limit'), contextItems, 'rm-info-box', 1);
       if (context) container.appendChild(context);
     }
     var primary = renderExpandableList(LABELS.warnings, summarized.primary, 'rm-warn-box', 3);
     if (primary) container.appendChild(primary);
     if (summarized.details.length > 0) {
       var details = el('details', 'rm-analysis-details');
-      details.appendChild(txt('summary', '', 'Analysis details (' + summarized.details.length + ')'));
+      details.appendChild(txt('summary', '', msg('main.analysis.details', {
+        count: summarized.details.length,
+      })));
       var list = el('ul');
       summarized.details.forEach(function (item) { list.appendChild(txt('li', '', item)); });
       details.appendChild(list);
@@ -3700,11 +3436,11 @@
 
     var body = el('div', 'rm-collapsible-body');
     var list = [
-      'Source files selected: ' + stats.selected_files_count,
-      'Test files selected:   ' + stats.selected_tests_count,
-      'Docs selected:         ' + stats.selected_docs_count,
-      'Packages selected:     ' + stats.selected_packages_count,
-      'Related import edges:  ' + stats.related_edges_count,
+      msg('main.bundle.source_files_selected', { count: stats.selected_files_count }),
+      msg('main.bundle.test_files_selected', { count: stats.selected_tests_count }),
+      msg('main.bundle.docs_selected', { count: stats.selected_docs_count }),
+      msg('main.bundle.packages_selected', { count: stats.selected_packages_count }),
+      msg('main.bundle.related_import_edges', { count: stats.related_edges_count }),
     ];
     list.forEach(function (line) {
       var div = txt('div', 'rm-bundle-stat', line);
@@ -3756,7 +3492,7 @@
     var container = el('div', 'rm-collapsible');
 
     var toggle = el('button', 'rm-collapsible-toggle');
-    toggle.textContent = 'Show parse error';
+    toggle.textContent = msg('main.chrome.show.parse.error');
     toggle.onclick = function () {
       container.classList.toggle('rm-collapsible--open');
     };
@@ -3802,21 +3538,21 @@
     if (directionContext) page.appendChild(directionContext);
 
     if (flow.error) {
-      page.appendChild(txt('div', 'rm-fallback-heading', 'Flow explanation failed, but local context was collected'));
+      page.appendChild(txt('div', 'rm-fallback-heading', msg('main.chrome.flow.explanation.failed.but.local.context.was.collected')));
 
-      var filesSection = renderFileList('Files selected by deterministic retrieval', flow.bundle_files);
+      var filesSection = renderFileList(msg('main.flow.files_deterministic'), flow.bundle_files);
       if (filesSection) page.appendChild(filesSection);
 
-      var testsSection = renderFileList('Tests selected by deterministic retrieval', flow.bundle_tests);
+      var testsSection = renderFileList(msg('main.flow.tests_deterministic'), flow.bundle_tests);
       if (testsSection) page.appendChild(testsSection);
 
-      var docsSection = renderFileList('Docs selected', flow.bundle_docs);
+      var docsSection = renderFileList(msg('main.flow.docs_selected'), flow.bundle_docs);
       if (docsSection) page.appendChild(docsSection);
 
-      var pkgsSection = renderStringList('Packages selected', flow.bundle_packages);
+      var pkgsSection = renderStringList(msg('main.flow.packages_selected'), flow.bundle_packages);
       if (pkgsSection) page.appendChild(pkgsSection);
 
-      var edgesSection = renderEdgeList('Related import edges', flow.bundle_edges);
+      var edgesSection = renderEdgeList(msg('main.flow.related_import_edges'), flow.bundle_edges);
       if (edgesSection) page.appendChild(edgesSection);
 
       if (flow.bundle_summary) {
@@ -3840,21 +3576,27 @@
       var localNeighbors = (flow.bundle_files || []).filter(function (file) {
         return file.reason !== 'likely_file from candidate_flow';
       });
-      var anchorsSection = renderBoundedFileList('Repository anchors from orientation', modelAnchors, 5);
+      var anchorsSection = renderBoundedFileList(msg('main.flow.orientation_anchors'), modelAnchors, 5);
       if (anchorsSection) page.appendChild(anchorsSection);
-      var neighborsSection = renderBoundedFileList('Related files from local retrieval', localNeighbors, 5);
+      var neighborsSection = renderBoundedFileList(msg('main.flow.related_local_files'), localNeighbors, 5);
       if (neighborsSection) page.appendChild(neighborsSection);
 
-      var localTests = renderFileList('Tests selected locally', (flow.bundle_tests || []).slice(0, 8));
+      var localTests = renderFileList(msg('main.flow.tests_selected_locally'), (flow.bundle_tests || []).slice(0, 8));
       if (localTests) page.appendChild(localTests);
 
-      var localDocs = renderFileList('Docs selected locally', (flow.bundle_docs || []).slice(0, 8));
+      var localDocs = renderFileList(msg('main.flow.docs_selected_locally'), (flow.bundle_docs || []).slice(0, 8));
       if (localDocs) page.appendChild(localDocs);
 
-      var localPackages = renderStringList('Packages in this focused neighborhood', (flow.bundle_packages || []).slice(0, 12));
+      var localPackages = renderStringList(
+        msg('main.flow.packages_focused_neighborhood'),
+        (flow.bundle_packages || []).slice(0, 12)
+      );
       if (localPackages) page.appendChild(localPackages);
 
-      var localEdges = renderEdgeList('Related import edges', (flow.bundle_edges || []).slice(0, 12));
+      var localEdges = renderEdgeList(
+        msg('main.flow.related_import_edges'),
+        (flow.bundle_edges || []).slice(0, 12)
+      );
       if (localEdges) page.appendChild(localEdges);
 
       if (flow.bundle_summary) page.appendChild(renderBundleStats(flow.bundle_summary));
@@ -3904,7 +3646,7 @@
   function renderSavedTraceMenu(flows) {
     if (!flows || flows.length === 0) return null;
     var menu = el('details', 'rm-guided-flow-menu');
-    var defaultLabel = 'Saved traces (' + flows.length + ')';
+    var defaultLabel = msg('main.saved_trace_count', { count: flows.length });
     var summary = txt('summary', 'rm-guided-flow-summary', defaultLabel);
     summary.id = 'rm-guided-flow-summary';
     summary.setAttribute('data-default-label', defaultLabel);
@@ -3912,7 +3654,9 @@
     var list = el('div', 'rm-guided-flow-list');
     flows.forEach(function (flow) {
       var label = flow.name || flow.id;
-      if (flow.error) label += ' · analysis unavailable';
+      if (flow.error) {
+        label = msg('main.flow.analysis_unavailable', { name: label });
+      }
       var option = txt('button', 'rm-guided-flow-option', label);
       option.type = 'button';
       option.setAttribute('data-flow-target', 'rm-flow-' + flow.id);
@@ -3948,7 +3692,9 @@
     });
     var flowSummary = document.getElementById('rm-guided-flow-summary');
     if (flowSummary) {
-      flowSummary.textContent = activeFlowLabel ? 'Saved trace · ' + activeFlowLabel : flowSummary.getAttribute('data-default-label');
+      flowSummary.textContent = activeFlowLabel
+        ? msg('main.saved_trace_named', { label: activeFlowLabel })
+        : flowSummary.getAttribute('data-default-label');
     }
   }
 
@@ -3982,7 +3728,7 @@
     if (/^How\b/i.test(title)) return title.replace(/\?$/, '');
     var question = String(mechanism.question || '').trim();
     if (question) return question.replace(/\?$/, '');
-    return title || 'How this code works';
+    return title || msg('main.how_this_code_works');
   }
 
   function mechanismShortAnswer(mechanism) {
@@ -4127,11 +3873,11 @@
   }
 
   function mechanismRoleLabel(mechanism) {
-		if (mechanismIsPrimary(mechanism)) return 'Main code path';
-		if (mechanism && mechanism.role === 'extension_point') return 'Extension path';
-		if (mechanism && mechanism.role === 'operational_support') return 'Maintenance path';
-		if (mechanism && mechanism.target_user_job === 'question_driven_exploration') return 'Question path';
-		return 'Other code path';
+		if (mechanismIsPrimary(mechanism)) return msg('main.chrome.main.code.path');
+		if (mechanism && mechanism.role === 'extension_point') return msg('main.mechanism_role.extension');
+		if (mechanism && mechanism.role === 'operational_support') return msg('main.mechanism_role.maintenance');
+		if (mechanism && mechanism.target_user_job === 'question_driven_exploration') return msg('main.mechanism_role.question');
+		return msg('main.mechanism_role.other');
   }
 
 	function userArchitectureAvailable() {
@@ -4164,12 +3910,12 @@
 
 	function renderGuideReadNext(mechanism, targets) {
 		if (!mechanism || !Array.isArray(targets) || !targets.length) return null;
-		var section = el('section', 'rm-workspace-section rm-read-next-section');
-		section.appendChild(renderViewHeading(
-			'Read next',
-			'Continue in the implementation',
-			'Jump to an exact symbol or file already used by the main code path.'
-		));
+			var section = el('section', 'rm-workspace-section rm-read-next-section');
+			section.appendChild(renderViewHeading(
+				msg('main.read_next.kicker'),
+				msg('main.read_next.title'),
+				msg('main.read_next.copy')
+			));
 		var grid = el('div', 'rm-read-next-grid');
 		targets.slice(0, 5).forEach(function (target) {
 			if (!target || !target.path) return;
@@ -4177,7 +3923,7 @@
 			button.type = 'button';
 			button.appendChild(txt('strong', '', target.label || target.symbol || target.path));
 			button.appendChild(txt('code', '', target.path + (target.line ? ':' + target.line : '')));
-			button.appendChild(txt('span', '', 'Open in code path →'));
+			button.appendChild(txt('span', '', msg('main.chrome.open.in.code.path')));
 			button.onclick = function () {
 				openUserMechanism(mechanism.artifact_id, Number(target.step_index) || 0, true);
 			};
@@ -4218,7 +3964,7 @@
     if (phases.length) {
       var phasePreview = el('span', 'rm-mechanism-card__phases');
       phases.forEach(function (phase, index) {
-        phasePreview.appendChild(txt('span', '', (index + 1) + '. ' + (phase.title || 'Implementation')));
+        phasePreview.appendChild(txt('span', '', (index + 1) + '. ' + (phase.title || msg('main.implementation'))));
       });
       card.appendChild(phasePreview);
     }
@@ -4229,7 +3975,7 @@
       principalFiles.forEach(function (path) { files.appendChild(txt('code', '', path)); });
       card.appendChild(files);
     }
-    card.appendChild(txt('span', 'rm-mechanism-card__action', 'Open code path →'));
+    card.appendChild(txt('span', 'rm-mechanism-card__action', msg('main.open.code.path')));
     card.onclick = function () { openUserMechanism(mechanism.artifact_id, 0); };
     return card;
   }
@@ -4237,8 +3983,8 @@
 	function renderTopicCard(topic) {
 		var card = el('button', 'rm-mechanism-card');
 		card.type = 'button';
-		card.appendChild(txt('span', 'rm-mechanism-card__label', 'Topic · incomplete'));
-		card.appendChild(txt('strong', '', topic.title || topic.question || 'Question worth exploring'));
+		card.appendChild(txt('span', 'rm-mechanism-card__label', msg('main.topic.incomplete')));
+		card.appendChild(txt('strong', '', topic.title || topic.question || msg('main.question.worth.exploring')));
 		if (topic.question) card.appendChild(txt('p', 'rm-mechanism-card__question', topic.question));
 		var symbols = Array.isArray(topic.starting_symbols) ? topic.starting_symbols.slice(0, 4) : [];
 		if (symbols.length) {
@@ -4251,7 +3997,7 @@
 		if (topic.uncertainty) {
 			card.appendChild(txt('p', 'rm-mechanism-card__answer', topic.uncertainty));
 		}
-		card.appendChild(txt('span', 'rm-mechanism-card__action', 'Inspect starting points →'));
+		card.appendChild(txt('span', 'rm-mechanism-card__action', msg('main.inspect.starting.points')));
 		card.onclick = function () {
 			activeOverviewTopicID = topic.candidate_id;
 			renderOverviewWorkspace();
@@ -4260,7 +4006,7 @@
 	}
 
 	function renderTopicDetail(root, topic) {
-		var back = txt('button', 'rm-secondary-action', '← All paths');
+		var back = txt('button', 'rm-secondary-action', msg('main.all.paths'));
 		back.type = 'button';
 		back.onclick = function () {
 			activeOverviewTopicID = '';
@@ -4269,29 +4015,29 @@
 		root.appendChild(back);
 
 		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
-		hero.appendChild(txt('div', 'rm-view-kicker', 'Topic · incomplete'));
-		hero.appendChild(txt('h2', '', topic.title || topic.question || 'Question worth exploring'));
+		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.topic.incomplete')));
+		hero.appendChild(txt('h2', '', topic.title || topic.question || msg('main.question.worth.exploring')));
 		if (topic.question) hero.appendChild(txt('p', '', topic.question));
 		root.appendChild(hero);
 
 		if (topic.uncertainty) {
-			var uncertainty = el('section', 'rm-workspace-section');
-			uncertainty.appendChild(renderViewHeading(
-				'Current boundary',
-				'Why this is not a mechanism',
-				topic.uncertainty
-			));
+				var uncertainty = el('section', 'rm-workspace-section');
+				uncertainty.appendChild(renderViewHeading(
+					msg('main.topic.current_boundary'),
+					msg('main.topic.why_not_mechanism'),
+					topic.uncertainty
+				));
 			root.appendChild(uncertainty);
 		}
 
 		var locations = Array.isArray(topic.starting_symbols) ? topic.starting_symbols.slice(0, 4) : [];
 		if (!locations.length) return;
-		var section = el('section', 'rm-workspace-section');
-		section.appendChild(renderViewHeading(
-			'Exact places to start',
-			'Continue in the repository',
-			'These exact symbols are grounded starting points, not an ordered path.'
-		));
+			var section = el('section', 'rm-workspace-section');
+			section.appendChild(renderViewHeading(
+				msg('main.exact.places.to.start'),
+				msg('main.topic.continue_repository'),
+				msg('main.topic.grounded_starting_points_copy')
+			));
 		var grid = el('div', 'rm-read-next-grid');
 		locations.forEach(function (location) {
 			if (!location || !location.path || !location.symbol) return;
@@ -4300,14 +4046,14 @@
 				if (remoteTarget) {
 					remoteTarget.appendChild(txt('strong', '', location.symbol));
 					remoteTarget.appendChild(txt('code', '', formatCodeLocation(location)));
-					remoteTarget.appendChild(txt('span', '', 'Open exact symbol →'));
+					remoteTarget.appendChild(txt('span', '', msg('main.open.exact.symbol')));
 					grid.appendChild(remoteTarget);
 				} else {
 					var button = el('button', 'rm-read-next-target');
 					button.type = 'button';
 					button.appendChild(txt('strong', '', location.symbol));
 					button.appendChild(txt('code', '', formatCodeLocation(location)));
-					button.appendChild(txt('span', '', 'Open exact symbol →'));
+					button.appendChild(txt('span', '', msg('main.open.exact.symbol')));
 					button.onclick = function () { openSourceLocation(location); };
 					grid.appendChild(button);
 				}
@@ -4328,14 +4074,14 @@
 		if (!INCOMPLETE_STUDY_DIRECTIONS.length) return;
 		var section = el('section', 'rm-workspace-section rm-study-map-section');
 		section.appendChild(renderViewHeading(
-			'Study',
-			'Explore more grounded questions',
-			'Each question has an exact place to begin, but not yet a complete reading path.'
+			msg('main.study'),
+			msg('main.explore.more.grounded.questions'),
+			msg('main.each.question.has.an.exact.place.to.begin.but.not.yet.a.complete.reading.path')
 		));
 		var open = txt(
 			'button',
 			'rm-secondary-action',
-			'Review ' + INCOMPLETE_STUDY_DIRECTIONS.length + ' incomplete Study directions →'
+			msg('main.study.review_incomplete', { count: INCOMPLETE_STUDY_DIRECTIONS.length })
 		);
 		open.type = 'button';
 		open.onclick = function () { navigateWorkspace('study_overview'); };
@@ -4352,29 +4098,29 @@
 		}
 
 		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
-		hero.appendChild(txt('div', 'rm-view-kicker', 'Understand the repository'));
-		hero.appendChild(txt('h2', '', 'Pick a path worth following.'));
+		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.understand.the.repository')));
+		hero.appendChild(txt('h2', '', msg('main.pick.a.path.worth.following')));
 		hero.appendChild(txt(
 			'p',
 			'',
-			'Complete mechanisms explain a source-backed path. Topics are honest starting points when the evidence is useful but the path is not closed yet.'
+			msg('main.complete.mechanisms.explain.a.source.backed.path.topics.are.honest.starting.points.when.the.evidence.is.useful.but.the.path.is.not.closed.yet')
 		));
 		root.appendChild(hero);
 
 		if (USER_MECHANISMS.length) {
-			var mechanismSection = el('section', 'rm-workspace-section rm-primary-path-section');
-			mechanismSection.appendChild(renderViewHeading(
-				'Complete mechanisms',
-				'Source-backed paths',
-				'Open a complete explanation, then continue to an exact source step.'
-			));
+				var mechanismSection = el('section', 'rm-workspace-section rm-primary-path-section');
+				mechanismSection.appendChild(renderViewHeading(
+					msg('main.mechanism.complete'),
+					msg('main.mechanism.source_backed_paths'),
+					msg('main.mechanism.open_complete_copy')
+				));
 			var mechanismGrid = el('div', 'rm-mechanism-grid');
 			USER_MECHANISMS.slice(0, 4).forEach(function (mechanism) {
 				var stepCount = mechanismNarrativeItems(mechanism).length;
-				mechanismGrid.appendChild(renderUserMechanismCard(
-					mechanism,
-					'Full mechanism · ' + stepCount + ' source-backed ' + (stepCount === 1 ? 'step' : 'steps')
-				));
+					mechanismGrid.appendChild(renderUserMechanismCard(
+						mechanism,
+						msg('main.mechanism.full_status', { count: stepCount })
+					));
 			});
 			mechanismSection.appendChild(mechanismGrid);
 			root.appendChild(mechanismSection);
@@ -4383,9 +4129,9 @@
 		if (USER_TOPICS.length) {
 			var topicSection = el('section', 'rm-workspace-section');
 			topicSection.appendChild(renderViewHeading(
-				'Questions worth exploring',
-				'Grounded starting points',
-				'Each topic shows what is known, where to start, and why no complete path is claimed.'
+				msg('main.questions.worth.exploring'),
+				msg('main.grounded.starting.points'),
+				msg('main.each.topic.shows.what.is.known.where.to.start.and.why.no.complete.path.is.claimed')
 			));
 			var topicGrid = el('div', 'rm-mechanism-grid');
 			USER_TOPICS.slice(0, 3).forEach(function (topic) {
@@ -4422,16 +4168,16 @@
       card = el('button', 'rm-repository-area');
       card.type = 'button';
     }
-    card.appendChild(txt('strong', '', area.label || area.name || 'Code area'));
+    card.appendChild(txt('strong', '', area.label || area.name || msg('main.code.area')));
     if (area.responsibility) card.appendChild(txt('span', 'rm-repository-area__responsibility', area.responsibility));
     if (action === 'code') {
       card.appendChild(txt('code', '', formatCodeLocation(area.code_location)));
-      card.appendChild(txt('span', 'rm-repository-area__action', 'Open code →'));
+      card.appendChild(txt('span', 'rm-repository-area__action', msg('main.open.code')));
       if (!remoteCard) {
         card.onclick = function () { openSourceLocation(area.code_location); };
       }
     } else {
-      card.appendChild(txt('span', 'rm-repository-area__action', 'View on map →'));
+      card.appendChild(txt('span', 'rm-repository-area__action', msg('main.view.on.map')));
       card.onclick = function () { openArchitectureTarget(area.map_target, null); };
     }
     return card;
@@ -4484,34 +4230,36 @@
 	function renderPavedPathCard(pavedPath) {
 		var card = el('button', 'rm-operation-card');
 		card.type = 'button';
-		card.appendChild(txt('span', 'rm-operation-card__label', 'Run and verify'));
-		card.appendChild(txt('strong', '', pavedPath.title || 'Repository operation'));
+		card.appendChild(txt('span', 'rm-operation-card__label', msg('main.run.and.verify')));
+		card.appendChild(txt('strong', '', pavedPath.title || msg('main.repository.operation')));
 		if (pavedPath.goal) card.appendChild(txt('p', '', pavedPath.goal));
 		var literal = firstOperationalLiteral(pavedPath);
 		if (literal) card.appendChild(txt('code', 'rm-operation-card__literal', literal));
 		var actionCount = Array.isArray(pavedPath.actions) ? pavedPath.actions.length : 0;
-		if (actionCount) card.appendChild(txt('span', 'rm-operation-card__meta', actionCount + (actionCount === 1 ? ' step' : ' steps')));
-		card.appendChild(txt('span', 'rm-operation-card__action', 'Open instructions →'));
+		if (actionCount) {
+			card.appendChild(txt('span', 'rm-operation-card__meta', msg('main.count.steps', { count: actionCount })));
+		}
+		card.appendChild(txt('span', 'rm-operation-card__action', msg('main.open.instructions')));
 		card.onclick = function () { openPavedPath(pavedPath.id); };
 		return card;
 	}
 
 	function renderOperationalLandmark(landmark) {
 		var card = el('article', 'rm-operation-landmark');
-		card.appendChild(txt('span', 'rm-operation-card__label', 'Repository reference'));
-		card.appendChild(txt('strong', '', landmark.label || 'Operational reference'));
+		card.appendChild(txt('span', 'rm-operation-card__label', msg('main.repository.reference')));
+		card.appendChild(txt('strong', '', landmark.label || msg('main.operational.reference')));
 		if (landmark.command) card.appendChild(txt('code', 'rm-operation-card__literal', landmark.command));
 		if (landmark.endpoint) card.appendChild(txt('code', 'rm-operation-card__literal', landmark.endpoint));
 		var actions = el('div', 'rm-overview-actions');
 		if (landmark.copy_text) {
-			var copy = txt('button', 'rm-secondary-action', 'Copy command');
+			var copy = txt('button', 'rm-secondary-action', msg('main.copy.command'));
 			copy.type = 'button';
 			copy.onclick = function () { copyText(landmark.copy_text); };
 			actions.appendChild(copy);
 		}
 		if (landmark.reference && !landmark.reference.redacted && sourceSnippetAvailable(landmark.reference.source)) {
 			var source = sourceActionElement(
-				staticSourceMode() ? staticSourceOpenLabel() : 'Show source',
+				staticSourceMode() ? staticSourceOpenLabel() : msg('main.show.source'),
 				'rm-quiet-action rm-source-action-link',
 				landmark.reference.location || sourceSnippetLocation(landmark.reference.source),
 				Number(landmark.reference.source.end_line) || 0,
@@ -4529,9 +4277,9 @@
 		if (!PAVED_PATHS.length && !OPERATIONAL_LANDMARKS.length) return;
 		var section = el('section', 'rm-workspace-section rm-operations-section');
 		section.appendChild(renderViewHeading(
-			'How to run and verify',
-			'Repository-backed operating paths',
-			'Use exact commands, endpoints, and checks saved from this repository, with their source beside them.'
+			msg('main.how.to.run.and.verify'),
+			msg('main.repository.backed.operating.paths'),
+			msg('main.use.exact.commands.endpoints.and.checks.saved.from.this.repository.with.their.source.beside.them')
 		));
 		if (PAVED_PATHS.length) {
 			var grid = el('div', 'rm-operation-grid');
@@ -4552,14 +4300,16 @@
 		card.type = 'button';
 		card.appendChild(txt('span', 'rm-study-direction-card__order', String(index + 1)));
 		var body = el('span', 'rm-study-direction-card__body');
-		if (direction.incomplete) {
-			body.appendChild(txt(
-				'span',
-				'rm-study-reading-anchor__label',
-				studyStageLabel(direction.learning_stage) + ' · incomplete'
-			));
+			if (direction.incomplete) {
+				body.appendChild(txt(
+					'span',
+					'rm-study-reading-anchor__label',
+					msg('main.study.stage_incomplete', {
+						stage: studyStageLabel(direction.learning_stage),
+					})
+				));
 		}
-		body.appendChild(txt('strong', '', direction.question || 'Explore this code area'));
+		body.appendChild(txt('strong', '', direction.question || msg('main.chrome.explore.this.code.area')));
 		if (direction.why_it_matters) body.appendChild(txt('span', 'rm-study-direction-card__reason', direction.why_it_matters));
 		if (direction.learning_outcome) body.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
 		var anchors = el('span', 'rm-study-direction-card__anchors');
@@ -4569,12 +4319,12 @@
 		if (anchors.childNodes.length) body.appendChild(anchors);
 		body.appendChild(txt(
 			'span',
-			'rm-study-direction-card__action',
-			direction.mechanism_id
-				? 'Open ready deep dive →'
-				: direction.incomplete
-					? 'Inspect starting point →'
-					: 'Explore this direction →'
+				'rm-study-direction-card__action',
+				direction.mechanism_id
+					? msg('main.study.open_ready_deep_dive')
+					: direction.incomplete
+						? msg('main.study.inspect_starting_point')
+						: msg('main.explore.this.direction')
 		));
 		card.appendChild(body);
 		card.onclick = function () { openStudyDirection(direction.id); };
@@ -4595,14 +4345,14 @@
 		var directions = canonical ? COMPLETE_STUDY_DIRECTIONS : INCOMPLETE_STUDY_DIRECTIONS;
 		root.appendChild(canonical
 			? renderViewHeading(
-				'Study',
-				'A useful path through the repository',
-				'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.'
+				msg('main.study'),
+				msg('main.a.useful.path.through.the.repository'),
+				msg('main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace')
 			)
 			: renderViewHeading(
-				'Study · incomplete directions',
-				'What is worth understanding next?',
-				'Questions backed by exact starting points. They are places to begin, not answers or ordered mechanisms.'
+				msg('main.study.incomplete.directions'),
+				msg('main.what.is.worth.understanding.next'),
+				msg('main.questions.backed.by.exact.starting.points.they.are.places.to.begin.not.answers.or.ordered.mechanisms')
 			));
 		var directionList = el('div', 'rm-study-direction-list');
 		directions.forEach(function (direction, index) {
@@ -4614,10 +4364,10 @@
 // repomap-source-episode:start
 	function sourceEpisodeStateLabel(state) {
 		switch (String(state || '').toLowerCase()) {
-		case 'extracted': return 'EXTRACTED';
-		case 'corroborated': return 'CORROBORATED';
-		case 'inferred': return 'INFERRED';
-		case 'unknown': return 'UNKNOWN';
+		case 'extracted': return msg('main.evidence_state.extracted');
+		case 'corroborated': return msg('main.evidence_state.corroborated');
+		case 'inferred': return msg('main.evidence_state.inferred');
+		case 'unknown': return msg('main.evidence_state.unknown');
 		default: return '';
 		}
 	}
@@ -4626,7 +4376,9 @@
 		var label = sourceEpisodeStateLabel(state);
 		if (!label) return null;
 		var badge = txt('span', 'rm-source-episode__state rm-source-episode__state--' + String(state).toLowerCase(), label);
-		badge.setAttribute('aria-label', 'Evidence status: ' + label.toLowerCase());
+		badge.setAttribute('aria-label', msg('main.source.evidence_status', {
+      status: label.toLowerCase(),
+    }));
 		return badge;
 	}
 
@@ -4660,7 +4412,9 @@
 					openSourceLocation({ path: source.path, line: Number(source.start_line) || 0 });
 				}
 			);
-			button.setAttribute('aria-label', 'Inspect exact source ' + sourceEpisodeSourceLabel(source));
+			button.setAttribute('aria-label', msg('main.source.inspect_exact', {
+        label: sourceEpisodeSourceLabel(source),
+      }));
 			actions.appendChild(button);
 		});
 		return actions;
@@ -4674,7 +4428,7 @@
 		var heading = el('div', 'rm-source-episode__claim-heading');
 		var badge = renderSourceEpisodeState(claim.state);
 		if (badge) heading.appendChild(badge);
-		heading.appendChild(txt('h3', '', claim.title || 'Explanation'));
+		heading.appendChild(txt('h3', '', claim.title || msg('main.chrome.explanation')));
 		body.appendChild(heading);
 		body.appendChild(txt('p', 'rm-source-episode__statement', claim.statement || ''));
 		var sources = renderSourceEpisodeSources(claim.sources);
@@ -4682,7 +4436,7 @@
 		var limits = Array.isArray(claim.limits) ? claim.limits.filter(Boolean) : [];
 		if (limits.length) {
 			var boundary = el('div', 'rm-source-episode__limits');
-			boundary.appendChild(txt('span', '', limits.length === 1 ? 'Boundary' : 'Boundaries'));
+			boundary.appendChild(txt('span', '', limits.length === 1 ? msg('main.boundary') : msg('main.boundaries')));
 			var list = el('ul', '');
 			limits.forEach(function (limit) { list.appendChild(txt('li', '', limit)); });
 			boundary.appendChild(list);
@@ -4697,7 +4451,7 @@
 		var section = el('section', 'rm-source-episode');
 		section.setAttribute('data-source-episode-id', episode.episode_id || '');
 		var hero = el('div', 'rm-source-episode__hero');
-		hero.appendChild(txt('div', 'rm-view-kicker', 'How this works'));
+		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.how.this.works')));
 		hero.appendChild(txt('h2', '', episode.question));
 		var provenance = [episode.repository, episode.revision && String(episode.revision).slice(0, 12)]
 			.filter(Boolean).join(' · ');
@@ -4719,8 +4473,8 @@
 			: [];
 		if (uncertainties.length) {
 			var frontier = el('section', 'rm-source-episode__uncertainties');
-			frontier.appendChild(txt('h3', '', 'What remains uncertain'));
-			frontier.appendChild(txt('p', 'rm-source-episode__uncertainty-intro', 'These boundaries stay visible because they change how the explanation should be used.'));
+			frontier.appendChild(txt('h3', '', msg('main.what.remains.uncertain')));
+			frontier.appendChild(txt('p', 'rm-source-episode__uncertainty-intro', msg('main.these.boundaries.stay.visible.because.they.change.how.the.explanation.should.be.used')));
 			var list = el('div', 'rm-source-episode__uncertainty-list');
 			uncertainties.forEach(function (item) {
 				var card = el('article', 'rm-source-episode__uncertainty');
@@ -4746,15 +4500,15 @@
 
 		var brief = STUDY_MAP && STUDY_MAP.brief || {};
 		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
-		hero.appendChild(txt('div', 'rm-view-kicker', 'Repository brief'));
-		hero.appendChild(txt('h2', '', DATA.repo_name || 'Repository overview'));
+		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.repository.brief')));
+		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
 		if (brief.what_it_is) hero.appendChild(txt('p', 'rm-brief-lead', brief.what_it_is));
 		if (brief.problem && brief.problem !== brief.what_it_is) hero.appendChild(txt('p', '', brief.problem));
 		var briefFacts = el('div', 'rm-brief-facts');
 		[
-			['Main input', brief.main_input],
-			['Central responsibility', brief.central_responsibility],
-			['Observable result', brief.observable_result],
+			[msg('main.main.input'), brief.main_input],
+			[msg('main.central.responsibility'), brief.central_responsibility],
+			[msg('main.observable.result'), brief.observable_result],
 		].forEach(function (item) {
 			if (!item[1]) return;
 			var fact = el('div', 'rm-brief-fact');
@@ -4779,7 +4533,7 @@
 		var areaCards = (Array.isArray(STUDY_MAP.shape) ? STUDY_MAP.shape : []).map(renderRepositoryArea).filter(Boolean);
 		if (areaCards.length) {
 			var shapeSection = el('section', 'rm-workspace-section');
-			shapeSection.appendChild(renderViewHeading('Repository shape', 'Code areas to know', 'A compact map of the production areas worth recognizing first.'));
+			shapeSection.appendChild(renderViewHeading(msg('main.repository.shape'), msg('main.code.areas.to.know'), msg('main.a.compact.map.of.the.production.areas.worth.recognizing.first')));
 			var areaGrid = el('div', 'rm-repository-area-grid');
 			areaCards.forEach(function (card) { areaGrid.appendChild(card); });
 			shapeSection.appendChild(areaGrid);
@@ -4788,7 +4542,7 @@
 
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			var studySection = el('section', 'rm-workspace-section rm-study-map-section');
-			studySection.appendChild(renderViewHeading('What to study', 'A useful path through the repository', 'Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace.'));
+			studySection.appendChild(renderViewHeading(msg('main.what.to.study'), msg('main.a.useful.path.through.the.repository'), msg('main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace')));
 			var directionList = el('div', 'rm-study-direction-list');
 			COMPLETE_STUDY_DIRECTIONS.forEach(function (direction, index) {
 				directionList.appendChild(renderStudyDirectionCard(direction, index));
@@ -4801,7 +4555,7 @@
 
 		if (USER_MECHANISMS.length) {
 			var deepDiveSection = el('section', 'rm-workspace-section');
-			deepDiveSection.appendChild(renderViewHeading('Ready deep dives', 'Source-backed code paths', 'These directions already have a validated step-by-step implementation explanation.'));
+			deepDiveSection.appendChild(renderViewHeading(msg('main.ready.deep.dives'), msg('main.source.backed.code.paths'), msg('main.these.directions.already.have.a.validated.step.by.step.implementation.explanation')));
 			appendMechanismGrid(deepDiveSection, USER_MECHANISMS.slice(0, 6));
 			root.appendChild(deepDiveSection);
 		}
@@ -4809,10 +4563,10 @@
 		var hasArchitecture = userArchitectureAvailable();
 		if (hasArchitecture) {
 			var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
-			exploreSection.appendChild(renderViewHeading('Explore', 'Open the full architecture', 'Use the study map as a starting point, then inspect the wider repository map.'));
+			exploreSection.appendChild(renderViewHeading(msg('main.explore'), msg('main.open.the.full.architecture'), msg('main.use.the.study.map.as.a.starting.point.then.inspect.the.wider.repository.map')));
 			var actions = el('div', 'rm-overview-actions');
 			if (hasArchitecture) {
-				var architecture = txt('button', 'rm-secondary-action', 'Full architecture');
+				var architecture = txt('button', 'rm-secondary-action', msg('main.full.architecture'));
 				architecture.type = 'button';
 				architecture.onclick = function () { openArchitectureTarget(null, null); };
 				actions.appendChild(architecture);
@@ -4829,39 +4583,36 @@
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
 		var incomplete = !!direction.incomplete;
-		var back = txt('button', 'rm-secondary-action rm-study-back', '← All Study directions');
+		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.all.study.directions'));
 		back.type = 'button';
 		back.onclick = function () { navigateWorkspace('study_overview'); };
 		root.appendChild(back);
-		root.appendChild(renderViewHeading(
-			incomplete ? 'Incomplete Study direction' : 'Reading path',
-			direction.question,
-			direction.why_it_matters
+			root.appendChild(renderViewHeading(
+				incomplete ? msg('main.study.incomplete_direction') : msg('main.reading.path'),
+				direction.question,
+				direction.why_it_matters
 		));
 		if (direction.learning_outcome) {
 			var outcome = el('aside', 'rm-study-outcome');
-			outcome.appendChild(txt('span', '', incomplete ? 'What you can learn' : 'After this reading path'));
+			outcome.appendChild(txt('span', '', incomplete ? msg('main.what.you.can.learn') : msg('main.after.this.reading.path')));
 			outcome.appendChild(txt('strong', '', direction.learning_outcome));
 			root.appendChild(outcome);
 		}
 		if (incomplete) {
 			var incompleteAnchorCount = Array.isArray(direction.reading_anchors) ? direction.reading_anchors.length : 0;
-			root.appendChild(txt(
-				'p',
-				'rm-study-order-note',
-				'This gives you ' + (incompleteAnchorCount === 1
-					? 'one exact place'
-					: incompleteAnchorCount + ' exact places') +
-					' to begin. It does not yet explain the complete reading path.'
-			));
+				root.appendChild(txt(
+					'p',
+					'rm-study-order-note',
+					msg('main.study.incomplete_places_copy', { count: incompleteAnchorCount })
+				));
 		} else {
-			root.appendChild(txt('p', 'rm-study-order-note', 'These anchors are ordered for learning. They do not claim runtime execution order.'));
+			root.appendChild(txt('p', 'rm-study-order-note', msg('main.these.anchors.are.ordered.for.learning.they.do.not.claim.runtime.execution.order')));
 		}
 		var start = studyStartReference(direction);
 		if (start) {
 			var startActions = el('div', 'rm-study-start-actions');
 			var startButton = sourceActionElement(
-				'Start with ' + start.label + ' →',
+				msg('main.action.start_with', { target: start.label }),
 				'rm-primary-action rm-source-action-link',
 				start.location,
 				0,
@@ -4871,11 +4622,13 @@
 			root.appendChild(startActions);
 		}
 		root.appendChild(renderViewHeading(
-			'',
-			incomplete
-				? ((direction.reading_anchors || []).length === 1 ? 'Exact place to start' : 'Exact places to start')
-				: 'You will inspect',
-			'Open an anchor at its exact repository location.'
+				'',
+				incomplete
+					? ((direction.reading_anchors || []).length === 1
+						? msg('main.study.exact_place_to_start')
+						: msg('main.exact.places.to.start'))
+					: msg('main.you.will.inspect'),
+			msg('main.open.an.anchor.at.its.exact.repository.location')
 		));
 		var anchors = el('div', 'rm-study-reading-list');
 		(direction.reading_anchors || []).forEach(function (reading, index) {
@@ -4885,7 +4638,7 @@
 		root.appendChild(anchors);
 
 		var related = el('section', 'rm-workspace-section rm-study-related');
-		related.appendChild(renderViewHeading('Continue exploring', 'Related repository context', 'Open a referenced document or inspect the full architecture.'));
+		related.appendChild(renderViewHeading(msg('main.continue.exploring'), msg('main.related.repository.context'), msg('main.open.a.referenced.document.or.inspect.the.full.architecture')));
 		var actions = el('div', 'rm-overview-actions');
 		(direction.documents || []).forEach(function (document) {
 			var documentLocation = document && (document.location || sourceSnippetLocation(document.source));
@@ -4905,7 +4658,7 @@
 				if (area && area.map_target) { areaTarget = area.map_target; return true; }
 				return false;
 			});
-			var architecture = txt('button', 'rm-secondary-action', 'Architecture');
+			var architecture = txt('button', 'rm-secondary-action', msg('main.architecture'));
 			architecture.type = 'button';
 			architecture.onclick = function () {
 				openArchitectureTarget(areaTarget, { directionID: direction.id });
@@ -4925,10 +4678,10 @@
 	}
 
 	function studyDocumentActionLabel(document) {
-		if (!document) return 'Open documentation';
+		if (!document) return msg('main.open.documentation');
 		var location = document.location || sourceSnippetLocation(document.source);
 		var path = location && location.path || '';
-		var label = document.label || 'Open documentation';
+		var label = document.label || msg('main.open.documentation');
 		return path ? label + ' · ' + path : label;
 	}
 
@@ -4980,7 +4733,7 @@
 		if (reading.what_to_look_for) copy.appendChild(txt('p', '', reading.what_to_look_for));
 		card.appendChild(copy);
 		var open = sourceActionElement(
-			staticSourceMode() ? staticSourceOpenLabel() : 'Open exact source',
+			staticSourceMode() ? staticSourceOpenLabel() : msg('main.open.exact.source'),
 			'rm-secondary-action rm-study-reading-anchor__open rm-source-action-link',
 			location,
 			Number(reading.source.end_line) || 0,
@@ -4993,12 +4746,12 @@
 	function operationOrderingCopy(pavedPath) {
 		if (!pavedPath) return '';
 		if (pavedPath.ordering_basis === 'documented_procedure') {
-			return 'The action order follows the procedure documented by this repository.';
+			return msg('main.operation_order.documented_procedure');
 		}
 		if (pavedPath.ordering_basis === 'script_sequence') {
-			return 'The action order follows the repository-owned script.';
+			return msg('main.operation_order.script_sequence');
 		}
-		return 'These source-backed actions are arranged as a practical operating path. Review each referenced source before using it.';
+		return msg('main.operation_order.practical_path');
 	}
 
 	function appendOperationalReferences(root, title, copy, references) {
@@ -5023,12 +4776,12 @@
 		var heading = el('div', 'rm-operation-action__heading');
 		heading.appendChild(txt('span', 'rm-operation-action__order', String(index + 1)));
 		var copy = el('div', 'rm-operation-action__copy');
-		copy.appendChild(txt('strong', '', action.instruction || 'Use this repository reference'));
+		copy.appendChild(txt('strong', '', action.instruction || msg('main.chrome.use.this.repository.reference')));
 		if (action.command) {
 			var literalRow = el('div', 'rm-operation-literal');
 			literalRow.appendChild(txt('code', '', action.command));
 			if (action.copy_text) {
-				var copyButton = txt('button', 'rm-secondary-action', 'Copy command');
+				var copyButton = txt('button', 'rm-secondary-action', msg('main.copy.command'));
 				copyButton.type = 'button';
 				copyButton.onclick = function () { copyText(action.copy_text); };
 				literalRow.appendChild(copyButton);
@@ -5045,7 +4798,7 @@
 		if (action.reference && sourceSnippetAvailable(action.reference.source)) {
 			section.appendChild(renderSourceSnippetCard(action.reference.source, {
 				primary: index === 0,
-				roleLabel: action.reference.label || 'Repository source',
+				roleLabel: action.reference.label || msg('main.repository_source'),
 				reason: action.instruction || '',
 				location: action.reference.location || sourceSnippetLocation(action.reference.source),
 				redacted: !!action.reference.redacted,
@@ -5055,8 +4808,8 @@
 	}
 
 	function operationalResultLabel(kind) {
-		if (kind === 'command_output') return 'Documented output';
-		if (kind === 'generated_artifact') return 'Generated artifact';
+		if (kind === 'command_output') return msg('main.operational_result.documented_output');
+		if (kind === 'generated_artifact') return msg('main.operational_result.generated_artifact');
 		return '';
 	}
 
@@ -5073,12 +4826,14 @@
 		if (!results.length) return null;
 
 		var section = el('section', 'rm-workspace-section rm-operation-results');
-		section.appendChild(renderViewHeading('', 'Expected result', 'Exact output or generated paths retained from this repository.'));
+		section.appendChild(renderViewHeading('', msg('main.expected.result'), msg('main.exact.output.or.generated.paths.retained.from.this.repository')));
 		var list = el('div', 'rm-operation-result-list');
 		results.forEach(function (result) {
 			var card = el('article', 'rm-operation-result');
 			var meta = el('div', 'rm-operation-result__meta');
-			meta.appendChild(txt('span', 'rm-operation-result__action', 'After action ' + result.after_action));
+			meta.appendChild(txt('span', 'rm-operation-result__action', msg('main.operation.after_action', {
+				action: result.after_action,
+			})));
 			meta.appendChild(txt('span', 'rm-operation-result__kind', operationalResultLabel(result.kind)));
 			card.appendChild(meta);
 			if (result.kind === 'command_output') {
@@ -5089,7 +4844,7 @@
 				card.appendChild(txt('code', 'rm-operation-result__value', result.value));
 			}
 			var source = sourceActionElement(
-				staticSourceMode() ? staticSourceOpenLabel() : 'Show source',
+				staticSourceMode() ? staticSourceOpenLabel() : msg('main.show.source'),
 				'rm-quiet-action rm-source-action-link',
 				result.reference.location || sourceSnippetLocation(result.reference.source),
 				Number(result.reference.source.end_line) || 0,
@@ -5110,24 +4865,24 @@
 		root.replaceChildren();
 		var pavedPath = pavedPathByID(workspaceState.operationID);
 		if (!pavedPath) return;
-		var back = txt('button', 'rm-secondary-action rm-study-back', '← Repository overview');
+		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.repository.overview.2'));
 		back.type = 'button';
 		back.onclick = function () { navigateWorkspace('overview'); };
 		root.appendChild(back);
-		root.appendChild(renderViewHeading('How to run and verify', pavedPath.title, pavedPath.goal));
+		root.appendChild(renderViewHeading(msg('main.how.to.run.and.verify'), pavedPath.title, pavedPath.goal));
 		root.appendChild(txt('p', 'rm-operation-order-note', operationOrderingCopy(pavedPath)));
 
 		appendOperationalReferences(
 			root,
-			'Before you start',
-			'Check the repository-owned prerequisites referenced below.',
+			msg('main.operate.before_start'),
+			msg('main.operate.prerequisites_copy'),
 			pavedPath.prerequisites
 		);
 
 		var actions = Array.isArray(pavedPath.actions) ? pavedPath.actions.filter(Boolean) : [];
 		if (actions.length) {
 			var actionSection = el('section', 'rm-workspace-section');
-			actionSection.appendChild(renderViewHeading('', 'Actions', 'Each action keeps its exact command or endpoint beside the repository source that defines it.'));
+			actionSection.appendChild(renderViewHeading('', msg('main.actions'), msg('main.each.action.keeps.its.exact.command.or.endpoint.beside.the.repository.source.that.defines.it')));
 			var actionList = el('div', 'rm-operation-action-list');
 			actions.forEach(function (action, index) {
 				actionList.appendChild(renderOperationAction(action, index));
@@ -5140,14 +4895,14 @@
 
 		appendOperationalReferences(
 			root,
-			'What to verify',
-			'Use these repository references to check the expected result.',
+			msg('main.operate.what_to_verify'),
+			msg('main.operate.verify_copy'),
 			pavedPath.expected
 		);
 		appendOperationalReferences(
 			root,
-			'If it does not work',
-			'Continue with the repository-owned troubleshooting references.',
+			msg('main.operate.if_not_working'),
+			msg('main.operate.troubleshooting_copy'),
 			pavedPath.troubleshooting
 		);
 
@@ -5156,7 +4911,7 @@
 		var relatedDirections = relatedIDs.map(studyDirectionByID).filter(Boolean);
 		if (relatedDirections.length) {
 			var related = el('section', 'rm-workspace-section rm-operation-related');
-			related.appendChild(renderViewHeading('Study the implementation', 'Related reading paths', 'Follow the code behind this operation without losing this page from browser history.'));
+			related.appendChild(renderViewHeading(msg('main.study.the.implementation'), msg('main.related.reading.paths'), msg('main.follow.the.code.behind.this.operation.without.losing.this.page.from.browser.history')));
 			var buttons = el('div', 'rm-overview-actions');
 			relatedDirections.forEach(function (direction) {
 				var button = txt('button', 'rm-secondary-action', direction.question);
@@ -5184,8 +4939,8 @@
 	}
 
 	function taskLensAnchorTitle(anchor) {
-		if (!anchor) return 'Repository anchor';
-		return String(anchor.symbol || anchor.section || anchor.path || 'Repository anchor');
+		if (!anchor) return msg('main.repository_anchor');
+		return String(anchor.symbol || anchor.section || anchor.path || msg('main.repository_anchor'));
 	}
 
 	function taskLensSupportBadge(value) {
@@ -5219,13 +4974,16 @@
 		}).filter(function (index) { return index !== null; });
 		if (!valid.length) return null;
 		var citations = el('div', 'rm-task-citations');
-		citations.appendChild(txt('span', 'rm-task-citations__label', label || 'Evidence'));
+		citations.appendChild(txt('span', 'rm-task-citations__label', label || msg('main.chrome.evidence')));
 		valid.forEach(function (index) {
 			var anchor = taskLensAnchor(index);
 			var button = txt(
 				'button',
 				'rm-task-citation',
-				'Anchor ' + String(index + 1) + ' · ' + taskLensAnchorTitle(anchor)
+				msg('main.task.anchor_citation', {
+					index: index + 1,
+					title: taskLensAnchorTitle(anchor),
+				})
 			);
 			button.type = 'button';
 			button.onclick = function () { scrollToTaskLensAnchor(index); };
@@ -5263,7 +5021,7 @@
 			var item = el('li', 'rm-task-guidance');
 			item.appendChild(txt('p', '', guidance.text));
 			item.appendChild(taskLensSupportBadge(guidance.authority));
-			appendTaskLensCitations(item, guidance.support_anchor_indexes, 'Evidence');
+			appendTaskLensCitations(item, guidance.support_anchor_indexes, msg('main.chrome.evidence'));
 			list.appendChild(item);
 		});
 		return list;
@@ -5278,8 +5036,8 @@
 		var interpretation = TASK_INVESTIGATION.interpretation || {};
 		var hero = el('section', 'rm-task-hero');
 		hero.appendChild(renderViewHeading(
-			'Task investigation',
-			interpretation.restatement || 'Repository task',
+			msg('main.chrome.task.investigation'),
+			interpretation.restatement || msg('main.repository_task'),
 			interpretation.observable_or_outcome || ''
 		));
 		var taskText = linkified('p', 'rm-task-original', TASK_INVESTIGATION.task || '');
@@ -5287,18 +5045,20 @@
 		var classification = el('div', 'rm-task-classification');
 		classification.appendChild(taskLensSupportBadge(interpretation.task_kind));
 		classification.appendChild(taskLensSupportBadge(TASK_INVESTIGATION.locality));
-		classification.appendChild(taskLensSupportBadge(
-			TASK_INVESTIGATION.sufficient ? 'bounded evidence sufficient' : 'partial bounded evidence'
-		));
+			classification.appendChild(taskLensSupportBadge(
+				TASK_INVESTIGATION.sufficient
+          ? msg('main.task_lens.bounded_evidence_sufficient')
+          : msg('main.task_lens.partial_bounded_evidence')
+			));
 		hero.appendChild(classification);
 		var termBoundary = el('div', 'rm-task-term-boundary');
 		var foundTerms = taskLensTermGroup(
-			'Found in repository evidence',
+				msg('main.task_lens.found_in_repository_evidence'),
 			interpretation.repository_terms_found,
 			'rm-task-term-group--found'
 		);
 		var userOnlyTerms = taskLensTermGroup(
-			'Task-provided only',
+				msg('main.task_lens.task_provided_only'),
 			interpretation.user_provided_only_terms,
 			'rm-task-term-group--task'
 		);
@@ -5313,9 +5073,9 @@
 		if (warnings.length) {
 			var warningSection = el('section', 'rm-workspace-section rm-task-warnings');
 			warningSection.appendChild(renderViewHeading(
-				'Evidence cautions',
-				'Limits to keep in view',
-				'These cautions qualify the bounded investigation below.'
+					msg('main.task_lens.evidence_cautions'),
+					msg('main.task_lens.limits_to_keep_in_view'),
+					msg('main.task_lens.cautions_copy')
 			));
 			var warningList = el('ul', 'rm-task-warning-list');
 			warnings.forEach(function (warning) {
@@ -5329,13 +5089,13 @@
 		if (areas.length) {
 			var areaSection = el('section', 'rm-workspace-section rm-task-areas');
 			areaSection.appendChild(renderViewHeading(
-				'Likely areas',
-				'Where the bounded evidence points',
-				'Each area remains tied to the exact retained anchors shown below.'
+					msg('main.task_lens.likely_areas'),
+					msg('main.task_lens.where_evidence_points'),
+					msg('main.task_lens.areas_copy')
 			));
 			areas.forEach(function (area) {
 				var areaCard = el('article', 'rm-task-area');
-				areaCard.appendChild(txt('h3', '', area.label || 'Relevant code area'));
+				areaCard.appendChild(txt('h3', '', area.label || msg('main.chrome.relevant.code.area')));
 				if (area.why) areaCard.appendChild(txt('p', '', area.why));
 				var areaAnchors = el('div', 'rm-task-area-anchors');
 				(area.anchor_indexes || []).forEach(function (anchorIndex) {
@@ -5359,9 +5119,9 @@
 		if (hypotheses.length) {
 			var hypothesisSection = el('section', 'rm-workspace-section rm-task-hypothesis');
 			hypothesisSection.appendChild(renderViewHeading(
-				'Working hypothesis',
-				'What the bounded evidence supports',
-				'Each clause keeps its support status visible; plausible and unresolved claims are not presented as repository facts.'
+					msg('main.task_lens.working_hypothesis'),
+					msg('main.task_lens.what_evidence_supports'),
+					msg('main.task_lens.hypothesis_copy')
 			));
 			var hypothesisList = el('div', 'rm-task-hypothesis-list');
 				hypotheses.forEach(function (clause) {
@@ -5369,7 +5129,7 @@
 					item.appendChild(taskLensSupportBadge(clause.status));
 					var claim = el('div', 'rm-task-hypothesis-claim');
 					claim.appendChild(txt('p', '', clause.text || ''));
-					appendTaskLensCitations(claim, clause.support_anchor_indexes, 'Evidence');
+					appendTaskLensCitations(claim, clause.support_anchor_indexes, msg('main.chrome.evidence'));
 					item.appendChild(claim);
 				hypothesisList.appendChild(item);
 			});
@@ -5381,9 +5141,9 @@
 		if (anchors.length) {
 			var anchorSection = el('section', 'rm-workspace-section rm-task-anchors');
 			anchorSection.appendChild(renderViewHeading(
-				'Anchor map',
-				'Files and symbols to inspect',
-				'Source stays folded until you choose an anchor.'
+					msg('main.task_lens.anchor_map'),
+					msg('main.task_lens.files_and_symbols'),
+					msg('main.task_lens.anchor_map_copy')
 			));
 			var anchorList = el('div', 'rm-task-anchor-list');
 			anchors.forEach(function (anchor, index) {
@@ -5397,7 +5157,7 @@
 				title.appendChild(taskLensSupportBadge(anchor.role));
 				heading.appendChild(title);
 				var showSource = sourceActionElement(
-					staticSourceMode() ? staticSourceOpenLabel() : 'Show source',
+					staticSourceMode() ? staticSourceOpenLabel() : msg('main.show.source'),
 					'rm-secondary-action rm-source-action-link',
 					{ path: anchor.path, line: anchor.start_line },
 					anchor.end_line,
@@ -5426,9 +5186,9 @@
 		if (joins.length) {
 			var joinSection = el('section', 'rm-workspace-section rm-task-joins');
 			joinSection.appendChild(renderViewHeading(
-				'Evidence joins',
-				'How the selected anchors connect',
-				'Every join states both its support type and what it does not prove.'
+					msg('main.task_lens.evidence_joins'),
+					msg('main.task_lens.how_anchors_connect'),
+					msg('main.task_lens.joins_copy')
 			));
 			var joinList = el('div', 'rm-task-join-list');
 			joins.forEach(function (join) {
@@ -5444,8 +5204,10 @@
 				card.appendChild(title);
 				card.appendChild(taskLensSupportBadge(join.support));
 				card.appendChild(txt('p', '', join.explanation || ''));
-				card.appendChild(txt('p', 'rm-task-scope', 'Scope: ' + (join.scope_non_guarantees || 'bounded local evidence only')));
-				appendTaskLensCitations(card, join.support_anchor_indexes, 'Supporting anchors');
+				card.appendChild(txt('p', 'rm-task-scope', msg('main.task.scope', {
+	          scope: join.scope_non_guarantees || msg('main.task_lens.bounded_local_evidence_only'),
+	        })));
+					appendTaskLensCitations(card, join.support_anchor_indexes, msg('main.task_lens.supporting_anchors'));
 				joinList.appendChild(card);
 			});
 			joinSection.appendChild(joinList);
@@ -5455,16 +5217,16 @@
 		var guidanceGrid = el('div', 'rm-task-guidance-grid');
 		var reproduce = el('section', 'rm-workspace-section');
 		reproduce.appendChild(renderViewHeading(
-			'Reproduce or observe',
-			'Collect the relevant signal',
-			'Authority labels distinguish repository instructions from task-provided or missing evidence.'
+				msg('main.task_lens.reproduce_or_observe'),
+				msg('main.task_lens.collect_signal'),
+				msg('main.task_lens.authority_copy')
 		));
 		reproduce.appendChild(taskLensGuidanceList(TASK_INVESTIGATION.reproduce_or_observe));
 		guidanceGrid.appendChild(reproduce);
 
 		var verification = TASK_INVESTIGATION.verify || {};
 		var verify = el('section', 'rm-workspace-section');
-		verify.appendChild(renderViewHeading('Verify', 'Confirm the intended effect', verification.effect_to_observe || ''));
+		verify.appendChild(renderViewHeading(msg('main.chrome.verify'), msg('main.chrome.confirm.the.intended.effect'), verification.effect_to_observe || ''));
 		verify.appendChild(taskLensGuidanceList(verification.steps));
 		guidanceGrid.appendChild(verify);
 		root.appendChild(guidanceGrid);
@@ -5473,16 +5235,16 @@
 		if (probes.length) {
 			var probeSection = el('section', 'rm-workspace-section rm-task-probes');
 			probeSection.appendChild(renderViewHeading(
-				'Next probes',
-				'What remains unresolved',
-				'These are bounded follow-ups, not claims that the missing relationship exists.'
+					msg('main.task_lens.next_probes'),
+					msg('main.what.remains.unresolved'),
+					msg('main.task_lens.probes_copy')
 			));
 			var probeList = el('ul', '');
 			probes.forEach(function (probe) {
 				var item = el('li', '');
 				var probeBody = el('div', 'rm-task-probe-body');
 				probeBody.appendChild(txt('span', '', probe.text || ''));
-				appendTaskLensCitations(probeBody, probe.anchor_indexes, 'Inspect');
+					appendTaskLensCitations(probeBody, probe.anchor_indexes, msg('main.task_lens.inspect'));
 				item.appendChild(taskLensSupportBadge(probe.action));
 				item.appendChild(probeBody);
 				probeList.appendChild(item);
@@ -5492,17 +5254,21 @@
 		}
 
 		var details = el('details', 'rm-task-retrieval');
-		details.appendChild(txt('summary', '', 'Bounded retrieval details'));
+		details.appendChild(txt('summary', '', msg('main.chrome.bounded.retrieval.details')));
 		var budget = TASK_INVESTIGATION.budget || {};
-		details.appendChild(txt(
-			'p',
-			'',
-			String(budget.read_files || 0) + ' files · ' + String(budget.read_bytes || 0) +
-			' bytes · ' + String(TASK_INVESTIGATION.provider && TASK_INVESTIGATION.provider.calls || 0) +
-			' model calls'
-		));
+      details.appendChild(txt(
+        'p',
+        '',
+        msg('main.task.budget_summary', {
+          files: Number(budget.read_files || 0),
+          bytes: Number(budget.read_bytes || 0),
+          calls: Number(TASK_INVESTIGATION.provider && TASK_INVESTIGATION.provider.calls || 0),
+        })
+      ));
 		if ((TASK_INVESTIGATION.stages_skipped || []).length) {
-			details.appendChild(txt('p', '', 'Skipped: ' + TASK_INVESTIGATION.stages_skipped.map(taskLensLabel).join(', ')));
+			details.appendChild(txt('p', '', msg('main.task.skipped', {
+        stages: TASK_INVESTIGATION.stages_skipped.map(taskLensLabel).join(', '),
+      })));
 		}
 		root.appendChild(details);
 	}
@@ -5532,16 +5298,16 @@
 			? (DATA.project_guess || thesis.purpose)
 			: (thesis.purpose || DATA.project_guess);
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
-    hero.appendChild(txt('div', 'rm-view-kicker', 'Purpose'));
-    hero.appendChild(txt('h2', '', DATA.repo_name || 'Repository overview'));
-    hero.appendChild(txt('p', '', overviewPurpose || 'Explore how this repository is organized and implemented.'));
+    hero.appendChild(txt('div', 'rm-view-kicker', msg('main.purpose')));
+    hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
+    hero.appendChild(txt('p', '', overviewPurpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
     root.appendChild(hero);
 
     var areas = Array.isArray(thesis.areas) ? thesis.areas.slice(0, 7) : [];
     var areaCards = areas.map(renderRepositoryArea).filter(Boolean);
     if (areaCards.length) {
       var shapeSection = el('section', 'rm-workspace-section');
-      shapeSection.appendChild(renderViewHeading('Repository shape', 'Code areas to know', 'Open a concrete source location or continue on the architecture map.'));
+      shapeSection.appendChild(renderViewHeading(msg('main.repository.shape'), msg('main.code.areas.to.know'), msg('main.open.a.concrete.source.location.or.continue.on.the.architecture.map')));
       var areaGrid = el('div', 'rm-repository-area-grid');
       areaCards.forEach(function (card) { areaGrid.appendChild(card); });
       shapeSection.appendChild(areaGrid);
@@ -5553,7 +5319,7 @@
     var primary = primaryUserMechanism();
     if (primary) {
       var primarySection = el('section', 'rm-workspace-section rm-primary-path-section');
-      primarySection.appendChild(renderViewHeading('Primary path', 'Start with the main behavior', 'Read one source-backed path before exploring the rest of the repository.'));
+      primarySection.appendChild(renderViewHeading(msg('main.chrome.primary.path'), msg('main.chrome.start.with.the.main.behavior'), msg('main.chrome.read.one.source.backed.path.before.exploring.the.rest.of.the.repository')));
       appendMechanismGrid(primarySection, [primary]);
       root.appendChild(primarySection);
     }
@@ -5563,7 +5329,7 @@
 			: USER_MECHANISMS.filter(function (mechanism) { return mechanism.role === 'extension_point'; });
 		if (extension.length) {
 			var extensionSection = el('section', 'rm-workspace-section');
-			extensionSection.appendChild(renderViewHeading('Extension paths', 'Where behavior plugs in', 'Follow an accepted code path to a registration, factory, adapter, or boundary.'));
+			extensionSection.appendChild(renderViewHeading(msg('main.chrome.extension.paths'), msg('main.chrome.where.behavior.plugs.in'), msg('main.chrome.follow.an.accepted.code.path.to.a.registration.factory.adapter.or.boundary')));
 			appendMechanismGrid(extensionSection, extension.slice(0, 3));
 			root.appendChild(extensionSection);
 		}
@@ -5575,7 +5341,7 @@
 			});
 		if (secondary.length) {
       var secondarySection = el('section', 'rm-workspace-section');
-      secondarySection.appendChild(renderViewHeading('Other paths', 'More behavior to explore', 'Continue with another source-backed explanation when it matches what you need.'));
+      secondarySection.appendChild(renderViewHeading(msg('main.chrome.other.paths'), msg('main.chrome.more.behavior.to.explore'), msg('main.chrome.continue.with.another.source.backed.explanation.when.it.matches.what.you.need')));
       appendMechanismGrid(secondarySection, secondary.slice(0, 4));
       root.appendChild(secondarySection);
     }
@@ -5586,7 +5352,7 @@
 		var systemStory = Array.isArray(thesis.system_story) ? thesis.system_story.filter(Boolean) : [];
 		if (systemStory.length) {
 			var storySection = el('section', 'rm-workspace-section');
-			storySection.appendChild(renderViewHeading('System story', 'How the parts fit together', 'A compact orientation assembled from repository documentation and existing code areas.'));
+			storySection.appendChild(renderViewHeading(msg('main.system.story'), msg('main.how.the.parts.fit.together'), msg('main.a.compact.orientation.assembled.from.repository.documentation.and.existing.code.areas')));
 			var story = el('ol', 'rm-system-story');
 			systemStory.forEach(function (item) { story.appendChild(txt('li', '', item)); });
 			storySection.appendChild(story);
@@ -5596,10 +5362,10 @@
 		var hasArchitecture = userArchitectureAvailable();
     if (hasArchitecture) {
       var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
-      exploreSection.appendChild(renderViewHeading('Explore', 'Inspect the wider repository', 'Open the repository map for additional context.'));
+      exploreSection.appendChild(renderViewHeading(msg('main.explore'), msg('main.inspect.the.wider.repository'), msg('main.open.the.repository.map.for.additional.context')));
       var actions = el('div', 'rm-overview-actions');
       if (hasArchitecture) {
-        var architecture = txt('button', 'rm-secondary-action', 'Explore architecture');
+        var architecture = txt('button', 'rm-secondary-action', msg('main.explore.architecture'));
         architecture.type = 'button';
         architecture.onclick = function () { openArchitectureTarget(null, null); };
         actions.appendChild(architecture);
@@ -5612,13 +5378,13 @@
 	function renderStudyPublicationNotice(root) {
 		if (!root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
 		var notice = el('section', 'rm-study-publication-notice');
-		notice.appendChild(txt('h2', '', 'Study unavailable for this run'));
+		notice.appendChild(txt('h2', '', msg('main.study.unavailable.for.this.run')));
 		notice.appendChild(txt(
 			'p',
 			'',
 			STUDY_PUBLICATION.state === 'started'
-				? 'Study stage did not finish, so no Study directions were published. The Overview below uses independently accepted inputs; it is not a substitute Study result.'
-				: 'No Study directions were published because the editing stage did not pass its required checks. The Overview below uses independently accepted inputs; it is not a substitute Study result.'
+				? msg('main.study.stage.did.not.finish.so.no.study.directions.were.published.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result')
+				: msg('main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result')
 		));
 		root.appendChild(notice);
 	}
@@ -5628,28 +5394,28 @@
     if (!root) return;
     root.replaceChildren();
     root.appendChild(renderViewHeading(
-      'Mechanisms',
-      'Ready explanations',
-      'Choose a source-backed path and walk through its implementation one step at a time.'
+      msg('main.mechanisms'),
+      msg('main.ready_explanations'),
+      msg('main.choose.a.source.backed.path.and.walk.through.its.implementation.one.step.at.a.time')
     ));
     if (!USER_MECHANISMS.length) {
       var empty = el('div', 'rm-empty-state');
 		empty.appendChild(txt('p', '', userArchitectureAvailable()
-			? 'Explore the architecture map for additional context.'
-			: 'No source-backed code path is available yet.'));
+			? msg('main.explore.the.architecture.map.for.additional.context')
+				: msg('main.no_source_backed_code_path')));
       root.appendChild(empty);
       return;
     }
     var primary = primaryUserMechanism();
     if (primary) {
-      root.appendChild(txt('h3', 'rm-mechanism-group-title', 'Main code path'));
+      root.appendChild(txt('h3', 'rm-mechanism-group-title', msg('main.chrome.main.code.path')));
       appendMechanismGrid(root, [primary]);
     }
     var secondary = USER_MECHANISMS.filter(function (mechanism) {
       return !primary || mechanism.artifact_id !== primary.artifact_id;
     });
     if (secondary.length) {
-      root.appendChild(txt('h3', 'rm-mechanism-group-title', 'Other code paths'));
+      root.appendChild(txt('h3', 'rm-mechanism-group-title', msg('main.chrome.other.code.paths')));
       appendMechanismGrid(root, secondary);
     }
   }
@@ -5696,21 +5462,21 @@
   function overviewSourceRoleLabel(snippet) {
     var kind = String(snippet && (snippet.landmark_kind || snippet.role) || 'source');
     var labels = {
-      cli_entrypoint: 'CLI entrypoint',
-      public_api: 'Public API',
-      quickstart: 'Quickstart example',
-      quickstart_example: 'Quickstart example',
-      start_here: 'Start here',
-      orientation_start: 'Start here',
-      constructor: 'Core constructor',
-      handler: 'Core handler',
-      test: 'Representative test',
-      example: 'Example',
-      core: 'Core code',
-      implementation: 'Implementation',
-      entrypoint: 'Start here',
+      cli_entrypoint: msg('main.overview.role.cli_entrypoint'),
+      public_api: msg('main.overview.role.public_api'),
+      quickstart: msg('main.overview.role.quickstart'),
+      quickstart_example: msg('main.overview.role.quickstart'),
+      start_here: msg('main.start.here'),
+      orientation_start: msg('main.start.here'),
+      constructor: msg('main.overview.role.constructor'),
+      handler: msg('main.overview.role.handler'),
+      test: msg('main.overview.role.test'),
+      example: msg('main.overview.role.example'),
+      core: msg('main.overview.role.core'),
+      implementation: msg('main.implementation'),
+      entrypoint: msg('main.start.here'),
     };
-    return labels[kind] || 'Source code';
+    return labels[kind] || msg('main.source.code');
   }
 
   function overviewSourceIsStrong(snippet) {
@@ -5845,7 +5611,7 @@
       if (line.gap_before) {
         var gap = el('div', 'rm-source-code__gap');
         gap.appendChild(txt('span', '', '⋮'));
-        gap.appendChild(txt('span', '', '… lines omitted …'));
+        gap.appendChild(txt('span', '', msg('main.lines_omitted')));
         code.appendChild(gap);
       }
       var row = el('div', 'rm-source-code__line' + (sourceLineHighlighted(snippet, line) ? ' is-highlighted' : ''));
@@ -6056,16 +5822,20 @@
 		var card = el('section', 'rm-source-card rm-readable-document-card');
 		var heading = el('div', 'rm-source-card__heading');
 		var title = el('div', '');
-		title.appendChild(txt('div', 'rm-source-card__role', reference.label || 'Documentation'));
+		title.appendChild(txt('div', 'rm-source-card__role', reference.label || msg('main.chrome.documentation')));
 		title.appendChild(txt('strong', '', snippet.path));
 		title.appendChild(txt(
 			'code',
 			'rm-source-card__location',
-			snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line
+			msg('main.source.location_lines', {
+				path: snippet.path,
+				start: snippet.start_line,
+				end: snippet.end_line,
+			})
 		));
 		heading.appendChild(title);
 		if (snippet.revision && DEBUG_MODE) {
-			heading.appendChild(txt('span', 'rm-source-card__snapshot', 'saved snapshot'));
+			heading.appendChild(txt('span', 'rm-source-card__snapshot', msg('main.saved.snapshot')));
 		}
 		card.appendChild(heading);
 
@@ -6076,7 +5846,7 @@
 		card.appendChild(rawHost);
 
 		var actions = renderSourceActions(snippet, sourceSnippetLocation(snippet, location), {});
-		var raw = txt('button', 'rm-secondary-action', 'Show raw exact source');
+		var raw = txt('button', 'rm-secondary-action', msg('main.show.raw.exact.source'));
 		raw.type = 'button';
 		var showingRaw = false;
 		raw.onclick = function () {
@@ -6085,7 +5855,7 @@
 			rawHost.hidden = !showingRaw;
 			rawHost.replaceChildren();
 			if (showingRaw) rawHost.appendChild(renderSourceCode(snippet));
-			raw.textContent = showingRaw ? 'Show readable document' : 'Show raw exact source';
+			raw.textContent = showingRaw ? msg('main.show.readable.document') : msg('main.show.raw.exact.source');
 		};
 		actions.appendChild(raw);
 		card.appendChild(actions);
@@ -6105,7 +5875,7 @@
       body: JSON.stringify({ run_id: runID, context_id: contextID }),
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
-        if (!response.ok) throw new Error(body.error || 'source context is unavailable');
+        if (!response.ok) throw new Error(body.error || msg('main.error.source_context_unavailable'));
         return body;
       });
     }).then(function (body) {
@@ -6147,13 +5917,13 @@
       actions.appendChild(staticSourceOpen);
     }
     if (serverMode() && currentRunID() && SOURCE_IDS[snippet.path]) {
-      var open = txt('button', 'rm-primary-action', 'Open in editor');
+      var open = txt('button', 'rm-primary-action', msg('main.open.in.editor'));
       open.type = 'button';
       open.onclick = function () { requestOpenFile(snippet.path, location.line, location.column); };
       actions.appendChild(open);
     }
     if (!options.expanded && serverMode() && SOURCE_CONTEXT_IDS[snippet.presentation_sha256]) {
-      var more = txt('button', 'rm-secondary-action', 'Show more context');
+      var more = txt('button', 'rm-secondary-action', msg('main.show.more.context'));
       more.type = 'button';
       more.onclick = function () {
         more.disabled = true;
@@ -6162,22 +5932,22 @@
           if (expanded) openSourceSnippet(expanded, location, true);
         }).catch(function (error) {
           more.disabled = false;
-          showToast(error && error.message ? error.message : 'Source context is unavailable.', true);
+          showToast(error && error.message ? error.message : msg('main.error.source_context_unavailable'), true);
         });
       };
       actions.appendChild(more);
     }
     if (typeof options.toggleFullFunction === 'function') {
-      var full = txt('button', 'rm-secondary-action', 'Show full function');
+      var full = txt('button', 'rm-secondary-action', msg('main.show.full.function'));
       full.type = 'button';
       full.onclick = function () { options.toggleFullFunction(full); };
       actions.appendChild(full);
     }
-    var copyLocation = txt('button', 'rm-secondary-action', 'Copy file:line');
+    var copyLocation = txt('button', 'rm-secondary-action', msg('main.copy.file.line'));
     copyLocation.type = 'button';
     copyLocation.onclick = function () { copyText(formatCodeLocation(location)); };
     actions.appendChild(copyLocation);
-    var copyPath = txt('button', 'rm-quiet-action', 'Copy path');
+    var copyPath = txt('button', 'rm-quiet-action', msg('main.copy.path'));
     copyPath.type = 'button';
     copyPath.onclick = function () { copyText(snippet.path); };
     actions.appendChild(copyPath);
@@ -6201,8 +5971,11 @@
   function sourceNoticeLineLabel(ranges) {
     var labels = ranges.map(function (range) {
       return Number(range.start_line) === Number(range.end_line)
-        ? 'Line ' + range.start_line
-        : 'Lines ' + range.start_line + '–' + range.end_line;
+        ? msg('main.source.notice_line', { line: range.start_line })
+        : msg('main.source.notice_lines', {
+          start: range.start_line,
+          end: range.end_line,
+        });
     });
     return labels.join(', ');
   }
@@ -6215,7 +5988,7 @@
     }).slice(0, 2);
     if (!safe.length) return null;
     var section = el('aside', 'rm-source-notices');
-    section.appendChild(txt('h4', '', 'What to notice'));
+    section.appendChild(txt('h4', '', msg('main.chrome.what.to.notice')));
     var list = el('ul', '');
     safe.forEach(function (item) {
       var listItem = el('li', '');
@@ -6248,10 +6021,14 @@
     title.appendChild(txt(
       'div',
       'rm-source-card__role',
-      options.roleLabel || (options.primary ? 'Primary implementation' : 'Source code')
+      options.roleLabel || (options.primary ? msg('main.primary_implementation') : msg('main.source.code'))
     ));
     title.appendChild(txt('strong', '', snippet.enclosing_symbol || snippet.path));
-    var locationText = snippet.path + ' · lines ' + snippet.start_line + '–' + snippet.end_line;
+    var locationText = msg('main.source.location_lines', {
+      path: snippet.path,
+      start: snippet.start_line,
+      end: snippet.end_line,
+    });
     var locationLabel = staticSourceLink(
       locationText,
       'rm-source-card__location rm-file-link',
@@ -6261,7 +6038,7 @@
     title.appendChild(locationLabel);
     heading.appendChild(title);
     if (!staticSourceMode() && snippet.revision && (DEBUG_MODE || options.showSnapshot)) {
-      heading.appendChild(txt('span', 'rm-source-card__snapshot', 'saved snapshot'));
+      heading.appendChild(txt('span', 'rm-source-card__snapshot', msg('main.saved.snapshot')));
     }
     card.appendChild(heading);
     if (String(options.reason || '').trim()) {
@@ -6283,10 +6060,14 @@
       toggleFullFunction = function (button) {
         showingFullFunction = !showingFullFunction;
         codeHost.replaceChildren(renderSourceCode(snippet, showingFullFunction ? fullLines : snippet.lines));
-        button.textContent = showingFullFunction ? 'Show focused excerpt' : 'Show full function';
+        button.textContent = showingFullFunction ? msg('main.show_focused_excerpt') : msg('main.show.full.function');
         var start = showingFullFunction ? snippet.full_function_start_line : snippet.start_line;
         var end = showingFullFunction ? snippet.full_function_end_line : snippet.end_line;
-        locationLabel.textContent = snippet.path + ' · lines ' + start + '–' + end;
+        locationLabel.textContent = msg('main.source.location_lines', {
+          path: snippet.path,
+          start: start,
+          end: end,
+        });
       };
     }
 		if (!options.redacted) {
@@ -6312,7 +6093,7 @@
     if (reason) meta.appendChild(txt('span', 'rm-related-source__reason', reason));
     card.appendChild(meta);
     var show = sourceActionElement(
-      staticSourceMode() ? staticSourceOpenLabel() : 'Show code',
+      staticSourceMode() ? staticSourceOpenLabel() : msg('main.source.show_code'),
       'rm-secondary-action rm-source-action-link',
       sourceSnippetLocation(snippet),
       snippet.end_line,
@@ -6325,7 +6106,9 @@
   function renderExactReferences(locations) {
     if (!Array.isArray(locations) || !locations.length) return null;
     var details = el('details', 'rm-exact-references');
-    details.appendChild(txt('summary', '', 'Show ' + locations.length + ' exact references'));
+    details.appendChild(txt('summary', '', msg('main.source.show_exact_references', {
+      count: locations.length,
+    })));
     var list = el('div', 'rm-exact-references__list');
     locations.forEach(function (location) {
       list.appendChild(renderFileReference(
@@ -6369,7 +6152,7 @@
   }
 
   function narrativeUnitName(mechanism) {
-    return mechanismUsesPhases(mechanism) ? 'Phase' : 'Step';
+    return mechanismUsesPhases(mechanism) ? msg('main.phase') : msg('main.step');
   }
 
   function renderMechanismContext(mechanism) {
@@ -6383,13 +6166,13 @@
         : null;
       var button = remoteContext || el('button', 'rm-context-item');
       if (!remoteContext) button.type = 'button';
-      button.appendChild(txt('strong', '', item.label || 'Related code area'));
+      button.appendChild(txt('strong', '', item.label || msg('main.chrome.related.code.area')));
       if (item.responsibility) button.appendChild(txt('span', '', item.responsibility));
       if (action === 'code') {
         button.appendChild(txt('code', '', formatCodeLocation(item.code_location)));
         if (!remoteContext) button.onclick = function () { openSourceLocation(item.code_location); };
       } else {
-        button.appendChild(txt('span', 'rm-context-item__action', 'View on map →'));
+        button.appendChild(txt('span', 'rm-context-item__action', msg('main.view.on.map')));
         button.onclick = function () {
           openArchitectureTarget(item.map_target, {
             artifactID: mechanism.artifact_id,
@@ -6401,8 +6184,8 @@
     });
     if (!items.length) return null;
     var strip = el('aside', 'rm-mechanism-context');
-    strip.setAttribute('aria-label', 'Code areas around this path');
-    strip.appendChild(txt('span', 'rm-mechanism-context__label', 'Around this path'));
+    strip.setAttribute('aria-label', msg('main.chrome.code.areas.around.this.path'));
+    strip.appendChild(txt('span', 'rm-mechanism-context__label', msg('main.chrome.around.this.path')));
     var list = el('div', 'rm-mechanism-context__items');
     items.forEach(function (item) { list.appendChild(item); });
     strip.appendChild(list);
@@ -6413,11 +6196,13 @@
     var implementationSteps = mechanismImplementationSteps(mechanism, phase);
     if (!implementationSteps.length) return null;
     var details = el('details', 'rm-implementation-details');
-    details.appendChild(txt('summary', '', 'Show implementation details (' + implementationSteps.length + ')'));
+    details.appendChild(txt('summary', '', msg('main.mechanism.show_implementation_details', {
+      count: implementationSteps.length,
+    })));
     var list = el('div', 'rm-implementation-details__list');
     implementationSteps.forEach(function (step, index) {
       var item = el('article', 'rm-implementation-detail');
-      item.appendChild(txt('strong', '', (index + 1) + '. ' + (step.title || 'Implementation')));
+      item.appendChild(txt('strong', '', (index + 1) + '. ' + (step.title || msg('main.implementation'))));
       if (step.explanation) item.appendChild(txt('p', '', step.explanation));
       var sources = uniqueSourceSnippets(step.sources || [], {}, 3, false);
       if (sources.length) {
@@ -6436,18 +6221,18 @@
   function renderStepButtons(mechanism, step, className, includeMap) {
     var actions = el('div', className || 'rm-step-actions');
     actions.setAttribute('data-step-controls', 'true');
-    var previous = txt('button', 'rm-quiet-action', '← Previous');
+    var previous = txt('button', 'rm-quiet-action', msg('main.chrome.previous'));
     previous.type = 'button';
     previous.disabled = workspaceState.stepIndex === 0;
     previous.onclick = function () { moveUserMechanismStep(-1); };
     actions.appendChild(previous);
-    var next = txt('button', 'rm-primary-action', 'Next →');
+    var next = txt('button', 'rm-primary-action', msg('main.chrome.next'));
     next.type = 'button';
     next.disabled = workspaceState.stepIndex >= mechanismNarrativeItems(mechanism).length - 1;
     next.onclick = function () { moveUserMechanismStep(1); };
     actions.appendChild(next);
 		if (includeMap && step.map_target && userArchitectureAvailable()) {
-      var showMap = txt('button', 'rm-secondary-action', 'Show on map');
+      var showMap = txt('button', 'rm-secondary-action', msg('main.chrome.show.on.map'));
       showMap.type = 'button';
       showMap.onclick = function () { showMechanismStepOnMap(step.map_target); };
       actions.appendChild(showMap);
@@ -6461,15 +6246,21 @@
     var controls = el('div', 'rm-mobile-step-controls');
     controls.appendChild(txt(
       'strong', 'rm-mobile-step-progress',
-      unit + ' ' + (workspaceState.stepIndex + 1) + ' of ' + narrative.length
+      msg('main.unit_progress', {
+        unit: unit,
+        current: workspaceState.stepIndex + 1,
+        total: narrative.length,
+      })
     ));
-    var previous = txt('button', 'rm-quiet-action', 'Previous');
+    var previous = txt('button', 'rm-quiet-action', msg('main.chrome.previous.2'));
     previous.type = 'button';
     previous.disabled = workspaceState.stepIndex === 0;
     previous.onclick = function () { moveUserMechanismStep(-1); };
     controls.appendChild(previous);
     var picker = el('details', 'rm-mobile-step-picker');
-    picker.appendChild(txt('summary', 'rm-secondary-action', 'All ' + unit.toLowerCase() + 's'));
+    picker.appendChild(txt('summary', 'rm-secondary-action', msg('main.mechanism.all_units', {
+      unit: unit.toLowerCase(),
+    })));
     var choices = el('div', 'rm-mobile-step-picker__choices');
     narrative.forEach(function (candidate, index) {
       var choice = txt('button', index === workspaceState.stepIndex ? 'is-active' : '', (index + 1) + '. ' + candidate.title);
@@ -6483,7 +6274,7 @@
     });
     picker.appendChild(choices);
     controls.appendChild(picker);
-    var next = txt('button', 'rm-primary-action', 'Next');
+    var next = txt('button', 'rm-primary-action', msg('main.chrome.next.2'));
     next.type = 'button';
     next.disabled = workspaceState.stepIndex >= narrative.length - 1;
     next.onclick = function () { moveUserMechanismStep(1); };
@@ -6505,7 +6296,7 @@
     root.appendChild(renderViewHeading(
       mechanismRoleLabel(mechanism),
       mechanismPresentationTitle(mechanism),
-      mechanism.question || 'Trace through the implementation.'
+      mechanism.question || msg('main.trace_through_implementation')
     ));
     var shortAnswer = mechanismShortAnswer(mechanism);
     if (shortAnswer) root.appendChild(txt('p', 'rm-mechanism-answer', shortAnswer));
@@ -6514,7 +6305,9 @@
 
     var layout = el('div', 'rm-mechanism-layout');
     var stepList = el('nav', 'rm-step-list');
-    stepList.setAttribute('aria-label', 'Mechanism ' + unit.toLowerCase() + 's');
+    stepList.setAttribute('aria-label', msg('main.mechanism.aria_units', {
+      unit: unit.toLowerCase(),
+    }));
     narrative.forEach(function (candidate, index) {
       var button = txt('button', index === workspaceState.stepIndex ? 'is-active' : '', (index + 1) + '. ' + candidate.title);
       button.type = 'button';
@@ -6527,7 +6320,11 @@
     var current = el('article', 'rm-step-workspace');
     current.appendChild(renderMobileStepControls(mechanism));
     current.appendChild(txt(
-      'div', 'rm-step-progress', unit + ' ' + (workspaceState.stepIndex + 1) + ' of ' + narrative.length
+      'div', 'rm-step-progress', msg('main.unit_progress', {
+        unit: unit,
+        current: workspaceState.stepIndex + 1,
+        total: narrative.length,
+      })
     ));
     current.appendChild(txt('h3', '', step.title));
     current.appendChild(txt('p', 'rm-step-explanation', step.explanation));
@@ -6538,7 +6335,9 @@
 			sources.forEach(function (snippet, sourceIndex) {
 				current.appendChild(renderSourceSnippetCard(snippet, {
 					primary: sourceIndex === 0,
-					roleLabel: sourceIndex === 0 ? 'Primary implementation' : 'Supporting implementation',
+						roleLabel: sourceIndex === 0
+              ? msg('main.primary_implementation')
+              : msg('main.supporting_implementation'),
 					location: sourceSnippetLocation(snippet),
 					notices: step.what_to_notice || [],
 				}));
@@ -6564,8 +6363,10 @@
     var mechanismSources = uniqueSourceSnippets(allMechanismSources, currentSourcePaths, Number.MAX_SAFE_INTEGER, true);
     if (mechanismSources.length) {
       var involved = el('details', 'rm-workspace-section rm-mechanism-files');
-      involved.appendChild(txt('summary', '', 'All files (' + mechanismSources.length + ' more)'));
-      involved.appendChild(txt('p', 'rm-mechanism-files__hint', 'Open another source excerpt without leaving this step.'));
+      involved.appendChild(txt('summary', '', msg('main.mechanism.all_files_more', {
+        count: mechanismSources.length,
+      })));
+      involved.appendChild(txt('p', 'rm-mechanism-files__hint', msg('main.chrome.open.another.source.excerpt.without.leaving.this.step')));
       var fileList = el('div', 'rm-related-source-list');
       mechanismSources.forEach(function (snippet) {
         fileList.appendChild(renderRelatedSourceTarget(snippet));
@@ -6685,24 +6486,24 @@
 			var study = activeSourceDrawerStudy();
 			var operation = activeSourceDrawerOperation();
 			var task = workspaceState.view === 'investigate' ? TASK_INVESTIGATION : null;
-			content.appendChild(txt('div', 'rm-view-kicker', mechanism ? 'Source in this code path' : study ? 'Source in this reading path' : operation ? 'Source in this operating path' : task ? 'Source in this task investigation' : 'Saved source'));
+			content.appendChild(txt('div', 'rm-view-kicker', mechanism ? msg('main.source.in.this.code.path') : study ? msg('main.source.in.this.reading.path') : operation ? msg('main.source.in.this.operating.path') : task ? msg('main.source.in.this.task.investigation') : msg('main.saved.source')));
     if (mechanism) {
       var step = mechanismNarrativeItems(mechanism)[boundedMechanismStep(mechanism, workspaceState.stepIndex)];
       var unit = narrativeUnitName(mechanism);
       content.appendChild(txt('h2', '', mechanismPresentationTitle(mechanism)));
-      content.appendChild(txt('p', '', unit + ' ' + (workspaceState.stepIndex + 1) + ': ' + (step.title || 'Implementation')));
+      content.appendChild(txt('p', '', unit + ' ' + (workspaceState.stepIndex + 1) + ': ' + (step.title || msg('main.implementation'))));
     }
 			if (study) {
 			content.appendChild(txt('h2', '', study.question));
-			content.appendChild(txt('p', '', study.learning_outcome || study.why_it_matters || 'Repository reading path'));
+			content.appendChild(txt('p', '', study.learning_outcome || study.why_it_matters || msg('main.chrome.repository.reading.path')));
 			}
 			if (operation) {
 				content.appendChild(txt('h2', '', operation.title));
-				content.appendChild(txt('p', '', operation.goal || 'Repository operating path'));
+				content.appendChild(txt('p', '', operation.goal || msg('main.chrome.repository.operating.path')));
 			}
 			if (task) {
-				content.appendChild(txt('h2', '', task.interpretation && task.interpretation.restatement || 'Task investigation'));
-				content.appendChild(txt('p', '', task.interpretation && task.interpretation.observable_or_outcome || 'Bounded saved source'));
+				content.appendChild(txt('h2', '', task.interpretation && task.interpretation.restatement || msg('main.chrome.task.investigation')));
+				content.appendChild(txt('p', '', task.interpretation && task.interpretation.observable_or_outcome || msg('main.chrome.bounded.saved.source')));
 			}
 			var documentReference = study ? studyDocumentForSnippet(study, snippet) : null;
 			if (documentReference && isMarkdownDocumentSource(snippet)) {
@@ -6903,11 +6704,11 @@
 					if (handlerName && handlerName !== surfaceName) {
 						label = surfaceName ? surfaceName + ' → ' + handlerName : handlerName;
 					}
-					if (!handlerLocation && registrationLocation) {
-						label += ' · registration';
-					} else if (!handlerLocation && !registrationLocation && entryLocation) {
-						label += ' · process entry';
-					}
+        if (!handlerLocation && registrationLocation) {
+          label += ' · ' + msg('main.surface.registration_suffix');
+        } else if (!handlerLocation && !registrationLocation && entryLocation) {
+          label += ' · ' + msg('main.surface.process_entry_suffix');
+        }
 					var projectedLocation = {
 						path: filePath,
 						line: line,
@@ -7014,8 +6815,8 @@
 			var direction = studyDirectionByID(workspaceState.mapReturn.directionID);
 			if (!direction) return;
 			var directionBanner = el('div', 'rm-architecture-return');
-			directionBanner.appendChild(txt('span', '', 'Map context for “' + direction.question + '”'));
-			var directionBack = txt('button', 'rm-secondary-action', '← Back to reading path');
+			directionBanner.appendChild(txt('span', '', msg('main.map.context', { title: direction.question })));
+			var directionBack = txt('button', 'rm-secondary-action', msg('main.back.to.reading.path'));
 			directionBack.type = 'button';
 			directionBack.onclick = returnFromArchitecture;
 			directionBanner.appendChild(directionBack);
@@ -7025,11 +6826,16 @@
     var mechanism = userMechanismByID(USER_MECHANISMS, workspaceState.mapReturn.artifactID);
     if (!mechanism) return;
     var banner = el('div', 'rm-architecture-return');
-    banner.appendChild(txt('span', '', 'Map context for “' + mechanismPresentationTitle(mechanism) + '”'));
+    banner.appendChild(txt('span', '', msg('main.map.context', {
+      title: mechanismPresentationTitle(mechanism),
+    })));
     var back = txt(
       'button',
       'rm-secondary-action',
-      '← Back to ' + narrativeUnitName(mechanism).toLowerCase() + ' ' + (workspaceState.mapReturn.stepIndex + 1)
+      msg('main.back_to_unit', {
+        unit: narrativeUnitName(mechanism).toLowerCase(),
+        index: workspaceState.mapReturn.stepIndex + 1,
+      })
     );
     back.type = 'button';
     back.onclick = returnFromArchitecture;
@@ -7042,9 +6848,9 @@
     if (!root) return;
     root.replaceChildren();
     root.appendChild(renderViewHeading(
-      'Architecture',
-      'Explore the repository map',
-      'Select a component, runtime surface, or code path to inspect its implementation context.'
+      msg('main.architecture'),
+      msg('main.explore.the.repository.map'),
+      msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var card = el('section', 'rm-card rm-architecture-canvas-card');
@@ -7054,7 +6860,7 @@
     } else {
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
-      else root.appendChild(txt('p', 'rm-empty-state', 'Open one of the suggested source files.'));
+      else root.appendChild(txt('p', 'rm-empty-state', msg('main.chrome.open.one.of.the.suggested.source.files')));
     }
     renderArchitectureReturn();
   }
@@ -7090,7 +6896,7 @@
     architectureAppliedFocus = null;
     var options = {
       userMode: !DEBUG_MODE,
-      translateUI: translateUIString,
+      message: msg,
       candidateDirections: DEBUG_MODE ? candidateDirections() : [],
       savedFlows: DEBUG_MODE ? (DATA.flows || []) : [],
       guidedTour: DEBUG_MODE ? (DATA.guided_tour || null) : null,
@@ -7176,9 +6982,9 @@
     if (!root || !DEBUG_MODE) return;
     root.replaceChildren();
     root.appendChild(renderViewHeading(
-      'Debug mode',
-      'Validation and provenance',
-      'Canonical semantic objects and pipeline diagnostics retained by this report.'
+      msg('main.debug_mode'),
+      msg('main.validation_and_provenance'),
+      msg('main.provenance_copy')
     ));
     var payload = {
       semantic_artifacts: DATA.semantic_artifacts || [],
@@ -7201,6 +7007,7 @@
     var host = el('div', 'rm-surface-catalog-host');
     root.appendChild(host);
     var options = {
+      message: msg,
       architectureSurfaces: (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [],
       architectureAnchorCount: DATA.run && DATA.run.architecture_anchor_count || 0,
       openTrace: function (flowID) {
@@ -7270,19 +7077,32 @@
     if (!details) return;
     details.hidden = !DEBUG_MODE;
     if (!DEBUG_MODE) return;
-    if (DATA.artifacts_dir) document.getElementById('rm-artifacts-dir').textContent = 'Artifacts: ' + DATA.artifacts_dir;
-    if (DATA.feedback_path) document.getElementById('rm-feedback-path').textContent = 'Feedback notes: ' + DATA.feedback_path;
+    if (DATA.artifacts_dir) {
+      document.getElementById('rm-artifacts-dir').textContent = msg('main.run.artifacts', {
+        path: DATA.artifacts_dir,
+      });
+    }
+    if (DATA.feedback_path) {
+      document.getElementById('rm-feedback-path').textContent = msg('main.run.feedback_notes', {
+        path: DATA.feedback_path,
+      });
+    }
     if (DATA.captured_revision) {
-      document.getElementById('rm-snapshot-detail').textContent =
-        'Captured snapshot: ' + DATA.captured_revision.slice(0, 12) + ' · ' + (DATA.captured_input_count || 0) + ' analyzed inputs';
+      document.getElementById('rm-snapshot-detail').textContent = msg('main.captured_snapshot', {
+        revision: DATA.captured_revision.slice(0, 12),
+        count: DATA.captured_input_count || 0,
+      });
     }
     if (DATA.freshness) {
-      document.getElementById('rm-freshness-detail').textContent =
-        'Current freshness: ' + String(DATA.freshness.state || 'unavailable').replaceAll('_', ' ');
+      document.getElementById('rm-freshness-detail').textContent = msg('main.current_freshness', {
+        state: String(DATA.freshness.state || 'unavailable').replaceAll('_', ' '),
+      });
     }
     var submodules = DATA.repository_submodules || [];
     if (submodules.length) {
-      document.getElementById('rm-submodule-detail').textContent = 'Excluded submodules: ' + submodules.length;
+      document.getElementById('rm-submodule-detail').textContent = msg('main.run.excluded_submodules', {
+        count: submodules.length,
+      });
     }
   }
 
@@ -7291,9 +7111,9 @@
     componentSelectionViews = {};
     resumeInvestigationStarted = false;
     var repoName = document.getElementById('rm-repo-name');
-    if (repoName) repoName.textContent = DATA.repo_name || 'Repository';
+    if (repoName) repoName.textContent = DATA.repo_name || msg('main.repository');
 		var workspacePurpose = document.getElementById('rm-workspace-purpose');
-		if (workspacePurpose && TASK_INVESTIGATION) workspacePurpose.textContent = 'Task investigation';
+		if (workspacePurpose && TASK_INVESTIGATION) workspacePurpose.textContent = msg('main.chrome.task.investigation');
     setupServerFeatures();
     renderRunDetails();
 
@@ -7301,14 +7121,14 @@
     if (tabs) {
       tabs.replaceChildren();
 			if (TASK_INVESTIGATION) {
-				addWorkspaceTab('Task', 'investigate');
+				addWorkspaceTab(msg('main.task'), 'investigate');
 			} else {
-				addWorkspaceTab('Overview', 'overview');
-				if (USER_MECHANISMS.length) addWorkspaceTab('Mechanisms', 'mechanisms');
-				if (STUDY_DIRECTIONS.length) addWorkspaceTab('Study', 'study_overview');
-				if (userArchitectureAvailable()) addWorkspaceTab('Architecture', 'architecture');
+				addWorkspaceTab(msg('main.overview'), 'overview');
+				if (USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
+				if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
+				if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 			}
-      if (DEBUG_MODE) addWorkspaceTab('Provenance', 'provenance');
+      if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');
     }
 
 		if (TASK_INVESTIGATION) {
@@ -7407,7 +7227,6 @@
       renderArchitectureWorkspace: renderArchitectureWorkspace,
       mountArchitectureCanvas: mountArchitectureCanvas,
       mountDebugSurfaceCatalog: mountDebugSurfaceCatalog,
-      translateUIString: translateUIString,
       txt: txt,
     });
   }
@@ -7415,7 +7234,7 @@
   window.addEventListener('hashchange', scheduleWorkspaceRouteRestore);
   window.addEventListener('popstate', scheduleWorkspaceRouteRestore);
   window.addEventListener('DOMContentLoaded', function () {
-    installReportLocale();
+    bindFixedMessages(document);
     render();
   });
 })();

@@ -15,9 +15,9 @@ func TestUserMechanismWorkspaceAssetContract(t *testing.T) {
 		"function renderMechanismDetailWorkspace(",
 		"function mechanismNarrativeItems(",
 		"function renderImplementationDetails(",
-		"'Primary implementation'",
-		"'← Previous'",
-		"'Next →'",
+		"'main.primary_implementation'",
+		"'main.chrome.previous'",
+		"'main.chrome.next'",
 		"openSourceLocation(location)",
 		"if (includeMap && step.map_target && userArchitectureAvailable())",
 	} {
@@ -111,7 +111,7 @@ func TestUserReportKeepsProvenanceBehindDebugMode(t *testing.T) {
 		"var DEBUG_MODE =",
 		"function renderProvenanceWorkspace(",
 		"if (DEBUG_MODE)",
-		"'Provenance'",
+		"'main.provenance'",
 	} {
 		if !strings.Contains(scriptJS, token) {
 			t.Errorf("report JS is missing debug provenance gate token %q", token)

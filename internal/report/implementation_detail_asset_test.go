@@ -38,6 +38,9 @@ const document = {
   getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });

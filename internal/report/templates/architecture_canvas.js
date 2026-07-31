@@ -39,13 +39,23 @@
   return value == null ? "" : String(value);
  }
 
- function architectureSourceLabel(value) {
+ function productMessage(message, id, params) {
+  const api = typeof message === "function"
+   ? message
+   : global.RepomapUI && typeof global.RepomapUI.message === "function"
+    ? global.RepomapUI.message
+    : null;
+  if (!api) throw new TypeError("Repomap Architecture UI message API is unavailable");
+  return api(id, params);
+ }
+
+ function architectureSourceLabel(value, message) {
   switch (text(value)) {
-   case "validated_model": return "validated model";
-   case "normalized_model": return "normalized model";
-   case "local_anchors": return "local anchors";
-   case "package_fallback": return "package fallback";
-   default: return "unspecified";
+   case "validated_model": return productMessage(message, "architecture.value.validated_model");
+   case "normalized_model": return productMessage(message, "architecture.value.normalized_model");
+   case "local_anchors": return productMessage(message, "architecture.value.local_anchors");
+   case "package_fallback": return productMessage(message, "architecture.value.package_fallback");
+   default: return productMessage(message, "architecture.value.unspecified");
   }
  }
 
@@ -164,8 +174,8 @@
   return clamp(scaleToBounds(bounds, viewport, padding), FOCUS_MIN_SCALE, FOCUS_MAX_SCALE);
  }
 
- function memberLabel(memberID) {
-  if (!memberID) return "unknown member";
+ function memberLabel(memberID, message) {
+  if (!memberID) return productMessage(message, "architecture.fallback.unknown_member");
   if (typeof memberID === "string") return memberID;
   return [text(memberID.kind), text(memberID.value)].filter(Boolean).join(":");
  }
@@ -185,28 +195,30 @@
   return "is-unassigned";
  }
 
- function branchLabel(kind) {
+ function branchLabel(kind, message) {
   const labels = {
-   main: "Main path",
-   task: "Background task",
-   shared: "Shared lifecycle context",
-   unassigned: "Unassigned evidence",
+   main: "architecture.value.branch_main",
+   task: "architecture.value.branch_task",
+   shared: "architecture.value.branch_shared",
+   unassigned: "architecture.label.unassigned_evidence",
   };
-  return labels[text(kind)] || "Unassigned evidence";
+  return productMessage(message, labels[text(kind)] || "architecture.label.unassigned_evidence");
  }
 
- function proofAreaLabel(kind) {
+ function proofAreaLabel(kind, message) {
   const labels = {
-   trigger: "Trigger",
-   entrypoint: "Entrypoint",
-   dispatch: "Dispatch",
-   application_callable: "Application callable",
-   core_operation: "Core operation",
-   io_boundary: "I/O boundary",
-   concurrency: "Concurrency",
-   termination: "Termination",
+   trigger: "architecture.value.proof_trigger",
+   entrypoint: "architecture.value.proof_entrypoint",
+   dispatch: "architecture.value.proof_dispatch",
+   application_callable: "architecture.value.proof_application_callable",
+   core_operation: "architecture.value.proof_core_operation",
+   io_boundary: "architecture.value.proof_io_boundary",
+   concurrency: "architecture.value.proof_concurrency",
+   termination: "architecture.value.proof_termination",
   };
-  return labels[text(kind)] || text(kind).replace(/_/g, " ") || "Unknown proof area";
+  const id = labels[text(kind)];
+  if (id) return productMessage(message, id);
+  return text(kind).replace(/_/g, " ") || productMessage(message, "architecture.fallback.unknown_proof_area");
  }
 
  function semanticClass(relation, invocation) {
@@ -218,29 +230,40 @@
   return "is-call";
  }
 
- function savedTraceLabel(archetype) {
+ function savedTraceLabel(archetype, message) {
   switch (text(archetype)) {
-   case "cli": return "Saved CLI trace";
-   case "process": return "Saved process trace";
-   default: return "Saved trace";
+   case "cli": return productMessage(message, "architecture.value.saved_cli_trace");
+   case "process": return productMessage(message, "architecture.value.saved_process_trace");
+   default: return productMessage(message, "architecture.label.saved_trace");
   }
  }
 
- function lifecycleRelationHeading(edge) {
+ function lifecycleRelationKind(edge) {
   const relation = text(edge && edge.relation).toLowerCase();
   const invocation = text(edge && edge.invocation).toLowerCase();
-  if (relation.indexOf("cancel") >= 0) return "Cancellation";
-  if (relation.indexOf("join") >= 0 || relation === "waits_for") return "Join";
-  if (relation.indexOf("callback") >= 0 || invocation === "callback") return "Callback";
-  if (relation.indexOf("start") >= 0 || invocation === "goroutine") return "Started by";
+  if (relation.indexOf("cancel") >= 0) return "cancellation";
+  if (relation.indexOf("join") >= 0 || relation === "waits_for") return "join";
+  if (relation.indexOf("callback") >= 0 || invocation === "callback") return "callback";
+  if (relation.indexOf("start") >= 0 || invocation === "goroutine") return "started_by";
   return "";
  }
 
+ function lifecycleRelationHeading(edge, message) {
+  const kind = lifecycleRelationKind(edge);
+  switch (kind) {
+   case "started_by": return productMessage(message, "architecture.value.lifecycle_started_by");
+   case "callback": return productMessage(message, "architecture.value.lifecycle_callback");
+   case "cancellation": return productMessage(message, "architecture.value.lifecycle_cancellation");
+   case "join": return productMessage(message, "architecture.value.lifecycle_join");
+   default: return "";
+  }
+ }
+
  function groupLifecycleRelations(flow, edges) {
-  const lifecycle = array(edges).filter((edge) => lifecycleRelationHeading(edge));
+  const lifecycle = array(edges).filter((edge) => lifecycleRelationKind(edge));
   const groups = [];
   const assigned = new Set();
-  const labelOrder = ["Started by", "Callback", "Cancellation", "Join"];
+  const labelOrder = ["started_by", "callback", "cancellation", "join"];
   array(flow && flow.branches)
    .filter((branch) => text(branch.kind) === "task" && text(branch.root_anchor_id))
    .forEach((branch) => {
@@ -251,7 +274,7 @@
     while (expanded) {
      expanded = false;
      lifecycle.forEach((edge) => {
-      if (lifecycleRelationHeading(edge) !== "Cancellation") return;
+      if (lifecycleRelationKind(edge) !== "cancellation") return;
       const from = text(edge.from);
       const to = text(edge.to);
       if (!cancellationAnchors.has(from) && !cancellationAnchors.has(to)) return;
@@ -269,12 +292,12 @@
      const from = text(edge.from);
      const to = text(edge.to);
      if (branchAnchors.has(from) || branchAnchors.has(to)) return true;
-     return lifecycleRelationHeading(edge) === "Cancellation" &&
+     return lifecycleRelationKind(edge) === "cancellation" &&
       (cancellationAnchors.has(from) || cancellationAnchors.has(to));
     });
     relations.sort((a, b) => {
-     const labelDifference = labelOrder.indexOf(lifecycleRelationHeading(a)) -
-      labelOrder.indexOf(lifecycleRelationHeading(b));
+     const labelDifference = labelOrder.indexOf(lifecycleRelationKind(a)) -
+      labelOrder.indexOf(lifecycleRelationKind(b));
      return labelDifference || text(a.id).localeCompare(text(b.id));
     });
     if (relations.length === 0) return;
@@ -294,21 +317,22 @@
   };
  }
 
- function relationLabel(relation) {
+ function relationLabel(relation, message) {
   const value = text(relation);
   const labels = {
-   calls: "calls",
-   callback: "invokes callback",
-   constructs: "constructs",
-   registers: "registers",
-   registers_command: "registers",
-   starts_goroutine: "starts task",
-   uses_cancellation: "uses cancellation context",
-   cancels: "invokes cancellation",
-   joins: "waits for task",
-   waits_for: "waits for",
+   calls: "architecture.relation.calls",
+   callback: "architecture.relation.invokes_callback",
+   constructs: "architecture.relation.constructs",
+   registers: "architecture.relation.registers",
+   registers_command: "architecture.relation.registers",
+   starts_goroutine: "architecture.relation.starts_task",
+   uses_cancellation: "architecture.relation.uses_cancellation_context",
+   cancels: "architecture.relation.invokes_cancellation",
+   joins: "architecture.relation.waits_for_task",
+   waits_for: "architecture.relation.waits_for",
   };
-  return labels[value] || value.replace(/_/g, " ") || "continues";
+  if (labels[value]) return productMessage(message, labels[value]);
+  return value.replace(/_/g, " ") || productMessage(message, "architecture.relation.continues");
  }
 
  function layoutComponentID(id) {
@@ -365,7 +389,15 @@
    this.host = host;
    this.data = data && typeof data === "object" ? data : {};
    this.options = options && typeof options === "object" ? options : {};
-   this.translateUI = typeof this.options.translateUI === "function" ? this.options.translateUI : text;
+   const message = typeof this.options.message === "function"
+    ? this.options.message
+    : global.RepomapUI && typeof global.RepomapUI.message === "function"
+     ? global.RepomapUI.message
+     : null;
+   if (!message) {
+    throw new TypeError("RepomapArchitectureCanvas.mount requires the typed RepomapUI message API");
+   }
+   this.message = (id, params) => message(id, params);
    this.userMode = this.options.userMode === true;
    this.componentContexts = this.options.componentContexts && typeof this.options.componentContexts === "object"
     ? this.options.componentContexts
@@ -506,24 +538,26 @@
 
    const toolbar = element("div", "rm-arch__toolbar");
     const flowNav = element("nav", "rm-arch__flows");
-     this.landscapeButton = element("button", "rm-arch__flow-button is-active", "Architecture");
+     this.landscapeButton = element("button", "rm-arch__flow-button is-active", this.msg("architecture.nav.architecture"));
     this.landscapeButton.type = "button";
     this.listen(this.landscapeButton, "click", () => {
      this.backToArchitecture();
     });
     flowNav.appendChild(this.landscapeButton);
     if (this.startHereArtifactID) {
-     this.startHereButton = element("button", "rm-arch__flow-button rm-arch__tour-start", "Start here");
+     this.startHereButton = element("button", "rm-arch__flow-button rm-arch__tour-start", this.msg("architecture.nav.start_here"));
      this.startHereButton.type = "button";
      this.startHereButton.setAttribute("aria-pressed", "false");
-     this.startHereButton.title = "Open the primary evidence-backed mechanism";
+     this.startHereButton.title = this.msg("architecture.title.open_primary_mechanism");
      this.listen(this.startHereButton, "click", () => {
       this.openSemanticArtifact(this.startHereArtifactID, 0);
      });
      flowNav.appendChild(this.startHereButton);
     }
     if (this.guidedTourStory) {
-     const guidedTourLabel = this.startHereArtifactID ? "Guided tour" : "Start here";
+     const guidedTourLabel = this.startHereArtifactID
+      ? this.msg("architecture.nav.guided_tour")
+      : this.msg("architecture.nav.start_here");
      this.guidedTourButton = element(
       "button",
       "rm-arch__flow-button" + (this.startHereArtifactID ? "" : " rm-arch__tour-start"),
@@ -531,19 +565,19 @@
      );
      this.guidedTourButton.type = "button";
      this.guidedTourButton.setAttribute("aria-pressed", "false");
-     this.guidedTourButton.title = "Open the guided architecture tour";
+     this.guidedTourButton.title = this.msg("architecture.title.open_guided_tour");
      this.listen(this.guidedTourButton, "click", () => this.startGuidedTour());
      flowNav.appendChild(this.guidedTourButton);
     }
     if (this.flows.length > 0) {
      if (this.userMode) {
       this.pathList = element("div", "rm-arch__path-list");
-      this.pathList.appendChild(element("span", "rm-arch__path-list-label", "Code paths"));
+      this.pathList.appendChild(element("span", "rm-arch__path-list-label", this.msg("architecture.nav.code_paths")));
       this.flows.forEach((flow) => {
        const button = element(
         "button",
         "rm-arch__flow-button rm-arch__path-button",
-        flow.name || "Code path"
+        flow.name || this.msg("architecture.fallback.code_path")
        );
        button.type = "button";
        if (flow.why_inspect) button.title = flow.why_inspect;
@@ -557,7 +591,9 @@
      this.traceMenuSummary = element(
       "button",
       "rm-arch__flow-button",
-      (this.userMode ? "Code paths (" : "Saved traces (") + this.flows.length + ")"
+      this.userMode
+       ? this.msg("architecture.count.code_paths", { count: this.flows.length })
+       : this.msg("architecture.count.saved_traces", { count: this.flows.length })
      );
      this.traceMenuSummary.type = "button";
      this.traceMenuSummary.setAttribute("aria-haspopup", "menu");
@@ -574,11 +610,16 @@
        const button = element("button", "rm-arch__trace-option");
       button.type = "button";
        button.setAttribute("role", "menuitem");
-       button.appendChild(element("strong", null, flow.name || "Code path"));
+       button.appendChild(element("strong", null, flow.name || this.msg("architecture.fallback.code_path")));
        if (flow.why_inspect) button.appendChild(element("small", "rm-arch__trace-purpose", flow.why_inspect));
         const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
         const originName = startSurface ? startSurface.name || startSurface.kind : flow.trigger || flow.command;
-        const origin = [this.userMode ? "Code path" : savedTraceLabel(flow.archetype), originName].filter(Boolean).join(" · ");
+        const origin = [
+         this.userMode
+          ? this.msg("architecture.fallback.code_path")
+          : savedTraceLabel(flow.archetype, this.message),
+         originName,
+        ].filter(Boolean).join(" · ");
        button.appendChild(element(
         "span",
         null,
@@ -586,9 +627,17 @@
          .filter(Boolean)
          .join(" · ")
        ));
-       button.appendChild(element("span", null, array(flow.participating_component_ids).length + " components"));
+       button.appendChild(element(
+        "span",
+        null,
+        this.msg("architecture.count.components", { count: array(flow.participating_component_ids).length })
+       ));
       if (!this.userMode && flow.status !== "complete" && flow.frontier_summary) {
-       button.appendChild(element("small", null, "Frontier: " + flow.frontier_summary));
+       button.appendChild(element(
+        "small",
+        null,
+        this.msg("architecture.label.frontier_value", { value: flow.frontier_summary })
+       ));
       }
       this.listen(button, "click", () => {
        this.toggleTraceMenu(false);
@@ -607,8 +656,8 @@
     if (diagnosticComponents.length > 0) {
      diagnosticComponents.forEach((component) => this.diagnosticComponentIDs.add(text(component.id)));
      this.diagnosticButton = this.controlButton(
-      "Unassigned evidence · " + diagnosticComponents.length,
-      "Inspect exact evidence outside conceptual architecture",
+      this.msg("architecture.count.unassigned_evidence", { count: diagnosticComponents.length }),
+      this.msg("architecture.title.inspect_unassigned_evidence"),
       () => this.setSelection({
        flow: "", component: text(diagnosticComponents[0].id), step: "", edge: "",
       }, true)
@@ -616,9 +665,13 @@
      this.diagnosticButton.classList.add("rm-arch__diagnostic-control");
      controls.appendChild(this.diagnosticButton);
     }
-    this.zoomOutButton = this.controlButton("−", "Zoom out", () => this.zoomBy(0.82));
-      this.fitButton = this.controlButton("Fit", "Fit architecture at readable scale", () => this.fit());
-   this.zoomInButton = this.controlButton("+", "Zoom in", () => this.zoomBy(1.22));
+    this.zoomOutButton = this.controlButton("−", this.msg("architecture.action.zoom_out"), () => this.zoomBy(0.82));
+      this.fitButton = this.controlButton(
+       this.msg("architecture.action.fit"),
+       this.msg("architecture.title.fit_readable"),
+       () => this.fit()
+      );
+   this.zoomInButton = this.controlButton("+", this.msg("architecture.action.zoom_in"), () => this.zoomBy(1.22));
    controls.append(this.zoomOutButton, this.fitButton, this.zoomInButton);
     toolbar.appendChild(controls);
     this.root.appendChild(toolbar);
@@ -626,20 +679,20 @@
 
    const workspace = element("div", "rm-arch__workspace");
     this.viewport = element("div", "rm-arch__viewport");
-    this.loading = element("div", "rm-arch__loading", "Laying out the saved architecture…");
+    this.loading = element("div", "rm-arch__loading", this.msg("architecture.state.laying_out"));
      this.flowFocus = element("div", "rm-arch__flow-focus");
      this.flowFocus.hidden = true;
-     this.viewportHint = element("div", "rm-arch__viewport-hint", "Drag to explore the architecture");
+     this.viewportHint = element("div", "rm-arch__viewport-hint", this.msg("architecture.hint.drag_to_explore"));
      this.viewport.append(this.loading, this.flowFocus, this.viewportHint);
    workspace.appendChild(this.viewport);
 
     this.drawerBackdrop = element("button", "rm-arch__drawer-backdrop");
     this.drawerBackdrop.type = "button";
-     this.drawerBackdrop.setAttribute("aria-label", "Close inspector");
+     this.drawerBackdrop.setAttribute("aria-label", this.msg("architecture.aria.close_inspector"));
     this.drawerBackdrop.hidden = true;
     this.listen(this.drawerBackdrop, "click", () => this.closeInspector());
      this.inspector = element("aside", "rm-arch__inspector");
-    this.inspector.setAttribute("aria-label", "Architecture inspector");
+    this.inspector.setAttribute("aria-label", this.msg("architecture.aria.inspector"));
     workspace.appendChild(this.inspector);
     this.root.append(workspace, this.drawerBackdrop);
 
@@ -711,6 +764,10 @@
    return button;
   }
 
+  msg(id, params) {
+   return this.message(id, params);
+  }
+
    isDiagnosticSubsystem(subsystem) {
     const id = text(subsystem && subsystem.id);
     return diagnosticSubsystemIDs(this.subsystems, this.diagnostics).indexOf(id) >= 0;
@@ -756,7 +813,7 @@
    layoutOnce() {
     const ELKConstructor = global.ELK;
    if (typeof ELKConstructor !== "function") {
-    return Promise.reject(new Error("Architecture renderer is unavailable."));
+    return Promise.reject(new Error(this.msg("architecture.error.renderer_unavailable")));
    }
     this.landscapeProjection = this.projectLandscapeGraph();
     this.landscapeLayoutMode = this.chooseLandscapeLayoutMode(this.landscapeProjection);
@@ -901,13 +958,13 @@
    }
 
    semanticCategoryLabel(category) {
-    const labels = {
-     primary: "Primary",
-     external: "Boundary",
-     support: "Supporting",
-     diagnostic: "Unresolved",
-    };
-    return labels[category] || "";
+    switch (category) {
+     case "primary": return this.msg("architecture.value.category_primary");
+     case "external": return this.msg("architecture.value.category_boundary");
+     case "support": return this.msg("architecture.value.category_supporting");
+     case "diagnostic": return this.msg("architecture.label.unresolved");
+     default: return "";
+    }
    }
 
    compareLandscapeGroups(projection, left, right) {
@@ -1237,8 +1294,9 @@
    this.surface.append(this.groupLayer, this.nodeLayer, this.stepLayer);
     this.viewport.appendChild(this.surface);
     if (this.landscapeProjection) {
-     this.viewportHint.textContent = "Drag to explore · " + this.landscapeProjection.groups.length +
-      " architecture groups · Fit keeps labels readable";
+     this.viewportHint.textContent = this.msg("architecture.hint.drag_groups_fit", {
+      count: this.landscapeProjection.groups.length,
+     });
     }
 
    this.renderGroups();
@@ -1274,13 +1332,24 @@
     group.style.top = position.y + "px";
     group.style.width = position.width + "px";
     group.style.height = position.height + "px";
-     group.title = text(subsystem.description || subsystem.name || (this.userMode ? "Repository area" : subsystem.id));
+     group.title = text(
+      subsystem.description || subsystem.name ||
+      (this.userMode ? this.msg("architecture.fallback.repository_area") : subsystem.id)
+     );
      const header = element("div", "rm-arch__group-header");
      header.appendChild(element("span", "rm-arch__category-marker"));
-     header.appendChild(element("h3", "rm-arch__group-title", subsystem.name || (this.userMode ? "Repository area" : subsystem.id)));
+     header.appendChild(element(
+      "h3",
+      "rm-arch__group-title",
+      subsystem.name || (this.userMode ? this.msg("architecture.fallback.repository_area") : subsystem.id)
+     ));
      const categoryLabel = this.semanticCategoryLabel(category);
      if (categoryLabel) header.appendChild(element("span", "rm-arch__group-category", categoryLabel));
-     header.appendChild(element("span", "rm-arch__group-count", array(subsystem.component_ids).length + " components"));
+     header.appendChild(element(
+      "span",
+      "rm-arch__group-count",
+      this.msg("architecture.count.components", { count: array(subsystem.component_ids).length })
+     ));
      group.appendChild(header);
      this.groupLayer.appendChild(group);
    });
@@ -1294,8 +1363,12 @@
     group.style.height = ungrouped.height + "px";
      const header = element("div", "rm-arch__group-header");
      header.appendChild(element("span", "rm-arch__category-marker"));
-     header.appendChild(element("h3", "rm-arch__group-title", "Unassigned subsystem"));
-     header.appendChild(element("span", "rm-arch__group-category", "Unresolved"));
+     header.appendChild(element(
+      "h3",
+      "rm-arch__group-title",
+      this.msg("architecture.label.unassigned_subsystem")
+     ));
+     header.appendChild(element("span", "rm-arch__group-category", this.msg("architecture.label.unresolved")));
      group.appendChild(header);
     this.groupLayer.appendChild(group);
    }
@@ -1322,20 +1395,37 @@
 
       const button = element("button", "rm-arch__component-card");
       button.type = "button";
-      button.title = text(component.name || (this.userMode ? "Code component" : id));
+      button.title = text(component.name || (this.userMode ? this.msg("architecture.fallback.code_component") : id));
       if (singleton && subsystem) {
-       button.appendChild(element("span", "rm-arch__component-group", subsystem.name || (this.userMode ? "Repository area" : subsystem.id)));
+       button.appendChild(element(
+        "span",
+        "rm-arch__component-group",
+        subsystem.name || (this.userMode ? this.msg("architecture.fallback.repository_area") : subsystem.id)
+       ));
       }
-     button.appendChild(element("strong", "rm-arch__component-name", component.name || (this.userMode ? "Code component" : id)));
+     button.appendChild(element(
+      "strong",
+      "rm-arch__component-name",
+      component.name || (this.userMode ? this.msg("architecture.fallback.code_component") : id)
+     ));
      if (component.description) {
       button.appendChild(element("span", "rm-arch__component-description", component.description));
      }
       const associatedSurfaces = this.componentSurfaces(component);
       if (associatedSurfaces.length > 0) {
        const surfaceSummary = element("span", "rm-arch__component-surfaces");
-       surfaceSummary.appendChild(element("span", "rm-arch__component-surfaces-label", "Surfaces"));
+       surfaceSummary.appendChild(element(
+        "span",
+        "rm-arch__component-surfaces-label",
+        this.msg("architecture.label.surfaces")
+       ));
        associatedSurfaces.slice(0, 2).forEach((surface) => {
-        surfaceSummary.appendChild(element("span", "rm-arch__surface-chip", surface.name || surface.kind || (this.userMode ? "Runtime surface" : surface.id)));
+        surfaceSummary.appendChild(element(
+         "span",
+         "rm-arch__surface-chip",
+         surface.name || surface.kind ||
+          (this.userMode ? this.msg("architecture.fallback.runtime_surface") : surface.id)
+        ));
        });
        if (associatedSurfaces.length > 2) {
         surfaceSummary.appendChild(element("span", "rm-arch__surface-chip is-more", "+" + (associatedSurfaces.length - 2)));
@@ -1345,21 +1435,35 @@
        const metadata = [];
        if (associatedSurfaces.length > 0) {
         const allCommands = associatedSurfaces.every((surface) => surface.kind === "cli_command");
-        metadata.push(associatedSurfaces.length + " " + (allCommands ? "command" : "surface") + (associatedSurfaces.length === 1 ? "" : "s"));
+        metadata.push(allCommands
+         ? this.msg("architecture.count.commands", { count: associatedSurfaces.length })
+         : this.msg("architecture.count.surfaces", { count: associatedSurfaces.length }));
        }
        const participatingFlows = array(component.participating_flow_ids).map((flowID) => this.flowByID.get(text(flowID))).filter(Boolean);
        if (participatingFlows.length === 1) {
-        metadata.push(this.userMode ? "1 code path" : "1 " + (participatingFlows[0].status || "saved") + " trace");
+        metadata.push(
+         this.userMode
+          ? this.msg("architecture.count.code_paths", { count: 1 })
+          : this.msg("architecture.count.trace_with_status", {
+           count: 1,
+           status: participatingFlows[0].status || this.msg("architecture.value.saved"),
+          })
+        );
        } else if (participatingFlows.length > 1) {
-        metadata.push(participatingFlows.length + (this.userMode ? " code paths" : " saved traces"));
+        metadata.push(this.msg(
+         this.userMode ? "architecture.count.code_paths" : "architecture.count.saved_traces",
+         { count: participatingFlows.length }
+        ));
        }
        const suggestionCount = this.userMode ? 0 : array(component.suggested_investigation_ids).length;
-       if (suggestionCount > 0) metadata.push(suggestionCount + " suggested investigation" + (suggestionCount === 1 ? "" : "s"));
+       if (suggestionCount > 0) {
+        metadata.push(this.msg("architecture.count.suggested_investigations", { count: suggestionCount }));
+       }
        const anchorCount = array(component.anchor_ids).length;
-       if (anchorCount > 0) metadata.push(anchorCount + " exact anchor" + (anchorCount === 1 ? "" : "s"));
+       if (anchorCount > 0) metadata.push(this.msg("architecture.count.exact_anchors", { count: anchorCount }));
        if (metadata.length === 0) {
         const memberCount = array(component.members).length;
-        if (memberCount > 0) metadata.push(memberCount + " exact member" + (memberCount === 1 ? "" : "s"));
+        if (memberCount > 0) metadata.push(this.msg("architecture.count.exact_members", { count: memberCount }));
        }
        if (metadata.length > 0) button.appendChild(element("span", "rm-arch__component-meta", metadata.join(" · ")));
     this.listen(button, "click", () => {
@@ -1380,9 +1484,13 @@
    this.unassignedRail.style.top = position.y + "px";
    this.unassignedRail.style.width = position.width + "px";
    this.unassignedRail.style.height = position.height + "px";
-   this.unassignedRail.appendChild(element("h3", "rm-arch__unassigned-title", "Unassigned evidence"));
+   this.unassignedRail.appendChild(element(
+    "h3",
+    "rm-arch__unassigned-title",
+    this.msg("architecture.label.unassigned_evidence")
+   ));
    this.unassignedRail.appendChild(
-    element("p", "rm-arch__unassigned-note", "Exact saved facts without a unique component binding")
+    element("p", "rm-arch__unassigned-note", this.msg("architecture.copy.unassigned_evidence"))
    );
    this.nodeLayer.appendChild(this.unassignedRail);
   }
@@ -1398,7 +1506,12 @@
     const group = this.interactiveSVGPath(
      route,
      "rm-arch__edge rm-arch__edge--structural",
-     "Structural relation " + text((edge.witness || {}).kind || (this.userMode ? "between code areas" : edge.id)),
+     this.msg("architecture.aria.structural_relation", {
+      relation: text(
+       (edge.witness || {}).kind ||
+       (this.userMode ? this.msg("architecture.value.between_code_areas") : edge.id)
+      ),
+     }),
      () => this.setSelection({ edge: text(edge.id), step: "" }, true)
     );
      setSVGVisible(group, true);
@@ -1514,7 +1627,7 @@
     flowID,
     geometry,
     "rm-arch__step " + branchClass(kind) + " " + this.stepSemantics(flowID, step.id).join(" "),
-    step.label || step.qualified_name || (this.userMode ? "Code step" : step.id)
+    step.label || step.qualified_name || (this.userMode ? this.msg("architecture.fallback.code_step") : step.id)
    );
    this.listen(button, "click", (event) => {
     event.stopPropagation();
@@ -1526,7 +1639,12 @@
   renderFrontierChip(flowID, frontier, index) {
    const geometry = this.flowStepGeometry(UNASSIGNED_ID, index);
    if (!geometry) return;
-   const button = this.canvasChip(flowID, geometry, "rm-arch__step is-unassigned is-frontier", frontier.kind || "frontier");
+   const button = this.canvasChip(
+    flowID,
+    geometry,
+    "rm-arch__step is-unassigned is-frontier",
+    frontier.kind || this.msg("architecture.fallback.frontier")
+   );
    this.listen(button, "click", (event) => {
     event.stopPropagation();
     this.setSelection({ flow: flowID, component: "", step: "", edge: "" }, true);
@@ -1537,7 +1655,12 @@
   renderOverflowChip(flowID, owner, hiddenCount) {
    const geometry = this.overflowGeometry(owner);
    if (!geometry) return;
-   const button = this.canvasChip(flowID, geometry, "rm-arch__step is-overflow", "+" + hiddenCount + " more");
+   const button = this.canvasChip(
+    flowID,
+    geometry,
+    "rm-arch__step is-overflow",
+    this.msg("architecture.count.more", { count: hiddenCount })
+   );
    this.listen(button, "click", (event) => {
     event.stopPropagation();
     this.setSelection({ flow: flowID, component: "", step: "", edge: "" }, true);
@@ -1684,16 +1807,21 @@
     ].filter(Boolean).join(" ");
     const fromStep = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.from));
     const toStep = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.to));
-    const userTransitionLabel = [
-     fromStep && (fromStep.label || fromStep.qualified_name),
-     toStep && (toStep.label || toStep.qualified_name),
-    ].filter(Boolean).join(" to ");
+    const userTransitionFrom = fromStep && (fromStep.label || fromStep.qualified_name) || "";
+    const userTransitionTo = toStep && (toStep.label || toStep.qualified_name) || "";
     const group = this.interactiveSVGPath(
      route,
      className,
      this.userMode
-      ? "Code transition" + (userTransitionLabel ? " from " + userTransitionLabel : "")
-      : "Flow transition " + text(edge.relation || edge.id) + " from " + text(edge.from) + " to " + text(edge.to),
+      ? this.msg("architecture.aria.code_transition", {
+       from: userTransitionFrom,
+       to: userTransitionTo,
+      })
+      : this.msg("architecture.aria.flow_transition", {
+       relation: text(edge.relation || edge.id),
+       from: text(edge.from),
+       to: text(edge.to),
+      }),
      () => this.setSelection({ flow: text(edge.flow_id), edge: text(edge.id), step: "" }, true)
     );
     setSVGVisible(group, false);
@@ -1762,13 +1890,19 @@
    button.dataset.stepId = text(step.id);
    if (sequence) button.appendChild(element("span", "rm-arch__focus-step-number", sequence));
    const copy = element("span", "rm-arch__focus-step-copy");
-   copy.appendChild(element("strong", null, step.label || step.qualified_name || (this.userMode ? "Code step" : step.id)));
+   copy.appendChild(element(
+    "strong",
+    null,
+    step.label || step.qualified_name || (this.userMode ? this.msg("architecture.fallback.code_step") : step.id)
+   ));
    const component = this.componentByID.get(text(step.component_id));
    copy.appendChild(element(
     "span",
     "rm-arch__focus-step-meta",
     [component && (component.name || (this.userMode ? "" : component.id)), locationLabel(step.location)].filter(Boolean).join(" · ") ||
-     (this.userMode ? "Implementation step" : "Exact saved anchor")
+     (this.userMode
+      ? this.msg("architecture.fallback.implementation_step")
+      : this.msg("architecture.fallback.exact_saved_anchor"))
    ));
    button.appendChild(copy);
    this.listen(button, "click", () => this.setSelection({
@@ -1778,15 +1912,19 @@
   }
 
   focusedTransitionButton(flow, edge, className) {
-   if (!edge) return element("span", "rm-arch__focus-transition is-static", "then");
+   if (!edge) {
+    return element("span", "rm-arch__focus-transition is-static", this.msg("architecture.label.then"));
+   }
    const button = element(
     "button",
     "rm-arch__focus-transition " + (className || "") + " " + semanticClass(edge.relation, edge.invocation),
-    relationLabel(edge.relation)
+    relationLabel(edge.relation, this.message)
    );
    button.type = "button";
    button.dataset.edgeId = text(edge.id);
-   button.setAttribute("aria-label", "Inspect " + text(edge.relation || "flow") + " transition");
+   button.setAttribute("aria-label", this.msg("architecture.aria.inspect_transition", {
+    relation: text(edge.relation) || this.msg("architecture.label.flow"),
+   }));
    this.listen(button, "click", () => this.setSelection({
     flow: text(flow.id), edge: text(edge.id), step: "", component: "",
    }, true));
@@ -1844,14 +1982,18 @@
 
   appendFocusedLifecycleRelation(parent, flow, edge, rootAnchorID) {
    const row = element("div", "rm-arch__lifecycle-row " + semanticClass(edge.relation, edge.invocation));
-   row.appendChild(element("strong", "rm-arch__lifecycle-label", lifecycleRelationHeading(edge)));
+   row.appendChild(element(
+    "strong",
+    "rm-arch__lifecycle-label",
+    lifecycleRelationHeading(edge, this.message)
+   ));
    const content = element("div", "rm-arch__lifecycle-content");
    const endpoints = element("div", "rm-arch__lifecycle-endpoints");
    const source = this.flowStepsByKey.get(flowStepKey(flow.id, edge.from));
    const target = this.flowStepsByKey.get(flowStepKey(flow.id, edge.to));
    const endpoint = (step) => {
     if (text(step.id) === text(rootAnchorID)) {
-     return element("span", "rm-arch__lifecycle-root-reference", "This task");
+     return element("span", "rm-arch__lifecycle-root-reference", this.msg("architecture.label.this_task"));
     }
     return this.focusedStepButton(
      flow,
@@ -1866,7 +2008,7 @@
    content.appendChild(endpoints);
    const metadata = element("div", "rm-arch__lifecycle-meta");
    metadata.appendChild(element("code", null, text(edge.relation)));
-   this.appendLocation(metadata, edge.evidence, "Exact source");
+   this.appendLocation(metadata, edge.evidence, this.msg("architecture.label.exact_source"));
    content.appendChild(metadata);
    row.appendChild(content);
    parent.appendChild(row);
@@ -1876,24 +2018,31 @@
    const card = element("article", "rm-arch__lifecycle-card");
    const header = element("header", "rm-arch__lifecycle-card-header");
    const root = group.rootAnchorID && this.flowStepsByKey.get(flowStepKey(flow.id, group.rootAnchorID));
-   header.appendChild(element("span", "rm-arch__lifecycle-kicker", root ? "Task branch" : "Ungrouped lifecycle evidence"));
+   header.appendChild(element(
+    "span",
+    "rm-arch__lifecycle-kicker",
+    root ? this.msg("architecture.label.task_branch") : this.msg("architecture.label.ungrouped_lifecycle")
+   ));
    if (root) {
     header.appendChild(this.focusedStepButton(flow, root, "is-compact is-task", ""));
    } else {
-    header.appendChild(element("strong", null, "No exact task root is available"));
+    header.appendChild(element("strong", null, this.msg("architecture.copy.no_exact_task_root")));
    }
    card.appendChild(header);
    const relations = element("div", "rm-arch__lifecycle-relations");
    group.relations.forEach((edge) => this.appendFocusedLifecycleRelation(relations, flow, edge, group.rootAnchorID));
    const limitation = element("div", "rm-arch__lifecycle-limitation");
-   limitation.appendChild(element("strong", null, "Limitation"));
+   limitation.appendChild(element("strong", null, this.msg("architecture.label.limitation")));
    const limitations = [];
    if (concurrency && concurrency.missing) limitations.push(text(concurrency.missing));
    if (!root && ungroupedTotal > group.relations.length) {
-    limitations.push("Showing " + group.relations.length + " of " + ungroupedTotal + " ungrouped lifecycle relations.");
+    limitations.push(this.msg("architecture.count.showing_lifecycle_relations", {
+     shown: group.relations.length,
+     total: ungroupedTotal,
+    }));
    }
-   if (!root) limitations.push("No exact task root was available, so these relations remain ungrouped.");
-   limitations.push("Static relation evidence only; execution and runtime ordering were not observed.");
+   if (!root) limitations.push(this.msg("architecture.copy.lifecycle_remains_ungrouped"));
+   limitations.push(this.msg("architecture.copy.static_relation_limit"));
    limitation.appendChild(element("span", null, limitations.join(" ")));
    relations.appendChild(limitation);
    card.appendChild(relations);
@@ -1925,8 +2074,11 @@
   focusedEvidenceDisclosure(flow) {
    const details = element("details", "rm-arch__focus-evidence");
    const summary = element("summary", "rm-arch__focus-evidence-summary");
-   summary.appendChild(element("strong", null, "Inspect full evidence"));
-   summary.appendChild(element("span", null, array(flow.steps).length + " anchors · " + array(flow.slots).length + " proof areas"));
+   summary.appendChild(element("strong", null, this.msg("architecture.action.inspect_full_evidence")));
+   summary.appendChild(element("span", null, this.msg("architecture.count.anchors_proof_areas", {
+    anchors: array(flow.steps).length,
+    areas: array(flow.slots).length,
+   })));
    details.appendChild(summary);
    const body = element("div", "rm-arch__focus-evidence-body");
    this.appendFlowEvidence(body, flow);
@@ -1941,55 +2093,71 @@
     parent.appendChild(node);
     return node;
    };
-   if (flow.trigger) this.appendKeyValue(parent, "Starts when", flow.trigger);
-   if (flow.scope) this.appendKeyValue(parent, "Scope", flow.scope);
-   if (flow.command) this.appendKeyValue(parent, "Command", flow.command);
-   if (flow.trace_quality) this.appendKeyValue(parent, "Trace quality", flow.trace_quality);
-   if (flow.current_frontier) this.appendKeyValue(parent, "Current frontier", flow.current_frontier);
+   if (flow.trigger) this.appendKeyValue(parent, this.msg("architecture.label.starts_when"), flow.trigger);
+   if (flow.scope) this.appendKeyValue(parent, this.msg("architecture.label.scope"), flow.scope);
+   if (flow.command) this.appendKeyValue(parent, this.msg("architecture.label.command"), flow.command);
+   if (flow.trace_quality) this.appendKeyValue(parent, this.msg("architecture.label.trace_quality"), flow.trace_quality);
+   if (flow.current_frontier) {
+    this.appendKeyValue(parent, this.msg("architecture.label.current_frontier"), flow.current_frontier);
+   }
 
-   const branches = section("Branches");
+   const branches = section(this.msg("architecture.section.branches"));
    array(flow.branches).forEach((branch) => {
     const row = element("div", "rm-arch__branch-row " + branchClass(branch.kind));
-    row.appendChild(element("strong", null, branchLabel(branch.kind)));
-    row.appendChild(element("span", null, array(branch.anchor_ids).length + " exact anchors"));
+    row.appendChild(element("strong", null, branchLabel(branch.kind, this.message)));
+    row.appendChild(element(
+     "span",
+     null,
+     this.msg("architecture.count.exact_anchors", { count: array(branch.anchor_ids).length })
+    ));
     if (branch.root_anchor_id) {
      const root = this.flowStepsByKey.get(flowStepKey(flow.id, branch.root_anchor_id));
-     row.appendChild(element("code", null, root && (root.label || root.qualified_name) || "task root"));
+     row.appendChild(element(
+      "code",
+      null,
+      root && (root.label || root.qualified_name) || this.msg("architecture.fallback.task_root")
+     ));
     }
     branches.appendChild(row);
    });
 
-   const steps = section("Exact steps");
+   const steps = section(this.msg("architecture.section.exact_steps"));
    array(flow.steps).forEach((step) => steps.appendChild(this.stepJumpButton(flow, step)));
 
-   const slots = section("Proof slots");
+   const slots = section(this.msg("architecture.section.proof_slots"));
    array(flow.slots).forEach((slot) => {
     const card = element("article", "rm-arch__slot is-" + (text(slot.status) || "unknown"));
     const header = element("div", "rm-arch__slot-header");
-    header.appendChild(element("strong", null, proofAreaLabel(slot.kind)));
+    header.appendChild(element("strong", null, proofAreaLabel(slot.kind, this.message)));
     header.appendChild(element("span", "rm-arch__badge", text(slot.status).replace(/_/g, " ")));
     card.appendChild(header);
     if (slot.summary) card.appendChild(element("p", "rm-arch__copy", slot.summary));
     if (slot.missing) card.appendChild(element("p", "rm-arch__notice is-warning", slot.missing));
-    if (slot.applicability_reason) this.appendKeyValue(card, "Applicability", slot.applicability_reason);
+    if (slot.applicability_reason) {
+     this.appendKeyValue(card, this.msg("architecture.label.applicability"), slot.applicability_reason);
+    }
     this.appendProvenance(card, slot.provenance);
     slots.appendChild(card);
    });
 
-   const frontiers = section("Unresolved frontiers");
+   const frontiers = section(this.msg("architecture.section.unresolved_frontiers"));
    const flowFrontiers = this.frontiers.filter((frontier) => text(frontier.flow_id) === text(flow.id));
    if (flowFrontiers.length === 0) {
-    frontiers.appendChild(element("p", "rm-arch__empty", "No explicit frontier was saved for this flow."));
+    frontiers.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_explicit_frontier")
+    ));
    } else {
     flowFrontiers.forEach((frontier) => {
      const row = element("div", "rm-arch__frontier-row");
      row.appendChild(element("strong", null, frontier.kind || frontier.id));
      row.appendChild(element("span", null, frontier.reason));
-     this.appendLocation(row, frontier.evidence, "Known evidence");
+     this.appendLocation(row, frontier.evidence, this.msg("architecture.label.known_evidence"));
      frontiers.appendChild(row);
     });
    }
-   this.appendDiagnostics(section("Diagnostics"), text(flow.id));
+   this.appendDiagnostics(section(this.msg("architecture.section.diagnostics")), text(flow.id));
   }
 
   renderUserFocusedFlow(flow) {
@@ -2003,27 +2171,35 @@
    const steps = connectedSteps.length > 0 ? connectedSteps : array(flow.steps).slice(0, 8);
    const flowEdges = this.focusedFlowEdges(flowID);
    const header = element("header", "rm-arch__focus-header");
-   const back = element("button", "rm-arch__focus-back", "← Back to architecture");
+   const back = element(
+    "button",
+    "rm-arch__focus-back",
+    this.msg("architecture.nav.back_to_architecture")
+   );
    back.type = "button";
    this.listen(back, "click", () => this.backToArchitecture());
    header.appendChild(back);
 
    const heading = element("div", "rm-arch__focus-heading");
-   heading.appendChild(element("span", "rm-arch__focus-kicker", "Code path"));
-   heading.appendChild(element("h3", null, flow.name || "Source-backed code path"));
+   heading.appendChild(element("span", "rm-arch__focus-kicker", this.msg("architecture.fallback.code_path")));
+   heading.appendChild(element(
+    "h3",
+    null,
+    flow.name || this.msg("architecture.fallback.source_backed_code_path")
+   ));
    const explanation = flow.mental_model || flow.goal || flow.why_inspect;
    if (explanation) heading.appendChild(element("p", null, explanation));
    const summary = element("dl", "rm-arch__trace-summary");
    const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
    const trigger = flow.trigger || flow.command || startSurface && (startSurface.name || startSurface.kind);
-   this.appendSummaryItem(summary, "Starts when", trigger);
-   this.appendSummaryItem(summary, "Scope", flow.scope);
+   this.appendSummaryItem(summary, this.msg("architecture.label.starts_when"), trigger);
+   this.appendSummaryItem(summary, this.msg("architecture.label.scope"), flow.scope);
    const participantNames = array(flow.participating_component_ids)
     .map((componentID) => this.componentByID.get(text(componentID)))
     .filter((component) => component && component.name);
    if (participantNames.length > 0) {
     const participating = element("div", "rm-arch__trace-participants");
-    participating.appendChild(element("dt", null, "Code areas"));
+    participating.appendChild(element("dt", null, this.msg("architecture.label.code_areas")));
     const values = element("dd");
     participantNames.forEach((component) => {
      const button = element("button", null, component.name);
@@ -2040,7 +2216,11 @@
    header.appendChild(heading);
    if (steps.length > 0) {
     const stats = element("div", "rm-arch__focus-stats");
-    stats.appendChild(element("strong", null, steps.length + " code step" + (steps.length === 1 ? "" : "s")));
+    stats.appendChild(element(
+     "strong",
+     null,
+     this.msg("architecture.count.code_steps", { count: steps.length })
+    ));
     header.appendChild(stats);
    }
    this.flowFocus.appendChild(header);
@@ -2048,7 +2228,13 @@
    if (steps.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
-    sectionHeader.appendChild(element("h4", null, connectedSteps.length > 0 ? "Source-linked sequence" : "Implementation steps"));
+    sectionHeader.appendChild(element(
+     "h4",
+     null,
+     connectedSteps.length > 0
+      ? this.msg("architecture.section.source_linked_sequence")
+      : this.msg("architecture.section.implementation_steps")
+    ));
     section.appendChild(sectionHeader);
     const path = element("div", "rm-arch__focus-path");
     steps.forEach((step, index) => {
@@ -2082,29 +2268,50 @@
    const concurrency = array(flow.slots).find((slot) => text(slot.kind) === "concurrency");
    const evidenceDisclosure = this.focusedEvidenceDisclosure(flow);
    const header = element("header", "rm-arch__focus-header");
-   const back = element("button", "rm-arch__focus-back", "← Back to architecture");
+   const back = element(
+    "button",
+    "rm-arch__focus-back",
+    this.msg("architecture.nav.back_to_architecture")
+   );
    back.type = "button";
    this.listen(back, "click", () => this.backToArchitecture());
    header.appendChild(back);
    const heading = element("div", "rm-arch__focus-heading");
-   heading.appendChild(element("span", "rm-arch__focus-kicker", savedTraceLabel(flow.archetype)));
+   heading.appendChild(element(
+    "span",
+    "rm-arch__focus-kicker",
+    savedTraceLabel(flow.archetype, this.message)
+   ));
    heading.appendChild(element("h3", null, flow.name || flow.id));
-   heading.appendChild(element("p", null, flow.why_inspect || flow.mental_model || flow.goal || "Inspect the exact static handoffs and current frontier."));
+   heading.appendChild(element(
+    "p",
+    null,
+    flow.why_inspect || flow.mental_model || flow.goal ||
+     this.msg("architecture.copy.inspect_static_handoffs")
+   ));
    const summary = element("dl", "rm-arch__trace-summary");
    const startSurface = this.surfaceByID.get(text(flow.start_surface_id));
-   const trigger = flow.trigger || flow.command || startSurface && (startSurface.name || startSurface.id) || "Explicit investigation";
+   const trigger = flow.trigger || flow.command || startSurface && (startSurface.name || startSurface.id) ||
+    this.msg("architecture.fallback.explicit_investigation");
    const groundedSequence = primary.length > 1 ?
-    primary.length + " exact anchors linked by explicit static transitions; runtime order is not inferred" :
-    primary.length === 1 ? "1 exact anchor; no downstream transition is established" : "No connected static sequence is established";
+    this.msg("architecture.count.grounded_sequence_many", { count: primary.length }) :
+    primary.length === 1
+     ? this.msg("architecture.copy.grounded_sequence_one")
+     : this.msg("architecture.copy.grounded_sequence_none");
    const concurrentActivities = lifecycle.groups.length > 0 ?
-    lifecycle.groups.length + " task branch" + (lifecycle.groups.length === 1 ? "" : "es") +
-     " with typed lifecycle relations grouped by task root" :
-    lifecycle.ungroupedTotal > 0 ? lifecycle.ungroupedTotal + " typed lifecycle relations without an exact task root" :
-     "No concurrent task relation is established in this bounded trace";
-   this.appendSummaryItem(summary, "Trigger", trigger);
-   this.appendSummaryItem(summary, "What the system does", flow.mental_model || flow.goal || flow.why_inspect || "Bounded behavior remains unresolved");
+    this.msg("architecture.count.task_branches_grouped", { count: lifecycle.groups.length }) :
+    lifecycle.ungroupedTotal > 0
+     ? this.msg("architecture.count.lifecycle_without_root", { count: lifecycle.ungroupedTotal })
+     : this.msg("architecture.copy.no_concurrent_relation");
+   this.appendSummaryItem(summary, this.msg("architecture.label.trigger"), trigger);
+   this.appendSummaryItem(
+    summary,
+    this.msg("architecture.label.what_system_does"),
+    flow.mental_model || flow.goal || flow.why_inspect ||
+     this.msg("architecture.fallback.bounded_behavior_unresolved")
+   );
    const participating = element("div", "rm-arch__trace-participants");
-   participating.appendChild(element("dt", null, "Participating components"));
+   participating.appendChild(element("dt", null, this.msg("architecture.label.participating_components")));
    const participantValues = element("dd");
    array(flow.participating_component_ids).forEach((componentID) => {
     const component = this.componentByID.get(text(componentID));
@@ -2113,35 +2320,65 @@
     this.listen(button, "click", () => this.setSelection({ component: text(componentID), surface: "", step: "", edge: "" }, true));
     participantValues.appendChild(button);
    });
-   if (participantValues.childElementCount === 0) participantValues.appendChild(element("span", null, "Unassigned"));
+   if (participantValues.childElementCount === 0) {
+    participantValues.appendChild(element("span", null, this.msg("architecture.label.unassigned")));
+   }
    participating.appendChild(participantValues);
    summary.appendChild(participating);
-   this.appendSummaryItem(summary, "Grounded sequence", groundedSequence);
-   this.appendSummaryItem(summary, "Concurrent activities", concurrentActivities);
-    this.appendSummaryItem(summary, "Current frontier", flow.frontier_summary || flow.current_frontier || "No explicit frontier was saved");
-    this.appendSummaryItem(summary, "Evidence basis", (flow.evidence_basis || "static") + " evidence; execution was not observed");
+   this.appendSummaryItem(summary, this.msg("architecture.label.grounded_sequence"), groundedSequence);
+   this.appendSummaryItem(summary, this.msg("architecture.label.concurrent_activities"), concurrentActivities);
     this.appendSummaryItem(
      summary,
-     "Trace surfaces",
-     String((flow.seed_surface_id ? 1 : 0) + array(flow.trace_evidence_surface_ids).length) +
-      " exact seed/evidence surface(s)"
+     this.msg("architecture.label.current_frontier"),
+     flow.frontier_summary || flow.current_frontier || this.msg("architecture.fallback.no_explicit_frontier")
     );
     this.appendSummaryItem(
      summary,
-     "Other component surfaces",
-     String(array(flow.related_component_surface_ids).length) + " related surface(s) — not trace evidence"
+     this.msg("architecture.label.evidence_basis"),
+     this.msg("architecture.label.evidence_not_observed", {
+      basis: flow.evidence_basis || this.msg("architecture.value.static"),
+     })
+    );
+    this.appendSummaryItem(
+     summary,
+     this.msg("architecture.label.trace_surfaces"),
+     this.msg("architecture.count.trace_evidence_surfaces", {
+      count: (flow.seed_surface_id ? 1 : 0) + array(flow.trace_evidence_surface_ids).length,
+     })
+    );
+    this.appendSummaryItem(
+     summary,
+     this.msg("architecture.label.other_component_surfaces"),
+     this.msg("architecture.count.related_not_trace_surfaces", {
+      count: array(flow.related_component_surface_ids).length,
+     })
     );
    heading.appendChild(summary);
    const proofNode = element("div", "rm-arch__focus-proof is-" + proof.status);
-   proofNode.appendChild(element("strong", null, proof.grounded + "/" + proof.total + " proof areas grounded"));
+   proofNode.appendChild(element(
+    "strong",
+    null,
+    this.msg("architecture.count.proof_areas_grounded", {
+     grounded: proof.grounded,
+     total: proof.total,
+    })
+   ));
    const proofCopy = [];
    if (proof.firstGap) {
-    proofCopy.push(proofAreaLabel(proof.firstGap.kind) + " " + (text(proof.firstGap.status) || "unknown"));
+    proofCopy.push(
+     proofAreaLabel(proof.firstGap.kind, this.message) +
+      " " +
+      (text(proof.firstGap.status) || this.msg("architecture.label.unknown"))
+    );
     if (proof.firstGap.missing) proofCopy.push(text(proof.firstGap.missing));
    }
-   proofCopy.push("Static evidence; execution was not observed");
+   proofCopy.push(this.msg("architecture.copy.static_evidence_not_observed"));
    proofNode.appendChild(element("span", null, proofCopy.join(" · ")));
-   const proofAction = element("button", "rm-arch__focus-proof-action", "Inspect full evidence");
+   const proofAction = element(
+    "button",
+    "rm-arch__focus-proof-action",
+    this.msg("architecture.action.inspect_full_evidence")
+   );
    proofAction.type = "button";
    this.listen(proofAction, "click", () => {
     evidenceDisclosure.open = true;
@@ -2151,22 +2388,39 @@
    heading.appendChild(proofNode);
    header.appendChild(heading);
    const stats = element("div", "rm-arch__focus-stats");
-   stats.appendChild(element("strong", null, array(flow.steps).length + " exact anchors"));
-   stats.appendChild(element("span", null, flowEdges.length + " evidenced transitions"));
-   stats.appendChild(element("span", null, array(flow.branches).length + " trace lanes"));
+   stats.appendChild(element(
+    "strong",
+    null,
+    this.msg("architecture.count.exact_anchors", { count: array(flow.steps).length })
+   ));
+   stats.appendChild(element(
+    "span",
+    null,
+    this.msg("architecture.count.evidenced_transitions", { count: flowEdges.length })
+   ));
+   stats.appendChild(element(
+    "span",
+    null,
+    this.msg("architecture.count.trace_lanes", { count: array(flow.branches).length })
+   ));
    header.appendChild(stats);
    this.flowFocus.appendChild(header);
 
    if (primary.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
-    sectionHeader.appendChild(element("h4", null, "Grounded sequence"));
-    const pathNotes = ["Exact anchors linked by explicit static transitions. Execution was not observed, and runtime order is not inferred."];
+    sectionHeader.appendChild(element("h4", null, this.msg("architecture.label.grounded_sequence")));
+    const pathNotes = [this.msg("architecture.copy.exact_anchors_static_transitions")];
     if (primaryProjection.total > primary.length) {
-     pathNotes.push("Showing " + primary.length + " of " + primaryProjection.total + " connected anchors.");
+     pathNotes.push(this.msg("architecture.count.showing_connected_anchors", {
+      shown: primary.length,
+      total: primaryProjection.total,
+     }));
     }
     if (primaryProjection.disconnected > 0) {
-     pathNotes.push(primaryProjection.disconnected + " role anchor" + (primaryProjection.disconnected === 1 ? " is" : "s are") + " not linked by the dispatch chain.");
+     pathNotes.push(this.msg("architecture.count.role_anchors_unlinked", {
+      count: primaryProjection.disconnected,
+     }));
     }
     sectionHeader.appendChild(element("p", null, pathNotes.join(" ")));
     section.appendChild(sectionHeader);
@@ -2188,10 +2442,13 @@
    if (operations.items.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
-    sectionHeader.appendChild(element("h4", null, "Key operations"));
-    let operationsCopy = "Important exact calls leaving the application callable; this is fan-out evidence, not runtime order.";
+    sectionHeader.appendChild(element("h4", null, this.msg("architecture.section.key_operations")));
+    let operationsCopy = this.msg("architecture.copy.key_operations_limit");
     if (operations.total > operations.items.length) {
-     operationsCopy += " Showing " + operations.items.length + " of " + operations.total + ".";
+     operationsCopy += " " + this.msg("architecture.count.showing_items", {
+      shown: operations.items.length,
+      total: operations.total,
+     });
     }
     sectionHeader.appendChild(element("p", null, operationsCopy));
     section.appendChild(sectionHeader);
@@ -2209,11 +2466,11 @@
    if (lifecycle.groups.length > 0 || lifecycle.ungrouped.length > 0) {
     const section = element("section", "rm-arch__focus-section");
     const sectionHeader = element("div", "rm-arch__focus-section-heading");
-    sectionHeader.appendChild(element("h4", null, "Concurrent activities"));
+    sectionHeader.appendChild(element("h4", null, this.msg("architecture.label.concurrent_activities")));
     sectionHeader.appendChild(element(
      "p",
      null,
-     "Typed start, callback, cancellation, and join rows are grouped by task root. They are not flattened into a runtime sequence."
+     this.msg("architecture.copy.concurrent_activities_limit")
     ));
     section.appendChild(sectionHeader);
     const cards = element("div", "rm-arch__focus-lifecycle");
@@ -2497,7 +2754,7 @@
     if (!artifact) return [];
     return [{
      id: text(artifact.id) + ":overview",
-     title: artifact.title || "Repository explanation",
+     title: artifact.title || this.msg("architecture.fallback.repository_explanation"),
      explanation: artifact.summary || "",
      statement_ids: array(artifact.statements).map((statement) => text(statement && statement.id)).filter(Boolean),
      focus: artifact.focus || {},
@@ -2817,7 +3074,9 @@
     );
    this.root.classList.toggle("has-selected-flow", hasFlow);
      this.landscapeButton.classList.toggle("is-active", !hasFlow);
-     this.landscapeButton.textContent = hasFlow ? "← Back to architecture" : "Architecture";
+     this.landscapeButton.textContent = hasFlow
+      ? this.msg("architecture.nav.back_to_architecture")
+      : this.msg("architecture.nav.architecture");
      this.flowButtons.forEach((button, id) => button.classList.toggle("is-active", id === flowID));
      if (this.diagnosticButton) {
       this.diagnosticButton.classList.toggle("is-active", this.diagnosticComponentIDs.has(this.selection.component));
@@ -2894,9 +3153,11 @@
     (this.hasInspectorSelection(this.selection) && !lowInformationComponent);
     this.inspector.setAttribute(
      "aria-label",
-     this.translateUI(
-      semanticArtifactActive ? "Repository explanation" : (this.guidedTour.active ? "Guided tour" : "Architecture inspector")
-     )
+     semanticArtifactActive
+      ? this.msg("architecture.aria.repository_explanation")
+      : (this.guidedTour.active
+       ? this.msg("architecture.aria.guided_tour")
+       : this.msg("architecture.aria.inspector"))
     );
     this.root.classList.toggle("has-detail-inspector", visible);
     this.root.classList.toggle(
@@ -2909,7 +3170,7 @@
     if (!visible) return;
     const close = element("button", "rm-arch__inspector-close", "×");
     close.type = "button";
-    close.setAttribute("aria-label", "Close inspector");
+    close.setAttribute("aria-label", this.msg("architecture.aria.close_inspector"));
     this.listen(close, "click", () => this.closeInspector());
     this.inspector.appendChild(close);
     if (semanticArtifactActive) return this.renderSemanticArtifactInspector();
@@ -2941,28 +3202,41 @@
    if (!artifact || !step) return;
 
    this.inspectorHeading(
-    this.guidedTourValueLabel(artifact.kind || "Repository explanation"),
-    artifact.title || artifact.question || "Repository explanation",
+    artifact.kind
+     ? this.guidedTourValueLabel(artifact.kind)
+     : this.msg("architecture.fallback.repository_explanation"),
+    artifact.title || artifact.question || this.msg("architecture.fallback.repository_explanation"),
     artifact.summary
    );
 
-   const overview = this.inspectorSection("What this answers");
+   const overview = this.inspectorSection(this.msg("architecture.section.what_this_answers"));
    if (artifact.question) overview.appendChild(element("p", "rm-arch__copy", artifact.question));
-   this.appendKeyValue(overview, "Verdict", this.guidedTourValueLabel(artifact.verdict || "unknown"));
-   this.appendKeyValue(overview, "Confidence", this.guidedTourValueLabel(artifact.confidence || "unknown"));
+   this.appendKeyValue(
+    overview,
+    this.msg("architecture.label.verdict"),
+    this.guidedTourValueLabel(artifact.verdict || this.msg("architecture.label.unknown"))
+   );
+   this.appendKeyValue(
+    overview,
+    this.msg("architecture.label.confidence"),
+    this.guidedTourValueLabel(artifact.confidence || this.msg("architecture.label.unknown"))
+   );
    const requiredAspects = array(artifact.required_answer_aspects);
    if (requiredAspects.length > 0) {
     this.appendKeyValue(
      overview,
-     "Answer coverage",
-     array(artifact.covered_answer_aspects).length + "/" + requiredAspects.length + " aspects"
+     this.msg("architecture.label.answer_coverage"),
+     this.msg("architecture.count.answer_aspects", {
+      covered: array(artifact.covered_answer_aspects).length,
+      total: requiredAspects.length,
+     })
     );
    }
    if (artifact.verdict === "insufficient_evidence") {
     overview.appendChild(element(
      "p",
      "rm-arch__notice is-warning",
-     "The saved facts do not support a complete answer. Verified observations and missing links are shown separately."
+     this.msg("architecture.copy.insufficient_evidence")
     ));
    }
 
@@ -2970,21 +3244,28 @@
    stepCard.appendChild(element(
     "div",
     "rm-arch__tour-progress",
-    "Step " + (this.semanticNarrative.index + 1) + "/" + steps.length
+    this.msg("architecture.count.step_progress", {
+     current: this.semanticNarrative.index + 1,
+     total: steps.length,
+    })
    ));
-   stepCard.appendChild(element("h4", "rm-arch__tour-step-title", step.title || "Explanation step"));
+   stepCard.appendChild(element(
+    "h4",
+    "rm-arch__tour-step-title",
+    step.title || this.msg("architecture.fallback.explanation_step")
+   ));
    if (step.explanation) stepCard.appendChild(element("p", "rm-arch__copy", step.explanation));
 
    const actions = element("div", "rm-arch__tour-actions");
-   const back = element("button", "rm-arch__tour-action", "Back");
+   const back = element("button", "rm-arch__tour-action", this.msg("architecture.action.back"));
    back.type = "button";
    back.disabled = this.semanticNarrative.index === 0;
    this.listen(back, "click", () => this.moveSemanticArtifact(-1));
-   const next = element("button", "rm-arch__tour-action is-primary", "Next");
+   const next = element("button", "rm-arch__tour-action is-primary", this.msg("architecture.action.next"));
    next.type = "button";
    next.disabled = this.semanticNarrative.index === steps.length - 1;
    this.listen(next, "click", () => this.moveSemanticArtifact(1));
-   const evidence = element("button", "rm-arch__tour-action", "Evidence");
+   const evidence = element("button", "rm-arch__tour-action", this.msg("architecture.action.evidence"));
    evidence.type = "button";
    this.listen(evidence, "click", () => {
     const target = this.inspector.querySelector("[data-semantic-artifact-evidence]");
@@ -2992,7 +3273,7 @@
      target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
    });
-   const fullMap = element("button", "rm-arch__tour-action is-quiet", "Full map");
+   const fullMap = element("button", "rm-arch__tour-action is-quiet", this.msg("architecture.action.full_map"));
    fullMap.type = "button";
    this.listen(fullMap, "click", () => this.finishSemanticArtifact(true));
    actions.append(back, next, evidence, fullMap);
@@ -3006,9 +3287,13 @@
    const statements = (requestedStatementIDs.length > 0
     ? requestedStatementIDs.map((statementID) => statementByID.get(statementID)).filter(Boolean)
     : array(artifact.statements).filter(Boolean));
-   const statementsSection = this.inspectorSection("Claims in this step");
+   const statementsSection = this.inspectorSection(this.msg("architecture.section.claims_in_step"));
    if (statements.length === 0) {
-    statementsSection.appendChild(element("p", "rm-arch__empty", "No materialized claim is attached to this step."));
+    statementsSection.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_materialized_claim")
+    ));
    }
    statements.forEach((statement) => {
     const basis = text(statement.basis || "unresolved");
@@ -3018,7 +3303,11 @@
       (basis === "unresolved" || basis === "interpretive" ? "is-warning" : "is-info")
     );
     card.appendChild(element("span", "rm-arch__badge", this.guidedTourValueLabel(basis)));
-    card.appendChild(element("p", null, statement.text || "Untitled claim"));
+    card.appendChild(element(
+     "p",
+     null,
+     statement.text || this.msg("architecture.fallback.untitled_claim")
+    ));
     const supportCount = array(statement.support_ids).length;
     const sourceGroupCount = array(statement.source_groups).length;
     if (supportCount || sourceGroupCount) {
@@ -3026,8 +3315,8 @@
       "small",
       "rm-arch__semantic-support",
       [
-       supportCount ? supportCount + (supportCount === 1 ? " supporting fact" : " supporting facts") : "",
-       sourceGroupCount ? sourceGroupCount + (sourceGroupCount === 1 ? " evidence group" : " evidence groups") : "",
+       supportCount ? this.msg("architecture.count.supporting_facts", { count: supportCount }) : "",
+       sourceGroupCount ? this.msg("architecture.count.evidence_groups", { count: sourceGroupCount }) : "",
       ].filter(Boolean).join(" · ")
      ));
     }
@@ -3035,20 +3324,24 @@
    });
 
    const referenceStep = this.semanticArtifactReferenceStep(artifact, step);
-   const references = this.inspectorSection("Related map objects");
+   const references = this.inspectorSection(this.msg("architecture.section.related_map_objects"));
    this.appendGuidedTourReferences(references, referenceStep);
 
-   const evidenceSection = this.inspectorSection("Evidence");
+   const evidenceSection = this.inspectorSection(this.msg("architecture.section.evidence"));
    evidenceSection.classList.add("rm-arch__tour-evidence");
    evidenceSection.setAttribute("data-semantic-artifact-evidence", "true");
    const evidenceItems = array(step.evidence).length > 0 ? step.evidence : artifact.evidence;
    if (this.appendGuidedTourEvidence(evidenceSection, evidenceItems) === 0) {
-    evidenceSection.appendChild(element("p", "rm-arch__empty", "No exact evidence record is attached to this step."));
+    evidenceSection.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_exact_evidence_record")
+    ));
    }
 
    const unknowns = array(artifact.unknowns).map(text).filter(Boolean);
    if (unknowns.length > 0) {
-    const gaps = this.inspectorSection("Known gaps");
+    const gaps = this.inspectorSection(this.msg("architecture.section.known_gaps"));
     unknowns.forEach((unknown) => {
      gaps.appendChild(element("p", "rm-arch__notice is-warning", unknown));
     });
@@ -3072,36 +3365,55 @@
    const step = this.guidedTourStep();
    if (!story || !step) return;
 
-   this.inspectorHeading("Guided tour", story.title || "Start here", story.summary);
+   this.inspectorHeading(
+    this.msg("architecture.nav.guided_tour"),
+    story.title || this.msg("architecture.nav.start_here"),
+    story.summary
+   );
    const stepCard = element("section", "rm-arch__tour-step");
    stepCard.appendChild(element(
     "div",
     "rm-arch__tour-progress",
-    "Step " + (this.guidedTour.index + 1) + "/" + this.guidedTourSteps.length
+    this.msg("architecture.count.step_progress", {
+     current: this.guidedTour.index + 1,
+     total: this.guidedTourSteps.length,
+    })
    ));
-   stepCard.appendChild(element("h4", "rm-arch__tour-step-title", step.title || "Orientation step"));
+   stepCard.appendChild(element(
+    "h4",
+    "rm-arch__tour-step-title",
+    step.title || this.msg("architecture.fallback.orientation_step")
+   ));
    if (step.explanation) stepCard.appendChild(element("p", "rm-arch__copy", step.explanation));
-   this.appendKeyValue(stepCard, "Story kind", this.guidedTourValueLabel(story.candidate_kind));
-   this.appendKeyValue(stepCard, "Ordering", this.guidedTourValueLabel(story.ordering_basis));
-   if (story.trigger) this.appendKeyValue(stepCard, "Starts when", story.trigger);
+   this.appendKeyValue(
+    stepCard,
+    this.msg("architecture.label.story_kind"),
+    this.guidedTourValueLabel(story.candidate_kind)
+   );
+   this.appendKeyValue(
+    stepCard,
+    this.msg("architecture.label.ordering"),
+    this.guidedTourValueLabel(story.ordering_basis)
+   );
+   if (story.trigger) this.appendKeyValue(stepCard, this.msg("architecture.label.starts_when"), story.trigger);
    if (this.guidedTourUsesEditorialOrder()) {
     stepCard.appendChild(element(
      "p",
      "rm-arch__notice is-warning rm-arch__tour-disclaimer",
-     "This is an editorial reading order for orientation, not runtime order or observed execution."
+     this.msg("architecture.copy.editorial_order_limit")
     ));
    }
 
    const actions = element("div", "rm-arch__tour-actions");
-   const back = element("button", "rm-arch__tour-action", "Back");
+   const back = element("button", "rm-arch__tour-action", this.msg("architecture.action.back"));
    back.type = "button";
    back.disabled = this.guidedTour.index === 0;
    this.listen(back, "click", () => this.moveGuidedTour(-1));
-   const next = element("button", "rm-arch__tour-action is-primary", "Next");
+   const next = element("button", "rm-arch__tour-action is-primary", this.msg("architecture.action.next"));
    next.type = "button";
    next.disabled = this.guidedTour.index === this.guidedTourSteps.length - 1;
    this.listen(next, "click", () => this.moveGuidedTour(1));
-   const evidence = element("button", "rm-arch__tour-action", "Evidence");
+   const evidence = element("button", "rm-arch__tour-action", this.msg("architecture.action.evidence"));
    evidence.type = "button";
    this.listen(evidence, "click", () => {
     const target = this.inspector.querySelector("[data-guided-tour-evidence]");
@@ -3109,31 +3421,39 @@
      target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
    });
-   const fullMap = element("button", "rm-arch__tour-action is-quiet", "Full map");
+   const fullMap = element("button", "rm-arch__tour-action is-quiet", this.msg("architecture.action.full_map"));
    fullMap.type = "button";
    this.listen(fullMap, "click", () => this.finishGuidedTour(true));
    actions.append(back, next, evidence, fullMap);
    stepCard.appendChild(actions);
    this.inspector.appendChild(stepCard);
 
-   const references = this.inspectorSection("Related map objects");
+   const references = this.inspectorSection(this.msg("architecture.section.related_map_objects"));
    this.appendGuidedTourReferences(references, step);
 
-   const evidenceSection = this.inspectorSection("Evidence");
+   const evidenceSection = this.inspectorSection(this.msg("architecture.section.evidence"));
    evidenceSection.classList.add("rm-arch__tour-evidence");
    evidenceSection.setAttribute("data-guided-tour-evidence", "true");
    if (this.appendGuidedTourEvidence(evidenceSection, step.evidence) === 0) {
-    evidenceSection.appendChild(element("p", "rm-arch__empty", "No exact evidence record is attached to this step."));
+    evidenceSection.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_exact_evidence_record")
+    ));
    }
 
    const gapSummaries = array(story.gap_summary).filter((summary) => summary && typeof summary === "object");
    if (gapSummaries.length > 0) {
-    const gapSection = this.inspectorSection("Known gaps");
+    const gapSection = this.inspectorSection(this.msg("architecture.section.known_gaps"));
     gapSummaries.forEach((summary) => {
      array(summary.gaps).forEach((gap) => {
       if (!gap || typeof gap !== "object") return;
       const card = element("article", "rm-arch__notice is-warning rm-arch__tour-gap");
-      card.appendChild(element("strong", null, gap.label || "Unresolved gap"));
+      card.appendChild(element(
+       "strong",
+       null,
+       gap.label || this.msg("architecture.fallback.unresolved_gap")
+      ));
       if (summary.explanation) card.appendChild(element("p", null, summary.explanation));
       if (gap.detail) card.appendChild(element("p", null, gap.detail));
       this.appendGuidedTourEvidence(card, gap.evidence);
@@ -3151,7 +3471,7 @@
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
     button.appendChild(element("strong", null, component.name || component.id));
-    button.appendChild(element("span", null, "Component"));
+    button.appendChild(element("span", null, this.msg("architecture.label.component")));
     this.listen(button, "click", () => this.openComponent(componentID));
     parent.appendChild(button);
     count++;
@@ -3164,7 +3484,11 @@
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
     button.appendChild(element("strong", null, surface.name || surface.id));
-    button.appendChild(element("span", null, [surface.kind, surface.status].filter(Boolean).join(" · ") || "Surface"));
+    button.appendChild(element(
+     "span",
+     null,
+     [surface.kind, surface.status].filter(Boolean).join(" · ") || this.msg("architecture.label.surface")
+    ));
     this.listen(button, "click", () => this.openSurface(surfaceID));
     parent.appendChild(button);
     count++;
@@ -3177,7 +3501,11 @@
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
     button.appendChild(element("strong", null, flow.name || flow.id));
-    button.appendChild(element("span", null, [savedTraceLabel(flow.archetype), flow.status].filter(Boolean).join(" · ")));
+    button.appendChild(element(
+     "span",
+     null,
+     [savedTraceLabel(flow.archetype, this.message), flow.status].filter(Boolean).join(" · ")
+    ));
     this.listen(button, "click", () => this.openTrace(flowID));
     parent.appendChild(button);
     count++;
@@ -3192,7 +3520,11 @@
    });
 
    if (count === 0) {
-    parent.appendChild(element("p", "rm-arch__empty", "No referenced canvas object resolves in this report."));
+    parent.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_referenced_canvas_object")
+    ));
    }
   }
 
@@ -3201,10 +3533,18 @@
    array(evidenceItems).forEach((item) => {
     if (!item || typeof item !== "object") return;
     const card = element("article", "rm-arch__evidence-card rm-arch__tour-evidence-card");
-    card.appendChild(element("strong", "rm-arch__evidence-title", item.label || item.kind || item.id || "Evidence"));
+    card.appendChild(element(
+     "strong",
+     "rm-arch__evidence-title",
+     item.label || item.kind || item.id || this.msg("architecture.section.evidence")
+    ));
     if (item.kind) card.appendChild(element("span", "rm-arch__badge", this.guidedTourValueLabel(item.kind)));
     if (item.id) card.appendChild(element("code", "rm-arch__member-id", item.id));
-    this.appendLocation(card, item.location || (item.path ? item : null), "Exact source");
+    this.appendLocation(
+     card,
+     item.location || (item.path ? item : null),
+     this.msg("architecture.label.exact_source")
+    );
     parent.appendChild(card);
     count++;
    });
@@ -3261,15 +3601,19 @@
    const context = this.userComponentContext(component);
    const actions = this.userComponentActions(component);
    if (!context) return;
-   this.inspectorHeading("Code area", component.name || "Repository component", component.description);
+   this.inspectorHeading(
+    this.msg("architecture.label.code_area"),
+    component.name || this.msg("architecture.fallback.repository_component"),
+    component.description
+   );
 
    if (subsystem && subsystem.name) {
-    const areaSection = this.inspectorSection("Repository area");
+    const areaSection = this.inspectorSection(this.msg("architecture.fallback.repository_area"));
     areaSection.appendChild(element("p", "rm-arch__copy", subsystem.name));
    }
 
    if (array(context.package_paths).length > 0) {
-    const packages = this.inspectorSection("Package");
+    const packages = this.inspectorSection(this.msg("architecture.section.package"));
     const packageTargets = new Map(array(context.package_targets).map((target) => [text(target && target.path), target]));
     array(context.package_paths).forEach((packagePath) => {
      const target = packageTargets.get(text(packagePath));
@@ -3286,7 +3630,7 @@
      packages.appendChild(element(
       "p",
       "rm-arch__compact-meta",
-      context.file_count + " repository file" + (Number(context.file_count) === 1 ? "" : "s")
+      this.msg("architecture.count.repository_files", { count: Number(context.file_count) })
      ));
     }
    }
@@ -3295,18 +3639,26 @@
     start && locationLabel(start.location)
    ));
    if (surfaceStarts.length > 0) {
-    const surfaceSection = this.inspectorSection("Launch points");
+    const surfaceSection = this.inspectorSection(this.msg("architecture.section.launch_points"));
     surfaceStarts.forEach((start) => {
      if (!start.actionable || typeof this.options.openSourceLocation !== "function") {
       const reference = element("div", "rm-arch__compact-reference");
-      reference.appendChild(element("strong", null, start.label || "Runtime surface"));
+      reference.appendChild(element(
+       "strong",
+       null,
+       start.label || this.msg("architecture.fallback.runtime_surface")
+      ));
       reference.appendChild(element("span", null, locationLabel(start.location)));
       surfaceSection.appendChild(reference);
       return;
      }
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
      button.type = "button";
-     button.appendChild(element("strong", null, start.label || "Open launch point"));
+     button.appendChild(element(
+      "strong",
+      null,
+      start.label || this.msg("architecture.action.open_launch_point")
+     ));
      button.appendChild(element("span", null, locationLabel(start.location)));
      this.listen(button, "click", () => this.options.openSourceLocation(start.location));
      surfaceSection.appendChild(button);
@@ -3315,12 +3667,16 @@
 
    const sourceActions = actions.filter((action) => action.kind === "source");
    if (sourceActions.length > 0) {
-    const sourceSection = this.inspectorSection("Start in code");
+    const sourceSection = this.inspectorSection(this.msg("architecture.section.start_in_code"));
     sourceActions.forEach((action) => {
      const source = action.value;
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
      button.type = "button";
-     button.appendChild(element("strong", null, source.detail || source.label || "Open code"));
+     button.appendChild(element(
+      "strong",
+      null,
+      source.detail || source.label || this.msg("architecture.action.open_code")
+     ));
      button.appendChild(element("span", null, locationLabel(source.location)));
      this.listen(button, "click", () => this.options.openSourceLocation(source.location));
      sourceSection.appendChild(button);
@@ -3329,13 +3685,13 @@
 
    const studyActions = actions.filter((action) => action.kind === "study");
    if (studyActions.length > 0) {
-    const studySection = this.inspectorSection("Reading paths");
+    const studySection = this.inspectorSection(this.msg("architecture.section.reading_paths"));
     studyActions.forEach((action) => {
      const study = action.value;
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
      button.type = "button";
      button.appendChild(element("strong", null, study.question));
-     button.appendChild(element("span", null, "Open reading path"));
+     button.appendChild(element("span", null, this.msg("architecture.action.open_reading_path")));
      this.listen(button, "click", () => this.options.openStudyDirection(study.id));
      studySection.appendChild(button);
     });
@@ -3343,10 +3699,14 @@
   }
 
   inspectUserSurface(surface) {
-   this.inspectorHeading("Runtime surface", surface.name || surface.kind || "Runtime surface", "Where the repository exposes this entry point.");
+   this.inspectorHeading(
+    this.msg("architecture.fallback.runtime_surface"),
+    surface.name || surface.kind || this.msg("architecture.fallback.runtime_surface"),
+    this.msg("architecture.copy.runtime_surface_entrypoint")
+   );
    const owner = this.componentByID.get(text(surface.owning_component_id));
    if (owner && owner.name) {
-    const section = this.inspectorSection("Code area");
+    const section = this.inspectorSection(this.msg("architecture.label.code_area"));
     const button = element("button", "rm-arch__edge-jump", owner.name);
     button.type = "button";
     this.listen(button, "click", () => this.openComponent(owner.id));
@@ -3354,14 +3714,20 @@
    }
    const locations = array(surface.evidence).filter((location) => locationLabel(location));
    if (locations.length > 0 || surface.owning_executable) {
-    const section = this.inspectorSection("Code");
-    this.appendKeyValue(section, "Executable", surface.owning_executable);
-    locations.forEach((location) => this.appendLocation(section, location, "Open code"));
+    const section = this.inspectorSection(this.msg("architecture.section.code"));
+    this.appendKeyValue(section, this.msg("architecture.label.executable"), surface.owning_executable);
+    locations.forEach((location) => {
+     this.appendLocation(section, location, this.msg("architecture.action.open_code"));
+    });
    }
    const flow = this.flowByID.get(text(surface.related_saved_trace_id));
    if (flow) {
-    const section = this.inspectorSection("Code path");
-    const button = element("button", "rm-arch__edge-jump", flow.name || "Source-backed code path");
+    const section = this.inspectorSection(this.msg("architecture.fallback.code_path"));
+    const button = element(
+     "button",
+     "rm-arch__edge-jump",
+     flow.name || this.msg("architecture.fallback.source_backed_code_path")
+    );
     button.type = "button";
     this.listen(button, "click", () => this.openTrace(flow.id));
     section.appendChild(button);
@@ -3369,17 +3735,25 @@
   }
 
   appendUserFlowEvidence(parent, flow) {
-   this.appendKeyValue(parent, "Starts when", flow.trigger);
-   this.appendKeyValue(parent, "Command", flow.command);
-   this.appendKeyValue(parent, "Scope", flow.scope);
+   this.appendKeyValue(parent, this.msg("architecture.label.starts_when"), flow.trigger);
+   this.appendKeyValue(parent, this.msg("architecture.label.command"), flow.command);
+   this.appendKeyValue(parent, this.msg("architecture.label.scope"), flow.scope);
    const steps = array(flow.steps);
    if (steps.length === 0) return;
    const section = element("section", "rm-arch__inspector-section");
-   section.appendChild(element("h4", "rm-arch__inspector-section-title", "Implementation steps"));
+   section.appendChild(element(
+    "h4",
+    "rm-arch__inspector-section-title",
+    this.msg("architecture.section.implementation_steps")
+   ));
    steps.forEach((step) => {
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
-    button.appendChild(element("strong", null, step.label || step.qualified_name || "Code step"));
+    button.appendChild(element(
+     "strong",
+     null,
+     step.label || step.qualified_name || this.msg("architecture.fallback.code_step")
+    ));
     const detail = [step.qualified_name, locationLabel(step.location)].filter(Boolean).join(" · ");
     if (detail) button.appendChild(element("span", null, detail));
     this.listen(button, "click", () => this.setSelection({
@@ -3392,20 +3766,20 @@
 
   inspectUserFlow(flow) {
    this.inspectorHeading(
-    "Code path",
-    flow.name || "Source-backed code path",
+    this.msg("architecture.fallback.code_path"),
+    flow.name || this.msg("architecture.fallback.source_backed_code_path"),
     flow.mental_model || flow.goal || flow.why_inspect
    );
    this.appendUserFlowEvidence(this.inspector, flow);
   }
 
   inspectUserStep(flow, step) {
-   const title = step.label || step.qualified_name || "Code step";
+   const title = step.label || step.qualified_name || this.msg("architecture.fallback.code_step");
    const subtitle = step.qualified_name && step.qualified_name !== title ? step.qualified_name : "";
-   this.inspectorHeading("Implementation step", title, subtitle);
+   this.inspectorHeading(this.msg("architecture.fallback.implementation_step"), title, subtitle);
    const component = this.componentByID.get(text(step.component_id));
    if (component && component.name) {
-    const section = this.inspectorSection("Code area");
+    const section = this.inspectorSection(this.msg("architecture.label.code_area"));
     const button = element("button", "rm-arch__edge-jump", component.name);
     button.type = "button";
     this.listen(button, "click", () => this.openComponent(component.id));
@@ -3413,9 +3787,11 @@
    }
    const locations = [step.location, step.binding && step.binding.location].filter((location) => locationLabel(location));
    if (locations.length > 0) {
-    const source = this.inspectorSection("Source");
-    this.appendLocation(source, step.location, "Open code");
-    if (step.binding) this.appendLocation(source, step.binding.location, "Binding code");
+    const source = this.inspectorSection(this.msg("architecture.section.source"));
+    this.appendLocation(source, step.location, this.msg("architecture.action.open_code"));
+    if (step.binding) {
+     this.appendLocation(source, step.binding.location, this.msg("architecture.label.binding_code"));
+    }
    }
   }
 
@@ -3425,24 +3801,24 @@
    const sourceName = source && (source.label || source.qualified_name);
    const targetName = target && (target.label || target.qualified_name);
    this.inspectorHeading(
-    "Code transition",
-    relationLabel(edge.relation),
+    this.msg("architecture.label.code_transition"),
+    relationLabel(edge.relation, this.message),
     sourceName && targetName ? sourceName + " → " + targetName : ""
    );
    const locations = [edge.evidence, source && source.location, target && target.location]
     .filter((location) => locationLabel(location));
    if (locations.length > 0) {
-    const code = this.inspectorSection("Source");
-    this.appendLocation(code, edge.evidence, "Call site");
-    if (source) this.appendLocation(code, source.location, "From");
-    if (target) this.appendLocation(code, target.location, "To");
+    const code = this.inspectorSection(this.msg("architecture.section.source"));
+    this.appendLocation(code, edge.evidence, this.msg("architecture.label.call_site"));
+    if (source) this.appendLocation(code, source.location, this.msg("architecture.label.from"));
+    if (target) this.appendLocation(code, target.location, this.msg("architecture.label.to"));
    }
    if (edge.condition && (edge.condition.expression || locationLabel(edge.condition.location))) {
-    const condition = this.inspectorSection("Condition");
+    const condition = this.inspectorSection(this.msg("architecture.section.condition"));
     if (edge.condition.expression) {
      condition.appendChild(element("code", "rm-arch__condition", edge.condition.expression));
     }
-    this.appendLocation(condition, edge.condition.location, "Open condition");
+    this.appendLocation(condition, edge.condition.location, this.msg("architecture.action.open_condition"));
    }
   }
 
@@ -3453,61 +3829,99 @@
    const fromName = from && from.name;
    const toName = to && to.name;
    this.inspectorHeading(
-    "Code relation",
-    witness.kind || "Source-backed relation",
+    this.msg("architecture.label.code_relation"),
+    witness.kind || this.msg("architecture.fallback.source_backed_relation"),
     fromName && toName ? fromName + " → " + toName : ""
    );
    if (locationLabel(witness.location)) {
-    const source = this.inspectorSection("Source");
-    this.appendLocation(source, witness.location, "Open code");
+    const source = this.inspectorSection(this.msg("architecture.section.source"));
+    this.appendLocation(source, witness.location, this.msg("architecture.action.open_code"));
    }
   }
 
   inspectLandscape() {
    if (this.userMode) {
-    this.inspectorHeading("Architecture", "Explore the repository map", "Select a code area, runtime surface, or source-backed code path.");
+    this.inspectorHeading(
+     this.msg("architecture.nav.architecture"),
+     this.msg("architecture.copy.explore_repository_map"),
+     this.msg("architecture.copy.select_map_object")
+    );
     return;
    }
    const hasFlows = this.flows.length > 0;
    this.inspectorHeading(
-    "Architecture",
-    "How to read this map",
-     hasFlows ? "Select a component, surface, or saved trace." : "Select a component to inspect its exact local members."
+    this.msg("architecture.nav.architecture"),
+    this.msg("architecture.copy.how_to_read_map"),
+     hasFlows
+      ? this.msg("architecture.copy.select_component_surface_trace")
+      : this.msg("architecture.copy.select_component_members")
    );
-    const note = this.inspectorSection("Evidence semantics");
-    note.appendChild(element("p", "rm-arch__copy", "Subsystem and component names are conceptual orientation. Quiet lines are witnessed structural relations, not runtime execution."));
-    this.appendKeyValue(note, "Architecture source", architectureSourceLabel(this.data.architecture_source));
-    this.appendKeyValue(note, "Grounding mode", text(this.data.grounding_mode).replaceAll("_", " "));
-    this.appendKeyValue(note, "Architecture anchors", String(array(this.data.behavior_anchors).length));
+    const note = this.inspectorSection(this.msg("architecture.section.evidence_semantics"));
+    note.appendChild(element(
+     "p",
+     "rm-arch__copy",
+     this.msg("architecture.copy.evidence_semantics")
+    ));
+    this.appendKeyValue(
+     note,
+     this.msg("architecture.label.architecture_source"),
+     architectureSourceLabel(this.data.architecture_source, this.message)
+    );
+    this.appendKeyValue(
+     note,
+     this.msg("architecture.label.grounding_mode"),
+     text(this.data.grounding_mode).replaceAll("_", " ")
+    );
+    this.appendKeyValue(
+     note,
+     this.msg("architecture.label.architecture_anchors"),
+     String(array(this.data.behavior_anchors).length)
+    );
    if (!hasFlows) {
-     const flowState = this.inspectorSection("Saved traces");
+     const flowState = this.inspectorSection(this.msg("architecture.nav.saved_traces"));
     flowState.appendChild(element(
      "p",
      "rm-arch__notice is-warning",
-     "No compatible saved FlowProof is available for this run. The landscape remains useful, but no runtime sequence is implied."
+     this.msg("architecture.copy.no_compatible_flowproof")
     ));
    }
-   this.appendDiagnostics(this.inspectorSection("Diagnostics"), "");
+   this.appendDiagnostics(this.inspectorSection(this.msg("architecture.section.diagnostics")), "");
   }
 
   inspectComponent(component) {
    if (this.userMode) return this.inspectUserComponent(component);
    const subsystem = this.subsystemByID.get(text(component.subsystem_id));
-   this.inspectorHeading("Component", component.name || component.id, component.description);
-   const purpose = this.inspectorSection("Purpose and grounding");
+   this.inspectorHeading(this.msg("architecture.label.component"), component.name || component.id, component.description);
+   const purpose = this.inspectorSection(this.msg("architecture.section.purpose_grounding"));
    if (component.description) purpose.appendChild(element("p", "rm-arch__copy", component.description));
-   if (subsystem) this.appendKeyValue(purpose, "Subsystem", subsystem.name || subsystem.id);
-   this.appendKeyValue(purpose, "Grounding", component.hypothesis ? "Conceptual / package-derived" : "Exact local membership");
+   if (subsystem) {
+    this.appendKeyValue(
+     purpose,
+     this.msg("architecture.label.subsystem"),
+     subsystem.name || subsystem.id
+    );
+   }
+   this.appendKeyValue(
+    purpose,
+    this.msg("architecture.label.grounding"),
+    component.hypothesis
+     ? this.msg("architecture.value.conceptual_package_derived")
+     : this.msg("architecture.value.exact_local_membership")
+   );
 
    const surfaceIDs = Array.from(new Set(array(component.owned_surface_ids).concat(array(component.participating_surface_ids))));
-   const surfaces = this.inspectorSection("Component surfaces");
+   const surfaces = this.inspectorSection(this.msg("architecture.section.component_surfaces"));
    surfaces.appendChild(element(
     "p",
     "rm-arch__copy",
-    "These surfaces share exact component or executable evidence. Only a saved trace's explicit seed/evidence surfaces participate in that trace."
+    this.msg("architecture.copy.component_surfaces_limit")
    ));
    if (surfaceIDs.length === 0) {
-     surfaces.appendChild(element("p", "rm-arch__empty", "No supported surface has a unique exact association with this component."));
+     surfaces.appendChild(element(
+      "p",
+      "rm-arch__empty",
+      this.msg("architecture.copy.no_supported_surface")
+     ));
    }
    surfaceIDs.forEach((surfaceID) => {
     const surface = this.surfaceByID.get(text(surfaceID));
@@ -3520,22 +3934,40 @@
     surfaces.appendChild(button);
    });
 
-   const traces = this.inspectorSection("Saved traces");
+   const traces = this.inspectorSection(this.msg("architecture.nav.saved_traces"));
    const relatedFlowIDs = array(component.participating_flow_ids).filter((flowID) => this.flowByID.has(text(flowID)));
-   if (relatedFlowIDs.length === 0) traces.appendChild(element("p", "rm-arch__empty", "No bounded saved trace crosses this component."));
+   if (relatedFlowIDs.length === 0) {
+    traces.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_trace_crosses_component")
+    ));
+   }
    relatedFlowIDs.forEach((flowID) => {
     const flow = this.flowByID.get(text(flowID));
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
     button.appendChild(element("strong", null, flow.name || flow.id));
-    button.appendChild(element("span", null, [flow.status, flow.grounded_areas + "/" + flow.total_areas + " grounded"].filter(Boolean).join(" · ")));
+    button.appendChild(element("span", null, [
+     flow.status,
+     this.msg("architecture.count.grounded_areas", {
+      grounded: flow.grounded_areas,
+      total: flow.total_areas,
+     }),
+    ].filter(Boolean).join(" · ")));
     this.listen(button, "click", () => this.openTrace(flow.id));
     traces.appendChild(button);
    });
 
-   const suggestions = this.inspectorSection("Suggested investigations");
+   const suggestions = this.inspectorSection(this.msg("architecture.section.suggested_investigations"));
    const suggestionIDs = array(component.suggested_investigation_ids);
-   if (suggestionIDs.length === 0) suggestions.appendChild(element("p", "rm-arch__empty", "No untraced suggestion is attached by exact saved evidence."));
+   if (suggestionIDs.length === 0) {
+    suggestions.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_untraced_suggestion")
+    ));
+   }
     suggestionIDs.forEach((directionID) => {
      const suggestion = this.suggestionByID.get(text(directionID));
      const direction = this.directionByID.get(text(directionID));
@@ -3544,17 +3976,47 @@
      card.appendChild(element("strong", "rm-arch__evidence-title", (suggestion && suggestion.title) || direction.name || direction.id));
      const reason = suggestion && suggestion.reason || direction.why_interesting;
      if (reason) card.appendChild(element("p", "rm-arch__copy", reason));
-     this.appendKeyValue(card, "Status", "Suggested investigation — not a saved trace");
+     this.appendKeyValue(
+      card,
+      this.msg("architecture.label.status"),
+      this.msg("architecture.value.suggested_not_trace")
+     );
      if (suggestion) {
-      this.appendKeyValue(card, "Grounding", text(suggestion.current_grounding).replaceAll("_", " "));
-      this.appendKeyValue(card, "Trace start", suggestion.can_start_trace ? "Available" : "Unavailable from current local evidence");
-      this.appendKeyValue(card, "Source investigation", suggestion.investigation_available ? "Exact source available" : "Unavailable");
+      this.appendKeyValue(
+       card,
+       this.msg("architecture.label.grounding"),
+       text(suggestion.current_grounding).replaceAll("_", " ")
+      );
+      this.appendKeyValue(
+       card,
+       this.msg("architecture.label.trace_start"),
+       suggestion.can_start_trace
+        ? this.msg("architecture.value.available")
+        : this.msg("architecture.value.unavailable_local_evidence")
+      );
+      this.appendKeyValue(
+       card,
+       this.msg("architecture.label.source_investigation"),
+       suggestion.investigation_available
+        ? this.msg("architecture.value.exact_source_available")
+        : this.msg("architecture.value.unavailable")
+      );
       if (!suggestion.can_start_trace) {
-       card.appendChild(element("p", "rm-arch__notice is-warning", "Trace unavailable: " +
-        (suggestion.trace_unavailable_reason || "No singular supported typed trace seed was found.")));
+       card.appendChild(element(
+        "p",
+        "rm-arch__notice is-warning",
+        this.msg("architecture.label.trace_unavailable_reason", {
+         reason: suggestion.trace_unavailable_reason ||
+          this.msg("architecture.copy.no_supported_trace_seed"),
+        })
+       ));
       }
       if (suggestion.investigation_available && suggestion.start_location && typeof this.options.openLocation === "function") {
-       const openSource = element("button", "rm-arch__edge-jump", "Open starting source");
+       const openSource = element(
+        "button",
+        "rm-arch__edge-jump",
+        this.msg("architecture.action.open_starting_source")
+       );
        openSource.type = "button";
        this.listen(openSource, "click", () => {
         const location = suggestion.start_location;
@@ -3563,57 +4025,101 @@
        card.appendChild(openSource);
       } else {
        const exactSourceUnavailable = suggestion.investigation_available;
-       card.appendChild(element("p", "rm-arch__notice is-warning", exactSourceUnavailable ? "Source action unavailable" : "Investigation unavailable"));
+       card.appendChild(element(
+        "p",
+        "rm-arch__notice is-warning",
+        exactSourceUnavailable
+         ? this.msg("architecture.value.source_action_unavailable")
+         : this.msg("architecture.value.investigation_unavailable")
+       ));
        const unavailableReason = exactSourceUnavailable ?
-        "Open this static export through repomap <repo> to enable manifest-authorized source actions." :
-        (suggestion.unavailable_reason || "No exact source starting point was found for this suggestion.");
-       this.appendKeyValue(card, "Reason", unavailableReason);
+        this.msg("architecture.copy.open_static_export") :
+        (suggestion.unavailable_reason || this.msg("architecture.copy.no_exact_source_start"));
+       this.appendKeyValue(card, this.msg("architecture.label.reason"), unavailableReason);
       }
      }
      suggestions.appendChild(card);
    });
 
-   const members = this.inspectorSection("Exact members");
+   const members = this.inspectorSection(this.msg("architecture.section.exact_members"));
    if (array(component.members).length === 0) {
-    members.appendChild(element("p", "rm-arch__empty", "No exact members were retained."));
+    members.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_exact_members")
+    ));
    }
    array(component.members).forEach((member) => {
     const card = element("article", "rm-arch__evidence-card");
-    card.appendChild(element("strong", "rm-arch__evidence-title", member.name || memberLabel(member.id)));
-    card.appendChild(element("code", "rm-arch__member-id", memberLabel(member.id)));
+    card.appendChild(element(
+     "strong",
+     "rm-arch__evidence-title",
+     member.name || memberLabel(member.id, this.message)
+    ));
+    card.appendChild(element("code", "rm-arch__member-id", memberLabel(member.id, this.message)));
     array(member.facts).forEach((fact) => this.appendFact(card, fact));
     members.appendChild(card);
    });
 
-   const evidence = this.inspectorSection("Evidence");
+   const evidence = this.inspectorSection(this.msg("architecture.section.evidence"));
    const anchorIDs = array(component.anchor_ids);
-   if (anchorIDs.length === 0) evidence.appendChild(element("p", "rm-arch__empty", "No exact architecture anchor is attached."));
+   if (anchorIDs.length === 0) {
+    evidence.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_architecture_anchor")
+    ));
+   }
    anchorIDs.forEach((anchorID) => {
       const anchor = this.anchorByID.get(text(anchorID));
       const card = element("article", "rm-arch__evidence-card");
       card.appendChild(element("strong", "rm-arch__evidence-title", anchor ? (anchor.label || anchor.kind) : anchorID));
       card.appendChild(element("code", "rm-arch__member-id", text(anchorID)));
       if (anchor) {
-       this.appendKeyValue(card, "Kind", anchor.kind);
-       this.appendKeyValue(card, "Certainty", anchor.certainty);
-       this.appendLocation(card, anchor.location, "Anchor evidence");
+       this.appendKeyValue(card, this.msg("architecture.label.kind"), anchor.kind);
+       this.appendKeyValue(card, this.msg("architecture.label.certainty"), anchor.certainty);
+       this.appendLocation(card, anchor.location, this.msg("architecture.label.anchor_evidence"));
        this.appendProvenance(card, anchor.producer ? [anchor.producer] : []);
       }
       evidence.appendChild(card);
    });
 
-   const unknowns = this.inspectorSection("Unknowns");
-   if (component.hypothesis) unknowns.appendChild(element("p", "rm-arch__notice is-warning", "This component remains a conceptual or package-derived hypothesis."));
-   if (surfaceIDs.length === 0) unknowns.appendChild(element("p", "rm-arch__notice", "Zero configured-catalog surfaces is an honest bounded-analysis result, not proof that the component has no runtime surface."));
+   const unknowns = this.inspectorSection(this.msg("architecture.section.unknowns"));
+   if (component.hypothesis) {
+    unknowns.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning",
+     this.msg("architecture.copy.component_hypothesis")
+    ));
+   }
+   if (surfaceIDs.length === 0) {
+    unknowns.appendChild(element(
+     "p",
+     "rm-arch__notice",
+     this.msg("architecture.copy.zero_surfaces_honest")
+    ));
+   }
    this.appendDiagnostics(unknowns, "");
   }
 
   inspectSurface(surface) {
    if (this.userMode) return this.inspectUserSurface(surface);
-   this.inspectorHeading("Surface", surface.name || surface.id, "Deterministic registration/start evidence; runtime execution was not observed.");
-   const ownership = this.inspectorSection("Ownership");
-   this.appendKeyValue(ownership, "Executable", surface.owning_executable || "Unassigned");
-   this.appendKeyValue(ownership, "Catalog group", text(surface.category).replaceAll("_", "/"));
+   this.inspectorHeading(
+    this.msg("architecture.label.surface"),
+    surface.name || surface.id,
+    this.msg("architecture.copy.surface_static_evidence")
+   );
+   const ownership = this.inspectorSection(this.msg("architecture.section.ownership"));
+   this.appendKeyValue(
+    ownership,
+    this.msg("architecture.label.executable"),
+    surface.owning_executable || this.msg("architecture.label.unassigned")
+   );
+   this.appendKeyValue(
+    ownership,
+    this.msg("architecture.label.catalog_group"),
+    text(surface.category).replaceAll("_", "/")
+   );
    const owner = this.componentByID.get(text(surface.owning_component_id));
    if (owner) {
     const button = element("button", "rm-arch__edge-jump", owner.name || owner.id);
@@ -3621,82 +4127,140 @@
     this.listen(button, "click", () => this.openComponent(owner.id));
     ownership.appendChild(button);
    } else {
-    ownership.appendChild(element("p", "rm-arch__notice is-warning", "Unassigned surface — no unique exact component owner was found."));
+    ownership.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning",
+     this.msg("architecture.copy.unassigned_surface")
+    ));
    }
 
-   const progression = this.inspectorSection("Saved trace");
+   const progression = this.inspectorSection(this.msg("architecture.label.saved_trace"));
    const trace = this.flowByID.get(text(surface.related_saved_trace_id));
    if (trace) {
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
-    button.appendChild(element("strong", null, "Open saved trace"));
+    button.appendChild(element("strong", null, this.msg("architecture.action.open_saved_trace")));
     button.appendChild(element("span", null, [trace.name || trace.id, trace.status].filter(Boolean).join(" · ")));
     this.listen(button, "click", () => this.openTrace(trace.id));
     progression.appendChild(button);
    } else {
-    progression.appendChild(element("p", "rm-arch__notice is-warning", "Trace unavailable: " + (surface.trace_unavailable_reason || "bounded surface seed is unavailable")));
+    progression.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning",
+     this.msg("architecture.label.trace_unavailable_reason", {
+      reason: surface.trace_unavailable_reason || this.msg("architecture.copy.surface_seed_unavailable"),
+     })
+    ));
    }
 
-   const facts = this.inspectorSection("Evidence");
-   this.appendKeyValue(facts, "Status", surface.status);
-   this.appendKeyValue(facts, "Certainty", surface.certainty);
-   this.appendKeyValue(facts, "Resolution", surface.resolution);
-   array(surface.evidence).forEach((location) => this.appendLocation(facts, location, "Exact source"));
+   const facts = this.inspectorSection(this.msg("architecture.section.evidence"));
+   this.appendKeyValue(facts, this.msg("architecture.label.status"), surface.status);
+   this.appendKeyValue(facts, this.msg("architecture.label.certainty"), surface.certainty);
+   this.appendKeyValue(facts, this.msg("architecture.label.resolution"), surface.resolution);
+   array(surface.evidence).forEach((location) => {
+    this.appendLocation(facts, location, this.msg("architecture.label.exact_source"));
+   });
   }
 
   inspectFlow(flow) {
    if (this.userMode) return this.inspectUserFlow(flow);
-   this.inspectorHeading("Saved trace", flow.name || flow.id, flow.why_inspect || flow.mental_model || flow.goal);
+   this.inspectorHeading(
+    this.msg("architecture.label.saved_trace"),
+    flow.name || flow.id,
+    flow.why_inspect || flow.mental_model || flow.goal
+   );
    this.appendFlowEvidence(this.inspector, flow);
   }
 
   inspectStep(flow, step) {
    if (this.userMode) return this.inspectUserStep(flow, step);
    const branch = this.flowBranch(flow.id, step.branch_id);
-   this.inspectorHeading("Flow step", step.label || step.id, step.qualified_name);
-   this.appendKeyValue(this.inspector, "Flow", flow.name || flow.id);
-   this.appendKeyValue(this.inspector, "Anchor kind", step.kind);
-   this.appendKeyValue(this.inspector, "Branch", branch ? branch.kind : "unassigned");
-   this.appendLocation(this.inspector, step.location, "Declaration");
+   this.inspectorHeading(this.msg("architecture.label.flow_step"), step.label || step.id, step.qualified_name);
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.flow"), flow.name || flow.id);
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.anchor_kind"), step.kind);
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.branch"),
+    branch ? branch.kind : this.msg("architecture.label.unassigned")
+   );
+   this.appendLocation(this.inspector, step.location, this.msg("architecture.label.declaration"));
 
    if (step.binding) {
-    const binding = this.inspectorSection("Exact component binding");
-    this.appendKeyValue(binding, "Member", memberLabel(step.binding.member_id));
-    this.appendKeyValue(binding, "Certainty", step.binding.certainty);
-    this.appendLocation(binding, step.binding.location, "Binding evidence");
+    const binding = this.inspectorSection(this.msg("architecture.section.exact_component_binding"));
+    this.appendKeyValue(
+     binding,
+     this.msg("architecture.label.member"),
+     memberLabel(step.binding.member_id, this.message)
+    );
+    this.appendKeyValue(binding, this.msg("architecture.label.certainty"), step.binding.certainty);
+    this.appendLocation(binding, step.binding.location, this.msg("architecture.label.binding_evidence"));
     this.appendProvenance(binding, step.binding.provenance);
     this.appendScenarios(binding, step.binding.scenarios);
    } else {
-    const missing = this.inspectorSection("Component binding");
-    missing.appendChild(element("p", "rm-arch__notice is-warning", "No unique exact member binds this anchor to a component."));
+    const missing = this.inspectorSection(this.msg("architecture.section.component_binding"));
+    missing.appendChild(element(
+     "p",
+     "rm-arch__notice is-warning",
+     this.msg("architecture.copy.no_unique_member_binding")
+    ));
    }
 
   }
 
   inspectFlowEdge(edge) {
    if (this.userMode) return this.inspectUserFlowEdge(edge);
-   this.inspectorHeading("Flow transition", edge.relation || edge.id, text(edge.from) + " → " + text(edge.to));
-   this.appendKeyValue(this.inspector, "Flow", edge.flow_id);
-   this.appendKeyValue(this.inspector, "Resolution", edge.resolution);
-   this.appendKeyValue(this.inspector, "Invocation", edge.invocation || "unspecified");
-   this.appendKeyValue(this.inspector, "Certainty", edge.certainty);
-   this.appendKeyValue(this.inspector, "Provider", edge.provider);
-   this.appendKeyValue(this.inspector, "From branch", edge.from_branch_id || "unassigned");
-   this.appendKeyValue(this.inspector, "To branch", edge.to_branch_id || "unassigned");
-   this.appendKeyValue(this.inspector, "Cross branch", edge.cross_branch ? "yes" : "no");
-   this.appendLocation(this.inspector, edge.evidence, "Callsite evidence");
+   this.inspectorHeading(
+    this.msg("architecture.label.flow_transition"),
+    edge.relation || edge.id,
+    text(edge.from) + " → " + text(edge.to)
+   );
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.flow"), edge.flow_id);
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.resolution"), edge.resolution);
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.invocation"),
+    edge.invocation || this.msg("architecture.value.unspecified")
+   );
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.certainty"), edge.certainty);
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.provider"), edge.provider);
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.from_branch"),
+    edge.from_branch_id || this.msg("architecture.label.unassigned")
+   );
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.to_branch"),
+    edge.to_branch_id || this.msg("architecture.label.unassigned")
+   );
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.cross_branch"),
+    edge.cross_branch ? this.msg("architecture.value.yes") : this.msg("architecture.value.no")
+   );
+   this.appendLocation(this.inspector, edge.evidence, this.msg("architecture.label.callsite_evidence"));
    const source = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.from));
    const target = this.flowStepsByKey.get(flowStepKey(edge.flow_id, edge.to));
-   if (source) this.appendLocation(this.inspector, source.location, "Source declaration");
-   if (target) this.appendLocation(this.inspector, target.location, "Target declaration");
+   if (source) {
+    this.appendLocation(this.inspector, source.location, this.msg("architecture.label.source_declaration"));
+   }
+   if (target) {
+    this.appendLocation(this.inspector, target.location, this.msg("architecture.label.target_declaration"));
+   }
    if (edge.condition) {
-    const condition = this.inspectorSection("Source condition");
+    const condition = this.inspectorSection(this.msg("architecture.section.source_condition"));
     const conditionText = edge.condition.expression || (
-     edge.condition.expression_omitted ? "condition (expression omitted)" : "condition recorded"
+     edge.condition.expression_omitted
+      ? this.msg("architecture.value.condition_expression_omitted")
+      : this.msg("architecture.value.condition_recorded")
     );
     condition.appendChild(element("code", "rm-arch__condition", conditionText));
-    this.appendLocation(condition, edge.condition.location, "Condition location");
-    condition.appendChild(element("p", "rm-arch__copy", "This preserves syntax; it does not claim the branch ran."));
+    this.appendLocation(condition, edge.condition.location, this.msg("architecture.label.condition_location"));
+    condition.appendChild(element(
+     "p",
+     "rm-arch__copy",
+     this.msg("architecture.copy.condition_limit")
+    ));
    }
   }
 
@@ -3706,18 +4270,30 @@
    const to = this.componentByID.get(text(edge.to_component_id));
    const witness = edge.witness || {};
    this.inspectorHeading(
-    "Structural evidence",
+    this.msg("architecture.label.structural_evidence"),
     witness.kind || edge.id,
     (from ? from.name : edge.from_component_id) + " → " + (to ? to.name : edge.to_component_id)
    );
-   this.appendKeyValue(this.inspector, "Source member", memberLabel(witness.from));
-   this.appendKeyValue(this.inspector, "Target member", memberLabel(witness.to));
-   this.appendKeyValue(this.inspector, "Certainty", witness.certainty);
-   this.appendKeyValue(this.inspector, "Witness ID", witness.id);
-   this.appendLocation(this.inspector, witness.location, "Local witness");
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.source_member"),
+    memberLabel(witness.from, this.message)
+   );
+   this.appendKeyValue(
+    this.inspector,
+    this.msg("architecture.label.target_member"),
+    memberLabel(witness.to, this.message)
+   );
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.certainty"), witness.certainty);
+   this.appendKeyValue(this.inspector, this.msg("architecture.label.witness_id"), witness.id);
+   this.appendLocation(this.inspector, witness.location, this.msg("architecture.label.local_witness"));
    this.appendProvenance(this.inspector, witness.provenance);
    this.appendScenarios(this.inspector, witness.scenarios);
-   this.inspector.appendChild(element("p", "rm-arch__notice", "Structural evidence does not imply runtime order or execution."));
+   this.inspector.appendChild(element(
+    "p",
+    "rm-arch__notice",
+    this.msg("architecture.copy.structural_evidence_limit")
+   ));
   }
 
   stepJumpButton(flow, step) {
@@ -3725,7 +4301,7 @@
    button.type = "button";
    const branch = this.flowBranch(flow.id, step.branch_id);
    button.appendChild(element("strong", null, step.label || step.id));
-   button.appendChild(element("span", null, branchLabel(branch && branch.kind)));
+   button.appendChild(element("span", null, branchLabel(branch && branch.kind, this.message)));
    this.listen(button, "click", () => this.setSelection({
     flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
    }, true));
@@ -3737,17 +4313,25 @@
    if (this.userMode) {
     const block = element("div", "rm-arch__fact");
     if (fact.value) block.appendChild(element("span", "rm-arch__fact-value", fact.value));
-    this.appendLocation(block, fact.location, "Open code");
+    this.appendLocation(block, fact.location, this.msg("architecture.action.open_code"));
     if (block.childElementCount > 0) parent.appendChild(block);
     return;
    }
    const block = element("div", "rm-arch__fact");
    const heading = element("div", "rm-arch__fact-heading");
-   heading.appendChild(element("span", "rm-arch__badge", fact.kind || "fact"));
-   heading.appendChild(element("span", "rm-arch__badge is-muted", fact.certainty || "unknown"));
+   heading.appendChild(element(
+    "span",
+    "rm-arch__badge",
+    fact.kind || this.msg("architecture.fallback.fact")
+   ));
+   heading.appendChild(element(
+    "span",
+    "rm-arch__badge is-muted",
+    fact.certainty || this.msg("architecture.label.unknown")
+   ));
    block.appendChild(heading);
    if (fact.value) block.appendChild(element("span", "rm-arch__fact-value", fact.value));
-   this.appendLocation(block, fact.location, "Evidence");
+   this.appendLocation(block, fact.location, this.msg("architecture.section.evidence"));
    this.appendProvenance(block, fact.provenance);
    parent.appendChild(block);
   }
@@ -3756,10 +4340,23 @@
    if (value == null || value === "") return;
    if (this.userMode) {
     const internalKeys = [
-     "answer coverage", "architecture anchors", "architecture source", "certainty", "current frontier",
-     "derived verdict", "evidence basis", "grounding", "grounding mode", "model", "model verdict",
-     "provider", "resolution", "status", "trace quality", "verdict",
-    ];
+     this.msg("architecture.label.answer_coverage"),
+     this.msg("architecture.label.architecture_anchors"),
+     this.msg("architecture.label.architecture_source"),
+     this.msg("architecture.label.certainty"),
+     this.msg("architecture.label.current_frontier"),
+     this.msg("architecture.label.derived_verdict"),
+     this.msg("architecture.label.evidence_basis"),
+     this.msg("architecture.label.grounding"),
+     this.msg("architecture.label.grounding_mode"),
+     this.msg("architecture.label.model"),
+     this.msg("architecture.label.model_verdict"),
+     this.msg("architecture.label.provider"),
+     this.msg("architecture.label.resolution"),
+     this.msg("architecture.label.status"),
+     this.msg("architecture.label.trace_quality"),
+     this.msg("architecture.label.verdict"),
+    ].map((label) => label.toLowerCase());
     if (internalKeys.indexOf(text(key).toLowerCase()) >= 0) return;
    }
    const row = element("div", "rm-arch__key-value");
@@ -3771,7 +4368,13 @@
   appendSummaryItem(parent, key, value) {
    if (value == null || value === "") return;
    if (this.userMode) {
-    const internalKeys = ["current frontier", "evidence basis", "proof coverage", "status", "verdict"];
+    const internalKeys = [
+     this.msg("architecture.label.current_frontier"),
+     this.msg("architecture.label.evidence_basis"),
+     this.msg("architecture.label.proof_coverage"),
+     this.msg("architecture.label.status"),
+     this.msg("architecture.label.verdict"),
+    ].map((label) => label.toLowerCase());
     if (internalKeys.indexOf(text(key).toLowerCase()) >= 0) return;
    }
    const row = element("div");
@@ -3784,7 +4387,11 @@
    const formatted = locationLabel(location);
    if (!formatted) return;
    const row = element("div", "rm-arch__location-row");
-   row.appendChild(element("span", "rm-arch__key", label || "Location"));
+   row.appendChild(element(
+    "span",
+    "rm-arch__key",
+    label || this.msg("architecture.label.location")
+   ));
    const callback = this.options.openLocation;
    if (typeof callback === "function") {
     const button = element("button", "rm-arch__location", formatted + " ↗");
@@ -3796,7 +4403,11 @@
    }
     parent.appendChild(row);
     if (!this.userMode && this.options.stalePaths && this.options.stalePaths.has && this.options.stalePaths.has(text(location.path))) {
-     parent.appendChild(element("p", "rm-arch__source-warning", "Source changed since this report was generated"));
+     parent.appendChild(element(
+      "p",
+      "rm-arch__source-warning",
+      this.msg("architecture.copy.source_changed")
+     ));
     }
   }
 
@@ -3805,15 +4416,23 @@
    const items = array(provenanceItems);
    if (items.length === 0) return;
    const details = element("details", "rm-arch__details");
-   details.appendChild(element("summary", null, "Provenance (" + items.length + ")"));
+   details.appendChild(element(
+    "summary",
+    null,
+    this.msg("architecture.count.provenance", { count: items.length })
+   ));
    const list = element("ul", "rm-arch__detail-list");
    items.forEach((provenance) => {
     const item = element("li");
     const description = [provenance.provider, provenance.operation, provenance.version, provenance.detail]
      .filter(Boolean)
      .join(" · ");
-    item.appendChild(element("span", null, description || "unspecified provenance"));
-    this.appendLocation(item, provenance.location, "Source");
+    item.appendChild(element(
+     "span",
+     null,
+     description || this.msg("architecture.fallback.unspecified_provenance")
+    ));
+    this.appendLocation(item, provenance.location, this.msg("architecture.section.source"));
     list.appendChild(item);
    });
    details.appendChild(list);
@@ -3825,11 +4444,19 @@
    const items = array(scenarios);
    if (items.length === 0) return;
    const details = element("details", "rm-arch__details");
-   details.appendChild(element("summary", null, "Scenarios (" + items.length + ")"));
+   details.appendChild(element(
+    "summary",
+    null,
+    this.msg("architecture.count.scenarios", { count: items.length })
+   ));
    const list = element("ul", "rm-arch__detail-list");
    items.forEach((scenario) => {
     const item = element("li");
-    item.appendChild(element("strong", null, scenario.name || scenario.id || "scenario"));
+    item.appendChild(element(
+     "strong",
+     null,
+     scenario.name || scenario.id || this.msg("architecture.fallback.scenario")
+    ));
     const build = scenario.build || {};
     const context = [build.goos, build.goarch, array(build.build_tags).join(", ")].filter(Boolean).join(" · ");
     if (context) item.appendChild(element("code", null, context));
@@ -3843,14 +4470,24 @@
    if (this.userMode) return;
    const diagnostics = this.diagnostics.filter((diagnostic) => !flowID || text(diagnostic.flow_id) === flowID);
    if (diagnostics.length === 0) {
-    parent.appendChild(element("p", "rm-arch__empty", "No saved diagnostics."));
+    parent.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.no_saved_diagnostics")
+    ));
     return;
    }
    diagnostics.forEach((diagnostic) => {
     const notice = element("article", "rm-arch__notice is-" + (diagnostic.severity || "info"));
-    notice.appendChild(element("strong", null, diagnostic.code || diagnostic.source || "diagnostic"));
+    notice.appendChild(element(
+     "strong",
+     null,
+     diagnostic.code || diagnostic.source || this.msg("architecture.fallback.diagnostic")
+    ));
     notice.appendChild(element("p", null, diagnostic.message));
-    if (diagnostic.member) notice.appendChild(element("code", null, memberLabel(diagnostic.member)));
+    if (diagnostic.member) {
+     notice.appendChild(element("code", null, memberLabel(diagnostic.member, this.message)));
+    }
     parent.appendChild(notice);
    });
   }

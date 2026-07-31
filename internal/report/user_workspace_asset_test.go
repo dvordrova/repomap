@@ -19,8 +19,8 @@ func TestUserWorkspaceMakesFailedStudyPublicationVisible(t *testing.T) {
 	script := string(raw)
 	for _, marker := range []string{
 		"renderStudyPublicationNotice(root);",
-		"Study unavailable for this run",
-		"it is not a substitute Study result",
+		"main.study.unavailable.for.this.run",
+		"main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result",
 		"label + ' · ' + path",
 	} {
 		if !strings.Contains(script, marker) {
@@ -54,6 +54,9 @@ const document = {
   },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -330,6 +333,9 @@ const document = {
   querySelector() { return null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -379,6 +385,9 @@ const topicDocument = {
   },
   querySelectorAll() { return []; },
 };
+topicDocument.documentElement = { lang: "en" };
+topicWindow.document = topicDocument;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window: topicWindow });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window: topicWindow, document: topicDocument, URLSearchParams, Set, Map, AbortController,
 });
@@ -398,6 +407,9 @@ const emptyDocument = {
   },
   querySelectorAll() { return []; },
 };
+emptyDocument.documentElement = { lang: "en" };
+emptyWindow.document = emptyDocument;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window: emptyWindow });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window: emptyWindow, document: emptyDocument, URLSearchParams, Set, Map, AbortController,
 });
@@ -670,6 +682,9 @@ const document = {
   },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -888,6 +903,9 @@ const document = {
   },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -1079,6 +1097,9 @@ const document = {
   querySelector() { return null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
@@ -1232,6 +1253,9 @@ const document = {
   },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
@@ -1420,6 +1444,9 @@ const document = {
   querySelector() { return null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
@@ -1590,6 +1617,9 @@ const document = {
   querySelector() { return null; },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
@@ -1741,6 +1771,9 @@ const document = {
   },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
@@ -1787,14 +1820,14 @@ func TestUserWorkspaceCodeFirstAssetContract(t *testing.T) {
 		"function uniqueSourceSnippets(",
 		"function remainingExactReferences(",
 		"function renderExactReferences(",
-		"'Primary implementation'",
-		"'Open in editor'",
-		"'Copy file:line'",
-		"'Show code'",
-		"'Show full function'",
-		"'What to notice'",
-		"'Open code path →'",
-		"'All files ('",
+			"'main.primary_implementation'",
+		"'main.open.in.editor'",
+		"'main.copy.file.line'",
+			"'main.source.show_code'",
+		"'main.show.full.function'",
+		"'main.chrome.what.to.notice'",
+		"'main.open.code.path'",
+		"'main.mechanism.all_files_more'",
 		"if (!action.selection || !action.selection.snippet",
 		"function parseWorkspaceHash(",
 		"window.addEventListener('hashchange'",
@@ -1810,9 +1843,9 @@ func TestUserWorkspaceCodeFirstAssetContract(t *testing.T) {
 		"DATA.repository_guide",
 		"function renderGuideReadNext(",
 		"function userArchitectureAvailable(",
-		"'Main code path'",
-		"'Other code path'",
-		"'Show implementation details ('",
+		"'main.chrome.main.code.path'",
+		"'main.mechanism_role.other'",
+		"'main.mechanism.show_implementation_details'",
 		"function returnFromArchitecture(",
 		"commitWorkspaceState(next, { replace: true })",
 	} {

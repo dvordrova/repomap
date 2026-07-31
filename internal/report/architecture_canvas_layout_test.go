@@ -22,7 +22,15 @@ func TestArchitectureCanvasLayoutModes(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const window = { __REPOMAP_LAYOUT_TEST__: {} };
+const window = {
+  RepomapUI: {
+    message(id, params) {
+      if (params !== undefined && Object.keys(params).length > 0) throw new Error("unexpected params for " + id);
+      return id;
+    },
+  },
+  __REPOMAP_LAYOUT_TEST__: {},
+};
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window });
 const api = window.__REPOMAP_LAYOUT_TEST__;
 const mode = (groupCount, primaryCount) => api.landscapeLayoutMode({
@@ -141,7 +149,24 @@ func TestArchitectureCanvasGroupsResticLifecycleByTaskRoot(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const window = { __REPOMAP_LAYOUT_TEST__: {} };
+const messages = {
+  "architecture.value.saved_cli_trace": "Saved CLI trace",
+  "architecture.value.saved_process_trace": "Saved process trace",
+  "architecture.label.saved_trace": "Saved trace",
+  "architecture.value.lifecycle_started_by": "Started by",
+  "architecture.value.lifecycle_callback": "Callback",
+  "architecture.value.lifecycle_cancellation": "Cancellation",
+  "architecture.value.lifecycle_join": "Join",
+};
+function message(id, params) {
+  if (!Object.prototype.hasOwnProperty.call(messages, id)) throw new Error("unknown message " + id);
+  if (params !== undefined && Object.keys(params).length > 0) throw new Error("unexpected params for " + id);
+  return messages[id];
+}
+const window = {
+  RepomapUI: { message },
+  __REPOMAP_LAYOUT_TEST__: {},
+};
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window });
 const api = window.__REPOMAP_LAYOUT_TEST__;
 const canvas = JSON.parse(fs.readFileSync(process.argv[3], "utf8")).architecture_canvas;
@@ -153,11 +178,15 @@ const fallback = api.groupLifecycleRelations(
 );
 process.stdout.write(JSON.stringify({
   archetype: flow.archetype,
-  traceLabels: [api.savedTraceLabel("cli"), api.savedTraceLabel("process"), api.savedTraceLabel("")],
+  traceLabels: [
+    api.savedTraceLabel("cli", message),
+    api.savedTraceLabel("process", message),
+    api.savedTraceLabel("", message),
+  ],
   groups: grouped.groups.map((group) => {
     const relations = {};
     group.relations.forEach((edge) => {
-      const label = api.lifecycleRelationHeading(edge);
+      const label = api.lifecycleRelationHeading(edge, message);
       if (!relations[label]) relations[label] = [];
       relations[label].push(edge.id);
     });
