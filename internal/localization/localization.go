@@ -446,13 +446,6 @@ func Apply(canonical CanonicalArtifact, input Input, projection Projection) (Res
 			})
 			continue
 		}
-		if !targetLanguageQualityOK(inputField.Text, translated, input.TargetLocale) {
-			result.Diagnostics = append(result.Diagnostics, Diagnostic{
-				Code:    "target_language_quality_failed",
-				FieldID: field.ID,
-			})
-			continue
-		}
 		for _, term := range field.ProtectedTerms {
 			translated = strings.ReplaceAll(translated, term.Token, term.Value)
 		}
@@ -638,46 +631,6 @@ func placeholdersMatch(text string, terms []ProtectedTerm) bool {
 		}
 	}
 	return true
-}
-
-// targetLanguageQualityOK rejects a Russian projection when English prose
-// remains outside opaque placeholders. Explicitly typed technical names are
-// protected before this check, so any Latin run here is unprotected model
-// prose rather than an allowed identifier. Fields that
-// contain no English prose after placeholder removal remain valid only while
-// the projection does not add new Latin prose around their opaque values.
-func targetLanguageQualityOK(source, translated, targetLocale string) bool {
-	if targetLocale != LocaleRussian {
-		return true
-	}
-	source = placeholderPattern.ReplaceAllString(source, "")
-	translated = placeholderPattern.ReplaceAllString(translated, "")
-	if !containsASCIILetter(source) {
-		return !containsASCIILetter(translated)
-	}
-	hasCyrillic := false
-	for _, value := range translated {
-		if isASCIILetter(value) {
-			return false
-		}
-		if unicode.In(value, unicode.Cyrillic) && unicode.IsLetter(value) {
-			hasCyrillic = true
-		}
-	}
-	return hasCyrillic
-}
-
-func containsASCIILetter(value string) bool {
-	for _, character := range value {
-		if isASCIILetter(character) {
-			return true
-		}
-	}
-	return false
-}
-
-func isASCIILetter(value rune) bool {
-	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
 }
 
 func canonicalResult(canonical CanonicalArtifact) Result {

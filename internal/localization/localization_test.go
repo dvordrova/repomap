@@ -116,17 +116,17 @@ func TestRussianProjectionChangesOnlyExplicitTypedValues(t *testing.T) {
 	}
 }
 
-func TestRussianProjectionRejectsPartiallyUntranslatedProse(t *testing.T) {
+func TestRussianProjectionAcceptsStructurallyValidMixedScriptProse(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical([]FieldSpec{{
-		OwnerKind: OwnerComponent,
-		OwnerID:   "redis-adapter",
-		Name:      FieldSummary,
-		Text:      "Uses Redis over RESP3 to process messages.",
+		OwnerKind: OwnerPresentationText,
+		OwnerID:   "architecture/flows/http-request-handling/trigger",
+		Name:      FieldText,
+		Text: "Incoming HTTP request to the Go server " +
+			"(e.g., curl http://localhost:30080/svc2/proxy) with Grafana.",
 		ProtectedTerms: []ProtectedValue{
-			{Kind: ProtectedProduct, Value: "Redis"},
-			{Kind: ProtectedProtocol, Value: "RESP3"},
+			{Kind: ProtectedURL, Value: "http://localhost:30080/svc2/proxy"},
 		},
 	}})
 	if err != nil {
@@ -136,30 +136,30 @@ func TestRussianProjectionRejectsPartiallyUntranslatedProse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	redis := protectedToken(t, canonical.Fields[0], "Redis")
-	resp3 := protectedToken(t, canonical.Fields[0], "RESP3")
+	urlToken := protectedToken(t, canonical.Fields[0], "http://localhost:30080/svc2/proxy")
+	wantText := "Входящий HTTP-запрос к Go-серверу " +
+		"(например, curl " + urlToken + ") с Grafana."
 	result, err := Apply(canonical, input, Projection{
 		Version:         ProjectionVersion,
 		CanonicalSHA256: canonical.SHA256,
 		Locale:          LocaleRussian,
 		Translations: map[string]string{
-			input.Fields[0].ID: "Использует " + redis + " через " + resp3 +
-				", but keeps English prose.",
+			input.Fields[0].ID: wantText,
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Diagnostic{{
-		Code:    "target_language_quality_failed",
-		FieldID: input.Fields[0].ID,
-	}}
-	if !result.Fallback || !equalDiagnostics(result.Diagnostics, want) {
-		t.Fatalf("partial-English result = %#v, want diagnostics %#v", result, want)
+	if result.Fallback || len(result.Diagnostics) != 0 {
+		t.Fatalf("mixed-script projection = %#v", result)
 	}
-	if result.Fields[0].Text != canonical.Fields[0].Text {
-		t.Fatalf("partial-English field = %q, want canonical fallback %q",
-			result.Fields[0].Text, canonical.Fields[0].Text)
+	wantText = strings.ReplaceAll(
+		wantText,
+		urlToken,
+		"http://localhost:30080/svc2/proxy",
+	)
+	if result.Fields[0].Text != wantText {
+		t.Fatalf("mixed-script field = %q, want %q", result.Fields[0].Text, wantText)
 	}
 }
 
@@ -201,119 +201,6 @@ func TestRussianProjectionAllowsOpaqueOnlyField(t *testing.T) {
 	if result.Fallback || len(result.Diagnostics) != 0 ||
 		result.Fields[0].Text != "RESP3" {
 		t.Fatalf("opaque-only result = %#v", result)
-	}
-}
-
-func TestRussianProjectionRejectsEnglishAddedAroundOpaqueOnlyField(t *testing.T) {
-	t.Parallel()
-
-	canonical, err := NewCanonical([]FieldSpec{{
-		OwnerKind: OwnerComponent,
-		OwnerID:   "protocol",
-		Name:      FieldSummary,
-		Text:      "RESP3",
-		ProtectedTerms: []ProtectedValue{{
-			Kind:  ProtectedProtocol,
-			Value: "RESP3",
-		}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := BuildInput(canonical, LocaleRussian)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := Apply(canonical, input, Projection{
-		Version:         ProjectionVersion,
-		CanonicalSHA256: canonical.SHA256,
-		Locale:          LocaleRussian,
-		Translations: map[string]string{
-			input.Fields[0].ID: "English fallback " + input.Fields[0].Text,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []Diagnostic{{
-		Code:    "target_language_quality_failed",
-		FieldID: input.Fields[0].ID,
-	}}
-	if !result.Fallback || !equalDiagnostics(result.Diagnostics, want) ||
-		result.Fields[0].Text != canonical.Fields[0].Text {
-		t.Fatalf("opaque English fallback result = %#v, want %#v", result, want)
-	}
-}
-
-func TestRussianProjectionRejectsSingleLowercaseEnglishRun(t *testing.T) {
-	t.Parallel()
-
-	canonical, err := NewCanonical([]FieldSpec{{
-		OwnerKind: OwnerComponent,
-		OwnerID:   "single-letter",
-		Name:      FieldSummary,
-		Text:      "Starts a worker.",
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := BuildInput(canonical, LocaleRussian)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := Apply(canonical, input, Projection{
-		Version:         ProjectionVersion,
-		CanonicalSHA256: canonical.SHA256,
-		Locale:          LocaleRussian,
-		Translations: map[string]string{
-			input.Fields[0].ID: "Запускает a worker.",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.Fallback ||
-		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
-			Code:    "target_language_quality_failed",
-			FieldID: input.Fields[0].ID,
-		}}) {
-		t.Fatalf("single-letter English result = %#v", result)
-	}
-}
-
-func TestRussianProjectionRejectsSingleUppercaseEnglishRun(t *testing.T) {
-	t.Parallel()
-
-	canonical, err := NewCanonical([]FieldSpec{{
-		OwnerKind: OwnerComponent,
-		OwnerID:   "single-uppercase-letter",
-		Name:      FieldSummary,
-		Text:      "A worker starts.",
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := BuildInput(canonical, LocaleRussian)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := Apply(canonical, input, Projection{
-		Version:         ProjectionVersion,
-		CanonicalSHA256: canonical.SHA256,
-		Locale:          LocaleRussian,
-		Translations: map[string]string{
-			input.Fields[0].ID: "Запускается A.",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.Fallback ||
-		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
-			Code:    "target_language_quality_failed",
-			FieldID: input.Fields[0].ID,
-		}}) {
-		t.Fatalf("single-uppercase-letter English result = %#v", result)
 	}
 }
 
@@ -412,7 +299,7 @@ func TestProtectedIdentifierRequiresAnIdentityBoundary(t *testing.T) {
 	}
 }
 
-func TestRussianProjectionCannotHideProseInsideProtectedIdentifier(t *testing.T) {
+func TestRussianProjectionRestoresProtectedIdentifierInMixedScriptProse(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical([]FieldSpec{{
@@ -444,16 +331,13 @@ func TestRussianProjectionCannotHideProseInsideProtectedIdentifier(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fallback ||
-		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
-			Code:    "target_language_quality_failed",
-			FieldID: input.Fields[0].ID,
-		}}) {
-		t.Fatalf("embedded-English result = %#v", result)
+	if result.Fallback || len(result.Diagnostics) != 0 ||
+		result.Fields[0].Text != "Слой domain вызывает main." {
+		t.Fatalf("mixed-script protected result = %#v", result)
 	}
 }
 
-func TestUntypedAcronymCannotBypassRussianQuality(t *testing.T) {
+func TestUntypedAcronymDoesNotRequireAnOpaquePlaceholder(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical([]FieldSpec{{
@@ -487,12 +371,9 @@ func TestUntypedAcronymCannotBypassRussianQuality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fallback ||
-		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
-			Code:    "target_language_quality_failed",
-			FieldID: input.Fields[0].ID,
-		}}) {
-		t.Fatalf("untranslated TitleCase result = %#v", result)
+	if result.Fallback || len(result.Diagnostics) != 0 ||
+		result.Fields[0].Text != "HTTP маршрутизация обрабатывает трафик." {
+		t.Fatalf("mixed-script acronym result = %#v", result)
 	}
 }
 

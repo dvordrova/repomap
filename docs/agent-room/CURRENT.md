@@ -1,16 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/174-localization-reliability-diagnostics.md
+    decisions/175-structural-localization-acceptance.md
 
 Status:
-    Decision 174 active; localization reliability diagnostics authorized
+    Decision 175 active; structural localization acceptance authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
-    Decision 174 is the immediate release-blocking diagnostic checkpoint. It
+    Decision 175 removes only the harmful residual-Latin localization
+    acceptance predicate exposed by the Decision 174 diagnostics. Provider
+    response schema/index coverage, opaque placeholders, secret scan, bounded
+    values, atomic batches, canonical English fallback, and cache safety remain
+    strict. No glossary, model-selected exemption, prompt change, cache
+    namespace, migration, legacy reader, or user flag is introduced.
+    Decision 174 completed the release-blocking diagnostic checkpoint. It
     records only actually processed localization batches, adds a closed safe
     failure stage/code/counter status contract, saves rejected localization
     output only under --dump-llm after secret handling, and exposes the Guided
