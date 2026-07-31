@@ -115,7 +115,7 @@ func buildArchitectureLocalizationRussianPrompt(
 			err,
 		)
 	}
-	if kind, found := secretscan.Detect(string(encoded)); found {
+	if kind, found := secretscan.DetectAlways(string(encoded)); found {
 		return localization.Prompt{}, nil, fmt.Errorf(
 			"architecture localization stage: prompt contains an obvious %s",
 			kind,

@@ -136,7 +136,7 @@ func replayPreparedArchitectureLocalizationRussian(
 	if len(encoded) == 0 || len(encoded) > maxArchitectureLocalizationArtifactBytes {
 		return nil, fmt.Errorf("architecture localization replay: result exceeds its byte limit")
 	}
-	if kind, found := secretscan.Detect(string(encoded)); found {
+	if kind, found := secretscan.DetectAlways(string(encoded)); found {
 		return nil, fmt.Errorf(
 			"architecture localization replay: result contains an obvious %s",
 			kind,
@@ -179,9 +179,10 @@ func readArchitectureLocalizationProjectionFile(path string) ([]byte, error) {
 	}
 	if !openedInfo.Mode().IsRegular() ||
 		openedInfo.Size() <= 0 ||
-		openedInfo.Size() > maxArchitectureLocalizationArtifactBytes {
+		openedInfo.Size() > maxArchitectureLocalizationArtifactBytes ||
+		!os.SameFile(info, openedInfo) {
 		return nil, fmt.Errorf(
-			"architecture localization replay: projection is not a bounded regular file",
+			"architecture localization replay: projection changed before open",
 		)
 	}
 	data, err := io.ReadAll(io.LimitReader(file, maxArchitectureLocalizationArtifactBytes+1))
@@ -209,7 +210,7 @@ func decodeArchitectureLocalizationProjection(
 			"architecture localization replay: projection is not valid UTF-8",
 		)
 	}
-	if kind, found := secretscan.Detect(string(data)); found {
+	if kind, found := secretscan.DetectAlways(string(data)); found {
 		return localization.Projection{}, fmt.Errorf(
 			"architecture localization replay: projection contains an obvious %s",
 			kind,
@@ -390,7 +391,7 @@ func (state *architectureLocalizationReplayPreflight) consumeString(
 		index += next
 	}
 	if scan {
-		if kind, found := secretscan.Detect(value); found &&
+		if kind, found := secretscan.DetectAlways(value); found &&
 			(state.secretKind == "" || kind < state.secretKind) {
 			state.secretKind = kind
 		}

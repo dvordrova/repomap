@@ -41,6 +41,17 @@ func Detect(text string) (string, bool) {
 	if disabled.Load() {
 		return "", false
 	}
+	return detect(text)
+}
+
+// DetectAlways performs mandatory credential detection even when the
+// explicitly unsafe process-wide override is active. Persistent artifacts and
+// provider request evidence must use this boundary.
+func DetectAlways(text string) (string, bool) {
+	return detect(text)
+}
+
+func detect(text string) (string, bool) {
 	for _, candidate := range patterns {
 		for _, match := range candidate.pattern.FindAllString(text, -1) {
 			if candidate.kind == "credential assignment" {

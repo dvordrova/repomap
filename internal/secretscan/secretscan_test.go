@@ -94,3 +94,16 @@ func TestDetectKeepsQuotedDottedCredentialLiteralFailClosed(t *testing.T) {
 		t.Fatalf("Detect(%q) = %q, %v, want credential assignment", input, kind, found)
 	}
 }
+
+func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
+	restore := SetDisabled(true)
+	defer restore()
+
+	const input = `API_KEY="actual-secret-value"`
+	if kind, found := Detect(input); found || kind != "" {
+		t.Fatalf("Detect() = %q, %v while disabled", kind, found)
+	}
+	if kind, found := DetectAlways(input); !found || kind != "credential assignment" {
+		t.Fatalf("DetectAlways() = %q, %v, want mandatory detection", kind, found)
+	}
+}

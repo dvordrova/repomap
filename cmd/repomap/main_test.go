@@ -47,6 +47,7 @@ func TestPrintPromptVersions(t *testing.T) {
 		"symbol_json":                  deepseek.SymbolPromptVersionJSON,
 		"symbol_tagged":                deepseek.SymbolPromptVersionTagged,
 		"localization":                 localization.PromptVersion,
+		"localization_request":         deepseek.LocalizationRequestVersion,
 		"guided_tour":                  guidedtour.PromptVersion,
 		"guided_tour_leaf":             guidedtour.LeafPromptVersion,
 		"guided_tour_fan_in":           guidedtour.FanInPromptVersion,

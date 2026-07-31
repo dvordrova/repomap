@@ -398,7 +398,7 @@ func validateArchitectureLocalizationIdentityPayloads(
 				payload.name,
 			)
 		}
-		if kind, found := secretscan.Detect(string(payload.data)); found {
+		if kind, found := secretscan.DetectAlways(string(payload.data)); found {
 			return fmt.Errorf(
 				"architecture localization artifacts: %s contains an obvious %s",
 				payload.name,
@@ -484,7 +484,7 @@ func architectureLocalizationCredential(
 ) (string, bool) {
 	scan := func(values ...string) (string, bool) {
 		for _, value := range values {
-			if kind, found := secretscan.Detect(value); found {
+			if kind, found := secretscan.DetectAlways(value); found {
 				return kind, true
 			}
 		}
