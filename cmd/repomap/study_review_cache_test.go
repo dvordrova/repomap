@@ -54,9 +54,17 @@ func (editor *studyReviewDirectEditor) DiscoverSemanticsMeasured(
 }
 
 type studyReviewCacheRunResult struct {
-	recordJSON []byte
-	recordHash string
-	editor     *studyReviewCachingEditor
+	recordJSON    []byte
+	recordHash    string
+	candidateIDs  []string
+	reviewIDs     []string
+	publishedIDs  []string
+	scheduled     int
+	accepted      int
+	rejected      int
+	providerCalls int
+	cacheStats    studyReviewCacheStats
+	editor        *studyReviewCachingEditor
 }
 
 type studyReviewCacheRunOptions struct {
@@ -85,6 +93,7 @@ func TestStudyReviewCacheHTTPColdWarmAndContentAddressing(t *testing.T) {
 		t.Fatalf("cold review HTTP calls = %d, want %d", got, want)
 	}
 	assertStudyReviewCacheStats(t, cold.editor, 0, len(directions.Directions), 0, 0)
+	assertStudyReviewCacheRunTrace(t, cold, directions, len(directions.Directions), 0, len(directions.Directions), 0)
 
 	cacheFiles := studyReviewCacheFiles(t, runsDir)
 	if got, want := len(cacheFiles), len(directions.Directions); got != want {
@@ -122,13 +131,21 @@ func TestStudyReviewCacheHTTPColdWarmAndContentAddressing(t *testing.T) {
 		t.Fatalf("warm live provider factories = %d, want 0", got)
 	}
 	assertStudyReviewCacheStats(t, warm.editor, len(directions.Directions), 0, 0, 0)
+	assertStudyReviewCacheRunTrace(t, warm, directions, 0, len(directions.Directions), 0, 0)
 	if !bytes.Equal(cold.recordJSON, warm.recordJSON) || cold.recordHash != warm.recordHash {
 		t.Fatalf("cold/warm normalized Study differs: %s / %s", cold.recordHash, warm.recordHash)
+	}
+	if !reflect.DeepEqual(cold.candidateIDs, warm.candidateIDs) ||
+		!reflect.DeepEqual(cold.reviewIDs, warm.reviewIDs) ||
+		!reflect.DeepEqual(cold.publishedIDs, warm.publishedIDs) {
+		t.Fatalf("cold/warm Study IDs differ: cold=%#v/%#v/%#v warm=%#v/%#v/%#v",
+			cold.candidateIDs, cold.reviewIDs, cold.publishedIDs,
+			warm.candidateIDs, warm.reviewIDs, warm.publishedIDs)
 	}
 
 	bundleB := mutateStudyReviewCacheSource(t, bundleA, 0, 2)
 	beforeB := provider.calls.Load()
-	runStudyReviewCacheFixture(t, provider, bundleB, directions, studyReviewCacheRunOptions{
+	changed := runStudyReviewCacheFixture(t, provider, bundleB, directions, studyReviewCacheRunOptions{
 		runsDir:  runsDir,
 		runName:  "one-fragment-b",
 		endpoint: provider.server.URL,
@@ -137,6 +154,7 @@ func TestStudyReviewCacheHTTPColdWarmAndContentAddressing(t *testing.T) {
 	if got := provider.calls.Load() - beforeB; got != 1 {
 		t.Fatalf("one changed review fragment HTTP calls = %d, want 1", got)
 	}
+	assertStudyReviewCacheRunTrace(t, changed, directions, 1, len(directions.Directions)-1, 1, 0)
 
 	var returnToALiveFactories atomic.Int64
 	returnToA := runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
@@ -155,9 +173,16 @@ func TestStudyReviewCacheHTTPColdWarmAndContentAddressing(t *testing.T) {
 	if got := returnToALiveFactories.Load(); got != 0 {
 		t.Fatalf("A-B-A live provider factories = %d, want 0", got)
 	}
+	assertStudyReviewCacheRunTrace(t, returnToA, directions, 0, len(directions.Directions), 0, 0)
 	if !bytes.Equal(cold.recordJSON, returnToA.recordJSON) || cold.recordHash != returnToA.recordHash {
 		t.Fatalf("A-B-A normalized Study differs: %s / %s", cold.recordHash, returnToA.recordHash)
 	}
+	t.Logf(
+		"Study review matrix candidates=%d scheduled=%d cold_calls=%d warm_hits=%d changed_hits=%d changed_misses=%d return_hits=%d published=%d",
+		len(cold.candidateIDs), cold.scheduled, cold.providerCalls, warm.cacheStats.Hits,
+		changed.cacheStats.Hits, changed.cacheStats.Misses, returnToA.cacheStats.Hits,
+		len(cold.publishedIDs),
+	)
 }
 
 func TestStudyReviewCacheIdentityDriftMisses(t *testing.T) {
@@ -898,10 +923,75 @@ func runStudyReviewCacheFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidateIDs := make([]string, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		candidateIDs = append(candidateIDs, direction.DirectionID)
+	}
+	reviewIDs := make([]string, 0, len(reviews))
+	for _, review := range reviews {
+		reviewIDs = append(reviewIDs, review.DirectionID)
+	}
+	publishedIDs := make([]string, 0, len(record.Directions))
+	for _, direction := range record.Directions {
+		publishedIDs = append(publishedIDs, direction.ID)
+	}
+	providerCalls := 0
+	accepted := 0
+	for _, stage := range stages {
+		if stage.ProviderCall {
+			providerCalls++
+		}
+		if stage.Status == "accepted" {
+			accepted++
+		}
+	}
+	editor.mu.Lock()
+	cacheStats := editor.stats
+	editor.mu.Unlock()
 	return studyReviewCacheRunResult{
-		recordJSON: recordJSON,
-		recordHash: studyReviewCacheTestSHA256(recordJSON),
-		editor:     editor,
+		recordJSON: recordJSON, recordHash: studyReviewCacheTestSHA256(recordJSON),
+		candidateIDs: candidateIDs, reviewIDs: reviewIDs, publishedIDs: publishedIDs,
+		scheduled: len(stages), accepted: accepted, rejected: len(stages) - accepted,
+		providerCalls: providerCalls, cacheStats: cacheStats, editor: editor,
+	}
+}
+
+func assertStudyReviewCacheRunTrace(
+	t *testing.T,
+	result studyReviewCacheRunResult,
+	directions studymap.DirectionProposal,
+	wantProviderCalls,
+	wantHits,
+	wantMisses,
+	wantRejected int,
+) {
+	t.Helper()
+	wantIDs := make([]string, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		wantIDs = append(wantIDs, direction.DirectionID)
+	}
+	if result.scheduled != len(wantIDs) || result.accepted != len(wantIDs) ||
+		result.rejected != wantRejected || result.providerCalls != wantProviderCalls ||
+		result.cacheStats.Hits != wantHits || result.cacheStats.Misses != wantMisses {
+		t.Fatalf(
+			"Study review trace scheduled/accepted/rejected/provider_calls/hits/misses = %d/%d/%d/%d/%d/%d, want %d/%d/%d/%d/%d/%d",
+			result.scheduled, result.accepted, result.rejected, result.providerCalls,
+			result.cacheStats.Hits, result.cacheStats.Misses,
+			len(wantIDs), len(wantIDs), wantRejected, wantProviderCalls, wantHits, wantMisses,
+		)
+	}
+	if !reflect.DeepEqual(result.candidateIDs, wantIDs) ||
+		!reflect.DeepEqual(result.reviewIDs, wantIDs) {
+		t.Fatalf(
+			"Study candidate/review IDs = %#v/%#v, want %#v",
+			result.candidateIDs, result.reviewIDs, wantIDs,
+		)
+	}
+	if len(result.publishedIDs) == 0 || len(result.publishedIDs) > len(wantIDs) {
+		t.Fatalf(
+			"published Study IDs = %#v, want a non-empty bounded reducer result",
+			result.publishedIDs,
+		)
 	}
 }
 
