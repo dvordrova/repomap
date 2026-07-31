@@ -18,6 +18,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
@@ -92,8 +93,10 @@ func ExactDiscoveryAnchors(
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
-	// ReportLanguage changes only human-facing presentation and model prose.
-	// Repository-owned identifiers, paths, symbols, and evidence remain exact.
+	// ReportLanguage is transient render state selected by the requested
+	// presentation locale. It controls the typed product message catalog
+	// independently of whether optional model-authored prose was translated.
+	// Canonical report artifacts always omit it.
 	ReportLanguage string `json:"report_language,omitempty"`
 	// GitLabSourceLinks is present only when the report is intended to be a
 	// standalone shareable artifact. Source actions then target the exact
@@ -122,8 +125,20 @@ type ReportData struct {
 	ArtifactsDir               string               `json:"artifacts_dir"`
 	FeedbackPath               string               `json:"feedback_path,omitempty"`
 	Warnings                   []string             `json:"warnings,omitempty"`
-	Run                        *RunInfo             `json:"run,omitempty"`
-	OpenablePaths              []string             `json:"openable_paths,omitempty"`
+	// PresentationWarnings is a render-only parallel copy of Warnings. A
+	// localized render clone replaces dynamic warning prose in both slices so
+	// the standalone terminal artifact does not retain copyable English prose.
+	PresentationWarnings []string `json:"presentation_warnings,omitempty"`
+	// PresentationWarningKinds is a render-only parallel list of typed catalog
+	// message IDs for warnings whose product-owned identity is known from
+	// structural run status. Canonical report artifacts never persist it.
+	PresentationWarningKinds []string `json:"presentation_warning_kinds,omitempty"`
+	// PresentationWarningMessages is the render-only typed message projection
+	// for product warnings that require catalog parameters. Canonical report
+	// artifacts keep only the unchanged legacy Warnings strings.
+	PresentationWarningMessages []RunPresentationWarning `json:"presentation_warning_messages,omitempty"`
+	Run                         *RunInfo                 `json:"run,omitempty"`
+	OpenablePaths               []string                 `json:"openable_paths,omitempty"`
 	// SourceIDs is an ephemeral server-rendered map from authorized
 	// repository-relative paths to opaque navigation IDs. WriteReportJSON
 	// deliberately excludes it from persisted report evidence.
@@ -187,30 +202,60 @@ type ReportData struct {
 	// used while replaying one bounded semantic experiment. It is deliberately
 	// excluded from report.json; the authoritative copy remains the saved local
 	// probe artifact beside the replay record.
-	SemanticSupplementalFacts []semanticdiscovery.Fact     `json:"-"`
-	SemanticSearchDisabled    bool                         `json:"semantic_search_disabled,omitempty"`
-	SemanticSearch            *SemanticSearchIndex         `json:"semantic_search,omitempty"`
-	ArchitectureSynthesis     *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
-	ArchitectureGrounding     *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
-	ModelResearch             *modelresearch.State         `json:"model_research,omitempty"`
-	DiscoveredSurfaces        *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
-	CommandTraces             []gofacts.CommandTrace       `json:"command_traces,omitempty"`
-	Freshness                 *freshness.FreshnessResult   `json:"freshness,omitempty"`
-	CapturedRevision          string                       `json:"captured_revision,omitempty"`
-	CapturedInputCount        int                          `json:"captured_input_count,omitempty"`
-	RepositorySubmodules      []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
-	evidenceLocations         []evidence.Location
-	sourceSignals             []SourceSignal
-	studyDocumentSourceRoot   string
-	standaloneLocalRoots      []string
-	externalImports           []externalImportUsage
-	repositoryGoFacts         *gofacts.Facts
-	repositoryEntrypointFacts *gofacts.Facts
-	semanticAttempted         int
-	semanticInvestigated      int
+	SemanticSupplementalFacts     []semanticdiscovery.Fact     `json:"-"`
+	SemanticSearchDisabled        bool                         `json:"semantic_search_disabled,omitempty"`
+	SemanticSearch                *SemanticSearchIndex         `json:"semantic_search,omitempty"`
+	ArchitectureSynthesis         *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	ArchitectureGrounding         *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
+	ModelResearch                 *modelresearch.State         `json:"model_research,omitempty"`
+	DiscoveredSurfaces            *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	CommandTraces                 []gofacts.CommandTrace       `json:"command_traces,omitempty"`
+	Freshness                     *freshness.FreshnessResult   `json:"freshness,omitempty"`
+	CapturedRevision              string                       `json:"captured_revision,omitempty"`
+	CapturedInputCount            int                          `json:"captured_input_count,omitempty"`
+	RepositorySubmodules          []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
+	evidenceLocations             []evidence.Location
+	sourceSignals                 []SourceSignal
+	studyDocumentSourceRoot       string
+	standaloneLocalRoots          []string
+	externalImports               []externalImportUsage
+	repositoryGoFacts             *gofacts.Facts
+	repositoryEntrypointFacts     *gofacts.Facts
+	architectureDebugPresentation map[string]string
+	semanticAttempted             int
+	semanticInvestigated          int
+	// Presentation localization is transient render state loaded from a
+	// separately validated sidecar. It is never part of canonical report JSON.
+	presentationLocalizationState     string
+	presentationLocalizationMessageID string
+	requestedPresentationLocale       string
+	presentationSourceEpisode         *sourceEpisodeProjection
+	runWarningDiagnostics             []runWarningDiagnostic
+	// presentationMetadataErr quarantines an invalid optional presentation
+	// sidecar without turning it into canonical report prose or failing EN
+	// replay. Shared hydration surfaces it to RU localization and serving.
+	presentationMetadataErr error
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+type runWarningDiagnostic struct {
+	WarningIndex   int
+	Code           orient.ConfidenceWarningCode
+	CandidateIndex int
+	Proposed       float64
+	Capped         float64
+}
+
+// RunPresentationWarning addresses one raw warning and supplies a closed set
+// of typed parameters to the shared EN/RU product-message catalog.
+type RunPresentationWarning struct {
+	WarningIndex   int    `json:"warning_index"`
+	MessageID      string `json:"message_id"`
+	CandidateIndex int    `json:"candidate_index"`
+	Proposed       string `json:"proposed"`
+	Capped         string `json:"capped"`
 }
 
 // UserTopic is a presentation-only projection of one rejected-but-grounded
@@ -517,9 +562,10 @@ type ChainStep struct {
 }
 
 type FileItem struct {
-	Path     string `json:"path"`
-	Reason   string `json:"reason"`
-	Priority int    `json:"priority"`
+	Path               string `json:"path"`
+	Reason             string `json:"reason"`
+	PresentationReason string `json:"presentation_reason,omitempty"`
+	Priority           int    `json:"priority"`
 }
 
 type PathItem struct {

@@ -1,5 +1,6 @@
 // Package localization defines provider-neutral contracts for projecting
-// allowlisted human-readable prose without changing semantic identity.
+// inventoried human-readable presentation prose without changing semantic
+// identity.
 package localization
 
 import (
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -25,41 +27,58 @@ const (
 type OwnerKind string
 
 const (
-	OwnerRepository     OwnerKind = "repository"
-	OwnerSubsystem      OwnerKind = "subsystem"
-	OwnerComponent      OwnerKind = "component"
-	OwnerGuidedTour     OwnerKind = "guided_tour"
-	OwnerGuidedStep     OwnerKind = "guided_step"
-	OwnerStudyBrief     OwnerKind = "study_brief"
-	OwnerStudyDirection OwnerKind = "study_direction"
-	OwnerConceptualArea OwnerKind = "conceptual_area"
-	OwnerMechanism      OwnerKind = "mechanism"
-	OwnerMechanismStep  OwnerKind = "mechanism_step"
+	OwnerRepository      OwnerKind = "repository"
+	OwnerSubsystem       OwnerKind = "subsystem"
+	OwnerComponent       OwnerKind = "component"
+	OwnerGuidedTour      OwnerKind = "guided_tour"
+	OwnerGuidedStep      OwnerKind = "guided_step"
+	OwnerGuidedGap       OwnerKind = "guided_gap"
+	OwnerStudyBrief      OwnerKind = "study_brief"
+	OwnerBriefDomainTerm OwnerKind = "brief_domain_term"
+	OwnerStudyDirection  OwnerKind = "study_direction"
+	OwnerStudyReading    OwnerKind = "study_reading"
+	OwnerConceptualArea  OwnerKind = "conceptual_area"
+	OwnerMechanism       OwnerKind = "mechanism"
+	OwnerMechanismStep   OwnerKind = "mechanism_step"
+	OwnerMechanismPhase  OwnerKind = "mechanism_phase"
+	// OwnerPresentationText addresses terminal presentation prose by its stable
+	// render path rather than by the semantic object that happened to supply
+	// it. Report-wide localization uses this owner exclusively.
+	OwnerPresentationText OwnerKind = "presentation_text"
 )
 
 type FieldName string
 
 const (
-	FieldProjectGuess      FieldName = "project_guess"
-	FieldDocumentedPurpose FieldName = "documented_purpose"
-	FieldNameText          FieldName = "name"
-	FieldTitle             FieldName = "title"
-	FieldSummary           FieldName = "summary"
-	FieldDescription       FieldName = "description"
-	FieldResponsibility    FieldName = "responsibility"
-	FieldExplanation       FieldName = "explanation"
-	FieldWhyItMatters      FieldName = "why_it_matters"
-	FieldGapExplanation    FieldName = "gap_explanation"
-	FieldHeadline          FieldName = "headline"
-	FieldArchitecture      FieldName = "architecture"
-	FieldOperatingModel    FieldName = "operating_model"
-	FieldStudyAdvice       FieldName = "study_advice"
-	FieldQuestion          FieldName = "question"
-	FieldWhy               FieldName = "why"
-	FieldOutcome           FieldName = "outcome"
-	FieldWhatToLookFor     FieldName = "what_to_look_for"
-	FieldSearchQuery       FieldName = "search_query"
-	FieldAnswer            FieldName = "answer"
+	FieldProjectGuess          FieldName = "project_guess"
+	FieldDocumentedPurpose     FieldName = "documented_purpose"
+	FieldNameText              FieldName = "name"
+	FieldTitle                 FieldName = "title"
+	FieldSummary               FieldName = "summary"
+	FieldDescription           FieldName = "description"
+	FieldResponsibility        FieldName = "responsibility"
+	FieldExplanation           FieldName = "explanation"
+	FieldWhyItMatters          FieldName = "why_it_matters"
+	FieldGapExplanation        FieldName = "gap_explanation"
+	FieldHeadline              FieldName = "headline"
+	FieldArchitecture          FieldName = "architecture"
+	FieldOperatingModel        FieldName = "operating_model"
+	FieldStudyAdvice           FieldName = "study_advice"
+	FieldWhatItIs              FieldName = "what_it_is"
+	FieldProblem               FieldName = "problem"
+	FieldMainInput             FieldName = "main_input"
+	FieldCentralResponsibility FieldName = "central_responsibility"
+	FieldObservableResult      FieldName = "observable_result"
+	FieldDomainTermMeaning     FieldName = "domain_term_meaning"
+	FieldQuestion              FieldName = "question"
+	FieldWhy                   FieldName = "why"
+	FieldOutcome               FieldName = "outcome"
+	FieldWhatToLookFor         FieldName = "what_to_look_for"
+	FieldSearchQuery           FieldName = "search_query"
+	FieldAnswer                FieldName = "answer"
+	// FieldText is the single payload field for a typed presentation address.
+	// The address itself identifies the report object and schema field.
+	FieldText FieldName = "text"
 )
 
 type ProtectedKind string
@@ -116,19 +135,32 @@ var allowedFields = map[OwnerKind]map[FieldName]struct{}{
 		FieldTitle:       {},
 		FieldExplanation: {},
 	},
+	OwnerGuidedGap: {
+		FieldExplanation: {},
+	},
 	OwnerStudyBrief: {
-		FieldHeadline:       {},
-		FieldSummary:        {},
-		FieldArchitecture:   {},
-		FieldOperatingModel: {},
-		FieldStudyAdvice:    {},
+		FieldHeadline:              {},
+		FieldSummary:               {},
+		FieldArchitecture:          {},
+		FieldOperatingModel:        {},
+		FieldStudyAdvice:           {},
+		FieldWhatItIs:              {},
+		FieldProblem:               {},
+		FieldMainInput:             {},
+		FieldCentralResponsibility: {},
+		FieldObservableResult:      {},
+	},
+	OwnerBriefDomainTerm: {
+		FieldDomainTermMeaning: {},
 	},
 	OwnerStudyDirection: {
-		FieldQuestion:      {},
-		FieldWhy:           {},
-		FieldOutcome:       {},
+		FieldQuestion:    {},
+		FieldWhy:         {},
+		FieldOutcome:     {},
+		FieldSearchQuery: {},
+	},
+	OwnerStudyReading: {
 		FieldWhatToLookFor: {},
-		FieldSearchQuery:   {},
 	},
 	OwnerConceptualArea: {
 		FieldNameText:       {},
@@ -142,6 +174,13 @@ var allowedFields = map[OwnerKind]map[FieldName]struct{}{
 	OwnerMechanismStep: {
 		FieldTitle:       {},
 		FieldExplanation: {},
+	},
+	OwnerMechanismPhase: {
+		FieldTitle:       {},
+		FieldExplanation: {},
+	},
+	OwnerPresentationText: {
+		FieldText: {},
 	},
 }
 
@@ -274,7 +313,7 @@ func BuildInput(canonical CanonicalArtifact, targetLocale string) (Input, error)
 		text := field.Text
 		expectations := make([]PlaceholderExpectation, 0, len(field.ProtectedTerms))
 		for _, term := range field.ProtectedTerms {
-			text = strings.ReplaceAll(text, term.Value, term.Token)
+			text, _ = replaceProtectedValue(text, term.Value, term.Token)
 			expectations = append(expectations, PlaceholderExpectation{
 				Token: term.Token,
 				Kind:  term.Kind,
@@ -407,6 +446,13 @@ func Apply(canonical CanonicalArtifact, input Input, projection Projection) (Res
 			})
 			continue
 		}
+		if !targetLanguageQualityOK(inputField.Text, translated, input.TargetLocale) {
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{
+				Code:    "target_language_quality_failed",
+				FieldID: field.ID,
+			})
+			continue
+		}
 		for _, term := range field.ProtectedTerms {
 			translated = strings.ReplaceAll(translated, term.Token, term.Value)
 		}
@@ -445,7 +491,7 @@ func canonicalField(spec FieldSpec) (CanonicalField, error) {
 	if placeholderPattern.MatchString(spec.Text) {
 		return CanonicalField{}, fmt.Errorf("localization: field %q contains a reserved placeholder", id)
 	}
-	terms, err := protectedTerms(spec.Text, spec.ProtectedTerms)
+	terms, err := protectedTerms(spec.Text, withInferredProtectedValues(spec.Text, spec.ProtectedTerms))
 	if err != nil {
 		return CanonicalField{}, fmt.Errorf("localization: field %q: %w", id, err)
 	}
@@ -472,7 +518,7 @@ func protectedTerms(text string, values []ProtectedValue) ([]ProtectedTerm, erro
 		if _, exists := unique[value.Value]; exists {
 			return nil, fmt.Errorf("duplicate protected term")
 		}
-		if !strings.Contains(text, value.Value) {
+		if !ContainsProtectedValue(text, value.Value) {
 			return nil, fmt.Errorf("protected term is absent from canonical text")
 		}
 		unique[value.Value] = struct{}{}
@@ -490,13 +536,13 @@ func protectedTerms(text string, values []ProtectedValue) ([]ProtectedTerm, erro
 
 	terms := make([]ProtectedTerm, 0, len(ordered))
 	protectedText := text
-	for index, value := range ordered {
-		token := fmt.Sprintf("{{term_%02d}}", index+1)
-		count := strings.Count(protectedText, value.Value)
+	for _, value := range ordered {
+		token := fmt.Sprintf("{{term_%02d}}", len(terms)+1)
+		replaced, count := replaceProtectedValue(protectedText, value.Value, token)
 		if count == 0 {
 			continue
 		}
-		protectedText = strings.ReplaceAll(protectedText, value.Value, token)
+		protectedText = replaced
 		terms = append(terms, ProtectedTerm{
 			Token: token,
 			Kind:  value.Kind,
@@ -505,6 +551,73 @@ func protectedTerms(text string, values []ProtectedValue) ([]ProtectedTerm, erro
 		})
 	}
 	return terms, nil
+}
+
+// ContainsProtectedValue reports whether value occurs as the same opaque
+// identity in text. Identifier-shaped edges must not be embedded in a larger
+// identifier: an identity such as "main" therefore matches "main()" but not
+// the prose word "domain".
+func ContainsProtectedValue(text, value string) bool {
+	_, count := replaceProtectedValue(text, value, value)
+	return count > 0
+}
+
+func replaceProtectedValue(text, value, replacement string) (string, int) {
+	if value == "" {
+		return text, 0
+	}
+	var result strings.Builder
+	scanFrom := 0
+	copyFrom := 0
+	count := 0
+	for scanFrom <= len(text) {
+		relative := strings.Index(text[scanFrom:], value)
+		if relative < 0 {
+			break
+		}
+		start := scanFrom + relative
+		end := start + len(value)
+		if !protectedOccurrenceBoundaryOK(text, value, start, end) {
+			_, size := utf8.DecodeRuneInString(text[start:])
+			scanFrom = start + size
+			continue
+		}
+		if count == 0 {
+			result.Grow(len(text))
+		}
+		result.WriteString(text[copyFrom:start])
+		result.WriteString(replacement)
+		copyFrom = end
+		scanFrom = end
+		count++
+	}
+	if count == 0 {
+		return text, 0
+	}
+	result.WriteString(text[copyFrom:])
+	return result.String(), count
+}
+
+func protectedOccurrenceBoundaryOK(text, value string, start, end int) bool {
+	first, _ := utf8.DecodeRuneInString(value)
+	if isProtectedIdentifierRune(first) && start > 0 {
+		previous, _ := utf8.DecodeLastRuneInString(text[:start])
+		if isProtectedIdentifierRune(previous) {
+			return false
+		}
+	}
+	last, _ := utf8.DecodeLastRuneInString(value)
+	if isProtectedIdentifierRune(last) && end < len(text) {
+		next, _ := utf8.DecodeRuneInString(text[end:])
+		if isProtectedIdentifierRune(next) {
+			return false
+		}
+	}
+	return true
+}
+
+func isProtectedIdentifierRune(value rune) bool {
+	return value == '_' || unicode.IsLetter(value) || unicode.IsDigit(value)
 }
 
 func placeholdersMatch(text string, terms []ProtectedTerm) bool {
@@ -525,6 +638,165 @@ func placeholdersMatch(text string, terms []ProtectedTerm) bool {
 		}
 	}
 	return true
+}
+
+// targetLanguageQualityOK rejects a Russian projection when English prose
+// remains outside opaque placeholders. Technical names from the canonical
+// source are protected before this check, so any multi-letter Latin run here
+// is unprotected model prose rather than an allowed identifier. Fields that
+// contain no English prose after placeholder removal remain valid only while
+// the projection does not add new Latin prose around their opaque values.
+func targetLanguageQualityOK(source, translated, targetLocale string) bool {
+	if targetLocale != LocaleRussian {
+		return true
+	}
+	source = placeholderPattern.ReplaceAllString(source, "")
+	translated = placeholderPattern.ReplaceAllString(translated, "")
+	if !containsASCIILetter(source) {
+		return !containsASCIILetter(translated)
+	}
+	hasCyrillic := false
+	latinStart := -1
+	runes := []rune(translated)
+	for index, value := range runes {
+		switch {
+		case unicode.In(value, unicode.Cyrillic) && unicode.IsLetter(value):
+			hasCyrillic = true
+			if !allowedLatinRun(runes, latinStart, index, source) {
+				return false
+			}
+			latinStart = -1
+		case isASCIILetter(value):
+			if latinStart < 0 {
+				latinStart = index
+			}
+		default:
+			if !allowedLatinRun(runes, latinStart, index, source) {
+				return false
+			}
+			latinStart = -1
+		}
+	}
+	if !allowedLatinRun(runes, latinStart, len(runes), source) {
+		return false
+	}
+	return hasCyrillic
+}
+
+func allowedLatinRun(text []rune, start, end int, source string) bool {
+	if start < 0 {
+		return true
+	}
+	token := string(text[start:end])
+	if end-start == 1 {
+		return false
+	}
+	for _, character := range token {
+		if character < 'A' || character > 'Z' {
+			return false
+		}
+	}
+	return containsASCIIWord(source, token)
+}
+
+func containsASCIIWord(text, token string) bool {
+	for _, candidate := range asciiWordTokens(text) {
+		if candidate == token {
+			return true
+		}
+	}
+	return false
+}
+
+func containsASCIILetter(value string) bool {
+	for _, character := range value {
+		if isASCIILetter(character) {
+			return true
+		}
+	}
+	return false
+}
+
+func isASCIILetter(value rune) bool {
+	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
+}
+
+// withInferredProtectedValues conservatively recognizes technical tokens
+// already present in canonical prose. It intentionally does not protect an
+// ordinary TitleCase word at the beginning of a field, where capitalization
+// alone cannot distinguish a product from sentence grammar.
+func withInferredProtectedValues(text string, explicit []ProtectedValue) []ProtectedValue {
+	values := append([]ProtectedValue(nil), explicit...)
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		seen[value.Value] = struct{}{}
+	}
+	for _, token := range asciiWordTokens(text) {
+		if _, exists := seen[token]; exists {
+			continue
+		}
+		kind, protect := inferredProtectedKind(token)
+		if !protect {
+			continue
+		}
+		values = append(values, ProtectedValue{Kind: kind, Value: token})
+		seen[token] = struct{}{}
+	}
+	return values
+}
+
+func asciiWordTokens(text string) []string {
+	tokens := make([]string, 0)
+	start := -1
+	for index, character := range text {
+		if isASCIILetter(character) || character >= '0' && character <= '9' {
+			if start < 0 {
+				start = index
+			}
+			continue
+		}
+		if start >= 0 {
+			tokens = append(tokens, text[start:index])
+			start = -1
+		}
+	}
+	if start >= 0 {
+		tokens = append(tokens, text[start:])
+	}
+	return tokens
+}
+
+func inferredProtectedKind(token string) (ProtectedKind, bool) {
+	if len(token) < 2 {
+		return "", false
+	}
+	upper := 0
+	lower := 0
+	digit := 0
+	upperAfterFirst := false
+	for index, character := range token {
+		switch {
+		case character >= 'A' && character <= 'Z':
+			upper++
+			if index > 0 {
+				upperAfterFirst = true
+			}
+		case character >= 'a' && character <= 'z':
+			lower++
+		case character >= '0' && character <= '9':
+			digit++
+		}
+	}
+	if digit > 0 && upper+lower > 0 {
+		return ProtectedProtocol, true
+	}
+	if upper >= 2 && lower == 0 {
+		return ProtectedProtocol, true
+	}
+	if upperAfterFirst && lower > 0 {
+		return ProtectedProduct, true
+	}
+	return "", false
 }
 
 func canonicalResult(canonical CanonicalArtifact) Result {

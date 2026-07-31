@@ -2,14 +2,21 @@ package deepseek
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestRussianOutputLanguageReinforcesEveryModelMessage(t *testing.T) {
-	client := &Client{Model: "test", MaxTokens: 1000, OutputLanguage: "ru"}
+func TestCanonicalEnglishContractWrapsEverySemanticRequestSeam(t *testing.T) {
+	t.Parallel()
 
-	orientationJSON, err := client.OrientPromptJSON([]byte(`{"allowed_paths":["cmd/server/main.go"]}`))
+	client := &Client{Model: "test", MaxTokens: 1000}
+	orientationJSON, err := client.OrientPromptJSON(
+		[]byte(`{"allowed_paths":["cmd/server/main.go"]}`),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,10 +27,18 @@ func TestRussianOutputLanguageReinforcesEveryModelMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	textJSON, err := client.flowExplainPromptText(
+		"Explain the bounded result.",
+		"Return plain text.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for name, raw := range map[string][]byte{
 		"orientation": orientationJSON,
-		"flow":        flowJSON,
+		"json stage":  flowJSON,
+		"text stage":  textJSON,
 	} {
 		var request chatRequest
 		if err := json.Unmarshal(raw, &request); err != nil {
@@ -32,63 +47,80 @@ func TestRussianOutputLanguageReinforcesEveryModelMessage(t *testing.T) {
 		if len(request.Messages) != 2 {
 			t.Fatalf("%s messages = %#v", name, request.Messages)
 		}
-		system := request.Messages[0].Content
 		for _, want := range []string{
-			"human-readable prose value in Russian",
+			"CANONICAL OUTPUT LANGUAGE CONTRACT",
+			SemanticOutputLanguageContractVersion,
+			"human-readable prose value in English",
 			"repository paths",
 			"code identifiers",
-			"exact schema literal values",
-			"allowed literals remains structural",
-			"exact protocol and format tags",
-			"API",
+			"closed lists of allowed literals",
 		} {
-			if !strings.Contains(system, want) {
-				t.Fatalf("%s system prompt is missing %q: %s", name, want, system)
+			joined := request.Messages[0].Content + "\n" + request.Messages[1].Content
+			if !strings.Contains(joined, want) {
+				t.Fatalf("%s request is missing %q: %s", name, want, joined)
 			}
 		}
-		user := request.Messages[1].Content
-		for _, want := range []string{
-			"OUTPUT LANGUAGE CONTRACT",
-			"human-readable prose value in Russian",
-			"protected technical identifiers",
-			"closed lists of allowed literals",
-			"exact protocol and format tags",
-		} {
-			if !strings.Contains(user, want) {
-				t.Fatalf("%s user prompt is missing %q: %s", name, want, user)
-			}
+		if strings.Contains(
+			request.Messages[0].Content+"\n"+request.Messages[1].Content,
+			"prose value in Russian",
+		) {
+			t.Fatalf("%s request retained the superseded Russian semantic contract", name)
 		}
 	}
 
-	if !strings.Contains(string(orientationJSON), `cmd/server/main.go`) {
-		t.Fatal("orientation request changed the repository path")
-	}
-	var flowRequest chatRequest
-	if err := json.Unmarshal(flowJSON, &flowRequest); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		`{"opaque_id":"direction-1","path":"cmd/server/main.go"}`,
-		"Do not return English explanatory sentences",
-	} {
-		if !strings.Contains(flowRequest.Messages[1].Content, want) {
-			t.Fatalf("flow user input is missing %q: %q", want, flowRequest.Messages[1].Content)
-		}
+	if !strings.Contains(string(orientationJSON), `cmd/server/main.go`) ||
+		!strings.Contains(string(flowJSON), `cmd/server/main.go`) {
+		t.Fatal("canonical-English wrapping changed an opaque repository path")
 	}
 }
 
-func TestDefaultOutputLanguagePreservesPromptBytes(t *testing.T) {
-	client := &Client{Model: "test", MaxTokens: 1000}
-	got, err := client.FlowExplainPromptJSON("user", "system")
+func TestChatRequestConstructionHasOneSemanticChokePointAndOneLocalizationException(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	want := map[string]int{
+		"canonicalSemanticRequest": 1,
+		"BuildLocalizationRequest": 1,
+	}
+	got := make(map[string]int)
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var request chatRequest
-	if err := json.Unmarshal(got, &request); err != nil {
-		t.Fatal(err)
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(".", name)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				composite, ok := node.(*ast.CompositeLit)
+				if !ok || len(composite.Elts) == 0 {
+					return true
+				}
+				identifier, ok := composite.Type.(*ast.Ident)
+				if ok && identifier.Name == "chatRequest" {
+					got[function.Name.Name]++
+				}
+				return true
+			})
+		}
 	}
-	if request.Messages[0].Content != "system" ||
-		request.Messages[1].Content != "user" {
-		t.Fatalf("default messages = %#v", request.Messages)
+	if len(got) != len(want) {
+		t.Fatalf("chatRequest constructors = %#v, want %#v", got, want)
+	}
+	for function, count := range want {
+		if got[function] != count {
+			t.Fatalf("chatRequest constructor %s count = %d, want %d", function, got[function], count)
+		}
 	}
 }

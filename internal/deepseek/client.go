@@ -49,6 +49,20 @@ const (
 // request contract used by Orient and OrientPromptJSON.
 const OrientationPromptVersionJSON = "orientation-json-v10"
 
+// SemanticOutputLanguageContractVersion identifies the shared language
+// contract applied to every non-localization model request. Localization uses
+// its own source/target-locale contract and deliberately bypasses this one.
+const SemanticOutputLanguageContractVersion = "canonical-english-output-v1"
+
+const canonicalEnglishSystemContract = `CANONICAL OUTPUT LANGUAGE CONTRACT (canonical-english-output-v1):
+- Write every human-readable prose value in English.
+- Keep JSON keys, enum values, exact schema literals, opaque IDs, repository paths, code identifiers, package/module names, API/protocol/product/library names, exact format tags, and quoted source text unchanged.
+- Copy values from closed lists of allowed literals exactly, even when their words look human-readable.
+- Return exactly the requested response shape.`
+
+const canonicalEnglishUserContract = `OUTPUT LANGUAGE:
+The response is the canonical semantic result. Before returning it, verify that every human-readable title, description, explanation, question, reason, warning, summary, and other prose value is English while protected technical values remain unchanged.`
+
 type Client struct {
 	HTTPClient *http.Client
 	APIKey     string
@@ -56,10 +70,6 @@ type Client struct {
 	MaxTokens  int
 	Endpoint   string
 	Auth       string
-	// OutputLanguage applies only to human-readable prose in model responses.
-	// JSON keys, enum values, opaque IDs, source text, and repository-owned
-	// identifiers remain unchanged.
-	OutputLanguage string
 	// OnWait is called from a heartbeat goroutine during long semantic stages.
 	// Set it before starting a request; it must be concurrency-safe, return
 	// promptly, and never log prompt, response, source, or credential content.
@@ -275,16 +285,8 @@ var (
 )
 
 func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
-	return chatRequest{
-		Model: c.Model,
-		Messages: []chatMessage{
-			{
-				Role:    "system",
-				Content: c.withOutputLanguage("You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only."),
-			},
-			{
-				Role: "user",
-				Content: c.withOutputLanguageUser(`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
+	return c.canonicalSemanticRequest(
+		`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
 Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
 
@@ -361,13 +363,10 @@ Important rules:
 - Use only the provided facts bundle. Do not imagine files you cannot see.
 
 Facts bundle JSON:
-` + string(bundleJSON)),
-			},
-		},
-		Temperature:    float64Pointer(0.1),
-		MaxTokens:      c.MaxTokens,
-		ResponseFormat: &jsonFormat{Type: "json_object"},
-	}
+`+string(bundleJSON),
+		"You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
+		true,
+	)
 }
 
 func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
@@ -386,11 +385,19 @@ func (c *Client) flowExplainPromptText(userContent, systemContent string) ([]byt
 }
 
 func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode bool) chatRequest {
+	return c.canonicalSemanticRequest(userContent, systemContent, jsonMode)
+}
+
+func (c *Client) canonicalSemanticRequest(
+	userContent,
+	systemContent string,
+	jsonMode bool,
+) chatRequest {
 	request := chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: c.withOutputLanguage(systemContent)},
-			{Role: "user", Content: c.withOutputLanguageUser(userContent)},
+			{Role: "system", Content: withCanonicalEnglishSystemContract(systemContent)},
+			{Role: "user", Content: withCanonicalEnglishUserContract(userContent)},
 		},
 		Temperature: float64Pointer(0.1),
 		MaxTokens:   c.MaxTokens,
@@ -401,34 +408,12 @@ func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode 
 	return request
 }
 
-func (c *Client) withOutputLanguage(systemContent string) string {
-	if c == nil || strings.ToLower(strings.TrimSpace(c.OutputLanguage)) != "ru" {
-		return systemContent
-	}
-	return systemContent + `
-
-Write every human-readable prose value in Russian. Keep JSON keys, enum values,
-exact schema literal values, opaque IDs, repository paths, code identifiers,
-package and module names, API and protocol names, product and library names,
-exact protocol and format tags, and quoted source text unchanged. Any value
-presented as a closed list of allowed literals remains structural even when
-its words look human-readable.
-Return exactly the requested JSON shape.`
+func withCanonicalEnglishSystemContract(systemContent string) string {
+	return systemContent + "\n\n" + canonicalEnglishSystemContract
 }
 
-func (c *Client) withOutputLanguageUser(userContent string) string {
-	if c == nil || strings.ToLower(strings.TrimSpace(c.OutputLanguage)) != "ru" {
-		return userContent
-	}
-	return `OUTPUT LANGUAGE CONTRACT:
-- Write every title, description, explanation, question, reason, warning, summary, and other human-readable prose value in Russian.
-- Keep repository paths, code identifiers, opaque IDs, JSON keys, enum values, exact schema literal values, package/module names, API/protocol/product/library names, exact protocol and format tags, and quoted source text unchanged.
-- Copy values from closed lists of allowed literals exactly; do not translate them even when their words look human-readable.
-- Do not return English explanatory sentences or English prose headings.
-
-` + userContent + `
-
-Before returning JSON, verify again that every human-readable prose value is Russian while protected technical identifiers remain unchanged.`
+func withCanonicalEnglishUserContract(userContent string) string {
+	return canonicalEnglishUserContract + "\n\n" + userContent
 }
 
 func float64Pointer(value float64) *float64 {

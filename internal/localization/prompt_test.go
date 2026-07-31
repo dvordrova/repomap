@@ -40,7 +40,7 @@ func TestRussianPromptIsDeterministicAndContainsOnlyProtectedInput(t *testing.T)
 		t.Fatalf("identical localization prompts differ:\n%s\n%s", firstJSON, secondJSON)
 	}
 	digest := sha256.Sum256(firstJSON)
-	const wantPromptSHA256 = "e399c596ef763d1407d12d108b6168be07503f0d398eab181eedcb67e35a59a7"
+	const wantPromptSHA256 = "a4776ce17d9c82ed1f9988b88f98f117d7ba790b8bda0f859792559d12ca8589"
 	if got := hex.EncodeToString(digest[:]); got != wantPromptSHA256 {
 		t.Fatalf("prompt SHA-256 = %q, want %q", got, wantPromptSHA256)
 	}

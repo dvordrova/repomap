@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/localization"
@@ -389,7 +388,7 @@ func presentProtectedValues(
 	seen := make(map[string]struct{})
 	result := make([]localization.ProtectedValue, 0)
 	for _, value := range values {
-		if value.Value == "" || !strings.Contains(text, value.Value) {
+		if value.Value == "" || !localization.ContainsProtectedValue(text, value.Value) {
 			continue
 		}
 		if _, duplicate := seen[value.Value]; duplicate {

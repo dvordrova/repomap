@@ -216,6 +216,47 @@ func TestReviewStudyMapDirectionsReviewsEveryCandidateAndRecordsPreparationFailu
 	}
 }
 
+func TestReviewStudyMapDirectionsDoesNotReduceTwelveSingleFileAnchors(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32SingleFileReviewFixture(t)
+	provider := &studyMapV32ReviewProviderStub{}
+	reviews, summaries, stages, issues, err := reviewStudyMapDirections(
+		context.Background(),
+		t.TempDir(),
+		bundle,
+		directions,
+		"single-file-bundle-sha",
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.mu.Lock()
+	calls := append([]string(nil), provider.calls...)
+	provider.mu.Unlock()
+	if len(calls) != studymap.MaxCandidates ||
+		len(reviews) != studymap.MaxCandidates ||
+		len(summaries) != studymap.MaxCandidates ||
+		len(stages) != studymap.MaxCandidates ||
+		len(issues) != 0 {
+		t.Fatalf(
+			"single-file calls/reviews/summaries/stages/issues = %d/%d/%d/%d/%d, want %d/%d/%d/%d/0",
+			len(calls), len(reviews), len(summaries), len(stages), len(issues),
+			studymap.MaxCandidates, studymap.MaxCandidates,
+			studymap.MaxCandidates, studymap.MaxCandidates,
+		)
+	}
+	for index, summary := range summaries {
+		if summary.DirectionID != directions.Directions[index].DirectionID {
+			t.Fatalf(
+				"summary[%d].direction_id = %q, want %q",
+				index, summary.DirectionID, directions.Directions[index].DirectionID,
+			)
+		}
+	}
+}
+
 func TestNormalizedDirectionArtifactRoundTripsWithoutRewritingRawAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -459,6 +500,75 @@ func studyMapV32ReviewFixture(t *testing.T) (studymap.Bundle, studymap.Direction
 				{AnchorID: anchorIDs[2], Label: "Related implementation", WhatToLookFor: "Inspect the visible output boundary."},
 			},
 			SearchQueries: []string{fmt.Sprintf("%s source", strings.TrimSuffix(question, "?"))},
+		})
+	}
+	normalized, err := studymap.NormalizeDirectionProposal(directions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bundle, normalized
+}
+
+func studyMapV32SingleFileReviewFixture(t *testing.T) (studymap.Bundle, studymap.DirectionProposal) {
+	t.Helper()
+
+	const filePath = "single.go"
+	area := studymap.Area{
+		ID: "area-single", Name: "Single file", Responsibility: "Bounded single-file fixture.",
+	}
+	bundle := studymap.Bundle{
+		Version: studymap.BundleVersion, RepoName: "single-file-fixture",
+		Areas: []studymap.Area{area}, AllowedPaths: []string{filePath},
+	}
+	anchorIDs := make([]string, 0, studymap.MaxCandidates)
+	for index := 0; index < studymap.MaxCandidates; index++ {
+		symbol := fmt.Sprintf("part%d", index)
+		window, err := sourcewindowfacts.NewWindow(
+			"window-"+symbol,
+			filePath,
+			1+index*5,
+			[]string{
+				"func " + symbol + "() int {",
+				"\treturn 1",
+				"}",
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		function, err := sourcewindowfacts.ExtractGoFunction(window, symbol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		anchorID := "fact-" + symbol
+		anchorIDs = append(anchorIDs, anchorID)
+		bundle.Anchors = append(bundle.Anchors, studymap.Anchor{
+			ID: anchorID, Path: filePath, Symbol: symbol, Line: function.StartLine,
+			Role:      artifactrole.RoleProductionCore,
+			Statement: symbol + " is an exact bounded function.",
+			AreaIDs:   []string{area.ID}, Function: function,
+		})
+	}
+	directions := studymap.DirectionProposal{Version: studymap.DirectionProposalVersion}
+	for index := 0; index < studymap.MaxCandidates; index++ {
+		selected := []string{
+			anchorIDs[index],
+			anchorIDs[(index+1)%len(anchorIDs)],
+			anchorIDs[(index+2)%len(anchorIDs)],
+		}
+		directions.Directions = append(directions.Directions, studymap.DirectionCandidate{
+			Question:        fmt.Sprintf("How does single-file direction %d work?", index+1),
+			WhyItMatters:    "This retains a distinct bounded reading direction.",
+			LearningOutcome: "The reader can locate the selected declarations.",
+			TargetJob:       studymap.JobFirstContact,
+			LearningStage:   studymap.StageCentralOperation,
+			AnchorIDs:       selected,
+			AreaIDs:         []string{area.ID},
+			ReadingAnchors: []studymap.ReadingAnchor{
+				{AnchorID: selected[0], Label: "Start here", WhatToLookFor: "Inspect the first declaration."},
+				{AnchorID: selected[1], Label: "Then inspect", WhatToLookFor: "Inspect the second declaration."},
+				{AnchorID: selected[2], Label: "Related implementation", WhatToLookFor: "Inspect the third declaration."},
+			},
 		})
 	}
 	normalized, err := studymap.NormalizeDirectionProposal(directions)

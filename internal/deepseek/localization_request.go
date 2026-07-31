@@ -45,7 +45,7 @@ type LocalizationRequestEvidence struct {
 
 // BuildLocalizationRequest returns the exact OpenAI-compatible JSON request
 // body for a validated provider-neutral localization prompt. It performs no
-// provider call and does not apply the ordinary OutputLanguage wrappers.
+// provider call and does not apply the canonical semantic-English contract.
 func (c *Client) BuildLocalizationRequest(
 	prompt localization.Prompt,
 ) (LocalizationRequestEvidence, error) {

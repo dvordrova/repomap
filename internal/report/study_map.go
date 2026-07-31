@@ -87,14 +87,48 @@ func readStudyPublicationStatus(statusPath string) (*StudyPublicationStatus, str
 	return &status, ""
 }
 
+const (
+	studyPublicationWarningEditingDidNotFinish = "Study was not published because the editing stage did not finish."
+	studyPublicationWarningChecksFailed        = "Study was not published because the proposed directions did not pass the required checks."
+	studyPublicationWarningNoSourceAdapter     = "Study was not published because this repository has no supported source adapter."
+	studyPublicationWarningNoSourceFunctions   = "Study was not published because no eligible source functions were found."
+
+	studyPublicationMessageEditingDidNotFinish = "main.warning.study_editing_did_not_finish"
+	studyPublicationMessageChecksFailed        = "main.warning.study_checks_failed"
+	studyPublicationMessageNoSourceAdapter     = "main.warning.study_no_source_adapter"
+	studyPublicationMessageNoSourceFunctions   = "main.warning.study_no_source_functions"
+)
+
 func studyPublicationUserWarning(status *StudyPublicationStatus) string {
 	if status == nil || status.State == "published" {
 		return ""
 	}
 	if status.State == "started" {
-		return "Study was not published because the editing stage did not finish."
+		return studyPublicationWarningEditingDidNotFinish
 	}
-	return "Study was not published because the proposed directions did not pass the required checks."
+	switch status.FailureReason {
+	case "no_supported_source_adapter":
+		return studyPublicationWarningNoSourceAdapter
+	case "no_eligible_source_functions":
+		return studyPublicationWarningNoSourceFunctions
+	}
+	return studyPublicationWarningChecksFailed
+}
+
+func studyPublicationWarningMessageID(status *StudyPublicationStatus) string {
+	if status == nil || status.State == "published" {
+		return ""
+	}
+	if status.State == "started" {
+		return studyPublicationMessageEditingDidNotFinish
+	}
+	switch status.FailureReason {
+	case "no_supported_source_adapter":
+		return studyPublicationMessageNoSourceAdapter
+	case "no_eligible_source_functions":
+		return studyPublicationMessageNoSourceFunctions
+	}
+	return studyPublicationMessageChecksFailed
 }
 
 // RepositoryStudyMap is the user-facing projection of a locally reduced

@@ -10,6 +10,16 @@
 {{if .HasDiscoveredSurfaces}}  <style id="rm-surface-catalog-css">{{.SurfaceCatalogCSS}}</style>{{end}}
 </head>
 <body>
+  <noscript>
+    <style>body > :not(noscript) { display: none !important; }</style>
+    <p>{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript. Исходные данные доступны в <code>report.json</code>.{{else}}This report requires JavaScript. The raw data is available in <code>report.json</code>.{{end}}</p>
+  </noscript>
+{{if .LocalizationState}}  <section class="rm-localization-status rm-localization-status--{{.LocalizationState}}" role="status" aria-live="polite">
+    <strong data-rm-message="main.localization.status_label">Localization</strong>
+{{if eq .LocalizationState "succeeded"}}    <span data-rm-message="main.localization.ru_active">Russian localization is active.</span>
+{{else}}    <span data-rm-message="main.localization.ru_unavailable_canonical_en">Russian localization is unavailable; canonical English is shown.</span>
+{{end}}  </section>
+{{end}}
   <header>
     <div class="rm-header-inner">
       <div>
@@ -55,7 +65,6 @@
       <div id="rm-source-drawer-content"></div>
     </aside>
   </div>
-  <noscript><p>{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript. Исходные данные доступны в <code>report.json</code>.{{else}}This report requires JavaScript. The raw data is available in <code>report.json</code>.{{end}}</p></noscript>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
   <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>
   <script id="rm-ui-messages-js">{{.UIMessagesJS}}</script>

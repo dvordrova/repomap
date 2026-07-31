@@ -83,16 +83,21 @@ const report = {
     ],
     anchors,
 	    evidence_joins: [
-	      { left_anchor: 0, right_anchor: 1, support_anchor_indexes: [0, 1], kind: "direct_call_expression", support: "locally_observed", explanation: "The call is present in saved source.", scope_non_guarantees: "Static source does not prove every runtime branch." },
-	      { left_anchor: 1, right_anchor: 2, support_anchor_indexes: [1, 2], kind: "shared_task_term", support: "unresolved", explanation: "Both anchors contain one selected task term.", scope_non_guarantees: "Text overlap does not establish behavior." },
+	      { left_anchor: 0, right_anchor: 1, support_anchor_indexes: [0, 1], kind: "direct_call", support: "locally_observed", explanation: "The call is present in saved source.", scope_non_guarantees: "Static source does not prove every runtime branch." },
+	      { left_anchor: 1, right_anchor: 2, support_anchor_indexes: [1, 2], kind: "shared_state_alias", support: "unresolved", explanation: "Both anchors contain one selected task term.", scope_non_guarantees: "Text overlap does not establish behavior." },
 	    ],
 	    working_hypothesis: [{ status: "supported", text: "Handle contains a direct Validate call.", support_anchor_indexes: [0, 1] }],
 	    reproduce_or_observe: [{ text: "Use the reported request.", authority: "task_provided" }],
 	    verify: { effect_to_observe: "The request succeeds.", steps: [{ text: "Run the focused test.", authority: "repository_test_or_example", support_anchor_indexes: [2] }] },
 	    next_probes: [{ action: "resolve_reference", anchor_indexes: [1], text: "Resolve callers outside this window." }],
-	    stages_skipped: ["orientation", "architecture", "study_map"],
+	    stages_skipped: [
+	      "architecture_synthesis", "generic_orientation", "guided_tour",
+	      "mechanism_opportunity", "paved_paths", "repository_study_map",
+	      "runtime_surface_discovery",
+	    ],
 	    budget: { read_files: 3, read_bytes: 256 }, provider: { calls: 1 },
-	    warnings: ["Evidence remains bounded to the retained source windows."],
+	    warnings: ["Evidence join 2 was rejected locally: document support lacks document evidence."],
+	    presentation_warnings: [{ message_id: "main.task_lens.warning.join_rejected", index: 2 }],
 	  },
 	};
 
@@ -137,9 +142,14 @@ const exactRoute = api.parseWorkspaceHash("#/investigate/" + taskID, [], null);
 const defaultRoute = api.parseWorkspaceHash("", [], null);
 const overviewRoute = api.parseWorkspaceHash("#/overview", [], null);
 const restoredSource = api.embeddedSourceForLocation({ path: "validate.go", line: 20 });
+document.documentElement.lang = "ru";
+api.renderTaskInvestigationWorkspace();
+const russianRendered = text(roots["rm-task-investigation"]);
+const unknownRussianEnum = api.taskLensEnumLabel("task_kind", "future_task_kind");
 process.stdout.write(JSON.stringify({
 	  rendered, buttons, exactRoute, defaultRoute, overviewRoute,
 	  restoredSourcePath: restoredSource && restoredSource.path || "", scrolledAnchorIDs,
+	  russianRendered, unknownRussianEnum,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "task-lens-workspace-test.js")
@@ -171,6 +181,8 @@ process.stdout.write(JSON.stringify({
 		} `json:"overviewRoute"`
 		RestoredSourcePath string   `json:"restoredSourcePath"`
 		ScrolledAnchorIDs  []string `json:"scrolledAnchorIDs"`
+		RussianRendered    string   `json:"russianRendered"`
+		UnknownRussianEnum string   `json:"unknownRussianEnum"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Task Lens workspace smoke: %v\n%s", err, output)
@@ -195,12 +207,12 @@ process.stdout.write(JSON.stringify({
 		"Task-provided only",
 		"connection closes",
 		"Limits to keep in view",
-		"Evidence remains bounded to the retained source windows.",
+		"Evidence join 2 was rejected because it did not pass local evidence checks.",
 		"What the bounded evidence supports",
 		"Files and symbols to inspect",
 		"How the selected anchors connect",
-		"Handle → Direct Call Expression → Validate",
-		"Validate ↔ Shared Task Term ↔ TestValidate",
+		"Handle → Direct call → Validate",
+		"Validate ↔ Shared state alias ↔ TestValidate",
 		"Supporting anchors",
 		"Collect the relevant signal",
 		"Confirm the intended effect",
@@ -230,6 +242,54 @@ process.stdout.write(JSON.stringify({
 	}
 	if got.RestoredSourcePath != "validate.go" {
 		t.Fatalf("task source was not available to the shared drawer: %q", got.RestoredSourcePath)
+	}
+	for _, expected := range []string{
+		"Ошибка",
+		"Ограниченно между файлами",
+		"Подтверждено",
+		"Место проявления",
+		"Характерная реализация",
+		"Опора проверки",
+		"Прямой вызов",
+		"Общий псевдоним состояния",
+		"Наблюдается локально",
+		"Не разрешено",
+		"Предоставлено в задаче",
+		"Тест или пример репозитория",
+		"Разрешить ссылку",
+		"Синтез архитектуры",
+		"Общая ориентация",
+		"Карта изучения репозитория",
+		"Поиск точек запуска",
+		"Связь свидетельств 2 отклонена, потому что не прошла локальные проверки свидетельств.",
+	} {
+		if !strings.Contains(got.RussianRendered, expected) {
+			t.Errorf("Russian task workspace is missing enum label %q: %s", expected, got.RussianRendered)
+		}
+	}
+	for _, forbidden := range []string{
+		"Bounded cross-file",
+		"Symptom site",
+		"Representative implementation",
+		"Verification anchor",
+		"Direct call",
+		"Shared state alias",
+		"Locally observed",
+		"Repository test or example",
+		"Resolve reference",
+		"Architecture synthesis",
+		"Generic orientation",
+		"Repository study map",
+		"Runtime surface discovery",
+		"document support lacks document evidence",
+		"Evidence join 2 was rejected",
+	} {
+		if strings.Contains(got.RussianRendered, forbidden) {
+			t.Errorf("Russian task workspace leaked fixed enum copy %q: %s", forbidden, got.RussianRendered)
+		}
+	}
+	if got.UnknownRussianEnum != "Неизвестное значение (future_task_kind)" {
+		t.Errorf("unknown Task Lens enum label = %q", got.UnknownRussianEnum)
 	}
 }
 

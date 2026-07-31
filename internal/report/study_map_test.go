@@ -119,6 +119,35 @@ func TestReadStudyPublicationStatusKeepsFailedStageExplicit(t *testing.T) {
 	}
 }
 
+func TestStudyPublicationUserWarningKeepsTypedLocalOutcome(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		warning   string
+		messageID string
+	}{
+		"no_supported_source_adapter": {
+			warning:   studyPublicationWarningNoSourceAdapter,
+			messageID: studyPublicationMessageNoSourceAdapter,
+		},
+		"no_eligible_source_functions": {
+			warning:   studyPublicationWarningNoSourceFunctions,
+			messageID: studyPublicationMessageNoSourceFunctions,
+		},
+	}
+	for reason, want := range tests {
+		status := &StudyPublicationStatus{
+			Version: 1, State: "failed", FailureReason: reason,
+		}
+		if got := studyPublicationUserWarning(status); got != want.warning {
+			t.Fatalf("studyPublicationUserWarning(%q) = %q, want %q", reason, got, want.warning)
+		}
+		if got := studyPublicationWarningMessageID(status); got != want.messageID {
+			t.Fatalf("studyPublicationWarningMessageID(%q) = %q, want %q", reason, got, want.messageID)
+		}
+	}
+}
+
 func TestReadStudyPublicationStatusAcceptsOnePublishedDirection(t *testing.T) {
 	t.Parallel()
 

@@ -279,8 +279,22 @@ func TestGoTopicProviderRequestIsOneShotJSONWithThinkingDisabled(t *testing.T) {
 		decoded.ResponseFormat.Type != "json_object" ||
 		decoded.Thinking.Type != "disabled" ||
 		len(decoded.Messages) != 2 ||
-		decoded.Messages[0].Content != systemPrompt ||
-		decoded.Messages[1].Content != userPrompt {
+		!strings.HasPrefix(
+			decoded.Messages[0].Content,
+			systemPrompt+"\n\n",
+		) ||
+		!strings.Contains(
+			decoded.Messages[0].Content,
+			deepseek.SemanticOutputLanguageContractVersion,
+		) ||
+		!strings.HasSuffix(
+			decoded.Messages[1].Content,
+			"\n\n"+userPrompt,
+		) ||
+		!strings.Contains(
+			decoded.Messages[1].Content,
+			"The response is the canonical semantic result.",
+		) {
 		t.Fatalf("provider request = %#v", decoded)
 	}
 }

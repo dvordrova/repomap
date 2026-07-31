@@ -30,7 +30,7 @@ func TestCanonicalIdentityProjectionIsDeterministicAndExact(t *testing.T) {
 	if !bytes.Equal(firstBytes, secondBytes) {
 		t.Fatalf("canonical bytes differ:\n%s\n%s", firstBytes, secondBytes)
 	}
-	const wantSHA256 = "0916b6136334691462d740449331cbe8596a765178529aeabf0f43aac1197529"
+	const wantSHA256 = "00b4e135c518d68918594b1a605d5758de081f800e50459f58e0b18ad988db59"
 	if first.SHA256 != wantSHA256 {
 		t.Fatalf("canonical SHA-256 = %q, want %q", first.SHA256, wantSHA256)
 	}
@@ -77,6 +77,7 @@ func TestRussianProjectionChangesOnlyAllowlistedProse(t *testing.T) {
 		"StartReplication",
 		"PostgreSQL",
 		"API/v2",
+		"CJK",
 	} {
 		if bytes.Contains(encodedInput, []byte(protected)) {
 			t.Fatalf("localization input exposed protected term %q: %s", protected, encodedInput)
@@ -85,14 +86,7 @@ func TestRussianProjectionChangesOnlyAllowlistedProse(t *testing.T) {
 
 	translations := make(map[string]string, len(input.Fields))
 	for _, field := range input.Fields {
-		switch {
-		case strings.HasSuffix(field.ID, ".summary"):
-			translations[field.ID] = "Открывает {{term_01}} через {{term_02}}; CJK: {{term_03}}."
-		case strings.HasSuffix(field.ID, ".question"):
-			translations[field.ID] = "Как {{term_01}} использует {{term_02}}?"
-		default:
-			t.Fatalf("unexpected fixture field %q", field.ID)
-		}
+		translations[field.ID] = russianFixtureText(field)
 	}
 	result, err := Apply(canonical, input, Projection{
 		Version:         ProjectionVersion,
@@ -119,6 +113,376 @@ func TestRussianProjectionChangesOnlyAllowlistedProse(t *testing.T) {
 	}
 	if !strings.Contains(joined, "東京") {
 		t.Fatalf("projected text lost CJK prose: %s", joined)
+	}
+}
+
+func TestRussianProjectionRejectsPartiallyUntranslatedProse(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "redis-adapter",
+		Name:      FieldSummary,
+		Text:      "Uses Redis over RESP3 to process messages.",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedProduct,
+			Value: "Redis",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redis := protectedToken(t, canonical.Fields[0], "Redis")
+	resp3 := protectedToken(t, canonical.Fields[0], "RESP3")
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: "Использует " + redis + " через " + resp3 +
+				", but keeps English prose.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Diagnostic{{
+		Code:    "target_language_quality_failed",
+		FieldID: input.Fields[0].ID,
+	}}
+	if !result.Fallback || !equalDiagnostics(result.Diagnostics, want) {
+		t.Fatalf("partial-English result = %#v, want diagnostics %#v", result, want)
+	}
+	if result.Fields[0].Text != canonical.Fields[0].Text {
+		t.Fatalf("partial-English field = %q, want canonical fallback %q",
+			result.Fields[0].Text, canonical.Fields[0].Text)
+	}
+}
+
+func TestRussianProjectionAllowsOpaqueOnlyField(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "protocol",
+		Name:      FieldSummary,
+		Text:      "RESP3",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical.Fields[0].ProtectedTerms) != 1 ||
+		input.Fields[0].Text != canonical.Fields[0].ProtectedTerms[0].Token {
+		t.Fatalf("opaque input = %#v from %#v", input.Fields[0], canonical.Fields[0])
+	}
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: input.Fields[0].Text,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fallback || len(result.Diagnostics) != 0 ||
+		result.Fields[0].Text != "RESP3" {
+		t.Fatalf("opaque-only result = %#v", result)
+	}
+}
+
+func TestRussianProjectionRejectsEnglishAddedAroundOpaqueOnlyField(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "protocol",
+		Name:      FieldSummary,
+		Text:      "RESP3",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: "English fallback " + input.Fields[0].Text,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Diagnostic{{
+		Code:    "target_language_quality_failed",
+		FieldID: input.Fields[0].ID,
+	}}
+	if !result.Fallback || !equalDiagnostics(result.Diagnostics, want) ||
+		result.Fields[0].Text != canonical.Fields[0].Text {
+		t.Fatalf("opaque English fallback result = %#v, want %#v", result, want)
+	}
+}
+
+func TestRussianProjectionRejectsSingleLowercaseEnglishRun(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "single-letter",
+		Name:      FieldSummary,
+		Text:      "Starts a worker.",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: "Запускает a worker.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback ||
+		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
+			Code:    "target_language_quality_failed",
+			FieldID: input.Fields[0].ID,
+		}}) {
+		t.Fatalf("single-letter English result = %#v", result)
+	}
+}
+
+func TestRussianProjectionRejectsSingleUppercaseEnglishRun(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "single-uppercase-letter",
+		Name:      FieldSummary,
+		Text:      "A worker starts.",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: "Запускается A.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback ||
+		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
+			Code:    "target_language_quality_failed",
+			FieldID: input.Fields[0].ID,
+		}}) {
+		t.Fatalf("single-uppercase-letter English result = %#v", result)
+	}
+}
+
+func TestCanonicalProtectsExplicitProductAndInfersStrongProtocol(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{
+		{
+			OwnerKind: OwnerComponent,
+			OwnerID:   "redis",
+			Name:      FieldSummary,
+			Text:      "Uses Redis over RESP3.",
+			ProtectedTerms: []ProtectedValue{{
+				Kind:  ProtectedProduct,
+				Value: "Redis",
+			}},
+		},
+		{
+			OwnerKind: OwnerComponent,
+			OwnerID:   "ordinary-title",
+			Name:      FieldSummary,
+			Text:      "Server Startup Sequence",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]CanonicalField, len(canonical.Fields))
+	for _, field := range canonical.Fields {
+		byID[field.OwnerID] = field
+	}
+	redisField := byID["redis"]
+	for _, value := range []string{"Redis", "RESP3"} {
+		if token := protectedToken(t, redisField, value); token == "" {
+			t.Fatalf("technical value %q has no placeholder", value)
+		}
+	}
+	if terms := byID["ordinary-title"].ProtectedTerms; len(terms) != 0 {
+		t.Fatalf("ordinary TitleCase words became opaque: %#v", terms)
+	}
+
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range input.Fields {
+		if field.ID == redisField.ID &&
+			(strings.Contains(field.Text, "Redis") || strings.Contains(field.Text, "RESP3")) {
+			t.Fatalf("technical values leaked into provider input: %q", field.Text)
+		}
+	}
+}
+
+func TestProtectedIdentifierRequiresAnIdentityBoundary(t *testing.T) {
+	t.Parallel()
+
+	const text = "The domain invokes main for requests."
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "main-boundary",
+		Name:      FieldSummary,
+		Text:      text,
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedSymbol,
+			Value: "main",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := canonical.Fields[0]
+	if len(field.ProtectedTerms) != 1 || field.ProtectedTerms[0].Count != 1 {
+		t.Fatalf("protected terms = %#v, want one standalone main occurrence", field.ProtectedTerms)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(input.Fields[0].Text, "domain") ||
+		strings.Contains(input.Fields[0].Text, " main ") {
+		t.Fatalf("boundary-aware input = %q", input.Fields[0].Text)
+	}
+
+	_, err = NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "embedded-main",
+		Name:      FieldSummary,
+		Text:      "The domain processes requests.",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedSymbol,
+			Value: "main",
+		}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "protected term is absent") {
+		t.Fatalf("embedded identifier error = %v, want absent protected term", err)
+	}
+}
+
+func TestRussianProjectionCannotHideProseInsideProtectedIdentifier(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "domain-main",
+		Name:      FieldSummary,
+		Text:      "The domain invokes main.",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedSymbol,
+			Value: "main",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainToken := protectedToken(t, canonical.Fields[0], "main")
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: "Слой domain вызывает " + mainToken + ".",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback ||
+		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
+			Code:    "target_language_quality_failed",
+			FieldID: input.Fields[0].ID,
+		}}) {
+		t.Fatalf("embedded-English result = %#v", result)
+	}
+}
+
+func TestTechnicalTokenDoesNotProtectFollowingTitleCaseProse(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "http-routing",
+		Name:      FieldSummary,
+		Text:      "HTTP Request Routing handles traffic.",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := canonical.Fields[0]
+	if len(field.ProtectedTerms) != 1 || field.ProtectedTerms[0].Value != "HTTP" {
+		t.Fatalf("protected terms = %#v, want only HTTP", field.ProtectedTerms)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpToken := protectedToken(t, field, "HTTP")
+	result, err := Apply(canonical, input, Projection{
+		Version:         ProjectionVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          LocaleRussian,
+		Translations: map[string]string{
+			input.Fields[0].ID: httpToken + " Request Routing обрабатывает трафик.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback ||
+		!equalDiagnostics(result.Diagnostics, []Diagnostic{{
+			Code:    "target_language_quality_failed",
+			FieldID: input.Fields[0].ID,
+		}}) {
+		t.Fatalf("untranslated TitleCase result = %#v", result)
 	}
 }
 
@@ -356,6 +720,94 @@ func TestFieldIDsAreAllowlistedAndStable(t *testing.T) {
 	}
 }
 
+func TestRepositoryBriefFieldIDsAreAllowlistedAndDeterministic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name FieldName
+		want string
+	}{
+		{name: FieldWhatItIs, want: "study_brief:repository-brief.what_it_is"},
+		{name: FieldProblem, want: "study_brief:repository-brief.problem"},
+		{name: FieldMainInput, want: "study_brief:repository-brief.main_input"},
+		{name: FieldCentralResponsibility, want: "study_brief:repository-brief.central_responsibility"},
+		{name: FieldObservableResult, want: "study_brief:repository-brief.observable_result"},
+	}
+	for _, test := range tests {
+		id, err := FieldID(OwnerStudyBrief, "repository-brief", test.name)
+		if err != nil {
+			t.Fatalf("FieldID(%q): %v", test.name, err)
+		}
+		if id != test.want {
+			t.Fatalf("FieldID(%q) = %q, want %q", test.name, id, test.want)
+		}
+	}
+
+	termID, err := FieldID(
+		OwnerBriefDomainTerm,
+		"repository-brief:domain-term:write-ahead-log",
+		FieldDomainTermMeaning,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantTermID = "brief_domain_term:repository-brief:domain-term:write-ahead-log.domain_term_meaning"
+	if termID != wantTermID {
+		t.Fatalf("domain term FieldID = %q, want %q", termID, wantTermID)
+	}
+
+	specs := []FieldSpec{
+		{
+			OwnerKind: OwnerBriefDomainTerm,
+			OwnerID:   "repository-brief:domain-term:write-ahead-log",
+			Name:      FieldDomainTermMeaning,
+			Text:      "A durable record of pending changes.",
+		},
+		{
+			OwnerKind: OwnerStudyBrief,
+			OwnerID:   "repository-brief",
+			Name:      FieldWhatItIs,
+			Text:      "A small storage library.",
+		},
+	}
+	first, err := NewCanonical(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewCanonical([]FieldSpec{specs[1], specs[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstBytes, err := MarshalCanonical(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBytes, err := MarshalCanonical(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstBytes, secondBytes) {
+		t.Fatalf("RepositoryBrief canonical bytes differ:\n%s\n%s", firstBytes, secondBytes)
+	}
+}
+
+func TestRepositoryBriefFieldAllowlistRejectsWrongOwners(t *testing.T) {
+	t.Parallel()
+
+	if _, err := FieldID(OwnerStudyBrief, "repository-brief", FieldDomainTermMeaning); err == nil {
+		t.Fatal("domain term meaning unexpectedly accepted without a stable term owner")
+	}
+	if _, err := FieldID(OwnerBriefDomainTerm, "", FieldDomainTermMeaning); err == nil {
+		t.Fatal("domain term meaning unexpectedly accepted without an owner id")
+	}
+	if _, err := FieldID(OwnerBriefDomainTerm, "repository-brief:domain-term:wal", FieldNameText); err == nil {
+		t.Fatal("domain term name unexpectedly entered the prose allowlist")
+	}
+	if _, err := FieldID(OwnerComponent, "component-01", FieldObservableResult); err == nil {
+		t.Fatal("RepositoryBrief field unexpectedly accepted for a component")
+	}
+}
+
 func TestCanonicalRejectsReservedPlaceholderAndHandlesNestedTerms(t *testing.T) {
 	t.Parallel()
 
@@ -388,6 +840,29 @@ func TestCanonicalRejectsReservedPlaceholderAndHandlesNestedTerms(t *testing.T) 
 	if len(input.Fields) != 1 || len(input.Fields[0].Placeholders) != 2 ||
 		input.Fields[0].Placeholders[1].Count != 2 {
 		t.Fatalf("nested placeholders = %#v", input.Fields)
+	}
+
+	inferredNested, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "nested-inferred",
+		Name:      FieldSummary,
+		Text:      "Calls API/v2.",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedAPI,
+			Value: "API/v2",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inferredInput, err := BuildInput(inferredNested, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inferredInput.Fields) != 1 ||
+		len(inferredInput.Fields[0].Placeholders) != 1 ||
+		inferredInput.Fields[0].Placeholders[0].Token != "{{term_01}}" {
+		t.Fatalf("nested inferred placeholders = %#v", inferredInput.Fields)
 	}
 }
 
@@ -427,4 +902,25 @@ func equalDiagnostics(left, right []Diagnostic) bool {
 		}
 	}
 	return true
+}
+
+func russianFixtureText(field InputField) string {
+	translated := "Русское описание"
+	for _, placeholder := range field.Placeholders {
+		for count := 0; count < placeholder.Count; count++ {
+			translated += " " + placeholder.Token
+		}
+	}
+	return translated
+}
+
+func protectedToken(t *testing.T, field CanonicalField, value string) string {
+	t.Helper()
+	for _, term := range field.ProtectedTerms {
+		if term.Value == value {
+			return term.Token
+		}
+	}
+	t.Fatalf("field %q has no protected term %q: %#v", field.ID, value, field.ProtectedTerms)
+	return ""
 }

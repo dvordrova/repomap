@@ -54,7 +54,7 @@ const opportunityUserPrefix = `Propose central mechanism questions, not finished
         "onboarding_rationale": "why this question helps a newcomer understand the repository",
         "investigation_rationale": "why the bounded evidence plan is worth its cost",
         "estimated_cost": "low | medium | high",
-        "search_queries": ["two to six natural queries, including one concise Russian query"]
+        "search_queries": ["two to six natural English queries, including one concise domain query"]
       }
     }
   ]
@@ -73,7 +73,7 @@ Rules:
 - Every expected-path required_capability must also occur in the candidate capability_contract.required_capabilities. Include a capability only when the selected support_ids collectively provide it; otherwise leave support_ids empty and keep the capability missing in the candidate contract.
 - Return only required_capabilities in capability_contract. Local code derives available_capabilities, missing_capabilities, and resolution from the selected facts; do not propose those derived fields.
 - Use at most two bounded_frontier items. They may request only supplied capability enum values and may not name a new path, file, symbol, relation, or runtime event.
-- search_queries are presentation aliases, not facts. Include ordinary developer wording, one short/domain query, and one concise Russian query; do not put paths or symbols in them.
+- search_queries are presentation aliases, not facts. Include ordinary English developer wording and one short domain query; do not put paths or symbols in them.
 - Prefer independent, central questions grounded in different behavior-capable evidence families. Preserve missing information and diversify later candidates across other useful behaviors.
 - Registry, factory, adapter, plugin-selection, helper, and error-detail mechanisms are secondary unless the supplied facts and planner context make them the repository's documented primary purpose. Do not rank a merely easy-to-prove extension point first.
 - A component inventory, warning list, glossary, package summary, or top-import list is not a mechanism question. Skip topics whose supplied facts cannot support behavior or sequence.

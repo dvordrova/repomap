@@ -64,6 +64,9 @@ type RunSummary struct {
 	ID                string `json:"id"`
 	RepoName          string `json:"repo_name,omitempty"`
 	CreatedAt         string `json:"created_at,omitempty"`
+	ReportLanguage    string `json:"report_language"`
+	CacheMode         string `json:"cache_mode"`
+	ShortID           string `json:"short_id"`
 	AnalysisAvailable bool   `json:"analysis_available"`
 }
 
@@ -78,6 +81,7 @@ type runRecord struct {
 	Sources            map[string]sourceTarget
 	SourceContexts     map[string]sourceContextTarget
 	ArtifactsSignature string
+	RequestedLocale    string
 }
 
 func (run runRecord) verifyRepositoryState(current freshness.RepositoryState) error {
@@ -130,9 +134,13 @@ type handler struct {
 }
 
 type metadata struct {
-	RepoName  string `json:"repo_name"`
-	RepoPath  string `json:"repo_path"`
-	CreatedAt string `json:"created_at"`
+	RepoName         string `json:"repo_name"`
+	RepoPath         string `json:"repo_path"`
+	CreatedAt        string `json:"created_at"`
+	EffectiveOptions struct {
+		ReportLanguage string `json:"report_language"`
+		NoCache        bool   `json:"no_cache"`
+	} `json:"effective_options"`
 }
 
 type openRequest struct {
@@ -306,16 +314,74 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("POST "+urlPrefix+"/api/investigation/latest", h.serveLatestInvestigation)
 	mux.HandleFunc("POST "+urlPrefix+"/api/investigation/target-tests", h.serveTargetTestReferences)
 	mux.HandleFunc("GET "+urlPrefix+"/runs/{runID}/report.html", h.serveReport)
-	return securityHeaders(mux, opts.ExpectedHost), nil
+	routes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && !knownBrowserGETPath(urlPrefix, r.URL.Path) {
+			h.serveUnknownBrowserRoute(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+	return securityHeaders(routes, opts.ExpectedHost), nil
+}
+
+func (h *handler) serveUnknownBrowserRoute(w http.ResponseWriter, r *http.Request) {
+	h.writeBrowserError(
+		w,
+		http.StatusNotFound,
+		"en",
+		report.BrowserErrorReportNotFound,
+		"unknown browser route %q",
+		r.URL.Path,
+	)
+}
+
+func knownBrowserGETPath(urlPrefix, requestPath string) bool {
+	switch requestPath {
+	case urlPrefix, urlPrefix + "/", urlPrefix + "/api/runs":
+		return true
+	}
+	const reportSuffix = "/report.html"
+	runPrefix := urlPrefix + "/runs/"
+	if !strings.HasPrefix(requestPath, runPrefix) ||
+		!strings.HasSuffix(requestPath, reportSuffix) {
+		return false
+	}
+	runID := strings.TrimSuffix(strings.TrimPrefix(requestPath, runPrefix), reportSuffix)
+	return runID != "" && !strings.Contains(runID, "/")
 }
 
 func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
-	_ = h.reloadRuns()
+	requestedLocale := "en"
+	cachedRuns := h.runsSnapshot()
+	cachedRunID := h.initialRunID
+	if !containsRun(cachedRuns, cachedRunID) && len(cachedRuns) > 0 {
+		cachedRunID = cachedRuns[0].ID
+	}
+	if cached, err := h.findRunCached(cachedRunID); err == nil {
+		requestedLocale = cached.RequestedLocale
+	}
+	if err := h.reloadRuns(); err != nil {
+		h.writeBrowserError(
+			w,
+			http.StatusInternalServerError,
+			requestedLocale,
+			report.BrowserErrorReportUnavailable,
+			"report root could not refresh saved reports: %v",
+			err,
+		)
+		return
+	}
 	runs := h.runsSnapshot()
 	runID := h.initialRunID
 	if !containsRun(runs, runID) {
 		if len(runs) == 0 {
-			http.Error(w, "no saved reports", http.StatusNotFound)
+			h.writeBrowserError(
+				w,
+				http.StatusNotFound,
+				"en",
+				report.BrowserErrorNoSavedReports,
+				"report root has no saved reports",
+			)
 			return
 		}
 		runID = runs[0].ID
@@ -337,25 +403,88 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	runID := r.PathValue("runID")
 	if !validRunID(runID) {
-		http.NotFound(w, r)
+		h.writeBrowserError(
+			w,
+			http.StatusNotFound,
+			"en",
+			report.BrowserErrorReportNotFound,
+			"report request has an invalid run id",
+		)
 		return
 	}
+	requestedLocale := "en"
+	if cached, err := h.findRunCached(runID); err == nil {
+		requestedLocale = cached.RequestedLocale
+	}
 	if err := h.reloadRuns(); err != nil {
-		http.Error(w, "could not refresh saved reports", http.StatusInternalServerError)
+		h.writeBrowserError(
+			w,
+			http.StatusInternalServerError,
+			requestedLocale,
+			report.BrowserErrorReportUnavailable,
+			"report %s could not refresh saved reports: %v",
+			runID,
+			err,
+		)
 		return
 	}
 	run, err := h.findRunCached(runID)
 	if err != nil {
-		http.NotFound(w, r)
+		h.writeBrowserError(
+			w,
+			http.StatusNotFound,
+			requestedLocale,
+			report.BrowserErrorReportNotFound,
+			"report %s was not found after refreshing saved reports",
+			runID,
+		)
 		return
 	}
+	requestedLocale = run.RequestedLocale
 	if run.Manifest == nil || run.Report == nil {
-		http.Error(w, "saved report cannot be served without verified local authority", http.StatusConflict)
+		h.writeBrowserError(
+			w,
+			http.StatusConflict,
+			requestedLocale,
+			report.BrowserErrorAuthorityUnavailable,
+			"report %s cannot be served without verified local authority",
+			runID,
+		)
 		return
 	}
 	reportData := *run.Report
 	run.Report = &reportData
 	h.refreshRunFreshness(r.Context(), &run)
+	if runID == h.sourceEpisodeRunID && len(h.sourceEpisodeJSON) > 0 {
+		if err := report.AttachSourceEpisodePresentation(
+			run.Report,
+			h.sourceEpisodeJSON,
+		); err != nil {
+			h.writeBrowserError(
+				w,
+				http.StatusInternalServerError,
+				requestedLocale,
+				report.BrowserErrorReportUnavailable,
+				"report %s could not bind approved source episode: %v",
+				runID,
+				err,
+			)
+			return
+		}
+	}
+	localizedReport, localizationStatus := report.LoadPresentationLocalization(
+		filepath.Join(h.runsDir, run.ID),
+		run.Report,
+		run.RequestedLocale,
+	)
+	run.Report = localizedReport
+	if localizationStatus.State == report.PresentationLocalizationFailed {
+		h.log(
+			"report %s localization failed reason=%s; serving Russian product UI with canonical English model prose",
+			run.ID,
+			localizationStatus.ReasonCode,
+		)
+	}
 	renderStarted := time.Now()
 	var rendered []byte
 	if runID == h.sourceEpisodeRunID && len(h.sourceEpisodeJSON) > 0 {
@@ -364,11 +493,28 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 		rendered, err = report.RenderHTML(run.Report)
 	}
 	if err != nil {
-		http.Error(w, "could not render report", http.StatusInternalServerError)
+		h.writeBrowserError(
+			w,
+			http.StatusInternalServerError,
+			requestedLocale,
+			report.BrowserErrorReportUnavailable,
+			"report %s could not render: %v",
+			runID,
+			err,
+		)
 		return
 	}
 	if len(rendered) > maxArtifactBytes {
-		http.Error(w, "invalid report artifact", http.StatusUnprocessableEntity)
+		h.writeBrowserError(
+			w,
+			http.StatusUnprocessableEntity,
+			requestedLocale,
+			report.BrowserErrorInvalidArtifact,
+			"report %s rendered artifact exceeds the byte limit: bytes=%d limit=%d",
+			runID,
+			len(rendered),
+			maxArtifactBytes,
+		)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -381,6 +527,45 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 		time.Since(started).Milliseconds(),
 		len(rendered),
 	)
+}
+
+func (h *handler) writeBrowserError(
+	w http.ResponseWriter,
+	status int,
+	locale string,
+	kind report.BrowserErrorKind,
+	diagnostic string,
+	args ...any,
+) {
+	if diagnostic != "" {
+		h.log(diagnostic, args...)
+	}
+	writeBrowserErrorResponse(w, status, locale, kind, h.log)
+}
+
+func writeBrowserErrorResponse(
+	w http.ResponseWriter,
+	status int,
+	locale string,
+	kind report.BrowserErrorKind,
+	logf func(string, ...any),
+) {
+	rendered, err := report.RenderBrowserErrorHTML(locale, kind)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		if logf != nil {
+			logf("browser error page render failed kind=%s status=%d: %v", kind, status, err)
+		}
+		w.WriteHeader(status)
+		return
+	}
+	w.WriteHeader(status)
+	if _, err := w.Write(rendered); err != nil {
+		if logf != nil {
+			logf("browser error page write failed kind=%s status=%d: %v", kind, status, err)
+		}
+	}
 }
 
 func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
@@ -579,18 +764,38 @@ func (h *handler) runArtifactsChanged(run runRecord) bool {
 }
 
 func runArtifactSignature(runDir string) (string, error) {
-	parts := make([]string, 0, 6)
+	parts := make([]string, 0, 8)
 	for index, name := range []string{
 		"report.json", report.RunManifestFilename,
 		"task_investigation_bundle.json", "task_investigation_attempt.json",
 		"task_investigation_pack.json", "task_investigation_status.json",
+		report.PresentationLocalizationStatusFile,
+		report.PresentationLocalizationProjectionFile,
 	} {
+		optionalPresentationArtifact := index >= 6
 		info, err := os.Lstat(filepath.Join(runDir, name))
 		if os.IsNotExist(err) && index > 0 {
 			parts = append(parts, name+":missing")
 			continue
 		}
-		if err != nil || !info.Mode().IsRegular() {
+		if err != nil {
+			if optionalPresentationArtifact {
+				parts = append(parts, name+":unavailable")
+				continue
+			}
+			return "", fmt.Errorf("run artifact is unavailable")
+		}
+		if !info.Mode().IsRegular() {
+			if optionalPresentationArtifact {
+				parts = append(parts, fmt.Sprintf(
+					"%s:invalid:%s:%d:%d",
+					name,
+					info.Mode().String(),
+					info.Size(),
+					info.ModTime().UnixNano(),
+				))
+				continue
+			}
 			return "", fmt.Errorf("run artifact is unavailable")
 		}
 		parts = append(parts, fmt.Sprintf("%s:%d:%d", name, info.Size(), info.ModTime().UnixNano()))
@@ -751,9 +956,17 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 			repoName = reportData.RepoName
 		}
 		run := runRecord{
-			RunSummary:         RunSummary{ID: entry.Name(), RepoName: repoName, CreatedAt: meta.CreatedAt},
+			RunSummary: RunSummary{
+				ID:             entry.Name(),
+				RepoName:       repoName,
+				CreatedAt:      meta.CreatedAt,
+				ReportLanguage: runReportLanguage(meta.EffectiveOptions.ReportLanguage),
+				CacheMode:      runCacheMode(meta.EffectiveOptions.NoCache),
+				ShortID:        shortRunID(entry.Name()),
+			},
 			Report:             &reportData,
 			ArtifactsSignature: artifactSignature,
+			RequestedLocale:    meta.EffectiveOptions.ReportLanguage,
 		}
 		manifestJSON, manifestErr := readRootFile(root, path.Join(entry.Name(), report.RunManifestFilename), maxArtifactBytes)
 		if manifestErr == nil {
@@ -785,6 +998,14 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 				}
 			}
 		}
+		if run.Manifest != nil {
+			if err := report.HydrateRunPresentationMetadata(
+				filepath.Join(h.runsDir, entry.Name()),
+				&reportData,
+			); err != nil {
+				h.log("report %s presentation metadata unavailable: %v", entry.Name(), err)
+			}
+		}
 		// Task Lens is an evidence-backed workspace, not a legacy view-only
 		// report. Never expose it when its exact report/manifest/artifact chain
 		// cannot be verified.
@@ -796,6 +1017,33 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 	sort.Slice(runs, func(i, j int) bool { return runs[i].ID > runs[j].ID })
 	h.log("loaded %d saved report(s) in %d ms", len(runs), time.Since(started).Milliseconds())
 	return runs, nil
+}
+
+func runReportLanguage(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "ru") {
+		return "ru"
+	}
+	return "en"
+}
+
+func runCacheMode(noCache bool) string {
+	if noCache {
+		return "no-cache"
+	}
+	return "cache"
+}
+
+func shortRunID(runID string) string {
+	value := runID
+	if separator := strings.LastIndexByte(runID, '-'); separator >= 0 &&
+		separator+1 < len(runID) {
+		value = runID[separator+1:]
+	}
+	const maxShortRunIDBytes = 12
+	if len(value) > maxShortRunIDBytes {
+		value = value[len(value)-maxShortRunIDBytes:]
+	}
+	return value
 }
 
 func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
@@ -935,6 +1183,16 @@ func validRunID(id string) bool {
 func securityHeaders(next http.Handler, expectedHost string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowedHost(r.Host, expectedHost) {
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				writeBrowserErrorResponse(
+					w,
+					http.StatusForbidden,
+					"en",
+					report.BrowserErrorReportUnavailable,
+					nil,
+				)
+				return
+			}
 			http.Error(w, "invalid host", http.StatusForbidden)
 			return
 		}

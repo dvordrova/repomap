@@ -272,7 +272,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
   ],
   "important_domain_words":[],
   "questions_for_human":[],
-  "unverified_paths":[],
+  "unverified_paths":[{"path":"internal/unretrieved.go","reason":"not present in the bounded bundle"}],
   "warnings":[]
 }`
 	requests := 0
@@ -328,6 +328,36 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	}
 
 	runDir := filepath.Join(debugDir, runID)
+	orientationReportJSON, err := os.ReadFile(filepath.Join(runDir, "orientation_report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	warningSidecarJSON, err := os.ReadFile(filepath.Join(
+		runDir,
+		ConfidenceWarningDiagnosticsFile,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	warningSidecar, err := DecodeConfidenceWarningDiagnostics(warningSidecarJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !warningSidecar.MatchesOrientationReport(orientationReportJSON) ||
+		len(warningSidecar.Diagnostics) != 3 {
+		t.Fatalf("orientation warning sidecar = %#v", warningSidecar)
+	}
+	var savedOrientation orientationPart
+	if err := json.Unmarshal(orientationReportJSON, &savedOrientation); err != nil {
+		t.Fatal(err)
+	}
+	for _, diagnostic := range warningSidecar.Diagnostics {
+		rawWarning, ok := diagnostic.RawWarning()
+		if !ok || diagnostic.WarningIndex >= len(savedOrientation.Warnings) ||
+			savedOrientation.Warnings[diagnostic.WarningIndex] != rawWarning {
+			t.Fatalf("sidecar diagnostic does not address producer warning: %#v", diagnostic)
+		}
+	}
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)

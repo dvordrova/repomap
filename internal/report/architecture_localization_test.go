@@ -155,7 +155,10 @@ func TestArchitectureLocalizationRussianProjectionChangesOnlyAllowlistedProse(t 
 
 	translations := make(map[string]string, len(input.Fields))
 	for _, field := range input.Fields {
-		translations[field.ID] = "Русская проекция: " + field.Text
+		translations[field.ID] = architectureRussianFixtureText(
+			"Русская проекция: ",
+			field,
+		)
 	}
 	projected, result, err := applyArchitectureLocalization(
 		canvas,
@@ -322,7 +325,10 @@ func TestArchitectureLocalizationFallsBackPerFieldWithoutMutatingInput(t *testin
 	}
 	translations := make(map[string]string, len(input.Fields))
 	for _, field := range input.Fields {
-		translations[field.ID] = "Переведено: " + field.Text
+		translations[field.ID] = architectureRussianFixtureText(
+			"Переведено: ",
+			field,
+		)
 	}
 	invalidID, err := localization.FieldID(
 		localization.OwnerComponent,
@@ -514,4 +520,20 @@ func roundTripArchitectureLocalizationJSON(t *testing.T, value any) {
 	if err := json.Unmarshal(encoded, value); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func architectureRussianFixtureText(
+	prefix string,
+	field localization.InputField,
+) string {
+	translated := prefix + "русское описание"
+	for _, placeholder := range field.Placeholders {
+		for count := 0; count < placeholder.Count; count++ {
+			translated += " " + placeholder.Token
+		}
+	}
+	if strings.Contains(field.Text, "東京") {
+		translated += " 東京"
+	}
+	return translated
 }

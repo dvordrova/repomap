@@ -83,13 +83,13 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 }
 
-func TestEnsureArchitectureSynthesisIsolatesCacheByOutputLanguage(t *testing.T) {
+func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
 	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
 	runsDir := t.TempDir()
-	run := func(name, language string) architectureSynthesisOutcome {
+	run := func(name string) architectureSynthesisOutcome {
 		t.Helper()
 		runDir := filepath.Join(runsDir, name)
 		if err := os.Mkdir(runDir, 0o700); err != nil {
@@ -103,7 +103,7 @@ func TestEnsureArchitectureSynthesisIsolatesCacheByOutputLanguage(t *testing.T) 
 			"openai-compatible/bearer",
 			"test-model",
 			provider,
-			architectureSynthesisOptions{outputLanguage: language},
+			architectureSynthesisOptions{},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -111,20 +111,20 @@ func TestEnsureArchitectureSynthesisIsolatesCacheByOutputLanguage(t *testing.T) 
 		return outcome
 	}
 
-	if outcome := run("english", "en"); outcome.Cached {
-		t.Fatalf("first English outcome = %#v, want provider call", outcome)
+	if outcome := run("canonical"); outcome.Cached {
+		t.Fatalf("first canonical outcome = %#v, want provider call", outcome)
 	}
-	if outcome := run("russian", "ru"); outcome.Cached {
-		t.Fatalf("first Russian outcome = %#v, want language-isolated provider call", outcome)
+	if outcome := run("english-render"); !outcome.Cached {
+		t.Fatalf("English presentation source = %#v, want canonical cache replay", outcome)
 	}
-	if outcome := run("russian-replay", "ru"); !outcome.Cached {
-		t.Fatalf("second Russian outcome = %#v, want same-language cache replay", outcome)
+	if outcome := run("russian-render"); !outcome.Cached {
+		t.Fatalf("Russian presentation source = %#v, want canonical cache replay", outcome)
 	}
-	if provider.calls != 2 {
-		t.Fatalf("provider calls = %d, want one English and one Russian call", provider.calls)
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want one canonical English call", provider.calls)
 	}
 
-	saved, err := os.ReadFile(filepath.Join(runsDir, "russian-replay", report.ArchitectureSynthesisFile))
+	saved, err := os.ReadFile(filepath.Join(runsDir, "russian-render", report.ArchitectureSynthesisFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,8 +132,8 @@ func TestEnsureArchitectureSynthesisIsolatesCacheByOutputLanguage(t *testing.T) 
 	if err := json.Unmarshal(saved, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.Call == nil || record.Call.Metadata.OutputLanguage != "ru" {
-		t.Fatalf("Russian cached record metadata = %#v", record.Call)
+	if record.Call == nil || record.Call.Metadata.OutputLanguage != "en" {
+		t.Fatalf("canonical cached record metadata = %#v", record.Call)
 	}
 }
 
@@ -387,7 +387,7 @@ func TestEnsureArchitectureSynthesisRefetchesLanguageUnknownActiveCache(t *testi
 		"openai-compatible/bearer",
 		"test-model",
 		provider,
-		architectureSynthesisOptions{outputLanguage: "en"},
+		architectureSynthesisOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -558,6 +559,7 @@ func readRunDir(
 		data.Warnings = append(data.Warnings, warning)
 	}
 	data.UserSources = projectOverviewSourceSnippets(data)
+	prepareReplayedPresentationMetadata(data)
 	return data, nil
 }
 
@@ -786,7 +788,9 @@ func parseRunMetadata(path string, data *ReportData) string {
 		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
 		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
 	}
-	data.ReportLanguage = storedReportLanguage(metadata.EffectiveOptions.ReportLanguage)
+	if normalizedReportLanguage(metadata.EffectiveOptions.ReportLanguage) == "ru" {
+		data.requestedPresentationLocale = "ru"
+	}
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""
 }
@@ -979,7 +983,25 @@ func parseOrientationReport(path string, data *ReportData) string {
 			Reason: item.Reason,
 		})
 	}
+	warningOffset := len(data.Warnings)
 	data.Warnings = append(data.Warnings, or.Warnings...)
+	diagnostics, diagnosticsErr := readOrientationWarningDiagnostics(
+		filepath.Dir(path),
+		b,
+		warningOffset,
+		or,
+	)
+	if diagnosticsErr != nil {
+		data.presentationMetadataErr = errors.Join(
+			data.presentationMetadataErr,
+			diagnosticsErr,
+		)
+	} else {
+		data.runWarningDiagnostics = append(
+			data.runWarningDiagnostics,
+			diagnostics...,
+		)
+	}
 	return ""
 }
 

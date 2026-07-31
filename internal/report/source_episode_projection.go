@@ -91,6 +91,7 @@ type sourceEpisodeProjection struct {
 }
 
 type sourceEpisodeProjectedClaim struct {
+	ID        string                `json:"-"`
 	State     string                `json:"state"`
 	Strength  string                `json:"strength,omitempty"`
 	Title     string                `json:"title"`
@@ -100,6 +101,7 @@ type sourceEpisodeProjectedClaim struct {
 }
 
 type sourceEpisodeProjectedGap struct {
+	ID        string                `json:"-"`
 	State     string                `json:"state"`
 	Statement string                `json:"statement"`
 	Sources   []sourceEpisodeSource `json:"sources,omitempty"`
@@ -149,6 +151,7 @@ func projectApprovedSourceEpisode(data *ReportData, raw []byte) (*sourceEpisodeP
 	claims := make([]sourceEpisodeProjectedClaim, 0, len(episode.Claims))
 	for _, claim := range episode.Claims {
 		claims = append(claims, sourceEpisodeProjectedClaim{
+			ID:        claim.ID,
 			State:     claim.State,
 			Strength:  claim.Strength,
 			Title:     claim.Title,
@@ -160,6 +163,7 @@ func projectApprovedSourceEpisode(data *ReportData, raw []byte) (*sourceEpisodeP
 	uncertainties := make([]sourceEpisodeProjectedGap, 0, len(episode.Uncertainties))
 	for _, uncertainty := range episode.Uncertainties {
 		uncertainties = append(uncertainties, sourceEpisodeProjectedGap{
+			ID:        uncertainty.ID,
 			State:     uncertainty.State,
 			Statement: uncertainty.Statement,
 			Sources:   authorizedSourceEpisodeSources(uncertainty.AnchorIDs, anchors, openable, data.SourceIDs),
@@ -174,6 +178,19 @@ func projectApprovedSourceEpisode(data *ReportData, raw []byte) (*sourceEpisodeP
 		Claims:        claims,
 		Uncertainties: uncertainties,
 	}, nil
+}
+
+// AttachSourceEpisodePresentation binds one already approved, bounded source
+// episode to transient terminal-presentation state. It never changes
+// report.json or source authority; the attached copy only lets the single
+// presentation-localization inventory include prose that will actually render.
+func AttachSourceEpisodePresentation(data *ReportData, raw []byte) error {
+	episode, err := projectApprovedSourceEpisode(data, raw)
+	if err != nil {
+		return err
+	}
+	data.presentationSourceEpisode = episode
+	return nil
 }
 
 func validateSourceEpisode(episode sourceEpisodeInput, approval sourceEpisodeApproval) error {

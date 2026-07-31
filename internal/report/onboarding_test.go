@@ -482,6 +482,98 @@ func TestProjectNarrativeCompressionRequiresCoveredAspectProjection(t *testing.T
 	}
 }
 
+func TestDocumentedPurposeSentencesPreserveTechnicalPunctuation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{
+			name:  "inline code",
+			value: "Run `go run ./cmd/server --version v1.2.3`. Then inspect logs.",
+			want: []string{
+				"Run `go run ./cmd/server --version v1.2.3`.",
+				"Then inspect logs.",
+			},
+		},
+		{
+			name:  "URL with version and decimal query",
+			value: "Read https://example.com/docs/v1.2.3?ratio=1.5 before starting. Then connect.",
+			want: []string{
+				"Read https://example.com/docs/v1.2.3?ratio=1.5 before starting.",
+				"Then connect.",
+			},
+		},
+		{
+			name:  "semantic version",
+			value: "Version v1.2.3 exposes the API. The protocol remains compatible.",
+			want: []string{
+				"Version v1.2.3 exposes the API.",
+				"The protocol remains compatible.",
+			},
+		},
+		{
+			name:  "decimal",
+			value: "The timeout is 1.25 seconds. Retry once.",
+			want: []string{
+				"The timeout is 1.25 seconds.",
+				"Retry once.",
+			},
+		},
+		{
+			name:  "repository path command",
+			value: "Use go run ./cmd/server to start the service. Then open the client.",
+			want: []string{
+				"Use go run ./cmd/server to start the service.",
+				"Then open the client.",
+			},
+		},
+		{
+			name:  "UTF-8 byte offsets",
+			value: "Запустите `go run ./cmd/server`. Затем откройте клиент.",
+			want: []string{
+				"Запустите `go run ./cmd/server`.",
+				"Затем откройте клиент.",
+			},
+		},
+		{
+			name:  "closing quotes",
+			value: `The service reports "ready." Then clients may connect.`,
+			want: []string{
+				`The service reports "ready."`,
+				"Then clients may connect.",
+			},
+		},
+		{
+			name:  "closing emphasis",
+			value: "The command is **ready.** Then clients may connect.",
+			want: []string{
+				"The command is **ready.**",
+				"Then clients may connect.",
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := documentedPurposeSentences(test.value, ""); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("sentences = %#v, want %#v", got, test.want)
+			}
+			end := firstSentenceEnd(test.value)
+			if end < 0 || test.value[:end+1] != test.want[0] {
+				got := ""
+				if end >= 0 {
+					got = test.value[:end+1]
+				}
+				t.Fatalf("first sentence = %q, want %q", got, test.want[0])
+			}
+		})
+	}
+}
+
 func onboardingMechanism(
 	artifactID string,
 	question string,

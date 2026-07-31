@@ -26,11 +26,16 @@ func TestRussianReportLanguageReachesDataAndHTML(t *testing.T) {
 		`"main.what.to.study"`,
 		`"Что изучать"`,
 		`id="rm-ui-messages-js"`,
-		`<noscript><p>Для этого отчёта нужен JavaScript. Исходные данные доступны в <code>report.json</code>.</p></noscript>`,
+		`<noscript>`,
+		`Для этого отчёта нужен JavaScript.`,
+		`body > :not(noscript)`,
 	} {
 		if !strings.Contains(string(html), want) {
 			t.Fatalf("Russian HTML is missing %q", want)
 		}
+	}
+	if strings.Contains(string(html), "This report requires JavaScript.") {
+		t.Fatal("Russian no-JS presentation contains the English notice")
 	}
 }
 
@@ -45,7 +50,9 @@ func TestDefaultReportLanguageRemainsEnglish(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(html), `<html lang="en">`) ||
-		!strings.Contains(string(html), `<noscript><p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p></noscript>`) ||
+		!strings.Contains(string(html), `<noscript>`) ||
+		!strings.Contains(string(html), `This report requires JavaScript.`) ||
+		strings.Contains(string(html), `Для этого отчёта нужен JavaScript.`) ||
 		strings.Contains(string(html), `"report_language"`) {
 		t.Fatalf("default report language changed: %s", html[:min(len(html), 500)])
 	}
@@ -107,7 +114,7 @@ process.stdout.write(JSON.stringify([
 	}
 }
 
-func TestParseRunMetadataRestoresReportLanguage(t *testing.T) {
+func TestParseRunMetadataDoesNotLeakRequestedLocaleIntoCanonicalReport(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "metadata.json")
@@ -122,7 +129,13 @@ func TestParseRunMetadataRestoresReportLanguage(t *testing.T) {
 	if warning := parseRunMetadata(path, &data); warning != "" {
 		t.Fatal(warning)
 	}
-	if data.ReportLanguage != "ru" {
-		t.Fatalf("ReportLanguage = %q, want ru", data.ReportLanguage)
+	if data.ReportLanguage != "" {
+		t.Fatalf("ReportLanguage = %q, want canonical English", data.ReportLanguage)
+	}
+	if data.requestedPresentationLocale != "ru" {
+		t.Fatalf(
+			"requestedPresentationLocale = %q, want transient ru render intent",
+			data.requestedPresentationLocale,
+		)
 	}
 }

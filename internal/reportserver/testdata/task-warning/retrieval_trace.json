@@ -1,0 +1,441 @@
+{
+  "version": 1,
+  "task_kind": "bug",
+  "task_profile": "unknown",
+  "task_terms": [
+    {
+      "text": "Validate",
+      "normalized": "validate",
+      "found": true,
+      "weight": 16
+    },
+    {
+      "text": "reported failure",
+      "normalized": "reported failure",
+      "found": false,
+      "weight": 16
+    },
+    {
+      "text": "reported",
+      "normalized": "reported",
+      "found": false,
+      "weight": 8
+    },
+    {
+      "text": "failure",
+      "normalized": "failure",
+      "found": false,
+      "weight": 8
+    },
+    {
+      "text": "request",
+      "normalized": "request",
+      "found": false,
+      "weight": 4
+    },
+    {
+      "text": "sees",
+      "normalized": "sees",
+      "found": false,
+      "weight": 2
+    },
+    {
+      "text": "path",
+      "normalized": "path",
+      "found": false,
+      "weight": 2
+    }
+  ],
+  "candidates_before_ranking": [
+    {
+      "id": "anchor-2e8bd13976e95aab1a42",
+      "stage": "initial",
+      "discovery_order": 1,
+      "path": "internal/api.go",
+      "symbol": "Handle",
+      "roles": [
+        "representative_implementation"
+      ],
+      "score": 0,
+      "score_components": [
+        {
+          "kind": "direct_task_term_match",
+          "value": 10,
+          "detail": "sum of exact retained task-term hits"
+        },
+        {
+          "kind": "missing_role_fit",
+          "value": 0,
+          "detail": "fit to immutable key-role reservations"
+        },
+        {
+          "kind": "exact_relation_to_selected_anchor",
+          "value": 0,
+          "detail": "relations are computed after retained anchor identity is fixed"
+        },
+        {
+          "kind": "production_relevance",
+          "value": 20
+        },
+        {
+          "kind": "test_fixture_relevance",
+          "value": 0
+        },
+        {
+          "kind": "source_scope_completeness",
+          "value": 20
+        },
+        {
+          "kind": "repository_role",
+          "value": -50,
+          "detail": "residual repository/path score; components sum to the exact pre-ranking score"
+        },
+        {
+          "kind": "distance_from_selected_anchor",
+          "value": 0,
+          "detail": "no repository-wide graph distance was computed"
+        },
+        {
+          "kind": "duplicate_adjacent_only_penalty",
+          "value": 0
+        },
+        {
+          "kind": "example_test_only_penalty",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "anchor-cd6ed011bcd4e5333200",
+      "stage": "initial",
+      "discovery_order": 2,
+      "path": "internal/service.go",
+      "symbol": "Validate",
+      "roles": [
+        "symptom_site"
+      ],
+      "score": 0,
+      "score_components": [
+        {
+          "kind": "direct_task_term_match",
+          "value": 10,
+          "detail": "sum of exact retained task-term hits"
+        },
+        {
+          "kind": "missing_role_fit",
+          "value": 0,
+          "detail": "fit to immutable key-role reservations"
+        },
+        {
+          "kind": "exact_relation_to_selected_anchor",
+          "value": 0,
+          "detail": "relations are computed after retained anchor identity is fixed"
+        },
+        {
+          "kind": "production_relevance",
+          "value": 20
+        },
+        {
+          "kind": "test_fixture_relevance",
+          "value": 0
+        },
+        {
+          "kind": "source_scope_completeness",
+          "value": 20
+        },
+        {
+          "kind": "repository_role",
+          "value": -50,
+          "detail": "residual repository/path score; components sum to the exact pre-ranking score"
+        },
+        {
+          "kind": "distance_from_selected_anchor",
+          "value": 0,
+          "detail": "no repository-wide graph distance was computed"
+        },
+        {
+          "kind": "duplicate_adjacent_only_penalty",
+          "value": 0
+        },
+        {
+          "kind": "example_test_only_penalty",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "anchor-dbf6609b644e97fdf1f5",
+      "stage": "initial",
+      "discovery_order": 3,
+      "path": "internal/service_test.go",
+      "symbol": "TestValidate",
+      "roles": [
+        "verification_anchor"
+      ],
+      "score": 0,
+      "score_components": [
+        {
+          "kind": "direct_task_term_match",
+          "value": 10,
+          "detail": "sum of exact retained task-term hits"
+        },
+        {
+          "kind": "missing_role_fit",
+          "value": 0,
+          "detail": "fit to immutable key-role reservations"
+        },
+        {
+          "kind": "exact_relation_to_selected_anchor",
+          "value": 0,
+          "detail": "relations are computed after retained anchor identity is fixed"
+        },
+        {
+          "kind": "production_relevance",
+          "value": 0
+        },
+        {
+          "kind": "test_fixture_relevance",
+          "value": 20
+        },
+        {
+          "kind": "source_scope_completeness",
+          "value": 20
+        },
+        {
+          "kind": "repository_role",
+          "value": -50,
+          "detail": "residual repository/path score; components sum to the exact pre-ranking score"
+        },
+        {
+          "kind": "distance_from_selected_anchor",
+          "value": 0,
+          "detail": "no repository-wide graph distance was computed"
+        },
+        {
+          "kind": "duplicate_adjacent_only_penalty",
+          "value": 0
+        },
+        {
+          "kind": "example_test_only_penalty",
+          "value": 0
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "relation-1ab78752d33f6af5ab01",
+      "left_candidate_id": "anchor-2e8bd13976e95aab1a42",
+      "right_candidate_id": "anchor-cd6ed011bcd4e5333200",
+      "kind": "direct_call",
+      "support_type": "locally_observed",
+      "evidence_ids": [
+        "evidence-3a68ae597cd4d4218f64",
+        "evidence-a9d5ac2ef6adb4921d74"
+      ],
+      "scope": "Exact retained anchor scopes only.",
+      "non_guarantees": "A direct call expression is present in the retained caller excerpt; this does not prove runtime reachability, order, or callee behavior."
+    },
+    {
+      "id": "relation-3e503c275742ad94a86a",
+      "left_candidate_id": "anchor-dbf6609b644e97fdf1f5",
+      "right_candidate_id": "anchor-cd6ed011bcd4e5333200",
+      "kind": "direct_call",
+      "support_type": "locally_observed",
+      "evidence_ids": [
+        "evidence-73de9feec3f18ff427e8",
+        "evidence-a9d5ac2ef6adb4921d74"
+      ],
+      "scope": "Exact retained anchor scopes only.",
+      "non_guarantees": "A direct call expression is present in the retained caller excerpt; this does not prove runtime reachability, order, or callee behavior."
+    },
+    {
+      "id": "relation-db0a568c6bec544bc2cf",
+      "left_candidate_id": "anchor-2e8bd13976e95aab1a42",
+      "right_candidate_id": "anchor-dbf6609b644e97fdf1f5",
+      "kind": "shared_state_alias",
+      "support_type": "locally_observed",
+      "evidence_ids": [
+        "evidence-3a68ae597cd4d4218f64",
+        "evidence-73de9feec3f18ff427e8"
+      ],
+      "scope": "Exact retained anchor scopes only.",
+      "non_guarantees": "Exact retained source references only; this does not prove runtime order, reachability, or causality."
+    }
+  ],
+  "selected_anchors": [
+    {
+      "candidate_id": "anchor-2e8bd13976e95aab1a42",
+      "anchor_id": "anchor-2e8bd13976e95aab1a42",
+      "rank": 1,
+      "reason": "reserved after key roles for supporting role representative_implementation"
+    },
+    {
+      "candidate_id": "anchor-cd6ed011bcd4e5333200",
+      "anchor_id": "anchor-cd6ed011bcd4e5333200",
+      "rank": 2,
+      "reason": "retained by bounded exact-term score and file diversity"
+    },
+    {
+      "candidate_id": "anchor-dbf6609b644e97fdf1f5",
+      "anchor_id": "anchor-dbf6609b644e97fdf1f5",
+      "rank": 3,
+      "reason": "retained by bounded exact-term score and file diversity"
+    }
+  ],
+  "dropped_anchors": [],
+  "source_scopes": [
+    {
+      "anchor_id": "anchor-2e8bd13976e95aab1a42",
+      "scope": {
+        "scope_kind": "complete_enclosing_symbol",
+        "scope_start": 10,
+        "scope_end": 12,
+        "source_total_lines": 32,
+        "truncated": false,
+        "truncation_reason": "",
+        "task_matches_outside_window": false,
+        "negative_claims_allowed": true,
+        "negative_evidence_basis": "complete_scope"
+      }
+    },
+    {
+      "anchor_id": "anchor-cd6ed011bcd4e5333200",
+      "scope": {
+        "scope_kind": "complete_enclosing_symbol",
+        "scope_start": 20,
+        "scope_end": 22,
+        "source_total_lines": 32,
+        "truncated": false,
+        "truncation_reason": "",
+        "task_matches_outside_window": false,
+        "negative_claims_allowed": true,
+        "negative_evidence_basis": "complete_scope"
+      }
+    },
+    {
+      "anchor_id": "anchor-dbf6609b644e97fdf1f5",
+      "scope": {
+        "scope_kind": "complete_enclosing_symbol",
+        "scope_start": 30,
+        "scope_end": 32,
+        "source_total_lines": 32,
+        "truncated": false,
+        "truncation_reason": "",
+        "task_matches_outside_window": false,
+        "negative_claims_allowed": true,
+        "negative_evidence_basis": "complete_scope"
+      }
+    }
+  ],
+  "role_coverage": {
+    "profile": "unknown",
+    "key": [],
+    "supporting": [
+      {
+        "role": "representative_implementation",
+        "minimum_anchors": 1,
+        "anchor_ids": [
+          "anchor-2e8bd13976e95aab1a42"
+        ],
+        "represented": true
+      }
+    ],
+    "optional": [
+      {
+        "role": "verification_anchor",
+        "minimum_anchors": 1,
+        "anchor_ids": [
+          "anchor-dbf6609b644e97fdf1f5"
+        ],
+        "represented": true
+      },
+      {
+        "role": "documentation_contract",
+        "minimum_anchors": 1,
+        "anchor_ids": [],
+        "represented": false
+      }
+    ]
+  },
+  "verification_frontier": {
+    "decisive_anchor_id": "anchor-2e8bd13976e95aab1a42",
+    "anchors": [
+      {
+        "id": "verification-75f20b065992b8a94d7a",
+        "authority": "exact_existing_test",
+        "anchor_id": "anchor-dbf6609b644e97fdf1f5",
+        "path": "internal/service_test.go",
+        "symbol": "TestValidate",
+        "text": "Exact retained test or example calls a decisive endpoint or asserts task-observable concepts; this does not establish coverage of every task case.",
+        "evidence_ids": [
+          "evidence-73de9feec3f18ff427e8"
+        ]
+      }
+    ]
+  },
+  "budgets": {
+    "initial_candidates": 7,
+    "candidate_items_found": 7,
+    "retained_anchors": 3,
+    "anchor_items_found": 3,
+    "evidence_files_considered": 7,
+    "read_files": 3,
+    "read_bytes": 256,
+    "retained_source_bytes": 120,
+    "gopls_queries": 1,
+    "frontier_expansions": 1,
+    "local_wall_millis": 42
+  },
+  "limits": [
+    {
+      "name": "initial_candidates",
+      "limit": 40,
+      "observed": 7,
+      "applied": false,
+      "caused_loss": false
+    },
+    {
+      "name": "retained_anchors",
+      "limit": 16,
+      "observed": 3,
+      "applied": false,
+      "caused_loss": false
+    },
+    {
+      "name": "read_files",
+      "limit": 12,
+      "observed": 3,
+      "applied": false,
+      "caused_loss": false
+    },
+    {
+      "name": "read_bytes",
+      "limit": 131072,
+      "observed": 256,
+      "applied": false,
+      "caused_loss": false
+    },
+    {
+      "name": "source_scan_bytes",
+      "limit": 4194304,
+      "observed": 0,
+      "applied": false,
+      "caused_loss": false
+    },
+    {
+      "name": "retained_source_bytes",
+      "limit": 131072,
+      "observed": 120,
+      "applied": false,
+      "caused_loss": false
+    },
+    {
+      "name": "completion_expansions",
+      "limit": 2,
+      "observed": 1,
+      "applied": false,
+      "caused_loss": false
+    }
+  ]
+}

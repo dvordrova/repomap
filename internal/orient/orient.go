@@ -55,7 +55,6 @@ type Options struct {
 	EffectiveOptions  debugdump.EffectiveOptions
 	ResearchPolicy    modelresearch.Policy
 	RepositoryContext modelresearch.RepositoryContext
-	OutputLanguage    string
 }
 
 type combinedReport struct {
@@ -161,7 +160,6 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		client.OutputLanguage = opts.OutputLanguage
 		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
 		if err != nil {
 			return nil, err
@@ -306,7 +304,6 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				opts.RepoPath,
 			)
 		}
-		client.OutputLanguage = opts.OutputLanguage
 		config := client.EffectiveConfig()
 		client.OnWait = func(progress deepseek.WaitProgress) {
 			emitProgress(opts, ProgressEvent{
@@ -522,8 +519,18 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		out, _ := json.MarshalIndent(or, "", "  ")
 		if dw != nil {
-			if err := dw.WriteOrientationReport(out); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required orientation report: %w", err)
+			writeErr := dw.WriteOrientationReportWithSidecar(
+				out,
+				ConfidenceWarningDiagnosticsFile,
+				func(savedOrientation []byte) ([]byte, error) {
+					return EncodeConfidenceWarningDiagnostics(
+						savedOrientation,
+						or.confidenceWarningDiagnostics,
+					)
+				},
+			)
+			if writeErr != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required orientation report: %w", writeErr)
 			}
 		}
 

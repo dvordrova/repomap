@@ -49,6 +49,40 @@
   return api(id, params);
  }
 
+ function architectureProvenanceProductMessageID(provenance) {
+  switch (text(provenance && provenance.provider) + "\u0000" + text(provenance && provenance.operation)) {
+   case "architecture_grounding\u0000behavior_anchor_file": return "architecture.provenance.behavior_anchor_file";
+   case "architecture_grounding\u0000behavior_anchor_member": return "architecture.provenance.behavior_anchor_member";
+   case "surface_catalog\u0000exact_process_entry_role": return "architecture.provenance.exact_process_entry_role";
+   case "report_repository_graph\u0000saved_package_import": return "architecture.provenance.saved_package_import";
+   case "report_repository_graph\u0000saved_package_member": return "architecture.provenance.saved_package_member";
+   case "flowproof\u0000saved_proof": return "architecture.provenance.saved_proof";
+   case "flowproof\u0000saved_flow_member": return "architecture.provenance.saved_flow_member";
+   case "flowproof\u0000anchor_file": return "architecture.provenance.anchor_file";
+   case "flowproof\u0000anchor_declaration": return "architecture.provenance.anchor_declaration";
+   case "flowproof\u0000bind_anchor_to_exact_member": return "architecture.provenance.bind_anchor_to_exact_member";
+   case "flowproof\u0000anchor_flow_participation": return "architecture.provenance.anchor_flow_participation";
+   default: return "";
+  }
+ }
+
+ function architectureScenarioProductMessageID(scenario) {
+  if (text(scenario && scenario.id) === "saved-package-graph") {
+   return "architecture.scenario.saved_package_graph";
+  }
+  const build = scenario && scenario.build || {};
+  if (text(build.goos) || text(build.goarch) || array(build.build_tags).length > 0) {
+   return "architecture.scenario.recorded_go_build";
+  }
+  return "";
+ }
+
+ function architecturePresentationText(lookup, address, fallback) {
+  return lookup && Object.prototype.hasOwnProperty.call(lookup, address)
+   ? text(lookup[address])
+   : fallback;
+ }
+
  function architectureSourceLabel(value, message) {
   switch (text(value)) {
    case "validated_model": return productMessage(message, "architecture.value.validated_model");
@@ -56,6 +90,38 @@
    case "local_anchors": return productMessage(message, "architecture.value.local_anchors");
    case "package_fallback": return productMessage(message, "architecture.value.package_fallback");
    default: return productMessage(message, "architecture.value.unspecified");
+  }
+ }
+
+ function architectureGroundingWording(source, mode, message) {
+  if (text(source) === "local_anchors") {
+   return {
+    title: productMessage(message, "architecture.grounding.local_anchors.title"),
+    subtitle: productMessage(message, "architecture.grounding.local_anchors.subtitle"),
+   };
+  }
+  if (text(source) === "package_fallback") {
+   return {
+    title: productMessage(message, "architecture.grounding.package_fallback.title"),
+    subtitle: productMessage(message, "architecture.grounding.package_fallback.subtitle"),
+   };
+  }
+  switch (text(mode)) {
+   case "behavior_grounded":
+    return {
+     title: productMessage(message, "architecture.grounding.behavior.title"),
+     subtitle: productMessage(message, "architecture.grounding.behavior.subtitle"),
+    };
+   case "mixed":
+    return {
+     title: productMessage(message, "architecture.grounding.mixed.title"),
+     subtitle: productMessage(message, "architecture.grounding.mixed.subtitle"),
+    };
+   default:
+    return {
+     title: productMessage(message, "architecture.grounding.conceptual.title"),
+     subtitle: productMessage(message, "architecture.grounding.conceptual.subtitle"),
+    };
   }
  }
 
@@ -218,7 +284,14 @@
   };
   const id = labels[text(kind)];
   if (id) return productMessage(message, id);
-  return text(kind).replace(/_/g, " ") || productMessage(message, "architecture.fallback.unknown_proof_area");
+  return text(kind) || productMessage(message, "architecture.fallback.unknown_proof_area");
+ }
+
+ function presentationValueLabel(value) {
+  if (value && typeof value === "object") {
+   value = value.label || value.name || value.kind || value.id;
+  }
+  return text(value);
  }
 
  function semanticClass(relation, invocation) {
@@ -327,12 +400,22 @@
    registers_command: "architecture.relation.registers",
    starts_goroutine: "architecture.relation.starts_task",
    uses_cancellation: "architecture.relation.uses_cancellation_context",
-   cancels: "architecture.relation.invokes_cancellation",
-   joins: "architecture.relation.waits_for_task",
-   waits_for: "architecture.relation.waits_for",
-  };
-  if (labels[value]) return productMessage(message, labels[value]);
-  return value.replace(/_/g, " ") || productMessage(message, "architecture.relation.continues");
+	   cancels: "architecture.relation.invokes_cancellation",
+	   joins: "architecture.relation.waits_for_task",
+	   waits_for: "architecture.relation.waits_for",
+	   dispatches_to: "architecture.relation.dispatches_to",
+	   registers_extension_family: "architecture.relation.registers_extension_family",
+	   loads_or_adapts_config: "architecture.relation.loads_or_adapts_config",
+	   starts_lifecycle: "architecture.relation.starts_lifecycle",
+	   exposes_admin_control_plane: "architecture.relation.exposes_admin_control_plane",
+	   dispatches_http_request: "architecture.relation.dispatches_http_request",
+	   configures_security_boundary: "architecture.relation.configures_security_boundary",
+	   static_call_supporting_relation: "architecture.relation.static_call_supporting_relation",
+	   package_import: "architecture.relation.package_import",
+	   behavior_handoff: "architecture.relation.behavior_handoff",
+	  };
+	  if (labels[value]) return productMessage(message, labels[value]);
+	  return productMessage(message, "architecture.relation.continues");
  }
 
  function layoutComponentID(id) {
@@ -399,6 +482,9 @@
    }
    this.message = (id, params) => message(id, params);
    this.userMode = this.options.userMode === true;
+   this.presentationText = this.options.presentationText && typeof this.options.presentationText === "object"
+    ? this.options.presentationText
+    : {};
    this.componentContexts = this.options.componentContexts && typeof this.options.componentContexts === "object"
     ? this.options.componentContexts
     : {};
@@ -768,6 +854,10 @@
    return this.message(id, params);
   }
 
+  presented(address, fallback) {
+   return architecturePresentationText(this.presentationText, address, fallback);
+  }
+
    isDiagnosticSubsystem(subsystem) {
     const id = text(subsystem && subsystem.id);
     return diagnosticSubsystemIDs(this.subsystems, this.diagnostics).indexOf(id) >= 0;
@@ -801,9 +891,9 @@
         else this.focusInitialLandscape();
        });
     })
-    .catch((error) => {
+    .catch(() => {
      if (this.destroyed) return;
-     this.loading.textContent = error && error.message ? error.message : text(error);
+     this.loading.textContent = this.msg("architecture.error.layout_failed");
      this.loading.classList.add("is-error");
      this.renderInspector();
     });
@@ -2129,14 +2219,18 @@
     const card = element("article", "rm-arch__slot is-" + (text(slot.status) || "unknown"));
     const header = element("div", "rm-arch__slot-header");
     header.appendChild(element("strong", null, proofAreaLabel(slot.kind, this.message)));
-    header.appendChild(element("span", "rm-arch__badge", text(slot.status).replace(/_/g, " ")));
+    header.appendChild(element("span", "rm-arch__badge", text(slot.status)));
     card.appendChild(header);
     if (slot.summary) card.appendChild(element("p", "rm-arch__copy", slot.summary));
     if (slot.missing) card.appendChild(element("p", "rm-arch__notice is-warning", slot.missing));
     if (slot.applicability_reason) {
      this.appendKeyValue(card, this.msg("architecture.label.applicability"), slot.applicability_reason);
     }
-    this.appendProvenance(card, slot.provenance);
+    this.appendProvenance(
+     card,
+     slot.provenance,
+     "architecture/flows/" + text(flow.id) + "/slots/" + text(slot.kind)
+    );
     slots.appendChild(card);
    });
 
@@ -3349,10 +3443,7 @@
   }
 
   guidedTourValueLabel(value) {
-   if (value && typeof value === "object") {
-    value = value.label || value.name || value.kind || value.id;
-   }
-   return text(value).replaceAll("_", " ");
+   return presentationValueLabel(value);
   }
 
   guidedTourUsesEditorialOrder() {
@@ -3828,11 +3919,13 @@
    const witness = edge.witness || {};
    const fromName = from && from.name;
    const toName = to && to.name;
-   this.inspectorHeading(
-    this.msg("architecture.label.code_relation"),
-    witness.kind || this.msg("architecture.fallback.source_backed_relation"),
-    fromName && toName ? fromName + " → " + toName : ""
-   );
+	   this.inspectorHeading(
+	    this.msg("architecture.label.code_relation"),
+	    witness.kind
+	     ? relationLabel(witness.kind, this.message)
+	     : this.msg("architecture.fallback.source_backed_relation"),
+	    fromName && toName ? fromName + " → " + toName : ""
+	   );
    if (locationLabel(witness.location)) {
     const source = this.inspectorSection(this.msg("architecture.section.source"));
     this.appendLocation(source, witness.location, this.msg("architecture.action.open_code"));
@@ -3840,21 +3933,24 @@
   }
 
   inspectLandscape() {
+   const grounding = architectureGroundingWording(
+    this.data.architecture_source,
+    this.data.grounding_mode,
+    this.message
+   );
    if (this.userMode) {
     this.inspectorHeading(
      this.msg("architecture.nav.architecture"),
-     this.msg("architecture.copy.explore_repository_map"),
-     this.msg("architecture.copy.select_map_object")
+     grounding.title,
+     grounding.subtitle
     );
     return;
    }
    const hasFlows = this.flows.length > 0;
    this.inspectorHeading(
     this.msg("architecture.nav.architecture"),
-    this.msg("architecture.copy.how_to_read_map"),
-     hasFlows
-      ? this.msg("architecture.copy.select_component_surface_trace")
-      : this.msg("architecture.copy.select_component_members")
+    grounding.title,
+    grounding.subtitle
    );
     const note = this.inspectorSection(this.msg("architecture.section.evidence_semantics"));
     note.appendChild(element(
@@ -3870,7 +3966,7 @@
     this.appendKeyValue(
      note,
      this.msg("architecture.label.grounding_mode"),
-     text(this.data.grounding_mode).replaceAll("_", " ")
+     text(this.data.grounding_mode)
     );
     this.appendKeyValue(
      note,
@@ -3929,7 +4025,7 @@
     const button = element("button", "rm-arch__edge-jump");
     button.type = "button";
     button.appendChild(element("strong", null, surface.name || surface.id));
-    button.appendChild(element("span", null, [surface.kind, text(surface.category).replaceAll("_", "/"), surface.status].filter(Boolean).join(" · ")));
+    button.appendChild(element("span", null, [surface.kind, text(surface.category), surface.status].filter(Boolean).join(" · ")));
     this.listen(button, "click", () => this.setSelection({ component: "", surface: text(surface.id), step: "", edge: "" }, true));
     surfaces.appendChild(button);
    });
@@ -3985,7 +4081,7 @@
       this.appendKeyValue(
        card,
        this.msg("architecture.label.grounding"),
-       text(suggestion.current_grounding).replaceAll("_", " ")
+       text(suggestion.current_grounding)
       );
       this.appendKeyValue(
        card,
@@ -4057,7 +4153,13 @@
      member.name || memberLabel(member.id, this.message)
     ));
     card.appendChild(element("code", "rm-arch__member-id", memberLabel(member.id, this.message)));
-    array(member.facts).forEach((fact) => this.appendFact(card, fact));
+    array(member.facts).forEach((fact, factIndex) => this.appendFact(
+     card,
+     fact,
+     "architecture/components/" + text(component.id) +
+      "/members/" + text(member.id && member.id.kind) + "/" + text(member.id && member.id.value) +
+      "/facts/" + String(factIndex)
+    ));
     members.appendChild(card);
    });
 
@@ -4079,7 +4181,11 @@
        this.appendKeyValue(card, this.msg("architecture.label.kind"), anchor.kind);
        this.appendKeyValue(card, this.msg("architecture.label.certainty"), anchor.certainty);
        this.appendLocation(card, anchor.location, this.msg("architecture.label.anchor_evidence"));
-       this.appendProvenance(card, anchor.producer ? [anchor.producer] : []);
+       this.appendProvenance(
+        card,
+        anchor.producer ? [anchor.producer] : [],
+        "architecture/behavior_anchors/" + text(anchor.id) + "/producer"
+       );
       }
       evidence.appendChild(card);
    });
@@ -4118,7 +4224,7 @@
    this.appendKeyValue(
     ownership,
     this.msg("architecture.label.catalog_group"),
-    text(surface.category).replaceAll("_", "/")
+    text(surface.category)
    );
    const owner = this.componentByID.get(text(surface.owning_component_id));
    if (owner) {
@@ -4194,8 +4300,10 @@
     );
     this.appendKeyValue(binding, this.msg("architecture.label.certainty"), step.binding.certainty);
     this.appendLocation(binding, step.binding.location, this.msg("architecture.label.binding_evidence"));
-    this.appendProvenance(binding, step.binding.provenance);
-    this.appendScenarios(binding, step.binding.scenarios);
+    const bindingPresentationBase = "architecture/flows/" + text(flow.id) +
+     "/steps/" + (text(step.id) || String(array(flow.steps).indexOf(step))) + "/binding";
+    this.appendProvenance(binding, step.binding.provenance, bindingPresentationBase);
+    this.appendScenarios(binding, step.binding.scenarios, bindingPresentationBase);
    } else {
     const missing = this.inspectorSection(this.msg("architecture.section.component_binding"));
     missing.appendChild(element(
@@ -4287,8 +4395,9 @@
    this.appendKeyValue(this.inspector, this.msg("architecture.label.certainty"), witness.certainty);
    this.appendKeyValue(this.inspector, this.msg("architecture.label.witness_id"), witness.id);
    this.appendLocation(this.inspector, witness.location, this.msg("architecture.label.local_witness"));
-   this.appendProvenance(this.inspector, witness.provenance);
-   this.appendScenarios(this.inspector, witness.scenarios);
+   const relationPresentationBase = "architecture/structural_relations/" + text(witness.id);
+   this.appendProvenance(this.inspector, witness.provenance, relationPresentationBase);
+   this.appendScenarios(this.inspector, witness.scenarios, relationPresentationBase);
    this.inspector.appendChild(element(
     "p",
     "rm-arch__notice",
@@ -4308,7 +4417,7 @@
    return button;
   }
 
-  appendFact(parent, fact) {
+  appendFact(parent, fact, presentationBase) {
    if (!fact) return;
    if (this.userMode) {
     const block = element("div", "rm-arch__fact");
@@ -4332,7 +4441,7 @@
    block.appendChild(heading);
    if (fact.value) block.appendChild(element("span", "rm-arch__fact-value", fact.value));
    this.appendLocation(block, fact.location, this.msg("architecture.section.evidence"));
-   this.appendProvenance(block, fact.provenance);
+   this.appendProvenance(block, fact.provenance, presentationBase);
    parent.appendChild(block);
   }
 
@@ -4411,7 +4520,7 @@
     }
   }
 
-  appendProvenance(parent, provenanceItems) {
+  appendProvenance(parent, provenanceItems, presentationBase) {
    if (this.userMode) return;
    const items = array(provenanceItems);
    if (items.length === 0) return;
@@ -4422,9 +4531,14 @@
     this.msg("architecture.count.provenance", { count: items.length })
    ));
    const list = element("ul", "rm-arch__detail-list");
-   items.forEach((provenance) => {
+   items.forEach((provenance, provenanceIndex) => {
     const item = element("li");
-    const description = [provenance.provider, provenance.operation, provenance.version, provenance.detail]
+    const detailMessageID = architectureProvenanceProductMessageID(provenance);
+    const detailAddress = text(presentationBase) + "/provenance/" + String(provenanceIndex) + "/detail";
+    const detail = detailMessageID
+     ? this.msg(detailMessageID)
+     : this.presented(detailAddress, provenance.detail);
+    const description = [provenance.provider, provenance.operation, provenance.version, detail]
      .filter(Boolean)
      .join(" · ");
     item.appendChild(element(
@@ -4439,7 +4553,7 @@
    parent.appendChild(details);
   }
 
-  appendScenarios(parent, scenarios) {
+  appendScenarios(parent, scenarios, presentationBase) {
    if (this.userMode) return;
    const items = array(scenarios);
    if (items.length === 0) return;
@@ -4450,12 +4564,17 @@
     this.msg("architecture.count.scenarios", { count: items.length })
    ));
    const list = element("ul", "rm-arch__detail-list");
-   items.forEach((scenario) => {
+   items.forEach((scenario, scenarioIndex) => {
     const item = element("li");
+    const scenarioMessageID = architectureScenarioProductMessageID(scenario);
     item.appendChild(element(
      "strong",
      null,
-     scenario.name || scenario.id || this.msg("architecture.fallback.scenario")
+     (scenarioMessageID && this.msg(scenarioMessageID)) ||
+      this.presented(
+       text(presentationBase) + "/scenarios/" + String(scenarioIndex) + "/name",
+       scenario.name
+      ) || scenario.id || this.msg("architecture.fallback.scenario")
     ));
     const build = scenario.build || {};
     const context = [build.goos, build.goarch, array(build.build_tags).join(", ")].filter(Boolean).join(" · ");
@@ -4531,6 +4650,11 @@
    savedTraceLabel: savedTraceLabel,
    lifecycleRelationHeading: lifecycleRelationHeading,
    groupLifecycleRelations: groupLifecycleRelations,
+   proofAreaLabel: proofAreaLabel,
+   presentationValueLabel: presentationValueLabel,
+   architectureProvenanceProductMessageID: architectureProvenanceProductMessageID,
+   architectureScenarioProductMessageID: architectureScenarioProductMessageID,
+   architecturePresentationText: architecturePresentationText,
   });
  }
 })(window);

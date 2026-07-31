@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"io"
@@ -106,6 +107,53 @@ type studyMapStatus struct {
 	LocalReplay           bool                            `json:"local_replay,omitempty"`
 }
 
+type studyMapSourceOutcome string
+
+const (
+	studyMapNoSupportedSourceAdapter  studyMapSourceOutcome = "no_supported_source_adapter"
+	studyMapNoEligibleSourceFunctions studyMapSourceOutcome = "no_eligible_source_functions"
+)
+
+// studyMapSourceOutcomeError is a typed local availability result. It carries
+// no filesystem cause so an absent optional research directory cannot leak
+// into the product-facing diagnostic.
+type studyMapSourceOutcomeError struct {
+	Outcome studyMapSourceOutcome
+}
+
+func (err *studyMapSourceOutcomeError) Error() string {
+	return "study map: " + string(err.Outcome)
+}
+
+func studyMapSourceOutcomeCode(err error) (studyMapSourceOutcome, bool) {
+	var outcomeErr *studyMapSourceOutcomeError
+	if !errors.As(err, &outcomeErr) {
+		return "", false
+	}
+	return outcomeErr.Outcome, true
+}
+
+func unavailableStudyMapSourceOutcome(data *report.ReportData) error {
+	hasGeneralSource := false
+	hasGoAdapterSource := false
+	if data != nil {
+		for _, filePath := range data.OpenablePaths {
+			if !artifactrole.IsSourcePath(filePath) {
+				continue
+			}
+			hasGeneralSource = true
+			if strings.EqualFold(path.Ext(filePath), ".go") {
+				hasGoAdapterSource = true
+			}
+		}
+	}
+	outcome := studyMapNoEligibleSourceFunctions
+	if hasGeneralSource && !hasGoAdapterSource {
+		outcome = studyMapNoSupportedSourceAdapter
+	}
+	return &studyMapSourceOutcomeError{Outcome: outcome}
+}
+
 type studyMapAttempt struct {
 	Version         int                           `json:"version"`
 	PromptVersion   string                        `json:"prompt_version"`
@@ -122,25 +170,25 @@ func editStudyMapForRun(
 	runDir string,
 	repoRoot string,
 	stderr io.Writer,
-	outputLanguage ...string,
 ) (studyMapStatus, error) {
-	client, err := deepseek.NewFromEnv()
-	if err != nil {
-		return studyMapStatus{}, fmt.Errorf("study map: provider configuration: %w", err)
-	}
-	configureClientOutputLanguage(client, outputLanguage)
-	var progressMu sync.Mutex
-	client.OnWait = func(progress deepseek.WaitProgress) {
-		progressMu.Lock()
-		defer progressMu.Unlock()
-		fmt.Fprintf(
-			stderr,
-			"repomap: %s still running after %s (Ctrl-C to cancel)\n",
-			progress.Stage,
-			progress.Elapsed.Round(time.Second),
-		)
-	}
-	return prepareStudyMap(ctx, runDir, repoRoot, client)
+	return prepareStudyMapWithProviderFactory(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
+		client, err := deepseek.NewFromEnv()
+		if err != nil {
+			return nil, fmt.Errorf("study map: provider configuration: %w", err)
+		}
+		var progressMu sync.Mutex
+		client.OnWait = func(progress deepseek.WaitProgress) {
+			progressMu.Lock()
+			defer progressMu.Unlock()
+			fmt.Fprintf(
+				stderr,
+				"repomap: %s still running after %s (Ctrl-C to cancel)\n",
+				progress.Stage,
+				progress.Elapsed.Round(time.Second),
+			)
+		}
+		return client, nil
+	})
 }
 
 // prepareStudyMapMonolithic is retained only so saved v3.1 attempt fixtures
@@ -299,12 +347,6 @@ func buildStudyMapBundle(
 	if len(savedSources) == 0 && len(centralSources) == 0 {
 		exactSources = freshSavedDiscoverySources(runDir, data, nil)
 	}
-	if centralErr != nil && len(savedSources) == 0 && len(exactSources) == 0 {
-		return studymap.Bundle{}, fmt.Errorf("study map: collect central source: %w", centralErr)
-	}
-	if savedErr != nil && len(savedSources) == 0 && len(centralSources) == 0 && len(exactSources) == 0 {
-		return studymap.Bundle{}, fmt.Errorf("study map: no bounded source functions: %w", savedErr)
-	}
 	diverseSources := studyMapDiverseSourceFunctions(repoRoot, data, append(savedSources, centralSources...))
 	sources := mergeFreshSourceFunctions(
 		savedSources,
@@ -371,9 +413,18 @@ func buildStudyMapBundle(
 		}
 	}
 	if len(anchors) == 0 {
-		return studymap.Bundle{}, fmt.Errorf("study map: no locally authorized code anchors")
+		if centralErr != nil && len(sources) == 0 && len(exactSources) == 0 {
+			return studymap.Bundle{}, fmt.Errorf("study map: collect central source: %w", centralErr)
+		}
+		savedSourceUnavailable := errors.Is(savedErr, os.ErrNotExist) ||
+			errors.Is(savedErr, errFreshNoUsableSourceWindows)
+		if savedErr != nil && !savedSourceUnavailable &&
+			len(sources) == 0 && len(exactSources) == 0 {
+			return studymap.Bundle{}, fmt.Errorf("study map: no bounded source functions: %w", savedErr)
+		}
+		return studymap.Bundle{}, unavailableStudyMapSourceOutcome(data)
 	}
-	areas, areaPaths = ensureStudyMapAreas(areas, areaPaths, anchors, data.ReportLanguage)
+	areas, areaPaths = ensureStudyMapAreas(areas, areaPaths, anchors)
 	for index := range anchors {
 		anchors[index].AreaIDs = studyMapAreasForPath(anchors[index].Path, areas, areaPaths)
 	}
@@ -877,9 +928,6 @@ func studyMapAreas(
 			}
 			name = studyMapHumanName(name)
 			responsibility := "Production package " + repositoryPackage.CanonicalPath + "."
-			if strings.EqualFold(strings.TrimSpace(data.ReportLanguage), "ru") {
-				responsibility = "Основной пакет " + repositoryPackage.CanonicalPath + "."
-			}
 			addArea(studymap.Area{
 				ID:   studyMapOpaqueID("package-area", repositoryPackage.CanonicalPath),
 				Name: name, Responsibility: responsibility,
@@ -1026,7 +1074,6 @@ func ensureStudyMapAreas(
 	areas []studymap.Area,
 	areaPaths map[string][]string,
 	anchors []studymap.Anchor,
-	reportLanguage string,
 ) ([]studymap.Area, map[string][]string) {
 	seen := make(map[string]struct{}, len(areas))
 	for _, area := range areas {
@@ -1050,9 +1097,6 @@ func ensureStudyMapAreas(
 			name = studyMapHumanName(directory)
 		}
 		responsibility := "Exact code area for inspecting behavior around " + name + "."
-		if strings.EqualFold(strings.TrimSpace(reportLanguage), "ru") {
-			responsibility = "Точная область кода для изучения поведения вокруг " + name + "."
-		}
 		areas = append(areas, studymap.Area{
 			ID: id, Name: name,
 			Responsibility: responsibility,

@@ -37,6 +37,33 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+func TestIsSourcePathRecognizesGeneralTrackedSourcesWithoutPromisingAParser(t *testing.T) {
+	t.Parallel()
+
+	for _, filePath := range []string{
+		"src/widget.ts",
+		"src/widget.tsx",
+		"web/client.js",
+		"web/client.jsx",
+		"tool/worker.py",
+		"src/main.java",
+		"engine/lib.rs",
+		"native/hash.c",
+		"native/hash.cc",
+		"native/hash.cpp",
+		"native/hash.hpp",
+	} {
+		if !IsSourcePath(filePath) {
+			t.Errorf("IsSourcePath(%q) = false, want true", filePath)
+		}
+	}
+	for _, filePath := range []string{"README.md", "package.json", "Makefile", "assets/widget.css"} {
+		if IsSourcePath(filePath) {
+			t.Errorf("IsSourcePath(%q) = true, want false", filePath)
+		}
+	}
+}
+
 func TestSortPathsPrefersShallowRolePeersAndExactMain(t *testing.T) {
 	input := []string{
 		"abs/replica_client.go",

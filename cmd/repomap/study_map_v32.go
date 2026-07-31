@@ -229,6 +229,25 @@ func prepareStudyMap(
 	runDir string,
 	repoRoot string,
 	provider semanticDiscoveryEditor,
+) (studyMapStatus, error) {
+	return prepareStudyMapWithProviderFactory(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
+		if provider == nil {
+			return nil, fmt.Errorf("study map: provider is required")
+		}
+		return provider, nil
+	})
+}
+
+// prepareStudyMapWithProviderFactory keeps local source availability ahead of
+// provider configuration. Unsupported repositories therefore produce their
+// typed local Study outcome without requiring credentials or a network-ready
+// client, while supported repositories retain the same canonical bundle and
+// provider pipeline.
+func prepareStudyMapWithProviderFactory(
+	ctx context.Context,
+	runDir string,
+	repoRoot string,
+	providerFactory func() (semanticDiscoveryEditor, error),
 ) (status studyMapStatus, returnErr error) {
 	started := time.Now()
 	status = studyMapStatus{Version: studyMapStatusVersion, State: "started"}
@@ -246,8 +265,8 @@ func prepareStudyMap(
 			}
 		}
 	}()
-	if ctx == nil || provider == nil {
-		return status, fmt.Errorf("study map: context and provider are required")
+	if ctx == nil || providerFactory == nil {
+		return status, fmt.Errorf("study map: context and provider factory are required")
 	}
 	if err := ctx.Err(); err != nil {
 		return status, err
@@ -261,6 +280,11 @@ func prepareStudyMap(
 	}
 	bundle, err := buildStudyMapBundle(runDir, repoRoot, data)
 	if err != nil {
+		if outcome, ok := studyMapSourceOutcomeCode(err); ok {
+			status.State = "failed"
+			status.FailureReason = string(outcome)
+			return status, nil
+		}
 		return status, err
 	}
 	status.Anchors = len(bundle.Anchors)
@@ -273,6 +297,13 @@ func prepareStudyMap(
 	}
 	if err := writeGoldenJSON(filepath.Join(runDir, studymap.BundleFile), bundle); err != nil {
 		return status, fmt.Errorf("study map: save bundle: %w", err)
+	}
+	provider, err := providerFactory()
+	if err != nil {
+		return status, err
+	}
+	if provider == nil {
+		return status, fmt.Errorf("study map: provider factory returned no provider")
 	}
 	record, reduction, stages, editErr := prepareStudyMapV32(ctx, runDir, bundle, provider)
 	status.Stages = stages

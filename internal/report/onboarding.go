@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
@@ -812,12 +814,9 @@ func documentedPurposeSentences(value, repoName string) []string {
 
 	result := make([]string, 0, 4)
 	start := 0
-	for index, current := range joined {
-		if current != '.' && current != '!' && current != '?' {
-			continue
-		}
-		sentence := strings.TrimSpace(joined[start : index+1])
-		start = index + 1
+	for _, end := range documentedSentenceEnds(joined) {
+		sentence := strings.TrimSpace(joined[start : end+1])
+		start = end + 1
 		if sentence == "" || len(sentence) > 320 || !userMechanismSummarySafe(sentence) {
 			continue
 		}
@@ -888,12 +887,63 @@ func sameRepositoryHeading(value, repoName string) bool {
 }
 
 func firstSentenceEnd(value string) int {
-	for index, current := range value {
-		if current == '.' || current == '!' || current == '?' {
-			return index
-		}
+	ends := documentedSentenceEnds(value)
+	if len(ends) > 0 {
+		return ends[0]
 	}
 	return -1
+}
+
+// documentedSentenceEnds finds presentation sentence terminators without
+// treating punctuation inside inline code, URLs, semantic versions, decimals,
+// or repository-relative paths as sentence boundaries. Returned indexes are
+// byte offsets so callers can slice the original UTF-8 string exactly.
+func documentedSentenceEnds(value string) []int {
+	result := make([]int, 0, 4)
+	codeDelimiter := 0
+	for index := 0; index < len(value); index++ {
+		if value[index] == '`' && (index == 0 || value[index-1] != '\\') {
+			runEnd := index + 1
+			for runEnd < len(value) && value[runEnd] == '`' {
+				runEnd++
+			}
+			runLength := runEnd - index
+			switch {
+			case codeDelimiter == 0:
+				codeDelimiter = runLength
+			case codeDelimiter == runLength:
+				codeDelimiter = 0
+			}
+			index = runEnd - 1
+			continue
+		}
+		if codeDelimiter != 0 ||
+			(value[index] != '.' && value[index] != '!' && value[index] != '?') {
+			continue
+		}
+		if end, ok := documentedSentenceBoundaryEnd(value, index+1); ok {
+			result = append(result, end)
+			index = end
+		}
+	}
+	return result
+}
+
+func documentedSentenceBoundaryEnd(value string, index int) (int, bool) {
+	end := index
+	for end < len(value) {
+		current, size := utf8.DecodeRuneInString(value[end:])
+		switch current {
+		case '"', '\'', '”', '’', ')', ']', '}', '*', '_', '~':
+			end += size
+			continue
+		}
+		if unicode.IsSpace(current) {
+			return end - 1, true
+		}
+		return 0, false
+	}
+	return len(value) - 1, true
 }
 
 func ensureOnboardingSentence(value string) string {

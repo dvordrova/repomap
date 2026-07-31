@@ -93,11 +93,74 @@ func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, 
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
 	}
-	episode, err := projectApprovedSourceEpisode(data, episodeJSON)
+	canonicalEpisode, err := projectApprovedSourceEpisode(data, episodeJSON)
 	if err != nil {
 		return nil, err
 	}
+	episode := canonicalEpisode
+	if data.presentationSourceEpisode != nil {
+		if !sameSourceEpisodePresentationShape(
+			canonicalEpisode,
+			data.presentationSourceEpisode,
+		) {
+			return nil, fmt.Errorf(
+				"report: localized source episode does not match approved input",
+			)
+		}
+		episode = data.presentationSourceEpisode
+	}
 	return buildHTMLWithSourceEpisode(data, episode)
+}
+
+func sameSourceEpisodePresentationShape(
+	left,
+	right *sourceEpisodeProjection,
+) bool {
+	if left == nil || right == nil ||
+		left.EpisodeID != right.EpisodeID ||
+		left.Repository != right.Repository ||
+		left.Revision != right.Revision ||
+		len(left.Claims) != len(right.Claims) ||
+		len(left.Uncertainties) != len(right.Uncertainties) {
+		return false
+	}
+	for index := range left.Claims {
+		if left.Claims[index].ID != right.Claims[index].ID ||
+			left.Claims[index].State != right.Claims[index].State ||
+			left.Claims[index].Strength != right.Claims[index].Strength ||
+			!sourceEpisodeSourcesEqual(
+				left.Claims[index].Sources,
+				right.Claims[index].Sources,
+			) {
+			return false
+		}
+	}
+	for index := range left.Uncertainties {
+		if left.Uncertainties[index].ID != right.Uncertainties[index].ID ||
+			left.Uncertainties[index].State != right.Uncertainties[index].State ||
+			!sourceEpisodeSourcesEqual(
+				left.Uncertainties[index].Sources,
+				right.Uncertainties[index].Sources,
+			) {
+			return false
+		}
+	}
+	return true
+}
+
+func sourceEpisodeSourcesEqual(
+	left,
+	right []sourceEpisodeSource,
+) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidateSourceEpisodeForRevision rejects an unapproved artifact or revision
@@ -132,17 +195,14 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 		css = withoutSourceEpisodeAssetBlocks(css)
 		js = withoutSourceEpisodeAssetBlocks(js)
 	}
-	var payload any
-	if episode == nil {
-		payload = rendered
-	} else {
-		payload = struct {
-			*ReportData
-			SourceEpisode *sourceEpisodeProjection `json:"source_episode"`
-		}{
-			ReportData:    rendered,
-			SourceEpisode: episode,
-		}
+	payload := struct {
+		*ReportData
+		ArchitectureDebugPresentation map[string]string        `json:"architecture_debug_presentation,omitempty"`
+		SourceEpisode                 *sourceEpisodeProjection `json:"source_episode,omitempty"`
+	}{
+		ReportData:                    rendered,
+		ArchitectureDebugPresentation: rendered.architectureDebugPresentation,
+		SourceEpisode:                 episode,
 	}
 	dataJSON, err := marshalHTMLPayload(
 		payload,
@@ -169,6 +229,7 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 		"HasDiscoveredSurfaces": data.DiscoveredSurfaces != nil,
 		"SurfaceCatalogCSS":     template.CSS(surfaceCatalogCSS),
 		"SurfaceCatalogJS":      template.JS(surfaceCatalogJS),
+		"LocalizationState":     data.presentationLocalizationState,
 		"DataJSON":              template.JS(dataJSON),
 		"UIMessagesJS":          template.JS(uiMessagesJS),
 		"JS":                    template.JS(js),
@@ -218,17 +279,36 @@ func reportDataForRendering(data *ReportData) *ReportData {
 	rendered := *data
 	rendered.SemanticSearch = nil
 	rendered.SemanticSearchDisabled = false
+	rendered.PresentationWarningMessages = runPresentationWarnings(data)
+	if data.TaskInvestigation != nil {
+		workspace := *data.TaskInvestigation
+		workspace.PresentationWarnings = taskInvestigationPresentationWarnings(
+			workspace.warningDiagnostics,
+		)
+		rendered.TaskInvestigation = &workspace
+	}
 	return &rendered
 }
 
 func reportDataForPersistence(data *ReportData) *ReportData {
 	rendered := *data
+	// Canonical report JSON is always English. Requested locale and any
+	// translated presentation live in separately validated render sidecars.
+	rendered.ReportLanguage = ""
 	rendered.SemanticSearch = nil
 	rendered.SemanticSearchDisabled = false
+	rendered.PresentationWarnings = nil
+	rendered.PresentationWarningKinds = nil
+	rendered.PresentationWarningMessages = nil
 	// Static source routing belongs only to the generated standalone HTML.
 	// Canonical report.json and its manifest binding remain host-neutral.
 	rendered.GitLabSourceLinks = nil
 	rendered.GitHubSourceLinks = nil
+	if data.TaskInvestigation != nil {
+		workspace := *data.TaskInvestigation
+		workspace.PresentationWarnings = nil
+		rendered.TaskInvestigation = &workspace
+	}
 	return &rendered
 }
 
@@ -451,11 +531,17 @@ func generate(
 		data.CapturedInputCount = len(authority.inputs)
 		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
 	}
+	if sourceEpisodeJSON != nil {
+		if err := AttachSourceEpisodePresentation(data, sourceEpisodeJSON); err != nil {
+			return err
+		}
+	}
 
 	jsonPath := runDir + "/report.json"
 	if err := WriteReportJSON(data, jsonPath); err != nil {
 		return err
 	}
+	canonicalData := data
 	var reportJSON []byte
 	if authority != nil {
 		reportJSON, err = os.ReadFile(jsonPath)
@@ -465,14 +551,19 @@ func generate(
 	}
 
 	htmlPath := runDir + "/report.html"
-	data.GitLabSourceLinks = gitLabSourceLinks
-	data.GitHubSourceLinks = gitHubSourceLinks
+	renderData, _ := LoadPresentationLocalization(
+		runDir,
+		canonicalData,
+		canonicalData.requestedPresentationLocale,
+	)
+	renderData.GitLabSourceLinks = gitLabSourceLinks
+	renderData.GitHubSourceLinks = gitHubSourceLinks
 	if sourceEpisodeJSON == nil {
-		if err := WriteReportHTML(data, htmlPath); err != nil {
+		if err := WriteReportHTML(renderData, htmlPath); err != nil {
 			return err
 		}
 	} else {
-		html, err := RenderHTMLWithSourceEpisode(data, sourceEpisodeJSON)
+		html, err := RenderHTMLWithSourceEpisode(renderData, sourceEpisodeJSON)
 		if err != nil {
 			return err
 		}
@@ -481,7 +572,7 @@ func generate(
 		}
 	}
 	if authority != nil {
-		if err := writeAuthorizedRunManifest(runDir, data, reportJSON, *authority); err != nil {
+		if err := writeAuthorizedRunManifest(runDir, canonicalData, reportJSON, *authority); err != nil {
 			return err
 		}
 	}

@@ -87,15 +87,158 @@ const (
 	PackWarningModelPartial = "This model-edited pack remains partial because the bounded evidence does not support a complete, actionable task lens."
 )
 
-func RawResponseOmissionWarning(reason string) string {
+// WarningCode is a semantic-neutral identity for one deterministic Task Lens
+// reducer warning. Raw warning strings remain the canonical artifact
+// diagnostics; presentation layers may map these codes to locale-specific
+// product copy without interpreting the raw prose.
+type WarningCode string
+
+const (
+	WarningAnchorOmittedIrrelevant        WarningCode = "anchor_omitted_irrelevant"
+	WarningAnchorRoleReplaced             WarningCode = "anchor_role_replaced"
+	WarningAnchorExplanationReplaced      WarningCode = "anchor_explanation_replaced"
+	WarningAreaTargetsFiltered            WarningCode = "area_targets_filtered"
+	WarningAreaOmittedWithoutAnchor       WarningCode = "area_omitted_without_anchor"
+	WarningAreasBounded                   WarningCode = "areas_bounded"
+	WarningAreaCopyReplaced               WarningCode = "area_copy_replaced"
+	WarningAreaFallbackAdded              WarningCode = "area_fallback_added"
+	WarningJoinsBounded                   WarningCode = "joins_bounded"
+	WarningJoinRejected                   WarningCode = "join_rejected"
+	WarningHypothesesBounded              WarningCode = "hypotheses_bounded"
+	WarningHypothesisRejected             WarningCode = "hypothesis_rejected"
+	WarningHypothesisSupportCompleted     WarningCode = "hypothesis_support_completed"
+	WarningHypothesisCopyReplaced         WarningCode = "hypothesis_copy_replaced"
+	WarningHypothesisFallbackAdded        WarningCode = "hypothesis_fallback_added"
+	WarningReproductionBounded            WarningCode = "reproduction_bounded"
+	WarningReproductionRejected           WarningCode = "reproduction_rejected"
+	WarningReproductionDuplicate          WarningCode = "reproduction_duplicate"
+	WarningReproductionFallbackAdded      WarningCode = "reproduction_fallback_added"
+	WarningVerificationBounded            WarningCode = "verification_bounded"
+	WarningVerificationOutsideFrontier    WarningCode = "verification_outside_frontier"
+	WarningVerificationRejected           WarningCode = "verification_rejected"
+	WarningVerificationDuplicate          WarningCode = "verification_duplicate"
+	WarningVerificationFallbackAdded      WarningCode = "verification_fallback_added"
+	WarningVerificationAuthorityAdded     WarningCode = "verification_authority_added"
+	WarningVerificationTestAuthorityAdded WarningCode = "verification_test_authority_added"
+	WarningNextProbesBounded              WarningCode = "next_probes_bounded"
+	WarningNextProbeRejected              WarningCode = "next_probe_rejected"
+	WarningNextProbeFallbackAdded         WarningCode = "next_probe_fallback_added"
+	WarningAttemptResponseSize            WarningCode = "attempt_response_size"
+	WarningAttemptResponseSecret          WarningCode = "attempt_response_secret"
+	WarningAttemptProviderFailed          WarningCode = "attempt_provider_failed"
+	WarningAttemptResponseRejected        WarningCode = "attempt_response_rejected"
+	WarningAttemptSparseEvidence          WarningCode = "attempt_sparse_evidence"
+	WarningPackLocalPartial               WarningCode = "pack_local_partial"
+	WarningPackModelPartial               WarningCode = "pack_model_partial"
+)
+
+// WarningDiagnostic is a bounded terminal-presentation projection emitted at
+// the same point as its canonical raw warning. Index is one-based and is the
+// only dynamic product-copy parameter used by the reducer warning catalog.
+type WarningDiagnostic struct {
+	Code  WarningCode `json:"code"`
+	Index int         `json:"index,omitempty"`
+}
+
+// WarningEmission keeps legacy artifact prose and terminal presentation
+// identity together at a typed producer boundary.
+type WarningEmission struct {
+	Raw        string
+	Diagnostic WarningDiagnostic
+}
+
+// RawResponseOmissionEmission selects the fixed warning from the typed
+// omission reason recorded by the producer, never from warning prose.
+func RawResponseOmissionEmission(reason string) (WarningEmission, bool) {
 	switch reason {
 	case RawResponseOmittedSize:
-		return AttemptWarningResponseSize
+		return WarningEmission{
+			Raw: AttemptWarningResponseSize,
+			Diagnostic: WarningDiagnostic{
+				Code: WarningAttemptResponseSize,
+			},
+		}, true
 	case RawResponseOmittedSecret:
-		return AttemptWarningResponseSecret
+		return WarningEmission{
+			Raw: AttemptWarningResponseSecret,
+			Diagnostic: WarningDiagnostic{
+				Code: WarningAttemptResponseSecret,
+			},
+		}, true
 	default:
+		return WarningEmission{}, false
+	}
+}
+
+// AttemptStateWarningEmission selects the one fixed warning implied by a
+// producer attempt state. Accepted and cleanly skipped states have no fixed
+// attempt warning; reducer warnings are emitted independently.
+func AttemptStateWarningEmission(state string) (WarningEmission, bool) {
+	var raw string
+	var code WarningCode
+	switch state {
+	case "provider_failed":
+		raw = AttemptWarningProviderFailed
+		code = WarningAttemptProviderFailed
+	case "rejected":
+		raw = AttemptWarningResponseRejected
+		code = WarningAttemptResponseRejected
+	case "skipped_insufficient_evidence":
+		raw = AttemptWarningSparseEvidence
+		code = WarningAttemptSparseEvidence
+	default:
+		return WarningEmission{}, false
+	}
+	return WarningEmission{
+		Raw:        raw,
+		Diagnostic: WarningDiagnostic{Code: code},
+	}, true
+}
+
+// PartialPackWarningEmission selects the fixed partial-pack warning from the
+// structural attempt state used by FinalizeTaskInvestigationPack.
+func PartialPackWarningEmission(attemptState string) WarningEmission {
+	if attemptState == "accepted" || attemptState == "accepted_with_rejections" {
+		return WarningEmission{
+			Raw: PackWarningModelPartial,
+			Diagnostic: WarningDiagnostic{
+				Code: WarningPackModelPartial,
+			},
+		}
+	}
+	return WarningEmission{
+		Raw: PackWarningLocalPartial,
+		Diagnostic: WarningDiagnostic{
+			Code: WarningPackLocalPartial,
+		},
+	}
+}
+
+type reductionWarningCollector struct {
+	raw         *[]string
+	diagnostics *[]WarningDiagnostic
+}
+
+func (collector reductionWarningCollector) add(
+	code WarningCode,
+	index int,
+	message string,
+) {
+	*collector.raw = append(*collector.raw, message)
+	if collector.diagnostics != nil {
+		*collector.diagnostics = append(*collector.diagnostics, WarningDiagnostic{
+			Code:  code,
+			Index: index,
+		})
+	}
+}
+
+func RawResponseOmissionWarning(reason string) string {
+	emission, ok := RawResponseOmissionEmission(reason)
+	if !ok {
 		return ""
 	}
+	return emission.Raw
 }
 
 func RawResponseOmissionReductionError(reason string) string {
@@ -897,6 +1040,27 @@ func ValidatePackAgainstBundle(bundle Bundle, pack Pack) error {
 // selected anchors and their likely-area grouping may be replaced from exact
 // local authority.
 func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
+	return reduceProposal(bundle, proposal, nil)
+}
+
+// ReduceProposalWithDiagnostics runs the same reducer as ReduceProposal and
+// returns the fixed product-message identities emitted alongside its raw
+// canonical warnings. It is used when reconstructing terminal presentation
+// from replayable Task Lens artifacts; it does not change those artifacts.
+func ReduceProposalWithDiagnostics(
+	bundle Bundle,
+	proposal Proposal,
+) (Pack, []string, []WarningDiagnostic, error) {
+	var diagnostics []WarningDiagnostic
+	pack, warnings, err := reduceProposal(bundle, proposal, &diagnostics)
+	return pack, warnings, diagnostics, err
+}
+
+func reduceProposal(
+	bundle Bundle,
+	proposal Proposal,
+	diagnostics *[]WarningDiagnostic,
+) (Pack, []string, error) {
 	if err := bundle.Validate(); err != nil {
 		return Pack{}, nil, err
 	}
@@ -909,6 +1073,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 	}
 	reduced := proposal
 	var warnings []string
+	warning := reductionWarningCollector{raw: &warnings, diagnostics: diagnostics}
 	selected := make(map[string]struct{}, len(proposal.Anchors))
 	seenProposed := make(map[string]struct{}, len(proposal.Anchors))
 	minimumVisible := min(PreferredMinVisibleAnchors, len(bundle.Anchors))
@@ -935,7 +1100,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 		}
 		seenProposed[proposed.AnchorID] = struct{}{}
 		if _, relevant := relevantIDs[proposed.AnchorID]; !relevant && canOmitIrrelevant {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningAnchorOmittedIrrelevant, itemIndex+1, fmt.Sprintf(
 				"Anchor %d was omitted because local evidence did not ground it in the task, a required or supporting role, the decisive component, or exact verification.",
 				itemIndex+1,
 			))
@@ -944,13 +1109,13 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 		if !locallyAllowedAnchorRole(proposed.Role, anchor) {
 			proposed.Role = anchor.RoleHints[0]
 			proposed.Why = localAnchorWhy()
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningAnchorRoleReplaced, itemIndex+1, fmt.Sprintf(
 				"Anchor %d was assigned an exact locally allowed role and its explanation was replaced with local wording.",
 				itemIndex+1,
 			))
 		} else if !validText(proposed.Why, 1024, true) || unknownPathInText(proposed.Why, index.paths) {
 			proposed.Why = localAnchorWhy()
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningAnchorExplanationReplaced, itemIndex+1, fmt.Sprintf(
 				"Anchor %d explanation was replaced with local wording because its presentation text was not grounded.",
 				itemIndex+1,
 			))
@@ -973,20 +1138,20 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 			targetIDs = append(targetIDs, id)
 		}
 		if !slices.Equal(targetIDs, area.TargetIDs) {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningAreaTargetsFiltered, itemIndex+1, fmt.Sprintf(
 				"Likely area %d target IDs were filtered to unique selected anchors.",
 				itemIndex+1,
 			))
 		}
 		if len(targetIDs) == 0 {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningAreaOmittedWithoutAnchor, itemIndex+1, fmt.Sprintf(
 				"Likely area %d was omitted because it did not retain a selected anchor.",
 				itemIndex+1,
 			))
 			continue
 		}
 		if len(reduced.Areas) == 3 {
-			warnings = append(warnings, "Additional likely areas were omitted at the local presentation bound.")
+			warning.add(WarningAreasBounded, 0, "Additional likely areas were omitted at the local presentation bound.")
 			break
 		}
 		area.TargetIDs = targetIDs
@@ -994,7 +1159,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 			unknownPathInText(area.Label, index.paths) || unknownPathInText(area.Why, index.paths) {
 			area.Label = localAreaLabel(targetIDs, index)
 			area.Why = localAreaWhy()
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningAreaCopyReplaced, itemIndex+1, fmt.Sprintf(
 				"Likely area %d label or explanation was replaced with local wording.",
 				itemIndex+1,
 			))
@@ -1003,7 +1168,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 	}
 	if len(reduced.Areas) == 0 && len(selected) > 0 {
 		reduced.Areas = localFallbackAreas(bundle, selected, index)
-		warnings = append(warnings, "A deterministic local likely area was added because no model area retained a selected anchor.")
+		warning.add(WarningAreaFallbackAdded, 0, "A deterministic local likely area was added because no model area retained a selected anchor.")
 	}
 
 	reduced.Joins = nil
@@ -1013,11 +1178,11 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 	reduced.NextProbes = nil
 	for itemIndex, item := range proposal.Joins {
 		if itemIndex >= MaxEvidenceJoins {
-			warnings = append(warnings, "Additional evidence joins were omitted at the local presentation bound.")
+			warning.add(WarningJoinsBounded, 0, "Additional evidence joins were omitted at the local presentation bound.")
 			break
 		}
 		if _, err := buildJoin(item, selected, index); err != nil {
-			warnings = append(warnings, fmt.Sprintf("Evidence join %d was rejected locally: %v.", itemIndex+1, err))
+			warning.add(WarningJoinRejected, itemIndex+1, fmt.Sprintf("Evidence join %d was rejected locally: %v.", itemIndex+1, err))
 			continue
 		}
 		reduced.Joins = append(reduced.Joins, item)
@@ -1025,23 +1190,23 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 	hasSubstantiveHypothesis := false
 	for itemIndex, item := range proposal.Hypothesis {
 		if itemIndex >= MaxHypothesisClauses {
-			warnings = append(warnings, "Additional hypothesis clauses were omitted at the local presentation bound.")
+			warning.add(WarningHypothesesBounded, 0, "Additional hypothesis clauses were omitted at the local presentation bound.")
 			break
 		}
 		normalized, completedRelationEvidence := completeHypothesisRelationEvidence(item, selected, index)
 		clause, err := buildClause(normalized, selected, index)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("Hypothesis clause %d was rejected locally: %v.", itemIndex+1, err))
+			warning.add(WarningHypothesisRejected, itemIndex+1, fmt.Sprintf("Hypothesis clause %d was rejected locally: %v.", itemIndex+1, err))
 			continue
 		}
 		if completedRelationEvidence {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningHypothesisSupportCompleted, itemIndex+1, fmt.Sprintf(
 				"Hypothesis clause %d support was completed from exact local relation evidence.",
 				itemIndex+1,
 			))
 		}
 		if clause.Text != normalized.Text {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningHypothesisCopyReplaced, itemIndex+1, fmt.Sprintf(
 				"Hypothesis clause %d prose was replaced with calibrated local wording because its references were not fully grounded.",
 				itemIndex+1,
 			))
@@ -1059,22 +1224,22 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 				return Pack{}, warnings, fmt.Errorf("task lens: build bounded local hypothesis fallback: %w", err)
 			}
 			reduced.Hypothesis = append(reduced.Hypothesis, fallback)
-			warnings = append(warnings, "A bounded exact local hypothesis fallback was added because no substantive model clause passed local reduction.")
+			warning.add(WarningHypothesisFallbackAdded, 0, "A bounded exact local hypothesis fallback was added because no substantive model clause passed local reduction.")
 		}
 	}
 	var retainedReproduction []Guidance
 	for itemIndex, item := range proposal.ReproduceOrObserve {
 		if itemIndex >= MaxGuidanceSteps {
-			warnings = append(warnings, "Additional reproduction steps were omitted at the local presentation bound.")
+			warning.add(WarningReproductionBounded, 0, "Additional reproduction steps were omitted at the local presentation bound.")
 			break
 		}
 		guidance, err := buildGuidance(item, selected, index)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("Reproduction step %d was rejected locally: %v.", itemIndex+1, err))
+			warning.add(WarningReproductionRejected, itemIndex+1, fmt.Sprintf("Reproduction step %d was rejected locally: %v.", itemIndex+1, err))
 			continue
 		}
 		if containsGuidance(retainedReproduction, guidance) {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningReproductionDuplicate, itemIndex+1, fmt.Sprintf(
 				"Reproduction step %d was omitted because it duplicates the same locally authoritative guidance.",
 				itemIndex+1,
 			))
@@ -1089,7 +1254,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 			return Pack{}, warnings, fmt.Errorf("task lens: build bounded local reproduction fallback: %w", err)
 		}
 		reduced.ReproduceOrObserve = []ProposedGuidance{fallback}
-		warnings = append(warnings, "No model reproduction or observation step passed local reduction; a bounded local reproduction or observation fallback was used.")
+		warning.add(WarningReproductionFallbackAdded, 0, "No model reproduction or observation step passed local reduction; a bounded local reproduction or observation fallback was used.")
 	}
 	// effect_to_observe is presentation text derived from the task-provided
 	// observable. The model may organize verification steps, but it cannot
@@ -1098,11 +1263,11 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 	var retainedVerification []Guidance
 	for itemIndex, item := range proposal.Verify.Steps {
 		if itemIndex >= MaxGuidanceSteps {
-			warnings = append(warnings, "Additional verification steps were omitted at the local presentation bound.")
+			warning.add(WarningVerificationBounded, 0, "Additional verification steps were omitted at the local presentation bound.")
 			break
 		}
 		if !verificationGuidanceUsesExactFrontier(item, bundle, selected) {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningVerificationOutsideFrontier, itemIndex+1, fmt.Sprintf(
 				"Verification step %d was rejected locally because its evidence is outside the exact verification frontier.",
 				itemIndex+1,
 			))
@@ -1110,11 +1275,11 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 		}
 		guidance, err := buildGuidance(item, selected, index)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("Verification step %d was rejected locally: %v.", itemIndex+1, err))
+			warning.add(WarningVerificationRejected, itemIndex+1, fmt.Sprintf("Verification step %d was rejected locally: %v.", itemIndex+1, err))
 			continue
 		}
 		if containsGuidance(retainedVerification, guidance) {
-			warnings = append(warnings, fmt.Sprintf(
+			warning.add(WarningVerificationDuplicate, itemIndex+1, fmt.Sprintf(
 				"Verification step %d was omitted because it duplicates the same locally authoritative guidance.",
 				itemIndex+1,
 			))
@@ -1129,7 +1294,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 			return Pack{}, warnings, fmt.Errorf("task lens: build bounded local verification fallback: %w", err)
 		}
 		reduced.Verify.Steps = []ProposedGuidance{fallback}
-		warnings = append(warnings, "No model verification step passed local reduction; a bounded repository-owned verification or missing-evidence fallback was used.")
+		warning.add(WarningVerificationFallbackAdded, 0, "No model verification step passed local reduction; a bounded repository-owned verification or missing-evidence fallback was used.")
 	}
 	if !hasRepositoryBackedGuidance(reduced.Verify.Steps) {
 		fallback := localFallbackVerification(bundle, selected)
@@ -1149,20 +1314,22 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 				}
 				reduced.Verify.Steps[replaceIndex] = fallback
 			}
+			code := WarningVerificationAuthorityAdded
 			message := "An exact-frontier repository verification item was added because the surviving model steps had no bound repository authority."
 			if fallback.Authority == AuthorityRepositoryTest {
+				code = WarningVerificationTestAuthorityAdded
 				message = "A selected repository test or example from the exact verification frontier was added because the surviving model steps had no bound repository authority."
 			}
-			warnings = append(warnings, message)
+			warning.add(code, 0, message)
 		}
 	}
 	for itemIndex, item := range proposal.NextProbes {
 		if itemIndex >= MaxNextProbes {
-			warnings = append(warnings, "Additional next probes were omitted at the local presentation bound.")
+			warning.add(WarningNextProbesBounded, 0, "Additional next probes were omitted at the local presentation bound.")
 			break
 		}
 		if _, err := buildProbe(item, selected, index.paths); err != nil {
-			warnings = append(warnings, fmt.Sprintf("Next probe %d was rejected locally: %v.", itemIndex+1, err))
+			warning.add(WarningNextProbeRejected, itemIndex+1, fmt.Sprintf("Next probe %d was rejected locally: %v.", itemIndex+1, err))
 			continue
 		}
 		reduced.NextProbes = append(reduced.NextProbes, item)
@@ -1173,7 +1340,7 @@ func ReduceProposal(bundle Bundle, proposal Proposal) (Pack, []string, error) {
 			return Pack{}, warnings, fmt.Errorf("task lens: build bounded local next probe fallback: %w", err)
 		}
 		reduced.NextProbes = []ProposedProbe{fallback}
-		warnings = append(warnings, "No model next probe passed local reduction; a bounded local next probe fallback was used.")
+		warning.add(WarningNextProbeFallbackAdded, 0, "No model next probe passed local reduction; a bounded local next probe fallback was used.")
 	}
 	pack, err := BuildPack(bundle, reduced)
 	if err != nil {

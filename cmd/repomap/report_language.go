@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	"github.com/dvordrova/repomap/internal/deepseek"
 )
 
 func normalizeReportLanguage(value string) (string, error) {
@@ -16,13 +14,6 @@ func normalizeReportLanguage(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("--lang must be \"en\" or \"ru\"")
 	}
-}
-
-func configureClientOutputLanguage(client *deepseek.Client, values []string) {
-	if client == nil || len(values) == 0 {
-		return
-	}
-	client.OutputLanguage = values[0]
 }
 
 func storedReportLanguage(value string) string {

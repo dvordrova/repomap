@@ -21,7 +21,7 @@ const (
 	OnboardingEditorPromptVersion  = "repository-onboarding-editor-json-v1"
 	StudyMapPromptVersion          = "repository-study-map-json-v1"
 	StudyBriefPromptVersion        = "repository-brief-shape-json-v2"
-	StudyCandidatesPromptVersion   = "repository-study-candidates-json-v3"
+	StudyCandidatesPromptVersion   = "repository-study-candidates-json-v4"
 	ReadingPackReviewPromptVersion = "repository-reading-pack-review-json-v1"
 
 	RecordFile               = "semantic_artifacts.json"

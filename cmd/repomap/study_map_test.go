@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -86,7 +88,6 @@ func TestStudyMapAreasPreferExactProductionShape(t *testing.T) {
 		"core.go": {}, "tree.go": {}, "middleware/chain.go": {}, "_examples/demo/main.go": {},
 	}
 	data := &report.ReportData{
-		ReportLanguage: "ru",
 		Components: []report.Component{{
 			ID: "component-core", Name: "Core Router", ModelPurpose: "Matches requests.",
 			AnchorGroups: []report.AnchorGroup{{ID: "anchor-core", Path: "core.go"}},
@@ -106,13 +107,13 @@ func TestStudyMapAreasPreferExactProductionShape(t *testing.T) {
 			t.Fatalf("non-production or non-navigable area = %#v paths=%v", area, areaPaths[area.ID])
 		}
 		if strings.HasPrefix(area.ID, "package-area-") &&
-			!strings.HasPrefix(area.Responsibility, "Основной пакет ") {
-			t.Fatalf("Russian package area was not localized: %#v", area)
+			!strings.HasPrefix(area.Responsibility, "Production package ") {
+			t.Fatalf("package area is not canonical English: %#v", area)
 		}
 	}
 }
 
-func TestEnsureStudyMapAreasUsesOneLocalizedExactSymbol(t *testing.T) {
+func TestEnsureStudyMapAreasUsesOneCanonicalEnglishExactSymbol(t *testing.T) {
 	t.Parallel()
 
 	areas, paths := ensureStudyMapAreas(
@@ -122,15 +123,14 @@ func TestEnsureStudyMapAreasUsesOneLocalizedExactSymbol(t *testing.T) {
 			{ID: "write-batch", Path: "wal.go", Symbol: "Log.writeBatch", Line: 458},
 			{ID: "sync", Path: "wal.go", Symbol: "Log.Sync", Line: 319},
 		},
-		"ru",
 	)
 	if len(areas) != 1 {
 		t.Fatalf("areas = %#v, want one honest area without three-area padding", areas)
 	}
 	if areas[0].Name != "Log.writeBatch" ||
-		areas[0].Responsibility != "Точная область кода для изучения поведения вокруг Log.writeBatch." ||
+		areas[0].Responsibility != "Exact code area for inspecting behavior around Log.writeBatch." ||
 		areas[0].Path != "wal.go" || areas[0].Line != 458 {
-		t.Fatalf("localized exact area = %#v", areas[0])
+		t.Fatalf("canonical exact area = %#v", areas[0])
 	}
 	if !slices.Equal(paths[areas[0].ID], []string{"wal.go"}) {
 		t.Fatalf("area paths = %#v", paths)
@@ -375,6 +375,154 @@ func TestBuildStudyMapBundleUsesExactPythonDeclarationFallback(t *testing.T) {
 	}
 	if strings.Contains(string(promptRaw), lines[1]) || len(bundle.Mechanisms) != 0 {
 		t.Fatalf("Python fallback invented source or a complete mechanism: %s %#v", promptRaw, bundle.Mechanisms)
+	}
+}
+
+func TestBuildStudyMapBundleReturnsTypedOutcomeWithoutSupportedDeepAdapter(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	filePath := "widget.ts"
+	writeFile(t, filepath.Join(repoRoot, filePath), "export function widget() { return 1; }\n")
+	data := &report.ReportData{
+		RepoName: "typescript-fixture", OpenablePaths: []string{filePath},
+		RepositoryGraph: &report.RepositoryGraph{Packages: []report.PackageInfo{{
+			CanonicalPath: "typescript-fixture", Dir: ".", Files: []string{filePath},
+		}}},
+	}
+
+	_, err := buildStudyMapBundle(runDir, repoRoot, data)
+	var outcome *studyMapSourceOutcomeError
+	if !errors.As(err, &outcome) || outcome.Outcome != studyMapNoSupportedSourceAdapter {
+		t.Fatalf("unsupported-adapter outcome = %#v, error = %v", outcome, err)
+	}
+	if strings.Contains(err.Error(), runDir) || strings.Contains(err.Error(), "research") {
+		t.Fatalf("typed outcome leaked an optional research path: %v", err)
+	}
+}
+
+func TestBuildStudyMapBundleReturnsTypedOutcomeWhenGoHasNoEligibleFunctions(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	filePath := "value.go"
+	writeFile(t, filepath.Join(repoRoot, filePath), "package fixture\n\nconst Value = 1\n")
+	data := &report.ReportData{
+		RepoName: "go-fixture", OpenablePaths: []string{filePath},
+		RepositoryGraph: &report.RepositoryGraph{Packages: []report.PackageInfo{{
+			CanonicalPath: "example.com/fixture", Dir: ".", Files: []string{filePath},
+		}}},
+	}
+
+	_, err := buildStudyMapBundle(runDir, repoRoot, data)
+	var outcome *studyMapSourceOutcomeError
+	if !errors.As(err, &outcome) || outcome.Outcome != studyMapNoEligibleSourceFunctions {
+		t.Fatalf("no-eligible-functions outcome = %#v, error = %v", outcome, err)
+	}
+	if strings.Contains(err.Error(), runDir) || strings.Contains(err.Error(), "research") {
+		t.Fatalf("typed outcome leaked an optional research path: %v", err)
+	}
+}
+
+func TestEditStudyMapForRunReportsUnsupportedAdapterWithoutProviderConfiguration(t *testing.T) {
+	clearLLMEnv(t)
+
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	filePath := "widget.ts"
+	writeFile(t, filepath.Join(repoRoot, filePath), "export function widget() { return 1; }\n")
+	writeFile(t, filepath.Join(runDir, "snapshot.json"), `{"repo_name":"typescript-fixture"}`)
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{"allowed_paths":["widget.ts"]}`)
+
+	var stderr strings.Builder
+	status, err := editStudyMapForRun(
+		context.Background(),
+		runDir,
+		repoRoot,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf("editStudyMapForRun() error = %v", err)
+	}
+	if status.State != "failed" || status.FailureReason != string(studyMapNoSupportedSourceAdapter) {
+		t.Fatalf("unsupported-adapter status = %#v", status)
+	}
+	if strings.Contains(stderr.String(), "provider") || strings.Contains(stderr.String(), "API key") {
+		t.Fatalf("unsupported local outcome touched provider diagnostics: %q", stderr.String())
+	}
+
+	rawStatus, err := os.ReadFile(filepath.Join(runDir, studymap.StatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved studyMapStatus
+	if err := json.Unmarshal(rawStatus, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.State != status.State || saved.FailureReason != status.FailureReason {
+		t.Fatalf("saved status = %#v, returned status = %#v", saved, status)
+	}
+}
+
+func TestPrepareStudyMapConfiguresProviderOnlyAfterSupportedLocalBundle(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	filePath := "service.go"
+	writeFile(t, filepath.Join(repoRoot, filePath), `package fixture
+
+func Start(value string) string {
+	return Finish(value)
+}
+
+func Finish(value string) string {
+	return value + "!"
+}
+`)
+	writeFile(t, filepath.Join(runDir, "snapshot.json"), `{
+  "repo_name":"go-fixture",
+  "go_facts":{
+    "modules":[{"id":"module-fixture","module_path":"example.com/fixture","module_dir":".","display_name":"."}],
+    "packages":[{
+      "canonical_package_path":"example.com/fixture",
+      "name":"fixture",
+      "owning_module_id":"module-fixture",
+      "module_path":"example.com/fixture",
+      "package_directory":".",
+      "module_relative_path":".",
+      "display_path":".",
+      "locality":"local",
+      "files":["service.go"]
+    }]
+  }
+}`)
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{"allowed_paths":["service.go"]}`)
+
+	wantErr := errors.New("provider factory reached after local bundle")
+	providerConfigured := false
+	status, err := prepareStudyMapWithProviderFactory(
+		context.Background(),
+		runDir,
+		repoRoot,
+		func() (semanticDiscoveryEditor, error) {
+			providerConfigured = true
+			return nil, wantErr
+		},
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("prepareStudyMapWithProviderFactory() error = %v, want %v", err, wantErr)
+	}
+	if !providerConfigured {
+		t.Fatal("supported local bundle did not reach provider configuration")
+	}
+	if status.Anchors == 0 {
+		t.Fatalf("provider was configured before a supported bundle was built: %#v", status)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, studymap.BundleFile)); err != nil {
+		t.Fatalf("supported local bundle was not saved before provider configuration: %v", err)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
@@ -65,6 +66,30 @@ func TestPrintPromptVersions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(versions, want) {
 		t.Fatalf("prompt versions = %#v, want %#v", versions, want)
+	}
+}
+
+func TestWriteStudyMapCompletionKeepsTypedLocalOutcome(t *testing.T) {
+	t.Parallel()
+
+	for _, reason := range []string{
+		string(studyMapNoSupportedSourceAdapter),
+		string(studyMapNoEligibleSourceFunctions),
+	} {
+		var output bytes.Buffer
+		writeStudyMapCompletion(
+			&output,
+			studyMapStatus{State: "failed", FailureReason: reason},
+			125*time.Millisecond,
+		)
+		want := "decision study: published=0 provider_calls=0 reason=" + reason +
+			" (after 125 ms)"
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("typed Study outcome %q was hidden:\n%s", reason, output.String())
+		}
+		if strings.Contains(output.String(), "selected 0 source-backed") {
+			t.Fatalf("typed Study outcome %q used success copy:\n%s", reason, output.String())
+		}
 	}
 }
 
@@ -1712,7 +1737,7 @@ func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
 	}
 }
 
-func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
+func TestRunDefaultOfflineRussianRequestPreservesCanonicalEnglishAndShowsDegradation(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/russian-report\n\ngo 1.24\n")
@@ -1752,8 +1777,24 @@ func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(reportJSON, []byte(`"report_language": "ru"`)) {
-		t.Fatalf("report did not retain --lang ru: %s", reportJSON)
+	if bytes.Contains(reportJSON, []byte(`"report_language"`)) {
+		t.Fatalf("canonical report leaked requested locale: %s", reportJSON)
+	}
+	statusJSON, err := os.ReadFile(filepath.Join(
+		runDir,
+		report.PresentationLocalizationStatusFile,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range [][]byte{
+		[]byte(`"requested_locale":"ru"`),
+		[]byte(`"state":"failed"`),
+		[]byte(`"reason_code":"offline_requested"`),
+	} {
+		if !bytes.Contains(statusJSON, marker) {
+			t.Fatalf("localization status is missing %q: %s", marker, statusJSON)
+		}
 	}
 	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
 	if err != nil {
@@ -1761,11 +1802,61 @@ func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
 	}
 	for _, marker := range [][]byte{
 		[]byte(`<html lang="ru">`),
-		[]byte(`"main.what.to.study": { params: [], text: "Что изучать" }`),
+		[]byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`),
 	} {
 		if !bytes.Contains(reportHTML, marker) {
-			t.Fatalf("Russian report HTML is missing %q", marker)
+			t.Fatalf("degraded RU product report with canonical-English prose is missing %q", marker)
 		}
+	}
+}
+
+func TestRunDefaultOfflineRussianRequestDoesNotRecaptureAfterLocalization(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/russian-freshness\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	initial, err := freshness.CaptureRepository(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	captures := []freshness.RepositoryState{initial, initial}
+	captureCount := 0
+	var stderr bytes.Buffer
+	err = runDefaultWithDeps(repo, []string{
+		"--offline",
+		"--discover-surfaces=false",
+		"--lang", "ru",
+		"--no-open",
+		"--no-serve",
+		"--debug-dir", t.TempDir(),
+	}, defaultRunDeps{
+		ctx:    context.Background(),
+		stdout: io.Discard,
+		stderr: &stderr,
+		captureRepo: func(context.Context, string) (freshness.RepositoryState, error) {
+			if captureCount >= len(captures) {
+				t.Fatalf("unexpected repository capture %d", captureCount+1)
+			}
+			state := captures[captureCount]
+			captureCount++
+			return state, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
+	}
+	if captureCount != 2 {
+		t.Fatalf("repository capture count = %d, want initial and pre-render only", captureCount)
+	}
+	if strings.Contains(
+		stderr.String(),
+		"after presentation localization",
+	) {
+		t.Fatalf("offline run performed a post-localization freshness reconciliation:\n%s", stderr.String())
 	}
 }
 
