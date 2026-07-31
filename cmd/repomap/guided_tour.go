@@ -46,6 +46,9 @@ type guidedTourOutcome struct {
 	LeafInsufficient      int
 	LeafFailed            int
 	ValidationState       string
+	ValidatorField        string
+	ValidatorRule         string
+	DebugDumpFailed       bool
 }
 
 func editGuidedTourForRun(
@@ -53,6 +56,7 @@ func editGuidedTourForRun(
 	runDir string,
 	stderr io.Writer,
 	noCache bool,
+	dumpLLM bool,
 ) (guidedTourOutcome, error) {
 	bundle, err := guidedTourBundleForRun(runDir)
 	if errors.Is(err, report.ErrNoGuidedTourCandidates) {
@@ -80,7 +84,8 @@ func editGuidedTourForRun(
 		client.Model,
 		client,
 		guidedTourRunOptions{
-			disableCache: noCache,
+			disableCache:         noCache,
+			dumpRejectedResponse: dumpLLM,
 		},
 	)
 }
@@ -136,6 +141,7 @@ func ensureGuidedTour(
 type guidedTourRunOptions struct {
 	independentExperiment bool
 	disableCache          bool
+	dumpRejectedResponse  bool
 	outputFile            string
 }
 
@@ -270,6 +276,9 @@ func ensureGuidedTourWithOptions(
 			break
 		}
 		validationErr = validateGuidedTourResponse(bundle, current.Content)
+		if validationErr != nil && options.dumpRejectedResponse {
+			outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "guided_tour", proposalAttempt, current.Content) != nil || outcome.DebugDumpFailed
+		}
 		if validationErr == nil || proposalAttempt == 2 {
 			break
 		}
@@ -298,6 +307,7 @@ func ensureGuidedTourWithOptions(
 	}
 	if validationErr != nil {
 		outcome.ValidationState = "rejected"
+		outcome.ValidatorField, outcome.ValidatorRule, _ = guidedtour.ValidationIssueDetails(validationErr)
 		validationErr = fmt.Errorf("guided tour: validate response after %d provider attempt(s): %w",
 			providerResult.Attempts, validationErr)
 		if !options.independentExperiment {

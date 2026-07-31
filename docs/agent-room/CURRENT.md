@@ -1,15 +1,30 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/172-casdoor-orientation-and-study-reliability.md
+    decisions/174-localization-reliability-diagnostics.md
 
 Status:
-    Decision 172 active; Casdoor orientation and Study reliability authorized
+    Decision 174 active; localization reliability diagnostics authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 174 is the immediate release-blocking diagnostic checkpoint. It
+    records only actually processed localization batches, adds a closed safe
+    failure stage/code/counter status contract, saves rejected localization
+    output only under --dump-llm after secret handling, and exposes the Guided
+    Tour validator field/rule without changing prompts or semantic behavior.
+    Decision 173 is approved but queued until this gate produces the exact
+    invalid_projection boundary and its smallest root-cause correction.
+    Decision 173 replaces every active Study model-output opaque-ID copy with
+    an exact request-local typed handle table. Canonical IDs remain local and
+    are restored only after exact type+handle resolution. The deterministic
+    table and contract versions bind exact requests and review-cache identity;
+    old cache entries are not read or migrated and `repomap cache clear` is the
+    explicit invalidation path. Candidate composition, scheduling, review
+    validation, publication, canonical IDs/paths/evidence/order, report, and UI
+    remain unchanged.
     Decision 172 disables provider-default hidden reasoning for the bounded
     orientation classification on the official DeepSeek endpoint and adds one
     bounded orientation completion retry only after an

@@ -132,18 +132,68 @@ type presentationLocalizationCacheObservation struct {
 }
 
 type presentationLocalizationOutcome struct {
-	State         string
-	ReasonCode    string
-	CacheHit      bool
-	CacheCorrupt  bool
-	CacheWriteErr bool
-	RequestBytes  int
-	ResponseBytes int
-	InputTokens   int
-	OutputTokens  int
-	Attempts      int
-	ProviderCalls int
-	Batches       []presentationLocalizationBatchOutcome
+	State           string
+	ReasonCode      string
+	FailureStage    string
+	ValidationCode  string
+	BatchTotal      int
+	BatchAttempted  int
+	BatchCompleted  int
+	FailedBatch     int
+	DebugDumpFailed bool
+	CacheHit        bool
+	CacheCorrupt    bool
+	CacheWriteErr   bool
+	RequestBytes    int
+	ResponseBytes   int
+	InputTokens     int
+	OutputTokens    int
+	Attempts        int
+	ProviderCalls   int
+	Batches         []presentationLocalizationBatchOutcome
+}
+
+type presentationLocalizationExecutionOptions struct {
+	DumpRejectedResponse bool
+}
+
+type presentationLocalizationStageError struct {
+	Stage          string
+	ValidationCode string
+	ReasonCode     string
+	Err            error
+}
+
+func (stageErr *presentationLocalizationStageError) Error() string {
+	return stageErr.Err.Error()
+}
+
+func (stageErr *presentationLocalizationStageError) Unwrap() error {
+	return stageErr.Err
+}
+
+func localizationStageError(
+	stage,
+	validationCode,
+	reasonCode string,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+	return &presentationLocalizationStageError{
+		Stage: stage, ValidationCode: validationCode, ReasonCode: reasonCode, Err: err,
+	}
+}
+
+func presentationLocalizationErrorDetails(err error) (stage, validationCode, reasonCode string) {
+	var stageErr *presentationLocalizationStageError
+	if errors.As(err, &stageErr) {
+		return stageErr.Stage, stageErr.ValidationCode, stageErr.ReasonCode
+	}
+	return report.LocalizationStageStatusWrite,
+		report.LocalizationValidationStatus,
+		report.LocalizationFailurePreparation
 }
 
 type presentationLocalizationBatchOutcome struct {
@@ -175,6 +225,7 @@ func localizePresentationForRun(
 	runDir,
 	cacheRoot string,
 	noCache bool,
+	dumpLLM bool,
 	stderr io.Writer,
 	sourceEpisodeJSON ...[]byte,
 ) (presentationLocalizationOutcome, error) {
@@ -184,40 +235,61 @@ func localizePresentationForRun(
 	}
 	data, err := readCanonicalReportForLocalization(runDir, episodeJSON)
 	if err != nil {
+		stage, validationCode, _ := presentationLocalizationErrorDetails(err)
+		failure := report.PresentationLocalizationFailure{
+			ReasonCode:     report.LocalizationFailurePreparation,
+			FailureStage:   stage,
+			ValidationCode: validationCode,
+		}
 		if writeErr := report.WritePresentationLocalizationFailure(
-			runDir, report.LocalizationFailurePreparation, "",
+			runDir, failure,
 		); writeErr != nil {
 			return presentationLocalizationOutcome{}, errors.Join(err, writeErr)
 		}
 		return presentationLocalizationOutcome{
-			State:      report.PresentationLocalizationFailed,
-			ReasonCode: report.LocalizationFailurePreparation,
+			State:          report.PresentationLocalizationFailed,
+			ReasonCode:     report.LocalizationFailurePreparation,
+			FailureStage:   failure.FailureStage,
+			ValidationCode: failure.ValidationCode,
 		}, nil
 	}
 	prepared, err := report.PreparePresentationLocalization(data, localization.LocaleRussian)
 	if err != nil {
+		failure := report.PresentationLocalizationFailure{
+			ReasonCode:     report.LocalizationFailurePreparation,
+			FailureStage:   report.LocalizationStageInventoryBuild,
+			ValidationCode: report.LocalizationValidationPresentationInventory,
+		}
 		if writeErr := report.WritePresentationLocalizationFailure(
-			runDir, report.LocalizationFailurePreparation, "",
+			runDir, failure,
 		); writeErr != nil {
 			return presentationLocalizationOutcome{}, errors.Join(err, writeErr)
 		}
 		return presentationLocalizationOutcome{
-			State:      report.PresentationLocalizationFailed,
-			ReasonCode: report.LocalizationFailurePreparation,
+			State:          report.PresentationLocalizationFailed,
+			ReasonCode:     report.LocalizationFailurePreparation,
+			FailureStage:   failure.FailureStage,
+			ValidationCode: failure.ValidationCode,
 		}, nil
 	}
 	promptClient, err := deepseek.NewPromptFromEnv()
 	if err != nil {
+		failure := report.PresentationLocalizationFailure{
+			ReasonCode:      report.LocalizationFailureProviderConfig,
+			FailureStage:    report.LocalizationStageProviderConfiguration,
+			ValidationCode:  report.LocalizationValidationRequestIdentity,
+			CanonicalSHA256: prepared.Canonical.SHA256,
+		}
 		if writeErr := report.WritePresentationLocalizationFailure(
-			runDir,
-			report.LocalizationFailureProviderConfig,
-			prepared.Canonical.SHA256,
+			runDir, failure,
 		); writeErr != nil {
 			return presentationLocalizationOutcome{}, errors.Join(err, writeErr)
 		}
 		return presentationLocalizationOutcome{
-			State:      report.PresentationLocalizationFailed,
-			ReasonCode: report.LocalizationFailureProviderConfig,
+			State:          report.PresentationLocalizationFailed,
+			ReasonCode:     report.LocalizationFailureProviderConfig,
+			FailureStage:   failure.FailureStage,
+			ValidationCode: failure.ValidationCode,
 		}, nil
 	}
 	provider := &lazyPresentationLocalizationProvider{
@@ -240,6 +312,7 @@ func localizePresentationForRun(
 		data,
 		prepared,
 		provider,
+		presentationLocalizationExecutionOptions{DumpRejectedResponse: dumpLLM},
 	)
 }
 
@@ -254,19 +327,28 @@ func markPresentationLocalizationUnavailable(
 	}
 	data, err := readCanonicalReportForLocalization(runDir, episodeJSON)
 	if err != nil {
-		return report.WritePresentationLocalizationFailure(runDir, reasonCode, "")
+		return report.WritePresentationLocalizationFailure(runDir, report.PresentationLocalizationFailure{
+			ReasonCode: reasonCode, FailureStage: report.LocalizationStageUnavailable,
+			ValidationCode: localizationUnavailableValidationCode(reasonCode),
+		})
 	}
 	prepared, prepareErr := report.PreparePresentationLocalization(
 		data,
 		localization.LocaleRussian,
 	)
 	if prepareErr != nil {
-		return report.WritePresentationLocalizationFailure(runDir, reasonCode, "")
+		return report.WritePresentationLocalizationFailure(runDir, report.PresentationLocalizationFailure{
+			ReasonCode: reasonCode, FailureStage: report.LocalizationStageUnavailable,
+			ValidationCode: localizationUnavailableValidationCode(reasonCode),
+		})
 	}
 	return report.WritePresentationLocalizationFailure(
 		runDir,
-		reasonCode,
-		prepared.Canonical.SHA256,
+		report.PresentationLocalizationFailure{
+			ReasonCode: reasonCode, FailureStage: report.LocalizationStageUnavailable,
+			ValidationCode:  localizationUnavailableValidationCode(reasonCode),
+			CanonicalSHA256: prepared.Canonical.SHA256,
+		},
 	)
 }
 
@@ -279,35 +361,70 @@ func readCanonicalReportForLocalization(
 		maxDecisionTraceReportBytes,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("localization: read canonical report: %w", err)
+		return nil, localizationStageError(
+			report.LocalizationStageCanonicalRead,
+			report.LocalizationValidationCanonicalReport,
+			report.LocalizationFailurePreparation,
+			fmt.Errorf("localization: read canonical report: %w", err),
+		)
 	}
 	var data report.ReportData
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&data); err != nil {
-		return nil, fmt.Errorf("localization: decode canonical report: %w", err)
+		return nil, localizationStageError(
+			report.LocalizationStageCanonicalRead,
+			report.LocalizationValidationCanonicalReport,
+			report.LocalizationFailurePreparation,
+			fmt.Errorf("localization: decode canonical report: %w", err),
+		)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, fmt.Errorf("localization: canonical report has trailing JSON")
+		return nil, localizationStageError(
+			report.LocalizationStageCanonicalRead,
+			report.LocalizationValidationCanonicalReport,
+			report.LocalizationFailurePreparation,
+			fmt.Errorf("localization: canonical report has trailing JSON"),
+		)
 	}
 	if data.FormatVersion != report.CurrentFormatVersion ||
 		data.ReportLanguage != "" ||
 		data.GitLabSourceLinks != nil ||
 		data.GitHubSourceLinks != nil {
-		return nil, fmt.Errorf("localization: report is not canonical English")
+		return nil, localizationStageError(
+			report.LocalizationStageCanonicalRead,
+			report.LocalizationValidationCanonicalReport,
+			report.LocalizationFailurePreparation,
+			fmt.Errorf("localization: report is not canonical English"),
+		)
 	}
 	manifestPath := filepath.Join(runDir, report.RunManifestFilename)
 	if _, err := os.Lstat(manifestPath); err == nil {
 		manifest, err := report.ReadRunManifest(runDir)
 		if err != nil {
-			return nil, fmt.Errorf("localization: verify current run authority: %w", err)
+			return nil, localizationStageError(
+				report.LocalizationStageCanonicalAuthority,
+				report.LocalizationValidationCanonicalReport,
+				report.LocalizationFailurePreparation,
+				fmt.Errorf("localization: verify current run authority: %w", err),
+			)
 		}
 		if manifest.Version != report.CurrentRunManifestVersion {
-			return nil, fmt.Errorf("localization: current run manifest is required")
+			return nil, localizationStageError(
+				report.LocalizationStageCanonicalAuthority,
+				report.LocalizationValidationCanonicalReport,
+				report.LocalizationFailurePreparation,
+				fmt.Errorf("localization: current run manifest is required"),
+			)
 		}
 	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("localization: inspect current run authority: %w", err)
+		return nil, localizationStageError(
+			report.LocalizationStageCanonicalAuthority,
+			report.LocalizationValidationCanonicalReport,
+			report.LocalizationFailurePreparation,
+			fmt.Errorf("localization: inspect current run authority: %w", err),
+		)
 	}
 	var episodeJSON []byte
 	if len(sourceEpisodeJSON) > 0 {
@@ -315,7 +432,12 @@ func readCanonicalReportForLocalization(
 	}
 	prepared, err := report.PrepareRunPresentation(runDir, &data, episodeJSON)
 	if err != nil {
-		return nil, fmt.Errorf("localization: prepare run presentation: %w", err)
+		return nil, localizationStageError(
+			report.LocalizationStagePresentationHydration,
+			report.LocalizationValidationPresentationInventory,
+			report.LocalizationFailurePreparation,
+			fmt.Errorf("localization: prepare run presentation: %w", err),
+		)
 	}
 	return prepared, nil
 }
@@ -328,36 +450,46 @@ func executePresentationLocalization(
 	data *report.ReportData,
 	prepared report.PreparedPresentationLocalization,
 	provider presentationLocalizationProvider,
+	options ...presentationLocalizationExecutionOptions,
 ) (presentationLocalizationOutcome, error) {
 	outcome := presentationLocalizationOutcome{}
-	fail := func(reasonCode string) (presentationLocalizationOutcome, error) {
+	executionOptions := presentationLocalizationExecutionOptions{}
+	if len(options) > 0 {
+		executionOptions = options[0]
+	}
+	fail := func(reasonCode, failureStage, validationCode string) (presentationLocalizationOutcome, error) {
 		outcome.State = report.PresentationLocalizationFailed
 		outcome.ReasonCode = reasonCode
+		outcome.FailureStage = failureStage
+		outcome.ValidationCode = validationCode
 		return outcome, report.WritePresentationLocalizationFailure(
 			runDir,
-			reasonCode,
-			prepared.Canonical.SHA256,
+			report.PresentationLocalizationFailure{
+				ReasonCode: reasonCode, FailureStage: failureStage,
+				ValidationCode: validationCode, CanonicalSHA256: prepared.Canonical.SHA256,
+				Progress: report.PresentationLocalizationProgress{
+					BatchTotal: outcome.BatchTotal, BatchAttempted: outcome.BatchAttempted,
+					BatchCompleted: outcome.BatchCompleted, FailedBatch: outcome.FailedBatch,
+				},
+				DebugDumpFailed: outcome.DebugDumpFailed,
+			},
 		)
 	}
 
 	plans, err := buildPresentationLocalizationBatchPlans(prepared, provider)
 	if err != nil {
-		reasonCode := report.LocalizationFailurePreparation
-		if strings.Contains(err.Error(), "byte limit") ||
-			strings.Contains(err.Error(), "output budget") {
-			reasonCode = report.LocalizationFailurePayloadTooLarge
-		} else if errors.Is(err, errPresentationLocalizationProviderConfiguration) {
-			reasonCode = report.LocalizationFailureProviderConfig
-		}
-		return fail(reasonCode)
+		stage, validationCode, reasonCode := presentationLocalizationErrorDetails(err)
+		return fail(reasonCode, stage, validationCode)
 	}
+	outcome.BatchTotal = len(plans)
 	projections := make([]localization.Projection, len(plans))
 	requestSHAs := make([]string, len(plans))
 	cacheKeys := make([]string, len(plans))
-	outcome.Batches = make([]presentationLocalizationBatchOutcome, len(plans))
+	outcome.Batches = make([]presentationLocalizationBatchOutcome, 0, len(plans))
 	allCacheHits := true
 
 	for index, plan := range plans {
+		outcome.BatchAttempted++
 		requestSHAs[index] = plan.RequestSHA
 		cacheKeys[index] = plan.Key
 		batchOutcome := presentationLocalizationBatchOutcome{
@@ -379,7 +511,8 @@ func executePresentationLocalization(
 			) {
 				projections[index] = record.Projection
 				batchOutcome.CacheHit = true
-				outcome.Batches[index] = batchOutcome
+				outcome.Batches = append(outcome.Batches, batchOutcome)
+				outcome.BatchCompleted++
 				continue
 			}
 			if found {
@@ -405,16 +538,25 @@ func executePresentationLocalization(
 		outcome.InputTokens += batchOutcome.InputTokens
 		outcome.OutputTokens += batchOutcome.OutputTokens
 		outcome.Attempts += batchOutcome.Attempts
-		outcome.Batches[index] = batchOutcome
+		outcome.Batches = append(outcome.Batches, batchOutcome)
 		if executeErr != nil {
 			reasonCode := report.LocalizationFailureProviderRequest
+			failureStage := report.LocalizationStageProviderRequest
+			validationCode := report.LocalizationValidationTransport
 			if errors.Is(executeErr, errPresentationLocalizationProviderConfiguration) {
 				reasonCode = report.LocalizationFailureProviderConfig
+				failureStage = report.LocalizationStageProviderConfiguration
+				validationCode = report.LocalizationValidationRequestIdentity
 			}
-			return fail(reasonCode)
+			outcome.FailedBatch = index + 1
+			return fail(reasonCode, failureStage, validationCode)
 		}
 		if _, found := secretscan.DetectAlways(string(providerResult.Content)); found {
-			return fail(report.LocalizationFailureInvalidProjection)
+			outcome.FailedBatch = index + 1
+			if executionOptions.DumpRejectedResponse {
+				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
+			}
+			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseSecretScan, report.LocalizationValidationUnsafeResponse)
 		}
 		projection, decodeErr := localization.DecodeRussianProviderResponse(
 			plan.Batch.Canonical,
@@ -422,7 +564,11 @@ func executePresentationLocalization(
 			[]byte(providerResult.Content),
 		)
 		if decodeErr != nil {
-			return fail(report.LocalizationFailureInvalidProjection)
+			outcome.FailedBatch = index + 1
+			if executionOptions.DumpRejectedResponse {
+				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
+			}
+			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseDecode, report.LocalizationValidationResponseDecode)
 		}
 		validation, validationErr := localization.Apply(
 			plan.Batch.Canonical,
@@ -430,12 +576,21 @@ func executePresentationLocalization(
 			projection,
 		)
 		if validationErr != nil {
-			return fail(report.LocalizationFailureInvalidProjection)
+			outcome.FailedBatch = index + 1
+			if executionOptions.DumpRejectedResponse {
+				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
+			}
+			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageProjectionApply, report.LocalizationValidationProjectionApply)
 		}
 		if validation.Fallback || len(validation.Diagnostics) != 0 {
-			return fail(report.LocalizationFailureInvalidProjection)
+			outcome.FailedBatch = index + 1
+			if executionOptions.DumpRejectedResponse {
+				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
+			}
+			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageProjectionQuality, report.LocalizationValidationProjectionDiagnostics)
 		}
 		projections[index] = projection
+		outcome.BatchCompleted++
 
 		if !noCache {
 			record := presentationLocalizationCacheRecord{
@@ -528,22 +683,22 @@ func executePresentationLocalization(
 		projections,
 	)
 	if err != nil {
-		return fail(report.LocalizationFailureInvalidProjection)
+		return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageProjectionApply, report.LocalizationValidationBatchCombination)
 	}
 	if _, result, err := report.ApplyPresentationLocalization(
 		data,
 		prepared,
 		projection,
 	); err != nil || result.Fallback || len(result.Diagnostics) != 0 {
-		return fail(report.LocalizationFailureInvalidProjection)
+		return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageProjectionQuality, report.LocalizationValidationPresentationApply)
 	}
 	requestSetJSON, err := json.Marshal(requestSHAs)
 	if err != nil {
-		return fail(report.LocalizationFailurePreparation)
+		return fail(report.LocalizationFailurePreparation, report.LocalizationStageStatusWrite, report.LocalizationValidationStatus)
 	}
 	cacheSetJSON, err := json.Marshal(cacheKeys)
 	if err != nil {
-		return fail(report.LocalizationFailurePreparation)
+		return fail(report.LocalizationFailurePreparation, report.LocalizationStageStatusWrite, report.LocalizationValidationStatus)
 	}
 	requestSHA := sha256Hex(requestSetJSON)
 	cacheKey := "translation-" + sha256Hex(cacheSetJSON)
@@ -554,7 +709,15 @@ func executePresentationLocalization(
 		allCacheHits,
 		requestSHA,
 		cacheKey,
+		report.PresentationLocalizationProgress{
+			BatchTotal: outcome.BatchTotal, BatchAttempted: outcome.BatchAttempted,
+			BatchCompleted: outcome.BatchCompleted,
+		},
 	); err != nil {
+		outcome.State = report.PresentationLocalizationFailed
+		outcome.ReasonCode = report.LocalizationFailurePreparation
+		outcome.FailureStage = report.LocalizationStageStatusWrite
+		outcome.ValidationCode = report.LocalizationValidationStatus
 		return outcome, err
 	}
 	outcome.State = report.PresentationLocalizationSucceeded
@@ -568,20 +731,40 @@ func buildPresentationLocalizationBatchPlans(
 ) ([]presentationLocalizationBatchPlan, error) {
 	batches, err := localization.BuildBatches(prepared.Canonical, prepared.Input)
 	if err != nil {
-		return nil, err
+		return nil, localizationStageError(
+			report.LocalizationStageBatchPartition,
+			report.LocalizationValidationPayloadBudget,
+			report.LocalizationFailurePayloadTooLarge,
+			err,
+		)
 	}
 	plans := make([]presentationLocalizationBatchPlan, 0, len(batches))
 	for _, batch := range batches {
 		prompt, err := localization.BuildRussianPrompt(batch.Canonical, batch.Input)
 		if err != nil {
-			return nil, err
+			return nil, localizationStageError(
+				report.LocalizationStagePromptBuild,
+				report.LocalizationValidationPayloadBudget,
+				report.LocalizationFailurePayloadTooLarge,
+				err,
+			)
 		}
 		request, err := provider.BuildLocalizationRequest(prompt)
 		if err != nil {
-			return nil, errors.Join(errPresentationLocalizationProviderConfiguration, err)
+			return nil, localizationStageError(
+				report.LocalizationStageProviderConfiguration,
+				report.LocalizationValidationRequestIdentity,
+				report.LocalizationFailureProviderConfig,
+				errors.Join(errPresentationLocalizationProviderConfiguration, err),
+			)
 		}
 		if err := request.Validate(prompt); err != nil {
-			return nil, errors.Join(errPresentationLocalizationProviderConfiguration, err)
+			return nil, localizationStageError(
+				report.LocalizationStageProviderConfiguration,
+				report.LocalizationValidationRequestIdentity,
+				report.LocalizationFailureProviderConfig,
+				errors.Join(errPresentationLocalizationProviderConfiguration, err),
+			)
 		}
 		identity := presentationLocalizationCacheIdentity{
 			Version:                    presentationLocalizationCacheVersion,
@@ -594,7 +777,12 @@ func buildPresentationLocalizationBatchPlans(
 		}
 		key, identityJSON, err := presentationLocalizationCacheKey(identity)
 		if err != nil {
-			return nil, err
+			return nil, localizationStageError(
+				report.LocalizationStagePromptBuild,
+				report.LocalizationValidationRequestIdentity,
+				report.LocalizationFailurePreparation,
+				err,
+			)
 		}
 		plans = append(plans, presentationLocalizationBatchPlan{
 			Batch: batch, Prompt: prompt, Request: request, Identity: identity,
@@ -669,11 +857,28 @@ func savePresentationLocalizationFailure(
 	reasonCode,
 	canonicalSHA string,
 ) (presentationLocalizationOutcome, error) {
-	err := report.WritePresentationLocalizationFailure(runDir, reasonCode, canonicalSHA)
+	err := report.WritePresentationLocalizationFailure(runDir, report.PresentationLocalizationFailure{
+		ReasonCode: reasonCode, FailureStage: report.LocalizationStageUnavailable,
+		ValidationCode:  localizationUnavailableValidationCode(reasonCode),
+		CanonicalSHA256: canonicalSHA,
+	})
 	return presentationLocalizationOutcome{
 		State:      report.PresentationLocalizationFailed,
 		ReasonCode: reasonCode,
 	}, err
+}
+
+func localizationUnavailableValidationCode(reasonCode string) string {
+	switch reasonCode {
+	case report.LocalizationFailureOfflineRequested:
+		return report.LocalizationValidationOffline
+	case report.LocalizationFailureCacheCorrupt, report.LocalizationFailureCacheUnavailable:
+		return report.LocalizationValidationCache
+	case report.LocalizationFailureSavedProjection:
+		return report.LocalizationValidationSavedProjection
+	default:
+		return report.LocalizationValidationStatus
+	}
 }
 
 func presentationLocalizationCacheKey(

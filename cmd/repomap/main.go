@@ -739,11 +739,22 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
-			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache)
+			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache, *dumpLLM)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
 			if guidedErr != nil {
+				if outcome.DebugDumpFailed {
+					fmt.Fprintln(deps.stderr, "warning: rejected Guided Tour diagnostic could not be saved")
+				}
+				if outcome.ValidatorField != "" && outcome.ValidatorRule != "" {
+					fmt.Fprintf(
+						deps.stderr,
+						"repomap: decision guided tour: published=0 validator_field=%s validator_rule=%s\n",
+						outcome.ValidatorField,
+						outcome.ValidatorRule,
+					)
+				}
 				fmt.Fprintf(
 					deps.stderr,
 					"warning: %v; report will keep the full architecture map without a guided tour (after %d ms)\n",
@@ -871,6 +882,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					runDir,
 					filepath.Join(dDir, presentationLocalizationCacheDir),
 					*noCache,
+					*dumpLLM,
 					deps.stderr,
 					sourceEpisodeJSON,
 				)
@@ -913,6 +925,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 							"warning: Russian localization cache entry could not be saved; the valid per-run projection remains available",
 						)
 					}
+					if localizationOutcome.DebugDumpFailed {
+						fmt.Fprintln(deps.stderr, "warning: rejected localization diagnostic could not be saved")
+					}
 					switch localizationOutcome.State {
 					case report.PresentationLocalizationSucceeded:
 						if localizationOutcome.CacheHit {
@@ -939,8 +954,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					default:
 						fmt.Fprintf(
 							deps.stderr,
-							"warning: Russian localization failed (%s); Russian product UI will show canonical English model prose (after %d ms)\n",
+							"warning: Russian localization failed (%s stage=%s validation=%s batches=%d attempted=%d completed=%d failed_batch=%d); Russian product UI will show canonical English model prose (after %d ms)\n",
 							localizationOutcome.ReasonCode,
+							localizationOutcome.FailureStage,
+							localizationOutcome.ValidationCode,
+							localizationOutcome.BatchTotal,
+							localizationOutcome.BatchAttempted,
+							localizationOutcome.BatchCompleted,
+							localizationOutcome.FailedBatch,
 							time.Since(localizationStarted).Milliseconds(),
 						)
 					}
@@ -1600,7 +1621,7 @@ func runGuidedTour(runDir string, stderr io.Writer) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	outcome, err := editGuidedTourForRun(ctx, absDir, stderr, false)
+	outcome, err := editGuidedTourForRun(ctx, absDir, stderr, false, false)
 	if err != nil {
 		return err
 	}

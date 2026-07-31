@@ -72,6 +72,35 @@ func TestNewWriterRejectsSymlinkRunDirectory(t *testing.T) {
 	}
 }
 
+func TestWriteRedactedRootArtifactRejectsUnsafePathsAndSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	for _, test := range []struct{ subdir, name string }{
+		{subdir: "../outside", name: "response.json"},
+		{subdir: "model_responses", name: "../response.json"},
+		{subdir: "/tmp", name: "response.json"},
+	} {
+		if err := WriteRedactedRootArtifact(runDir, test.subdir, test.name, []byte(`{}`)); err == nil {
+			t.Fatalf("unsafe artifact path was accepted: %#v", test)
+		}
+	}
+
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(runDir, "model_responses")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := WriteRedactedRootArtifact(
+		runDir, "model_responses", "response.json", []byte(`{"token":"secret"}`),
+	); err == nil {
+		t.Fatal("root-confined artifact writer accepted a symlink escape")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("outside directory was touched: entries=%v err=%v", entries, err)
+	}
+}
+
 func TestRunMetaPersistsSafeEffectiveRequestDiagnostics(t *testing.T) {
 	t.Parallel()
 
