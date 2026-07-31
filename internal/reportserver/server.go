@@ -770,7 +770,6 @@ func runArtifactSignature(runDir string) (string, error) {
 		"task_investigation_bundle.json", "task_investigation_attempt.json",
 		"task_investigation_pack.json", "task_investigation_status.json",
 		report.PresentationLocalizationStatusFile,
-		report.PresentationLocalizationProjectionFile,
 	} {
 		optionalPresentationArtifact := index >= 6
 		info, err := os.Lstat(filepath.Join(runDir, name))

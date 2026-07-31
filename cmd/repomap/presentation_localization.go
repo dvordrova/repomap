@@ -23,9 +23,9 @@ import (
 )
 
 const (
-	presentationLocalizationCacheVersion    = "presentation-localization-cache-v1"
+	presentationLocalizationCacheVersion    = "presentation-localization-cache-v3"
 	presentationLocalizationCacheDir        = ".localization-cache"
-	presentationLocalizationCacheVersionDir = "v1"
+	presentationLocalizationCacheVersionDir = "v3"
 	maxPresentationLocalizationCacheBytes   = 8 << 20
 )
 
@@ -110,6 +110,8 @@ type presentationLocalizationCacheIdentity struct {
 	ContractVersion            string                               `json:"contract_version"`
 	TranslationContractVersion string                               `json:"translation_contract_version"`
 	TargetLocale               string                               `json:"target_locale"`
+	BatchContractVersion       int                                  `json:"batch_contract_version"`
+	BatchContentSHA256         string                               `json:"batch_content_sha256"`
 	Request                    deepseek.LocalizationRequestEvidence `json:"request"`
 }
 
@@ -118,6 +120,15 @@ type presentationLocalizationCacheRecord struct {
 	Key        string                                `json:"key"`
 	Identity   presentationLocalizationCacheIdentity `json:"identity"`
 	Projection localization.Projection               `json:"projection"`
+}
+
+// presentationLocalizationCacheObservation binds a cache decision to the
+// exact bounded regular file that was inspected. The file identity prevents a
+// replacement inode from being removed, while data preserves the exact bytes
+// used to classify the observed inode as corrupt.
+type presentationLocalizationCacheObservation struct {
+	info os.FileInfo
+	data []byte
 }
 
 type presentationLocalizationOutcome struct {
@@ -131,6 +142,32 @@ type presentationLocalizationOutcome struct {
 	InputTokens   int
 	OutputTokens  int
 	Attempts      int
+	ProviderCalls int
+	Batches       []presentationLocalizationBatchOutcome
+}
+
+type presentationLocalizationBatchOutcome struct {
+	Index                int
+	Count                int
+	FieldCount           int
+	PredictedOutputBytes int
+	CacheHit             bool
+	RequestBytes         int
+	ResponseBytes        int
+	InputTokens          int
+	OutputTokens         int
+	Attempts             int
+	ProviderCalls        int
+}
+
+type presentationLocalizationBatchPlan struct {
+	Batch        localization.Batch
+	Prompt       localization.Prompt
+	Request      deepseek.LocalizationRequestEvidence
+	Identity     presentationLocalizationCacheIdentity
+	Key          string
+	IdentityJSON []byte
+	RequestSHA   string
 }
 
 func localizePresentationForRun(
@@ -279,208 +316,287 @@ func executePresentationLocalization(
 	prepared report.PreparedPresentationLocalization,
 	provider presentationLocalizationProvider,
 ) (presentationLocalizationOutcome, error) {
-	prompt, err := localization.BuildRussianPrompt(prepared.Canonical, prepared.Input)
-	if err != nil {
-		reasonCode := report.LocalizationFailurePreparation
-		if strings.Contains(err.Error(), "prompt exceeds its byte limit") {
-			reasonCode = report.LocalizationFailurePayloadTooLarge
-		}
-		return savePresentationLocalizationFailure(
-			runDir, reasonCode, prepared.Canonical.SHA256,
-		)
-	}
-	request, err := provider.BuildLocalizationRequest(prompt)
-	if err != nil {
-		return savePresentationLocalizationFailure(
-			runDir, report.LocalizationFailureProviderConfig, prepared.Canonical.SHA256,
-		)
-	}
-	if err := request.Validate(prompt); err != nil {
-		return savePresentationLocalizationFailure(
-			runDir, report.LocalizationFailureProviderConfig, prepared.Canonical.SHA256,
-		)
-	}
-	identity := presentationLocalizationCacheIdentity{
-		Version:                    presentationLocalizationCacheVersion,
-		ContractVersion:            report.PresentationLocalizationContractVersion,
-		TranslationContractVersion: localization.PromptVersion,
-		TargetLocale:               localization.LocaleRussian,
-		Request:                    request,
-	}
-	key, identityJSON, err := presentationLocalizationCacheKey(identity)
-	if err != nil {
-		return savePresentationLocalizationFailure(
-			runDir, report.LocalizationFailurePreparation, prepared.Canonical.SHA256,
-		)
-	}
-	requestSHA := sha256Hex(request.Body)
-	outcome := presentationLocalizationOutcome{
-		RequestBytes: len(request.Body),
-	}
-	if !noCache {
-		record, found, corrupt := loadPresentationLocalizationCache(
-			cacheRoot,
-			key,
-			identityJSON,
-		)
-		outcome.CacheCorrupt = corrupt
-		if found {
-			if presentationLocalizationCacheProjectionValid(
-				data,
-				prepared,
-				record,
-			) {
-				if err := report.WritePresentationLocalizationSuccess(
-					runDir,
-					prepared,
-					record.Projection,
-					true,
-					requestSHA,
-					key,
-				); err != nil {
-					return outcome, err
-				}
-				outcome.State = report.PresentationLocalizationSucceeded
-				outcome.CacheHit = true
-				return outcome, nil
-			}
-			outcome.CacheCorrupt = true
-		}
-	}
-
-	providerResult, err := provider.ExecuteLocalizationRequest(ctx, prompt, request)
-	outcome.ResponseBytes = len(providerResult.Content)
-	outcome.InputTokens = providerResult.InputTokens
-	outcome.OutputTokens = providerResult.OutputTokens
-	outcome.Attempts = providerResult.Attempts
-	if err != nil {
-		reasonCode := report.LocalizationFailureProviderRequest
-		if errors.Is(err, errPresentationLocalizationProviderConfiguration) {
-			reasonCode = report.LocalizationFailureProviderConfig
-		}
-		failure, writeErr := savePresentationLocalizationFailure(
+	outcome := presentationLocalizationOutcome{}
+	fail := func(reasonCode string) (presentationLocalizationOutcome, error) {
+		outcome.State = report.PresentationLocalizationFailed
+		outcome.ReasonCode = reasonCode
+		return outcome, report.WritePresentationLocalizationFailure(
 			runDir,
 			reasonCode,
 			prepared.Canonical.SHA256,
 		)
-		failure.CacheCorrupt = outcome.CacheCorrupt
-		failure.RequestBytes = outcome.RequestBytes
-		failure.Attempts = outcome.Attempts
-		return failure, writeErr
 	}
-	if _, found := secretscan.DetectAlways(string(providerResult.Content)); found {
-		failure, writeErr := savePresentationLocalizationFailure(
-			runDir,
-			report.LocalizationFailureInvalidProjection,
-			prepared.Canonical.SHA256,
+
+	plans, err := buildPresentationLocalizationBatchPlans(prepared, provider)
+	if err != nil {
+		reasonCode := report.LocalizationFailurePreparation
+		if strings.Contains(err.Error(), "byte limit") ||
+			strings.Contains(err.Error(), "output budget") {
+			reasonCode = report.LocalizationFailurePayloadTooLarge
+		} else if errors.Is(err, errPresentationLocalizationProviderConfiguration) {
+			reasonCode = report.LocalizationFailureProviderConfig
+		}
+		return fail(reasonCode)
+	}
+	projections := make([]localization.Projection, len(plans))
+	requestSHAs := make([]string, len(plans))
+	cacheKeys := make([]string, len(plans))
+	outcome.Batches = make([]presentationLocalizationBatchOutcome, len(plans))
+	allCacheHits := true
+
+	for index, plan := range plans {
+		requestSHAs[index] = plan.RequestSHA
+		cacheKeys[index] = plan.Key
+		batchOutcome := presentationLocalizationBatchOutcome{
+			Index: index, Count: len(plans),
+			FieldCount:           plan.Batch.Manifest.FieldCount,
+			PredictedOutputBytes: plan.Batch.Manifest.PredictedOutputBytes,
+		}
+
+		if !noCache {
+			record, found, corrupt := loadPresentationLocalizationCache(
+				cacheRoot,
+				plan.Key,
+				plan.IdentityJSON,
+			)
+			outcome.CacheCorrupt = outcome.CacheCorrupt || corrupt
+			if found && presentationLocalizationBatchCacheProjectionValid(
+				plan.Batch,
+				record,
+			) {
+				projections[index] = record.Projection
+				batchOutcome.CacheHit = true
+				outcome.Batches[index] = batchOutcome
+				continue
+			}
+			if found {
+				outcome.CacheCorrupt = true
+			}
+		}
+
+		allCacheHits = false
+		batchOutcome.RequestBytes = len(plan.Request.Body)
+		outcome.RequestBytes += batchOutcome.RequestBytes
+		providerResult, executeErr := provider.ExecuteLocalizationRequest(
+			ctx,
+			plan.Prompt,
+			plan.Request,
 		)
-		failure.CacheCorrupt = outcome.CacheCorrupt
-		failure.RequestBytes = outcome.RequestBytes
-		failure.ResponseBytes = outcome.ResponseBytes
-		failure.InputTokens = outcome.InputTokens
-		failure.OutputTokens = outcome.OutputTokens
-		failure.Attempts = outcome.Attempts
-		return failure, writeErr
+		batchOutcome.ResponseBytes = len(providerResult.Content)
+		batchOutcome.ProviderCalls++
+		outcome.ProviderCalls++
+		batchOutcome.InputTokens = providerResult.InputTokens
+		batchOutcome.OutputTokens = providerResult.OutputTokens
+		batchOutcome.Attempts = providerResult.Attempts
+		outcome.ResponseBytes += batchOutcome.ResponseBytes
+		outcome.InputTokens += batchOutcome.InputTokens
+		outcome.OutputTokens += batchOutcome.OutputTokens
+		outcome.Attempts += batchOutcome.Attempts
+		outcome.Batches[index] = batchOutcome
+		if executeErr != nil {
+			reasonCode := report.LocalizationFailureProviderRequest
+			if errors.Is(executeErr, errPresentationLocalizationProviderConfiguration) {
+				reasonCode = report.LocalizationFailureProviderConfig
+			}
+			return fail(reasonCode)
+		}
+		if _, found := secretscan.DetectAlways(string(providerResult.Content)); found {
+			return fail(report.LocalizationFailureInvalidProjection)
+		}
+		projection, decodeErr := localization.DecodeRussianProviderResponse(
+			plan.Batch.Canonical,
+			plan.Batch.Input,
+			[]byte(providerResult.Content),
+		)
+		if decodeErr != nil {
+			return fail(report.LocalizationFailureInvalidProjection)
+		}
+		validation, validationErr := localization.Apply(
+			plan.Batch.Canonical,
+			plan.Batch.Input,
+			projection,
+		)
+		if validationErr != nil {
+			return fail(report.LocalizationFailureInvalidProjection)
+		}
+		if validation.Fallback || len(validation.Diagnostics) != 0 {
+			return fail(report.LocalizationFailureInvalidProjection)
+		}
+		projections[index] = projection
+
+		if !noCache {
+			record := presentationLocalizationCacheRecord{
+				Version: presentationLocalizationCacheVersion,
+				Key:     plan.Key, Identity: plan.Identity,
+				Projection: projection,
+			}
+			cacheAlreadyValid := false
+			cacheWriteBlocked := false
+			var cacheWinner *localization.Projection
+			existing, found, corrupt, observed := loadPresentationLocalizationCacheObserved(
+				cacheRoot,
+				plan.Key,
+				plan.IdentityJSON,
+			)
+			if found && presentationLocalizationBatchCacheProjectionValid(
+				plan.Batch,
+				existing,
+			) {
+				cacheAlreadyValid = true
+				cacheWinner = &existing.Projection
+			} else if found {
+				corrupt = true
+			}
+			if corrupt {
+				outcome.CacheCorrupt = true
+				removed, err := removeCorruptPresentationLocalizationCache(
+					cacheRoot,
+					plan.Key,
+					observed,
+				)
+				if err != nil {
+					outcome.CacheWriteErr = true
+					cacheWriteBlocked = true
+				} else if !removed {
+					// A different inode or byte sequence won the race. Never
+					// unlink it. A valid winner is first-valid-wins; an invalid
+					// winner blocks this write and will be observed afresh by a
+					// later run.
+					winner, winnerFound, _ := loadPresentationLocalizationCache(
+						cacheRoot,
+						plan.Key,
+						plan.IdentityJSON,
+					)
+					if winnerFound && presentationLocalizationBatchCacheProjectionValid(
+						plan.Batch,
+						winner,
+					) {
+						cacheAlreadyValid = true
+						cacheWinner = &winner.Projection
+					} else {
+						outcome.CacheWriteErr = true
+						cacheWriteBlocked = true
+					}
+				}
+			}
+			if !cacheAlreadyValid && !cacheWriteBlocked {
+				if err := writePresentationLocalizationCache(
+					cacheRoot,
+					plan.Key,
+					record,
+				); err != nil {
+					existing, found, _ := loadPresentationLocalizationCache(
+						cacheRoot,
+						plan.Key,
+						plan.IdentityJSON,
+					)
+					if !found || !presentationLocalizationBatchCacheProjectionValid(
+						plan.Batch,
+						existing,
+					) {
+						outcome.CacheWriteErr = true
+					} else {
+						cacheAlreadyValid = true
+						cacheWinner = &existing.Projection
+					}
+				}
+			}
+			if cacheAlreadyValid && cacheWinner != nil {
+				projection = *cacheWinner
+				projections[index] = projection
+			}
+		}
 	}
-	projection, err := report.DecodePresentationLocalizationProjection(
-		[]byte(providerResult.Content),
+
+	projection, err := localization.CombineBatchProjections(
+		prepared.Canonical,
+		prepared.Input,
+		localizationBatches(plans),
+		projections,
 	)
 	if err != nil {
-		failure, writeErr := savePresentationLocalizationFailure(
-			runDir,
-			report.LocalizationFailureInvalidProjection,
-			prepared.Canonical.SHA256,
-		)
-		failure.CacheCorrupt = outcome.CacheCorrupt
-		failure.RequestBytes = outcome.RequestBytes
-		failure.ResponseBytes = outcome.ResponseBytes
-		failure.InputTokens = outcome.InputTokens
-		failure.OutputTokens = outcome.OutputTokens
-		failure.Attempts = outcome.Attempts
-		return failure, writeErr
+		return fail(report.LocalizationFailureInvalidProjection)
 	}
 	if _, result, err := report.ApplyPresentationLocalization(
 		data,
 		prepared,
 		projection,
 	); err != nil || result.Fallback || len(result.Diagnostics) != 0 {
-		failure, writeErr := savePresentationLocalizationFailure(
-			runDir,
-			report.LocalizationFailureInvalidProjection,
-			prepared.Canonical.SHA256,
-		)
-		failure.CacheCorrupt = outcome.CacheCorrupt
-		failure.RequestBytes = outcome.RequestBytes
-		failure.ResponseBytes = outcome.ResponseBytes
-		failure.InputTokens = outcome.InputTokens
-		failure.OutputTokens = outcome.OutputTokens
-		failure.Attempts = outcome.Attempts
-		return failure, writeErr
+		return fail(report.LocalizationFailureInvalidProjection)
 	}
-	if !noCache {
-		record := presentationLocalizationCacheRecord{
-			Version:    presentationLocalizationCacheVersion,
-			Key:        key,
-			Identity:   identity,
-			Projection: projection,
-		}
-		cacheAlreadyValid := false
-		cacheWriteBlocked := false
-		existing, found, corrupt := loadPresentationLocalizationCache(
-			cacheRoot,
-			key,
-			identityJSON,
-		)
-		if found && presentationLocalizationCacheProjectionValid(
-			data,
-			prepared,
-			existing,
-		) {
-			// Another writer completed this immutable request while the
-			// provider call was in flight. First valid publication wins.
-			cacheAlreadyValid = true
-		} else if found {
-			corrupt = true
-		}
-		if corrupt {
-			outcome.CacheCorrupt = true
-			if err := removeCorruptPresentationLocalizationCache(
-				cacheRoot,
-				key,
-			); err != nil {
-				outcome.CacheWriteErr = true
-				cacheWriteBlocked = true
-			}
-		}
-		if !cacheAlreadyValid && !cacheWriteBlocked {
-			if err := writePresentationLocalizationCache(cacheRoot, key, record); err != nil {
-				existing, found, _ := loadPresentationLocalizationCache(
-					cacheRoot,
-					key,
-					identityJSON,
-				)
-				if !found || !presentationLocalizationCacheProjectionValid(
-					data,
-					prepared,
-					existing,
-				) {
-					outcome.CacheWriteErr = true
-				}
-			}
-		}
+	requestSetJSON, err := json.Marshal(requestSHAs)
+	if err != nil {
+		return fail(report.LocalizationFailurePreparation)
 	}
+	cacheSetJSON, err := json.Marshal(cacheKeys)
+	if err != nil {
+		return fail(report.LocalizationFailurePreparation)
+	}
+	requestSHA := sha256Hex(requestSetJSON)
+	cacheKey := "translation-" + sha256Hex(cacheSetJSON)
 	if err := report.WritePresentationLocalizationSuccess(
 		runDir,
 		prepared,
 		projection,
-		false,
+		allCacheHits,
 		requestSHA,
-		key,
+		cacheKey,
 	); err != nil {
 		return outcome, err
 	}
 	outcome.State = report.PresentationLocalizationSucceeded
+	outcome.CacheHit = allCacheHits
 	return outcome, nil
+}
+
+func buildPresentationLocalizationBatchPlans(
+	prepared report.PreparedPresentationLocalization,
+	provider presentationLocalizationProvider,
+) ([]presentationLocalizationBatchPlan, error) {
+	batches, err := localization.BuildBatches(prepared.Canonical, prepared.Input)
+	if err != nil {
+		return nil, err
+	}
+	plans := make([]presentationLocalizationBatchPlan, 0, len(batches))
+	for _, batch := range batches {
+		prompt, err := localization.BuildRussianPrompt(batch.Canonical, batch.Input)
+		if err != nil {
+			return nil, err
+		}
+		request, err := provider.BuildLocalizationRequest(prompt)
+		if err != nil {
+			return nil, errors.Join(errPresentationLocalizationProviderConfiguration, err)
+		}
+		if err := request.Validate(prompt); err != nil {
+			return nil, errors.Join(errPresentationLocalizationProviderConfiguration, err)
+		}
+		identity := presentationLocalizationCacheIdentity{
+			Version:                    presentationLocalizationCacheVersion,
+			ContractVersion:            report.PresentationLocalizationContractVersion,
+			TranslationContractVersion: localization.PromptVersion,
+			TargetLocale:               localization.LocaleRussian,
+			BatchContractVersion:       batch.Manifest.Version,
+			BatchContentSHA256:         batch.Manifest.ContentSHA256,
+			Request:                    request,
+		}
+		key, identityJSON, err := presentationLocalizationCacheKey(identity)
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, presentationLocalizationBatchPlan{
+			Batch: batch, Prompt: prompt, Request: request, Identity: identity,
+			Key: key, IdentityJSON: identityJSON, RequestSHA: sha256Hex(request.Body),
+		})
+	}
+	return plans, nil
+}
+
+func localizationBatches(plans []presentationLocalizationBatchPlan) []localization.Batch {
+	batches := make([]localization.Batch, len(plans))
+	for index, plan := range plans {
+		batches[index] = plan.Batch
+	}
+	return batches
 }
 
 func samePresentationLocalizationRequest(
@@ -490,6 +606,29 @@ func samePresentationLocalizationRequest(
 	leftJSON, leftErr := json.Marshal(left)
 	rightJSON, rightErr := json.Marshal(right)
 	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
+}
+
+func presentationLocalizationBatchProjectionValid(
+	batch localization.Batch,
+	projection localization.Projection,
+) bool {
+	encoded, err := json.Marshal(projection)
+	if err != nil {
+		return false
+	}
+	if _, found := secretscan.DetectAlways(string(encoded)); found {
+		return false
+	}
+	result, err := localization.Apply(batch.Canonical, batch.Input, projection)
+	return err == nil && !result.Fallback && len(result.Diagnostics) == 0
+}
+
+func presentationLocalizationBatchCacheProjectionValid(
+	batch localization.Batch,
+	record presentationLocalizationCacheRecord,
+) bool {
+	return record.Version == presentationLocalizationCacheVersion &&
+		presentationLocalizationBatchProjectionValid(batch, record.Projection)
 }
 
 func presentationLocalizationCacheProjectionValid(
@@ -530,7 +669,9 @@ func presentationLocalizationCacheKey(
 	if strings.TrimSpace(identity.Version) == "" ||
 		strings.TrimSpace(identity.ContractVersion) == "" ||
 		strings.TrimSpace(identity.TranslationContractVersion) == "" ||
-		strings.TrimSpace(identity.TargetLocale) == "" {
+		strings.TrimSpace(identity.TargetLocale) == "" ||
+		identity.BatchContractVersion != localization.BatchManifestVersion ||
+		!validSHA256Hex(identity.BatchContentSHA256) {
 		return "", nil, fmt.Errorf("localization cache: invalid identity")
 	}
 	encoded, err := json.Marshal(identity)
@@ -543,13 +684,40 @@ func presentationLocalizationCacheKey(
 	return "translation-" + sha256Hex(encoded), encoded, nil
 }
 
+func validSHA256Hex(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
 func loadPresentationLocalizationCache(
 	cacheRoot,
 	key string,
 	identityJSON []byte,
 ) (presentationLocalizationCacheRecord, bool, bool) {
+	record, found, corrupt, _ := loadPresentationLocalizationCacheObserved(
+		cacheRoot,
+		key,
+		identityJSON,
+	)
+	return record, found, corrupt
+}
+
+func loadPresentationLocalizationCacheObserved(
+	cacheRoot,
+	key string,
+	identityJSON []byte,
+) (
+	presentationLocalizationCacheRecord,
+	bool,
+	bool,
+	presentationLocalizationCacheObservation,
+) {
 	if !validPresentationLocalizationCacheKey(key) {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true,
+			presentationLocalizationCacheObservation{}
 	}
 	path := filepath.Join(
 		cacheRoot,
@@ -558,71 +726,141 @@ func loadPresentationLocalizationCache(
 	)
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return presentationLocalizationCacheRecord{}, false, false
+		return presentationLocalizationCacheRecord{}, false, false,
+			presentationLocalizationCacheObservation{}
 	}
 	if err != nil || info.Mode()&os.ModeSymlink != 0 ||
 		!info.Mode().IsRegular() || info.Size() <= 0 ||
 		info.Size() > maxPresentationLocalizationCacheBytes {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true,
+			presentationLocalizationCacheObservation{}
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true,
+			presentationLocalizationCacheObservation{}
 	}
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true,
+			presentationLocalizationCacheObservation{}
 	}
 	data, err := io.ReadAll(io.LimitReader(
 		file,
 		maxPresentationLocalizationCacheBytes+1,
 	))
 	if err != nil || len(data) == 0 ||
-		len(data) > maxPresentationLocalizationCacheBytes ||
-		!utf8.Valid(data) {
-		return presentationLocalizationCacheRecord{}, false, true
+		len(data) > maxPresentationLocalizationCacheBytes {
+		return presentationLocalizationCacheRecord{}, false, true,
+			presentationLocalizationCacheObservation{}
+	}
+	observed := presentationLocalizationCacheObservation{info: opened, data: data}
+	if !utf8.Valid(data) {
+		return presentationLocalizationCacheRecord{}, false, true, observed
 	}
 	var record presentationLocalizationCacheRecord
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&record) != nil {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true, observed
 	}
 	var trailing any
 	if decoder.Decode(&trailing) != io.EOF {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true, observed
 	}
 	recordIdentityJSON, err := json.Marshal(record.Identity)
 	if err != nil ||
 		record.Version != presentationLocalizationCacheVersion ||
 		record.Key != key ||
 		!bytes.Equal(recordIdentityJSON, identityJSON) {
-		return presentationLocalizationCacheRecord{}, false, true
+		return presentationLocalizationCacheRecord{}, false, true, observed
 	}
-	return record, true, false
+	return record, true, false, observed
 }
 
-func removeCorruptPresentationLocalizationCache(cacheRoot, key string) error {
+func removeCorruptPresentationLocalizationCache(
+	cacheRoot,
+	key string,
+	observed presentationLocalizationCacheObservation,
+) (bool, error) {
 	if !validPresentationLocalizationCacheKey(key) {
-		return fmt.Errorf("localization cache: invalid corrupt entry key")
+		return false, fmt.Errorf("localization cache: invalid corrupt entry key")
+	}
+	if observed.info == nil || len(observed.data) == 0 ||
+		len(observed.data) > maxPresentationLocalizationCacheBytes {
+		return false, fmt.Errorf(
+			"localization cache: corrupt entry has no stable observation",
+		)
 	}
 	path := filepath.Join(
 		cacheRoot,
 		presentationLocalizationCacheVersionDir,
 		key+".json",
 	)
+	// Serialize corrupt-entry cleanup for this content identity. Writers publish with a
+	// no-replace hard link, so while the observed corrupt path exists they
+	// cannot replace it. Holding this claim through the conditional unlink
+	// closes the only writer/remover race: a second cleanup cannot remove a
+	// valid entry published after this cleanup releases the path.
+	claimPath := path + ".cleanup.lock"
+	claim, err := os.OpenFile(
+		claimPath,
+		os.O_CREATE|os.O_EXCL|os.O_WRONLY,
+		0o600,
+	)
+	if os.IsExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf(
+			"localization cache: claim corrupt entry cleanup: %w",
+			err,
+		)
+	}
+	defer func() {
+		_ = claim.Close()
+		_ = os.Remove(claimPath)
+	}()
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return nil
+		return true, nil
 	}
-	if err != nil || info.IsDir() {
-		return fmt.Errorf("localization cache: corrupt entry is unavailable")
+	if err != nil || info.Mode()&os.ModeSymlink != 0 ||
+		!info.Mode().IsRegular() || !os.SameFile(observed.info, info) ||
+		info.Size() != int64(len(observed.data)) {
+		return false, nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false, nil
+	}
+	opened, statErr := file.Stat()
+	data, readErr := io.ReadAll(io.LimitReader(
+		file,
+		maxPresentationLocalizationCacheBytes+1,
+	))
+	closeErr := file.Close()
+	if statErr != nil || !opened.Mode().IsRegular() ||
+		!os.SameFile(info, opened) || readErr != nil || closeErr != nil ||
+		!bytes.Equal(data, observed.data) {
+		return false, nil
+	}
+	// Recheck the directory entry after reading. This closes the practical
+	// replacement window and, together with the inode and byte comparison,
+	// ensures a different first-valid-wins entry is never intentionally
+	// removed.
+	current, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil || !os.SameFile(opened, current) {
+		return false, nil
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("localization cache: remove corrupt entry: %w", err)
+		return false, fmt.Errorf("localization cache: remove corrupt entry: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 func writePresentationLocalizationCache(

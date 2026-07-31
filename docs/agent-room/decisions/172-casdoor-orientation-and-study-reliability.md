@@ -57,6 +57,55 @@ opaque tokenization split `s3` out of the already protected path
 `storage/aws_s3.go`, then rejected its own token under identifier-boundary
 validation. Inference now uses that same boundary predicate before adding an
 opaque value. Canonical prose and explicit opaque values remain unchanged.
+After preparation recovered, the complete 557-field Casdoor projection then
+reproducibly exhausted the ordinary 6,000-token response envelope. Repeating
+long presentation addresses in the provider response then consumed 53,990
+avoidable bytes, so the transient provider envelope now uses strict ordered
+index/text pairs and restores the same stable ID-keyed internal projection
+before validation. Even that compact response ended at exactly 32,000 tokens.
+
+The owner and supervisor therefore explicitly supersede Decision 170's
+one-request localization constraint for this measured failure. Localization
+now partitions the complete inventory deterministically in stable field-ID
+order by a predicted output budget. Every batch has an exact manifest and
+content hash, one compact ordered `[index, text]` provider request, its own
+exact-request cache entry, and the same strict live/cache validation. Provider
+output remains capped at 32,000 tokens per batch; the implementation does not
+replace the demonstrated limit with a speculative 64,000-token monolith. Each
+batch contains at most 64 fields. The current saved Casdoor replay contains 508
+fields and deterministically partitions into eight batches: seven batches of
+64 fields and one final batch of 60. This is a replay measurement of the
+current inventory and batching contract, not a claim that a complete live RU
+projection has succeeded.
+
+Every live response or cache hit passes the same strict completeness,
+placeholder, target-language, secret, and tuple-order validation. A rejected
+result is neither applied nor cached; localization does not add a separate
+repair request or weaken validation.
+
+The internal projection and persisted sidecar remain stable ID-keyed values.
+No sidecar is published until all independently validated batch results
+are merged and the complete projection validates against the full canonical
+English inventory. A missing, corrupt, truncated, or rejected batch therefore
+degrades the whole presentation to canonical English; partial RU is never
+published, cached as a complete projection, or labelled successful.
+
+The complete response then exposed a prompt-quality failure rather than a
+validator ambiguity: 167 fields retained unprotected English prose. The
+translation contract keeps opaque technical values outside model discretion
+through typed field semantics and reversible object-local placeholders, while
+every unprotected heading, label, name, diagnostic, and explanation is
+translated as human prose. It does not add a lexical dictionary that treats
+words such as `Controllers`, `main`, or `s3` as globally translatable or opaque.
+It also does not impose a blanket policy to translate or transliterate every
+Latin span: opaque spans are classified by typed ownership before the request,
+and the model translates the remaining human prose normally.
+The validator remains strict and the whole projection still degrades atomically
+if any field or placeholder violates that rule.
+
+Localization cache contract changes do not decode or classify older cache
+entries. `repomap cache clear [--debug-dir DIR]` is the single explicit clean
+invalidation operation and leaves saved run artifacts intact.
 
 ## Verification
 

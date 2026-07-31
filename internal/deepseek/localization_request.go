@@ -16,6 +16,12 @@ import (
 
 const LocalizationRequestVersion = "localization-openai-request-v1"
 
+// Each bounded terminal-presentation batch must have enough room for its
+// complete compact response. Casdoor proved that 32k is sufficient only after
+// the complete inventory is split deterministically; the full projection is
+// never attempted as one oversized provider completion.
+const localizationMinMaxTokens = 32_000
+
 // MaxLocalizationRequestBodyBytes is the shared upper bound for the exact
 // provider-free localization request and its immutable projection record.
 const MaxLocalizationRequestBodyBytes = 2 << 20
@@ -103,6 +109,10 @@ func (c *Client) BuildLocalizationRequest(
 		)
 	}
 
+	maxTokens := c.MaxTokens
+	if isOfficialDeepSeekEndpoint(endpoint) && maxTokens < localizationMinMaxTokens {
+		maxTokens = localizationMinMaxTokens
+	}
 	temperature := float64(0)
 	request := chatRequest{
 		Model: c.Model,
@@ -111,7 +121,7 @@ func (c *Client) BuildLocalizationRequest(
 			{Role: "user", Content: prompt.User},
 		},
 		Temperature:    &temperature,
-		MaxTokens:      c.MaxTokens,
+		MaxTokens:      maxTokens,
 		ResponseFormat: &jsonFormat{Type: "json_object"},
 	}
 	thinking := ""
@@ -140,7 +150,7 @@ func (c *Client) BuildLocalizationRequest(
 	evidence := LocalizationRequestEvidence{
 		Version: LocalizationRequestVersion, Provider: localizationProvider,
 		Endpoint: endpoint, AuthMode: authMode, Model: c.Model,
-		Temperature: &temperature, MaxTokens: c.MaxTokens,
+		Temperature: &temperature, MaxTokens: maxTokens,
 		ResponseFormat: "json_object", Thinking: thinking,
 		Body: body,
 	}

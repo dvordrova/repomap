@@ -215,18 +215,21 @@ func presentationLocalizationHTTPResponse(
 			input.TargetLocale != localization.LocaleRussian {
 			return nil, "", errors.New("unexpected localization direction")
 		}
-		translations := make(map[string]string, len(input.Fields))
-		for _, field := range input.Fields {
+		translations := make([]localization.ProviderTranslation, len(input.Fields))
+		for index, field := range input.Fields {
 			translated := "Полностью переведённое описание"
 			for _, placeholder := range field.Placeholders {
 				for count := 0; count < placeholder.Count; count++ {
 					translated += " " + placeholder.Token
 				}
 			}
-			translations[field.ID] = translated
+			translations[index] = localization.NewProviderTranslation(
+				index,
+				translated,
+			)
 		}
-		encoded, err := json.Marshal(localization.Projection{
-			Version:         localization.ProjectionVersion,
+		encoded, err := json.Marshal(localization.ProviderResponse{
+			Version:         localization.ProviderResponseVersion,
 			CanonicalSHA256: input.CanonicalSHA256,
 			Locale:          localization.LocaleRussian,
 			Translations:    translations,

@@ -192,26 +192,12 @@ func TestPresentationLocalizationCacheIdentityChanges(t *testing.T) {
 	t.Parallel()
 
 	_, prepared := presentationLocalizationFixture(t)
-	prompt, err := localization.BuildRussianPrompt(prepared.Canonical, prepared.Input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	baseRequest, err := (&deepseek.Client{
-		Endpoint:  "https://translation.example.test/v1/chat/completions",
-		Auth:      "none",
-		Model:     "translation-model",
-		MaxTokens: 2048,
-	}).BuildLocalizationRequest(prompt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := presentationLocalizationCacheIdentity{
-		Version:                    presentationLocalizationCacheVersion,
-		ContractVersion:            report.PresentationLocalizationContractVersion,
-		TranslationContractVersion: localization.PromptVersion,
-		TargetLocale:               localization.LocaleRussian,
-		Request:                    baseRequest,
-	}
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		nil,
+	)
+	base := presentationLocalizationFirstBatchPlan(t, prepared, provider).Identity
 	baseKey, _, err := presentationLocalizationCacheKey(base)
 	if err != nil {
 		t.Fatal(err)
@@ -306,36 +292,16 @@ func TestPresentationLocalizationSelectionReasonDoesNotEnterPromptOrCacheKey(t *
 		t.Fatal("opaque selection_reason changed the presentation inventory hash")
 	}
 
-	client := &deepseek.Client{
-		Endpoint:  "https://translation.example.test/v1/chat/completions",
-		Auth:      "none",
-		Model:     "translation-model",
-		MaxTokens: 2048,
-	}
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		nil,
+	)
 	requestAndKey := func(
 		prepared report.PreparedPresentationLocalization,
 	) (deepseek.LocalizationRequestEvidence, string) {
-		prompt, err := localization.BuildRussianPrompt(prepared.Canonical, prepared.Input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		request, err := client.BuildLocalizationRequest(prompt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		key, _, err := presentationLocalizationCacheKey(
-			presentationLocalizationCacheIdentity{
-				Version:                    presentationLocalizationCacheVersion,
-				ContractVersion:            report.PresentationLocalizationContractVersion,
-				TranslationContractVersion: localization.PromptVersion,
-				TargetLocale:               localization.LocaleRussian,
-				Request:                    request,
-			},
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return request, key
+		plan := presentationLocalizationFirstBatchPlan(t, prepared, provider)
+		return plan.Request, plan.Key
 	}
 	firstRequest, firstKey := requestAndKey(first)
 	secondRequest, secondKey := requestAndKey(second)
@@ -574,10 +540,11 @@ func TestPresentationLocalizationRejectsSecretBearingProviderOutput(t *testing.T
 		projection.Translations[fieldID] = "api_key=secret-value-123456"
 		break
 	}
-	response, err := json.Marshal(projection)
-	if err != nil {
-		t.Fatal(err)
-	}
+	response := localizationProviderResponseJSON(
+		t,
+		prepared.Input,
+		projection,
+	)
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
 	runDir := t.TempDir()
 	provider := newFakePresentationLocalizationProvider(
@@ -602,10 +569,15 @@ func TestPresentationLocalizationRejectsSecretBearingProviderOutput(t *testing.T
 		provider.executeCalls != 1 {
 		t.Fatalf("secret-bearing provider outcome/calls = %#v/%d", outcome, provider.executeCalls)
 	}
-	if _, err := os.Stat(
-		filepath.Join(runDir, report.PresentationLocalizationProjectionFile),
-	); !os.IsNotExist(err) {
-		t.Fatalf("secret-bearing projection artifact stat error = %v, want not exist", err)
+	projectionMatches, err := filepath.Glob(filepath.Join(
+		runDir,
+		"presentation_localization_projection.v1.*.json",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projectionMatches) != 0 {
+		t.Fatalf("secret-bearing projection artifacts = %v, want none", projectionMatches)
 	}
 	if _, err := os.Stat(
 		filepath.Join(cacheRoot, presentationLocalizationCacheVersionDir),
@@ -618,32 +590,24 @@ func TestPresentationLocalizationCacheRecordIsImmutable(t *testing.T) {
 	t.Parallel()
 
 	_, prepared := presentationLocalizationFixture(t)
-	prompt, err := localization.BuildRussianPrompt(prepared.Canonical, prepared.Input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := (&deepseek.Client{
-		Endpoint:  "https://translation.example.test/v1/chat/completions",
-		Auth:      "none",
-		Model:     "translation-model",
-		MaxTokens: 2048,
-	}).BuildLocalizationRequest(prompt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity := presentationLocalizationCacheIdentity{
-		Version:                    presentationLocalizationCacheVersion,
-		ContractVersion:            report.PresentationLocalizationContractVersion,
-		TranslationContractVersion: localization.PromptVersion,
-		TargetLocale:               localization.LocaleRussian,
-		Request:                    request,
-	}
-	key, _, err := presentationLocalizationCacheKey(identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstProjection := presentationLocalizationProjection(t, prepared, "Первый перевод: ")
-	secondProjection := presentationLocalizationProjection(t, prepared, "Второй перевод: ")
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		nil,
+	)
+	plan := presentationLocalizationFirstBatchPlan(t, prepared, provider)
+	identity := plan.Identity
+	key := plan.Key
+	firstProjection := localizationProjectionFor(
+		plan.Batch.Canonical,
+		plan.Batch.Input,
+		"Первый перевод: ",
+	)
+	secondProjection := localizationProjectionFor(
+		plan.Batch.Canonical,
+		plan.Batch.Input,
+		"Второй перевод: ",
+	)
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
 	first := presentationLocalizationCacheRecord{
 		Version:    presentationLocalizationCacheVersion,
@@ -674,6 +638,99 @@ func TestPresentationLocalizationCacheRecordIsImmutable(t *testing.T) {
 	}
 	if string(after) != string(before) {
 		t.Fatal("immutable cache bytes changed after conflicting publication")
+	}
+}
+
+func TestPresentationLocalizationCorruptCacheRemovalPreservesConcurrentReplacement(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	_, prepared := presentationLocalizationFixture(t)
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		nil,
+	)
+	plan := presentationLocalizationFirstBatchPlan(t, prepared, provider)
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	cacheDir := filepath.Join(cacheRoot, presentationLocalizationCacheVersionDir)
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cachePath := filepath.Join(cacheDir, plan.Key+".json")
+	if err := os.WriteFile(cachePath, []byte("{corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, found, corrupt, observed := loadPresentationLocalizationCacheObserved(
+		cacheRoot,
+		plan.Key,
+		plan.IdentityJSON,
+	)
+	if found || !corrupt || observed.info == nil || len(observed.data) == 0 {
+		t.Fatalf(
+			"corrupt observation = found %t corrupt %t observation %#v",
+			found,
+			corrupt,
+			observed,
+		)
+	}
+
+	winner := presentationLocalizationCacheRecord{
+		Version:  presentationLocalizationCacheVersion,
+		Key:      plan.Key,
+		Identity: plan.Identity,
+		Projection: localizationProjectionFor(
+			plan.Batch.Canonical,
+			plan.Batch.Input,
+			"Победивший перевод: ",
+		),
+	}
+	winnerJSON, err := json.Marshal(winner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	winnerJSON = append(winnerJSON, '\n')
+	replacement, err := os.CreateTemp(cacheDir, ".winner-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementPath := replacement.Name()
+	if _, err := replacement.Write(winnerJSON); err != nil {
+		_ = replacement.Close()
+		t.Fatal(err)
+	}
+	if err := replacement.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacementPath, cachePath); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := removeCorruptPresentationLocalizationCache(
+		cacheRoot,
+		plan.Key,
+		observed,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed {
+		t.Fatal("corrupt-cache cleanup removed a concurrent replacement")
+	}
+	got, gotFound, gotCorrupt := loadPresentationLocalizationCache(
+		cacheRoot,
+		plan.Key,
+		plan.IdentityJSON,
+	)
+	if !gotFound || gotCorrupt ||
+		!presentationLocalizationBatchCacheProjectionValid(plan.Batch, got) {
+		t.Fatalf(
+			"concurrent valid replacement = found %t corrupt %t record %#v",
+			gotFound,
+			gotCorrupt,
+			got,
+		)
 	}
 }
 
@@ -733,6 +790,128 @@ func TestPresentationLocalizationProviderFailurePreservesCanonicalRun(t *testing
 	}
 }
 
+func TestPresentationLocalizationRejectsStrictlyInvalidBatchAfterOneProviderRequest(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	invalidProjection := localization.Projection{
+		Version:         localization.ProjectionVersion,
+		CanonicalSHA256: prepared.Canonical.SHA256,
+		Locale:          localization.LocaleRussian,
+		Translations:    make(map[string]string, len(prepared.Input.Fields)),
+	}
+	for _, field := range prepared.Input.Fields {
+		invalidProjection.Translations[field.ID] = field.Text
+	}
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		localizationProviderResponseJSON(t, prepared.Input, invalidProjection),
+	)
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	outcome, err := executePresentationLocalization(
+		context.Background(),
+		t.TempDir(),
+		cacheRoot,
+		false,
+		data,
+		prepared,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationFailed ||
+		outcome.ReasonCode != report.LocalizationFailureInvalidProjection ||
+		provider.buildCalls != 1 || provider.executeCalls != 1 ||
+		outcome.ProviderCalls != 1 {
+		t.Fatalf(
+			"strict-invalid outcome/provider calls = %#v/%d",
+			outcome,
+			provider.executeCalls,
+		)
+	}
+	if _, err := os.Stat(filepath.Join(
+		cacheRoot,
+		presentationLocalizationCacheVersionDir,
+	)); !os.IsNotExist(err) {
+		t.Fatalf("strict-invalid batch populated cache: %v", err)
+	}
+}
+
+func TestPresentationLocalizationAdoptsConcurrentValidCacheWinner(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	liveProjection := presentationLocalizationProjection(t, prepared, "Живой ответ: ")
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		localizationProviderResponseJSON(t, prepared.Input, liveProjection),
+	)
+	plan := presentationLocalizationFirstBatchPlan(t, prepared, provider)
+	winnerProjection := localizationProjectionFor(
+		plan.Batch.Canonical,
+		plan.Batch.Input,
+		"Победивший кэш: ",
+	)
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	provider.executeHook = func() {
+		record := presentationLocalizationCacheRecord{
+			Version: presentationLocalizationCacheVersion,
+			Key:     plan.Key, Identity: plan.Identity,
+			Projection: winnerProjection,
+		}
+		if err := writePresentationLocalizationCache(
+			cacheRoot,
+			plan.Key,
+			record,
+		); err != nil {
+			t.Errorf("publish concurrent winner: %v", err)
+		}
+	}
+	runDir := t.TempDir()
+	outcome, err := executePresentationLocalization(
+		context.Background(),
+		runDir,
+		cacheRoot,
+		false,
+		data,
+		prepared,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationSucceeded {
+		t.Fatalf("winner outcome = %#v", outcome)
+	}
+	expected, _, err := report.ApplyPresentationLocalization(
+		data,
+		prepared,
+		winnerProjection,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, status := report.LoadPresentationLocalization(
+		runDir,
+		data,
+		localization.LocaleRussian,
+	)
+	if status.State != report.PresentationLocalizationSucceeded ||
+		actual.ProjectGuess != expected.ProjectGuess {
+		t.Fatalf(
+			"published projection/status = %q/%#v, want concurrent winner %q",
+			actual.ProjectGuess,
+			status,
+			expected.ProjectGuess,
+		)
+	}
+}
+
 func TestPresentationLocalizationRejectsSecretBearingCacheHit(t *testing.T) {
 	t.Parallel()
 
@@ -743,32 +922,15 @@ func TestPresentationLocalizationRejectsSecretBearingCacheHit(t *testing.T) {
 		"translation-model",
 		response,
 	)
-	prompt, err := localization.BuildRussianPrompt(
-		prepared.Canonical,
-		prepared.Input,
+	plan := presentationLocalizationFirstBatchPlan(t, prepared, provider)
+	identity := plan.Identity
+	key := plan.Key
+	identityJSON := plan.IdentityJSON
+	unsafeProjection := localizationProjectionFor(
+		plan.Batch.Canonical,
+		plan.Batch.Input,
+		"Перевод: ",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := provider.BuildLocalizationRequest(prompt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity := presentationLocalizationCacheIdentity{
-		Version:                    presentationLocalizationCacheVersion,
-		ContractVersion:            report.PresentationLocalizationContractVersion,
-		TranslationContractVersion: localization.PromptVersion,
-		TargetLocale:               localization.LocaleRussian,
-		Request:                    request,
-	}
-	key, identityJSON, err := presentationLocalizationCacheKey(identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var unsafeProjection localization.Projection
-	if err := json.Unmarshal(response, &unsafeProjection); err != nil {
-		t.Fatal(err)
-	}
 	for fieldID := range unsafeProjection.Translations {
 		unsafeProjection.Translations[fieldID] =
 			"api_key=secret-value-123456"
@@ -793,7 +955,7 @@ func TestPresentationLocalizationRejectsSecretBearingCacheHit(t *testing.T) {
 		identityJSON,
 	)
 	if !found || corrupt ||
-		presentationLocalizationCacheProjectionValid(data, prepared, loaded) {
+		presentationLocalizationBatchCacheProjectionValid(plan.Batch, loaded) {
 		t.Fatalf(
 			"unsafe cache setup/validation = found %t corrupt %t record %#v",
 			found,
@@ -829,9 +991,12 @@ func TestPresentationLocalizationRejectsSecretBearingCacheHit(t *testing.T) {
 type fakePresentationLocalizationProvider struct {
 	client       *deepseek.Client
 	response     []byte
+	responses    [][]byte
 	executeErr   error
 	buildCalls   int
 	executeCalls int
+	prompts      []localization.Prompt
+	executeHook  func()
 }
 
 func newFakePresentationLocalizationProvider(
@@ -859,15 +1024,27 @@ func (provider *fakePresentationLocalizationProvider) BuildLocalizationRequest(
 
 func (provider *fakePresentationLocalizationProvider) ExecuteLocalizationRequest(
 	_ context.Context,
-	_ localization.Prompt,
+	prompt localization.Prompt,
 	_ deepseek.LocalizationRequestEvidence,
 ) (modelresearch.ProviderResult, error) {
 	provider.executeCalls++
+	provider.prompts = append(provider.prompts, prompt)
+	if provider.executeHook != nil {
+		provider.executeHook()
+	}
 	if provider.executeErr != nil {
 		return modelresearch.ProviderResult{Attempts: 1}, provider.executeErr
 	}
+	response := provider.response
+	if len(provider.responses) != 0 {
+		responseIndex := provider.executeCalls - 1
+		if responseIndex >= len(provider.responses) {
+			responseIndex = len(provider.responses) - 1
+		}
+		response = provider.responses[responseIndex]
+	}
 	return modelresearch.ProviderResult{
-		Content:      append([]byte(nil), provider.response...),
+		Content:      append([]byte(nil), response...),
 		Attempts:     1,
 		InputTokens:  100,
 		OutputTokens: 20,
@@ -902,11 +1079,7 @@ func presentationLocalizationProjectionJSON(
 ) []byte {
 	t.Helper()
 	projection := presentationLocalizationProjection(t, prepared, "Перевод: ")
-	encoded, err := json.Marshal(projection)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return encoded
+	return localizationProviderResponseJSON(t, prepared.Input, projection)
 }
 
 func presentationLocalizationProjection(
@@ -915,8 +1088,20 @@ func presentationLocalizationProjection(
 	prefix string,
 ) localization.Projection {
 	t.Helper()
-	translations := make(map[string]string, len(prepared.Input.Fields))
-	for _, field := range prepared.Input.Fields {
+	return localizationProjectionFor(
+		prepared.Canonical,
+		prepared.Input,
+		prefix,
+	)
+}
+
+func localizationProjectionFor(
+	canonical localization.CanonicalArtifact,
+	input localization.Input,
+	prefix string,
+) localization.Projection {
+	translations := make(map[string]string, len(input.Fields))
+	for _, field := range input.Fields {
 		translated := prefix + "Русское описание"
 		for _, placeholder := range field.Placeholders {
 			for count := 0; count < placeholder.Count; count++ {
@@ -927,10 +1112,51 @@ func presentationLocalizationProjection(
 	}
 	return localization.Projection{
 		Version:         localization.ProjectionVersion,
-		CanonicalSHA256: prepared.Canonical.SHA256,
+		CanonicalSHA256: canonical.SHA256,
 		Locale:          localization.LocaleRussian,
 		Translations:    translations,
 	}
+}
+
+func localizationProviderResponseJSON(
+	t *testing.T,
+	input localization.Input,
+	projection localization.Projection,
+) []byte {
+	t.Helper()
+	translations := make([]localization.ProviderTranslation, len(input.Fields))
+	for index, field := range input.Fields {
+		translations[index] = localization.NewProviderTranslation(
+			index,
+			projection.Translations[field.ID],
+		)
+	}
+	encoded, err := json.Marshal(localization.ProviderResponse{
+		Version:         localization.ProviderResponseVersion,
+		CanonicalSHA256: projection.CanonicalSHA256,
+		Locale:          projection.Locale,
+		Translations:    translations,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func presentationLocalizationFirstBatchPlan(
+	t *testing.T,
+	prepared report.PreparedPresentationLocalization,
+	provider presentationLocalizationProvider,
+) presentationLocalizationBatchPlan {
+	t.Helper()
+	plans, err := buildPresentationLocalizationBatchPlans(prepared, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		t.Fatal("localization fixture produced no batch plans")
+	}
+	return plans[0]
 }
 
 func presentationLocalizationCachePath(
@@ -940,28 +1166,7 @@ func presentationLocalizationCachePath(
 	provider presentationLocalizationProvider,
 ) string {
 	t.Helper()
-	prompt, err := localization.BuildRussianPrompt(
-		prepared.Canonical,
-		prepared.Input,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := provider.BuildLocalizationRequest(prompt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity := presentationLocalizationCacheIdentity{
-		Version:                    presentationLocalizationCacheVersion,
-		ContractVersion:            report.PresentationLocalizationContractVersion,
-		TranslationContractVersion: localization.PromptVersion,
-		TargetLocale:               localization.LocaleRussian,
-		Request:                    request,
-	}
-	key, _, err := presentationLocalizationCacheKey(identity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := presentationLocalizationFirstBatchPlan(t, prepared, provider).Key
 	return filepath.Join(
 		cacheRoot,
 		presentationLocalizationCacheVersionDir,

@@ -1037,6 +1037,143 @@ func TestPresentationLocalizationSuccessfulSidecarLoadsWithoutChangingCanonicalJ
 	}
 }
 
+func TestPresentationLocalizationStatusCommitsContentAddressedProjectionAtomically(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	canonical := presentationLocalizationFixture()
+	prepared, err := PreparePresentationLocalization(
+		canonical,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := russianPresentationProjection(prepared)
+	if err := WritePresentationLocalizationSuccess(
+		runDir,
+		prepared,
+		first,
+		false,
+		strings.Repeat("1", 64),
+		strings.Repeat("2", 64),
+	); err != nil {
+		t.Fatal(err)
+	}
+	firstPath := presentationLocalizationGenerationPath(t, runDir)
+	firstProjected, firstStatus := LoadPresentationLocalization(
+		runDir,
+		canonical,
+		localization.LocaleRussian,
+	)
+	if firstStatus.State != PresentationLocalizationSucceeded {
+		t.Fatalf("first status = %#v", firstStatus)
+	}
+
+	second := localization.Projection{
+		Version:         first.Version,
+		CanonicalSHA256: first.CanonicalSHA256,
+		Locale:          first.Locale,
+		Translations:    make(map[string]string, len(first.Translations)),
+	}
+	for fieldID, translated := range first.Translations {
+		second.Translations[fieldID] = strings.Replace(
+			translated,
+			"Русский текст",
+			"Другой русский текст",
+			1,
+		)
+	}
+	secondRecord := PresentationLocalizationProjectionRecord{
+		Version:         PresentationLocalizationRecordVersion,
+		ContractVersion: PresentationLocalizationContractVersion,
+		TargetLocale:    localization.LocaleRussian,
+		CanonicalSHA256: prepared.Canonical.SHA256,
+		Projection:      second,
+	}
+	secondJSON, err := json.Marshal(secondRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJSON = append(secondJSON, '\n')
+	secondPath := filepath.Join(
+		runDir,
+		presentationLocalizationProjectionFilename(
+			presentationLocalizationSHA256(secondJSON),
+		),
+	)
+	if err := os.WriteFile(secondPath, secondJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A crash after publishing the next generation but before status leaves
+	// the previous pair authoritative and loadable.
+	stillFirst, stillFirstStatus := LoadPresentationLocalization(
+		runDir,
+		canonical,
+		localization.LocaleRussian,
+	)
+	if stillFirstStatus.ProjectionSHA256 != firstStatus.ProjectionSHA256 ||
+		stillFirst.ProjectGuess != firstProjected.ProjectGuess {
+		t.Fatalf(
+			"uncommitted generation changed active pair: status=%#v report=%#v",
+			stillFirstStatus,
+			stillFirst,
+		)
+	}
+	if _, err := os.Stat(firstPath); err != nil {
+		t.Fatalf("prior committed projection disappeared: %v", err)
+	}
+
+	if err := WritePresentationLocalizationSuccess(
+		runDir,
+		prepared,
+		second,
+		false,
+		strings.Repeat("3", 64),
+		strings.Repeat("4", 64),
+	); err != nil {
+		t.Fatal(err)
+	}
+	committed, committedStatus := LoadPresentationLocalization(
+		runDir,
+		canonical,
+		localization.LocaleRussian,
+	)
+	if committedStatus.State != PresentationLocalizationSucceeded ||
+		committedStatus.ProjectionSHA256 == firstStatus.ProjectionSHA256 ||
+		committed.ProjectGuess == firstProjected.ProjectGuess ||
+		!strings.HasPrefix(committed.ProjectGuess, "Другой русский текст") {
+		t.Fatalf(
+			"new committed pair was not loaded: status=%#v report=%#v",
+			committedStatus,
+			committed,
+		)
+	}
+}
+
+func TestPresentationLocalizationRejectsUnsafeProjectionGenerationHash(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	status := PresentationLocalizationStatus{
+		Version:          PresentationLocalizationStatusVersion,
+		ContractVersion:  PresentationLocalizationContractVersion,
+		RequestedLocale:  localization.LocaleRussian,
+		State:            PresentationLocalizationSucceeded,
+		CanonicalSHA256:  strings.Repeat("1", 64),
+		RequestSHA256:    strings.Repeat("2", 64),
+		ProjectionSHA256: "../presentation_localization_projection.v1.json",
+		CacheKey:         strings.Repeat("3", 64),
+	}
+	if _, err := marshalPresentationLocalizationStatus(status); err == nil {
+		t.Fatal("path-like projection generation hash was accepted")
+	}
+}
+
 func TestPresentationLocalizationFailureKeepsRussianCatalogAndCanonicalEnglishProse(t *testing.T) {
 	t.Parallel()
 
@@ -1102,7 +1239,7 @@ func TestPresentationLocalizationFailureKeepsRussianCatalogAndCanonicalEnglishPr
 					t.Fatal(err)
 				}
 				if err := os.WriteFile(
-					filepath.Join(runDir, PresentationLocalizationProjectionFile),
+					presentationLocalizationGenerationPath(t, runDir),
 					[]byte("{"),
 					0o600,
 				); err != nil {
@@ -1316,10 +1453,7 @@ func TestPresentationLocalizationRejectsSecretBearingRunSidecar(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recordPath := filepath.Join(
-		runDir,
-		PresentationLocalizationProjectionFile,
-	)
+	recordPath := presentationLocalizationGenerationPath(t, runDir)
 	recordJSON, err := os.ReadFile(recordPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1852,6 +1986,28 @@ func russianPresentationProjection(
 var presentationLocalizationTestPlaceholderPattern = regexp.MustCompile(
 	`\{\{term_[0-9]{2}\}\}`,
 )
+
+func presentationLocalizationGenerationPath(t *testing.T, runDir string) string {
+	t.Helper()
+	statusJSON, err := os.ReadFile(filepath.Join(
+		runDir,
+		PresentationLocalizationStatusFile,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status PresentationLocalizationStatus
+	if err := decodePresentationLocalizationJSON(statusJSON, &status); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePresentationLocalizationStatus(status); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(
+		runDir,
+		presentationLocalizationProjectionFilename(status.ProjectionSHA256),
+	)
+}
 
 func marshalPresentationDataWithCanonicalProse(
 	t *testing.T,

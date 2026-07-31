@@ -97,29 +97,6 @@ func TestPresentationLocalizationDoesNotGlobalizePackageNameAsProse(t *testing.T
 	)
 }
 
-func TestGlobalPresentationProtectionRejectsAmbiguousProductWords(t *testing.T) {
-	t.Parallel()
-
-	filtered := globallyUnambiguousPresentationProtectedValues(
-		[]localization.ProtectedValue{
-			{Kind: localization.ProtectedProduct, Value: "echo"},
-			{Kind: localization.ProtectedProduct, Value: "Redis"},
-			{Kind: localization.ProtectedIdentifier, Value: "Main Service"},
-			{Kind: localization.ProtectedProtocol, Value: "HTTP"},
-		},
-	)
-	got := make(map[string]bool, len(filtered))
-	for _, value := range filtered {
-		got[value.Value] = true
-	}
-	if got["echo"] || got["Redis"] || got["Main Service"] {
-		t.Fatalf("ambiguous global protected values survived: %#v", filtered)
-	}
-	if !got["HTTP"] {
-		t.Fatalf("unambiguous technical values were lost: %#v", filtered)
-	}
-}
-
 func TestPresentationLocalizationScopesRepositoryProductName(t *testing.T) {
 	t.Parallel()
 

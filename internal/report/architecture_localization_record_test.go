@@ -55,7 +55,7 @@ func TestArchitectureLocalizationRecordStoresThenHitsWithoutResponse(t *testing.
 	t.Parallel()
 
 	runDir := architectureLocalizationSavedRun(t, false)
-	response := architectureLocalizationRecordFixtureResponse(t)
+	response := architectureLocalizationRecordFixtureResponse(t, runDir)
 	builder := architectureLocalizationRecordRequestBuilder(
 		"https://gateway.example.test/v1/chat/completions",
 		"fixture-model",
@@ -140,19 +140,15 @@ func TestArchitectureLocalizationRecordRejectsResponseWithoutRecord(t *testing.T
 			response: func(*testing.T, string) []byte {
 				return []byte(`{"version":1`)
 			},
-			want: "strict JSON",
+			want: "invalid provider response",
 		},
 		{
 			name: "field fallback",
 			response: func(t *testing.T, runDir string) []byte {
 				_, canonical, input := architectureLocalizationRussianContext(t, runDir)
 				projection := architectureLocalizationRussianProjection(t, canonical, input)
-				delete(projection.Translations, input.Fields[0].ID)
-				encoded, err := json.Marshal(projection)
-				if err != nil {
-					t.Fatal(err)
-				}
-				return encoded
+				projection.Translations[input.Fields[0].ID] = input.Fields[0].Text
+				return architectureLocalizationProviderResponse(t, canonical, input, projection)
 			},
 			want: "not fully accepted",
 		},
@@ -216,15 +212,12 @@ func TestArchitectureLocalizationRecordRejectsCredentialWhenSecretScanDisabled(t
 	projection := architectureLocalizationRussianProjection(t, canonical, input)
 	const credential = `api_key="company-secret-localization-record"`
 	for id := range projection.Translations {
-		projection.Translations[id] = credential
+		projection.Translations[id] += " " + credential
 		break
 	}
-	response, err := json.Marshal(projection)
-	if err != nil {
-		t.Fatal(err)
-	}
+	response := architectureLocalizationProviderResponse(t, canonical, input, projection)
 	calls := 0
-	_, err = replayArchitectureLocalizationRussianRecord(
+	_, err := replayArchitectureLocalizationRussianRecord(
 		context.Background(),
 		runDir,
 		architectureLocalizationRecordRequestBuilder(
@@ -257,7 +250,7 @@ func TestArchitectureLocalizationRecordIdentityVariationMissesCleanly(t *testing
 	t.Parallel()
 
 	runDir := architectureLocalizationSavedRun(t, false)
-	response := architectureLocalizationRecordFixtureResponse(t)
+	response := architectureLocalizationRecordFixtureResponse(t, runDir)
 	base := architectureLocalizationRecordRequestBuilder(
 		"https://gateway.example.test/v1/chat/completions",
 		"fixture-model",
@@ -485,7 +478,7 @@ func TestArchitectureLocalizationRecordRejectsCorruptSymlinkAndTamper(t *testing
 				runDir,
 				builder,
 				func(context.Context) ([]byte, error) {
-					return architectureLocalizationRecordFixtureResponse(t), nil
+					return architectureLocalizationRecordFixtureResponse(t, runDir), nil
 				},
 			)
 			if err != nil {
@@ -502,7 +495,7 @@ func TestArchitectureLocalizationRecordRejectsCorruptSymlinkAndTamper(t *testing
 				builder,
 				func(context.Context) ([]byte, error) {
 					calls++
-					return architectureLocalizationRecordFixtureResponse(t), nil
+					return architectureLocalizationRecordFixtureResponse(t, runDir), nil
 				},
 			)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
@@ -562,7 +555,7 @@ func TestArchitectureLocalizationRecordCancellationDoesNotPublish(t *testing.T) 
 			builder,
 			func(context.Context) ([]byte, error) {
 				calls++
-				return architectureLocalizationRecordFixtureResponse(t), nil
+				return architectureLocalizationRecordFixtureResponse(t, runDir), nil
 			},
 		)
 		if !errors.Is(err, context.Canceled) || calls != 0 {
@@ -581,7 +574,7 @@ func TestArchitectureLocalizationRecordCancellationDoesNotPublish(t *testing.T) 
 			func(context.Context) ([]byte, error) {
 				calls++
 				cancel()
-				return architectureLocalizationRecordFixtureResponse(t), nil
+				return architectureLocalizationRecordFixtureResponse(t, runDir), nil
 			},
 		)
 		if !errors.Is(err, context.Canceled) || calls != 1 {
@@ -595,7 +588,7 @@ func TestArchitectureLocalizationRecordConcurrentSameKeyPublishesOneWinner(t *te
 	t.Parallel()
 
 	runDir := architectureLocalizationSavedRun(t, false)
-	response := architectureLocalizationRecordFixtureResponse(t)
+	response := architectureLocalizationRecordFixtureResponse(t, runDir)
 	builder := architectureLocalizationRecordRequestBuilder(
 		"https://gateway.example.test/v1/chat/completions",
 		"fixture-model",
@@ -676,7 +669,7 @@ func architectureLocalizationRecordRequestBuilder(
 	return client.BuildLocalizationRequest
 }
 
-func architectureLocalizationRecordFixtureResponse(t *testing.T) []byte {
+func architectureLocalizationRecordFixtureResponse(t *testing.T, runDir string) []byte {
 	t.Helper()
 
 	data, err := os.ReadFile(filepath.Join(
@@ -687,7 +680,12 @@ func architectureLocalizationRecordFixtureResponse(t *testing.T) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return data
+	projection, err := decodeArchitectureLocalizationProjection(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, canonical, input := architectureLocalizationRussianContext(t, runDir)
+	return architectureLocalizationProviderResponse(t, canonical, input, projection)
 }
 
 func decodeArchitectureLocalizationRecordResult(

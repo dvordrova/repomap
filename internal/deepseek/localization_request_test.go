@@ -86,22 +86,26 @@ func TestBuildLocalizationRequestCanonicalizesEndpointAndThinking(t *testing.T) 
 		endpoint     string
 		wantEndpoint string
 		wantThinking string
+		wantTokens   int
 	}{
 		{
 			name:         "official deepseek default port",
 			endpoint:     "HTTPS://API.DeepSeek.COM:443/chat/%63ompletions",
 			wantEndpoint: "https://api.deepseek.com/chat/%63ompletions",
 			wantThinking: "disabled",
+			wantTokens:   localizationMinMaxTokens,
 		},
 		{
 			name:         "generic default port",
 			endpoint:     "HTTP://Gateway.Example.TEST:80/v1/%63hat/completions",
 			wantEndpoint: "http://gateway.example.test/v1/%63hat/completions",
+			wantTokens:   100,
 		},
 		{
 			name:         "ipv6 non-default port",
 			endpoint:     "https://[2001:DB8::1]:8443/v1/chat",
 			wantEndpoint: "https://[2001:db8::1]:8443/v1/chat",
+			wantTokens:   100,
 		},
 	}
 	for _, test := range tests {
@@ -116,13 +120,16 @@ func TestBuildLocalizationRequestCanonicalizesEndpointAndThinking(t *testing.T) 
 				t.Fatalf("BuildLocalizationRequest() error = %v", err)
 			}
 			if evidence.Endpoint != test.wantEndpoint ||
-				evidence.Thinking != test.wantThinking {
+				evidence.Thinking != test.wantThinking ||
+				evidence.MaxTokens != test.wantTokens {
 				t.Fatalf(
-					"endpoint, thinking = %q, %q; want %q, %q",
+					"endpoint, thinking, max_tokens = %q, %q, %d; want %q, %q, %d",
 					evidence.Endpoint,
 					evidence.Thinking,
+					evidence.MaxTokens,
 					test.wantEndpoint,
 					test.wantThinking,
+					test.wantTokens,
 				)
 			}
 			var request chatRequest
