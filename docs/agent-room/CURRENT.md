@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/164-architecture-russian-projection-replay.md
+    decisions/165-architecture-localization-stage-replay.md
 
 Status:
-    Decision 164 active; provider-free Architecture Russian projection replay authorized
+    Decision 165 active; provider-free Architecture localization stage replay authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 165 adds only one exact provider-neutral localization prompt and
+    one explicit provider-free developer stage over the verified Decision 164
+    replay. The stage re-derives current canonical English Architecture prose,
+    emits exact prompt JSON when previewed, and may consume one explicitly
+    supplied bounded local projection through an injected no-network seam.
+    Prompt/response bytes are bounded and secret-scanned, the run remains
+    unchanged, and field/envelope fallback remains the Decision 164 behavior.
+    No live provider, direct HTTP path, retry, cache, persistence, ordinary
+    `--lang`, semantic request, report, manifest, source-authority, or browser
+    behavior changes.
     Decision 164 adds only an explicit provider-free replay over the verified
     Decision 163 English Architecture identity. An explicitly supplied strict,
     bounded Russian projection fixture is applied to a freshly re-derived

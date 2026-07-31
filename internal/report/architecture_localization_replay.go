@@ -30,6 +30,12 @@ type ArchitectureLocalizationReplay struct {
 	Canvas          ArchitectureCanvas        `json:"architecture_canvas"`
 }
 
+type preparedArchitectureLocalizationRussian struct {
+	canvas    ArchitectureCanvas
+	canonical localization.CanonicalArtifact
+	input     localization.Input
+}
+
 // ReplayArchitectureLocalizationRussianFile reads one explicitly supplied,
 // bounded regular projection fixture and returns deterministic replay JSON.
 // It does not write into the run directory or call a provider.
@@ -55,21 +61,41 @@ func ReplayArchitectureLocalizationRussian(
 	if err != nil {
 		return nil, err
 	}
-
-	context, err := prepareArchitectureLocalizationIdentity(runDir)
+	prepared, err := prepareArchitectureLocalizationRussian(runDir)
 	if err != nil {
 		return nil, err
+	}
+	return replayPreparedArchitectureLocalizationRussian(prepared, projection)
+}
+
+func prepareArchitectureLocalizationRussian(
+	runDir string,
+) (preparedArchitectureLocalizationRussian, error) {
+	context, err := prepareArchitectureLocalizationIdentity(runDir)
+	if err != nil {
+		return preparedArchitectureLocalizationRussian{}, err
 	}
 	canonical, input, err := buildArchitectureLocalization(
 		context.canvas,
 		localization.LocaleRussian,
 	)
 	if err != nil {
-		return nil, err
+		return preparedArchitectureLocalizationRussian{}, err
 	}
+	return preparedArchitectureLocalizationRussian{
+		canvas:    context.canvas,
+		canonical: canonical,
+		input:     input,
+	}, nil
+}
+
+func replayPreparedArchitectureLocalizationRussian(
+	prepared preparedArchitectureLocalizationRussian,
+	projection localization.Projection,
+) ([]byte, error) {
 	if kind, found := architectureLocalizationCredential(
-		canonical,
-		input,
+		prepared.canonical,
+		prepared.input,
 		projection,
 	); found {
 		return nil, fmt.Errorf(
@@ -79,9 +105,9 @@ func ReplayArchitectureLocalizationRussian(
 	}
 
 	projected, result, err := applyArchitectureLocalization(
-		context.canvas,
-		canonical,
-		input,
+		prepared.canvas,
+		prepared.canonical,
+		prepared.input,
 		projection,
 	)
 	if err != nil {
@@ -89,7 +115,7 @@ func ReplayArchitectureLocalizationRussian(
 	}
 	replay := ArchitectureLocalizationReplay{
 		Version:         ArchitectureLocalizationReplayVersion,
-		CanonicalSHA256: canonical.SHA256,
+		CanonicalSHA256: prepared.canonical.SHA256,
 		Locale:          result.Locale,
 		Fallback:        result.Fallback,
 		Diagnostics:     append([]localization.Diagnostic(nil), result.Diagnostics...),
@@ -192,8 +218,7 @@ func decodeArchitectureLocalizationProjection(
 	var projection localization.Projection
 	if err := decodeArchitectureLocalizationJSON(data, &projection); err != nil {
 		return localization.Projection{}, fmt.Errorf(
-			"architecture localization replay: decode projection: %w",
-			err,
+			"architecture localization replay: projection is not strict JSON",
 		)
 	}
 	return projection, nil

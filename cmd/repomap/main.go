@@ -23,6 +23,7 @@ import (
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
+	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/pavedpath"
@@ -96,7 +97,7 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -121,6 +122,11 @@ func main() {
 			}
 		case "localization-replay":
 			if err := runLocalizationReplayCLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "localization-stage":
+			if err := runLocalizationStageCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -248,11 +254,12 @@ func defaultRunExitCode(err error) int {
 func printPromptVersions(writer io.Writer) {
 	fmt.Fprintf(
 		writer,
-		"{\"orientation_json\":%q,\"source_json\":%q,\"symbol_json\":%q,\"symbol_tagged\":%q,\"guided_tour\":%q,\"guided_tour_leaf\":%q,\"guided_tour_fan_in\":%q,\"semantic_opportunity\":%q,\"semantic_leaf\":%q,\"semantic_fan_in\":%q,\"semantic_monolithic\":%q,\"golden_mechanism\":%q,\"repository_onboarding_editor\":%q,\"repository_brief_shape\":%q,\"study_direction_candidates\":%q,\"reading_pack_review\":%q,\"paved_paths\":%q,\"task_investigation\":%q}\n",
+		"{\"orientation_json\":%q,\"source_json\":%q,\"symbol_json\":%q,\"symbol_tagged\":%q,\"localization\":%q,\"guided_tour\":%q,\"guided_tour_leaf\":%q,\"guided_tour_fan_in\":%q,\"semantic_opportunity\":%q,\"semantic_leaf\":%q,\"semantic_fan_in\":%q,\"semantic_monolithic\":%q,\"golden_mechanism\":%q,\"repository_onboarding_editor\":%q,\"repository_brief_shape\":%q,\"study_direction_candidates\":%q,\"reading_pack_review\":%q,\"paved_paths\":%q,\"task_investigation\":%q}\n",
 		deepseek.OrientationPromptVersionJSON,
 		deepseek.SourcePromptVersionJSON,
 		deepseek.SymbolPromptVersionJSON,
 		deepseek.SymbolPromptVersionTagged,
+		localization.PromptVersion,
 		guidedtour.PromptVersion,
 		guidedtour.LeafPromptVersion,
 		guidedtour.FanInPromptVersion,

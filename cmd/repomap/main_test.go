@@ -22,6 +22,7 @@ import (
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
+	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/pavedpath"
 	"github.com/dvordrova/repomap/internal/report"
@@ -45,6 +46,7 @@ func TestPrintPromptVersions(t *testing.T) {
 		"source_json":                  deepseek.SourcePromptVersionJSON,
 		"symbol_json":                  deepseek.SymbolPromptVersionJSON,
 		"symbol_tagged":                deepseek.SymbolPromptVersionTagged,
+		"localization":                 localization.PromptVersion,
 		"guided_tour":                  guidedtour.PromptVersion,
 		"guided_tour_leaf":             guidedtour.LeafPromptVersion,
 		"guided_tour_fan_in":           guidedtour.FanInPromptVersion,
