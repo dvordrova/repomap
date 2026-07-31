@@ -10,7 +10,9 @@ Approved by:
     Repository owner in the current session
 
 Notes:
-    Decision 172 adds one bounded orientation completion retry only after an
+    Decision 172 disables provider-default hidden reasoning for the bounded
+    orientation classification on the official DeepSeek endpoint and adds one
+    bounded orientation completion retry only after an
     explicit provider finish_reason=length outcome, preserving the exact
     canonical prompt, facts, endpoint, model, and validation while doubling
     output headroom once and aggregating attempt telemetry. It then measures

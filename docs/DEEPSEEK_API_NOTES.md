@@ -131,6 +131,10 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   a bounded classification task, so the official DeepSeek endpoint receives
   `"thinking": {"type":"disabled"}` for that request only. Generic compatible
   endpoints do not receive this DeepSeek-specific extension.
+- Orientation is likewise a bounded classification over an already compact
+  local facts bundle. The official endpoint receives explicit disabled
+  thinking; compatible endpoints do not. This prevents hidden reasoning from
+  consuming the whole JSON envelope before any report content is returned.
 - The guided-onboarding comparison uses the opposite, purpose-specific policy
   on the official endpoint: independently verifiable semantic leaves receive
   `"thinking":{"type":"enabled"}` with `"reasoning_effort":"high"`; the

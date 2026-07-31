@@ -47,7 +47,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v11"
+const OrientationPromptVersionJSON = "orientation-json-v12"
 
 // SemanticOutputLanguageContractVersion identifies the shared language
 // contract applied to every non-localization model request. Localization uses
@@ -285,7 +285,7 @@ var (
 )
 
 func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
-	return c.canonicalSemanticRequest(
+	request := c.canonicalSemanticRequest(
 		`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
 Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
@@ -367,6 +367,13 @@ Facts bundle JSON:
 		"You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
 		true,
 	)
+	if isOfficialDeepSeekEndpoint(c.Endpoint) {
+		// Orientation is a bounded classification over an already compact local
+		// facts bundle. DeepSeek V4 otherwise enables thinking by default and can
+		// consume the entire JSON completion envelope without returning content.
+		request.Thinking = &thinkingConfig{Type: "disabled"}
+	}
+	return request
 }
 
 func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
