@@ -102,6 +102,7 @@ type studyReviewCacheReplay interface {
 		studymap.DirectionCandidate,
 	) (modelresearch.ProviderResult, bool, error)
 	storeStudyReview(
+		context.Context,
 		semanticdiscovery.Prompt,
 		[]byte,
 		studymap.Bundle,
@@ -249,7 +250,9 @@ func (editor *studyReviewCachingEditor) loadStudyReview(
 		editor.writeDiagnostic(
 			"warning: Study review cache ignored an invalid entry; the ordinary review request will be recomputed",
 		)
-		if err := removeCorruptStudyReviewCache(editor.runsDir, key); err != nil {
+		if err := repairCorruptStudyReviewCache(
+			editor.runsDir, key, identityJSON, bundle, direction,
+		); err != nil {
 			editor.addStat(func(stats *studyReviewCacheStats) { stats.WriteFailures++ })
 		}
 	}
@@ -257,13 +260,15 @@ func (editor *studyReviewCachingEditor) loadStudyReview(
 }
 
 func (editor *studyReviewCachingEditor) storeStudyReview(
+	ctx context.Context,
 	prompt semanticdiscovery.Prompt,
 	request []byte,
 	bundle studymap.Bundle,
 	direction studymap.DirectionCandidate,
 	response []byte,
 ) {
-	if editor.disableCache || !studyReviewResponseAccepted(bundle, direction, response) {
+	if editor.disableCache || ctx == nil || ctx.Err() != nil ||
+		!studyReviewResponseAccepted(bundle, direction, response) {
 		return
 	}
 	identity, key, _, err := editor.reviewCacheIdentity(
@@ -277,13 +282,19 @@ func (editor *studyReviewCachingEditor) storeStudyReview(
 		editor.cacheWriteFailed()
 		return
 	}
+	if ctx.Err() != nil {
+		return
+	}
 	record := studyReviewCacheRecord{
 		Version: studyReviewCacheContractVersion,
 		Key:     key, Identity: identity,
 		ResponseSHA256: sha256Hex(response),
 		Response:       append([]byte(nil), response...),
 	}
-	if err := writeStudyReviewCache(editor.runsDir, key, record); err != nil {
+	if err := writeStudyReviewCache(ctx, editor.runsDir, key, record); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		editor.cacheWriteFailed()
 	}
 }
@@ -595,10 +606,14 @@ func loadStudyReviewCache(
 }
 
 func writeStudyReviewCache(
+	ctx context.Context,
 	runsDir,
 	key string,
 	record studyReviewCacheRecord,
 ) error {
+	if ctx == nil || ctx.Err() != nil {
+		return context.Canceled
+	}
 	if !validStudyReviewCacheKey(key) || record.Key != key ||
 		record.Version != studyReviewCacheContractVersion ||
 		record.ResponseSHA256 != sha256Hex(record.Response) {
@@ -643,6 +658,9 @@ func writeStudyReviewCache(
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("study review cache: close record: %w", err)
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	path := studyReviewCachePath(runsDir, key)
 	if err := os.Link(temporaryPath, path); err != nil {
 		if studyReviewCacheFileMatches(path, encoded) {
@@ -661,12 +679,35 @@ func writeStudyReviewCache(
 	return nil
 }
 
-func removeCorruptStudyReviewCache(runsDir, key string) error {
+func repairCorruptStudyReviewCache(
+	runsDir,
+	key string,
+	identityJSON []byte,
+	bundle studymap.Bundle,
+	direction studymap.DirectionCandidate,
+) error {
 	if !validStudyReviewCacheKey(key) {
 		return fmt.Errorf("study review cache: invalid corrupt entry key")
 	}
-	if _, safe := studyReviewCacheDirectory(runsDir, false); !safe {
+	versionDir, safe := studyReviewCacheDirectory(runsDir, false)
+	if !safe {
 		return fmt.Errorf("study review cache: corrupt entry directory is unavailable")
+	}
+	lockPath := filepath.Join(versionDir, key+".repair-lock")
+	if err := os.Mkdir(lockPath, 0o700); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("study review cache: lock corrupt entry repair: %w", err)
+	}
+	defer func() { _ = os.Remove(lockPath) }()
+
+	record, found, corrupt := loadStudyReviewCache(runsDir, key, identityJSON)
+	if found && studyReviewResponseAccepted(bundle, direction, record.Response) {
+		return nil
+	}
+	if !found && !corrupt {
+		return nil
 	}
 	path := studyReviewCachePath(runsDir, key)
 	info, err := os.Lstat(path)
