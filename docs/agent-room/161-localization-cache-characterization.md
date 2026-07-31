@@ -236,3 +236,22 @@ UI actions actually performed: none; these files have no product consumer
 Not run and why: no provider call, no Russian projection, no cache read/write, and no EN->RU->EN round trip; B3 is English identity persistence only. The etcd repository was read only by the required provider-free snapshot/bundle check
 Remaining blocker or next checkpoint: bind a complete, explicitly scoped semantic artifact to verified run state before any locale projection cache or product consumer is authorized
 ```
+
+## Checkpoint B4 handoff
+
+```text
+Checkpoint: B4 — explicit provider-free Architecture Russian projection replay
+Changed contract: Decision 164 adds `make localization-replay RUN=<run-dir> PROJECTION=<projection.json>` and `repomap dev localization-replay <run-dir> <projection.json>` as explicit developer operations; ordinary runs, providers, caches, persisted artifacts, reports, manifests, HTTP, source authority, and browser behavior remain unchanged
+Fixture evidence: fixed genuine-Russian projection SHA-256 18a610ea92407f25b4b4429ae51bc371fd0d7b42e2237fa88aeeed024fe36203 is bound to canonical English Architecture SHA-256 eef1c023de5c3c81cf1e992be2dbd22b9f100e847f21a4cece8294b792841771
+J0/J1 evidence: accepted and accepted-with-normalization run shapes replayed successfully; identical input produced byte-identical compact JSON, the complete run directory remained byte-identical, protected terms were restored exactly, and resetting only subsystem/component names and descriptions made the complete projected Canvas byte-identical to canonical English
+Failure behavior: projection envelope mismatch retains the complete canonical English Canvas atomically; a missing or placeholder-invalid translation retains canonical English for exactly that field while valid Russian fields survive; malformed, unknown, trailing, invalid-UTF-8, oversize, symlink, and credential-like projection input fails closed without echoing its value
+Safety boundary: projection bytes are bounded before decode; translation cardinality and IDs are bounded before sort/regex work; the complete replay graph is scalar-scanned and conservatively size-counted before `json.Marshal`; the final encoded bytes are bounded and secret-scanned again; Make stdout contains exactly the replay JSON plus one newline
+Adversarial review: initial review found Make recipe leakage, JSON-escape secret-scan bypass, and post-allocation output bounding; all three were fixed and the repeat review passed with no B3 regression, provider, cache, write, or RU-to-EN path
+Focused tests: make localization-check, focused internal/report and cmd/repomap tests, focused race tests, focused vet, and git diff --check passed
+Full checks: scripts/check.sh passed, including go test, go vet, and six offline quality tasks, real 42.72s; the provider-free etcd snapshot/bundle check also passed, real 16.26s
+Commit: this handoff is committed atomically with the B4 implementation
+UI actions actually performed: none; replay JSON has no product consumer or browser surface
+Not run and why: no provider call, no product binary rebuild, no cache read/write, no ordinary `--lang ru` run, and no RU-to-EN round trip; the only external repository access was the required provider-free etcd snapshot/bundle check
+Residual limitation: a same-user replacement race remains possible between projection-file Lstat and Open; both pre-open and opened-file bounds/type checks remain in place, and this explicit dev-only replay does not treat the fixture as cache authority
+Remaining blocker or next checkpoint: production Russian output still requires a separately approved localization provider stage, exact projection cache, compatibility boundary, and typed UI message catalog
+```

@@ -1,15 +1,24 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/163-architecture-localization-identity-artifacts.md
+    decisions/164-architecture-russian-projection-replay.md
 
 Status:
-    Decision 163 active; explicit provider-free Architecture identity artifacts authorized
+    Decision 164 active; provider-free Architecture Russian projection replay authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 164 adds only an explicit provider-free replay over the verified
+    Decision 163 English Architecture identity. An explicitly supplied strict,
+    bounded Russian projection fixture is applied to a freshly re-derived
+    current English Canvas and one deterministic bounded replay JSON value is
+    emitted to stdout. Envelope or field failures retain canonical English
+    with deterministic diagnostics. The command writes no run artifact and
+    does not trust the B3 sidecars as cache authority. No live provider,
+    RU-to-EN round trip, ordinary run, cache, `--lang`, semantic request,
+    report, manifest, HTTP, source-authority, or browser behavior changes.
     Decision 163 adds only an explicit provider-free developer export through
     `make localization-check RUN=<run-dir>` and
     `repomap dev localization-check <run-dir>`. An eligible saved run may

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/localization"
@@ -34,26 +35,59 @@ type architectureLocalizationArtifactPayload struct {
 	data []byte
 }
 
+type architectureLocalizationIdentityContext struct {
+	runDir   string
+	canvas   ArchitectureCanvas
+	payloads []architectureLocalizationArtifactPayload
+}
+
 // MaterializeArchitectureLocalizationIdentity is an explicit provider-free
 // developer check. It writes three non-consumable Architecture identity
 // sidecars only when the current saved run proves an explicit English,
 // accepted model synthesis against the current locally rebuilt facts.
 func MaterializeArchitectureLocalizationIdentity(runDir string) (string, error) {
+	context, err := prepareArchitectureLocalizationIdentity(runDir)
+	if err != nil {
+		return "", err
+	}
+	if err := writeArchitectureLocalizationIdentityPayloads(
+		context.runDir,
+		context.payloads,
+	); err != nil {
+		return "", err
+	}
+	return filepath.Join(context.runDir, architectureLocalizationArtifactDir), nil
+}
+
+func prepareArchitectureLocalizationIdentity(
+	runDir string,
+) (architectureLocalizationIdentityContext, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
-		return "", fmt.Errorf("architecture localization artifacts: resolve run dir: %w", err)
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
+			"architecture localization artifacts: resolve run dir: %w",
+			err,
+		)
 	}
 	info, err := os.Stat(absDir)
 	if err != nil {
-		return "", fmt.Errorf("architecture localization artifacts: inspect run dir: %w", err)
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
+			"architecture localization artifacts: inspect run dir: %w",
+			err,
+		)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("architecture localization artifacts: run path is not a directory")
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
+			"architecture localization artifacts: run path is not a directory",
+		)
 	}
 
 	root, err := os.OpenRoot(absDir)
 	if err != nil {
-		return "", fmt.Errorf("architecture localization artifacts: open run root: %w", err)
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
+			"architecture localization artifacts: open run root: %w",
+			err,
+		)
 	}
 	defer root.Close()
 	statusJSON, err := readArchitectureLocalizationArtifactInput(
@@ -62,7 +96,7 @@ func MaterializeArchitectureLocalizationIdentity(runDir string) (string, error) 
 		maxArchitectureLocalizationStatusBytes,
 	)
 	if err != nil {
-		return "", err
+		return architectureLocalizationIdentityContext{}, err
 	}
 	synthesisJSON, err := readArchitectureLocalizationArtifactInput(
 		root,
@@ -70,17 +104,17 @@ func MaterializeArchitectureLocalizationIdentity(runDir string) (string, error) 
 		maxArchitectureLocalizationSynthesisBytes,
 	)
 	if err != nil {
-		return "", err
+		return architectureLocalizationIdentityContext{}, err
 	}
 	var status ArchitectureSynthesisStatus
 	if err := decodeArchitectureLocalizationJSON(statusJSON, &status); err != nil {
-		return "", fmt.Errorf(
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
 			"architecture localization artifacts: decode synthesis status: %w",
 			err,
 		)
 	}
 	if err := status.Validate(); err != nil {
-		return "", fmt.Errorf(
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
 			"architecture localization artifacts: validate synthesis status: %w",
 			err,
 		)
@@ -90,7 +124,10 @@ func MaterializeArchitectureLocalizationIdentity(runDir string) (string, error) 
 		synthesis: append([]byte(nil), synthesisJSON...),
 	})
 	if err != nil {
-		return "", fmt.Errorf("architecture localization artifacts: read run: %w", err)
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
+			"architecture localization artifacts: read run: %w",
+			err,
+		)
 	}
 	payloads, err := buildArchitectureLocalizationIdentityPayloads(
 		data,
@@ -98,12 +135,18 @@ func MaterializeArchitectureLocalizationIdentity(runDir string) (string, error) 
 		synthesisJSON,
 	)
 	if err != nil {
-		return "", err
+		return architectureLocalizationIdentityContext{}, err
 	}
-	if err := writeArchitectureLocalizationIdentityPayloads(absDir, payloads); err != nil {
-		return "", err
+	if data.ArchitectureCanvas == nil {
+		return architectureLocalizationIdentityContext{}, fmt.Errorf(
+			"architecture localization artifacts: current run has no accepted Architecture Canvas",
+		)
 	}
-	return filepath.Join(absDir, architectureLocalizationArtifactDir), nil
+	return architectureLocalizationIdentityContext{
+		runDir:   absDir,
+		canvas:   *data.ArchitectureCanvas,
+		payloads: payloads,
+	}, nil
 }
 
 func readArchitectureLocalizationArtifactInput(
@@ -487,7 +530,18 @@ func architectureLocalizationCredential(
 			}
 		}
 	}
-	for id, translated := range projection.Translations {
+	if len(projection.Translations) > len(input.Fields) {
+		// Both callers raw-scan the bounded JSON first. Apply rejects this
+		// collection atomically without forwarding any untrusted ID or value.
+		return "", false
+	}
+	translationIDs := make([]string, 0, len(input.Fields))
+	for id := range projection.Translations {
+		translationIDs = append(translationIDs, id)
+	}
+	sort.Strings(translationIDs)
+	for _, id := range translationIDs {
+		translated := projection.Translations[id]
 		if kind, found := scan(id, translated); found {
 			return kind, true
 		}
