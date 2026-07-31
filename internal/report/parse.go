@@ -375,13 +375,19 @@ func (f *flexStrings) UnmarshalJSON(b []byte) error {
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
-	return readRunDir(runDir, "", nil)
+	return readRunDir(runDir, "", nil, nil)
+}
+
+type savedArchitectureArtifacts struct {
+	status    ArchitectureSynthesisStatus
+	synthesis []byte
 }
 
 func readRunDir(
 	runDir,
 	studyDocumentSourceRoot string,
 	authority *RunAuthority,
+	architectureArtifacts *savedArchitectureArtifacts,
 ) (*ReportData, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
@@ -410,9 +416,16 @@ func readRunDir(
 	} else if !os.IsNotExist(err) {
 		parseWarnings = append(parseWarnings, fmt.Sprintf("model research: %v", err))
 	}
-	architectureStatus, warning := readArchitectureSynthesisStatus(
-		filepath.Join(absDir, ArchitectureSynthesisStatusFile),
-	)
+	var architectureStatus *ArchitectureSynthesisStatus
+	var warning string
+	if architectureArtifacts == nil {
+		architectureStatus, warning = readArchitectureSynthesisStatus(
+			filepath.Join(absDir, ArchitectureSynthesisStatusFile),
+		)
+	} else {
+		status := architectureArtifacts.status
+		architectureStatus = &status
+	}
 	data.ArchitectureSynthesis = architectureStatus
 	if warning != "" {
 		parseWarnings = append(parseWarnings, warning)
@@ -456,7 +469,19 @@ func readRunDir(
 	attachAuthorizedWorkspacePackageGraph(data, authority)
 	attachAuthorizedWorkspaceEntrypointIndex(data, authority)
 	buildComponents(data)
-	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
+	var architectureWarning string
+	if architectureArtifacts == nil {
+		architectureWarning = projectSavedArchitectureCanvas(
+			data,
+			filepath.Join(absDir, ArchitectureSynthesisFile),
+		)
+	} else {
+		architectureWarning = projectSavedArchitectureCanvasBytes(
+			data,
+			architectureArtifacts.synthesis,
+		)
+	}
+	if w := architectureWarning; w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
 	linkArchitectureProductObjects(data)
@@ -603,6 +628,10 @@ func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) stri
 		}
 		return fmt.Sprintf("architecture map unavailable: cannot read saved synthesis: %v", readErr)
 	}
+	return projectSavedArchitectureCanvasBytes(data, saved)
+}
+
+func projectSavedArchitectureCanvasBytes(data *ReportData, saved []byte) string {
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas: %v", err)

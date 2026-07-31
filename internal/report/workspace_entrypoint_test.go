@@ -325,7 +325,7 @@ func TestAuthorizedReadRunDirUsesEntrypointIndexWithoutChangingReportBytes(t *te
 		"/workspace-entrypoint-report-read-run-dir",
 		allowed,
 	)
-	adapted, err := readRunDir(dir, authority.analysisRoot, &authority)
+	adapted, err := readRunDir(dir, authority.analysisRoot, &authority, nil)
 	if err != nil {
 		t.Fatalf("authorized readRunDir: %v", err)
 	}

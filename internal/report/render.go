@@ -357,7 +357,7 @@ func generate(
 	if authority != nil {
 		studyDocumentSourceRoot = authority.analysisRoot
 	}
-	data, err := readRunDir(runDir, studyDocumentSourceRoot, authority)
+	data, err := readRunDir(runDir, studyDocumentSourceRoot, authority, nil)
 	if err != nil {
 		return err
 	}
