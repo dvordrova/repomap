@@ -1,15 +1,24 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/165-architecture-localization-stage-replay.md
+    decisions/166-architecture-localization-projection-record.md
 
 Status:
-    Decision 165 active; provider-free Architecture localization stage replay authorized
+    Decision 166 active; immutable provider-free Architecture localization projection record authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 166 adds only an explicit provider-free, content-addressed
+    Architecture localization projection record. It builds the exact
+    Decision 165 prompt and one deterministic OpenAI-compatible request body
+    without an API key or network call, then records only a complete accepted
+    Russian projection under a fixed root-confined immutable path. Every hit
+    re-derives current canonical English input and reruns Decision 164 replay.
+    Missing is an explicit dev-only miss; corrupt or unsafe expected content
+    fails closed. No live provider, retry, shared cache, ordinary `--lang`,
+    report, manifest, HTTP, source-authority, or browser behavior changes.
     Decision 165 adds only one exact provider-neutral localization prompt and
     one explicit provider-free developer stage over the verified Decision 164
     replay. The stage re-derives current canonical English Architecture prose,
