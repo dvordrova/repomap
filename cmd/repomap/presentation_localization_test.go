@@ -3,19 +3,177 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/reportserver"
 )
+
+func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testing.T) {
+	clearLLMEnv(t)
+
+	repository := t.TempDir()
+	writeFile(t, filepath.Join(repository, "batch.go"), "package example\n\nfunc Core() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "batch.go")
+	commitTestRepository(t, repository)
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runsDir := t.TempDir()
+	const (
+		ruRunID    = "20260731-210000-localization-cli-ru"
+		enRunID    = "20260731-210001-localization-cli-en"
+		capability = "localization-cli-e2e"
+	)
+	canonical := presentationLocalizationCoherenceFixture()
+	ruDir := writePresentationLocalizationServeRun(
+		t, runsDir, ruRunID, state, canonical, localization.LocaleRussian,
+	)
+	writePresentationLocalizationServeRun(
+		t, runsDir, enRunID, state, canonical, localization.LocaleEnglish,
+	)
+	ruReportPath := filepath.Join(ruDir, "report.json")
+	ruReportBefore, err := os.ReadFile(ruReportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	direct, err := report.PreparePresentationLocalization(
+		canonical,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cliData, err := readCanonicalReportForLocalization(ruDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := report.PreparePresentationLocalization(
+		cliData,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Input.Fields) <= len(direct.Input.Fields) ||
+		prepared.Canonical.SHA256 == direct.Canonical.SHA256 {
+		t.Fatalf(
+			"fixture did not reproduce direct/shared mismatch: direct=%d/%s shared=%d/%s",
+			len(direct.Input.Fields),
+			direct.Canonical.SHA256,
+			len(prepared.Input.Fields),
+			prepared.Canonical.SHA256,
+		)
+	}
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	endpoint := "https://translation.example.test/v1/chat/completions"
+	model := "translation-model"
+	provider := newFakePresentationLocalizationProvider(
+		endpoint,
+		model,
+		presentationLocalizationProjectionJSON(t, prepared),
+	)
+	if _, err := executePresentationLocalization(
+		context.Background(),
+		t.TempDir(),
+		cacheRoot,
+		false,
+		cliData,
+		prepared,
+		provider,
+	); err != nil {
+		t.Fatalf("seed executePresentationLocalization() error = %v", err)
+	}
+	if provider.executeCalls != 1 {
+		t.Fatalf("seed provider calls = %d, want 1", provider.executeCalls)
+	}
+
+	t.Setenv("REPOMAP_LLM_ENDPOINT", endpoint)
+	t.Setenv("REPOMAP_LLM_MODEL", model)
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_API_KEY", "")
+	t.Setenv("REPOMAP_LLM_MAX_TOKENS", "2048")
+	outcome, err := localizePresentationForRun(
+		context.Background(),
+		ruDir,
+		cacheRoot,
+		false,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("localizePresentationForRun() error = %v", err)
+	}
+	if outcome.State != report.PresentationLocalizationSucceeded ||
+		!outcome.CacheHit || outcome.ProviderCalls != 0 {
+		t.Fatalf("CLI cache-hit outcome = %#v", outcome)
+	}
+
+	handler, err := reportserver.NewHandler(reportserver.Options{
+		RunsDir:      runsDir,
+		InitialRunID: ruRunID,
+		Capability:   capability,
+		CaptureRepository: func(context.Context, string) (freshness.RepositoryState, error) {
+			return state, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	baseURL := server.URL + "/_repomap/" + capability + "/runs/"
+	ruHTML := getPresentationLocalizationReport(t, server.Client(), baseURL+ruRunID+"/report.html")
+	for _, required := range []string{
+		`"report_language":"ru"`,
+		`rm-localization-status--succeeded`,
+		"Перевод: Русское описание",
+	} {
+		if !strings.Contains(ruHTML, required) {
+			t.Fatalf("served RU report is missing %q", required)
+		}
+	}
+	if strings.Contains(ruHTML, `saved_projection_invalid`) {
+		t.Fatal("server rejected the CLI-produced RU projection")
+	}
+
+	enHTML := getPresentationLocalizationReport(t, server.Client(), baseURL+enRunID+"/report.html")
+	if !strings.Contains(enHTML, `"project_guess":"repository orientation"`) ||
+		strings.Contains(enHTML, `"report_language":"ru"`) ||
+		strings.Contains(enHTML, "Перевод: Русское описание") {
+		t.Fatal("served EN report did not retain canonical English presentation")
+	}
+	if got, readErr := os.ReadFile(ruReportPath); readErr != nil || !bytes.Equal(got, ruReportBefore) {
+		t.Fatal("CLI localization or server rendering changed canonical report.json")
+	}
+	t.Logf(
+		"CLI/server presentation inventory direct=%d shared=%d sha=%s",
+		len(direct.Input.Fields),
+		len(prepared.Input.Fields),
+		prepared.Canonical.SHA256,
+	)
+}
 
 func TestReadCanonicalReportHydratesProducerOwnedWarningSidecar(t *testing.T) {
 	t.Parallel()
@@ -1249,4 +1407,155 @@ func writePresentationWarningSidecarRun(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	return runDir, rawWarning
+}
+
+func presentationLocalizationCoherenceFixture() *report.ReportData {
+	return &report.ReportData{
+		FormatVersion: report.CurrentFormatVersion,
+		RepoName:      "example.test/coherent",
+		ProjectGuess:  "repository orientation",
+		OpenablePaths: []string{"batch.go"},
+		ArchitectureCanvas: &report.ArchitectureCanvas{
+			Title:    "Repository architecture",
+			Subtitle: "A bounded architecture view.",
+			Subsystems: []report.ArchitectureSubsystem{{
+				ID:           "subsystem-core",
+				Name:         "Core subsystem",
+				Description:  "Owns the central behavior.",
+				ComponentIDs: []componentmap.ComponentID{"component-core"},
+			}},
+			Components: []report.ArchitectureComponent{{
+				ID:          "component-core",
+				SubsystemID: "subsystem-core",
+				Name:        "Core component",
+				Description: "Coordinates the example service.",
+				Members: []componentmap.Candidate{{
+					ID: componentmap.MemberID{
+						Kind:  componentmap.MemberSymbol,
+						Value: "example.Core",
+					},
+					Name: "example.Core",
+					Facts: []componentmap.LocalFact{{
+						Kind:      componentmap.FactDeclaration,
+						Value:     "example.Core",
+						Certainty: evidence.CertaintyStatic,
+						Location:  &evidence.Location{Path: "batch.go", Line: 3},
+					}},
+				}},
+			}},
+		},
+	}
+}
+
+func writePresentationLocalizationServeRun(
+	t *testing.T,
+	runsDir,
+	runID string,
+	state freshness.RepositoryState,
+	data *report.ReportData,
+	language string,
+) string {
+	t.Helper()
+	runDir := filepath.Join(runsDir, runID)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(runDir, "report.json")
+	if err := report.WriteReportJSON(data, reportPath); err != nil {
+		t.Fatal(err)
+	}
+	reportJSON, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "report.html"), []byte("fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(state.Identity, "batch.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := freshness.CapturedInput{
+		Version:       freshness.CapturedInputVersion,
+		ID:            fmt.Sprintf("%x", sha256.Sum256([]byte("input\x00batch.go"))),
+		Path:          "batch.go",
+		Kind:          freshness.FileRegular,
+		Mode:          "100644",
+		ContentSHA256: fmt.Sprintf("%x", sha256.Sum256(content)),
+		Stages:        []string{"report_evidence"},
+	}
+	stateSHA, err := state.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputsSHA, err := freshness.CapturedInputsDigest([]freshness.CapturedInput{input})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := report.RunManifest{
+		Version:               report.CurrentRunManifestVersion,
+		RepositoryState:       state,
+		AnalysisRoot:          state.Identity,
+		RepositoryStateSHA256: stateSHA,
+		ReportSHA256:          fmt.Sprintf("%x", sha256.Sum256(reportJSON)),
+		ReportFormatVersion:   report.CurrentFormatVersion,
+		OpenablePaths:         []string{"batch.go"},
+		CapturedInputs:        []freshness.CapturedInput{input},
+		CapturedInputsSHA256:  inputsSHA,
+		Freshness:             freshness.NewFreshnessResult(freshness.FreshnessFresh),
+		MaterialInputs: report.MaterialInputs{
+			SelectedRevision:     state.Head,
+			InputPolicyVersion:   "captured-inputs-v1",
+			ArchitectureContract: 1,
+			ReportContract:       report.CurrentFormatVersion,
+		},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runDir, report.RunManifestFilename),
+		manifestJSON,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	metadataJSON, err := json.Marshal(map[string]any{
+		"repo_name":  data.RepoName,
+		"repo_path":  state.Identity,
+		"created_at": runID,
+		"effective_options": map[string]any{
+			"report_language": language,
+			"no_cache":        false,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "metadata.json"), metadataJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return runDir
+}
+
+func getPresentationLocalizationReport(
+	t *testing.T,
+	client *http.Client,
+	url string,
+) string {
+	t.Helper()
+	response, err := client.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s status = %d: %s", url, response.StatusCode, body)
+	}
+	return string(body)
 }
