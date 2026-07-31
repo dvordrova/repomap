@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/studymap"
@@ -97,6 +98,8 @@ Rules:
 
 const studyMapReviewSystemPrompt = `You review one fixed source-backed Reading Pack. The supplied direction, opaque anchor IDs, metadata, and exact line-numbered source fragments are the complete authority. Evaluate each anchor independently. Return valid JSON only. Do not create or alter IDs, files, symbols, relations, facts, commands, or runtime order. A supported observation is presentation copy bounded to the visible fragment, not a new repository fact.`
 
+const studyMapReviewBundleMarker = "Fixed bounded review bundle JSON:\n"
+
 const studyMapReviewTask = `Return exactly:
 {
   "version": 1,
@@ -115,8 +118,7 @@ const studyMapReviewTask = `Return exactly:
 
 Review every supplied anchor exactly once. Choose ` + "`none`" + ` alone when no overclaim applies. Use ` + "`irrelevant`" + ` when the exact fragment does not help answer the fixed question. Do not repair the question, infer missing code, or claim an execution sequence.
 
-Fixed bounded review bundle JSON:
-`
+` + studyMapReviewBundleMarker
 
 type studyMapV32StageAttempt struct {
 	Version              int                                    `json:"version"`
@@ -160,9 +162,10 @@ type studyMapReviewSummary struct {
 }
 
 type studyMapReviewTaskInput struct {
-	index  int
-	bundle studymap.ReviewBundle
-	plan   semanticDiscoveryStagePlan
+	index     int
+	direction studymap.DirectionCandidate
+	bundle    studymap.ReviewBundle
+	plan      semanticDiscoveryStagePlan
 }
 
 type studyMapReviewCompletion struct {
@@ -653,7 +656,9 @@ func reviewStudyMapDirections(
 			))
 			continue
 		}
-		tasks = append(tasks, studyMapReviewTaskInput{index: index, bundle: reviewBundle, plan: plan})
+		tasks = append(tasks, studyMapReviewTaskInput{
+			index: index, direction: direction, bundle: reviewBundle, plan: plan,
+		})
 	}
 	completions := make(chan studyMapReviewCompletion, len(tasks))
 	semaphore := make(chan struct{}, studyMapV32ReviewConcurrency)
@@ -661,7 +666,9 @@ func reviewStudyMapDirections(
 	for _, task := range tasks {
 		task := task
 		wait.Go(func() {
-			completion := executeStudyMapReview(ctx, provider, task, bundleSHA, semaphore)
+			completion := executeStudyMapReview(
+				ctx, provider, task, bundle, bundleSHA, semaphore,
+			)
 			completions <- completion
 		})
 	}
@@ -736,12 +743,13 @@ func executeStudyMapReview(
 	ctx context.Context,
 	provider semanticDiscoveryEditor,
 	task studyMapReviewTaskInput,
+	sourceBundle studymap.Bundle,
 	bundleSHA string,
 	semaphore chan struct{},
 ) studyMapReviewCompletion {
 	metrics := semanticDiscoveryStageMetrics{
 		Stage: task.plan.name, PromptVersion: task.plan.prompt.Version,
-		RequestBytes: len(task.plan.request), ProviderCall: true,
+		RequestBytes: len(task.plan.request),
 	}
 	attempt := studyMapReviewAttempt{
 		Version: 1, PromptVersion: task.plan.prompt.Version, BundleSHA256: bundleSHA,
@@ -752,19 +760,47 @@ func executeStudyMapReview(
 		index: task.index, directionID: task.bundle.DirectionID,
 		bundle: task.bundle, attempt: attempt,
 	}
-	select {
-	case semaphore <- struct{}{}:
-		defer func() { <-semaphore }()
-	case <-ctx.Done():
-		metrics.Status = "canceled"
-		completion.attempt.Metrics = metrics
-		completion.attempt.ValidationState = metrics.Status
-		completion.attempt.FailureReason = semanticDiscoveryReason(ctx.Err().Error())
-		return completion
+	var (
+		result  modelresearch.ProviderResult
+		callErr error
+		cached  bool
+	)
+	if cache, ok := provider.(studyReviewCacheReplay); ok {
+		result, cached, callErr = cache.loadStudyReview(
+			task.plan.prompt,
+			task.plan.request,
+			sourceBundle,
+			task.direction,
+		)
+		if callErr != nil {
+			metrics.Status = "failed_provider"
+			completion.attempt.Metrics = metrics
+			completion.attempt.ValidationState = metrics.Status
+			completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+			return completion
+		}
+		if cached {
+			metrics.ProviderCall = false
+		}
 	}
-	started := time.Now()
-	result, callErr := provider.DiscoverSemanticsMeasured(ctx, task.plan.prompt)
-	metrics.addResponse(result, time.Since(started))
+	if !cached {
+		select {
+		case semaphore <- struct{}{}:
+			defer func() { <-semaphore }()
+		case <-ctx.Done():
+			metrics.Status = "canceled"
+			completion.attempt.Metrics = metrics
+			completion.attempt.ValidationState = metrics.Status
+			completion.attempt.FailureReason = semanticDiscoveryReason(ctx.Err().Error())
+			return completion
+		}
+		started := time.Now()
+		result, callErr = provider.DiscoverSemanticsMeasured(ctx, task.plan.prompt)
+		metrics.ProviderCall = true
+		metrics.addResponse(result, time.Since(started))
+	} else {
+		metrics.addResponse(result, 0)
+	}
 	completion.attempt.Metrics = metrics
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		metrics.Status = "canceled"
@@ -802,6 +838,21 @@ func executeStudyMapReview(
 	completion.attempt.ValidationState = metrics.Status
 	completion.proposal = proposal
 	completion.valid = true
+	if !cached && studyReviewResponseAccepted(
+		sourceBundle,
+		task.direction,
+		result.Content,
+	) {
+		if cache, ok := provider.(studyReviewCacheReplay); ok {
+			cache.storeStudyReview(
+				task.plan.prompt,
+				task.plan.request,
+				sourceBundle,
+				task.direction,
+				result.Content,
+			)
+		}
+	}
 	return completion
 }
 

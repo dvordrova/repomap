@@ -442,6 +442,7 @@ func TestEditStudyMapForRunReportsUnsupportedAdapterWithoutProviderConfiguration
 		runDir,
 		repoRoot,
 		&stderr,
+		false,
 	)
 	if err != nil {
 		t.Fatalf("editStudyMapForRun() error = %v", err)
