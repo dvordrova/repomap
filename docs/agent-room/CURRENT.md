@@ -1,15 +1,23 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/171-content-addressed-study-review-cache.md
+    decisions/172-casdoor-orientation-and-study-reliability.md
 
 Status:
-    Decision 171 active; content-addressed Study reading-pack review cache authorized
+    Decision 172 active; Casdoor orientation and Study reliability authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 172 adds one bounded orientation completion retry only after an
+    explicit provider finish_reason=length outcome, preserving the exact
+    canonical prompt, facts, endpoint, model, and validation while doubling
+    output headroom once and aggregating attempt telemetry. It then measures
+    the real Casdoor Study funnel against the saved baseline before any
+    separate coverage correction. Decision 171's cache remains an accelerator
+    and must not alter candidate composition, validation, publication, IDs,
+    evidence, paths, or order.
     Decision 171 adds only a content-addressed persistent cache for the
     existing bounded canonical-English Study reading-pack review requests. It
     does not change candidates, scheduling, review validation, publication,

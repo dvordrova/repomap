@@ -373,14 +373,18 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		researchState.Orientation = call.Metrics
 		researchState.Usage.SemanticCalls += call.Metrics.SemanticCalls
 		if call.Metrics.SemanticCalls > 0 {
-			researchState.Usage.RequestBytes += len(requestJSON)
+			researchState.Usage.RequestBytes += call.Metrics.RequestBytes
 		}
 		runMeta.ExternalRequestBytes = researchState.Usage.RequestBytes
 		runMeta.ProviderRequestCount = researchState.Usage.SemanticCalls
 		runMeta.ProviderLatencyMillis = &providerLatency
 		attempt := &runMeta.RequestAttempts[len(runMeta.RequestAttempts)-1]
 		attempt.LatencyMillis = &providerLatency
+		attempt.RequestBytes = call.Metrics.RequestBytes
 		attempt.ProviderCallCount = call.Metrics.SemanticCalls
+		if call.Metrics.SemanticCalls > 0 {
+			attempt.TransportAttemptCount = call.Metrics.RetryCount + 1
+		}
 		contextErr := ctx.Err()
 		if contextErr != nil {
 			attempt.State = "canceled"

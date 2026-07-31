@@ -93,12 +93,21 @@ func obtainOrientation(
 	started := time.Now()
 	result, err := client.OrientMeasured(ctx, bundleJSON)
 	call.Metrics.LatencyMillis = time.Since(started).Milliseconds()
+	call.Metrics.RequestBytes = result.RequestBytes
 	call.Metrics.ResponseBytes = len(result.Content)
 	call.Metrics.InputTokens = result.InputTokens
 	call.Metrics.OutputTokens = result.OutputTokens
 	call.Metrics.SemanticCalls = 1
 	if result.Attempts > 1 {
 		call.Metrics.RetryCount = result.Attempts - 1
+	}
+	// A completion recovery changes max_tokens for the accepted transport
+	// envelope. The legacy orientation cache has one path per stage fingerprint,
+	// so saving it under the original request identity would be dishonest.
+	// Keep the valid per-run result and leave persistent reuse to a later exact
+	// multi-envelope cache contract.
+	if result.CompletionRetries > 0 {
+		call.SaveCache = false
 	}
 	if err != nil {
 		call.Metrics.Status = "failed"

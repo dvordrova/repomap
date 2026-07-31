@@ -22,6 +22,7 @@ type Prompt struct {
 type ProviderResult struct {
 	Content               []byte
 	Attempts              int
+	CompletionRetries     int
 	RequestBytes          int
 	InputTokens           int
 	OutputTokens          int

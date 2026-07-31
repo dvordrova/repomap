@@ -63,11 +63,12 @@ type EffectiveOptions struct {
 }
 
 type RequestAttempt struct {
-	Stage             string `json:"stage"`
-	State             string `json:"state"`
-	RequestBytes      int    `json:"request_bytes,omitempty"`
-	ProviderCallCount int    `json:"provider_call_count,omitempty"`
-	LatencyMillis     *int64 `json:"latency_ms,omitempty"`
+	Stage                 string `json:"stage"`
+	State                 string `json:"state"`
+	RequestBytes          int    `json:"request_bytes,omitempty"`
+	ProviderCallCount     int    `json:"provider_call_count,omitempty"`
+	TransportAttemptCount int    `json:"transport_attempt_count,omitempty"`
+	LatencyMillis         *int64 `json:"latency_ms,omitempty"`
 }
 
 type Writer struct {
