@@ -3,10 +3,12 @@ package deepseek
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -463,7 +465,9 @@ func TestOrientMeasuredReportsPromptCacheTokens(t *testing.T) {
 }
 
 func TestOrientInvalidJSON(t *testing.T) {
+	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"content":"not json"}}]}`)
 	}))
@@ -483,6 +487,105 @@ func TestOrientInvalidJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not valid JSON") {
 		t.Fatalf("error should mention invalid JSON, got: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 for non-truncated invalid JSON", attempts)
+	}
+}
+
+func TestOrientRetriesOneExplicitLengthCompletionWithMoreHeadroom(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	seenMaxTokens := make([]int, 0, 2)
+	seenRequests := make([]chatRequest, 0, 2)
+	attemptedRequestBytes := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		requestBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		attemptedRequestBytes += len(requestBody)
+		var request chatRequest
+		if err := json.Unmarshal(requestBody, &request); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		seenMaxTokens = append(seenMaxTokens, request.MaxTokens)
+		seenRequests = append(seenRequests, request)
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			_, _ = io.WriteString(w, `{
+				"choices":[{"finish_reason":"length","message":{"content":"{\"project_guess\":\"cut"}}],
+				"usage":{"prompt_tokens":100,"completion_tokens":6000}
+			}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{
+			"choices":[{"finish_reason":"stop","message":{"content":"{}"}}],
+			"usage":{"prompt_tokens":100,"completion_tokens":20}
+		}`)
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		HTTPClient: srv.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   srv.URL,
+		Auth:       authNone,
+	}
+	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
+	if err != nil {
+		t.Fatalf("OrientMeasured() error = %v", err)
+	}
+	if attempts != 2 || !reflect.DeepEqual(seenMaxTokens, []int{6000, 12000}) {
+		t.Fatalf("attempts/max_tokens = %d/%v, want 2/[6000 12000]", attempts, seenMaxTokens)
+	}
+	secondMaxTokens := seenRequests[1].MaxTokens
+	seenRequests[1].MaxTokens = seenRequests[0].MaxTokens
+	if !reflect.DeepEqual(seenRequests[0], seenRequests[1]) {
+		t.Fatalf("recovery request changed fields other than max_tokens:\nfirst=%#v\nsecond=%#v", seenRequests[0], seenRequests[1])
+	}
+	seenRequests[1].MaxTokens = secondMaxTokens
+	if result.Attempts != 2 || result.CompletionRetries != 1 ||
+		result.RequestBytes != attemptedRequestBytes ||
+		result.InputTokens != 200 || result.OutputTokens != 6020 {
+		t.Fatalf("OrientMeasured() telemetry = %#v", result)
+	}
+	if string(result.Content) != `{}` {
+		t.Fatalf("OrientMeasured() content = %q", result.Content)
+	}
+}
+
+func TestOrientStopsAfterTwoExplicitLengthCompletions(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{"finish_reason":"length","message":{"content":"{\"cut\":"}}],
+			"usage":{"completion_tokens":6000}
+		}`)
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		HTTPClient: srv.Client(), Model: "deepseek-v4-flash",
+		MaxTokens: 6000, Endpoint: srv.URL, Auth: authNone,
+	}
+	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
+	if err == nil || !errors.Is(err, errJSONCompletionTruncated) {
+		t.Fatalf("OrientMeasured() error = %v, want typed truncation", err)
+	}
+	if attempts != 2 || result.Attempts != 2 || result.CompletionRetries != 1 {
+		t.Fatalf("attempts/result = %d/%#v, want exactly two envelopes", attempts, result)
 	}
 }
 
@@ -738,7 +841,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v10" {
+	if OrientationPromptVersionJSON != "orientation-json-v11" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{

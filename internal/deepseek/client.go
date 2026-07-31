@@ -47,7 +47,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v10"
+const OrientationPromptVersionJSON = "orientation-json-v11"
 
 // SemanticOutputLanguageContractVersion identifies the shared language
 // contract applied to every non-localization model request. Localization uses
@@ -545,40 +545,70 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelresearch.ProviderResult, error) {
 	stopWaiting := c.startWaitProgress(ctx, "orientation")
 	defer stopWaiting()
-	body, err := c.OrientPromptJSON(bundleJSON)
-	if err != nil {
-		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
-	}
-
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := backoffDuration(attempt)
+	request := c.buildRequest(bundleJSON)
+	var (
+		measured          modelresearch.ProviderResult
+		lastErr           error
+		transportRetries  int
+		completionRetries int
+	)
+	for {
+		body, err := json.Marshal(request)
+		if err != nil {
+			return measured, fmt.Errorf("marshal llm request: %w", err)
+		}
+		if measured.Attempts > 0 {
+			backoff := backoffDuration(measured.Attempts)
 			select {
 			case <-ctx.Done():
-				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
+				return measured, ctx.Err()
 			case <-time.After(backoff):
 			}
 		}
 
-		result, shouldRetry, err := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+		result, shouldRetry, err := doChatMeasured(
+			ctx,
+			c.HTTPClient,
+			c.Endpoint,
+			c.APIKey,
+			c.Auth,
+			body,
+			true,
+		)
+		measured.Attempts++
+		measured.RequestBytes += len(body)
+		measured.InputTokens += result.InputTokens
+		measured.OutputTokens += result.OutputTokens
+		measured.PromptCacheHitTokens += result.PromptCacheHitTokens
+		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
 		if err == nil {
-			return modelresearch.ProviderResult{
-				Content: result.Content, Attempts: attempt + 1,
-				InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-				PromptCacheHitTokens:  result.PromptCacheHitTokens,
-				PromptCacheMissTokens: result.PromptCacheMissTokens,
-			}, nil
+			measured.Content = result.Content
+			return measured, nil
 		}
 		lastErr = err
-		if !shouldRetry {
-			return modelresearch.ProviderResult{Attempts: attempt + 1}, err
+		if errors.Is(err, errJSONCompletionTruncated) && completionRetries == 0 {
+			maxInt := int(^uint(0) >> 1)
+			if request.MaxTokens <= 0 || request.MaxTokens > maxInt/2 {
+				return measured, err
+			}
+			request.MaxTokens *= 2
+			completionRetries++
+			measured.CompletionRetries = completionRetries
+			continue
 		}
+		if shouldRetry && transportRetries < maxRetries {
+			transportRetries++
+			continue
+		}
+		if shouldRetry {
+			return measured, fmt.Errorf(
+				"retries exhausted (%d attempts): %w",
+				measured.Attempts,
+				lastErr,
+			)
+		}
+		return measured, err
 	}
-
-	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
-		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
-	)
 }
 
 func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
