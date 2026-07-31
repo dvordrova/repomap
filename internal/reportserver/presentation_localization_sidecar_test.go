@@ -1,6 +1,8 @@
 package reportserver
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -12,12 +14,267 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/orient"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/studymap"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
+
+func TestServeRussianProjectionUsesSharedRunPresentation(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(repository, "batch.go"),
+		[]byte("package example\n\nfunc Core() {}\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	const runID = "20260731-193000-shared-presentation"
+	writeRun(t, runsDir, runID, repository, "canonical report")
+	runDir := filepath.Join(runsDir, runID)
+
+	canonical := &reportpkg.ReportData{
+		FormatVersion: reportpkg.CurrentFormatVersion,
+		RepoName:      "example.test/coherent",
+		ProjectGuess:  "repository orientation",
+		OpenablePaths: []string{"batch.go"},
+		ArchitectureCanvas: &reportpkg.ArchitectureCanvas{
+			Title:    "Repository architecture",
+			Subtitle: "A bounded architecture view.",
+			Subsystems: []reportpkg.ArchitectureSubsystem{{
+				ID:           "subsystem-core",
+				Name:         "Core subsystem",
+				Description:  "Owns the central behavior.",
+				ComponentIDs: []componentmap.ComponentID{"component-core"},
+			}},
+			Components: []reportpkg.ArchitectureComponent{{
+				ID:          "component-core",
+				SubsystemID: "subsystem-core",
+				Name:        "Core component",
+				Description: "Coordinates the example service.",
+				Members: []componentmap.Candidate{{
+					ID: componentmap.MemberID{
+						Kind:  componentmap.MemberSymbol,
+						Value: "example.Core",
+					},
+					Name: "example.Core",
+					Facts: []componentmap.LocalFact{{
+						Kind:      componentmap.FactDeclaration,
+						Value:     "example.Core",
+						Certainty: evidence.CertaintyStatic,
+						Location: &evidence.Location{
+							Path: "batch.go",
+							Line: 3,
+						},
+					}},
+				}},
+			}},
+		},
+	}
+	reportPath := filepath.Join(runDir, "report.json")
+	if err := reportpkg.WriteReportJSON(canonical, reportPath); err != nil {
+		t.Fatal(err)
+	}
+	canonicalJSON, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalState, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifestPath := filepath.Join(runDir, reportpkg.RunManifestFilename)
+	manifestJSON, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := reportpkg.DecodeRunManifest(manifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ReportSHA256 = fmt.Sprintf("%x", sha256.Sum256(canonicalJSON))
+	manifestJSON, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	meta := metadata{
+		RepoName:  canonical.RepoName,
+		RepoPath:  repository,
+		CreatedAt: runID,
+	}
+	meta.EffectiveOptions.ReportLanguage = localization.LocaleRussian
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runDir, "metadata.json"),
+		metaJSON,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	direct, err := reportpkg.PreparePresentationLocalization(
+		canonical,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	producerData, err := reportpkg.PrepareRunPresentation(runDir, canonical, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer, err := reportpkg.PreparePresentationLocalization(
+		producerData,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(producer.Input.Fields) <= len(direct.Input.Fields) ||
+		producer.Canonical.SHA256 == direct.Canonical.SHA256 {
+		t.Fatalf(
+			"fixture did not reproduce pre/post-enrichment mismatch: direct=%d/%s producer=%d/%s",
+			len(direct.Input.Fields),
+			direct.Canonical.SHA256,
+			len(producer.Input.Fields),
+			producer.Canonical.SHA256,
+		)
+	}
+	if got, marshalErr := json.Marshal(canonical); marshalErr != nil ||
+		!bytes.Equal(got, canonicalState) {
+		t.Fatal("producer preparation mutated canonical report state")
+	}
+
+	translations := make(map[string]string, len(producer.Input.Fields))
+	for _, field := range producer.Input.Fields {
+		parts := []string{"Русский текст"}
+		for _, placeholder := range field.Placeholders {
+			for count := 0; count < placeholder.Count; count++ {
+				parts = append(parts, placeholder.Token)
+			}
+		}
+		translations[field.ID] = strings.Join(parts, " ")
+	}
+	projection := localization.Projection{
+		Version:         localization.ProjectionVersion,
+		CanonicalSHA256: producer.Canonical.SHA256,
+		Locale:          localization.LocaleRussian,
+		Translations:    translations,
+	}
+	if err := reportpkg.WritePresentationLocalizationSuccess(
+		runDir,
+		producer,
+		projection,
+		true,
+		"request-sha",
+		"cache-key",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	producerState, err := json.Marshal(producerData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ruData, ruStatus := reportpkg.LoadPresentationLocalization(
+		runDir,
+		producerData,
+		localization.LocaleRussian,
+	)
+	if ruStatus.State != reportpkg.PresentationLocalizationSucceeded ||
+		ruData.ReportLanguage != localization.LocaleRussian ||
+		ruData.ProjectGuess != "Русский текст" {
+		t.Fatalf("producer RU projection/status = %#v/%#v", ruData, ruStatus)
+	}
+	if got, marshalErr := json.Marshal(producerData); marshalErr != nil ||
+		!bytes.Equal(got, producerState) {
+		t.Fatal("RU projection load mutated prepared canonical presentation")
+	}
+	enData, enStatus := reportpkg.LoadPresentationLocalization(
+		runDir,
+		producerData,
+		localization.LocaleEnglish,
+	)
+	if enStatus.State != "" || enData.ReportLanguage != "" ||
+		enData.ProjectGuess != "repository orientation" {
+		t.Fatalf("EN presentation unexpectedly used RU projection: %#v/%#v", enData, enStatus)
+	}
+
+	var logs []string
+	handler, err := NewHandler(Options{
+		RunsDir:      runsDir,
+		InitialRunID: runID,
+		Capability:   testCapability,
+		CaptureRepository: func(
+			context.Context,
+			string,
+		) (freshness.RepositoryState, error) {
+			return manifest.RepositoryState, nil
+		},
+		Logf: func(format string, args ...any) {
+			logs = append(logs, fmt.Sprintf(format, args...))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response, err := server.Client().Get(
+		server.URL + capabilityURLPrefix(testCapability) +
+			"/runs/" + runID + "/report.html",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, readErr := io.ReadAll(response.Body)
+	response.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("serve status = %d: %s", response.StatusCode, body)
+	}
+	for _, required := range []string{
+		`"report_language":"ru"`,
+		`rm-localization-status--succeeded`,
+		"Русский текст",
+	} {
+		if !strings.Contains(string(body), required) {
+			t.Fatalf("localized report is missing %q", required)
+		}
+	}
+	for _, line := range logs {
+		if strings.Contains(line, "localization failed") {
+			t.Fatalf("server rejected producer projection: %s", line)
+		}
+	}
+	if got, readErr := os.ReadFile(reportPath); readErr != nil ||
+		!bytes.Equal(got, canonicalJSON) {
+		t.Fatal("producer/server preparation or RU load changed canonical report.json")
+	}
+	t.Logf(
+		"presentation inventory direct=%d shared=%d sha=%s",
+		len(direct.Input.Fields),
+		len(producer.Input.Fields),
+		producer.Canonical.SHA256,
+	)
+}
 
 func TestServeRussianProjectionHydratesStudyAndTaskWarningMetadata(t *testing.T) {
 	t.Parallel()

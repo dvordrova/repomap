@@ -14,9 +14,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dvordrova/repomap/internal/freshness"
-
 	_ "embed"
+	"github.com/dvordrova/repomap/internal/freshness"
 )
 
 //go:embed templates/report.html
@@ -551,9 +550,17 @@ func generate(
 	}
 
 	htmlPath := runDir + "/report.html"
-	renderData, _ := LoadPresentationLocalization(
+	preparedRenderData, _ := PrepareRunPresentation(
 		runDir,
 		canonicalData,
+		sourceEpisodeJSON,
+	)
+	if preparedRenderData == nil {
+		preparedRenderData = canonicalData
+	}
+	renderData, _ := LoadPresentationLocalization(
+		runDir,
+		preparedRenderData,
 		canonicalData.requestedPresentationLocale,
 	)
 	renderData.GitLabSourceLinks = gitLabSourceLinks

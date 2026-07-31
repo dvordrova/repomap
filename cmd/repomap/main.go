@@ -849,6 +849,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				if err := markPresentationLocalizationUnavailable(
 					runDir,
 					report.LocalizationFailureOfflineRequested,
+					sourceEpisodeJSON,
 				); err != nil {
 					fmt.Fprintln(
 						deps.stderr,
