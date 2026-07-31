@@ -97,6 +97,27 @@ func TestPresentationLocalizationDoesNotGlobalizePackageNameAsProse(t *testing.T
 	)
 }
 
+func TestPresentationLocalizationDoesNotInferOpaqueIdentityFromProseShape(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	data := &ReportData{
+		RepoName:     "fixture",
+		ProjectGuess: "The guide uses controllers.js-like wording as ordinary prose.",
+	}
+	prepared, err := PreparePresentationLocalization(data, localization.LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPresentationFieldDoesNotProtectValue(
+		t,
+		prepared,
+		"repository",
+		"controllers.js-like",
+	)
+}
+
 func TestPresentationLocalizationScopesRepositoryProductName(t *testing.T) {
 	t.Parallel()
 

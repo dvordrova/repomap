@@ -78,10 +78,6 @@ func (bindings *presentationLocalizationBindings) addAddress(
 	if text == "" {
 		return nil
 	}
-	protected = append(
-		append([]localization.ProtectedValue(nil), protected...),
-		presentationOpaqueValuesInText(text)...,
-	)
 	id, err := localization.FieldID(
 		localization.OwnerPresentationText,
 		address,
@@ -114,60 +110,6 @@ func (bindings *presentationLocalizationBindings) addAddress(
 		setters: []func(*ReportData, string) bool{setter},
 	}
 	return nil
-}
-
-func presentationOpaqueValuesInText(text string) []localization.ProtectedValue {
-	tokens := strings.Fields(text)
-	result := make([]localization.ProtectedValue, 0, len(tokens))
-	seen := make(map[string]struct{}, len(tokens))
-	for _, raw := range tokens {
-		token := strings.Trim(raw, "\"'`()[]{}<>,;!?")
-		token = strings.TrimSuffix(token, ".")
-		if token == "" {
-			continue
-		}
-		kind := localization.ProtectedKind("")
-		switch {
-		case strings.Contains(token, "://"):
-			kind = localization.ProtectedURL
-		case strings.HasPrefix(token, "--"):
-			kind = localization.ProtectedIdentifier
-		case strings.Contains(token, "/") &&
-			token != "and/or" &&
-			token != "input/output":
-			kind = localization.ProtectedPath
-		case strings.Contains(token, "::"):
-			kind = localization.ProtectedSymbol
-		case looksLikePresentationFileToken(token):
-			kind = localization.ProtectedPath
-		}
-		if kind == "" {
-			continue
-		}
-		if _, ok := seen[token]; ok {
-			continue
-		}
-		seen[token] = struct{}{}
-		result = append(result, localization.ProtectedValue{
-			Kind:  kind,
-			Value: token,
-		})
-	}
-	return result
-}
-
-func looksLikePresentationFileToken(token string) bool {
-	lower := strings.ToLower(token)
-	for _, suffix := range []string{
-		".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".html", ".java",
-		".js", ".json", ".jsx", ".kt", ".md", ".php", ".proto", ".py",
-		".rb", ".rs", ".sh", ".sql", ".toml", ".ts", ".tsx", ".yaml", ".yml",
-	} {
-		if strings.Contains(lower, suffix) {
-			return true
-		}
-	}
-	return false
 }
 
 func (bindings *presentationLocalizationBindings) specs() []localization.FieldSpec {
