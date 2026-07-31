@@ -215,3 +215,24 @@ UI actions actually performed: none; the adapter has no production consumer
 Not run and why: no provider call, no external repository, no etcd run, no product binary rebuild, and no EN->RU->EN round trip; no ordinary product path or locale-projection cache changed
 Remaining blocker or next checkpoint: persisted canonical/input/identity sidecars require a new numbered decision and a root-confined atomic writer; they must remain non-consumable until bound to verified run state
 ```
+
+## Checkpoint B3 handoff
+
+```text
+Checkpoint: B3 — explicit provider-free Architecture English identity artifacts
+Changed contract: Decision 163 adds `make localization-check RUN=<run-dir>` and `repomap dev localization-check <run-dir>` as explicit developer operations; ordinary CLI generation, providers, caches, persisted report artifacts, reports, manifests, HTTP, source authority, and browser behavior remain unchanged
+Artifact scope: exactly localization/architecture.canonical.v1.json, localization/architecture.en.input.v1.json, and localization/architecture.en.projection.v1.json; these files cover only allowlisted Architecture Canvas prose and are deliberately non-consumable
+Draft-plan departure: whole-report-shaped semantic-report.canonical.json, localization/input.v1.json, and localization/en.projection.json are not written because whole-report semantic ownership and cache authority have not been proven
+Eligibility: explicit current v3 output_language=en, accepted or accepted_with_normalization non-fallback synthesis; matching successful/cached accepted v2 status; consistent synthesis/status/canvas metadata; replay against current saved facts; exact English identity replay
+Failure behavior: all eligibility, decoding, replay, metadata, language, fallback, secret, bound, symlink, existing-file, and installation conflicts fail closed before publishing a usable partial set
+Persistence boundary: fixed root-confined paths, 0700 localization directory, 0600 files, bounded input/output, pre-write secret scan, synced temporary files, complete-set installation, rollback on partial install, and refusal to overwrite conflicting owner data
+J0/J1 evidence: both accepted and accepted-with-normalization saved-run shapes produced the exact three-file set; repeated materialization preserved every artifact byte, English identity replay preserved Architecture Canvas bytes, and unrelated report/HTML/manifest/synthesis bytes remained unchanged
+Focused tests: make localization-check, go test ./cmd/repomap -run LocalizationCheck -count=1, focused race tests across internal/report and cmd/repomap, focused vet, and git diff --check passed
+Provider-free replay: strict saved-status and synthesis replay rebuilt the current Architecture Canvas and applied the persisted English identity projection with zero diagnostics or fallback
+Adversarial review: no remaining blockers after passing exact bounded status/synthesis bytes into run replay; root confinement, bounds, strict decoding, stale-facts rejection, symlink refusal, deep secret scanning, exact-set idempotence, conflict refusal, and rollback were reviewed
+Full checks: scripts/check.sh passed, including go test, go vet, and six offline quality tasks, real 44.56s; the provider-free etcd snapshot/bundle check also passed, real 17.35s
+Commit: this handoff is committed atomically with the B3 implementation
+UI actions actually performed: none; these files have no product consumer
+Not run and why: no provider call, no Russian projection, no cache read/write, and no EN->RU->EN round trip; B3 is English identity persistence only. The etcd repository was read only by the required provider-free snapshot/bundle check
+Remaining blocker or next checkpoint: bind a complete, explicitly scoped semantic artifact to verified run state before any locale projection cache or product consumer is authorized
+```

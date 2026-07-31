@@ -1,15 +1,30 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/162-architecture-localization-adapter.md
+    decisions/163-architecture-localization-identity-artifacts.md
 
 Status:
-    Decision 162 active; provider-free Architecture localization adapter authorized
+    Decision 163 active; explicit provider-free Architecture identity artifacts authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 163 adds only an explicit provider-free developer export through
+    `make localization-check RUN=<run-dir>` and
+    `repomap dev localization-check <run-dir>`. An eligible saved run may
+    receive exactly three non-consumable English identity artifacts under
+    `localization/`, with Architecture-specific names that intentionally
+    narrow the draft whole-report filenames. Eligibility requires an explicit
+    current v3 English accepted or accepted-with-normalization non-fallback
+    synthesis, matching current v2 status, replay against current saved facts,
+    and byte-exact English identity. The root-confined writer uses only fixed
+    paths, `0700`/`0600` permissions, bounded inputs and outputs, pre-write
+    secret scanning, exclusive temporary files with partial-install rollback,
+    and refuses symlinks, incomplete sets, and conflicting files. No ordinary
+    run path reads or writes these files, and no provider, Russian projection,
+    cache, report JSON/HTML, manifest, HTTP, source-authority, or UI behavior
+    changes.
     Decision 162 connects the isolated localization contract to exactly one
     real semantic shape: Architecture Canvas subsystem and component names and
     descriptions. Their identities come from validated local member sets and

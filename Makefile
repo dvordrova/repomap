@@ -28,6 +28,10 @@ quality-check: ## Replay saved quality tasks without a model call
 
 localization-check: ## Validate provider-free canonical and locale projection contracts
 	go test ./internal/localization -count=1
+	go test ./internal/report -run 'ArchitectureLocalization' -count=1
+	@if [[ -n "$(RUN)" ]]; then \
+		go run ./cmd/repomap dev localization-check "$(RUN)"; \
+	fi
 
 SURFACE_REPO ?= internal/experiment/surfacediscovery/testdata/direct
 SURFACE_OUT ?= $(TMP_DIR)/surface-discovery
