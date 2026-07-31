@@ -1193,8 +1193,12 @@ func TestPresentationLocalizationFailureKeepsRussianCatalogAndCanonicalEnglishPr
 				}
 				if err := WritePresentationLocalizationFailure(
 					runDir,
-					LocalizationFailureProviderRequest,
-					prepared.Canonical.SHA256,
+					PresentationLocalizationFailure{
+						ReasonCode:      LocalizationFailureProviderRequest,
+						FailureStage:    LocalizationStageProviderRequest,
+						ValidationCode:  LocalizationValidationTransport,
+						CanonicalSHA256: prepared.Canonical.SHA256,
+					},
 				); err != nil {
 					t.Fatal(err)
 				}
@@ -1354,8 +1358,12 @@ func TestPresentationLocalizationEndToEndRendersEnglishRussianAndDegradation(t *
 	failureRun := t.TempDir()
 	if err := WritePresentationLocalizationFailure(
 		failureRun,
-		LocalizationFailureProviderRequest,
-		prepared.Canonical.SHA256,
+		PresentationLocalizationFailure{
+			ReasonCode:      LocalizationFailureProviderRequest,
+			FailureStage:    LocalizationStageProviderRequest,
+			ValidationCode:  LocalizationValidationTransport,
+			CanonicalSHA256: prepared.Canonical.SHA256,
+		},
 	); err != nil {
 		t.Fatal(err)
 	}

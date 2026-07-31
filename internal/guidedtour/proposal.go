@@ -3,12 +3,41 @@ package guidedtour
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+const ValidationRulePathLikeReference = "path_like_reference"
+
+// ValidationIssue exposes only a closed field/rule pair for safe run
+// diagnostics. The original validation error remains the user-facing detail.
+type ValidationIssue struct {
+	Field string
+	Rule  string
+	err   error
+}
+
+func (issue *ValidationIssue) Error() string {
+	return issue.err.Error()
+}
+
+func (issue *ValidationIssue) Unwrap() error {
+	return issue.err
+}
+
+// ValidationIssueDetails returns bounded diagnostics for known proposal
+// validation rules without exposing model prose or repository paths.
+func ValidationIssueDetails(err error) (field, rule string, ok bool) {
+	var issue *ValidationIssue
+	if !errors.As(err, &issue) {
+		return "", "", false
+	}
+	return issue.Field, issue.Rule, true
+}
 
 const (
 	maxProposalBytes           = 64 << 10
@@ -245,11 +274,11 @@ func validateProposalShape(proposal Proposal, allowRepositoryBearingTitle bool) 
 			return err
 		}
 	} else {
-		if err := validateModelProse("proposal title", proposal.Title, maxProposalTitleBytes); err != nil {
+		if err := validateModelProse("proposal title", "proposal.title", proposal.Title, maxProposalTitleBytes); err != nil {
 			return err
 		}
 	}
-	if err := validateModelProse("proposal summary", proposal.Summary, maxProposalSummaryBytes); err != nil {
+	if err := validateModelProse("proposal summary", "proposal.summary", proposal.Summary, maxProposalSummaryBytes); err != nil {
 		return err
 	}
 	if len(proposal.Steps) < minProposalSteps || len(proposal.Steps) > maxProposalSteps {
@@ -260,10 +289,10 @@ func validateProposalShape(proposal Proposal, allowRepositoryBearingTitle bool) 
 		)
 	}
 	for index, step := range proposal.Steps {
-		if err := validateModelProse("step title", step.Title, maxProposalTitleBytes); err != nil {
+		if err := validateModelProse("step title", fmt.Sprintf("steps[%d].title", index), step.Title, maxProposalTitleBytes); err != nil {
 			return fmt.Errorf("guided tour: proposal steps[%d]: %w", index, err)
 		}
-		if err := validateModelProse("step explanation", step.Explanation, maxProposalExplainBytes); err != nil {
+		if err := validateModelProse("step explanation", fmt.Sprintf("steps[%d].explanation", index), step.Explanation, maxProposalExplainBytes); err != nil {
 			return fmt.Errorf("guided tour: proposal steps[%d]: %w", index, err)
 		}
 		if len(step.BeatIDs) == 0 {
@@ -274,7 +303,7 @@ func validateProposalShape(proposal Proposal, allowRepositoryBearingTitle bool) 
 		}
 	}
 	for index, summary := range proposal.GapSummary {
-		if err := validateModelProse("gap explanation", summary.Explanation, maxProposalExplainBytes); err != nil {
+		if err := validateModelProse("gap explanation", fmt.Sprintf("gap_summary[%d].explanation", index), summary.Explanation, maxProposalExplainBytes); err != nil {
 			return fmt.Errorf("guided tour: proposal gap_summary[%d]: %w", index, err)
 		}
 		if len(summary.GapIDs) == 0 {
@@ -287,12 +316,16 @@ func validateProposalShape(proposal Proposal, allowRepositoryBearingTitle bool) 
 	return nil
 }
 
-func validateModelProse(field, value string, limit int) error {
+func validateModelProse(field, diagnosticField, value string, limit int) error {
 	if err := validateText(field, value, limit, true); err != nil {
 		return err
 	}
 	if repositoryReferencePattern.MatchString(value) || strings.ContainsAny(value, `/\`) {
-		return fmt.Errorf("guided tour: %s contains a path-like reference", field)
+		return &ValidationIssue{
+			Field: diagnosticField,
+			Rule:  ValidationRulePathLikeReference,
+			err:   fmt.Errorf("guided tour: %s contains a path-like reference", field),
+		}
 	}
 	return nil
 }

@@ -276,10 +276,71 @@ var sensitiveKeyPattern = regexp.MustCompile(
 
 func redactJSON(data []byte) []byte {
 	redacted := sensitiveKeyPattern.ReplaceAll(data, []byte(`"$1": "[redacted]"`))
-	if kind, found := secretscan.Detect(string(redacted)); found {
+	if kind, found := secretscan.DetectAlways(string(redacted)); found {
 		return []byte(fmt.Sprintf("[redacted: %s detected]\n", kind))
 	}
 	return redacted
+}
+
+// RedactForArtifact applies the same mandatory credential handling used by
+// the confined debug writer. Callers may persist the returned bytes, never the
+// original provider text. The process-wide unsafe scan override is ignored.
+func RedactForArtifact(data []byte) []byte {
+	return append([]byte(nil), redactJSON(data)...)
+}
+
+// WriteRedactedRootArtifact writes one fixed-name diagnostic below an already
+// existing run root. os.Root confines every lookup; absolute paths, traversal,
+// and symlink escapes are rejected by the filesystem boundary.
+func WriteRedactedRootArtifact(runDir, subdir, name string, data []byte) error {
+	if runDir == "" || subdir == "" || filepath.Base(subdir) != subdir ||
+		name == "" || filepath.Base(name) != name ||
+		!filepath.IsLocal(subdir) || !filepath.IsLocal(name) {
+		return fmt.Errorf("debug artifact: invalid fixed path")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("debug artifact: open run root: %w", err)
+	}
+	defer root.Close()
+	if err := root.MkdirAll(subdir, 0o700); err != nil {
+		return fmt.Errorf("debug artifact: create directory: %w", err)
+	}
+	redacted := RedactForArtifact(data)
+	if len(redacted) == 0 {
+		return fmt.Errorf("debug artifact: redaction produced no output")
+	}
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return fmt.Errorf("debug artifact: create temporary name: %w", err)
+	}
+	localName := filepath.Join(subdir, name)
+	temporaryName := localName + "." + hex.EncodeToString(nonce[:]) + ".tmp"
+	file, err := root.OpenFile(temporaryName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("debug artifact: create temporary file: %w", err)
+	}
+	published := false
+	defer func() {
+		_ = file.Close()
+		if !published {
+			_ = root.Remove(temporaryName)
+		}
+	}()
+	if _, err := file.Write(redacted); err != nil {
+		return fmt.Errorf("debug artifact: write temporary file: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("debug artifact: sync temporary file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("debug artifact: close temporary file: %w", err)
+	}
+	if err := root.Rename(temporaryName, localName); err != nil {
+		return fmt.Errorf("debug artifact: publish file: %w", err)
+	}
+	published = true
+	return nil
 }
 
 func GenerateRunID(repoName string) string {

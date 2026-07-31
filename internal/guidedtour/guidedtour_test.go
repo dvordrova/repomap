@@ -377,6 +377,28 @@ func TestValidateProposalAllowsExactCandidateNameWithNaturalSlashOnlyAsTitle(t *
 	}
 }
 
+func TestValidateProposalReportsIndexedPathLikeField(t *testing.T) {
+	t.Parallel()
+
+	bundle := testBundle(t)
+	proposal := testProposal()
+	proposal.Steps = append(proposal.Steps,
+		ProposedStep{Title: "Fourth", Explanation: "Inspect another supplied anchor.", BeatIDs: []string{"unused-fourth"}},
+		ProposedStep{Title: "Fifth", Explanation: "Inspect cmd/server.go before continuing.", BeatIDs: []string{"unused-fifth"}},
+	)
+	err := ValidateProposal(bundle, proposal)
+	if err == nil || !strings.Contains(
+		err.Error(),
+		"proposal steps[4]: guided tour: step explanation contains a path-like reference",
+	) {
+		t.Fatalf("indexed path-like error = %v", err)
+	}
+	field, rule, ok := ValidationIssueDetails(err)
+	if !ok || field != "steps[4].explanation" || rule != ValidationRulePathLikeReference {
+		t.Fatalf("typed validation issue = %q/%q/%t", field, rule, ok)
+	}
+}
+
 func TestUnsupportedBehaviorClaimCount(t *testing.T) {
 	t.Parallel()
 

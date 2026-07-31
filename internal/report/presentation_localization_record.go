@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	PresentationLocalizationStatusFile       = "presentation_localization_status.v1.json"
+	PresentationLocalizationStatusFile       = "presentation_localization_status.v2.json"
 	presentationLocalizationProjectionPrefix = "presentation_localization_projection.v1."
 
-	PresentationLocalizationStatusVersion = 1
+	PresentationLocalizationStatusVersion = 2
 	PresentationLocalizationRecordVersion = 1
 
 	PresentationLocalizationSucceeded = "succeeded"
@@ -28,6 +28,76 @@ const (
 	maxPresentationLocalizationStatusBytes = 64 << 10
 	maxPresentationLocalizationRecordBytes = 5 << 20
 )
+
+const (
+	LocalizationStageCanonicalRead         = "canonical_read"
+	LocalizationStageCanonicalAuthority    = "canonical_authority"
+	LocalizationStagePresentationHydration = "presentation_hydration"
+	LocalizationStageInventoryBuild        = "inventory_build"
+	LocalizationStageBatchPartition        = "batch_partition"
+	LocalizationStagePromptBuild           = "prompt_build"
+	LocalizationStageProviderConfiguration = "provider_configuration"
+	LocalizationStageProviderRequest       = "provider_request"
+	LocalizationStageResponseSecretScan    = "response_secret_scan"
+	LocalizationStageResponseDecode        = "response_decode"
+	LocalizationStageProjectionApply       = "projection_apply"
+	LocalizationStageProjectionQuality     = "projection_quality"
+	LocalizationStageStatusWrite           = "status_write"
+	LocalizationStageUnavailable           = "unavailable"
+)
+
+const (
+	LocalizationValidationCanonicalReport       = "canonical_report"
+	LocalizationValidationPresentationInventory = "presentation_inventory"
+	LocalizationValidationPayloadBudget         = "payload_budget"
+	LocalizationValidationRequestIdentity       = "request_identity"
+	LocalizationValidationTransport             = "transport"
+	LocalizationValidationUnsafeResponse        = "unsafe_response"
+	LocalizationValidationResponseDecode        = "response_decode"
+	LocalizationValidationProjectionApply       = "projection_apply"
+	LocalizationValidationProjectionDiagnostics = "projection_diagnostics"
+	LocalizationValidationBatchCombination      = "batch_combination"
+	LocalizationValidationPresentationApply     = "presentation_apply"
+	LocalizationValidationOffline               = "offline"
+	LocalizationValidationCache                 = "cache"
+	LocalizationValidationSavedProjection       = "saved_projection"
+	LocalizationValidationStatus                = "status"
+)
+
+var presentationLocalizationFailureStages = map[string]struct{}{
+	LocalizationStageCanonicalRead:         {},
+	LocalizationStageCanonicalAuthority:    {},
+	LocalizationStagePresentationHydration: {},
+	LocalizationStageInventoryBuild:        {},
+	LocalizationStageBatchPartition:        {},
+	LocalizationStagePromptBuild:           {},
+	LocalizationStageProviderConfiguration: {},
+	LocalizationStageProviderRequest:       {},
+	LocalizationStageResponseSecretScan:    {},
+	LocalizationStageResponseDecode:        {},
+	LocalizationStageProjectionApply:       {},
+	LocalizationStageProjectionQuality:     {},
+	LocalizationStageStatusWrite:           {},
+	LocalizationStageUnavailable:           {},
+}
+
+var presentationLocalizationValidationCodes = map[string]struct{}{
+	LocalizationValidationCanonicalReport:       {},
+	LocalizationValidationPresentationInventory: {},
+	LocalizationValidationPayloadBudget:         {},
+	LocalizationValidationRequestIdentity:       {},
+	LocalizationValidationTransport:             {},
+	LocalizationValidationUnsafeResponse:        {},
+	LocalizationValidationResponseDecode:        {},
+	LocalizationValidationProjectionApply:       {},
+	LocalizationValidationProjectionDiagnostics: {},
+	LocalizationValidationBatchCombination:      {},
+	LocalizationValidationPresentationApply:     {},
+	LocalizationValidationOffline:               {},
+	LocalizationValidationCache:                 {},
+	LocalizationValidationSavedProjection:       {},
+	LocalizationValidationStatus:                {},
+}
 
 const (
 	LocalizationFailurePreparation       = "preparation_failed"
@@ -69,6 +139,33 @@ type PresentationLocalizationStatus struct {
 	RequestSHA256    string `json:"request_sha256,omitempty"`
 	ProjectionSHA256 string `json:"projection_sha256,omitempty"`
 	CacheKey         string `json:"cache_key,omitempty"`
+	FailureStage     string `json:"failure_stage,omitempty"`
+	ValidationCode   string `json:"validation_code,omitempty"`
+	BatchTotal       int    `json:"batch_total"`
+	BatchAttempted   int    `json:"batch_attempted"`
+	BatchCompleted   int    `json:"batch_completed"`
+	FailedBatch      int    `json:"failed_batch,omitempty"`
+	DebugDumpFailed  bool   `json:"debug_dump_failed,omitempty"`
+}
+
+// PresentationLocalizationProgress contains only bounded stage counters. A
+// failed batch is one-based so zero remains an unambiguous "none" value.
+type PresentationLocalizationProgress struct {
+	BatchTotal     int
+	BatchAttempted int
+	BatchCompleted int
+	FailedBatch    int
+}
+
+// PresentationLocalizationFailure contains only closed diagnostic values.
+// Provider text, paths, endpoints, and errors never enter the status record.
+type PresentationLocalizationFailure struct {
+	ReasonCode      string
+	FailureStage    string
+	ValidationCode  string
+	CanonicalSHA256 string
+	Progress        PresentationLocalizationProgress
+	DebugDumpFailed bool
 }
 
 type PresentationLocalizationProjectionRecord struct {
@@ -86,6 +183,7 @@ func WritePresentationLocalizationSuccess(
 	cacheHit bool,
 	requestSHA256,
 	cacheKey string,
+	progress ...PresentationLocalizationProgress,
 ) error {
 	result, err := localization.Apply(prepared.Canonical, prepared.Input, projection)
 	if err != nil || result.Fallback || len(result.Diagnostics) != 0 ||
@@ -111,6 +209,10 @@ func WritePresentationLocalizationSuccess(
 	if _, found := secretscan.DetectAlways(string(recordJSON)); found {
 		return fmt.Errorf("report localization: saved projection contains unsafe material")
 	}
+	batchProgress := PresentationLocalizationProgress{BatchTotal: 1, BatchAttempted: 1, BatchCompleted: 1}
+	if len(progress) > 0 {
+		batchProgress = progress[0]
+	}
 	status := PresentationLocalizationStatus{
 		Version:          PresentationLocalizationStatusVersion,
 		ContractVersion:  PresentationLocalizationContractVersion,
@@ -121,6 +223,9 @@ func WritePresentationLocalizationSuccess(
 		RequestSHA256:    requestSHA256,
 		ProjectionSHA256: presentationLocalizationSHA256(recordJSON),
 		CacheKey:         cacheKey,
+		BatchTotal:       batchProgress.BatchTotal,
+		BatchAttempted:   batchProgress.BatchAttempted,
+		BatchCompleted:   batchProgress.BatchCompleted,
 	}
 	statusJSON, err := marshalPresentationLocalizationStatus(status)
 	if err != nil {
@@ -147,11 +252,10 @@ func WritePresentationLocalizationSuccess(
 }
 
 func WritePresentationLocalizationFailure(
-	runDir,
-	reasonCode,
-	canonicalSHA256 string,
+	runDir string,
+	failure PresentationLocalizationFailure,
 ) error {
-	if _, ok := presentationLocalizationFailureCodes[reasonCode]; !ok {
+	if _, ok := presentationLocalizationFailureCodes[failure.ReasonCode]; !ok {
 		return fmt.Errorf("report localization: invalid failure code")
 	}
 	statusJSON, err := marshalPresentationLocalizationStatus(PresentationLocalizationStatus{
@@ -159,8 +263,15 @@ func WritePresentationLocalizationFailure(
 		ContractVersion: PresentationLocalizationContractVersion,
 		RequestedLocale: localization.LocaleRussian,
 		State:           PresentationLocalizationFailed,
-		ReasonCode:      reasonCode,
-		CanonicalSHA256: canonicalSHA256,
+		ReasonCode:      failure.ReasonCode,
+		CanonicalSHA256: failure.CanonicalSHA256,
+		FailureStage:    failure.FailureStage,
+		ValidationCode:  failure.ValidationCode,
+		BatchTotal:      failure.Progress.BatchTotal,
+		BatchAttempted:  failure.Progress.BatchAttempted,
+		BatchCompleted:  failure.Progress.BatchCompleted,
+		FailedBatch:     failure.Progress.FailedBatch,
+		DebugDumpFailed: failure.DebugDumpFailed,
 	})
 	if err != nil {
 		return err
@@ -199,7 +310,10 @@ func validatePresentationLocalizationStatus(
 		!validPresentationLocalizationScalar(status.CanonicalSHA256, 128) ||
 		!validPresentationLocalizationScalar(status.RequestSHA256, 128) ||
 		!validPresentationLocalizationScalar(status.ProjectionSHA256, 128) ||
-		!validPresentationLocalizationScalar(status.CacheKey, 256) {
+		!validPresentationLocalizationScalar(status.CacheKey, 256) ||
+		!validPresentationLocalizationScalar(status.FailureStage, 64) ||
+		!validPresentationLocalizationScalar(status.ValidationCode, 64) ||
+		!validPresentationLocalizationProgress(status) {
 		return fmt.Errorf("report localization: invalid status")
 	}
 	switch status.State {
@@ -207,7 +321,11 @@ func validatePresentationLocalizationStatus(
 		if status.ReasonCode != "" || status.CanonicalSHA256 == "" ||
 			status.RequestSHA256 == "" || status.ProjectionSHA256 == "" ||
 			!validPresentationLocalizationSHA256(status.ProjectionSHA256) ||
-			status.CacheKey == "" {
+			status.CacheKey == "" || status.FailureStage != "" ||
+			status.ValidationCode != "" || status.FailedBatch != 0 ||
+			status.DebugDumpFailed ||
+			status.BatchTotal == 0 || status.BatchAttempted != status.BatchTotal ||
+			status.BatchCompleted != status.BatchTotal {
 			return fmt.Errorf("report localization: invalid success status")
 		}
 	case PresentationLocalizationFailed:
@@ -216,10 +334,29 @@ func validatePresentationLocalizationStatus(
 			status.ProjectionSHA256 != "" || status.CacheKey != "" {
 			return fmt.Errorf("report localization: invalid failure status")
 		}
+		if _, ok := presentationLocalizationFailureStages[status.FailureStage]; !ok {
+			return fmt.Errorf("report localization: invalid failure status")
+		}
+		if _, ok := presentationLocalizationValidationCodes[status.ValidationCode]; !ok {
+			return fmt.Errorf("report localization: invalid failure status")
+		}
 	default:
 		return fmt.Errorf("report localization: invalid status state")
 	}
 	return nil
+}
+
+func validPresentationLocalizationProgress(status PresentationLocalizationStatus) bool {
+	if status.BatchTotal < 0 || status.BatchTotal > 4096 ||
+		status.BatchAttempted < 0 || status.BatchAttempted > status.BatchTotal ||
+		status.BatchCompleted < 0 || status.BatchCompleted > status.BatchAttempted ||
+		status.FailedBatch < 0 || status.FailedBatch > status.BatchTotal {
+		return false
+	}
+	if status.FailedBatch > 0 && status.FailedBatch > status.BatchAttempted {
+		return false
+	}
+	return true
 }
 
 func validPresentationLocalizationSHA256(value string) bool {
@@ -257,13 +394,10 @@ func LoadPresentationLocalization(
 		return canonicalEnglishPresentation(data), PresentationLocalizationStatus{}
 	}
 	if data.presentationMetadataErr != nil {
-		return failedRussianPresentation(data), PresentationLocalizationStatus{
-			Version:         PresentationLocalizationStatusVersion,
-			ContractVersion: PresentationLocalizationContractVersion,
-			RequestedLocale: localization.LocaleRussian,
-			State:           PresentationLocalizationFailed,
-			ReasonCode:      LocalizationFailureSavedProjection,
-		}
+		return failedRussianPresentation(data), failedPresentationLocalizationStatus(
+			LocalizationFailureSavedProjection,
+			LocalizationValidationSavedProjection,
+		)
 	}
 	statusJSON, statusErr := readPresentationLocalizationFile(
 		runDir,
@@ -271,25 +405,19 @@ func LoadPresentationLocalization(
 		maxPresentationLocalizationStatusBytes,
 	)
 	if os.IsNotExist(statusErr) {
-		return failedRussianPresentation(data), PresentationLocalizationStatus{
-			Version:         PresentationLocalizationStatusVersion,
-			ContractVersion: PresentationLocalizationContractVersion,
-			RequestedLocale: localization.LocaleRussian,
-			State:           PresentationLocalizationFailed,
-			ReasonCode:      LocalizationFailureStatusUnavailable,
-		}
+		return failedRussianPresentation(data), failedPresentationLocalizationStatus(
+			LocalizationFailureStatusUnavailable,
+			LocalizationValidationStatus,
+		)
 	}
 	var status PresentationLocalizationStatus
 	if statusErr != nil ||
 		decodePresentationLocalizationJSON(statusJSON, &status) != nil ||
 		validatePresentationLocalizationStatus(status) != nil {
-		return failedRussianPresentation(data), PresentationLocalizationStatus{
-			Version:         PresentationLocalizationStatusVersion,
-			ContractVersion: PresentationLocalizationContractVersion,
-			RequestedLocale: localization.LocaleRussian,
-			State:           PresentationLocalizationFailed,
-			ReasonCode:      LocalizationFailureSavedProjection,
-		}
+		return failedRussianPresentation(data), failedPresentationLocalizationStatus(
+			LocalizationFailureSavedProjection,
+			LocalizationValidationSavedProjection,
+		)
 	}
 	if status.State == PresentationLocalizationFailed {
 		return failedRussianPresentation(data), status
@@ -303,21 +431,11 @@ func LoadPresentationLocalization(
 		maxPresentationLocalizationRecordBytes,
 	)
 	if err != nil {
-		status.State = PresentationLocalizationFailed
-		status.ReasonCode = LocalizationFailureSavedProjection
-		status.CacheHit = false
-		status.RequestSHA256 = ""
-		status.ProjectionSHA256 = ""
-		status.CacheKey = ""
+		status = rejectedSavedPresentationLocalizationStatus(status)
 		return failedRussianPresentation(data), status
 	}
 	if _, found := secretscan.DetectAlways(string(recordJSON)); found {
-		status.State = PresentationLocalizationFailed
-		status.ReasonCode = LocalizationFailureSavedProjection
-		status.CacheHit = false
-		status.RequestSHA256 = ""
-		status.ProjectionSHA256 = ""
-		status.CacheKey = ""
+		status = rejectedSavedPresentationLocalizationStatus(status)
 		return failedRussianPresentation(data), status
 	}
 	var record PresentationLocalizationProjectionRecord
@@ -327,35 +445,46 @@ func LoadPresentationLocalization(
 		record.ContractVersion != PresentationLocalizationContractVersion ||
 		record.TargetLocale != localization.LocaleRussian ||
 		record.CanonicalSHA256 != status.CanonicalSHA256 {
-		status.State = PresentationLocalizationFailed
-		status.ReasonCode = LocalizationFailureSavedProjection
-		status.CacheHit = false
-		status.RequestSHA256 = ""
-		status.ProjectionSHA256 = ""
-		status.CacheKey = ""
+		status = rejectedSavedPresentationLocalizationStatus(status)
 		return failedRussianPresentation(data), status
 	}
 	prepared, err := PreparePresentationLocalization(data, localization.LocaleRussian)
 	if err != nil || prepared.Canonical.SHA256 != status.CanonicalSHA256 {
-		status.State = PresentationLocalizationFailed
-		status.ReasonCode = LocalizationFailureSavedProjection
-		status.CacheHit = false
-		status.RequestSHA256 = ""
-		status.ProjectionSHA256 = ""
-		status.CacheKey = ""
+		status = rejectedSavedPresentationLocalizationStatus(status)
 		return failedRussianPresentation(data), status
 	}
 	projected, result, err := ApplyPresentationLocalization(data, prepared, record.Projection)
 	if err != nil || result.Fallback || len(result.Diagnostics) != 0 {
-		status.State = PresentationLocalizationFailed
-		status.ReasonCode = LocalizationFailureSavedProjection
-		status.CacheHit = false
-		status.RequestSHA256 = ""
-		status.ProjectionSHA256 = ""
-		status.CacheKey = ""
+		status = rejectedSavedPresentationLocalizationStatus(status)
 		return failedRussianPresentation(data), status
 	}
 	return projected, status
+}
+
+func failedPresentationLocalizationStatus(
+	reasonCode,
+	validationCode string,
+) PresentationLocalizationStatus {
+	return PresentationLocalizationStatus{
+		Version:         PresentationLocalizationStatusVersion,
+		ContractVersion: PresentationLocalizationContractVersion,
+		RequestedLocale: localization.LocaleRussian,
+		State:           PresentationLocalizationFailed,
+		ReasonCode:      reasonCode,
+		FailureStage:    LocalizationStageUnavailable,
+		ValidationCode:  validationCode,
+	}
+}
+
+func rejectedSavedPresentationLocalizationStatus(
+	status PresentationLocalizationStatus,
+) PresentationLocalizationStatus {
+	failed := failedPresentationLocalizationStatus(
+		LocalizationFailureSavedProjection,
+		LocalizationValidationSavedProjection,
+	)
+	failed.CanonicalSHA256 = status.CanonicalSHA256
+	return failed
 }
 
 func presentationLocalizationSHA256(data []byte) string {

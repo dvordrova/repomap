@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -185,6 +187,69 @@ func TestEnsureGuidedTourRejectsInventedReferenceWithoutSavingIt(t *testing.T) {
 	}
 }
 
+func TestEnsureGuidedTourReportsTypedPathLikeRejectionAndDumpsOnlyOnOptIn(t *testing.T) {
+	t.Parallel()
+
+	bundle := guidedTourTestBundle()
+	var proposal guidedtour.Proposal
+	if err := json.Unmarshal(guidedTourTestProposal(t, bundle, false), &proposal); err != nil {
+		t.Fatal(err)
+	}
+	proposal.Steps[0].Explanation = "Inspect cmd/server.go before continuing."
+	rejected, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name string
+		dump bool
+	}{
+		{name: "ordinary", dump: false},
+		{name: "dump", dump: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := filepath.Join(t.TempDir(), "run")
+			provider := &guidedTourEditorStub{response: rejected}
+			outcome, runErr := ensureGuidedTourWithOptions(
+				context.Background(), bundle, runDir, "test", "fixture-model", provider,
+				guidedTourRunOptions{disableCache: true, dumpRejectedResponse: test.dump},
+			)
+			if runErr == nil {
+				t.Fatal("path-like proposal was accepted")
+			}
+			if outcome.ValidatorField != "steps[0].explanation" ||
+				outcome.ValidatorRule != guidedtour.ValidationRulePathLikeReference {
+				t.Fatalf("typed validator outcome = %#v", outcome)
+			}
+			matches, globErr := filepath.Glob(filepath.Join(runDir, "model_responses", "guided_tour-rejected-*.redacted.json"))
+			if globErr != nil {
+				t.Fatal(globErr)
+			}
+			if got, want := len(matches), 0; test.dump {
+				want = 2
+				if got == want {
+					for index, match := range matches {
+						wantName := fmt.Sprintf("guided_tour-rejected-%03d.redacted.json", index+1)
+						if filepath.Base(match) != wantName {
+							t.Fatalf("rejected response artifact = %s, want %s", match, wantName)
+						}
+					}
+					dumped, readErr := os.ReadFile(matches[0])
+					if readErr != nil || !bytes.Contains(dumped, []byte("cmd/server.go")) {
+						t.Fatalf("rejected response artifact = %q, err = %v", dumped, readErr)
+					}
+				}
+				if got != want {
+					t.Fatalf("dumped artifacts = %v, want %d", matches, want)
+				}
+			} else if got != want {
+				t.Fatalf("dumped artifacts = %v, want %d", matches, want)
+			}
+		})
+	}
+}
+
 func TestEnsureGuidedTourRetriesRejectedProposalAndPublishesOnlyValidResult(t *testing.T) {
 	runDir := filepath.Join(t.TempDir(), "run")
 	bundle := guidedTourTestBundle()
@@ -193,8 +258,9 @@ func TestEnsureGuidedTourRetriesRejectedProposalAndPublishesOnlyValidResult(t *t
 		guidedTourTestProposal(t, bundle, false),
 	}}
 
-	outcome, err := ensureGuidedTour(
+	outcome, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		guidedTourRunOptions{disableCache: true, dumpRejectedResponse: true},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -212,6 +278,16 @@ func TestEnsureGuidedTourRetriesRejectedProposalAndPublishesOnlyValidResult(t *t
 	}
 	if story.CandidateID != bundle.Candidates[0].ID {
 		t.Fatalf("story = %#v", story)
+	}
+	if _, err := os.Stat(filepath.Join(
+		runDir, "model_responses", "guided_tour-rejected-001.redacted.json",
+	)); err != nil {
+		t.Fatalf("first rejected semantic attempt was not dumped: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(
+		runDir, "model_responses", "guided_tour-rejected-002.redacted.json",
+	)); !os.IsNotExist(err) {
+		t.Fatalf("accepted second semantic attempt was dumped: %v", err)
 	}
 }
 

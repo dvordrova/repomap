@@ -436,7 +436,7 @@ func ValidateLeafArtifact(task LeafTask, artifact LeafArtifact) error {
 	observationSupport := make(map[string]struct{})
 	for index, observation := range artifact.Observations {
 		field := fmt.Sprintf("leaf observations[%d] explanation", index)
-		if err := validateModelProse(field, observation.Explanation, maxProposalExplainBytes); err != nil {
+		if err := validateModelProse(field, fmt.Sprintf("leaf.observations[%d].explanation", index), observation.Explanation, maxProposalExplainBytes); err != nil {
 			return err
 		}
 		if editorialNegationPattern.MatchString(observation.Explanation) ||
@@ -487,6 +487,7 @@ func ValidateLeafArtifact(task LeafTask, artifact LeafArtifact) error {
 	}
 	if err := validateModelProse(
 		"leaf candidate connection explanation",
+		"leaf.candidate_connection.explanation",
 		connection.Explanation,
 		maxProposalExplainBytes,
 	); err != nil {
@@ -511,7 +512,7 @@ func ValidateLeafArtifact(task LeafTask, artifact LeafArtifact) error {
 
 	for index, missing := range artifact.MissingEvidence {
 		field := fmt.Sprintf("leaf missing_evidence[%d] explanation", index)
-		if err := validateModelProse(field, missing.Explanation, maxProposalExplainBytes); err != nil {
+		if err := validateModelProse(field, fmt.Sprintf("leaf.missing_evidence[%d].explanation", index), missing.Explanation, maxProposalExplainBytes); err != nil {
 			return err
 		}
 		if err := validateLeafHedgedProse(field, missing.Explanation); err != nil {
@@ -697,6 +698,7 @@ func ValidateFanInArtifact(bundle Bundle, results []LeafResult, artifact FanInAr
 	}
 	if err := validateModelProse(
 		"fan-in explanation",
+		"fan_in.explanation",
 		artifact.Explanation,
 		maxProposalExplainBytes,
 	); err != nil {

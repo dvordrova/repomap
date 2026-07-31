@@ -120,6 +120,7 @@ func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testi
 		ruDir,
 		cacheRoot,
 		false,
+		false,
 		io.Discard,
 	)
 	if err != nil {
@@ -696,6 +697,7 @@ func TestPresentationLocalizationCacheHitDoesNotRequireAPIKey(t *testing.T) {
 		runDir,
 		cacheRoot,
 		false,
+		false,
 		io.Discard,
 	)
 	if err != nil {
@@ -1014,6 +1016,144 @@ func TestPresentationLocalizationRejectsStrictlyInvalidBatchAfterOneProviderRequ
 		presentationLocalizationCacheVersionDir,
 	)); !os.IsNotExist(err) {
 		t.Fatalf("strict-invalid batch populated cache: %v", err)
+	}
+}
+
+func TestPresentationLocalizationFailureRecordsOnlyAttemptedBatches(t *testing.T) {
+	t.Parallel()
+
+	data := &report.ReportData{
+		FormatVersion: report.CurrentFormatVersion,
+		RepoName:      "fixture",
+		ProjectGuess:  "A bounded repository guide",
+	}
+	for index := 0; index < 140; index++ {
+		data.FirstFilesToOpen = append(data.FirstFilesToOpen, report.FileItem{
+			Path:     fmt.Sprintf("pkg/file-%03d.go", index),
+			Reason:   fmt.Sprintf("Inspect bounded behavior number %d", index),
+			Priority: index + 1,
+		})
+	}
+	prepared, err := report.PreparePresentationLocalization(data, localization.LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		[]byte(`{"version":1,"target_locale":"ru","translations":[]}`),
+	)
+	plans, err := buildPresentationLocalizationBatchPlans(prepared, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) < 2 {
+		t.Fatalf("fixture produced %d batch plans, want at least 2", len(plans))
+	}
+	runDir := t.TempDir()
+	outcome, err := executePresentationLocalization(
+		context.Background(), runDir, filepath.Join(t.TempDir(), "cache"), true,
+		data, prepared, provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationFailed ||
+		outcome.FailureStage != report.LocalizationStageResponseDecode ||
+		outcome.ValidationCode != report.LocalizationValidationResponseDecode ||
+		outcome.BatchTotal != len(plans) || outcome.BatchAttempted != 1 ||
+		outcome.BatchCompleted != 0 || outcome.FailedBatch != 1 ||
+		len(outcome.Batches) != 1 || outcome.Batches[0].Count != len(plans) {
+		t.Fatalf("failure outcome = %#v", outcome)
+	}
+	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.PresentationLocalizationStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.PresentationLocalizationStatus
+	if err := json.Unmarshal(statusJSON, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.BatchTotal != len(plans) || status.BatchAttempted != 1 ||
+		status.BatchCompleted != 0 || status.FailedBatch != 1 ||
+		status.FailureStage != report.LocalizationStageResponseDecode ||
+		status.ValidationCode != report.LocalizationValidationResponseDecode {
+		t.Fatalf("failure status = %#v", status)
+	}
+	if matches, err := filepath.Glob(filepath.Join(runDir, "model_responses", "*")); err != nil || len(matches) != 0 {
+		t.Fatalf("ordinary run persisted rejected response: %v / %v", matches, err)
+	}
+}
+
+func TestPresentationLocalizationDumpRejectedResponseIsSecretSafe(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		[]byte(`{"api_key":"sk-test-secret-value","translations":[]}`),
+	)
+	runDir := t.TempDir()
+	outcome, err := executePresentationLocalization(
+		context.Background(), runDir, filepath.Join(t.TempDir(), "cache"), true,
+		data, prepared, provider,
+		presentationLocalizationExecutionOptions{DumpRejectedResponse: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.ValidationCode != report.LocalizationValidationUnsafeResponse {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+	dumped, err := os.ReadFile(filepath.Join(runDir, "model_responses", "localization-rejected-001.redacted.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(dumped, []byte("sk-test-secret-value")) || !bytes.Contains(dumped, []byte("[redacted")) {
+		t.Fatalf("unsafe rejected-response artifact = %q", dumped)
+	}
+}
+
+func TestPresentationLocalizationRejectedDumpCannotEscapeRunRoot(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		[]byte(`{"not":"a projection"}`),
+	)
+	runDir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(runDir, "model_responses")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	outcome, err := executePresentationLocalization(
+		context.Background(), runDir, filepath.Join(t.TempDir(), "cache"), true,
+		data, prepared, provider,
+		presentationLocalizationExecutionOptions{DumpRejectedResponse: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.DebugDumpFailed || outcome.ValidationCode != report.LocalizationValidationResponseDecode {
+		t.Fatalf("dump failure outcome = %#v", outcome)
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("escaped rejected dump: entries=%v err=%v", entries, err)
+	}
+	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.PresentationLocalizationStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.PresentationLocalizationStatus
+	if err := json.Unmarshal(statusJSON, &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.DebugDumpFailed {
+		t.Fatalf("status omitted rejected dump failure: %#v", status)
 	}
 }
 
