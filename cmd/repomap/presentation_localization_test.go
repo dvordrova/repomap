@@ -974,15 +974,9 @@ func TestPresentationLocalizationRejectsStrictlyInvalidBatchAfterOneProviderRequ
 	t.Parallel()
 
 	data, prepared := presentationLocalizationFixture(t)
-	invalidProjection := localization.Projection{
-		Version:         localization.ProjectionVersion,
-		CanonicalSHA256: prepared.Canonical.SHA256,
-		Locale:          localization.LocaleRussian,
-		Translations:    make(map[string]string, len(prepared.Input.Fields)),
-	}
-	for _, field := range prepared.Input.Fields {
-		invalidProjection.Translations[field.ID] = field.Text
-	}
+	invalidProjection := presentationLocalizationProjection(t, prepared, "")
+	firstFieldID := prepared.Input.Fields[0].ID
+	invalidProjection.Translations[firstFieldID] += " {{term_99}}"
 	provider := newFakePresentationLocalizationProvider(
 		"https://translation.example.test/v1/chat/completions",
 		"translation-model",
@@ -1016,6 +1010,52 @@ func TestPresentationLocalizationRejectsStrictlyInvalidBatchAfterOneProviderRequ
 		presentationLocalizationCacheVersionDir,
 	)); !os.IsNotExist(err) {
 		t.Fatalf("strict-invalid batch populated cache: %v", err)
+	}
+}
+
+func TestPresentationLocalizationAcceptsMixedScriptBatchAndCachesIt(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	projection := presentationLocalizationProjection(t, prepared, "")
+	firstFieldID := prepared.Input.Fields[0].ID
+	projection.Translations[firstFieldID] = "HTTP Go Grafana curl: " +
+		projection.Translations[firstFieldID]
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		localizationProviderResponseJSON(t, prepared.Input, projection),
+	)
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	outcome, err := executePresentationLocalization(
+		context.Background(),
+		t.TempDir(),
+		cacheRoot,
+		false,
+		data,
+		prepared,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationSucceeded ||
+		outcome.ReasonCode != "" || outcome.CacheHit ||
+		provider.buildCalls != 1 || provider.executeCalls != 1 ||
+		outcome.ProviderCalls != 1 {
+		t.Fatalf(
+			"mixed-script outcome/provider calls = %#v/%d",
+			outcome,
+			provider.executeCalls,
+		)
+	}
+	if _, err := os.Stat(filepath.Join(
+		cacheRoot,
+		presentationLocalizationCacheVersionDir,
+	)); err != nil {
+		t.Fatalf("mixed-script batch was not cached: %v", err)
 	}
 }
 
