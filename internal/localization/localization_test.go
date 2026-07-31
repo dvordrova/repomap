@@ -866,6 +866,66 @@ func TestCanonicalRejectsReservedPlaceholderAndHandlesNestedTerms(t *testing.T) 
 	}
 }
 
+func TestCanonicalDoesNotInferNestedSnakeCaseToken(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "storage",
+		Name:      FieldSummary,
+		Text:      "storage/aws_s3.go is one storage adapter.",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedPath,
+			Value: "storage/aws_s3.go",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Fields) != 1 || len(input.Fields[0].Placeholders) != 1 {
+		t.Fatalf("snake-case placeholders = %#v, want only the full opaque path", input.Fields)
+	}
+	if input.Fields[0].Placeholders[0].Kind != ProtectedPath ||
+		input.Fields[0].Placeholders[0].Count != 1 {
+		t.Fatalf("protected placeholder = %#v, want one full path", input.Fields[0].Placeholders[0])
+	}
+	if input.Fields[0].Text != "{{term_01}} is one storage adapter." {
+		t.Fatalf("protected text = %q, want only the full path replaced", input.Fields[0].Text)
+	}
+}
+
+func TestCanonicalStillInfersStandaloneProtocolBesideSnakeCasePath(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical([]FieldSpec{{
+		OwnerKind: OwnerComponent,
+		OwnerID:   "storage-protocol",
+		Name:      FieldSummary,
+		Text:      "storage/aws_s3.go implements S3 storage.",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedPath,
+			Value: "storage/aws_s3.go",
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Fields) != 1 || len(input.Fields[0].Placeholders) != 2 {
+		t.Fatalf("path/protocol placeholders = %#v, want two opaque values", input.Fields)
+	}
+	if input.Fields[0].Text != "{{term_01}} implements {{term_02}} storage." {
+		t.Fatalf("protected text = %q", input.Fields[0].Text)
+	}
+}
+
 func fixtureSpecs() []FieldSpec {
 	return []FieldSpec{
 		{

@@ -16,6 +16,8 @@ import (
 	"github.com/dvordrova/repomap/internal/studymap"
 )
 
+const legacyReadingPackReviewPromptVersion = "repository-reading-pack-review-json-v1"
+
 const maxV32ReplayArtifactBytes = 32 << 20
 
 func replaySavedStudyMapV32(runDir string) (studyMapStatus, error) {
@@ -220,7 +222,7 @@ func loadBoundStudyMapReviews(
 			return nil, nil, nil, err
 		}
 		if attempt.Version != 1 ||
-			attempt.PromptVersion != semanticdiscovery.ReadingPackReviewPromptVersion ||
+			!supportedReadingPackReviewPromptVersion(attempt.PromptVersion) ||
 			attempt.BundleSHA256 != bundleSHA || attempt.DirectionID != direction.DirectionID {
 			return nil, nil, nil, fmt.Errorf("v32 replay: reading review attempt binding mismatch")
 		}
@@ -252,6 +254,11 @@ func loadBoundStudyMapReviews(
 		reviews = append(reviews, proposal)
 	}
 	return reviews, summaries, issues, nil
+}
+
+func supportedReadingPackReviewPromptVersion(version string) bool {
+	return version == semanticdiscovery.ReadingPackReviewPromptVersion ||
+		version == legacyReadingPackReviewPromptVersion
 }
 
 func v32ReplayArtifactExists(path string) (bool, error) {

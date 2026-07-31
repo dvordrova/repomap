@@ -736,7 +736,7 @@ func withInferredProtectedValues(text string, explicit []ProtectedValue) []Prote
 			continue
 		}
 		kind, protect := inferredProtectedKind(token)
-		if !protect {
+		if !protect || !ContainsProtectedValue(text, token) {
 			continue
 		}
 		values = append(values, ProtectedValue{Kind: kind, Value: token})

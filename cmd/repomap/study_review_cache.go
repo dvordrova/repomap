@@ -306,7 +306,7 @@ func (editor *studyReviewCachingEditor) reviewCacheIdentity(
 	direction studymap.DirectionCandidate,
 ) (studyReviewCacheIdentity, string, []byte, error) {
 	if prompt.Version != semanticdiscovery.ReadingPackReviewPromptVersion ||
-		prompt.ThinkingProfile != semanticdiscovery.ThinkingHigh {
+		prompt.ThinkingProfile != semanticdiscovery.ThinkingDisabled {
 		return studyReviewCacheIdentity{}, "", nil,
 			fmt.Errorf("study review cache: unsupported review prompt contract")
 	}

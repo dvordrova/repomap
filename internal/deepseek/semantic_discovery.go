@@ -28,11 +28,18 @@ func (c *Client) SemanticDiscoveryPromptJSON(prompt semanticdiscovery.Prompt) ([
 	}
 	request := c.flowExplainRequest(prompt.User, prompt.System, true)
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
-		// DeepSeek thinking mode ignores temperature. The strict local JSON
-		// contract and replay cache own reproducibility for these stages.
-		request.Temperature = nil
-		request.Thinking = &thinkingConfig{Type: "enabled"}
-		request.ReasoningEffort = string(prompt.ThinkingProfile)
+		if prompt.ThinkingProfile == semanticdiscovery.ThinkingDisabled {
+			// A reading-pack review is a bounded classification over three to
+			// five exact anchors. Hidden reasoning can otherwise consume the
+			// entire response envelope before emitting the small JSON verdict.
+			request.Thinking = &thinkingConfig{Type: "disabled"}
+		} else {
+			// DeepSeek thinking mode ignores temperature. The strict local JSON
+			// contract and replay cache own reproducibility for these stages.
+			request.Temperature = nil
+			request.Thinking = &thinkingConfig{Type: "enabled"}
+			request.ReasoningEffort = string(prompt.ThinkingProfile)
+		}
 		if prompt.Version == semanticdiscovery.StudyCandidatesPromptVersion &&
 			request.MaxTokens < semanticDiscoveryStudyCandidatesMinMaxTokens {
 			request.MaxTokens = semanticDiscoveryStudyCandidatesMinMaxTokens
@@ -134,7 +141,7 @@ func validateSemanticDiscoveryPrompt(prompt semanticdiscovery.Prompt) error {
 	case semanticdiscovery.StudyCandidatesPromptVersion:
 		expectedProfile = semanticdiscovery.ThinkingMax
 	case semanticdiscovery.ReadingPackReviewPromptVersion:
-		expectedProfile = semanticdiscovery.ThinkingHigh
+		expectedProfile = semanticdiscovery.ThinkingDisabled
 	case pavedpath.PromptVersion:
 		expectedProfile = semanticdiscovery.ThinkingHigh
 	default:
