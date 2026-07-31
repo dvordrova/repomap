@@ -640,7 +640,7 @@ func reviewStudyMapDirections(
 		prompt := semanticdiscovery.Prompt{
 			Version: semanticdiscovery.ReadingPackReviewPromptVersion,
 			System:  studyMapReviewSystemPrompt, User: studyMapReviewTask + string(raw),
-			ThinkingProfile: semanticdiscovery.ThinkingHigh,
+			ThinkingProfile: semanticdiscovery.ThinkingDisabled,
 			ProgressLabel:   "reading pack review " + reviewBundle.DirectionID,
 		}
 		plan, err := newSemanticDiscoveryStagePlan(provider, prompt, stage)

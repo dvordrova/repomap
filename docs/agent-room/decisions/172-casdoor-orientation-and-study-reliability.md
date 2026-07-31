@@ -42,6 +42,22 @@ the saved baseline. Subsequent Study changes must target a demonstrated loss
 boundary and may not use Decision 171's cache to change candidate composition,
 review validation, published IDs, evidence, paths, or order.
 
+That control run scheduled all eight accepted candidates, but four independent
+reading-pack reviews returned no JSON content because official DeepSeek spent
+the complete output on hidden reasoning. One of the four even ended with
+`finish_reason=stop`, so more response headroom alone is not a recovery. Each
+review is only a bounded classification over three to five exact anchors; the
+official endpoint therefore disables thinking for this stage, while compatible
+endpoints remain unchanged. The prompt contract version changes, which safely
+invalidates the exact-request Decision 171 cache without changing candidates,
+scheduling, validation, publication, IDs, evidence, paths, or order.
+
+The same run also exposed a presentation-only preparation failure: inferred
+opaque tokenization split `s3` out of the already protected path
+`storage/aws_s3.go`, then rejected its own token under identifier-boundary
+validation. Inference now uses that same boundary predicate before adding an
+opaque value. Canonical prose and explicit opaque values remain unchanged.
+
 ## Verification
 
 Before the first checkpoint, focused fake-provider tests prove the exact

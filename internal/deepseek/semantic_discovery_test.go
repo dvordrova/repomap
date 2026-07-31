@@ -160,9 +160,9 @@ func TestSemanticDiscoveryPromptJSONUsesPurposeSpecificDeepSeekThinking(t *testi
 			wantTokens: semanticDiscoveryStudyCandidatesMinMaxTokens,
 		},
 		{
-			name:       "bounded reading pack review uses high",
+			name:       "bounded reading pack review disables thinking",
 			version:    semanticdiscovery.ReadingPackReviewPromptVersion,
-			profile:    semanticdiscovery.ThinkingHigh,
+			profile:    semanticdiscovery.ThinkingDisabled,
 			wantTokens: 6000,
 		},
 		{
@@ -191,19 +191,60 @@ func TestSemanticDiscoveryPromptJSONUsesPurposeSpecificDeepSeekThinking(t *testi
 			if request.ResponseFormat == nil || request.ResponseFormat.Type != "json_object" {
 				t.Fatalf("response_format = %#v", request.ResponseFormat)
 			}
-			if request.Thinking == nil || request.Thinking.Type != "enabled" {
-				t.Fatalf("thinking = %#v, want enabled", request.Thinking)
-			}
-			if request.Temperature != nil {
-				t.Fatalf("temperature = %v, want omitted", *request.Temperature)
-			}
-			if request.ReasoningEffort != string(test.profile) {
-				t.Fatalf("reasoning_effort = %q, want %q", request.ReasoningEffort, test.profile)
+			if test.profile == semanticdiscovery.ThinkingDisabled {
+				if request.Thinking == nil || request.Thinking.Type != "disabled" {
+					t.Fatalf("thinking = %#v, want disabled", request.Thinking)
+				}
+				if request.Temperature == nil || *request.Temperature != 0.1 {
+					t.Fatalf("temperature = %v, want 0.1", request.Temperature)
+				}
+				if request.ReasoningEffort != "" {
+					t.Fatalf("reasoning_effort = %q, want omitted", request.ReasoningEffort)
+				}
+			} else {
+				if request.Thinking == nil || request.Thinking.Type != "enabled" {
+					t.Fatalf("thinking = %#v, want enabled", request.Thinking)
+				}
+				if request.Temperature != nil {
+					t.Fatalf("temperature = %v, want omitted", *request.Temperature)
+				}
+				if request.ReasoningEffort != string(test.profile) {
+					t.Fatalf("reasoning_effort = %q, want %q", request.ReasoningEffort, test.profile)
+				}
 			}
 			if request.MaxTokens != test.wantTokens {
 				t.Fatalf("max_tokens = %d, want %d", request.MaxTokens, test.wantTokens)
 			}
 		})
+	}
+}
+
+func TestSemanticDiscoveryPromptJSONKeepsReadingPackProviderNeutral(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{
+		Endpoint:  "https://compatible.example.test/v1/chat/completions",
+		Model:     "compatible-model",
+		MaxTokens: 6000,
+	}
+	raw, err := client.SemanticDiscoveryPromptJSON(semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.ReadingPackReviewPromptVersion,
+		System:          "return valid JSON",
+		User:            "bounded reading pack review",
+		ThinkingProfile: semanticdiscovery.ThinkingDisabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request chatRequest
+	if err := json.Unmarshal(raw, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Thinking != nil || request.ReasoningEffort != "" {
+		t.Fatalf("compatible request has DeepSeek thinking fields: %#v", request)
+	}
+	if request.Temperature == nil || *request.Temperature != 0.1 {
+		t.Fatalf("temperature = %v, want 0.1", request.Temperature)
 	}
 }
 
@@ -292,6 +333,15 @@ func TestSemanticDiscoveryPromptJSONRejectsInvalidContract(t *testing.T) {
 				System:          "system",
 				User:            "user",
 				ThinkingProfile: semanticdiscovery.ThinkingMax,
+			},
+		},
+		{
+			name: "wrong reading pack profile",
+			prompt: semanticdiscovery.Prompt{
+				Version:         semanticdiscovery.ReadingPackReviewPromptVersion,
+				System:          "system",
+				User:            "user",
+				ThinkingProfile: semanticdiscovery.ThinkingHigh,
 			},
 		},
 		{

@@ -170,6 +170,12 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   `reasoning_effort:"max"` even when the final JSON itself is small. The
   20,000-token minimum is limited to global semantic tasks; bounded leaves and
   unrelated stages keep their existing limits.
+- Study reading-pack review is a bounded classification over three to five
+  exact anchors. The official endpoint receives explicit disabled thinking for
+  that review only; compatible endpoints receive no DeepSeek-specific field.
+  A Casdoor control run showed four of eight otherwise independent reviews
+  returning reasoning-only completions, including one `finish_reason=stop`, so
+  increasing the output cap would not recover the missing JSON verdicts.
 - DeepSeek usage may report `prompt_cache_hit_tokens` and
   `prompt_cache_miss_tokens`. Guided experiment records and semantic-discovery
   measured results preserve both fields independently from total prompt tokens

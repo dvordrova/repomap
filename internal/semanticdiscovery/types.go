@@ -22,7 +22,7 @@ const (
 	StudyMapPromptVersion          = "repository-study-map-json-v1"
 	StudyBriefPromptVersion        = "repository-brief-shape-json-v2"
 	StudyCandidatesPromptVersion   = "repository-study-candidates-json-v4"
-	ReadingPackReviewPromptVersion = "repository-reading-pack-review-json-v1"
+	ReadingPackReviewPromptVersion = "repository-reading-pack-review-json-v2"
 
 	RecordFile               = "semantic_artifacts.json"
 	MaxSelectedCandidates    = 5
@@ -518,8 +518,9 @@ type Step struct {
 type ThinkingProfile string
 
 const (
-	ThinkingHigh ThinkingProfile = "high"
-	ThinkingMax  ThinkingProfile = "max"
+	ThinkingDisabled ThinkingProfile = "disabled"
+	ThinkingHigh     ThinkingProfile = "high"
+	ThinkingMax      ThinkingProfile = "max"
 )
 
 type Prompt struct {

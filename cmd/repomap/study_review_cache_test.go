@@ -1020,7 +1020,7 @@ func studyReviewCachePlanFor(
 		Version:         semanticdiscovery.ReadingPackReviewPromptVersion,
 		System:          studyMapReviewSystemPrompt,
 		User:            studyMapReviewTask + string(raw),
-		ThinkingProfile: semanticdiscovery.ThinkingHigh,
+		ThinkingProfile: semanticdiscovery.ThinkingDisabled,
 		ProgressLabel:   "reading pack review " + reviewBundle.DirectionID,
 	}
 	request, err := editor.SemanticDiscoveryPromptJSON(prompt)
