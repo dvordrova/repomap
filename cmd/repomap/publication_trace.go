@@ -78,6 +78,8 @@ var knownStudyDecisionReasons = map[string]struct{}{
 	"review_malformed":                              {},
 	"review_missing":                                {},
 	"review_request_plan_failed":                    {},
+	"review_selection_cap":                          {},
+	"review_semantic_duplicate_after_compression":   {},
 	"too_many_search_queries":                       {},
 	"unsupported_runtime_order":                     {},
 }

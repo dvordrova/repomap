@@ -1294,6 +1294,9 @@ func TestCompressReviewedDirectionsPrefersQuestionFitOnTies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reduction.Directions = extendReviewedDirectionsForCompression(
+		t, reduction.Directions, MaxReviewedDirections+1,
+	)
 	if len(reduction.Directions) <= MaxReviewedDirections {
 		t.Fatalf("fixture has %d reviewed directions, need more than %d", len(reduction.Directions), MaxReviewedDirections)
 	}
@@ -1348,6 +1351,10 @@ func TestComposeReviewedRecordCompressesDuplicatesAndKeepsV1Contract(t *testing.
 	if reduction.Proposed != len(directions.Directions) ||
 		reduction.Reviewed != len(directions.Directions) || reduction.Selected != len(proposal.Candidates) {
 		t.Fatalf("reduction = %#v", reduction)
+	}
+	if !hasReviewIssue(reduction, directions.Directions[len(directions.Directions)-1].DirectionID,
+		"review_semantic_duplicate_after_compression") {
+		t.Fatalf("duplicate compression was not observable: %#v", reduction.Issues)
 	}
 	for _, candidate := range proposal.Candidates {
 		if candidate.Confidence != "" {
@@ -1439,6 +1446,9 @@ func TestCompressReviewedDirectionsReservesFirstContact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reduction.Directions = extendReviewedDirectionsForCompression(
+		t, reduction.Directions, MaxReviewedDirections+1,
+	)
 	if len(reduction.Directions) <= MaxReviewedDirections {
 		t.Fatalf("fixture has %d reviewed directions, need more than %d", len(reduction.Directions), MaxReviewedDirections)
 	}
@@ -1456,6 +1466,93 @@ func TestCompressReviewedDirectionsReservesFirstContact(t *testing.T) {
 	}) {
 		t.Fatalf("first-contact direction %q was displaced: %#v", firstContactID, selected)
 	}
+}
+
+func TestBuildReviewedRecordRetainsNineDistinctAcceptedDirections(t *testing.T) {
+	t.Parallel()
+
+	bundle, legacy := studyMapFixture(t)
+	brief := briefShapeFromLegacy(legacy)
+	directions := rawDirectionsFromLegacy(legacy)
+	additional := directions.Directions[0]
+	additional.DirectionID = ""
+	additional.Question = "How do maintainers manage users and permissions?"
+	additional.WhyItMatters = "User administration is a distinct repository responsibility."
+	additional.LearningOutcome = "The reader can locate the user-management boundary and its supporting implementation."
+	additional.TargetJob = JobMaintain
+	additional.LearningStage = StageCentralOperation
+	additional.AnchorIDs = []string{"fact-1", "fact-4", "fact-7"}
+	additional.AreaIDs = []string{"area-api", "area-extension"}
+	additional.ReadingAnchors = readingAnchors(additional.AnchorIDs)
+	directions.Directions = append(directions.Directions, additional)
+	var err error
+	directions, err = NormalizeDirectionProposal(directions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := make([]ReviewProposal, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		reviews = append(reviews, directReview(direction))
+	}
+
+	record, reduction, err := BuildReviewedRecord(bundle, brief, directions, reviews)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reduction.Proposed != 9 || reduction.Reviewed != 9 ||
+		reduction.Selected != 9 || len(record.Directions) != 9 {
+		t.Fatalf("nine-direction funnel = proposed %d reviewed %d selected %d published %d",
+			reduction.Proposed, reduction.Reviewed, reduction.Selected, len(record.Directions))
+	}
+	if !slices.ContainsFunc(record.Directions, func(direction Direction) bool {
+		return direction.Question == additional.Question
+	}) {
+		t.Fatalf("user-management direction was lost: %#v", record.Directions)
+	}
+}
+
+func extendReviewedDirectionsForCompression(
+	t *testing.T,
+	directions []ReviewedDirection,
+	want int,
+) []ReviewedDirection {
+	t.Helper()
+	result := append([]ReviewedDirection(nil), directions...)
+	for first := 1; first <= 8 && len(result) < want; first++ {
+		for second := first + 1; second <= 8 && len(result) < want; second++ {
+			for third := second + 1; third <= 8 && len(result) < want; third++ {
+				anchorIDs := []string{
+					fmt.Sprintf("fact-%d", first),
+					fmt.Sprintf("fact-%d", second),
+					fmt.Sprintf("fact-%d", third),
+				}
+				if slices.ContainsFunc(result, func(direction ReviewedDirection) bool {
+					return stringSetJaccard(direction.Candidate.AnchorIDs, anchorIDs) >= 0.6
+				}) {
+					continue
+				}
+				index := len(result)
+				candidate := result[0].Candidate
+				candidate.Question = fmt.Sprintf("topic%d", index)
+				candidate.LearningOutcome = fmt.Sprintf("outcome%d", index)
+				candidate.AnchorIDs = anchorIDs
+				candidate.ReadingAnchors = readingAnchors(anchorIDs)
+				result = append(result, ReviewedDirection{
+					DirectionID:      fmt.Sprintf("compression-direction-%d", index),
+					Candidate:        candidate,
+					Reviews:          directReview(DirectionCandidate{DirectionID: fmt.Sprintf("compression-direction-%d", index), AnchorIDs: anchorIDs}).Reviews,
+					QualityScore:     10,
+					RoleDiversity:    1,
+					QuestionFitScore: 0,
+					proposalIndex:    index,
+				})
+			}
+		}
+	}
+	if len(result) != want {
+		t.Fatalf("extended reviewed directions = %d, want %d", len(result), want)
+	}
+	return result
 }
 
 func TestBuildReviewedRecordTreatsBriefSupportIDsAsUnordered(t *testing.T) {

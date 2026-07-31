@@ -23,7 +23,7 @@ const (
 	ReviewReductionVersion    = 1
 
 	MinReviewedDirections = MinDirections
-	MaxReviewedDirections = 6
+	MaxReviewedDirections = MaxDirections
 
 	maxEditingArtifactBytes = 4 << 20
 	maxReviewBundleBytes    = 64 << 10
@@ -1320,7 +1320,7 @@ func questionFitStem(token string) string {
 	}
 }
 
-// CompressReviewedDirections selects one through six strong, distinct packs.
+// CompressReviewedDirections selects bounded, distinct reviewed packs.
 // It uses local fit/role scores and deterministic text/anchor overlap only.
 // A reviewed first-contact pack owns one slot when present: losing the only
 // onboarding question to several higher-scoring contributor topics makes the
@@ -1430,6 +1430,23 @@ func ComposeReviewedProposal(
 		return Proposal{}, reduction, err
 	}
 	selected := CompressReviewedDirections(bundle, reduction.Directions)
+	selectedIDs := make(map[string]struct{}, len(selected))
+	for _, direction := range selected {
+		selectedIDs[direction.DirectionID] = struct{}{}
+	}
+	for _, direction := range reduction.Directions {
+		if _, ok := selectedIDs[direction.DirectionID]; ok {
+			continue
+		}
+		code := "review_selection_cap"
+		if semanticallyDuplicatesReviewed(direction, selected) {
+			code = "review_semantic_duplicate_after_compression"
+		}
+		reduction.Issues = append(reduction.Issues, ReviewIssue{
+			DirectionID: direction.DirectionID,
+			Code:        code,
+		})
+	}
 	reduction.Selected = len(selected)
 	if len(selected) < MinReviewedDirections {
 		return Proposal{}, reduction, fmt.Errorf(

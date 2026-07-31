@@ -42,6 +42,24 @@ the saved baseline. Subsequent Study changes must target a demonstrated loss
 boundary and may not use Decision 171's cache to change candidate composition,
 review validation, published IDs, evidence, paths, or order.
 
+The saved post-recovery Casdoor Study artifact then demonstrated that exact
+loss boundary without another provider call: all nine proposed directions had
+one accepted reading-pack review, but the review reducer stopped at its smaller
+six-direction cap before the canonical seven-direction selector ran. The three
+discarded valid packs included the controller authentication and management
+direction, while two ACME directions survived. The historical artifact is a
+Study/discovery baseline only; it predates the final localization checkpoint
+and is not RU acceptance evidence.
+
+The corrective removes those two smaller output caps as independent policy.
+The already bounded twelve-candidate input limit now owns review compression
+and canonical publication as one shared maximum. Deterministic semantic
+duplicate suppression, ordering, local review validation, candidate discovery,
+provider requests, cache identity, IDs, paths, and evidence remain unchanged.
+Any reviewed pack still removed as a semantic duplicate (or by the shared
+defensive cap) receives a stable bounded issue code in the saved reduction, so
+the loss is visible without provider prose or jq archaeology.
+
 That control run scheduled all eight accepted candidates, but four independent
 reading-pack reviews returned no JSON content because official DeepSeek spent
 the complete output on hidden reasoning. One of the four even ended with
