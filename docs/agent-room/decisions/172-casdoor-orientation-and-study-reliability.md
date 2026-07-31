@@ -17,6 +17,14 @@ Orientation therefore gets one bounded logical completion retry only for the
 provider's explicit length outcome. The retry preserves the exact canonical
 English prompt, facts bundle, endpoint, model, validation, and authority; it
 only doubles output headroom once. Ordinary invalid JSON is not retried.
+
+The control run then showed a second provider-specific failure: official
+DeepSeek V4 spent all 12,000 recovery tokens on hidden reasoning and returned
+no JSON content. Orientation is a bounded classification over an already
+compact local facts bundle, so its official-DeepSeek envelope now disables
+thinking explicitly, matching the existing architecture grouping policy.
+Compatible endpoints receive no DeepSeek-specific field. This does not change
+the facts, schema, prompt prose, or local validation.
 Transport retries remain independently bounded, and usage plus attempt
 telemetry includes every transport attempt. Debug metadata keeps one semantic
 call while recording the exact transport-attempt count and aggregate attempted

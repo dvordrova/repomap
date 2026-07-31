@@ -841,7 +841,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v11" {
+	if OrientationPromptVersionJSON != "orientation-json-v12" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{
@@ -884,6 +884,34 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		if !strings.Contains(body, field) {
 			t.Fatalf("prompt must contain expected JSON field %s", field)
 		}
+	}
+}
+
+func TestOrientationThinkingPolicyIsEndpointSpecific(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name         string
+		endpoint     string
+		wantThinking string
+	}{
+		{name: "official DeepSeek", endpoint: "https://api.deepseek.com/chat/completions", wantThinking: "disabled"},
+		{name: "compatible endpoint", endpoint: "https://llm.example.test/chat/completions"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &Client{Model: "fixture", MaxTokens: 6000, Endpoint: test.endpoint}
+			request := client.buildRequest([]byte(`{}`))
+			if test.wantThinking == "" {
+				if request.Thinking != nil {
+					t.Fatalf("thinking = %#v, want omitted", request.Thinking)
+				}
+				return
+			}
+			if request.Thinking == nil || request.Thinking.Type != test.wantThinking {
+				t.Fatalf("thinking = %#v, want %q", request.Thinking, test.wantThinking)
+			}
+		})
 	}
 }
 
