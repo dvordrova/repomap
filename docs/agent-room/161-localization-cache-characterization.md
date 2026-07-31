@@ -255,3 +255,23 @@ Not run and why: no provider call, no product binary rebuild, no cache read/writ
 Residual limitation: a same-user replacement race remains possible between projection-file Lstat and Open; both pre-open and opened-file bounds/type checks remain in place, and this explicit dev-only replay does not treat the fixture as cache authority
 Remaining blocker or next checkpoint: production Russian output still requires a separately approved localization provider stage, exact projection cache, compatibility boundary, and typed UI message catalog
 ```
+
+## Checkpoint B5 handoff
+
+```text
+Checkpoint: B5 — provider-free Architecture localization stage replay
+Changed contract: Decision 165 adds `make localization-stage RUN=<run-dir> [RESPONSE=<projection.json>]` and `repomap dev localization-stage <run-dir> [<projection.json>]` as explicit developer operations; ordinary runs, `--lang`, providers, caches, persisted artifacts, reports, manifests, HTTP, source authority, and browser behavior remain unchanged
+Direction: exactly canonical English presentation prose to Russian projection; no Russian-to-English translation or semantic round trip exists
+Prompt identity: generic contract prompt SHA-256 e399c596ef763d1407d12d108b6168be07503f0d398eab181eedcb67e35a59a7; fixed Architecture saved-run prompt SHA-256 da4a36c6cb0f036bffbad49cc082a92c0fe7c05226631342c03287d3eefb28e4; prompt version localization-projection-json-v1
+Prompt boundary: the stage re-derives current eligible canonical/input data, includes only allowlisted prose plus typed placeholders, caps raw collection cardinality and scalar bytes before whole-input validation or marshal, emits deterministic compact JSON bounded to 1 MiB, and secret-scans typed input and encoded bytes before the provider seam
+Saved/fake response replay: the unexported injected seam is invoked exactly once; the public adapter reads one explicitly supplied bounded regular local file and makes no network call; accepted bytes are identical to direct Decision 164 replay and the complete run directory remains byte-identical
+Failure behavior: cancellation before the seam prevents the call and cancellation immediately after it prevents response processing; provider errors are sanitized; malformed, unknown, trailing, invalid-UTF-8, oversize, symlink, and credential-like output fails closed with no retry; escaped credential-shaped unknown JSON field names cannot leak through strict-decoder errors
+Field behavior: envelope mismatch and individual field fallback remain exactly the Decision 164 contract; ordinary in-bound Russian fixture output is byte-identical to direct replay
+Focused tests: make localization-check, focused internal/localization, internal/report, and cmd/repomap tests, focused race tests, focused vet, and git diff --check passed
+Adversarial review: scope and test-gap reviews found no blocker; security review found a decoded unknown-field error leak, which was fixed with sanitized strict-JSON errors and escaped-field regressions; a secondary pre-validation allocation concern was fixed with raw prompt preflight
+Full checks: scripts/check.sh passed, including go test, go vet, and six offline quality tasks, real 25.70s; the provider-free etcd snapshot/bundle check also passed, real 16.91s
+Commit: this handoff is committed atomically with the B5 implementation
+UI actions actually performed: none; the prompt and replay JSON have no product consumer or browser surface
+Not run and why: no live provider, network call, external model, product binary rebuild, cache read/write, ordinary `--lang ru` run, UI localization, or Russian-to-English path; the only external repository access was the required provider-free etcd snapshot/bundle check
+Remaining blocker or next checkpoint: an exact projection record/cache needs a separately approved identity binding that includes the exact prompt plus provider/model/endpoint/generation parameters; it must remain provider-free and non-product until its own gate is green
+```

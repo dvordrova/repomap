@@ -244,8 +244,8 @@ func TestReplayArchitectureLocalizationRussianRejectsMalformedBeforeRunWork(t *t
 		{name: "empty", data: nil, want: "byte limit"},
 		{name: "oversize", data: bytes.Repeat([]byte("x"), maxArchitectureLocalizationArtifactBytes+1), want: "byte limit"},
 		{name: "invalid UTF-8", data: invalidUTF8, want: "valid UTF-8"},
-		{name: "unknown field", data: []byte(`{"version":1,"canonical_sha256":"x","locale":"ru","translations":{},"extra":true}`), want: "unknown field"},
-		{name: "trailing JSON", data: []byte(`{"version":1,"canonical_sha256":"x","locale":"ru","translations":{}} {}`), want: "multiple JSON values"},
+		{name: "unknown field", data: []byte(`{"version":1,"canonical_sha256":"x","locale":"ru","translations":{},"extra":true}`), want: "strict JSON"},
+		{name: "trailing JSON", data: []byte(`{"version":1,"canonical_sha256":"x","locale":"ru","translations":{}} {}`), want: "strict JSON"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := ReplayArchitectureLocalizationRussian(
@@ -259,6 +259,26 @@ func TestReplayArchitectureLocalizationRussianRejectsMalformedBeforeRunWork(t *t
 				t.Fatalf("projection preflight did not precede run work: %v", err)
 			}
 		})
+	}
+}
+
+func TestReplayArchitectureLocalizationRussianDoesNotEchoEscapedUnknownField(t *testing.T) {
+	t.Parallel()
+
+	const secret = `company-secret-value-123456789`
+	data := []byte(
+		`{"version":1,"canonical_sha256":"x","locale":"ru","translations":{},` +
+			`"\u0061pi_key=\u0022` + secret + `\u0022":true}`,
+	)
+	_, err := ReplayArchitectureLocalizationRussian(
+		filepath.Join(t.TempDir(), "missing-run"),
+		data,
+	)
+	if err == nil || !strings.Contains(err.Error(), "strict JSON") {
+		t.Fatalf("escaped unknown field error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "api_key") {
+		t.Fatalf("escaped unknown field leaked through decoder error: %v", err)
 	}
 }
 

@@ -8,7 +8,7 @@ TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 RUN_ARGS ?=
 
-.PHONY: help test vet check quality-check localization-check localization-replay build clean smoke etcd-check friend-check symbol-check symbol-prompt-experiment source-prompt-experiment component-study-preview component-study-live component-study-replay component-probe component-probe-frontier component-teach-preview component-teach-live component-teach-replay research-trail-replay flowproof-replay research-budget-check pyright-fixture gopls-examples gopls-examples-fetch doctor doctor-check generic-deepseek-doctor debug-last guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-json run-offline run-flows2 deepseek-check
+.PHONY: help test vet check quality-check localization-check localization-replay localization-stage build clean smoke etcd-check friend-check symbol-check symbol-prompt-experiment source-prompt-experiment component-study-preview component-study-live component-study-replay component-probe component-probe-frontier component-teach-preview component-teach-live component-teach-replay research-trail-replay flowproof-replay research-budget-check pyright-fixture gopls-examples gopls-examples-fetch doctor doctor-check generic-deepseek-doctor debug-last guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-json run-offline run-flows2 deepseek-check
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -29,6 +29,7 @@ quality-check: ## Replay saved quality tasks without a model call
 localization-check: ## Validate provider-free canonical and locale projection contracts
 	go test ./internal/localization -count=1
 	go test ./internal/report -run 'ArchitectureLocalization' -count=1
+	go test ./cmd/repomap -run 'Localization(Stage|Replay|Check)|PrintPromptVersions' -count=1
 	@if [[ -n "$(RUN)" ]]; then \
 		go run ./cmd/repomap dev localization-check "$(RUN)"; \
 	fi
@@ -37,6 +38,14 @@ localization-replay: ## Replay one provider-free Russian Architecture projection
 	@if [[ -z "$(RUN)" ]]; then echo "RUN is required" >&2; exit 2; fi
 	@if [[ -z "$(PROJECTION)" ]]; then echo "PROJECTION is required" >&2; exit 2; fi
 	@go run ./cmd/repomap dev localization-replay "$(RUN)" "$(PROJECTION)"
+
+localization-stage: ## Preview or replay the provider-free Architecture localization stage
+	@if [[ -z "$(RUN)" ]]; then echo "RUN is required" >&2; exit 2; fi
+	@if [[ -n "$(RESPONSE)" ]]; then \
+		go run ./cmd/repomap dev localization-stage "$(RUN)" "$(RESPONSE)"; \
+	else \
+		go run ./cmd/repomap dev localization-stage "$(RUN)"; \
+	fi
 
 SURFACE_REPO ?= internal/experiment/surfacediscovery/testdata/direct
 SURFACE_OUT ?= $(TMP_DIR)/surface-discovery
