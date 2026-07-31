@@ -46,8 +46,6 @@ func TestPresentationLocalizationRussianProjectionChangesOnlyInventoriedProse(t 
 	}
 	for _, opaque := range []string{
 		"internal/storage/replicate.go",
-		"StartReplication",
-		"StartReplication storage",
 		canonical.ArchitectureCanvas.Title,
 		canonical.ArchitectureCanvas.Subtitle,
 	} {
@@ -1598,7 +1596,7 @@ func TestPresentationLocalizationAuthorizedCanonicalRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bytes.Contains(inputJSON, []byte(initial.Head)) {
-		t.Fatal("captured revision leaked instead of remaining an opaque placeholder")
+		t.Fatalf("captured revision leaked instead of remaining an opaque placeholder: %s", inputJSON)
 	}
 	if err := WritePresentationLocalizationSuccess(
 		runDir,

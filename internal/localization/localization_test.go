@@ -57,7 +57,7 @@ func TestCanonicalIdentityProjectionIsDeterministicAndExact(t *testing.T) {
 	}
 }
 
-func TestRussianProjectionChangesOnlyAllowlistedProse(t *testing.T) {
+func TestRussianProjectionChangesOnlyExplicitTypedValues(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical(fixtureSpecs())
@@ -124,10 +124,10 @@ func TestRussianProjectionRejectsPartiallyUntranslatedProse(t *testing.T) {
 		OwnerID:   "redis-adapter",
 		Name:      FieldSummary,
 		Text:      "Uses Redis over RESP3 to process messages.",
-		ProtectedTerms: []ProtectedValue{{
-			Kind:  ProtectedProduct,
-			Value: "Redis",
-		}},
+		ProtectedTerms: []ProtectedValue{
+			{Kind: ProtectedProduct, Value: "Redis"},
+			{Kind: ProtectedProtocol, Value: "RESP3"},
+		},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +171,10 @@ func TestRussianProjectionAllowsOpaqueOnlyField(t *testing.T) {
 		OwnerID:   "protocol",
 		Name:      FieldSummary,
 		Text:      "RESP3",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedProtocol,
+			Value: "RESP3",
+		}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +212,10 @@ func TestRussianProjectionRejectsEnglishAddedAroundOpaqueOnlyField(t *testing.T)
 		OwnerID:   "protocol",
 		Name:      FieldSummary,
 		Text:      "RESP3",
+		ProtectedTerms: []ProtectedValue{{
+			Kind:  ProtectedProtocol,
+			Value: "RESP3",
+		}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +317,7 @@ func TestRussianProjectionRejectsSingleUppercaseEnglishRun(t *testing.T) {
 	}
 }
 
-func TestCanonicalProtectsExplicitProductAndInfersStrongProtocol(t *testing.T) {
+func TestCanonicalProtectsOnlyExplicitTypedValues(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical([]FieldSpec{
@@ -318,16 +326,16 @@ func TestCanonicalProtectsExplicitProductAndInfersStrongProtocol(t *testing.T) {
 			OwnerID:   "redis",
 			Name:      FieldSummary,
 			Text:      "Uses Redis over RESP3.",
-			ProtectedTerms: []ProtectedValue{{
-				Kind:  ProtectedProduct,
-				Value: "Redis",
-			}},
+			ProtectedTerms: []ProtectedValue{
+				{Kind: ProtectedProduct, Value: "Redis"},
+				{Kind: ProtectedProtocol, Value: "RESP3"},
+			},
 		},
 		{
 			OwnerKind: OwnerComponent,
 			OwnerID:   "ordinary-title",
 			Name:      FieldSummary,
-			Text:      "Server Startup Sequence",
+			Text:      "HTTP ServerControllers V2",
 		},
 	})
 	if err != nil {
@@ -344,7 +352,7 @@ func TestCanonicalProtectsExplicitProductAndInfersStrongProtocol(t *testing.T) {
 		}
 	}
 	if terms := byID["ordinary-title"].ProtectedTerms; len(terms) != 0 {
-		t.Fatalf("ordinary TitleCase words became opaque: %#v", terms)
+		t.Fatalf("untyped technical-looking words became opaque: %#v", terms)
 	}
 
 	input, err := BuildInput(canonical, LocaleRussian)
@@ -445,7 +453,7 @@ func TestRussianProjectionCannotHideProseInsideProtectedIdentifier(t *testing.T)
 	}
 }
 
-func TestTechnicalTokenDoesNotProtectFollowingTitleCaseProse(t *testing.T) {
+func TestUntypedAcronymCannotBypassRussianQuality(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical([]FieldSpec{{
@@ -458,20 +466,22 @@ func TestTechnicalTokenDoesNotProtectFollowingTitleCaseProse(t *testing.T) {
 		t.Fatal(err)
 	}
 	field := canonical.Fields[0]
-	if len(field.ProtectedTerms) != 1 || field.ProtectedTerms[0].Value != "HTTP" {
-		t.Fatalf("protected terms = %#v, want only HTTP", field.ProtectedTerms)
+	if len(field.ProtectedTerms) != 0 {
+		t.Fatalf("untyped acronym became opaque: %#v", field.ProtectedTerms)
 	}
 	input, err := BuildInput(canonical, LocaleRussian)
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpToken := protectedToken(t, field, "HTTP")
+	if input.Fields[0].Text != canonical.Fields[0].Text {
+		t.Fatalf("provider input = %q, want complete human prose", input.Fields[0].Text)
+	}
 	result, err := Apply(canonical, input, Projection{
 		Version:         ProjectionVersion,
 		CanonicalSHA256: canonical.SHA256,
 		Locale:          LocaleRussian,
 		Translations: map[string]string{
-			input.Fields[0].ID: httpToken + " Request Routing обрабатывает трафик.",
+			input.Fields[0].ID: "HTTP маршрутизация обрабатывает трафик.",
 		},
 	})
 	if err != nil {
@@ -842,9 +852,9 @@ func TestCanonicalRejectsReservedPlaceholderAndHandlesNestedTerms(t *testing.T) 
 		t.Fatalf("nested placeholders = %#v", input.Fields)
 	}
 
-	inferredNested, err := NewCanonical([]FieldSpec{{
+	protectedNested, err := NewCanonical([]FieldSpec{{
 		OwnerKind: OwnerComponent,
-		OwnerID:   "nested-inferred",
+		OwnerID:   "nested-protected",
 		Name:      FieldSummary,
 		Text:      "Calls API/v2.",
 		ProtectedTerms: []ProtectedValue{{
@@ -855,14 +865,14 @@ func TestCanonicalRejectsReservedPlaceholderAndHandlesNestedTerms(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	inferredInput, err := BuildInput(inferredNested, LocaleRussian)
+	protectedInput, err := BuildInput(protectedNested, LocaleRussian)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inferredInput.Fields) != 1 ||
-		len(inferredInput.Fields[0].Placeholders) != 1 ||
-		inferredInput.Fields[0].Placeholders[0].Token != "{{term_01}}" {
-		t.Fatalf("nested inferred placeholders = %#v", inferredInput.Fields)
+	if len(protectedInput.Fields) != 1 ||
+		len(protectedInput.Fields[0].Placeholders) != 1 ||
+		protectedInput.Fields[0].Placeholders[0].Token != "{{term_01}}" {
+		t.Fatalf("nested protected placeholders = %#v", protectedInput.Fields)
 	}
 }
 
@@ -898,7 +908,7 @@ func TestCanonicalDoesNotInferNestedSnakeCaseToken(t *testing.T) {
 	}
 }
 
-func TestCanonicalStillInfersStandaloneProtocolBesideSnakeCasePath(t *testing.T) {
+func TestCanonicalProtectsOnlyExplicitPathBesideUntypedProtocol(t *testing.T) {
 	t.Parallel()
 
 	canonical, err := NewCanonical([]FieldSpec{{
@@ -918,10 +928,10 @@ func TestCanonicalStillInfersStandaloneProtocolBesideSnakeCasePath(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(input.Fields) != 1 || len(input.Fields[0].Placeholders) != 2 {
-		t.Fatalf("path/protocol placeholders = %#v, want two opaque values", input.Fields)
+	if len(input.Fields) != 1 || len(input.Fields[0].Placeholders) != 1 {
+		t.Fatalf("path/protocol placeholders = %#v, want only explicit path", input.Fields)
 	}
-	if input.Fields[0].Text != "{{term_01}} implements {{term_02}} storage." {
+	if input.Fields[0].Text != "{{term_01}} implements S3 storage." {
 		t.Fatalf("protected text = %q", input.Fields[0].Text)
 	}
 }
@@ -936,6 +946,7 @@ func fixtureSpecs() []FieldSpec {
 			ProtectedTerms: []ProtectedValue{
 				{Kind: ProtectedPath, Value: "cmd/сервер main.go:42"},
 				{Kind: ProtectedSymbol, Value: "StartReplication"},
+				{Kind: ProtectedProtocol, Value: "CJK"},
 				{Kind: ProtectedIdentifier, Value: "東京"},
 			},
 		},
