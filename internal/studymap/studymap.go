@@ -35,7 +35,10 @@ const (
 
 	MaxCandidates = 12
 	MinDirections = 1
-	MaxDirections = 7
+	// Every provider candidate is already bounded and independently reviewed.
+	// Keep one publication bound so a second, smaller editorial cap cannot hide
+	// valid reading packs after that work has completed.
+	MaxDirections = MaxCandidates
 	MaxAnchors    = 32
 	MaxAreas      = 12
 	MaxDocuments  = 12
