@@ -182,6 +182,31 @@ process.stdout.write(JSON.stringify({
   ),
   unicode,
   rendered,
+  identical: enIDs.filter((id) => {
+    if (typeof en[id].text === "string") return en[id].text === ru[id].text;
+    return en[id].format.toString() === ru[id].format.toString();
+  }),
+  russianCopy: {
+    chrome: api.messageForLocale("ru", "main.chrome.what.to.notice"),
+    workspace: api.messageForLocale("ru", "main.repository.workspace"),
+    study: api.messageForLocale("ru", "main.study.incomplete_direction"),
+    taskLens: api.messageForLocale("ru", "main.task_lens.working_hypothesis"),
+    progress: api.messageForLocale("ru", "main.unit_progress", {
+      unit: "Раздел", current: 2, total: 5,
+    }),
+    architecture: api.messageForLocale("ru", "architecture.action.open_code"),
+    surfaces: api.messageForLocale("ru", "surfaces.action.reset_filters"),
+    traceReadinessReason: api.messageForLocale("ru", "surfaces.field.trace_readiness_reason"),
+  },
+  opaqueTechnical: {
+    route: api.messageForLocale("ru", "surfaces.identity.http_route", {
+      method: "PATCH", path: "/雪/😀",
+    }),
+    location: api.messageForLocale("ru", "surfaces.location.open", {
+      location: "путь/雪/😀.go:7",
+    }),
+    protocol: api.messageForLocale("ru", "surfaces.value.http"),
+  },
   dynamic: {
     component: api.messageForLocale("ru", "main.component.role_anchor_count", {
       role: "Граница", count: 2,
@@ -228,6 +253,22 @@ process.stdout.write(JSON.stringify({
 			Symbol  string `json:"symbol"`
 			Package string `json:"package"`
 		} `json:"rendered"`
+		Identical   []string `json:"identical"`
+		RussianCopy struct {
+			Chrome               string `json:"chrome"`
+			Workspace            string `json:"workspace"`
+			Study                string `json:"study"`
+			TaskLens             string `json:"taskLens"`
+			Progress             string `json:"progress"`
+			Architecture         string `json:"architecture"`
+			Surfaces             string `json:"surfaces"`
+			TraceReadinessReason string `json:"traceReadinessReason"`
+		} `json:"russianCopy"`
+		OpaqueTechnical struct {
+			Route    string `json:"route"`
+			Location string `json:"location"`
+			Protocol string `json:"protocol"`
+		} `json:"opaqueTechnical"`
 		Dynamic struct {
 			Component    string `json:"component"`
 			Budget       string `json:"budget"`
@@ -248,6 +289,14 @@ process.stdout.write(JSON.stringify({
 		!got.Failures.Extra || !got.Failures.UnsupportedLocale || !got.Failures.EmptyLocale {
 		t.Errorf("catalog rejection contract = %#v", got.Failures)
 	}
+	wantIdentical := []string{
+		"surfaces.identity.http_route",
+		"surfaces.location.open",
+		"surfaces.value.http",
+	}
+	if !slices.Equal(got.Identical, wantIdentical) {
+		t.Errorf("EN/RU byte-identical renderers = %#v, want opaque-only allowlist %#v", got.Identical, wantIdentical)
+	}
 	wantPlurals := []string{"1 компонент", "2 компонента", "5 компонентов", "11 компонентов", "21 компонент"}
 	if !slices.Equal(got.Plurals, wantPlurals) {
 		t.Errorf("RU component plurals = %#v, want %#v", got.Plurals, wantPlurals)
@@ -260,6 +309,49 @@ process.stdout.write(JSON.stringify({
 		if !strings.Contains(pair[1], pair[0]) {
 			t.Errorf("Unicode %s parameter was not byte-preserved: value %q rendered %q", name, pair[0], pair[1])
 		}
+	}
+	wantRussianCopy := struct {
+		Chrome               string
+		Workspace            string
+		Study                string
+		TaskLens             string
+		Progress             string
+		Architecture         string
+		Surfaces             string
+		TraceReadinessReason string
+	}{
+		Chrome:               "На что обратить внимание",
+		Workspace:            "Рабочее пространство репозитория",
+		Study:                "Неполное направление изучения",
+		TaskLens:             "Рабочая гипотеза",
+		Progress:             "Раздел 2 из 5",
+		Architecture:         "Открыть код",
+		Surfaces:             "Сбросить фильтры",
+		TraceReadinessReason: "Причина готовности трассировки",
+	}
+	if got.RussianCopy.Chrome != wantRussianCopy.Chrome ||
+		got.RussianCopy.Workspace != wantRussianCopy.Workspace ||
+		got.RussianCopy.Study != wantRussianCopy.Study ||
+		got.RussianCopy.TaskLens != wantRussianCopy.TaskLens ||
+		got.RussianCopy.Progress != wantRussianCopy.Progress ||
+		got.RussianCopy.Architecture != wantRussianCopy.Architecture ||
+		got.RussianCopy.Surfaces != wantRussianCopy.Surfaces ||
+		got.RussianCopy.TraceReadinessReason != wantRussianCopy.TraceReadinessReason {
+		t.Errorf("representative RU product copy = %#v, want %#v", got.RussianCopy, wantRussianCopy)
+	}
+	wantOpaqueTechnical := struct {
+		Route    string
+		Location string
+		Protocol string
+	}{
+		Route:    "PATCH /雪/😀",
+		Location: "путь/雪/😀.go:7 ↗",
+		Protocol: "HTTP",
+	}
+	if got.OpaqueTechnical.Route != wantOpaqueTechnical.Route ||
+		got.OpaqueTechnical.Location != wantOpaqueTechnical.Location ||
+		got.OpaqueTechnical.Protocol != wantOpaqueTechnical.Protocol {
+		t.Errorf("opaque technical RU values = %#v, want %#v", got.OpaqueTechnical, wantOpaqueTechnical)
 	}
 	wantDynamic := struct {
 		Component    string
