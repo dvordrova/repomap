@@ -2710,9 +2710,11 @@ func addOnboardingPresentationText(
 	data *ReportData,
 ) error {
 	if data.RepositoryThesis != nil {
-		thesisAdd := addObject.with(repositoryThesisProtectedValues(
-			*data.RepositoryThesis,
-		))
+		protected := append(
+			append([]localization.ProtectedValue(nil), repositoryPresentationProtectedValues(data)...),
+			repositoryThesisProtectedValues(*data.RepositoryThesis)...,
+		)
+		thesisAdd := addObject.with(protected)
 		if err := thesisAdd(
 			"onboarding/repository_thesis/purpose",
 			data.RepositoryThesis.Purpose,
@@ -2761,9 +2763,11 @@ func addOnboardingPresentationText(
 		}
 	}
 	if data.RepositoryGuide != nil {
-		guideAdd := addObject.with(repositoryGuideProtectedValues(
-			*data.RepositoryGuide,
-		))
+		protected := append(
+			append([]localization.ProtectedValue(nil), repositoryPresentationProtectedValues(data)...),
+			repositoryGuideProtectedValues(*data.RepositoryGuide)...,
+		)
+		guideAdd := addObject.with(protected)
 		if err := guideAdd(
 			"onboarding/repository_guide/purpose",
 			data.RepositoryGuide.Purpose,

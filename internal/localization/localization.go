@@ -491,7 +491,7 @@ func canonicalField(spec FieldSpec) (CanonicalField, error) {
 	if placeholderPattern.MatchString(spec.Text) {
 		return CanonicalField{}, fmt.Errorf("localization: field %q contains a reserved placeholder", id)
 	}
-	terms, err := protectedTerms(spec.Text, withInferredProtectedValues(spec.Text, spec.ProtectedTerms))
+	terms, err := protectedTerms(spec.Text, spec.ProtectedTerms)
 	if err != nil {
 		return CanonicalField{}, fmt.Errorf("localization: field %q: %w", id, err)
 	}
@@ -641,9 +641,9 @@ func placeholdersMatch(text string, terms []ProtectedTerm) bool {
 }
 
 // targetLanguageQualityOK rejects a Russian projection when English prose
-// remains outside opaque placeholders. Technical names from the canonical
-// source are protected before this check, so any multi-letter Latin run here
-// is unprotected model prose rather than an allowed identifier. Fields that
+// remains outside opaque placeholders. Explicitly typed technical names are
+// protected before this check, so any Latin run here is unprotected model
+// prose rather than an allowed identifier. Fields that
 // contain no English prose after placeholder removal remain valid only while
 // the projection does not add new Latin prose around their opaque values.
 func targetLanguageQualityOK(source, translated, targetLocale string) bool {
@@ -656,56 +656,15 @@ func targetLanguageQualityOK(source, translated, targetLocale string) bool {
 		return !containsASCIILetter(translated)
 	}
 	hasCyrillic := false
-	latinStart := -1
-	runes := []rune(translated)
-	for index, value := range runes {
-		switch {
-		case unicode.In(value, unicode.Cyrillic) && unicode.IsLetter(value):
-			hasCyrillic = true
-			if !allowedLatinRun(runes, latinStart, index, source) {
-				return false
-			}
-			latinStart = -1
-		case isASCIILetter(value):
-			if latinStart < 0 {
-				latinStart = index
-			}
-		default:
-			if !allowedLatinRun(runes, latinStart, index, source) {
-				return false
-			}
-			latinStart = -1
-		}
-	}
-	if !allowedLatinRun(runes, latinStart, len(runes), source) {
-		return false
-	}
-	return hasCyrillic
-}
-
-func allowedLatinRun(text []rune, start, end int, source string) bool {
-	if start < 0 {
-		return true
-	}
-	token := string(text[start:end])
-	if end-start == 1 {
-		return false
-	}
-	for _, character := range token {
-		if character < 'A' || character > 'Z' {
+	for _, value := range translated {
+		if isASCIILetter(value) {
 			return false
 		}
-	}
-	return containsASCIIWord(source, token)
-}
-
-func containsASCIIWord(text, token string) bool {
-	for _, candidate := range asciiWordTokens(text) {
-		if candidate == token {
-			return true
+		if unicode.In(value, unicode.Cyrillic) && unicode.IsLetter(value) {
+			hasCyrillic = true
 		}
 	}
-	return false
+	return hasCyrillic
 }
 
 func containsASCIILetter(value string) bool {
@@ -719,84 +678,6 @@ func containsASCIILetter(value string) bool {
 
 func isASCIILetter(value rune) bool {
 	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
-}
-
-// withInferredProtectedValues conservatively recognizes technical tokens
-// already present in canonical prose. It intentionally does not protect an
-// ordinary TitleCase word at the beginning of a field, where capitalization
-// alone cannot distinguish a product from sentence grammar.
-func withInferredProtectedValues(text string, explicit []ProtectedValue) []ProtectedValue {
-	values := append([]ProtectedValue(nil), explicit...)
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		seen[value.Value] = struct{}{}
-	}
-	for _, token := range asciiWordTokens(text) {
-		if _, exists := seen[token]; exists {
-			continue
-		}
-		kind, protect := inferredProtectedKind(token)
-		if !protect || !ContainsProtectedValue(text, token) {
-			continue
-		}
-		values = append(values, ProtectedValue{Kind: kind, Value: token})
-		seen[token] = struct{}{}
-	}
-	return values
-}
-
-func asciiWordTokens(text string) []string {
-	tokens := make([]string, 0)
-	start := -1
-	for index, character := range text {
-		if isASCIILetter(character) || character >= '0' && character <= '9' {
-			if start < 0 {
-				start = index
-			}
-			continue
-		}
-		if start >= 0 {
-			tokens = append(tokens, text[start:index])
-			start = -1
-		}
-	}
-	if start >= 0 {
-		tokens = append(tokens, text[start:])
-	}
-	return tokens
-}
-
-func inferredProtectedKind(token string) (ProtectedKind, bool) {
-	if len(token) < 2 {
-		return "", false
-	}
-	upper := 0
-	lower := 0
-	digit := 0
-	upperAfterFirst := false
-	for index, character := range token {
-		switch {
-		case character >= 'A' && character <= 'Z':
-			upper++
-			if index > 0 {
-				upperAfterFirst = true
-			}
-		case character >= 'a' && character <= 'z':
-			lower++
-		case character >= '0' && character <= '9':
-			digit++
-		}
-	}
-	if digit > 0 && upper+lower > 0 {
-		return ProtectedProtocol, true
-	}
-	if upper >= 2 && lower == 0 {
-		return ProtectedProtocol, true
-	}
-	if upperAfterFirst && lower > 0 {
-		return ProtectedProduct, true
-	}
-	return "", false
 }
 
 func canonicalResult(canonical CanonicalArtifact) Result {
