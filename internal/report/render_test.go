@@ -255,7 +255,8 @@ func TestReportPreservesMissingFlowTypeWithoutRequestClaim(t *testing.T) {
 func TestReportUsesDistinctProductVocabulary(t *testing.T) {
 	t.Parallel()
 
-	assets := string(readCanvasAsset(t, "architecture_canvas.js"))
+	assets := string(readCanvasAsset(t, "ui_messages.js"))
+	assets += string(readCanvasAsset(t, "architecture_canvas.js"))
 	mainScript, err := os.ReadFile(filepath.Join("templates", "script.js"))
 	if err != nil {
 		t.Fatal(err)
@@ -310,11 +311,11 @@ func TestSourceOpenBrowserContractUsesOpaqueIDsAndTypedFallback(t *testing.T) {
 	}
 	for _, required := range []string{
 		`source_id: sourceID`,
-		`Opening in VS Code…`,
-		`VS Code is not available`,
-		`Copy repository-relative path`,
-		`Copy path:line:column`,
-		`Source changed since this report was generated`,
+		`main.toast.opening_vscode`,
+		`main.vs.code.is.not.available`,
+		`main.copy.repository.relative.path`,
+		`main.copy.path.line.column`,
+		`main.toast.source_changed_suffix`,
 	} {
 		if !bytes.Contains(script, []byte(required)) {
 			t.Fatalf("source-open browser contract is missing %q", required)

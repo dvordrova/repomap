@@ -204,6 +204,9 @@ const sandbox = {
   clearTimeout,
 };
 vm.createContext(sandbox);
+document.documentElement.lang = "en";
+window.document = document;
+vm.runInContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), sandbox);
 vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);
 
 const api = window.__REPOMAP_WORKSPACE_TEST__;
@@ -402,10 +405,10 @@ api.renderArchitectureWorkspace();
 			got.DirtyCardLinks,
 		)
 	}
-	if !slices.Contains(got.DirtyCardButtonTexts, "Только локальный исходник") {
+	if !slices.Contains(got.DirtyCardButtonTexts, "Local-only source") {
 		t.Fatalf("dirty source actions = %#v", got.DirtyCardButtonTexts)
 	}
-	if !strings.Contains(got.DirtyToast, "не совпадает с зафиксированным commit") {
+	if !strings.Contains(got.DirtyToast, "does not exactly match the captured GitLab commit") {
 		t.Fatalf("dirty source toast = %q", got.DirtyToast)
 	}
 	if !got.Mode || got.ServerMode {
@@ -426,14 +429,14 @@ api.renderArchitectureWorkspace();
 	if len(got.CardLinks) < 2 {
 		t.Fatalf("source card links = %#v, want location and GitLab action", got.CardLinks)
 	}
-	hasRussianGitLabAction := false
+	hasGitLabAction := false
 	for _, link := range got.CardLinks {
-		if link.Text == "Открыть в GitLab" {
-			hasRussianGitLabAction = true
+		if link.Text == "Open in GitLab" {
+			hasGitLabAction = true
 		}
 	}
-	if !hasRussianGitLabAction {
-		t.Fatalf("source card links = %#v, want localized GitLab action", got.CardLinks)
+	if !hasGitLabAction {
+		t.Fatalf("source card links = %#v, want English GitLab action", got.CardLinks)
 	}
 	wantLine := "https://gitlab.example/team/sub/project/-/blob/0123456789abcdef0123456789abcdef01234567/nested%20worktree/dir/space%20%23.go#L12"
 	for label, links := range map[string][]string{
@@ -460,11 +463,11 @@ api.renderArchitectureWorkspace();
 		t.Fatalf("component source = %#v, want exact behavior anchor", got.ComponentSource)
 	}
 	for _, label := range got.CardButtonTexts {
-		if label == "Открыть в редакторе" || label == "Показать больше контекста" || label == "Показать всю функцию" {
+		if label == "Open in editor" || label == "Show more context" || label == "Show full function" {
 			t.Fatalf("static source card retained local action %q", label)
 		}
 	}
-	if got.Hint.Hidden || !strings.Contains(got.Hint.Text, "стабильные локальные изменения") {
+	if got.Hint.Hidden || !strings.Contains(got.Hint.Text, "stable local changes") {
 		t.Fatalf("GitLab hint = %#v", got.Hint)
 	}
 	if got.FetchCount != 0 {
@@ -514,14 +517,14 @@ api.renderArchitectureWorkspace();
 	if gitHubGot.DirtyURL != "" || gitHubGot.DirtyReference.TagName != "SPAN" {
 		t.Fatalf("dirty source exposed a GitHub link: URL %q reference %#v", gitHubGot.DirtyURL, gitHubGot.DirtyReference)
 	}
-	hasRussianGitHubAction := false
+	hasGitHubAction := false
 	for _, link := range gitHubGot.CardLinks {
-		if link.Text == "Открыть в GitHub" {
-			hasRussianGitHubAction = true
+		if link.Text == "Open in GitHub" {
+			hasGitHubAction = true
 		}
 	}
-	if !hasRussianGitHubAction {
-		t.Fatalf("source card links = %#v, want localized GitHub action", gitHubGot.CardLinks)
+	if !hasGitHubAction {
+		t.Fatalf("source card links = %#v, want English GitHub action", gitHubGot.CardLinks)
 	}
 	if gitHubGot.FetchCount != 0 || gitHubGot.ServerMode || !gitHubGot.Mode {
 		t.Fatalf(

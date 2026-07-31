@@ -3,46 +3,54 @@
 
  const PAGE_SIZE = 6;
  const KIND_FILTERS = [
-  { value: "all", label: "All" },
-  { value: "process_entry", label: "Process entries" },
-  { value: "cli_command", label: "CLI commands" },
-  { value: "http_route", label: "HTTP registrations" },
-  { value: "http_route_descriptor", label: "Route descriptors" },
-  { value: "http_route_frontier", label: "Route frontiers" },
-  { value: "http_server", label: "Server start sites" },
-  { value: "worker", label: "Workers" },
-  { value: "async_task", label: "Non-worker tasks" },
+  { value: "all", messageID: "surfaces.filter.kind.all" },
+  { value: "process_entry", messageID: "surfaces.filter.kind.process_entries" },
+  { value: "cli_command", messageID: "surfaces.filter.kind.cli_commands" },
+  { value: "http_route", messageID: "surfaces.filter.kind.http_registrations" },
+  { value: "http_route_descriptor", messageID: "surfaces.filter.kind.route_descriptors" },
+  { value: "http_route_frontier", messageID: "surfaces.filter.kind.route_frontiers" },
+  { value: "http_server", messageID: "surfaces.filter.kind.server_start_sites" },
+  { value: "worker", messageID: "surfaces.filter.kind.workers" },
+  { value: "async_task", messageID: "surfaces.filter.kind.non_worker_tasks" },
  ];
  const EVIDENCE_FILTERS = [
-  { value: "all", label: "All evidence" },
-  { value: "direct", label: "Direct" },
-  { value: "wrapper", label: "Through wrapper" },
-  { value: "dynamic", label: "Dynamic / unresolved" },
+  { value: "all", messageID: "surfaces.filter.evidence.all" },
+  { value: "direct", messageID: "surfaces.filter.evidence.direct" },
+  { value: "wrapper", messageID: "surfaces.filter.evidence.wrapper" },
+  { value: "dynamic", messageID: "surfaces.filter.evidence.dynamic" },
  ];
  const STATUS_LABELS = {
-  confirmed_direct_registration: "Confirmed registration",
-  confirmed_through_library_wrapper: "Confirmed registration",
-  confirmed_through_repository_wrapper: "Confirmed registration",
-  confirmed_server_start_call: "Static start call found",
-  confirmed_route_descriptor: "Admin route descriptor found",
-  configured_route_inventory_unresolved: "Configured routes unresolved",
-  dynamic_unknown: "Dynamic registration",
-  confirmed_async_task_start: "Async task",
-  possible_worker_loop: "Possible worker",
-  confirmed_worker_registration: "Worker registration",
-  confirmed_command_registration: "Confirmed command registration",
-  partial_command_registration: "Partial command registration",
-  confirmed_process_entry: "Exact process entry",
+  confirmed_direct_registration: "surfaces.status.confirmed_registration",
+  confirmed_through_library_wrapper: "surfaces.status.confirmed_registration",
+  confirmed_through_repository_wrapper: "surfaces.status.confirmed_registration",
+  confirmed_server_start_call: "surfaces.status.static_start_call",
+  confirmed_route_descriptor: "surfaces.status.admin_route_descriptor",
+  configured_route_inventory_unresolved: "surfaces.status.configured_routes_unresolved",
+  dynamic_unknown: "surfaces.status.dynamic_registration",
+  confirmed_async_task_start: "surfaces.status.async_task",
+  possible_worker_loop: "surfaces.status.possible_worker",
+  confirmed_worker_registration: "surfaces.status.worker_registration",
+  confirmed_command_registration: "surfaces.status.confirmed_command_registration",
+  partial_command_registration: "surfaces.status.partial_command_registration",
+  confirmed_process_entry: "surfaces.status.exact_process_entry",
  };
  const GROUPS = [
-  { value: "application", label: "Application" },
-  { value: "secondary_service", label: "Secondary services" },
-  { value: "tooling", label: "Tooling" },
-  { value: "tests_helpers", label: "Tests/helpers" },
-  { value: "unassigned", label: "Unassigned" },
-  { value: "dynamic_unresolved", label: "Dynamic/unresolved" },
-  { value: "unavailable", label: "Unavailable" },
+  { value: "application", messageID: "surfaces.group.application" },
+  { value: "secondary_service", messageID: "surfaces.group.secondary_services" },
+  { value: "tooling", messageID: "surfaces.group.tooling" },
+  { value: "tests_helpers", messageID: "surfaces.group.tests_helpers" },
+  { value: "unassigned", messageID: "surfaces.group.unassigned" },
+  { value: "dynamic_unresolved", messageID: "surfaces.group.dynamic_unresolved" },
+  { value: "unavailable", messageID: "surfaces.group.unavailable" },
  ];
+ const QUALITY_LABELS = {
+  identity: "surfaces.quality.identity",
+  registration_start: "surfaces.quality.registration_start",
+  handler_callback: "surfaces.quality.handler_callback",
+  reachability: "surfaces.quality.reachability",
+  ownership: "surfaces.quality.ownership",
+  traceability: "surfaces.quality.traceability",
+ };
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -121,47 +129,51 @@ function surfaceGroup(trigger, association) {
   return text(association.category || "unassigned");
  }
 
- function sentenceLabel(value) {
+ function sentenceLabel(value, message) {
   const source = text(value).trim().replace(/_/g, " ");
-  if (!source) return "Unknown";
+  if (!source) return message("surfaces.value.unknown");
   return source.charAt(0).toUpperCase() + source.slice(1);
  }
 
- function statusLabel(status) {
-  return STATUS_LABELS[status] || sentenceLabel(status);
+ function statusLabel(status, message) {
+  const messageID = STATUS_LABELS[status];
+  return messageID ? message(messageID) : sentenceLabel(status, message);
  }
 
- function certaintyLabel(certainty) {
-  if (text(certainty).toLowerCase() === "static") return "Static · not observed";
-  return sentenceLabel(certainty);
+ function certaintyLabel(certainty, message) {
+  if (text(certainty).toLowerCase() === "static") return message("surfaces.certainty.static_not_observed");
+  return sentenceLabel(certainty, message);
  }
 
-  function primaryLabel(trigger) {
+  function primaryLabel(trigger, message) {
   const identity = object(trigger.identity);
   if (trigger.kind === "http_route") {
-   const method = valueText(identity.method).trim().toUpperCase() || "HTTP";
-   const path = valueKnown(identity.path) ? valueText(identity.path) : "<dynamic route>";
-   return method + " " + path;
+   const method = valueText(identity.method).trim().toUpperCase() || message("surfaces.value.http");
+   const path = valueKnown(identity.path) ? valueText(identity.path) : message("surfaces.value.dynamic_route");
+   return message("surfaces.identity.http_route", { method: method, path: path });
   }
   if (trigger.kind === "http_route_descriptor") {
-   const path = valueKnown(identity.path) ? valueText(identity.path) : "<dynamic route>";
-   return "Route descriptor " + path;
+   const path = valueKnown(identity.path) ? valueText(identity.path) : message("surfaces.value.dynamic_route");
+   return message("surfaces.identity.route_descriptor", { path: path });
   }
-  if (trigger.kind === "http_route_frontier") return "Configured route inventory";
-   if (trigger.kind === "http_server") return "HTTP server start call";
+  if (trigger.kind === "http_route_frontier") return message("surfaces.identity.configured_route_inventory");
+   if (trigger.kind === "http_server") return message("surfaces.identity.http_server_start");
    if (trigger.kind === "process_entry") {
-    return "Process entry " + (executableOwner(trigger) || compactSymbolLabel(object(trigger.process_entrypoint).id) || "main");
+    return message("surfaces.identity.process_entry", {
+     owner: executableOwner(trigger) || compactSymbolLabel(object(trigger.process_entrypoint).id, message) || "main",
+    });
    }
-  return compactSymbolLabel(identity.name || trigger.name || valueText(trigger.handler)) || "Unnamed surface";
+  return compactSymbolLabel(identity.name || trigger.name || valueText(trigger.handler), message) ||
+   message("surfaces.identity.unnamed");
  }
 
- function compactSymbolLabel(value) {
+ function compactSymbolLabel(value, message) {
   let label = text(value).trim();
   if (!label) return "";
   const slash = label.lastIndexOf("/");
   if (slash >= 0) label = label.slice(slash + 1);
   const task = label.match(/\.([^.]+)\$(\d+)$/);
-  if (task) return task[1] + " · task " + task[2];
+  if (task) return message("surfaces.identity.task", { name: task[1], number: task[2] });
   const dot = label.lastIndexOf(".");
   return dot >= 0 ? label.slice(dot + 1) : label;
  }
@@ -199,24 +211,45 @@ function hasDynamicEvidence(trigger) {
   return "direct";
  }
 
- function frontierPresentation(frontier) {
+ function frontierPresentation(frontier, message) {
   switch (text(frontier.kind)) {
    case "configuration_assembled_route_inventory":
-    return { label: "Configuration-built routes", detail: "Runtime configuration assembles these routes; static analysis did not invent or enumerate them." };
+    return {
+     label: message("surfaces.frontier.configuration_routes.label"),
+     detail: message("surfaces.frontier.configuration_routes.detail"),
+    };
    case "unresolved_dispatch_inventory":
-    return { label: "Route inventory unresolved", detail: "No supported route registration was correlated with this static start call." };
+    return {
+     label: message("surfaces.frontier.route_inventory_unresolved.label"),
+     detail: message("surfaces.frontier.route_inventory_unresolved.detail"),
+    };
    case "route_provider_dispatch_candidate":
-    return { label: "Provider selection unresolved", detail: "The returned descriptor is exact, but runtime provider selection and consumer registration were not observed." };
+    return {
+     label: message("surfaces.frontier.provider_selection_unresolved.label"),
+     detail: message("surfaces.frontier.provider_selection_unresolved.detail"),
+    };
    case "call_target_limit":
-    return { label: "Static dispatch bounded", detail: "Some possible call targets were intentionally left unresolved." };
+    return {
+     label: message("surfaces.frontier.static_dispatch_bounded.label"),
+     detail: message("surfaces.frontier.static_dispatch_bounded.detail"),
+    };
    case "entrypoint_dispatch_unresolved":
-    return { label: "Entrypoint handoff unresolved", detail: "The callback is build-selected, but its runtime handoff from the process entrypoint was not observed." };
+    return {
+     label: message("surfaces.frontier.entrypoint_handoff_unresolved.label"),
+     detail: message("surfaces.frontier.entrypoint_handoff_unresolved.detail"),
+    };
    case "dynamic_route_identity":
-    return { label: "Route identity unresolved", detail: "The route path depends on values unavailable to bounded static analysis." };
+    return {
+     label: message("surfaces.frontier.route_identity_unresolved.label"),
+     detail: message("surfaces.frontier.route_identity_unresolved.detail"),
+    };
    case "dynamic_handler_identity":
-    return { label: "Handler identity unresolved", detail: "The handler depends on values unavailable to bounded static analysis." };
+    return {
+     label: message("surfaces.frontier.handler_identity_unresolved.label"),
+     detail: message("surfaces.frontier.handler_identity_unresolved.detail"),
+    };
    default:
-    return { label: sentenceLabel(frontier.kind), detail: text(frontier.detail) };
+    return { label: sentenceLabel(frontier.kind, message), detail: text(frontier.detail) };
   }
  }
 
@@ -233,13 +266,17 @@ function hasDynamicEvidence(trigger) {
 
  class SurfaceCatalogApp {
   constructor(host, data, options) {
+   this.options = object(options);
+   if (typeof this.options.message !== "function") {
+    throw new TypeError("RepomapSurfaceCatalog.mount requires options.message");
+   }
+   this.message = this.options.message;
    if (!host || host.nodeType !== 1) {
-    throw new TypeError("RepomapSurfaceCatalog.mount requires a host Element");
+    throw new TypeError(this.message("surfaces.error.host_element"));
    }
    this.host = host;
    this.data = object(data);
    this.coverage = object(this.data.coverage || this.data.surface_coverage);
-    this.options = object(options);
     this.architectureSurfaces = new Map(array(this.options.architectureSurfaces).map((surface) => [text(surface.id), surface]));
    this.triggers = array(this.data.triggers).map((trigger) => object(trigger));
    this.kindFilter = "all";
@@ -259,6 +296,7 @@ function hasDynamicEvidence(trigger) {
   }
 
   build() {
+   const message = this.message;
    this.host.replaceChildren();
    this.root = element("section", "rm-surface");
    this.root.setAttribute("aria-labelledby", "rm-surface-title");
@@ -266,16 +304,16 @@ function hasDynamicEvidence(trigger) {
    const heading = element("div", "rm-surface__heading");
    const headingCopy = element("div", "rm-surface__heading-copy");
    const titleLine = element("div", "rm-surface__title-line");
-    const title = element("h2", "rm-surface__title", "All surfaces");
+    const title = element("h2", "rm-surface__title", message("surfaces.title"));
    title.id = "rm-surface-title";
    titleLine.appendChild(title);
-   titleLine.appendChild(element("span", "rm-surface__source", "Local static analysis"));
+   titleLine.appendChild(element("span", "rm-surface__source", message("surfaces.source.local_static")));
    headingCopy.appendChild(titleLine);
    headingCopy.appendChild(
     element(
      "p",
      "rm-surface__intro",
-      "Bounded static catalog of supported registrations, route descriptors, route frontiers, and start call sites. This is not a runtime trace or a complete route inventory; configuration-built routes may remain unresolved."
+      message("surfaces.intro")
     )
    );
    heading.appendChild(headingCopy);
@@ -290,11 +328,13 @@ function hasDynamicEvidence(trigger) {
      this.data.analysis_ran !== false &&
      (Object.prototype.hasOwnProperty.call(this.data, "triggers") || this.data.version || this.data.analyzer_version);
      const anchorCount = Number(this.options.architectureAnchorCount || 0);
-     const message = hasCatalog
-      ? "No supported runtime registrations were cataloged." +
-       (anchorCount > 0 ? " " + anchorCount + " architecture-anchor families remain available." : "")
-      : "No surface catalog is available for this saved run.";
-    this.root.appendChild(this.emptyState(message));
+     const emptyMessage = hasCatalog
+      ? message(
+       anchorCount > 0 ? "surfaces.empty.catalog_with_anchors" : "surfaces.empty.catalog",
+       anchorCount > 0 ? { count: anchorCount } : {}
+      )
+      : message("surfaces.empty.unavailable");
+    this.root.appendChild(this.emptyState(emptyMessage));
     this.root.appendChild(this.renderCoverage());
     this.host.appendChild(this.root);
     return;
@@ -302,8 +342,8 @@ function hasDynamicEvidence(trigger) {
 
    this.renderCounts();
    this.filters = element("div", "rm-surface__filters");
-   this.filters.appendChild(this.filterGroup("Surface kind", KIND_FILTERS, "kind"));
-   this.filters.appendChild(this.filterGroup("Evidence", EVIDENCE_FILTERS, "evidence"));
+   this.filters.appendChild(this.filterGroup(message("surfaces.filter.kind.label"), KIND_FILTERS, "kind"));
+   this.filters.appendChild(this.filterGroup(message("surfaces.filter.evidence.label"), EVIDENCE_FILTERS, "evidence"));
    this.root.appendChild(this.filters);
 
    this.liveStatus = element("p", "rm-surface__live");
@@ -328,6 +368,7 @@ function hasDynamicEvidence(trigger) {
   }
 
   renderCounts() {
+   const message = this.message;
    const coverage = this.coverage;
    const frontierFallback = this.triggers.filter((trigger) => evidenceClass(trigger) === "dynamic").length;
     const traceReady = this.triggers.filter((trigger) => text(trigger.trace_readiness) === "trace_ready").length;
@@ -337,92 +378,92 @@ function hasDynamicEvidence(trigger) {
     const rejectedNoisy = this.triggers.filter((trigger) => ["rejected", "noisy"].includes(text(trigger.surface_role))).length;
      const metrics = [
      {
-      label: "total",
+      messageID: "surfaces.metric.total",
       value: firstNumber([this.data.total_count], this.triggers.length),
      },
-      { label: "trace-ready", value: traceReady },
-      { label: "partial-trace candidates", value: partialReady },
-      { label: "runtime activities", value: runtimeActivities },
-      { label: "rejected/noisy", value: rejectedNoisy },
+      { messageID: "surfaces.metric.trace_ready", value: traceReady },
+      { messageID: "surfaces.metric.partial_trace_candidates", value: partialReady },
+      { messageID: "surfaces.metric.runtime_activities", value: runtimeActivities },
+      { messageID: "surfaces.metric.rejected_noisy", value: rejectedNoisy },
       {
-       label: "CLI commands",
+       messageID: "surfaces.metric.cli_commands",
       value: firstNumber([this.data.cli_command_count], countByKind(this.triggers, "cli_command")),
       },
       {
-       label: "process entries",
+       messageID: "surfaces.metric.process_entries",
        value: firstNumber([this.data.process_entry_count], countByKind(this.triggers, "process_entry")),
       },
      {
-      label: "application",
+      messageID: "surfaces.metric.application",
       value: firstNumber(
        [this.data.application_count],
        this.triggers.filter((trigger) => trigger.executable_role === "primary_application").length
       ),
      },
       {
-       label: "secondary services",
+       messageID: "surfaces.metric.secondary_services",
        value: firstNumber(
         [this.data.secondary_service_count],
         this.triggers.filter((trigger) => trigger.executable_role === "secondary_service").length
        ),
       },
       {
-       label: "tooling",
+       messageID: "surfaces.metric.tooling",
       value: firstNumber(
        [this.data.tooling_count],
         this.triggers.filter((trigger) => ["tooling", "secondary_tooling"].includes(trigger.executable_role)).length
        ),
       },
       {
-       label: "unavailable",
+       messageID: "surfaces.metric.unavailable",
        value: firstNumber(
         [this.data.unavailable_surface_count],
         this.triggers.filter((trigger) => trigger.availability === "unavailable").length
        ),
       },
       {
-       label: "supporting dependency",
+       messageID: "surfaces.metric.supporting_dependency",
        value: firstNumber(
         [this.data.supporting_dependency_count],
         this.triggers.filter((trigger) => trigger.application_classification === "supporting_dependency_behavior").length
        ),
       },
       {
-       label: "dependency-only",
+       messageID: "surfaces.metric.dependency_only",
        value: firstNumber(
         [this.data.dependency_only_count],
         this.triggers.filter((trigger) => trigger.application_classification === "dependency_only").length
        ),
       },
      {
-      label: "HTTP registrations",
+      messageID: "surfaces.metric.http_registrations",
       value: firstNumber([this.data.http_count, this.data.http_route_count], countByKind(this.triggers, "http_route")),
      },
      {
-      label: "route descriptors",
+      messageID: "surfaces.metric.route_descriptors",
       value: firstNumber([this.data.http_route_descriptor_count], countByKind(this.triggers, "http_route_descriptor")),
      },
      {
-      label: "route frontiers",
+      messageID: "surfaces.metric.route_frontiers",
       value: firstNumber([this.data.http_route_frontier_count], countByKind(this.triggers, "http_route_frontier")),
      },
      {
-      label: "server start sites",
+      messageID: "surfaces.metric.server_start_sites",
       value: firstNumber([this.data.http_server_count], countByKind(this.triggers, "http_server")),
      },
     {
-     label: "workers",
+     messageID: "surfaces.metric.workers",
      value: firstNumber([this.data.worker_count, coverage.workers], countByKind(this.triggers, "worker")),
     },
     {
-      label: "non-worker async tasks",
+      messageID: "surfaces.metric.non_worker_async_tasks",
      value: firstNumber(
       [this.data.async_task_count, coverage.async_tasks],
       countByKind(this.triggers, "async_task")
      ),
     },
      {
-      label: "dynamic frontiers",
+      messageID: "surfaces.metric.dynamic_frontiers",
       value: firstNumber(
        [this.data.dynamic_frontier_count],
        dynamicFrontiers || array(this.data.dynamic_frontiers || coverage.dynamic_frontiers).length || frontierFallback
@@ -432,19 +473,20 @@ function hasDynamicEvidence(trigger) {
    metrics.forEach((metric) => {
     const chip = element("span", "rm-surface__count");
     chip.appendChild(element("strong", "", metric.value));
-    chip.appendChild(document.createTextNode(" " + metric.label));
+    chip.appendChild(document.createTextNode(" " + message(metric.messageID)));
     this.summary.appendChild(chip);
    });
   }
 
   filterGroup(label, filters, dimension) {
+   const message = this.message;
    const group = element("div", "rm-surface__filter-group");
    group.setAttribute("role", "group");
    group.setAttribute("aria-label", label);
    group.appendChild(element("span", "rm-surface__filter-label", label));
    const buttons = dimension === "kind" ? this.kindButtons : this.evidenceButtons;
    filters.forEach((filter) => {
-    const button = element("button", "rm-surface__filter", filter.label);
+    const button = element("button", "rm-surface__filter", message(filter.messageID));
     button.type = "button";
     button.setAttribute("aria-pressed", filter.value === "all" ? "true" : "false");
     this.listen(button, "click", () => {
@@ -482,6 +524,7 @@ function hasDynamicEvidence(trigger) {
   }
 
   renderList(selectedID) {
+   const message = this.message;
    this.list.replaceChildren();
    const matches = this.matchingTriggers();
    const hasCatalog =
@@ -490,18 +533,20 @@ function hasDynamicEvidence(trigger) {
 
    if (this.triggers.length === 0) {
      const anchorCount = Number(this.options.architectureAnchorCount || 0);
-     const message = hasCatalog
-      ? "No supported runtime registrations were cataloged." +
-       (anchorCount > 0 ? " " + anchorCount + " architecture-anchor families remain available." : "")
-      : "No surface catalog is available for this saved run.";
-    this.list.appendChild(this.emptyState(message));
-    this.liveStatus.textContent = message;
+     const emptyMessage = hasCatalog
+      ? message(
+       anchorCount > 0 ? "surfaces.empty.catalog_with_anchors" : "surfaces.empty.catalog",
+       anchorCount > 0 ? { count: anchorCount } : {}
+      )
+      : message("surfaces.empty.unavailable");
+    this.list.appendChild(this.emptyState(emptyMessage));
+    this.liveStatus.textContent = emptyMessage;
     this.moreButton.hidden = true;
     return;
    }
    if (matches.length === 0) {
-     const empty = this.emptyState("No surfaces match these filters.");
-    const reset = element("button", "rm-surface__reset", "Reset filters");
+     const empty = this.emptyState(message("surfaces.empty.filters"));
+    const reset = element("button", "rm-surface__reset", message("surfaces.action.reset_filters"));
     reset.type = "button";
     this.listen(reset, "click", () => {
      this.kindFilter = "all";
@@ -512,7 +557,7 @@ function hasDynamicEvidence(trigger) {
     });
     empty.appendChild(reset);
     this.list.appendChild(empty);
-     this.liveStatus.textContent = "No surfaces match these filters.";
+     this.liveStatus.textContent = message("surfaces.empty.filters");
     this.moreButton.hidden = true;
     return;
    }
@@ -529,7 +574,7 @@ function hasDynamicEvidence(trigger) {
      });
      if (grouped.length === 0) return;
      const section = element("section", "rm-surface__group");
-     const heading = element("h3", "rm-surface__group-title", group.label);
+     const heading = element("h3", "rm-surface__group-title", message(group.messageID));
       heading.appendChild(element("span", "rm-surface__group-count", groupedMatches.length));
      section.appendChild(heading);
      grouped.forEach((trigger) => {
@@ -542,28 +587,34 @@ function hasDynamicEvidence(trigger) {
     });
    const hiddenCount = matches.length - PAGE_SIZE;
    this.moreButton.hidden = hiddenCount <= 0;
-   this.moreButton.textContent = this.expanded ? "Show less" : "Show " + hiddenCount + " more";
+   this.moreButton.textContent = this.expanded
+    ? message("surfaces.action.show_less")
+    : message("surfaces.action.show_more", { count: hiddenCount });
    this.moreButton.setAttribute("aria-expanded", this.expanded ? "true" : "false");
-    this.liveStatus.textContent = "Showing " + visible.length + " of " + matches.length + " surfaces.";
+    this.liveStatus.textContent = message("surfaces.status.showing", {
+     visible: visible.length,
+     total: matches.length,
+    });
   }
 
   emptyState(message) {
    const empty = element("div", "rm-surface__empty");
    empty.appendChild(element("p", "", message));
    empty.appendChild(
-     element("p", "rm-surface__empty-note", "Architecture anchors and the supported surface catalog have different scopes; absence here does not prove runtime absence.")
+     element("p", "rm-surface__empty-note", message("surfaces.empty.scope_note"))
    );
    return empty;
   }
 
   renderTrigger(trigger, index) {
+   const message = this.message;
    const card = element("details", "rm-surface__item");
    const id = triggerID(trigger, index);
      const association = Object.assign({}, object(trigger), object(this.architectureSurfaces.get(id)));
    card.dataset.surfaceId = id;
    const summary = element("summary", "rm-surface__item-summary");
    const identityBlock = element("span", "rm-surface__identity");
-   const primaryText = primaryLabel(trigger);
+   const primaryText = primaryLabel(trigger, message);
    const primary = element("span", "rm-surface__primary", primaryText);
    primary.title = primary.textContent;
    identityBlock.appendChild(primary);
@@ -576,7 +627,7 @@ function hasDynamicEvidence(trigger) {
     }
      const owner = association.owning_executable || executableOwner(trigger);
     if (owner) {
-     const ownership = element("span", "rm-surface__owner", "Executable · " + owner);
+     const ownership = element("span", "rm-surface__owner", message("surfaces.owner.executable", { owner: owner }));
      ownership.title = owner;
      identityBlock.appendChild(ownership);
     }
@@ -586,58 +637,94 @@ function hasDynamicEvidence(trigger) {
    const routeFrontier = trigger.kind === "http_route_frontier";
     const processEntry = trigger.kind === "process_entry";
     const registration = locationLabel(processEntry ? object(trigger.process_entrypoint).location : (serverStart ? trigger.server_start_site : (descriptor ? trigger.descriptor_site : trigger.registration_site)));
-    const locationVerb = processEntry ? "declared " : (serverStart ? "start call " : (descriptor ? "descriptor " : (routeFrontier ? "assembled " : "registered ")));
+    let registrationMessageID = "surfaces.location.registered";
+    if (processEntry) registrationMessageID = "surfaces.location.declared";
+    else if (serverStart) registrationMessageID = "surfaces.location.start_call";
+    else if (descriptor) registrationMessageID = "surfaces.location.descriptor";
+    else if (routeFrontier) registrationMessageID = "surfaces.location.assembled";
    summary.appendChild(
-    element("span", "rm-surface__registration", registration ? locationVerb + registration : "")
+    element(
+     "span",
+     "rm-surface__registration",
+     registration ? message(registrationMessageID, { location: registration }) : ""
+    )
    );
 
    const semantics = element("dl", "rm-surface__semantics");
-   semantics.appendChild(this.semantic("Status", statusLabel(trigger.status)));
-   semantics.appendChild(this.semantic("Role", sentenceLabel(trigger.surface_role)));
-   semantics.appendChild(this.semantic("Trace readiness", sentenceLabel(trigger.trace_readiness)));
-   semantics.appendChild(this.semantic("Certainty", certaintyLabel(trigger.certainty)));
-   semantics.appendChild(this.semantic("Resolution", sentenceLabel(trigger.resolution)));
+   semantics.appendChild(this.semantic(message("surfaces.field.status"), statusLabel(trigger.status, message)));
+   semantics.appendChild(this.semantic(message("surfaces.field.role"), sentenceLabel(trigger.surface_role, message)));
+   semantics.appendChild(
+    this.semantic(message("surfaces.field.trace_readiness"), sentenceLabel(trigger.trace_readiness, message))
+   );
+   semantics.appendChild(
+    this.semantic(message("surfaces.field.certainty"), certaintyLabel(trigger.certainty, message))
+   );
+   semantics.appendChild(
+    this.semantic(message("surfaces.field.resolution"), sentenceLabel(trigger.resolution, message))
+   );
    summary.appendChild(semantics);
    card.appendChild(summary);
 
    const body = element("div", "rm-surface__item-body");
    const facts = element("dl", "rm-surface__details");
-    appendText(facts, "Kind", sentenceLabel(trigger.kind));
-    appendText(facts, "Framework", trigger.framework);
-       appendText(facts, "Executable role", sentenceLabel(trigger.executable_role));
-       appendText(facts, "Availability", sentenceLabel(trigger.availability));
-       appendText(facts, "Application ownership", sentenceLabel(trigger.application_classification));
-       appendText(facts, "Terminal source", sentenceLabel(trigger.terminal_source_scope));
-       appendText(facts, "Promotion basis", sentenceLabel(trigger.promotion_basis));
-      appendText(facts, "Unavailable reason", trigger.unavailable_reason);
-      appendText(facts, "Trace readiness reason", trigger.trace_readiness_reason);
+    appendText(facts, message("surfaces.field.kind"), sentenceLabel(trigger.kind, message));
+    appendText(facts, message("surfaces.field.framework"), trigger.framework);
+       appendText(
+        facts,
+        message("surfaces.field.executable_role"),
+        sentenceLabel(trigger.executable_role, message)
+       );
+       appendText(facts, message("surfaces.field.availability"), sentenceLabel(trigger.availability, message));
+       appendText(
+        facts,
+        message("surfaces.field.application_ownership"),
+        sentenceLabel(trigger.application_classification, message)
+       );
+       appendText(
+        facts,
+        message("surfaces.field.terminal_source"),
+        sentenceLabel(trigger.terminal_source_scope, message)
+       );
+       appendText(
+        facts,
+        message("surfaces.field.promotion_basis"),
+        sentenceLabel(trigger.promotion_basis, message)
+       );
+      appendText(facts, message("surfaces.field.unavailable_reason"), trigger.unavailable_reason);
+      appendText(facts, message("surfaces.field.trace_readiness_reason"), trigger.trace_readiness_reason);
       const quality = object(trigger.quality);
       appendText(
        facts,
-       "Quality",
+       message("surfaces.field.quality"),
        ["identity", "registration_start", "handler_callback", "reachability", "ownership", "traceability"]
-        .map((dimension) => dimension.replace(/_/g, " ") + ": " + text(quality[dimension]))
-        .filter((dimension) => !dimension.endsWith(": "))
+        .map((dimension) => {
+         const value = text(quality[dimension]);
+         if (!value) return "";
+         return message(QUALITY_LABELS[dimension]) + ": " + value;
+        })
+        .filter(Boolean)
         .join(" · ")
       );
-     appendText(facts, "Transport", trigger.transport);
-     appendText(facts, "Handler / callback", handler);
-     appendText(facts, "Constructor", text(object(trigger.constructor).name));
-    if (trigger.provisional_id && hasDynamicEvidence(trigger)) appendText(facts, "Identity", "Provisional; unresolved values may change it");
+     appendText(facts, message("surfaces.field.transport"), trigger.transport);
+     appendText(facts, message("surfaces.field.handler_callback"), handler);
+     appendText(facts, message("surfaces.field.constructor"), text(object(trigger.constructor).name));
+    if (trigger.provisional_id && hasDynamicEvidence(trigger)) {
+     appendText(facts, message("surfaces.field.identity"), message("surfaces.identity.provisional"));
+    }
     body.appendChild(facts);
 
     const progression = element("section", "rm-surface__progression");
-    progression.appendChild(element("h4", "", "Architecture progression"));
+    progression.appendChild(element("h4", "", message("surfaces.progression.title")));
     if (association.owning_component_id && typeof this.options.openComponent === "function") {
-     const component = element("button", "rm-surface__action", "Open owning component");
+     const component = element("button", "rm-surface__action", message("surfaces.action.open_owning_component"));
      component.type = "button";
      this.listen(component, "click", () => this.options.openComponent(association.owning_component_id));
      progression.appendChild(component);
     } else {
-     progression.appendChild(element("p", "rm-surface__caveat", "Unassigned surface — no unique exact component owner was found."));
+     progression.appendChild(element("p", "rm-surface__caveat", message("surfaces.progression.unassigned")));
     }
     if (association.related_saved_trace_id && typeof this.options.openTrace === "function") {
-     const trace = element("button", "rm-surface__action is-primary", "Open saved trace");
+     const trace = element("button", "rm-surface__action is-primary", message("surfaces.action.open_saved_trace"));
      trace.type = "button";
      this.listen(trace, "click", () => this.options.openTrace(association.related_saved_trace_id));
      progression.appendChild(trace);
@@ -645,11 +732,13 @@ function hasDynamicEvidence(trigger) {
      progression.appendChild(element(
       "p",
       "rm-surface__unavailable",
-       "Trace unavailable: " + (association.trace_unavailable_reason || "no compatible saved trace was found")
+       message("surfaces.progression.trace_unavailable", {
+        reason: association.trace_unavailable_reason || message("surfaces.progression.trace_unavailable_default"),
+       })
      ));
     }
     if (typeof this.options.openSurface === "function") {
-     const inspect = element("button", "rm-surface__action", "View in Architecture");
+     const inspect = element("button", "rm-surface__action", message("surfaces.action.view_in_architecture"));
      inspect.type = "button";
      this.listen(inspect, "click", () => this.options.openSurface(id));
      progression.appendChild(inspect);
@@ -657,46 +746,60 @@ function hasDynamicEvidence(trigger) {
     body.appendChild(progression);
 
    const locations = element("div", "rm-surface__locations");
-     if (trigger.kind === "http_route") this.appendLocation(locations, "Registration", trigger.registration_site);
-     if (trigger.kind === "http_route_descriptor") {
-      this.appendLocation(locations, "Descriptor source", trigger.descriptor_site);
-      this.appendLocation(locations, "Provider call", trigger.registration_site);
+     if (trigger.kind === "http_route") {
+      this.appendLocation(locations, message("surfaces.location_label.registration"), trigger.registration_site);
      }
-     if (trigger.kind === "http_route_frontier") this.appendLocation(locations, "Route assembly", trigger.registration_site);
-    this.appendLocation(locations, "Constructor", object(trigger.constructor).location);
-    this.appendLocation(locations, "Handler / callback", trigger.handler_location);
-   this.appendLocation(locations, "Server start", trigger.server_start_site);
-   this.appendLocation(locations, "Process entrypoint", object(trigger.process_entrypoint).location);
-   if (locations.childElementCount > 0) body.appendChild(this.detailSection("Source locations", locations));
+     if (trigger.kind === "http_route_descriptor") {
+      this.appendLocation(locations, message("surfaces.location_label.descriptor_source"), trigger.descriptor_site);
+      this.appendLocation(locations, message("surfaces.location_label.provider_call"), trigger.registration_site);
+     }
+     if (trigger.kind === "http_route_frontier") {
+      this.appendLocation(locations, message("surfaces.location_label.route_assembly"), trigger.registration_site);
+     }
+    this.appendLocation(locations, message("surfaces.field.constructor"), object(trigger.constructor).location);
+    this.appendLocation(locations, message("surfaces.field.handler_callback"), trigger.handler_location);
+   this.appendLocation(locations, message("surfaces.location_label.server_start"), trigger.server_start_site);
+   this.appendLocation(
+    locations,
+    message("surfaces.location_label.process_entrypoint"),
+    object(trigger.process_entrypoint).location
+   );
+   if (locations.childElementCount > 0) {
+    body.appendChild(this.detailSection(message("surfaces.section.source_locations"), locations));
+   }
 
    const middleware = array(trigger.middleware);
    if (middleware.length > 0) {
     const content = element("div", "rm-surface__stack");
     content.appendChild(
-     element("p", "rm-surface__caveat", "Registered middleware identities; execution order was not observed.")
+     element("p", "rm-surface__caveat", message("surfaces.middleware.caveat"))
     );
-    middleware.forEach((item) => content.appendChild(element("code", "rm-surface__code", valueText(item) || "unknown")));
-    body.appendChild(this.detailSection("Middleware", content));
+    middleware.forEach((item) => {
+     content.appendChild(
+      element("code", "rm-surface__code", valueText(item) || message("surfaces.value.unknown"))
+     );
+    });
+    body.appendChild(this.detailSection(message("surfaces.section.middleware"), content));
    }
 
    const wrappers = array(trigger.wrapper_chain);
    if (wrappers.length > 0) {
     const content = element("div", "rm-surface__stack");
     content.appendChild(
-     element("p", "rm-surface__caveat", "Derived registration chain; runtime execution order was not observed.")
+     element("p", "rm-surface__caveat", message("surfaces.wrapper.caveat"))
     );
     const list = element("ol", "rm-surface__evidence-list");
     wrappers.forEach((wrapper) => {
      const item = element("li", "rm-surface__wrapper");
      const symbol = object(wrapper.symbol);
-     item.appendChild(element("strong", "", symbol.name || symbol.id || "wrapper"));
+     item.appendChild(element("strong", "", symbol.name || symbol.id || message("surfaces.value.wrapper")));
      if (wrapper.origin) item.appendChild(element("span", "rm-surface__muted", " · " + wrapper.origin));
-     this.appendLocation(item, "Declaration", symbol.location);
-     this.appendLocation(item, "Callsite", wrapper.callsite);
+     this.appendLocation(item, message("surfaces.location_label.declaration"), symbol.location);
+     this.appendLocation(item, message("surfaces.location_label.callsite"), wrapper.callsite);
      list.appendChild(item);
     });
     content.appendChild(list);
-    body.appendChild(this.detailSection("Wrapper chain", content));
+    body.appendChild(this.detailSection(message("surfaces.section.wrapper_chain"), content));
    }
 
    const evidence = array(trigger.evidence);
@@ -704,16 +807,20 @@ function hasDynamicEvidence(trigger) {
     const content = element("ul", "rm-surface__evidence-list");
     evidence.forEach((fact) => {
      const item = element("li", "rm-surface__evidence");
-     item.appendChild(element("strong", "", sentenceLabel(fact.kind)));
+     item.appendChild(element("strong", "", sentenceLabel(fact.kind, message)));
      if (fact.detail) item.appendChild(element("span", "rm-surface__muted", " — " + fact.detail));
-     this.appendLocation(item, "Evidence", fact.location);
+     this.appendLocation(item, message("surfaces.section.evidence"), fact.location);
      content.appendChild(item);
     });
-    body.appendChild(this.detailSection("Evidence", content));
+    body.appendChild(this.detailSection(message("surfaces.section.evidence"), content));
    }
 
    const frontiers = array(trigger.dynamic_frontier);
-   if (frontiers.length > 0) body.appendChild(this.detailSection("Dynamic frontiers", this.renderFrontiers(frontiers)));
+   if (frontiers.length > 0) {
+    body.appendChild(
+     this.detailSection(message("surfaces.section.dynamic_frontiers"), this.renderFrontiers(frontiers))
+    );
+   }
 
    card.appendChild(body);
    this.listen(card, "toggle", () => {
@@ -738,14 +845,19 @@ function hasDynamicEvidence(trigger) {
   }
 
   appendLocation(parent, label, location) {
+   const message = this.message;
    const rendered = locationLabel(location);
    if (!rendered) return;
    const row = element("div", "rm-surface__location");
    row.appendChild(element("span", "rm-surface__location-label", label));
    if (typeof this.options.openLocation === "function") {
-    const button = element("button", "rm-surface__location-button", rendered + " ↗");
+    const button = element(
+     "button",
+     "rm-surface__location-button",
+     message("surfaces.location.open", { location: rendered })
+    );
     button.type = "button";
-    button.title = "Open in editor";
+    button.title = message("surfaces.action.open_in_editor");
     this.listen(button, "click", () => this.openLocation(location));
     row.appendChild(button);
    } else {
@@ -755,35 +867,42 @@ function hasDynamicEvidence(trigger) {
   }
 
   openLocation(location) {
+   const message = this.message;
    try {
     const result = this.options.openLocation(object(location));
     if (result && typeof result.catch === "function") {
      result.catch(() => {
-      this.liveStatus.textContent = "The editor could not open " + locationLabel(location) + ".";
+      this.liveStatus.textContent = message("surfaces.error.editor_open", {
+       location: locationLabel(location),
+      });
      });
     }
    } catch (_error) {
-    this.liveStatus.textContent = "The editor could not open " + locationLabel(location) + ".";
+    this.liveStatus.textContent = message("surfaces.error.editor_open", {
+     location: locationLabel(location),
+    });
    }
   }
 
   renderFrontiers(frontiers) {
+   const message = this.message;
    const list = element("ul", "rm-surface__frontiers");
    frontiers.forEach((frontier) => {
     const item = element("li", "rm-surface__frontier");
-     const presentation = frontierPresentation(frontier);
+     const presentation = frontierPresentation(frontier, message);
      item.appendChild(element("strong", "", presentation.label));
      if (presentation.detail) item.appendChild(element("span", "", " — " + presentation.detail));
-    this.appendLocation(item, "Frontier", frontier.location);
+    this.appendLocation(item, message("surfaces.location_label.frontier"), frontier.location);
     list.appendChild(item);
    });
    return list;
   }
 
   renderCoverage() {
+   const message = this.message;
    const coverage = Object.keys(this.coverage).length > 0 ? this.coverage : this.data;
    const details = element("details", "rm-surface__coverage");
-    details.appendChild(element("summary", "", "View coverage and limits"));
+    details.appendChild(element("summary", "", message("surfaces.coverage.title")));
    const body = element("div", "rm-surface__coverage-body");
    body.appendChild(
     element(
@@ -791,45 +910,65 @@ function hasDynamicEvidence(trigger) {
      "rm-surface__scope",
      coverage.scope_statement ||
       this.data.scope_statement ||
-      "Configured terminal seeds and bounded static propagation under the recorded build scenario."
+      message("surfaces.coverage.default_scope")
     )
    );
    body.appendChild(
     element(
      "p",
      "rm-surface__caveat",
-      "Static registration evidence does not prove callback execution, middleware order, branch choice, or process lifetime. Worker and non-worker async-task counts are exclusive catalog classifications and are independent of selected FlowProof coverage."
+      message("surfaces.coverage.caveat")
     )
    );
 
   const scenario = object(coverage.scenario);
   const facts = element("dl", "rm-surface__details rm-surface__coverage-facts");
-  appendText(facts, "Scenario", this.data.scenario_id || scenario.id);
-  appendText(facts, "Analyzer", this.data.analyzer_version);
-  appendText(facts, "Catalog surfaces", coverage.total_count);
-  if (coverage.truncated === true) appendText(facts, "Surfaces embedded", this.triggers.length);
-  appendText(facts, "Direct surfaces", coverage.direct_count);
-  appendText(facts, "Wrapper-derived", coverage.wrapper_count);
-  appendText(facts, "Workers", coverage.worker_count);
-   appendText(facts, "Non-worker async tasks", coverage.async_task_count);
-   appendText(facts, "Process entries", coverage.process_entry_count == null ? coverage.process_entries : coverage.process_entry_count);
-   appendText(facts, "Unavailable process entries", coverage.unavailable_process_entries);
-   appendText(facts, "Unavailable packages", coverage.unavailable_package_count);
-   appendText(facts, "Package diagnostics", coverage.package_diagnostic_count);
-  if (coverage.truncated === true) appendText(facts, "Projection bound", "Reached; additional triggers were not embedded");
-  appendText(facts, "Packages inspected", coverage.packages_inspected);
-  appendText(facts, "Functions inspected", coverage.functions_inspected);
+  appendText(facts, message("surfaces.coverage.scenario"), this.data.scenario_id || scenario.id);
+  appendText(facts, message("surfaces.coverage.analyzer"), this.data.analyzer_version);
+  appendText(facts, message("surfaces.coverage.catalog_surfaces"), coverage.total_count);
+  if (coverage.truncated === true) {
+   appendText(facts, message("surfaces.coverage.surfaces_embedded"), this.triggers.length);
+  }
+  appendText(facts, message("surfaces.coverage.direct_surfaces"), coverage.direct_count);
+  appendText(facts, message("surfaces.coverage.wrapper_derived"), coverage.wrapper_count);
+  appendText(facts, message("surfaces.coverage.workers"), coverage.worker_count);
+   appendText(facts, message("surfaces.coverage.non_worker_async_tasks"), coverage.async_task_count);
+   appendText(
+    facts,
+    message("surfaces.coverage.process_entries"),
+    coverage.process_entry_count == null ? coverage.process_entries : coverage.process_entry_count
+   );
+   appendText(
+    facts,
+    message("surfaces.coverage.unavailable_process_entries"),
+    coverage.unavailable_process_entries
+   );
+   appendText(facts, message("surfaces.coverage.unavailable_packages"), coverage.unavailable_package_count);
+   appendText(facts, message("surfaces.coverage.package_diagnostics"), coverage.package_diagnostic_count);
+  if (coverage.truncated === true) {
+   appendText(
+    facts,
+    message("surfaces.coverage.projection_bound"),
+    message("surfaces.coverage.projection_bound_reached")
+   );
+  }
+  appendText(facts, message("surfaces.coverage.packages_inspected"), coverage.packages_inspected);
+  appendText(facts, message("surfaces.coverage.functions_inspected"), coverage.functions_inspected);
   if (Array.isArray(coverage.configured_seeds_matched)) {
-   appendText(facts, "Configured seeds matched", coverage.configured_seeds_matched.length);
+   appendText(
+    facts,
+    message("surfaces.coverage.configured_seeds_matched"),
+    coverage.configured_seeds_matched.length
+   );
   }
   appendText(
    facts,
-   "Unresolved handlers",
+   message("surfaces.coverage.unresolved_handlers"),
    coverage.unresolved_handler_count == null ? coverage.unresolved_handlers : coverage.unresolved_handler_count
   );
   appendText(
    facts,
-   "Possible registrations",
+   message("surfaces.coverage.possible_registrations"),
    coverage.possible_registration_count == null
     ? coverage.possible_registrations
     : coverage.possible_registration_count
@@ -841,31 +980,45 @@ function hasDynamicEvidence(trigger) {
     const list = element("ul", "rm-surface__evidence-list");
     loopSignals.forEach((signal) => {
      const item = element("li", "rm-surface__loop");
-     item.appendChild(element("strong", "", sentenceLabel(signal.kind)));
+     item.appendChild(element("strong", "", sentenceLabel(signal.kind, message)));
      if (signal.function_id) item.appendChild(element("span", "rm-surface__muted", " · " + signal.function_id));
      if (signal.detail) item.appendChild(element("p", "", signal.detail));
-     this.appendLocation(item, "Signal", signal.location);
+     this.appendLocation(item, message("surfaces.location_label.signal"), signal.location);
      list.appendChild(item);
     });
-    body.appendChild(this.detailSection("Loop signals", list));
+    body.appendChild(this.detailSection(message("surfaces.section.loop_signals"), list));
    }
 
    const frontiers = array(this.data.dynamic_frontiers || coverage.dynamic_frontiers).concat(
     array(coverage.unsupported_dispatch_mechanisms)
    );
-   if (frontiers.length > 0) body.appendChild(this.detailSection("Analysis frontiers", this.renderFrontiers(frontiers)));
+   if (frontiers.length > 0) {
+    body.appendChild(
+     this.detailSection(message("surfaces.section.analysis_frontiers"), this.renderFrontiers(frontiers))
+    );
+   }
 
    const unavailablePackages = array(this.data.unavailable_packages || coverage.unavailable_packages);
    if (unavailablePackages.length > 0) {
     const list = element("ul", "rm-surface__evidence-list");
     unavailablePackages.forEach((unavailablePackage) => {
      const item = element("li", "rm-surface__diagnostic");
-     item.appendChild(element("strong", "", unavailablePackage.package || unavailablePackage.package_name || "Unavailable package"));
+     item.appendChild(
+      element(
+       "strong",
+       "",
+       unavailablePackage.package ||
+        unavailablePackage.package_name ||
+        message("surfaces.value.unavailable_package")
+      )
+     );
      if (unavailablePackage.owning_executable) item.appendChild(element("span", "rm-surface__muted", " · " + unavailablePackage.owning_executable));
-     if (unavailablePackage.reason) item.appendChild(element("p", "", sentenceLabel(unavailablePackage.reason)));
+     if (unavailablePackage.reason) {
+      item.appendChild(element("p", "", sentenceLabel(unavailablePackage.reason, message)));
+     }
      list.appendChild(item);
     });
-    body.appendChild(this.detailSection("Unavailable packages", list));
+    body.appendChild(this.detailSection(message("surfaces.section.unavailable_packages"), list));
    }
 
    const packageDiagnostics = array(this.data.package_diagnostics || coverage.package_diagnostics);
@@ -873,31 +1026,39 @@ function hasDynamicEvidence(trigger) {
     const list = element("ul", "rm-surface__evidence-list");
     packageDiagnostics.forEach((diagnostic) => {
      const item = element("li", "rm-surface__diagnostic");
-     item.appendChild(element("strong", "", diagnostic.package || diagnostic.package_name || "Package diagnostic"));
+     item.appendChild(
+      element(
+       "strong",
+       "",
+       diagnostic.package || diagnostic.package_name || message("surfaces.value.package_diagnostic")
+      )
+     );
      if (diagnostic.message) item.appendChild(element("p", "", diagnostic.message));
-     this.appendLocation(item, "Diagnostic", diagnostic.location);
+     this.appendLocation(item, message("surfaces.location_label.diagnostic"), diagnostic.location);
      list.appendChild(item);
     });
-    body.appendChild(this.detailSection("Package diagnostics", list));
+    body.appendChild(this.detailSection(message("surfaces.section.package_diagnostics"), list));
    }
 
    const budgets = array(coverage.budgets_reached);
    if (budgets.length > 0) {
     const list = element("ul", "rm-surface__evidence-list");
     budgets.forEach((budget) => list.appendChild(element("li", "", this.budgetLabel(budget))));
-    body.appendChild(this.detailSection("Budgets reached", list));
+    body.appendChild(this.detailSection(message("surfaces.section.budgets_reached"), list));
    }
    details.appendChild(body);
    return details;
   }
 
   budgetLabel(budget) {
+   const message = this.message;
    const labels = {
-    depth: "Call-depth bound reached",
-    targets: "Dynamic call-target bound reached",
-    tasks: "Analysis work-item bound reached",
+    depth: "surfaces.budget.depth",
+    targets: "surfaces.budget.targets",
+    tasks: "surfaces.budget.tasks",
    };
-   return labels[text(budget)] || sentenceLabel(budget);
+   const messageID = labels[text(budget)];
+   return messageID ? message(messageID) : sentenceLabel(budget, message);
   }
 
   hashValue() {

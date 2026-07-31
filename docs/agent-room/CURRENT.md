@@ -1,15 +1,29 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/166-architecture-localization-projection-record.md
+    decisions/167-typed-report-ui-message-catalog.md
 
 Status:
-    Decision 166 active; immutable provider-free Architecture localization projection record authorized
+    Decision 167 active; typed English/Russian report UI message catalog authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 167 atomically replaces the report's exact-string, regex,
+    TreeWalker, and MutationObserver localization path with one explicit
+    English/Russian product-message catalog shared by the main renderer,
+    Architecture canvas, surface catalog, and fixed template chrome.
+    Product-owned strings use stable message IDs and declared parameters at
+    their render sites; repository/model prose, paths, symbols, packages,
+    source, IDs, links, and lines remain opaque exact parameters. Unknown IDs
+    or parameter mismatches fail explicitly and English is not a Russian
+    fallback. The sole server-rendered EN/RU noscript notice is an explicit
+    fixed exception because the JavaScript catalog cannot run when JavaScript
+    is disabled; no second translation runtime is introduced. No ordinary
+    Architecture projection, --lang behavior, provider, executor, retry,
+    cache, report/manifest/HTTP/source-authority behavior, or semantic-stage
+    localization changes.
     Decision 166 adds only an explicit provider-free, content-addressed
     Architecture localization projection record. It builds the exact
     Decision 165 prompt and one deterministic OpenAI-compatible request body

@@ -97,6 +97,9 @@ const document = {
   },
   querySelectorAll() { return []; },
 };
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
@@ -253,10 +256,10 @@ func TestStudyProgressiveAssetContract(t *testing.T) {
 	for _, token := range []string{
 		"var start = studyStartReference(direction);",
 		"function renderStudyReadingAnchor(",
-		"'Open exact source'",
+		"'main.open.exact.source'",
 		"function renderReadableDocument(",
 		"function renderReadableDocumentCard(",
-		"'Show raw exact source'",
+		"'main.show.raw.exact.source'",
 		"documentReference && isMarkdownDocumentSource(snippet)",
 	} {
 		if !strings.Contains(string(script), token) {

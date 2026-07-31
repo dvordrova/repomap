@@ -40,6 +40,9 @@ var surfaceCatalogJS string
 //go:embed templates/script.js
 var scriptJS string
 
+//go:embed templates/ui_messages.js
+var uiMessagesJS string
+
 var reportTmpl *template.Template
 
 // MaxSourceEpisodeBytes is the maximum approved source-episode artifact that
@@ -167,6 +170,7 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 		"SurfaceCatalogCSS":     template.CSS(surfaceCatalogCSS),
 		"SurfaceCatalogJS":      template.JS(surfaceCatalogJS),
 		"DataJSON":              template.JS(dataJSON),
+		"UIMessagesJS":          template.JS(uiMessagesJS),
 		"JS":                    template.JS(js),
 	})
 	if err != nil {

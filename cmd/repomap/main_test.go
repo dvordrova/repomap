@@ -1761,7 +1761,7 @@ func TestRunDefaultRussianLanguageReachesSavedReport(t *testing.T) {
 	}
 	for _, marker := range [][]byte{
 		[]byte(`<html lang="ru">`),
-		[]byte(`'What to study': 'Что изучать'`),
+		[]byte(`"main.what.to.study": { params: [], text: "Что изучать" }`),
 	} {
 		if !bytes.Contains(reportHTML, marker) {
 			t.Fatalf("Russian report HTML is missing %q", marker)
