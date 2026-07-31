@@ -57,7 +57,7 @@ func main() {
 	}
 
 	// repomap <repo> [flags]
-	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "investigate" && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "serve" && os.Args[1] != "dev" {
+	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") && os.Args[1] != "investigate" && os.Args[1] != "orient" && os.Args[1] != "doctor" && os.Args[1] != "serve" && os.Args[1] != "cache" && os.Args[1] != "dev" {
 		if err := runDefault(os.Args[1], os.Args[2:]); err != nil {
 			writeDefaultRunError(os.Stderr, err)
 			os.Exit(defaultRunExitCode(err))
@@ -87,6 +87,11 @@ func main() {
 		}
 	case "doctor":
 		if err := runDoctor(os.Args[2:], os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "cache":
+		if err := runCache(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -874,6 +879,27 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 						"warning: Russian localization status could not be saved; Russian product UI will retain canonical English model prose",
 					)
 				} else {
+					for _, batch := range localizationOutcome.Batches {
+						cacheState := "miss"
+						if batch.CacheHit {
+							cacheState = "hit"
+						}
+						fmt.Fprintf(
+							deps.stderr,
+							"repomap: localization batch %d/%d: fields=%d predicted_output=%d bytes cache=%s request=%d response=%d tokens=%d/%d semantic_calls=%d transport_attempts=%d\n",
+							batch.Index+1,
+							batch.Count,
+							batch.FieldCount,
+							batch.PredictedOutputBytes,
+							cacheState,
+							batch.RequestBytes,
+							batch.ResponseBytes,
+							batch.InputTokens,
+							batch.OutputTokens,
+							batch.ProviderCalls,
+							batch.Attempts,
+						)
+					}
 					if localizationOutcome.CacheCorrupt {
 						fmt.Fprintln(
 							deps.stderr,
@@ -897,7 +923,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 						} else {
 							fmt.Fprintf(
 								deps.stderr,
-								"repomap: Russian presentation translation received %d bytes from a %d-byte request in %d ms (%s; %d provider attempt(s))\n",
+								"repomap: Russian presentation translation received %d bytes from %d request bytes in %d ms (%s; %d semantic call(s), %d transport attempt(s))\n",
 								localizationOutcome.ResponseBytes,
 								localizationOutcome.RequestBytes,
 								time.Since(localizationStarted).Milliseconds(),
@@ -905,6 +931,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 									localizationOutcome.InputTokens,
 									localizationOutcome.OutputTokens,
 								),
+								localizationOutcome.ProviderCalls,
 								localizationOutcome.Attempts,
 							)
 						}
@@ -1598,6 +1625,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "       repomap investigate <repo> --task-file <task.md> [flags]\n")
 	fmt.Fprintf(os.Stderr, "       repomap doctor llm [--check]\n")
 	fmt.Fprintf(os.Stderr, "       repomap serve [--run RUN_ID] [--source-episode PATH] [--port PORT]\n")
+	fmt.Fprintf(os.Stderr, "       repomap cache clear [--debug-dir DIR]\n")
 	fmt.Fprintf(os.Stderr, "       repomap orient --repo <repo> [flags]\n")
 	fmt.Fprintf(os.Stderr, "\nFlags:\n")
 	fmt.Fprintf(os.Stderr, "  --json          output JSON instead of text\n")
@@ -1636,6 +1664,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --preview-request > /tmp/repomap-request.json\n")
 	fmt.Fprintf(os.Stderr, "  repomap doctor llm --check\n")
 	fmt.Fprintf(os.Stderr, "  repomap serve\n")
+	fmt.Fprintf(os.Stderr, "  repomap cache clear\n")
 	fmt.Fprintf(os.Stderr, "  repomap ../etcd --flows 2 --json | jq .\n")
 	fmt.Fprintf(os.Stderr, "  repomap --help\n")
 }

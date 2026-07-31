@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -14,7 +15,21 @@ func TestPresentationLocalizationOversizePayloadDegradesWithoutProviderCall(
 	t.Parallel()
 
 	data, prepared := presentationLocalizationFixture(t)
-	prepared.Input.Fields[0].Text = strings.Repeat("x", 1<<20)
+	canonical, err := localization.NewCanonical([]localization.FieldSpec{{
+		OwnerKind: localization.OwnerPresentationText,
+		OwnerID:   "oversize",
+		Name:      localization.FieldText,
+		Text:      strings.Repeat("x", 1<<20),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := localization.BuildInput(canonical, localization.LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.Canonical = canonical
+	prepared.Input = input
 	provider := newFakePresentationLocalizationProvider(
 		"https://translation.example.test/v1/chat/completions",
 		"translation-model",

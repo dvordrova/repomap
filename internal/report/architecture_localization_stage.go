@@ -78,7 +78,11 @@ func replayArchitectureLocalizationRussianStage(
 	if len(response) == 0 || len(response) > maxArchitectureLocalizationArtifactBytes {
 		return nil, fmt.Errorf("architecture localization stage: response exceeds its byte limit")
 	}
-	projection, err := decodeArchitectureLocalizationProjection(response)
+	projection, err := localization.DecodeRussianProviderResponse(
+		prepared.canonical,
+		prepared.input,
+		response,
+	)
 	if err != nil {
 		return nil, err
 	}

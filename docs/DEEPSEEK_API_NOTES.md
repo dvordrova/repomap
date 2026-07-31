@@ -176,6 +176,35 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   A Casdoor control run showed four of eight otherwise independent reviews
   returning reasoning-only completions, including one `finish_reason=stop`, so
   increasing the output cap would not recover the missing JSON verdicts.
+- Complete Russian presentation projection is assembled from deterministic
+  bounded requests rather than one monolithic completion. Fields are sorted by
+  their stable presentation ID and partitioned by a predicted output budget;
+  every batch records an exact manifest and content hash. The provider wire is
+  the compact ordered `[index, text]` tuple form, while the saved sidecar and
+  internal projection remain keyed by the original stable IDs. Each batch has
+  an exact request/cache identity, passes the same strict completeness,
+  placeholder, language, secret, and tuple-order validation on a live response
+  or cache hit, and keeps the 32,000-token provider maximum. A batch contains
+  at most 64 fields. The current saved Casdoor replay contains 508 fields and
+  deterministically produces eight batches: seven batches of 64 fields and one
+  final batch of 60. This is a replay measurement, not a claim of complete live
+  RU success. A live batch that fails quality validation is rejected without a
+  localization-specific repair request; a rejected result is neither cached
+  nor applied. The final RU sidecar is published only after every batch validates
+  and the merged projection validates against the full canonical English
+  inventory. A missing, corrupt, truncated, or rejected batch therefore
+  degrades the whole presentation atomically to canonical English; partial RU
+  is never published or labelled successful. Opaque paths, IDs, symbols, URLs,
+  packages, protocol
+  identities, and exact technical spans are supplied through typed ownership
+  and reversible object-local placeholders. Localization does not maintain a
+  lexical allow/deny dictionary for words in human prose; unprotected prose is
+  translated by the model as prose. It does not apply a blanket policy to
+  translate or transliterate every Latin span.
+- Cache contract changes use clean invalidation rather than replay adapters.
+  `repomap cache clear [--debug-dir DIR]` removes only the known persistent
+  model-research, component-synthesis, and localization cache directories;
+  saved run artifacts remain untouched.
 - DeepSeek usage may report `prompt_cache_hit_tokens` and
   `prompt_cache_miss_tokens`. Guided experiment records and semantic-discovery
   measured results preserve both fields independently from total prompt tokens

@@ -472,6 +472,34 @@ func architectureLocalizationRussianProjection(
 	}
 }
 
+func architectureLocalizationProviderResponse(
+	t *testing.T,
+	canonical localization.CanonicalArtifact,
+	input localization.Input,
+	projection localization.Projection,
+) []byte {
+	t.Helper()
+
+	translations := make([]localization.ProviderTranslation, len(input.Fields))
+	for index, field := range input.Fields {
+		text, found := projection.Translations[field.ID]
+		if !found {
+			t.Fatalf("provider response is missing translation %q", field.ID)
+		}
+		translations[index] = localization.NewProviderTranslation(index, text)
+	}
+	response, err := json.Marshal(localization.ProviderResponse{
+		Version:         localization.ProviderResponseVersion,
+		CanonicalSHA256: canonical.SHA256,
+		Locale:          input.TargetLocale,
+		Translations:    translations,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
 func assertArchitectureLocalizationRussianProjection(
 	t *testing.T,
 	original,

@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	PresentationLocalizationStatusFile     = "presentation_localization_status.v1.json"
-	PresentationLocalizationProjectionFile = "presentation_localization_projection.v1.json"
+	PresentationLocalizationStatusFile       = "presentation_localization_status.v1.json"
+	presentationLocalizationProjectionPrefix = "presentation_localization_projection.v1."
 
 	PresentationLocalizationStatusVersion = 1
 	PresentationLocalizationRecordVersion = 1
@@ -126,11 +126,13 @@ func WritePresentationLocalizationSuccess(
 	if err != nil {
 		return err
 	}
-	// The status is the commit marker. A crash after the projection write but
-	// before this status write leaves the prior status authoritative.
+	// The status is the commit marker. Each projection is published under its
+	// content address before status changes, so a crash or concurrent writer can
+	// leave only an unreferenced generation; it cannot break the prior valid
+	// status/projection pair.
 	if err := writePresentationLocalizationFile(
 		runDir,
-		PresentationLocalizationProjectionFile,
+		presentationLocalizationProjectionFilename(status.ProjectionSHA256),
 		recordJSON,
 		maxPresentationLocalizationRecordBytes,
 	); err != nil {
@@ -204,6 +206,7 @@ func validatePresentationLocalizationStatus(
 	case PresentationLocalizationSucceeded:
 		if status.ReasonCode != "" || status.CanonicalSHA256 == "" ||
 			status.RequestSHA256 == "" || status.ProjectionSHA256 == "" ||
+			!validPresentationLocalizationSHA256(status.ProjectionSHA256) ||
 			status.CacheKey == "" {
 			return fmt.Errorf("report localization: invalid success status")
 		}
@@ -217,6 +220,19 @@ func validatePresentationLocalizationStatus(
 		return fmt.Errorf("report localization: invalid status state")
 	}
 	return nil
+}
+
+func validPresentationLocalizationSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') &&
+			(character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func validPresentationLocalizationScalar(value string, limit int) bool {
@@ -278,9 +294,12 @@ func LoadPresentationLocalization(
 	if status.State == PresentationLocalizationFailed {
 		return failedRussianPresentation(data), status
 	}
+	recordName := presentationLocalizationProjectionFilename(
+		status.ProjectionSHA256,
+	)
 	recordJSON, err := readPresentationLocalizationFile(
 		runDir,
-		PresentationLocalizationProjectionFile,
+		recordName,
 		maxPresentationLocalizationRecordBytes,
 	)
 	if err != nil {
@@ -342,6 +361,10 @@ func LoadPresentationLocalization(
 func presentationLocalizationSHA256(data []byte) string {
 	digest := sha256.Sum256(data)
 	return fmt.Sprintf("%x", digest[:])
+}
+
+func presentationLocalizationProjectionFilename(sha256 string) string {
+	return presentationLocalizationProjectionPrefix + sha256 + ".json"
 }
 
 func DecodePresentationLocalizationProjection(

@@ -184,7 +184,11 @@ func replayArchitectureLocalizationRussianRecord(
 			"architecture localization record: saved response unavailable",
 		)
 	}
-	projection, err := decodeArchitectureLocalizationProjection(responseJSON)
+	projection, err := localization.DecodeRussianProviderResponse(
+		prepared.localization.canonical,
+		prepared.localization.input,
+		responseJSON,
+	)
 	if err != nil {
 		return nil, err
 	}

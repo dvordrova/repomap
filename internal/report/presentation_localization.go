@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,8 +20,8 @@ import (
 // presentation inventory or its stable owner binding changes. It is part of
 // cache identity.
 const (
-	PresentationLocalizationContractVersion = "report-presentation-localization-v8"
-	PresentationTextInventoryVersion        = "presentation-text-inventory-v5"
+	PresentationLocalizationContractVersion = "report-presentation-localization-v9"
+	PresentationTextInventoryVersion        = "presentation-text-inventory-v6"
 )
 
 // PresentationTextInventory is the complete bounded terminal-presentation
@@ -321,15 +322,6 @@ func buildPresentationLocalizationBindings(
 		return nil, fmt.Errorf("report localization: data is required")
 	}
 	bindings := newPresentationLocalizationBindings()
-	// Report-wide values may protect prose only when their spelling makes the
-	// technical identity self-authenticating (a path, URL, acronym, version, or
-	// punctuated identifier). Semantic identities with ordinary word spelling
-	// are attached to the presentation object that owns them below. This keeps
-	// repository or framework names such as "main", "Echo", or "Server" from
-	// masking unrelated prose elsewhere in the report.
-	globalProtected := globallyUnambiguousPresentationProtectedValues(
-		reportLocalizationProtectedValues(data),
-	)
 	repositoryProtected := repositoryPresentationProtectedValues(data)
 	add := func(
 		kind localization.OwnerKind,
@@ -344,14 +336,14 @@ func buildPresentationLocalizationBindings(
 
 	if err := add(
 		localization.OwnerRepository, "repository", localization.FieldProjectGuess,
-		data.ProjectGuess, append(repositoryProtected, globalProtected...),
+		data.ProjectGuess, repositoryProtected,
 		func(target *ReportData, text string) bool { target.ProjectGuess = text; return true },
 	); err != nil {
 		return nil, err
 	}
 	if err := add(
 		localization.OwnerRepository, "repository", localization.FieldDocumentedPurpose,
-		data.DocumentedPurpose, append(repositoryProtected, globalProtected...),
+		data.DocumentedPurpose, repositoryProtected,
 		func(target *ReportData, text string) bool { target.DocumentedPurpose = text; return true },
 	); err != nil {
 		return nil, err
@@ -446,10 +438,11 @@ func buildPresentationLocalizationBindings(
 
 	if story := data.GuidedTour; story != nil {
 		candidateID := story.CandidateID
+		storyProtected := guidedTourPresentationProtectedValues(data, *story)
 		if err := bindings.addAddress(
 			"guided_tour/"+candidateID+"/trigger",
 			story.Trigger,
-			globalProtected,
+			storyProtected,
 			func(target *ReportData, text string) bool {
 				if target.GuidedTour == nil || target.GuidedTour.CandidateID != candidateID {
 					return false
@@ -462,7 +455,7 @@ func buildPresentationLocalizationBindings(
 		}
 		if err := add(
 			localization.OwnerGuidedTour, candidateID, localization.FieldTitle,
-			story.Title, globalProtected,
+			story.Title, storyProtected,
 			func(target *ReportData, text string) bool {
 				if target.GuidedTour == nil || target.GuidedTour.CandidateID != candidateID {
 					return false
@@ -475,7 +468,7 @@ func buildPresentationLocalizationBindings(
 		}
 		if err := add(
 			localization.OwnerGuidedTour, candidateID, localization.FieldSummary,
-			story.Summary, globalProtected,
+			story.Summary, storyProtected,
 			func(target *ReportData, text string) bool {
 				if target.GuidedTour == nil || target.GuidedTour.CandidateID != candidateID {
 					return false
@@ -488,7 +481,7 @@ func buildPresentationLocalizationBindings(
 		}
 		for _, step := range story.Steps {
 			stepID := guidedStepLocalizationOwner(candidateID, step.BeatIDs)
-			if err := addGuidedStepBindings(bindings, stepID, step, globalProtected); err != nil {
+			if err := addGuidedStepBindings(bindings, stepID, step, storyProtected); err != nil {
 				return nil, err
 			}
 		}
@@ -496,7 +489,7 @@ func buildPresentationLocalizationBindings(
 			gapID := guidedGapLocalizationOwner(candidateID, gap.GapIDs)
 			if err := add(
 				localization.OwnerGuidedGap, gapID, localization.FieldExplanation,
-				gap.Explanation, globalProtected,
+				gap.Explanation, storyProtected,
 				func(target *ReportData, text string) bool {
 					if target.GuidedTour == nil {
 						return false
@@ -519,7 +512,7 @@ func buildPresentationLocalizationBindings(
 				if err := bindings.addAddress(
 					itemOwner+"/label",
 					item.Label,
-					globalProtected,
+					storyProtected,
 					func(target *ReportData, text string) bool {
 						current := findGuidedTourGap(target, candidateID, itemID)
 						if current == nil {
@@ -534,7 +527,7 @@ func buildPresentationLocalizationBindings(
 				if err := bindings.addAddress(
 					itemOwner+"/detail",
 					item.Detail,
-					globalProtected,
+					storyProtected,
 					func(target *ReportData, text string) bool {
 						current := findGuidedTourGap(target, candidateID, itemID)
 						if current == nil {
@@ -551,28 +544,30 @@ func buildPresentationLocalizationBindings(
 	}
 
 	if data.StudyMap != nil {
-		if err := addStudyMapLocalizationBindings(bindings, data.StudyMap, globalProtected); err != nil {
+		studyProtected := append([]localization.ProtectedValue(nil), repositoryProtected...)
+		if err := addStudyMapLocalizationBindings(bindings, data.StudyMap, studyProtected); err != nil {
 			return nil, err
 		}
 	}
 	if data.IncompleteStudy != nil {
+		studyProtected := append([]localization.ProtectedValue(nil), repositoryProtected...)
 		for _, direction := range data.IncompleteStudy.Directions {
 			if err := addStudyDirectionLocalizationBindings(
-				bindings, direction, globalProtected,
+				bindings, direction, studyProtected,
 			); err != nil {
 				return nil, err
 			}
 		}
 	}
 	for _, mechanism := range data.UserMechanisms {
-		if err := addMechanismLocalizationBindings(bindings, mechanism, globalProtected); err != nil {
+		if err := addMechanismLocalizationBindings(bindings, mechanism, nil); err != nil {
 			return nil, err
 		}
 	}
 	if err := addRemainingPresentationTextInventory(
 		bindings,
 		data,
-		globalProtected,
+		nil,
 	); err != nil {
 		return nil, err
 	}
@@ -1176,534 +1171,6 @@ func addMechanismPhaseDetailLocalizationBindings(
 	})
 }
 
-func reportLocalizationProtectedValues(data *ReportData) []localization.ProtectedValue {
-	values := []localization.ProtectedValue{
-		{Kind: localization.ProtectedProduct, Value: data.RepoName},
-		{Kind: localization.ProtectedIdentifier, Value: data.CapturedRevision},
-	}
-	appendValue := func(kind localization.ProtectedKind, value string) {
-		values = append(values, localization.ProtectedValue{Kind: kind, Value: value})
-	}
-	appendLocation := func(location UserCodeLocation) {
-		appendValue(localization.ProtectedPath, location.Path)
-	}
-	appendSource := func(source SourceSnippet) {
-		appendValue(localization.ProtectedPath, source.Path)
-		appendValue(localization.ProtectedSymbol, source.EnclosingSymbol)
-	}
-	appendSurfaceLocation := func(location *SurfaceLocation) {
-		if location != nil {
-			appendValue(localization.ProtectedPath, location.Path)
-		}
-	}
-	appendSurfaceSymbol := func(symbol SurfaceSymbol) {
-		appendValue(localization.ProtectedIdentifier, symbol.ID)
-		appendValue(localization.ProtectedPackage, symbol.Package)
-		appendValue(localization.ProtectedSymbol, symbol.Name)
-		appendSurfaceLocation(symbol.Location)
-	}
-	appendSurfaceValue := func(value SurfaceValue) {
-		appendValue(localization.ProtectedIdentifier, value.Text)
-		for _, candidate := range value.Candidates {
-			appendValue(localization.ProtectedIdentifier, candidate)
-		}
-	}
-	for _, path := range data.OpenablePaths {
-		appendValue(localization.ProtectedPath, path)
-	}
-	for _, item := range data.FirstFilesToOpen {
-		appendValue(localization.ProtectedPath, item.Path)
-	}
-	for _, item := range data.OrientationUnverifiedPaths {
-		appendValue(localization.ProtectedPath, item.Path)
-	}
-	for _, direction := range data.CandidateDirections {
-		appendValue(localization.ProtectedIdentifier, direction.ID)
-		appendValue(localization.ProtectedIdentifier, direction.FlowType)
-		appendValue(localization.ProtectedSymbol, direction.LikelyEntrypoint)
-		appendValue(localization.ProtectedIdentifier, direction.Disposition)
-		appendValue(localization.ProtectedIdentifier, direction.CandidateBasis)
-		for _, filePath := range direction.LikelyFiles {
-			appendValue(localization.ProtectedPath, filePath)
-		}
-	}
-	for _, flow := range data.Flows {
-		appendValue(localization.ProtectedIdentifier, flow.ID)
-		appendValue(localization.ProtectedIdentifier, flow.FlowType)
-		appendValue(localization.ProtectedIdentifier, flow.FlowStatus)
-		appendValue(localization.ProtectedIdentifier, flow.CandidateBasis)
-		for _, step := range flow.LikelyChain {
-			for _, filePath := range step.EvidenceFiles {
-				appendValue(localization.ProtectedPath, filePath)
-			}
-		}
-		for _, collection := range [][]FileItem{
-			flow.FilesToRead,
-			flow.TestsToRead,
-			flow.BundleFiles,
-			flow.BundleTests,
-			flow.BundleDocs,
-		} {
-			for _, item := range collection {
-				appendValue(localization.ProtectedPath, item.Path)
-			}
-		}
-		for _, item := range flow.UnverifiedPaths {
-			appendValue(localization.ProtectedPath, item.Path)
-		}
-		for _, packagePath := range flow.BundlePackages {
-			appendValue(localization.ProtectedPackage, packagePath)
-		}
-		for _, edge := range flow.BundleEdges {
-			appendValue(localization.ProtectedPackage, edge.From)
-			appendValue(localization.ProtectedPackage, edge.To)
-		}
-	}
-	if data.RepositoryGraph != nil {
-		for _, module := range data.RepositoryGraph.Modules {
-			appendValue(localization.ProtectedIdentifier, module.ID)
-			appendValue(localization.ProtectedModule, module.Path)
-			appendValue(localization.ProtectedPath, module.Dir)
-			appendValue(localization.ProtectedModule, module.DisplayName)
-		}
-		for _, packageInfo := range data.RepositoryGraph.Packages {
-			appendValue(localization.ProtectedPackage, packageInfo.CanonicalPath)
-			appendValue(localization.ProtectedIdentifier, packageInfo.Name)
-			appendValue(localization.ProtectedIdentifier, packageInfo.ModuleID)
-			appendValue(localization.ProtectedModule, packageInfo.ModulePath)
-			appendValue(localization.ProtectedPath, packageInfo.Dir)
-			appendValue(localization.ProtectedPath, packageInfo.ModuleRelativeDir)
-			appendValue(localization.ProtectedPackage, packageInfo.DisplayPath)
-			for _, path := range packageInfo.Files {
-				appendValue(localization.ProtectedPath, path)
-			}
-		}
-	}
-	for _, word := range data.ImportantDomainWords {
-		appendValue(localization.ProtectedIdentifier, word.Word)
-	}
-	for _, component := range data.Components {
-		appendValue(localization.ProtectedIdentifier, component.ID)
-		appendValue(localization.ProtectedPackage, component.PrimaryPackage)
-		for _, packagePath := range component.Packages {
-			appendValue(localization.ProtectedPackage, packagePath)
-		}
-		for _, group := range component.AnchorGroups {
-			appendValue(localization.ProtectedIdentifier, group.ID)
-			appendValue(localization.ProtectedPath, group.Path)
-			for _, location := range group.Locations {
-				appendValue(localization.ProtectedPath, location.Path)
-			}
-		}
-	}
-	if data.ArchitectureCanvas != nil {
-		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
-			appendValue(localization.ProtectedIdentifier, anchor.ID)
-			appendValue(localization.ProtectedPath, anchor.Location.Path)
-			for _, memberID := range anchor.MemberIDs {
-				appendValue(localization.ProtectedIdentifier, memberID.Value)
-			}
-		}
-		for _, subsystem := range data.ArchitectureCanvas.Subsystems {
-			appendValue(localization.ProtectedIdentifier, string(subsystem.ID))
-			for _, componentID := range subsystem.ComponentIDs {
-				appendValue(localization.ProtectedIdentifier, string(componentID))
-			}
-		}
-		for _, component := range data.ArchitectureCanvas.Components {
-			values = append(values, presentationComponentProtectedValues(component)...)
-		}
-		for _, surface := range data.ArchitectureCanvas.Surfaces {
-			appendValue(localization.ProtectedIdentifier, surface.ID)
-			appendValue(localization.ProtectedIdentifier, surface.Source)
-			appendValue(localization.ProtectedIdentifier, surface.Kind)
-			appendValue(localization.ProtectedIdentifier, surface.Category)
-			appendValue(localization.ProtectedPackage, surface.OwningExecutable)
-			appendValue(localization.ProtectedIdentifier, string(surface.OwningComponentID))
-			appendValue(localization.ProtectedIdentifier, string(surface.RelatedTraceID))
-			for _, componentID := range surface.ParticipatingComponentIDs {
-				appendValue(localization.ProtectedIdentifier, string(componentID))
-			}
-			for index := range surface.Evidence {
-				appendSurfaceLocation(&surface.Evidence[index])
-			}
-		}
-		for _, suggestion := range data.ArchitectureCanvas.Suggestions {
-			appendValue(localization.ProtectedIdentifier, suggestion.ID)
-			for _, reference := range suggestion.EvidenceReferences {
-				appendValue(localization.ProtectedIdentifier, reference)
-			}
-			for _, anchorID := range suggestion.RelevantAnchorIDs {
-				appendValue(localization.ProtectedIdentifier, anchorID)
-			}
-			for _, componentID := range suggestion.RelevantComponentIDs {
-				appendValue(localization.ProtectedIdentifier, string(componentID))
-			}
-			if suggestion.StartLocation != nil {
-				appendSurfaceLocation(suggestion.StartLocation)
-			}
-		}
-		for _, flow := range data.ArchitectureCanvas.Flows {
-			appendValue(localization.ProtectedIdentifier, string(flow.ID))
-			appendValue(localization.ProtectedIdentifier, string(flow.Archetype))
-			appendValue(localization.ProtectedIdentifier, flow.Command)
-			appendValue(localization.ProtectedIdentifier, flow.Status)
-			appendValue(localization.ProtectedIdentifier, flow.EvidenceBasis)
-			appendValue(localization.ProtectedIdentifier, flow.StartSurfaceID)
-			appendValue(localization.ProtectedIdentifier, flow.SeedSurfaceID)
-			for _, step := range flow.Steps {
-				appendValue(localization.ProtectedIdentifier, step.ID)
-				appendValue(localization.ProtectedSymbol, step.QualifiedName)
-				appendValue(localization.ProtectedIdentifier, step.BranchID)
-				appendValue(localization.ProtectedIdentifier, string(step.ComponentID))
-				if step.Location != nil {
-					appendValue(localization.ProtectedPath, step.Location.Path)
-				}
-			}
-			for _, componentID := range flow.ParticipatingComponentIDs {
-				appendValue(localization.ProtectedIdentifier, string(componentID))
-			}
-		}
-		for _, frontier := range data.ArchitectureCanvas.Frontiers {
-			appendValue(localization.ProtectedIdentifier, frontier.ID)
-			appendValue(localization.ProtectedIdentifier, string(frontier.FlowID))
-			appendValue(localization.ProtectedIdentifier, frontier.Kind)
-			appendValue(localization.ProtectedIdentifier, frontier.AnchorID)
-			appendValue(localization.ProtectedIdentifier, frontier.TransitionID)
-			if frontier.Evidence != nil {
-				appendValue(localization.ProtectedPath, frontier.Evidence.Path)
-			}
-		}
-		for _, diagnostic := range data.ArchitectureCanvas.Diagnostics {
-			appendValue(localization.ProtectedIdentifier, diagnostic.ID)
-			appendValue(localization.ProtectedIdentifier, diagnostic.Source)
-			appendValue(localization.ProtectedIdentifier, diagnostic.Code)
-			appendValue(localization.ProtectedIdentifier, string(diagnostic.FlowID))
-			if diagnostic.Member != nil {
-				appendValue(
-					protectedMemberKind(diagnostic.Member.Kind),
-					diagnostic.Member.Value,
-				)
-			}
-		}
-	}
-	if data.GuidedTour != nil {
-		appendValue(localization.ProtectedIdentifier, data.GuidedTour.CandidateID)
-		for _, step := range data.GuidedTour.Steps {
-			for _, beatID := range step.BeatIDs {
-				appendValue(localization.ProtectedIdentifier, beatID)
-			}
-			for _, componentID := range step.ComponentIDs {
-				appendValue(localization.ProtectedIdentifier, componentID)
-			}
-			for _, surfaceID := range step.SurfaceIDs {
-				appendValue(localization.ProtectedIdentifier, surfaceID)
-			}
-			for _, flowID := range step.FlowIDs {
-				appendValue(localization.ProtectedIdentifier, flowID)
-			}
-			for _, flowStepID := range step.FlowStepIDs {
-				appendValue(localization.ProtectedIdentifier, flowStepID)
-			}
-			for _, reference := range step.Evidence {
-				appendValue(localization.ProtectedIdentifier, reference.ID)
-				if reference.Location != nil {
-					appendValue(localization.ProtectedPath, reference.Location.Path)
-				}
-			}
-		}
-	}
-	if data.StudyMap != nil {
-		for _, term := range data.StudyMap.Brief.DomainTerms {
-			appendValue(localization.ProtectedIdentifier, term.Term)
-		}
-		appendDirectionValues := func(directions []StudyDirection) {
-			for _, direction := range directions {
-				appendValue(localization.ProtectedIdentifier, direction.ID)
-				for _, anchor := range direction.PrincipalAnchors {
-					appendValue(localization.ProtectedPath, anchor.Path)
-					appendValue(localization.ProtectedSymbol, anchor.Symbol)
-				}
-				for _, anchor := range direction.ReadingAnchors {
-					appendLocation(anchor.Location)
-					appendSource(anchor.Source)
-				}
-				for _, document := range direction.Documents {
-					appendLocation(document.Location)
-					if document.Source != nil {
-						appendSource(*document.Source)
-					}
-				}
-			}
-		}
-		appendDirectionValues(data.StudyMap.Directions)
-		appendDirectionValues(data.StudyMap.HiddenDirections)
-	}
-	if data.IncompleteStudy != nil {
-		for _, direction := range data.IncompleteStudy.Directions {
-			appendValue(localization.ProtectedIdentifier, direction.ID)
-			for _, anchor := range direction.PrincipalAnchors {
-				appendValue(localization.ProtectedPath, anchor.Path)
-				appendValue(localization.ProtectedSymbol, anchor.Symbol)
-			}
-			for _, anchor := range direction.ReadingAnchors {
-				appendLocation(anchor.Location)
-				appendSource(anchor.Source)
-			}
-			for _, document := range direction.Documents {
-				appendLocation(document.Location)
-				if document.Source != nil {
-					appendSource(*document.Source)
-				}
-			}
-		}
-	}
-	for _, mechanism := range data.UserMechanisms {
-		appendValue(localization.ProtectedIdentifier, mechanism.ArtifactID)
-		for _, location := range mechanism.Files {
-			appendLocation(location)
-		}
-		for _, step := range mechanism.Steps {
-			for _, location := range step.Locations {
-				appendLocation(location)
-			}
-			for _, source := range step.Sources {
-				appendSource(source)
-			}
-		}
-		for _, phase := range mechanism.Phases {
-			for _, location := range phase.Locations {
-				appendLocation(location)
-			}
-			for _, source := range phase.Sources {
-				appendSource(source)
-			}
-			for _, detail := range phase.ImplementationDetails {
-				for _, location := range detail.Locations {
-					appendLocation(location)
-				}
-				for _, source := range detail.Sources {
-					appendSource(source)
-				}
-			}
-		}
-		for _, context := range mechanism.Context {
-			if context.CodeLocation != nil {
-				appendLocation(*context.CodeLocation)
-			}
-		}
-		for _, target := range mechanism.ReadNext {
-			appendValue(localization.ProtectedPath, target.Path)
-			appendValue(localization.ProtectedSymbol, target.Symbol)
-		}
-	}
-	if data.Operations != nil {
-		appendReference := func(reference OperationalReference) {
-			appendLocation(reference.Location)
-			appendSource(reference.Source)
-			appendValue(localization.ProtectedIdentifier, reference.Role)
-		}
-		for _, path := range data.Operations.Paths {
-			appendValue(localization.ProtectedIdentifier, path.ID)
-			for _, relatedID := range path.RelatedStudyIDs {
-				appendValue(localization.ProtectedIdentifier, relatedID)
-			}
-			for _, reference := range path.Prerequisites {
-				appendReference(reference)
-			}
-			for _, action := range path.Actions {
-				appendValue(localization.ProtectedIdentifier, action.Command)
-				appendValue(localization.ProtectedIdentifier, action.CopyText)
-				appendValue(localization.ProtectedURL, action.Endpoint)
-				appendReference(action.Reference)
-			}
-			for _, result := range path.ExpectedResults {
-				appendValue(localization.ProtectedIdentifier, string(result.Kind))
-				appendValue(localization.ProtectedIdentifier, result.Value)
-				for _, evidenceID := range result.ResultEvidenceIDs {
-					appendValue(localization.ProtectedIdentifier, evidenceID)
-				}
-				appendReference(result.Reference)
-			}
-			for _, reference := range path.Expected {
-				appendReference(reference)
-			}
-			for _, reference := range path.Troubleshooting {
-				appendReference(reference)
-			}
-		}
-		for _, landmark := range data.Operations.Landmarks {
-			appendValue(localization.ProtectedIdentifier, landmark.ID)
-			appendValue(localization.ProtectedIdentifier, landmark.Role)
-			appendValue(localization.ProtectedIdentifier, landmark.Command)
-			appendValue(localization.ProtectedIdentifier, landmark.CopyText)
-			appendValue(localization.ProtectedURL, landmark.Endpoint)
-			appendReference(landmark.Reference)
-		}
-	}
-	if catalog := data.DiscoveredSurfaces; catalog != nil {
-		appendValue(localization.ProtectedIdentifier, catalog.AnalyzerVersion)
-		appendValue(localization.ProtectedIdentifier, catalog.ScenarioID)
-		for _, entrypoint := range catalog.EntrypointsConsidered {
-			appendSurfaceSymbol(entrypoint)
-		}
-		for _, seed := range catalog.ConfiguredSeedsMatched {
-			appendValue(localization.ProtectedIdentifier, seed)
-		}
-		for _, trigger := range catalog.Triggers {
-			appendValue(localization.ProtectedIdentifier, trigger.ID)
-			appendValue(localization.ProtectedIdentifier, trigger.Kind)
-			appendValue(localization.ProtectedIdentifier, trigger.Producer)
-			appendValue(localization.ProtectedProtocol, trigger.Transport)
-			appendValue(localization.ProtectedProduct, trigger.Framework)
-			appendSurfaceSymbol(trigger.ProcessEntrypoint)
-			appendSurfaceValue(trigger.Dispatcher)
-			appendSurfaceSymbol(trigger.Constructor)
-			appendSurfaceLocation(trigger.RegistrationSite)
-			appendSurfaceLocation(trigger.DescriptorSite)
-			appendSurfaceLocation(trigger.ServerStartSite)
-			appendSurfaceValue(trigger.Handler)
-			appendSurfaceLocation(trigger.HandlerLocation)
-			for _, middleware := range trigger.Middleware {
-				appendSurfaceValue(middleware)
-			}
-			for _, wrapper := range trigger.WrapperChain {
-				appendSurfaceSymbol(wrapper.Symbol)
-				appendSurfaceLocation(wrapper.Callsite)
-				appendValue(localization.ProtectedIdentifier, wrapper.Origin)
-			}
-			appendValue(localization.ProtectedIdentifier, trigger.FinalSeed)
-			appendValue(localization.ProtectedIdentifier, trigger.DiscoveryBasis)
-			appendValue(localization.ProtectedIdentifier, trigger.OwningExecutable)
-			appendValue(localization.ProtectedIdentifier, string(trigger.OwningComponentID))
-			appendValue(localization.ProtectedIdentifier, string(trigger.RelatedTraceID))
-			for _, componentID := range trigger.ParticipatingComponentIDs {
-				appendValue(localization.ProtectedIdentifier, string(componentID))
-			}
-			for _, evidence := range trigger.Evidence {
-				appendValue(localization.ProtectedIdentifier, evidence.ID)
-				appendValue(localization.ProtectedIdentifier, evidence.Kind)
-				appendSurfaceLocation(evidence.Location)
-			}
-			for _, frontier := range trigger.DynamicFrontier {
-				appendValue(localization.ProtectedIdentifier, frontier.Kind)
-				appendSurfaceLocation(frontier.Location)
-			}
-		}
-		for _, signal := range catalog.LoopSignals {
-			appendValue(localization.ProtectedIdentifier, signal.Kind)
-			appendValue(localization.ProtectedSymbol, signal.FunctionID)
-			appendValue(localization.ProtectedIdentifier, signal.TerminalSeed)
-			appendSurfaceLocation(signal.Location)
-		}
-		for _, collection := range [][]SurfaceFrontier{
-			catalog.DynamicFrontiers,
-			catalog.UnsupportedDispatch,
-		} {
-			for _, frontier := range collection {
-				appendValue(localization.ProtectedIdentifier, frontier.Kind)
-				appendSurfaceLocation(frontier.Location)
-			}
-		}
-		for _, diagnostic := range catalog.PackageDiagnostics {
-			appendValue(localization.ProtectedIdentifier, diagnostic.ID)
-			appendValue(localization.ProtectedIdentifier, diagnostic.Kind)
-			appendValue(localization.ProtectedPackage, diagnostic.Package)
-			appendValue(localization.ProtectedPackage, diagnostic.PackageName)
-			appendValue(localization.ProtectedPackage, diagnostic.OwningExecutable)
-			appendSurfaceLocation(diagnostic.Location)
-		}
-		for _, unavailable := range catalog.UnavailablePackages {
-			appendValue(localization.ProtectedPackage, unavailable.Package)
-			appendValue(localization.ProtectedPackage, unavailable.PackageName)
-			appendValue(localization.ProtectedPackage, unavailable.OwningExecutable)
-			for _, diagnosticID := range unavailable.DiagnosticIDs {
-				appendValue(localization.ProtectedIdentifier, diagnosticID)
-			}
-		}
-	}
-	if episode := data.presentationSourceEpisode; episode != nil {
-		appendValue(localization.ProtectedIdentifier, episode.EpisodeID)
-		appendValue(localization.ProtectedProduct, episode.Repository)
-		appendValue(localization.ProtectedIdentifier, episode.Revision)
-		for _, claim := range episode.Claims {
-			appendValue(localization.ProtectedIdentifier, claim.ID)
-			for _, source := range claim.Sources {
-				appendValue(localization.ProtectedPath, source.Path)
-			}
-		}
-		for _, gap := range episode.Uncertainties {
-			appendValue(localization.ProtectedIdentifier, gap.ID)
-			for _, source := range gap.Sources {
-				appendValue(localization.ProtectedPath, source.Path)
-			}
-		}
-	}
-	if data.GitLabSourceLinks != nil {
-		appendValue(localization.ProtectedURL, data.GitLabSourceLinks.RepositoryURL)
-	}
-	if data.GitHubSourceLinks != nil {
-		appendValue(localization.ProtectedURL, data.GitHubSourceLinks.RepositoryURL)
-	}
-	seen := make(map[string]struct{}, len(values))
-	result := make([]localization.ProtectedValue, 0, len(values))
-	for _, value := range values {
-		if value.Value == "" {
-			continue
-		}
-		if _, exists := seen[value.Value]; exists {
-			continue
-		}
-		seen[value.Value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
-}
-
-func globallyUnambiguousPresentationProtectedValues(
-	values []localization.ProtectedValue,
-) []localization.ProtectedValue {
-	result := make([]localization.ProtectedValue, 0, len(values))
-	for _, value := range values {
-		switch value.Kind {
-		case localization.ProtectedPath,
-			localization.ProtectedURL:
-			result = append(result, value)
-		default:
-			if isGloballyUnambiguousTechnicalSpelling(value.Value) {
-				result = append(result, value)
-			}
-		}
-	}
-	return result
-}
-
-func isGloballyUnambiguousTechnicalSpelling(value string) bool {
-	if strings.ContainsAny(value, " \t\r\n") {
-		return false
-	}
-	asciiLetterIndex := 0
-	for _, character := range value {
-		switch {
-		case character >= '0' && character <= '9':
-			return true
-		case character >= 'A' && character <= 'Z':
-			if asciiLetterIndex > 0 {
-				return true
-			}
-			asciiLetterIndex++
-		case character >= 'a' && character <= 'z':
-			asciiLetterIndex++
-		case character == ' ':
-			// A plain multi-word phrase is not an opaque identity merely
-			// because it appears elsewhere in the report.
-		default:
-			return true
-		}
-	}
-	return false
-}
-
 func repositoryPresentationProtectedValues(
 	data *ReportData,
 ) []localization.ProtectedValue {
@@ -1712,6 +1179,18 @@ func repositoryPresentationProtectedValues(
 	}
 	var builder objectProtectedValueBuilder
 	builder.add(localization.ProtectedProduct, data.RepoName)
+	// RepoName may be a module or forge path while model-authored prose uses
+	// the repository's display spelling. Derive that spelling from the exact
+	// repository path and its canonical project sentence, rather than from a
+	// report-wide product-word dictionary.
+	base := path.Base(strings.TrimSuffix(data.RepoName, "/"))
+	for _, raw := range strings.Fields(data.ProjectGuess) {
+		candidate := strings.Trim(raw, "\"'`()[]{}<>,;:!?.")
+		if candidate != "" && strings.EqualFold(candidate, base) {
+			builder.add(localization.ProtectedProduct, candidate)
+			break
+		}
+	}
 	builder.add(localization.ProtectedIdentifier, data.CapturedRevision)
 	return builder.values
 }

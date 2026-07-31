@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-const PromptVersion = "localization-projection-json-v2"
+const PromptVersion = "localization-projection-json-v4"
 
 const (
 	maxPromptBytes         = 1 << 20
@@ -22,13 +22,18 @@ Return valid json only, with exactly the requested projection shape.`
 const russianUserPrefix = `Translate every human-readable text value in localization_input from English to Russian.
 
 Return one json object with exactly this shape:
-{"version":1,"canonical_sha256":"<copy canonical_sha256 exactly>","locale":"ru","translations":{"<copy each field id exactly>":"<Russian translation>"}}
+{"version":1,"canonical_sha256":"<copy canonical_sha256 exactly>","locale":"ru","translations":[[0,"<Russian translation of localization_input.fields[0].text>"]]}
 
 Rules:
-- Return exactly one translation for every input field ID and no unknown IDs.
-- Copy canonical_sha256 and every field ID byte-for-byte.
+- Return exactly one translation entry for every input field, in the same order as localization_input.fields.
+- Each translation entry is exactly [index, text]. Start indexes at 0. Every entry index must equal its array position, with no missing, duplicate, reordered, or extra entries.
+- Copy canonical_sha256 byte-for-byte. Field IDs are opaque input-only addresses: do not copy or translate them into the response.
 - Preserve every placeholder such as {{term_01}} byte-for-byte and with the same count.
 - Do not translate, alter, remove, duplicate, or invent placeholders.
+- Translate every English prose word outside placeholders, including short headings, labels, names, summaries, diagnostics, and technical explanations.
+- Latin-script technical identities are allowed only where the input supplies a placeholder. Translate unprotected descriptive technical words into natural Russian instead of copying them.
+- Every value that contains prose outside placeholders must contain Cyrillic Russian text. A value made only of placeholders must remain only those placeholders.
+- Before returning, check every value and remove any leftover unprotected English prose.
 - Values in translations contain only presentation prose. Do not return markdown, code fences, commentary, or additional json fields.
 
 localization_input:

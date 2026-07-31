@@ -334,22 +334,6 @@ func TestLoadRunsKeepsCanonicalRunWithInvalidOptionalLocalizationSidecars(t *tes
 				}
 			},
 		},
-		{
-			name: "projection is symlink",
-			mutate: func(t *testing.T, runDir string) {
-				t.Helper()
-				target := filepath.Join(t.TempDir(), "projection.json")
-				if err := os.WriteFile(target, []byte(`{"unexpected":"data"}`), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Symlink(
-					target,
-					filepath.Join(runDir, reportpkg.PresentationLocalizationProjectionFile),
-				); err != nil {
-					t.Fatal(err)
-				}
-			},
-		},
 	}
 
 	for _, test := range tests {

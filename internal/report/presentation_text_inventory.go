@@ -3,10 +3,12 @@ package report
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowproof"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/modelresearch"
@@ -47,7 +49,7 @@ func addRemainingPresentationTextInventory(
 	if err := addCandidateDirectionProofPresentationText(bindings, data); err != nil {
 		return err
 	}
-	if err := addLegacyComponentPresentationText(add, data); err != nil {
+	if err := addComponentPresentationText(add, addObject, data); err != nil {
 		return err
 	}
 	if err := addArchitecturePresentationText(addObject, data); err != nil {
@@ -80,7 +82,7 @@ func addRemainingPresentationTextInventory(
 	if err := addSourceEpisodePresentationText(add, data); err != nil {
 		return err
 	}
-	return addSurfacePresentationText(add, data)
+	return addSurfacePresentationText(add, addObject, data)
 }
 
 type presentationInventoryAdder func(
@@ -155,6 +157,45 @@ func candidateDirectionProofProtectedValues(
 		}
 	}
 	return builder.values
+}
+
+func candidateDirectionPresentationProtectedValues(
+	data *ReportData,
+	direction CandidateDirection,
+) []localization.ProtectedValue {
+	values := candidateDirectionProofProtectedValues(direction)
+	if data == nil {
+		return values
+	}
+	if data.DiscoveredSurfaces != nil {
+		for _, trigger := range data.DiscoveredSurfaces.Triggers {
+			if string(trigger.RelatedTraceID) != direction.ID {
+				continue
+			}
+			values = append(values, discoveredTriggerPresentationProtectedValues(trigger)...)
+		}
+	}
+	for _, component := range data.Components {
+		if !candidateDirectionOwnsComponent(direction, component) {
+			continue
+		}
+		values = append(values, reportComponentPresentationProtectedValues(component)...)
+	}
+	return values
+}
+
+func candidateDirectionOwnsComponent(
+	direction CandidateDirection,
+	component Component,
+) bool {
+	for _, likelyFile := range direction.LikelyFiles {
+		for _, group := range component.AnchorGroups {
+			if group.Path == likelyFile {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func flowPresentationProtectedValues(flow FlowData) []localization.ProtectedValue {
@@ -374,6 +415,22 @@ func repositoryGuideProtectedValues(
 	for _, target := range guide.ReadNext {
 		builder.add(localization.ProtectedPath, target.Path)
 		builder.add(localization.ProtectedSymbol, target.Symbol)
+	}
+	return builder.values
+}
+
+func reportComponentPresentationProtectedValues(
+	component Component,
+) []localization.ProtectedValue {
+	var builder objectProtectedValueBuilder
+	builder.add(localization.ProtectedIdentifier, component.ID)
+	builder.add(localization.ProtectedPackage, component.PrimaryPackage)
+	for _, packagePath := range component.Packages {
+		builder.add(localization.ProtectedPackage, packagePath)
+	}
+	for _, group := range component.AnchorGroups {
+		builder.add(localization.ProtectedIdentifier, group.ID)
+		builder.add(localization.ProtectedPath, group.Path)
 	}
 	return builder.values
 }
@@ -695,7 +752,7 @@ func addOrientationPresentationText(
 		index := index
 		id := data.CandidateDirections[index].ID
 		directionAdd := addObject.with(
-			candidateDirectionProofProtectedValues(data.CandidateDirections[index]),
+			candidateDirectionPresentationProtectedValues(data, data.CandidateDirections[index]),
 		)
 		owner := "orientation/directions/" + id
 		fields := []struct {
@@ -752,7 +809,7 @@ func addOrientationPresentationText(
 			data.CandidateDirections[index].ID != "" {
 			ownerID = data.CandidateDirections[index].ID
 			flowAdd = addObject.with(
-				candidateDirectionProofProtectedValues(data.CandidateDirections[index]),
+				candidateDirectionPresentationProtectedValues(data, data.CandidateDirections[index]),
 			)
 		}
 		owner := "orientation/candidate_flow_names/" + ownerID
@@ -823,7 +880,7 @@ func addCandidateDirectionProofPresentationText(
 		direction := data.CandidateDirections[directionIndex]
 		directionID := direction.ID
 		owner := "orientation/directions/" + directionID
-		protected := candidateDirectionProofProtectedValues(direction)
+		protected := candidateDirectionPresentationProtectedValues(data, direction)
 		add := func(
 			address string,
 			text string,
@@ -1075,6 +1132,13 @@ func addFlowPresentationText(
 		for index := range collection.items {
 			index := index
 			item := collection.items[index]
+			// The retrieval producer owns a small closed set of reason formats
+			// which the UI renders through typed product messages. Arbitrary
+			// repository/model prose in the same field still enters the complete
+			// presentation inventory.
+			if isCatalogBundleReasonCode(item.Reason) {
+				continue
+			}
 			itemOwner := presentationAddress(
 				owner+"/"+collection.name,
 				item.Path,
@@ -1147,6 +1211,10 @@ func addFlowPresentationText(
 	return nil
 }
 
+func isCatalogBundleReasonCode(reason string) bool {
+	return reason == "likely_file from candidate_flow"
+}
+
 func findFlow(data *ReportData, id string, fallbackIndex int) *FlowData {
 	for index := range data.Flows {
 		if data.Flows[index].ID == id {
@@ -1159,15 +1227,18 @@ func findFlow(data *ReportData, id string, fallbackIndex int) *FlowData {
 	return nil
 }
 
-func addLegacyComponentPresentationText(
+func addComponentPresentationText(
 	add presentationInventoryAdder,
+	addObject presentationInventoryObjectAdder,
 	data *ReportData,
 ) error {
 	for index := range data.Components {
 		index := index
 		id := data.Components[index].ID
 		owner := "components/" + id
-		if err := add(owner+"/name", data.Components[index].Name, func(target *ReportData, text string) bool {
+		componentProtected := reportComponentPresentationProtectedValues(data.Components[index])
+		componentAdd := addObject.with(componentProtected)
+		if err := componentAdd(owner+"/name", data.Components[index].Name, func(target *ReportData, text string) bool {
 			for componentIndex := range target.Components {
 				if target.Components[componentIndex].ID == id {
 					target.Components[componentIndex].Name = text
@@ -1178,7 +1249,7 @@ func addLegacyComponentPresentationText(
 		}); err != nil {
 			return err
 		}
-		if err := add(owner+"/model_purpose", data.Components[index].ModelPurpose, func(target *ReportData, text string) bool {
+		if err := componentAdd(owner+"/model_purpose", data.Components[index].ModelPurpose, func(target *ReportData, text string) bool {
 			for componentIndex := range target.Components {
 				if target.Components[componentIndex].ID == id {
 					target.Components[componentIndex].ModelPurpose = text
@@ -1194,21 +1265,19 @@ func addLegacyComponentPresentationText(
 			group := data.Components[index].AnchorGroups[groupIndex]
 			groupID := group.ID
 			groupOwner := owner + "/anchor_groups/" + groupID
-			if err := add(groupOwner+"/grounding", group.Grounding, func(target *ReportData, text string) bool {
-				group := findAnchorGroup(target, id, groupID)
-				if group == nil {
-					return false
-				}
-				group.Grounding = text
-				return true
-			}); err != nil {
-				return err
-			}
+			// Grounding is a closed enum rendered through the typed product
+			// message catalog. It is not repository/model-authored prose and must
+			// never enter the model localization inventory.
 			for noteIndex := range group.ModelNotes {
 				noteIndex := noteIndex
-				if err := add(
+				protected := append(
+					append([]localization.ProtectedValue(nil), componentProtected...),
+					componentModelNoteProtectedValues(group.ModelNotes[noteIndex])...,
+				)
+				if err := addObject(
 					groupOwner+"/model_notes/"+strconv.Itoa(noteIndex),
 					group.ModelNotes[noteIndex],
+					protected,
 					func(target *ReportData, text string) bool {
 						group := findAnchorGroup(target, id, groupID)
 						if group == nil || noteIndex >= len(group.ModelNotes) {
@@ -1223,7 +1292,7 @@ func addLegacyComponentPresentationText(
 			}
 			for signalIndex := range group.LocalContext {
 				signalIndex := signalIndex
-				if err := add(
+				if err := componentAdd(
 					groupOwner+"/local_context/"+strconv.Itoa(signalIndex)+"/reason",
 					group.LocalContext[signalIndex].Reason,
 					func(target *ReportData, text string) bool {
@@ -1241,6 +1310,19 @@ func addLegacyComponentPresentationText(
 		}
 	}
 	return nil
+}
+
+func componentModelNoteProtectedValues(note string) []localization.ProtectedValue {
+	// Entrypoint anchor kinds are closed deterministic enums. Protect them only
+	// inside the component note that carries the exact value; surrounding
+	// explanation remains ordinary translatable prose.
+	value := string(gofacts.EntrypointAnchorGoMain)
+	if !strings.Contains(note, value) {
+		return nil
+	}
+	return []localization.ProtectedValue{{
+		Kind: localization.ProtectedIdentifier, Value: value,
+	}}
 }
 
 func findAnchorGroup(data *ReportData, componentID, groupID string) *AnchorGroup {
@@ -1303,6 +1385,15 @@ func architectureSuggestionProtectedValues(
 		builder.add(localization.ProtectedPath, suggestion.StartLocation.Path)
 	}
 	return builder.values
+}
+
+func architectureSuggestionPresentationProtectedValues(
+	data *ReportData,
+	canvas *ArchitectureCanvas,
+	suggestion ArchitectureSuggestion,
+) []localization.ProtectedValue {
+	values := architectureSuggestionProtectedValues(canvas, suggestion)
+	return append(values, repositoryPresentationProtectedValues(data)...)
 }
 
 func appendArchitectureFlowStepProtectedValues(
@@ -1423,7 +1514,37 @@ func architectureFlowProtectedValues(
 	return builder.values
 }
 
+// architectureFlowPresentationProtectedValues extends the exact flow-owned
+// identities with protocol identities owned by the deterministic surfaces the
+// flow names. The join is by typed surface ID; prose is never scanned to infer
+// a protocol token.
+func architectureFlowPresentationProtectedValues(
+	data *ReportData,
+	canvas *ArchitectureCanvas,
+	flow ArchitectureFlow,
+) []localization.ProtectedValue {
+	values := architectureFlowProtectedValues(canvas, flow)
+	values = append(values, repositoryPresentationProtectedValues(data)...)
+	if data == nil || data.DiscoveredSurfaces == nil {
+		return values
+	}
+	surfaceIDs := append(
+		[]string{flow.StartSurfaceID, flow.SeedSurfaceID},
+		flow.TraceEvidenceSurfaceIDs...,
+	)
+	surfaceIDs = append(surfaceIDs, flow.RelatedComponentSurfaceIDs...)
+	for _, surfaceID := range surfaceIDs {
+		trigger := findDiscoveredTrigger(data, surfaceID)
+		if trigger == nil {
+			continue
+		}
+		values = append(values, discoveredTriggerPresentationProtectedValues(*trigger)...)
+	}
+	return values
+}
+
 func architectureFrontierProtectedValues(
+	data *ReportData,
 	canvas *ArchitectureCanvas,
 	frontier ArchitectureFrontier,
 ) []localization.ProtectedValue {
@@ -1445,7 +1566,7 @@ func architectureFrontierProtectedValues(
 			if flow.ID == frontier.FlowID {
 				builder.values = append(
 					builder.values,
-					architectureFlowProtectedValues(canvas, flow)...,
+					architectureFlowPresentationProtectedValues(data, canvas, flow)...,
 				)
 				break
 			}
@@ -1455,6 +1576,7 @@ func architectureFrontierProtectedValues(
 }
 
 func architectureDiagnosticProtectedValues(
+	data *ReportData,
 	canvas *ArchitectureCanvas,
 	diagnostic ArchitectureDiagnostic,
 ) []localization.ProtectedValue {
@@ -1478,7 +1600,7 @@ func architectureDiagnosticProtectedValues(
 			if flow.ID == diagnostic.FlowID {
 				builder.values = append(
 					builder.values,
-					architectureFlowProtectedValues(canvas, flow)...,
+					architectureFlowPresentationProtectedValues(data, canvas, flow)...,
 				)
 				break
 			}
@@ -1517,6 +1639,39 @@ func architectureSurfaceProtectedValues(
 	appendArchitectureComponentProtectedValues(&builder, canvas, componentIDs)
 	for _, location := range surface.Evidence {
 		builder.add(localization.ProtectedPath, location.Path)
+	}
+	return builder.values
+}
+
+// discoveredTriggerPresentationProtectedValues returns only exact identities
+// typed on one deterministic trigger. In particular, a lower-case transport
+// such as "http" is protected for prose owned by that trigger without becoming
+// a report-wide lexical exception.
+func discoveredTriggerPresentationProtectedValues(
+	trigger DiscoveredTrigger,
+) []localization.ProtectedValue {
+	var builder objectProtectedValueBuilder
+	builder.add(localization.ProtectedProtocol, trigger.Transport, trigger.Framework)
+	return builder.values
+}
+
+func guidedTourPresentationProtectedValues(
+	data *ReportData,
+	story guidedtour.Story,
+) []localization.ProtectedValue {
+	var builder objectProtectedValueBuilder
+	builder.add(localization.ProtectedIdentifier, story.CandidateID)
+	if data == nil || data.DiscoveredSurfaces == nil {
+		return builder.values
+	}
+	for _, trigger := range data.DiscoveredSurfaces.Triggers {
+		if string(trigger.RelatedTraceID) != story.CandidateID {
+			continue
+		}
+		builder.values = append(
+			builder.values,
+			discoveredTriggerPresentationProtectedValues(trigger)...,
+		)
 	}
 	return builder.values
 }
@@ -1755,7 +1910,8 @@ func addArchitecturePresentationText(
 		index := index
 		id := canvas.Suggestions[index].ID
 		owner := "architecture/suggestions/" + id
-		add := addObject.with(architectureSuggestionProtectedValues(
+		add := addObject.with(architectureSuggestionPresentationProtectedValues(
+			data,
 			canvas,
 			canvas.Suggestions[index],
 		))
@@ -1787,7 +1943,8 @@ func addArchitecturePresentationText(
 		index := index
 		id := string(canvas.Flows[index].ID)
 		owner := "architecture/flows/" + id
-		add := addObject.with(architectureFlowProtectedValues(
+		add := addObject.with(architectureFlowPresentationProtectedValues(
+			data,
 			canvas,
 			canvas.Flows[index],
 		))
@@ -1893,7 +2050,7 @@ func addArchitecturePresentationText(
 		if err := addObject(
 			"architecture/frontiers/"+id+"/reason",
 			canvas.Frontiers[index].Reason,
-			architectureFrontierProtectedValues(canvas, canvas.Frontiers[index]),
+			architectureFrontierProtectedValues(data, canvas, canvas.Frontiers[index]),
 			func(target *ReportData, text string) bool {
 				if target.ArchitectureCanvas == nil ||
 					index >= len(target.ArchitectureCanvas.Frontiers) {
@@ -1919,7 +2076,7 @@ func addArchitecturePresentationText(
 		if err := addObject(
 			"architecture/diagnostics/"+id+"/message",
 			canvas.Diagnostics[index].Message,
-			architectureDiagnosticProtectedValues(canvas, canvas.Diagnostics[index]),
+			architectureDiagnosticProtectedValues(data, canvas, canvas.Diagnostics[index]),
 			func(target *ReportData, text string) bool {
 				if target.ArchitectureCanvas == nil ||
 					index >= len(target.ArchitectureCanvas.Diagnostics) {
@@ -1940,15 +2097,25 @@ func addArchitecturePresentationText(
 			canvas,
 			canvas.Surfaces[index],
 		))
-		for _, field := range []struct {
+		fields := []struct {
 			name string
 			text string
 			set  func(*ArchitectureSurface, string)
 		}{
-			{"name", canvas.Surfaces[index].Name, func(item *ArchitectureSurface, text string) { item.Name = text }},
 			{"trace_unavailable_reason", canvas.Surfaces[index].TraceUnavailableReason, func(item *ArchitectureSurface, text string) { item.TraceUnavailableReason = text }},
 			{"trace_readiness_reason", canvas.Surfaces[index].TraceReadinessReason, func(item *ArchitectureSurface, text string) { item.TraceReadinessReason = text }},
-		} {
+		}
+		// Catalog surface names come directly from deterministic trigger
+		// identity (for example the exact symbol "main"). They remain opaque
+		// presentation values rather than being sent to the prose translator.
+		if canvas.Surfaces[index].Source != surfaceSourceCatalog {
+			fields = append(fields, struct {
+				name string
+				text string
+				set  func(*ArchitectureSurface, string)
+			}{"name", canvas.Surfaces[index].Name, func(item *ArchitectureSurface, text string) { item.Name = text }})
+		}
+		for _, field := range fields {
 			field := field
 			if err := add(owner+"/"+field.name, field.text, func(target *ReportData, text string) bool {
 				surface := findArchitectureSurface(target, id)
@@ -2306,6 +2473,13 @@ func architectureProvenanceProtectedValues(
 	if provenance.Location != nil {
 		builder.add(localization.ProtectedPath, provenance.Location.Path)
 	}
+	// This producer/operation pair owns a bounded direct-call evidence enum.
+	// Protect it by the typed producer identity, not by searching arbitrary
+	// prose for a familiar word.
+	if provenance.Provider == "go_ssa" &&
+		provenance.Operation == "connect_architecture_anchors" {
+		builder.add(localization.ProtectedIdentifier, "bounded_direct_call")
+	}
 	return builder.values
 }
 
@@ -2655,59 +2829,6 @@ func addOnboardingPresentationText(
 				return true
 			}); err != nil {
 				return err
-			}
-		}
-	}
-	if data.GuidedTour != nil {
-		candidateID := data.GuidedTour.CandidateID
-		if err := add(
-			"guided_tour/"+candidateID+"/trigger",
-			data.GuidedTour.Trigger,
-			func(target *ReportData, text string) bool {
-				if target.GuidedTour == nil ||
-					target.GuidedTour.CandidateID != candidateID {
-					return false
-				}
-				target.GuidedTour.Trigger = text
-				return true
-			},
-		); err != nil {
-			return err
-		}
-		for summaryIndex := range data.GuidedTour.GapSummary {
-			for gapIndex := range data.GuidedTour.GapSummary[summaryIndex].Gaps {
-				gapID := data.GuidedTour.GapSummary[summaryIndex].Gaps[gapIndex].ID
-				for _, field := range []struct {
-					name string
-					text string
-					set  func(*guidedtour.Gap, string)
-				}{
-					{"label", data.GuidedTour.GapSummary[summaryIndex].Gaps[gapIndex].Label, func(gap *guidedtour.Gap, text string) { gap.Label = text }},
-					{"detail", data.GuidedTour.GapSummary[summaryIndex].Gaps[gapIndex].Detail, func(gap *guidedtour.Gap, text string) { gap.Detail = text }},
-				} {
-					field := field
-					if err := add(
-						"guided_tour/"+candidateID+"/gaps/"+gapID+"/"+field.name,
-						field.text,
-						func(target *ReportData, text string) bool {
-							if target.GuidedTour == nil {
-								return false
-							}
-							for summaryIndex := range target.GuidedTour.GapSummary {
-								for gapIndex := range target.GuidedTour.GapSummary[summaryIndex].Gaps {
-									gap := &target.GuidedTour.GapSummary[summaryIndex].Gaps[gapIndex]
-									if gap.ID == gapID {
-										field.set(gap, text)
-										return true
-									}
-								}
-							}
-							return false
-						},
-					); err != nil {
-						return err
-					}
-				}
 			}
 		}
 	}
@@ -4011,6 +4132,7 @@ func findSourceEpisodeGap(
 
 func addSurfacePresentationText(
 	add presentationInventoryAdder,
+	addObject presentationInventoryObjectAdder,
 	data *ReportData,
 ) error {
 	catalog := data.DiscoveredSurfaces
@@ -4034,6 +4156,9 @@ func addSurfacePresentationText(
 		triggerIndex := triggerIndex
 		triggerID := catalog.Triggers[triggerIndex].ID
 		owner := "surfaces/triggers/" + triggerID
+		triggerAdd := addObject.with(discoveredTriggerPresentationProtectedValues(
+			catalog.Triggers[triggerIndex],
+		))
 		for _, field := range []struct {
 			name string
 			text string
@@ -4044,7 +4169,7 @@ func addSurfacePresentationText(
 			{"trace_readiness_reason", catalog.Triggers[triggerIndex].TraceReadinessReason, func(item *DiscoveredTrigger, text string) { item.TraceReadinessReason = text }},
 		} {
 			field := field
-			if err := add(owner+"/"+field.name, field.text, func(target *ReportData, text string) bool {
+			if err := triggerAdd(owner+"/"+field.name, field.text, func(target *ReportData, text string) bool {
 				trigger := findDiscoveredTrigger(target, triggerID)
 				if trigger == nil {
 					return false
@@ -4065,7 +4190,7 @@ func addSurfacePresentationText(
 					surfaceLocationIdentity(evidence.Location),
 				)
 			}
-			if err := add(
+			if err := triggerAdd(
 				owner+"/evidence/"+evidenceID+"/detail",
 				evidence.Detail,
 				func(target *ReportData, text string) bool {
@@ -4084,7 +4209,7 @@ func addSurfacePresentationText(
 			frontierIndex := frontierIndex
 			frontier := catalog.Triggers[triggerIndex].DynamicFrontier[frontierIndex]
 			frontierID := surfaceFrontierIdentity(frontier, frontierIndex)
-			if err := add(
+			if err := triggerAdd(
 				owner+"/frontiers/"+frontierID+"/detail",
 				frontier.Detail,
 				func(target *ReportData, text string) bool {
