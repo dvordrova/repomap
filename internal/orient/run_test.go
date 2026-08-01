@@ -86,6 +86,17 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	if !strings.Contains(string(request), `"model":"company-test-model"`) || !strings.Contains(string(request), `"json_object"`) {
 		t.Fatalf("request artifact does not describe the attempted request: %s", request)
 	}
+	semanticRecords := readOrientationSemanticRecords(t, runDir)
+	if len(semanticRecords) != 1 ||
+		semanticRecords[0].Stage != debugdump.SemanticStageOrientation ||
+		semanticRecords[0].State != debugdump.SemanticStateProviderFailed ||
+		semanticRecords[0].ValidationCode != debugdump.SemanticValidationProvider ||
+		semanticRecords[0].RequestProvenance != debugdump.SemanticRequestPrepared ||
+		semanticRecords[0].SemanticCalls != 1 ||
+		semanticRecords[0].TransportAttempts != 1 ||
+		semanticRecords[0].Response.Storage != "raw_unavailable" {
+		t.Fatalf("failed orientation semantic exchange = %#v", semanticRecords)
+	}
 
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
 	if err != nil {
@@ -381,7 +392,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 
 	debugDir := t.TempDir()
 	runID := "onboarding-directions"
-	output, err := Run(context.Background(), Options{
+	options := Options{
 		RepoPath:               repo,
 		OutputJSON:             true,
 		FlowCount:              0,
@@ -399,7 +410,8 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 		MaxLLMFiles:            10,
 		MaxLocalDirectionFiles: 1,
 		MaxLLMEdges:            10,
-	})
+	}
+	output, err := Run(context.Background(), options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,6 +427,30 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	}
 
 	runDir := filepath.Join(debugDir, runID)
+	semanticRecords := readOrientationSemanticRecords(t, runDir)
+	if len(semanticRecords) != 1 ||
+		semanticRecords[0].State != debugdump.SemanticStateAccepted ||
+		semanticRecords[0].ValidationCode != debugdump.SemanticValidationAccepted ||
+		semanticRecords[0].SemanticCalls != 1 ||
+		semanticRecords[0].TransportAttempts != 1 ||
+		semanticRecords[0].Response.Storage != "raw_content" {
+		t.Fatalf("accepted orientation semantic exchange = %#v", semanticRecords)
+	}
+	options.RunID = runID + "-cached"
+	if _, err := Run(context.Background(), options); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("validated orientation cache made %d provider requests, want 1 total", requests)
+	}
+	cachedRecords := readOrientationSemanticRecords(t, filepath.Join(debugDir, options.RunID))
+	if len(cachedRecords) != 1 ||
+		cachedRecords[0].State != debugdump.SemanticStateCacheHit ||
+		cachedRecords[0].ValidationCode != debugdump.SemanticValidationCache ||
+		cachedRecords[0].SemanticCalls != 0 || cachedRecords[0].TransportAttempts != 0 ||
+		cachedRecords[0].Response.Storage != "raw_content" {
+		t.Fatalf("cached orientation semantic exchange = %#v", cachedRecords)
+	}
 	orientationReportJSON, err := os.ReadFile(filepath.Join(runDir, "orientation_report.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -584,6 +620,38 @@ func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 	if !strings.Contains(string(status), `"mode": "local_only"`) {
 		t.Fatalf("expanded flow status = %s", status)
 	}
+}
+
+func readOrientationSemanticRecords(
+	t *testing.T,
+	runDir string,
+) []debugdump.SemanticExchangeRecord {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]debugdump.SemanticExchangeRecord, 0, len(directories))
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(
+			runDir,
+			debugdump.SemanticExchangesDir,
+			directory.Name(),
+			debugdump.SemanticExchangeMetaFile,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record debugdump.SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
 }
 
 func runOrientGit(t *testing.T, repo string, args ...string) {

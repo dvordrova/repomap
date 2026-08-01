@@ -1,15 +1,27 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/191-safe-localization-response-attribution.md
+    decisions/192-default-semantic-exchange-journal.md
 
 Status:
-    Decision 191 active; safe localization response attribution authorized
+    Decision 192 active; default semantic exchange journal authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 192 adds one default debug-only semantic exchange journal below
+    the existing root-confined debug writer. Every ordinary model question has
+    one recording owner; safe post-redaction request/response bytes or truthful
+    closed markers are published before a metadata commit marker. Unsafe
+    payloads retain only original SHA-256, byte count, and a closed kind.
+    Best-effort write failures emit one bounded closed warning per run/stage and
+    never change provider, cache, validation, retry, accounting, canonical,
+    report, manifest, replay, or publication behavior. Current cache formats
+    remain unchanged and raw-unavailable cache responses are never fabricated.
+    The checkpoint lands in three reviewed trunks: recorder plus
+    Orientation/Targeted Research; Architecture/Guided Tour/Study; then
+    Localization and removal of --dump-llm and replaced dump paths.
     Decision 191 preserves the mandatory raw DetectAlways rejection for every
     localization provider response. Only after that rejection fires, the
     existing strict response decoder may attribute unsafe material to one

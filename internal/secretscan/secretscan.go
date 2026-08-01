@@ -26,6 +26,38 @@ var patterns = []struct {
 var dynamicCredentialReference = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
 var disabled atomic.Bool
 
+const (
+	ClosedKindPrivateKey           = "private_key"
+	ClosedKindBearerCredential     = "bearer_credential"
+	ClosedKindSecretKey            = "secret_key"
+	ClosedKindGitHubToken          = "github_token"
+	ClosedKindAWSAccessKey         = "aws_access_key"
+	ClosedKindCredentialAssignment = "credential_assignment"
+	ClosedKindUnknown              = "unknown"
+)
+
+// ClosedKind converts detector-owned descriptions into the bounded codes
+// permitted in persistent diagnostics. Unknown descriptions fail closed and
+// never become artifact prose.
+func ClosedKind(kind string) string {
+	switch kind {
+	case "private key":
+		return ClosedKindPrivateKey
+	case "bearer credential":
+		return ClosedKindBearerCredential
+	case "secret key":
+		return ClosedKindSecretKey
+	case "github token":
+		return ClosedKindGitHubToken
+	case "aws access key":
+		return ClosedKindAWSAccessKey
+	case "credential assignment":
+		return ClosedKindCredentialAssignment
+	default:
+		return ClosedKindUnknown
+	}
+}
+
 // SetDisabled changes credential detection for the current process and returns
 // a restore function. It exists for the explicitly unsafe CLI override; normal
 // callers must leave detection enabled.

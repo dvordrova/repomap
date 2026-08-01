@@ -2,13 +2,16 @@ package debugdump
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/secretscan"
@@ -71,12 +74,125 @@ type RequestAttempt struct {
 	LatencyMillis         *int64 `json:"latency_ms,omitempty"`
 }
 
+const (
+	SemanticExchangesDir     = "semantic_exchanges"
+	SemanticExchangeMetaFile = "exchange.v1.json"
+
+	SemanticStageOrientation       = "orientation"
+	SemanticStageTargetedResearch  = "targeted_research"
+	SemanticStageArchitecture      = "architecture_synthesis"
+	SemanticStageGuidedTour        = "guided_tour"
+	SemanticStageStudyBrief        = "repository_brief_shape"
+	SemanticStageStudyDirections   = "study_direction_candidates"
+	SemanticStageStudyReview       = "reading_pack_review"
+	SemanticStageLocalization      = "localization"
+	SemanticRequestPrepared        = "prepared_request"
+	SemanticRequestExactSent       = "exact_sent_request"
+	SemanticStateAccepted          = "accepted"
+	SemanticStateRejected          = "rejected"
+	SemanticStateCacheHit          = "cache_hit"
+	SemanticStateCanceled          = "canceled"
+	SemanticStateProviderFailed    = "provider_failed"
+	SemanticValidationAccepted     = "accepted"
+	SemanticValidationCache        = "cache_validated"
+	SemanticValidationCanceled     = "canceled"
+	SemanticValidationProvider     = "provider_failed"
+	SemanticValidationSecret       = "response_secret_scan"
+	SemanticValidationDecode       = "response_decode"
+	SemanticValidationResponse     = "response_validation"
+	SemanticValidationApply        = "projection_apply"
+	SemanticValidationQuality      = "projection_quality"
+	SemanticUnavailableNoContent   = "provider_no_content"
+	SemanticUnavailableCanceled    = "canceled"
+	SemanticUnavailableCache       = "cache_raw_unavailable"
+	SemanticUnavailableProjection  = "cache_projection_only"
+	SemanticUnavailableOmitted     = "cache_response_omitted"
+	SemanticUnavailableSize        = "size_limit"
+	SemanticExchangeWarningCode    = "artifact_write_failed"
+	semanticExchangeVersion        = 1
+	semanticPayloadMarkerVersion   = 1
+	maxSemanticExchangePayloadSize = 16 << 20
+)
+
+// SemanticUnavailable describes response bytes that the current stage seam
+// truthfully does not possess. It may carry an already-known original identity
+// but never reconstructed content.
+type SemanticUnavailable struct {
+	Code           string
+	OriginalSHA256 string
+	OriginalBytes  int
+}
+
+// SemanticExchange is one observation at the semantic request owner. The
+// recorder is diagnostic-only: callers give it their existing outcome after
+// validation and never read a value back into execution.
+type SemanticExchange struct {
+	Stage                  string
+	InstanceOrdinal        int
+	SemanticAttemptOrdinal int
+	RequestProvenance      string
+	State                  string
+	ValidationCode         string
+	SemanticCalls          int
+	TransportAttempts      int
+	Request                []byte
+	Response               []byte
+	ResponseUnavailable    *SemanticUnavailable
+}
+
+type SemanticPayloadRecord struct {
+	Storage         string `json:"storage"`
+	File            string `json:"file"`
+	MediaType       string `json:"media_type"`
+	OriginalSHA256  string `json:"original_sha256,omitempty"`
+	OriginalBytes   int    `json:"original_bytes"`
+	SavedSHA256     string `json:"saved_sha256"`
+	SavedBytes      int    `json:"saved_bytes"`
+	UnsafeKind      string `json:"unsafe_kind,omitempty"`
+	UnavailableCode string `json:"unavailable_code,omitempty"`
+}
+
+type SemanticExchangeRecord struct {
+	Version                int                   `json:"version"`
+	Stage                  string                `json:"stage"`
+	InstanceOrdinal        int                   `json:"instance_ordinal"`
+	SemanticAttemptOrdinal int                   `json:"semantic_attempt_ordinal"`
+	RequestSHA256          string                `json:"request_sha256"`
+	RequestProvenance      string                `json:"request_provenance"`
+	State                  string                `json:"state"`
+	ValidationCode         string                `json:"validation_code"`
+	SemanticCalls          int                   `json:"semantic_calls"`
+	TransportAttempts      int                   `json:"transport_attempts"`
+	Request                SemanticPayloadRecord `json:"request"`
+	Response               SemanticPayloadRecord `json:"response"`
+}
+
+type semanticPayloadMarker struct {
+	Version         int    `json:"version"`
+	Storage         string `json:"storage"`
+	OriginalSHA256  string `json:"original_sha256,omitempty"`
+	OriginalBytes   int    `json:"original_bytes"`
+	UnsafeKind      string `json:"unsafe_kind,omitempty"`
+	UnavailableCode string `json:"unavailable_code,omitempty"`
+}
+
+type preparedSemanticPayload struct {
+	name   string
+	data   []byte
+	record SemanticPayloadRecord
+}
+
 type Writer struct {
 	BaseDir  string
 	RunID    string
 	Redacted bool
 	runDir   string
 	root     *os.Root
+
+	semanticMu     sync.Mutex
+	warningMu      sync.Mutex
+	warningWriter  io.Writer
+	warnedSemantic map[string]struct{}
 }
 
 func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
@@ -108,7 +224,42 @@ func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
 	fmt.Fprintf(os.Stderr, "debug artifacts: %s\n", runDir)
 	return &Writer{
 		BaseDir: baseDir, RunID: runID, Redacted: redacted,
-		runDir: runDir, root: runRoot,
+		runDir: runDir, root: runRoot, warningWriter: os.Stderr,
+		warnedSemantic: make(map[string]struct{}),
+	}, nil
+}
+
+// OpenWriter opens an existing run directory while retaining os.Root
+// confinement. It never creates or follows a replacement run-directory
+// symlink.
+func OpenWriter(runDir string, redacted bool) (*Writer, error) {
+	if runDir == "" {
+		return nil, fmt.Errorf("debug run dir is empty")
+	}
+	absRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve debug run dir: %w", err)
+	}
+	info, err := os.Lstat(absRunDir)
+	if err != nil {
+		return nil, fmt.Errorf("inspect debug run dir: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("debug run dir must be an existing directory")
+	}
+	parentRoot, err := os.OpenRoot(filepath.Dir(absRunDir))
+	if err != nil {
+		return nil, fmt.Errorf("open debug run parent: %w", err)
+	}
+	defer parentRoot.Close()
+	root, err := parentRoot.OpenRoot(filepath.Base(absRunDir))
+	if err != nil {
+		return nil, fmt.Errorf("open debug run dir: %w", err)
+	}
+	return &Writer{
+		BaseDir: filepath.Dir(absRunDir), RunID: filepath.Base(absRunDir),
+		Redacted: redacted, runDir: absRunDir, root: root,
+		warningWriter: os.Stderr, warnedSemantic: make(map[string]struct{}),
 	}, nil
 }
 
@@ -154,6 +305,319 @@ func (w *Writer) writePreparedRootFile(name string, data []byte) error {
 	}
 	written = true
 	return nil
+}
+
+// RecordSemanticExchange publishes one best-effort human-debug journal entry.
+// A write failure is deliberately not returned to semantic execution; instead
+// one bounded warning is emitted for the closed stage in this writer.
+func (w *Writer) RecordSemanticExchange(exchange SemanticExchange) {
+	if w == nil {
+		return
+	}
+	if err := w.writeSemanticExchange(exchange, nil); err != nil {
+		w.warnSemanticExchange(exchange.Stage)
+	}
+}
+
+// SetWarningWriter routes bounded recorder warnings. A nil writer restores the
+// default stderr destination.
+func (w *Writer) SetWarningWriter(writer io.Writer) {
+	if w == nil {
+		return
+	}
+	w.warningMu.Lock()
+	defer w.warningMu.Unlock()
+	if writer == nil {
+		writer = os.Stderr
+	}
+	w.warningWriter = writer
+}
+
+func (w *Writer) writeSemanticExchange(
+	exchange SemanticExchange,
+	afterPayloads func() error,
+) error {
+	if err := validateSemanticExchange(exchange); err != nil {
+		return err
+	}
+	request, err := prepareSemanticPayload("request", exchange.Request, nil)
+	if err != nil {
+		return err
+	}
+	response, err := prepareSemanticPayload(
+		"response",
+		exchange.Response,
+		exchange.ResponseUnavailable,
+	)
+	if err != nil {
+		return err
+	}
+	record := SemanticExchangeRecord{
+		Version: semanticExchangeVersion,
+		Stage:   exchange.Stage, InstanceOrdinal: exchange.InstanceOrdinal,
+		SemanticAttemptOrdinal: exchange.SemanticAttemptOrdinal,
+		RequestSHA256:          sha256Hex(exchange.Request),
+		RequestProvenance:      exchange.RequestProvenance,
+		State:                  exchange.State, ValidationCode: exchange.ValidationCode,
+		SemanticCalls: exchange.SemanticCalls, TransportAttempts: exchange.TransportAttempts,
+		Request: request.record, Response: response.record,
+	}
+	metadata, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode semantic exchange metadata: %w", err)
+	}
+	metadata = append(metadata, '\n')
+
+	w.semanticMu.Lock()
+	defer w.semanticMu.Unlock()
+	if w.root == nil {
+		return fmt.Errorf("debug writer is closed")
+	}
+	if err := w.root.MkdirAll(SemanticExchangesDir, 0o700); err != nil {
+		return fmt.Errorf("create semantic exchange directory: %w", err)
+	}
+	directory := filepath.Join(SemanticExchangesDir, semanticExchangeKey(exchange))
+	if err := w.root.Mkdir(directory, 0o700); err != nil {
+		return fmt.Errorf("create semantic exchange: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = w.root.RemoveAll(directory)
+		}
+	}()
+	if err := w.writePreparedRootFile(filepath.Join(directory, request.name), request.data); err != nil {
+		return err
+	}
+	if err := w.writePreparedRootFile(filepath.Join(directory, response.name), response.data); err != nil {
+		return err
+	}
+	if afterPayloads != nil {
+		if err := afterPayloads(); err != nil {
+			return err
+		}
+	}
+	// Metadata is the commit marker and is always published last.
+	if err := w.writePreparedRootFile(filepath.Join(directory, SemanticExchangeMetaFile), metadata); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+func (w *Writer) warnSemanticExchange(stage string) {
+	if !validSemanticStage(stage) {
+		stage = "unknown"
+	}
+	w.warningMu.Lock()
+	defer w.warningMu.Unlock()
+	if w.warnedSemantic == nil {
+		w.warnedSemantic = make(map[string]struct{})
+	}
+	if _, found := w.warnedSemantic[stage]; found {
+		return
+	}
+	w.warnedSemantic[stage] = struct{}{}
+	writer := w.warningWriter
+	if writer == nil {
+		writer = os.Stderr
+	}
+	fmt.Fprintf(
+		writer,
+		"warning: semantic exchange journal unavailable: stage=%s code=%s\n",
+		stage,
+		SemanticExchangeWarningCode,
+	)
+}
+
+func validateSemanticExchange(exchange SemanticExchange) error {
+	if !validSemanticStage(exchange.Stage) {
+		return fmt.Errorf("semantic exchange: invalid stage")
+	}
+	if exchange.InstanceOrdinal < 1 || exchange.InstanceOrdinal > 4096 ||
+		exchange.SemanticAttemptOrdinal < 1 || exchange.SemanticAttemptOrdinal > 16 {
+		return fmt.Errorf("semantic exchange: invalid ordinal")
+	}
+	if exchange.RequestProvenance != SemanticRequestPrepared &&
+		exchange.RequestProvenance != SemanticRequestExactSent {
+		return fmt.Errorf("semantic exchange: invalid request provenance")
+	}
+	if !validSemanticState(exchange.State) || !validSemanticValidationCode(exchange.ValidationCode) {
+		return fmt.Errorf("semantic exchange: invalid outcome")
+	}
+	if exchange.SemanticCalls < 0 || exchange.SemanticCalls > 1 ||
+		exchange.TransportAttempts < 0 || exchange.TransportAttempts > 64 ||
+		exchange.SemanticCalls == 0 && exchange.TransportAttempts != 0 {
+		return fmt.Errorf("semantic exchange: invalid call counts")
+	}
+	if len(exchange.Request) == 0 ||
+		len(exchange.Response) > 0 && exchange.ResponseUnavailable != nil ||
+		len(exchange.Response) == 0 && exchange.ResponseUnavailable == nil {
+		return fmt.Errorf("semantic exchange: invalid payload availability")
+	}
+	if exchange.ResponseUnavailable != nil {
+		if !validSemanticUnavailableCode(exchange.ResponseUnavailable.Code) ||
+			exchange.ResponseUnavailable.OriginalBytes < 0 ||
+			exchange.ResponseUnavailable.OriginalSHA256 != "" &&
+				!validSHA256(exchange.ResponseUnavailable.OriginalSHA256) {
+			return fmt.Errorf("semantic exchange: invalid unavailable response identity")
+		}
+	}
+	return nil
+}
+
+func validSemanticStage(stage string) bool {
+	switch stage {
+	case SemanticStageOrientation,
+		SemanticStageTargetedResearch,
+		SemanticStageArchitecture,
+		SemanticStageGuidedTour,
+		SemanticStageStudyBrief,
+		SemanticStageStudyDirections,
+		SemanticStageStudyReview,
+		SemanticStageLocalization:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSemanticState(state string) bool {
+	switch state {
+	case SemanticStateAccepted,
+		SemanticStateRejected,
+		SemanticStateCacheHit,
+		SemanticStateCanceled,
+		SemanticStateProviderFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSemanticValidationCode(code string) bool {
+	switch code {
+	case SemanticValidationAccepted,
+		SemanticValidationCache,
+		SemanticValidationCanceled,
+		SemanticValidationProvider,
+		SemanticValidationSecret,
+		SemanticValidationDecode,
+		SemanticValidationResponse,
+		SemanticValidationApply,
+		SemanticValidationQuality:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSemanticUnavailableCode(code string) bool {
+	switch code {
+	case SemanticUnavailableNoContent,
+		SemanticUnavailableCanceled,
+		SemanticUnavailableCache,
+		SemanticUnavailableProjection,
+		SemanticUnavailableOmitted,
+		SemanticUnavailableSize:
+		return true
+	default:
+		return false
+	}
+}
+
+func prepareSemanticPayload(
+	label string,
+	raw []byte,
+	unavailable *SemanticUnavailable,
+) (preparedSemanticPayload, error) {
+	if label != "request" && label != "response" {
+		return preparedSemanticPayload{}, fmt.Errorf("semantic exchange: invalid payload label")
+	}
+	if unavailable != nil {
+		marker := semanticPayloadMarker{
+			Version: semanticPayloadMarkerVersion, Storage: "raw_unavailable",
+			OriginalSHA256: unavailable.OriginalSHA256,
+			OriginalBytes:  unavailable.OriginalBytes, UnavailableCode: unavailable.Code,
+		}
+		return prepareSemanticMarker(label, marker)
+	}
+	originalSHA := sha256Hex(raw)
+	redacted := sensitiveKeyPattern.ReplaceAll(raw, []byte(`"$1": "[redacted]"`))
+	if kind, found := secretscan.DetectAlways(string(redacted)); found {
+		return prepareSemanticMarker(label, semanticPayloadMarker{
+			Version: semanticPayloadMarkerVersion, Storage: "unsafe_marker",
+			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
+			UnsafeKind: secretscan.ClosedKind(kind),
+		})
+	}
+	if len(redacted) > maxSemanticExchangePayloadSize {
+		return prepareSemanticMarker(label, semanticPayloadMarker{
+			Version: semanticPayloadMarkerVersion, Storage: "raw_unavailable",
+			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
+			UnavailableCode: SemanticUnavailableSize,
+		})
+	}
+	extension := ".txt"
+	mediaType := "text/plain"
+	if json.Valid(redacted) {
+		extension = ".json"
+		mediaType = "application/json"
+	}
+	name := label + extension
+	return preparedSemanticPayload{
+		name: name, data: append([]byte(nil), redacted...),
+		record: SemanticPayloadRecord{
+			Storage: "raw_content", File: name, MediaType: mediaType,
+			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
+			SavedSHA256: sha256Hex(redacted), SavedBytes: len(redacted),
+		},
+	}, nil
+}
+
+func prepareSemanticMarker(
+	label string,
+	marker semanticPayloadMarker,
+) (preparedSemanticPayload, error) {
+	data, err := json.MarshalIndent(marker, "", "  ")
+	if err != nil {
+		return preparedSemanticPayload{}, fmt.Errorf("encode semantic payload marker: %w", err)
+	}
+	data = append(data, '\n')
+	name := label + ".marker.json"
+	return preparedSemanticPayload{
+		name: name, data: data,
+		record: SemanticPayloadRecord{
+			Storage: marker.Storage, File: name, MediaType: "application/json",
+			OriginalSHA256: marker.OriginalSHA256, OriginalBytes: marker.OriginalBytes,
+			SavedSHA256: sha256Hex(data), SavedBytes: len(data),
+			UnsafeKind: marker.UnsafeKind, UnavailableCode: marker.UnavailableCode,
+		},
+	}, nil
+}
+
+func semanticExchangeKey(exchange SemanticExchange) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf(
+		"%s\x00%d\x00%d\x00%s",
+		exchange.Stage,
+		exchange.InstanceOrdinal,
+		exchange.SemanticAttemptOrdinal,
+		sha256Hex(exchange.Request),
+	)))
+	return hex.EncodeToString(digest[:])
+}
+
+func sha256Hex(data []byte) string {
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
+}
+
+func validSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func (w *Writer) WriteMetadata(meta RunMeta) error {
@@ -268,7 +732,12 @@ func (w *Writer) RunDir() string {
 
 // Close releases the directory handle that confines artifact writes.
 func (w *Writer) Close() error {
-	if w == nil || w.root == nil {
+	if w == nil {
+		return nil
+	}
+	w.semanticMu.Lock()
+	defer w.semanticMu.Unlock()
+	if w.root == nil {
 		return nil
 	}
 	err := w.root.Close()

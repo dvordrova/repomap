@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
@@ -42,12 +43,14 @@ type ExecuteInput struct {
 	Repository RepositoryContext
 	// OutputLanguage participates only in cache identity. The provider owns
 	// the actual prompt contract.
-	OutputLanguage string
-	RunsDir        string
-	RunDir         string
-	Profile        string
-	Model          string
-	Provider       Provider
+	OutputLanguage  string
+	RunsDir         string
+	RunDir          string
+	Profile         string
+	Model           string
+	Provider        Provider
+	ExchangeWriter  *debugdump.Writer
+	ExchangeOrdinal int
 }
 
 type researchResponse struct {
@@ -147,7 +150,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	}
 	round.RequestBytes = len(request)
 	round.ProviderRequestSHA256 = requestHash(request)
-	if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, nil); err != nil {
+	if err := persistEvidenceBundle(input.RunDir, input.Plan.Bundle, request); err != nil {
 		return round, err
 	}
 	if allowed, reason := input.Policy.Allows(input.Policy.Targeted, input.Usage, len(request)); !allowed {
@@ -198,9 +201,14 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 			cachedRound.RetryCount = record.RetryCount
 			applyErr := applyResponse(&cachedRound, input.Plan.Bundle, record.Response)
 			if applyErr == nil && cachedRound.Status == RoundCached {
-				if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, record.Response); err != nil {
+				if err := validateProviderResponseArtifact(input.RunDir, record.Response); err != nil {
 					return round, err
 				}
+				recordTargetedSemanticExchange(
+					input, request, record.Response, 0,
+					debugdump.SemanticStateCacheHit,
+					debugdump.SemanticValidationCache,
+				)
 				cachedRound.CompletedAt = nowUTC()
 				return cachedRound, nil
 			}
@@ -226,16 +234,44 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	if callErr != nil {
 		round.Status = RoundFailed
 		round.StopReason = "provider_call_failed"
+		state := debugdump.SemanticStateProviderFailed
+		validationCode := debugdump.SemanticValidationProvider
+		if errors.Is(callErr, context.Canceled) || errors.Is(callErr, context.DeadlineExceeded) || ctx.Err() != nil {
+			state = debugdump.SemanticStateCanceled
+			validationCode = debugdump.SemanticValidationCanceled
+		}
+		recordTargetedSemanticExchange(
+			input, request, result.Content, result.Attempts, state, validationCode,
+		)
 		return round, callErr
 	}
-	if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, result.Content); err != nil {
+	if err := validateProviderResponseArtifact(input.RunDir, result.Content); err != nil {
+		recordTargetedSemanticExchange(
+			input, request, result.Content, result.Attempts,
+			debugdump.SemanticStateRejected,
+			debugdump.SemanticValidationSecret,
+		)
 		return round, err
 	}
 	if err := applyResponse(&round, input.Plan.Bundle, result.Content); err != nil {
 		round.Status = RoundRejected
 		round.StopReason = "invalid_response"
+		recordTargetedSemanticExchange(
+			input, request, result.Content, result.Attempts,
+			debugdump.SemanticStateRejected,
+			debugdump.SemanticValidationDecode,
+		)
 		return round, err
 	}
+	state := debugdump.SemanticStateAccepted
+	validationCode := debugdump.SemanticValidationAccepted
+	if round.Status == RoundRejected {
+		state = debugdump.SemanticStateRejected
+		validationCode = debugdump.SemanticValidationResponse
+	}
+	recordTargetedSemanticExchange(
+		input, request, result.Content, result.Attempts, state, validationCode,
+	)
 	if round.Status == RoundCompleted && input.RunsDir != "" {
 		record := cacheRecord{
 			Version: cacheRecordVersion, CacheKey: cacheKey,
@@ -266,17 +302,12 @@ func targetedResearchCacheFingerprint(input ExecuteInput, bundleSHA string) Fing
 	}
 }
 
-func persistProviderArtifacts(runDir string, bundle EvidenceBundle, request, response []byte) error {
+func persistEvidenceBundle(runDir string, bundle EvidenceBundle, request []byte) error {
 	if runDir == "" {
 		return nil
 	}
 	if _, found := secretscan.Detect(string(request)); found {
 		return fmt.Errorf("model research: targeted request contains an obvious credential")
-	}
-	if len(response) > 0 {
-		if _, found := secretscan.Detect(string(response)); found {
-			return fmt.Errorf("model research: targeted response contains an obvious credential")
-		}
 	}
 	subdir := filepath.Join(runDir, "research", bundle.RoundID)
 	bundleJSON, err := json.MarshalIndent(bundle, "", "  ")
@@ -286,15 +317,57 @@ func persistProviderArtifacts(runDir string, bundle EvidenceBundle, request, res
 	if err := writeProtected(filepath.Join(subdir, "evidence_bundle.json"), append(bundleJSON, '\n')); err != nil {
 		return err
 	}
-	if err := writeProtected(filepath.Join(subdir, "request.redacted.json"), request); err != nil {
-		return err
+	return nil
+}
+
+func validateProviderResponseArtifact(runDir string, response []byte) error {
+	if runDir == "" {
+		return nil
 	}
 	if len(response) > 0 {
-		if err := writeProtected(filepath.Join(subdir, "response.raw.json"), response); err != nil {
-			return err
+		if _, found := secretscan.Detect(string(response)); found {
+			return fmt.Errorf("model research: targeted response contains an obvious credential")
 		}
 	}
 	return nil
+}
+
+func recordTargetedSemanticExchange(
+	input ExecuteInput,
+	request,
+	response []byte,
+	transportAttempts int,
+	state,
+	validationCode string,
+) {
+	if input.ExchangeWriter == nil {
+		return
+	}
+	ordinal := input.ExchangeOrdinal
+	if ordinal <= 0 {
+		ordinal = 1
+	}
+	semanticCalls := 1
+	if state == debugdump.SemanticStateCacheHit {
+		semanticCalls = 0
+		transportAttempts = 0
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:           debugdump.SemanticStageTargetedResearch,
+		InstanceOrdinal: ordinal, SemanticAttemptOrdinal: 1,
+		RequestProvenance: debugdump.SemanticRequestPrepared,
+		State:             state, ValidationCode: validationCode,
+		SemanticCalls: semanticCalls, TransportAttempts: transportAttempts,
+		Request: request, Response: response,
+	}
+	if len(response) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+	}
+	input.ExchangeWriter.RecordSemanticExchange(exchange)
 }
 
 func applyResponse(round *ResearchRound, bundle EvidenceBundle, raw []byte) error {

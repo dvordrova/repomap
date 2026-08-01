@@ -2,11 +2,9 @@ package orient
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
@@ -200,7 +198,7 @@ func runTargetedResearch(
 	traceIDs := savedFlowProofIDs(report.CandidateFlows)
 	state.Theory.RelatedTraceIDs = append([]string(nil), traceIDs...)
 	warnings := make([]string, 0)
-	for _, planned := range plan.Selected {
+	for plannedIndex, planned := range plan.Selected {
 		if err := ctx.Err(); err != nil {
 			return warnings, err
 		}
@@ -218,14 +216,12 @@ func runTargetedResearch(
 			Plan: planned, Policy: state.Policy, Usage: state.Usage, Repository: state.Repository,
 			RunsDir: runsDir, RunDir: dw.RunDir(),
 			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
+			ExchangeWriter: dw, ExchangeOrdinal: plannedIndex + 1,
 		})
 		if err := ctx.Err(); err != nil {
 			return warnings, err
 		}
 		modelresearch.ApplyRound(state, planned, round)
-		if artifactErr := writeResearchBundleArtifact(dw, round, planned.Bundle); artifactErr != nil {
-			warnings = append(warnings, fmt.Sprintf("persist targeted evidence bundle: %v", artifactErr))
-		}
 		attemptState := string(round.Status)
 		runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
 			Stage: "targeted_research", State: attemptState, RequestBytes: round.RequestBytes,
@@ -440,13 +436,4 @@ func optionalMillis(value int64) *int64 {
 		return nil
 	}
 	return &value
-}
-
-func writeResearchBundleArtifact(dw *debugdump.Writer, round modelresearch.ResearchRound, bundle modelresearch.EvidenceBundle) error {
-	data, err := json.MarshalIndent(bundle, "", "  ")
-	if err != nil {
-		return err
-	}
-	subdir := filepath.Join("research", strings.TrimSpace(round.ID))
-	return dw.WriteDirFile(subdir, "evidence_bundle.json", append(data, '\n'))
 }
