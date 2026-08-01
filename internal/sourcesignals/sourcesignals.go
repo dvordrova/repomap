@@ -147,6 +147,31 @@ type ScanOptions struct {
 	MaxTotal   int
 }
 
+const maxScanTraceSamples = 12
+
+// ScanTrace describes only cutoffs proven by the actual bounded scanner. It
+// never contains source snippets or match text from omitted signals.
+type ScanTrace struct {
+	MaxPerFile                 int                `json:"max_per_file"`
+	MaxTotal                   int                `json:"max_total"`
+	EligibleFiles              int                `json:"eligible_files"`
+	ScannedFiles               int                `json:"scanned_files"`
+	UnscannedFilesAtTotalLimit int                `json:"unscanned_files_at_total_limit"`
+	ProvenEligibleSignals      int                `json:"proven_eligible_signals"`
+	SelectedSignals            int                `json:"selected_signals"`
+	OmittedAtPerFileLimit      int                `json:"omitted_at_per_file_limit"`
+	OmittedAtTotalLimit        int                `json:"omitted_at_total_limit"`
+	OmittedSamples             []ScanCutoffSample `json:"omitted_samples,omitempty"`
+	UnscannedFileSamples       []string           `json:"unscanned_file_samples,omitempty"`
+}
+
+type ScanCutoffSample struct {
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	Category string `json:"category"`
+	Cutoff   string `json:"cutoff"`
+}
+
 func defaults(opts ScanOptions) ScanOptions {
 	if opts.MaxPerFile <= 0 {
 		opts.MaxPerFile = 5
@@ -158,30 +183,59 @@ func defaults(opts ScanOptions) ScanOptions {
 }
 
 func ScanFiles(filePaths []string, repoPath string, opts ScanOptions) []Signal {
+	signals, _ := ScanFilesWithTrace(filePaths, repoPath, opts)
+	return signals
+}
+
+// ScanFilesWithTrace returns the exact existing bounded selection plus a
+// source-local account of cutoffs observed while producing it.
+func ScanFilesWithTrace(filePaths []string, repoPath string, opts ScanOptions) ([]Signal, ScanTrace) {
 	opts = defaults(opts)
+	trace := ScanTrace{MaxPerFile: opts.MaxPerFile, MaxTotal: opts.MaxTotal}
+	ordered := artifactrole.SortPaths(filePaths)
+	eligibleFiles := make([]string, 0, len(ordered))
+	for _, filePath := range ordered {
+		if !shouldSkipFile(filePath) {
+			eligibleFiles = append(eligibleFiles, filePath)
+		}
+	}
+	trace.EligibleFiles = len(eligibleFiles)
 
 	var signals []Signal
 	reader, err := reporead.New(repoPath)
 	if err != nil {
-		return signals
+		return signals, trace
 	}
 	defer reader.Close()
 
-	for _, f := range artifactrole.SortPaths(filePaths) {
-		if shouldSkipFile(f) {
-			continue
-		}
+	for fileIndex, f := range eligibleFiles {
 		if len(signals) >= opts.MaxTotal {
+			trace.UnscannedFilesAtTotalLimit = len(eligibleFiles) - fileIndex
+			trace.UnscannedFileSamples = boundedStrings(eligibleFiles[fileIndex:], maxScanTraceSamples)
 			break
 		}
 
 		remaining := opts.MaxTotal - len(signals)
 		perFile := opts.MaxPerFile
+		cutoff := "max_per_file"
 		if perFile > remaining {
 			perFile = remaining
+			cutoff = "max_total"
 		}
 
-		fileSignals := scanFile(reader, f, perFile)
+		fileSignals, eligible, omitted := scanFileWithTrace(reader, f, perFile, cutoff)
+		trace.ScannedFiles++
+		trace.ProvenEligibleSignals += eligible
+		for _, sample := range omitted {
+			if sample.Cutoff == "max_total" {
+				trace.OmittedAtTotalLimit++
+			} else {
+				trace.OmittedAtPerFileLimit++
+			}
+			if len(trace.OmittedSamples) < maxScanTraceSamples {
+				trace.OmittedSamples = append(trace.OmittedSamples, sample)
+			}
+		}
 		signals = append(signals, fileSignals...)
 	}
 
@@ -192,16 +246,27 @@ func ScanFiles(filePaths []string, repoPath string, opts ScanOptions) []Signal {
 		return signals[i].Line < signals[j].Line
 	})
 
-	return signals
+	trace.SelectedSignals = len(signals)
+	return signals, trace
 }
 
 func scanFile(reader *reporead.Reader, repoRel string, maxSignals int) []Signal {
+	signals, _, _ := scanFileWithTrace(reader, repoRel, maxSignals, "max_per_file")
+	return signals
+}
+
+func scanFileWithTrace(
+	reader *reporead.Reader,
+	repoRel string,
+	maxSignals int,
+	cutoff string,
+) ([]Signal, int, []ScanCutoffSample) {
 	content, err := reader.ReadFile(repoRel, maxFileBytes)
 	if err != nil || content.Truncated {
-		return nil
+		return nil, 0, nil
 	}
 
-	return scanContent(content.Bytes, repoRel, maxSignals)
+	return scanContentWithTrace(content.Bytes, repoRel, maxSignals, cutoff)
 }
 
 type lineMatch struct {
@@ -210,6 +275,16 @@ type lineMatch struct {
 }
 
 func scanContent(data []byte, repoRel string, maxSignals int) []Signal {
+	signals, _, _ := scanContentWithTrace(data, repoRel, maxSignals, "max_per_file")
+	return signals
+}
+
+func scanContentWithTrace(
+	data []byte,
+	repoRel string,
+	maxSignals int,
+	cutoff string,
+) ([]Signal, int, []ScanCutoffSample) {
 	var signals []Signal
 
 	scanner := bufio.NewScanner(bytes.NewReader(data))
@@ -263,14 +338,20 @@ func scanContent(data []byte, repoRel string, maxSignals int) []Signal {
 	})
 
 	seen := make(map[int]bool)
+	eligible := 0
+	var omitted []ScanCutoffSample
 	for _, m := range matches {
-		if len(signals) >= maxSignals {
-			break
-		}
 		if seen[m.line] {
 			continue
 		}
 		seen[m.line] = true
+		eligible++
+		if len(signals) >= maxSignals {
+			omitted = append(omitted, ScanCutoffSample{
+				Path: repoRel, Line: m.line, Category: m.category, Cutoff: cutoff,
+			})
+			continue
+		}
 
 		snippet := m.rawLine
 		if len(snippet) > 120 {
@@ -288,7 +369,14 @@ func scanContent(data []byte, repoRel string, maxSignals int) []Signal {
 		})
 	}
 
-	return signals
+	return signals, eligible, omitted
+}
+
+func boundedStrings(values []string, limit int) []string {
+	if len(values) > limit {
+		values = values[:limit]
+	}
+	return append([]string(nil), values...)
 }
 
 func trimMatch(s string) string {

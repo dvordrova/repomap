@@ -256,46 +256,6 @@ func TestHandlerRejectsInvalidSourceEpisodeBinding(t *testing.T) {
 	})
 }
 
-func TestLegacyManifestSourceTargetsPreserveV2V3Behavior(t *testing.T) {
-	t.Parallel()
-
-	reportSHA256 := strings.Repeat("a", 64)
-	contentSHA256 := strings.Repeat("b", 64)
-	manifest := reportpkg.RunManifest{
-		RepositoryState: freshness.RepositoryState{Identity: "/repo"},
-		AnalysisRoot:    "/repo/service",
-		ReportSHA256:    reportSHA256,
-		OpenablePaths:   []string{"batch.go"},
-		CapturedInputs: []freshness.CapturedInput{{
-			Path: "service/batch.go", ContentSHA256: contentSHA256,
-		}},
-	}
-	const runID = "20260724-120000-legacy"
-	sourceID := manifestSourceID(runID, reportSHA256, "batch.go")
-	for _, test := range []struct {
-		version    int
-		wantSHA256 string
-	}{
-		{version: 2, wantSHA256: ""},
-		{version: 3, wantSHA256: contentSHA256},
-	} {
-		manifest.Version = test.version
-		if test.version == 2 {
-			manifest.CapturedInputs = nil
-		} else {
-			manifest.CapturedInputs = []freshness.CapturedInput{{
-				Path: "service/batch.go", ContentSHA256: contentSHA256,
-			}}
-		}
-		targets, sourceIDs := legacyManifestSourceTargets(runID, reportSHA256, manifest)
-		target, ok := targets[sourceID]
-		if !ok || target.relativePath != "batch.go" ||
-			target.capturedSHA256 != test.wantSHA256 || sourceIDs["batch.go"] != sourceID {
-			t.Fatalf("v%d targets=%#v source IDs=%#v", test.version, targets, sourceIDs)
-		}
-	}
-}
-
 func TestHandlerListsReportsServesLatestAndOpensValidatedFile(t *testing.T) {
 	t.Parallel()
 

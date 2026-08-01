@@ -2,6 +2,8 @@ package orient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 )
 
 func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
@@ -222,6 +225,97 @@ func TestRunOfflineRespectsZeroFlowExpansion(t *testing.T) {
 	}
 	if len(report.ExplainedFlows) != 0 {
 		t.Fatalf("explained flows = %d, want 0", len(report.ExplainedFlows))
+	}
+}
+
+func TestRunOfflineWritesExactBoundedOrientationContextSelection(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/selection\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte(`package main
+
+import "time"
+
+func main() {
+	time.NewTicker(time.Second)
+}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "private"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "private", "blob.bin"), []byte("must-not-leak-source-body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOrientGit(t, repo, "init", "--quiet")
+	runOrientGit(t, repo, "add", "--", "go.mod", "main.go", "private/blob.bin")
+
+	debugDir := t.TempDir()
+	runID := "selection-manifest"
+	if _, err := Run(context.Background(), Options{
+		RepoPath:         repo,
+		Offline:          true,
+		OutputJSON:       true,
+		FlowCount:        0,
+		RunID:            runID,
+		DebugDir:         debugDir,
+		RequireArtifacts: true,
+		MaxLLMFiles:      8,
+		MaxLLMEdges:      8,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runDir := filepath.Join(debugDir, runID)
+	manifestBytes, err := os.ReadFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := llmbundle.DecodeOrientationContextSelection(manifestBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleBytes, err := os.ReadFile(filepath.Join(runDir, "llm_bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalBundle := []byte(strings.TrimSuffix(string(bundleBytes), "\n"))
+	var bundle llmbundle.Bundle
+	if err := json.Unmarshal(canonicalBundle, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := buildOrientationReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typedWire, err := buildOrientationWireBundle(bundle, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleDigest := sha256.Sum256(canonicalBundle)
+	wireDigest := sha256.Sum256(typedWire)
+	if manifest.CanonicalBundleSHA256 != hex.EncodeToString(bundleDigest[:]) ||
+		manifest.CanonicalBundleBytes != len(canonicalBundle) ||
+		manifest.TypedWireSHA256 != hex.EncodeToString(wireDigest[:]) ||
+		manifest.TypedWireBytes != len(typedWire) {
+		t.Fatalf("selection identity = %#v", manifest)
+	}
+	if len(manifest.SelectedCandidates) != len(bundle.CandidateFileIndex) {
+		t.Fatalf("selected candidates = %d, bundle = %d", len(manifest.SelectedCandidates), len(bundle.CandidateFileIndex))
+	}
+	for index, candidate := range bundle.CandidateFileIndex {
+		selected := manifest.SelectedCandidates[index]
+		if selected.Path != candidate.Path || selected.Kind != candidate.Kind || selected.Score != candidate.Score ||
+			strings.Join(selected.Reasons, "\x00") != strings.Join(candidate.Reasons, "\x00") ||
+			strings.Join(selected.Signals, "\x00") != strings.Join(candidate.Signals, "\x00") {
+			t.Fatalf("selected candidate %d differs: %#v / %#v", index, selected, candidate)
+		}
+	}
+	if strings.Contains(string(manifestBytes), "must-not-leak-source-body") ||
+		strings.Contains(string(manifestBytes), `"file_tree"`) {
+		t.Fatalf("selection manifest leaked source body or full file tree: %s", manifestBytes)
 	}
 }
 

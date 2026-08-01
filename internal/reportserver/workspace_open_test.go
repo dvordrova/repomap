@@ -217,11 +217,8 @@ func TestOpenEndpointPreservesCanceledRequestAdapterCompatibility(t *testing.T) 
 	}
 }
 
-func TestResolveOpenTargetUsesSnapshotCatalogAndLegacyFallback(t *testing.T) {
+func TestResolveOpenTargetUsesSnapshotCatalogAndFailsClosedWithoutIt(t *testing.T) {
 	repo, runsDir, _ := writeAnalysisRun(t)
-	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-		manifest.Version = 3
-	})
 	h := &handler{runsDir: runsDir}
 	if err := h.reloadRuns(); err != nil {
 		t.Fatal(err)
@@ -250,12 +247,12 @@ func TestResolveOpenTargetUsesSnapshotCatalogAndLegacyFallback(t *testing.T) {
 	run.WorkspaceSnapshot = nil
 	run.SourceCatalog = nil
 	absolutePath, changed, err = resolveOpenTarget(context.Background(), run, target)
-	if err != nil || changed || absolutePath != filepath.Join(repo, "batch.go") {
-		t.Fatalf("legacy resolve path=%q changed=%t err=%v", absolutePath, changed, err)
+	if err == nil || changed || absolutePath != "" {
+		t.Fatalf("missing-snapshot resolve path=%q changed=%t err=%v", absolutePath, changed, err)
 	}
 }
 
-func TestOpenEndpointPreservesLegacyAndCurrentVersionMatrix(t *testing.T) {
+func TestOpenEndpointRequiresCurrentSnapshotAuthority(t *testing.T) {
 	tests := []struct {
 		name       string
 		rewrite    func(*testing.T, string)
@@ -264,42 +261,8 @@ func TestOpenEndpointPreservesLegacyAndCurrentVersionMatrix(t *testing.T) {
 		wantLaunch int
 	}{
 		{
-			name: "version 2 legacy open",
-			rewrite: func(t *testing.T, runsDir string) {
-				rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-					manifest.Version = 2
-					manifest.RepositoryState.Version = 1
-					manifest.CapturedInputs = nil
-					manifest.CapturedInputsSHA256 = ""
-					manifest.Freshness = freshness.FreshnessResult{}
-					manifest.MaterialInputs = report.MaterialInputs{}
-					digest, err := manifest.RepositoryState.Digest()
-					if err != nil {
-						t.Fatal(err)
-					}
-					manifest.RepositoryStateSHA256 = digest
-				})
-			},
-			wantStatus: http.StatusOK,
-			wantBody:   `{"source_changed":false,"status":"opened"}` + "\n",
-			wantLaunch: 1,
-		},
-		{
-			name: "valid version 3 snapshot open",
-			rewrite: func(t *testing.T, runsDir string) {
-				rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-					manifest.Version = 3
-				})
-			},
-			wantStatus: http.StatusOK,
-			wantBody:   `{"source_changed":false,"status":"opened"}` + "\n",
-			wantLaunch: 1,
-		},
-		{
-			name: "degraded version 3 legacy open",
-			rewrite: func(t *testing.T, runsDir string) {
-				rewriteAnalysisManifestWithOversizedStages(t, runsDir, 3)
-			},
+			name:       "current snapshot open",
+			rewrite:    func(*testing.T, string) {},
 			wantStatus: http.StatusOK,
 			wantBody:   `{"source_changed":false,"status":"opened"}` + "\n",
 			wantLaunch: 1,
@@ -346,7 +309,7 @@ func TestOpenEndpointPreservesLegacyAndCurrentVersionMatrix(t *testing.T) {
 	}
 }
 
-func TestOpenEndpointPreservesVersionedWhitespacePathCompatibility(t *testing.T) {
+func TestOpenEndpointPreservesCurrentWhitespacePathExactly(t *testing.T) {
 	const authorizedPath = " main.go "
 	exactContent := []byte("package exact\n")
 	tests := []struct {
@@ -357,39 +320,6 @@ func TestOpenEndpointPreservesVersionedWhitespacePathCompatibility(t *testing.T)
 		{
 			name:      "current version snapshot exact",
 			wantExact: true,
-		},
-		{
-			name: "valid version 3 snapshot exact",
-			rewrite: func(t *testing.T, runsDir string) {
-				rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-					manifest.Version = 3
-				})
-			},
-			wantExact: true,
-		},
-		{
-			name: "version 2 legacy trim",
-			rewrite: func(t *testing.T, runsDir string) {
-				rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-					manifest.Version = 2
-					manifest.RepositoryState.Version = 1
-					manifest.CapturedInputs = nil
-					manifest.CapturedInputsSHA256 = ""
-					manifest.Freshness = freshness.FreshnessResult{}
-					manifest.MaterialInputs = report.MaterialInputs{}
-					digest, err := manifest.RepositoryState.Digest()
-					if err != nil {
-						t.Fatal(err)
-					}
-					manifest.RepositoryStateSHA256 = digest
-				})
-			},
-		},
-		{
-			name: "degraded version 3 legacy trim",
-			rewrite: func(t *testing.T, runsDir string) {
-				rewriteAnalysisManifestWithOversizedStages(t, runsDir, 3)
-			},
 		},
 	}
 	for _, test := range tests {

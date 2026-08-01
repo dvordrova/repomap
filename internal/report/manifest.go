@@ -19,13 +19,14 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	CurrentRunManifestVersion = 4
+	CurrentRunManifestVersion = 5
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -60,17 +61,18 @@ type RunManifest struct {
 }
 
 type MaterialInputs struct {
-	SelectedRevision                 string `json:"selected_revision"`
-	ModelBundleSHA256                string `json:"model_bundle_sha256,omitempty"`
-	TaskBundleSHA256                 string `json:"task_bundle_sha256,omitempty"`
-	TaskAttemptSHA256                string `json:"task_attempt_sha256,omitempty"`
-	TaskPackSHA256                   string `json:"task_pack_sha256,omitempty"`
-	TaskStatusSHA256                 string `json:"task_status_sha256,omitempty"`
-	TaskRetrievalTraceSHA256         string `json:"task_retrieval_trace_sha256,omitempty"`
-	TaskRetrievalTraceMarkdownSHA256 string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
-	InputPolicyVersion               string `json:"input_policy_version"`
-	ArchitectureContract             int    `json:"architecture_contract"`
-	ReportContract                   int    `json:"report_contract"`
+	SelectedRevision                  string `json:"selected_revision"`
+	ModelBundleSHA256                 string `json:"model_bundle_sha256,omitempty"`
+	OrientationContextSelectionSHA256 string `json:"orientation_context_selection_sha256,omitempty"`
+	TaskBundleSHA256                  string `json:"task_bundle_sha256,omitempty"`
+	TaskAttemptSHA256                 string `json:"task_attempt_sha256,omitempty"`
+	TaskPackSHA256                    string `json:"task_pack_sha256,omitempty"`
+	TaskStatusSHA256                  string `json:"task_status_sha256,omitempty"`
+	TaskRetrievalTraceSHA256          string `json:"task_retrieval_trace_sha256,omitempty"`
+	TaskRetrievalTraceMarkdownSHA256  string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
+	InputPolicyVersion                string `json:"input_policy_version"`
+	ArchitectureContract              int    `json:"architecture_contract"`
+	ReportContract                    int    `json:"report_contract"`
 }
 
 // RunAuthority is a repository state that was captured before repository
@@ -110,7 +112,7 @@ type AnchorAuthority struct {
 // Validate checks that a manifest is bounded, canonical, and internally
 // consistent before it is used as an authority source.
 func (m RunManifest) Validate() error {
-	if m.Version != 2 && m.Version != 3 && m.Version != CurrentRunManifestVersion {
+	if m.Version != CurrentRunManifestVersion {
 		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
 	}
 	if err := m.RepositoryState.Validate(); err != nil {
@@ -138,49 +140,51 @@ func (m RunManifest) Validate() error {
 	if len(m.OpenablePaths) > maxManifestOpenablePaths {
 		return fmt.Errorf("report manifest: more than %d openable paths", maxManifestOpenablePaths)
 	}
-	if m.Version >= 3 {
-		inputsDigest, err := freshness.CapturedInputsDigest(m.CapturedInputs)
-		if err != nil {
-			return fmt.Errorf("report manifest: captured inputs: %w", err)
-		}
-		if !validManifestSHA256(m.CapturedInputsSHA256) || inputsDigest != m.CapturedInputsSHA256 {
-			return fmt.Errorf("report manifest: captured inputs sha256 mismatch")
-		}
-		if err := m.Freshness.Validate(); err != nil {
-			return fmt.Errorf("report manifest: freshness: %w", err)
-		}
-		if m.MaterialInputs.SelectedRevision != m.RepositoryState.Head ||
-			!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
-			m.MaterialInputs.ArchitectureContract <= 0 || m.MaterialInputs.ReportContract != m.ReportFormatVersion {
-			return fmt.Errorf("report manifest: material inputs are invalid")
-		}
-		if m.MaterialInputs.ModelBundleSHA256 != "" && !validManifestSHA256(m.MaterialInputs.ModelBundleSHA256) {
-			return fmt.Errorf("report manifest: model bundle sha256 is invalid")
-		}
-		taskDigests := []string{
-			m.MaterialInputs.TaskBundleSHA256,
-			m.MaterialInputs.TaskAttemptSHA256,
-			m.MaterialInputs.TaskPackSHA256,
-			m.MaterialInputs.TaskStatusSHA256,
-		}
-		if m.Version >= 4 {
-			taskDigests = append(taskDigests,
-				m.MaterialInputs.TaskRetrievalTraceSHA256,
-				m.MaterialInputs.TaskRetrievalTraceMarkdownSHA256,
-			)
-		}
-		taskDigestCount := 0
-		for _, digest := range taskDigests {
-			if digest != "" {
-				taskDigestCount++
-				if !validManifestSHA256(digest) {
-					return fmt.Errorf("report manifest: Task Lens artifact sha256 is invalid")
-				}
+	inputsDigest, err := freshness.CapturedInputsDigest(m.CapturedInputs)
+	if err != nil {
+		return fmt.Errorf("report manifest: captured inputs: %w", err)
+	}
+	if !validManifestSHA256(m.CapturedInputsSHA256) || inputsDigest != m.CapturedInputsSHA256 {
+		return fmt.Errorf("report manifest: captured inputs sha256 mismatch")
+	}
+	if err := m.Freshness.Validate(); err != nil {
+		return fmt.Errorf("report manifest: freshness: %w", err)
+	}
+	if m.MaterialInputs.SelectedRevision != m.RepositoryState.Head ||
+		!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
+		m.MaterialInputs.ArchitectureContract <= 0 || m.MaterialInputs.ReportContract != m.ReportFormatVersion {
+		return fmt.Errorf("report manifest: material inputs are invalid")
+	}
+	hasModelBundle := m.MaterialInputs.ModelBundleSHA256 != ""
+	hasOrientationSelection := m.MaterialInputs.OrientationContextSelectionSHA256 != ""
+	if hasModelBundle != hasOrientationSelection {
+		return fmt.Errorf("report manifest: Orientation model bundle and context selection identity must both be present or absent")
+	}
+	if hasModelBundle && !validManifestSHA256(m.MaterialInputs.ModelBundleSHA256) {
+		return fmt.Errorf("report manifest: model bundle sha256 is invalid")
+	}
+	if hasOrientationSelection && !validManifestSHA256(m.MaterialInputs.OrientationContextSelectionSHA256) {
+		return fmt.Errorf("report manifest: orientation context selection sha256 is invalid")
+	}
+	taskDigests := []string{
+		m.MaterialInputs.TaskBundleSHA256,
+		m.MaterialInputs.TaskAttemptSHA256,
+		m.MaterialInputs.TaskPackSHA256,
+		m.MaterialInputs.TaskStatusSHA256,
+		m.MaterialInputs.TaskRetrievalTraceSHA256,
+		m.MaterialInputs.TaskRetrievalTraceMarkdownSHA256,
+	}
+	taskDigestCount := 0
+	for _, digest := range taskDigests {
+		if digest != "" {
+			taskDigestCount++
+			if !validManifestSHA256(digest) {
+				return fmt.Errorf("report manifest: Task Lens artifact sha256 is invalid")
 			}
 		}
-		if taskDigestCount != 0 && taskDigestCount != len(taskDigests) {
-			return fmt.Errorf("report manifest: Task Lens artifact identity is incomplete")
-		}
+	}
+	if taskDigestCount != 0 && taskDigestCount != len(taskDigests) {
+		return fmt.Errorf("report manifest: Task Lens artifact identity is incomplete")
 	}
 	openable := make(map[string]struct{}, len(m.OpenablePaths))
 	previousPath := ""
@@ -484,15 +488,12 @@ func (m RunManifest) SourceCatalog() (sourcecatalog.Catalog, error) {
 	return catalog, nil
 }
 
-// WorkspaceSnapshot adapts captured-input authority from v3/v4 manifests into
-// one presentation-neutral immutable value. Live filesystem canonicality
-// remains the responsibility of ResolveAnalysisRoot.
+// WorkspaceSnapshot adapts current captured-input authority into one
+// presentation-neutral immutable value. Live filesystem canonicality remains
+// the responsibility of ResolveAnalysisRoot.
 func (m RunManifest) WorkspaceSnapshot() (workspacesnapshot.Snapshot, error) {
 	if err := m.Validate(); err != nil {
 		return workspacesnapshot.Snapshot{}, err
-	}
-	if m.Version != 3 && m.Version != CurrentRunManifestVersion {
-		return workspacesnapshot.Snapshot{}, fmt.Errorf("report manifest: workspace snapshot is unavailable for version %d", m.Version)
 	}
 	snapshot, err := workspacesnapshot.New(workspacesnapshot.Input{
 		AnalysisRoot:   m.AnalysisRoot,
@@ -559,11 +560,10 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		!validManifestSHA256(report.TaskInvestigation.AttemptSHA256) ||
 		!validManifestSHA256(report.TaskInvestigation.PackSHA256) ||
 		!validManifestSHA256(report.TaskInvestigation.StatusSHA256) ||
-		(m.Version >= 4 &&
-			(report.TaskInvestigation.RetrievalTraceSHA256 != material.TaskRetrievalTraceSHA256 ||
-				report.TaskInvestigation.RetrievalTraceMarkdownSHA256 != material.TaskRetrievalTraceMarkdownSHA256 ||
-				!validManifestSHA256(report.TaskInvestigation.RetrievalTraceSHA256) ||
-				!validManifestSHA256(report.TaskInvestigation.RetrievalTraceMarkdownSHA256))) {
+		report.TaskInvestigation.RetrievalTraceSHA256 != material.TaskRetrievalTraceSHA256 ||
+		report.TaskInvestigation.RetrievalTraceMarkdownSHA256 != material.TaskRetrievalTraceMarkdownSHA256 ||
+		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceMarkdownSHA256) {
 		return fmt.Errorf("report manifest: Task Lens artifact identity does not match report")
 	}
 	return nil
@@ -590,12 +590,10 @@ func (m RunManifest) VerifyTaskInvestigationArtifacts(runDir string) error {
 		{tasklens.PackFile, material.TaskPackSHA256},
 		{tasklens.StatusFile, material.TaskStatusSHA256},
 	}
-	if m.Version >= 4 {
-		artifacts = append(artifacts,
-			struct{ name, want string }{tasklens.TraceJSONFile, material.TaskRetrievalTraceSHA256},
-			struct{ name, want string }{tasklens.TraceMarkdownFile, material.TaskRetrievalTraceMarkdownSHA256},
-		)
-	}
+	artifacts = append(artifacts,
+		struct{ name, want string }{tasklens.TraceJSONFile, material.TaskRetrievalTraceSHA256},
+		struct{ name, want string }{tasklens.TraceMarkdownFile, material.TaskRetrievalTraceMarkdownSHA256},
+	)
 	for _, artifact := range artifacts {
 		data, readErr := readManifestFile(root, artifact.name, maxRunManifestBytes)
 		if readErr != nil || manifestSHA256(data) != artifact.want {
@@ -605,21 +603,59 @@ func (m RunManifest) VerifyTaskInvestigationArtifacts(runDir string) error {
 	return nil
 }
 
+// VerifyOrientationContextSelectionArtifact binds the safe selection trace to
+// the authorized run before callers trust it as an explanation of model input.
+func (m RunManifest) VerifyOrientationContextSelectionArtifact(runDir string) error {
+	want := m.MaterialInputs.OrientationContextSelectionSHA256
+	if want == "" {
+		return nil
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open orientation context selection run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(
+		root,
+		llmbundle.OrientationContextSelectionFilename,
+		llmbundle.MaxOrientationContextSelectionBytes,
+	)
+	if err != nil || manifestSHA256(data) != want {
+		return fmt.Errorf("report manifest: orientation context selection sha256 mismatch")
+	}
+	selection, err := llmbundle.DecodeOrientationContextSelection(data)
+	if err != nil {
+		return fmt.Errorf("report manifest: orientation context selection: %w", err)
+	}
+	modelBundle, err := readManifestFile(root, "llm_bundle.json", maxManifestReportBytes)
+	if err != nil || manifestSHA256(modelBundle) != m.MaterialInputs.ModelBundleSHA256 {
+		return fmt.Errorf("report manifest: model bundle sha256 mismatch")
+	}
+	if !orientationSelectionMatchesModelBundle(selection, modelBundle) {
+		return fmt.Errorf("report manifest: orientation context selection model bundle identity mismatch")
+	}
+	return nil
+}
+
+func orientationSelectionMatchesModelBundle(
+	selection llmbundle.OrientationContextSelection,
+	modelBundle []byte,
+) bool {
+	if selection.CanonicalBundleBytes == len(modelBundle) &&
+		selection.CanonicalBundleSHA256 == manifestSHA256(modelBundle) {
+		return true
+	}
+	withoutWriterNewline := bytes.TrimSuffix(modelBundle, []byte("\n"))
+	return len(withoutWriterNewline) != len(modelBundle) &&
+		selection.CanonicalBundleBytes == len(withoutWriterNewline) &&
+		selection.CanonicalBundleSHA256 == manifestSHA256(withoutWriterNewline)
+}
+
 // VerifyRepositoryState lets a caller compare a freshly captured repository
 // state with the one authorized by this manifest without re-reading artifacts.
 func (m RunManifest) VerifyRepositoryState(current freshness.RepositoryState) error {
 	if err := m.Validate(); err != nil {
 		return err
-	}
-	if m.Version < 3 {
-		digest, err := current.Digest()
-		if err != nil {
-			return fmt.Errorf("report manifest: current repository state: %w", err)
-		}
-		if digest != m.RepositoryStateSHA256 {
-			return fmt.Errorf("report manifest: legacy repository state changed")
-		}
-		return nil
 	}
 	result := freshness.AssessInputs(context.Background(), m.RepositoryState, current, m.CapturedInputs)
 	if result.State == freshness.FreshnessPartiallyStale || result.State == freshness.FreshnessMixedSnapshot ||
@@ -630,9 +666,6 @@ func (m RunManifest) VerifyRepositoryState(current freshness.RepositoryState) er
 }
 
 func (m RunManifest) CurrentFreshness(current freshness.RepositoryState) freshness.FreshnessResult {
-	if m.Version < 3 {
-		return freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
-	}
 	return freshness.AssessInputs(context.Background(), m.RepositoryState, current, m.CapturedInputs)
 }
 
@@ -684,6 +717,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 		return RunManifest{}, err
 	}
 	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
 		return RunManifest{}, err
 	}
 	return manifest, nil
@@ -743,6 +779,14 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err != nil {
 		return err
 	}
+	orientationSelectionDigest, err := savedOrientationContextSelectionSHA256(runDir)
+	if err != nil {
+		return err
+	}
+	modelBundleDigest, err := savedModelBundleSHA256(runDir)
+	if err != nil {
+		return err
+	}
 	manifest := RunManifest{
 		Version:               CurrentRunManifestVersion,
 		RepositoryState:       authority.repository,
@@ -756,18 +800,23 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		CapturedInputsSHA256:  inputsDigest,
 		Freshness:             authority.freshness,
 		MaterialInputs: MaterialInputs{
-			SelectedRevision: authority.repository.Head, ModelBundleSHA256: savedArtifactSHA256(runDir, "llm_bundle.json"),
-			TaskBundleSHA256:                 savedArtifactSHA256(runDir, tasklens.BundleFile),
-			TaskAttemptSHA256:                savedArtifactSHA256(runDir, tasklens.AttemptFile),
-			TaskPackSHA256:                   savedArtifactSHA256(runDir, tasklens.PackFile),
-			TaskStatusSHA256:                 savedArtifactSHA256(runDir, tasklens.StatusFile),
-			TaskRetrievalTraceSHA256:         savedArtifactSHA256(runDir, tasklens.TraceJSONFile),
-			TaskRetrievalTraceMarkdownSHA256: savedArtifactSHA256(runDir, tasklens.TraceMarkdownFile),
-			InputPolicyVersion:               "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
+			SelectedRevision:                  authority.repository.Head,
+			ModelBundleSHA256:                 modelBundleDigest,
+			OrientationContextSelectionSHA256: orientationSelectionDigest,
+			TaskBundleSHA256:                  savedArtifactSHA256(runDir, tasklens.BundleFile),
+			TaskAttemptSHA256:                 savedArtifactSHA256(runDir, tasklens.AttemptFile),
+			TaskPackSHA256:                    savedArtifactSHA256(runDir, tasklens.PackFile),
+			TaskStatusSHA256:                  savedArtifactSHA256(runDir, tasklens.StatusFile),
+			TaskRetrievalTraceSHA256:          savedArtifactSHA256(runDir, tasklens.TraceJSONFile),
+			TaskRetrievalTraceMarkdownSHA256:  savedArtifactSHA256(runDir, tasklens.TraceMarkdownFile),
+			InputPolicyVersion:                "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
 			ReportContract: data.FormatVersion,
 		},
 	}
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		return err
+	}
+	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
 		return err
 	}
 	return writeRunManifestAtomic(runDir, manifest)
@@ -806,6 +855,57 @@ func savedArtifactSHA256(runDir, name string) string {
 		return ""
 	}
 	return manifestSHA256(data)
+}
+
+func savedOrientationContextSelectionSHA256(runDir string) (string, error) {
+	path := filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("report manifest: inspect orientation context selection: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > llmbundle.MaxOrientationContextSelectionBytes {
+		return "", fmt.Errorf("report manifest: orientation context selection must be a bounded regular file")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open orientation context selection run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(root, llmbundle.OrientationContextSelectionFilename, llmbundle.MaxOrientationContextSelectionBytes)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: read orientation context selection: %w", err)
+	}
+	if _, err := llmbundle.DecodeOrientationContextSelection(data); err != nil {
+		return "", fmt.Errorf("report manifest: orientation context selection: %w", err)
+	}
+	return manifestSHA256(data), nil
+}
+
+func savedModelBundleSHA256(runDir string) (string, error) {
+	path := filepath.Join(runDir, "llm_bundle.json")
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("report manifest: inspect model bundle: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxManifestReportBytes {
+		return "", fmt.Errorf("report manifest: model bundle must be a bounded regular file")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open model bundle run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(root, "llm_bundle.json", maxManifestReportBytes)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: read model bundle: %w", err)
+	}
+	return manifestSHA256(data), nil
 }
 
 func validManifestLabel(value string) bool {

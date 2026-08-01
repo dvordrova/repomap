@@ -112,6 +112,55 @@ func TestBuildCompactBundle(t *testing.T) {
 	}
 }
 
+func TestBuildTracePreservesBelowCapEdgeBundleJSONAndWarnings(t *testing.T) {
+	edges := []gofacts.Edge{
+		{From: "example.com/fixture/z", To: "example.com/fixture/b"},
+		{From: "example.com/fixture/a", To: "example.com/fixture/c"},
+	}
+	s := snapshot.Snapshot{
+		RepoName: "edge-policy",
+		GoFacts: &gofacts.Facts{
+			PackagesCount: 2,
+			InternalEdges: edges,
+		},
+	}
+	opts := Options{MaxEdges: 3, SourceSignals: []sourcesignals.Signal{}}
+	bundle := Build(s, nil, opts)
+	traced, trace := BuildWithTrace(s, nil, opts)
+	bundleJSON, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracedJSON, err := json.Marshal(traced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON, err := json.Marshal(Bundle{
+		RepoName: "edge-policy",
+		Go: goSection{
+			PackagesCount:         2,
+			ModuleSummaries:       []moduleSummaryCompact{},
+			Entrypoints:           []entrypointCompact{},
+			OrientationCandidates: []gofacts.OrientationCandidate{},
+			ImportantEdges: []gofacts.Edge{
+				{From: "example.com/fixture/a", To: "example.com/fixture/c"},
+				{From: "example.com/fixture/z", To: "example.com/fixture/b"},
+			},
+		},
+		KnownDocs:            []string{},
+		ProviderAllowedPaths: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(bundleJSON) != string(wantJSON) || string(tracedJSON) != string(wantJSON) {
+		t.Fatalf("below-cap edge bundle bytes changed:\nordinary: %s\ntraced:   %s\nwant:     %s", bundleJSON, tracedJSON, wantJSON)
+	}
+	if len(bundle.Warnings) != 0 || len(traced.Warnings) != 0 || trace.Counts.Edges.Omitted != 0 {
+		t.Fatalf("below-cap edge warnings/trace changed: ordinary=%#v traced=%#v counts=%#v", bundle.Warnings, traced.Warnings, trace.Counts.Edges)
+	}
+}
+
 func TestBuildUsesProvidedSourceSignalsWithoutRescanning(t *testing.T) {
 	t.Parallel()
 

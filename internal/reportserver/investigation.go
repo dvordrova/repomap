@@ -396,12 +396,19 @@ func (h *handler) readAuthorizedRun(runID string, root *os.Root) (runRecord, err
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		return runRecord{}, err
 	}
+	runDir := filepath.Join(h.runsDir, runID)
+	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
+		return runRecord{}, err
+	}
+	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
+		return runRecord{}, err
+	}
 	analysisRoot, err := manifest.ResolveAnalysisRoot()
 	if err != nil {
 		return runRecord{}, err
 	}
 	snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)
-	if snapshotErr != nil && manifest.Version >= report.CurrentRunManifestVersion {
+	if snapshotErr != nil {
 		return runRecord{}, fmt.Errorf("invalid source authority")
 	}
 	repoPath := analysisRoot

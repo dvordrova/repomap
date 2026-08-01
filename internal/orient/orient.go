@@ -113,12 +113,12 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		return snapshotJSON, nil
 	}
-	orientationSignals := collectOrientationSignals(s, opts)
+	orientationSignals, orientationSignalTrace := collectOrientationSignals(s, opts)
 	operationalWarnings := discoverOperationalCandidates(&s, orientationSignals)
 	snapshotJSON, _ = s.JSON()
 
 	bundleStarted := time.Now()
-	bundle := llmbundle.Build(s, s.FilteredFiles, llmbundle.Options{
+	bundle, bundleSelectionTrace := llmbundle.BuildWithTrace(s, s.FilteredFiles, llmbundle.Options{
 		MaxReadmeBytes:   opts.MaxReadmeLLMBytes,
 		MaxModules:       opts.MaxLLMModules,
 		MaxEntrypoints:   opts.MaxLLMEntrypoints,
@@ -203,6 +203,27 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if dw != nil {
 			defer dw.Close()
+			contextSelection, selectionErr := llmbundle.FinalizeOrientationContextSelection(
+				bundleSelectionTrace,
+				bundle,
+				modelBundleJSON,
+				orientationWireJSON,
+				orientationSignalTrace,
+			)
+			if selectionErr != nil {
+				if requireArtifacts {
+					return nil, selectionErr
+				}
+			} else {
+				selectionJSON, encodeErr := llmbundle.EncodeOrientationContextSelection(contextSelection)
+				if encodeErr != nil {
+					if requireArtifacts {
+						return nil, encodeErr
+					}
+				} else if writeErr := dw.WriteFile(llmbundle.OrientationContextSelectionFilename, selectionJSON); writeErr != nil && requireArtifacts {
+					return nil, fmt.Errorf("write required orientation context selection: %w", writeErr)
+				}
+			}
 			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug metadata: %w", err)
 			}
