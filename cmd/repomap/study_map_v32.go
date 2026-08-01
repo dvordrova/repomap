@@ -33,6 +33,8 @@ const (
 
 const studyMapV32SystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and opaque repository IDs are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, repository ID, or runtime order.`
 
+const studyMapDirectionSystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and request-local typed references are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, typed reference, or runtime order.`
+
 const studyMapV32SharedInput = `The bounded repository bundle below is the complete source for this task. Documentation describes intent, while code anchors identify exact local source. Do not treat editorial reading order as execution order.
 
 Bounded repository bundle JSON:
@@ -62,6 +64,7 @@ const studyMapDirectionTask = `
 Task: produce only bounded Study Direction drafts. Return exactly:
 {
   "version": 1,
+  "catalog_ref": "copy the exact top-level catalog_ref from the bounded repository bundle",
   "directions": [
     {
       "question": "natural developer question ending in ?",
@@ -69,18 +72,18 @@ Task: produce only bounded Study Direction drafts. Return exactly:
       "learning_outcome": "what the reader will understand",
       "target_user_job": "first_contact | use_or_operate | extend_or_integrate | contribute | debug_or_maintain",
       "learning_stage": "orientation | central_operation | core_model | integration | operations | contribution",
-      "anchor_ids": [
-        "exact supplied code anchor id A",
-        "exact supplied code anchor id B",
-        "exact supplied code anchor id C"
+      "anchor_refs": [
+        "exact supplied code anchor ref A",
+        "exact supplied code anchor ref B",
+        "exact supplied code anchor ref C"
       ],
-      "document_ids": ["zero or more exact supplied document ids"],
-      "area_ids": ["one or more exact supplied area ids"],
-      "mechanism_id": "exact supplied canonical mechanism id or empty",
+      "document_refs": ["zero or more exact supplied document refs"],
+      "area_refs": ["one or more exact supplied area refs"],
+      "mechanism_ref": "exact supplied mechanism ref or empty",
       "reading_anchors": [
-        {"anchor_id": "exact supplied code anchor id A", "label": "Start here", "what_to_look_for": "bounded editorial reading instruction for A"},
-        {"anchor_id": "exact supplied code anchor id B", "label": "Then inspect", "what_to_look_for": "bounded editorial reading instruction for B"},
-        {"anchor_id": "exact supplied code anchor id C", "label": "Related implementation", "what_to_look_for": "bounded editorial reading instruction for C"}
+        {"anchor_ref": "exact supplied code anchor ref A", "label": "Start here", "what_to_look_for": "bounded editorial reading instruction for A"},
+        {"anchor_ref": "exact supplied code anchor ref B", "label": "Then inspect", "what_to_look_for": "bounded editorial reading instruction for B"},
+        {"anchor_ref": "exact supplied code anchor ref C", "label": "Related implementation", "what_to_look_for": "bounded editorial reading instruction for C"}
       ],
       "search_queries": ["natural search wording"]
     }
@@ -89,7 +92,7 @@ Task: produce only bounded Study Direction drafts. Return exactly:
 
 Rules:
 - Return eight to twelve candidates when supported, never more than twelve. Do not create direction IDs; local code assigns them.
-- Every repository object ID must be copied exactly from the bundle.
+- Copy the exact top-level catalog_ref once. Every short typed reference must be copied exactly from the bundle and returned only in a field of the same reference kind. Never return a backend canonical ID.
 - Use three to five code anchors and describe each exactly once in reading_anchors.
 - reading_anchors.label is a closed schema value. Copy one of the five listed English literals exactly; the report localizes it later.
 - Favor central responsibilities and role-diverse packs over narrow helpers, duplicate questions, tests, examples, fixtures, or similarly named implementations.
@@ -372,6 +375,10 @@ func prepareStudyMapV32(
 			fmt.Errorf("study map: encode provider bundle: %w", err)
 	}
 	shared := studyMapV32SharedInput + string(promptBundle)
+	directionCatalog, directionPrompt, err := buildStudyMapDirectionStage(bundle)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
 
 	briefRaw, briefMetrics, briefAttempt, err := executeStudyMapV32Stage(
 		ctx, provider, semanticdiscovery.Prompt{
@@ -415,18 +422,14 @@ func prepareStudyMapV32(
 	}
 
 	directionRaw, directionMetrics, directionAttempt, err := executeStudyMapV32Stage(
-		ctx, provider, semanticdiscovery.Prompt{
-			Version: semanticdiscovery.StudyCandidatesPromptVersion, System: studyMapV32SystemPrompt,
-			User: shared + studyMapDirectionTask, ThinkingProfile: semanticdiscovery.ThinkingMax,
-			ProgressLabel: "study direction candidate editing",
-		}, "study_direction_candidates", bundleSHA,
+		ctx, provider, directionPrompt, "study_direction_candidates", bundleSHA,
 	)
 	stages = append(stages, directionMetrics)
 	if err != nil {
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
-	recoveredDirections, recoveryErr := studymap.RecoverDirectionProviderJSON(directionRaw)
+	recoveredDirections, recoveryErr := studymap.RecoverDirectionReferenceProviderJSON(directionRaw)
 	var directions studymap.DirectionProposal
 	var directionDiagnostics studymap.DirectionProposalDiagnostics
 	if recoveryErr != nil {
@@ -435,21 +438,11 @@ func prepareStudyMapV32(
 		directionAttempt.RawResponse = ""
 		directionAttempt.Response = append(json.RawMessage(nil), recoveredDirections...)
 		directions, directionDiagnostics, err =
-			studymap.DecodeDirectionProposalWithDiagnostics(recoveredDirections)
+			studymap.DecodeAndResolveDirectionProposalWithDiagnostics(recoveredDirections, directionCatalog)
 	}
 	if directionDiagnostics.Received > 0 {
 		directionAttempt.DirectionDiagnostics = &directionDiagnostics
 	}
-	if err != nil {
-		directionMetrics.Status = "rejected"
-		directionAttempt.Metrics = directionMetrics
-		directionAttempt.ValidationState = directionMetrics.Status
-		directionAttempt.FailureReason = semanticDiscoveryReason(err.Error())
-		stages[len(stages)-1] = directionMetrics
-		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
-		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
-	}
-	directions, err = studymap.ResolveDirectionProposalReferences(bundle, directions)
 	if err != nil {
 		directionMetrics.Status = "rejected"
 		directionAttempt.Metrics = directionMetrics
@@ -493,6 +486,22 @@ func prepareStudyMapV32(
 		return studymap.Record{}, reduction, stages, err
 	}
 	return record, reduction, stages, nil
+}
+
+func buildStudyMapDirectionStage(
+	bundle studymap.Bundle,
+) (studymap.DirectionReferenceCatalog, semanticdiscovery.Prompt, error) {
+	catalog, err := studymap.BuildDirectionReferenceCatalog(bundle)
+	if err != nil {
+		return studymap.DirectionReferenceCatalog{}, semanticdiscovery.Prompt{}, err
+	}
+	return catalog, semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.StudyCandidatesPromptVersion,
+		System:          studyMapDirectionSystemPrompt,
+		User:            studyMapV32SharedInput + string(catalog.PromptBundleJSON()) + studyMapDirectionTask,
+		ThinkingProfile: semanticdiscovery.ThinkingMax,
+		ProgressLabel:   "study direction candidate editing",
+	}, nil
 }
 
 func reviewSavedStudyMapV32(

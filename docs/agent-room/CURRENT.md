@@ -1,15 +1,37 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/186-local-operational-entrypoint-absence.md
+    decisions/187-study-direction-request-local-typed-references.md
 
 Status:
-    Decision 186 active; truthful local operational entrypoint absence authorized
+    Decision 187 active; exact request-local Study direction references authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 187 changes only the Study direction candidate provider seam.
+    Backend-owned anchor, document, area, and mechanism identities are
+    projected as compact typed ordinal refs under one exact request-bound
+    catalog_ref. The response token is checked atomically; unknown, wrong-kind,
+    duplicate, cross-request, substituted, prefixed, compacted, and corrupted
+    item refs fail closed without fuzzy or string repair. One invalid candidate
+    retains valid siblings and records only a bounded position and closed code.
+    Canonical IDs are restored before existing normalization, review,
+    publication, and persistence, so valid canonical candidates, direction IDs,
+    and Study JSON remain byte-identical. The old unique-prefix resolver is
+    removed. The candidate prompt advances to v5; exact typed request bytes and
+    private catalog identity bind catalog/order plus prompt, response, and
+    validator contracts, so earlier candidate-stage identities miss without an
+    old reader or migration. The downstream per-direction review cache remains
+    on its existing v1 request/bundle/source identity and keeps one-fragment
+    reuse. Saved incomplete-Study projection rebuilds the same exact catalog
+    from the verified bundle and resolves only typed reading-anchor refs; it
+    does not read the earlier canonical-ID provider shape.
+    BriefShape, shape_area_ids, review prompt/response and splitting, candidate
+    composition/order/evidence, publication, report, UI, localization,
+    Architecture, Atlas, retries, clients, flags, and cache framework remain
+    unchanged.
     Decision 186 removes the blocked Decision 185 semantic fallback without
     rewriting its historical checkpoint. A local source-signal aggregate keeps
     a producer-owned entrypoint package when present and otherwise publishes an

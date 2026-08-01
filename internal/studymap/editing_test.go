@@ -185,69 +185,6 @@ func TestBriefShapeAcceptsOneExactAreaForSmallLibrary(t *testing.T) {
 	}
 }
 
-func TestResolveDirectionProposalReferencesExpandsOnlyUniquePrefixes(t *testing.T) {
-	t.Parallel()
-
-	bundle, legacy := studyMapFixture(t)
-	raw := rawDirectionsFromLegacy(legacy)
-	direction := raw.Directions[0]
-	oldAnchorID := direction.AnchorIDs[0]
-	fullAnchorID := "fact-12345678aaaaaaaa"
-	for index := range bundle.Anchors {
-		if bundle.Anchors[index].ID == oldAnchorID {
-			bundle.Anchors[index].ID = fullAnchorID
-		}
-	}
-	direction.AnchorIDs = append([]string(nil), direction.AnchorIDs...)
-	for index := range direction.AnchorIDs {
-		if direction.AnchorIDs[index] == oldAnchorID {
-			direction.AnchorIDs[index] = fullAnchorID
-		}
-	}
-	direction.ReadingAnchors = append([]ReadingAnchor(nil), direction.ReadingAnchors...)
-	for index := range direction.ReadingAnchors {
-		if direction.ReadingAnchors[index].AnchorID == oldAnchorID {
-			direction.ReadingAnchors[index].AnchorID = fullAnchorID
-		}
-	}
-	shortAnchorID := fullAnchorID[:minUniqueBundleReferencePrefixBytes]
-	direction.AnchorIDs[0] = shortAnchorID
-	for index := range direction.ReadingAnchors {
-		if direction.ReadingAnchors[index].AnchorID == fullAnchorID {
-			direction.ReadingAnchors[index].AnchorID = shortAnchorID
-		}
-	}
-
-	resolved, err := ResolveDirectionProposalReferences(bundle, DirectionProposal{
-		Version: DirectionProposalVersion, Directions: []DirectionCandidate{direction},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := resolved.Directions[0]
-	if got.AnchorIDs[0] != fullAnchorID {
-		t.Fatalf("anchor id = %q, want %q", got.AnchorIDs[0], fullAnchorID)
-	}
-	for _, reading := range got.ReadingAnchors {
-		if reading.AnchorID == shortAnchorID {
-			t.Fatalf("short reading anchor survived: %#v", reading)
-		}
-	}
-	if got.DirectionID == "" {
-		t.Fatal("resolved direction did not receive a local ID")
-	}
-
-	if _, err := resolveUniqueBundleReference(
-		"frf-12345678",
-		[]string{"frf-12345678aaaaaaaa", "frf-12345678bbbbbbbb"},
-	); err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatalf("ambiguous prefix error = %v", err)
-	}
-	if _, err := resolveUniqueBundleReference("frf-short", []string{"frf-short-and-valid"}); err == nil {
-		t.Fatal("short prefix was accepted")
-	}
-}
-
 func TestRecoverStudyProviderJSONBeforeStrictValidation(t *testing.T) {
 	t.Parallel()
 
@@ -789,29 +726,41 @@ func TestDecodeDirectionProposalRejectsItemsIndependentlyAndEnvelopeAtomically(
 	}
 }
 
-func TestDecodeIncompleteDirectionsRetainsResolvedStartsInProviderOrder(t *testing.T) {
+func TestDecodeIncompleteDirectionReferencesRetainsResolvedStartsInProviderOrder(t *testing.T) {
 	t.Parallel()
 
-	bundle, legacy := studyMapFixture(t)
-	base := rawDirectionsFromLegacy(legacy).Directions[0]
-	raw := DirectionProposal{Version: DirectionProposalVersion}
+	bundle, canonical := directionReferenceFixture(t)
+	catalog, err := BuildDirectionReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := directionReferenceProviderFixture(t, catalog, canonical).Directions[0]
+	raw := directionReferenceProviderResponseFixture{
+		Version: DirectionProposalVersion, CatalogRef: catalog.CatalogRef(),
+	}
 	for index := 0; index < MaxCandidates; index++ {
 		candidate := base
-		candidate.DirectionID = ""
 		candidate.Question = fmt.Sprintf(
 			"How does retained incomplete direction %d help a new contributor?",
 			index+1,
 		)
-		candidate.AnchorIDs = []string{"not-used-by-incomplete-projection"}
-		candidate.ReadingAnchors = []ReadingAnchor{{
-			AnchorID:      bundle.Anchors[index%len(bundle.Anchors)].ID,
+		candidate.AnchorRefs = []string{"not-used-by-incomplete-projection"}
+		anchorRef, err := catalog.ref(
+			directionReferenceAnchor,
+			bundle.Anchors[index%len(bundle.Anchors)].ID,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate.ReadingAnchors = []directionReferenceReadingAnchor{{
+			AnchorRef:     anchorRef,
 			Label:         "Start here",
 			WhatToLookFor: "Inspect the exact saved declaration and its local responsibility.",
 		}}
 		raw.Directions = append(raw.Directions, candidate)
 	}
 
-	got, diagnostics, err := DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	got, diagnostics, err := DecodeIncompleteDirectionReferences(mustEditingJSON(t, raw), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -831,23 +780,27 @@ func TestDecodeIncompleteDirectionsRetainsResolvedStartsInProviderOrder(t *testi
 	}
 }
 
-func TestDecodeIncompleteDirectionsCanonicalizesLocalizedReadingLabel(t *testing.T) {
+func TestDecodeIncompleteDirectionReferencesCanonicalizesLocalizedReadingLabel(t *testing.T) {
 	t.Parallel()
 
-	bundle, legacy := studyMapFixture(t)
-	candidate := rawDirectionsFromLegacy(legacy).Directions[0]
-	candidate.DirectionID = ""
-	candidate.ReadingAnchors = []ReadingAnchor{{
-		AnchorID:      bundle.Anchors[0].ID,
+	bundle, canonical := directionReferenceFixture(t)
+	catalog, err := BuildDirectionReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := directionReferenceProviderFixture(t, catalog, canonical)
+	candidate := response.Directions[0]
+	candidate.ReadingAnchors = []directionReferenceReadingAnchor{{
+		AnchorRef:     candidate.AnchorRefs[0],
 		Label:         "С чего начать",
 		WhatToLookFor: "Изучите точное сохранённое объявление.",
 	}}
-	raw := DirectionProposal{
-		Version:    DirectionProposalVersion,
-		Directions: []DirectionCandidate{candidate},
+	raw := directionReferenceProviderResponseFixture{
+		Version: DirectionProposalVersion, CatalogRef: catalog.CatalogRef(),
+		Directions: []directionReferenceProviderCandidateFixture{candidate},
 	}
 
-	got, diagnostics, err := DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	got, diagnostics, err := DecodeIncompleteDirectionReferences(mustEditingJSON(t, raw), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -857,7 +810,7 @@ func TestDecodeIncompleteDirectionsCanonicalizesLocalizedReadingLabel(t *testing
 	}
 
 	raw.Directions[0].ReadingAnchors[0].Label = "Platform-specific"
-	got, diagnostics, err = DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	got, diagnostics, err = DecodeIncompleteDirectionReferences(mustEditingJSON(t, raw), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,25 +823,32 @@ func TestDecodeIncompleteDirectionsCanonicalizesLocalizedReadingLabel(t *testing
 	}
 }
 
-func TestDecodeIncompleteDirectionsRejectsUnsafeCandidatesIndependently(t *testing.T) {
+func TestDecodeIncompleteDirectionReferencesRejectsUnsafeCandidatesIndependently(t *testing.T) {
 	t.Parallel()
 
-	bundle, legacy := studyMapFixture(t)
-	base := rawDirectionsFromLegacy(legacy).Directions[0]
-	valid := func(question, anchorID string) DirectionCandidate {
+	bundle, canonical := directionReferenceFixture(t)
+	catalog, err := BuildDirectionReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := directionReferenceProviderFixture(t, catalog, canonical).Directions[0]
+	valid := func(question, anchorID string) directionReferenceProviderCandidateFixture {
 		candidate := base
-		candidate.DirectionID = ""
 		candidate.Question = question
-		candidate.ReadingAnchors = []ReadingAnchor{{
-			AnchorID:      anchorID,
+		anchorRef := anchorID
+		if ref, refErr := catalog.ref(directionReferenceAnchor, anchorID); refErr == nil {
+			anchorRef = ref
+		}
+		candidate.ReadingAnchors = []directionReferenceReadingAnchor{{
+			AnchorRef:     anchorRef,
 			Label:         "Start here",
 			WhatToLookFor: "Inspect the exact saved declaration.",
 		}}
 		return candidate
 	}
-	raw := DirectionProposal{
-		Version: DirectionProposalVersion,
-		Directions: []DirectionCandidate{
+	raw := directionReferenceProviderResponseFixture{
+		Version: DirectionProposalVersion, CatalogRef: catalog.CatalogRef(),
+		Directions: []directionReferenceProviderCandidateFixture{
 			valid("How does the first incomplete direction help contributors?", bundle.Anchors[0].ID),
 			valid("How does "+strings.Repeat("oversized ", 128)+"metadata help?", bundle.Anchors[0].ID),
 			valid("How does an unresolved incomplete direction help contributors?", "unknown-anchor"),
@@ -897,7 +857,7 @@ func TestDecodeIncompleteDirectionsRejectsUnsafeCandidatesIndependently(t *testi
 	}
 	raw.Directions[2].ReadingAnchors[0].WhatToLookFor = "Then the system executes an unsupported runtime step."
 
-	got, diagnostics, err := DecodeIncompleteDirections(mustEditingJSON(t, raw), bundle)
+	got, diagnostics, err := DecodeIncompleteDirectionReferences(mustEditingJSON(t, raw), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}

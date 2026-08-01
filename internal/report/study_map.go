@@ -331,7 +331,7 @@ func replaySavedIncompleteStudy(
 	if err != nil || bundleSHA != attempt.BundleSHA256 {
 		return "incomplete study unavailable: attempt bundle hash mismatch"
 	}
-	directions, _, err := studymap.DecodeIncompleteDirections(attempt.Response, bundle)
+	directions, _, err := studymap.DecodeIncompleteDirectionReferences(attempt.Response, bundle)
 	if err != nil {
 		return fmt.Sprintf("incomplete study unavailable: %v", err)
 	}
