@@ -655,7 +655,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		DumpRedacted:              true,
 		RequireArtifacts:          dDir != "" && !*previewRequest,
 		DiscoverSurfaces:          *discoverSurfaces && artifactRun,
-		MaxLLMFiles:               researchPolicy.Orientation.MaxFiles,
+		MaxLLMFiles:               0,
 		MaxOrientationBundleBytes: researchPolicy.Orientation.MaxRequestBytes - (16 << 10),
 		MaxLocalDirectionFiles:    20,
 		MaxLLMEdges:               60,
@@ -1230,7 +1230,7 @@ func runOrient(args []string) error {
 	explainFlows := fs.Int("explain-flows", 0, "explain top N candidate flows")
 	flowBundlesOnly := fs.Bool("flow-bundles-only", false, "build flow bundles only")
 	strictSnapshot := fs.Bool("strict-snapshot", false, "fail when captured analyzed inputs change before report publication")
-	maxLLMFiles := fs.Int("max-llm-files", 150, "max files in LLM bundle")
+	maxLLMFiles := fs.Int("max-llm-files", 0, "explicit debug cap for files in the Orientation bundle")
 
 	if err := fs.Parse(args); err != nil {
 		return err

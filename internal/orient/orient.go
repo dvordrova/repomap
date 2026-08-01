@@ -118,11 +118,12 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	snapshotJSON, _ = s.JSON()
 
 	bundleStarted := time.Now()
+	maxOrientationFiles := orientationFileLimit(opts.MaxLLMFiles, len(s.FilteredFiles))
 	bundle, bundleSelectionTrace := llmbundle.BuildWithTrace(s, s.FilteredFiles, llmbundle.Options{
 		MaxReadmeBytes:   opts.MaxReadmeLLMBytes,
 		MaxModules:       opts.MaxLLMModules,
 		MaxEntrypoints:   opts.MaxLLMEntrypoints,
-		MaxFiles:         opts.MaxLLMFiles,
+		MaxFiles:         maxOrientationFiles,
 		MaxEdges:         opts.MaxLLMEdges,
 		MaxSignalTotal:   opts.MaxLLMSignals,
 		MaxSignalPerFile: opts.MaxLLMSignalsPerFile,
@@ -605,6 +606,16 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	text := formatHumanReadable(report, opts.DebugDir, runID)
 	return []byte(text), nil
+}
+
+func orientationFileLimit(explicitLimit, inputCount int) int {
+	if explicitLimit > 0 {
+		return explicitLimit
+	}
+	// The ordinary Orientation path is byte-bounded, not count-bounded. Every
+	// eligible candidate comes from FilteredFiles, so this input count is an
+	// exact upper bound without rerunning candidate selection here.
+	return max(1, inputCount)
 }
 
 func resolvePreparedOrientation(

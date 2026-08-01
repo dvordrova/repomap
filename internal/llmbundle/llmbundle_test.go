@@ -112,6 +112,89 @@ func TestBuildCompactBundle(t *testing.T) {
 	}
 }
 
+func TestCompleteCasdoorShapedCandidateCatalogFitsConfiguredBundleBudget(t *testing.T) {
+	const candidateCount = 834
+	files := make([]string, 0, candidateCount)
+	files = append(files, "cmd/casdoor/main.go", "controllers/user.go")
+	for index := 0; len(files) < candidateCount; index++ {
+		files = append(files, fmt.Sprintf("controllers/handler_%03d.go", index))
+	}
+	s := snapshot.Snapshot{
+		RepoName: "casdoor",
+		GoFacts: &gofacts.Facts{
+			Modules: []gofacts.ModuleFact{{
+				ModulePath: "github.com/casdoor/casdoor",
+				ModuleDir:  ".",
+			}},
+			EntrypointPackages: []gofacts.Entrypoint{{
+				ModulePath: "github.com/casdoor/casdoor",
+				ImportPath: "github.com/casdoor/casdoor/cmd/casdoor",
+				PackageDir: "cmd/casdoor",
+				Kind:       "primary_binary",
+				GoFiles:    []string{"main.go"},
+				Anchors: []gofacts.EntrypointAnchor{{
+					Version: gofacts.EntrypointAnchorVersion,
+					Kind:    gofacts.EntrypointAnchorGoMain,
+					Path:    "cmd/casdoor/main.go",
+					Line:    1,
+				}},
+			}},
+			InternalEdges: []gofacts.Edge{{
+				From: "github.com/casdoor/casdoor/cmd/casdoor",
+				To:   "github.com/casdoor/casdoor/controllers",
+			}},
+		},
+	}
+	bundle, trace := BuildWithTrace(s, files, Options{
+		MaxFiles:      len(files),
+		MaxBytes:      1_032_192,
+		SourceSignals: []sourcesignals.Signal{},
+	})
+	if trace.Counts.Candidates.Before != candidateCount || trace.Counts.Candidates.After != candidateCount ||
+		trace.Counts.Candidates.Omitted != 0 || trace.ByteFit.Applied || !trace.ByteFit.Fit ||
+		trace.ByteFit.Attempts != 1 {
+		t.Fatalf("complete catalog selection = counts %#v byte fit %#v", trace.Counts.Candidates, trace.ByteFit)
+	}
+	if len(bundle.CandidateFileIndex) != candidateCount || len(bundle.ProviderAllowedPaths) != candidateCount {
+		t.Fatalf("complete catalog sizes = candidates %d allowed %d", len(bundle.CandidateFileIndex), len(bundle.ProviderAllowedPaths))
+	}
+	var userFile *fileIndexEntry
+	for index := range bundle.CandidateFileIndex {
+		if bundle.CandidateFileIndex[index].Path == "controllers/user.go" {
+			userFile = &bundle.CandidateFileIndex[index]
+			break
+		}
+	}
+	if userFile == nil || userFile.ID != "file-5b366d4eacda4fd5" || userFile.Score != 130 {
+		t.Fatalf("controllers/user.go candidate = %#v", userFile)
+	}
+	encoded, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > 1_032_192 {
+		t.Fatalf("complete catalog bytes = %d, exceeds configured budget", len(encoded))
+	}
+}
+
+func TestCompleteCandidateUpperBoundPreservesSmallBundleBytes(t *testing.T) {
+	files := []string{"cmd/app/main.go", "internal/server/server.go", "README.md"}
+	s := snapshot.Snapshot{RepoName: "small", Readme: "small repository"}
+	debugCapped := Build(s, files, Options{MaxFiles: 250, SourceSignals: []sourcesignals.Signal{}})
+	complete := Build(s, files, Options{MaxFiles: len(files), SourceSignals: []sourcesignals.Signal{}})
+	debugJSON, err := json.Marshal(debugCapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeJSON, err := json.Marshal(complete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(completeJSON) != string(debugJSON) {
+		t.Fatalf("complete upper bound changed below-cap bundle bytes:\ncomplete: %s\ndebug:    %s", completeJSON, debugJSON)
+	}
+}
+
 func TestBuildTracePreservesBelowCapEdgeBundleJSONAndWarnings(t *testing.T) {
 	edges := []gofacts.Edge{
 		{From: "example.com/fixture/z", To: "example.com/fixture/b"},
