@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	OrientationContextSelectionFilename = "orientation_context_selection.v1.json"
-	OrientationContextSelectionVersion  = 1
+	OrientationContextSelectionFilename = "orientation_context_selection.v2.json"
+	OrientationContextSelectionVersion  = 2
 	MaxOrientationContextSelectionBytes = 4 * 1024 * 1024
 	maxSelectionCutoffs                 = 64
 	maxSelectionCutoffSamples           = 12
@@ -97,8 +97,10 @@ type BuildTrace struct {
 type OrientationContextSelection struct {
 	Version                 int                     `json:"version"`
 	CanonicalBundleSHA256   string                  `json:"canonical_bundle_sha256"`
+	PersistedBundleSHA256   string                  `json:"persisted_bundle_sha256"`
 	TypedWireSHA256         string                  `json:"typed_wire_sha256"`
 	CanonicalBundleBytes    int                     `json:"canonical_bundle_bytes"`
+	PersistedBundleBytes    int                     `json:"persisted_bundle_bytes"`
 	TypedWireBytes          int                     `json:"typed_wire_bytes"`
 	ConfiguredCaps          SelectionCaps           `json:"configured_caps"`
 	EffectiveCaps           SelectionCaps           `json:"effective_caps"`
@@ -115,11 +117,12 @@ func FinalizeOrientationContextSelection(
 	trace BuildTrace,
 	bundle Bundle,
 	canonicalBundleJSON []byte,
+	persistedBundleBytes []byte,
 	typedWireJSON []byte,
 	signalScan sourcesignals.ScanTrace,
 ) (OrientationContextSelection, error) {
-	if !json.Valid(canonicalBundleJSON) || !json.Valid(typedWireJSON) {
-		return OrientationContextSelection{}, fmt.Errorf("orientation context selection: bundle and wire must be valid json")
+	if !json.Valid(canonicalBundleJSON) || len(persistedBundleBytes) == 0 || !json.Valid(typedWireJSON) {
+		return OrientationContextSelection{}, fmt.Errorf("orientation context selection: canonical bundle and wire must be valid json and persisted bundle must be non-empty")
 	}
 	selected := candidateSelectionRows(bundle.CandidateFileIndex)
 	if !equalCandidateSelectionRows(selected, trace.SelectedCandidates) {
@@ -141,8 +144,10 @@ func FinalizeOrientationContextSelection(
 	manifest := OrientationContextSelection{
 		Version:               OrientationContextSelectionVersion,
 		CanonicalBundleSHA256: selectionSHA256(canonicalBundleJSON),
+		PersistedBundleSHA256: selectionSHA256(persistedBundleBytes),
 		TypedWireSHA256:       selectionSHA256(typedWireJSON),
 		CanonicalBundleBytes:  len(canonicalBundleJSON),
+		PersistedBundleBytes:  len(persistedBundleBytes),
 		TypedWireBytes:        len(typedWireJSON),
 		ConfiguredCaps:        trace.ConfiguredCaps,
 		EffectiveCaps:         trace.EffectiveCaps,
@@ -272,8 +277,10 @@ func (manifest OrientationContextSelection) Validate() error {
 	if manifest.Version != OrientationContextSelectionVersion {
 		return fmt.Errorf("orientation context selection: unsupported version")
 	}
-	if !validSelectionSHA256(manifest.CanonicalBundleSHA256) || !validSelectionSHA256(manifest.TypedWireSHA256) ||
-		manifest.CanonicalBundleBytes <= 0 || manifest.TypedWireBytes <= 0 {
+	if !validSelectionSHA256(manifest.CanonicalBundleSHA256) ||
+		!validSelectionSHA256(manifest.PersistedBundleSHA256) ||
+		!validSelectionSHA256(manifest.TypedWireSHA256) ||
+		manifest.CanonicalBundleBytes <= 0 || manifest.PersistedBundleBytes <= 0 || manifest.TypedWireBytes <= 0 {
 		return fmt.Errorf("orientation context selection: invalid bundle or wire identity")
 	}
 	if err := validateSelectionCaps(manifest.ConfiguredCaps); err != nil {

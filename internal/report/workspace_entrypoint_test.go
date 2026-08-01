@@ -106,7 +106,7 @@ func TestWorkspaceEntrypointProjectionPreservesLegacyBytesAndConsumers(t *testin
 	}
 	if CurrentFormatVersion != 26 ||
 		SemanticSearchIndexVersion != 5 ||
-		CurrentRunManifestVersion != 5 {
+		CurrentRunManifestVersion != 6 {
 		t.Fatalf(
 			"wire versions changed: report=%d search=%d manifest=%d",
 			CurrentFormatVersion,

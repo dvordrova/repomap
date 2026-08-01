@@ -1,6 +1,8 @@
 package debugdump
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +10,83 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestWriteLLMBundleWithSidecarBindsExactPreparedBytes(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		redacted      bool
+		input         []byte
+		wantDifferent bool
+	}{
+		{
+			name:          "redaction changes persisted bundle",
+			redacted:      true,
+			input:         []byte(`{"readme":"API_KEY=actual-secret-value"}` + "\n"),
+			wantDifferent: true,
+		},
+		{
+			name:     "non-redacted bundle stays byte exact",
+			input:    []byte(`{"repo_name":"exact"}` + "\n"),
+			redacted: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			writer, err := NewWriter(t.TempDir(), "bundle-sidecar", test.redacted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+			var callbackBytes []byte
+			err = writer.WriteLLMBundleWithSidecar(
+				test.input,
+				"bundle_identity.json",
+				func(saved []byte) ([]byte, error) {
+					callbackBytes = append([]byte(nil), saved...)
+					digest := sha256.Sum256(saved)
+					return json.Marshal(struct {
+						SHA256 string `json:"sha256"`
+						Bytes  int    `json:"bytes"`
+					}{SHA256: fmt.Sprintf("%x", digest), Bytes: len(saved)})
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := os.ReadFile(filepath.Join(writer.RunDir(), "llm_bundle.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(callbackBytes, saved) {
+				t.Fatal("sidecar callback did not observe the exact persisted bundle bytes")
+			}
+			if test.wantDifferent == bytes.Equal(saved, test.input) {
+				t.Fatalf("persisted bundle change = %v, want %v", !bytes.Equal(saved, test.input), test.wantDifferent)
+			}
+			if test.redacted && bytes.Contains(saved, []byte("actual-secret-value")) {
+				t.Fatalf("persisted bundle leaked the redaction-changing value: %s", saved)
+			}
+			var sidecar struct {
+				SHA256 string `json:"sha256"`
+				Bytes  int    `json:"bytes"`
+			}
+			sidecarJSON, err := os.ReadFile(filepath.Join(writer.RunDir(), "bundle_identity.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(sidecarJSON, &sidecar); err != nil {
+				t.Fatal(err)
+			}
+			digest := sha256.Sum256(saved)
+			if sidecar.SHA256 != fmt.Sprintf("%x", digest) || sidecar.Bytes != len(saved) {
+				t.Fatalf("sidecar identity = %#v, want exact saved bundle hash/length", sidecar)
+			}
+		})
+	}
+}
 
 func TestNewWriterCreatesDir(t *testing.T) {
 	dir := t.TempDir()

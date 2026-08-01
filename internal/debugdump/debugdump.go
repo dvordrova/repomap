@@ -165,8 +165,19 @@ func (w *Writer) WriteSnapshot(snapshotJSON []byte) error {
 	return w.WriteFile("snapshot.json", snapshotJSON)
 }
 
-func (w *Writer) WriteLLMBundle(bundleJSON []byte) error {
-	return w.WriteFile("llm_bundle.json", bundleJSON)
+// WriteLLMBundleWithSidecar writes the exact persisted bundle bytes and a
+// producer-built sidecar derived from those same post-redaction bytes.
+func (w *Writer) WriteLLMBundleWithSidecar(
+	bundleJSON []byte,
+	sidecarName string,
+	buildSidecar func([]byte) ([]byte, error),
+) error {
+	return w.writeRootFileWithSidecar(
+		"llm_bundle.json",
+		bundleJSON,
+		sidecarName,
+		buildSidecar,
+	)
 }
 
 func (w *Writer) WriteLLMRequest(requestJSON []byte) error {
@@ -190,24 +201,40 @@ func (w *Writer) WriteOrientationReportWithSidecar(
 	sidecarName string,
 	buildSidecar func([]byte) ([]byte, error),
 ) error {
+	return w.writeRootFileWithSidecar(
+		"orientation_report.json",
+		reportJSON,
+		sidecarName,
+		buildSidecar,
+	)
+}
+
+func (w *Writer) writeRootFileWithSidecar(
+	primaryName string,
+	primaryJSON []byte,
+	sidecarName string,
+	buildSidecar func([]byte) ([]byte, error),
+) error {
 	if w == nil || w.root == nil {
 		return fmt.Errorf("debug writer is closed")
 	}
 	if buildSidecar == nil {
-		return fmt.Errorf("debug orientation sidecar builder is required")
+		return fmt.Errorf("debug sidecar builder is required")
 	}
-	preparedReport := reportJSON
+	preparedPrimary := primaryJSON
 	if w.Redacted {
-		preparedReport = redactJSON(preparedReport)
+		preparedPrimary = redactJSON(preparedPrimary)
 	}
-	sidecar, err := buildSidecar(preparedReport)
+	// The callback may retain or mutate its argument. Give it an exact copy so
+	// the prepared primary remains the immutable write authority.
+	sidecar, err := buildSidecar(append([]byte(nil), preparedPrimary...))
 	if err != nil {
 		return fmt.Errorf("build %s: %w", sidecarName, err)
 	}
 	if w.Redacted {
 		sidecar = redactJSON(sidecar)
 	}
-	if err := w.writePreparedRootFile("orientation_report.json", preparedReport); err != nil {
+	if err := w.writePreparedRootFile(primaryName, preparedPrimary); err != nil {
 		return err
 	}
 	return w.writePreparedRootFile(sidecarName, sidecar)

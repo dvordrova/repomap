@@ -22,8 +22,10 @@ func writeOrientationSelectionFixture(t *testing.T, runDir string, canonicalBund
 	artifact, err := llmbundle.EncodeOrientationContextSelection(llmbundle.OrientationContextSelection{
 		Version:               llmbundle.OrientationContextSelectionVersion,
 		CanonicalBundleSHA256: fmt.Sprintf("%x", sha256.Sum256(canonicalBundle)),
+		PersistedBundleSHA256: fmt.Sprintf("%x", sha256.Sum256(canonicalBundle)),
 		TypedWireSHA256:       fmt.Sprintf("%x", sha256.Sum256(typedWire)),
 		CanonicalBundleBytes:  len(canonicalBundle),
+		PersistedBundleBytes:  len(canonicalBundle),
 		TypedWireBytes:        len(typedWire),
 		ConfiguredCaps:        caps,
 		EffectiveCaps:         caps,

@@ -281,9 +281,8 @@ func main() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonicalBundle := []byte(strings.TrimSuffix(string(bundleBytes), "\n"))
 	var bundle llmbundle.Bundle
-	if err := json.Unmarshal(canonicalBundle, &bundle); err != nil {
+	if err := json.Unmarshal(bundleBytes, &bundle); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := buildOrientationReferenceCatalog(bundle)
@@ -294,10 +293,12 @@ func main() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundleDigest := sha256.Sum256(canonicalBundle)
+	bundleDigest := sha256.Sum256(bundleBytes)
 	wireDigest := sha256.Sum256(typedWire)
 	if manifest.CanonicalBundleSHA256 != hex.EncodeToString(bundleDigest[:]) ||
-		manifest.CanonicalBundleBytes != len(canonicalBundle) ||
+		manifest.CanonicalBundleBytes != len(bundleBytes) ||
+		manifest.PersistedBundleSHA256 != hex.EncodeToString(bundleDigest[:]) ||
+		manifest.PersistedBundleBytes != len(bundleBytes) ||
 		manifest.TypedWireSHA256 != hex.EncodeToString(wireDigest[:]) ||
 		manifest.TypedWireBytes != len(typedWire) {
 		t.Fatalf("selection identity = %#v", manifest)
