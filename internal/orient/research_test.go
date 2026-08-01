@@ -22,7 +22,7 @@ import (
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
-func acceptCachedOrientation([]byte) error { return nil }
+func acceptCachedOrientation([]byte) (orientationPart, error) { return orientationPart{}, nil }
 
 func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	requests := 0
@@ -151,16 +151,24 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	validate := func(raw []byte) error {
+	rejectedPreparations := 0
+	acceptedPreparations := 0
+	prepare := func(raw []byte) (orientationPart, string, error) {
 		if string(raw) != `{"fresh":true}` {
-			return io.ErrUnexpectedEOF
+			rejectedPreparations++
+			return orientationPart{}, "response_validation_failed", io.ErrUnexpectedEOF
 		}
-		return nil
+		acceptedPreparations++
+		return orientationPart{ProjectGuess: "fresh"}, "", nil
 	}
 
 	call, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test",
-		bundleJSON, requestJSON, true, validate,
+		bundleJSON, requestJSON, true,
+		func(raw []byte) (orientationPart, error) {
+			prepared, _, err := prepare(raw)
+			return prepared, err
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +176,21 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 	if requests != 1 || call.Metrics.CacheHit || call.Metrics.SemanticCalls != 1 ||
 		string(call.Raw) != `{"fresh":true}` {
 		t.Fatalf("self-healed orientation = requests %d, call %#v", requests, call)
+	}
+	if rejectedPreparations != 1 || acceptedPreparations != 0 || call.Prepared != nil {
+		t.Fatalf(
+			"preparations before accepted live response = rejected %d, accepted %d, prepared %#v",
+			rejectedPreparations,
+			acceptedPreparations,
+			call.Prepared,
+		)
+	}
+	accepted, _, err := resolvePreparedOrientation(call, prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acceptedPreparations != 1 || accepted.ProjectGuess != "fresh" {
+		t.Fatalf("accepted live preparation = count %d, result %#v", acceptedPreparations, accepted)
 	}
 	if _, found, err := modelresearch.LoadStageResponse(cacheInput); err != nil || found {
 		t.Fatalf("rejected cache before validated save = found %t, err %v", found, err)
@@ -177,13 +200,29 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 	}
 	replayed, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test",
-		bundleJSON, requestJSON, true, validate,
+		bundleJSON, requestJSON, true,
+		func(raw []byte) (orientationPart, error) {
+			prepared, _, err := prepare(raw)
+			return prepared, err
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests != 1 || !replayed.Metrics.CacheHit || replayed.Metrics.SemanticCalls != 0 {
+	if requests != 1 || !replayed.Metrics.CacheHit || replayed.Metrics.SemanticCalls != 0 ||
+		replayed.Prepared == nil {
 		t.Fatalf("valid warm orientation = requests %d, call %#v", requests, replayed)
+	}
+	warm, _, err := resolvePreparedOrientation(replayed, prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acceptedPreparations != 2 || warm.ProjectGuess != "fresh" {
+		t.Fatalf(
+			"warm preparation reuse = accepted preparations %d, result %#v",
+			acceptedPreparations,
+			warm,
+		)
 	}
 }
 

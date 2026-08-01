@@ -24,6 +24,7 @@ import (
 
 type orientationCall struct {
 	Raw        []byte
+	Prepared   *orientationPart
 	Metrics    modelresearch.StageMetrics
 	CacheInput modelresearch.StageCacheInput
 	SaveCache  bool
@@ -56,7 +57,7 @@ func obtainOrientation(
 	bundleJSON []byte,
 	requestJSON []byte,
 	useCache bool,
-	validateCached func([]byte) error,
+	prepareCached func([]byte) (orientationPart, error),
 ) (orientationCall, error) {
 	call := orientationCall{Metrics: modelresearch.StageMetrics{
 		Stage: "orientation", Status: "prepared", RequestBytes: len(requestJSON),
@@ -78,14 +79,17 @@ func obtainOrientation(
 			return call, fmt.Errorf("orientation cache: %w", err)
 		}
 		if found {
-			if validateCached == nil {
+			if prepareCached == nil {
 				return call, fmt.Errorf("orientation cache: semantic validator is required")
 			}
-			if err := validateCached(cached.Content); err != nil {
+			prepared, prepareErr := prepareCached(cached.Content)
+			if prepareErr != nil {
 				if err := modelresearch.InvalidateStageResponse(call.CacheInput); err != nil {
 					return call, fmt.Errorf("orientation cache: invalidate rejected hit: %w", err)
 				}
 				found = false
+			} else {
+				call.Prepared = &prepared
 			}
 		}
 		if found {

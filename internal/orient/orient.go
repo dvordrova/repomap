@@ -407,9 +407,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		call, err := obtainOrientation(
 			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
 			modelBundleJSON, requestJSON, !opts.NoCache,
-			func(raw []byte) error {
-				_, _, err := prepareOrientation(raw)
-				return err
+			func(raw []byte) (orientationPart, error) {
+				prepared, _, err := prepareOrientation(raw)
+				return prepared, err
 			},
 		)
 		raw := call.Raw
@@ -459,7 +459,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 
-		or, responseFailureState, responseErr := prepareOrientation(raw)
+		or, responseFailureState, responseErr := resolvePreparedOrientation(call, prepareOrientation)
 		if responseErr != nil {
 			attempt.State = responseFailureState
 			if dw != nil {
@@ -598,6 +598,16 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	text := formatHumanReadable(report, opts.DebugDir, runID)
 	return []byte(text), nil
+}
+
+func resolvePreparedOrientation(
+	call orientationCall,
+	prepare func([]byte) (orientationPart, string, error),
+) (orientationPart, string, error) {
+	if call.Prepared != nil {
+		return *call.Prepared, "", nil
+	}
+	return prepare(call.Raw)
 }
 
 func writeOrientationFailureArtifacts(
