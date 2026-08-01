@@ -212,19 +212,23 @@ func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	responseRaw, err := json.Marshal(studymap.DirectionProposal{
-		Version: studymap.DirectionProposalVersion,
-		Directions: []studymap.DirectionCandidate{{
-			Question:        "Как участнику начать изучение результата fixture?",
-			WhyItMatters:    "Это указывает на точное объявление production-кода для изучения.",
-			LearningOutcome: "Читатель сможет найти сохранённую реализацию результата.",
-			TargetJob:       studymap.JobFirstContact,
-			LearningStage:   studymap.StageOrientation,
-			AnchorIDs:       []string{bundle.Anchors[2].ID},
-			ReadingAnchors: []studymap.ReadingAnchor{{
-				AnchorID:      bundle.Anchors[2].ID,
-				Label:         "С чего начать",
-				WhatToLookFor: "Изучите объявление и его локальную ответственность.",
+	catalog, err := studymap.BuildDirectionReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseRaw, err := json.Marshal(map[string]any{
+		"version": 1, "catalog_ref": catalog.CatalogRef(),
+		"directions": []any{map[string]any{
+			"question":         "Как участнику начать изучение результата fixture?",
+			"why_it_matters":   "Это указывает на точное объявление production-кода для изучения.",
+			"learning_outcome": "Читатель сможет найти сохранённую реализацию результата.",
+			"target_user_job":  studymap.JobFirstContact,
+			"learning_stage":   studymap.StageOrientation,
+			"anchor_refs":      []string{"a3"},
+			"reading_anchors": []any{map[string]any{
+				"anchor_ref":       "a3",
+				"label":            "С чего начать",
+				"what_to_look_for": "Изучите объявление и его локальную ответственность.",
 			}},
 		}},
 	})

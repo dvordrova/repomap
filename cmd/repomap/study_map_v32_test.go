@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,13 +40,61 @@ func TestStudyDirectionPromptExampleMatchesCompleteAnchorContract(t *testing.T) 
 	t.Parallel()
 
 	for _, suffix := range []string{"A", "B", "C"} {
-		placeholder := "exact supplied code anchor id " + suffix
+		placeholder := "exact supplied code anchor ref " + suffix
 		if strings.Count(studyMapDirectionTask, placeholder) != 2 {
 			t.Fatalf("Study prompt placeholder %q must appear once in anchor_ids and once in reading_anchors", placeholder)
 		}
 	}
-	if got := strings.Count(studyMapDirectionTask, `{"anchor_id":`); got != 3 {
+	if got := strings.Count(studyMapDirectionTask, `{"anchor_ref":`); got != 3 {
 		t.Fatalf("Study prompt reading-anchor examples = %d, want 3", got)
+	}
+}
+
+func TestStudyDirectionRequestIdentityBindsCatalogOrderAndContracts(t *testing.T) {
+	t.Parallel()
+
+	bundle, _ := studyMapV32ReviewFixture(t)
+	firstCatalog, firstPrompt, err := buildStudyMapDirectionStage(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRequest, err := json.Marshal(firstPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered := bundle
+	reordered.Anchors = append([]studymap.Anchor(nil), bundle.Anchors...)
+	reordered.Anchors[0], reordered.Anchors[1] = reordered.Anchors[1], reordered.Anchors[0]
+	secondCatalog, secondPrompt, err := buildStudyMapDirectionStage(reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRequest, err := json.Marshal(secondPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstHash := sha256.Sum256(firstRequest)
+	secondHash := sha256.Sum256(secondRequest)
+	if bytes.Equal(firstRequest, secondRequest) || firstHash == secondHash ||
+		firstCatalog.Digest() == secondCatalog.Digest() ||
+		firstCatalog.CatalogRef() == secondCatalog.CatalogRef() {
+		t.Fatal("exact catalog order did not drift the candidate request/content identity")
+	}
+	var identity struct {
+		CatalogContract   string `json:"catalog_contract"`
+		ResponseContract  string `json:"response_contract"`
+		ValidatorContract string `json:"validator_contract"`
+		PromptContract    string `json:"prompt_contract"`
+	}
+	if err := json.Unmarshal(firstCatalog.IdentityJSON(), &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity.CatalogContract != studymap.DirectionReferenceCatalogVersion ||
+		identity.ResponseContract != studymap.DirectionReferenceResponseVersion ||
+		identity.ValidatorContract != studymap.DirectionReferenceValidatorVersion ||
+		identity.PromptContract != semanticdiscovery.StudyCandidatesPromptVersion ||
+		firstPrompt.Version != semanticdiscovery.StudyCandidatesPromptVersion {
+		t.Fatalf("candidate request contract identity = %#v, prompt %q", identity, firstPrompt.Version)
 	}
 }
 
@@ -151,6 +200,261 @@ func TestStudyDirectionExampleShapeRetainsTwelveValidCandidates(t *testing.T) {
 		diagnostics.Rejected != 0 {
 		t.Fatalf("complete example-shaped directions = %d, diagnostics %#v", len(decoded.Directions), diagnostics)
 	}
+}
+
+type studyMapV32TypedRoundTripProvider struct {
+	t          *testing.T
+	bundle     studymap.Bundle
+	directions studymap.DirectionProposal
+
+	mu              sync.Mutex
+	briefSystem     string
+	briefPrompt     string
+	directionSystem string
+	directionPrompt string
+	reviewPrompts   []string
+}
+
+func (stub *studyMapV32TypedRoundTripProvider) SemanticDiscoveryPromptJSON(
+	prompt semanticdiscovery.Prompt,
+) ([]byte, error) {
+	return json.Marshal(prompt)
+}
+
+func (stub *studyMapV32TypedRoundTripProvider) DiscoverSemanticsMeasured(
+	_ context.Context,
+	prompt semanticdiscovery.Prompt,
+) (modelresearch.ProviderResult, error) {
+	stub.mu.Lock()
+	switch prompt.Version {
+	case semanticdiscovery.StudyBriefPromptVersion:
+		stub.briefSystem = prompt.System
+		stub.briefPrompt = prompt.User
+	case semanticdiscovery.StudyCandidatesPromptVersion:
+		stub.directionSystem = prompt.System
+		stub.directionPrompt = prompt.User
+	case semanticdiscovery.ReadingPackReviewPromptVersion:
+		stub.reviewPrompts = append(stub.reviewPrompts, prompt.User)
+	}
+	stub.mu.Unlock()
+
+	var raw []byte
+	var err error
+	switch prompt.Version {
+	case semanticdiscovery.StudyBriefPromptVersion:
+		anchorID := stub.bundle.Anchors[0].ID
+		raw, err = json.Marshal(studymap.BriefShapeProposal{
+			Version:        studymap.BriefShapeProposalVersion,
+			RepositoryType: studymap.RepositoryLibrary,
+			Brief: studymap.Brief{
+				WhatItIs:              studymap.BriefStatement{Text: "This is a bounded source fixture.", SupportIDs: []string{anchorID}},
+				Problem:               studymap.BriefStatement{Text: "It demonstrates exact Study editing.", SupportIDs: []string{anchorID}},
+				MainInput:             studymap.BriefStatement{Text: "A developer starts from source.", SupportIDs: []string{anchorID}},
+				CentralResponsibility: studymap.BriefStatement{Text: "The source defines bounded work.", SupportIDs: []string{anchorID}},
+				ObservableResult:      studymap.BriefStatement{Text: "The source exposes a result.", SupportIDs: []string{anchorID}},
+			},
+			ShapeAreaIDs: []string{stub.bundle.Areas[0].ID},
+		})
+	case semanticdiscovery.StudyCandidatesPromptVersion:
+		raw, err = studyMapTypedDirectionResponse(stub.t, prompt.User, stub.bundle, stub.directions)
+	case semanticdiscovery.ReadingPackReviewPromptVersion:
+		const marker = "Fixed bounded review bundle JSON:\n"
+		markerIndex := strings.LastIndex(prompt.User, marker)
+		if markerIndex < 0 {
+			return modelresearch.ProviderResult{}, errors.New("fixture review bundle is absent")
+		}
+		reviewBundle, decodeErr := studymap.DecodeReviewBundle(
+			[]byte(prompt.User[markerIndex+len(marker):]),
+		)
+		if decodeErr != nil {
+			return modelresearch.ProviderResult{}, decodeErr
+		}
+		proposal := studymap.ReviewProposal{
+			Version: studymap.ReviewProposalVersion, DirectionID: reviewBundle.DirectionID,
+		}
+		roles := []studymap.ReadingRole{
+			studymap.ReadingRolePublicOrCLIEntry,
+			studymap.ReadingRoleCoreOrchestration,
+			studymap.ReadingRoleEffectOrIntegrationBoundary,
+		}
+		for index, anchor := range reviewBundle.Anchors {
+			proposal.Reviews = append(proposal.Reviews, studymap.AnchorReview{
+				AnchorID: anchor.AnchorID, Fit: studymap.AnchorFitDirect,
+				SupportedObservation: "This fragment defines the selected function.",
+				Role:                 roles[index%len(roles)],
+				OverclaimReasons:     []studymap.OverclaimReason{studymap.OverclaimNone},
+			})
+		}
+		raw, err = json.Marshal(proposal)
+	default:
+		return modelresearch.ProviderResult{}, fmt.Errorf("unexpected prompt version %q", prompt.Version)
+	}
+	return modelresearch.ProviderResult{Content: raw, Attempts: 1}, err
+}
+
+func TestPrepareStudyMapV32UsesTypedDirectionSeamAndKeepsCanonicalPublication(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	provider := &studyMapV32TypedRoundTripProvider{
+		t: t, bundle: bundle, directions: directions,
+	}
+	runDir := t.TempDir()
+	record, reduction, stages, err := prepareStudyMapV32(
+		context.Background(), runDir, bundle, provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reduction.Proposed != len(directions.Directions) ||
+		reduction.Reviewed != len(directions.Directions) ||
+		len(record.Directions) == 0 || reduction.Selected != len(record.Directions) ||
+		len(stages) != 2+len(directions.Directions) {
+		t.Fatalf(
+			"typed Study proposed/reviewed/published/stages = %d/%d/%d/%d",
+			reduction.Proposed, reduction.Reviewed, len(record.Directions), len(stages),
+		)
+	}
+	savedDirections, err := os.ReadFile(filepath.Join(runDir, studyMapDirectionsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedDirections, err := studymap.DecodeNormalizedDirectionProposal(savedDirections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(replayedDirections, directions) {
+		t.Fatal("typed provider round-trip changed canonical candidates, IDs, or order")
+	}
+	provider.mu.Lock()
+	briefSystem := provider.briefSystem
+	briefPrompt := provider.briefPrompt
+	directionSystem := provider.directionSystem
+	directionPrompt := provider.directionPrompt
+	reviewPrompts := append([]string(nil), provider.reviewPrompts...)
+	provider.mu.Unlock()
+	promptBundle, err := json.Marshal(bundle.PromptBundle())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if briefSystem != studyMapV32SystemPrompt ||
+		briefPrompt != studyMapV32SharedInput+string(promptBundle)+studyMapBriefShapeTask ||
+		!strings.Contains(briefSystem, "opaque repository IDs") ||
+		strings.Contains(briefSystem, "request-local typed references") ||
+		!strings.Contains(briefPrompt, bundle.Anchors[0].ID) {
+		t.Fatal("BriefShape provider request changed at the candidate-only typed-reference seam")
+	}
+	if directionSystem != studyMapDirectionSystemPrompt ||
+		!strings.Contains(directionSystem, "request-local typed references") {
+		t.Fatal("direction provider request did not use its candidate-only typed-reference system prompt")
+	}
+	for _, anchor := range bundle.Anchors {
+		if strings.Contains(directionPrompt, anchor.ID) {
+			t.Fatalf("direction provider prompt leaked canonical anchor id %q", anchor.ID)
+		}
+	}
+	if !strings.Contains(directionPrompt, `"catalog_ref":"c_`) ||
+		!strings.Contains(directionPrompt, `"anchor_ref":"a1"`) {
+		t.Fatal("direction provider prompt omitted compact typed reference contract")
+	}
+	foundCanonicalReview := false
+	for _, prompt := range reviewPrompts {
+		if strings.Contains(prompt, directions.Directions[0].DirectionID) &&
+			strings.Contains(prompt, bundle.Anchors[0].ID) {
+			foundCanonicalReview = true
+			break
+		}
+	}
+	if len(reviewPrompts) != len(directions.Directions) || !foundCanonicalReview {
+		t.Fatal("per-direction review splitting or canonical review contract changed")
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("typed direction publication did not produce a valid canonical record: %v", err)
+	}
+}
+
+func studyMapTypedDirectionResponse(
+	t *testing.T,
+	user string,
+	bundle studymap.Bundle,
+	directions studymap.DirectionProposal,
+) ([]byte, error) {
+	t.Helper()
+	input := strings.TrimPrefix(user, studyMapV32SharedInput)
+	marker := strings.Index(input, "\n\nTask:")
+	if marker < 0 {
+		return nil, errors.New("typed direction fixture bundle marker is absent")
+	}
+	var wire struct {
+		CatalogRef string `json:"catalog_ref"`
+		Areas      []struct {
+			AreaRef string `json:"area_ref"`
+		} `json:"areas"`
+		Anchors []struct {
+			AnchorRef string `json:"anchor_ref"`
+		} `json:"code_anchors"`
+		Documents []struct {
+			DocumentRef string `json:"document_ref"`
+		} `json:"documents"`
+		Mechanisms []struct {
+			MechanismRef string `json:"mechanism_ref"`
+		} `json:"canonical_mechanisms"`
+	}
+	if err := json.Unmarshal([]byte(input[:marker]), &wire); err != nil {
+		return nil, err
+	}
+	anchors := make(map[string]string, len(bundle.Anchors))
+	for index, anchor := range bundle.Anchors {
+		anchors[anchor.ID] = wire.Anchors[index].AnchorRef
+	}
+	areas := make(map[string]string, len(bundle.Areas))
+	for index, area := range bundle.Areas {
+		areas[area.ID] = wire.Areas[index].AreaRef
+	}
+	documents := make(map[string]string, len(bundle.Documents))
+	for index, document := range bundle.Documents {
+		documents[document.ID] = wire.Documents[index].DocumentRef
+	}
+	mechanisms := make(map[string]string, len(bundle.Mechanisms))
+	for index, mechanism := range bundle.Mechanisms {
+		mechanisms[mechanism.ID] = wire.Mechanisms[index].MechanismRef
+	}
+	response := map[string]any{
+		"version": 1, "catalog_ref": wire.CatalogRef,
+		"directions": []any{},
+	}
+	items := make([]any, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		anchorRefs := make([]string, 0, len(direction.AnchorIDs))
+		for _, id := range direction.AnchorIDs {
+			anchorRefs = append(anchorRefs, anchors[id])
+		}
+		documentRefs := make([]string, 0, len(direction.DocumentIDs))
+		for _, id := range direction.DocumentIDs {
+			documentRefs = append(documentRefs, documents[id])
+		}
+		areaRefs := make([]string, 0, len(direction.AreaIDs))
+		for _, id := range direction.AreaIDs {
+			areaRefs = append(areaRefs, areas[id])
+		}
+		reading := make([]any, 0, len(direction.ReadingAnchors))
+		for _, item := range direction.ReadingAnchors {
+			reading = append(reading, map[string]any{
+				"anchor_ref": anchors[item.AnchorID], "label": item.Label,
+				"what_to_look_for": item.WhatToLookFor,
+			})
+		}
+		items = append(items, map[string]any{
+			"question": direction.Question, "why_it_matters": direction.WhyItMatters,
+			"learning_outcome": direction.LearningOutcome,
+			"target_user_job":  direction.TargetJob, "learning_stage": direction.LearningStage,
+			"anchor_refs": anchorRefs, "document_refs": documentRefs, "area_refs": areaRefs,
+			"mechanism_ref": mechanisms[direction.MechanismID], "reading_anchors": reading,
+			"search_queries": direction.SearchQueries,
+		})
+	}
+	response["directions"] = items
+	return json.Marshal(response)
 }
 
 func TestReviewStudyMapDirectionsReviewsEveryCandidateAndRecordsPreparationFailures(
