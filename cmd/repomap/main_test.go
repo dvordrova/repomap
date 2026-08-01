@@ -1746,7 +1746,8 @@ func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
-	if !strings.Contains(stderr.String(), "--no-secrets disables credential detection") {
+	if !strings.Contains(stderr.String(), "--no-secrets disables ordinary input credential detection") ||
+		!strings.Contains(stderr.String(), "mandatory provider-response and persisted-artifact credential scans remain active") {
 		t.Fatalf("unsafe override warning is absent:\n%s", stderr.String())
 	}
 	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))

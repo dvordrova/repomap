@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/190-byte-bounded-complete-orientation-candidate-catalog.md
+    decisions/191-safe-localization-response-attribution.md
 
 Status:
-    Decision 190 active; byte-bounded complete Orientation candidate catalog authorized
+    Decision 191 active; safe localization response attribution authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 191 preserves the mandatory raw DetectAlways rejection for every
+    localization provider response. Only after that rejection fires, the
+    existing strict response decoder may attribute unsafe material to one
+    decoded translation. The in-memory outcome and CLI warning expose a closed
+    unsafe-kind code and one-based batch-local translation index; zero means
+    strict decode or attribution was unavailable. Raw response, translated
+    text, stable field identity, path, endpoint, and error never enter the
+    diagnostic, status, cache, or another artifact. The saved localization
+    status and every prompt, request, provider, cache, retry, acceptance,
+    locale, canonical report, Study, Architecture, Atlas, UI, legacy, and
+    migration contract remain unchanged. The --no-secrets runtime warning now
+    distinguishes disabled ordinary input detection from mandatory
+    provider-response and persisted-artifact scans.
     Decision 190 removes the ordinary Orientation candidate count cutoff while
     preserving the existing request-byte boundary. The normal command path
     supplies no file-count override, and Orientation resolves that value to
