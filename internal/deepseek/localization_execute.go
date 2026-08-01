@@ -39,18 +39,11 @@ func (c *Client) ExecuteLocalizationRequest(
 		true,
 	)
 	if err != nil {
-		return modelresearch.ProviderResult{
-			Attempts:     attempts,
-			RequestBytes: len(evidence.Body) * attempts,
-		}, err
+		return providerResultFromCompletion(
+			completion,
+			attempts,
+			len(evidence.Body)*attempts,
+		), annotateResourceLimit(err, "localization", evidence.MaxTokens)
 	}
-	return modelresearch.ProviderResult{
-		Content:               completion.Content,
-		Attempts:              attempts,
-		RequestBytes:          len(evidence.Body) * attempts,
-		InputTokens:           completion.InputTokens,
-		OutputTokens:          completion.OutputTokens,
-		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
-		PromptCacheMissTokens: completion.PromptCacheMissTokens,
-	}, nil
+	return providerResultFromCompletion(completion, attempts, len(evidence.Body)*attempts), nil
 }

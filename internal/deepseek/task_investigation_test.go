@@ -21,7 +21,7 @@ func TestDefaultTaskInvestigationConfigIsStableAndEnvironmentIndependent(t *test
 		config.Endpoint != "https://api.deepseek.com/chat/completions" ||
 		config.AuthMode != authBearer ||
 		config.Timeout != defaultTimeout ||
-		config.MaxTokens != TaskInvestigationMinMaxTokens {
+		config.MaxTokens != defaultMaxTokens {
 		t.Fatalf("default Task Investigation config = %#v", config)
 	}
 }
@@ -45,7 +45,7 @@ func TestTaskInvestigationPromptUsesOneJSONThinkingRequestAndHidesDisplayName(t 
 		request.ReasoningEffort != tasklens.SynthesisThinkingProfile || request.Temperature != nil {
 		t.Fatalf("request envelope = %#v", request)
 	}
-	if request.MaxTokens != TaskInvestigationMinMaxTokens {
+	if request.MaxTokens != client.MaxTokens {
 		t.Fatalf("max_tokens = %d", request.MaxTokens)
 	}
 	if string(raw) == "" || containsJSONText(raw, "task-labelled-checkout") {

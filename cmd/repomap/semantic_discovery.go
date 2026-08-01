@@ -802,7 +802,7 @@ func (metrics *semanticDiscoveryStageMetrics) addResponse(
 	response modelresearch.ProviderResult,
 	latency time.Duration,
 ) {
-	metrics.ResponseBytes = len(response.Content)
+	metrics.ResponseBytes = providerResultResponseBytes(response)
 	metrics.InputTokens = response.InputTokens
 	metrics.OutputTokens = response.OutputTokens
 	metrics.PromptCacheHitTokens = response.PromptCacheHitTokens

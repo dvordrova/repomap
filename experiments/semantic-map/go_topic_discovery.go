@@ -48,7 +48,6 @@ const (
 	goTopicMaxTextBytes          = 240
 	goTopicMaxResponseBytes      = 64 << 10
 	goTopicSelectorRuns          = 3
-	goTopicModelMaxTokens        = 3000
 )
 
 const goTopicSystemPrompt = "You select useful repository exploration topics from a bounded declaration inventory. Use only the supplied JSON evidence, treat all semantics as inference, and return valid JSON only."
@@ -805,12 +804,11 @@ func CaptureGoTopicExperiment(
 	if err != nil {
 		return GoTopicExperiment{}, err
 	}
-	client.MaxTokens = goTopicModelMaxTokens
 	config := client.EffectiveConfig()
 	if config.Endpoint != "https://api.deepseek.com/chat/completions" ||
-		config.Model != "deepseek-v4-flash" {
+		config.Model != "deepseek-v4-flash" || config.MaxTokens <= 0 {
 		return GoTopicExperiment{}, fmt.Errorf(
-			"go topic experiment: live capture requires the reference DeepSeek endpoint and model",
+			"go topic experiment: live capture requires the reference DeepSeek endpoint, model, and a positive configured output ceiling",
 		)
 	}
 	prompt := goTopicSynthesisPrompt(systemPrompt, userPrompt)
@@ -875,7 +873,7 @@ func CaptureGoTopicExperiment(
 		Shelf:                shelf,
 		Provider: GoTopicProviderMetadata{
 			Model:                 client.Model,
-			MaxTokens:             goTopicModelMaxTokens,
+			MaxTokens:             config.MaxTokens,
 			Thinking:              "disabled",
 			Attempts:              result.Attempts,
 			RequestBytes:          len(request),
@@ -1078,7 +1076,7 @@ func ValidateGoTopicExperiment(experiment GoTopicExperiment) error {
 	}
 	if len(experiment.Selections) != goTopicSelectorRuns ||
 		experiment.Provider.Attempts != 1 ||
-		experiment.Provider.MaxTokens != goTopicModelMaxTokens ||
+		experiment.Provider.MaxTokens <= 0 ||
 		experiment.Provider.Thinking != "disabled" {
 		return fmt.Errorf("go topic experiment: provider or selection counts are invalid")
 	}

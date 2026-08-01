@@ -182,6 +182,7 @@ type studyMapReviewCompletion struct {
 	issue       studymap.ReviewIssue
 	valid       bool
 	unsafeKind  string
+	providerErr error
 }
 
 type studyMapReviewPreparationFailure struct {
@@ -201,7 +202,9 @@ type studyMapRunOptions struct {
 type studyMapStageExchange struct {
 	request           []byte
 	response          []byte
+	responseBytes     int
 	transportAttempts int
+	providerErr       error
 }
 
 func clearStudyMapV32Outputs(runDir string) error {
@@ -647,7 +650,9 @@ func executeStudyMapV32Stage(
 	exchange := studyMapStageExchange{
 		request:           append([]byte(nil), plan.request...),
 		response:          append([]byte(nil), result.Content...),
+		responseBytes:     providerResultResponseBytes(result),
 		transportAttempts: result.Attempts,
+		providerErr:       callErr,
 	}
 	metrics.addResponse(result, time.Since(started))
 	attempt.Metrics = metrics
@@ -694,14 +699,19 @@ func recordStudyMapStageSemanticExchange(
 		SemanticCalls:          1,
 		TransportAttempts:      exchange.transportAttempts,
 		Request:                exchange.request,
-		Response:               exchange.response,
+		Response: providerFailureContentForExchange(
+			exchange.providerErr,
+			exchange.response,
+		),
 	}
-	if len(exchange.response) == 0 {
+	if len(record.Response) == 0 {
 		unavailableCode := debugdump.SemanticUnavailableNoContent
 		if state == debugdump.SemanticStateCanceled {
 			unavailableCode = debugdump.SemanticUnavailableCanceled
 		}
-		record.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+		record.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: exchange.responseBytes,
+		}
 	}
 	writer.RecordSemanticExchange(record)
 }
@@ -844,6 +854,13 @@ func reviewStudyMapDirectionsWithOptions(
 	stages := make([]semanticDiscoveryStageMetrics, 0, len(ordered))
 	issues := make([]studymap.ReviewIssue, 0, len(ordered))
 	for _, completion := range ordered {
+		if isSemanticResourceLimit(completion.providerErr) {
+			return nil, nil, stages, issues, fmt.Errorf(
+				"study map: review %s provider call: %w",
+				completion.directionID,
+				completion.providerErr,
+			)
+		}
 		if completion.unsafeKind != "" {
 			return nil, nil, stages, issues, fmt.Errorf(
 				"study map: review provider response contains an obvious %s",
@@ -945,6 +962,7 @@ func executeStudyMapReview(
 			completion.attempt.Metrics = metrics
 			completion.attempt.ValidationState = metrics.Status
 			completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+			completion.providerErr = callErr
 			return completion
 		}
 		if cached {
@@ -976,7 +994,7 @@ func executeStudyMapReview(
 		completion.attempt.ValidationState = metrics.Status
 		completion.attempt.FailureReason = semanticDiscoveryReason(ctxErr.Error())
 		recordStudyMapReviewSemanticExchange(
-			exchangeWriter, task, result, cached,
+			exchangeWriter, task, result, callErr, cached,
 			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
 		)
 		return completion
@@ -986,8 +1004,9 @@ func executeStudyMapReview(
 		completion.attempt.Metrics = metrics
 		completion.attempt.ValidationState = metrics.Status
 		completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+		completion.providerErr = callErr
 		recordStudyMapReviewSemanticExchange(
-			exchangeWriter, task, result, cached,
+			exchangeWriter, task, result, callErr, cached,
 			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
 		)
 		return completion
@@ -999,7 +1018,7 @@ func executeStudyMapReview(
 		completion.attempt.FailureReason = "review_response_contains_obvious_credential"
 		completion.unsafeKind = kind
 		recordStudyMapReviewSemanticExchange(
-			exchangeWriter, task, result, cached,
+			exchangeWriter, task, result, nil, cached,
 			debugdump.SemanticStateRejected, debugdump.SemanticValidationSecret,
 		)
 		return completion
@@ -1024,7 +1043,7 @@ func executeStudyMapReview(
 			validationCode = debugdump.SemanticValidationDecode
 		}
 		recordStudyMapReviewSemanticExchange(
-			exchangeWriter, task, result, cached,
+			exchangeWriter, task, result, nil, cached,
 			debugdump.SemanticStateRejected, validationCode,
 		)
 		return completion
@@ -1041,7 +1060,7 @@ func executeStudyMapReview(
 		validationCode = debugdump.SemanticValidationCache
 	}
 	recordStudyMapReviewSemanticExchange(
-		exchangeWriter, task, result, cached, state, validationCode,
+		exchangeWriter, task, result, nil, cached, state, validationCode,
 	)
 	if !cached && studyReviewResponseAccepted(
 		sourceBundle,
@@ -1066,6 +1085,7 @@ func recordStudyMapReviewSemanticExchange(
 	writer *debugdump.Writer,
 	task studyMapReviewTaskInput,
 	result modelresearch.ProviderResult,
+	providerErr error,
 	cached bool,
 	state string,
 	validationCode string,
@@ -1089,16 +1109,21 @@ func recordStudyMapReviewSemanticExchange(
 		SemanticCalls:          semanticCalls,
 		TransportAttempts:      transportAttempts,
 		Request:                task.plan.request,
-		Response:               result.Content,
+		Response: providerFailureContentForExchange(
+			providerErr,
+			result.Content,
+		),
 	}
-	if len(result.Content) == 0 {
+	if len(exchange.Response) == 0 {
 		unavailableCode := debugdump.SemanticUnavailableNoContent
 		if state == debugdump.SemanticStateCanceled {
 			unavailableCode = debugdump.SemanticUnavailableCanceled
 		} else if cached {
 			unavailableCode = debugdump.SemanticUnavailableCache
 		}
-		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: providerResultResponseBytes(result),
+		}
 	}
 	writer.RecordSemanticExchange(exchange)
 }

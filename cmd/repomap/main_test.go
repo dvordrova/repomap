@@ -2066,13 +2066,12 @@ func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 	}
 
 	requests := run()
-	if len(requests) != 4 {
-		t.Fatalf("model request count = %d, want orientation, architecture, and two rejected guided tour attempts; sparse Study must stop before its provider call", len(requests))
+	if len(requests) != 3 {
+		t.Fatalf("model request count = %d, want orientation, architecture, and one rejected guided tour attempt; sparse Study must stop before its provider call", len(requests))
 	}
 	wantStageMarkers := []string{
 		"senior software engineer helping orient",
 		"compact conceptual architecture landscape",
-		"optional editorial guide for one bounded repository tour",
 		"optional editorial guide for one bounded repository tour",
 	}
 	for index, marker := range wantStageMarkers {
@@ -2172,6 +2171,8 @@ func TestRunDoctorReportsConfigWithoutSecret(t *testing.T) {
 		"endpoint: https://llm.company.example/v1/chat/completions",
 		"model: company-model",
 		"auth: bearer",
+		"max_tokens: 64000",
+		"max_tokens_override: REPOMAP_LLM_MAX_TOKENS",
 		"network_check: skipped",
 	} {
 		if !strings.Contains(output, want) {
@@ -2180,6 +2181,23 @@ func TestRunDoctorReportsConfigWithoutSecret(t *testing.T) {
 	}
 	if strings.Contains(output, "must-not-be-printed") {
 		t.Fatal("doctor output contains API key")
+	}
+}
+
+func TestRunDoctorReportsExactMaxTokensOverride(t *testing.T) {
+	clearLLMEnv(t)
+	t.Setenv("REPOMAP_LLM_ENDPOINT", "https://llm.company.example/v1/chat/completions")
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_MAX_TOKENS", "12345")
+	t.Setenv("DEEPSEEK_MAX_TOKENS", "2048")
+
+	var stdout bytes.Buffer
+	if err := runDoctor([]string{"llm"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatalf("runDoctor() error = %v", err)
+	}
+	if output := stdout.String(); !strings.Contains(output, "max_tokens: 12345\n") ||
+		!strings.Contains(output, "max_tokens_override: REPOMAP_LLM_MAX_TOKENS\n") {
+		t.Fatalf("doctor max_tokens output = %q", output)
 	}
 }
 

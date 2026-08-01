@@ -3,6 +3,7 @@ package deepseek
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -93,7 +94,7 @@ func TestBuildLocalizationRequestCanonicalizesEndpointAndThinking(t *testing.T) 
 			endpoint:     "HTTPS://API.DeepSeek.COM:443/chat/%63ompletions",
 			wantEndpoint: "https://api.deepseek.com/chat/%63ompletions",
 			wantThinking: "disabled",
-			wantTokens:   localizationMinMaxTokens,
+			wantTokens:   100,
 		},
 		{
 			name:         "generic default port",
@@ -400,6 +401,38 @@ func TestBuildLocalizationRequestAcceptsLargestValidPromptBody(t *testing.T) {
 			len(promptJSON),
 			MaxLocalizationRequestBodyBytes,
 		)
+	}
+}
+
+func TestLocalizationRequestEvidenceReportsTypedRequestBodyLimit(t *testing.T) {
+	t.Parallel()
+
+	prompt := localization.Prompt{
+		Version: localization.PromptVersion,
+		System:  "system",
+		User:    "user",
+	}
+	evidence, err := (&Client{
+		Endpoint: "https://example.test/v1/chat/completions", Auth: authNone,
+		Model: "fixture-model", MaxTokens: 4096,
+	}).BuildLocalizationRequest(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence.Body = bytes.Repeat([]byte("x"), MaxLocalizationRequestBodyBytes+1)
+	err = evidence.Validate(prompt)
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("Validate() error = %v, want ResourceLimitError", err)
+	}
+	if limitErr.Stage != "localization" || limitErr.Kind != ResourceLimitRequestBytes ||
+		limitErr.Limit != MaxLocalizationRequestBodyBytes ||
+		limitErr.Observed != len(evidence.Body) || !limitErr.ObservedKnown ||
+		limitErr.ConfiguredMaxTokens != evidence.MaxTokens {
+		t.Fatalf("resource limit = %#v", limitErr)
+	}
+	if strings.Contains(err.Error(), "xxxxx") {
+		t.Fatalf("resource error exposed request content: %v", err)
 	}
 }
 

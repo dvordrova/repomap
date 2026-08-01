@@ -77,7 +77,7 @@ func (c *Client) TeachComponent(ctx context.Context, bundleJSON []byte) ([]byte,
 		}
 		lastErr = err
 		if !shouldRetry {
-			return nil, err
+			return nil, annotateResourceLimit(err, "component_teach", c.MaxTokens)
 		}
 	}
 

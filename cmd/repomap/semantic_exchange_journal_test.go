@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/studymap"
@@ -167,17 +171,16 @@ func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *tes
 	}
 }
 
-func TestGuidedTourSemanticJournalPreservesTwoAttemptAndCacheContracts(t *testing.T) {
+func TestGuidedTourSemanticJournalPreservesSingleAttemptAndCacheContracts(t *testing.T) {
 	bundle := guidedTourTestBundle()
 	runsDir := t.TempDir()
-	rejectedResponse := guidedTourTestProposal(t, bundle, true)
 	acceptedResponse := guidedTourTestProposal(t, bundle, false)
 	runDir := filepath.Join(runsDir, "live")
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	writer := openSemanticJournalTestWriter(t, runDir)
-	provider := &guidedTourEditorStub{responses: [][]byte{rejectedResponse, acceptedResponse}}
+	provider := &guidedTourEditorStub{response: acceptedResponse}
 	outcome, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "model", provider,
 		guidedTourRunOptions{exchangeWriter: writer},
@@ -186,10 +189,9 @@ func TestGuidedTourSemanticJournalPreservesTwoAttemptAndCacheContracts(t *testin
 		t.Fatal(err)
 	}
 	entries := readSemanticJournalEntries(t, runDir)
-	if outcome.SemanticCalls != 1 || outcome.RetryCount != 1 || provider.calls != 2 || len(entries) != 2 ||
-		entries[0].record.SemanticAttemptOrdinal != 1 || entries[0].record.State != debugdump.SemanticStateRejected ||
-		entries[1].record.SemanticAttemptOrdinal != 2 || entries[1].record.State != debugdump.SemanticStateAccepted ||
-		!bytes.Equal(entries[0].response, rejectedResponse) || !bytes.Equal(entries[1].response, acceptedResponse) {
+	if outcome.SemanticCalls != 1 || outcome.RetryCount != 0 || provider.calls != 1 || len(entries) != 1 ||
+		entries[0].record.SemanticAttemptOrdinal != 1 || entries[0].record.State != debugdump.SemanticStateAccepted ||
+		!bytes.Equal(entries[0].response, acceptedResponse) {
 		t.Fatalf("guided journal/outcome = %#v / %#v", entries, outcome)
 	}
 
@@ -206,11 +208,47 @@ func TestGuidedTourSemanticJournalPreservesTwoAttemptAndCacheContracts(t *testin
 		t.Fatal(err)
 	}
 	cached := readSemanticJournalEntries(t, cacheDir)
-	if !cachedOutcome.Cached || provider.calls != 2 || len(cached) != 1 ||
+	if !cachedOutcome.Cached || provider.calls != 1 || len(cached) != 1 ||
 		cached[0].record.State != debugdump.SemanticStateCacheHit ||
 		cached[0].record.SemanticCalls != 0 || cached[0].record.TransportAttempts != 0 ||
 		!bytes.Equal(cached[0].response, acceptedResponse) {
 		t.Fatalf("guided cache journal/outcome = %#v / %#v", cached, cachedOutcome)
+	}
+}
+
+func TestGuidedTourResourceLimitRecordsOneFailedExchange(t *testing.T) {
+	bundle := guidedTourTestBundle()
+	runDir := filepath.Join(t.TempDir(), "run")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writer := openSemanticJournalTestWriter(t, runDir)
+	partial := []byte(`{"version":1`)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"length","message":{"content":"{\"version\":1"}}],"usage":{"completion_tokens":128}}`)
+	}))
+	defer server.Close()
+	provider := &deepseek.Client{
+		HTTPClient: server.Client(), Model: "fixture-model", MaxTokens: 128,
+		Endpoint: server.URL, Auth: "none",
+	}
+	_, err := ensureGuidedTourWithOptions(
+		context.Background(), bundle, runDir, "test", "model", provider,
+		guidedTourRunOptions{disableCache: true, exchangeWriter: writer},
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("guided error = %v, want ResourceLimitError", err)
+	}
+	entries := readSemanticJournalEntries(t, runDir)
+	if requests != 1 || len(entries) != 1 ||
+		entries[0].record.State != debugdump.SemanticStateProviderFailed ||
+		entries[0].record.SemanticCalls != 1 || entries[0].record.TransportAttempts != 1 ||
+		!bytes.Equal(entries[0].response, partial) {
+		t.Fatalf("resource-limited guided journal = %#v, calls=%d", entries, requests)
 	}
 }
 

@@ -67,13 +67,14 @@ func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	cliData, err := readCanonicalReportForLocalization(ruDir)
-	if err != nil {
+	var canonicalRunData report.ReportData
+	if err := json.Unmarshal(ruReportBefore, &canonicalRunData); err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := report.PreparePresentationLocalization(
-		cliData,
-		localization.LocaleRussian,
+	cliData, prepared, err := preparePresentationLocalizationForRun(
+		ruDir,
+		&canonicalRunData,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -117,12 +118,14 @@ func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testi
 	t.Setenv("REPOMAP_LLM_AUTH", "none")
 	t.Setenv("REPOMAP_LLM_API_KEY", "")
 	t.Setenv("REPOMAP_LLM_MAX_TOKENS", "2048")
-	outcome, err := localizePresentationForRun(
+	outcome, err := localizePreparedPresentationForRun(
 		context.Background(),
 		ruDir,
 		cacheRoot,
 		false,
 		io.Discard,
+		cliData,
+		prepared,
 	)
 	if err != nil {
 		t.Fatalf("localizePresentationForRun() error = %v", err)
@@ -177,17 +180,18 @@ func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testi
 	)
 }
 
-func TestReadCanonicalReportHydratesProducerOwnedWarningSidecar(t *testing.T) {
+func TestPreparePresentationLocalizationHydratesProducerOwnedWarningSidecar(t *testing.T) {
 	t.Parallel()
 
 	runDir, rawWarning := writePresentationWarningSidecarRun(t)
-	data, err := readCanonicalReportForLocalization(runDir)
+	canonical, err := report.ReadRunDir(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := report.PreparePresentationLocalization(
-		data,
-		localization.LocaleRussian,
+	_, prepared, err := preparePresentationLocalizationForRun(
+		runDir,
+		canonical,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +209,11 @@ func TestReadCanonicalReportHydratesProducerOwnedWarningSidecar(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readCanonicalReportForLocalization(runDir); err == nil {
+	if _, _, err := preparePresentationLocalizationForRun(
+		runDir,
+		canonical,
+		nil,
+	); err == nil {
 		t.Fatal("CLI localization hydration accepted a corrupt warning sidecar")
 	}
 }
@@ -748,12 +756,25 @@ func TestPresentationLocalizationCacheHitDoesNotRequireAPIKey(t *testing.T) {
 	t.Setenv("REPOMAP_LLM_API_KEY", "")
 	t.Setenv("REPOMAP_LLM_MAX_TOKENS", "2048")
 
-	outcome, err := localizePresentationForRun(
+	preparedData, err := report.PrepareRunPresentation(runDir, data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedRun, err := report.PreparePresentationLocalization(
+		preparedData,
+		localization.LocaleRussian,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := localizePreparedPresentationForRun(
 		context.Background(),
 		runDir,
 		cacheRoot,
 		false,
 		io.Discard,
+		preparedData,
+		preparedRun,
 	)
 	if err != nil {
 		t.Fatalf("localizePresentationForRun() error = %v", err)
@@ -1020,6 +1041,50 @@ func TestPresentationLocalizationProviderFailurePreservesCanonicalRun(t *testing
 		presentation.ReportLanguage != localization.LocaleRussian ||
 		presentation.ProjectGuess != data.ProjectGuess {
 		t.Fatalf("failure presentation/status = %#v/%#v", presentation, status)
+	}
+}
+
+func TestPresentationLocalizationResourceLimitIsTerminal(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	runDir := t.TempDir()
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		nil,
+	)
+	provider.executeErr = &deepseek.ResourceLimitError{
+		Stage: "presentation_localization", Kind: deepseek.ResourceLimitOutputTokens,
+		Limit: 128, Observed: 128, ObservedKnown: true,
+		FinishReason: "length",
+	}
+	outcome, err := executePresentationLocalization(
+		context.Background(), runDir, cacheRoot, false, data, prepared, provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("executePresentationLocalization() error = %v, want ResourceLimitError", err)
+	}
+	if outcome.State != report.PresentationLocalizationFailed ||
+		outcome.ReasonCode != report.LocalizationFailureProviderRequest ||
+		provider.executeCalls != 1 || outcome.BatchCompleted != 0 {
+		t.Fatalf("terminal outcome/provider calls = %#v/%d", outcome, provider.executeCalls)
+	}
+	if entries, readErr := os.ReadDir(cacheRoot); readErr == nil && len(entries) != 0 {
+		t.Fatalf("resource-limited localization populated cache: %v", entries)
+	} else if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	projectionFiles, globErr := filepath.Glob(
+		filepath.Join(runDir, "presentation_localization_projection.*.json"),
+	)
+	if globErr != nil {
+		t.Fatal(globErr)
+	}
+	if len(projectionFiles) != 0 {
+		t.Fatalf("resource-limited projection exists: %v", projectionFiles)
 	}
 }
 

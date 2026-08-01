@@ -229,7 +229,7 @@ func ensureArchitectureSynthesisWithOptions(
 		}
 		return outcome, budgetErr
 	}
-	cacheKey, err := componentmap.SynthesisCacheKeyForProviderAndLanguage(
+	baseCacheKey, err := componentmap.SynthesisCacheKeyForProviderAndLanguage(
 		repositoryRevision,
 		bundle,
 		profile,
@@ -239,6 +239,7 @@ func ensureArchitectureSynthesisWithOptions(
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
+	cacheKey := baseCacheKey + "-request-" + modelresearch.SHA256(requestJSON)
 	runPath := filepath.Join(runDir, report.ArchitectureSynthesisFile)
 	cachePath := filepath.Join(
 		filepath.Dir(runDir),
@@ -250,7 +251,7 @@ func ensureArchitectureSynthesisWithOptions(
 		for _, candidate := range []struct {
 			path      string
 			copyToRun bool
-		}{{path: runPath}, {path: cachePath, copyToRun: true}} {
+		}{{path: cachePath, copyToRun: true}} {
 			saved, readErr := os.ReadFile(candidate.path)
 			if readErr == nil {
 				cachedOutcome, replayErr := replayArchitectureSynthesisOutcome(
@@ -309,23 +310,25 @@ func ensureArchitectureSynthesisWithOptions(
 	started := time.Now()
 	providerResult, err := provider.SynthesizeComponentLandscapeMeasured(ctx, prompt)
 	raw := providerResult.Content
+	responseBytes := providerResultResponseBytes(providerResult)
 	latency := time.Since(started)
 	outcome.LatencyMillis = latency.Milliseconds()
-	outcome.ResponseBytes = len(raw)
+	outcome.ResponseBytes = responseBytes
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		recordArchitectureSemanticExchange(
 			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
-			len(raw), providerResult.Attempts,
+			responseBytes, providerResult.Attempts,
 			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
 		)
 		return outcome, ctxErr
 	}
 	if err != nil {
 		recordArchitectureSemanticExchange(
-			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
-			len(raw), providerResult.Attempts,
+			options.exchangeWriter, requestJSON,
+			providerFailureContentForExchange(err, raw), componentmap.ResponseCaptured,
+			responseBytes, providerResult.Attempts,
 			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
 		)
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
@@ -346,7 +349,7 @@ func ensureArchitectureSynthesisWithOptions(
 	if err != nil {
 		recordArchitectureSemanticExchange(
 			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
-			len(raw), providerResult.Attempts,
+			responseBytes, providerResult.Attempts,
 			debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
 		)
 		validationErr := fmt.Errorf("architecture synthesis: validate response: %w", err)
@@ -361,7 +364,7 @@ func ensureArchitectureSynthesisWithOptions(
 		InputBytes:            len(requestJSON),
 		LatencyMillis:         result.Record.Call.Metadata.LatencyMillis,
 		FallbackReason:        result.Landscape.FallbackReason,
-		ResponseBytes:         len(raw),
+		ResponseBytes:         responseBytes,
 		Attempted:             true,
 		ProviderCallSucceeded: true,
 		ResponseParsed:        architectureResponseParsed(result.Landscape),

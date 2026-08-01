@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -93,9 +94,9 @@ func TestGuidedTourPromptJSONUsesPurposeSpecificDeepSeekThinkingEffort(t *testin
 		wantEffort string
 		wantTokens int
 	}{
-		{name: "monolithic global planning", version: guidedtour.PromptVersion, wantEffort: "max", wantTokens: guidedTourGlobalMinMaxTokens},
+		{name: "monolithic global planning", version: guidedtour.PromptVersion, wantEffort: "max", wantTokens: client.MaxTokens},
 		{name: "bounded semantic leaf", version: guidedtour.LeafPromptVersion, wantEffort: "high", wantTokens: 6000},
-		{name: "fan-in global planning", version: guidedtour.FanInPromptVersion, wantEffort: "max", wantTokens: guidedTourFanInMinMaxTokens},
+		{name: "fan-in global planning", version: guidedtour.FanInPromptVersion, wantEffort: "max", wantTokens: client.MaxTokens},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -206,17 +207,28 @@ func TestEditGuidedTourMeasuredPreservesUsageWhenThinkingExhaustsContent(t *test
 		System:  "return valid JSON",
 		User:    "bounded guided-tour task",
 	})
-	if err == nil || !strings.Contains(err.Error(), "content is empty") {
-		t.Fatalf("EditGuidedTourMeasured() error = %v", err)
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("EditGuidedTourMeasured() error = %v, want ResourceLimitError", err)
 	}
-	if len(result.Content) != 0 || result.Attempts != 2 ||
-		result.InputTokens != 240 || result.OutputTokens != 12000 ||
-		result.PromptCacheHitTokens != 192 || result.PromptCacheMissTokens != 48 {
+	if limitErr.Stage != "guided_tour" || limitErr.Kind != ResourceLimitOutputTokens ||
+		limitErr.Limit != client.MaxTokens || limitErr.Observed != 6000 ||
+		limitErr.InputTokens != 120 || limitErr.ReasoningTokens != 6000 ||
+		limitErr.FinishReason != "length" {
+		t.Fatalf("resource limit = %#v", limitErr)
+	}
+	if strings.Contains(err.Error(), "private provider reasoning") {
+		t.Fatalf("resource error exposed provider reasoning: %v", err)
+	}
+	if len(result.Content) != 0 || result.Attempts != 1 ||
+		result.InputTokens != 120 || result.OutputTokens != 6000 ||
+		result.ReasoningTokens != 6000 || result.FinishReason != "length" ||
+		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 {
 		t.Fatalf("EditGuidedTourMeasured() failed-call metrics = %#v", result)
 	}
 }
 
-func TestEditGuidedTourMeasuredRetriesMalformedJSONOnce(t *testing.T) {
+func TestEditGuidedTourMeasuredDoesNotRetryMalformedJSON(t *testing.T) {
 	t.Parallel()
 
 	maxTokens := make([]int, 0, 2)
@@ -230,9 +242,6 @@ func TestEditGuidedTourMeasuredRetriesMalformedJSONOnce(t *testing.T) {
 		maxTokens = append(maxTokens, request.MaxTokens)
 		w.Header().Set("Content-Type", "application/json")
 		content := `{"version":1`
-		if len(maxTokens) == 2 {
-			content = `{"version":1}`
-		}
 		encodedContent, err := json.Marshal(content)
 		if err != nil {
 			t.Errorf("encode content: %v", err)
@@ -259,18 +268,18 @@ func TestEditGuidedTourMeasuredRetriesMalformedJSONOnce(t *testing.T) {
 		System:  "return valid JSON",
 		User:    "bounded guided-tour task",
 	})
-	if err != nil {
-		t.Fatalf("EditGuidedTourMeasured() error = %v", err)
+	if err == nil || !errors.Is(err, errJSONCompletionInvalid) {
+		t.Fatalf("EditGuidedTourMeasured() error = %v, want invalid JSON", err)
 	}
-	if string(result.Content) != `{"version":1}` || result.Attempts != 2 {
+	if string(result.Content) != `{"version":1` || result.Attempts != 1 {
 		t.Fatalf("result = %#v", result)
 	}
-	if len(maxTokens) != 2 || maxTokens[0] != 6000 || maxTokens[1] != 6000 {
-		t.Fatalf("max_tokens by attempt = %v, want [6000 6000]", maxTokens)
+	if len(maxTokens) != 1 || maxTokens[0] != client.MaxTokens {
+		t.Fatalf("max_tokens by attempt = %v, want [%d]", maxTokens, client.MaxTokens)
 	}
 }
 
-func TestEditGuidedTourMeasuredRetriesTruncatedJSONWithMoreHeadroom(t *testing.T) {
+func TestEditGuidedTourMeasuredFailsClosedOnLengthWithoutRetry(t *testing.T) {
 	t.Parallel()
 
 	maxTokens := make([]int, 0, 2)
@@ -283,22 +292,12 @@ func TestEditGuidedTourMeasuredRetriesTruncatedJSONWithMoreHeadroom(t *testing.T
 		}
 		maxTokens = append(maxTokens, request.MaxTokens)
 		w.Header().Set("Content-Type", "application/json")
-		if len(maxTokens) == 1 {
-			_, _ = io.WriteString(w, `{
-				"choices":[{
-					"finish_reason":"length",
-					"message":{"content":"{\"version\":1"}
-				}],
-				"usage":{"prompt_tokens":120,"completion_tokens":6000}
-			}`)
-			return
-		}
 		_, _ = io.WriteString(w, `{
 			"choices":[{
-				"finish_reason":"stop",
-				"message":{"content":"{\"version\":1}"}
+				"finish_reason":"length",
+				"message":{"content":"{\"version\":1"}
 			}],
-			"usage":{"prompt_tokens":120,"completion_tokens":10}
+			"usage":{"prompt_tokens":120,"completion_tokens":6000}
 		}`)
 	}))
 	defer server.Close()
@@ -315,14 +314,67 @@ func TestEditGuidedTourMeasuredRetriesTruncatedJSONWithMoreHeadroom(t *testing.T
 		System:  "return valid JSON",
 		User:    "bounded guided-tour task",
 	})
-	if err != nil {
-		t.Fatalf("EditGuidedTourMeasured() error = %v", err)
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("EditGuidedTourMeasured() error = %v, want ResourceLimitError", err)
 	}
-	if string(result.Content) != `{"version":1}` || result.Attempts != 2 ||
-		result.InputTokens != 240 || result.OutputTokens != 6010 {
+	if limitErr.Kind != ResourceLimitOutputTokens || limitErr.Stage != "guided_tour" ||
+		limitErr.Limit != client.MaxTokens || limitErr.FinishReason != "length" ||
+		string(limitErr.ProviderContent()) != `{"version":1` {
+		t.Fatalf("resource limit = %#v, content = %q", limitErr, limitErr.ProviderContent())
+	}
+	if string(result.Content) != `{"version":1` || result.Attempts != 1 ||
+		result.InputTokens != 120 || result.OutputTokens != 6000 ||
+		result.FinishReason != "length" {
 		t.Fatalf("result = %#v", result)
 	}
-	if len(maxTokens) != 2 || maxTokens[0] != 6000 || maxTokens[1] != 12000 {
-		t.Fatalf("max_tokens by attempt = %v, want [6000 12000]", maxTokens)
+	if len(maxTokens) != 1 || maxTokens[0] != client.MaxTokens {
+		t.Fatalf("max_tokens by attempt = %v, want [%d]", maxTokens, client.MaxTokens)
+	}
+	if strings.Contains(err.Error(), `{"version":1`) {
+		t.Fatalf("resource error exposed provider content: %v", err)
+	}
+}
+
+func TestEditGuidedTourMeasuredTransportRetryReusesExactRequest(t *testing.T) {
+	t.Parallel()
+
+	var bodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bodies = append(bodies, append([]byte(nil), body...))
+		if len(bodies) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(), Model: "company-model", MaxTokens: 7777,
+		Endpoint: server.URL, Auth: authNone,
+	}
+	result, err := client.EditGuidedTourMeasured(context.Background(), guidedtour.Prompt{
+		Version: guidedtour.PromptVersion, System: "return valid JSON", User: "bounded task",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Attempts != 2 || len(bodies) != 2 || !bytes.Equal(bodies[0], bodies[1]) {
+		t.Fatalf("attempts = %d, bodies identical = %t", result.Attempts, len(bodies) == 2 && bytes.Equal(bodies[0], bodies[1]))
+	}
+	var request chatRequest
+	if err := json.Unmarshal(bodies[0], &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.MaxTokens != client.MaxTokens {
+		t.Fatalf("max_tokens = %d, want %d", request.MaxTokens, client.MaxTokens)
 	}
 }

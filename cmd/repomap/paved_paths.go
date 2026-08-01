@@ -238,6 +238,9 @@ func preparePavedPaths(
 		attempt.ValidationState = metrics.Status
 		attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
 		_ = writeGoldenJSON(filepath.Join(runDir, pavedpath.AttemptFile), attempt)
+		if isSemanticResourceLimit(callErr) {
+			return status, fmt.Errorf("paved paths: provider call: %w", callErr)
+		}
 		return publishPavedPathLandmarks(runDir, bundle, studyIDs, status, attempt, fmt.Errorf("paved paths: provider call: %w", callErr))
 	}
 	if json.Valid(providerResult.Content) {

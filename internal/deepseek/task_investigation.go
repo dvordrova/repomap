@@ -10,23 +10,17 @@ import (
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
-const TaskInvestigationMinMaxTokens = 10_000
-
 // DefaultTaskInvestigationConfig identifies the synthesis route without
 // consulting provider environment or retaining credentials. It is used when
 // local evidence skips the provider but run metadata still needs a stable
 // provider/model identity and comparable request limits.
 func DefaultTaskInvestigationConfig() EffectiveConfig {
-	maxTokens := defaultMaxTokens
-	if maxTokens < TaskInvestigationMinMaxTokens {
-		maxTokens = TaskInvestigationMinMaxTokens
-	}
 	return EffectiveConfig{
 		Endpoint:  defaultEndpoint,
 		Model:     defaultModel,
 		AuthMode:  authBearer,
 		Timeout:   defaultTimeout,
-		MaxTokens: maxTokens,
+		MaxTokens: defaultMaxTokens,
 	}
 }
 
@@ -42,9 +36,6 @@ func (c *Client) TaskInvestigationPromptJSON(bundle tasklens.Bundle) ([]byte, er
 		request.Temperature = nil
 		request.Thinking = &thinkingConfig{Type: "enabled"}
 		request.ReasoningEffort = prompt.ThinkingProfile
-		if request.MaxTokens < TaskInvestigationMinMaxTokens {
-			request.MaxTokens = TaskInvestigationMinMaxTokens
-		}
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -54,9 +45,6 @@ func (c *Client) TaskInvestigationPromptJSON(bundle tasklens.Bundle) ([]byte, er
 }
 
 func (c *Client) TaskInvestigationMaxTokens() int {
-	if isOfficialDeepSeekEndpoint(c.Endpoint) && c.MaxTokens < TaskInvestigationMinMaxTokens {
-		return TaskInvestigationMinMaxTokens
-	}
 	return c.MaxTokens
 }
 
@@ -91,22 +79,22 @@ func (c *Client) InvestigateTaskMeasured(
 			ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, false,
 		)
 		usage.RequestBytes += len(body)
+		usage.ResponseBytes += result.ResponseBytes
 		usage.InputTokens += result.InputTokens
 		usage.OutputTokens += result.OutputTokens
+		usage.ReasoningTokens += result.ReasoningTokens
 		usage.PromptCacheHitTokens += result.PromptCacheHitTokens
 		usage.PromptCacheMissTokens += result.PromptCacheMissTokens
+		usage.Content = append([]byte(nil), result.Content...)
+		usage.FinishReason = result.FinishReason
 		if err == nil {
-			return modelresearch.ProviderResult{
-				Content: result.Content, Attempts: attempt + 1, RequestBytes: usage.RequestBytes,
-				InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
-				PromptCacheHitTokens:  usage.PromptCacheHitTokens,
-				PromptCacheMissTokens: usage.PromptCacheMissTokens,
-			}, nil
+			usage.Attempts = attempt + 1
+			return usage, nil
 		}
 		lastErr = err
 		if !shouldRetry {
 			usage.Attempts = attempt + 1
-			return usage, err
+			return usage, annotateResourceLimit(err, "task_investigation", c.MaxTokens)
 		}
 	}
 

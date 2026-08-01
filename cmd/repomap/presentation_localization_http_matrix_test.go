@@ -14,8 +14,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/reportserver"
 )
 
 func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
@@ -42,6 +44,12 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 			t.Errorf("build provider response: %v", err)
 			return
 		}
+		if kind == "localization" {
+			assertNoAuthorizedPublicationArtifacts(
+				t,
+				calls.currentDebugDir(),
+			)
+		}
 		calls.add(kind)
 		writer.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(writer).Encode(map[string]any{
@@ -64,11 +72,14 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
 
 	missBefore := calls.snapshot()
+	missDebugDir := t.TempDir()
+	calls.setCurrentDebugDir(missDebugDir)
 	missRunDir, missDebugDir := runPresentationLocalizationHTTPMatrix(
 		t,
 		repository,
 		"ru",
 		false,
+		missDebugDir,
 	)
 	miss := calls.snapshot().minus(missBefore)
 	if miss.orientation != 1 || miss.localization != 1 {
@@ -77,6 +88,7 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 			miss,
 		)
 	}
+	assertPresentationLocalizationRunMaxTokens(t, missRunDir, 64_000)
 	assertPresentationLocalizationHTTPSucceeded(t, missRunDir, false)
 
 	// The prompt-only client must be able to identify the cache entry before
@@ -84,12 +96,26 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 	// no API key and makes no HTTP request at all.
 	t.Setenv("REPOMAP_LLM_API_KEY", "")
 	hitBefore := calls.snapshot()
-	hit, err := localizePresentationForRun(
+	canonical, err := report.ReadRunDir(missRunDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localizationData, prepared, err := preparePresentationLocalizationForRun(
+		missRunDir,
+		canonical,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hit, err := localizePreparedPresentationForRun(
 		context.Background(),
 		missRunDir,
 		filepath.Join(missDebugDir, presentationLocalizationCacheDir),
 		false,
 		io.Discard,
+		localizationData,
+		prepared,
 	)
 	if err != nil {
 		t.Fatalf("cache-hit localizePresentationForRun() error = %v", err)
@@ -103,11 +129,14 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 
 	t.Setenv("REPOMAP_LLM_API_KEY", "matrix-test-key")
 	noCacheBefore := calls.snapshot()
+	noCacheDebugDir := t.TempDir()
+	calls.setCurrentDebugDir(noCacheDebugDir)
 	noCacheRunDir, _ := runPresentationLocalizationHTTPMatrix(
 		t,
 		repository,
 		"ru",
 		true,
+		noCacheDebugDir,
 	)
 	noCacheCalls := calls.snapshot().minus(noCacheBefore)
 	if noCacheCalls.orientation != 1 || noCacheCalls.localization != 1 {
@@ -119,11 +148,14 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 	assertPresentationLocalizationHTTPSucceeded(t, noCacheRunDir, false)
 
 	englishBefore := calls.snapshot()
+	englishDebugDir := t.TempDir()
+	calls.setCurrentDebugDir(englishDebugDir)
 	englishRunDir, _ := runPresentationLocalizationHTTPMatrix(
 		t,
 		repository,
 		"en",
 		true,
+		englishDebugDir,
 	)
 	englishCalls := calls.snapshot().minus(englishBefore)
 	if englishCalls.orientation != 1 || englishCalls.localization != 0 {
@@ -137,6 +169,152 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 		report.PresentationLocalizationStatusFile,
 	)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("EN run wrote presentation localization status: %v", err)
+	}
+}
+
+func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
+	clearLLMEnv(t)
+	repository := presentationLocalizationHTTPRepository(t)
+	orientationJSON := presentationLocalizationHTTPOrientation(t)
+
+	for _, test := range []struct {
+		name           string
+		terminalStage  string
+		wantErrorStage string
+	}{
+		{
+			name:           "representative earlier optional architecture stage",
+			terminalStage:  "architecture",
+			wantErrorStage: "architecture_synthesis",
+		},
+		{
+			name:           "presentation localization after optional stages",
+			terminalStage:  "localization",
+			wantErrorStage: "localization",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			calls := &presentationLocalizationHTTPCalls{}
+			server := httptest.NewServer(http.HandlerFunc(func(
+				writer http.ResponseWriter,
+				request *http.Request,
+			) {
+				body, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Errorf("read provider request: %v", err)
+					return
+				}
+				content, kind, err := presentationLocalizationHTTPResponse(
+					t,
+					body,
+					orientationJSON,
+				)
+				if err != nil {
+					t.Errorf("build provider response: %v", err)
+					return
+				}
+				if bytes.Contains(
+					body,
+					[]byte("compact conceptual architecture landscape"),
+				) {
+					kind = "architecture"
+				}
+				calls.add(kind)
+				finishReason := "stop"
+				if kind == test.terminalStage {
+					finishReason = "length"
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(writer).Encode(map[string]any{
+					"choices": []any{map[string]any{
+						"finish_reason": finishReason,
+						"message": map[string]any{
+							"role": "assistant", "content": string(content),
+						},
+					}},
+					"usage": map[string]any{
+						"prompt_tokens": 101, "completion_tokens": 23,
+					},
+				}); err != nil {
+					t.Errorf("encode provider response: %v", err)
+				}
+			}))
+			defer server.Close()
+
+			t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
+			t.Setenv("REPOMAP_LLM_MODEL", "resource-proof-model")
+			t.Setenv("REPOMAP_LLM_AUTH", "none")
+			t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+
+			debugDir := t.TempDir()
+			var opened, served int
+			var stderr bytes.Buffer
+			err := runDefaultWithDeps(repository, []string{
+				"--debug-dir", debugDir,
+				"--discover-surfaces=false",
+				"--guided-tour=false",
+				"--lang", "ru",
+				"--no-cache",
+			}, defaultRunDeps{
+				ctx: context.Background(), stdout: io.Discard, stderr: &stderr,
+				openReport: func(string) error {
+					opened++
+					return nil
+				},
+				serveReport: func(context.Context, reportserver.Options) error {
+					served++
+					return nil
+				},
+			})
+			var limitErr *deepseek.ResourceLimitError
+			if !errors.As(err, &limitErr) {
+				t.Fatalf(
+					"runDefaultWithDeps() error = %v, want ResourceLimitError\nstderr:\n%s",
+					err,
+					stderr.String(),
+				)
+			}
+			if limitErr.Stage != test.wantErrorStage ||
+				limitErr.Kind != deepseek.ResourceLimitOutputTokens ||
+				limitErr.FinishReason != "length" {
+				t.Fatalf("terminal ResourceLimitError = %#v", limitErr)
+			}
+
+			sequence := calls.sequence()
+			if len(sequence) == 0 || sequence[len(sequence)-1] != test.terminalStage {
+				t.Fatalf("semantic call sequence = %v, want final %q", sequence, test.terminalStage)
+			}
+			if test.terminalStage == "architecture" {
+				if len(sequence) != 2 || sequence[0] != "orientation" {
+					t.Fatalf(
+						"architecture-limit call sequence = %v, want [orientation architecture]",
+						sequence,
+					)
+				}
+			} else {
+				count := calls.snapshot()
+				if count.orientation != 1 || count.localization != 1 {
+					t.Fatalf("localization-limit HTTP calls = %#v; sequence=%v", count, sequence)
+				}
+			}
+			if opened != 0 || served != 0 {
+				t.Fatalf("publication side effects: open=%d serve=%d", opened, served)
+			}
+
+			runDir := presentationLocalizationResourceRunDir(t, debugDir)
+			for _, name := range []string{
+				"report.json",
+				"report.html",
+				report.RunManifestFilename,
+			} {
+				if _, statErr := os.Lstat(filepath.Join(runDir, name)); !errors.Is(statErr, os.ErrNotExist) {
+					t.Fatalf("terminal resource outcome published %s: %v", name, statErr)
+				}
+			}
+			if _, statErr := os.Lstat(filepath.Join(debugDir, "latest")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("terminal resource outcome linked latest: %v", statErr)
+			}
+		})
 	}
 }
 
@@ -157,13 +335,16 @@ func (count presentationLocalizationHTTPCallCount) minus(
 }
 
 type presentationLocalizationHTTPCalls struct {
-	mu    sync.Mutex
-	count presentationLocalizationHTTPCallCount
+	mu             sync.Mutex
+	count          presentationLocalizationHTTPCallCount
+	order          []string
+	activeDebugDir string
 }
 
 func (calls *presentationLocalizationHTTPCalls) add(kind string) {
 	calls.mu.Lock()
 	defer calls.mu.Unlock()
+	calls.order = append(calls.order, kind)
 	switch kind {
 	case "orientation":
 		calls.count.orientation++
@@ -172,6 +353,24 @@ func (calls *presentationLocalizationHTTPCalls) add(kind string) {
 	default:
 		calls.count.other++
 	}
+}
+
+func (calls *presentationLocalizationHTTPCalls) sequence() []string {
+	calls.mu.Lock()
+	defer calls.mu.Unlock()
+	return append([]string(nil), calls.order...)
+}
+
+func (calls *presentationLocalizationHTTPCalls) setCurrentDebugDir(debugDir string) {
+	calls.mu.Lock()
+	defer calls.mu.Unlock()
+	calls.activeDebugDir = debugDir
+}
+
+func (calls *presentationLocalizationHTTPCalls) currentDebugDir() string {
+	calls.mu.Lock()
+	defer calls.mu.Unlock()
+	return calls.activeDebugDir
 }
 
 func (calls *presentationLocalizationHTTPCalls) snapshot() presentationLocalizationHTTPCallCount {
@@ -266,6 +465,28 @@ func presentationLocalizationHTTPRepository(t *testing.T) string {
 	return repository
 }
 
+func presentationLocalizationResourceRunDir(t *testing.T, debugDir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(debugDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runDirs []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(debugDir, entry.Name())
+		if _, err := os.Stat(filepath.Join(candidate, "metadata.json")); err == nil {
+			runDirs = append(runDirs, candidate)
+		}
+	}
+	if len(runDirs) != 1 {
+		t.Fatalf("artifact run directories = %v, want exactly one", runDirs)
+	}
+	return runDirs[0]
+}
+
 func presentationLocalizationHTTPOrientation(t *testing.T) orientationResponseFixture {
 	t.Helper()
 	return orientationResponseFixture{
@@ -286,9 +507,9 @@ func runPresentationLocalizationHTTPMatrix(
 	repository,
 	language string,
 	noCache bool,
+	debugDir string,
 ) (string, string) {
 	t.Helper()
-	debugDir := t.TempDir()
 	args := []string{
 		"--debug-dir", debugDir,
 		"--discover-surfaces=false",
@@ -319,6 +540,26 @@ func runPresentationLocalizationHTTPMatrix(
 	return runDir, debugDir
 }
 
+func assertNoAuthorizedPublicationArtifacts(t *testing.T, debugDir string) {
+	t.Helper()
+	if strings.TrimSpace(debugDir) == "" {
+		t.Fatal("missing active debug directory for publication boundary assertion")
+	}
+	runDir := presentationLocalizationResourceRunDir(t, debugDir)
+	for _, name := range []string{
+		"report.json",
+		"report.html",
+		report.RunManifestFilename,
+	} {
+		if _, err := os.Lstat(filepath.Join(runDir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("authorized publication artifact %s exists before localization: %v", name, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(debugDir, "latest")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("latest exists before localization: %v", err)
+	}
+}
+
 func assertPresentationLocalizationHTTPSucceeded(
 	t *testing.T,
 	runDir string,
@@ -342,5 +583,26 @@ func assertPresentationLocalizationHTTPSucceeded(
 		status.CacheHit != wantCacheHit ||
 		projected.ReportLanguage != localization.LocaleRussian {
 		t.Fatalf("localized presentation/status = %#v/%#v", projected, status)
+	}
+}
+
+func assertPresentationLocalizationRunMaxTokens(
+	t *testing.T,
+	runDir string,
+	want int,
+) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.MaxTokens != want {
+		t.Fatalf("run metadata max_tokens = %d, want exact %d", metadata.MaxTokens, want)
 	}
 }

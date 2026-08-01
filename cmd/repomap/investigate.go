@@ -259,8 +259,11 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 			PromptCacheMissTokens: result.PromptCacheMissTokens,
 			LatencyMillis:         time.Since(callStarted).Milliseconds(),
 		}
-		recordTaskResponse(&attempt, result.Content)
 		if callErr != nil {
+			if isSemanticResourceLimit(callErr) {
+				return fmt.Errorf("task investigation: provider call: %w", callErr)
+			}
+			recordTaskResponse(&attempt, result.Content)
 			attempt.State = "provider_failed"
 			attempt.ReductionError = tasklens.ReductionErrorProviderFailed
 			warning, _ := tasklens.AttemptStateWarningEmission(attempt.State)
@@ -268,6 +271,7 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 			packState = "partial_local"
 			proposal, err = tasklens.LocalProposal(bundle)
 		} else {
+			recordTaskResponse(&attempt, result.Content)
 			if attempt.RawResponseOmittedReason != "" {
 				err = fmt.Errorf("%s", tasklens.RawResponseOmissionReductionError(attempt.RawResponseOmittedReason))
 			} else {

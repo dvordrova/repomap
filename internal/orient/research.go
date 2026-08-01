@@ -2,6 +2,7 @@ package orient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -113,20 +114,12 @@ func obtainOrientation(
 	result, err := client.OrientMeasured(ctx, bundleJSON)
 	call.Metrics.LatencyMillis = time.Since(started).Milliseconds()
 	call.Metrics.RequestBytes = result.RequestBytes
-	call.Metrics.ResponseBytes = len(result.Content)
+	call.Metrics.ResponseBytes = max(len(result.Content), result.ResponseBytes)
 	call.Metrics.InputTokens = result.InputTokens
 	call.Metrics.OutputTokens = result.OutputTokens
 	call.Metrics.SemanticCalls = 1
 	if result.Attempts > 1 {
 		call.Metrics.RetryCount = result.Attempts - 1
-	}
-	// A completion recovery changes max_tokens for the accepted transport
-	// envelope. The legacy orientation cache has one path per stage fingerprint,
-	// so saving it under the original request identity would be dishonest.
-	// Keep the valid per-run result and leave persistent reuse to a later exact
-	// multi-envelope cache contract.
-	if result.CompletionRetries > 0 {
-		call.SaveCache = false
 	}
 	if err != nil {
 		call.Metrics.Status = "failed"
@@ -221,13 +214,16 @@ func runTargetedResearch(
 		if err := ctx.Err(); err != nil {
 			return warnings, err
 		}
-		modelresearch.ApplyRound(state, planned, round)
 		attemptState := string(round.Status)
 		runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
 			Stage: "targeted_research", State: attemptState, RequestBytes: round.RequestBytes,
 			ProviderCallCount: boolInt(!round.Cached && round.RequestBytes > 0),
 			LatencyMillis:     optionalMillis(round.LatencyMillis),
 		})
+		if callErr != nil && isResourceLimitError(callErr) {
+			return warnings, callErr
+		}
+		modelresearch.ApplyRound(state, planned, round)
 		if callErr != nil {
 			warnings = append(warnings, fmt.Sprintf("targeted model research %q failed; local evidence was preserved: %v", round.Question, callErr))
 		}
@@ -259,6 +255,11 @@ func runTargetedResearch(
 	runMeta.ProviderRequestCount = state.Usage.SemanticCalls
 	runMeta.ExternalRequestBytes = state.Usage.RequestBytes
 	return warnings, nil
+}
+
+func isResourceLimitError(err error) bool {
+	var limitErr *deepseek.ResourceLimitError
+	return errors.As(err, &limitErr)
 }
 
 func addResearchFocusLocations(
