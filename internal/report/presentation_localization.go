@@ -20,8 +20,8 @@ import (
 // presentation inventory or its stable owner binding changes. It is part of
 // cache identity.
 const (
-	PresentationLocalizationContractVersion = "report-presentation-localization-v10"
-	PresentationTextInventoryVersion        = "presentation-text-inventory-v7"
+	PresentationLocalizationContractVersion = "report-presentation-localization-v11"
+	PresentationTextInventoryVersion        = "presentation-text-inventory-v8"
 )
 
 // PresentationTextInventory is the complete bounded terminal-presentation

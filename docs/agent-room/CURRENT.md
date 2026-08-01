@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/178-targeted-research-cache-semantic-acceptance.md
+    decisions/179-injective-surface-frontier-presentation-addresses.md
 
 Status:
-    Decision 178 active; targeted-research cache semantic acceptance authorized
+    Decision 179 active; injective surface-frontier presentation addresses authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 179 makes every SurfaceFrontier terminal-prose address injective
+    by including immutable canonical collection order as the local
+    prose-independent discriminator. Distinct frontiers may share kind and
+    exact location without colliding in the RU presentation inventory. The
+    report presentation contract advances to v11 and inventory contract to v8;
+    earlier localization cache entries are misses, with `repomap cache clear`
+    as explicit invalidation and no migration. Canonical report bytes,
+    surface collection/count/order/details, semantic IDs, source links, Study,
+    generic model cache, request shapes, UI schema, and retrieval are
+    unchanged.
     Decision 178 makes semantic acceptance a prerequisite for persisting or
     applying a targeted-research provider response. Decode/validation failures
     and all-findings-rejected outcomes are never cached. A corrupt or

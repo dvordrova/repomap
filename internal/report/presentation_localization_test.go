@@ -985,6 +985,83 @@ func TestPresentationTextInventoryProjectionIsAtomicAndPreservesOpaqueValues(t *
 	}
 }
 
+func TestPresentationTextInventoryDistinguishesLocatedFrontiersByCanonicalOrder(t *testing.T) {
+	t.Parallel()
+
+	location := &SurfaceLocation{
+		Path:   "server/etcdserver/server.go",
+		Line:   123,
+		Column: 7,
+	}
+	canonical := &ReportData{DiscoveredSurfaces: &DiscoveredSurfaces{
+		DynamicFrontiers: []SurfaceFrontier{
+			{
+				Kind:     "dynamic_dispatch",
+				Detail:   "The first dynamic dispatch remains unresolved.",
+				Location: location,
+			},
+			{
+				Kind:     "dynamic_dispatch",
+				Detail:   "The second dynamic dispatch remains unresolved.",
+				Location: location,
+			},
+		},
+	}}
+	before, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := PreparePresentationLocalization(canonical, localization.LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := PreparePresentationLocalization(canonical, localization.LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("repeated inventory preparation is not deterministic:\nfirst=%#v\nsecond=%#v", first, second)
+	}
+
+	fieldIDs := make(map[string]string, 2)
+	for _, field := range first.Canonical.Fields {
+		switch field.Text {
+		case canonical.DiscoveredSurfaces.DynamicFrontiers[0].Detail,
+			canonical.DiscoveredSurfaces.DynamicFrontiers[1].Detail:
+			fieldIDs[field.Text] = field.ID
+		}
+	}
+	firstID := fieldIDs[canonical.DiscoveredSurfaces.DynamicFrontiers[0].Detail]
+	secondID := fieldIDs[canonical.DiscoveredSurfaces.DynamicFrontiers[1].Detail]
+	if firstID == "" || secondID == "" || firstID == secondID {
+		t.Fatalf("frontier field IDs = %q/%q, want two distinct stable addresses", firstID, secondID)
+	}
+
+	projection := russianPresentationProjection(first)
+	projection.Translations[firstID] = "Первый динамический переход остаётся неразрешённым."
+	projection.Translations[secondID] = "Второй динамический переход остаётся неразрешённым."
+	projected, result, err := ApplyPresentationLocalization(canonical, first, projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fallback || projected == nil {
+		t.Fatalf("complete frontier projection = projected %#v result %#v", projected, result)
+	}
+	if got := projected.DiscoveredSurfaces.DynamicFrontiers[0].Detail; got != projection.Translations[firstID] {
+		t.Fatalf("first frontier detail = %q, want %q", got, projection.Translations[firstID])
+	}
+	if got := projected.DiscoveredSurfaces.DynamicFrontiers[1].Detail; got != projection.Translations[secondID] {
+		t.Fatalf("second frontier detail = %q, want %q", got, projection.Translations[secondID])
+	}
+	after, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("inventory preparation/application changed canonical report bytes")
+	}
+}
+
 func TestPresentationLocalizationSuccessfulSidecarLoadsWithoutChangingCanonicalJSON(t *testing.T) {
 	t.Parallel()
 

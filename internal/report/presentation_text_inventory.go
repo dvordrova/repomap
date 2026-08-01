@@ -4333,15 +4333,17 @@ func findDiscoveredTrigger(data *ReportData, id string) *DiscoveredTrigger {
 	return nil
 }
 
-func surfaceFrontierIdentity(frontier SurfaceFrontier, fallbackIndex int) string {
+func surfaceFrontierIdentity(frontier SurfaceFrontier, collectionIndex int) string {
 	location := surfaceLocationIdentity(frontier.Location)
-	if location != "" {
-		return presentationOwnerDigest(frontier.Kind, location)
-	}
-	// Dynamic frontier entries without an exact location can legitimately share
-	// a kind. Their bounded collection order is the only stable identity that
-	// does not depend on the prose being localized.
-	return presentationOwnerDigest(frontier.Kind, strconv.Itoa(fallbackIndex))
+	// Frontiers can legitimately share kind and exact location while carrying
+	// distinct terminal prose. Canonical collection order is the local,
+	// prose-independent discriminator that keeps every presentation address
+	// injective without changing semantic identity or report data.
+	return presentationOwnerDigest(
+		frontier.Kind,
+		location,
+		strconv.Itoa(collectionIndex),
+	)
 }
 
 func surfaceLocationIdentity(location *SurfaceLocation) string {
