@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/181-shared-provider-transport-retries.md
+    decisions/182-semantic-cache-hit-revalidation.md
 
 Status:
-    Decision 181 active; shared provider transport retries authorized
+    Decision 182 active; generic semantic cache-hit revalidation authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 182 makes semantic acceptance mandatory when replaying the generic
+    StageResponse cache for orientation and Guided Tour monolithic, fan-out
+    leaf, and fan-in stages. Each existing stage-local validator remains the
+    semantic owner. A semantically invalid exact hit is removed and handled as
+    a miss through the ordinary bounded recomputation path; valid hits still
+    make zero provider calls, structurally corrupt records remain normal
+    misses, and failed/canceled/invalid live responses are not cached.
+    Targeted research, Study, prompts, requests, candidate composition,
+    scheduling, canonical artifacts, locale, UI, publication, flags, and saved
+    formats remain unchanged. There is no legacy reader or migration.
     Decision 181 gives exact localization requests the same bounded retry
     behavior as normal targeted provider requests through one shared private
     transport primitive. Retryable request errors, HTTP 429/5xx, and transient

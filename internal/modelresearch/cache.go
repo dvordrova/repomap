@@ -119,6 +119,16 @@ func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
 	}, true, nil
 }
 
+// InvalidateStageResponse removes only the exact generic stage-cache record.
+// Semantic validation remains owned by the consuming stage.
+func InvalidateStageResponse(input StageCacheInput) error {
+	cacheKey, err := CacheKey(input.Fingerprint)
+	if err != nil {
+		return err
+	}
+	return removeCache(input.RunsDir, cacheKey)
+}
+
 func SaveStageResponse(input StageCacheInput, response StageResponse) (StageResponse, error) {
 	cacheKey, err := CacheKey(input.Fingerprint)
 	if err != nil {

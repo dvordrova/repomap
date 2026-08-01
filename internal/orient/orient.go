@@ -364,9 +364,53 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RequestBytes: len(requestJSON),
 		})
 
+		prepareOrientation := func(raw []byte) (orientationPart, string, error) {
+			if err := validateProviderOutputForStorage("orientation", raw); err != nil {
+				return orientationPart{}, "response_rejected", err
+			}
+			or, err := parseOrientation(raw)
+			if err != nil {
+				return orientationPart{}, "response_parse_failed", err
+			}
+			mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
+
+			allowedEntrypoints := orientationEntrypoints(bundle)
+			signalLocations := make([]evidence.Location, 0, len(bundle.SourceSignals))
+			for _, signal := range bundle.SourceSignals {
+				signalLocations = append(signalLocations, evidence.Location{Path: signal.Path, Line: signal.Line})
+			}
+			for _, trace := range bundle.Go.CommandTraces {
+				for _, step := range trace.Steps {
+					signalLocations = append(signalLocations, step.TargetLocation)
+					if step.CallsiteLocation != nil {
+						signalLocations = append(signalLocations, *step.CallsiteLocation)
+					}
+				}
+				for _, call := range trace.HandlerCalls {
+					signalLocations = append(signalLocations, evidence.Location{Path: call.Path, Line: call.Line})
+				}
+			}
+			normalizeOrientationGrounding(&or, bundle.ProviderAllowedPaths, allowedEntrypoints, signalLocations)
+			localProofInput := localFlowProofInput(s, successfulSurfaceResult)
+			attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
+			reconcileResolvedUnknownPaths(&or)
+			applyOrientationConfidenceGate(&or, bundle)
+			for index := range or.CandidateFlows {
+				flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
+			}
+			if err := validateOrientation(or, bundle.ProviderAllowedPaths, allowedEntrypoints); err != nil {
+				return orientationPart{}, "response_validation_failed", err
+			}
+			return or, "", nil
+		}
+
 		call, err := obtainOrientation(
 			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
 			modelBundleJSON, requestJSON, !opts.NoCache,
+			func(raw []byte) error {
+				_, _, err := prepareOrientation(raw)
+				return err
+			},
 		)
 		raw := call.Raw
 		providerLatency := call.Metrics.LatencyMillis
@@ -409,63 +453,34 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 			return nil, err
 		}
-		if err := validateProviderOutputForStorage("orientation", raw); err != nil {
-			attempt.State = "response_rejected"
-			if dw != nil {
-				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "response_rejected", err)
-			}
-			return nil, err
-		}
-
 		if opts.DumpLLM && dw != nil {
 			if err := dw.WriteLLMResponse(raw); err != nil {
 				return nil, fmt.Errorf("write required llm response: %w", err)
 			}
 		}
 
-		or, err := parseOrientation(raw)
-		if err != nil {
-			attempt.State = "response_parse_failed"
+		or, responseFailureState, responseErr := prepareOrientation(raw)
+		if responseErr != nil {
+			attempt.State = responseFailureState
 			if dw != nil {
 				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, raw, "response_parse_failed", err)
-			}
-			return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
-		}
-		mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
-
-		allowedEntrypoints := orientationEntrypoints(bundle)
-		signalLocations := make([]evidence.Location, 0, len(bundle.SourceSignals))
-		for _, signal := range bundle.SourceSignals {
-			signalLocations = append(signalLocations, evidence.Location{Path: signal.Path, Line: signal.Line})
-		}
-		for _, trace := range bundle.Go.CommandTraces {
-			for _, step := range trace.Steps {
-				signalLocations = append(signalLocations, step.TargetLocation)
-				if step.CallsiteLocation != nil {
-					signalLocations = append(signalLocations, *step.CallsiteLocation)
+				failureRaw := raw
+				if responseFailureState == "response_rejected" {
+					failureRaw = nil
 				}
+				writeOrientationFailureArtifacts(
+					dw,
+					opts.DumpLLM,
+					requestJSON,
+					failureRaw,
+					responseFailureState,
+					responseErr,
+				)
 			}
-			for _, call := range trace.HandlerCalls {
-				signalLocations = append(signalLocations, evidence.Location{Path: call.Path, Line: call.Line})
+			if responseFailureState == "response_parse_failed" {
+				return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
 			}
-		}
-		normalizeOrientationGrounding(&or, bundle.ProviderAllowedPaths, allowedEntrypoints, signalLocations)
-		localProofInput := localFlowProofInput(s, successfulSurfaceResult)
-		attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
-		reconcileResolvedUnknownPaths(&or)
-		applyOrientationConfidenceGate(&or, bundle)
-		for index := range or.CandidateFlows {
-			flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
-		}
-		if err := validateOrientation(or, bundle.ProviderAllowedPaths, allowedEntrypoints); err != nil {
-			attempt.State = "response_validation_failed"
-			if dw != nil {
-				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, raw, "response_validation_failed", err)
-			}
-			return nil, err
+			return nil, responseErr
 		}
 		if call.Metrics.CacheHit {
 			attempt.State = "cached"
