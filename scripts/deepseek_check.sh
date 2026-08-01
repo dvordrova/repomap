@@ -37,7 +37,7 @@ mkdir -p tmp .repomap-runs
 
 echo "=== configured LLM orient ($ETCD_REPO) ==="
 set +e
-go run ./cmd/repomap orient --repo "$ETCD_REPO" --debug-dir .repomap-runs --dump-llm > tmp/deepseek-orientation.json 2>tmp/deepseek-stderr.txt
+go run ./cmd/repomap orient --repo "$ETCD_REPO" --debug-dir .repomap-runs > tmp/deepseek-orientation.json 2>tmp/deepseek-stderr.txt
 EXIT_CODE=$?
 set -e
 

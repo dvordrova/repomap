@@ -43,7 +43,6 @@ type Options struct {
 	MaxLLMSignalsPerFile      int
 	DebugDir                  string
 	RunID                     string
-	DumpLLM                   bool
 	DumpRedacted              bool
 	RequireArtifacts          bool
 	DiscoverSurfaces          bool
@@ -71,13 +70,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	requireArtifacts := opts.DumpLLM || opts.RequireArtifacts
-	if opts.DumpLLM && opts.Offline {
-		return nil, fmt.Errorf("--dump-llm cannot be used with offline mode; use request preview instead")
-	}
-	if opts.DumpLLM && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
-		return nil, fmt.Errorf("--dump-llm requires a debug directory")
-	}
+	requireArtifacts := opts.RequireArtifacts
 	if opts.RequireArtifacts && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
 		return nil, fmt.Errorf("required browser artifacts need a debug directory")
 	}
@@ -376,11 +369,6 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				return nil, fmt.Errorf("write request attempt metadata: %w", metadataErr)
 			}
 		}
-		if opts.DumpLLM && dw != nil {
-			if err := dw.WriteLLMRequest(requestJSON); err != nil {
-				return nil, fmt.Errorf("write required llm request before provider call: %w", err)
-			}
-		}
 		emitProgress(opts, ProgressEvent{
 			Stage:        ProgressModelRequest,
 			RepoName:     s.RepoName,
@@ -469,14 +457,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				debugdump.SemanticUnavailableNoContent,
 			)
 			if dw != nil {
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "provider_request_failed", err)
+				writeOrientationFailureArtifacts(dw, "provider_request_failed", err)
 			}
 			return nil, err
-		}
-		if opts.DumpLLM && dw != nil {
-			if err := dw.WriteLLMResponse(raw); err != nil {
-				return nil, fmt.Errorf("write required llm response: %w", err)
-			}
 		}
 
 		or, responseFailureState, responseErr := resolvePreparedOrientation(call, prepareOrientation)
@@ -496,15 +479,8 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			)
 			if dw != nil {
 				_ = dw.WriteMetadata(runMeta)
-				failureRaw := raw
-				if responseFailureState == "response_rejected" {
-					failureRaw = nil
-				}
 				writeOrientationFailureArtifacts(
 					dw,
-					opts.DumpLLM,
-					requestJSON,
-					failureRaw,
 					responseFailureState,
 					responseErr,
 				)
@@ -603,7 +579,6 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			expandedIDs[flowexplain.GenerateFlowID(candidate.Name)] = struct{}{}
 		}
 		if err := writeLocalFlowBundles(
-			ctx,
 			acceptedFlows,
 			expandedIDs,
 			s.FilteredFiles,
@@ -614,16 +589,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, err
 		}
 		for _, cf := range cfs {
-			ef := explainOneFlow(ctx, client, cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts, false)
-			if ef.ProviderRequestBytes > 0 {
-				runMeta.ExternalRequestBytes += ef.ProviderRequestBytes
-				runMeta.ProviderRequestCount++
-				if dw != nil {
-					if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-						return nil, fmt.Errorf("write flow metadata: %w", metadataErr)
-					}
-				}
-			}
+			ef := explainOneFlow(cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts)
 			if ef.ArtifactError != "" {
 				return nil, fmt.Errorf("persist flow %q: %s", cf.Name, ef.ArtifactError)
 			}
@@ -699,18 +665,9 @@ func recordOrientationSemanticExchange(
 
 func writeOrientationFailureArtifacts(
 	dw *debugdump.Writer,
-	dumped bool,
-	requestJSON []byte,
-	safeResponse []byte,
 	stage string,
 	err error,
 ) {
-	if !dumped && len(requestJSON) > 0 {
-		_ = dw.WriteLLMRequest(requestJSON)
-	}
-	if !dumped && len(safeResponse) > 0 {
-		_ = dw.WriteLLMResponse(safeResponse)
-	}
 	validation, marshalErr := json.MarshalIndent(map[string]string{
 		"status": "failed",
 		"stage":  stage,

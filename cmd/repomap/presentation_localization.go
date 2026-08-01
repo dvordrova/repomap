@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/modelresearch"
@@ -142,7 +143,6 @@ type presentationLocalizationOutcome struct {
 	BatchAttempted   int
 	BatchCompleted   int
 	FailedBatch      int
-	DebugDumpFailed  bool
 	CacheHit         bool
 	CacheCorrupt     bool
 	CacheWriteErr    bool
@@ -156,7 +156,12 @@ type presentationLocalizationOutcome struct {
 }
 
 type presentationLocalizationExecutionOptions struct {
-	DumpRejectedResponse bool
+	ExchangeWriter  *debugdump.Writer
+	ApplyProjection func(
+		localization.CanonicalArtifact,
+		localization.Input,
+		localization.Projection,
+	) (localization.Result, error)
 }
 
 type presentationLocalizationStageError struct {
@@ -227,10 +232,21 @@ func localizePresentationForRun(
 	runDir,
 	cacheRoot string,
 	noCache bool,
-	dumpLLM bool,
 	stderr io.Writer,
 	sourceEpisodeJSON ...[]byte,
 ) (presentationLocalizationOutcome, error) {
+	exchangeWriter, writerErr := debugdump.OpenWriter(runDir, true)
+	if writerErr == nil {
+		defer exchangeWriter.Close()
+		exchangeWriter.SetWarningWriter(stderr)
+	} else {
+		fmt.Fprintf(
+			stderr,
+			"warning: semantic exchange journal unavailable: stage=%s code=%s\n",
+			debugdump.SemanticStageLocalization,
+			debugdump.SemanticExchangeWarningCode,
+		)
+	}
 	var episodeJSON []byte
 	if len(sourceEpisodeJSON) > 0 {
 		episodeJSON = sourceEpisodeJSON[0]
@@ -314,7 +330,7 @@ func localizePresentationForRun(
 		data,
 		prepared,
 		provider,
-		presentationLocalizationExecutionOptions{DumpRejectedResponse: dumpLLM},
+		presentationLocalizationExecutionOptions{ExchangeWriter: exchangeWriter},
 	)
 }
 
@@ -459,6 +475,10 @@ func executePresentationLocalization(
 	if len(options) > 0 {
 		executionOptions = options[0]
 	}
+	applyProjection := executionOptions.ApplyProjection
+	if applyProjection == nil {
+		applyProjection = localization.Apply
+	}
 	fail := func(reasonCode, failureStage, validationCode string) (presentationLocalizationOutcome, error) {
 		outcome.State = report.PresentationLocalizationFailed
 		outcome.ReasonCode = reasonCode
@@ -473,7 +493,6 @@ func executePresentationLocalization(
 					BatchTotal: outcome.BatchTotal, BatchAttempted: outcome.BatchAttempted,
 					BatchCompleted: outcome.BatchCompleted, FailedBatch: outcome.FailedBatch,
 				},
-				DebugDumpFailed: outcome.DebugDumpFailed,
 			},
 		)
 	}
@@ -511,6 +530,18 @@ func executePresentationLocalization(
 				plan.Batch,
 				record,
 			) {
+				recordPresentationLocalizationSemanticExchange(
+					executionOptions.ExchangeWriter,
+					plan,
+					index,
+					nil,
+					&debugdump.SemanticUnavailable{Code: debugdump.SemanticUnavailableProjection},
+					debugdump.SemanticRequestPrepared,
+					debugdump.SemanticStateCacheHit,
+					debugdump.SemanticValidationCache,
+					0,
+					0,
+				)
 				projections[index] = record.Projection
 				batchOutcome.CacheHit = true
 				outcome.Batches = append(outcome.Batches, batchOutcome)
@@ -551,6 +582,30 @@ func executePresentationLocalization(
 				validationCode = report.LocalizationValidationRequestIdentity
 			}
 			outcome.FailedBatch = index + 1
+			state := debugdump.SemanticStateProviderFailed
+			semanticValidation := debugdump.SemanticValidationProvider
+			unavailableCode := debugdump.SemanticUnavailableNoContent
+			if ctx.Err() != nil {
+				state = debugdump.SemanticStateCanceled
+				semanticValidation = debugdump.SemanticValidationCanceled
+				unavailableCode = debugdump.SemanticUnavailableCanceled
+			}
+			provenance := debugdump.SemanticRequestPrepared
+			if providerResult.Attempts > 0 {
+				provenance = debugdump.SemanticRequestExactSent
+			}
+			recordPresentationLocalizationSemanticExchange(
+				executionOptions.ExchangeWriter,
+				plan,
+				index,
+				providerResult.Content,
+				localizationUnavailableResponse(providerResult.Content, unavailableCode),
+				provenance,
+				state,
+				semanticValidation,
+				1,
+				providerResult.Attempts,
+			)
 			return fail(reasonCode, failureStage, validationCode)
 		}
 		if unsafeKind, found := secretscan.DetectAlways(string(providerResult.Content)); found {
@@ -561,9 +616,13 @@ func executePresentationLocalization(
 				unsafeKind,
 			)
 			outcome.FailedBatch = index + 1
-			if executionOptions.DumpRejectedResponse {
-				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
-			}
+			recordPresentationLocalizationSemanticExchange(
+				executionOptions.ExchangeWriter, plan, index, providerResult.Content,
+				localizationUnavailableResponse(providerResult.Content, debugdump.SemanticUnavailableNoContent),
+				debugdump.SemanticRequestExactSent,
+				debugdump.SemanticStateRejected, debugdump.SemanticValidationSecret,
+				1, providerResult.Attempts,
+			)
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseSecretScan, report.LocalizationValidationUnsafeResponse)
 		}
 		projection, decodeErr := localization.DecodeRussianProviderResponse(
@@ -573,30 +632,49 @@ func executePresentationLocalization(
 		)
 		if decodeErr != nil {
 			outcome.FailedBatch = index + 1
-			if executionOptions.DumpRejectedResponse {
-				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
-			}
+			recordPresentationLocalizationSemanticExchange(
+				executionOptions.ExchangeWriter, plan, index, providerResult.Content,
+				localizationUnavailableResponse(providerResult.Content, debugdump.SemanticUnavailableNoContent),
+				debugdump.SemanticRequestExactSent,
+				debugdump.SemanticStateRejected, debugdump.SemanticValidationDecode,
+				1, providerResult.Attempts,
+			)
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseDecode, report.LocalizationValidationResponseDecode)
 		}
-		validation, validationErr := localization.Apply(
+		validation, validationErr := applyProjection(
 			plan.Batch.Canonical,
 			plan.Batch.Input,
 			projection,
 		)
 		if validationErr != nil {
 			outcome.FailedBatch = index + 1
-			if executionOptions.DumpRejectedResponse {
-				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
-			}
+			recordPresentationLocalizationSemanticExchange(
+				executionOptions.ExchangeWriter, plan, index, providerResult.Content,
+				localizationUnavailableResponse(providerResult.Content, debugdump.SemanticUnavailableNoContent),
+				debugdump.SemanticRequestExactSent,
+				debugdump.SemanticStateRejected, debugdump.SemanticValidationApply,
+				1, providerResult.Attempts,
+			)
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageProjectionApply, report.LocalizationValidationProjectionApply)
 		}
 		if validation.Fallback || len(validation.Diagnostics) != 0 {
 			outcome.FailedBatch = index + 1
-			if executionOptions.DumpRejectedResponse {
-				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
-			}
+			recordPresentationLocalizationSemanticExchange(
+				executionOptions.ExchangeWriter, plan, index, providerResult.Content,
+				localizationUnavailableResponse(providerResult.Content, debugdump.SemanticUnavailableNoContent),
+				debugdump.SemanticRequestExactSent,
+				debugdump.SemanticStateRejected, debugdump.SemanticValidationQuality,
+				1, providerResult.Attempts,
+			)
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageProjectionQuality, report.LocalizationValidationProjectionDiagnostics)
 		}
+		recordPresentationLocalizationSemanticExchange(
+			executionOptions.ExchangeWriter, plan, index, providerResult.Content,
+			localizationUnavailableResponse(providerResult.Content, debugdump.SemanticUnavailableNoContent),
+			debugdump.SemanticRequestExactSent,
+			debugdump.SemanticStateAccepted, debugdump.SemanticValidationAccepted,
+			1, providerResult.Attempts,
+		)
 		projections[index] = projection
 		outcome.BatchCompleted++
 
@@ -731,6 +809,46 @@ func executePresentationLocalization(
 	outcome.State = report.PresentationLocalizationSucceeded
 	outcome.CacheHit = allCacheHits
 	return outcome, nil
+}
+
+func recordPresentationLocalizationSemanticExchange(
+	writer *debugdump.Writer,
+	plan presentationLocalizationBatchPlan,
+	index int,
+	response []byte,
+	unavailable *debugdump.SemanticUnavailable,
+	requestProvenance string,
+	state string,
+	validationCode string,
+	semanticCalls int,
+	transportAttempts int,
+) {
+	if writer == nil {
+		return
+	}
+	writer.RecordSemanticExchange(debugdump.SemanticExchange{
+		Stage:                  debugdump.SemanticStageLocalization,
+		InstanceOrdinal:        index + 1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      requestProvenance,
+		State:                  state,
+		ValidationCode:         validationCode,
+		SemanticCalls:          semanticCalls,
+		TransportAttempts:      transportAttempts,
+		Request:                plan.Request.Body,
+		Response:               response,
+		ResponseUnavailable:    unavailable,
+	})
+}
+
+func localizationUnavailableResponse(
+	response []byte,
+	code string,
+) *debugdump.SemanticUnavailable {
+	if len(response) > 0 {
+		return nil
+	}
+	return &debugdump.SemanticUnavailable{Code: code}
 }
 
 // presentationLocalizationUnsafeResponseAttribution runs only after the

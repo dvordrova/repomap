@@ -145,7 +145,6 @@ type PresentationLocalizationStatus struct {
 	BatchAttempted   int    `json:"batch_attempted"`
 	BatchCompleted   int    `json:"batch_completed"`
 	FailedBatch      int    `json:"failed_batch,omitempty"`
-	DebugDumpFailed  bool   `json:"debug_dump_failed,omitempty"`
 }
 
 // PresentationLocalizationProgress contains only bounded stage counters. A
@@ -165,7 +164,6 @@ type PresentationLocalizationFailure struct {
 	ValidationCode  string
 	CanonicalSHA256 string
 	Progress        PresentationLocalizationProgress
-	DebugDumpFailed bool
 }
 
 type PresentationLocalizationProjectionRecord struct {
@@ -270,7 +268,6 @@ func WritePresentationLocalizationFailure(
 		BatchAttempted:  failure.Progress.BatchAttempted,
 		BatchCompleted:  failure.Progress.BatchCompleted,
 		FailedBatch:     failure.Progress.FailedBatch,
-		DebugDumpFailed: failure.DebugDumpFailed,
 	})
 	if err != nil {
 		return err
@@ -322,7 +319,6 @@ func validatePresentationLocalizationStatus(
 			!validPresentationLocalizationSHA256(status.ProjectionSHA256) ||
 			status.CacheKey == "" || status.FailureStage != "" ||
 			status.ValidationCode != "" || status.FailedBatch != 0 ||
-			status.DebugDumpFailed ||
 			status.BatchTotal == 0 || status.BatchAttempted != status.BatchTotal ||
 			status.BatchCompleted != status.BatchTotal {
 			return fmt.Errorf("report localization: invalid success status")

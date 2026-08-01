@@ -181,11 +181,13 @@ names a test or preserves a test gap, and does not claim to know the exact patch
 - path-like mentions inside orientation evidence are rejected unless the path
   was actually present in the bounded bundle;
 - the exact request body can be previewed without a key or network call;
-- live debug artifacts record the selected model and endpoint and retain the
-  attempted request even when the provider call fails.
+- live debug artifacts record the selected model and endpoint and journal the
+  attempted semantic request even when the provider call fails.
 
-When `--dump-llm` is requested, failure to create or write the required request
-artifact aborts before the provider call; inspectability is not best-effort.
+Ordinary debug runs publish the bounded semantic exchange journal best-effort.
+A journal failure emits one closed warning per stage and never changes provider,
+cache, validation, or publication behavior. Use request preview when a request
+must be inspected without making a provider call.
 
 ## Trial completion gates
 
@@ -195,7 +197,8 @@ These are zero-tolerance conditions for all three scenarios:
 - no path outside the local allowlist presented as verified;
 - no README or source symlink escape outside the resolved repository root;
 - obvious credentials cause remote use to fail closed;
-- the exact outbound request is inspectable before sending;
+- the exact outbound request can be previewed without sending, and ordinary
+  semantic calls leave a bounded journal entry;
 - saved evaluation tasks expose model/provider, prompt/evaluator versions,
   bytes, latency, revision, and build scenario without inventing missing values;
 - source-supported claims cite line-addressable evidence;

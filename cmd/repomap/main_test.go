@@ -35,6 +35,22 @@ import (
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
+func TestRemovedDumpLLMFlagIsRejected(t *testing.T) {
+	var stderr bytes.Buffer
+	err := runDefaultWithDeps(
+		t.TempDir(),
+		[]string{"--dump-llm"},
+		defaultRunDeps{stdout: io.Discard, stderr: &stderr},
+	)
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("default removed flag error = %v", err)
+	}
+	if err := runOrient([]string{"--dump-llm"}); err == nil ||
+		!strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("orient removed flag error = %v", err)
+	}
+}
+
 func TestPrintPromptVersions(t *testing.T) {
 	t.Parallel()
 

@@ -46,7 +46,7 @@ func TestSelectFlowUsesCandidateWhenNoExplanationExists(t *testing.T) {
 	}
 }
 
-func TestSelectFlowUsesExplainedOfflineReportAndPinsExactBytes(t *testing.T) {
+func TestSelectFlowUsesExplainedLocalReportAndPinsExactBytes(t *testing.T) {
 	t.Parallel()
 
 	reportJSON, err := json.Marshal(combinedReport{
@@ -59,7 +59,6 @@ func TestSelectFlowUsesExplainedOfflineReportAndPinsExactBytes(t *testing.T) {
 					LikelyEntrypoint: "must.not.become.Symbol",
 					ValidSeedFiles:   []string{"server/watch.go"},
 				},
-				FlowReport: json.RawMessage(`{"summary":"model prose must stay behind the handoff"}`),
 			},
 		},
 	})
@@ -82,7 +81,7 @@ func TestSelectFlowUsesExplainedOfflineReportAndPinsExactBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"must.not.become.Symbol", "server/watch.go", "model prose"} {
+	for _, forbidden := range []string{"must.not.become.Symbol", "server/watch.go"} {
 		if strings.Contains(string(selectedJSON), forbidden) {
 			t.Fatalf("handoff contains excluded report detail %q: %s", forbidden, selectedJSON)
 		}

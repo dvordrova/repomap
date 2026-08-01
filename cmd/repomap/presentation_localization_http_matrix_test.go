@@ -89,7 +89,6 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 		missRunDir,
 		filepath.Join(missDebugDir, presentationLocalizationCacheDir),
 		false,
-		false,
 		io.Discard,
 	)
 	if err != nil {

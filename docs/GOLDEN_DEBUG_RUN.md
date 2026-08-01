@@ -15,15 +15,16 @@ Use `--preview-request` to inspect the complete provider body without sending it
 ## Capture a full provider run (requires configured auth)
 
 ```bash
-repomap orient --repo ../etcd --debug-dir .repomap-runs --dump-llm
+repomap orient --repo ../etcd --debug-dir .repomap-runs
 ```
 
 Writes under `.repomap-runs/<run-id>/`:
 - `metadata.json`
 - `snapshot.json`
 - `llm_bundle.json`
-- `llm_request.redacted.json`
-- `llm_response.raw.json`
+- `semantic_exchanges/<content-addressed-id>/request.{json,txt}`
+- `semantic_exchanges/<content-addressed-id>/response.{json,txt}` or `response.marker.json`
+- `semantic_exchanges/<content-addressed-id>/exchange.v1.json`
 - `orientation_report.json`
 - `error.txt` (if failure)
 
@@ -45,8 +46,11 @@ the normal CLI. Pass an explicit directory for the reproducible layout above.
     metadata.json
     snapshot.json
     llm_bundle.json
-    llm_request.redacted.json
-    llm_response.raw.json
+    semantic_exchanges/
+      <content-addressed-id>/
+        request.json or request.txt
+        response.json, response.txt, or response.marker.json
+        exchange.v1.json
     orientation_report.json
     error.txt
 ```
@@ -56,4 +60,5 @@ the normal CLI. Pass an explicit directory for the reproducible layout above.
 - **Do not commit** `.repomap-runs/` — it may contain repository information.
 - Debug artifacts never include API keys or Authorization headers.
 - Sensitive values are redacted (api_key, token, password, secret, authorization, bearer).
+- Semantic journal payloads are bounded; unavailable or unsafe raw bytes use closed markers.
 - Directories use mode 0700, files use 0600.

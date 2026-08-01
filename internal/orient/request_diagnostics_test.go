@@ -13,7 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 )
 
-func TestRunPersistsRequestAndResponseOnValidationFailure(t *testing.T) {
+func TestRunPersistsJournalAndClosedDiagnosticsOnValidationFailure(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/invalid-response\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -65,8 +65,6 @@ func TestRunPersistsRequestAndResponseOnValidationFailure(t *testing.T) {
 	}
 	runDir := filepath.Join(debugDir, runID)
 	for _, name := range []string{
-		"llm_request.redacted.json",
-		"llm_response.raw.json",
 		"orientation_validation.json",
 		"error.txt",
 	} {
