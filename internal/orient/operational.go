@@ -14,8 +14,8 @@ import (
 
 const maxMergedOrientationCandidates = 20
 
-func collectOrientationSignals(s snapshot.Snapshot, opts Options) []sourcesignals.Signal {
-	signals := sourcesignals.ScanFiles(
+func collectOrientationSignals(s snapshot.Snapshot, opts Options) ([]sourcesignals.Signal, sourcesignals.ScanTrace) {
+	signals, trace := sourcesignals.ScanFilesWithTrace(
 		s.FilteredFiles,
 		opts.RepoPath,
 		sourcesignals.ScanOptions{
@@ -24,9 +24,9 @@ func collectOrientationSignals(s snapshot.Snapshot, opts Options) []sourcesignal
 		},
 	)
 	if signals == nil {
-		return []sourcesignals.Signal{}
+		return []sourcesignals.Signal{}, trace
 	}
-	return signals
+	return signals, trace
 }
 
 func discoverOperationalCandidates(

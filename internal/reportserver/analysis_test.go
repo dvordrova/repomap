@@ -312,27 +312,13 @@ func TestInspectSymbolEndpointAcceptsCanonicalSlashIdentityAndReturnsBoundedLoca
 	}
 }
 
-func TestVersion3SymbolListAndExactInspectPreserveEndpointParity(t *testing.T) {
-	repo, runsDir, state := writeAnalysisRun(t)
+func TestPreviousManifestVersionDoesNotAuthorizeSymbolAnalysis(t *testing.T) {
+	_, runsDir, state := writeAnalysisRun(t)
 	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-		manifest.Version = 3
+		manifest.Version = 4
 	})
-	target := evidence.Entity{
-		ID:       "function:batch.go:3:1:Commit",
-		Kind:     evidence.EntityFunction,
-		Name:     "Commit",
-		Language: "go",
-		Location: &evidence.Location{Path: "batch.go", Line: 3, Column: 1},
-	}
-	resolver := &recordingLocationResolver{resolution: analysis.LocationResolution{
-		Location: evidence.Location{Path: "batch.go", Line: 395},
-		Candidates: []analysis.LocationCandidate{{
-			Entity: target, Match: "file_callable", Certainty: evidence.CertaintyPossible, Investigable: true,
-		}},
-		Certainty:  evidence.CertaintyPossible,
-		Provenance: evidence.Provenance{Provider: "gopls", Operation: "document_symbols"},
-	}}
-	exact := &recordingExactAnalyzer{graph: exactGraphFixture(repo, target)}
+	resolver := &recordingLocationResolver{}
+	exact := &recordingExactAnalyzer{}
 	handler, err := NewHandler(Options{
 		RunsDir:             runsDir,
 		Capability:          testCapability,
@@ -354,69 +340,9 @@ func TestVersion3SymbolListAndExactInspectPreserveEndpointParity(t *testing.T) {
 		AnchorID:    "anchor-batch",
 		Line:        395,
 	})
-	if lookup.Code != http.StatusOK {
-		t.Fatalf("v3 lookup status = %d, body=%s", lookup.Code, lookup.Body.String())
-	}
-	var candidates symbolsResponse
-	if err := json.Unmarshal(lookup.Body.Bytes(), &candidates); err != nil {
-		t.Fatal(err)
-	}
-	if candidates.Status != "ok" || len(candidates.Candidates) != 1 ||
-		candidates.Candidates[0].Name != target.Name {
-		t.Fatalf("v3 candidates = %#v", candidates)
-	}
-	inspect := performInspectRequest(t, handler, inspectSymbolRequest{
-		RunID:          "20260711-220000-pebble",
-		CandidateSetID: candidates.CandidateSetID,
-		CandidateID:    candidates.Candidates[0].ID,
-	})
-	if inspect.Code != http.StatusOK {
-		t.Fatalf("v3 inspect status = %d, body=%s", inspect.Code, inspect.Body.String())
-	}
-	var result inspectSymbolResponse
-	if err := json.Unmarshal(inspect.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Status != "ok" || result.Target.Name != target.Name ||
-		result.Source.Path != "batch.go" || len(result.IncomingCalls) != 1 ||
-		len(result.OutgoingCalls) != 1 || strings.Contains(inspect.Body.String(), repo) {
-		t.Fatalf("v3 inspect response = %#v body=%s", result, inspect.Body.String())
-	}
-}
-
-func TestVersion3SourceOpenKeepsLegacyOpaqueIDBehavior(t *testing.T) {
-	repo, runsDir, _ := writeAnalysisRun(t)
-	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-		manifest.Version = 3
-	})
-	sourceID := testSourceID(t, runsDir, "20260711-220000-pebble", "batch.go")
-	var opened string
-	handler, err := NewHandler(Options{
-		RunsDir:    runsDir,
-		Capability: testCapability,
-		OpenFile: func(_ context.Context, absolutePath string, _, _ int) error {
-			opened = absolutePath
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	response := postOpen(
-		t,
-		server.URL+capabilityURLPrefix(testCapability),
-		openRequest{
-			RunID:    "20260711-220000-pebble",
-			SourceID: sourceID,
-			Line:     3,
-		},
-		true,
-	)
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK || opened != filepath.Join(repo, "batch.go") {
-		t.Fatalf("v3 source open status=%d path=%q", response.StatusCode, opened)
+	if lookup.Code != http.StatusForbidden || len(resolver.requests) != 0 || len(exact.requests) != 0 {
+		t.Fatalf("previous-version lookup status=%d resolver=%d exact=%d body=%s",
+			lookup.Code, len(resolver.requests), len(exact.requests), lookup.Body.String())
 	}
 }
 

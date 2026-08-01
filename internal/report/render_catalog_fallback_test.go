@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 )
 
 func TestLateCatalogIncompatibilityPublishesViewOnly(t *testing.T) {
@@ -77,9 +78,17 @@ func testLateCatalogIncompatibilityPublishesViewOnly(
 		"file_tree":["batch.go",%q],
 		"files_considered":2
 	}`, linkName))
-	writeTestFile(t, runDir, "llm_bundle.json", fmt.Sprintf(`{
+	modelBundle := fmt.Sprintf(`{
 		"allowed_paths":["batch.go",%q]
-	}`, linkName))
+	}`, linkName)
+	writeTestFile(t, runDir, "llm_bundle.json", modelBundle)
+	if err := os.WriteFile(
+		filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename),
+		validOrientationContextSelectionArtifact(t, []byte(modelBundle)),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	writeTestFile(t, runDir, "orientation_report.json", `{
 		"project_guess":"batch fixture",
 		"high_level_map":[{

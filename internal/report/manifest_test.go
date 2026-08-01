@@ -3,7 +3,6 @@ package report
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,9 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T) {
@@ -24,10 +25,19 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 	runDir := t.TempDir()
 	writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"manifest-fixture"}`)
 	writeRunManifestMetadata(t, runDir, repository)
-	writeTestFile(t, runDir, "llm_bundle.json", `{
+	const llmBundleArtifact = `{
 		"allowed_paths":["batch.go"],
 		"source_signals":[{"path":"batch.go","line":3,"category":"request_handler","snippet":"func Commit() {}","reason":"fixture"}]
-	}`)
+	}`
+	writeTestFile(t, runDir, "llm_bundle.json", llmBundleArtifact)
+	selectionArtifact := validOrientationContextSelectionArtifact(t, []byte(llmBundleArtifact))
+	if err := os.WriteFile(
+		filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename),
+		selectionArtifact,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	writeTestFile(t, runDir, "orientation_report.json", `{
 		"project_guess":"batch fixture",
 		"high_level_map":[{
@@ -67,6 +77,9 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 	}
 	if manifest.RepositoryState.Identity != repository {
 		t.Fatalf("repository identity = %q, want %q", manifest.RepositoryState.Identity, repository)
+	}
+	if manifest.MaterialInputs.OrientationContextSelectionSHA256 != manifestSHA256(selectionArtifact) {
+		t.Fatalf("orientation context selection digest = %q", manifest.MaterialInputs.OrientationContextSelectionSHA256)
 	}
 	if manifest.AnalysisRoot != repository {
 		t.Fatalf("analysis root = %q, want %q", manifest.AnalysisRoot, repository)
@@ -118,6 +131,162 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 	if _, err := ReadRunManifest(runDir); err == nil || !strings.Contains(err.Error(), "report sha256 mismatch") {
 		t.Fatalf("ReadRunManifest after report tamper error = %v", err)
 	}
+}
+
+func TestGenerateAuthorizedRequiresSelectionForSavedModelBundle(t *testing.T) {
+	repository := newRunManifestRepository(t)
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := ConfirmRunAuthority(repository, state, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name             string
+		selectionContent string
+		want             string
+	}{
+		{name: "absent", want: "must both be present or absent"},
+		{name: "invalid", selectionContent: `{"version":1}`, want: "orientation context selection"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := t.TempDir()
+			writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"manifest-fixture"}`)
+			writeRunManifestMetadata(t, runDir, repository)
+			writeTestFile(t, runDir, "llm_bundle.json", `{"repo_name":"manifest-fixture"}`)
+			if test.selectionContent != "" {
+				writeTestFile(t, runDir, llmbundle.OrientationContextSelectionFilename, test.selectionContent)
+			}
+			writeTestFile(t, runDir, "orientation_report.json", `{
+				"project_guess":"manifest fixture",
+				"candidate_flows":[],
+				"warnings":[]
+			}`)
+
+			err := GenerateAuthorized(runDir, authority)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("GenerateAuthorized error = %v, want %q", err, test.want)
+			}
+			if _, statErr := os.Stat(filepath.Join(runDir, RunManifestFilename)); !os.IsNotExist(statErr) {
+				t.Fatalf("run manifest exists after rejected publication: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRunManifestVerifiesOrientationContextSelectionArtifact(t *testing.T) {
+	bundleArtifact := []byte(`{"repo_name":"fixture"}`)
+	artifact := validOrientationContextSelectionArtifact(t, bundleArtifact)
+	want := manifestSHA256(artifact)
+
+	t.Run("exact regular artifact", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(runDir, "llm_bundle.json"), bundleArtifact, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename), artifact, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		manifest := validRunManifestFixture(t)
+		manifest.MaterialInputs.ModelBundleSHA256 = manifestSHA256(bundleArtifact)
+		manifest.MaterialInputs.OrientationContextSelectionSHA256 = want
+		if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("selection is bound to a different model bundle", func(t *testing.T) {
+		runDir := t.TempDir()
+		otherBundle := []byte(`{"repo_name":"other"}`)
+		if err := os.WriteFile(filepath.Join(runDir, "llm_bundle.json"), otherBundle, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename), artifact, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		manifest := validRunManifestFixture(t)
+		manifest.MaterialInputs.ModelBundleSHA256 = manifestSHA256(otherBundle)
+		manifest.MaterialInputs.OrientationContextSelectionSHA256 = want
+		if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err == nil ||
+			!strings.Contains(err.Error(), "model bundle identity mismatch") {
+			t.Fatalf("mismatched selection error = %v", err)
+		}
+	})
+
+	tests := []struct {
+		name  string
+		setup func(*testing.T, string) string
+	}{
+		{
+			name: "missing",
+			setup: func(_ *testing.T, _ string) string {
+				return want
+			},
+		},
+		{
+			name: "tampered",
+			setup: func(t *testing.T, runDir string) string {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename), append(append([]byte(nil), artifact...), '\n'), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return want
+			},
+		},
+		{
+			name: "symlink",
+			setup: func(t *testing.T, runDir string) string {
+				t.Helper()
+				outside := filepath.Join(t.TempDir(), "selection.json")
+				if err := os.WriteFile(outside, artifact, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename)); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+				return want
+			},
+		},
+		{
+			name: "invalid matching hash",
+			setup: func(t *testing.T, runDir string) string {
+				t.Helper()
+				invalid := []byte(`{"version":1}`)
+				if err := os.WriteFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename), invalid, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return manifestSHA256(invalid)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := t.TempDir()
+			manifest := validRunManifestFixture(t)
+			manifest.MaterialInputs.ModelBundleSHA256 = strings.Repeat("f", 64)
+			manifest.MaterialInputs.OrientationContextSelectionSHA256 = test.setup(t, runDir)
+			if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err == nil {
+				t.Fatal("verification unexpectedly succeeded")
+			}
+		})
+	}
+
+	t.Run("manifest writer refuses symlink artifact", func(t *testing.T) {
+		runDir := t.TempDir()
+		outside := filepath.Join(t.TempDir(), "selection.json")
+		if err := os.WriteFile(outside, artifact, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename)); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		if _, err := savedOrientationContextSelectionSHA256(runDir); err == nil {
+			t.Fatal("manifest writer accepted symlinked orientation context selection")
+		}
+	})
 }
 
 func TestGenerateWithoutConfirmedAuthorityLeavesRunViewOnly(t *testing.T) {
@@ -225,6 +394,20 @@ func TestRunManifestValidateRejectsUnsafeOrAmbiguousAuthority(t *testing.T) {
 			},
 			want: "repository state sha256 mismatch",
 		},
+		{
+			name: "model bundle without selection",
+			mutate: func(manifest *RunManifest) {
+				manifest.MaterialInputs.ModelBundleSHA256 = strings.Repeat("e", 64)
+			},
+			want: "must both be present or absent",
+		},
+		{
+			name: "selection without model bundle",
+			mutate: func(manifest *RunManifest) {
+				manifest.MaterialInputs.OrientationContextSelectionSHA256 = strings.Repeat("e", 64)
+			},
+			want: "must both be present or absent",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -269,75 +452,60 @@ func TestRunManifestSourceCatalogPreservesCurrentSourceScopeAndJSON(t *testing.T
 	}
 }
 
-func TestRunManifestWorkspaceSnapshotPreservesV3V4AuthorityAndJSON(t *testing.T) {
+func TestRunManifestWorkspaceSnapshotPreservesCurrentAuthorityAndJSON(t *testing.T) {
 	t.Parallel()
 
-	for _, version := range []int{3, CurrentRunManifestVersion} {
-		t.Run(fmt.Sprintf("version %d", version), func(t *testing.T) {
-			t.Parallel()
+	manifest := validRunManifestFixture(t)
+	before, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := manifest.WorkspaceSnapshot()
+	if err != nil {
+		t.Fatalf("WorkspaceSnapshot: %v", err)
+	}
+	if snapshot.RepositoryRoot() != manifest.RepositoryState.Identity ||
+		snapshot.AnalysisRoot() != manifest.AnalysisRoot ||
+		snapshot.Revision() != manifest.RepositoryState.Head ||
+		snapshot.RepositoryDigest() != manifest.RepositoryStateSHA256 ||
+		snapshot.CapturedInputsDigest() != manifest.CapturedInputsSHA256 {
+		t.Fatalf("snapshot identity does not match manifest: %#v", snapshot)
+	}
+	wantCatalog, err := manifest.SourceCatalog()
+	if err != nil {
+		t.Fatalf("SourceCatalog: %v", err)
+	}
+	assertCatalogParity(t, snapshot.Catalog(), wantCatalog)
 
-			manifest := validRunManifestFixture(t)
-			manifest.Version = version
-			before, err := json.Marshal(manifest)
-			if err != nil {
-				t.Fatal(err)
-			}
-			snapshot, err := manifest.WorkspaceSnapshot()
-			if err != nil {
-				t.Fatalf("WorkspaceSnapshot: %v", err)
-			}
-			if snapshot.RepositoryRoot() != manifest.RepositoryState.Identity ||
-				snapshot.AnalysisRoot() != manifest.AnalysisRoot ||
-				snapshot.Revision() != manifest.RepositoryState.Head ||
-				snapshot.RepositoryDigest() != manifest.RepositoryStateSHA256 ||
-				snapshot.CapturedInputsDigest() != manifest.CapturedInputsSHA256 {
-				t.Fatalf("snapshot identity does not match manifest: %#v", snapshot)
-			}
-			wantCatalog, err := manifest.SourceCatalog()
-			if err != nil {
-				t.Fatalf("SourceCatalog: %v", err)
-			}
-			assertCatalogParity(t, snapshot.Catalog(), wantCatalog)
+	for _, current := range []freshness.RepositoryState{
+		manifest.RepositoryState,
+		reportRepositoryWithDirty(manifest.RepositoryState, "notes.txt", strings.Repeat("e", 64)),
+		reportRepositoryWithDirty(manifest.RepositoryState, "batch.go", strings.Repeat("f", 64)),
+		func() freshness.RepositoryState {
+			state := manifest.RepositoryState
+			state.Identity = "/other"
+			return state
+		}(),
+	} {
+		want := manifest.CurrentFreshness(current)
+		got := snapshot.Assess(current)
+		want.ComparedAt = ""
+		got.ComparedAt = ""
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Assess parity:\n got: %#v\nwant: %#v", got, want)
+		}
+		wantAllowed := manifest.VerifyRepositoryState(current) == nil
+		if gotAllowed := snapshot.Verify(current) == nil; gotAllowed != wantAllowed {
+			t.Fatalf("Verify allowed = %t, want %t", gotAllowed, wantAllowed)
+		}
+	}
 
-			for _, current := range []freshness.RepositoryState{
-				manifest.RepositoryState,
-				reportRepositoryWithDirty(
-					manifest.RepositoryState,
-					"notes.txt",
-					strings.Repeat("e", 64),
-				),
-				reportRepositoryWithDirty(
-					manifest.RepositoryState,
-					"batch.go",
-					strings.Repeat("f", 64),
-				),
-				func() freshness.RepositoryState {
-					state := manifest.RepositoryState
-					state.Identity = "/other"
-					return state
-				}(),
-			} {
-				want := manifest.CurrentFreshness(current)
-				got := snapshot.Assess(current)
-				want.ComparedAt = ""
-				got.ComparedAt = ""
-				if !reflect.DeepEqual(got, want) {
-					t.Fatalf("Assess parity:\n got: %#v\nwant: %#v", got, want)
-				}
-				wantAllowed := manifest.VerifyRepositoryState(current) == nil
-				if gotAllowed := snapshot.Verify(current) == nil; gotAllowed != wantAllowed {
-					t.Fatalf("Verify allowed = %t, want %t", gotAllowed, wantAllowed)
-				}
-			}
-
-			after, err := json.Marshal(manifest)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(after) != string(before) {
-				t.Fatalf("WorkspaceSnapshot changed manifest JSON:\nbefore: %s\nafter:  %s", before, after)
-			}
-		})
+	after, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("WorkspaceSnapshot changed manifest JSON:\nbefore: %s\nafter:  %s", before, after)
 	}
 }
 
@@ -405,46 +573,19 @@ func TestRunManifestSourceCatalogPreservesSubdirectoryMapping(t *testing.T) {
 	assertCatalogParity(t, snapshot.Catalog(), catalog)
 }
 
-func TestRunManifestSourceCatalogDoesNotChangeLegacyValidation(t *testing.T) {
+func TestDecodeRunManifestRejectsPreviousVersionsWithoutMigration(t *testing.T) {
 	t.Parallel()
 
-	version3 := validRunManifestFixture(t)
-	version3.Version = 3
-	if _, err := version3.SourceCatalog(); err != nil {
-		t.Fatalf("v3 SourceCatalog: %v", err)
-	}
-
-	version2 := validRunManifestFixture(t)
-	version2.Version = 2
-	version2.RepositoryState.Version = 1
-	version2.CapturedInputs = nil
-	version2.CapturedInputsSHA256 = ""
-	version2.Freshness = freshness.FreshnessResult{}
-	version2.MaterialInputs = MaterialInputs{}
-	digest, err := version2.RepositoryState.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	version2.RepositoryStateSHA256 = digest
-	encoded, err := json.Marshal(version2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := DecodeRunManifest(encoded); err != nil {
-		t.Fatalf("DecodeRunManifest(v2): %v", err)
-	}
-	if _, err := version2.SourceCatalog(); err == nil || !strings.Contains(err.Error(), "has no captured input") {
-		t.Fatalf("v2 SourceCatalog error = %v", err)
-	}
-	if _, err := version2.WorkspaceSnapshot(); err == nil ||
-		!strings.Contains(err.Error(), "workspace snapshot is unavailable for version 2") {
-		t.Fatalf("v2 WorkspaceSnapshot error = %v", err)
-	}
-	if err := version2.VerifyRepositoryState(version2.RepositoryState); err != nil {
-		t.Fatalf("v2 VerifyRepositoryState: %v", err)
-	}
-	if got := version2.CurrentFreshness(version2.RepositoryState).State; got != freshness.FreshnessLegacyUnknown {
-		t.Fatalf("v2 CurrentFreshness = %s", got)
+	for _, version := range []int{2, 3, 4} {
+		manifest := validRunManifestFixture(t)
+		manifest.Version = version
+		encoded, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DecodeRunManifest(encoded); err == nil || !strings.Contains(err.Error(), "unsupported version") {
+			t.Fatalf("DecodeRunManifest(version %d) error = %v", version, err)
+		}
 	}
 }
 
@@ -457,34 +598,6 @@ func TestDecodeRunManifestRejectsUnknownFields(t *testing.T) {
 	data = append(data[:len(data)-1], []byte(`,"unexpected":true}`)...)
 	if _, err := DecodeRunManifest(data); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("DecodeRunManifest error = %v", err)
-	}
-}
-
-func TestDecodeRunManifestReopensLegacyManifestWithUnknownFreshness(t *testing.T) {
-	t.Parallel()
-
-	manifest := validRunManifestFixture(t)
-	manifest.Version = 2
-	manifest.RepositoryState.Version = 1
-	manifest.CapturedInputs = nil
-	manifest.CapturedInputsSHA256 = ""
-	manifest.Freshness = freshness.FreshnessResult{}
-	manifest.MaterialInputs = MaterialInputs{}
-	digest, err := manifest.RepositoryState.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.RepositoryStateSHA256 = digest
-	encoded, err := json.Marshal(manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := DecodeRunManifest(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Version != 2 || decoded.CurrentFreshness(decoded.RepositoryState).State != freshness.FreshnessLegacyUnknown {
-		t.Fatalf("legacy manifest = %#v", decoded)
 	}
 }
 
@@ -535,6 +648,40 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 			}},
 		}},
 	}
+}
+
+func validOrientationContextSelectionArtifact(t *testing.T, canonicalBundle []byte) []byte {
+	t.Helper()
+	if !json.Valid(canonicalBundle) {
+		t.Fatal("canonical bundle fixture is invalid json")
+	}
+	typedWire := []byte(`{}`)
+	caps := llmbundle.SelectionCaps{
+		ReadmeBytes: 1024, Modules: 8, Entrypoints: 8, CandidateFiles: 8,
+		Edges: 8, SourceSignalsTotal: 200, SourceSignalsPerFile: 5,
+		KnownDocs: 30, CommandTraces: 8,
+	}
+	artifact, err := llmbundle.EncodeOrientationContextSelection(llmbundle.OrientationContextSelection{
+		Version:               llmbundle.OrientationContextSelectionVersion,
+		CanonicalBundleSHA256: manifestSHA256(canonicalBundle),
+		TypedWireSHA256:       manifestSHA256(typedWire),
+		CanonicalBundleBytes:  len(canonicalBundle),
+		TypedWireBytes:        len(typedWire),
+		ConfiguredCaps:        caps,
+		EffectiveCaps:         caps,
+		ByteFit: llmbundle.ByteFitTrace{
+			Attempts: 1, Fit: true, InitialBytes: len(canonicalBundle), FittedBytes: len(canonicalBundle),
+		},
+		SelectedCandidates: []llmbundle.CandidateSelectionRow{},
+		SourceSignalScan: sourcesignals.ScanTrace{
+			MaxPerFile: 5,
+			MaxTotal:   200,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return artifact
 }
 
 func assertCatalogParity(t *testing.T, got, want interface {

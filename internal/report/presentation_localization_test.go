@@ -17,6 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/orient"
@@ -1649,7 +1650,15 @@ func TestPresentationLocalizationAuthorizedCanonicalRoundTrip(t *testing.T) {
 		"file_tree":["main.go"],
 		"files_considered":1
 	}`)
-	writeTestFile(t, runDir, "llm_bundle.json", `{"allowed_paths":["main.go"]}`)
+	modelBundle := `{"allowed_paths":["main.go"]}`
+	writeTestFile(t, runDir, "llm_bundle.json", modelBundle)
+	if err := os.WriteFile(
+		filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename),
+		validOrientationContextSelectionArtifact(t, []byte(modelBundle)),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	writeTestFile(t, runDir, "orientation_report.json", fmt.Sprintf(`{
 		"project_guess":"An English guide for captured revision %s",
 		"high_level_map":[],

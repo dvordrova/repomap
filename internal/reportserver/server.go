@@ -88,10 +88,7 @@ func (run runRecord) verifyRepositoryState(current freshness.RepositoryState) er
 	if run.WorkspaceSnapshot != nil {
 		return run.WorkspaceSnapshot.Verify(current)
 	}
-	if run.Manifest == nil || run.Manifest.Version >= report.CurrentRunManifestVersion {
-		return fmt.Errorf("workspace authority unavailable")
-	}
-	return run.Manifest.VerifyRepositoryState(current)
+	return fmt.Errorf("workspace authority unavailable")
 }
 
 func (run runRecord) workspaceAnalysisRoot() string {
@@ -594,8 +591,7 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 	}
 	authorizeStarted := time.Now()
 	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) ||
-		(run.Manifest.Version >= report.CurrentRunManifestVersion &&
-			(run.WorkspaceSnapshot == nil || run.SourceCatalog == nil)) {
+		run.WorkspaceSnapshot == nil || run.SourceCatalog == nil {
 		h.logSourceOpen(run.ID, request.SourceID, "view_only", resolveRunMS, time.Since(authorizeStarted).Milliseconds(), 0, 0, started)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only; regenerate it to enable editor actions"})
 		return
@@ -699,12 +695,6 @@ func (h *handler) reloadRuns() error {
 		}
 		if run.Manifest != nil && run.Report != nil {
 			switch {
-			case run.Manifest.Version < report.CurrentRunManifestVersion:
-				run.Sources, run.Report.SourceIDs = legacyManifestSourceTargets(
-					run.ID,
-					run.ReportSHA256,
-					*run.Manifest,
-				)
 			case run.SourceCatalog != nil:
 				run.Sources, run.Report.SourceIDs = catalogSourceTargets(
 					run.ID,
@@ -717,7 +707,7 @@ func (h *handler) reloadRuns() error {
 			}
 			run.SourceContexts = make(map[string]sourceContextTarget)
 			run.Report.SourceContextIDs = make(map[string]string)
-			if run.Manifest.Version >= report.CurrentRunManifestVersion && run.SourceCatalog != nil {
+			if run.SourceCatalog != nil {
 				for _, snippet := range reportSourceSnippets(run.Report) {
 					if err := snippet.Validate(); err != nil {
 						continue
@@ -834,55 +824,6 @@ func catalogSourceTargets(
 	return targets, sourceIDs
 }
 
-func legacyManifestSourceTargets(
-	runID, reportSHA256 string,
-	manifest report.RunManifest,
-) (map[string]sourceTarget, map[string]string) {
-	// Manifest v2/v3 source-open behavior predates captured regular-file
-	// catalogs. Keep this compatibility path out of current-v4 authority.
-	targets := make(map[string]sourceTarget, len(manifest.OpenablePaths))
-	sourceIDs := make(map[string]string, len(manifest.OpenablePaths))
-	for _, relativePath := range manifest.OpenablePaths {
-		sourceID := manifestSourceID(runID, reportSHA256, relativePath)
-		targets[sourceID] = sourceTarget{
-			relativePath:   relativePath,
-			capturedSHA256: legacyCapturedSourceSHA256(manifest, relativePath),
-		}
-		sourceIDs[relativePath] = sourceID
-	}
-	return targets, sourceIDs
-}
-
-func legacyCapturedSourceSHA256(manifest report.RunManifest, relativePath string) string {
-	repositoryRelative := relativePath
-	if analysisRelative, err := filepath.Rel(manifest.RepositoryState.Identity, manifest.AnalysisRoot); err == nil && analysisRelative != "." {
-		repositoryRelative = filepath.ToSlash(filepath.Join(analysisRelative, filepath.FromSlash(relativePath)))
-	}
-	for _, input := range manifest.CapturedInputs {
-		if input.Path == repositoryRelative || input.Path == relativePath {
-			return input.ContentSHA256
-		}
-	}
-	return ""
-}
-
-func sourceTargetChanged(absolutePath, capturedSHA256 string) bool {
-	if capturedSHA256 == "" {
-		return false
-	}
-	file, err := os.Open(absolutePath)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	hash := sha256.New()
-	written, err := io.Copy(hash, io.LimitReader(file, maxSourceHashBytes+1))
-	if err != nil || written > maxSourceHashBytes {
-		return false
-	}
-	return fmt.Sprintf("%x", hash.Sum(nil)) != capturedSHA256
-}
-
 func resolveOpenTarget(
 	ctx context.Context,
 	run runRecord,
@@ -902,15 +843,7 @@ func resolveOpenTarget(
 		}
 		return resolved.AbsolutePath, resolved.SourceChanged, nil
 	}
-
-	// v2 and tolerated degraded-v3 runs predate reusable snapshot authority.
-	// Preserve their existing verified-manifest source-open compatibility
-	// without manufacturing a neutral snapshot.
-	absolutePath, err := resolveRepoFile(run.RepoPath, target.relativePath)
-	if err != nil {
-		return "", false, err
-	}
-	return absolutePath, sourceTargetChanged(absolutePath, target.capturedSHA256), nil
+	return "", false, fmt.Errorf("workspace snapshot unavailable")
 }
 
 func (h *handler) logSourceOpen(
@@ -981,29 +914,24 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 		if manifestErr == nil {
 			manifest, decodeErr := report.DecodeRunManifest(manifestJSON)
 			if decodeErr == nil && manifest.VerifyReportJSON(reportJSON) == nil &&
-				manifest.VerifyTaskInvestigationArtifacts(filepath.Join(h.runsDir, entry.Name())) == nil {
+				manifest.VerifyTaskInvestigationArtifacts(filepath.Join(h.runsDir, entry.Name())) == nil &&
+				manifest.VerifyOrientationContextSelectionArtifact(filepath.Join(h.runsDir, entry.Name())) == nil {
 				analysisRoot, rootErr := manifest.ResolveAnalysisRoot()
 				if rootErr == nil {
 					run.Manifest = &manifest
 					run.RepoPath = analysisRoot
 					run.ReportSHA256 = manifest.ReportSHA256
-					if manifest.Version >= 3 {
-						snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)
-						if snapshotErr == nil {
-							run.WorkspaceSnapshot = snapshot
-							run.SourceCatalog = catalog
-							run.RepoPath = snapshot.AnalysisRoot()
-						} else if manifest.Version >= report.CurrentRunManifestVersion {
-							h.log("report %s source catalog unavailable; local analysis disabled", run.ID)
-						}
+					snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)
+					if snapshotErr == nil {
+						run.WorkspaceSnapshot = snapshot
+						run.SourceCatalog = catalog
+						run.RepoPath = snapshot.AnalysisRoot()
+					} else {
+						h.log("report %s source catalog unavailable; local analysis disabled", run.ID)
 					}
 					run.AnalysisAvailable = run.WorkspaceSnapshot != nil &&
 						run.SourceCatalog != nil &&
 						h.analysisAvailable(manifest)
-					if manifest.Version < report.CurrentRunManifestVersion {
-						legacy := freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
-						run.Report.Freshness = &legacy
-					}
 				}
 			}
 		}
@@ -1048,7 +976,7 @@ func shortRunID(runID string) string {
 }
 
 func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
-	if run == nil || run.Manifest == nil || run.Report == nil || run.Manifest.Version < report.CurrentRunManifestVersion ||
+	if run == nil || run.Manifest == nil || run.Report == nil || run.Manifest.Version != report.CurrentRunManifestVersion ||
 		h.captureRepo == nil {
 		return
 	}
@@ -1083,8 +1011,8 @@ func workspaceSnapshotForManifest(
 	manifest report.RunManifest,
 	resolvedRoot string,
 ) (*workspacesnapshot.Snapshot, *sourcecatalog.Catalog, error) {
-	if manifest.Version < 3 {
-		return nil, nil, nil
+	if manifest.Version != report.CurrentRunManifestVersion {
+		return nil, nil, fmt.Errorf("workspace snapshot unavailable")
 	}
 	snapshot, err := manifest.WorkspaceSnapshot()
 	if err != nil {

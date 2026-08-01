@@ -15,32 +15,30 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 )
 
-func TestWorkspaceSnapshotForManifestPreservesVersionMatrix(t *testing.T) {
+func TestWorkspaceSnapshotForManifestRequiresCurrentVersion(t *testing.T) {
 	t.Parallel()
 
-	for _, version := range []int{3, report.CurrentRunManifestVersion} {
-		manifest := workspaceTestManifest(t, version, "/repo")
-		snapshot, catalog, err := workspaceSnapshotForManifest(manifest, "/repo")
-		if err != nil {
-			t.Fatalf("v%d workspaceSnapshotForManifest: %v", version, err)
-		}
-		if snapshot == nil || catalog == nil ||
-			snapshot.RepositoryRoot() != manifest.RepositoryState.Identity ||
-			snapshot.AnalysisRoot() != manifest.AnalysisRoot ||
-			snapshot.RepositoryDigest() != manifest.RepositoryStateSHA256 ||
-			snapshot.CapturedInputsDigest() != manifest.CapturedInputsSHA256 ||
-			catalog.AnalysisRoot() != manifest.AnalysisRoot {
-			t.Fatalf("v%d snapshot=%#v catalog=%#v", version, snapshot, catalog)
-		}
-		if _, _, err := workspaceSnapshotForManifest(manifest, "/other"); err == nil {
-			t.Fatalf("v%d mismatched resolved root was accepted", version)
-		}
+	manifest := workspaceTestManifest(t, report.CurrentRunManifestVersion, "/repo")
+	snapshot, catalog, err := workspaceSnapshotForManifest(manifest, "/repo")
+	if err != nil {
+		t.Fatalf("current workspaceSnapshotForManifest: %v", err)
 	}
-
-	legacy := workspaceTestManifest(t, 2, "/repo")
-	snapshot, catalog, err := workspaceSnapshotForManifest(legacy, "/repo")
-	if err != nil || snapshot != nil || catalog != nil {
-		t.Fatalf("v2 snapshot=%#v catalog=%#v err=%v", snapshot, catalog, err)
+	if snapshot == nil || catalog == nil ||
+		snapshot.RepositoryRoot() != manifest.RepositoryState.Identity ||
+		snapshot.AnalysisRoot() != manifest.AnalysisRoot ||
+		snapshot.RepositoryDigest() != manifest.RepositoryStateSHA256 ||
+		snapshot.CapturedInputsDigest() != manifest.CapturedInputsSHA256 ||
+		catalog.AnalysisRoot() != manifest.AnalysisRoot {
+		t.Fatalf("current snapshot=%#v catalog=%#v", snapshot, catalog)
+	}
+	if _, _, err := workspaceSnapshotForManifest(manifest, "/other"); err == nil {
+		t.Fatal("mismatched resolved root was accepted")
+	}
+	for _, version := range []int{2, 3, 4} {
+		previous := workspaceTestManifest(t, version, "/repo")
+		if snapshot, catalog, err := workspaceSnapshotForManifest(previous, "/repo"); err == nil || snapshot != nil || catalog != nil {
+			t.Fatalf("version %d snapshot=%#v catalog=%#v err=%v", version, snapshot, catalog, err)
+		}
 	}
 }
 
@@ -123,34 +121,26 @@ func TestAnalysisAvailabilityRequiresBoundedWorkspaceSnapshot(t *testing.T) {
 	}
 }
 
-func TestVersion3SnapshotRejectionPreservesLegacyDegradation(t *testing.T) {
+func TestPreviousManifestVersionDoesNotRestoreWorkspaceAuthority(t *testing.T) {
 	repo, runsDir, _ := writeAnalysisRun(t)
-	rewriteAnalysisManifestWithOversizedStages(t, runsDir, 3)
-	var logs []string
+	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
+		manifest.Version = 4
+	})
 	h := &handler{
 		runsDir: runsDir,
 		analysis: newSymbolAnalysis(Options{
 			LocationResolver:    &recordingLocationResolver{},
 			ExactSymbolAnalyzer: &recordingExactAnalyzer{},
 		}),
-		logf: func(format string, args ...any) {
-			logs = append(logs, fmt.Sprintf(format, args...))
-		},
 	}
 	if err := h.reloadRuns(); err != nil {
 		t.Fatal(err)
 	}
 	loaded := h.runsSnapshot()
-	if len(loaded) != 1 || loaded[0].Manifest == nil || loaded[0].Report == nil ||
-		loaded[0].RepoPath != repo || loaded[0].WorkspaceSnapshot != nil ||
-		loaded[0].SourceCatalog != nil || loaded[0].AnalysisAvailable ||
-		len(loaded[0].Sources) == 0 || loaded[0].Report.SourceIDs["batch.go"] == "" {
-		t.Fatalf("snapshot-rejected v3 run = %#v", loaded)
-	}
-	for _, log := range logs {
-		if strings.Contains(log, "source catalog unavailable; local analysis disabled") {
-			t.Fatalf("v3 emitted current-only snapshot diagnostic: %v", logs)
-		}
+	if len(loaded) != 1 || loaded[0].Manifest != nil || loaded[0].Report == nil ||
+		loaded[0].RepoPath == repo || loaded[0].WorkspaceSnapshot != nil ||
+		loaded[0].SourceCatalog != nil || loaded[0].AnalysisAvailable {
+		t.Fatalf("previous-version run restored authority = %#v", loaded)
 	}
 }
 
@@ -184,10 +174,6 @@ func TestRunRecordUsesSnapshotForCurrentWorkspaceAuthority(t *testing.T) {
 		t.Fatal("report binding moved out of the manifest/reportserver adapter")
 	}
 
-	version3 := workspaceTestManifest(t, 3, "/legacy-v3")
-	if err := (runRecord{Manifest: &version3}).verifyRepositoryState(version3.RepositoryState); err != nil {
-		t.Fatalf("v3 degraded verification fallback: %v", err)
-	}
 	current := workspaceTestManifest(t, report.CurrentRunManifestVersion, "/current")
 	if err := (runRecord{Manifest: &current}).verifyRepositoryState(current.RepositoryState); err == nil {
 		t.Fatal("current run without a snapshot did not fail closed")
@@ -281,20 +267,22 @@ func TestLoadAndReadAuthorizedRunRestoreWorkspaceSnapshot(t *testing.T) {
 
 	assertLoaded(report.CurrentRunManifestVersion)
 	rewriteAnalysisManifest(t, runsDir, func(manifest *report.RunManifest) {
-		manifest.Version = 3
+		manifest.Version = 4
 	})
-	assertLoaded(3)
+	runs, err := h.loadRuns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Manifest != nil || runs[0].WorkspaceSnapshot != nil || runs[0].AnalysisAvailable {
+		t.Fatalf("previous-version run restored authority: %#v", runs)
+	}
 }
 
 func workspaceTestManifest(t *testing.T, version int, root string) report.RunManifest {
 	t.Helper()
 
-	repositoryVersion := freshness.RepositoryStateVersion
-	if version == 2 {
-		repositoryVersion = 1
-	}
 	repository := freshness.RepositoryState{
-		Version:  repositoryVersion,
+		Version:  freshness.RepositoryStateVersion,
 		Identity: root,
 		Head:     strings.Repeat("a", 40),
 		Dirty:    []freshness.DirtyFile{},
@@ -311,9 +299,6 @@ func workspaceTestManifest(t *testing.T, version int, root string) report.RunMan
 		ReportSHA256:          strings.Repeat("b", 64),
 		ReportFormatVersion:   report.CurrentFormatVersion,
 		OpenablePaths:         []string{"main.go"},
-	}
-	if version == 2 {
-		return manifest
 	}
 	manifest.CapturedInputs = []freshness.CapturedInput{{
 		Version:       freshness.CapturedInputVersion,

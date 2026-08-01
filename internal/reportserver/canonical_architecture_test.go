@@ -59,13 +59,15 @@ func TestOrdinaryStaticAndServerReportsShareCanonicalArchitectureBase(t *testing
 		"file_tree":["main.go"],
 		"files_considered":1
 	}`))
-	writeCanonicalArchitectureFixture(t, runDir, "llm_bundle.json", []byte(`{
+	modelBundleJSON := []byte(`{
 		"allowed_paths":["main.go"],
 		"go": {
 			"module_summaries":[{"module_path":"example.com/canonical","module_dir":"."}],
 			"important_edges":[{"from":"example.com/canonical/cmd","to":"example.com/canonical/internal/service"}]
 		}
-	}`))
+	}`)
+	writeCanonicalArchitectureFixture(t, runDir, "llm_bundle.json", modelBundleJSON)
+	writeOrientationSelectionFixture(t, runDir, modelBundleJSON)
 	writeCanonicalArchitectureFixture(t, runDir, "orientation_report.json", []byte(`{
 		"project_guess":"Canonical architecture fixture",
 		"high_level_map":[],
@@ -115,13 +117,13 @@ func TestOrdinaryStaticAndServerReportsShareCanonicalArchitectureBase(t *testing
 	}
 	staticData := embeddedCanonicalReportData(t, staticHTML)
 
-	handler, err := NewHandler(Options{
+	httpHandler, err := NewHandler(Options{
 		RunsDir: runsDir, InitialRunID: runID, Capability: testCapability,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(httpHandler)
 	defer server.Close()
 	response, err := server.Client().Get(
 		server.URL + capabilityURLPrefix(testCapability) + "/runs/" + runID + "/report.html",
@@ -155,6 +157,21 @@ func TestOrdinaryStaticAndServerReportsShareCanonicalArchitectureBase(t *testing
 		canonicalArchitectureComponentIDs(servedData.ArchitectureCanvas),
 	) {
 		t.Fatalf("static/server component IDs differ")
+	}
+
+	writeCanonicalArchitectureFixture(
+		t,
+		runDir,
+		"orientation_context_selection.v1.json",
+		[]byte(`{"version":1}`),
+	)
+	reloaded := &handler{runsDir: runsDir}
+	if err := reloaded.reloadRuns(); err != nil {
+		t.Fatal(err)
+	}
+	runs := reloaded.runsSnapshot()
+	if len(runs) != 1 || runs[0].Manifest != nil || runs[0].Report == nil {
+		t.Fatalf("tampered selection restored report authority: %#v", runs)
 	}
 }
 

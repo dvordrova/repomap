@@ -17,6 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/orient"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
@@ -321,13 +322,15 @@ func TestServeRussianProjectionHydratesStudyAndTaskWarningMetadata(t *testing.T)
 	); err != nil {
 		t.Fatal(err)
 	}
+	modelBundleJSON := []byte("{}\n")
 	if err := os.WriteFile(
 		filepath.Join(runDir, "llm_bundle.json"),
-		[]byte("{}\n"),
+		modelBundleJSON,
 		0o600,
 	); err != nil {
 		t.Fatal(err)
 	}
+	writeOrientationSelectionFixture(t, runDir, modelBundleJSON)
 	if err := os.WriteFile(
 		filepath.Join(runDir, studymap.StatusFile),
 		[]byte(`{
@@ -365,9 +368,18 @@ func TestServeRussianProjectionHydratesStudyAndTaskWarningMetadata(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest.Version = 2
 	manifest.ReportSHA256 = fmt.Sprintf("%x", sha256.Sum256(reportJSON))
 	manifest.OpenablePaths = append([]string(nil), canonical.OpenablePaths...)
+	manifest.MaterialInputs.ModelBundleSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		"llm_bundle.json",
+	)
+	manifest.MaterialInputs.OrientationContextSelectionSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		llmbundle.OrientationContextSelectionFilename,
+	)
 	manifest.MaterialInputs.TaskBundleSHA256 = taskWarningFixtureSHA256(
 		t,
 		runDir,
@@ -388,8 +400,16 @@ func TestServeRussianProjectionHydratesStudyAndTaskWarningMetadata(t *testing.T)
 		runDir,
 		tasklens.StatusFile,
 	)
-	manifest.MaterialInputs.TaskRetrievalTraceSHA256 = ""
-	manifest.MaterialInputs.TaskRetrievalTraceMarkdownSHA256 = ""
+	manifest.MaterialInputs.TaskRetrievalTraceSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		tasklens.TraceJSONFile,
+	)
+	manifest.MaterialInputs.TaskRetrievalTraceMarkdownSHA256 = taskWarningFixtureSHA256(
+		t,
+		runDir,
+		tasklens.TraceMarkdownFile,
+	)
 	manifestJSON, err = json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)

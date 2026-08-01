@@ -1,15 +1,29 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/183-orientation-request-local-references.md
+    decisions/184-orientation-context-selection-manifest.md
 
 Status:
-    Decision 183 active; Orientation request-local typed references authorized
+    Decision 184 active; Orientation context-selection manifest authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 184 adds one provider-free, versioned, safe local Orientation
+    context-selection artifact produced by the actual llmbundle selection and
+    byte-fit path. It records effective caps, exact before/after counts,
+    bounded proven cutoff samples, canonical selected candidate rows, and the
+    exact compact-bundle/typed-wire byte identities without rerunning ranking.
+    The version-5 normal run manifest binds and verifies its SHA-256, requires
+    model-bundle and selection identities as a pair, and rejects earlier
+    manifest versions without migration. No full file tree,
+    extra source contents/snippets, provider response, credentials, replay, or
+    development artifacts enter it. Selected composition/order,
+    prompt/request/cache identity, provider calls, canonical report, Study,
+    Architecture, localization, UI, clients/retries, flags, and
+    --llm-bundle-only output remain unchanged; there is no legacy reader or
+    migration.
     Decision 183 replaces repository-bearing values in the Orientation model
     response with one exact request-local private typed reference catalog and a
     compact in-place wire projection. The provider returns only the small

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 )
 
 func TestNormalizeGitLabRepositoryURL(t *testing.T) {
@@ -442,16 +443,24 @@ func TestGenerateAuthorizedGitLabKeepsPersistenceHostNeutralAndStripsHTMLSource(
 	runDir := t.TempDir()
 	writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"gitlab-fixture"}`)
 	writeRunManifestMetadata(t, runDir, repository)
-	writeTestFile(t, runDir, "llm_bundle.json", `{
+	modelBundle := `{
 		"allowed_paths":["batch.go"],
 		"source_signals":[{
 			"path":"batch.go",
 			"line":4,
 			"category":"request_handler",
-			"snippet":"func Commit() {} // `+sourceSentinel+`",
+			"snippet":"func Commit() {} // ` + sourceSentinel + `",
 			"reason":"fixture"
 		}]
-	}`)
+	}`
+	writeTestFile(t, runDir, "llm_bundle.json", modelBundle)
+	if err := os.WriteFile(
+		filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename),
+		validOrientationContextSelectionArtifact(t, []byte(modelBundle)),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	writeTestFile(t, runDir, "orientation_report.json", `{
 		"project_guess":"batch fixture",
 		"high_level_map":[{

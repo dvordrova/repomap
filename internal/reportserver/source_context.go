@@ -63,7 +63,7 @@ func (h *handler) serveSourceContext(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
 		return
 	}
-	if run.Manifest == nil || run.Manifest.Version < report.CurrentRunManifestVersion ||
+	if run.Manifest == nil || run.Manifest.Version != report.CurrentRunManifestVersion ||
 		run.WorkspaceSnapshot == nil || run.Report == nil || run.SourceCatalog == nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only"})
 		return

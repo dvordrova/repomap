@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -327,6 +328,50 @@ func (s *Server) snapshot() { /* compaction, snapshot, defrag */ }
 
 	if len(signals) > 3 {
 		t.Errorf("expected max 3 signals, got %d", len(signals))
+	}
+}
+
+func TestScanFilesWithTracePreservesSelectionAndReportsOnlyProvenCutoffs(t *testing.T) {
+	dir := t.TempDir()
+	writeTestGoFile(t, dir, "a.go", `package fixture
+
+func run() {
+	time.NewTicker(time.Second)
+	go func() {}()
+	file.Sync()
+}
+`)
+	writeTestGoFile(t, dir, "b.go", `package fixture
+
+func observe() {
+	time.NewTicker(time.Second)
+}
+`)
+	files := []string{"b.go", "a.go"}
+	opts := ScanOptions{MaxPerFile: 1, MaxTotal: 1}
+
+	want := ScanFiles(files, dir, opts)
+	got, trace := ScanFilesWithTrace(files, dir, opts)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("traced scan changed selected signals:\n got %#v\nwant %#v", got, want)
+	}
+	if len(got) != 1 || trace.EligibleFiles != 2 || trace.ScannedFiles != 1 ||
+		trace.UnscannedFilesAtTotalLimit != 1 || trace.SelectedSignals != 1 {
+		t.Fatalf("scan trace = %#v, signals = %#v", trace, got)
+	}
+	if trace.ProvenEligibleSignals <= trace.SelectedSignals ||
+		trace.ProvenEligibleSignals != trace.SelectedSignals+trace.OmittedAtPerFileLimit+trace.OmittedAtTotalLimit ||
+		trace.OmittedAtPerFileLimit == 0 || trace.OmittedAtTotalLimit != 0 {
+		t.Fatalf("cutoff accounting = %#v", trace)
+	}
+	if len(trace.OmittedSamples) == 0 || len(trace.OmittedSamples) > maxScanTraceSamples ||
+		len(trace.UnscannedFileSamples) != 1 {
+		t.Fatalf("bounded cutoff samples = %#v", trace)
+	}
+	for _, sample := range trace.OmittedSamples {
+		if sample.Path == "" || sample.Line <= 0 || sample.Category == "" || sample.Cutoff != "max_per_file" {
+			t.Fatalf("unsafe or incomplete cutoff sample = %#v", sample)
+		}
 	}
 }
 

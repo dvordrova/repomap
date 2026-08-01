@@ -48,6 +48,11 @@ var packageAnchorRoles = map[string]struct{}{
 	"service": {}, "store": {}, "worker": {},
 }
 
+const (
+	maxKnownDocsForBundle     = 30
+	maxCommandTracesForBundle = 8
+)
+
 type goSection struct {
 	ModulesCount          int                            `json:"modules_count"`
 	PackagesCount         int                            `json:"packages_count"`
@@ -116,47 +121,121 @@ func defaults(opts Options) Options {
 }
 
 func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
+	bundle, _ := BuildWithTrace(s, fileList, opts)
+	return bundle
+}
+
+// BuildWithTrace returns the exact ordinary Bundle plus observability captured
+// inside the same selection and byte-fit path.
+func BuildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundle, BuildTrace) {
 	opts = defaults(opts)
 	maxBytes := opts.MaxBytes
 	opts.MaxBytes = 0
+	configuredCaps := selectionCapsFromOptions(opts, maxBytes)
 	if maxBytes <= 0 {
-		return build(s, fileList, opts)
+		candidate, trace := buildWithTrace(s, fileList, opts)
+		encoded, _ := json.Marshal(candidate)
+		trace.ConfiguredCaps = configuredCaps
+		trace.EffectiveCaps = effectiveSelectionCaps(opts, opts, configuredCaps, maxBytes)
+		trace.ByteFit = ByteFitTrace{
+			Attempts: 1, Fit: true, InitialBytes: len(encoded), FittedBytes: len(encoded),
+		}
+		return candidate, trace
 	}
 
 	fit := opts
 	var candidate Bundle
+	var trace BuildTrace
+	initialBytes := 0
+	attempts := 0
+	usedFit := fit
 	for attempt := 0; attempt < 24; attempt++ {
-		candidate = build(s, fileList, fit)
+		attempts = attempt + 1
+		usedFit = fit
+		candidate, trace = buildWithTrace(s, fileList, fit)
 		encoded, err := json.Marshal(candidate)
+		if attempt == 0 && err == nil {
+			initialBytes = len(encoded)
+		}
 		if err == nil && len(encoded) <= maxBytes {
 			if fit.MaxFiles < opts.MaxFiles || fit.MaxEdges < opts.MaxEdges ||
 				fit.MaxSignalTotal < opts.MaxSignalTotal {
 				candidate.Warnings = append(candidate.Warnings, "provider bundle fitted to request-byte context budget")
 			}
-			return candidate
+			finalEncoded, finalErr := json.Marshal(candidate)
+			finalBytes := len(finalEncoded)
+			finalFit := finalErr == nil && finalBytes <= maxBytes
+			trace.ConfiguredCaps = configuredCaps
+			trace.EffectiveCaps = effectiveSelectionCaps(opts, fit, configuredCaps, maxBytes)
+			trace.ByteFit = ByteFitTrace{
+				Attempts: attempt + 1, Applied: attempt > 0, Fit: finalFit,
+				InitialBytes: initialBytes, FittedBytes: finalBytes,
+			}
+			if attempt > 0 {
+				reason := "request_byte_budget"
+				if !finalFit {
+					reason = "request_byte_budget_exhausted"
+				}
+				appendSelectionCutoff(&trace, "bundle_bytes", "byte_fit", reason, initialBytes, finalBytes, nil)
+			}
+			return candidate, trace
 		}
 		if !shrinkForByteBudget(&fit) {
 			break
 		}
 	}
 	candidate.Warnings = append(candidate.Warnings, "provider bundle exceeds configured context-byte budget")
-	return candidate
+	encoded, _ := json.Marshal(candidate)
+	trace.ConfiguredCaps = configuredCaps
+	trace.EffectiveCaps = effectiveSelectionCaps(opts, usedFit, configuredCaps, maxBytes)
+	trace.ByteFit = ByteFitTrace{
+		Attempts: attempts, Applied: !equalSelectionCaps(configuredCaps, trace.EffectiveCaps), Fit: false,
+		InitialBytes: initialBytes, FittedBytes: len(encoded),
+	}
+	if trace.ByteFit.Applied && initialBytes > len(encoded) {
+		appendSelectionCutoff(&trace, "bundle_bytes", "byte_fit", "request_byte_budget_exhausted", initialBytes, len(encoded), nil)
+	}
+	return candidate, trace
 }
 
 func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
+	bundle, _ := buildWithTrace(s, fileList, opts)
+	return bundle
+}
+
+func buildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundle, BuildTrace) {
+	var trace BuildTrace
+	allKnownDocs := findKnownDocsUnbounded(fileList)
+	knownDocs := allKnownDocs
+	if len(knownDocs) > maxKnownDocsForBundle {
+		knownDocs = knownDocs[:maxKnownDocsForBundle]
+		appendSelectionCutoff(&trace, "known_docs", "selection", "max_known_docs", len(allKnownDocs), len(knownDocs), allKnownDocs[len(knownDocs):])
+	}
+	readmeExcerpt, readmeRetainedBytes := truncateStrWithRetainedBytes(s.Readme, opts.MaxReadmeBytes)
 
 	b := Bundle{
 		RepoName:               s.RepoName,
-		ReadmeExcerpt:          truncateStr(s.Readme, opts.MaxReadmeBytes),
+		ReadmeExcerpt:          readmeExcerpt,
 		TopLevelDirectoryStats: s.TopLevelStats,
 		LanguageHints:          s.LanguageHints,
-		KnownDocs:              findKnownDocs(fileList),
+		KnownDocs:              knownDocs,
 		PolicyVersion:          opts.PolicyVersion,
 		LocalAuthorizedFiles:   len(fileList),
+	}
+	trace.Counts.ReadmeBytes.Before = len(s.Readme)
+	trace.Counts.ReadmeBytes.After = readmeRetainedBytes
+	trace.Counts.KnownDocs.Before = len(allKnownDocs)
+	if len(s.Readme) > readmeRetainedBytes {
+		appendSelectionCutoff(&trace, "readme_bytes", "selection", "max_readme_bytes", len(s.Readme), readmeRetainedBytes, nil)
 	}
 
 	if s.GoFacts != nil {
 		f := s.GoFacts
+		trace.Counts.Modules.Before = len(f.ModuleSummaries)
+		trace.Counts.Entrypoints.Before = len(f.EntrypointPackages)
+		trace.Counts.Edges.Before = len(f.InternalEdges)
+		trace.Counts.OrientationCandidates.Before = len(f.OrientationCandidates)
+		trace.Counts.CommandTraces.Before = len(f.CommandTraces)
 
 		modSummaries := make([]moduleSummaryCompact, 0, len(f.ModuleSummaries))
 		for _, ms := range f.ModuleSummaries {
@@ -184,12 +263,18 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		})
 		if len(modSummaries) > opts.MaxModules {
 			b.Warnings = append(b.Warnings, "truncated module summaries")
+			omitted := moduleSummarySamples(modSummaries[opts.MaxModules:])
+			appendSelectionCutoff(&trace, "modules", "selection", "max_modules", len(modSummaries), opts.MaxModules, omitted)
 			modSummaries = modSummaries[:opts.MaxModules]
 		}
 
 		selectedEntrypoints := selectOrientationEntrypoints(f.EntrypointPackages)
+		if len(selectedEntrypoints) < len(f.EntrypointPackages) {
+			appendSelectionCutoff(&trace, "entrypoints", "eligibility", "orientation_entrypoint_policy", len(f.EntrypointPackages), len(selectedEntrypoints), entrypointSamplesDifference(f.EntrypointPackages, selectedEntrypoints))
+		}
 		if len(selectedEntrypoints) > opts.MaxEntrypoints {
 			b.Warnings = append(b.Warnings, "truncated entrypoints")
+			appendSelectionCutoff(&trace, "entrypoints", "selection", "max_entrypoints", len(selectedEntrypoints), opts.MaxEntrypoints, entrypointSamples(selectedEntrypoints[opts.MaxEntrypoints:]))
 			selectedEntrypoints = selectedEntrypoints[:opts.MaxEntrypoints]
 		}
 		selectedEntrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
@@ -233,8 +318,12 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				candidates = append(candidates, candidate)
 			}
 		}
+		if len(candidates) < len(f.OrientationCandidates) {
+			appendSelectionCutoff(&trace, "orientation_candidates", "eligibility", "selected_entrypoint_or_signal_flow", len(f.OrientationCandidates), len(candidates), orientationCandidateSamplesDifference(f.OrientationCandidates, candidates))
+		}
 		if len(candidates) > opts.MaxFiles {
 			b.Warnings = append(b.Warnings, "truncated orientation candidates")
+			appendSelectionCutoff(&trace, "orientation_candidates", "selection", "max_files", len(candidates), opts.MaxFiles, orientationCandidateSamples(candidates[opts.MaxFiles:]))
 			candidates = candidates[:opts.MaxFiles]
 		}
 
@@ -242,13 +331,20 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 		if len(f.InternalEdges) > opts.MaxEdges {
 			b.Warnings = append(b.Warnings, "truncated important edges")
 		}
+		if len(edges) < len(f.InternalEdges) {
+			appendSelectionCutoff(&trace, "edges", "selection", "max_edges", len(f.InternalEdges), len(edges), edgeSamplesDifference(f.InternalEdges, edges))
+		}
+		commandTraces := selectCommandTraces(f.CommandTraces, b.ReadmeExcerpt, maxCommandTracesForBundle)
+		if len(commandTraces) < len(f.CommandTraces) {
+			appendSelectionCutoff(&trace, "command_traces", "selection", "max_command_traces", len(f.CommandTraces), len(commandTraces), commandTraceSamplesDifference(f.CommandTraces, commandTraces))
+		}
 
 		b.Go = goSection{
 			ModulesCount:          len(f.Modules),
 			PackagesCount:         f.PackagesCount,
 			ModuleSummaries:       modSummaries,
 			Entrypoints:           eps,
-			CommandTraces:         selectCommandTraces(f.CommandTraces, b.ReadmeExcerpt, 8),
+			CommandTraces:         commandTraces,
 			OrientationCandidates: candidates,
 			ImportantEdges:        edges,
 		}
@@ -267,23 +363,49 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 	}
 	b.SourceSignals = fileSignals
 	fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
+	trace.Counts.Candidates.Before = len(fileIndex)
+	trace.Counts.SourceSignals.Before = len(fileSignals)
 	if len(fileIndex) > opts.MaxFiles {
 		b.Warnings = append(b.Warnings, "truncated candidate_file_index")
-		fileIndex = selectFileIndexWithPins(fileIndex, opts.MaxFiles, selectedCommandTracePaths(b.Go.CommandTraces))
+		selected := selectFileIndexWithPins(fileIndex, opts.MaxFiles, selectedCommandTracePaths(b.Go.CommandTraces))
+		omittedRows := omittedCandidateRows(fileIndex, selected)
+		trace.OmittedCandidateSamples = boundedCandidateRows(omittedRows, maxSelectionCutoffSamples)
+		appendSelectionCutoff(&trace, "candidates", "selection", "max_files", len(fileIndex), len(selected), candidatePaths(omittedRows))
+		fileIndex = selected
 	}
 	b.CandidateFileIndex = fileIndex
 	b.ProviderAllowedPaths = buildAllowedPaths(fileIndex)
 	allowedSet := makePathSet(b.ProviderAllowedPaths)
-	b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
-	b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
-	b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)
-	b.Go.CommandTraces = filterCommandTraces(b.Go.CommandTraces, allowedSet)
-	b.Go.OrientationCandidates = filterOrientationCandidates(
+	filteredKnownDocs := filterPaths(b.KnownDocs, allowedSet)
+	appendSelectionCutoff(&trace, "known_docs", "allowlist", "candidate_file_index", len(b.KnownDocs), len(filteredKnownDocs), stringDifference(b.KnownDocs, filteredKnownDocs))
+	b.KnownDocs = filteredKnownDocs
+	filteredSignals := filterSourceSignals(b.SourceSignals, allowedSet)
+	appendSelectionCutoff(&trace, "source_signals", "allowlist", "candidate_file_index", len(b.SourceSignals), len(filteredSignals), sourceSignalSamplesDifference(b.SourceSignals, filteredSignals))
+	b.SourceSignals = filteredSignals
+	filteredEntrypoints := filterEntrypoints(b.Go.Entrypoints, allowedSet)
+	appendSelectionCutoff(&trace, "entrypoints", "allowlist", "candidate_file_index", len(b.Go.Entrypoints), len(filteredEntrypoints), nil)
+	b.Go.Entrypoints = filteredEntrypoints
+	filteredCommandTraces := filterCommandTraces(b.Go.CommandTraces, allowedSet)
+	appendSelectionCutoff(&trace, "command_traces", "allowlist", "candidate_file_index", len(b.Go.CommandTraces), len(filteredCommandTraces), nil)
+	b.Go.CommandTraces = filteredCommandTraces
+	filteredOrientationCandidates := filterOrientationCandidates(
 		b.Go.OrientationCandidates,
 		allowedSet,
 	)
+	appendSelectionCutoff(&trace, "orientation_candidates", "allowlist", "candidate_file_index", len(b.Go.OrientationCandidates), len(filteredOrientationCandidates), orientationCandidateSamplesDifference(b.Go.OrientationCandidates, filteredOrientationCandidates))
+	b.Go.OrientationCandidates = filteredOrientationCandidates
 
-	return b
+	trace.Counts.Candidates.After = len(b.CandidateFileIndex)
+	trace.Counts.Entrypoints.After = len(b.Go.Entrypoints)
+	trace.Counts.Modules.After = len(b.Go.ModuleSummaries)
+	trace.Counts.Edges.After = len(b.Go.ImportantEdges)
+	trace.Counts.SourceSignals.After = len(b.SourceSignals)
+	trace.Counts.OrientationCandidates.After = len(b.Go.OrientationCandidates)
+	trace.Counts.KnownDocs.After = len(b.KnownDocs)
+	trace.Counts.CommandTraces.After = len(b.Go.CommandTraces)
+	_ = completeSelectionCounts(&trace.Counts)
+	trace.SelectedCandidates = candidateSelectionRows(b.CandidateFileIndex)
+	return b, trace
 }
 
 func shrinkForByteBudget(opts *Options) bool {
@@ -1403,6 +1525,14 @@ func filterOrientationCandidates(
 }
 
 func findKnownDocs(files []string) []string {
+	docs := findKnownDocsUnbounded(files)
+	if len(docs) > maxKnownDocsForBundle {
+		docs = docs[:maxKnownDocsForBundle]
+	}
+	return docs
+}
+
+func findKnownDocsUnbounded(files []string) []string {
 	interestingPatterns := []string{
 		"Documentation/",
 		"docs/",
@@ -1459,10 +1589,6 @@ func findKnownDocs(files []string) []string {
 		return artifactrole.LessPath(docs[i], docs[j], left)
 	})
 
-	if len(docs) > 30 {
-		docs = docs[:30]
-	}
-
 	return docs
 }
 
@@ -1481,8 +1607,13 @@ func isDocumentationFile(filePath string) bool {
 }
 
 func truncateStr(s string, maxBytes int) string {
+	result, _ := truncateStrWithRetainedBytes(s, maxBytes)
+	return result
+}
+
+func truncateStrWithRetainedBytes(s string, maxBytes int) (string, int) {
 	if maxBytes <= 0 || len(s) <= maxBytes {
-		return s
+		return s, len(s)
 	}
 	cut := maxBytes
 	for cut > 0 {
@@ -1495,7 +1626,7 @@ func truncateStr(s string, maxBytes int) string {
 		cut--
 	}
 	if cut == 0 {
-		return ""
+		return "", 0
 	}
-	return s[:cut] + "\n...[truncated]"
+	return s[:cut] + "\n...[truncated]", cut
 }
