@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/188-persisted-orientation-bundle-selection-identity.md
+    decisions/189-repository-atlas-canonical-core-and-go-adapter.md
 
 Status:
-    Decision 188 active; persisted Orientation bundle identity authorized
+    Decision 189 active; Repository Atlas canonical core and exact Go adapter authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 189 adds one provider-free, language-neutral Repository Atlas
+    canonical core and one pure Go adapter over existing authoritative local
+    facts. The closed core keeps repository/module/service/app/package Units;
+    Surface/Operation/Boundary/Resource/Contract entities; and scoped
+    Observation, Evidence, and Relation substrates with exact typed refs,
+    closed Phase and Authority, and descendant-aware scope validation. Files
+    and symbols remain Evidence locators, never Overview entities. The Go
+    adapter preserves producer-owned module ownership, keeps app and package
+    as sibling children of their module, and emits only an exactly matched
+    process Surface to Operation exposes/startup/resolved slice. Missing or
+    ambiguous proof remains absence. Canonical ordering deep-copies its input.
+    No report, UI, persistence, manifest, provider, cache, Study, Architecture,
+    localization, flag, legacy, or migration behavior changes.
     Decision 188 changes only the debug-artifact seam that persists
     llm_bundle.json with orientation_context_selection.v2.json. One shared
     private prepared-primary writer applies mandatory redaction exactly once,
