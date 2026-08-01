@@ -376,6 +376,7 @@ const (
 	SourceValidatedModel  ArchitectureSource = "validated_model"
 	SourceNormalizedModel ArchitectureSource = "normalized_model"
 	SourceLocalAnchors    ArchitectureSource = "local_anchors"
+	SourceLocalPackages   ArchitectureSource = "local_packages"
 	SourcePackageFallback ArchitectureSource = "package_fallback"
 )
 
@@ -435,7 +436,7 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		return Landscape{}, fmt.Errorf("componentmap: rejected proposal has no fatal diagnostic")
 	}
 	if !usable {
-		landscape = deterministicFallback(bundle)
+		landscape = buildDeterministicLocalLandscape(bundle, SourcePackageFallback)
 		landscape.Diagnostics = diagnostics
 		landscape.ValidationOutcome = ValidationRejected
 		landscape.FallbackReason = fallbackReasonForDiagnostics(diagnostics, len(bundle.BehaviorAnchors) > 0)
@@ -469,9 +470,24 @@ func Deterministic(bundle CandidateBundle, reason FallbackReason) (Landscape, er
 		reason != FallbackAnchorFirst && reason != FallbackInsufficientAnchors && reason != FallbackPackageLandscape {
 		return Landscape{}, fmt.Errorf("componentmap: invalid deterministic fallback reason %q", reason)
 	}
-	landscape := deterministicFallback(bundle)
+	landscape := buildDeterministicLocalLandscape(bundle, SourcePackageFallback)
 	landscape.Fallback = true
 	landscape.FallbackReason = reason
+	landscape.ValidationOutcome = ValidationAccepted
+	if err := landscape.Validate(bundle); err != nil {
+		return Landscape{}, err
+	}
+	return landscape, nil
+}
+
+// Canonical builds the deterministic local landscape that exists independently
+// of optional conceptual synthesis. It is primary local evidence, not a
+// provider fallback.
+func Canonical(bundle CandidateBundle) (Landscape, error) {
+	if err := bundle.Validate(); err != nil {
+		return Landscape{}, err
+	}
+	landscape := buildDeterministicLocalLandscape(bundle, SourceLocalPackages)
 	landscape.ValidationOutcome = ValidationAccepted
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
@@ -682,6 +698,9 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	}
 	if landscape.Source == SourceLocalAnchors && landscape.Level != 3 {
 		return fmt.Errorf("componentmap: local-anchor source has inconsistent level")
+	}
+	if landscape.Source == SourceLocalPackages && landscape.Level != 4 {
+		return fmt.Errorf("componentmap: local-package source has inconsistent level")
 	}
 	if landscape.Source == SourcePackageFallback && landscape.Level != 4 {
 		return fmt.Errorf("componentmap: package source has inconsistent level")
@@ -982,7 +1001,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	return landscape, diagnostics, true
 }
 
-type fallbackGroup struct {
+type localGroup struct {
 	key         string
 	category    string
 	name        string
@@ -990,28 +1009,31 @@ type fallbackGroup struct {
 	members     []Candidate
 }
 
-func deterministicFallback(bundle CandidateBundle) Landscape {
-	if useAnchorFirstFallback(bundle) {
-		return anchorFirstFallback(bundle)
+func buildDeterministicLocalLandscape(
+	bundle CandidateBundle,
+	packageSource ArchitectureSource,
+) Landscape {
+	if useAnchorFirstLocalGrouping(bundle) {
+		return anchorFirstLocalLandscape(bundle)
 	}
-	return packageLandscapeFallback(bundle)
+	return packageLocalLandscape(bundle, packageSource)
 }
 
-func packageLandscapeFallback(bundle CandidateBundle) Landscape {
+func packageLocalLandscape(bundle CandidateBundle, source ArchitectureSource) Landscape {
 	known := candidateIndex(bundle)
 	flowNames := make(map[FlowID]string, len(bundle.Flows))
 	for _, flow := range bundle.Flows {
 		flowNames[flow.ID] = flow.Name
 	}
 
-	groupsByKey := make(map[string]*fallbackGroup)
+	groupsByKey := make(map[string]*localGroup)
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
 	for _, candidate := range candidates {
-		key, category, name := fallbackBasis(candidate, known, flowNames)
+		key, category, name := localGroupingBasis(candidate, known, flowNames)
 		group := groupsByKey[key]
 		if group == nil {
-			group = &fallbackGroup{
+			group = &localGroup{
 				key: key, category: category, name: name,
 				description: "Deterministic grouping from exact local " + category + " candidates.",
 			}
@@ -1020,7 +1042,7 @@ func packageLandscapeFallback(bundle CandidateBundle) Landscape {
 		group.members = append(group.members, cloneCandidate(candidate))
 	}
 
-	groups := make([]fallbackGroup, 0, len(groupsByKey))
+	groups := make([]localGroup, 0, len(groupsByKey))
 	for _, group := range groupsByKey {
 		sortCandidates(group.members)
 		groups = append(groups, *group)
@@ -1031,8 +1053,8 @@ func packageLandscapeFallback(bundle CandidateBundle) Landscape {
 		groupLimit = 8
 	}
 	if len(groups) > groupLimit {
-		kept := append([]fallbackGroup(nil), groups[:groupLimit-1]...)
-		remainder := fallbackGroup{
+		kept := append([]localGroup(nil), groups[:groupLimit-1]...)
+		remainder := localGroup{
 			key: "zz:other", category: "diagnostic", name: "Other repository members",
 			description: "Deterministic bounded remainder kept outside the primary architecture.",
 		}
@@ -1063,7 +1085,7 @@ func packageLandscapeFallback(bundle CandidateBundle) Landscape {
 	for _, category := range categories {
 		components := byCategory[category]
 		sort.Slice(components, func(i, j int) bool { return components[i].ID < components[j].ID })
-		name := fallbackSubsystemName(category)
+		name := localSubsystemName(category)
 		subsystemCategory := SubsystemCategory("")
 		if category == "diagnostic" {
 			subsystemCategory = SubsystemCategoryDiagnostic
@@ -1078,18 +1100,18 @@ func packageLandscapeFallback(bundle CandidateBundle) Landscape {
 	return Landscape{
 		Version: ContractVersion, Subsystems: subsystems,
 		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
-		Source: SourcePackageFallback, Level: 4,
+		Source: source, Level: 4,
 	}
 }
 
-type anchorFallbackGroup struct {
+type anchorLocalGroup struct {
 	name        string
 	description string
 	kinds       []BehaviorAnchorKind
 }
 
-func anchorFirstFallback(bundle CandidateBundle) Landscape {
-	groups := []anchorFallbackGroup{
+func anchorFirstLocalLandscape(bundle CandidateBundle) Landscape {
+	groups := []anchorLocalGroup{
 		{name: "Entry and dispatch", description: "Process entry and command dispatch anchors.", kinds: []BehaviorAnchorKind{AnchorProcessEntry, AnchorCommandDispatch}},
 		{name: "Configuration", description: "Configuration ingress, adaptation, and application anchors.", kinds: []BehaviorAnchorKind{AnchorConfigIngress, AnchorConfigAdapter, AnchorConfigApply}},
 		{name: "Runtime and extensions", description: "Registry, extension, and lifecycle anchors.", kinds: []BehaviorAnchorKind{AnchorRegistryWrite, AnchorRegistryLookup, AnchorExtensionFamily, AnchorLifecycleInterface, AnchorLifecycleStart}},
@@ -1116,7 +1138,7 @@ func anchorFirstFallback(bundle CandidateBundle) Landscape {
 				continue
 			}
 			if kind == AnchorProcessEntry {
-				components = append(components, processEntryFallbackComponents(anchors, known, owned)...)
+				components = append(components, processEntryLocalComponents(anchors, known, owned)...)
 				continue
 			}
 			memberSet := make(map[MemberID]struct{})
@@ -1124,7 +1146,7 @@ func anchorFirstFallback(bundle CandidateBundle) Landscape {
 			for _, anchor := range anchors {
 				anchorIDs = append(anchorIDs, anchor.ID)
 				for _, memberID := range anchor.MemberIDs {
-					addAnchorFallbackMember(memberID, known, owned, memberSet)
+					addAnchorLocalMember(memberID, known, owned, memberSet)
 				}
 			}
 			members := candidatesFromIDSet(memberSet, known)
@@ -1133,7 +1155,7 @@ func anchorFirstFallback(bundle CandidateBundle) Landscape {
 			}
 			id := componentID(candidateIDs(members))
 			components = append(components, Component{
-				ID: id, Name: anchorFallbackComponentName(kind),
+				ID: id, Name: anchorLocalComponentName(kind),
 				Description: "Deterministic grouping from exact " + string(kind) + " anchors.",
 				Members:     members, AnchorIDs: anchorIDs, SourceIDs: []ComponentID{id},
 			})
@@ -1177,7 +1199,7 @@ func anchorFirstFallback(bundle CandidateBundle) Landscape {
 	}
 }
 
-func processEntryFallbackComponents(
+func processEntryLocalComponents(
 	anchors []BehaviorAnchor,
 	known map[MemberID]Candidate,
 	owned map[MemberID]struct{},
@@ -1198,7 +1220,7 @@ func processEntryFallbackComponents(
 	for _, group := range groups {
 		matching := make([]BehaviorAnchor, 0)
 		for _, anchor := range anchors {
-			if processEntryFallbackClass(anchor, known, modulePrefix) != group.class {
+			if processEntryLocalClass(anchor, known, modulePrefix) != group.class {
 				continue
 			}
 			matching = append(matching, anchor)
@@ -1210,7 +1232,7 @@ func processEntryFallbackComponents(
 			for _, anchor := range matching[start:end] {
 				anchorIDs = append(anchorIDs, anchor.ID)
 				for _, memberID := range anchor.MemberIDs {
-					addAnchorFallbackMember(memberID, known, owned, memberSet)
+					addAnchorLocalMember(memberID, known, owned, memberSet)
 				}
 			}
 			members := candidatesFromIDSet(memberSet, known)
@@ -1231,7 +1253,7 @@ func processEntryFallbackComponents(
 	return components
 }
 
-func processEntryFallbackClass(anchor BehaviorAnchor, known map[MemberID]Candidate, modulePrefix string) string {
+func processEntryLocalClass(anchor BehaviorAnchor, known map[MemberID]Candidate, modulePrefix string) string {
 	if role := processEntryExecutableRole(anchor, known); role != "" {
 		return role
 	}
@@ -1382,7 +1404,7 @@ func anchorHasFlowParticipation(anchor BehaviorAnchor, known map[MemberID]Candid
 	return false
 }
 
-func addAnchorFallbackMember(
+func addAnchorLocalMember(
 	memberID MemberID,
 	known map[MemberID]Candidate,
 	owned map[MemberID]struct{},
@@ -1414,7 +1436,7 @@ func candidatesFromIDSet(ids map[MemberID]struct{}, known map[MemberID]Candidate
 	return result
 }
 
-func anchorFallbackComponentName(kind BehaviorAnchorKind) string {
+func anchorLocalComponentName(kind BehaviorAnchorKind) string {
 	switch kind {
 	case AnchorProcessEntry:
 		return "Process entry"
@@ -1449,7 +1471,7 @@ func anchorFallbackComponentName(kind BehaviorAnchorKind) string {
 	}
 }
 
-func fallbackBasis(candidate Candidate, known map[MemberID]Candidate, flowNames map[FlowID]string) (string, string, string) {
+func localGroupingBasis(candidate Candidate, known map[MemberID]Candidate, flowNames map[FlowID]string) (string, string, string) {
 	root := candidate
 	seen := make(map[MemberID]struct{})
 	for root.ParentID != nil {
@@ -1484,7 +1506,7 @@ func fallbackBasis(candidate Candidate, known map[MemberID]Candidate, flowNames 
 	return "kind:" + category, category, "Repository " + pluralKind(candidate.ID.Kind)
 }
 
-func fallbackSubsystemName(category string) string {
+func localSubsystemName(category string) string {
 	switch category {
 	case "entrypoint":
 		return "Entrypoints"

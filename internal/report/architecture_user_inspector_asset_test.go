@@ -436,7 +436,7 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-func TestRejectedArchitectureFallbackIsDiagnosticOnly(t *testing.T) {
+func TestArchitectureAvailabilityDependsOnlyOnCanonicalCanvas(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -496,7 +496,7 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode architecture publication contract: %v\n%s", err, output)
 	}
-	if !got.Accepted || got.Rejected || got.Failed || !got.Diagnostic || !got.LocalOnly {
+	if !got.Accepted || !got.Rejected || !got.Failed || !got.Diagnostic || !got.LocalOnly {
 		t.Fatalf("architecture publication contract = %#v", got)
 	}
 }

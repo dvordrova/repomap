@@ -1595,8 +1595,12 @@ func TestPresentationLocalizationAuthorizedCanonicalRoundTrip(t *testing.T) {
 		!strings.Contains(canonical.ProjectGuess, initial.Head) {
 		t.Fatalf("authority-bound canonical report = %#v", canonical)
 	}
+	canonicalPresentation, err := PrepareRunPresentation(runDir, &canonical, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	prepared, err := PreparePresentationLocalization(
-		&canonical,
+		canonicalPresentation,
 		localization.LocaleRussian,
 	)
 	if err != nil {
@@ -1626,6 +1630,14 @@ func TestPresentationLocalizationAuthorizedCanonicalRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	afterJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var afterCanonical ReportData
+	if err := json.Unmarshal(afterJSON, &afterCanonical); err != nil {
+		t.Fatal(err)
+	}
 	for _, marker := range [][]byte{
 		[]byte(`<html lang="ru">`),
 		[]byte(`data-rm-message="main.localization.ru_active"`),
@@ -1634,10 +1646,6 @@ func TestPresentationLocalizationAuthorizedCanonicalRoundTrip(t *testing.T) {
 		if !bytes.Contains(html, marker) {
 			t.Fatalf("authorized RU render is missing %q", marker)
 		}
-	}
-	afterJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
-	if err != nil {
-		t.Fatal(err)
 	}
 	if !bytes.Equal(afterJSON, canonicalJSON) {
 		t.Fatal("localized authorized render changed canonical report.json")

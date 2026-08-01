@@ -1489,10 +1489,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.value.validated_model": { params: [], text: "validated model" },
     "architecture.value.normalized_model": { params: [], text: "normalized model" },
     "architecture.value.local_anchors": { params: [], text: "local anchors" },
+    "architecture.value.local_packages": { params: [], text: "local package structure" },
     "architecture.value.package_fallback": { params: [], text: "package fallback" },
     "architecture.value.unspecified": { params: [], text: "unspecified" },
     "architecture.grounding.local_anchors.title": { params: [], text: "Evidence-backed architecture skeleton" },
     "architecture.grounding.local_anchors.subtitle": { params: [], text: "Built from exact local architecture anchors" },
+    "architecture.grounding.local_packages.title": { params: [], text: "Repository architecture" },
+    "architecture.grounding.local_packages.subtitle": { params: [], text: "Built from exact local package and repository structure" },
     "architecture.grounding.package_fallback.title": { params: [], text: "Package landscape" },
     "architecture.grounding.package_fallback.subtitle": { params: [], text: "Behavioral grounding was insufficient or the architecture proposal was rejected" },
     "architecture.grounding.behavior.title": { params: [], text: "Behavioral architecture" },
@@ -2710,10 +2713,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.value.validated_model": { params: [], text: "проверенный результат модели" },
     "architecture.value.normalized_model": { params: [], text: "нормализованный результат модели" },
     "architecture.value.local_anchors": { params: [], text: "локальные опоры" },
+    "architecture.value.local_packages": { params: [], text: "локальная структура пакетов" },
     "architecture.value.package_fallback": { params: [], text: "резервный вариант по пакетам" },
     "architecture.value.unspecified": { params: [], text: "не указано" },
     "architecture.grounding.local_anchors.title": { params: [], text: "Каркас архитектуры, подтверждённый свидетельствами" },
     "architecture.grounding.local_anchors.subtitle": { params: [], text: "Построен по точным локальным архитектурным опорам" },
+    "architecture.grounding.local_packages.title": { params: [], text: "Архитектура репозитория" },
+    "architecture.grounding.local_packages.subtitle": { params: [], text: "Построена по точной локальной структуре пакетов и репозитория" },
     "architecture.grounding.package_fallback.title": { params: [], text: "Карта пакетов" },
     "architecture.grounding.package_fallback.subtitle": { params: [], text: "Поведенческих свидетельств оказалось недостаточно или архитектурное предложение было отклонено" },
     "architecture.grounding.behavior.title": { params: [], text: "Поведенческая архитектура" },
@@ -5007,7 +5013,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         addFact(LABELS.snapshotFreshness, freshnessValue);
       }
       addFact(LABELS.architectureAnchors, msg('main.count.static_families', { count: DATA.run.architecture_anchor_count || 0 }));
-      if (DATA.architecture_synthesis) {
+      if (DEBUG_MODE && DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
         var architectureValue = msg('main.unavailable');
         if (DATA.architecture_synthesis.proposal_normalized) {
@@ -7327,19 +7333,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function userArchitectureAvailable() {
 		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
-		var synthesis = DATA.architecture_synthesis || null;
-		if (synthesis && (
-			synthesis.state === 'failed' ||
-			synthesis.proposal_rejected ||
-			synthesis.fallback_selected
-		)) {
-			return false;
-		}
-		if (STUDY_MAP) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		if (STUDY_MAP) return !!DATA.architecture_canvas;
 		if (REPOSITORY_GUIDE) {
 			return !!(REPOSITORY_GUIDE.architecture_useful && DATA.architecture_canvas);
 		}
-		return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		return !!DATA.architecture_canvas;
 	}
 
 	function guideMechanisms(ids) {

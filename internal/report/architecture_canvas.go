@@ -367,6 +367,8 @@ func architectureGroundingWording(source componentmap.ArchitectureSource, mode c
 	switch source {
 	case componentmap.SourceLocalAnchors:
 		return "Evidence-backed architecture skeleton", "Built from exact local architecture anchors"
+	case componentmap.SourceLocalPackages:
+		return "Repository architecture", "Built from exact local package and repository structure"
 	case componentmap.SourcePackageFallback:
 		return "Package landscape", "Behavioral grounding was insufficient or the architecture proposal was rejected"
 	}

@@ -228,7 +228,7 @@ func TestBuildGuidedTourBundleAddsOnlyCandidateOwnedStaticPackageImports(t *test
 	}
 }
 
-func TestReadRunDirReplaysGuidedStoryAndWarnsOnCorruption(t *testing.T) {
+func TestReadRunDirDoesNotReplayGuidedStoryFromCandidateDirectionProof(t *testing.T) {
 	t.Parallel()
 
 	runDir := t.TempDir()
@@ -262,53 +262,11 @@ func TestReadRunDirReplaysGuidedStoryAndWarnsOnCorruption(t *testing.T) {
 	if containsWarning(data.Warnings, "guided tour") {
 		t.Fatalf("absent %s produced a warning: %#v", GuidedStoryFile, data.Warnings)
 	}
-	writeArchitectureBuildSynthesis(t, runDir, data, "guided-tour-replay")
-	data, err = ReadRunDir(runDir)
-	if err != nil {
-		t.Fatal(err)
+	if data.ArchitectureCanvas == nil || len(data.ArchitectureCanvas.Flows) != 0 {
+		t.Fatalf("CandidateDirection proof became an architecture flow: %#v", data.ArchitectureCanvas)
 	}
-	bundle, err := BuildGuidedTourBundle(data)
-	if err != nil {
-		t.Fatalf("BuildGuidedTourBundle() error = %v", err)
-	}
-	candidate := bundle.Candidates[0]
-	if len(candidate.Beats) < 3 {
-		t.Fatalf("saved trace beats = %d, want at least 3", len(candidate.Beats))
-	}
-	gapIDs := make([]string, 0, len(candidate.Gaps))
-	for _, gap := range candidate.Gaps {
-		gapIDs = append(gapIDs, gap.ID)
-	}
-	gapSummary := []guidedtour.ProposedGapSummary{}
-	if len(gapIDs) > 0 {
-		gapSummary = append(gapSummary, guidedtour.ProposedGapSummary{
-			Explanation: "Keep every saved proof frontier explicit",
-			GapIDs:      gapIDs,
-		})
-	}
-	proposal := guidedtour.Proposal{
-		Version: guidedtour.ProposalVersion, CandidateID: candidate.ID,
-		Title: "Backup tour", Summary: "Follow the saved static behavior",
-		Steps: []guidedtour.ProposedStep{
-			{Title: "First", Explanation: "Inspect the first exact beat", BeatIDs: []string{candidate.Beats[0].ID}},
-			{Title: "Second", Explanation: "Inspect the next exact beat", BeatIDs: []string{candidate.Beats[1].ID}},
-			{Title: "Third", Explanation: "Inspect the final exact beat", BeatIDs: []string{candidate.Beats[2].ID}},
-		},
-		GapSummary: gapSummary,
-	}
-	record, err := guidedtour.EncodeRecord(bundle, proposal)
-	if err != nil {
-		t.Fatalf("EncodeRecord() error = %v", err)
-	}
-	writeArchitectureBuildFixture(t, runDir, GuidedStoryFile, record)
-
-	replayed, err := ReadRunDir(runDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if replayed.GuidedTour == nil || replayed.GuidedTour.CandidateID != candidate.ID ||
-		len(replayed.GuidedTour.Steps) != 3 {
-		t.Fatalf("ReadRunDir() guided tour = %#v", replayed.GuidedTour)
+	if _, err := BuildGuidedTourBundle(data); !errors.Is(err, ErrNoGuidedTourCandidates) {
+		t.Fatalf("BuildGuidedTourBundle() error = %v, want no exact candidate", err)
 	}
 
 	writeArchitectureBuildFixture(t, runDir, GuidedStoryFile, []byte(`{"broken"`))
@@ -316,7 +274,7 @@ func TestReadRunDirReplaysGuidedStoryAndWarnsOnCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if corrupt.GuidedTour != nil || !containsWarning(corrupt.Warnings, "saved story cannot be replayed") {
+	if corrupt.GuidedTour != nil || !containsWarning(corrupt.Warnings, "cannot rebuild saved story bundle") {
 		t.Fatalf("corrupt guided story result = %#v, warnings = %#v", corrupt.GuidedTour, corrupt.Warnings)
 	}
 }

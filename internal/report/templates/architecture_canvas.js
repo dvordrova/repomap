@@ -88,6 +88,7 @@
    case "validated_model": return productMessage(message, "architecture.value.validated_model");
    case "normalized_model": return productMessage(message, "architecture.value.normalized_model");
    case "local_anchors": return productMessage(message, "architecture.value.local_anchors");
+   case "local_packages": return productMessage(message, "architecture.value.local_packages");
    case "package_fallback": return productMessage(message, "architecture.value.package_fallback");
    default: return productMessage(message, "architecture.value.unspecified");
   }
@@ -98,6 +99,12 @@
    return {
     title: productMessage(message, "architecture.grounding.local_anchors.title"),
     subtitle: productMessage(message, "architecture.grounding.local_anchors.subtitle"),
+   };
+  }
+  if (text(source) === "local_packages") {
+   return {
+    title: productMessage(message, "architecture.grounding.local_packages.title"),
+    subtitle: productMessage(message, "architecture.grounding.local_packages.subtitle"),
    };
   }
   if (text(source) === "package_fallback") {

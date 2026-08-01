@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
@@ -18,23 +21,34 @@ import (
 func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *testing.T) {
 	t.Parallel()
 
-	input, err := BuildArchitectureCanvasInput(&ReportData{CandidateDirections: []CandidateDirection{{
-		ID: "backup", Name: "Backup",
-		LocalProof: &flowproof.Session{Version: flowproof.SessionVersion, Proof: flowproof.Proof{
-			Version: flowproof.Version, ID: "backup", Archetype: flowproof.ArchetypeCLI,
-			Anchors: []flowproof.Anchor{{ID: "unknown", Kind: flowproof.AnchorOperation, Label: "unknown"}},
+	data := &ReportData{
+		RepositoryGraph: &RepositoryGraph{PackageEdges: []EdgeInfo{{
+			From: "example.com/project/cmd", To: "example.com/project/internal/repo",
+		}}},
+		CandidateDirections: []CandidateDirection{{
+			ID: "backup", Name: "Backup",
+			LocalProof: &flowproof.Session{Version: flowproof.SessionVersion, Proof: flowproof.Proof{
+				Version: flowproof.Version, ID: "backup", Archetype: flowproof.ArchetypeCLI,
+				SeedSurfaceID: "surface-backup",
+				Anchors:       []flowproof.Anchor{{ID: "unknown", Kind: flowproof.AnchorOperation, Label: "unknown"}},
+			}},
 		}},
-	}}})
+	}
+	bindArchitectureTestDirection(data, "surface-backup")
+	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	memberID := input.CandidateBundle.Candidates[0].ID
+	memberIDs := make([]componentmap.MemberID, 0, len(input.CandidateBundle.Candidates))
+	for _, candidate := range input.CandidateBundle.Candidates {
+		memberIDs = append(memberIDs, candidate.ID)
+	}
 	response, err := json.Marshal(componentmap.Proposal{
 		Version: componentmap.ContractVersion,
 		Subsystems: []componentmap.ProposedSubsystem{{
 			Name: "Data protection",
 			Components: []componentmap.ProposedComponent{{
-				Name: "Backup execution", MemberIDs: []componentmap.MemberID{memberID},
+				Name: "Backup execution", MemberIDs: memberIDs,
 			}},
 		}},
 	})
@@ -70,7 +84,7 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	}
 }
 
-func TestBuildArchitectureCanvasUsesExactSurfaceExecutableRole(t *testing.T) {
+func TestBuildArchitectureCanvasKeepsExactSurfaceRoleWithoutPublishingDirectionOverlay(t *testing.T) {
 	t.Parallel()
 
 	location := evidence.Location{Path: "cmd/inspect/main.go", Line: 12}
@@ -102,7 +116,8 @@ func TestBuildArchitectureCanvasUsesExactSurfaceExecutableRole(t *testing.T) {
 			}},
 		},
 		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
-			Kind: "process_entry", ExecutableRole: ExecutableRoleTooling,
+			ID: "surface-inspect", Kind: "process_entry", ExecutableRole: ExecutableRoleTooling,
+			Resolution: "exact", SurfaceRole: SurfaceRoleEntrySurface,
 			ProcessEntrypoint: SurfaceSymbol{
 				ID:       "example.com/project/cmd/inspect.main",
 				Location: &SurfaceLocation{Path: location.Path, Line: location.Line},
@@ -110,6 +125,7 @@ func TestBuildArchitectureCanvasUsesExactSurfaceExecutableRole(t *testing.T) {
 		}}},
 		CandidateDirections: []CandidateDirection{{
 			ID: "inspect", Name: "Inspect service startup", LocalProof: &session,
+			CandidateBasis: flowexplain.CandidateBasisLocalEntrypoint,
 		}},
 	}
 
@@ -130,13 +146,13 @@ func TestBuildArchitectureCanvasUsesExactSurfaceExecutableRole(t *testing.T) {
 	if !foundRole {
 		t.Fatal("exact tooling role was not joined to the process-entry candidate")
 	}
-	if len(input.CandidateBundle.AnchorBindings) != 1 ||
-		input.CandidateBundle.AnchorBindings[0].MemberID != roleMemberID {
-		t.Fatalf("process flow binding was not joined to grounded declaration: role=%#v bindings=%#v", roleMemberID, input.CandidateBundle.AnchorBindings)
+	if len(input.CandidateBundle.AnchorBindings) != 0 || len(input.Flows) != 0 ||
+		len(input.CandidateBundle.Flows) != 0 {
+		t.Fatalf("CandidateDirection proof became an architecture overlay: role=%#v bindings=%#v flows=%#v", roleMemberID, input.CandidateBundle.AnchorBindings, input.Flows)
 	}
 }
 
-func TestProcessTraceQualityPersistsProjectsAndRenders(t *testing.T) {
+func TestCandidateDirectionTraceQualityRemainsOutsideArchitectureOverlay(t *testing.T) {
 	t.Parallel()
 
 	proof := flowproof.BuildProcess(flowproof.ProcessSeed{
@@ -151,47 +167,25 @@ func TestProcessTraceQualityPersistsProjectsAndRenders(t *testing.T) {
 	session := flowproof.Start(proof, flowproof.DefaultBudget(), "go-default", flowproof.SurfaceCollectorVersion)
 	data := &ReportData{
 		FormatVersion: CurrentFormatVersion, RepoName: "project",
+		RepositoryGraph: &RepositoryGraph{PackageEdges: []EdgeInfo{{
+			From: "example.com/project/cmd/app", To: "example.com/project/internal/runtime",
+		}}},
 		CandidateDirections: []CandidateDirection{{
 			ID: "startup", Name: "Application startup", LocalProof: &session,
 		}},
 	}
+	bindArchitectureTestDirection(data, "surface-main")
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	canvas, err := ProjectArchitectureCanvas(input)
-	if err != nil {
-		t.Fatal(err)
+	if len(input.Flows) != 0 || len(input.CandidateBundle.Flows) != 0 ||
+		len(input.CandidateBundle.AnchorBindings) != 0 {
+		t.Fatalf("CandidateDirection trace became an architecture overlay: %#v", input)
 	}
-	if len(canvas.Flows) != 1 {
-		t.Fatalf("projected flows = %#v", canvas.Flows)
-	}
-	flow := canvas.Flows[0]
-	if flow.Archetype != flowproof.ArchetypeProcess || flow.SeedSurfaceID != "surface-main" ||
-		flow.TraceQuality != flowproof.TraceQualityPartial ||
-		flow.CurrentFrontier != proof.CurrentFrontier {
-		t.Fatalf("projected process trace = %#v", flow)
-	}
-	data.ArchitectureCanvas = &canvas
-	rendered, err := RenderHTML(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, marker := range []string{
-		`"archetype":"process"`,
-		`"seed_surface_id":"surface-main"`,
-		`"trace_quality":"partial"`,
-		`"current_frontier":"downstream runtime handoff remains unresolved"`,
-		"Trace quality",
-		"What the system does",
-		"Grounded sequence",
-		"Concurrent activities",
-		"Evidence basis",
-		"Current frontier",
-	} {
-		if !strings.Contains(string(rendered), marker) {
-			t.Errorf("rendered process trace is missing %q", marker)
-		}
+	if data.CandidateDirections[0].LocalProof.Proof.TraceQuality != proof.TraceQuality ||
+		data.CandidateDirections[0].LocalProof.Proof.CurrentFrontier != proof.CurrentFrontier {
+		t.Fatalf("Study/debug proof was mutated: %#v", data.CandidateDirections[0].LocalProof)
 	}
 }
 
@@ -216,12 +210,23 @@ func TestBuildArchitectureCanvasInputConsumesAcceptedResearchAsInterpretation(t 
 	}}
 	data := &ReportData{
 		ModelResearch: &state,
+		ArchitectureGrounding: &ArchitectureGrounding{
+			Version:             ArchitectureGroundingVersion,
+			RepositoryArchetype: ArchitectureArchetype{Selected: componentmap.ArchetypeApplication},
+			GroundingMode:       componentmap.GroundingBehavior,
+			BehaviorAnchors: []ArchitectureBehaviorAnchor{architectureGroundingTestAnchor(
+				"backup-call", componentmap.AnchorRequestDispatchRoot,
+				"cmd/backup.go", 20, "cmd.runBackup", architectureGroundingScenario{ID: "go:test"},
+				evidence.Provenance{Provider: "go_types", Version: "test", Operation: "exact_callsite"},
+			)},
+		},
 		CandidateDirections: []CandidateDirection{{
 			ID: "backup", Name: "Backup", LocalProof: &flowproof.Session{
 				Version: flowproof.SessionVersion, Proof: architectureBuildTestProof(),
 			},
 		}},
 	}
+	bindArchitectureTestDirection(data, "surface-backup")
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +247,7 @@ func TestBuildArchitectureCanvasInputConsumesAcceptedResearchAsInterpretation(t 
 	}
 }
 
-func TestReadRunDirRequiresSavedSynthesisBeforeProjectingArchitectureCanvas(t *testing.T) {
+func TestReadRunDirKeepsCanonicalArchitectureCanvasWhenSavedSynthesisIsUnavailable(t *testing.T) {
 	t.Parallel()
 
 	runDir := t.TempDir()
@@ -275,16 +280,19 @@ func TestReadRunDirRequiresSavedSynthesisBeforeProjectingArchitectureCanvas(t *t
 	if data.RepositoryGraph == nil || len(data.RepositoryGraph.PackageEdges) != 1 {
 		t.Fatalf("repository graph = %#v, want the saved package witness", data.RepositoryGraph)
 	}
-	if data.ArchitectureCanvas != nil {
-		t.Fatalf("architecture canvas = %#v, want no package fallback without synthesis", data.ArchitectureCanvas)
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		data.ArchitectureCanvas.ArchitectureSource != componentmap.SourceLocalPackages ||
+		len(data.ArchitectureCanvas.Components) != 2 || len(data.ArchitectureCanvas.Flows) != 0 {
+		t.Fatalf("canonical architecture canvas = %#v", data.ArchitectureCanvas)
 	}
+	canonicalIDs := architectureCanvasComponentIDs(data.ArchitectureCanvas)
 	writeArchitectureBuildSynthesis(t, runDir, data, "revision-proof")
 	data, err = ReadRunDir(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
-		len(data.ArchitectureCanvas.Flows) != 1 || data.ArchitectureCanvas.Flows[0].ID != "backup" {
+		len(data.ArchitectureCanvas.Components) != 2 || len(data.ArchitectureCanvas.Flows) != 0 {
 		t.Fatalf("architecture canvas = %#v", data.ArchitectureCanvas)
 	}
 
@@ -293,17 +301,14 @@ func TestReadRunDirRequiresSavedSynthesisBeforeProjectingArchitectureCanvas(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.ArchitectureCanvas != nil {
-		t.Fatalf("invalid saved synthesis produced a fallback canvas: %#v", data.ArchitectureCanvas)
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback {
+		t.Fatalf("invalid saved synthesis erased the canonical canvas: %#v", data.ArchitectureCanvas)
 	}
-	foundUnavailableWarning := false
-	for _, warning := range data.Warnings {
-		if strings.Contains(warning, "architecture map unavailable") {
-			foundUnavailableWarning = true
-		}
+	if got := architectureCanvasComponentIDs(data.ArchitectureCanvas); !reflect.DeepEqual(got, canonicalIDs) {
+		t.Fatalf("component IDs after malformed synthesis = %v, want %v", got, canonicalIDs)
 	}
-	if !foundUnavailableWarning {
-		t.Fatalf("warnings = %#v, want invalid synthesis warning", data.Warnings)
+	if containsWarning(data.Warnings, "architecture map unavailable") {
+		t.Fatalf("ordinary warnings exposed optional synthesis diagnostics: %#v", data.Warnings)
 	}
 }
 
@@ -312,6 +317,12 @@ func TestReadRunDirReportsFailedArchitectureSynthesisWithoutProductFallback(t *t
 
 	runDir := t.TempDir()
 	writeArchitectureBuildFixture(t, runDir, "snapshot.json", []byte(`{"repo_name":"fixture"}`))
+	writeArchitectureBuildFixture(t, runDir, "llm_bundle.json", []byte(`{
+		"go": {
+			"module_summaries": [{"module_path":"example.com/project","module_dir":"."}],
+			"important_edges": [{"from":"example.com/project/cmd","to":"example.com/project/internal/repo"}]
+		}
+	}`))
 	writeArchitectureBuildFixture(t, runDir, "metadata.json", []byte(`{
 		"model":"test-model",
 		"provider_request_count":1
@@ -334,8 +345,9 @@ func TestReadRunDirReportsFailedArchitectureSynthesisWithoutProductFallback(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.ArchitectureCanvas != nil {
-		t.Fatalf("architecture canvas = %#v, want no substitute graph", data.ArchitectureCanvas)
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		data.ArchitectureCanvas.ArchitectureSource != componentmap.SourceLocalPackages {
+		t.Fatalf("canonical architecture canvas = %#v", data.ArchitectureCanvas)
 	}
 	if data.ArchitectureSynthesis == nil || data.ArchitectureSynthesis.State != ArchitectureSynthesisFailed {
 		t.Fatalf("architecture status = %#v, want failed", data.ArchitectureSynthesis)
@@ -343,8 +355,9 @@ func TestReadRunDirReportsFailedArchitectureSynthesisWithoutProductFallback(t *t
 	if data.Run == nil || data.Run.ProviderRequestCount != 2 {
 		t.Fatalf("run = %#v, want both orientation and architecture provider attempts", data.Run)
 	}
-	if !containsWarning(data.Warnings, "grouping request returned no content") {
-		t.Fatalf("warnings = %#v, want concise architecture failure", data.Warnings)
+	if containsWarning(data.Warnings, "grouping request returned no content") ||
+		containsWarning(data.Warnings, "architecture map unavailable") {
+		t.Fatalf("ordinary warnings exposed optional synthesis diagnostics: %#v", data.Warnings)
 	}
 }
 
@@ -355,6 +368,18 @@ func containsWarning(warnings []string, substring string) bool {
 		}
 	}
 	return false
+}
+
+func architectureCanvasComponentIDs(canvas *ArchitectureCanvas) []componentmap.ComponentID {
+	if canvas == nil {
+		return nil
+	}
+	ids := make([]componentmap.ComponentID, 0, len(canvas.Components))
+	for _, component := range canvas.Components {
+		ids = append(ids, component.ID)
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 func TestReadRunDirProjectsArchitectureLandscapeWithoutFlowProof(t *testing.T) {
@@ -382,8 +407,10 @@ func TestReadRunDirProjectsArchitectureLandscapeWithoutFlowProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.ArchitectureCanvas != nil {
-		t.Fatalf("architecture canvas = %#v, want no fallback without synthesis", data.ArchitectureCanvas)
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		data.ArchitectureCanvas.ArchitectureSource != componentmap.SourceLocalPackages ||
+		len(data.ArchitectureCanvas.Components) == 0 || len(data.ArchitectureCanvas.Flows) != 0 {
+		t.Fatalf("canonical architecture canvas = %#v", data.ArchitectureCanvas)
 	}
 	writeArchitectureBuildSynthesis(t, runDir, data, "revision-landscape")
 	data, err = ReadRunDir(runDir)
@@ -443,7 +470,7 @@ func writeArchitectureBuildFixture(t *testing.T, dir, name string, data []byte) 
 	}
 }
 
-func TestBuildArchitectureCanvasInputUsesExactFlowBindingsAndPackageWitnesses(t *testing.T) {
+func TestBuildArchitectureCanvasInputUsesExactPackageWitnessesWithoutDirectionBindings(t *testing.T) {
 	t.Parallel()
 
 	proof := architectureBuildTestProof()
@@ -460,6 +487,7 @@ func TestBuildArchitectureCanvasInputUsesExactFlowBindingsAndPackageWitnesses(t 
 			},
 		},
 	}
+	bindArchitectureTestDirection(data, "surface-backup")
 
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
@@ -468,11 +496,13 @@ func TestBuildArchitectureCanvasInputUsesExactFlowBindingsAndPackageWitnesses(t 
 	if err := input.CandidateBundle.Validate(); err != nil {
 		t.Fatalf("candidate bundle is invalid: %v", err)
 	}
-	if !input.Landscape.Fallback || input.Landscape.FallbackReason != componentmap.FallbackModelDisabled {
+	if input.Landscape.Fallback || input.Landscape.FallbackReason != "" ||
+		input.Landscape.Source != componentmap.SourceLocalPackages {
 		t.Fatalf(
-			"fallback = %v (%q), want explicit model-disabled deterministic landscape",
+			"canonical landscape = fallback %v (%q), source %q",
 			input.Landscape.Fallback,
 			input.Landscape.FallbackReason,
+			input.Landscape.Source,
 		)
 	}
 	if len(input.CandidateBundle.Relations) != 1 {
@@ -492,15 +522,9 @@ func TestBuildArchitectureCanvasInputUsesExactFlowBindingsAndPackageWitnesses(t 
 		t.Fatalf("relation scenario = %#v, want explicit unknown build values", relation.Scenarios)
 	}
 
-	bindings := architectureBuildTestBindingIndex(input.CandidateBundle.AnchorBindings)
-	if got := bindings["handler"].MemberID.Kind; got != componentmap.MemberEntrypoint {
-		t.Fatalf("handler member kind = %q, want exact verified entrypoint", got)
-	}
-	if got := bindings["save"].MemberID.Kind; got != componentmap.MemberSymbol {
-		t.Fatalf("save member kind = %q, want exact declaration symbol", got)
-	}
-	if got := bindings["call-save"].MemberID.Kind; got != componentmap.MemberFile {
-		t.Fatalf("callsite member kind = %q, want containing file without declaration inference", got)
+	if len(input.CandidateBundle.AnchorBindings) != 0 || len(input.Flows) != 0 ||
+		len(input.CandidateBundle.Flows) != 0 {
+		t.Fatalf("CandidateDirection proof became an architecture overlay: %#v", input)
 	}
 }
 
@@ -582,6 +606,7 @@ func TestBuildArchitectureCanvasInputPrioritizesGroundedBehavior(t *testing.T) {
 			}},
 		},
 	}
+	bindArchitectureTestDirection(data, "surface-backup")
 
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
@@ -652,7 +677,7 @@ func architectureGroundingTestAnchor(
 	}
 }
 
-func TestBuildArchitectureCanvasInputLeavesUnsupportedOwnershipAsFrontier(t *testing.T) {
+func TestBuildArchitectureCanvasInputDoesNotPublishCandidateDirectionProofFrontiers(t *testing.T) {
 	t.Parallel()
 
 	proof := architectureBuildTestProof()
@@ -678,36 +703,30 @@ func TestBuildArchitectureCanvasInputLeavesUnsupportedOwnershipAsFrontier(t *tes
 			}},
 		},
 	}
+	bindArchitectureTestDirection(data, "surface-backup")
 
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bindings := architectureBuildTestBindingIndex(input.CandidateBundle.AnchorBindings)
-	if _, exists := bindings["unknown-backend"]; exists {
-		t.Fatal("locationless backend anchor received an invented member binding")
-	}
-	unlisted := architectureBuildTestCandidate(input.CandidateBundle, bindings["unlisted-file"].MemberID)
-	if unlisted.ParentID != nil {
-		t.Fatalf("unlisted file parent = %#v, want no package inferred outside exact saved endpoints", unlisted.ParentID)
+	if len(input.CandidateBundle.AnchorBindings) != 0 || len(input.CandidateBundle.Flows) != 0 ||
+		len(input.Flows) != 0 {
+		t.Fatalf("CandidateDirection proof became an architecture overlay: %#v", input)
 	}
 
 	canvas, err := ProjectArchitectureCanvas(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !architectureHasAnchorFrontier(canvas, "unassigned_component", "unknown-backend") {
-		t.Fatalf("frontiers = %#v, want locationless anchor to remain explicit", canvas.Frontiers)
-	}
-	if !architectureHasFrontier(canvas, "unresolved_transition", "dynamic-plugin") {
-		t.Fatalf("frontiers = %#v, want unresolved dynamic dispatch frontier", canvas.Frontiers)
+	if len(canvas.Flows) != 0 || len(canvas.FlowEdges) != 0 || len(canvas.Frontiers) != 0 {
+		t.Fatalf("CandidateDirection proof leaked into projected architecture: %#v", canvas)
 	}
 }
 
 func architectureBuildTestProof() flowproof.Proof {
 	return flowproof.Proof{
 		Version: flowproof.Version, ID: "backup", Archetype: flowproof.ArchetypeCLI,
-		Goal: "save repository data", Command: "backup",
+		Goal: "save repository data", Command: "backup", SeedSurfaceID: "surface-backup",
 		Slots: []flowproof.Slot{{
 			Kind: flowproof.SlotEntrypoint, Status: flowproof.SlotVerified,
 			EvidenceIDs: []string{"handler"}, Summary: "exact process entrypoint",
@@ -736,6 +755,22 @@ func architectureBuildTestProof() flowproof.Proof {
 	}
 }
 
+func bindArchitectureTestDirection(data *ReportData, surfaceID string) {
+	for index := range data.CandidateDirections {
+		if data.CandidateDirections[index].LocalProof != nil &&
+			data.CandidateDirections[index].LocalProof.Proof.SeedSurfaceID == surfaceID {
+			data.CandidateDirections[index].CandidateBasis = flowexplain.CandidateBasisLocalEntrypoint
+		}
+	}
+	if data.DiscoveredSurfaces == nil {
+		data.DiscoveredSurfaces = &DiscoveredSurfaces{}
+	}
+	data.DiscoveredSurfaces.Triggers = append(data.DiscoveredSurfaces.Triggers, DiscoveredTrigger{
+		ID: surfaceID, Kind: "process_entry", Resolution: "exact",
+		SurfaceRole: SurfaceRoleEntrySurface,
+	})
+}
+
 func architectureBuildTestTransition(
 	id, from, to string,
 	relation evidence.RelationKind,
@@ -749,44 +784,30 @@ func architectureBuildTestTransition(
 	}
 }
 
-func architectureBuildTestBindingIndex(
-	bindings []componentmap.FlowAnchorBinding,
-) map[string]componentmap.FlowAnchorBinding {
-	result := make(map[string]componentmap.FlowAnchorBinding, len(bindings))
-	for _, binding := range bindings {
-		result[binding.AnchorID] = binding
-	}
-	return result
-}
-
-func architectureBuildTestCandidate(
-	bundle componentmap.CandidateBundle,
-	id componentmap.MemberID,
-) componentmap.Candidate {
-	for _, candidate := range bundle.Candidates {
-		if candidate.ID == id {
-			return candidate
-		}
-	}
-	panic("missing candidate " + string(id.Kind) + ":" + id.Value)
-}
-
-func TestBuildArchitectureCanvasInputPreservesEntirelyUnboundFlow(t *testing.T) {
+func TestBuildArchitectureCanvasInputOmitsEntirelyUnboundFlowOverlay(t *testing.T) {
 	t.Parallel()
 
-	input, err := BuildArchitectureCanvasInput(&ReportData{CandidateDirections: []CandidateDirection{{
-		ID: "unknown", Name: "Unknown",
-		LocalProof: &flowproof.Session{Version: flowproof.SessionVersion, Proof: flowproof.Proof{
-			Version: flowproof.Version, ID: "unknown", Archetype: flowproof.ArchetypeCLI,
-			Anchors: []flowproof.Anchor{{ID: "opaque", Kind: flowproof.AnchorOperation, Label: "opaque"}},
+	input, err := BuildArchitectureCanvasInput(&ReportData{
+		RepositoryGraph: &RepositoryGraph{
+			Modules: []ModuleInfo{{Path: "example.com/project"}},
+			PackageEdges: []EdgeInfo{{
+				From: "example.com/project/cmd", To: "example.com/project/internal/repo",
+			}},
+		},
+		CandidateDirections: []CandidateDirection{{
+			ID: "unknown", Name: "Unknown", CandidateBasis: flowexplain.CandidateBasisModelOrientation,
+			LocalProof: &flowproof.Session{Version: flowproof.SessionVersion, Proof: flowproof.Proof{
+				Version: flowproof.Version, ID: "unknown", Archetype: flowproof.ArchetypeCLI,
+				SeedSurfaceID: "heuristic-surface",
+				Anchors:       []flowproof.Anchor{{ID: "opaque", Kind: flowproof.AnchorOperation, Label: "opaque"}},
+			}},
 		}},
-	}}})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(input.CandidateBundle.Candidates) != 1 ||
-		input.CandidateBundle.Candidates[0].ID.Kind != componentmap.MemberFlow {
-		t.Fatalf("candidates = %#v, want only the exact saved flow member", input.CandidateBundle.Candidates)
+	if len(input.Flows) != 0 || len(input.CandidateBundle.Flows) != 0 {
+		t.Fatalf("unbound flow was published: %#v / %#v", input.Flows, input.CandidateBundle.Flows)
 	}
 	if len(input.CandidateBundle.AnchorBindings) != 0 {
 		t.Fatalf("bindings = %#v, want no invented member for locationless anchor", input.CandidateBundle.AnchorBindings)
@@ -795,7 +816,7 @@ func TestBuildArchitectureCanvasInputPreservesEntirelyUnboundFlow(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !architectureHasAnchorFrontier(canvas, "unassigned_component", "opaque") {
-		t.Fatalf("frontiers = %#v, want explicit unbound anchor", canvas.Frontiers)
+	if len(canvas.Flows) != 0 || len(canvas.FlowEdges) != 0 {
+		t.Fatalf("unbound flow overlay = %#v / %#v", canvas.Flows, canvas.FlowEdges)
 	}
 }

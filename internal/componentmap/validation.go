@@ -358,7 +358,8 @@ func validValidationOutcome(outcome ValidationOutcome) bool {
 
 func validArchitectureSource(source ArchitectureSource) bool {
 	return source == SourceValidatedModel || source == SourceNormalizedModel ||
-		source == SourceLocalAnchors || source == SourcePackageFallback
+		source == SourceLocalAnchors || source == SourceLocalPackages ||
+		source == SourcePackageFallback
 }
 
 func validateNormalizationOperation(operation NormalizationOperation) error {
@@ -374,7 +375,7 @@ func validateNormalizationOperation(operation NormalizationOperation) error {
 	return nil
 }
 
-func useAnchorFirstFallback(bundle CandidateBundle) bool {
+func useAnchorFirstLocalGrouping(bundle CandidateBundle) bool {
 	if len(bundle.BehaviorAnchors) == 0 || bundle.GroundingMode == GroundingPackages {
 		return false
 	}
