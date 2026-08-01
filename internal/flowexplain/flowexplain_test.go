@@ -1,11 +1,122 @@
 package flowexplain
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
+
+func TestClassifyCandidateFlowRequiresExactLocalEvidence(t *testing.T) {
+	t.Parallel()
+
+	typedProof := &flowproof.Session{Proof: flowproof.Proof{
+		SeedSurfaceID:           "trigger-process-entry",
+		TraceEvidenceSurfaceIDs: []string{"trigger-http-server"},
+	}}
+	tests := []struct {
+		name            string
+		flow            CandidateFlow
+		wantDisposition string
+		wantReason      string
+	}{
+		{
+			name:            "high provider confidence is not publication authority",
+			flow:            CandidateFlow{Confidence: 0.99, CandidateBasis: CandidateBasisModelOrientation},
+			wantDisposition: DirectionRejected,
+			wantReason:      "no exact local verification",
+		},
+		{
+			name:            "typed local proof",
+			flow:            CandidateFlow{Confidence: 0.1, LocalProof: typedProof},
+			wantDisposition: DirectionAccepted,
+		},
+		{
+			name: "producer owned verified evidence",
+			flow: CandidateFlow{LocalVerification: &FlowVerification{
+				Verified: []string{"exact entrypoint declaration"},
+			}},
+			wantDisposition: DirectionAccepted,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			beforeSeed := ""
+			var beforeTrace []string
+			if test.flow.LocalProof != nil {
+				beforeSeed = test.flow.LocalProof.Proof.SeedSurfaceID
+				beforeTrace = append([]string(nil), test.flow.LocalProof.Proof.TraceEvidenceSurfaceIDs...)
+			}
+
+			ClassifyCandidateFlow(&test.flow)
+
+			if test.flow.Disposition != test.wantDisposition || test.flow.DispositionReason != test.wantReason {
+				t.Fatalf("disposition = %q (%q), want %q (%q)",
+					test.flow.Disposition, test.flow.DispositionReason, test.wantDisposition, test.wantReason)
+			}
+			if test.flow.LocalProof != nil &&
+				(test.flow.LocalProof.Proof.SeedSurfaceID != beforeSeed ||
+					!reflect.DeepEqual(test.flow.LocalProof.Proof.TraceEvidenceSurfaceIDs, beforeTrace)) {
+				t.Fatalf("typed Surface identities changed: %#v", test.flow.LocalProof.Proof)
+			}
+		})
+	}
+}
+
+func TestClassifyCandidateFlowCasdoorReplayShapesPublishOneGroundedDirection(t *testing.T) {
+	t.Parallel()
+
+	proof := func() *flowproof.Session {
+		return &flowproof.Session{Proof: flowproof.Proof{SeedSurfaceID: "trigger-process-entry"}}
+	}
+	tests := []struct {
+		name  string
+		flows []CandidateFlow
+	}{
+		{
+			name: "cached 14:36 shape",
+			flows: []CandidateFlow{
+				{Name: "HTTP request handling for MCP proxy", Confidence: 0.6, CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Server startup and initialization", Confidence: 0.3, LocalProof: proof(), CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Background ticker loop for CLI downloader", Confidence: 0.3, CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Quota enforcement during authentication", Confidence: 0.6, CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Storage durability", Confidence: 0.3, CandidateBasis: CandidateBasisSourceSignalAggregate},
+				{Name: "Threshold enforcement", Confidence: 0.3, CandidateBasis: CandidateBasisSourceSignalAggregate},
+				{Name: "Background loop", Confidence: 0.3, CandidateBasis: CandidateBasisSourceSignalAggregate},
+			},
+		},
+		{
+			name: "live 15:26 shape",
+			flows: []CandidateFlow{
+				{Name: "HTTP request handling", Confidence: 0.9, LocalProof: proof(), CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Background loop for CLI downloader", Confidence: 0.3, CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Storage durability flow", Confidence: 0.3, CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Quota enforcement", Confidence: 0.3, CandidateBasis: CandidateBasisModelOrientation},
+				{Name: "Storage durability", Confidence: 0.3, CandidateBasis: CandidateBasisSourceSignalAggregate},
+				{Name: "Threshold enforcement", Confidence: 0.3, CandidateBasis: CandidateBasisSourceSignalAggregate},
+				{Name: "Background loop", Confidence: 0.3, CandidateBasis: CandidateBasisSourceSignalAggregate},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			accepted := 0
+			for index := range test.flows {
+				ClassifyCandidateFlow(&test.flows[index])
+				if test.flows[index].Disposition == DirectionAccepted {
+					accepted++
+				}
+			}
+			if accepted != 1 {
+				t.Fatalf("accepted directions = %d, want exactly one grounded direction: %#v", accepted, test.flows)
+			}
+		})
+	}
+}
 
 func TestGenerateFlowID(t *testing.T) {
 	cases := []struct {

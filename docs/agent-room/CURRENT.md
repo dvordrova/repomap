@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/192-default-semantic-exchange-journal.md
+    decisions/193-grounded-orientation-direction-publication.md
 
 Status:
-    Decision 192 active; default semantic exchange journal authorized
+    Decision 193 active; grounded Orientation direction publication authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 193 removes provider confidence as standalone publication
+    authority for Orientation candidate directions. A direction is accepted
+    only when the existing local proof is present or producer-owned local
+    verification names at least one verified fact. Rejected candidates remain
+    in their existing diagnostic detail and order, but the report component
+    backend excludes them from both path/evidence related-flow matching and
+    lexical fallback anchors. Existing typed Surface identities carried by an
+    accepted LocalProof remain intact. Prompts, calls, candidate production,
+    schemas, caches, Study, Architecture, Atlas, localization, UI, README and
+    edge caps, retries, legacy readers, and migrations remain unchanged.
     Decision 192 adds one default debug-only semantic exchange journal below
     the existing root-confined debug writer. Every ordinary model question has
     one recording owner; safe post-redaction request/response bytes or truthful
