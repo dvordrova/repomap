@@ -92,6 +92,23 @@ func replaySavedMechanismV1(
 	return replayDecodedMechanismV1(data, mechanism, factsPath, probePath)
 }
 
+// ApplySavedMechanismV1 explicitly projects one independently validated saved
+// Mechanism for a development workflow. Ordinary ReadRunDir intentionally
+// does not call this function: merely co-locating a development artifact with
+// canonical run inputs must never change an ordinary report.
+func ApplySavedMechanismV1(
+	data *ReportData,
+	mechanismPath string,
+	factsPath string,
+	probePath string,
+) error {
+	warning := replaySavedMechanismV1(data, mechanismPath, factsPath, probePath)
+	if warning != "" {
+		return fmt.Errorf("apply saved mechanism v1: %s", warning)
+	}
+	return nil
+}
+
 // replaySavedMechanismV1Collection layers every valid collection entry onto
 // the report independently. One malformed or stale entry cannot remove an
 // already replayed artifact or prevent later entries from being considered.

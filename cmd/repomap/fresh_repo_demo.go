@@ -2603,6 +2603,14 @@ func publishFreshMechanism(
 	if err != nil {
 		return mechanism, 0, err
 	}
+	if err := report.ApplySavedMechanismV1(
+		replayed,
+		paths[3],
+		paths[1],
+		paths[0],
+	); err != nil {
+		return mechanism, 0, err
+	}
 	for _, projected := range replayed.UserMechanisms {
 		if projected.ArtifactID != artifact.ID {
 			continue
