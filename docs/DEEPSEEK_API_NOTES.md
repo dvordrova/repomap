@@ -224,22 +224,22 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     {
       "name": "component or subsystem name",
       "role": "entry | boundary | coordination | domain | state | support | unknown",
-      "evidence": ["facts or paths from bundle"],
+	  "evidence_refs": ["e0001"],
       "why_it_matters": "..."
     }
   ],
   "first_files_to_open": [
-    {"path": "repo-relative path", "reason": "..."}
+	{"file_ref": "f0001", "reason": "..."}
   ],
   "candidate_flows": [
     {
       "name": "runtime or event flow name",
       "flow_type": "request | operational",
       "trigger": "what starts this flow",
-      "likely_entrypoint": "exact full path from allowed_paths",
-      "likely_files": ["repo-relative paths"],
+	  "likely_entrypoint_ref": "f0001",
+	  "likely_file_refs": ["f0001"],
       "why_interesting": "...",
-      "evidence": ["facts from bundle supporting this flow"],
+	  "evidence_refs": ["e0001"],
       "confidence": 0.0
     }
   ],
@@ -247,14 +247,20 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     {
       "word": "term",
       "guess": "what it probably means",
-      "evidence": ["paths or readme excerpts"]
+	  "evidence_refs": ["e0001"]
     }
   ],
   "questions_for_human": [
     "question that helps guide next analysis step"
   ],
-  "unverified_paths": [
-    {"path": "suspected/repo-relative/path", "reason": "not in allowed_paths"}
+	"research_questions": [
+	  {
+		"id": "short id",
+		"purpose": "why this matters",
+		"question": "one bounded question",
+		"candidate_file_refs": ["f0001"],
+		"evidence_categories": ["declaration", "callsite"]
+	  }
   ],
   "warnings": [
     "uncertainty or missing context"
@@ -262,34 +268,46 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 }
 ```
 
-Operational flows must cite bounded `source_signals` evidence. When the static
+The request uses Orientation prompt `orientation-json-v13`. Its compact wire
+projection has one request-local `file_index`; each concrete model-visible path
+appears there once. Candidate-file rows replace long canonical IDs and paths
+with a `file_ref`, raw `allowed_paths` is not repeated, and signals, entrypoint
+anchors/open files, command traces, orientation candidates, and import edges
+carry inline file/evidence refs without restating their facts. This projection
+does not reselect, shrink, or reorder the already bounded bundle.
+
+Operational flows must cite bounded `source_signals` evidence through its exact
+inline evidence ref. When the static
 evidence remains weak and no local proof establishes execution, confidence is
 capped at `0.3`. Request and operational flows remain one naturally ranked
 candidate list.
 
-Orientation parsing separates recoverable prose drift from structured
-navigation. A free-form evidence item that contains an invalid or unprovided
-path-like mention is dropped with a warning. If `likely_entrypoint` is neither
-an allowed file nor a provided entrypoint package, it may be replaced with that
-flow's first already-allowed `likely_file`, again with a warning.
-`first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
-invented values. Invalid or unallowed items are removed with an explicit parser
-warning; the remaining structured paths still validate fail-closed. A response
-with no grounded candidate flow remains fatal.
-Orientation prompt v6 retains the atomic-evidence and closed-`allowed_paths`
-rules introduced in v3, explicitly rejects directory, package, import, and
-trailing-slash values in structured file fields, and adds the bounded component
-role used by the landscape layout.
-`main.go` is not accepted as an abbreviation for `cmd/prometheus/main.go`, and
-an import such as `pkg/goanalysis` is not accepted as a file. Prompt v2 captures
-remain replayable historical artifacts. The Prometheus capture still contains
-mixed prose items, which quality replay leaves explicitly unscored. Its clean
-raw-contract flag means the JSON wire shape was clean, not that every semantic
-prompt instruction was obeyed.
+Orientation response decoding is strict and typed. The provider returns only
+the decision AST above; private catalog digests and backend contract versions
+are not response fields. Unknown fields, unknown refs, wrong namespaces,
+duplicate refs, prefixes, shortening, substitutions, and raw paths in ref
+fields reject the response as a whole. There is no unique-prefix, regex/path
+grammar, fuzzy/semantic repair, or entrypoint-from-first-file fallback on this
+path. Provider prose is
+non-authoritative and never parsed into evidence or navigation. Canonical paths,
+evidence statements/locations, and research candidate IDs are restored locally
+from exact refs before shared structural validation and downstream consumers;
+the legacy evidence-path grammar is not run over those locally owned values.
+A fact file outside `candidate_file_index` remains valid bounded navigation,
+but has no candidate mapping and therefore cannot be selected for targeted
+research. Canonical
+`unverified_paths` remains empty because the provider contract has no such
+field.
+
+The cache fingerprint binds the exact provider request and a backend-owned
+private catalog digest that includes the response contract and canonical
+candidate-ID mapping. Equal provider-visible wire bytes with a different
+private mapping therefore miss rather than replaying a stale response. The
+provider never copies that digest or those versions.
 
 The component `role` is a bounded orientation hypothesis used only to arrange
-the browser landscape. It is normalized to `unknown` when a provider returns an
-unsupported value. Static package imports remain separate evidence and never
+the browser landscape. Unsupported provider role literals reject the strict
+typed response. Static package imports remain separate evidence and never
 upgrade a semantic role into a verified fact.
 
 ## Component planning and probe handoff

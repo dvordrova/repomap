@@ -245,42 +245,34 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	runOrientGit(t, repo, "init", "--quiet")
 	runOrientGit(t, repo, "add", "--", "go.mod", "cmd/trial/main.go", "internal/worker/worker.go")
 
-	orientation := `{
-  "project_guess":"tiny worker command",
-  "confidence":0.9,
-  "high_level_map":[],
-  "first_files_to_open":[],
-  "candidate_flows":[
-    {
-      "name":"Process startup",
-      "trigger":"the executable starts",
-      "likely_entrypoint":"cmd/trial/main.go",
-      "likely_files":["cmd/trial/main.go"],
-      "why_interesting":"shows process wiring",
-      "evidence":["cmd/trial/main.go"],
-      "confidence":0.9
-    },
-    {
-      "name":"Worker run",
-      "trigger":"the worker is invoked",
-      "likely_entrypoint":"internal/worker/worker.go",
-      "likely_files":["internal/worker/worker.go"],
-      "why_interesting":"shows background work",
-      "evidence":["internal/worker/worker.go"],
-      "confidence":0.8
-    }
-  ],
-  "important_domain_words":[],
-  "questions_for_human":[],
-  "unverified_paths":[{"path":"internal/unretrieved.go","reason":"not present in the bounded bundle"}],
-  "warnings":[]
-}`
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requests++
+		wire := orientationWireFromHTTPRequest(t, request)
+		mainRef, mainEvidence := orientationWireFileRefs(t, wire, "cmd/trial/main.go")
+		workerRef, workerEvidence := orientationWireFileRefs(t, wire, "internal/worker/worker.go")
+		orientation, err := json.Marshal(orientationProviderResponse{
+			ProjectGuess: "tiny worker command", Confidence: 0.9,
+			CandidateFlows: []orientationProviderCandidateFlow{
+				{
+					Name: "Process startup", FlowType: "request", Trigger: "the executable starts",
+					LikelyEntrypointRef: mainRef, LikelyFileRefs: []string{mainRef},
+					WhyInteresting: "shows process wiring", EvidenceRefs: []string{mainEvidence}, Confidence: 0.9,
+				},
+				{
+					Name: "Worker run", FlowType: "request", Trigger: "the worker is invoked",
+					LikelyEntrypointRef: workerRef, LikelyFileRefs: []string{workerRef},
+					WhyInteresting: "shows background work", EvidenceRefs: []string{workerEvidence}, Confidence: 0.8,
+				},
+			},
+			Warnings: []string{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": orientation},
+				"message": map[string]any{"role": "assistant", "content": string(orientation)},
 			}},
 		})
 	}))
@@ -344,7 +336,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 		t.Fatal(err)
 	}
 	if !warningSidecar.MatchesOrientationReport(orientationReportJSON) ||
-		len(warningSidecar.Diagnostics) != 3 {
+		len(warningSidecar.Diagnostics) != 0 {
 		t.Fatalf("orientation warning sidecar = %#v", warningSidecar)
 	}
 	var savedOrientation orientationPart
@@ -421,25 +413,6 @@ func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 	runOrientGit(t, repo, "init", "--quiet")
 	runOrientGit(t, repo, "add", "--", "go.mod", "main.go")
 
-	orientation := `{
-  "project_guess":"tiny command",
-  "confidence":0.9,
-  "high_level_map":[],
-  "first_files_to_open":[{"path":"main.go","reason":"entrypoint"}],
-  "candidate_flows":[{
-    "name":"Process startup",
-    "trigger":"the executable starts",
-    "likely_entrypoint":"main.go",
-    "likely_files":["main.go"],
-    "why_interesting":"shows wiring",
-    "evidence":["main.go"],
-    "confidence":0.9
-  }],
-  "important_domain_words":[],
-  "questions_for_human":[],
-  "unverified_paths":[],
-  "warnings":[]
-}`
 	var requestSizes []int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
@@ -448,9 +421,24 @@ func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 			return
 		}
 		requestSizes = append(requestSizes, len(body))
+		wire := orientationWireFromRequestBytes(t, body)
+		fileRef, evidenceRef := orientationWireFileRefs(t, wire, "main.go")
+		orientation, err := json.Marshal(orientationProviderResponse{
+			ProjectGuess: "tiny command", Confidence: 0.9,
+			FirstFilesToOpen: []orientationProviderFileToOpen{{FileRef: fileRef, Reason: "entrypoint"}},
+			CandidateFlows: []orientationProviderCandidateFlow{{
+				Name: "Process startup", FlowType: "request", Trigger: "the executable starts",
+				LikelyEntrypointRef: fileRef, LikelyFileRefs: []string{fileRef},
+				WhyInteresting: "shows wiring", EvidenceRefs: []string{evidenceRef}, Confidence: 0.9,
+			}},
+			Warnings: []string{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": orientation},
+				"message": map[string]any{"role": "assistant", "content": string(orientation)},
 			}},
 		})
 	}))

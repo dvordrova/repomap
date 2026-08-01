@@ -34,6 +34,7 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 			return
 		}
 		content, kind, err := presentationLocalizationHTTPResponse(
+			t,
 			body,
 			orientationJSON,
 		)
@@ -181,8 +182,9 @@ func (calls *presentationLocalizationHTTPCalls) snapshot() presentationLocalizat
 }
 
 func presentationLocalizationHTTPResponse(
-	body,
-	orientationJSON []byte,
+	t *testing.T,
+	body []byte,
+	orientationFixture orientationResponseFixture,
 ) ([]byte, string, error) {
 	var request struct {
 		Messages []struct {
@@ -237,7 +239,7 @@ func presentationLocalizationHTTPResponse(
 		})
 		return encoded, "localization", err
 	case strings.Contains(system, "senior software engineer helping orient"):
-		return bytes.Clone(orientationJSON), "orientation", nil
+		return orientationResponseForRequest(t, body, orientationFixture), "orientation", nil
 	default:
 		// Optional architecture/Study stages are intentionally irrelevant to
 		// this matrix. Valid JSON lets their normal fail-soft paths finish
@@ -265,38 +267,19 @@ func presentationLocalizationHTTPRepository(t *testing.T) string {
 	return repository
 }
 
-func presentationLocalizationHTTPOrientation(t *testing.T) []byte {
+func presentationLocalizationHTTPOrientation(t *testing.T) orientationResponseFixture {
 	t.Helper()
-	encoded, err := json.Marshal(map[string]any{
-		"project_guess": "tiny localization matrix command",
-		"confidence":    0.9,
-		"high_level_map": []any{map[string]any{
-			"name":           "command",
-			"evidence":       []string{"main.go"},
-			"why_it_matters": "it owns process startup",
+	return orientationResponseFixture{
+		ProjectGuess: "tiny localization matrix command", Confidence: 0.9,
+		Map:        []orientationMapFixture{{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "it owns process startup"}},
+		FirstFiles: []orientationFileFixture{{Path: "main.go", Reason: "process entrypoint"}},
+		Flows: []orientationFlowFixture{{
+			Name: "Process startup", Trigger: "the executable starts", EntrypointPath: "main.go",
+			LikelyPaths: []string{"main.go"}, EvidencePaths: []string{"main.go"},
+			WhyInteresting: "shows the complete command behavior", Confidence: 0.9,
 		}},
-		"first_files_to_open": []any{map[string]any{
-			"path":   "main.go",
-			"reason": "process entrypoint",
-		}},
-		"candidate_flows": []any{map[string]any{
-			"name":              "Process startup",
-			"trigger":           "the executable starts",
-			"likely_entrypoint": "main.go",
-			"likely_files":      []string{"main.go"},
-			"why_interesting":   "shows the complete command behavior",
-			"evidence":          []string{"main.go"},
-			"confidence":        0.9,
-		}},
-		"important_domain_words": []any{},
-		"questions_for_human":    []any{},
-		"unverified_paths":       []any{},
-		"warnings":               []any{},
-	})
-	if err != nil {
-		t.Fatal(err)
+		Warnings: []string{},
 	}
-	return encoded
 }
 
 func runPresentationLocalizationHTTPMatrix(

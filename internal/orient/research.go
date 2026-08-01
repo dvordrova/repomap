@@ -55,6 +55,7 @@ func obtainOrientation(
 	repository modelresearch.RepositoryContext,
 	profile string,
 	bundleJSON []byte,
+	evidenceBundleHash string,
 	requestJSON []byte,
 	useCache bool,
 	prepareCached func([]byte) (orientationPart, error),
@@ -62,7 +63,10 @@ func obtainOrientation(
 	call := orientationCall{Metrics: modelresearch.StageMetrics{
 		Stage: "orientation", Status: "prepared", RequestBytes: len(requestJSON),
 	}}
-	bundleHash := modelresearch.SHA256(bundleJSON)
+	if evidenceBundleHash == "" {
+		return call, fmt.Errorf("orientation cache: private evidence identity is required")
+	}
+	bundleHash := evidenceBundleHash
 	if dw != nil && useCache {
 		call.CacheInput = modelresearch.StageCacheInput{
 			RunsDir: dw.BaseDir,
@@ -71,6 +75,7 @@ func obtainOrientation(
 				PromptVersion: deepseek.OrientationPromptVersionJSON,
 				Profile:       profile, Model: client.Model,
 				EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+				CacheContract: orientationCacheContractVersion,
 			},
 			Request: requestJSON, EvidenceBundleHash: bundleHash,
 		}

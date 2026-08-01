@@ -58,7 +58,6 @@ func TestSourceCatalogPathsAreRegularBoundedAndNoFollow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if !sourceCatalogPathsAreRegular(
 		context.Background(),
 		state,
@@ -230,6 +229,17 @@ func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 	if err != nil {
 		t.Fatal(err)
 	}
+	orientationFixture := orientationResponseFixture{
+		ProjectGuess: "tracked-link fixture", Confidence: 0.9,
+		Map:        []orientationMapFixture{{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "owns process startup"}},
+		FirstFiles: []orientationFileFixture{{Path: "main.go", Reason: "process entrypoint"}},
+		Flows: []orientationFlowFixture{{
+			Name: "Process startup", Trigger: "the executable starts", EntrypointPath: "main.go",
+			LikelyPaths: []string{"main.go"}, EvidencePaths: []string{"main.go"},
+			WhyInteresting: "shows startup", Confidence: 0.9,
+		}},
+		Warnings: []string{},
+	}
 
 	var providerRequests atomic.Int32
 	var requestBody []byte
@@ -243,10 +253,14 @@ func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 		if call == 1 {
 			requestBody = append([]byte(nil), body...)
 		}
+		responseContent := orientationJSON
+		if call == 1 {
+			responseContent = orientationResponseForRequest(t, body, orientationFixture)
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(writer).Encode(map[string]any{
 			"choices": []any{map[string]any{"message": map[string]any{
-				"role": "assistant", "content": string(orientationJSON),
+				"role": "assistant", "content": string(responseContent),
 			}}},
 		}); err != nil {
 			t.Errorf("write provider response: %v", err)

@@ -47,7 +47,7 @@ const (
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v12"
+const OrientationPromptVersionJSON = "orientation-json-v13"
 
 // SemanticOutputLanguageContractVersion identifies the shared language
 // contract applied to every non-localization model request. Localization uses
@@ -288,7 +288,7 @@ func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 	request := c.canonicalSemanticRequest(
 		`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
-Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
+The request-local reference fields embedded in the facts bundle are closed. Return only exact file refs (f0001...) in file-ref fields and exact evidence refs (e0001...) in evidence-ref fields. Never return a repository path, candidate_file_index id, package path, import path, path:line statement, or reference handle in a prose field. Never shorten, extend, prefix, substitute, or repair a ref. Never use a file ref where an evidence ref is required or an evidence ref where a file ref is required. Do not duplicate a ref within one field. Omit a value or flow that cannot use exact refs from this request. There is no unverified_paths response field and no filename inference or fallback from an entrypoint to the first likely file.
 
 Produce a json orientation report with this exact shape:
 {
@@ -298,13 +298,13 @@ Produce a json orientation report with this exact shape:
     {
       "name": "component or subsystem name",
       "role": "entry | boundary | coordination | domain | state | support | unknown",
-      "evidence": ["facts or paths from the bundle"],
+      "evidence_refs": ["exact e-ref embedded in this request"],
       "why_it_matters": "why this component matters for understanding the repo"
     }
   ],
   "first_files_to_open": [
     {
-      "path": "must be from allowed_paths",
+      "file_ref": "exact f-ref embedded in this request",
       "reason": "why this file is worth opening first"
     }
   ],
@@ -313,10 +313,10 @@ Produce a json orientation report with this exact shape:
       "name": "runtime or event flow name",
       "flow_type": "request | operational",
       "trigger": "what starts this flow",
-      "likely_entrypoint": "exact full path from allowed_paths, preferably one of likely_files",
-      "likely_files": ["all must be from allowed_paths"],
+      "likely_entrypoint_ref": "exact f-ref embedded in this request, preferably one of likely_file_refs",
+      "likely_file_refs": ["exact f-refs embedded in this request"],
       "why_interesting": "why this flow matters",
-      "evidence": ["facts from the bundle supporting this flow"],
+      "evidence_refs": ["exact e-refs embedded in this request that support this flow"],
       "confidence": 0.0
     }
   ],
@@ -324,7 +324,7 @@ Produce a json orientation report with this exact shape:
     {
       "word": "term found in paths or readme",
       "guess": "what it probably means in this repo",
-      "evidence": ["paths or readme excerpts from the bundle"]
+      "evidence_refs": ["exact e-refs embedded in this request"]
     }
   ],
   "questions_for_human": [
@@ -335,14 +335,8 @@ Produce a json orientation report with this exact shape:
       "id": "short question id",
       "purpose": "why resolving this question would improve architecture or a saved trace",
       "question": "one concrete high-value repository question",
-      "candidate_ids": ["opaque ids copied from candidate_file_index"],
+      "candidate_file_refs": ["exact f-refs from candidate_file_index in this request"],
       "evidence_categories": ["declaration, callsite, transition, source_window, test, or frontier"]
-    }
-  ],
-  "unverified_paths": [
-    {
-      "path": "path model suspects but was not present in allowed_paths",
-      "reason": "why it might be relevant"
     }
   ],
   "warnings": [
@@ -353,16 +347,16 @@ Produce a json orientation report with this exact shape:
 Important rules:
 - Candidate flows must be runtime/event-oriented (e.g. "CLI command dispatch", "HTTP request handling", "server startup", "plugin loading", "background job execution"), not folder-oriented (do not say "server module" or "pkg folder").
 - Set flow_type to "request" for user/request-driven work and "operational" for background, maintenance, threshold, consensus, or durability work. Prefer the strongest grounded evidence regardless of flow type.
-- An operational candidate must cite source_signal evidence. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
+- An operational candidate must cite an evidence_ref attached to a source_signals record. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
 - Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
-- Every candidate flow must include evidence from the bundle.
-- Propose two to four research_questions only when bounded local evidence could answer them. Use only opaque candidate_file_index ids and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
+- Every candidate flow must include evidence_refs from the facts bundle.
+- Propose two to four research_questions only when bounded local evidence could answer them. Select candidates only through exact candidate_file_refs and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
 - go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.
-- Keep each evidence item atomic. When citing source_signals or go.command_traces, start with its exact path:line and optionally add one short fact, for example "app/service.py:42 registers the handler". Never write "path line 42", "path lines 42-43", or "at line 42". For evidence without a grounded line, use either one exact full allowed_paths value or one non-path fact copied from the bundle. Never abbreviate a path.
+- Evidence is selected only by exact evidence_refs embedded in this request; do not rewrite referenced evidence as prose.
 - Distinguish facts from guesses. If confidence is low, say so in warnings.
-- Use only the provided facts bundle. Do not imagine files you cannot see.
+- Use only the provided facts bundle and its request-local reference fields. Do not imagine files you cannot see.
 
-Facts bundle JSON:
+Orientation facts bundle JSON:
 `+string(bundleJSON),
 		"You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
 		true,

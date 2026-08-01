@@ -452,6 +452,23 @@ func normalizeCandidateFlowIDs(report *orientationPart) {
 }
 
 func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoints []string) error {
+	if err := validateOrientationStructure(report); err != nil {
+		return err
+	}
+	return validateLegacyOrientationGrounding(report, allowedPaths, allowedEntrypoints)
+}
+
+// validateResolvedOrientation runs after exact request-local ref resolution.
+// Repository identity and evidence authority have already been proven by typed
+// lookup, so legacy path/evidence lexical parsing is not a second authority.
+func validateResolvedOrientation(report orientationPart) error {
+	if len(report.UnverifiedPaths) != 0 {
+		return fmt.Errorf("orientation: resolved response cannot contain unverified_paths")
+	}
+	return validateOrientationStructure(report)
+}
+
+func validateOrientationStructure(report orientationPart) error {
 	if strings.TrimSpace(report.ProjectGuess) == "" {
 		return fmt.Errorf("orientation: project_guess is required")
 	}
@@ -462,55 +479,6 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 		return fmt.Errorf("orientation: at least one candidate flow is required")
 	}
 
-	allowed := make(map[string]struct{}, len(allowedPaths))
-	for _, path := range allowedPaths {
-		allowed[path] = struct{}{}
-	}
-	entrypoints := make(map[string]struct{}, len(allowedEntrypoints))
-	for _, entrypoint := range allowedEntrypoints {
-		if entrypoint = strings.TrimSpace(entrypoint); entrypoint != "" && entrypoint != "." {
-			entrypoints[entrypoint] = struct{}{}
-		}
-	}
-	validateAllowed := func(field, path string) error {
-		if !validRepoRelativePath(path) {
-			return fmt.Errorf("orientation: %s has invalid path %q", field, path)
-		}
-		if _, ok := allowed[path]; !ok {
-			return fmt.Errorf("orientation: %s references path outside allowed_paths: %q", field, path)
-		}
-		return nil
-	}
-	validateEvidence := func(field string, evidence []string) error {
-		for evidenceIndex, statement := range evidence {
-			for _, path := range evidencePathMentions(statement) {
-				if !validRepoRelativePath(path) {
-					return fmt.Errorf("orientation: %s[%d] has invalid path-like evidence %q", field, evidenceIndex, path)
-				}
-				if _, ok := allowed[path]; !ok {
-					return fmt.Errorf("orientation: %s[%d] references path-like evidence outside allowed_paths: %q", field, evidenceIndex, path)
-				}
-			}
-		}
-		return nil
-	}
-
-	for index, item := range report.HighLevelMap {
-		if err := validateEvidence(fmt.Sprintf("high_level_map[%d].evidence", index), item.Evidence); err != nil {
-			return err
-		}
-	}
-	for index, item := range report.ImportantDomainWords {
-		if err := validateEvidence(fmt.Sprintf("important_domain_words[%d].evidence", index), item.Evidence); err != nil {
-			return err
-		}
-	}
-
-	for index, file := range report.FirstFilesToOpen {
-		if err := validateAllowed(fmt.Sprintf("first_files_to_open[%d]", index), file.Path); err != nil {
-			return err
-		}
-	}
 	flowIDs := make(map[string]string, len(report.CandidateFlows))
 	for flowIndex, flow := range report.CandidateFlows {
 		if strings.TrimSpace(flow.Name) == "" || strings.TrimSpace(flow.Trigger) == "" {
@@ -542,21 +510,73 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 		if len(flow.Evidence) == 0 {
 			return fmt.Errorf("orientation: candidate_flows[%d] has no evidence", flowIndex)
 		}
-		if err := validateEvidence(fmt.Sprintf("candidate_flows[%d].evidence", flowIndex), flow.Evidence); err != nil {
-			return err
-		}
-		for pathIndex, path := range flow.LikelyFiles {
-			if err := validateAllowed(
-				fmt.Sprintf("candidate_flows[%d].likely_files[%d]", flowIndex, pathIndex),
-				path,
-			); err != nil {
-				return err
-			}
-		}
 		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
 		if entrypoint == "" {
 			return fmt.Errorf("orientation: candidate_flows[%d] has no likely_entrypoint", flowIndex)
 		}
+	}
+	return nil
+}
+
+func validateLegacyOrientationGrounding(report orientationPart, allowedPaths, allowedEntrypoints []string) error {
+	allowed := make(map[string]struct{}, len(allowedPaths))
+	for _, path := range allowedPaths {
+		allowed[path] = struct{}{}
+	}
+	entrypoints := make(map[string]struct{}, len(allowedEntrypoints))
+	for _, entrypoint := range allowedEntrypoints {
+		if entrypoint = strings.TrimSpace(entrypoint); entrypoint != "" && entrypoint != "." {
+			entrypoints[entrypoint] = struct{}{}
+		}
+	}
+	validateAllowed := func(field, path string) error {
+		if !validRepoRelativePath(path) {
+			return fmt.Errorf("orientation: %s has invalid path %q", field, path)
+		}
+		if _, ok := allowed[path]; !ok {
+			return fmt.Errorf("orientation: %s references path outside allowed_paths: %q", field, path)
+		}
+		return nil
+	}
+	validateEvidence := func(field string, statements []string) error {
+		for evidenceIndex, statement := range statements {
+			for _, path := range evidencePathMentions(statement) {
+				if !validRepoRelativePath(path) {
+					return fmt.Errorf("orientation: %s[%d] has invalid path-like evidence %q", field, evidenceIndex, path)
+				}
+				if _, ok := allowed[path]; !ok {
+					return fmt.Errorf("orientation: %s[%d] references path-like evidence outside allowed_paths: %q", field, evidenceIndex, path)
+				}
+			}
+		}
+		return nil
+	}
+
+	for index, item := range report.HighLevelMap {
+		if err := validateEvidence(fmt.Sprintf("high_level_map[%d].evidence", index), item.Evidence); err != nil {
+			return err
+		}
+	}
+	for index, item := range report.ImportantDomainWords {
+		if err := validateEvidence(fmt.Sprintf("important_domain_words[%d].evidence", index), item.Evidence); err != nil {
+			return err
+		}
+	}
+	for index, file := range report.FirstFilesToOpen {
+		if err := validateAllowed(fmt.Sprintf("first_files_to_open[%d]", index), file.Path); err != nil {
+			return err
+		}
+	}
+	for flowIndex, flow := range report.CandidateFlows {
+		if err := validateEvidence(fmt.Sprintf("candidate_flows[%d].evidence", flowIndex), flow.Evidence); err != nil {
+			return err
+		}
+		for pathIndex, path := range flow.LikelyFiles {
+			if err := validateAllowed(fmt.Sprintf("candidate_flows[%d].likely_files[%d]", flowIndex, pathIndex), path); err != nil {
+				return err
+			}
+		}
+		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
 		if _, isAllowedPath := allowed[entrypoint]; isAllowedPath {
 			if !validRepoRelativePath(entrypoint) {
 				return fmt.Errorf("orientation: candidate_flows[%d].likely_entrypoint has invalid path %q", flowIndex, entrypoint)
