@@ -86,12 +86,13 @@ contains prompt, response, source, credential, or header material. Ctrl-C
 cancels the shared request context even though the default transport timeout is
 ten minutes.
 
-With `--dump-llm`, `llm_request.redacted.json` remains the inspectable request
-body written before network access. Without that flag, a provider failure now
-writes the same redacted request body automatically, while `error.txt` retains
-the bounded safe provider error. Request-attempt metadata is written before
-network access, so a failed or canceled request does not look as though no
-request was prepared.
+Ordinary debug runs write every covered semantic request and its validated
+response, or a truthful closed unavailable marker, under `semantic_exchanges/`.
+The bounded payloads are redacted and secret-scanned, and `exchange.v1.json` is
+published last as the commit marker. Use request preview when the exact request
+must be inspected without making a provider call. Request-attempt metadata is
+still written before network access, so a failed or canceled request does not
+look as though no request was prepared.
 
 ## Model
 
@@ -514,7 +515,7 @@ split-line, or truncated shapes are not promoted.
 ## Debugging
 
 ```bash
-repomap orient --repo ../etcd --debug-dir .repomap-runs --dump-llm
+repomap orient --repo ../etcd --debug-dir .repomap-runs
 ./scripts/debug_last_run.sh .repomap-runs
 ```
 
@@ -522,8 +523,10 @@ Artifacts produced:
 - `metadata.json` — run metadata (model, endpoint, command)
 - `snapshot.json` — full local deterministic snapshot
 - `llm_bundle.json` — compact bounded bundle sent to DeepSeek
-- `llm_request.redacted.json` — full request body (no Authorization header)
-- `llm_response.raw.json` — raw DeepSeek HTTP response body (redacted)
+- `semantic_exchanges/<id>/request.{json,txt}` — bounded redacted semantic request
+- `semantic_exchanges/<id>/response.{json,txt}` — bounded redacted response, when available and safe
+- `semantic_exchanges/<id>/response.marker.json` — closed unavailable or unsafe marker
+- `semantic_exchanges/<id>/exchange.v1.json` — closed committed outcome metadata
 - `orientation_report.json` — parsed/pretty orientation report
 - `error.txt` — error message if any step failed
 

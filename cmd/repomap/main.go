@@ -506,7 +506,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
 	port := fs.Int("port", 0, "local report server port (default: random)")
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
-	dumpLLM := fs.Bool("dump-llm", false, "dump LLM request/response to debug dir")
 	previewRequest := fs.Bool("preview-request", false, "print the exact redacted LLM request without sending it")
 	strictSnapshot := fs.Bool("strict-snapshot", false, "fail when captured analyzed inputs change before report publication")
 	sourceEpisodePath := fs.String("source-episode", "", "render an approved bounded source episode over the generated report")
@@ -651,7 +650,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		FlowCount:                 *flows,
 		RunID:                     runID,
 		DebugDir:                  dDir,
-		DumpLLM:                   *dumpLLM,
 		DumpRedacted:              true,
 		RequireArtifacts:          dDir != "" && !*previewRequest,
 		DiscoverSurfaces:          *discoverSurfaces && artifactRun,
@@ -681,7 +679,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			ReportLanguage:   storedReportLanguage(reportLanguage),
 			GitLabURL:        gitLabURL,
 			GitHubURL:        gitHubURL,
-			DumpLLM:          *dumpLLM,
 			OutputJSON:       *jsonOut,
 			PreviewRequest:   *previewRequest,
 			NoOpen:           *noOpen,
@@ -739,14 +736,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		}
 		if runOptionalModelStages && *guidedTour {
 			guidedStarted := time.Now()
-			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache, *dumpLLM)
+			outcome, guidedErr := editGuidedTourForRun(ctx, runDir, deps.stderr, *noCache)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
 			if guidedErr != nil {
-				if outcome.DebugDumpFailed {
-					fmt.Fprintln(deps.stderr, "warning: rejected Guided Tour diagnostic could not be saved")
-				}
 				if outcome.ValidatorField != "" && outcome.ValidatorRule != "" {
 					fmt.Fprintf(
 						deps.stderr,
@@ -882,7 +876,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					runDir,
 					filepath.Join(dDir, presentationLocalizationCacheDir),
 					*noCache,
-					*dumpLLM,
 					deps.stderr,
 					sourceEpisodeJSON,
 				)
@@ -924,9 +917,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 							deps.stderr,
 							"warning: Russian localization cache entry could not be saved; the valid per-run projection remains available",
 						)
-					}
-					if localizationOutcome.DebugDumpFailed {
-						fmt.Fprintln(deps.stderr, "warning: rejected localization diagnostic could not be saved")
 					}
 					switch localizationOutcome.State {
 					case report.PresentationLocalizationSucceeded:
@@ -1247,7 +1237,6 @@ func runOrient(args []string) error {
 	llmRequestOnly := fs.Bool("llm-request-only", false, "print exact redacted LLM request (no API call)")
 	out := fs.String("out", "", "write output to file")
 	debugDir := fs.String("debug-dir", "", "directory for debug artifacts")
-	dumpLLM := fs.Bool("dump-llm", false, "dump LLM request/response")
 	explainFlows := fs.Int("explain-flows", 0, "explain top N candidate flows")
 	flowBundlesOnly := fs.Bool("flow-bundles-only", false, "build flow bundles only")
 	strictSnapshot := fs.Bool("strict-snapshot", false, "fail when captured analyzed inputs change before report publication")
@@ -1307,7 +1296,6 @@ func runOrient(args []string) error {
 		FlowBundlesOnly:           *flowBundlesOnly,
 		RunID:                     runID,
 		DebugDir:                  dDir,
-		DumpLLM:                   *dumpLLM,
 		DumpRedacted:              true,
 		RequireArtifacts:          dDir != "",
 		MaxLLMFiles:               *maxLLMFiles,
@@ -1642,7 +1630,7 @@ func runGuidedTour(runDir string, stderr io.Writer) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	outcome, err := editGuidedTourForRun(ctx, absDir, stderr, false, false)
+	outcome, err := editGuidedTourForRun(ctx, absDir, stderr, false)
 	if err != nil {
 		return err
 	}
@@ -1686,7 +1674,6 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --no-serve      generate a static report without starting the local server\n")
 	fmt.Fprintf(os.Stderr, "  --port PORT     local report server port (default random)\n")
 	fmt.Fprintf(os.Stderr, "  --debug-dir DIR debug artifact directory (default user cache)\n")
-	fmt.Fprintf(os.Stderr, "  --dump-llm      dump LLM request/response in debug dir\n")
 	fmt.Fprintf(os.Stderr, "  --preview-request print exact redacted request without an API call\n")
 	fmt.Fprintf(os.Stderr, "  --strict-snapshot fail if captured analyzed inputs change during the run\n")
 	fmt.Fprintf(os.Stderr, "  --source-episode PATH render one approved bounded source episode over the generated report\n")

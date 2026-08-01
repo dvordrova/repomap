@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -120,7 +121,6 @@ func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testi
 		context.Background(),
 		ruDir,
 		cacheRoot,
-		false,
 		false,
 		io.Discard,
 	)
@@ -753,7 +753,6 @@ func TestPresentationLocalizationCacheHitDoesNotRequireAPIKey(t *testing.T) {
 		runDir,
 		cacheRoot,
 		false,
-		false,
 		io.Discard,
 	)
 	if err != nil {
@@ -1176,12 +1175,9 @@ func TestPresentationLocalizationFailureRecordsOnlyAttemptedBatches(t *testing.T
 		status.ValidationCode != report.LocalizationValidationResponseDecode {
 		t.Fatalf("failure status = %#v", status)
 	}
-	if matches, err := filepath.Glob(filepath.Join(runDir, "model_responses", "*")); err != nil || len(matches) != 0 {
-		t.Fatalf("ordinary run persisted rejected response: %v / %v", matches, err)
-	}
 }
 
-func TestPresentationLocalizationDumpRejectedResponseIsSecretSafe(t *testing.T) {
+func TestPresentationLocalizationSemanticJournalRedactsSensitiveResponse(t *testing.T) {
 	t.Parallel()
 
 	data, prepared := presentationLocalizationFixture(t)
@@ -1191,10 +1187,11 @@ func TestPresentationLocalizationDumpRejectedResponseIsSecretSafe(t *testing.T) 
 		[]byte(`{"api_key":"sk-test-secret-value","translations":[]}`),
 	)
 	runDir := t.TempDir()
+	writer := openSemanticJournalTestWriter(t, runDir)
 	outcome, err := executePresentationLocalization(
 		context.Background(), runDir, filepath.Join(t.TempDir(), "cache"), true,
 		data, prepared, provider,
-		presentationLocalizationExecutionOptions{DumpRejectedResponse: true},
+		presentationLocalizationExecutionOptions{ExchangeWriter: writer},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1206,12 +1203,143 @@ func TestPresentationLocalizationDumpRejectedResponseIsSecretSafe(t *testing.T) 
 		outcome.TranslationIndex != 0 {
 		t.Fatalf("unsafe response attribution = %#v", outcome)
 	}
-	dumped, err := os.ReadFile(filepath.Join(runDir, "model_responses", "localization-rejected-001.redacted.json"))
-	if err != nil {
-		t.Fatal(err)
+	entries := readSemanticJournalEntries(t, runDir)
+	if len(entries) != 1 || entries[0].record.Stage != debugdump.SemanticStageLocalization ||
+		entries[0].record.State != debugdump.SemanticStateRejected ||
+		entries[0].record.ValidationCode != debugdump.SemanticValidationSecret ||
+		entries[0].record.Response.Storage != "raw_content" ||
+		bytes.Contains(entries[0].response, []byte("sk-test-secret-value")) ||
+		!bytes.Contains(entries[0].response, []byte("[redacted]")) {
+		t.Fatalf("unsafe localization semantic journal = %#v", entries)
 	}
-	if bytes.Contains(dumped, []byte("sk-test-secret-value")) || !bytes.Contains(dumped, []byte("[redacted")) {
-		t.Fatalf("unsafe rejected-response artifact = %q", dumped)
+}
+
+func TestPresentationLocalizationSemanticJournalLiveCacheFailureCancelMatrix(t *testing.T) {
+	data, prepared := presentationLocalizationFixture(t)
+	response := presentationLocalizationProjectionJSON(t, prepared)
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		response,
+	)
+
+	liveDir := t.TempDir()
+	liveWriter := openSemanticJournalTestWriter(t, liveDir)
+	if outcome, err := executePresentationLocalization(
+		context.Background(), liveDir, cacheRoot, false, data, prepared, provider,
+		presentationLocalizationExecutionOptions{ExchangeWriter: liveWriter},
+	); err != nil || outcome.State != report.PresentationLocalizationSucceeded {
+		t.Fatalf("live localization outcome = %#v, err = %v", outcome, err)
+	}
+	live := readSemanticJournalEntries(t, liveDir)
+	if len(live) != 1 || live[0].record.State != debugdump.SemanticStateAccepted ||
+		live[0].record.ValidationCode != debugdump.SemanticValidationAccepted ||
+		live[0].record.RequestProvenance != debugdump.SemanticRequestExactSent ||
+		live[0].record.SemanticCalls != 1 || live[0].record.TransportAttempts != 1 ||
+		!bytes.Equal(live[0].response, response) {
+		t.Fatalf("live localization journal = %#v", live)
+	}
+
+	cacheDir := t.TempDir()
+	cacheWriter := openSemanticJournalTestWriter(t, cacheDir)
+	if outcome, err := executePresentationLocalization(
+		context.Background(), cacheDir, cacheRoot, false, data, prepared, provider,
+		presentationLocalizationExecutionOptions{ExchangeWriter: cacheWriter},
+	); err != nil || !outcome.CacheHit || provider.executeCalls != 1 {
+		t.Fatalf("cached localization outcome = %#v, calls = %d, err = %v", outcome, provider.executeCalls, err)
+	}
+	cached := readSemanticJournalEntries(t, cacheDir)
+	if len(cached) != 1 || cached[0].record.State != debugdump.SemanticStateCacheHit ||
+		cached[0].record.ValidationCode != debugdump.SemanticValidationCache ||
+		cached[0].record.RequestProvenance != debugdump.SemanticRequestPrepared ||
+		cached[0].record.SemanticCalls != 0 || cached[0].record.TransportAttempts != 0 ||
+		cached[0].record.Response.Storage != "raw_unavailable" ||
+		cached[0].record.Response.UnavailableCode != debugdump.SemanticUnavailableProjection {
+		t.Fatalf("cached localization journal = %#v", cached)
+	}
+	qualityProjection := presentationLocalizationProjection(t, prepared, "Перевод: ")
+	for fieldID := range qualityProjection.Translations {
+		qualityProjection.Translations[fieldID] = strings.Repeat("я", 32<<10)
+		break
+	}
+	qualityResponse := localizationProviderResponseJSON(t, prepared.Input, qualityProjection)
+
+	for _, test := range []struct {
+		name            string
+		ctx             func() context.Context
+		response        []byte
+		executeErr      error
+		applyProjection func(
+			localization.CanonicalArtifact,
+			localization.Input,
+			localization.Projection,
+		) (localization.Result, error)
+		state          string
+		validationCode string
+	}{
+		{
+			name: "provider_failed", ctx: context.Background,
+			executeErr: errors.New("fixture provider failure"),
+			state:      debugdump.SemanticStateProviderFailed, validationCode: debugdump.SemanticValidationProvider,
+		},
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			executeErr: context.Canceled,
+			state:      debugdump.SemanticStateCanceled, validationCode: debugdump.SemanticValidationCanceled,
+		},
+		{
+			name: "decode_rejected", ctx: context.Background, response: []byte("not json"),
+			state: debugdump.SemanticStateRejected, validationCode: debugdump.SemanticValidationDecode,
+		},
+		{
+			name: "apply_rejected", ctx: context.Background, response: response,
+			applyProjection: func(
+				localization.CanonicalArtifact,
+				localization.Input,
+				localization.Projection,
+			) (localization.Result, error) {
+				return localization.Result{}, errors.New("fixture projection apply failure")
+			},
+			state: debugdump.SemanticStateRejected, validationCode: debugdump.SemanticValidationApply,
+		},
+		{
+			name: "quality_rejected", ctx: context.Background, response: qualityResponse,
+			state: debugdump.SemanticStateRejected, validationCode: debugdump.SemanticValidationQuality,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := t.TempDir()
+			writer := openSemanticJournalTestWriter(t, runDir)
+			fixture := newFakePresentationLocalizationProvider(
+				"https://translation.example.test/v1/chat/completions",
+				"translation-model",
+				test.response,
+			)
+			fixture.executeErr = test.executeErr
+			outcome, err := executePresentationLocalization(
+				test.ctx(), runDir, filepath.Join(t.TempDir(), "cache"), true,
+				data, prepared, fixture,
+				presentationLocalizationExecutionOptions{
+					ExchangeWriter:  writer,
+					ApplyProjection: test.applyProjection,
+				},
+			)
+			if err != nil || outcome.State != report.PresentationLocalizationFailed {
+				t.Fatalf("localization outcome = %#v, err = %v", outcome, err)
+			}
+			entries := readSemanticJournalEntries(t, runDir)
+			if len(entries) != 1 || entries[0].record.State != test.state ||
+				entries[0].record.ValidationCode != test.validationCode ||
+				entries[0].record.SemanticCalls != 1 || entries[0].record.TransportAttempts != 1 {
+				t.Fatalf("localization journal = %#v", entries)
+			}
+		})
 	}
 }
 
@@ -1257,9 +1385,6 @@ func TestPresentationLocalizationAttributesUnsafeStrictTranslationWithoutApplyin
 		"presentation_localization_projection.v1.*",
 	)); err != nil || len(projections) != 0 {
 		t.Fatalf("unsafe provider response saved a projection: %v / %v", projections, err)
-	}
-	if responses, err := filepath.Glob(filepath.Join(runDir, "model_responses", "*")); err != nil || len(responses) != 0 {
-		t.Fatalf("ordinary unsafe rejection persisted a response: %v / %v", responses, err)
 	}
 	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.PresentationLocalizationStatusFile))
 	if err != nil {
@@ -1310,7 +1435,7 @@ func TestPresentationLocalizationFailureWarningAddsOnlyClosedUnsafeAttribution(t
 	}
 }
 
-func TestPresentationLocalizationRejectedDumpCannotEscapeRunRoot(t *testing.T) {
+func TestPresentationLocalizationJournalFailureCannotEscapeOrChangeOutcome(t *testing.T) {
 	t.Parallel()
 
 	data, prepared := presentationLocalizationFixture(t)
@@ -1320,35 +1445,31 @@ func TestPresentationLocalizationRejectedDumpCannotEscapeRunRoot(t *testing.T) {
 		[]byte(`{"not":"a projection"}`),
 	)
 	runDir := t.TempDir()
+	writer := openSemanticJournalTestWriter(t, runDir)
+	var warnings bytes.Buffer
+	writer.SetWarningWriter(&warnings)
 	outside := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(runDir, "model_responses")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(runDir, debugdump.SemanticExchangesDir)); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	outcome, err := executePresentationLocalization(
 		context.Background(), runDir, filepath.Join(t.TempDir(), "cache"), true,
 		data, prepared, provider,
-		presentationLocalizationExecutionOptions{DumpRejectedResponse: true},
+		presentationLocalizationExecutionOptions{ExchangeWriter: writer},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !outcome.DebugDumpFailed || outcome.ValidationCode != report.LocalizationValidationResponseDecode {
-		t.Fatalf("dump failure outcome = %#v", outcome)
+	if outcome.ValidationCode != report.LocalizationValidationResponseDecode {
+		t.Fatalf("journal failure outcome = %#v", outcome)
 	}
 	entries, err := os.ReadDir(outside)
 	if err != nil || len(entries) != 0 {
-		t.Fatalf("escaped rejected dump: entries=%v err=%v", entries, err)
+		t.Fatalf("escaped semantic journal: entries=%v err=%v", entries, err)
 	}
-	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.PresentationLocalizationStatusFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var status report.PresentationLocalizationStatus
-	if err := json.Unmarshal(statusJSON, &status); err != nil {
-		t.Fatal(err)
-	}
-	if !status.DebugDumpFailed {
-		t.Fatalf("status omitted rejected dump failure: %#v", status)
+	want := "warning: semantic exchange journal unavailable: stage=localization code=artifact_write_failed\n"
+	if warnings.String() != want {
+		t.Fatalf("journal warning = %q, want %q", warnings.String(), want)
 	}
 }
 

@@ -79,13 +79,6 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	}
 
 	runDir := filepath.Join(debugDir, runID)
-	request, err := os.ReadFile(filepath.Join(runDir, "llm_request.redacted.json"))
-	if err != nil {
-		t.Fatalf("read request artifact: %v", err)
-	}
-	if !strings.Contains(string(request), `"model":"company-test-model"`) || !strings.Contains(string(request), `"json_object"`) {
-		t.Fatalf("request artifact does not describe the attempted request: %s", request)
-	}
 	semanticRecords := readOrientationSemanticRecords(t, runDir)
 	if len(semanticRecords) != 1 ||
 		semanticRecords[0].Stage != debugdump.SemanticStageOrientation ||
@@ -132,8 +125,8 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		)
 	}
 	if metadata.EffectiveOptions.FlowCount != 2 || !metadata.EffectiveOptions.DiscoverSurfaces ||
-		metadata.EffectiveOptions.DumpLLM || !metadata.EffectiveOptions.OutputJSON ||
-		!metadata.EffectiveOptions.NoOpen || metadata.EffectiveOptions.Port != 59769 ||
+		!metadata.EffectiveOptions.OutputJSON || !metadata.EffectiveOptions.NoOpen ||
+		metadata.EffectiveOptions.Port != 59769 ||
 		!metadata.EffectiveOptions.DebugEnabled {
 		t.Fatalf("metadata effective options = %#v", metadata.EffectiveOptions)
 	}
@@ -151,7 +144,7 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	}
 }
 
-func TestRunDumpLLMAbortsBeforeNetworkWhenDebugWriterFails(t *testing.T) {
+func TestRunRequiredArtifactsAbortBeforeNetworkWhenDebugWriterFails(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/dump-failure\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -178,21 +171,6 @@ func TestRunDumpLLMAbortsBeforeNetworkWhenDebugWriterFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := Run(context.Background(), Options{
-		RepoPath:     repo,
-		OutputJSON:   true,
-		RunID:        "must-not-call-provider",
-		DebugDir:     blockedDebugDir,
-		DumpLLM:      true,
-		DumpRedacted: true,
-	})
-	if err == nil || !strings.Contains(err.Error(), "create required debug writer") {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if requests != 0 {
-		t.Fatalf("provider requests = %d, want 0", requests)
-	}
-
-	_, err = Run(context.Background(), Options{
 		RepoPath:         repo,
 		OutputJSON:       true,
 		RunID:            "required-browser-artifacts",

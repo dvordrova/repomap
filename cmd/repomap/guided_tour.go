@@ -49,7 +49,6 @@ type guidedTourOutcome struct {
 	ValidationState       string
 	ValidatorField        string
 	ValidatorRule         string
-	DebugDumpFailed       bool
 }
 
 func editGuidedTourForRun(
@@ -57,7 +56,6 @@ func editGuidedTourForRun(
 	runDir string,
 	stderr io.Writer,
 	noCache bool,
-	dumpLLM bool,
 ) (guidedTourOutcome, error) {
 	bundle, err := guidedTourBundleForRun(runDir)
 	if errors.Is(err, report.ErrNoGuidedTourCandidates) {
@@ -97,9 +95,8 @@ func editGuidedTourForRun(
 		client.Model,
 		client,
 		guidedTourRunOptions{
-			disableCache:         noCache,
-			dumpRejectedResponse: dumpLLM,
-			exchangeWriter:       exchangeWriter,
+			disableCache:   noCache,
+			exchangeWriter: exchangeWriter,
 		},
 	)
 }
@@ -155,7 +152,6 @@ func ensureGuidedTour(
 type guidedTourRunOptions struct {
 	independentExperiment bool
 	disableCache          bool
-	dumpRejectedResponse  bool
 	outputFile            string
 	exchangeWriter        *debugdump.Writer
 }
@@ -336,9 +332,6 @@ func ensureGuidedTourWithOptions(
 			break
 		}
 		validationErr = currentValidationErr
-		if validationErr != nil && options.dumpRejectedResponse {
-			outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "guided_tour", proposalAttempt, current.Content) != nil || outcome.DebugDumpFailed
-		}
 		if validationErr == nil || proposalAttempt == 2 {
 			break
 		}

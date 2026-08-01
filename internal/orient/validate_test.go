@@ -51,16 +51,6 @@ func TestValidateOutboundBundlesRejectCredentials(t *testing.T) {
 	}); err == nil || !contains(err.Error(), "server/main.go:12") {
 		t.Fatalf("source signal validation error = %v", err)
 	}
-	if err := validateFlowBundleForRemote(flowexplain.FlowBundle{
-		FlowSeed: flowexplain.FlowSeed{Name: "startup"},
-		SourceSignals: []sourcesignals.Signal{{
-			Path:    "server/main.go",
-			Line:    12,
-			Snippet: `password = "company-secret-value"`,
-		}},
-	}); err == nil || !contains(err.Error(), "startup") {
-		t.Fatalf("flow validation error = %v", err)
-	}
 	if err := validateProviderOutputForStorage("orientation", []byte(`{"summary":"Bearer company-secret-token-value"}`)); err == nil || !contains(err.Error(), "refusing to retain") {
 		t.Fatalf("provider output validation error = %v", err)
 	}
@@ -670,105 +660,6 @@ func TestK6QualityOrientationMatchesProductContract(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(report.Warnings, "\n"), "wildcard evidence") {
 		t.Fatalf("parser warnings = %q, want wildcard evidence warning", report.Warnings)
-	}
-}
-
-func TestValidateFlowReport(t *testing.T) {
-	t.Parallel()
-
-	bundle := flowexplain.FlowBundle{
-		FlowSeed: flowexplain.FlowSeed{
-			Name:           "server startup",
-			ValidSeedFiles: []string{"server/main.go", "server/main_test.go"},
-		},
-	}
-	tests := []struct {
-		name   string
-		report string
-		want   string
-	}{
-		{
-			name: "object and string lists",
-			report: `{
-				"summary":"startup",
-				"confidence":0.6,
-				"files_to_read_in_order":[{"path":"server/main.go","reason":"entry"}],
-				"tests_to_read":["server/main_test.go"],
-				"likely_chain":[{"step":"Step 1","what_happens":"server starts","file":"server/main.go","evidence_files":["server/main.go"],"confidence":0.5}],
-				"unverified_paths":[{"path":"server/maybe.go","reason":"suspected"}],
-				"unknowns":[],
-				"warnings":[]
-			}`,
-		},
-		{
-			name:   "invented file",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/invented.go"],"tests_to_read":[],"likely_chain":[],"unknowns":[],"warnings":[]}`,
-			want:   "unprovided path",
-		},
-		{
-			name:   "invented chain evidence",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/main.go"],"tests_to_read":[],"likely_chain":[{"what_happens":"starts","evidence_files":["server/invented.go"]}],"unknowns":[],"warnings":[]}`,
-			want:   "unprovided path",
-		},
-		{
-			name:   "unverified traversal",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/main.go"],"tests_to_read":[],"likely_chain":[],"unverified_paths":["../secret"],"unknowns":[],"warnings":[]}`,
-			want:   "invalid path",
-		},
-		{
-			name:   "invalid confidence",
-			report: `{"summary":"startup","confidence":2,"files_to_read_in_order":["server/main.go"],"tests_to_read":[],"likely_chain":[],"unknowns":[],"warnings":[]}`,
-			want:   "within [0,1]",
-		},
-		{
-			name:   "empty object",
-			report: `{}`,
-			want:   "required field",
-		},
-		{
-			name:   "non test path",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/main.go"],"tests_to_read":["server/main.go"],"likely_chain":[],"unknowns":[],"warnings":[]}`,
-			want:   "not a Go test file",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			err := validateFlowReport([]byte(test.report), bundle)
-			if test.want == "" {
-				if err != nil {
-					t.Fatalf("validateFlowReport() error = %v", err)
-				}
-				return
-			}
-			if err == nil || !contains(err.Error(), test.want) {
-				t.Fatalf("validateFlowReport() error = %v, want %q", err, test.want)
-			}
-		})
-	}
-
-	normalized, err := normalizeFlowReport([]byte(`{
-		"summary":"startup",
-		"confidence":0.5,
-		"files_to_read_in_order":["server/main.go"],
-		"tests_to_read":[],
-		"likely_chain":[],
-		"unknowns":[],
-		"warnings":[],
-		"dangerous_path":"/etc/passwd"
-	}`), bundle)
-	if err != nil {
-		t.Fatalf("normalizeFlowReport() error = %v", err)
-	}
-	var normalizedFields map[string]json.RawMessage
-	if err := json.Unmarshal(normalized, &normalizedFields); err != nil {
-		t.Fatal(err)
-	}
-	if _, retained := normalizedFields["dangerous_path"]; retained {
-		t.Fatal("normalized report retained an unknown path-bearing field")
-	}
-	if !contains(string(normalizedFields["warnings"]), "dangerous_path") {
-		t.Fatal("normalized report did not warn about ignored unknown field")
 	}
 }
 

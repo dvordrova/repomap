@@ -1,7 +1,6 @@
 package orient
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -53,79 +52,13 @@ func formatHumanReadable(report combinedReport, debugDir string, runID string) s
 
 	for i, ef := range report.ExplainedFlows {
 		b.WriteString(fmt.Sprintf("━ %s ━\n", ef.FlowSeed.Name))
-		if ef.Error != "" {
-			b.WriteString(fmt.Sprintf("  Model explanation rejected: %s\n", ef.Error))
-		}
-
-		var summary string
-		var confidence float64
-		var likelyChain []flowChainStep
-		var readFiles []fileToOpen
-		var testsToRead []fileToOpen
-		var unknowns []string
-		var warnings []string
-
-		if ef.FlowReport != nil {
-			var fr flowReportFields
-			if json.Unmarshal(ef.FlowReport, &fr) == nil {
-				summary = fr.Summary
-				confidence = fr.Confidence
-				likelyChain = fr.LikelyChain
-				readFiles = fr.FilesToReadInOrder
-				testsToRead = fr.TestsToRead
-				unknowns = fr.Unknowns
-				warnings = fr.Warnings
-			}
-		}
-
-		if summary != "" {
-			b.WriteString(fmt.Sprintf("  %s\n", summary))
-			b.WriteString(fmt.Sprintf("  Confidence: %.0f%%\n", confidence*100))
-		} else {
-			b.WriteString(fmt.Sprintf("  (selected %d files, %d tests, %d docs)\n",
-				ef.FlowBundleSummary.SelectedFilesCount,
-				ef.FlowBundleSummary.SelectedTestsCount,
-				ef.FlowBundleSummary.SelectedDocsCount))
-		}
-
-		if len(likelyChain) > 0 {
-			b.WriteString("  Evidence-backed likely chain:\n")
-			for _, step := range likelyChain {
-				b.WriteString(fmt.Sprintf("    %d. %s", step.Step, step.WhatHappens))
-				if len(step.EvidenceFiles) > 0 {
-					b.WriteString(fmt.Sprintf(" [%s]", strings.Join(step.EvidenceFiles, ", ")))
-				}
-				b.WriteByte('\n')
-			}
-		}
-
-		if len(readFiles) > 0 {
-			b.WriteString(fmt.Sprintf("  Files to read (%d):\n", len(readFiles)))
-			for _, f := range readFiles {
-				b.WriteString(fmt.Sprintf("    %s\n", f.Path))
-				if f.Reason != "" {
-					b.WriteString(fmt.Sprintf("      %s\n", f.Reason))
-				}
-			}
-		}
-
-		if len(testsToRead) > 0 {
-			b.WriteString(fmt.Sprintf("  Tests (%d):\n", len(testsToRead)))
-			for _, t := range testsToRead {
-				b.WriteString(fmt.Sprintf("    %s\n", t.Path))
-			}
-		}
+		b.WriteString(fmt.Sprintf("  (selected %d files, %d tests, %d docs)\n",
+			ef.FlowBundleSummary.SelectedFilesCount,
+			ef.FlowBundleSummary.SelectedTestsCount,
+			ef.FlowBundleSummary.SelectedDocsCount))
 
 		if len(ef.FlowBundleSummary.UnverifiedSeeds) > 0 {
 			b.WriteString(fmt.Sprintf("  Unverified seeds: %v\n", ef.FlowBundleSummary.UnverifiedSeeds))
-		}
-
-		if len(unknowns) > 0 {
-			b.WriteString(fmt.Sprintf("  Unknowns: %v\n", unknowns))
-		}
-
-		if len(warnings) > 0 {
-			b.WriteString(fmt.Sprintf("  Warnings: %v\n", warnings))
 		}
 
 		if i < len(report.ExplainedFlows)-1 {
