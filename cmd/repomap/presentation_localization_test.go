@@ -421,6 +421,61 @@ func TestPresentationLocalizationCacheIdentityChanges(t *testing.T) {
 	}
 }
 
+func TestPresentationLocalizationPreviousInventoryContractIsACacheMiss(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		presentationLocalizationProjectionJSON(t, prepared),
+	)
+	currentPlan := presentationLocalizationFirstBatchPlan(t, prepared, provider)
+	previousIdentity := currentPlan.Identity
+	previousIdentity.ContractVersion = "report-presentation-localization-v10"
+	previousKey, _, err := presentationLocalizationCacheKey(previousIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previousKey == currentPlan.Key {
+		t.Fatalf("previous contract kept current cache key %q", currentPlan.Key)
+	}
+	if err := writePresentationLocalizationCache(
+		cacheRoot,
+		previousKey,
+		presentationLocalizationCacheRecord{
+			Version:  presentationLocalizationCacheVersion,
+			Key:      previousKey,
+			Identity: previousIdentity,
+			Projection: localizationProjectionFor(
+				currentPlan.Batch.Canonical,
+				currentPlan.Batch.Input,
+				"Предыдущий контракт: ",
+			),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := executePresentationLocalization(
+		context.Background(),
+		t.TempDir(),
+		cacheRoot,
+		false,
+		data,
+		prepared,
+		provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationSucceeded ||
+		outcome.CacheHit || provider.executeCalls != 1 {
+		t.Fatalf("previous-contract execution = %#v, provider calls = %d", outcome, provider.executeCalls)
+	}
+}
+
 func TestPresentationLocalizationSelectionReasonDoesNotEnterPromptOrCacheKey(t *testing.T) {
 	t.Parallel()
 
