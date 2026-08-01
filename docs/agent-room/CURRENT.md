@@ -1,15 +1,35 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/182-semantic-cache-hit-revalidation.md
+    decisions/183-orientation-request-local-references.md
 
 Status:
-    Decision 182 active; generic semantic cache-hit revalidation authorized
+    Decision 183 active; Orientation request-local typed references authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 183 replaces repository-bearing values in the Orientation model
+    response with one exact request-local private typed reference catalog and a
+    compact in-place wire projection. The provider returns only the small
+    decision AST; it does not echo backend contract versions or the private
+    catalog digest. One file table covers every visible
+    concrete location exactly once; existing bounded facts carry refs without
+    a duplicate catalog inventory, raw allowed_paths, or long candidate IDs.
+    File and evidence namespaces are separate; research candidate selections
+    resolve only files that have a current canonical candidate ID. Provider
+    prose remains non-authoritative and is not path/ID parsed. Unknown,
+    wrong-kind, duplicate, prefix, shortened, substituted, and
+    raw paths in typed ref fields fail closed. No regex/fuzzy/semantic repair or
+    entrypoint fallback remains on the new provider-response path. Prompt,
+    backend-owned response, and cache contracts advance together. Exact request
+    bytes plus the private catalog digest bind cache identity, so an equal wire
+    with a different private candidate mapping is a miss. Old cache records are
+    misses with no reader or migration. Canonical report DTOs, candidate
+    composition/order/confidence, targeted planning, local operational
+    candidates, LocalProof, Study, Architecture fan-out, localization, UI,
+    clients/retries, and flags remain unchanged.
     Decision 182 makes semantic acceptance mandatory when replaying the generic
     StageResponse cache for orientation and Guided Tour monolithic, fan-out
     leaf, and fan-in stages. Each existing stage-local validator remains the

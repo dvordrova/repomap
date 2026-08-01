@@ -250,6 +250,17 @@ func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	orientationFixture := orientationResponseFixture{
+		ProjectGuess: "tiny Go command", Confidence: 0.9,
+		Map:        []orientationMapFixture{{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "it owns process startup"}},
+		FirstFiles: []orientationFileFixture{{Path: "main.go", Reason: "process entrypoint"}},
+		Flows: []orientationFlowFixture{{
+			Name: "Process startup", Trigger: "the executable starts", EntrypointPath: "main.go",
+			LikelyPaths: []string{"main.go"}, EvidencePaths: []string{"main.go"},
+			WhyInteresting: "shows the complete behavior of this tiny command", Confidence: 0.9,
+		}},
+		Questions: []string{"Which behavior should we inspect next?"}, Warnings: []string{},
+	}
 
 	requestCount := 0
 	var requestBody []byte
@@ -263,11 +274,15 @@ func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
 		if err != nil {
 			t.Errorf("read request: %v", err)
 		}
+		responseContent := orientationJSON
+		if requestCount == 1 {
+			responseContent = orientationResponseForRequest(t, body, orientationFixture)
+		}
 		envelope, marshalErr := json.Marshal(map[string]any{
 			"choices": []any{map[string]any{
 				"message": map[string]any{
 					"role":    "assistant",
-					"content": string(orientationJSON),
+					"content": string(responseContent),
 				},
 			}},
 		})
@@ -441,6 +456,22 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pythonOrientationFixture := orientationResponseFixture{
+		ProjectGuess: "tiny Python service", Confidence: 0.85,
+		Map:        []orientationMapFixture{{Name: "CLI entry", Role: "entry", EvidencePath: "src/tool/__main__.py", WhyItMatters: "starts the utility"}},
+		FirstFiles: []orientationFileFixture{{Path: "src/tool/__main__.py", Reason: "entrypoint"}},
+		Flows: []orientationFlowFixture{{
+			Name: "CLI startup", Trigger: "python module execution", EntrypointPath: "src/tool/__main__.py",
+			LikelyPaths:    []string{"src/tool/__main__.py", "src/tool/service.py"},
+			EvidencePaths:  []string{"src/tool/__main__.py", "src/tool/service.py"},
+			WhyInteresting: "shows startup and delegation", Confidence: 0.85,
+		}},
+		Research: []orientationResearchFixture{{
+			ID: "service-execution", Purpose: "find a useful exact service behavior starting point",
+			Question: "How does the Python service execute its main operation?", EvidenceCategories: []string{"source_window"},
+		}},
+		Warnings: []string{},
+	}
 	requestCount := 0
 	opportunityCount := 0
 	var requestBody []byte
@@ -456,6 +487,9 @@ func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
 			return
 		}
 		responseContent := orientationJSON
+		if requestCount == 1 {
+			responseContent = orientationResponseForRequest(t, body, pythonOrientationFixture)
+		}
 		if strings.Contains(string(body), "Propose central mechanism questions") {
 			opportunityCount++
 			var chatRequest struct {
@@ -1907,6 +1941,25 @@ func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	modelPlanOrientationFixture := orientationResponseFixture{
+		ProjectGuess: "three-stage Go command", Confidence: 0.9,
+		Map: []orientationMapFixture{
+			{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "starts the command"},
+			{Name: "service", Role: "coordination", EvidencePath: "internal/a/a.go", WhyItMatters: "coordinates work"},
+			{Name: "worker", Role: "domain", EvidencePath: "internal/b/b.go", WhyItMatters: "finishes work"},
+		},
+		FirstFiles: []orientationFileFixture{
+			{Path: "main.go", Reason: "entrypoint"}, {Path: "internal/a/a.go", Reason: "coordination"},
+			{Path: "internal/b/b.go", Reason: "terminal work"},
+		},
+		Flows: []orientationFlowFixture{{
+			Name: "Command startup", Trigger: "the executable starts", EntrypointPath: "main.go",
+			LikelyPaths:    []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
+			EvidencePaths:  []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
+			WhyInteresting: "connects startup to the terminal worker", Confidence: 0.9,
+		}},
+		Warnings: []string{},
+	}
 
 	run := func() [][]byte {
 		t.Helper()
@@ -1921,9 +1974,13 @@ func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 			mu.Lock()
 			requests = append(requests, bytes.Clone(body))
 			mu.Unlock()
+			responseContent := orientationJSON
+			if bytes.Contains(body, []byte("Orientation facts bundle JSON:")) {
+				responseContent = orientationResponseForRequest(t, body, modelPlanOrientationFixture)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"choices": []any{map[string]any{"message": map[string]any{
-					"role": "assistant", "content": string(orientationJSON),
+					"role": "assistant", "content": string(responseContent),
 				}}},
 			})
 		}))

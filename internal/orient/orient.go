@@ -10,7 +10,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
@@ -138,6 +137,14 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal compact model bundle: %w", err)
 	}
+	orientationCatalog, err := buildOrientationReferenceCatalog(bundle)
+	if err != nil {
+		return nil, err
+	}
+	orientationWireJSON, err := buildOrientationWireBundle(bundle, orientationCatalog)
+	if err != nil {
+		return nil, err
+	}
 	emitProgress(opts, ProgressEvent{
 		Stage:          ProgressBundleReady,
 		RepoName:       s.RepoName,
@@ -160,7 +167,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
+		requestJSON, err := client.OrientPromptJSON(orientationWireJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +189,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		RepoName:            s.RepoName,
 		RepoPath:            opts.RepoPath,
 		Command:             "orient",
-		CompactContextBytes: len(modelBundleJSON),
+		CompactContextBytes: len(orientationWireJSON),
 		LLMBundleOnly:       opts.LLMBundleOnly,
 		EffectiveOptions:    opts.EffectiveOptions,
 	}
@@ -327,7 +334,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 
-		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
+		requestJSON, err := client.OrientPromptJSON(orientationWireJSON)
 		if err != nil {
 			if dw != nil {
 				runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
@@ -360,7 +367,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			Stage:        ProgressModelRequest,
 			RepoName:     s.RepoName,
 			Model:        client.Model,
-			BundleBytes:  len(modelBundleJSON),
+			BundleBytes:  len(orientationWireJSON),
 			RequestBytes: len(requestJSON),
 		})
 
@@ -368,29 +375,12 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			if err := validateProviderOutputForStorage("orientation", raw); err != nil {
 				return orientationPart{}, "response_rejected", err
 			}
-			or, err := parseOrientation(raw)
+			or, err := parseAndResolveOrientationResponse(raw, orientationCatalog)
 			if err != nil {
 				return orientationPart{}, "response_parse_failed", err
 			}
 			mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
 
-			allowedEntrypoints := orientationEntrypoints(bundle)
-			signalLocations := make([]evidence.Location, 0, len(bundle.SourceSignals))
-			for _, signal := range bundle.SourceSignals {
-				signalLocations = append(signalLocations, evidence.Location{Path: signal.Path, Line: signal.Line})
-			}
-			for _, trace := range bundle.Go.CommandTraces {
-				for _, step := range trace.Steps {
-					signalLocations = append(signalLocations, step.TargetLocation)
-					if step.CallsiteLocation != nil {
-						signalLocations = append(signalLocations, *step.CallsiteLocation)
-					}
-				}
-				for _, call := range trace.HandlerCalls {
-					signalLocations = append(signalLocations, evidence.Location{Path: call.Path, Line: call.Line})
-				}
-			}
-			normalizeOrientationGrounding(&or, bundle.ProviderAllowedPaths, allowedEntrypoints, signalLocations)
 			localProofInput := localFlowProofInput(s, successfulSurfaceResult)
 			attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
 			reconcileResolvedUnknownPaths(&or)
@@ -398,7 +388,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			for index := range or.CandidateFlows {
 				flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
 			}
-			if err := validateOrientation(or, bundle.ProviderAllowedPaths, allowedEntrypoints); err != nil {
+			if err := validateResolvedOrientation(or); err != nil {
 				return orientationPart{}, "response_validation_failed", err
 			}
 			return or, "", nil
@@ -406,7 +396,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 		call, err := obtainOrientation(
 			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
-			modelBundleJSON, requestJSON, !opts.NoCache,
+			orientationWireJSON, orientationCatalog.digest, requestJSON, !opts.NoCache,
 			func(raw []byte) (orientationPart, error) {
 				prepared, _, err := prepareOrientation(raw)
 				return prepared, err

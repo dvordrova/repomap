@@ -841,7 +841,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v12" {
+	if OrientationPromptVersionJSON != "orientation-json-v13" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{
@@ -859,11 +859,13 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 	body := msgs[1].Content // user message
 
 	expected := []string{
+		"file_ref",
+		"evidence_refs",
 		"project_guess",
 		"candidate_flows",
 		"flow_type",
 		`"operational"`,
-		"cite source_signal evidence",
+		"source_signal",
 		"cap confidence at 0.3",
 		"strongest grounded evidence regardless of flow type",
 		"first_files_to_open",
@@ -872,11 +874,11 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		"orientation hypothesis",
 		"important_domain_words",
 		"questions_for_human",
-		"never shorten cmd/server/main.go to main.go",
-		"each evidence item atomic",
-		"closed exact set",
-		"Directory, package, and import paths are not files",
-		"unverified_paths may contain a suspected repository-relative file or directory",
+		"Never shorten, extend, prefix, substitute, or repair a ref",
+		"Evidence is selected only by exact evidence_refs",
+		"embedded in the facts bundle are closed",
+		"Never use a file ref where an evidence ref is required",
+		"There is no unverified_paths response field",
 		"go.command_traces are locally extracted bounded syntax evidence",
 	}
 

@@ -58,6 +58,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 		PromptVersion: deepseek.OrientationPromptVersionJSON,
 		Profile:       "test", Model: client.Model,
 		EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+		CacheContract: orientationCacheContractVersion,
 	}
 	cacheKey, err := modelresearch.CacheKey(fingerprint)
 	if err != nil {
@@ -72,7 +73,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 
 	call, err := obtainOrientation(
-		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, true,
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, bundleHash, requestJSON, true,
 		acceptCachedOrientation,
 	)
 	if err != nil {
@@ -85,7 +86,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	replayed, err := obtainOrientation(
-		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, true,
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, bundleHash, requestJSON, true,
 		acceptCachedOrientation,
 	)
 	if err != nil {
@@ -96,7 +97,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 
 	uncached, err := obtainOrientation(
-		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, false,
+		context.Background(), client, writer, policy, repository, "test", bundleJSON, bundleHash, requestJSON, false,
 		acceptCachedOrientation,
 	)
 	if err != nil {
@@ -143,6 +144,7 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 			PromptVersion: deepseek.OrientationPromptVersionJSON,
 			Profile:       "test", Model: client.Model,
 			EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+			CacheContract: orientationCacheContractVersion,
 		},
 		Request: requestJSON, EvidenceBundleHash: bundleHash,
 	}
@@ -164,7 +166,7 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 
 	call, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test",
-		bundleJSON, requestJSON, true,
+		bundleJSON, bundleHash, requestJSON, true,
 		func(raw []byte) (orientationPart, error) {
 			prepared, _, err := prepare(raw)
 			return prepared, err
@@ -200,7 +202,7 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 	}
 	replayed, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test",
-		bundleJSON, requestJSON, true,
+		bundleJSON, bundleHash, requestJSON, true,
 		func(raw []byte) (orientationPart, error) {
 			prepared, _, err := prepare(raw)
 			return prepared, err
@@ -258,6 +260,7 @@ func TestObtainOrientationDoesNotCacheRecoveredCompletionUnderBaseRequest(t *tes
 	}
 	t.Cleanup(func() { _ = writer.Close() })
 	bundleJSON := []byte(`{"bounded":"evidence"}`)
+	bundleHash := modelresearch.SHA256(bundleJSON)
 	requestJSON, err := client.OrientPromptJSON(bundleJSON)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +274,7 @@ func TestObtainOrientationDoesNotCacheRecoveredCompletionUnderBaseRequest(t *tes
 		t.Helper()
 		call, callErr := obtainOrientation(
 			context.Background(), client, writer, policy, repository, "test",
-			bundleJSON, requestJSON, true, acceptCachedOrientation,
+			bundleJSON, bundleHash, requestJSON, true, acceptCachedOrientation,
 		)
 		if callErr != nil {
 			t.Fatal(callErr)
@@ -322,6 +325,7 @@ func TestObtainOrientationCacheReusesCanonicalEnglishAcrossPresentationLocales(t
 	}
 	policy := modelresearch.DefaultPolicy()
 	bundleJSON := []byte(`{"bounded":"evidence"}`)
+	bundleHash := modelresearch.SHA256(bundleJSON)
 
 	run := func(requestJSON []byte) orientationCall {
 		t.Helper()
@@ -333,6 +337,7 @@ func TestObtainOrientationCacheReusesCanonicalEnglishAcrossPresentationLocales(t
 			repository,
 			"test",
 			bundleJSON,
+			bundleHash,
 			requestJSON,
 			true,
 			acceptCachedOrientation,
@@ -371,6 +376,82 @@ func TestObtainOrientationCacheReusesCanonicalEnglishAcrossPresentationLocales(t
 			replayedForEnglish.Raw,
 			replayedForRussian.Raw,
 		)
+	}
+}
+
+func TestObtainOrientationCacheBindsExactReferenceCatalog(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"accepted\":true}"}}]}`)
+	}))
+	defer server.Close()
+
+	client := &deepseek.Client{
+		HTTPClient: server.Client(), Model: "fixture-model", MaxTokens: 128,
+		Endpoint: server.URL, Auth: "none",
+	}
+	writer, err := debugdump.NewWriter(t.TempDir(), "reference-catalog-cache", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	repository := modelresearch.RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"}
+	policy := modelresearch.DefaultPolicy()
+
+	bundleA := referenceFixtureBundle(t)
+	catalogA, err := buildOrientationReferenceCatalog(bundleA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireA, err := buildOrientationWireBundle(bundleA, catalogA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleB := referenceFixtureBundle(t)
+	bundleB.CandidateFileIndex[0].ID = "different-private-candidate-id"
+	catalogB, err := buildOrientationReferenceCatalog(bundleB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireB, err := buildOrientationWireBundle(bundleB, catalogB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wireA, wireB) {
+		t.Fatal("provider-visible wire changed with private candidate identity")
+	}
+	if catalogA.digest == catalogB.digest {
+		t.Fatal("private catalog digest did not change with candidate identity")
+	}
+	requestJSON, err := client.OrientPromptJSON(wireA)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(bundleJSON []byte, catalogDigest string) orientationCall {
+		t.Helper()
+		call, err := obtainOrientation(
+			context.Background(), client, writer, policy, repository, "test",
+			bundleJSON, catalogDigest, requestJSON, true, acceptCachedOrientation,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if call.SaveCache {
+			if err := saveOrientationResponse(call); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return call
+	}
+
+	first := run(wireA, catalogA.digest)
+	exact := run(wireA, catalogA.digest)
+	changed := run(wireB, catalogB.digest)
+	if first.Metrics.CacheHit || !exact.Metrics.CacheHit || changed.Metrics.CacheHit || requests != 2 {
+		t.Fatalf("catalog-bound cache = first %t exact %t changed %t requests %d", first.Metrics.CacheHit, exact.Metrics.CacheHit, changed.Metrics.CacheHit, requests)
 	}
 }
 
