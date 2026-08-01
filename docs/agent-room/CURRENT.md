@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/179-injective-surface-frontier-presentation-addresses.md
+    decisions/180-terminal-tsx-orientation-evidence-paths.md
 
 Status:
-    Decision 179 active; injective surface-frontier presentation addresses authorized
+    Decision 180 active; terminal TSX orientation evidence paths authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 180 makes the bounded orientation evidence-path grammar recognize
+    an exact terminal `.tsx` path without accepting its `.ts` prefix. The same
+    existing repository-relative and exact allowed-path validation remains in
+    force, so invented `.tsx` evidence is rejected. Model prompts/requests,
+    cache, retry, candidate composition, LocalProof, Study, locale, UI,
+    report/manifest formats, flags, adapter discovery, and fallback policy are
+    unchanged.
     Decision 179 makes every SurfaceFrontier terminal-prose address injective
     by including immutable canonical collection order as the local
     prose-independent discriminator. Distinct frontiers may share kind and

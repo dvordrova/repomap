@@ -420,6 +420,102 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 	}
 }
 
+func TestNormalizeOrientationGroundingPreservesTerminalTSXEvidencePath(t *testing.T) {
+	t.Parallel()
+
+	const response = `{
+		"project_guess":"TypeScript tutorial game",
+		"confidence":0.7,
+		"high_level_map":[{
+			"name":"browser entrypoint",
+			"role":"entrypoint",
+			"evidence":["front/src/index.tsx mounts the application"],
+			"why_it_matters":"starts the browser UI"
+		}],
+		"first_files_to_open":[{"path":"front/src/index.tsx","reason":"browser entrypoint"}],
+		"candidate_flows":[{
+			"name":"Browser startup",
+			"trigger":"the page loads",
+			"likely_entrypoint":"front/src/index.tsx",
+			"likely_files":["front/src/index.tsx"],
+			"why_interesting":"application startup",
+			"evidence":["front/src/index.tsx mounts the application"],
+			"confidence":0.7
+		}],
+		"important_domain_words":[],
+		"questions_for_human":[],
+		"unverified_paths":[],
+		"warnings":[]
+	}`
+	allowed := []string{"front/src/index.tsx"}
+
+	report, err := parseOrientation([]byte(response))
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalizeOrientationGrounding(&report, allowed, nil, nil)
+	if err := validateOrientation(report, allowed, nil); err != nil {
+		t.Fatalf("normalized .tsx orientation should validate: %v", err)
+	}
+	if got := report.CandidateFlows[0].Evidence; !slices.Equal(got, []string{"front/src/index.tsx mounts the application"}) {
+		t.Fatalf("candidate evidence = %q", got)
+	}
+	if got := evidencePathMentions(report.CandidateFlows[0].Evidence[0]); !slices.Equal(got, allowed) {
+		t.Fatalf("evidence paths = %q, want exact terminal .tsx path", got)
+	}
+}
+
+func TestValidateOrientationRejectsInventedTSXEvidencePath(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "TypeScript tutorial game",
+		Confidence:   0.7,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:             "Browser startup",
+			Trigger:          "the page loads",
+			LikelyEntrypoint: "front/src/index.tsx",
+			LikelyFiles:      []string{"front/src/index.tsx"},
+			Evidence:         []string{"front/src/invented.tsx mounts the application"},
+			Confidence:       0.7,
+		}},
+	}
+
+	err := validateOrientation(report, []string{"front/src/index.tsx"}, nil)
+	if err == nil || !strings.Contains(err.Error(), `outside allowed_paths: "front/src/invented.tsx"`) {
+		t.Fatalf("validateOrientation() error = %v, want invented .tsx rejection", err)
+	}
+}
+
+func TestEvidencePathMentionsRequiresTerminalExtensionBoundary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		statement string
+		want      []string
+	}{
+		{name: "tsx", statement: "front/src/index.tsx mounts", want: []string{"front/src/index.tsx"}},
+		{name: "tsx line", statement: "front/src/index.tsx:42 mounts", want: []string{"front/src/index.tsx"}},
+		{name: "ts", statement: "front/src/index.ts mounts", want: []string{"front/src/index.ts"}},
+		{name: "longer suffix", statement: "front/src/index.tsx.extra mounts"},
+		{name: "path continuation", statement: "front/src/index.tsx/child mounts"},
+		{
+			name:      "adjacent paths",
+			statement: "front/src/index.tsx,front/src/router.ts",
+			want:      []string{"front/src/index.tsx", "front/src/router.ts"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := evidencePathMentions(test.statement); !slices.Equal(got, test.want) {
+				t.Fatalf("evidencePathMentions(%q) = %q, want %q", test.statement, got, test.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeOrientationGroundingDisambiguatesCollidingFlowIDs(t *testing.T) {
 	t.Parallel()
 
