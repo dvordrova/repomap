@@ -1,15 +1,32 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/189-repository-atlas-canonical-core-and-go-adapter.md
+    decisions/190-byte-bounded-complete-orientation-candidate-catalog.md
 
 Status:
-    Decision 189 active; Repository Atlas canonical core and exact Go adapter authorized
+    Decision 190 active; byte-bounded complete Orientation candidate catalog authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 190 removes the ordinary Orientation candidate count cutoff while
+    preserving the existing request-byte boundary. The normal command path
+    supplies no file-count override, and Orientation resolves that value to
+    the complete eligible FilteredFiles count before the existing generic
+    bundle builder runs. A positive --max-llm-files value remains an explicit
+    debug/test override and keeps the existing count-bound diversity selector.
+    If the exact canonical bundle exceeds its byte budget, one bounded binary
+    search returns the largest deterministic prefix of the already-ranked
+    candidate rows that fits, including its returned fit warning. Only the
+    candidate-file cap changes during byte fitting; README, module,
+    entrypoint, edge, source-signal, known-doc, command-trace, and bundle-byte
+    caps remain fixed. The reduced candidate cap does not become the
+    OrientationCandidate cap. Candidate rows, allowed paths, dependent facts,
+    the private reference catalog, and typed wire remain one atomic closed
+    projection. This adds no source contents and changes no prompt, response,
+    provider, cache, Study, canonical report, Architecture, Atlas,
+    localization, UI, retry, legacy, migration, or live-model behavior.
     Decision 189 adds one provider-free, language-neutral Repository Atlas
     canonical core and one pure Go adapter over existing authoritative local
     facts. The closed core keeps repository/module/service/app/package Units;

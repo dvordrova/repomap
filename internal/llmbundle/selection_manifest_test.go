@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
@@ -114,6 +115,7 @@ func TestOrientationContextSelectionExposesByteFitAndBoundedCutoffs(t *testing.T
 	for index := 0; index < 180; index++ {
 		files = append(files, fmt.Sprintf("internal/service/long_descriptive_handler_%03d.go", index))
 	}
+	ranked := buildFileIndex(files, nil, nil, nil)
 	bundle, trace := BuildWithTrace(snapshot.Snapshot{RepoName: "byte-fit"}, files, Options{
 		MaxFiles:      180,
 		MaxBytes:      12 << 10,
@@ -123,14 +125,48 @@ func TestOrientationContextSelectionExposesByteFitAndBoundedCutoffs(t *testing.T
 		trace.EffectiveCaps.CandidateFiles >= trace.ConfiguredCaps.CandidateFiles {
 		t.Fatalf("byte fit trace = %#v, caps %#v -> %#v", trace.ByteFit, trace.ConfiguredCaps, trace.EffectiveCaps)
 	}
-	if trace.EffectiveCaps.SourceSignalsTotal != trace.ConfiguredCaps.SourceSignalsTotal ||
-		trace.EffectiveCaps.SourceSignalsPerFile != trace.ConfiguredCaps.SourceSignalsPerFile {
-		t.Fatalf("caller-bounded source signal caps were reported as effective byte-fit cuts: %#v -> %#v", trace.ConfiguredCaps, trace.EffectiveCaps)
+	wantEffectiveCaps := trace.ConfiguredCaps
+	wantEffectiveCaps.CandidateFiles = trace.EffectiveCaps.CandidateFiles
+	if trace.EffectiveCaps != wantEffectiveCaps {
+		t.Fatalf("byte fit changed a non-candidate cap: %#v -> %#v", trace.ConfiguredCaps, trace.EffectiveCaps)
 	}
 	if trace.Counts.Candidates.Before != len(files) || trace.Counts.Candidates.After != len(bundle.CandidateFileIndex) ||
 		trace.Counts.Candidates.Omitted == 0 || len(trace.OmittedCandidateSamples) == 0 ||
 		len(trace.OmittedCandidateSamples) > maxSelectionCutoffSamples {
 		t.Fatalf("candidate cutoff trace = counts %#v samples %d", trace.Counts.Candidates, len(trace.OmittedCandidateSamples))
+	}
+	if len(bundle.ProviderAllowedPaths) != len(bundle.CandidateFileIndex) {
+		t.Fatalf("allowed paths = %d, candidates = %d", len(bundle.ProviderAllowedPaths), len(bundle.CandidateFileIndex))
+	}
+	for index, candidate := range bundle.CandidateFileIndex {
+		if !reflect.DeepEqual(candidate, ranked[index]) {
+			t.Fatalf("byte-fit candidate %d = %#v, want ranked prefix %#v", index, candidate, ranked[index])
+		}
+		if bundle.ProviderAllowedPaths[index] != candidate.Path {
+			t.Fatalf("allowed path %d = %q, want candidate %q", index, bundle.ProviderAllowedPaths[index], candidate.Path)
+		}
+	}
+	selectedCount := len(bundle.CandidateFileIndex)
+	if selectedCount >= len(ranked) {
+		t.Fatalf("forced byte-fit retained the full catalog: %d", selectedCount)
+	}
+	nextOptions := defaults(Options{
+		MaxFiles:      selectedCount + 1,
+		SourceSignals: []sourcesignals.Signal{},
+	})
+	nextBundle, _ := buildWithByteFitTrace(
+		snapshot.Snapshot{RepoName: "byte-fit"},
+		files,
+		nextOptions,
+		len(files),
+	)
+	nextBundle.Warnings = append(nextBundle.Warnings, byteFitWarning)
+	nextJSON, err := json.Marshal(nextBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nextJSON) <= 12<<10 {
+		t.Fatalf("byte-fit underfilled budget: selected=%d bytes=%d, next bytes=%d", selectedCount, trace.ByteFit.FittedBytes, len(nextJSON))
 	}
 	foundByteFit := false
 	for _, cutoff := range trace.Cutoffs {
@@ -144,25 +180,132 @@ func TestOrientationContextSelectionExposesByteFitAndBoundedCutoffs(t *testing.T
 	if !foundByteFit {
 		t.Fatalf("byte-fit cutoff missing: %#v", trace.Cutoffs)
 	}
+	wantAttempts := expectedByteFitSearchAttempts(len(files)-1, selectedCount)
+	if trace.ByteFit.Attempts != wantAttempts {
+		t.Fatalf("byte-fit attempts = %d, want %d actual builds", trace.ByteFit.Attempts, wantAttempts)
+	}
 }
 
-func TestByteFitTraceUsesExactReturnedBytesWhenFitWarningCrossesBudget(t *testing.T) {
+func TestByteFitNoFitReusesMinimumAttemptAndReportsActualBuildCount(t *testing.T) {
+	files := make([]string, 0, 180)
+	for index := 0; index < 180; index++ {
+		files = append(files, fmt.Sprintf("internal/service/long_descriptive_handler_%03d.go", index))
+	}
+	bundle, trace := BuildWithTrace(snapshot.Snapshot{RepoName: "byte-fit-exhausted"}, files, Options{
+		MaxFiles:      len(files),
+		MaxBytes:      1,
+		SourceSignals: []sourcesignals.Signal{},
+	})
+	if trace.ByteFit.Fit || !trace.ByteFit.Applied || len(bundle.CandidateFileIndex) != minByteFitCandidateFiles {
+		t.Fatalf("exhausted byte fit = %#v candidates=%d", trace.ByteFit, len(bundle.CandidateFileIndex))
+	}
+	wantAttempts := expectedByteFitSearchAttempts(len(files)-1, minByteFitCandidateFiles-1)
+	if trace.ByteFit.Attempts != wantAttempts {
+		t.Fatalf("exhausted byte-fit attempts = %d, want %d actual builds", trace.ByteFit.Attempts, wantAttempts)
+	}
+}
+
+func TestByteFitMinimumWarningBoundaryMeasuresExactReturnedFailure(t *testing.T) {
+	files := make([]string, 0, 180)
+	for index := 0; index < 180; index++ {
+		files = append(files, fmt.Sprintf("internal/service/long_descriptive_handler_%03d.go", index))
+	}
+	s := snapshot.Snapshot{RepoName: "minimum-warning-boundary"}
+	configured := defaults(Options{MaxFiles: len(files), SourceSignals: []sourcesignals.Signal{}})
+	minimumOptions := configured
+	minimumOptions.MaxFiles = minByteFitCandidateFiles
+	minimumWithoutFitWarning, _ := buildWithByteFitTrace(s, files, minimumOptions, configured.MaxFiles)
+	minimumWithoutFitWarningJSON, err := json.Marshal(minimumWithoutFitWarning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	minimumProbe := minimumWithoutFitWarning
+	minimumProbe.Warnings = append(append([]string(nil), minimumProbe.Warnings...), byteFitWarning)
+	minimumProbeJSON, err := json.Marshal(minimumProbe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(minimumProbeJSON) <= len(minimumWithoutFitWarningJSON) {
+		t.Fatalf("fit warning did not cross fixture boundary: without=%d with=%d", len(minimumWithoutFitWarningJSON), len(minimumProbeJSON))
+	}
+
+	bundle, trace := BuildWithTrace(s, files, Options{
+		MaxFiles:      len(files),
+		MaxBytes:      len(minimumWithoutFitWarningJSON),
+		SourceSignals: []sourcesignals.Signal{},
+	})
+	returnedJSON, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.ByteFit.Fit || len(returnedJSON) <= len(minimumWithoutFitWarningJSON) ||
+		trace.ByteFit.FittedBytes != len(returnedJSON) || len(bundle.CandidateFileIndex) != minByteFitCandidateFiles {
+		t.Fatalf("minimum warning-boundary result = %#v bytes=%d cap=%d candidates=%d",
+			trace.ByteFit, len(returnedJSON), len(minimumWithoutFitWarningJSON), len(bundle.CandidateFileIndex))
+	}
+	if !containsString(bundle.Warnings, byteFitWarning) ||
+		!containsString(bundle.Warnings, "provider bundle exceeds configured context-byte budget") {
+		t.Fatalf("returned minimum warnings = %#v", bundle.Warnings)
+	}
+}
+
+func expectedByteFitSearchAttempts(high, largestFitting int) int {
+	attempts := 1 // full baseline
+	for low := minByteFitCandidateFiles; low <= high; {
+		candidateLimit := low + (high-low)/2
+		attempts++
+		if candidateLimit <= largestFitting {
+			low = candidateLimit + 1
+		} else {
+			high = candidateLimit - 1
+		}
+	}
+	return attempts
+}
+
+func TestByteFitDoesNotReuseReducedCandidateCapForOrientationCandidates(t *testing.T) {
+	orientationCandidates := make([]gofacts.OrientationCandidate, 0, 12)
+	for index := 0; index < 12; index++ {
+		orientationCandidates = append(orientationCandidates, gofacts.OrientationCandidate{
+			Name:      fmt.Sprintf("flow-%02d", index),
+			Kind:      gofacts.OrientationKindSignalFlow,
+			OpenFiles: []string{"cmd/app/main.go"},
+		})
+	}
+	opts := defaults(Options{MaxFiles: 8, SourceSignals: []sourcesignals.Signal{}})
+	bundle, trace := buildWithByteFitTrace(
+		snapshot.Snapshot{
+			RepoName: "orientation-candidate-cap",
+			GoFacts: &gofacts.Facts{
+				OrientationCandidates: orientationCandidates,
+			},
+		},
+		[]string{"cmd/app/main.go"},
+		opts,
+		20,
+	)
+	if len(bundle.Go.OrientationCandidates) != len(orientationCandidates) ||
+		trace.Counts.OrientationCandidates.After != len(orientationCandidates) {
+		t.Fatalf("byte-fit candidate cap leaked into orientation candidates: bundle=%d trace=%#v",
+			len(bundle.Go.OrientationCandidates), trace.Counts.OrientationCandidates)
+	}
+}
+
+func TestByteFitSearchAccountsForReturnedFitWarning(t *testing.T) {
 	files := make([]string, 0, 300)
 	for index := 0; index < 300; index++ {
 		files = append(files, fmt.Sprintf("internal/service/long_descriptive_handler_%03d.go", index))
 	}
 	s := snapshot.Snapshot{RepoName: "warning-boundary"}
 	configured := defaults(Options{MaxFiles: len(files), SourceSignals: []sourcesignals.Signal{}})
-	fit := configured
-	if !shrinkForByteBudget(&fit) {
-		t.Fatal("fixture options did not shrink")
-	}
 	initialBundle, _ := buildWithTrace(s, files, configured)
 	initialJSON, err := json.Marshal(initialBundle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	preWarningBundle, _ := buildWithTrace(s, files, fit)
+	fit := configured
+	fit.MaxFiles = 200
+	preWarningBundle, _ := buildWithByteFitTrace(s, files, fit, configured.MaxFiles)
 	preWarningJSON, err := json.Marshal(preWarningBundle)
 	if err != nil {
 		t.Fatal(err)
@@ -180,21 +323,21 @@ func TestByteFitTraceUsesExactReturnedBytesWhenFitWarningCrossesBudget(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !trace.ByteFit.Applied || trace.ByteFit.Fit ||
-		trace.ByteFit.FittedBytes != len(actualJSON) || len(actualJSON) <= len(preWarningJSON) {
+	if !trace.ByteFit.Applied || !trace.ByteFit.Fit ||
+		trace.ByteFit.FittedBytes != len(actualJSON) || len(actualJSON) > len(preWarningJSON) {
 		t.Fatalf("warning-boundary byte fit = %#v, actual=%d cap=%d", trace.ByteFit, len(actualJSON), len(preWarningJSON))
 	}
 	if !containsString(bundle.Warnings, "provider bundle fitted to request-byte context budget") {
 		t.Fatalf("existing returned bundle warning changed: %#v", bundle.Warnings)
 	}
-	foundExhausted := false
+	foundFit := false
 	for _, cutoff := range trace.Cutoffs {
-		if cutoff.Stage == "byte_fit" && cutoff.Reason == "request_byte_budget_exhausted" {
-			foundExhausted = true
+		if cutoff.Stage == "byte_fit" && cutoff.Reason == "request_byte_budget" {
+			foundFit = true
 		}
 	}
-	if !foundExhausted {
-		t.Fatalf("truthful exhausted cutoff missing: %#v", trace.Cutoffs)
+	if !foundFit {
+		t.Fatalf("truthful fitted cutoff missing: %#v", trace.Cutoffs)
 	}
 	manifest, err := FinalizeOrientationContextSelection(
 		trace,

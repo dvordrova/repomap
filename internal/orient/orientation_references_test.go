@@ -18,6 +18,8 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
 func orientationWireFromHTTPRequest(t *testing.T, request *http.Request) orientationWireBundle {
@@ -254,16 +256,27 @@ func TestOrientationReferenceCatalogAndWireAreDeterministicWithoutDuplicateInven
 }
 
 func TestOrientationWireDoesNotInflateOrLoseLargeCandidateInventory(t *testing.T) {
-	const candidateCount = 250
+	const (
+		candidateCount = 834
+		userPath       = "controllers/user.go"
+		userID         = "file-5b366d4eacda4fd5"
+	)
 	candidates := make([]map[string]any, 0, candidateCount)
 	allowed := make([]string, 0, candidateCount)
 	for index := 0; index < candidateCount; index++ {
 		path := fmt.Sprintf("internal/component%03d/long_descriptive_runtime_file_%03d.go", index, index)
+		candidateID := fmt.Sprintf("file-%016x-long-canonical-candidate-identity", index)
+		score := candidateCount - index
+		if index == candidateCount/2 {
+			path = userPath
+			candidateID = userID
+			score = 130
+		}
 		allowed = append(allowed, path)
 		candidates = append(candidates, map[string]any{
-			"id":   fmt.Sprintf("file-%016x-long-canonical-candidate-identity", index),
+			"id":   candidateID,
 			"path": path, "kind": "source", "signals": []string{"source"},
-			"score": candidateCount - index, "reasons": []string{"bounded source candidate"},
+			"score": score, "reasons": []string{"bounded source candidate"},
 		})
 	}
 	raw, err := json.Marshal(map[string]any{
@@ -296,12 +309,75 @@ func TestOrientationWireDoesNotInflateOrLoseLargeCandidateInventory(t *testing.T
 	if len(wire.CandidateFileIndex) != candidateCount || len(wire.FileIndex) != candidateCount {
 		t.Fatalf("large wire lost candidates/files: candidates=%d files=%d", len(wire.CandidateFileIndex), len(wire.FileIndex))
 	}
+	userRef := catalog.fileRefByPath[userPath]
+	if userRef == "" || catalog.filesByRef[userRef].CandidateID != userID {
+		t.Fatalf("controllers/user.go catalog mapping = ref %q file %#v", userRef, catalog.filesByRef[userRef])
+	}
+	userInWire := false
+	for _, candidate := range wire.CandidateFileIndex {
+		if candidate.FileRef == userRef {
+			userInWire = true
+			break
+		}
+	}
+	if !userInWire {
+		t.Fatal("controllers/user.go candidate ref is absent from typed wire")
+	}
 	if len(wireJSON) >= len(raw) {
 		t.Fatalf("large wire would consume more context: before=%d after=%d", len(raw), len(wireJSON))
 	}
 	for _, path := range allowed {
 		if count := strings.Count(string(wireJSON), path); count != 1 {
 			t.Fatalf("large wire path %q count = %d", path, count)
+		}
+	}
+}
+
+func TestOrientationByteFitCatalogAndWireHaveNoDanglingCandidateRefs(t *testing.T) {
+	files := make([]string, 0, 180)
+	for index := 0; index < 180; index++ {
+		files = append(files, fmt.Sprintf("internal/service/long_descriptive_handler_%03d.go", index))
+	}
+	bundle, trace := llmbundle.BuildWithTrace(
+		snapshot.Snapshot{RepoName: "byte-fit-refs"},
+		files,
+		llmbundle.Options{
+			MaxFiles:      len(files),
+			MaxBytes:      12 << 10,
+			SourceSignals: []sourcesignals.Signal{},
+		},
+	)
+	if !trace.ByteFit.Applied || !trace.ByteFit.Fit {
+		t.Fatalf("fixture did not byte-fit: %#v", trace.ByteFit)
+	}
+	catalog, err := buildOrientationReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireJSON, err := buildOrientationWireBundle(bundle, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire orientationWireBundle
+	if err := json.Unmarshal(wireJSON, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.CandidateFileIndex) != len(bundle.CandidateFileIndex) {
+		t.Fatalf("byte-fit wire candidates = %d, bundle candidates = %d", len(wire.CandidateFileIndex), len(bundle.CandidateFileIndex))
+	}
+	fileRefs := make(map[string]struct{}, len(wire.FileIndex))
+	for _, file := range wire.FileIndex {
+		fileRefs[file.FileRef] = struct{}{}
+	}
+	for _, candidate := range wire.CandidateFileIndex {
+		if _, ok := fileRefs[candidate.FileRef]; !ok {
+			t.Fatalf("candidate has dangling file ref %q", candidate.FileRef)
+		}
+		if catalog.filesByRef[candidate.FileRef].CandidateID == "" {
+			t.Fatalf("candidate file ref %q has no canonical candidate id", candidate.FileRef)
+		}
+		if _, ok := catalog.evidenceByRef[candidate.EvidenceRef]; !ok {
+			t.Fatalf("candidate has dangling evidence ref %q", candidate.EvidenceRef)
 		}
 	}
 }

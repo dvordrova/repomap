@@ -51,6 +51,9 @@ var packageAnchorRoles = map[string]struct{}{
 const (
 	maxKnownDocsForBundle     = 30
 	maxCommandTracesForBundle = 8
+	minByteFitCandidateFiles  = 8
+	maxByteFitSearchAttempts  = 64
+	byteFitWarning            = "provider bundle fitted to request-byte context budget"
 )
 
 type goSection struct {
@@ -143,59 +146,119 @@ func BuildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundl
 		return candidate, trace
 	}
 
-	fit := opts
-	var candidate Bundle
-	var trace BuildTrace
-	initialBytes := 0
-	attempts := 0
-	usedFit := fit
-	for attempt := 0; attempt < 24; attempt++ {
-		attempts = attempt + 1
-		usedFit = fit
-		candidate, trace = buildWithTrace(s, fileList, fit)
-		encoded, err := json.Marshal(candidate)
-		if attempt == 0 && err == nil {
-			initialBytes = len(encoded)
+	baseline, baselineTrace := buildWithTrace(s, fileList, opts)
+	baselineJSON, baselineErr := json.Marshal(baseline)
+	initialBytes := len(baselineJSON)
+	if baselineErr == nil && initialBytes <= maxBytes {
+		baselineTrace.ConfiguredCaps = configuredCaps
+		baselineTrace.EffectiveCaps = effectiveSelectionCaps(opts, opts, configuredCaps, maxBytes)
+		baselineTrace.ByteFit = ByteFitTrace{
+			Attempts: 1, Fit: true, InitialBytes: initialBytes, FittedBytes: initialBytes,
 		}
-		if err == nil && len(encoded) <= maxBytes {
-			if fit.MaxFiles < opts.MaxFiles || fit.MaxEdges < opts.MaxEdges ||
-				fit.MaxSignalTotal < opts.MaxSignalTotal {
-				candidate.Warnings = append(candidate.Warnings, "provider bundle fitted to request-byte context budget")
-			}
-			finalEncoded, finalErr := json.Marshal(candidate)
-			finalBytes := len(finalEncoded)
-			finalFit := finalErr == nil && finalBytes <= maxBytes
-			trace.ConfiguredCaps = configuredCaps
-			trace.EffectiveCaps = effectiveSelectionCaps(opts, fit, configuredCaps, maxBytes)
-			trace.ByteFit = ByteFitTrace{
-				Attempts: attempt + 1, Applied: attempt > 0, Fit: finalFit,
-				InitialBytes: initialBytes, FittedBytes: finalBytes,
-			}
-			if attempt > 0 {
-				reason := "request_byte_budget"
-				if !finalFit {
-					reason = "request_byte_budget_exhausted"
-				}
-				appendSelectionCutoff(&trace, "bundle_bytes", "byte_fit", reason, initialBytes, finalBytes, nil)
-			}
-			return candidate, trace
-		}
-		if !shrinkForByteBudget(&fit) {
-			break
-		}
+		return baseline, baselineTrace
 	}
-	candidate.Warnings = append(candidate.Warnings, "provider bundle exceeds configured context-byte budget")
-	encoded, _ := json.Marshal(candidate)
+
+	// The canonical candidate rows are sorted best-first. Search that exact
+	// prefix for the largest count whose complete returned bundle, including
+	// its fit warning, stays within the byte budget.
+	upper := min(opts.MaxFiles, baselineTrace.Counts.Candidates.Before)
+	if upper <= minByteFitCandidateFiles {
+		return failedByteFitResult(
+			baseline,
+			baselineTrace,
+			opts,
+			opts,
+			configuredCaps,
+			maxBytes,
+			1,
+			initialBytes,
+		)
+	}
+
+	attempts := 1
+	var bestBundle Bundle
+	var bestTrace BuildTrace
+	var bestOptions Options
+	bestBytes := 0
+	var minimumBundle Bundle
+	var minimumTrace BuildTrace
+	minimumCaptured := false
+	low, high := minByteFitCandidateFiles, upper-1
+	for low <= high && attempts < maxByteFitSearchAttempts {
+		candidateLimit := low + (high-low)/2
+		fitOptions := opts
+		fitOptions.MaxFiles = candidateLimit
+		candidate, trace := buildWithByteFitTrace(s, fileList, fitOptions, opts.MaxFiles)
+		candidate.Warnings = append(candidate.Warnings, byteFitWarning)
+		if candidateLimit == minByteFitCandidateFiles {
+			minimumBundle = candidate
+			minimumBundle.Warnings = append([]string(nil), candidate.Warnings...)
+			minimumTrace = trace
+			minimumCaptured = true
+		}
+		encoded, err := json.Marshal(candidate)
+		attempts++
+		if err == nil && len(encoded) <= maxBytes {
+			bestBundle = candidate
+			bestTrace = trace
+			bestOptions = fitOptions
+			bestBytes = len(encoded)
+			low = candidateLimit + 1
+			continue
+		}
+		high = candidateLimit - 1
+	}
+	if bestBytes > 0 {
+		bestTrace.ConfiguredCaps = configuredCaps
+		bestTrace.EffectiveCaps = effectiveSelectionCaps(opts, bestOptions, configuredCaps, maxBytes)
+		bestTrace.ByteFit = ByteFitTrace{
+			Attempts: attempts, Applied: true, Fit: true,
+			InitialBytes: initialBytes, FittedBytes: bestBytes,
+		}
+		appendSelectionCutoff(&bestTrace, "bundle_bytes", "byte_fit", "request_byte_budget", initialBytes, bestBytes, nil)
+		return bestBundle, bestTrace
+	}
+
+	minimumOptions := opts
+	minimumOptions.MaxFiles = minByteFitCandidateFiles
+	if !minimumCaptured {
+		minimumBundle, minimumTrace = buildWithByteFitTrace(s, fileList, minimumOptions, opts.MaxFiles)
+		attempts++
+	}
+	return failedByteFitResult(
+		minimumBundle,
+		minimumTrace,
+		opts,
+		minimumOptions,
+		configuredCaps,
+		maxBytes,
+		attempts,
+		initialBytes,
+	)
+}
+
+func failedByteFitResult(
+	bundle Bundle,
+	trace BuildTrace,
+	configuredOptions Options,
+	effectiveOptions Options,
+	configuredCaps SelectionCaps,
+	maxBytes int,
+	attempts int,
+	initialBytes int,
+) (Bundle, BuildTrace) {
+	bundle.Warnings = append(bundle.Warnings, "provider bundle exceeds configured context-byte budget")
+	encoded, _ := json.Marshal(bundle)
 	trace.ConfiguredCaps = configuredCaps
-	trace.EffectiveCaps = effectiveSelectionCaps(opts, usedFit, configuredCaps, maxBytes)
+	trace.EffectiveCaps = effectiveSelectionCaps(configuredOptions, effectiveOptions, configuredCaps, maxBytes)
 	trace.ByteFit = ByteFitTrace{
-		Attempts: attempts, Applied: !equalSelectionCaps(configuredCaps, trace.EffectiveCaps), Fit: false,
+		Attempts: attempts, Applied: attempts > 1, Fit: false,
 		InitialBytes: initialBytes, FittedBytes: len(encoded),
 	}
 	if trace.ByteFit.Applied && initialBytes > len(encoded) {
 		appendSelectionCutoff(&trace, "bundle_bytes", "byte_fit", "request_byte_budget_exhausted", initialBytes, len(encoded), nil)
 	}
-	return candidate, trace
+	return bundle, trace
 }
 
 func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
@@ -204,6 +267,44 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 }
 
 func buildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundle, BuildTrace) {
+	return buildWithFileIndexSelection(
+		s,
+		fileList,
+		opts,
+		opts.MaxFiles,
+		countBoundFileIndexSelection,
+	)
+}
+
+type fileIndexSelection int
+
+const (
+	countBoundFileIndexSelection fileIndexSelection = iota
+	byteFitFileIndexSelection
+)
+
+func buildWithByteFitTrace(
+	s snapshot.Snapshot,
+	fileList []string,
+	opts Options,
+	orientationCandidateLimit int,
+) (Bundle, BuildTrace) {
+	return buildWithFileIndexSelection(
+		s,
+		fileList,
+		opts,
+		orientationCandidateLimit,
+		byteFitFileIndexSelection,
+	)
+}
+
+func buildWithFileIndexSelection(
+	s snapshot.Snapshot,
+	fileList []string,
+	opts Options,
+	orientationCandidateLimit int,
+	selection fileIndexSelection,
+) (Bundle, BuildTrace) {
 	var trace BuildTrace
 	allKnownDocs := findKnownDocsUnbounded(fileList)
 	knownDocs := allKnownDocs
@@ -321,10 +422,18 @@ func buildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundl
 		if len(candidates) < len(f.OrientationCandidates) {
 			appendSelectionCutoff(&trace, "orientation_candidates", "eligibility", "selected_entrypoint_or_signal_flow", len(f.OrientationCandidates), len(candidates), orientationCandidateSamplesDifference(f.OrientationCandidates, candidates))
 		}
-		if len(candidates) > opts.MaxFiles {
+		if len(candidates) > orientationCandidateLimit {
 			b.Warnings = append(b.Warnings, "truncated orientation candidates")
-			appendSelectionCutoff(&trace, "orientation_candidates", "selection", "max_files", len(candidates), opts.MaxFiles, orientationCandidateSamples(candidates[opts.MaxFiles:]))
-			candidates = candidates[:opts.MaxFiles]
+			appendSelectionCutoff(
+				&trace,
+				"orientation_candidates",
+				"selection",
+				"max_files",
+				len(candidates),
+				orientationCandidateLimit,
+				orientationCandidateSamples(candidates[orientationCandidateLimit:]),
+			)
+			candidates = candidates[:orientationCandidateLimit]
 		}
 
 		edges := selectImportantEdges(f.InternalEdges, selectedEntrypoints, f.Modules, opts.MaxEdges)
@@ -367,10 +476,31 @@ func buildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundl
 	trace.Counts.SourceSignals.Before = len(fileSignals)
 	if len(fileIndex) > opts.MaxFiles {
 		b.Warnings = append(b.Warnings, "truncated candidate_file_index")
-		selected := selectFileIndexWithPins(fileIndex, opts.MaxFiles, selectedCommandTracePaths(b.Go.CommandTraces))
+		var selected []fileIndexEntry
+		cutoffStage := "selection"
+		cutoffReason := "max_files"
+		if selection == byteFitFileIndexSelection {
+			selected = append([]fileIndexEntry(nil), fileIndex[:opts.MaxFiles]...)
+			cutoffStage = "byte_fit"
+			cutoffReason = "request_byte_budget"
+		} else {
+			selected = selectFileIndexWithPins(
+				fileIndex,
+				opts.MaxFiles,
+				selectedCommandTracePaths(b.Go.CommandTraces),
+			)
+		}
 		omittedRows := omittedCandidateRows(fileIndex, selected)
 		trace.OmittedCandidateSamples = boundedCandidateRows(omittedRows, maxSelectionCutoffSamples)
-		appendSelectionCutoff(&trace, "candidates", "selection", "max_files", len(fileIndex), len(selected), candidatePaths(omittedRows))
+		appendSelectionCutoff(
+			&trace,
+			"candidates",
+			cutoffStage,
+			cutoffReason,
+			len(fileIndex),
+			len(selected),
+			candidatePaths(omittedRows),
+		)
 		fileIndex = selected
 	}
 	b.CandidateFileIndex = fileIndex
@@ -406,31 +536,6 @@ func buildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundl
 	_ = completeSelectionCounts(&trace.Counts)
 	trace.SelectedCandidates = candidateSelectionRows(b.CandidateFileIndex)
 	return b, trace
-}
-
-func shrinkForByteBudget(opts *Options) bool {
-	changed := false
-	shrink := func(value *int, minimum int) {
-		if *value <= minimum {
-			return
-		}
-		next := *value * 4 / 5
-		if next < minimum {
-			next = minimum
-		}
-		if next == *value {
-			next--
-		}
-		*value = next
-		changed = true
-	}
-	shrink(&opts.MaxFiles, 8)
-	shrink(&opts.MaxEdges, 16)
-	shrink(&opts.MaxSignalTotal, 12)
-	shrink(&opts.MaxEntrypoints, 8)
-	shrink(&opts.MaxModules, 8)
-	shrink(&opts.MaxReadmeBytes, 2<<10)
-	return changed
 }
 
 func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string, fileSignals []sourcesignals.Signal) []fileIndexEntry {
