@@ -56,6 +56,8 @@ type researchResponse struct {
 	Summary             string       `json:"summary,omitempty"`
 }
 
+const targetedResearchCacheContractVersion = "targeted-research-cache-v3"
+
 func BuildPrompt(bundle EvidenceBundle) (Prompt, error) {
 	if bundle.Version != ContractVersion || bundle.PolicyVersion != PolicyVersion ||
 		strings.TrimSpace(bundle.Question) == "" || len(bundle.Evidence) == 0 {
@@ -156,46 +158,57 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 		return round, nil
 	}
 
-	cacheKey, err := CacheKey(FingerprintInput{
-		Repository: input.Repository, Stage: "targeted_research", PromptVersion: PromptVersion,
-		Profile: input.Profile, Model: input.Model, EvidenceBundleHash: bundleSHA,
-		PolicyVersion:  input.Policy.Version,
-		OutputLanguage: CacheOutputLanguage(input.OutputLanguage),
-	})
+	cacheFingerprint := targetedResearchCacheFingerprint(input, bundleSHA)
+	cacheKey, err := CacheKey(cacheFingerprint)
 	if err != nil {
 		return round, err
 	}
 	round.CacheKey = cacheKey
 	if input.RunsDir != "" {
-		record, found, loadErr := loadCache(input.RunsDir, cacheKey, round.ProviderRequestSHA256, bundleSHA)
+		record, found, loadErr := loadCache(
+			input.RunsDir,
+			cacheKey,
+			cacheFingerprint.CacheContract,
+			round.ProviderRequestSHA256,
+			bundleSHA,
+		)
 		if loadErr != nil {
 			if !errors.Is(loadErr, ErrInvalidCachedRound) {
 				round.Status = RoundRejected
 				round.StopReason = "invalid_cached_record"
 				return round, loadErr
 			}
+			if removeErr := removeCache(input.RunsDir, cacheKey); removeErr != nil {
+				round.Status = RoundRejected
+				round.StopReason = "invalid_cached_record"
+				return round, removeErr
+			}
 			found = false
 		}
 		if found {
-			round.Cached = true
-			round.Status = RoundCached
-			round.ResponseBytes = record.ResponseBytes
-			round.InputTokens = record.InputTokens
-			round.OutputTokens = record.OutputTokens
-			round.PromptCacheHitTokens = record.PromptCacheHitTokens
-			round.PromptCacheMissTokens = record.PromptCacheMissTokens
-			round.LatencyMillis = record.LatencyMillis
-			round.RetryCount = record.RetryCount
-			if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, record.Response); err != nil {
-				return round, err
+			cachedRound := round
+			cachedRound.Cached = true
+			cachedRound.Status = RoundCached
+			cachedRound.ResponseBytes = record.ResponseBytes
+			cachedRound.InputTokens = record.InputTokens
+			cachedRound.OutputTokens = record.OutputTokens
+			cachedRound.PromptCacheHitTokens = record.PromptCacheHitTokens
+			cachedRound.PromptCacheMissTokens = record.PromptCacheMissTokens
+			cachedRound.LatencyMillis = record.LatencyMillis
+			cachedRound.RetryCount = record.RetryCount
+			applyErr := applyResponse(&cachedRound, input.Plan.Bundle, record.Response)
+			if applyErr == nil && cachedRound.Status == RoundCached {
+				if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, record.Response); err != nil {
+					return round, err
+				}
+				cachedRound.CompletedAt = nowUTC()
+				return cachedRound, nil
 			}
-			if err := applyResponse(&round, input.Plan.Bundle, record.Response); err != nil {
+			if removeErr := removeCache(input.RunsDir, cacheKey); removeErr != nil {
 				round.Status = RoundRejected
 				round.StopReason = "invalid_cached_response"
-				return round, err
+				return round, removeErr
 			}
-			round.CompletedAt = nowUTC()
-			return round, nil
 		}
 	}
 
@@ -218,9 +231,15 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, result.Content); err != nil {
 		return round, err
 	}
-	if input.RunsDir != "" {
+	if err := applyResponse(&round, input.Plan.Bundle, result.Content); err != nil {
+		round.Status = RoundRejected
+		round.StopReason = "invalid_response"
+		return round, err
+	}
+	if round.Status == RoundCompleted && input.RunsDir != "" {
 		record := cacheRecord{
 			Version: cacheRecordVersion, CacheKey: cacheKey,
+			CacheContract: cacheFingerprint.CacheContract,
 			RequestSHA256: round.ProviderRequestSHA256, BundleSHA256: bundleSHA,
 			ResponseSHA256: requestHash(result.Content), Response: append([]byte(nil), result.Content...),
 			RequestBytes: len(request), ResponseBytes: len(result.Content),
@@ -233,13 +252,18 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 			return round, err
 		}
 	}
-	if err := applyResponse(&round, input.Plan.Bundle, result.Content); err != nil {
-		round.Status = RoundRejected
-		round.StopReason = "invalid_response"
-		return round, err
-	}
 	round.CompletedAt = nowUTC()
 	return round, nil
+}
+
+func targetedResearchCacheFingerprint(input ExecuteInput, bundleSHA string) FingerprintInput {
+	return FingerprintInput{
+		Repository: input.Repository, Stage: "targeted_research", PromptVersion: PromptVersion,
+		CacheContract: targetedResearchCacheContractVersion,
+		Profile:       input.Profile, Model: input.Model, EvidenceBundleHash: bundleSHA,
+		PolicyVersion:  input.Policy.Version,
+		OutputLanguage: CacheOutputLanguage(input.OutputLanguage),
+	}
 }
 
 func persistProviderArtifacts(runDir string, bundle EvidenceBundle, request, response []byte) error {
