@@ -100,20 +100,17 @@ func TestPublishFreshMechanismReplacesExistingRootWithoutReplayHashDrift(t *test
 		t.Fatalf("second visible steps = %d, want at least 3", steps)
 	}
 
-	replayed, err := report.ReadRunDir(runDir)
+	ordinary, err := report.ReadRunDir(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]bool{}
-	for _, mechanism := range replayed.UserMechanisms {
-		seen[mechanism.ArtifactID] = true
+	if len(ordinary.UserMechanisms) != 0 {
+		t.Fatalf(
+			"ordinary report replayed development Mechanism artifacts: %#v",
+			ordinary.UserMechanisms,
+		)
 	}
-	for _, fixture := range []freshPublicationReplay{first, second} {
-		if !seen[fixture.artifact.ID] {
-			t.Errorf("published artifact %q is unavailable after replay", fixture.artifact.ID)
-		}
-	}
-	for _, warning := range replayed.Warnings {
+	for _, warning := range ordinary.Warnings {
 		if strings.Contains(warning, "replay bundle hash does not match current facts") {
 			t.Fatalf("publication leaked transient replay warning: %s", warning)
 		}

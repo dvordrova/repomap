@@ -347,9 +347,13 @@ func assertPresentationLocalizationHTTPSucceeded(
 	if err != nil {
 		t.Fatal(err)
 	}
+	prepared, err := report.PrepareRunPresentation(runDir, canonical, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	projected, status := report.LoadPresentationLocalization(
 		runDir,
-		canonical,
+		prepared,
 		localization.LocaleRussian,
 	)
 	if status.State != report.PresentationLocalizationSucceeded ||
