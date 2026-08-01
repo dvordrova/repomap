@@ -110,7 +110,7 @@ func mergeOperationalCandidateFlows(
 			Name:             candidate.Name,
 			FlowType:         flowexplain.FlowTypeOperational,
 			Trigger:          "local static source-signal threshold was met",
-			LikelyEntrypoint: localOperationalLikelyEntrypoint(candidate),
+			LikelyEntrypoint: candidate.EntrypointPackage,
 			LikelyFiles:      append([]string(nil), candidate.OpenFiles...),
 			WhyInteresting:   candidate.Why,
 			Evidence:         evidence,
@@ -119,16 +119,6 @@ func mergeOperationalCandidateFlows(
 		})
 		existing[key] = len(report.CandidateFlows) - 1
 	}
-}
-
-func localOperationalLikelyEntrypoint(candidate gofacts.OrientationCandidate) string {
-	if candidate.EntrypointPackage != "" {
-		return candidate.EntrypointPackage
-	}
-	if len(candidate.OpenFiles) > 0 {
-		return candidate.OpenFiles[0]
-	}
-	return ""
 }
 
 func operationalCandidateEvidence(
