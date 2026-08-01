@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
 )
 
@@ -162,8 +163,8 @@ func TestOrdinaryStaticAndServerReportsShareCanonicalArchitectureBase(t *testing
 	writeCanonicalArchitectureFixture(
 		t,
 		runDir,
-		"orientation_context_selection.v1.json",
-		[]byte(`{"version":1}`),
+		llmbundle.OrientationContextSelectionFilename,
+		[]byte(`{"version":2}`),
 	)
 	reloaded := &handler{runsDir: runsDir}
 	if err := reloaded.reloadRuns(); err != nil {

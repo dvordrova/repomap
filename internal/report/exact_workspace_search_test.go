@@ -215,7 +215,7 @@ func TestCatalogExactSearchBoundsRawReportMembersBeforeProjection(t *testing.T) 
 func TestCatalogExactSearchKeepsVersions(t *testing.T) {
 	t.Parallel()
 
-	if SemanticSearchIndexVersion != 5 || CurrentFormatVersion != 26 || CurrentRunManifestVersion != 5 {
+	if SemanticSearchIndexVersion != 5 || CurrentFormatVersion != 26 || CurrentRunManifestVersion != 6 {
 		t.Fatalf(
 			"versions changed: search=%d report=%d manifest=%d",
 			SemanticSearchIndexVersion,

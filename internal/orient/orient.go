@@ -203,35 +203,31 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if dw != nil {
 			defer dw.Close()
-			contextSelection, selectionErr := llmbundle.FinalizeOrientationContextSelection(
-				bundleSelectionTrace,
-				bundle,
-				modelBundleJSON,
-				orientationWireJSON,
-				orientationSignalTrace,
-			)
-			if selectionErr != nil {
-				if requireArtifacts {
-					return nil, selectionErr
-				}
-			} else {
-				selectionJSON, encodeErr := llmbundle.EncodeOrientationContextSelection(contextSelection)
-				if encodeErr != nil {
-					if requireArtifacts {
-						return nil, encodeErr
-					}
-				} else if writeErr := dw.WriteFile(llmbundle.OrientationContextSelectionFilename, selectionJSON); writeErr != nil && requireArtifacts {
-					return nil, fmt.Errorf("write required orientation context selection: %w", writeErr)
-				}
-			}
 			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug metadata: %w", err)
 			}
 			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug snapshot: %w", err)
 			}
-			if err := dw.WriteLLMBundle(append(modelBundleJSON, '\n')); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required model bundle: %w", err)
+			if err := dw.WriteLLMBundleWithSidecar(
+				modelBundleJSON,
+				llmbundle.OrientationContextSelectionFilename,
+				func(savedBundle []byte) ([]byte, error) {
+					contextSelection, selectionErr := llmbundle.FinalizeOrientationContextSelection(
+						bundleSelectionTrace,
+						bundle,
+						modelBundleJSON,
+						savedBundle,
+						orientationWireJSON,
+						orientationSignalTrace,
+					)
+					if selectionErr != nil {
+						return nil, selectionErr
+					}
+					return llmbundle.EncodeOrientationContextSelection(contextSelection)
+				},
+			); err != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required model bundle and orientation context selection: %w", err)
 			}
 		}
 	}

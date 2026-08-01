@@ -216,6 +216,24 @@ func TestRunManifestVerifiesOrientationContextSelectionArtifact(t *testing.T) {
 		}
 	})
 
+	t.Run("pre-write bundle identity is not accepted", func(t *testing.T) {
+		runDir := t.TempDir()
+		persistedBundle := append(append([]byte(nil), bundleArtifact...), '\n')
+		if err := os.WriteFile(filepath.Join(runDir, "llm_bundle.json"), persistedBundle, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename), artifact, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		manifest := validRunManifestFixture(t)
+		manifest.MaterialInputs.ModelBundleSHA256 = manifestSHA256(persistedBundle)
+		manifest.MaterialInputs.OrientationContextSelectionSHA256 = want
+		if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err == nil ||
+			!strings.Contains(err.Error(), "model bundle identity mismatch") {
+			t.Fatalf("pre-write selection identity error = %v", err)
+		}
+	})
+
 	tests := []struct {
 		name  string
 		setup func(*testing.T, string) string
@@ -576,7 +594,7 @@ func TestRunManifestSourceCatalogPreservesSubdirectoryMapping(t *testing.T) {
 func TestDecodeRunManifestRejectsPreviousVersionsWithoutMigration(t *testing.T) {
 	t.Parallel()
 
-	for _, version := range []int{2, 3, 4} {
+	for _, version := range []int{2, 3, 4, 5} {
 		manifest := validRunManifestFixture(t)
 		manifest.Version = version
 		encoded, err := json.Marshal(manifest)
@@ -664,8 +682,10 @@ func validOrientationContextSelectionArtifact(t *testing.T, canonicalBundle []by
 	artifact, err := llmbundle.EncodeOrientationContextSelection(llmbundle.OrientationContextSelection{
 		Version:               llmbundle.OrientationContextSelectionVersion,
 		CanonicalBundleSHA256: manifestSHA256(canonicalBundle),
+		PersistedBundleSHA256: manifestSHA256(canonicalBundle),
 		TypedWireSHA256:       manifestSHA256(typedWire),
 		CanonicalBundleBytes:  len(canonicalBundle),
+		PersistedBundleBytes:  len(canonicalBundle),
 		TypedWireBytes:        len(typedWire),
 		ConfiguredCaps:        caps,
 		EffectiveCaps:         caps,

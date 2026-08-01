@@ -36,7 +36,7 @@ func TestOrientationContextSelectionMatchesActualBundleAndIsDeterministic(t *tes
 	}
 	wireJSON := []byte(`{"typed_wire":true}`)
 	scanTrace := sourcesignals.ScanTrace{MaxPerFile: 5, MaxTotal: 200}
-	manifest, err := FinalizeOrientationContextSelection(trace, bundle, bundleJSON, wireJSON, scanTrace)
+	manifest, err := FinalizeOrientationContextSelection(trace, bundle, bundleJSON, bundleJSON, wireJSON, scanTrace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +72,40 @@ func TestOrientationContextSelectionMatchesActualBundleAndIsDeterministic(t *tes
 	decoded, err := DecodeOrientationContextSelection(first)
 	if err != nil || !reflect.DeepEqual(decoded, manifest) {
 		t.Fatalf("decoded manifest = %#v, %v", decoded, err)
+	}
+}
+
+func TestOrientationContextSelectionSeparatesCanonicalAndPersistedBundleIdentities(t *testing.T) {
+	t.Parallel()
+
+	bundle, trace := BuildWithTrace(
+		snapshot.Snapshot{RepoName: "redacted-selection"},
+		[]string{"main.go"},
+		Options{MaxFiles: 8},
+	)
+	canonical, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted := []byte("[redacted: credential assignment detected]\n")
+	manifest, err := FinalizeOrientationContextSelection(
+		trace,
+		bundle,
+		canonical,
+		persisted,
+		[]byte(`{"wire":true}`),
+		sourcesignals.ScanTrace{MaxPerFile: 5, MaxTotal: 200},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.CanonicalBundleSHA256 != selectionSHA256(canonical) ||
+		manifest.CanonicalBundleBytes != len(canonical) ||
+		manifest.PersistedBundleSHA256 != selectionSHA256(persisted) ||
+		manifest.PersistedBundleBytes != len(persisted) ||
+		manifest.CanonicalBundleSHA256 == manifest.PersistedBundleSHA256 ||
+		manifest.ByteFit.FittedBytes != len(canonical) {
+		t.Fatalf("canonical/persisted identities were conflated: %#v", manifest)
 	}
 }
 
@@ -166,6 +200,7 @@ func TestByteFitTraceUsesExactReturnedBytesWhenFitWarningCrossesBudget(t *testin
 		trace,
 		bundle,
 		actualJSON,
+		actualJSON,
 		[]byte(`{}`),
 		sourcesignals.ScanTrace{MaxPerFile: 5, MaxTotal: 200},
 	)
@@ -200,6 +235,7 @@ func TestFinalizeSelectionMeasuresWarningsAppendedAfterBundleSelection(t *testin
 		trace,
 		bundle,
 		finalJSON,
+		finalJSON,
 		[]byte(`{}`),
 		sourcesignals.ScanTrace{MaxPerFile: 5, MaxTotal: 200},
 	)
@@ -228,6 +264,7 @@ func TestOrientationContextSelectionRejectsUnsafeUnknownAndOversizedData(t *test
 		trace,
 		bundle,
 		bundleJSON,
+		bundleJSON,
 		[]byte(`{"wire":true}`),
 		sourcesignals.ScanTrace{MaxPerFile: 5, MaxTotal: 200},
 	)
@@ -247,6 +284,15 @@ func TestOrientationContextSelectionRejectsUnsafeUnknownAndOversizedData(t *test
 	unsupported.Version++
 	if _, err := EncodeOrientationContextSelection(unsupported); err == nil || !strings.Contains(err.Error(), "unsupported version") {
 		t.Fatalf("unsupported-version encode error = %v", err)
+	}
+	legacy := manifest
+	legacy.Version = 1
+	legacyJSON, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeOrientationContextSelection(legacyJSON); err == nil || !strings.Contains(err.Error(), "unsupported version") {
+		t.Fatalf("legacy-version decode error = %v", err)
 	}
 	var value map[string]any
 	if err := json.Unmarshal(data, &value); err != nil {

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	CurrentRunManifestVersion = 5
+	CurrentRunManifestVersion = 6
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -641,14 +641,8 @@ func orientationSelectionMatchesModelBundle(
 	selection llmbundle.OrientationContextSelection,
 	modelBundle []byte,
 ) bool {
-	if selection.CanonicalBundleBytes == len(modelBundle) &&
-		selection.CanonicalBundleSHA256 == manifestSHA256(modelBundle) {
-		return true
-	}
-	withoutWriterNewline := bytes.TrimSuffix(modelBundle, []byte("\n"))
-	return len(withoutWriterNewline) != len(modelBundle) &&
-		selection.CanonicalBundleBytes == len(withoutWriterNewline) &&
-		selection.CanonicalBundleSHA256 == manifestSHA256(withoutWriterNewline)
+	return selection.PersistedBundleBytes == len(modelBundle) &&
+		selection.PersistedBundleSHA256 == manifestSHA256(modelBundle)
 }
 
 // VerifyRepositoryState lets a caller compare a freshly captured repository

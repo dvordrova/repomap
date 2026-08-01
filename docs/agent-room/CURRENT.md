@@ -1,15 +1,32 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/187-study-direction-request-local-typed-references.md
+    decisions/188-persisted-orientation-bundle-selection-identity.md
 
 Status:
-    Decision 187 active; exact request-local Study direction references authorized
+    Decision 188 active; persisted Orientation bundle identity authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 188 changes only the debug-artifact seam that persists
+    llm_bundle.json with orientation_context_selection.v2.json. One shared
+    private prepared-primary writer applies mandatory redaction exactly once,
+    passes those exact post-redaction bytes to the producer sidecar callback,
+    and persists the same primary bytes plus the derived sidecar. Orientation
+    context selection preserves the exact canonical/request bundle identity
+    and separately hashes and counts those exact saved bytes, including a safe
+    non-JSON redaction marker when credential assignment detection replaces the
+    complete bundle. Run manifest v6 verifies the persisted identity and
+    rejects selection v1 and manifest v5 without a legacy reader or migration.
+    It no longer accepts earlier pre-write bytes through a writer-newline
+    fallback. Existing orientation-report diagnostics use the same helper.
+    Redaction, --no-secrets runtime semantics, model bundle and
+    typed-wire semantics, prompt/request/cache identity, candidate
+    composition/order, canonical report, Study, Architecture, Atlas, UI,
+    localization, clients, retries, flags, and provider policy remain
+    unchanged.
     Decision 187 changes only the Study direction candidate provider seam.
     Backend-owned anchor, document, area, and mechanism identities are
     projected as compact typed ordinal refs under one exact request-bound

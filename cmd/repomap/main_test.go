@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/pavedpath"
@@ -1765,6 +1767,45 @@ func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
 	}
 	if !metadata.EffectiveOptions.NoSecrets {
 		t.Fatalf("metadata does not retain --no-secrets: %s", metadataJSON)
+	}
+	manifestJSON, err := os.ReadFile(filepath.Join(runDir, report.RunManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runManifest, err := report.DecodeRunManifest(manifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runManifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
+		t.Fatalf("redacted model bundle selection identity is invalid: %v", err)
+	}
+	bundlePath := filepath.Join(runDir, "llm_bundle.json")
+	persistedBundle, err := os.ReadFile(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(persistedBundle, []byte("actual-secret-value")) {
+		t.Fatalf("debug model bundle leaked the credential assignment: %s", persistedBundle)
+	}
+	selectionJSON, err := os.ReadFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := llmbundle.DecodeOrientationContextSelection(selectionJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persistedDigest := fmt.Sprintf("%x", sha256.Sum256(persistedBundle))
+	if selection.PersistedBundleSHA256 != persistedDigest ||
+		selection.PersistedBundleBytes != len(persistedBundle) ||
+		selection.CanonicalBundleSHA256 == selection.PersistedBundleSHA256 {
+		t.Fatalf("redacted canonical/persisted bundle identities = %#v", selection)
+	}
+	if err := os.WriteFile(bundlePath, append(append([]byte(nil), persistedBundle...), ' '), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runManifest.VerifyOrientationContextSelectionArtifact(runDir); err == nil {
+		t.Fatal("run manifest accepted a tampered redacted model bundle")
 	}
 	if kind, found := secretscan.Detect("API_KEY=actual-secret-value"); !found || kind != "credential assignment" {
 		t.Fatalf("credential detection was not restored after run: %q, %v", kind, found)
