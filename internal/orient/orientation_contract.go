@@ -511,7 +511,7 @@ func validateOrientationStructure(report orientationPart) error {
 			return fmt.Errorf("orientation: candidate_flows[%d] has no evidence", flowIndex)
 		}
 		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
-		if entrypoint == "" {
+		if entrypoint == "" && !allowsMissingOrientationEntrypoint(flow) {
 			return fmt.Errorf("orientation: candidate_flows[%d] has no likely_entrypoint", flowIndex)
 		}
 	}
@@ -577,6 +577,9 @@ func validateLegacyOrientationGrounding(report orientationPart, allowedPaths, al
 			}
 		}
 		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
+		if entrypoint == "" && allowsMissingOrientationEntrypoint(flow) {
+			continue
+		}
 		if _, isAllowedPath := allowed[entrypoint]; isAllowedPath {
 			if !validRepoRelativePath(entrypoint) {
 				return fmt.Errorf("orientation: candidate_flows[%d].likely_entrypoint has invalid path %q", flowIndex, entrypoint)
@@ -591,6 +594,11 @@ func validateLegacyOrientationGrounding(report orientationPart, allowedPaths, al
 		}
 	}
 	return nil
+}
+
+func allowsMissingOrientationEntrypoint(flow flowexplain.CandidateFlow) bool {
+	return flow.FlowType == flowexplain.FlowTypeOperational &&
+		flow.CandidateBasis == flowexplain.CandidateBasisSourceSignalAggregate
 }
 
 func evidencePathMentions(statement string) []string {

@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/185-local-operational-likely-entrypoint.md
+    decisions/186-local-operational-entrypoint-absence.md
 
 Status:
-    Decision 185 active; local operational likely-entrypoint correction authorized
+    Decision 186 active; truthful local operational entrypoint absence authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 186 removes the blocked Decision 185 semantic fallback without
+    rewriting its historical checkpoint. A local source-signal aggregate keeps
+    a producer-owned entrypoint package when present and otherwise publishes an
+    empty likely_entrypoint with its exact LikelyFiles and evidence intact.
+    Only that local candidate basis receives the structural allowance;
+    provider/model and every other basis still require an exact entrypoint.
+    Downstream local bundle selection uses the exact likely files as seeds and
+    synthesizes no entrypoint/path query semantics. Report DTO/format and
+    manifest authority remain unchanged; successful local output now
+    truthfully represents the absent entrypoint while exact files and evidence
+    stay intact. No prompt, request, cache, Study, Atlas, Architecture,
+    localization, UI, retry, client, flag, or --llm-bundle-only behavior
+    changes.
     Decision 185 corrects only the local operational CandidateFlow producer.
     When an operational candidate has no statically proven entrypoint package,
     the newly appended local flow uses that candidate's first exact existing
