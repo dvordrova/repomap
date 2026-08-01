@@ -1,15 +1,25 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/177-canonical-report-base-map-ownership.md
+    decisions/178-targeted-research-cache-semantic-acceptance.md
 
 Status:
-    Decision 177 active; canonical report and base-map ownership authorized
+    Decision 178 active; targeted-research cache semantic acceptance authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 178 makes semantic acceptance a prerequisite for persisting or
+    applying a targeted-research provider response. Decode/validation failures
+    and all-findings-rejected outcomes are never cached. A corrupt or
+    semantically rejected exact cached record is removed and handled as a miss;
+    an accepted hit still passes the same local validation and makes no
+    provider semantic call. The targeted v3 cache contract is bound into both
+    fingerprint and record; earlier targeted records are not read or migrated,
+    and `repomap cache clear` is the explicit whole-cache invalidation. No
+    prompt, request, retry, Study, locale, Guided Tour, orientation, UI,
+    report/manifest, or flag behavior changes.
     Decision 177 makes the local deterministic Architecture Canvas the sole
     canonical base map consumed by static rendering and reportserver. Accepted
     model synthesis may enrich grouping over the same exact candidates, but

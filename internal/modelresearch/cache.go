@@ -29,6 +29,7 @@ type FingerprintInput struct {
 	Repository         RepositoryContext `json:"repository"`
 	Stage              string            `json:"stage"`
 	PromptVersion      string            `json:"prompt_version"`
+	CacheContract      string            `json:"cache_contract,omitempty"`
 	Profile            string            `json:"profile"`
 	Model              string            `json:"model"`
 	EvidenceBundleHash string            `json:"evidence_bundle_sha256"`
@@ -39,6 +40,7 @@ type FingerprintInput struct {
 type cacheRecord struct {
 	Version               int    `json:"version"`
 	CacheKey              string `json:"cache_key"`
+	CacheContract         string `json:"cache_contract,omitempty"`
 	RequestSHA256         string `json:"request_sha256"`
 	BundleSHA256          string `json:"bundle_sha256"`
 	ResponseSHA256        string `json:"response_sha256"`
@@ -94,7 +96,13 @@ func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
 	if err != nil {
 		return StageResponse{}, false, err
 	}
-	record, found, err := loadCache(input.RunsDir, cacheKey, requestHash(input.Request), input.EvidenceBundleHash)
+	record, found, err := loadCache(
+		input.RunsDir,
+		cacheKey,
+		input.Fingerprint.CacheContract,
+		requestHash(input.Request),
+		input.EvidenceBundleHash,
+	)
 	if errors.Is(err, ErrInvalidCachedRound) {
 		return StageResponse{}, false, nil
 	}
@@ -118,6 +126,7 @@ func SaveStageResponse(input StageCacheInput, response StageResponse) (StageResp
 	}
 	record := cacheRecord{
 		Version: cacheRecordVersion, CacheKey: cacheKey,
+		CacheContract: input.Fingerprint.CacheContract,
 		RequestSHA256: requestHash(input.Request), BundleSHA256: input.EvidenceBundleHash,
 		ResponseSHA256: requestHash(response.Content), Response: append([]byte(nil), response.Content...),
 		RequestBytes: len(input.Request), ResponseBytes: len(response.Content),
@@ -169,7 +178,13 @@ func cachePath(runsDir, cacheKey string) string {
 	return filepath.Join(runsDir, cacheDirectory, cacheKey+".json")
 }
 
-func loadCache(runsDir, cacheKey, requestSHA, bundleSHA string) (cacheRecord, bool, error) {
+func loadCache(
+	runsDir,
+	cacheKey,
+	cacheContract,
+	requestSHA,
+	bundleSHA string,
+) (cacheRecord, bool, error) {
 	data, err := os.ReadFile(cachePath(runsDir, cacheKey))
 	if errors.Is(err, os.ErrNotExist) {
 		return cacheRecord{}, false, nil
@@ -182,11 +197,23 @@ func loadCache(runsDir, cacheKey, requestSHA, bundleSHA string) (cacheRecord, bo
 		return cacheRecord{}, false, fmt.Errorf("%w: decode: %v", ErrInvalidCachedRound, err)
 	}
 	if record.Version != cacheRecordVersion || record.CacheKey != cacheKey ||
+		record.CacheContract != cacheContract ||
 		record.RequestSHA256 != requestSHA || record.BundleSHA256 != bundleSHA ||
 		record.ResponseSHA256 != requestHash(record.Response) || record.ResponseBytes != len(record.Response) {
 		return cacheRecord{}, false, ErrInvalidCachedRound
 	}
 	return record, true, nil
+}
+
+func removeCache(runsDir, cacheKey string) error {
+	err := os.Remove(cachePath(runsDir, cacheKey))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("model research: remove rejected cache entry: %w", err)
+	}
+	return nil
 }
 
 func saveCache(runsDir string, record cacheRecord) error {
