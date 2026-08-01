@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/secretscan"
@@ -193,6 +194,16 @@ type studyMapReviewPreparationFailure struct {
 	cause       error
 }
 
+type studyMapRunOptions struct {
+	exchangeWriter *debugdump.Writer
+}
+
+type studyMapStageExchange struct {
+	request           []byte
+	response          []byte
+	transportAttempts int
+}
+
 func clearStudyMapV32Outputs(runDir string) error {
 	files := []string{
 		studymap.RecordFile,
@@ -257,6 +268,18 @@ func prepareStudyMapWithProviderFactory(
 	repoRoot string,
 	providerFactory func() (semanticDiscoveryEditor, error),
 ) (status studyMapStatus, returnErr error) {
+	return prepareStudyMapWithProviderFactoryWithOptions(
+		ctx, runDir, repoRoot, providerFactory, studyMapRunOptions{},
+	)
+}
+
+func prepareStudyMapWithProviderFactoryWithOptions(
+	ctx context.Context,
+	runDir string,
+	repoRoot string,
+	providerFactory func() (semanticDiscoveryEditor, error),
+	options studyMapRunOptions,
+) (status studyMapStatus, returnErr error) {
 	started := time.Now()
 	status = studyMapStatus{Version: studyMapStatusVersion, State: "started"}
 	defer func() {
@@ -313,7 +336,9 @@ func prepareStudyMapWithProviderFactory(
 	if provider == nil {
 		return status, fmt.Errorf("study map: provider factory returned no provider")
 	}
-	record, reduction, stages, editErr := prepareStudyMapV32(ctx, runDir, bundle, provider)
+	record, reduction, stages, editErr := prepareStudyMapV32WithOptions(
+		ctx, runDir, bundle, provider, options,
+	)
 	status.Stages = stages
 	status.Metrics = aggregateStudyMapMetrics(stages, editErr)
 	status.ProviderLatencyMillis = status.Metrics.LatencyMillis
@@ -354,6 +379,18 @@ func prepareStudyMapV32(
 	bundle studymap.Bundle,
 	provider semanticDiscoveryEditor,
 ) (studymap.Record, studymap.ReviewReduction, []semanticDiscoveryStageMetrics, error) {
+	return prepareStudyMapV32WithOptions(
+		ctx, runDir, bundle, provider, studyMapRunOptions{},
+	)
+}
+
+func prepareStudyMapV32WithOptions(
+	ctx context.Context,
+	runDir string,
+	bundle studymap.Bundle,
+	provider semanticDiscoveryEditor,
+	options studyMapRunOptions,
+) (studymap.Record, studymap.ReviewReduction, []semanticDiscoveryStageMetrics, error) {
 	if ctx == nil || provider == nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, nil,
 			fmt.Errorf("study map: context and provider are required")
@@ -380,7 +417,7 @@ func prepareStudyMapV32(
 		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
 	}
 
-	briefRaw, briefMetrics, briefAttempt, err := executeStudyMapV32Stage(
+	briefRaw, briefMetrics, briefAttempt, briefExchange, err := executeStudyMapV32Stage(
 		ctx, provider, semanticdiscovery.Prompt{
 			Version: semanticdiscovery.StudyBriefPromptVersion, System: studyMapV32SystemPrompt,
 			User: shared + studyMapBriefShapeTask, ThinkingProfile: semanticdiscovery.ThinkingMax,
@@ -389,6 +426,13 @@ func prepareStudyMapV32(
 	)
 	stages := []semanticDiscoveryStageMetrics{briefMetrics}
 	if err != nil {
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyBrief,
+			briefExchange,
+			semanticStateForStudyMapStage(briefMetrics.Status),
+			semanticValidationForStudyMapStage(briefMetrics.Status),
+		)
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
@@ -402,6 +446,13 @@ func prepareStudyMapV32(
 		brief, err = studymap.DecodeBriefShapeProposal(recoveredBrief)
 	}
 	if err != nil {
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyBrief,
+			briefExchange,
+			debugdump.SemanticStateRejected,
+			debugdump.SemanticValidationResponse,
+		)
 		briefMetrics.Status = "rejected"
 		briefAttempt.Metrics = briefMetrics
 		briefAttempt.ValidationState = briefMetrics.Status
@@ -414,6 +465,13 @@ func prepareStudyMapV32(
 	briefAttempt.Metrics = briefMetrics
 	briefAttempt.ValidationState = briefMetrics.Status
 	stages[0] = briefMetrics
+	recordStudyMapStageSemanticExchange(
+		options.exchangeWriter,
+		debugdump.SemanticStageStudyBrief,
+		briefExchange,
+		debugdump.SemanticStateAccepted,
+		debugdump.SemanticValidationAccepted,
+	)
 	if saveErr := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt); saveErr != nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, saveErr
 	}
@@ -421,11 +479,18 @@ func prepareStudyMapV32(
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
 
-	directionRaw, directionMetrics, directionAttempt, err := executeStudyMapV32Stage(
+	directionRaw, directionMetrics, directionAttempt, directionExchange, err := executeStudyMapV32Stage(
 		ctx, provider, directionPrompt, "study_direction_candidates", bundleSHA,
 	)
 	stages = append(stages, directionMetrics)
 	if err != nil {
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyDirections,
+			directionExchange,
+			semanticStateForStudyMapStage(directionMetrics.Status),
+			semanticValidationForStudyMapStage(directionMetrics.Status),
+		)
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
@@ -444,6 +509,13 @@ func prepareStudyMapV32(
 		directionAttempt.DirectionDiagnostics = &directionDiagnostics
 	}
 	if err != nil {
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyDirections,
+			directionExchange,
+			debugdump.SemanticStateRejected,
+			debugdump.SemanticValidationResponse,
+		)
 		directionMetrics.Status = "rejected"
 		directionAttempt.Metrics = directionMetrics
 		directionAttempt.ValidationState = directionMetrics.Status
@@ -456,6 +528,13 @@ func prepareStudyMapV32(
 	directionAttempt.Metrics = directionMetrics
 	directionAttempt.ValidationState = directionMetrics.Status
 	stages[len(stages)-1] = directionMetrics
+	recordStudyMapStageSemanticExchange(
+		options.exchangeWriter,
+		debugdump.SemanticStageStudyDirections,
+		directionExchange,
+		debugdump.SemanticStateAccepted,
+		debugdump.SemanticValidationAccepted,
+	)
 	if saveErr := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt); saveErr != nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, saveErr
 	}
@@ -466,8 +545,8 @@ func prepareStudyMapV32(
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
 
-	reviews, summaries, reviewStages, preparationIssues, err := reviewStudyMapDirections(
-		ctx, runDir, bundle, directions, bundleSHA, provider,
+	reviews, summaries, reviewStages, preparationIssues, err := reviewStudyMapDirectionsWithOptions(
+		ctx, runDir, bundle, directions, bundleSHA, provider, options,
 	)
 	stages = append(stages, reviewStages...)
 	if err != nil {
@@ -551,10 +630,10 @@ func executeStudyMapV32Stage(
 	prompt semanticdiscovery.Prompt,
 	stage string,
 	bundleSHA string,
-) ([]byte, semanticDiscoveryStageMetrics, studyMapV32StageAttempt, error) {
+) ([]byte, semanticDiscoveryStageMetrics, studyMapV32StageAttempt, studyMapStageExchange, error) {
 	plan, err := newSemanticDiscoveryStagePlan(provider, prompt, stage)
 	if err != nil {
-		return nil, semanticDiscoveryStageMetrics{}, studyMapV32StageAttempt{}, err
+		return nil, semanticDiscoveryStageMetrics{}, studyMapV32StageAttempt{}, studyMapStageExchange{}, err
 	}
 	metrics := semanticDiscoveryStageMetrics{
 		Stage: plan.name, PromptVersion: prompt.Version, RequestBytes: len(plan.request), ProviderCall: true,
@@ -565,6 +644,11 @@ func executeStudyMapV32Stage(
 	}
 	started := time.Now()
 	result, callErr := provider.DiscoverSemanticsMeasured(ctx, prompt)
+	exchange := studyMapStageExchange{
+		request:           append([]byte(nil), plan.request...),
+		response:          append([]byte(nil), result.Content...),
+		transportAttempts: result.Attempts,
+	}
 	metrics.addResponse(result, time.Since(started))
 	attempt.Metrics = metrics
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -572,14 +656,14 @@ func executeStudyMapV32Stage(
 		attempt.Metrics = metrics
 		attempt.ValidationState = metrics.Status
 		attempt.FailureReason = semanticDiscoveryReason(ctxErr.Error())
-		return nil, metrics, attempt, ctxErr
+		return nil, metrics, attempt, exchange, ctxErr
 	}
 	if callErr != nil {
 		metrics.Status = "failed_provider"
 		attempt.Metrics = metrics
 		attempt.ValidationState = metrics.Status
 		attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
-		return nil, metrics, attempt, fmt.Errorf("study map: %s provider call: %w", stage, callErr)
+		return nil, metrics, attempt, exchange, fmt.Errorf("study map: %s provider call: %w", stage, callErr)
 	}
 	if json.Valid(result.Content) {
 		attempt.Response = append(json.RawMessage(nil), result.Content...)
@@ -587,7 +671,53 @@ func executeStudyMapV32Stage(
 	metrics.Status = "accepted_transport"
 	attempt.Metrics = metrics
 	attempt.ValidationState = metrics.Status
-	return append([]byte(nil), result.Content...), metrics, attempt, nil
+	return append([]byte(nil), result.Content...), metrics, attempt, exchange, nil
+}
+
+func recordStudyMapStageSemanticExchange(
+	writer *debugdump.Writer,
+	stage string,
+	exchange studyMapStageExchange,
+	state string,
+	validationCode string,
+) {
+	if writer == nil || len(exchange.request) == 0 {
+		return
+	}
+	record := debugdump.SemanticExchange{
+		Stage:                  stage,
+		InstanceOrdinal:        1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      debugdump.SemanticRequestPrepared,
+		State:                  state,
+		ValidationCode:         validationCode,
+		SemanticCalls:          1,
+		TransportAttempts:      exchange.transportAttempts,
+		Request:                exchange.request,
+		Response:               exchange.response,
+	}
+	if len(exchange.response) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		}
+		record.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+	}
+	writer.RecordSemanticExchange(record)
+}
+
+func semanticStateForStudyMapStage(status string) string {
+	if status == "canceled" {
+		return debugdump.SemanticStateCanceled
+	}
+	return debugdump.SemanticStateProviderFailed
+}
+
+func semanticValidationForStudyMapStage(status string) string {
+	if status == "canceled" {
+		return debugdump.SemanticValidationCanceled
+	}
+	return debugdump.SemanticValidationProvider
 }
 
 func reviewStudyMapDirections(
@@ -597,6 +727,26 @@ func reviewStudyMapDirections(
 	directions studymap.DirectionProposal,
 	bundleSHA string,
 	provider semanticDiscoveryEditor,
+) (
+	[]studymap.ReviewProposal,
+	[]studyMapReviewSummary,
+	[]semanticDiscoveryStageMetrics,
+	[]studymap.ReviewIssue,
+	error,
+) {
+	return reviewStudyMapDirectionsWithOptions(
+		ctx, runDir, bundle, directions, bundleSHA, provider, studyMapRunOptions{},
+	)
+}
+
+func reviewStudyMapDirectionsWithOptions(
+	ctx context.Context,
+	runDir string,
+	bundle studymap.Bundle,
+	directions studymap.DirectionProposal,
+	bundleSHA string,
+	provider semanticDiscoveryEditor,
+	options studyMapRunOptions,
 ) (
 	[]studymap.ReviewProposal,
 	[]studyMapReviewSummary,
@@ -678,7 +828,7 @@ func reviewStudyMapDirections(
 		task := task
 		wait.Go(func() {
 			completion := executeStudyMapReview(
-				ctx, provider, task, bundle, bundleSHA, semaphore,
+				ctx, provider, task, bundle, bundleSHA, semaphore, options.exchangeWriter,
 			)
 			completions <- completion
 		})
@@ -763,6 +913,7 @@ func executeStudyMapReview(
 	sourceBundle studymap.Bundle,
 	bundleSHA string,
 	semaphore chan struct{},
+	exchangeWriter *debugdump.Writer,
 ) studyMapReviewCompletion {
 	metrics := semanticDiscoveryStageMetrics{
 		Stage: task.plan.name, PromptVersion: task.plan.prompt.Version,
@@ -824,6 +975,10 @@ func executeStudyMapReview(
 		completion.attempt.Metrics = metrics
 		completion.attempt.ValidationState = metrics.Status
 		completion.attempt.FailureReason = semanticDiscoveryReason(ctxErr.Error())
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, cached,
+			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
+		)
 		return completion
 	}
 	if callErr != nil {
@@ -831,6 +986,10 @@ func executeStudyMapReview(
 		completion.attempt.Metrics = metrics
 		completion.attempt.ValidationState = metrics.Status
 		completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, cached,
+			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
+		)
 		return completion
 	}
 	if kind, found := secretscan.DetectAlways(string(result.Content)); found {
@@ -839,6 +998,10 @@ func executeStudyMapReview(
 		completion.attempt.ValidationState = metrics.Status
 		completion.attempt.FailureReason = "review_response_contains_obvious_credential"
 		completion.unsafeKind = kind
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, cached,
+			debugdump.SemanticStateRejected, debugdump.SemanticValidationSecret,
+		)
 		return completion
 	}
 	if json.Valid(result.Content) {
@@ -856,6 +1019,14 @@ func executeStudyMapReview(
 		} else {
 			completion.attempt.FailureReason = "review_direction_mismatch"
 		}
+		validationCode := debugdump.SemanticValidationResponse
+		if err != nil {
+			validationCode = debugdump.SemanticValidationDecode
+		}
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, cached,
+			debugdump.SemanticStateRejected, validationCode,
+		)
 		return completion
 	}
 	metrics.Status = "accepted"
@@ -863,6 +1034,15 @@ func executeStudyMapReview(
 	completion.attempt.ValidationState = metrics.Status
 	completion.proposal = proposal
 	completion.valid = true
+	state := debugdump.SemanticStateAccepted
+	validationCode := debugdump.SemanticValidationAccepted
+	if cached {
+		state = debugdump.SemanticStateCacheHit
+		validationCode = debugdump.SemanticValidationCache
+	}
+	recordStudyMapReviewSemanticExchange(
+		exchangeWriter, task, result, cached, state, validationCode,
+	)
 	if !cached && studyReviewResponseAccepted(
 		sourceBundle,
 		task.direction,
@@ -880,6 +1060,47 @@ func executeStudyMapReview(
 		}
 	}
 	return completion
+}
+
+func recordStudyMapReviewSemanticExchange(
+	writer *debugdump.Writer,
+	task studyMapReviewTaskInput,
+	result modelresearch.ProviderResult,
+	cached bool,
+	state string,
+	validationCode string,
+) {
+	if writer == nil {
+		return
+	}
+	semanticCalls := 1
+	transportAttempts := result.Attempts
+	if cached {
+		semanticCalls = 0
+		transportAttempts = 0
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:                  debugdump.SemanticStageStudyReview,
+		InstanceOrdinal:        task.index + 1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      debugdump.SemanticRequestPrepared,
+		State:                  state,
+		ValidationCode:         validationCode,
+		SemanticCalls:          semanticCalls,
+		TransportAttempts:      transportAttempts,
+		Request:                task.plan.request,
+		Response:               result.Content,
+	}
+	if len(result.Content) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		} else if cached {
+			unavailableCode = debugdump.SemanticUnavailableCache
+		}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+	}
+	writer.RecordSemanticExchange(exchange)
 }
 
 func studyMapV32InputsFromRecord(

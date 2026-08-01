@@ -21,6 +21,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
@@ -172,8 +173,20 @@ func editStudyMapForRun(
 	stderr io.Writer,
 	noCache bool,
 ) (studyMapStatus, error) {
+	exchangeWriter, writerErr := debugdump.OpenWriter(runDir, true)
+	if writerErr == nil {
+		defer exchangeWriter.Close()
+		exchangeWriter.SetWarningWriter(stderr)
+	} else {
+		fmt.Fprintf(
+			stderr,
+			"warning: semantic exchange journal unavailable: stage=%s code=%s\n",
+			debugdump.SemanticStageStudyBrief,
+			debugdump.SemanticExchangeWarningCode,
+		)
+	}
 	var cacheEditor *studyReviewCachingEditor
-	status, err := prepareStudyMapWithProviderFactory(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
+	status, err := prepareStudyMapWithProviderFactoryWithOptions(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
 		promptClient, err := deepseek.NewPromptFromEnv()
 		if err != nil {
 			return nil, fmt.Errorf("study map: provider configuration: %w", err)
@@ -203,7 +216,7 @@ func editStudyMapForRun(
 			stderr,
 		)
 		return cacheEditor, nil
-	})
+	}, studyMapRunOptions{exchangeWriter: exchangeWriter})
 	if cacheEditor != nil {
 		cacheEditor.writeSummary(stderr)
 	}
