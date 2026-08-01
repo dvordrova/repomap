@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/180-terminal-tsx-orientation-evidence-paths.md
+    decisions/181-shared-provider-transport-retries.md
 
 Status:
-    Decision 180 active; terminal TSX orientation evidence paths authorized
+    Decision 181 active; shared provider transport retries authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 181 gives exact localization requests the same bounded retry
+    behavior as normal targeted provider requests through one shared private
+    transport primitive. Retryable request errors, HTTP 429/5xx, and transient
+    response-body read failures replay identical request bytes; cancellation
+    and semantic/JSON rejection do not. Metrics count actual transport
+    attempts. Retry-After, prompts, provider identity, cache, Study, canonical
+    artifacts, locale UI, flags, and saved formats remain unchanged.
     Decision 180 makes the bounded orientation evidence-path grammar recognize
     an exact terminal `.tsx` path without accepting its `.ts` prefix. The same
     existing repository-relative and exact allowed-path validation remains in

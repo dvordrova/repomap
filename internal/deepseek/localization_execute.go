@@ -29,7 +29,7 @@ func (c *Client) ExecuteLocalizationRequest(
 	stopWaiting := c.startWaitProgress(ctx, "localization")
 	defer stopWaiting()
 
-	completion, _, err := doChatMeasured(
+	completion, attempts, err := executeChatWithTransportRetries(
 		ctx,
 		c.HTTPClient,
 		evidence.Endpoint,
@@ -40,14 +40,14 @@ func (c *Client) ExecuteLocalizationRequest(
 	)
 	if err != nil {
 		return modelresearch.ProviderResult{
-			Attempts:     1,
-			RequestBytes: len(evidence.Body),
+			Attempts:     attempts,
+			RequestBytes: len(evidence.Body) * attempts,
 		}, err
 	}
 	return modelresearch.ProviderResult{
 		Content:               completion.Content,
-		Attempts:              1,
-		RequestBytes:          len(evidence.Body),
+		Attempts:              attempts,
+		RequestBytes:          len(evidence.Body) * attempts,
 		InputTokens:           completion.InputTokens,
 		OutputTokens:          completion.OutputTokens,
 		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
