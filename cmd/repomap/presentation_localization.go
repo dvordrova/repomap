@@ -155,16 +155,6 @@ type presentationLocalizationOutcome struct {
 	Batches          []presentationLocalizationBatchOutcome
 }
 
-const (
-	presentationLocalizationUnsafePrivateKey           = "private_key"
-	presentationLocalizationUnsafeBearerCredential     = "bearer_credential"
-	presentationLocalizationUnsafeSecretKey            = "secret_key"
-	presentationLocalizationUnsafeGitHubToken          = "github_token"
-	presentationLocalizationUnsafeAWSAccessKey         = "aws_access_key"
-	presentationLocalizationUnsafeCredentialAssignment = "credential_assignment"
-	presentationLocalizationUnsafeUnknown              = "unknown"
-)
-
 type presentationLocalizationExecutionOptions struct {
 	DumpRejectedResponse bool
 }
@@ -777,22 +767,7 @@ func presentationLocalizationUnsafeResponseAttribution(
 }
 
 func presentationLocalizationUnsafeKind(kind string) string {
-	switch kind {
-	case "private key":
-		return presentationLocalizationUnsafePrivateKey
-	case "bearer credential":
-		return presentationLocalizationUnsafeBearerCredential
-	case "secret key":
-		return presentationLocalizationUnsafeSecretKey
-	case "github token":
-		return presentationLocalizationUnsafeGitHubToken
-	case "aws access key":
-		return presentationLocalizationUnsafeAWSAccessKey
-	case "credential assignment":
-		return presentationLocalizationUnsafeCredentialAssignment
-	default:
-		return presentationLocalizationUnsafeUnknown
-	}
+	return secretscan.ClosedKind(kind)
 }
 
 func buildPresentationLocalizationBatchPlans(

@@ -4,12 +4,396 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestSemanticExchangeRecordsExactSafeBytesAndUnsafeMarker(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	safeRequest := []byte(`{"model":"fixture","messages":[]}`)
+	safeResponse := []byte(`{"answer":"bounded"}`)
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 2,
+		Request: safeRequest, Response: safeResponse,
+	})
+	unsafe := []byte(`{"answer":"sk-abcdefghijklmnop"}`)
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageTargetedResearch, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateRejected, ValidationCode: SemanticValidationSecret,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: safeRequest, Response: unsafe,
+	})
+
+	records := readSemanticExchangeRecords(t, w.RunDir())
+	if len(records) != 2 {
+		t.Fatalf("semantic exchange records = %d, want 2", len(records))
+	}
+	byStage := make(map[string]SemanticExchangeRecord, len(records))
+	for _, record := range records {
+		byStage[record.Stage] = record
+	}
+	safe := byStage[SemanticStageOrientation]
+	if safe.RequestProvenance != SemanticRequestPrepared || safe.State != SemanticStateAccepted ||
+		safe.SemanticCalls != 1 || safe.TransportAttempts != 2 {
+		t.Fatalf("safe semantic metadata = %#v", safe)
+	}
+	assertSemanticPayloadIdentity(t, w.RunDir(), safe.Request, safeRequest)
+	assertSemanticPayloadIdentity(t, w.RunDir(), safe.Response, safeResponse)
+
+	rejected := byStage[SemanticStageTargetedResearch]
+	if rejected.Response.Storage != "unsafe_marker" ||
+		rejected.Response.UnsafeKind != "secret_key" ||
+		rejected.Response.OriginalSHA256 != sha256Text(unsafe) ||
+		rejected.Response.OriginalBytes != len(unsafe) {
+		t.Fatalf("unsafe semantic response = %#v", rejected.Response)
+	}
+	marker := readSemanticPayload(t, w.RunDir(), rejected.Response)
+	if bytes.Contains(marker, unsafe) || bytes.Contains(marker, []byte("abcdefghijklmnop")) {
+		t.Fatalf("unsafe marker leaked provider content: %s", marker)
+	}
+}
+
+func TestSemanticExchangeRedactsSensitiveFieldsAndBoundsOversizePayload(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-redaction", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	request := []byte(`{"api_key":"sk-abcdefghijklmnop","normal":"kept"}`)
+	oversize := bytes.Repeat([]byte("x"), maxSemanticExchangePayloadSize+1)
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateRejected, ValidationCode: SemanticValidationResponse,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: request, Response: oversize,
+	})
+	record := readSemanticExchangeRecords(t, w.RunDir())[0]
+	requestSaved := readSemanticPayload(t, w.RunDir(), record.Request)
+	if bytes.Contains(requestSaved, []byte("abcdefghijklmnop")) ||
+		!bytes.Contains(requestSaved, []byte(`"normal":"kept"`)) ||
+		!bytes.Contains(requestSaved, []byte("[redacted]")) {
+		t.Fatalf("request redaction = %s", requestSaved)
+	}
+	if record.Request.OriginalSHA256 != sha256Text(request) || record.Request.OriginalBytes != len(request) {
+		t.Fatalf("request original identity = %#v", record.Request)
+	}
+	if record.Response.Storage != "raw_unavailable" ||
+		record.Response.UnavailableCode != SemanticUnavailableSize ||
+		record.Response.OriginalSHA256 != sha256Text(oversize) ||
+		record.Response.OriginalBytes != len(oversize) {
+		t.Fatalf("oversize response marker = %#v", record.Response)
+	}
+}
+
+func TestSemanticExchangePublishesMetadataLast(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-partial", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	exchange := SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	if err := w.writeSemanticExchange(exchange, func() error {
+		return errors.New("injected after payloads")
+	}); err == nil {
+		t.Fatal("injected partial write succeeded")
+	}
+	directory := filepath.Join(w.RunDir(), SemanticExchangesDir, semanticExchangeKey(exchange))
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial exchange directory survived cleanup: %v", err)
+	}
+	if records := readSemanticExchangeRecords(t, w.RunDir()); len(records) != 0 {
+		t.Fatalf("partial exchange was treated as committed: %#v", records)
+	}
+	if err := w.writeSemanticExchange(exchange, nil); err != nil {
+		t.Fatalf("identical semantic exchange was not recoverable: %v", err)
+	}
+	if records := readSemanticExchangeRecords(t, w.RunDir()); len(records) != 1 {
+		t.Fatalf("recovered semantic records = %d, want exactly 1", len(records))
+	}
+}
+
+func TestSemanticExchangeWriteWarningIsBoundedAndDeduplicated(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-warning", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	var warnings bytes.Buffer
+	w.SetWarningWriter(&warnings)
+	exchange := SemanticExchange{
+		Stage: SemanticStageTargetedResearch, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	w.RecordSemanticExchange(exchange)
+	w.RecordSemanticExchange(exchange)
+	w.RecordSemanticExchange(exchange)
+	got := warnings.String()
+	if strings.Count(got, "warning:") != 1 ||
+		!strings.Contains(got, "stage=targeted_research") ||
+		!strings.Contains(got, "code="+SemanticExchangeWarningCode) {
+		t.Fatalf("semantic warning = %q", got)
+	}
+	for _, forbidden := range []string{w.RunDir(), "create semantic exchange", "file exists", "response"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("semantic warning leaked unbounded detail %q: %q", forbidden, got)
+		}
+	}
+}
+
+func TestSemanticExchangeSupportsConcurrentDistinctOwners(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-concurrent", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	var wait sync.WaitGroup
+	for ordinal := 1; ordinal <= 12; ordinal++ {
+		ordinal := ordinal
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			w.RecordSemanticExchange(SemanticExchange{
+				Stage:           SemanticStageStudyReview,
+				InstanceOrdinal: ordinal, SemanticAttemptOrdinal: 1,
+				RequestProvenance: SemanticRequestPrepared,
+				State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+				SemanticCalls: 1, TransportAttempts: 1,
+				Request:  []byte(fmt.Sprintf(`{"request":%d}`, ordinal)),
+				Response: []byte(fmt.Sprintf(`{"response":%d}`, ordinal)),
+			})
+		}()
+	}
+	wait.Wait()
+	if records := readSemanticExchangeRecords(t, w.RunDir()); len(records) != 12 {
+		t.Fatalf("concurrent semantic records = %d, want 12", len(records))
+	}
+}
+
+func TestOpenWriterRejectsRunSymlink(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(base, "run")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := OpenWriter(link, true); err == nil {
+		t.Fatal("OpenWriter accepted a run-directory symlink")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("outside directory was touched: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestOpenWriterRecordsInsideExistingConfinedRun(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	created, err := NewWriter(base, "existing-run", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := created.RunDir()
+	if err := created.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	})
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if records := readSemanticExchangeRecords(t, runDir); len(records) != 1 {
+		t.Fatalf("reopened semantic records = %d, want 1", len(records))
+	}
+}
+
+func TestSemanticExchangeRejectsSymlinkEscapeWithoutChangingCaller(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-symlink", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(w.RunDir(), SemanticExchangesDir)); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	var warnings bytes.Buffer
+	w.SetWarningWriter(&warnings)
+	// RecordSemanticExchange has no failure return by design; a confined write
+	// failure cannot be fed back into the caller's semantic result.
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	})
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("semantic exchange escaped run root: entries=%v err=%v", entries, err)
+	}
+	if got := warnings.String(); got != "warning: semantic exchange journal unavailable: stage=orientation code=artifact_write_failed\n" {
+		t.Fatalf("bounded symlink warning = %q", got)
+	}
+}
+
+func TestSemanticExchangeRejectsOpenMetadataAndAvailability(t *testing.T) {
+	t.Parallel()
+
+	base := SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	for name, mutate := range map[string]func(*SemanticExchange){
+		"stage":      func(value *SemanticExchange) { value.Stage = "repository/path" },
+		"state":      func(value *SemanticExchange) { value.State = "some_error_text" },
+		"validation": func(value *SemanticExchange) { value.ValidationCode = "decoder said secret prose" },
+		"ordinal":    func(value *SemanticExchange) { value.InstanceOrdinal = 0 },
+		"availability": func(value *SemanticExchange) {
+			value.ResponseUnavailable = &SemanticUnavailable{Code: SemanticUnavailableNoContent}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := base
+			mutate(&value)
+			if err := validateSemanticExchange(value); err == nil {
+				t.Fatalf("invalid semantic exchange accepted: %#v", value)
+			}
+		})
+	}
+}
+
+func readSemanticExchangeRecords(t *testing.T, runDir string) []SemanticExchangeRecord {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, SemanticExchangesDir))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]SemanticExchangeRecord, 0, len(directories))
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(
+			runDir,
+			SemanticExchangesDir,
+			directory.Name(),
+			SemanticExchangeMetaFile,
+		))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func readSemanticPayload(t *testing.T, runDir string, record SemanticPayloadRecord) []byte {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range directories {
+		metadata, err := os.ReadFile(filepath.Join(
+			runDir, SemanticExchangesDir, directory.Name(), SemanticExchangeMetaFile,
+		))
+		if err != nil {
+			continue
+		}
+		if !bytes.Contains(metadata, []byte(record.SavedSHA256)) {
+			continue
+		}
+		payload, err := os.ReadFile(filepath.Join(
+			runDir, SemanticExchangesDir, directory.Name(), record.File,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+	t.Fatalf("semantic payload %q was not found", record.File)
+	return nil
+}
+
+func assertSemanticPayloadIdentity(
+	t *testing.T,
+	runDir string,
+	record SemanticPayloadRecord,
+	want []byte,
+) {
+	t.Helper()
+	got := readSemanticPayload(t, runDir, record)
+	if !bytes.Equal(got, want) || record.Storage != "raw_content" ||
+		record.OriginalSHA256 != sha256Text(want) || record.OriginalBytes != len(want) ||
+		record.SavedSHA256 != sha256Text(got) || record.SavedBytes != len(got) {
+		t.Fatalf("semantic payload identity = %#v, bytes %q, want %q", record, got, want)
+	}
+}
+
+func sha256Text(data []byte) string {
+	digest := sha256.Sum256(data)
+	return fmt.Sprintf("%x", digest)
+}
 
 func TestWriteLLMBundleWithSidecarBindsExactPreparedBytes(t *testing.T) {
 	t.Parallel()

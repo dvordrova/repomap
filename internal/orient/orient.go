@@ -453,9 +453,21 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 		if contextErr != nil {
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateCanceled,
+				debugdump.SemanticValidationCanceled,
+				debugdump.SemanticUnavailableCanceled,
+			)
 			return nil, contextErr
 		}
 		if err != nil {
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateProviderFailed,
+				debugdump.SemanticValidationProvider,
+				debugdump.SemanticUnavailableNoContent,
+			)
 			if dw != nil {
 				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "provider_request_failed", err)
 			}
@@ -470,6 +482,18 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		or, responseFailureState, responseErr := resolvePreparedOrientation(call, prepareOrientation)
 		if responseErr != nil {
 			attempt.State = responseFailureState
+			validationCode := debugdump.SemanticValidationResponse
+			if responseFailureState == "response_rejected" {
+				validationCode = debugdump.SemanticValidationSecret
+			} else if responseFailureState == "response_parse_failed" {
+				validationCode = debugdump.SemanticValidationDecode
+			}
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateRejected,
+				validationCode,
+				debugdump.SemanticUnavailableNoContent,
+			)
 			if dw != nil {
 				_ = dw.WriteMetadata(runMeta)
 				failureRaw := raw
@@ -493,9 +517,21 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if call.Metrics.CacheHit {
 			attempt.State = "cached"
 			researchState.Orientation.Status = "cached"
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateCacheHit,
+				debugdump.SemanticValidationCache,
+				debugdump.SemanticUnavailableCache,
+			)
 		} else {
 			attempt.State = "succeeded"
 			researchState.Orientation.Status = "completed"
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateAccepted,
+				debugdump.SemanticValidationAccepted,
+				debugdump.SemanticUnavailableNoContent,
+			)
 			if err := saveOrientationResponse(call); err != nil {
 				return nil, fmt.Errorf("persist validated orientation cache: %w", err)
 			}
@@ -626,6 +662,39 @@ func resolvePreparedOrientation(
 		return *call.Prepared, "", nil
 	}
 	return prepare(call.Raw)
+}
+
+func recordOrientationSemanticExchange(
+	dw *debugdump.Writer,
+	request,
+	response []byte,
+	metrics modelresearch.StageMetrics,
+	state,
+	validationCode,
+	unavailableCode string,
+) {
+	if dw == nil {
+		return
+	}
+	if metrics.SemanticCalls == 0 && state != debugdump.SemanticStateCacheHit {
+		return
+	}
+	transportAttempts := 0
+	if metrics.SemanticCalls > 0 {
+		transportAttempts = metrics.RetryCount + 1
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:           debugdump.SemanticStageOrientation,
+		InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: debugdump.SemanticRequestPrepared,
+		State:             state, ValidationCode: validationCode,
+		SemanticCalls: metrics.SemanticCalls, TransportAttempts: transportAttempts,
+		Request: request, Response: response,
+	}
+	if len(response) == 0 {
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+	}
+	dw.RecordSemanticExchange(exchange)
 }
 
 func writeOrientationFailureArtifacts(

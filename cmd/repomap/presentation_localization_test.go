@@ -24,6 +24,7 @@ import (
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 func TestPresentationLocalizationCLICacheHitServesSharedRunPresentation(t *testing.T) {
@@ -1201,7 +1202,7 @@ func TestPresentationLocalizationDumpRejectedResponseIsSecretSafe(t *testing.T) 
 	if outcome.ValidationCode != report.LocalizationValidationUnsafeResponse {
 		t.Fatalf("outcome = %#v", outcome)
 	}
-	if outcome.UnsafeKind != presentationLocalizationUnsafeSecretKey ||
+	if outcome.UnsafeKind != secretscan.ClosedKindSecretKey ||
 		outcome.TranslationIndex != 0 {
 		t.Fatalf("unsafe response attribution = %#v", outcome)
 	}
@@ -1240,7 +1241,7 @@ func TestPresentationLocalizationAttributesUnsafeStrictTranslationWithoutApplyin
 	if outcome.State != report.PresentationLocalizationFailed ||
 		outcome.FailureStage != report.LocalizationStageResponseSecretScan ||
 		outcome.ValidationCode != report.LocalizationValidationUnsafeResponse ||
-		outcome.UnsafeKind != presentationLocalizationUnsafeSecretKey ||
+		outcome.UnsafeKind != secretscan.ClosedKindSecretKey ||
 		outcome.TranslationIndex != translationIndex+1 ||
 		outcome.FailedBatch != 1 {
 		t.Fatalf("unsafe strict translation outcome = %#v", outcome)
@@ -1297,7 +1298,7 @@ func TestPresentationLocalizationFailureWarningAddsOnlyClosedUnsafeAttribution(t
 	unsafe := base
 	unsafe.FailureStage = report.LocalizationStageResponseSecretScan
 	unsafe.ValidationCode = report.LocalizationValidationUnsafeResponse
-	unsafe.UnsafeKind = presentationLocalizationUnsafeSecretKey
+	unsafe.UnsafeKind = secretscan.ClosedKindSecretKey
 	unsafe.TranslationIndex = 3
 	var attributed bytes.Buffer
 	writePresentationLocalizationFailureWarning(&attributed, unsafe, 9)

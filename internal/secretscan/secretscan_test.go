@@ -107,3 +107,22 @@ func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
 		t.Fatalf("DetectAlways() = %q, %v, want mandatory detection", kind, found)
 	}
 }
+
+func TestClosedKindUsesOnlyBoundedCodes(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"private key":           ClosedKindPrivateKey,
+		"bearer credential":     ClosedKindBearerCredential,
+		"secret key":            ClosedKindSecretKey,
+		"github token":          ClosedKindGitHubToken,
+		"aws access key":        ClosedKindAWSAccessKey,
+		"credential assignment": ClosedKindCredentialAssignment,
+		"detector prose drift":  ClosedKindUnknown,
+	}
+	for input, want := range tests {
+		if got := ClosedKind(input); got != want {
+			t.Errorf("ClosedKind(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

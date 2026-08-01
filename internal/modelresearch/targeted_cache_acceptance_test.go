@@ -1,13 +1,114 @@
 package modelresearch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/debugdump"
 )
+
+func TestExecuteRoundRecordsLiveAndValidatedCachedExchange(t *testing.T) {
+	plan, policy := targetedCacheTestPlan(t)
+	runsDir := t.TempDir()
+	provider := &savedProvider{response: targetedCacheValidResponse(t, plan)}
+	repository := RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"}
+
+	coldWriter, err := debugdump.NewWriter(runsDir, "cold-run", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cold, err := ExecuteRound(context.Background(), ExecuteInput{
+		Plan: plan, Policy: policy, Repository: repository,
+		RunsDir: runsDir, RunDir: coldWriter.RunDir(),
+		Profile: "test", Model: "saved", Provider: provider,
+		ExchangeWriter: coldWriter, ExchangeOrdinal: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coldWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if cold.Status != RoundCompleted || cold.Cached {
+		t.Fatalf("cold round = %#v", cold)
+	}
+	coldRecords := readTargetedSemanticRecords(t, coldWriter.RunDir())
+	if len(coldRecords) != 1 || coldRecords[0].Stage != debugdump.SemanticStageTargetedResearch ||
+		coldRecords[0].State != debugdump.SemanticStateAccepted ||
+		coldRecords[0].RequestProvenance != debugdump.SemanticRequestPrepared ||
+		coldRecords[0].SemanticCalls != 1 || coldRecords[0].TransportAttempts != 1 {
+		t.Fatalf("cold semantic exchange = %#v", coldRecords)
+	}
+	for _, removed := range []string{"request.redacted.json", "response.raw.json"} {
+		if _, err := os.Stat(filepath.Join(coldWriter.RunDir(), "research", plan.Bundle.RoundID, removed)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("replaced targeted artifact %s still exists: %v", removed, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(
+		coldWriter.RunDir(), "research", plan.Bundle.RoundID, "evidence_bundle.json",
+	)); err != nil {
+		t.Fatalf("targeted evidence bundle was not retained: %v", err)
+	}
+
+	warmWriter, err := debugdump.NewWriter(runsDir, "warm-run", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm, err := ExecuteRound(context.Background(), ExecuteInput{
+		Plan: plan, Policy: policy, Repository: repository,
+		RunsDir: runsDir, RunDir: warmWriter.RunDir(),
+		Profile: "test", Model: "saved", Provider: provider,
+		ExchangeWriter: warmWriter, ExchangeOrdinal: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := warmWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if warm.Status != RoundCached || !warm.Cached || provider.calls != 1 {
+		t.Fatalf("warm round = %#v, provider calls = %d", warm, provider.calls)
+	}
+	warmRecords := readTargetedSemanticRecords(t, warmWriter.RunDir())
+	if len(warmRecords) != 1 || warmRecords[0].State != debugdump.SemanticStateCacheHit ||
+		warmRecords[0].ValidationCode != debugdump.SemanticValidationCache ||
+		warmRecords[0].SemanticCalls != 0 || warmRecords[0].TransportAttempts != 0 ||
+		warmRecords[0].Response.Storage != "raw_content" {
+		t.Fatalf("warm semantic exchange = %#v", warmRecords)
+	}
+}
+
+func TestExecuteRoundJournalFailureWarnsWithoutChangingAcceptedResult(t *testing.T) {
+	plan, policy := targetedCacheTestPlan(t)
+	provider := &savedProvider{response: targetedCacheValidResponse(t, plan)}
+	runsDir := t.TempDir()
+	writer, err := debugdump.NewWriter(runsDir, "closed-writer", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var warnings bytes.Buffer
+	writer.SetWarningWriter(&warnings)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	round, err := ExecuteRound(context.Background(), ExecuteInput{
+		Plan: plan, Policy: policy,
+		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
+		RunDir:     writer.RunDir(), Profile: "test", Model: "saved", Provider: provider,
+		ExchangeWriter: writer, ExchangeOrdinal: 1,
+	})
+	if err != nil || round.Status != RoundCompleted || provider.calls != 1 {
+		t.Fatalf("accepted result changed by journal failure: round=%#v calls=%d err=%v", round, provider.calls, err)
+	}
+	if got := warnings.String(); got != "warning: semantic exchange journal unavailable: stage=targeted_research code=artifact_write_failed\n" {
+		t.Fatalf("bounded semantic warning = %q", got)
+	}
+}
 
 func TestExecuteRoundCachesOnlyAcceptedTargetedResponse(t *testing.T) {
 	plan, policy := targetedCacheTestPlan(t)
@@ -91,9 +192,19 @@ func TestExecuteRoundEvictsSemanticRejectedCacheBeforeRecompute(t *testing.T) {
 	cacheKey := seedTargetedCacheRecord(t, input, invalid)
 	provider := &savedProvider{response: targetedCacheValidResponse(t, plan)}
 	input.Provider = provider
+	writer, err := debugdump.NewWriter(runsDir, "invalid-cache-recompute", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.RunDir = writer.RunDir()
+	input.ExchangeWriter = writer
+	input.ExchangeOrdinal = 1
 
 	recomputed, err := ExecuteRound(context.Background(), input)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if recomputed.Status != RoundCompleted || recomputed.Cached || len(recomputed.RejectedFindings) != 0 {
@@ -102,11 +213,17 @@ func TestExecuteRoundEvictsSemanticRejectedCacheBeforeRecompute(t *testing.T) {
 	if provider.calls != 1 {
 		t.Fatalf("provider calls = %d, want one recomputation", provider.calls)
 	}
+	records := readTargetedSemanticRecords(t, writer.RunDir())
+	if len(records) != 1 || records[0].State != debugdump.SemanticStateAccepted ||
+		records[0].SemanticCalls != 1 || records[0].TransportAttempts != 1 {
+		t.Fatalf("invalid cache fabricated a provider exchange: %#v", records)
+	}
 	record := readTargetedCacheRecord(t, runsDir, cacheKey)
 	if string(record.Response) != string(provider.response) {
 		t.Fatalf("recomputed cache response = %s, want %s", record.Response, provider.response)
 	}
 
+	input.ExchangeWriter = nil
 	warm, err := ExecuteRound(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -264,4 +381,36 @@ func normalizedTargetedRound(t *testing.T, round ResearchRound) string {
 		t.Fatal(err)
 	}
 	return string(encoded)
+}
+
+func readTargetedSemanticRecords(
+	t *testing.T,
+	runDir string,
+) []debugdump.SemanticExchangeRecord {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]debugdump.SemanticExchangeRecord, 0, len(directories))
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(
+			runDir,
+			debugdump.SemanticExchangesDir,
+			directory.Name(),
+			debugdump.SemanticExchangeMetaFile,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record debugdump.SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
 }

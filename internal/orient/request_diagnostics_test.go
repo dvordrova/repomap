@@ -85,6 +85,15 @@ func TestRunPersistsRequestAndResponseOnValidationFailure(t *testing.T) {
 	if len(metadata.RequestAttempts) != 1 || metadata.RequestAttempts[0].State != "response_validation_failed" {
 		t.Fatalf("request attempts = %#v", metadata.RequestAttempts)
 	}
+	semanticRecords := readOrientationSemanticRecords(t, runDir)
+	if len(semanticRecords) != 1 ||
+		semanticRecords[0].State != debugdump.SemanticStateRejected ||
+		semanticRecords[0].ValidationCode != debugdump.SemanticValidationResponse ||
+		semanticRecords[0].SemanticCalls != 1 ||
+		semanticRecords[0].TransportAttempts != 1 ||
+		semanticRecords[0].Response.Storage != "raw_content" {
+		t.Fatalf("rejected orientation semantic exchange = %#v", semanticRecords)
+	}
 	validation, err := os.ReadFile(filepath.Join(runDir, "orientation_validation.json"))
 	if err != nil {
 		t.Fatal(err)
