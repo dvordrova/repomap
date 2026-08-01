@@ -6,6 +6,8 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/flowproof"
 )
 
 func TestBuildComponentsGroupsAnchorsAndBuildsGroundedRelation(t *testing.T) {
@@ -281,6 +283,108 @@ func TestBuildComponentsAddsSymbolAnchorsOnlyFromSemanticallyRelatedSavedDirecti
 	}
 	if componentHasAnchor(grpc, "server/main.go") || componentHasAnchor(grpc, "tools/check-grpc/main.go") {
 		t.Fatalf("generic/tool main.go became a gRPC anchor: %#v", grpc.AnchorGroups)
+	}
+}
+
+func TestBuildComponentsOmitsRejectedDirectionsFromRelatedFlows(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		OpenablePaths: []string{"storage/storage.go"},
+		HighLevelMap: []Subsystem{{
+			Name:     "Storage and Persistence",
+			Evidence: []string{"storage/storage.go:10 persists records"},
+		}},
+		CandidateDirections: []CandidateDirection{
+			{
+				ID: "rejected-provider", Name: "Storage durability flow",
+				LikelyFiles:    []string{"storage/storage.go"},
+				Disposition:    flowexplain.DirectionRejected,
+				CandidateBasis: flowexplain.CandidateBasisModelOrientation,
+			},
+			{
+				ID: "rejected-local", Name: "Storage durability — backend storage reference",
+				Evidence:       []string{"storage/storage.go:10 source_signal fsync"},
+				Disposition:    flowexplain.DirectionRejected,
+				CandidateBasis: flowexplain.CandidateBasisSourceSignalAggregate,
+			},
+			{
+				ID: "accepted-typed", Name: "Storage startup",
+				LikelyFiles: []string{"storage/storage.go"},
+				Disposition: flowexplain.DirectionAccepted,
+				LocalProof: &flowproof.Session{Proof: flowproof.Proof{
+					SeedSurfaceID:           "trigger-process-entry",
+					TraceEvidenceSurfaceIDs: []string{"trigger-storage-boundary"},
+				}},
+			},
+		},
+	}
+
+	buildComponents(data)
+	if len(data.Components) != 1 {
+		t.Fatalf("components = %#v", data.Components)
+	}
+	if got := data.Components[0].RelatedFlowIDs; !reflect.DeepEqual(got, []string{"accepted-typed"}) {
+		t.Fatalf("related flow IDs = %#v, want only accepted typed direction", got)
+	}
+}
+
+func TestBuildComponentsLexicalFallbackOmitsRejectedDirections(t *testing.T) {
+	t.Parallel()
+
+	typedProof := &flowproof.Session{Proof: flowproof.Proof{
+		SeedSurfaceID:           "trigger-process-entry",
+		TraceEvidenceSurfaceIDs: []string{"trigger-http-server"},
+	}}
+	data := &ReportData{
+		OpenablePaths: []string{
+			"docs/storage.md",
+			"storage/accepted.go",
+			"storage/rejected-local.go",
+			"storage/rejected-provider.go",
+		},
+		HighLevelMap: []Subsystem{{
+			Name:     "Storage Persistence",
+			Evidence: []string{"docs/storage.md describes persistence"},
+		}},
+		CandidateDirections: []CandidateDirection{
+			{
+				ID: "rejected-provider", Name: "Storage Persistence Flow",
+				LikelyFiles:    []string{"storage/rejected-provider.go"},
+				Disposition:    flowexplain.DirectionRejected,
+				CandidateBasis: flowexplain.CandidateBasisModelOrientation,
+			},
+			{
+				ID: "rejected-local", Name: "Storage Persistence Signal",
+				LikelyFiles:    []string{"storage/rejected-local.go"},
+				Disposition:    flowexplain.DirectionRejected,
+				CandidateBasis: flowexplain.CandidateBasisSourceSignalAggregate,
+			},
+			{
+				ID: "accepted-typed", Name: "Storage Startup",
+				LikelyFiles: []string{"storage/accepted.go"},
+				Disposition: flowexplain.DirectionAccepted,
+				LocalProof:  typedProof,
+			},
+		},
+	}
+
+	buildComponents(data)
+	if len(data.Components) != 1 {
+		t.Fatalf("components = %#v", data.Components)
+	}
+	component := data.Components[0]
+	if !reflect.DeepEqual(component.RelatedFlowIDs, []string{"accepted-typed"}) {
+		t.Fatalf("fallback related flow IDs = %#v, want accepted typed direction", component.RelatedFlowIDs)
+	}
+	if !componentHasAnchor(component, "storage/accepted.go") ||
+		componentHasAnchor(component, "storage/rejected-provider.go") ||
+		componentHasAnchor(component, "storage/rejected-local.go") {
+		t.Fatalf("fallback anchors leaked a rejected direction: %#v", component.AnchorGroups)
+	}
+	if data.CandidateDirections[2].LocalProof.Proof.SeedSurfaceID != "trigger-process-entry" ||
+		!reflect.DeepEqual(data.CandidateDirections[2].LocalProof.Proof.TraceEvidenceSurfaceIDs, []string{"trigger-http-server"}) {
+		t.Fatalf("accepted typed Surface context changed: %#v", data.CandidateDirections[2].LocalProof.Proof)
 	}
 }
 

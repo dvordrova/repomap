@@ -16,6 +16,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 )
 
@@ -470,7 +471,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	if metadata.CandidateDirectionCount != 2 || metadata.ProviderRequestCount != 1 || metadata.CompactContextBytes <= 0 || metadata.ExternalRequestBytes <= 0 {
 		t.Fatalf("onboarding metadata = %#v", metadata)
 	}
-	for _, flowID := range []string{"process-startup", "worker-run"} {
+	for _, flowID := range []string{"process-startup"} {
 		bundlePath := filepath.Join(runDir, "flows", flowID, "flow_bundle.json")
 		bundle, err := os.ReadFile(bundlePath)
 		if err != nil {
@@ -508,6 +509,20 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 		if _, err := os.Stat(filepath.Join(runDir, "flows", flowID, "flow_report.json")); !os.IsNotExist(err) {
 			t.Fatalf("flow %s unexpectedly has a model report: %v", flowID, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "flows", "worker-run")); !os.IsNotExist(err) {
+		t.Fatalf("unverified worker direction unexpectedly has a local bundle: %v", err)
+	}
+	var worker *flowexplain.CandidateFlow
+	for index := range savedOrientation.CandidateFlows {
+		if savedOrientation.CandidateFlows[index].Name == "Worker run" {
+			worker = &savedOrientation.CandidateFlows[index]
+			break
+		}
+	}
+	if worker == nil || worker.Disposition != flowexplain.DirectionRejected ||
+		worker.DispositionReason != "no exact local verification" {
+		t.Fatalf("unverified worker disposition = %#v", worker)
 	}
 }
 

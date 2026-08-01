@@ -58,7 +58,6 @@ const (
 	FlowTypeOperational                 = "operational"
 	DirectionAccepted                   = "accepted"
 	DirectionRejected                   = "rejected"
-	minAcceptedDirectionConfidence      = 0.4
 	CandidateBasisModelOrientation      = "model_orientation"
 	CandidateBasisLocalEntrypoint       = "local_entrypoint_candidate"
 	CandidateBasisSourceSignalAggregate = "local_source_signal_aggregate"
@@ -88,13 +87,13 @@ func ClassifyCandidateFlow(flow *CandidateFlow) {
 		return
 	}
 	verified := flow.LocalVerification != nil && len(flow.LocalVerification.Verified) > 0
-	if flow.LocalProof != nil || flow.Confidence >= minAcceptedDirectionConfidence || verified {
+	if flow.LocalProof != nil || verified {
 		flow.Disposition = DirectionAccepted
 		flow.DispositionReason = ""
 		return
 	}
 	flow.Disposition = DirectionRejected
-	flow.DispositionReason = "low confidence and no exact local verification"
+	flow.DispositionReason = "no exact local verification"
 }
 
 type FlowVerification struct {

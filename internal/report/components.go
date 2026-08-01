@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/evidenceref"
+	"github.com/dvordrova/repomap/internal/flowexplain"
 )
 
 const (
@@ -81,7 +82,8 @@ func hasSymbolAnchor(anchors []AnchorGroup) bool {
 func preferredComponentDirection(data *ReportData, component Component, relatedIDs []string) *CandidateDirection {
 	for _, relatedID := range relatedIDs {
 		for index := range data.CandidateDirections {
-			if data.CandidateDirections[index].ID == relatedID {
+			if data.CandidateDirections[index].ID == relatedID &&
+				data.CandidateDirections[index].Disposition != flowexplain.DirectionRejected {
 				return &data.CandidateDirections[index]
 			}
 		}
@@ -90,6 +92,9 @@ func preferredComponentDirection(data *ReportData, component Component, relatedI
 	bestIndex := -1
 	bestScore := 0
 	for index := range data.CandidateDirections {
+		if data.CandidateDirections[index].Disposition == flowexplain.DirectionRejected {
+			continue
+		}
 		score := sharedTokenScore(componentTokens, semanticTokens(data.CandidateDirections[index].Name))
 		if score > bestScore {
 			bestIndex = index
@@ -390,6 +395,9 @@ func relatedFlowIDs(data *ReportData, anchors []AnchorGroup) []string {
 	}
 	var ids []string
 	for _, direction := range data.CandidateDirections {
+		if direction.Disposition == flowexplain.DirectionRejected {
+			continue
+		}
 		paths := append([]string{direction.LikelyEntrypoint}, direction.LikelyFiles...)
 		for _, statement := range direction.Evidence {
 			for _, location := range evidenceref.Extract(statement, data.OpenablePaths) {

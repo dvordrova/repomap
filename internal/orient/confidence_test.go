@@ -223,10 +223,13 @@ func TestRejectedDirectionDoesNotEnterAcceptedFlowSelection(t *testing.T) {
 		flowexplain.ClassifyCandidateFlow(&flows[index])
 	}
 	accepted := acceptedCandidateFlows(flows)
-	if len(accepted) != 2 || accepted[0].Name != "Startup" || accepted[1].Name != "Admin" {
+	if len(accepted) != 1 || accepted[0].Name != "Startup" {
 		t.Fatalf("accepted directions = %#v", accepted)
 	}
-	if flows[2].Disposition != flowexplain.DirectionRejected || flows[2].DispositionReason == "" {
+	if flows[1].Disposition != flowexplain.DirectionRejected || flows[1].DispositionReason != "no exact local verification" {
+		t.Fatalf("high-confidence unverified disposition = %#v", flows[1])
+	}
+	if flows[2].Disposition != flowexplain.DirectionRejected || flows[2].DispositionReason != "no exact local verification" {
 		t.Fatalf("threshold disposition = %#v", flows[2])
 	}
 }

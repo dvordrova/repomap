@@ -586,7 +586,7 @@ func TestOrientationReferenceRoundTripPreservesPlannerSelection(t *testing.T) {
 		flowexplain.ClassifyCandidateFlow(&resolved.CandidateFlows[index])
 	}
 	legacyAccepted, resolvedAccepted := acceptedCandidateFlows(legacy.CandidateFlows), acceptedCandidateFlows(resolved.CandidateFlows)
-	if !reflect.DeepEqual(legacyAccepted, resolvedAccepted) || len(resolvedAccepted) != 1 {
+	if !reflect.DeepEqual(legacyAccepted, resolvedAccepted) || len(resolvedAccepted) != 0 {
 		t.Fatalf("accepted candidate count/order/confidence drifted: legacy=%#v resolved=%#v", legacyAccepted, resolvedAccepted)
 	}
 

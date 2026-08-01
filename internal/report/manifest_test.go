@@ -52,7 +52,8 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 			"likely_files":["batch.go"],
 			"why_interesting":"primary write path",
 			"evidence":["batch.go:3 defines Commit"],
-			"confidence":0.9
+			"confidence":0.9,
+			"local_verification":{"status":"verified","confidence_cap":1,"verified":["exact entrypoint declaration"]}
 		}],
 		"warnings":[]
 	}`)

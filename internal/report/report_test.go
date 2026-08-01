@@ -570,7 +570,8 @@ func TestReadRunDir_Integration(t *testing.T) {
 			"likely_files":["server/put.go","storage/kv.go"],
 			"why_interesting":"shows the write path",
 			"evidence":["server/put.go handles Put at line 42"],
-			"confidence":0.82
+			"confidence":0.82,
+			"disposition":"accepted"
 		}],
 		"important_domain_words":[{
 			"word":"revision",
