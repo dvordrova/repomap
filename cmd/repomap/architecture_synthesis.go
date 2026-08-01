@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
@@ -51,6 +52,18 @@ func synthesizeArchitectureForRun(
 	stderr io.Writer,
 	noCache bool,
 ) (architectureSynthesisOutcome, error) {
+	exchangeWriter, writerErr := debugdump.OpenWriter(runDir, true)
+	if writerErr == nil {
+		defer exchangeWriter.Close()
+		exchangeWriter.SetWarningWriter(stderr)
+	} else {
+		fmt.Fprintf(
+			stderr,
+			"warning: semantic exchange journal unavailable: stage=%s code=%s\n",
+			debugdump.SemanticStageArchitecture,
+			debugdump.SemanticExchangeWarningCode,
+		)
+	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
@@ -70,7 +83,7 @@ func synthesizeArchitectureForRun(
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
-		architectureSynthesisOptions{disableCache: noCache},
+		architectureSynthesisOptions{disableCache: noCache, exchangeWriter: exchangeWriter},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
@@ -124,7 +137,8 @@ func prepareArchitectureSynthesis(
 }
 
 type architectureSynthesisOptions struct {
-	disableCache bool
+	disableCache   bool
+	exchangeWriter *debugdump.Writer
 }
 
 func prepareArchitectureSynthesisWithOptions(
@@ -248,8 +262,22 @@ func ensureArchitectureSynthesisWithOptions(
 				if replayErr != nil {
 					continue
 				}
+				var cachedRecord componentmap.SynthesisRecord
+				if err := json.Unmarshal(saved, &cachedRecord); err != nil || cachedRecord.Call == nil {
+					continue
+				}
 				cachedOutcome.Cached = true
 				cachedOutcome.InputBytes = len(requestJSON)
+				recordArchitectureSemanticExchange(
+					options.exchangeWriter,
+					requestJSON,
+					cachedRecord.Call.Response,
+					cachedRecord.Call.ResponseState,
+					cachedRecord.Call.ResponseBytes,
+					0,
+					debugdump.SemanticStateCacheHit,
+					debugdump.SemanticValidationCache,
+				)
 				if candidate.copyToRun {
 					if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
 						return architectureSynthesisOutcome{}, err
@@ -287,9 +315,19 @@ func ensureArchitectureSynthesisWithOptions(
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
 	if ctxErr := ctx.Err(); ctxErr != nil {
+		recordArchitectureSemanticExchange(
+			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
+			len(raw), providerResult.Attempts,
+			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
+		)
 		return outcome, ctxErr
 	}
 	if err != nil {
+		recordArchitectureSemanticExchange(
+			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
+			len(raw), providerResult.Attempts,
+			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
+		)
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
 		if recordErr := recordArchitectureResearch(runDir, outcome, "failed", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(callErr, recordErr)
@@ -306,6 +344,11 @@ func ensureArchitectureSynthesisWithOptions(
 		raw,
 	)
 	if err != nil {
+		recordArchitectureSemanticExchange(
+			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
+			len(raw), providerResult.Attempts,
+			debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
+		)
 		validationErr := fmt.Errorf("architecture synthesis: validate response: %w", err)
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(validationErr, recordErr)
@@ -330,6 +373,22 @@ func ensureArchitectureSynthesisWithOptions(
 		InputTokens:           providerResult.InputTokens,
 		OutputTokens:          providerResult.OutputTokens,
 	}
+	state := debugdump.SemanticStateAccepted
+	validationCode := debugdump.SemanticValidationAccepted
+	if result.Landscape.ValidationOutcome == componentmap.ValidationRejected {
+		state = debugdump.SemanticStateRejected
+		validationCode = debugdump.SemanticValidationResponse
+	}
+	recordArchitectureSemanticExchange(
+		options.exchangeWriter,
+		requestJSON,
+		raw,
+		result.Record.Call.ResponseState,
+		result.Record.Call.ResponseBytes,
+		providerResult.Attempts,
+		state,
+		validationCode,
+	)
 	saved, err := json.MarshalIndent(result.Record, "", "  ")
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: encode record: %w", err)
@@ -354,6 +413,55 @@ func ensureArchitectureSynthesisWithOptions(
 		return architectureSynthesisOutcome{}, err
 	}
 	return outcome, nil
+}
+
+func recordArchitectureSemanticExchange(
+	writer *debugdump.Writer,
+	request []byte,
+	response []byte,
+	responseState componentmap.ResponseState,
+	responseBytes int,
+	transportAttempts int,
+	state string,
+	validationCode string,
+) {
+	if writer == nil {
+		return
+	}
+	semanticCalls := 1
+	if state == debugdump.SemanticStateCacheHit {
+		semanticCalls = 0
+		transportAttempts = 0
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:                  debugdump.SemanticStageArchitecture,
+		InstanceOrdinal:        1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      debugdump.SemanticRequestPrepared,
+		State:                  state,
+		ValidationCode:         validationCode,
+		SemanticCalls:          semanticCalls,
+		TransportAttempts:      transportAttempts,
+		Request:                request,
+		Response:               response,
+	}
+	if len(response) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		} else if state == debugdump.SemanticStateCacheHit {
+			unavailableCode = debugdump.SemanticUnavailableCache
+			if responseState == componentmap.ResponseOversize ||
+				responseState == componentmap.ResponseSensitiveOmitted {
+				unavailableCode = debugdump.SemanticUnavailableOmitted
+			}
+		}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code:          unavailableCode,
+			OriginalBytes: responseBytes,
+		}
+	}
+	writer.RecordSemanticExchange(exchange)
 }
 
 func recordArchitectureResearch(
