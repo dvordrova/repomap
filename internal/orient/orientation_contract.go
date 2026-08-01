@@ -17,7 +17,11 @@ import (
 )
 
 var (
-	evidenceFilePathPattern  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_./-])((?:/|\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:go|md|yaml|yml|json|toml|proto|mod|sum|sh|c|h|rs|py|js|ts))(?:[:#][0-9]+)?`)
+	// The consumed terminal delimiter is part of the grammar so a shorter
+	// extension cannot match a prefix of a longer one (for example, .ts in
+	// .tsx). evidencePathMentions resumes at the capture boundary so consuming
+	// that delimiter does not hide an immediately adjacent path.
+	evidenceFilePathPattern  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_./-])((?:/|\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:go|md|yaml|yml|json|toml|proto|mod|sum|sh|c|h|rs|py|js|tsx|ts))(?:[:#][0-9]+)?(?:$|[^A-Za-z0-9_./-]|\.(?:$|[^A-Za-z0-9_./-]))`)
 	evidenceEscapePattern    = regexp.MustCompile(`(?:^|[\s"'()\[\]{},;=:])((?:/|\.\./)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)`)
 	versionedAPIRoutePattern = regexp.MustCompile(`(?i)^/(?:api/)?v[0-9]+(?:/|$)`)
 )
@@ -572,20 +576,34 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 func evidencePathMentions(statement string) []string {
 	seen := make(map[string]struct{})
 	var paths []string
-	for _, pattern := range []*regexp.Regexp{evidenceFilePathPattern, evidenceEscapePattern} {
-		for _, match := range pattern.FindAllStringSubmatch(statement, -1) {
-			if len(match) < 2 || match[1] == "" {
-				continue
-			}
-			path := strings.TrimSuffix(strings.TrimSuffix(match[1], "."), ",")
-			if looksLikeHTTPRoute(statement, path) {
-				continue
-			}
-			if _, exists := seen[path]; exists {
-				continue
-			}
-			seen[path] = struct{}{}
-			paths = append(paths, path)
+	appendPath := func(path string) {
+		path = strings.TrimSuffix(strings.TrimSuffix(path, "."), ",")
+		if path == "" || looksLikeHTTPRoute(statement, path) {
+			return
+		}
+		if _, exists := seen[path]; exists {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	for offset := 0; offset < len(statement); {
+		match := evidenceFilePathPattern.FindStringSubmatchIndex(statement[offset:])
+		if len(match) < 4 || match[2] < 0 || match[3] <= match[2] {
+			break
+		}
+		captureStart := offset + match[2]
+		captureEnd := offset + match[3]
+		appendPath(statement[captureStart:captureEnd])
+		// Resume at the end of the captured path, before the terminal delimiter
+		// consumed by the RE2 grammar. This preserves adjacent path matches.
+		offset = captureEnd
+	}
+
+	for _, match := range evidenceEscapePattern.FindAllStringSubmatch(statement, -1) {
+		if len(match) >= 2 {
+			appendPath(match[1])
 		}
 	}
 	return paths
