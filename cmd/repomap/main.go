@@ -524,7 +524,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	restoreSecretScan := secretscan.SetDisabled(*noSecrets)
 	defer restoreSecretScan()
 	if *noSecrets {
-		fmt.Fprintln(deps.stderr, "warning: --no-secrets disables credential detection; selected tracked source may reach the model provider and debug artifacts")
+		fmt.Fprintln(deps.stderr, "warning: --no-secrets disables ordinary input credential detection; mandatory provider-response and persisted-artifact credential scans remain active; selected tracked source may reach the model provider and debug artifacts")
 	}
 	if *flows < 0 {
 		return fmt.Errorf("--flows cannot be negative")
@@ -952,16 +952,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 							)
 						}
 					default:
-						fmt.Fprintf(
+						writePresentationLocalizationFailureWarning(
 							deps.stderr,
-							"warning: Russian localization failed (%s stage=%s validation=%s batches=%d attempted=%d completed=%d failed_batch=%d); Russian product UI will show canonical English model prose (after %d ms)\n",
-							localizationOutcome.ReasonCode,
-							localizationOutcome.FailureStage,
-							localizationOutcome.ValidationCode,
-							localizationOutcome.BatchTotal,
-							localizationOutcome.BatchAttempted,
-							localizationOutcome.BatchCompleted,
-							localizationOutcome.FailedBatch,
+							localizationOutcome,
 							time.Since(localizationStarted).Milliseconds(),
 						)
 					}
@@ -1130,6 +1123,34 @@ func repositoryStateHasAnalyzedSubmodule(state freshness.RepositoryState) bool {
 		}
 	}
 	return false
+}
+
+func writePresentationLocalizationFailureWarning(
+	stderr io.Writer,
+	outcome presentationLocalizationOutcome,
+	elapsedMillis int64,
+) {
+	unsafeAttribution := ""
+	if outcome.UnsafeKind != "" {
+		unsafeAttribution = fmt.Sprintf(
+			" unsafe_kind=%s translation_index=%d",
+			outcome.UnsafeKind,
+			outcome.TranslationIndex,
+		)
+	}
+	fmt.Fprintf(
+		stderr,
+		"warning: Russian localization failed (%s stage=%s validation=%s batches=%d attempted=%d completed=%d failed_batch=%d%s); Russian product UI will show canonical English model prose (after %d ms)\n",
+		outcome.ReasonCode,
+		outcome.FailureStage,
+		outcome.ValidationCode,
+		outcome.BatchTotal,
+		outcome.BatchAttempted,
+		outcome.BatchCompleted,
+		outcome.FailedBatch,
+		unsafeAttribution,
+		elapsedMillis,
+	)
 }
 
 func runServe(args []string) error {

@@ -1201,12 +1201,111 @@ func TestPresentationLocalizationDumpRejectedResponseIsSecretSafe(t *testing.T) 
 	if outcome.ValidationCode != report.LocalizationValidationUnsafeResponse {
 		t.Fatalf("outcome = %#v", outcome)
 	}
+	if outcome.UnsafeKind != presentationLocalizationUnsafeSecretKey ||
+		outcome.TranslationIndex != 0 {
+		t.Fatalf("unsafe response attribution = %#v", outcome)
+	}
 	dumped, err := os.ReadFile(filepath.Join(runDir, "model_responses", "localization-rejected-001.redacted.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(dumped, []byte("sk-test-secret-value")) || !bytes.Contains(dumped, []byte("[redacted")) {
 		t.Fatalf("unsafe rejected-response artifact = %q", dumped)
+	}
+}
+
+func TestPresentationLocalizationAttributesUnsafeStrictTranslationWithoutApplyingOrCaching(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	projection := presentationLocalizationProjection(t, prepared, "Перевод: ")
+	translationIndex := len(prepared.Input.Fields) - 1
+	projection.Translations[prepared.Input.Fields[translationIndex].ID] =
+		"Перевод содержит sk-1234567890abcdefghijkl"
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		localizationProviderResponseJSON(t, prepared.Input, projection),
+	)
+	runDir := t.TempDir()
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	originalProjectGuess := data.ProjectGuess
+	outcome, err := executePresentationLocalization(
+		context.Background(), runDir, cacheRoot, false,
+		data, prepared, provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationFailed ||
+		outcome.FailureStage != report.LocalizationStageResponseSecretScan ||
+		outcome.ValidationCode != report.LocalizationValidationUnsafeResponse ||
+		outcome.UnsafeKind != presentationLocalizationUnsafeSecretKey ||
+		outcome.TranslationIndex != translationIndex+1 ||
+		outcome.FailedBatch != 1 {
+		t.Fatalf("unsafe strict translation outcome = %#v", outcome)
+	}
+	if data.ProjectGuess != originalProjectGuess {
+		t.Fatal("unsafe provider response changed canonical report data")
+	}
+	if _, err := os.Stat(filepath.Join(cacheRoot, presentationLocalizationCacheVersionDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unsafe provider response created a cache: %v", err)
+	}
+	if projections, err := filepath.Glob(filepath.Join(
+		runDir,
+		"presentation_localization_projection.v1.*",
+	)); err != nil || len(projections) != 0 {
+		t.Fatalf("unsafe provider response saved a projection: %v / %v", projections, err)
+	}
+	if responses, err := filepath.Glob(filepath.Join(runDir, "model_responses", "*")); err != nil || len(responses) != 0 {
+		t.Fatalf("ordinary unsafe rejection persisted a response: %v / %v", responses, err)
+	}
+	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.PresentationLocalizationStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range [][]byte{
+		[]byte("sk-1234567890abcdefghijkl"),
+		[]byte(`"unsafe_kind"`),
+		[]byte(`"translation_index"`),
+	} {
+		if bytes.Contains(statusJSON, forbidden) {
+			t.Fatalf("persisted status contains in-memory attribution %q: %s", forbidden, statusJSON)
+		}
+	}
+}
+
+func TestPresentationLocalizationFailureWarningAddsOnlyClosedUnsafeAttribution(t *testing.T) {
+	t.Parallel()
+
+	base := presentationLocalizationOutcome{
+		State:          report.PresentationLocalizationFailed,
+		ReasonCode:     report.LocalizationFailureInvalidProjection,
+		FailureStage:   report.LocalizationStageResponseDecode,
+		ValidationCode: report.LocalizationValidationResponseDecode,
+		BatchTotal:     2,
+		BatchAttempted: 1,
+		FailedBatch:    1,
+	}
+	var ordinary bytes.Buffer
+	writePresentationLocalizationFailureWarning(&ordinary, base, 7)
+	wantOrdinary := "warning: Russian localization failed (invalid_projection stage=response_decode validation=response_decode batches=2 attempted=1 completed=0 failed_batch=1); Russian product UI will show canonical English model prose (after 7 ms)\n"
+	if ordinary.String() != wantOrdinary {
+		t.Fatalf("ordinary failure warning = %q, want %q", ordinary.String(), wantOrdinary)
+	}
+
+	unsafe := base
+	unsafe.FailureStage = report.LocalizationStageResponseSecretScan
+	unsafe.ValidationCode = report.LocalizationValidationUnsafeResponse
+	unsafe.UnsafeKind = presentationLocalizationUnsafeSecretKey
+	unsafe.TranslationIndex = 3
+	var attributed bytes.Buffer
+	writePresentationLocalizationFailureWarning(&attributed, unsafe, 9)
+	if !strings.Contains(
+		attributed.String(),
+		"failed_batch=1 unsafe_kind=secret_key translation_index=3",
+	) {
+		t.Fatalf("unsafe failure warning = %q", attributed.String())
 	}
 }
 

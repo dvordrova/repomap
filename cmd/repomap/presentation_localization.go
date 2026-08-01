@@ -132,26 +132,38 @@ type presentationLocalizationCacheObservation struct {
 }
 
 type presentationLocalizationOutcome struct {
-	State           string
-	ReasonCode      string
-	FailureStage    string
-	ValidationCode  string
-	BatchTotal      int
-	BatchAttempted  int
-	BatchCompleted  int
-	FailedBatch     int
-	DebugDumpFailed bool
-	CacheHit        bool
-	CacheCorrupt    bool
-	CacheWriteErr   bool
-	RequestBytes    int
-	ResponseBytes   int
-	InputTokens     int
-	OutputTokens    int
-	Attempts        int
-	ProviderCalls   int
-	Batches         []presentationLocalizationBatchOutcome
+	State            string
+	ReasonCode       string
+	FailureStage     string
+	ValidationCode   string
+	UnsafeKind       string
+	TranslationIndex int
+	BatchTotal       int
+	BatchAttempted   int
+	BatchCompleted   int
+	FailedBatch      int
+	DebugDumpFailed  bool
+	CacheHit         bool
+	CacheCorrupt     bool
+	CacheWriteErr    bool
+	RequestBytes     int
+	ResponseBytes    int
+	InputTokens      int
+	OutputTokens     int
+	Attempts         int
+	ProviderCalls    int
+	Batches          []presentationLocalizationBatchOutcome
 }
+
+const (
+	presentationLocalizationUnsafePrivateKey           = "private_key"
+	presentationLocalizationUnsafeBearerCredential     = "bearer_credential"
+	presentationLocalizationUnsafeSecretKey            = "secret_key"
+	presentationLocalizationUnsafeGitHubToken          = "github_token"
+	presentationLocalizationUnsafeAWSAccessKey         = "aws_access_key"
+	presentationLocalizationUnsafeCredentialAssignment = "credential_assignment"
+	presentationLocalizationUnsafeUnknown              = "unknown"
+)
 
 type presentationLocalizationExecutionOptions struct {
 	DumpRejectedResponse bool
@@ -551,7 +563,13 @@ func executePresentationLocalization(
 			outcome.FailedBatch = index + 1
 			return fail(reasonCode, failureStage, validationCode)
 		}
-		if _, found := secretscan.DetectAlways(string(providerResult.Content)); found {
+		if unsafeKind, found := secretscan.DetectAlways(string(providerResult.Content)); found {
+			outcome.UnsafeKind, outcome.TranslationIndex = presentationLocalizationUnsafeResponseAttribution(
+				plan.Batch.Canonical,
+				plan.Batch.Input,
+				providerResult.Content,
+				unsafeKind,
+			)
 			outcome.FailedBatch = index + 1
 			if executionOptions.DumpRejectedResponse {
 				outcome.DebugDumpFailed = writeRejectedModelResponse(runDir, "localization", index+1, providerResult.Content) != nil
@@ -723,6 +741,58 @@ func executePresentationLocalization(
 	outcome.State = report.PresentationLocalizationSucceeded
 	outcome.CacheHit = allCacheHits
 	return outcome, nil
+}
+
+// presentationLocalizationUnsafeResponseAttribution runs only after the
+// mandatory raw response scan has already rejected the response. It decodes
+// through the existing strict provider contract solely to identify which
+// batch-local translation contained unsafe material. Provider text and decode
+// errors never leave this function.
+func presentationLocalizationUnsafeResponseAttribution(
+	canonical localization.CanonicalArtifact,
+	input localization.Input,
+	response []byte,
+	detectedKind string,
+) (string, int) {
+	unsafeKind := presentationLocalizationUnsafeKind(detectedKind)
+	projection, err := localization.DecodeRussianProviderResponse(
+		canonical,
+		input,
+		response,
+	)
+	if err != nil {
+		return unsafeKind, 0
+	}
+	for index, field := range input.Fields {
+		translation, ok := projection.Translations[field.ID]
+		if !ok {
+			return unsafeKind, 0
+		}
+		translationKind, found := secretscan.DetectAlways(translation)
+		if found {
+			return presentationLocalizationUnsafeKind(translationKind), index + 1
+		}
+	}
+	return unsafeKind, 0
+}
+
+func presentationLocalizationUnsafeKind(kind string) string {
+	switch kind {
+	case "private key":
+		return presentationLocalizationUnsafePrivateKey
+	case "bearer credential":
+		return presentationLocalizationUnsafeBearerCredential
+	case "secret key":
+		return presentationLocalizationUnsafeSecretKey
+	case "github token":
+		return presentationLocalizationUnsafeGitHubToken
+	case "aws access key":
+		return presentationLocalizationUnsafeAWSAccessKey
+	case "credential assignment":
+		return presentationLocalizationUnsafeCredentialAssignment
+	default:
+		return presentationLocalizationUnsafeUnknown
+	}
 }
 
 func buildPresentationLocalizationBatchPlans(
