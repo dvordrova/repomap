@@ -3,6 +3,7 @@ package deepseek
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -92,62 +93,187 @@ func TestExecuteLocalizationRequestUsesExactEvidenceAndReturnsMetrics(t *testing
 	}
 }
 
-func TestExecuteLocalizationRequestDoesNotRetryNetworkFailure(t *testing.T) {
+func TestExecuteLocalizationRequestRetriesRetryableTransportFailures(t *testing.T) {
 	t.Parallel()
 
-	var serverCalls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		serverCalls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{
-			"choices":[{"message":{"content":"{}"}}],
-			"usage":{"prompt_tokens":7,"completion_tokens":3}
-		}`)
-	}))
-	defer server.Close()
+	tests := []struct {
+		name  string
+		first func(*http.Request) (*http.Response, error)
+	}{
+		{
+			name: "connection reset",
+			first: func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("connection reset by peer")
+			},
+		},
+		{
+			name: "http 429",
+			first: func(request *http.Request) (*http.Response, error) {
+				return localizationHTTPResponse(request, http.StatusTooManyRequests, `{"error":"busy"}`), nil
+			},
+		},
+		{
+			name: "http 503",
+			first: func(request *http.Request) (*http.Response, error) {
+				return localizationHTTPResponse(request, http.StatusServiceUnavailable, `{"error":"unavailable"}`), nil
+			},
+		},
+		{
+			name: "mid-body read error",
+			first: func(request *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: &localizationReadErrorBody{
+						data: []byte(`{"choices":[`), err: io.ErrUnexpectedEOF,
+					},
+					Request: request,
+				}, nil
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	prompt := localization.Prompt{
-		Version: localization.PromptVersion,
-		System:  "system",
-		User:    "user",
+			prompt, evidence := localizationExecutionEvidence(t)
+			var calls int
+			var requestBodies [][]byte
+			transport := localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+				body, err := io.ReadAll(request.Body)
+				if err != nil {
+					return nil, err
+				}
+				requestBodies = append(requestBodies, append([]byte(nil), body...))
+				calls++
+				if calls == 1 {
+					return test.first(request)
+				}
+				return localizationHTTPResponse(
+					request,
+					http.StatusOK,
+					localizationProviderEnvelope(`{}`),
+				), nil
+			})
+
+			result, err := (&Client{
+				HTTPClient: &http.Client{Transport: transport}, Auth: authNone,
+			}).ExecuteLocalizationRequest(t.Context(), prompt, evidence)
+			if err != nil {
+				t.Fatalf("ExecuteLocalizationRequest() error = %v", err)
+			}
+			if calls != 2 || len(requestBodies) != 2 {
+				t.Fatalf("transport calls/bodies = %d/%d, want 2/2", calls, len(requestBodies))
+			}
+			for index, body := range requestBodies {
+				if !bytes.Equal(body, evidence.Body) {
+					t.Fatalf("request body %d changed\ngot:  %s\nwant: %s", index, body, evidence.Body)
+				}
+			}
+			if string(result.Content) != `{}` || result.Attempts != 2 ||
+				result.RequestBytes != 2*len(evidence.Body) {
+				t.Fatalf("result = %#v", result)
+			}
+		})
 	}
-	builder := &Client{
-		Endpoint: server.URL, Auth: authNone,
-		Model: "translation-model", MaxTokens: 128,
+}
+
+func TestExecuteLocalizationRequestStopsBeforeRetryWhenCanceled(t *testing.T) {
+	t.Parallel()
+
+	prompt, evidence := localizationExecutionEvidence(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var calls int
+	transport := localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		cancel()
+		return localizationHTTPResponse(request, http.StatusServiceUnavailable, ""), nil
+	})
+
+	result, err := (&Client{
+		HTTPClient: &http.Client{Transport: transport}, Auth: authNone,
+	}).ExecuteLocalizationRequest(ctx, prompt, evidence)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ExecuteLocalizationRequest() error = %v, want context.Canceled", err)
 	}
-	evidence, err := builder.BuildLocalizationRequest(prompt)
-	if err != nil {
-		t.Fatalf("BuildLocalizationRequest() error = %v", err)
+	if calls != 1 || result.Attempts != 1 || result.RequestBytes != len(evidence.Body) {
+		t.Fatalf("calls/result = %d/%#v, want one completed attempt", calls, result)
 	}
-	transport := &failOnceRoundTripper{
-		next: server.Client().Transport,
-		err:  errors.New("temporary connection reset"),
-	}
-	executor := &Client{
-		HTTPClient: &http.Client{Transport: transport},
-		Auth:       authNone,
-	}
-	result, err := executor.ExecuteLocalizationRequest(
-		context.Background(),
-		prompt,
-		evidence,
-	)
-	if err == nil || !strings.Contains(err.Error(), "temporary connection reset") {
-		t.Fatalf("ExecuteLocalizationRequest() error = %v", err)
-	}
-	if transport.calls.Load() != 1 || serverCalls.Load() != 0 {
-		t.Fatalf(
-			"transport calls/server calls = %d/%d, want 1/0",
-			transport.calls.Load(),
-			serverCalls.Load(),
-		)
-	}
-	if result.Attempts != 1 ||
-		result.RequestBytes != len(evidence.Body) ||
-		result.InputTokens != 0 ||
-		result.OutputTokens != 0 {
-		t.Fatalf("metrics = %#v", result)
-	}
+}
+
+func TestExecuteLocalizationRequestDoesNotRetryMalformedOrSemanticInvalidResponse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("malformed response envelope", func(t *testing.T) {
+		t.Parallel()
+		prompt, evidence := localizationExecutionEvidence(t)
+		var calls int
+		transport := localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			calls++
+			return localizationHTTPResponse(request, http.StatusOK, `{"choices":[`), nil
+		})
+		result, err := (&Client{
+			HTTPClient: &http.Client{Transport: transport}, Auth: authNone,
+		}).ExecuteLocalizationRequest(t.Context(), prompt, evidence)
+		if err == nil || !errors.Is(err, errResponseEnvelopeMalformed) {
+			t.Fatalf("ExecuteLocalizationRequest() error = %v", err)
+		}
+		if calls != 1 || result.Attempts != 1 {
+			t.Fatalf("calls/result = %d/%#v, want one attempt", calls, result)
+		}
+	})
+
+	t.Run("semantic invalid projection", func(t *testing.T) {
+		t.Parallel()
+		canonical, err := localization.NewCanonical([]localization.FieldSpec{{
+			OwnerKind: localization.OwnerRepository,
+			OwnerID:   "repository",
+			Name:      localization.FieldProjectGuess,
+			Text:      "Repository guide",
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		input, err := localization.BuildInput(canonical, localization.LocaleRussian)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := json.Marshal(localization.ProviderResponse{
+			Version:         localization.ProviderResponseVersion + 1,
+			CanonicalSHA256: canonical.SHA256,
+			Locale:          localization.LocaleRussian,
+			Translations: []localization.ProviderTranslation{
+				localization.NewProviderTranslation(0, "Руководство по репозиторию"),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		prompt, evidence := localizationExecutionEvidence(t)
+		var calls int
+		transport := localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			calls++
+			return localizationHTTPResponse(
+				request,
+				http.StatusOK,
+				localizationProviderEnvelope(string(response)),
+			), nil
+		})
+		result, err := (&Client{
+			HTTPClient: &http.Client{Transport: transport}, Auth: authNone,
+		}).ExecuteLocalizationRequest(t.Context(), prompt, evidence)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := localization.DecodeRussianProviderResponse(canonical, input, result.Content); err == nil {
+			t.Fatal("semantic-invalid localization response was accepted locally")
+		}
+		if calls != 1 || result.Attempts != 1 {
+			t.Fatalf("calls/result = %d/%#v, want one attempt", calls, result)
+		}
+	})
 }
 
 func TestExecuteLocalizationRequestRejectsInvalidEvidenceBeforeTransport(t *testing.T) {
@@ -238,17 +364,64 @@ func TestExecuteLocalizationRequestPreservesSafeProviderErrors(t *testing.T) {
 	}
 }
 
-type failOnceRoundTripper struct {
-	next  http.RoundTripper
-	err   error
-	calls atomic.Int32
+func localizationExecutionEvidence(t *testing.T) (localization.Prompt, LocalizationRequestEvidence) {
+	t.Helper()
+	prompt := localization.Prompt{
+		Version: localization.PromptVersion,
+		System:  "system",
+		User:    "user",
+	}
+	evidence, err := (&Client{
+		Endpoint:  "https://provider.example.test/v1/chat/completions",
+		Auth:      authNone,
+		Model:     "translation-model",
+		MaxTokens: 128,
+	}).BuildLocalizationRequest(prompt)
+	if err != nil {
+		t.Fatalf("BuildLocalizationRequest() error = %v", err)
+	}
+	return prompt, evidence
 }
 
-func (transport *failOnceRoundTripper) RoundTrip(
+func localizationProviderEnvelope(content string) string {
+	encoded, _ := json.Marshal(content)
+	return `{"choices":[{"message":{"content":` + string(encoded) +
+		`}}],"usage":{"prompt_tokens":7,"completion_tokens":3}}`
+}
+
+func localizationHTTPResponse(
 	request *http.Request,
-) (*http.Response, error) {
-	if transport.calls.Add(1) == 1 {
-		return nil, transport.err
+	status int,
+	body string,
+) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    request,
 	}
-	return transport.next.RoundTrip(request)
+}
+
+type localizationRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn localizationRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+type localizationReadErrorBody struct {
+	data []byte
+	err  error
+}
+
+func (body *localizationReadErrorBody) Read(buffer []byte) (int, error) {
+	if len(body.data) == 0 {
+		return 0, body.err
+	}
+	read := copy(buffer, body.data)
+	body.data = body.data[read:]
+	return read, nil
+}
+
+func (*localizationReadErrorBody) Close() error {
+	return nil
 }

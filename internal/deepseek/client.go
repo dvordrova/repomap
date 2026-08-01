@@ -449,33 +449,24 @@ func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (mod
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
 	}
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := backoffDuration(attempt)
-			select {
-			case <-ctx.Done():
-				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-		completion, shouldRetry, callErr := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
-		if callErr == nil {
-			return modelresearch.ProviderResult{
-				Content: completion.Content, Attempts: attempt + 1,
-				InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
-				PromptCacheHitTokens:  completion.PromptCacheHitTokens,
-				PromptCacheMissTokens: completion.PromptCacheMissTokens,
-			}, nil
-		}
-		lastErr = callErr
-		if !shouldRetry {
-			return modelresearch.ProviderResult{Attempts: attempt + 1}, callErr
-		}
-	}
-	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
-		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
+	completion, attempts, callErr := executeChatWithTransportRetries(
+		ctx,
+		c.HTTPClient,
+		c.Endpoint,
+		c.APIKey,
+		c.Auth,
+		body,
+		true,
 	)
+	if callErr != nil {
+		return modelresearch.ProviderResult{Attempts: attempts}, callErr
+	}
+	return modelresearch.ProviderResult{
+		Content: completion.Content, Attempts: attempts,
+		InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
+		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
+		PromptCacheMissTokens: completion.PromptCacheMissTokens,
+	}, nil
 }
 
 // CheckJSONCompatibility makes exactly one small synthetic request. It is used
@@ -696,7 +687,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return chatCompletion{}, false, fmt.Errorf("read llm response: %w", err)
+		return chatCompletion{}, isRetryableNetworkError(err), fmt.Errorf("read llm response: %w", err)
 	}
 	if len(respBody) > maxProviderResponseBytes {
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
