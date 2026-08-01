@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -147,17 +148,24 @@ func TestMergeOrientationCandidatesUsesNaturalPriorityOrder(t *testing.T) {
 func TestMergeOperationalCandidateFlowsKeepsLocallyGroundedCandidate(t *testing.T) {
 	t.Parallel()
 
-	report := orientationPart{CandidateFlows: []flowexplain.CandidateFlow{{
-		Name:     "HTTP request handling",
-		FlowType: flowexplain.FlowTypeRequest,
-	}}}
+	providerFlow := flowexplain.CandidateFlow{
+		Name:             "HTTP request handling",
+		FlowType:         flowexplain.FlowTypeRequest,
+		Trigger:          "GET /items",
+		LikelyEntrypoint: "cmd/server/main.go",
+		LikelyFiles:      []string{"cmd/server/main.go"},
+		WhyInteresting:   "shows request dispatch",
+		Evidence:         []string{"exact provider evidence"},
+		Confidence:       0.8,
+		CandidateBasis:   flowexplain.CandidateBasisModelOrientation,
+	}
+	report := orientationPart{CandidateFlows: []flowexplain.CandidateFlow{providerFlow}}
 	candidates := []gofacts.OrientationCandidate{{
-		Name:              "Background loop — periodic ticker created",
-		Kind:              "signal_flow",
-		EntrypointPackage: "example.com/project/cmd/server",
-		OpenFiles:         []string{"internal/worker/reaper.go"},
-		Why:               "operational flow discovered from one strong signal",
-		Priority:          2,
+		Name:      "Background loop — periodic ticker created",
+		Kind:      "signal_flow",
+		OpenFiles: []string{"internal/worker/reaper.go", "internal/worker/queue.go"},
+		Why:       "operational flow discovered from one strong signal",
+		Priority:  2,
 	}}
 	signals := []sourcesignals.Signal{{
 		Path:     "internal/worker/reaper.go",
@@ -172,13 +180,56 @@ func TestMergeOperationalCandidateFlowsKeepsLocallyGroundedCandidate(t *testing.
 	if len(report.CandidateFlows) != 2 {
 		t.Fatalf("candidate flows = %#v, want request plus operational", report.CandidateFlows)
 	}
+	if !reflect.DeepEqual(report.CandidateFlows[0], providerFlow) {
+		t.Fatalf("provider flow changed:\n got: %#v\nwant: %#v", report.CandidateFlows[0], providerFlow)
+	}
 	operational := report.CandidateFlows[1]
 	if operational.FlowType != flowexplain.FlowTypeOperational || operational.Confidence != 0.3 {
 		t.Fatalf("operational flow = %#v", operational)
 	}
+	if operational.LikelyEntrypoint != "internal/worker/reaper.go" ||
+		!reflect.DeepEqual(operational.LikelyFiles, candidates[0].OpenFiles) {
+		t.Fatalf("local operational entrypoint/files = %q / %#v", operational.LikelyEntrypoint, operational.LikelyFiles)
+	}
 	if len(operational.Evidence) != 1 ||
 		operational.Evidence[0] != "internal/worker/reaper.go:8 source_signal periodic ticker created" {
 		t.Fatalf("operational evidence = %v", operational.Evidence)
+	}
+}
+
+func TestMergeOperationalCandidateFlowsDoesNotRepairInvalidModelFlow(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "worker service",
+		Confidence:   0.8,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:           "Background loop",
+			FlowType:       flowexplain.FlowTypeRequest,
+			Trigger:        "provider trigger",
+			LikelyFiles:    []string{"internal/worker/reaper.go"},
+			WhyInteresting: "provider interpretation",
+			Evidence:       []string{"provider evidence"},
+			Confidence:     0.8,
+		}}}
+	candidates := []gofacts.OrientationCandidate{{
+		Name:      "Background loop",
+		Kind:      "signal_flow",
+		OpenFiles: []string{"internal/worker/reaper.go"},
+	}}
+	signals := []sourcesignals.Signal{{
+		Path: "internal/worker/reaper.go", Line: 8,
+		Category: "background_loop", Weight: 40, Reason: "periodic ticker created",
+	}}
+
+	mergeOperationalCandidateFlows(&report, candidates, signals)
+
+	if report.CandidateFlows[0].LikelyEntrypoint != "" {
+		t.Fatalf("invalid model likely_entrypoint was repaired: %#v", report.CandidateFlows[0])
+	}
+	if err := validateResolvedOrientation(report); err == nil ||
+		!strings.Contains(err.Error(), "candidate_flows[0] has no likely_entrypoint") {
+		t.Fatalf("invalid whole model output error = %v", err)
 	}
 }
 

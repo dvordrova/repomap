@@ -1,15 +1,23 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/184-orientation-context-selection-manifest.md
+    decisions/185-local-operational-likely-entrypoint.md
 
 Status:
-    Decision 184 active; Orientation context-selection manifest authorized
+    Decision 185 active; local operational likely-entrypoint correction authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 185 corrects only the local operational CandidateFlow producer.
+    When an operational candidate has no statically proven entrypoint package,
+    the newly appended local flow uses that candidate's first exact existing
+    OpenFile as likely_entrypoint. Existing provider flows are not repaired or
+    normalized, and invalid whole provider output still fails closed. Candidate
+    composition/order/IDs/evidence, model acceptance, prompts, requests, cache,
+    Study, Architecture, localization, UI, reports, manifests, clients,
+    retries, flags, and --llm-bundle-only bytes remain unchanged.
     Decision 184 adds one provider-free, versioned, safe local Orientation
     context-selection artifact produced by the actual llmbundle selection and
     byte-fit path. It records effective caps, exact before/after counts,

@@ -374,6 +374,9 @@ func TestOrientationReferenceResolverRejectsInvalidTypedRefs(t *testing.T) {
 		"duplicate": func(value map[string]any) {
 			value["candidate_flows"].([]any)[0].(map[string]any)["likely_file_refs"] = []any{fileRef, fileRef}
 		},
+		"missing likely entrypoint": func(value map[string]any) {
+			delete(value["candidate_flows"].([]any)[0].(map[string]any), "likely_entrypoint_ref")
+		},
 		"prefix": func(value map[string]any) {
 			value["first_files_to_open"].([]any)[0].(map[string]any)["file_ref"] = strings.TrimSuffix(fileRef, "1")
 		},
