@@ -37,8 +37,7 @@ Accepted cache hits continue through the current local validator, preserve the
 accepted canonical output/order/IDs/evidence, and make no provider semantic
 call. This decision does not change prompts, request shapes, provider retries,
 orientation, Study, Guided Tour, localization, report/manifest formats, UI, or
-flags. The shared cache record remains compatible for other stages whose
-fingerprints omit a stage-specific cache contract.
+flags. Non-targeted stage contracts are unchanged.
 
 ## Proof
 

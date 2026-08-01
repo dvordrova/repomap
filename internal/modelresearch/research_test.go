@@ -752,15 +752,15 @@ func TestStageResponseCachePreservesPromptCacheTokens(t *testing.T) {
 	}
 }
 
-func TestStageResponseCacheReplaysLegacyRecordWithoutPromptCacheTokens(t *testing.T) {
+func TestStageResponseCacheDefaultsOmittedPromptCacheTokensToZero(t *testing.T) {
 	t.Parallel()
 
 	runsDir := t.TempDir()
-	request := []byte(`{"model":"legacy"}`)
+	request := []byte(`{"model":"fixture"}`)
 	responseContent := []byte(`{"status":"ok"}`)
-	bundleHash := SHA256([]byte("legacy evidence"))
+	bundleHash := SHA256([]byte("bounded evidence"))
 	fingerprint := FingerprintInput{
-		Repository: RepositoryContext{Identity: "legacy", Revision: "abc", Scenario: "go-default"},
+		Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
 		Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
 		Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
 	}
@@ -775,7 +775,7 @@ func TestStageResponseCacheReplaysLegacyRecordWithoutPromptCacheTokens(t *testin
 		RequestBytes: len(request), ResponseBytes: len(responseContent),
 		InputTokens: 41, OutputTokens: 7,
 	}); err != nil {
-		t.Fatalf("save legacy cache record: %v", err)
+		t.Fatalf("save cache record with omitted prompt-cache counters: %v", err)
 	}
 
 	response, found, err := LoadStageResponse(StageCacheInput{
@@ -785,7 +785,7 @@ func TestStageResponseCacheReplaysLegacyRecordWithoutPromptCacheTokens(t *testin
 		t.Fatalf("LoadStageResponse() error = %v", err)
 	}
 	if !found || response.PromptCacheHitTokens != 0 || response.PromptCacheMissTokens != 0 {
-		t.Fatalf("legacy cache replay = found %t, response %#v", found, response)
+		t.Fatalf("omitted prompt-cache counters = found %t, response %#v", found, response)
 	}
 }
 
