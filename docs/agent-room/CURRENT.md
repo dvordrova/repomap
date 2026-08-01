@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/175-structural-localization-acceptance.md
+    decisions/177-canonical-report-base-map-ownership.md
 
 Status:
-    Decision 175 active; structural localization acceptance authorized
+    Decision 177 active; canonical report and base-map ownership authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 177 makes the local deterministic Architecture Canvas the sole
+    canonical base map consumed by static rendering and reportserver. Accepted
+    model synthesis may enrich grouping over the same exact candidates, but
+    rejected or malformed synthesis cannot erase or substitute the base.
+    Ordinary ReadRunDir no longer implicitly applies development semantic,
+    Mechanism, onboarding, or paved-path replay files merely because they
+    coexist in a run directory. Decision 177 publishes zero CandidateDirection
+    FlowProof overlays: the current seed-surface field may come from a
+    same-executable heuristic and is not an exact architecture relation. Those
+    directions remain available to Study/suggestions until a future
+    producer-owned typed binding slice. No adapter,
+    prompt, cache, Study, locale, manifest, source-authority, migration, or new
+    flag is introduced.
     Decision 175 removes only the harmful residual-Latin localization
     acceptance predicate exposed by the Decision 174 diagnostics. Provider
     response schema/index coverage, opaque placeholders, secret scan, bounded

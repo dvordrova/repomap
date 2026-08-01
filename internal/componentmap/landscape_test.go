@@ -196,6 +196,30 @@ func TestDeterministicSupportsPathOnlyFactsAndNoStructuralRelations(t *testing.T
 	}
 }
 
+func TestCanonicalBuildsStableLocalLandscapeWithoutFallbackState(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	first, err := Canonical(bundle)
+	if err != nil {
+		t.Fatalf("Canonical(first) error = %v", err)
+	}
+	second, err := Canonical(bundle)
+	if err != nil {
+		t.Fatalf("Canonical(second) error = %v", err)
+	}
+
+	if first.Fallback || first.FallbackReason != "" {
+		t.Fatalf("canonical fallback = %v (%q), want primary local landscape", first.Fallback, first.FallbackReason)
+	}
+	if first.Source != SourceLocalPackages || first.ValidationOutcome != ValidationAccepted {
+		t.Fatalf("canonical source/outcome = %q/%q", first.Source, first.ValidationOutcome)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("canonical landscape is not deterministic:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+}
+
 func TestApplyBoundsAndValidatesProposedMemberIDs(t *testing.T) {
 	t.Parallel()
 
@@ -449,7 +473,7 @@ func TestProcessEntryFallbackSeparatesExecutableRoles(t *testing.T) {
 			},
 		},
 	}
-	components := processEntryFallbackComponents([]BehaviorAnchor{
+	components := processEntryLocalComponents([]BehaviorAnchor{
 		{ID: "app-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{appSymbol}},
 		{ID: "service-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{serviceSymbol}},
 		{ID: "tool-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{toolSymbol}},

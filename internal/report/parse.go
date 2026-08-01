@@ -20,7 +20,6 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/modelresearch"
-	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 	"github.com/dvordrova/repomap/internal/studymap"
 )
@@ -428,12 +427,6 @@ func readRunDir(
 		architectureStatus = &status
 	}
 	data.ArchitectureSynthesis = architectureStatus
-	if warning != "" {
-		parseWarnings = append(parseWarnings, warning)
-	}
-	if warning = architectureSynthesisUserWarning(data.ArchitectureSynthesis); warning != "" {
-		parseWarnings = append(parseWarnings, warning)
-	}
 	if data.Run != nil && data.ArchitectureSynthesis != nil && data.ModelResearch == nil {
 		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
 	}
@@ -470,20 +463,19 @@ func readRunDir(
 	attachAuthorizedWorkspacePackageGraph(data, authority)
 	attachAuthorizedWorkspaceEntrypointIndex(data, authority)
 	buildComponents(data)
-	var architectureWarning string
+	if architectureWarning := projectCanonicalArchitectureCanvas(data); architectureWarning != "" {
+		parseWarnings = append(parseWarnings, architectureWarning)
+	}
 	if architectureArtifacts == nil {
-		architectureWarning = projectSavedArchitectureCanvas(
+		projectSavedArchitectureCanvas(
 			data,
 			filepath.Join(absDir, ArchitectureSynthesisFile),
 		)
 	} else {
-		architectureWarning = projectSavedArchitectureCanvasBytes(
+		projectSavedArchitectureCanvasBytes(
 			data,
 			architectureArtifacts.synthesis,
 		)
-	}
-	if w := architectureWarning; w != "" {
-		parseWarnings = append(parseWarnings, w)
 	}
 	linkArchitectureProductObjects(data)
 	if w := replaySavedGuidedTour(data, filepath.Join(absDir, GuidedStoryFile)); w != "" {
@@ -503,38 +495,6 @@ func readRunDir(
 	})
 
 	data.Warnings = append(data.Warnings, parseWarnings...)
-	if warning := replaySavedSemanticArtifacts(
-		data,
-		filepath.Join(absDir, semanticDiscoveryRecordFile),
-	); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	if warning := replaySavedGoldenMechanism(
-		data,
-		filepath.Join(absDir, GoldenMechanismFactsFile),
-		filepath.Join(absDir, GoldenMechanismRecordFile),
-	); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	if warning := replaySavedMechanismV1(
-		data,
-		filepath.Join(absDir, semanticdiscovery.MechanismFile),
-		filepath.Join(absDir, GoldenMechanismFactsFile),
-		filepath.Join(absDir, GoldenMechanismProbeFile),
-	); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	data.Warnings = append(
-		data.Warnings,
-		replaySavedMechanismV1Collection(data, absDir)...,
-	)
-	editorial, editorialWarning := readRepositoryOnboardingEditorial(
-		filepath.Join(absDir, RepositoryOnboardingFile),
-	)
-	if editorialWarning != "" {
-		data.Warnings = append(data.Warnings, editorialWarning)
-	}
-	applyRepositoryOnboardingEditorial(data, editorial)
 	if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
 		data.Warnings = append(data.Warnings, warning)
 	}
@@ -555,12 +515,25 @@ func readRunDir(
 		data.Warnings = append(data.Warnings, warning)
 	}
 	applyCanonicalStudyPublication(data)
-	if warning := replaySavedPavedPaths(data, pavedPathRecordPath(absDir)); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
 	data.UserSources = projectOverviewSourceSnippets(data)
 	prepareReplayedPresentationMetadata(data)
 	return data, nil
+}
+
+func projectCanonicalArchitectureCanvas(data *ReportData) string {
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		if errors.Is(err, errNoCanonicalArchitectureCandidates) {
+			return ""
+		}
+		return fmt.Sprintf("architecture canvas: %v", err)
+	}
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		return fmt.Sprintf("architecture canvas projection: %v", err)
+	}
+	data.ArchitectureCanvas = &canvas
+	return ""
 }
 
 // applyCanonicalStudyPublication makes the locally reduced Study record the
@@ -628,7 +601,7 @@ func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) stri
 		if os.IsNotExist(readErr) {
 			return ""
 		}
-		return fmt.Sprintf("architecture map unavailable: cannot read saved synthesis: %v", readErr)
+		return ""
 	}
 	return projectSavedArchitectureCanvasBytes(data, saved)
 }
@@ -640,7 +613,7 @@ func projectSavedArchitectureCanvasBytes(data *ReportData, saved []byte) string 
 	}
 	replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
 	if replayErr != nil {
-		return fmt.Sprintf("architecture map unavailable: saved grouping is invalid: %v", replayErr)
+		return ""
 	}
 	canvas, err := ProjectArchitectureCanvas(replayed)
 	if err != nil {

@@ -135,16 +135,10 @@ func linkArchitectureProductObjects(data *ReportData) {
 }
 
 // ApplyProductCoherence upgrades a loaded saved report with presentation-only
-// component/surface/trace joins. Callers must invoke it before publishing the
-// report to concurrent readers; it mutates the supplied projection.
+// component/surface/trace joins. The canonical Architecture Canvas is owned by
+// the saved-run reader; presentation preparation must never create a competing
+// base map. Callers must invoke this before publishing to concurrent readers.
 func ApplyProductCoherence(data *ReportData) {
-	if data != nil && data.ArchitectureCanvas == nil {
-		if input, err := BuildArchitectureCanvasInput(data); err == nil {
-			if canvas, projectErr := ProjectArchitectureCanvas(input); projectErr == nil {
-				data.ArchitectureCanvas = &canvas
-			}
-		}
-	}
 	linkArchitectureProductObjects(data)
 	refreshProductCounts(data)
 	data.RepositoryThesis = DeriveRepositoryThesis(data)

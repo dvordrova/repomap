@@ -1638,7 +1638,7 @@
         addFact(LABELS.snapshotFreshness, freshnessValue);
       }
       addFact(LABELS.architectureAnchors, msg('main.count.static_families', { count: DATA.run.architecture_anchor_count || 0 }));
-      if (DATA.architecture_synthesis) {
+      if (DEBUG_MODE && DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
         var architectureValue = msg('main.unavailable');
         if (DATA.architecture_synthesis.proposal_normalized) {
@@ -3958,19 +3958,11 @@
 
 	function userArchitectureAvailable() {
 		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
-		var synthesis = DATA.architecture_synthesis || null;
-		if (synthesis && (
-			synthesis.state === 'failed' ||
-			synthesis.proposal_rejected ||
-			synthesis.fallback_selected
-		)) {
-			return false;
-		}
-		if (STUDY_MAP) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		if (STUDY_MAP) return !!DATA.architecture_canvas;
 		if (REPOSITORY_GUIDE) {
 			return !!(REPOSITORY_GUIDE.architecture_useful && DATA.architecture_canvas);
 		}
-		return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
+		return !!DATA.architecture_canvas;
 	}
 
 	function guideMechanisms(ids) {

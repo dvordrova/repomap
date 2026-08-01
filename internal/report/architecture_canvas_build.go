@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -19,15 +20,19 @@ import (
 
 const architectureBuildContractVersion = "architecture-candidates-v1"
 
+var errNoCanonicalArchitectureCandidates = errors.New(
+	"architecture canvas build: no canonical local candidates",
+)
+
 // ArchitectureSynthesisFile is the optional, replayable conceptual synthesis
 // record stored beside other run artifacts.
 const ArchitectureSynthesisFile = "architecture_synthesis.json"
 
 // BuildArchitectureCanvasInput derives the exact local input for the v2
-// architecture canvas from saved report facts. A repository landscape does
-// not require a proven flow; saved FlowProof sessions add optional overlays.
-// It intentionally chooses the deterministic landscape; conceptual synthesis
-// may replace only that membership result later, using the returned candidate
+// architecture canvas from saved report facts. CandidateDirection.LocalProof
+// is not a producer-owned exact relation and therefore never becomes a flow
+// overlay here. It remains available to Study and diagnostics. Conceptual
+// synthesis may replace only local grouping, using the returned candidate
 // bundle.
 func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, error) {
 	if data == nil {
@@ -43,7 +48,6 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 	sort.SliceStable(directions, func(i, j int) bool {
 		return directions[i].ID < directions[j].ID
 	})
-	seenFlows := make(map[componentmap.FlowID]struct{}, len(directions))
 	for _, direction := range directions {
 		if direction.Disposition == flowexplain.DirectionRejected {
 			builder.diagnostics = append(builder.diagnostics, componentmap.Diagnostic{
@@ -52,28 +56,25 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 			})
 			continue
 		}
-		if direction.LocalProof == nil {
-			builder.assessUngroundedDirection(direction)
-			continue
+		if direction.LocalProof != nil {
+			builder.diagnostics = append(builder.diagnostics, componentmap.Diagnostic{
+				Code: "builder.direction_flow_overlay_omitted", Severity: componentmap.FindingAdvisory,
+				Message: fmt.Sprintf("direction %q remains a Study direction because it has no producer-owned exact architecture binding", direction.Name),
+			})
 		}
-		flowID := componentmap.FlowID(direction.ID)
-		if _, duplicate := seenFlows[flowID]; duplicate {
-			return ArchitectureCanvasInput{}, fmt.Errorf(
-				"architecture canvas build: duplicate saved flow id %q",
-				direction.ID,
-			)
-		}
-		seenFlows[flowID] = struct{}{}
-		builder.addFlow(direction)
+		builder.assessUngroundedDirection(direction)
 	}
 	builder.addResearchFindings(data.ModelResearch)
 	bundle := builder.bundle()
+	if len(bundle.Candidates) == 0 {
+		return ArchitectureCanvasInput{}, errNoCanonicalArchitectureCandidates
+	}
 	if err := bundle.Validate(); err != nil {
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: candidate bundle: %w", err)
 	}
-	landscape, err := componentmap.Deterministic(bundle, componentmap.FallbackModelDisabled)
+	landscape, err := componentmap.Canonical(bundle)
 	if err != nil {
-		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: deterministic landscape: %w", err)
+		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: canonical landscape: %w", err)
 	}
 	landscape.Diagnostics = append(landscape.Diagnostics, builder.diagnostics...)
 	if err := landscape.Validate(bundle); err != nil {
@@ -83,7 +84,7 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 	return ArchitectureCanvasInput{
 		CandidateBundle: bundle,
 		Landscape:       landscape,
-		Flows:           append([]ArchitectureFlowInput(nil), builder.flows...),
+		Flows:           nil,
 	}, nil
 }
 
@@ -106,10 +107,10 @@ func ReplayArchitectureSynthesis(
 		saved,
 	)
 	if err != nil {
-		landscape, err = componentmap.ReplayLegacyCapturedSynthesis(input.CandidateBundle, saved)
-		if err != nil {
-			return input, fmt.Errorf("architecture canvas synthesis: %w", err)
-		}
+		return input, fmt.Errorf("architecture canvas synthesis: %w", err)
+	}
+	if landscape.Fallback || landscape.ValidationOutcome == componentmap.ValidationRejected {
+		return input, fmt.Errorf("architecture canvas synthesis: proposal was not accepted")
 	}
 	input.Landscape = landscape
 	return input, nil
