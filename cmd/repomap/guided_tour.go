@@ -215,10 +215,21 @@ func ensureGuidedTourWithOptions(
 		Request: request, EvidenceBundleHash: bundleSHA,
 	}
 	if !options.disableCache {
-		if cached, found, cacheErr := modelresearch.LoadStageResponse(cacheInput); cacheErr != nil {
+		cached, found, cacheErr := modelresearch.LoadStageResponse(cacheInput)
+		if cacheErr != nil {
 			outcome.ValidationState = "invalid_cache"
 			return outcome, fmt.Errorf("guided tour: reject optional cache without another provider call: %w", cacheErr)
-		} else if found {
+		}
+		if found {
+			if validationErr := validateGuidedTourResponse(bundle, cached.Content); validationErr != nil {
+				if err := modelresearch.InvalidateStageResponse(cacheInput); err != nil {
+					outcome.ValidationState = "invalid_cache"
+					return outcome, fmt.Errorf("guided tour: invalidate rejected cache hit: %w", err)
+				}
+				found = false
+			}
+		}
+		if found {
 			outcome.Cached = true
 			outcome.CacheHits = 1
 			outcome.ResponseBytes = cached.ResponseBytes

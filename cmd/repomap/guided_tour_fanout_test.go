@@ -272,6 +272,98 @@ func TestEnsureGuidedTourFanoutExperimentCachesValidatedLeavesAndFanIn(t *testin
 	}
 }
 
+func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidLeafCache(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	provider := guidedTourFanoutTestProvider(t, bundle, "")
+	if _, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	); err != nil {
+		t.Fatal(err)
+	}
+	tasks, leafCaches, _ := guidedTourFanoutCacheInputs(
+		t, bundle, runDir, "test", "fixture-model", provider,
+	)
+	rejected := guidedTourLeafTestArtifact(tasks[0])
+	rejected.Observations[0].SupportIDs[0] = "invented-beat"
+	if _, err := modelresearch.SaveStageResponse(
+		leafCaches[tasks[0].ID],
+		modelresearch.StageResponse{Content: mustJSON(t, rejected)},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	replacementProvider := guidedTourFanoutTestProvider(t, bundle, "")
+	outcome, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", replacementProvider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.SemanticCalls != 1 || outcome.CacheHits != len(tasks) ||
+		replacementProvider.callCount() != 1 ||
+		replacementProvider.callsByVersion[guidedtour.LeafPromptVersion] != 1 {
+		t.Fatalf("self-healed leaf outcome = %#v, calls = %#v", outcome, replacementProvider.callsByVersion)
+	}
+
+	warmProvider := guidedTourFanoutTestProvider(t, bundle, "")
+	warm, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !warm.Cached || warm.SemanticCalls != 0 || warm.CacheHits != len(tasks)+1 ||
+		warmProvider.callCount() != 0 {
+		t.Fatalf("valid warm fan-out = %#v, provider calls %d", warm, warmProvider.callCount())
+	}
+}
+
+func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidFanInCache(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	provider := guidedTourFanoutTestProvider(t, bundle, "")
+	if _, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	); err != nil {
+		t.Fatal(err)
+	}
+	tasks, _, fanInCache := guidedTourFanoutCacheInputs(
+		t, bundle, runDir, "test", "fixture-model", provider,
+	)
+	if _, err := modelresearch.SaveStageResponse(
+		fanInCache,
+		modelresearch.StageResponse{Content: []byte(`{}`)},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	replacementProvider := guidedTourFanoutTestProvider(t, bundle, "")
+	outcome, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", replacementProvider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.SemanticCalls != 1 || outcome.CacheHits != len(tasks) ||
+		replacementProvider.callCount() != 1 ||
+		replacementProvider.callsByVersion[guidedtour.FanInPromptVersion] != 1 {
+		t.Fatalf("self-healed fan-in outcome = %#v, calls = %#v", outcome, replacementProvider.callsByVersion)
+	}
+
+	warmProvider := guidedTourFanoutTestProvider(t, bundle, "")
+	warm, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !warm.Cached || warm.SemanticCalls != 0 || warm.CacheHits != len(tasks)+1 ||
+		warmProvider.callCount() != 0 {
+		t.Fatalf("valid warm fan-in = %#v, provider calls %d", warm, warmProvider.callCount())
+	}
+}
+
 func TestEnsureGuidedTourFanoutCachesOnlyNormalizedLeafProse(t *testing.T) {
 	runDir := filepath.Join(t.TempDir(), "run")
 	bundle := guidedTourTestBundle()
@@ -587,6 +679,85 @@ func guidedTourFanoutTestProvider(
 			supportTask,
 		),
 	}
+}
+
+func guidedTourFanoutCacheInputs(
+	t *testing.T,
+	bundle guidedtour.Bundle,
+	runDir string,
+	profile string,
+	model string,
+	provider guidedTourEditor,
+) ([]guidedtour.LeafTask, map[string]modelresearch.StageCacheInput, modelresearch.StageCacheInput) {
+	t.Helper()
+	bundleSHA, _, err := guidedtour.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := guidedtour.PlanLeafTasks(bundle, guidedTourExperimentLeafLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := modelresearch.DefaultPolicy().WithGuidedTourBudget(
+		len(tasks)+1,
+		guidedTourFanoutAggregateBytes,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := modelresearch.RepositoryContext{
+		Identity: bundle.RepoName, Revision: "captured-run",
+		DirtySHA256: bundleSHA, Scenario: "saved-artifacts",
+	}
+	leaves := make(map[string]modelresearch.StageCacheInput, len(tasks))
+	results := make([]guidedtour.LeafResult, 0, len(tasks))
+	for _, task := range tasks {
+		prompt, err := guidedtour.BuildLeafPrompt(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := provider.GuidedTourPromptJSON(prompt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		taskSHA, _, err := guidedtour.LeafTaskHash(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaves[task.ID] = modelresearch.StageCacheInput{
+			RunsDir: filepath.Dir(runDir),
+			Fingerprint: modelresearch.FingerprintInput{
+				Repository: repository, Stage: "guided_story_leaf/" + task.ID,
+				PromptVersion: guidedtour.LeafPromptVersion,
+				Profile:       profile, Model: model,
+				EvidenceBundleHash: taskSHA, PolicyVersion: policy.Version,
+			},
+			Request: request, EvidenceBundleHash: taskSHA,
+		}
+		results = append(results, guidedtour.LeafResult{
+			Task: task, Artifact: guidedTourLeafTestArtifact(task),
+		})
+	}
+	finalPrompt, err := guidedtour.BuildFanInPrompt(bundle, results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalRequest, err := provider.GuidedTourPromptJSON(finalPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalFactsSHA := modelresearch.SHA256([]byte(finalPrompt.System + "\x00" + finalPrompt.User))
+	finalCache := modelresearch.StageCacheInput{
+		RunsDir: filepath.Dir(runDir),
+		Fingerprint: modelresearch.FingerprintInput{
+			Repository: repository, Stage: "guided_story_fan_in",
+			PromptVersion: guidedtour.FanInPromptVersion,
+			Profile:       profile, Model: model,
+			EvidenceBundleHash: finalFactsSHA, PolicyVersion: policy.Version,
+		},
+		Request: finalRequest, EvidenceBundleHash: finalFactsSHA,
+	}
+	return tasks, leaves, finalCache
 }
 
 func guidedTourLeafTestArtifact(task guidedtour.LeafTask) guidedtour.LeafArtifact {

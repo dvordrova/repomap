@@ -752,6 +752,42 @@ func TestStageResponseCachePreservesPromptCacheTokens(t *testing.T) {
 	}
 }
 
+func TestInvalidateStageResponseRemovesOnlyExactRecord(t *testing.T) {
+	t.Parallel()
+
+	runsDir := t.TempDir()
+	bundleHash := SHA256([]byte("bounded evidence"))
+	newInput := func(stage string) StageCacheInput {
+		request := []byte(`{"stage":"` + stage + `"}`)
+		return StageCacheInput{
+			RunsDir: runsDir,
+			Fingerprint: FingerprintInput{
+				Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+				Stage:      stage, PromptVersion: "prompt-v1", Profile: "test",
+				Model: "fixture-model", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+			},
+			Request: request, EvidenceBundleHash: bundleHash,
+		}
+	}
+	rejected := newInput("rejected")
+	retained := newInput("retained")
+	for _, input := range []StageCacheInput{rejected, retained} {
+		if _, err := SaveStageResponse(input, StageResponse{Content: []byte(`{"status":"ok"}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := InvalidateStageResponse(rejected); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := LoadStageResponse(rejected); err != nil || found {
+		t.Fatalf("rejected cache after invalidation = found %t, err %v", found, err)
+	}
+	if _, found, err := LoadStageResponse(retained); err != nil || !found {
+		t.Fatalf("unrelated cache after invalidation = found %t, err %v", found, err)
+	}
+}
+
 func TestStageResponseCacheDefaultsOmittedPromptCacheTokensToZero(t *testing.T) {
 	t.Parallel()
 

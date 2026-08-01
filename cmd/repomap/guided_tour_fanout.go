@@ -152,12 +152,15 @@ func ensureGuidedTourFanoutExperiment(
 			parseErr = guidedtour.ValidateLeafArtifact(task, artifact)
 		}
 		if parseErr != nil {
-			failures = append(failures, guidedTourLeafFailure{
-				TaskID: task.ID, Kind: task.Kind,
-				Reason: guidedTourLeafFailureReason(
-					"cached leaf failed local validation",
-					parseErr,
-				),
+			if err := modelresearch.InvalidateStageResponse(cacheInput); err != nil {
+				return outcome, fmt.Errorf(
+					"guided tour fan-out: invalidate rejected leaf cache %q: %w",
+					task.ID,
+					err,
+				)
+			}
+			misses = append(misses, guidedTourLeafCall{
+				task: task, prompt: prompt, cacheInput: cacheInput,
 			})
 			continue
 		}
@@ -277,36 +280,44 @@ func ensureGuidedTourFanoutExperiment(
 		},
 		Request: finalRequest, EvidenceBundleHash: finalFactsSHA,
 	}
-	if cached, found, cacheErr := modelresearch.LoadStageResponse(finalCache); cacheErr != nil {
+	cached, found, cacheErr := modelresearch.LoadStageResponse(finalCache)
+	if cacheErr != nil {
 		outcome.ValidationState = "invalid_fan_in_cache"
 		return outcome, fmt.Errorf(
 			"guided tour fan-out: reject fan-in cache without another provider call: %w",
 			cacheErr,
 		)
-	} else if found {
-		outcome.CacheHits++
-		addGuidedTourResponseMetrics(&outcome, cached)
-		outcome.UnsupportedClaims += countGuidedTourFanInUnsupportedClaims(bundle, cached.Content)
-		artifact, validationErr := validateGuidedTourFanInResponse(
+	}
+	var cachedFinalArtifact guidedtour.FanInArtifact
+	if found {
+		cachedFinalArtifact, cacheErr = validateGuidedTourFanInResponse(
 			bundle,
 			validResults,
 			cached.Content,
 		)
-		if validationErr != nil {
-			outcome.ValidationState = "invalid_cached_fan_in"
-			return outcome, fmt.Errorf("guided tour fan-out: reject cached fan-in: %w", validationErr)
+		if cacheErr != nil {
+			if err := modelresearch.InvalidateStageResponse(finalCache); err != nil {
+				outcome.ValidationState = "invalid_fan_in_cache"
+				return outcome, fmt.Errorf("guided tour fan-out: invalidate rejected fan-in cache: %w", err)
+			}
+			found = false
 		}
-		if err := writeGuidedTourFanInArtifact(runDir, artifact); err != nil {
+	}
+	if found {
+		outcome.CacheHits++
+		addGuidedTourResponseMetrics(&outcome, cached)
+		outcome.UnsupportedClaims += countGuidedTourFanInUnsupportedClaims(bundle, cached.Content)
+		if err := writeGuidedTourFanInArtifact(runDir, cachedFinalArtifact); err != nil {
 			return outcome, err
 		}
 		outcome.Cached = outcome.SemanticCalls == 0 && outcome.LeafFailed == 0
-		if artifact.Verdict == guidedtour.FanInVerdictInsufficientEvidence {
+		if cachedFinalArtifact.Verdict == guidedtour.FanInVerdictInsufficientEvidence {
 			outcome.ValidationState = "insufficient_evidence"
 			return outcome, fmt.Errorf(
 				"guided tour fan-out: fan-in concluded insufficient evidence",
 			)
 		}
-		if err := saveGuidedTourFanInStory(bundle, artifact, runDir); err != nil {
+		if err := saveGuidedTourFanInStory(bundle, cachedFinalArtifact, runDir); err != nil {
 			return outcome, err
 		}
 		if outcome.LeafFailed > 0 {

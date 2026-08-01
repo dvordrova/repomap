@@ -71,6 +71,52 @@ func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
 	}
 }
 
+func TestEnsureGuidedTourSelfHealsSemanticallyInvalidCache(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	cacheInput := guidedTourMonolithicCacheInput(t, bundle, runDir, "test", "fixture-model")
+	if _, err := modelresearch.SaveStageResponse(cacheInput, modelresearch.StageResponse{
+		Content: guidedTourTestProposal(t, bundle, true),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	invalidProvider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, true)}
+	if _, err := ensureGuidedTour(
+		context.Background(), bundle, runDir, "test", "fixture-model", invalidProvider,
+	); err == nil {
+		t.Fatal("semantically invalid replacement was accepted")
+	}
+	if invalidProvider.calls != 2 {
+		t.Fatalf("ordinary bounded proposal attempts = %d, want 2", invalidProvider.calls)
+	}
+	if _, found, err := modelresearch.LoadStageResponse(cacheInput); err != nil || found {
+		t.Fatalf("invalid replacement cache = found %t, err %v", found, err)
+	}
+
+	provider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, false)}
+	refetched, err := ensureGuidedTour(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refetched.Cached || refetched.SemanticCalls != 1 || provider.calls != 1 {
+		t.Fatalf("self-healed monolith = %#v, provider calls %d", refetched, provider.calls)
+	}
+
+	warmProvider := &guidedTourEditorStub{}
+	warm, err := ensureGuidedTour(
+		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !warm.Cached || warm.SemanticCalls != 0 || warmProvider.calls != 0 {
+		t.Fatalf("valid warm monolith = %#v, provider calls %d", warm, warmProvider.calls)
+	}
+}
+
 func TestEnsureGuidedTourCachesOneCanonicalEnglishStory(t *testing.T) {
 	runsDir := t.TempDir()
 	bundle := guidedTourTestBundle()
@@ -365,6 +411,42 @@ func guidedTourTestBundle() guidedtour.Bundle {
 				ID: "gap-1", Label: "Runtime order", Detail: "runtime order is not proven",
 			}},
 		}},
+	}
+}
+
+func guidedTourMonolithicCacheInput(
+	t *testing.T,
+	bundle guidedtour.Bundle,
+	runDir string,
+	profile string,
+	model string,
+) modelresearch.StageCacheInput {
+	t.Helper()
+	bundleSHA, _, err := guidedtour.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := guidedtour.BuildPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := json.Marshal(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := modelresearch.DefaultPolicy()
+	return modelresearch.StageCacheInput{
+		RunsDir: filepath.Dir(runDir),
+		Fingerprint: modelresearch.FingerprintInput{
+			Repository: modelresearch.RepositoryContext{
+				Identity: bundle.RepoName, Revision: "captured-run",
+				DirtySHA256: bundleSHA, Scenario: "saved-artifacts",
+			},
+			Stage: "guided_story_editor", PromptVersion: guidedtour.PromptVersion,
+			Profile: profile, Model: model,
+			EvidenceBundleHash: bundleSHA, PolicyVersion: policy.Version,
+		},
+		Request: request, EvidenceBundleHash: bundleSHA,
 	}
 }
 

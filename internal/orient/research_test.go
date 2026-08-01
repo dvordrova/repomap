@@ -22,6 +22,8 @@ import (
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
 
+func acceptCachedOrientation([]byte) error { return nil }
+
 func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -71,6 +73,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 
 	call, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, true,
+		acceptCachedOrientation,
 	)
 	if err != nil {
 		t.Fatalf("obtainOrientation() error = %v", err)
@@ -83,6 +86,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 	replayed, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, true,
+		acceptCachedOrientation,
 	)
 	if err != nil {
 		t.Fatalf("cached obtainOrientation() error = %v", err)
@@ -93,6 +97,7 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 
 	uncached, err := obtainOrientation(
 		context.Background(), client, writer, policy, repository, "test", bundleJSON, requestJSON, false,
+		acceptCachedOrientation,
 	)
 	if err != nil {
 		t.Fatalf("uncached obtainOrientation() error = %v", err)
@@ -102,6 +107,83 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 			"uncached orientation = requests %d, cache hit %t, save cache %t, raw %q",
 			requests, uncached.Metrics.CacheHit, uncached.SaveCache, uncached.Raw,
 		)
+	}
+}
+
+func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"fresh\":true}"}}]}`)
+	}))
+	defer server.Close()
+
+	client := &deepseek.Client{
+		HTTPClient: server.Client(), Model: "fixture-model", MaxTokens: 128,
+		Endpoint: server.URL, Auth: "none",
+	}
+	baseDir := t.TempDir()
+	writer, err := debugdump.NewWriter(baseDir, "semantic-invalid-cache", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	repository := modelresearch.RepositoryContext{
+		Identity: "fixture", Revision: "abc", Scenario: "go-default",
+	}
+	policy := modelresearch.DefaultPolicy()
+	bundleJSON := []byte(`{"bounded":"evidence"}`)
+	requestJSON := []byte(`{"provider":"request"}`)
+	bundleHash := modelresearch.SHA256(bundleJSON)
+	cacheInput := modelresearch.StageCacheInput{
+		RunsDir: baseDir,
+		Fingerprint: modelresearch.FingerprintInput{
+			Repository: repository, Stage: "orientation",
+			PromptVersion: deepseek.OrientationPromptVersionJSON,
+			Profile:       "test", Model: client.Model,
+			EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+		},
+		Request: requestJSON, EvidenceBundleHash: bundleHash,
+	}
+	if _, err := modelresearch.SaveStageResponse(cacheInput, modelresearch.StageResponse{
+		Content: []byte(`{"fresh":false}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	validate := func(raw []byte) error {
+		if string(raw) != `{"fresh":true}` {
+			return io.ErrUnexpectedEOF
+		}
+		return nil
+	}
+
+	call, err := obtainOrientation(
+		context.Background(), client, writer, policy, repository, "test",
+		bundleJSON, requestJSON, true, validate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || call.Metrics.CacheHit || call.Metrics.SemanticCalls != 1 ||
+		string(call.Raw) != `{"fresh":true}` {
+		t.Fatalf("self-healed orientation = requests %d, call %#v", requests, call)
+	}
+	if _, found, err := modelresearch.LoadStageResponse(cacheInput); err != nil || found {
+		t.Fatalf("rejected cache before validated save = found %t, err %v", found, err)
+	}
+	if err := saveOrientationResponse(call); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := obtainOrientation(
+		context.Background(), client, writer, policy, repository, "test",
+		bundleJSON, requestJSON, true, validate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || !replayed.Metrics.CacheHit || replayed.Metrics.SemanticCalls != 0 {
+		t.Fatalf("valid warm orientation = requests %d, call %#v", requests, replayed)
 	}
 }
 
@@ -150,7 +232,7 @@ func TestObtainOrientationDoesNotCacheRecoveredCompletionUnderBaseRequest(t *tes
 		t.Helper()
 		call, callErr := obtainOrientation(
 			context.Background(), client, writer, policy, repository, "test",
-			bundleJSON, requestJSON, true,
+			bundleJSON, requestJSON, true, acceptCachedOrientation,
 		)
 		if callErr != nil {
 			t.Fatal(callErr)
@@ -214,6 +296,7 @@ func TestObtainOrientationCacheReusesCanonicalEnglishAcrossPresentationLocales(t
 			bundleJSON,
 			requestJSON,
 			true,
+			acceptCachedOrientation,
 		)
 		if callErr != nil {
 			t.Fatal(callErr)

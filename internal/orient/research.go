@@ -56,6 +56,7 @@ func obtainOrientation(
 	bundleJSON []byte,
 	requestJSON []byte,
 	useCache bool,
+	validateCached func([]byte) error,
 ) (orientationCall, error) {
 	call := orientationCall{Metrics: modelresearch.StageMetrics{
 		Stage: "orientation", Status: "prepared", RequestBytes: len(requestJSON),
@@ -75,6 +76,17 @@ func obtainOrientation(
 		cached, found, err := modelresearch.LoadStageResponse(call.CacheInput)
 		if err != nil {
 			return call, fmt.Errorf("orientation cache: %w", err)
+		}
+		if found {
+			if validateCached == nil {
+				return call, fmt.Errorf("orientation cache: semantic validator is required")
+			}
+			if err := validateCached(cached.Content); err != nil {
+				if err := modelresearch.InvalidateStageResponse(call.CacheInput); err != nil {
+					return call, fmt.Errorf("orientation cache: invalidate rejected hit: %w", err)
+				}
+				found = false
+			}
 		}
 		if found {
 			call.Raw = cached.Content
