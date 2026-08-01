@@ -451,7 +451,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if err != nil {
 			recordOrientationSemanticExchange(
-				dw, requestJSON, raw, call.Metrics,
+				dw, requestJSON, providerFailureContentForExchange(err, raw), call.Metrics,
 				debugdump.SemanticStateProviderFailed,
 				debugdump.SemanticValidationProvider,
 				debugdump.SemanticUnavailableNoContent,
@@ -658,9 +658,21 @@ func recordOrientationSemanticExchange(
 		Request: request, Response: response,
 	}
 	if len(response) == 0 {
-		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: metrics.ResponseBytes,
+		}
 	}
 	dw.RecordSemanticExchange(exchange)
+}
+
+// providerFailureContentForExchange is only for the existing redacting
+// semantic-exchange recorder.
+func providerFailureContentForExchange(err error, fallback []byte) []byte {
+	var limitErr *deepseek.ResourceLimitError
+	if errors.As(err, &limitErr) {
+		return limitErr.ProviderContent()
+	}
+	return fallback
 }
 
 func writeOrientationFailureArtifacts(

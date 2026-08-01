@@ -24,7 +24,7 @@ import (
 const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
-	defaultMaxTokens = 6000
+	defaultMaxTokens = 64_000
 	defaultTimeout   = 10 * time.Minute
 
 	authBearer = "bearer"
@@ -37,12 +37,11 @@ const (
 	envTimeout   = "REPOMAP_LLM_TIMEOUT"
 	envAuth      = "REPOMAP_LLM_AUTH"
 
-	legacyEnvEndpoint  = "DEEPSEEK_ENDPOINT"
-	legacyEnvModel     = "DEEPSEEK_MODEL"
-	legacyEnvAPIKey    = "DEEPSEEK_API_KEY"
-	legacyEnvMaxTokens = "DEEPSEEK_MAX_TOKENS"
-	legacyEnvTimeout   = "DEEPSEEK_TIMEOUT"
-	legacyEnvAuth      = "DEEPSEEK_AUTH"
+	legacyEnvEndpoint = "DEEPSEEK_ENDPOINT"
+	legacyEnvModel    = "DEEPSEEK_MODEL"
+	legacyEnvAPIKey   = "DEEPSEEK_API_KEY"
+	legacyEnvTimeout  = "DEEPSEEK_TIMEOUT"
+	legacyEnvAuth     = "DEEPSEEK_AUTH"
 )
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
@@ -148,7 +147,7 @@ func newFromEnv(requireAPIKey bool) (*Client, error) {
 	}
 
 	maxTokens := defaultMaxTokens
-	if s := value(envMaxTokens, legacyEnvMaxTokens); s != "" {
+	if s := strings.TrimSpace(os.Getenv(envMaxTokens)); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil {
 			return nil, fmt.Errorf("%s must be an integer: %w", envMaxTokens, err)
@@ -280,7 +279,6 @@ const maxProviderResponseBytes = 16 * 1024 * 1024
 
 var (
 	errJSONCompletionInvalid     = errors.New("llm response content is not valid JSON")
-	errJSONCompletionTruncated   = errors.New("llm JSON completion was truncated")
 	errResponseEnvelopeMalformed = errors.New("llm response envelope is malformed")
 )
 
@@ -453,14 +451,10 @@ func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (mod
 		true,
 	)
 	if callErr != nil {
-		return modelresearch.ProviderResult{Attempts: attempts}, callErr
+		return providerResultFromCompletion(completion, attempts, len(body)*attempts),
+			annotateResourceLimit(callErr, "targeted_research", c.MaxTokens)
 	}
-	return modelresearch.ProviderResult{
-		Content: completion.Content, Attempts: attempts,
-		InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
-		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
-		PromptCacheMissTokens: completion.PromptCacheMissTokens,
-	}, nil
+	return providerResultFromCompletion(completion, attempts, len(body)*attempts), nil
 }
 
 // CheckJSONCompatibility makes exactly one small synthetic request. It is used
@@ -471,7 +465,6 @@ func (c *Client) CheckJSONCompatibility(ctx context.Context) error {
 		"This is a provider compatibility check. Return valid JSON only.",
 		true,
 	)
-	reqPayload.MaxTokens = 64
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return fmt.Errorf("marshal llm compatibility request: %w", err)
@@ -520,7 +513,7 @@ func (c *Client) flowExplain(ctx context.Context, userContent, systemContent str
 		}
 		lastErr = err
 		if !shouldRetry {
-			return nil, err
+			return nil, annotateResourceLimit(err, "flow_explain", c.MaxTokens)
 		}
 	}
 
@@ -538,17 +531,16 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 	stopWaiting := c.startWaitProgress(ctx, "orientation")
 	defer stopWaiting()
 	request := c.buildRequest(bundleJSON)
+	body, err := json.Marshal(request)
+	if err != nil {
+		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
+	}
 	var (
-		measured          modelresearch.ProviderResult
-		lastErr           error
-		transportRetries  int
-		completionRetries int
+		measured         modelresearch.ProviderResult
+		lastErr          error
+		transportRetries int
 	)
 	for {
-		body, err := json.Marshal(request)
-		if err != nil {
-			return measured, fmt.Errorf("marshal llm request: %w", err)
-		}
 		if measured.Attempts > 0 {
 			backoff := backoffDuration(measured.Attempts)
 			select {
@@ -569,25 +561,18 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 		)
 		measured.Attempts++
 		measured.RequestBytes += len(body)
+		measured.ResponseBytes += result.ResponseBytes
 		measured.InputTokens += result.InputTokens
 		measured.OutputTokens += result.OutputTokens
+		measured.ReasoningTokens += result.ReasoningTokens
 		measured.PromptCacheHitTokens += result.PromptCacheHitTokens
 		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
+		measured.Content = append([]byte(nil), result.Content...)
+		measured.FinishReason = result.FinishReason
 		if err == nil {
-			measured.Content = result.Content
 			return measured, nil
 		}
 		lastErr = err
-		if errors.Is(err, errJSONCompletionTruncated) && completionRetries == 0 {
-			maxInt := int(^uint(0) >> 1)
-			if request.MaxTokens <= 0 || request.MaxTokens > maxInt/2 {
-				return measured, err
-			}
-			request.MaxTokens *= 2
-			completionRetries++
-			measured.CompletionRetries = completionRetries
-			continue
-		}
 		if shouldRetry && transportRetries < maxRetries {
 			transportRetries++
 			continue
@@ -599,7 +584,24 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 				lastErr,
 			)
 		}
-		return measured, err
+		return measured, annotateResourceLimit(err, "orientation", request.MaxTokens)
+	}
+}
+
+func providerResultFromCompletion(
+	completion chatCompletion,
+	attempts int,
+	requestBytes int,
+) modelresearch.ProviderResult {
+	return modelresearch.ProviderResult{
+		Content:  append([]byte(nil), completion.Content...),
+		Attempts: attempts, RequestBytes: requestBytes,
+		ResponseBytes: completion.ResponseBytes,
+		InputTokens:   completion.InputTokens, OutputTokens: completion.OutputTokens,
+		ReasoningTokens:       completion.ReasoningTokens,
+		FinishReason:          completion.FinishReason,
+		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
+		PromptCacheMissTokens: completion.PromptCacheMissTokens,
 	}
 }
 
@@ -648,8 +650,11 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 
 type chatCompletion struct {
 	Content               []byte
+	ResponseBytes         int
 	InputTokens           int
 	OutputTokens          int
+	ReasoningTokens       int
+	FinishReason          string
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
 }
@@ -684,14 +689,17 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{}, isRetryableNetworkError(err), fmt.Errorf("read llm response: %w", err)
 	}
 	if len(respBody) > maxProviderResponseBytes {
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return chatCompletion{}, isRetryableHTTP(resp.StatusCode), fmt.Errorf(
-				"llm request failed with status %d: %s...[truncated]",
-				resp.StatusCode,
-				safeProviderErrorText(respBody[:maxProviderErrorBytes]),
-			)
+		resourceErr := &ResourceLimitError{
+			Kind:            ResourceLimitResponseBytes,
+			Limit:           maxProviderResponseBytes,
+			Observed:        len(respBody),
+			ObservedKnown:   true,
+			ObservedAtLeast: true,
 		}
-		return chatCompletion{}, false, fmt.Errorf("llm response exceeds %d bytes", maxProviderResponseBytes)
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resourceErr.HTTPStatus = resp.StatusCode
+		}
+		return chatCompletion{ResponseBytes: len(respBody)}, false, resourceErr
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -704,8 +712,10 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
 	}
 	completion := chatCompletion{
+		ResponseBytes:         len(respBody),
 		InputTokens:           parsed.Usage.PromptTokens,
 		OutputTokens:          parsed.Usage.CompletionTokens,
+		ReasoningTokens:       parsed.Usage.CompletionTokenDetails.ReasoningTokens,
 		PromptCacheHitTokens:  parsed.Usage.PromptCacheHitTokens,
 		PromptCacheMissTokens: parsed.Usage.PromptCacheMissTokens,
 	}
@@ -713,7 +723,21 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return completion, false, fmt.Errorf("llm response contains no choices")
 	}
 	choice := parsed.Choices[0]
+	completion.FinishReason = knownFinishReason(choice.FinishReason)
 	content := strings.TrimSpace(choice.Message.Content)
+	completion.Content = []byte(content)
+	if choice.FinishReason == "length" {
+		return completion, false, &ResourceLimitError{
+			Kind:            ResourceLimitOutputTokens,
+			Observed:        parsed.Usage.CompletionTokens,
+			ObservedKnown:   parsed.Usage.CompletionTokens > 0,
+			InputTokens:     parsed.Usage.PromptTokens,
+			OutputTokens:    parsed.Usage.CompletionTokens,
+			ReasoningTokens: parsed.Usage.CompletionTokenDetails.ReasoningTokens,
+			FinishReason:    "length",
+			responseContent: append([]byte(nil), completion.Content...),
+		}
+	}
 	if content == "" {
 		details := make([]string, 0, 4)
 		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
@@ -730,13 +754,6 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		} else if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 			details = append(details, "reasoning_content_present")
 		}
-		if choice.FinishReason == "length" {
-			return completion, false, fmt.Errorf(
-				"llm response content is empty: %w (%s)",
-				errJSONCompletionTruncated,
-				strings.Join(details, ", "),
-			)
-		}
 		if len(details) > 0 {
 			return completion, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
 		}
@@ -746,19 +763,10 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	if validateJSON {
 		var validate json.RawMessage
 		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			if choice.FinishReason == "length" {
-				return completion, false, fmt.Errorf(
-					"%w (finish_reason=length, completion_tokens=%d): %v",
-					errJSONCompletionTruncated,
-					parsed.Usage.CompletionTokens,
-					err,
-				)
-			}
 			return completion, false, fmt.Errorf("%w: %v", errJSONCompletionInvalid, err)
 		}
 	}
 
-	completion.Content = []byte(content)
 	return completion, false, nil
 }
 

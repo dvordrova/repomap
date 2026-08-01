@@ -255,6 +255,7 @@ func ensureGuidedTourWithOptions(
 				options.exchangeWriter,
 				request,
 				cached.Content,
+				cached.ResponseBytes,
 				1,
 				0,
 				debugdump.SemanticStateCacheHit,
@@ -288,56 +289,36 @@ func ensureGuidedTourWithOptions(
 	outcome.SemanticCalls = 1
 	outcome.AttemptedBytes = len(request)
 	providerStarted := time.Now()
-	var (
-		providerResult modelresearch.ProviderResult
-		callErr        error
-		validationErr  error
-	)
-	for proposalAttempt := 1; proposalAttempt <= 2; proposalAttempt++ {
-		current, currentCallErr := provider.EditGuidedTourMeasured(ctx, prompt)
-		providerResult.Content = current.Content
-		providerResult.Attempts += max(1, current.Attempts)
-		providerResult.InputTokens += current.InputTokens
-		providerResult.OutputTokens += current.OutputTokens
-		providerResult.PromptCacheHitTokens += current.PromptCacheHitTokens
-		providerResult.PromptCacheMissTokens += current.PromptCacheMissTokens
-		outcome.UnsupportedClaims += countGuidedTourProposalUnsupportedClaims(bundle, current.Content)
-		currentValidationErr := error(nil)
-		if currentCallErr == nil {
-			currentValidationErr = validateGuidedTourResponse(bundle, current.Content)
-		}
-		state := debugdump.SemanticStateAccepted
-		validationCode := debugdump.SemanticValidationAccepted
-		if ctx.Err() != nil {
-			state = debugdump.SemanticStateCanceled
-			validationCode = debugdump.SemanticValidationCanceled
-		} else if currentCallErr != nil {
-			state = debugdump.SemanticStateProviderFailed
-			validationCode = debugdump.SemanticValidationProvider
-		} else if currentValidationErr != nil {
-			state = debugdump.SemanticStateRejected
-			validationCode = debugdump.SemanticValidationResponse
-		}
-		recordGuidedTourSemanticExchange(
-			options.exchangeWriter,
-			request,
-			current.Content,
-			proposalAttempt,
-			current.Attempts,
-			state,
-			validationCode,
-		)
-		if currentCallErr != nil {
-			callErr = currentCallErr
-			break
-		}
-		validationErr = currentValidationErr
-		if validationErr == nil || proposalAttempt == 2 {
-			break
-		}
+	providerResult, callErr := provider.EditGuidedTourMeasured(ctx, prompt)
+	var validationErr error
+	if callErr == nil {
+		outcome.UnsupportedClaims = countGuidedTourProposalUnsupportedClaims(bundle, providerResult.Content)
+		validationErr = validateGuidedTourResponse(bundle, providerResult.Content)
 	}
+	state := debugdump.SemanticStateAccepted
+	validationCode := debugdump.SemanticValidationAccepted
+	if ctx.Err() != nil {
+		state = debugdump.SemanticStateCanceled
+		validationCode = debugdump.SemanticValidationCanceled
+	} else if callErr != nil {
+		state = debugdump.SemanticStateProviderFailed
+		validationCode = debugdump.SemanticValidationProvider
+	} else if validationErr != nil {
+		state = debugdump.SemanticStateRejected
+		validationCode = debugdump.SemanticValidationResponse
+	}
+	recordGuidedTourSemanticExchange(
+		options.exchangeWriter,
+		request,
+		providerFailureContentForExchange(callErr, providerResult.Content),
+		providerResultResponseBytes(providerResult),
+		1,
+		providerResult.Attempts,
+		state,
+		validationCode,
+	)
 	outcome.LatencyMillis = time.Since(providerStarted).Milliseconds()
-	outcome.ResponseBytes = len(providerResult.Content)
+	outcome.ResponseBytes = providerResultResponseBytes(providerResult)
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
 	outcome.PromptCacheHitTokens = providerResult.PromptCacheHitTokens
@@ -361,8 +342,7 @@ func ensureGuidedTourWithOptions(
 	if validationErr != nil {
 		outcome.ValidationState = "rejected"
 		outcome.ValidatorField, outcome.ValidatorRule, _ = guidedtour.ValidationIssueDetails(validationErr)
-		validationErr = fmt.Errorf("guided tour: validate response after %d provider attempt(s): %w",
-			providerResult.Attempts, validationErr)
+		validationErr = fmt.Errorf("guided tour: validate response: %w", validationErr)
 		if !options.independentExperiment {
 			if recordErr := recordGuidedTourResearch(runDir, outcome, policy, usage); recordErr != nil {
 				return outcome, errors.Join(validationErr, recordErr)
@@ -398,6 +378,7 @@ func recordGuidedTourSemanticExchange(
 	writer *debugdump.Writer,
 	request []byte,
 	response []byte,
+	responseBytes int,
 	semanticAttemptOrdinal int,
 	transportAttempts int,
 	state string,
@@ -430,7 +411,9 @@ func recordGuidedTourSemanticExchange(
 		} else if state == debugdump.SemanticStateCacheHit {
 			unavailableCode = debugdump.SemanticUnavailableCache
 		}
-		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: responseBytes,
+		}
 	}
 	writer.RecordSemanticExchange(exchange)
 }

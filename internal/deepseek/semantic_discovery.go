@@ -11,15 +11,6 @@ import (
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const semanticDiscoveryGlobalMinMaxTokens = 20_000
-
-// The self-host candidate run was truncated at the 20k global envelope and
-// returned incomplete JSON. Keep this purpose-specific headroom rather than
-// raising unrelated semantic stages.
-const semanticDiscoveryStudyCandidatesMinMaxTokens = 32_000
-
-const semanticDiscoveryPavedPathMinMaxTokens = 10_000
-
 // SemanticDiscoveryPromptJSON returns the exact OpenAI-compatible request used
 // by DiscoverSemanticsMeasured without making a provider call.
 func (c *Client) SemanticDiscoveryPromptJSON(prompt semanticdiscovery.Prompt) ([]byte, error) {
@@ -39,16 +30,6 @@ func (c *Client) SemanticDiscoveryPromptJSON(prompt semanticdiscovery.Prompt) ([
 			request.Temperature = nil
 			request.Thinking = &thinkingConfig{Type: "enabled"}
 			request.ReasoningEffort = string(prompt.ThinkingProfile)
-		}
-		if prompt.Version == semanticdiscovery.StudyCandidatesPromptVersion &&
-			request.MaxTokens < semanticDiscoveryStudyCandidatesMinMaxTokens {
-			request.MaxTokens = semanticDiscoveryStudyCandidatesMinMaxTokens
-		} else if semanticDiscoveryUsesLargeEnvelope(prompt.Version) &&
-			request.MaxTokens < semanticDiscoveryGlobalMinMaxTokens {
-			request.MaxTokens = semanticDiscoveryGlobalMinMaxTokens
-		} else if prompt.Version == pavedpath.PromptVersion &&
-			request.MaxTokens < semanticDiscoveryPavedPathMinMaxTokens {
-			request.MaxTokens = semanticDiscoveryPavedPathMinMaxTokens
 		}
 	}
 	return json.Marshal(request)
@@ -76,12 +57,8 @@ func (c *Client) DiscoverSemanticsMeasured(
 		body,
 		false,
 	)
-	return modelresearch.ProviderResult{
-		Content: result.Content, Attempts: 1,
-		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-		PromptCacheHitTokens:  result.PromptCacheHitTokens,
-		PromptCacheMissTokens: result.PromptCacheMissTokens,
-	}, err
+	return providerResultFromCompletion(result, 1, len(body)),
+		annotateResourceLimit(err, "semantic_discovery", c.MaxTokens)
 }
 
 func semanticDiscoveryProgressLabel(prompt semanticdiscovery.Prompt) string {
@@ -162,15 +139,4 @@ func validateSemanticDiscoveryPrompt(prompt semanticdiscovery.Prompt) error {
 		return fmt.Errorf("llm: semantic discovery user prompt is required")
 	}
 	return nil
-}
-
-func semanticDiscoveryUsesLargeEnvelope(version string) bool {
-	switch version {
-	case semanticdiscovery.LeafPromptVersion,
-		semanticdiscovery.ReadingPackReviewPromptVersion,
-		pavedpath.PromptVersion:
-		return false
-	default:
-		return true
-	}
 }

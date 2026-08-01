@@ -16,12 +16,6 @@ import (
 
 const LocalizationRequestVersion = "localization-openai-request-v1"
 
-// Each bounded terminal-presentation batch must have enough room for its
-// complete compact response. Casdoor proved that 32k is sufficient only after
-// the complete inventory is split deterministically; the full projection is
-// never attempted as one oversized provider completion.
-const localizationMinMaxTokens = 32_000
-
 // MaxLocalizationRequestBodyBytes is the shared upper bound for the exact
 // provider-free localization request and its immutable projection record.
 const MaxLocalizationRequestBodyBytes = 2 << 20
@@ -110,9 +104,6 @@ func (c *Client) BuildLocalizationRequest(
 	}
 
 	maxTokens := c.MaxTokens
-	if isOfficialDeepSeekEndpoint(endpoint) && maxTokens < localizationMinMaxTokens {
-		maxTokens = localizationMinMaxTokens
-	}
 	temperature := float64(0)
 	request := chatRequest{
 		Model: c.Model,
@@ -137,9 +128,11 @@ func (c *Client) BuildLocalizationRequest(
 		)
 	}
 	if len(body) == 0 || len(body) > MaxLocalizationRequestBodyBytes {
-		return LocalizationRequestEvidence{}, fmt.Errorf(
-			"llm: localization request exceeds its byte limit",
-		)
+		return LocalizationRequestEvidence{}, &ResourceLimitError{
+			Stage: "localization", Kind: ResourceLimitRequestBytes,
+			Limit: MaxLocalizationRequestBodyBytes, Observed: len(body),
+			ObservedKnown: true, ConfiguredMaxTokens: c.MaxTokens,
+		}
 	}
 	if _, found := secretscan.DetectAlways(string(body)); found {
 		return LocalizationRequestEvidence{}, fmt.Errorf(
@@ -168,6 +161,13 @@ func (evidence LocalizationRequestEvidence) Validate(
 	if _, err := localization.MarshalPrompt(prompt); err != nil {
 		return fmt.Errorf("llm: invalid localization prompt")
 	}
+	if len(evidence.Body) > MaxLocalizationRequestBodyBytes {
+		return &ResourceLimitError{
+			Stage: "localization", Kind: ResourceLimitRequestBytes,
+			Limit: MaxLocalizationRequestBodyBytes, Observed: len(evidence.Body),
+			ObservedKnown: true, ConfiguredMaxTokens: evidence.MaxTokens,
+		}
+	}
 	if evidence.Version != LocalizationRequestVersion ||
 		evidence.Provider != localizationProvider ||
 		!validLocalizationRequestScalar(evidence.Endpoint, false) ||
@@ -179,8 +179,7 @@ func (evidence LocalizationRequestEvidence) Validate(
 		evidence.MaxTokens <= 0 ||
 		evidence.ResponseFormat != "json_object" ||
 		evidence.ReasoningEffort != "" ||
-		len(evidence.Body) == 0 ||
-		len(evidence.Body) > MaxLocalizationRequestBodyBytes {
+		len(evidence.Body) == 0 {
 		return fmt.Errorf("llm: invalid localization request evidence")
 	}
 	canonicalEndpoint, err := canonicalLocalizationEndpoint(evidence.Endpoint)

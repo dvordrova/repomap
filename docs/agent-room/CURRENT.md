@@ -1,15 +1,33 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/193-grounded-orientation-direction-publication.md
+    decisions/194-honest-global-semantic-output-ceiling.md
 
 Status:
-    Decision 193 active; grounded Orientation direction publication authorized
+    Decision 194 active; honest global semantic output ceiling authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 194 makes REPOMAP_LLM_MAX_TOKENS the one truthful hard ceiling
+    for every semantic provider request, with a 64,000-token default and no
+    automatic stage floors, raises, doubling, or semantic completion/proposal
+    resends. Existing byte-identical bounded transport retries and stage-owned
+    thinking profiles remain separate. An exact request/response hard-limit
+    breach or any finish_reason=length is a typed terminal resource error: the
+    existing safe exchange recorder may retain the one failed exchange, but
+    the response is not cached or applied and the ordinary run exits non-zero
+    before later calls, authorized report/manifest/latest publication, serve,
+    or open. Architecture cache identity binds the exact provider request.
+    Russian localization consumes in-memory canonical report data and
+    authorized output is generated once after successful localization or the
+    existing non-resource fallback. No schema/cardinality expansion, provider
+    capability framework, per-stage output knob, new debug/cache framework,
+    transaction, legacy reader, migration, README/edge change, or live-model
+    path is added. Implementation lands in three reviewed checkpoints: shared
+    output-envelope core; callers/cache/top-level propagation; then Russian
+    single publication, truthful doctor/metadata, docs, and full verification.
     Decision 193 removes provider confidence as standalone publication
     authority for Orientation candidate directions. A direction is accepted
     only when the existing local proof is present or producer-owned local

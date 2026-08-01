@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
@@ -16,6 +18,7 @@ type guidedTourEditorStub struct {
 	response  []byte
 	responses [][]byte
 	calls     int
+	err       error
 }
 
 func (s *guidedTourEditorStub) GuidedTourPromptJSON(prompt guidedtour.Prompt) ([]byte, error) {
@@ -33,7 +36,7 @@ func (s *guidedTourEditorStub) EditGuidedTourMeasured(
 	}
 	return modelresearch.ProviderResult{
 		Content: response, InputTokens: 120, OutputTokens: 80, Attempts: 1,
-	}, nil
+	}, s.err
 }
 
 func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
@@ -85,8 +88,8 @@ func TestEnsureGuidedTourSelfHealsSemanticallyInvalidCache(t *testing.T) {
 	); err == nil {
 		t.Fatal("semantically invalid replacement was accepted")
 	}
-	if invalidProvider.calls != 2 {
-		t.Fatalf("ordinary bounded proposal attempts = %d, want 2", invalidProvider.calls)
+	if invalidProvider.calls != 1 {
+		t.Fatalf("ordinary bounded proposal attempts = %d, want 1", invalidProvider.calls)
 	}
 	if _, found, err := modelresearch.LoadStageResponse(cacheInput); err != nil || found {
 		t.Fatalf("invalid replacement cache = found %t, err %v", found, err)
@@ -226,8 +229,8 @@ func TestEnsureGuidedTourRejectsInventedReferenceWithoutSavingIt(t *testing.T) {
 	if len(cacheFiles) != 0 {
 		t.Fatalf("invalid proposal populated cache: %v", cacheFiles)
 	}
-	if provider.calls != 2 {
-		t.Fatalf("provider calls = %d, want one bounded validation retry", provider.calls)
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want one semantic proposal call", provider.calls)
 	}
 }
 
@@ -260,7 +263,7 @@ func TestEnsureGuidedTourReportsTypedPathLikeRejection(t *testing.T) {
 	}
 }
 
-func TestEnsureGuidedTourRetriesRejectedProposalAndPublishesOnlyValidResult(t *testing.T) {
+func TestEnsureGuidedTourDoesNotRetryRejectedProposal(t *testing.T) {
 	runDir := filepath.Join(t.TempDir(), "run")
 	bundle := guidedTourTestBundle()
 	provider := &guidedTourEditorStub{responses: [][]byte{
@@ -272,22 +275,49 @@ func TestEnsureGuidedTourRetriesRejectedProposalAndPublishesOnlyValidResult(t *t
 		context.Background(), bundle, runDir, "test", "fixture-model", provider,
 		guidedTourRunOptions{disableCache: true},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("rejected proposal was accepted")
 	}
-	if provider.calls != 2 || outcome.RetryCount != 1 || outcome.ValidationState != "accepted" {
+	if provider.calls != 1 || outcome.RetryCount != 0 || outcome.ValidationState != "rejected" {
 		t.Fatalf("provider calls = %d, outcome = %#v", provider.calls, outcome)
 	}
-	saved, err := os.ReadFile(filepath.Join(runDir, report.GuidedStoryFile))
-	if err != nil {
-		t.Fatal(err)
+	if _, statErr := os.Stat(filepath.Join(runDir, report.GuidedStoryFile)); !os.IsNotExist(statErr) {
+		t.Fatalf("rejected proposal artifact exists or stat failed: %v", statErr)
 	}
-	story, err := guidedtour.ReplayRecord(bundle, saved)
-	if err != nil {
-		t.Fatalf("saved retry result is not valid: %v", err)
+}
+
+func TestEnsureGuidedTourResourceLimitIsOneCallAndNeverCachedOrApplied(t *testing.T) {
+	t.Parallel()
+
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	provider := &guidedTourEditorStub{
+		response: []byte(`{"version":1`),
+		err: &deepseek.ResourceLimitError{
+			Stage: "guided_tour", Kind: deepseek.ResourceLimitOutputTokens,
+			Limit: 128, Observed: 128, ObservedKnown: true,
+			FinishReason: "length",
+		},
 	}
-	if story.CandidateID != bundle.Candidates[0].ID {
-		t.Fatalf("story = %#v", story)
+	outcome, err := ensureGuidedTour(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("ensureGuidedTour() error = %v, want ResourceLimitError", err)
+	}
+	if provider.calls != 1 || outcome.RetryCount != 0 || outcome.ValidationState != "failed" {
+		t.Fatalf("provider calls/outcome = %d/%#v", provider.calls, outcome)
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, report.GuidedStoryFile)); !os.IsNotExist(statErr) {
+		t.Fatalf("resource-limited story exists or stat failed: %v", statErr)
+	}
+	cacheFiles, globErr := filepath.Glob(filepath.Join(filepath.Dir(runDir), ".model-research", "*.json"))
+	if globErr != nil {
+		t.Fatal(globErr)
+	}
+	if len(cacheFiles) != 0 {
+		t.Fatalf("resource-limited response populated cache: %v", cacheFiles)
 	}
 }
 

@@ -3,7 +3,6 @@ package deepseek
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,10 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
-
-const guidedTourGlobalMinMaxTokens = 12_000
-
-const guidedTourFanInMinMaxTokens = guidedTourGlobalMinMaxTokens
 
 // GuidedTourPromptJSON returns the exact OpenAI-compatible request used by
 // EditGuidedTourMeasured without making a provider call.
@@ -41,10 +36,6 @@ func (c *Client) guidedTourRequest(prompt guidedtour.Prompt) (chatRequest, error
 		} else {
 			request.ReasoningEffort = "max"
 		}
-		if (prompt.Version == guidedtour.PromptVersion || prompt.Version == guidedtour.FanInPromptVersion) &&
-			request.MaxTokens < guidedTourGlobalMinMaxTokens {
-			request.MaxTokens = guidedTourGlobalMinMaxTokens
-		}
 	}
 	return request, nil
 }
@@ -61,12 +52,12 @@ func (c *Client) EditGuidedTourMeasured(
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
 	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return modelresearch.ProviderResult{}, fmt.Errorf("llm: encode guided tour request: %w", err)
+	}
 	var measured modelresearch.ProviderResult
 	for attempt := 1; attempt <= 2; attempt++ {
-		body, marshalErr := json.Marshal(request)
-		if marshalErr != nil {
-			return measured, fmt.Errorf("llm: encode guided tour request: %w", marshalErr)
-		}
 		result, retryableTransport, callErr := doChatMeasured(
 			ctx,
 			c.HTTPClient,
@@ -77,26 +68,20 @@ func (c *Client) EditGuidedTourMeasured(
 			true,
 		)
 		measured.Attempts = attempt
+		measured.RequestBytes += len(body)
+		measured.ResponseBytes += result.ResponseBytes
 		measured.InputTokens += result.InputTokens
 		measured.OutputTokens += result.OutputTokens
+		measured.ReasoningTokens += result.ReasoningTokens
 		measured.PromptCacheHitTokens += result.PromptCacheHitTokens
 		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
+		measured.Content = append([]byte(nil), result.Content...)
+		measured.FinishReason = result.FinishReason
 		if callErr == nil {
-			measured.Content = result.Content
 			return measured, nil
 		}
-		retryableResponse := errors.Is(callErr, errJSONCompletionTruncated) ||
-			errors.Is(callErr, errJSONCompletionInvalid) ||
-			errors.Is(callErr, errResponseEnvelopeMalformed)
-		if (!retryableTransport && !retryableResponse) || attempt == 2 {
-			return measured, callErr
-		}
-		if errors.Is(callErr, errJSONCompletionTruncated) {
-			maxInt := int(^uint(0) >> 1)
-			if request.MaxTokens > maxInt/2 {
-				return measured, callErr
-			}
-			request.MaxTokens *= 2
+		if !retryableTransport || attempt == 2 {
+			return measured, annotateResourceLimit(callErr, "guided_tour", request.MaxTokens)
 		}
 		select {
 		case <-ctx.Done():

@@ -233,10 +233,10 @@ reasonable commit story, but exact-symbol inspection showed that
 connected explanation. This falsification is the reason teacher cannot follow
 planner directly: `DB.Apply` must become the single bounded frontier hop.
 
-The transport experiment also rejected an artificial small response budget.
-Pebble returned empty content with `max_tokens: 1600` and succeeded with the
-configured/default 6000. Deeper stages should keep the provider configuration
-instead of silently imposing a smaller per-cube cap.
+The historical transport experiment also rejected an artificial small response
+budget. Pebble returned empty content with `max_tokens: 1600` and succeeded with
+the then-configured 6000-token ceiling. The current global default is 64,000 and
+every stage uses its exact configured value instead of imposing a per-cube cap.
 
 ### Step 2: bounded local probe
 
@@ -300,8 +300,10 @@ under its own byte budget.
 
 The Pebble chain was compacted from about 207 KiB of local probe JSON into a
 path-free 27-28 KiB teacher bundle. A separate local index retained every
-clickable `file:line` locator. The request used JSON mode, temperature zero,
-the configured 6000-token budget, and one logical provider call.
+clickable `file:line` locator. The historical request used JSON mode,
+temperature zero, the then-configured 6000-token budget, and one logical
+provider call. Current requests use the exact global ceiling (64,000 by
+default).
 
 The first teacher version recovered the correct bridge and separated the
 ingest `directWrite` lead, but incorrectly claimed that supplied

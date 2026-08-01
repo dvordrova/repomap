@@ -54,12 +54,8 @@ func (c *Client) SynthesizeComponentLandscapeMeasured(
 		body,
 		false,
 	)
-	return modelresearch.ProviderResult{
-		Content: result.Content, Attempts: 1,
-		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-		PromptCacheHitTokens:  result.PromptCacheHitTokens,
-		PromptCacheMissTokens: result.PromptCacheMissTokens,
-	}, err
+	return providerResultFromCompletion(result, 1, len(body)),
+		annotateResourceLimit(err, "architecture_synthesis", c.MaxTokens)
 }
 
 func validateComponentSynthesisPrompt(prompt componentmap.SynthesisPrompt) error {

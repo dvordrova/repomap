@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
@@ -103,6 +104,53 @@ type studyMapV32ReviewProviderStub struct {
 	failPlanID string
 	plans      []string
 	calls      []string
+}
+
+type studyMapV32ResourceLimitProvider struct {
+	calls int
+}
+
+func (stub *studyMapV32ResourceLimitProvider) SemanticDiscoveryPromptJSON(
+	prompt semanticdiscovery.Prompt,
+) ([]byte, error) {
+	return json.Marshal(prompt)
+}
+
+func (stub *studyMapV32ResourceLimitProvider) DiscoverSemanticsMeasured(
+	_ context.Context,
+	_ semanticdiscovery.Prompt,
+) (modelresearch.ProviderResult, error) {
+	stub.calls++
+	return modelresearch.ProviderResult{
+			Content: []byte(`{"version":1`), Attempts: 1,
+		}, &deepseek.ResourceLimitError{
+			Stage: "semantic_discovery", Kind: deepseek.ResourceLimitOutputTokens,
+			Limit: 128, Observed: 128, ObservedKnown: true,
+			FinishReason: "length",
+		}
+}
+
+func TestPrepareStudyMapV32ResourceLimitSuppressesLaterStages(t *testing.T) {
+	t.Parallel()
+
+	bundle, _ := studyMapV32ReviewFixture(t)
+	provider := &studyMapV32ResourceLimitProvider{}
+	runDir := t.TempDir()
+	_, _, stages, err := prepareStudyMapV32(
+		context.Background(), runDir, bundle, provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("prepareStudyMapV32() error = %v, want ResourceLimitError", err)
+	}
+	if provider.calls != 1 || len(stages) != 1 || stages[0].Status != "failed_provider" {
+		t.Fatalf("provider calls/stages = %d/%#v, want terminal first-stage failure", provider.calls, stages)
+	}
+	for _, name := range []string{studyMapBriefShapeFile, studyMapDirectionsFile, studyMapReviewsFile} {
+		if _, statErr := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("later-stage artifact %s exists or stat failed: %v", name, statErr)
+		}
+	}
 }
 
 func (stub *studyMapV32ReviewProviderStub) SemanticDiscoveryPromptJSON(

@@ -12,7 +12,7 @@ REPOMAP_LLM_ENDPOINT      required full chat/completions URL
 REPOMAP_LLM_MODEL         model name
 REPOMAP_LLM_API_KEY       required for bearer auth
 REPOMAP_LLM_AUTH          bearer (default) or none
-REPOMAP_LLM_MAX_TOKENS    positive integer (default 6000)
+REPOMAP_LLM_MAX_TOKENS    positive integer (default 64000; sole output-ceiling override)
 REPOMAP_LLM_TIMEOUT       Go duration (default 10m)
 ```
 
@@ -22,9 +22,10 @@ to the public DeepSeek endpoint and prevents a stale DeepSeek key from reaching
 an internal endpoint.
 
 `DEEPSEEK_ENDPOINT`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_KEY`,
-`DEEPSEEK_MAX_TOKENS`, `DEEPSEEK_TIMEOUT`, and `DEEPSEEK_AUTH` remain a
-legacy-only compatibility mode. With no explicit legacy endpoint/model, the
-DeepSeek defaults below are used.
+`DEEPSEEK_TIMEOUT`, and `DEEPSEEK_AUTH` remain a legacy-only compatibility
+mode. With no explicit legacy endpoint/model, the DeepSeek defaults below are
+used. `DEEPSEEK_MAX_TOKENS` is intentionally ignored: the only output-ceiling
+override in either configuration mode is `REPOMAP_LLM_MAX_TOKENS`.
 
 The application does not source `.env` files. The current repository may be
 untrusted input and its environment file may contain unrelated credentials or
@@ -114,7 +115,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     }
   ],
   "temperature": 0.1,
-  "max_tokens": 6000,
+  "max_tokens": 64000,
   "response_format": {"type": "json_object"}
 }
 ```
@@ -124,10 +125,12 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 - Request must include `"response_format": {"type": "json_object"}`.
 - Prompt must contain the word **json** (case-insensitive match is fine).
 - Prompt must include an example JSON shape so the model knows the expected schema.
-- `max_tokens` must be high enough to avoid truncation (default 6000).
-- Do not replace the configured/default budget with a small stage-specific cap.
-  The Pebble component planner returned empty content at 1600 tokens and
-  succeeded at 6000.
+- Every semantic request serializes the exact configured global output ceiling.
+  The default is 64,000 and `REPOMAP_LLM_MAX_TOKENS` is its only override.
+  Request builders do not raise, lower, or double it for a stage or endpoint.
+  Historical Pebble calibration returned empty content at 1,600 tokens and
+  succeeded at the then-configured 6,000-token ceiling; that evidence motivated
+  removing smaller stage-specific caps, not a current per-stage exception.
 - DeepSeek V4 enables thinking by default. The architecture grouping request is
   a bounded classification task, so the official DeepSeek endpoint receives
   `"thinking": {"type":"disabled"}` for that request only. Generic compatible
@@ -142,35 +145,26 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   monolithic editor and final fan-in planner receive `reasoning_effort:"max"`.
   Thinking mode ignores temperature, so determinism comes from strict JSON
   contracts, opaque-ID validation, canonical inputs, and replayable caches.
-- The monolithic guided editor and final guided fan-in use a minimum
-  12,000-token response envelope on the official endpoint. Bounded leaves keep
-  the configured default, and larger explicit user configuration is preserved.
-  Real Chatto and self-experiment runs showed `thinking/max` consuming the
-  ordinary 6,000-token envelope before completing the strict JSON wrapper. If
-  the provider explicitly ends a partial JSON response with
-  `finish_reason=length`, the guided editor retries exactly once with twice the
-  first attempt's output headroom. Retryable network failures, malformed
-  response envelopes, and incomplete JSON receive one bounded replay of the
-  same request. A syntactically valid proposal rejected by local Guided Tour
-  validation also receives one fresh bounded proposal attempt. Only a locally
+- Guided editor, fan-in, and leaf requests all use the exact global ceiling.
+  Historical Chatto and self-experiment runs showed `thinking/max` consuming
+  6,000 and 12,000-token envelopes before completing the strict JSON wrapper;
+  the current 64,000 default replaces those former stage floors. An explicit
+  `finish_reason=length`, malformed or incomplete semantic content, or local
+  Guided Tour rejection is terminal for that semantic request. It is never
+  resent for more output or replaced by a fresh proposal. Only a locally
   accepted proposal can be cached or published.
 - Semantic discovery always uses JSON mode. On the official DeepSeek endpoint,
   the opportunity scan, fan-in synthesis, and monolithic comparison use
   `"thinking":{"type":"enabled"}` with `reasoning_effort:"max"`; bounded
   evidence leaves use `reasoning_effort:"high"`. Temperature is omitted for
-  all of these thinking-mode requests. These three global semantic tasks use
-  a minimum 20,000-token response envelope, while
-  bounded leaves retain the configured default and larger explicit user
-  configurations are preserved. Generic compatible endpoints receive the
+  all of these thinking-mode requests. Global tasks and bounded leaves use the
+  same exact configured ceiling. Generic compatible endpoints receive the
   ordinary OpenAI-compatible JSON request without DeepSeek-specific thinking
-  fields. The first self scan exhausted exactly 6,000 output tokens and ended
-  in a locally rejected, truncated JSON object; no invalid response was
-  accepted or written to the semantic replay record.
-  A later five-artifact fan-in also exhausted exactly 12,000 output tokens and
-  ended mid-JSON, so 12,000 is not sufficient for DeepSeek V4 Flash at
-  `reasoning_effort:"max"` even when the final JSON itself is small. The
-  20,000-token minimum is limited to global semantic tasks; bounded leaves and
-  unrelated stages keep their existing limits.
+  fields. Historical scans exhausted 6,000 and 12,000 output-token envelopes
+  and ended in locally rejected truncated JSON; no invalid response was
+  accepted or written to the semantic replay record. Those measurements
+  informed the current global 64,000 default rather than creating per-stage
+  minimums.
 - Study reading-pack review is a bounded classification over three to five
   exact anchors. The official endpoint receives explicit disabled thinking for
   that review only; compatible endpoints receive no DeepSeek-specific field.
@@ -185,7 +179,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   internal projection remain keyed by the original stable IDs. Each batch has
   an exact request/cache identity, passes the same strict completeness,
   placeholder, language, secret, and tuple-order validation on a live response
-  or cache hit, and keeps the 32,000-token provider maximum. A batch contains
+  or cache hit, and uses the exact global output ceiling. A batch contains
   at most 64 fields. The current saved Casdoor replay contains 508 fields and
   deterministically produces eight batches: seven batches of 64 fields and one
   final batch of 60. This is a replay measurement, not a claim of complete live
@@ -463,10 +457,10 @@ closed `allowed_paths` set. It never receives the checkout display name, raw
 file tree, global edges, or generic onboarding artifacts.
 
 On the official DeepSeek endpoint, this request enables thinking with
-`reasoning_effort: "high"`, omits temperature, and uses a purpose-specific
-10,000-token minimum because the development run demonstrated truncation at
-the ordinary 6,000-token envelope. Compatible endpoints receive the ordinary
-configured JSON-mode request. The
+`reasoning_effort: "high"` and omits temperature. It uses the same exact global
+output ceiling as every other semantic request; the historical development run
+that truncated at 6,000 no longer creates a purpose-specific minimum.
+Compatible endpoints receive the ordinary configured JSON-mode request. The
 response is only a proposal: local reduction rejects unknown IDs, fabricated
 local relations, unsupported causal claims, ungrounded commands, and paths
 outside the bundle. A substantive rejection is not retried; Task Lens may
@@ -507,10 +501,14 @@ split-line, or truncated shapes are not promoted.
 
 ## Retry behavior
 
-- Retry on network errors (unless context canceled/exceeded).
-- Retry on HTTP 429 and 5xx.
-- No retry on HTTP 4xx (except 429).
-- Small exponential backoff with jitter, max 3 retries.
+- The shared transport may replay the exact same request after retryable network
+  errors, HTTP 429, or HTTP 5xx, using bounded exponential backoff with jitter
+  and at most three retries.
+- Context cancellation, non-429 HTTP 4xx, response-body overflow,
+  `finish_reason=length`, malformed semantic content, and local semantic
+  rejection are not retried.
+- Transport replay never changes `max_tokens`, prompt content, request identity,
+  or any other request byte. There is no semantic completion/proposal retry.
 
 ## Debugging
 

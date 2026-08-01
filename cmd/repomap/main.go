@@ -731,6 +731,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
+				if isSemanticResourceLimit(err) {
+					return err
+				}
 				fmt.Fprintf(deps.stderr, "warning: %v; architecture map will be unavailable (after %d ms)\n", err, time.Since(architectureStarted).Milliseconds())
 			}
 		}
@@ -741,6 +744,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				return ctxErr
 			}
 			if guidedErr != nil {
+				if isSemanticResourceLimit(guidedErr) {
+					return guidedErr
+				}
 				if outcome.ValidatorField != "" && outcome.ValidatorRule != "" {
 					fmt.Fprintf(
 						deps.stderr,
@@ -787,6 +793,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				return ctxErr
 			}
 			if studyErr != nil {
+				if isSemanticResourceLimit(studyErr) {
+					return studyErr
+				}
 				fmt.Fprintf(
 					deps.stderr,
 					"warning: %v; report will keep its existing overview and code paths (after %d ms)\n",
@@ -841,20 +850,22 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			return report.GenerateAuthorized(runDir, authority)
 		}
 		reportStarted := time.Now()
-		reportGenerated := false
 		if reportLanguage == "ru" {
-			// Publish the exact authority-bound canonical English artifact
-			// before the optional provider/cache/sidecar projection. The
-			// localization input is then derived from this same report.json.
-			if err := generateAuthorizedReport(); err != nil {
-				return fmt.Errorf("generate canonical authorized browser report: %w", err)
-			}
-			reportGenerated = true
+			localizationData, preparedLocalization, preparationErr :=
+				preparePresentationLocalizationForRun(
+					runDir,
+					reportData,
+					sourceEpisodeJSON,
+				)
 			if *offline {
+				var prepared *report.PreparedPresentationLocalization
+				if preparationErr == nil {
+					prepared = &preparedLocalization
+				}
 				if err := markPresentationLocalizationUnavailable(
 					runDir,
 					report.LocalizationFailureOfflineRequested,
-					sourceEpisodeJSON,
+					prepared,
 				); err != nil {
 					fmt.Fprintln(
 						deps.stderr,
@@ -871,15 +882,30 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					"repomap: translating the complete bounded presentation inventory from canonical English to Russian",
 				)
 				localizationStarted := time.Now()
-				localizationOutcome, localizationErr := localizePresentationForRun(
-					ctx,
-					runDir,
-					filepath.Join(dDir, presentationLocalizationCacheDir),
-					*noCache,
-					deps.stderr,
-					sourceEpisodeJSON,
-				)
+				var localizationOutcome presentationLocalizationOutcome
+				var localizationErr error
+				if preparationErr != nil {
+					localizationOutcome, localizationErr =
+						recordPresentationLocalizationPreparationFailure(
+							runDir,
+							preparationErr,
+						)
+				} else {
+					localizationOutcome, localizationErr =
+						localizePreparedPresentationForRun(
+							ctx,
+							runDir,
+							filepath.Join(dDir, presentationLocalizationCacheDir),
+							*noCache,
+							deps.stderr,
+							localizationData,
+							preparedLocalization,
+						)
+				}
 				if localizationErr != nil {
+					if isSemanticResourceLimit(localizationErr) {
+						return localizationErr
+					}
 					fmt.Fprintln(
 						deps.stderr,
 						"warning: Russian localization status could not be saved; Russian product UI will retain canonical English model prose",
@@ -990,15 +1016,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 					len(report.CapturedInputPaths(reportData)),
 					time.Since(localizationReconciliationStarted).Milliseconds(),
 				)
-				// The first render was canonical pre-translation publication.
-				// Re-render once with the successful or failed live projection.
-				reportGenerated = false
 			}
 		}
-		if !reportGenerated {
-			if err := generateAuthorizedReport(); err != nil {
-				return fmt.Errorf("generate authorized browser report: %w", err)
-			}
+		if err := generateAuthorizedReport(); err != nil {
+			return fmt.Errorf("generate authorized browser report: %w", err)
 		}
 		fmt.Fprintf(deps.stderr, "repomap: generated authorized report in %d ms\n", time.Since(reportStarted).Milliseconds())
 		if showProgress {
@@ -1323,6 +1344,9 @@ func runOrient(args []string) error {
 
 	if reportArtifacts {
 		if _, err := synthesizeArchitectureForRun(ctx, runDir, os.Stderr, false); err != nil {
+			if isSemanticResourceLimit(err) {
+				return err
+			}
 			fmt.Fprintf(os.Stderr, "warning: %v; architecture map will be unavailable\n", err)
 		}
 		reportData, err := report.ReadRunDir(runDir)
@@ -1558,6 +1582,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "auth: %s\n", client.Auth)
 	fmt.Fprintf(stdout, "timeout: %s\n", client.HTTPClient.Timeout)
 	fmt.Fprintf(stdout, "max_tokens: %d\n", client.MaxTokens)
+	fmt.Fprintln(stdout, "max_tokens_override: REPOMAP_LLM_MAX_TOKENS")
 	if !*check {
 		fmt.Fprintln(stdout, "network_check: skipped (use --check)")
 		return nil

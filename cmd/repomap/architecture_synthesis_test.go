@@ -17,9 +17,10 @@ import (
 )
 
 type architectureSynthesisStub struct {
-	calls    int
-	response []byte
-	err      error
+	calls     int
+	response  []byte
+	err       error
+	maxTokens int
 }
 
 func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeMeasured(
@@ -31,7 +32,43 @@ func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeMeasured(
 }
 
 func (stub *architectureSynthesisStub) ComponentSynthesisPromptJSON(prompt componentmap.SynthesisPrompt) ([]byte, error) {
-	return json.Marshal(prompt)
+	maxTokens := stub.maxTokens
+	if maxTokens == 0 {
+		maxTokens = 64_000
+	}
+	return json.Marshal(struct {
+		Prompt    componentmap.SynthesisPrompt `json:"prompt"`
+		MaxTokens int                          `json:"max_tokens"`
+	}{Prompt: prompt, MaxTokens: maxTokens})
+}
+
+func architectureSynthesisTestCacheKey(
+	t *testing.T,
+	bundle componentmap.CandidateBundle,
+	revision,
+	profile,
+	model string,
+	provider *architectureSynthesisStub,
+) string {
+	t.Helper()
+	base, err := componentmap.SynthesisCacheKeyForProvider(
+		revision,
+		bundle,
+		profile,
+		model,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := provider.ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base + "-request-" + modelresearch.SHA256(request)
 }
 
 func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
@@ -80,6 +117,46 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 	if landscape.Fallback || landscape.Subsystems[0].Components[0].Name != "Runtime" {
 		t.Fatalf("cached landscape = %#v", landscape)
+	}
+}
+
+func TestEnsureArchitectureSynthesisCacheMissesAcrossConfiguredMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{
+		response:  architectureSynthesisTestResponse(t, bundle),
+		maxTokens: 8_000,
+	}
+	runsDir := t.TempDir()
+	run := func(name string) architectureSynthesisOutcome {
+		t.Helper()
+		runDir := filepath.Join(runsDir, name)
+		if err := os.MkdirAll(runDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		outcome, err := ensureArchitectureSynthesis(
+			context.Background(), bundle, runDir, "revision-max-tokens",
+			"openai-compatible/bearer", "test-model", provider,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return outcome
+	}
+
+	if first := run("same-run"); first.Cached {
+		t.Fatalf("first outcome = %#v", first)
+	}
+	provider.maxTokens = 16_000
+	if changed := run("same-run"); changed.Cached {
+		t.Fatalf("changed-max outcome = %#v, want cache miss", changed)
+	}
+	if warm := run("warm"); !warm.Cached {
+		t.Fatalf("warm outcome = %#v, want exact-request cache hit", warm)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one call per exact max_tokens request", provider.calls)
 	}
 }
 
@@ -299,12 +376,9 @@ func TestEnsureArchitectureSynthesisRefetchesCorruptSavedRecord(t *testing.T) {
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cacheKey, err := componentmap.SynthesisCacheKeyForProvider(
-		"revision-corrupt", bundle, "openai-compatible/bearer", "test-model",
+	cacheKey := architectureSynthesisTestCacheKey(
+		t, bundle, "revision-corrupt", "openai-compatible/bearer", "test-model", provider,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cacheDir := filepath.Join(runsDir, architectureSynthesisCacheDirectory)
 	if err := os.Mkdir(cacheDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -365,20 +439,15 @@ func TestEnsureArchitectureSynthesisRefetchesLanguageUnknownActiveCache(t *testi
 			t.Fatal(err)
 		}
 	}
-	cacheKey, err := componentmap.SynthesisCacheKeyForProvider(
-		"revision-language-unknown",
-		bundle,
-		"openai-compatible/bearer",
-		"test-model",
+	provider := &architectureSynthesisStub{response: response}
+	cacheKey := architectureSynthesisTestCacheKey(
+		t, bundle, "revision-language-unknown",
+		"openai-compatible/bearer", "test-model", provider,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(cacheDir, cacheKey+".json"), saved, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	provider := &architectureSynthesisStub{response: response}
 	outcome, err := ensureArchitectureSynthesisWithOptions(
 		context.Background(),
 		bundle,

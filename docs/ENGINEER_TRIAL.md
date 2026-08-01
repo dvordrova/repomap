@@ -48,6 +48,8 @@ export REPOMAP_LLM_MODEL=company-code-model
 export REPOMAP_LLM_API_KEY=...
 export REPOMAP_LLM_AUTH=bearer
 export REPOMAP_LLM_TIMEOUT=90s
+# Optional sole output-ceiling override; the default is 64000.
+export REPOMAP_LLM_MAX_TOKENS=64000
 ```
 
 For an explicitly unauthenticated local endpoint:
@@ -58,9 +60,16 @@ export REPOMAP_LLM_MODEL=qwen2.5-coder:1.5b
 export REPOMAP_LLM_AUTH=none
 ```
 
-`DEEPSEEK_*` remains a compatibility alias. New integrations should use
-`REPOMAP_LLM_*`. The namespaces are atomic: generic configuration requires an
-explicit endpoint and never inherits a legacy DeepSeek key or endpoint.
+Legacy `DEEPSEEK_*` endpoint, model, key, timeout, and auth settings remain a
+compatibility mode. New integrations should use `REPOMAP_LLM_*`. The namespaces
+are atomic: generic configuration requires an explicit endpoint and never
+inherits a legacy DeepSeek key or endpoint. `DEEPSEEK_MAX_TOKENS` is ignored;
+the sole output-ceiling override is `REPOMAP_LLM_MAX_TOKENS`.
+
+The default output ceiling is 64,000 tokens. Every semantic request sends that
+exact configured value; no stage raises, lowers, or doubles it. An explicit
+`finish_reason=length` terminates the run as a resource-limit result without a
+semantic resend or partial report publication.
 
 Check configuration without sending repository content, then optionally send a
 tiny synthetic JSON compatibility request:

@@ -248,7 +248,7 @@ func TestGoTopicProviderRequestIsOneShotJSONWithThinkingDisabled(t *testing.T) {
 	client := &deepseek.Client{
 		Endpoint:  "https://api.deepseek.com/chat/completions",
 		Model:     "deepseek-v4-flash",
-		MaxTokens: goTopicModelMaxTokens,
+		MaxTokens: 7891,
 	}
 	request, err := client.ComponentSynthesisPromptJSON(goTopicSynthesisPrompt(
 		systemPrompt,
@@ -275,7 +275,7 @@ func TestGoTopicProviderRequestIsOneShotJSONWithThinkingDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	if decoded.Model != "deepseek-v4-flash" ||
-		decoded.MaxTokens != goTopicModelMaxTokens ||
+		decoded.MaxTokens != client.MaxTokens ||
 		decoded.ResponseFormat.Type != "json_object" ||
 		decoded.Thinking.Type != "disabled" ||
 		len(decoded.Messages) != 2 ||

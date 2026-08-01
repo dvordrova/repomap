@@ -2,6 +2,7 @@ package orient
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -228,23 +229,16 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 	}
 }
 
-func TestObtainOrientationDoesNotCacheRecoveredCompletionUnderBaseRequest(t *testing.T) {
+func TestObtainOrientationLengthCompletionIsTerminalAndNotCached(t *testing.T) {
 	t.Parallel()
 
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests++
 		w.Header().Set("Content-Type", "application/json")
-		if requests%2 == 1 {
-			_, _ = io.WriteString(w, `{
-				"choices":[{"finish_reason":"length","message":{"content":"{\"cut\":"}}],
-				"usage":{"completion_tokens":128}
-			}`)
-			return
-		}
 		_, _ = io.WriteString(w, `{
-			"choices":[{"finish_reason":"stop","message":{"content":"{}"}}],
-			"usage":{"completion_tokens":8}
+			"choices":[{"finish_reason":"length","message":{"content":"{}"}}],
+			"usage":{"completion_tokens":128}
 		}`)
 	}))
 	defer server.Close()
@@ -270,28 +264,28 @@ func TestObtainOrientationDoesNotCacheRecoveredCompletionUnderBaseRequest(t *tes
 	}
 	policy := modelresearch.DefaultPolicy()
 
-	run := func() orientationCall {
+	run := func() {
 		t.Helper()
 		call, callErr := obtainOrientation(
 			context.Background(), client, writer, policy, repository, "test",
 			bundleJSON, bundleHash, requestJSON, true, acceptCachedOrientation,
 		)
-		if callErr != nil {
-			t.Fatal(callErr)
+		var limitErr *deepseek.ResourceLimitError
+		if !errors.As(callErr, &limitErr) {
+			t.Fatalf("obtainOrientation() error = %v, want ResourceLimitError", callErr)
 		}
-		if saveErr := saveOrientationResponse(call); saveErr != nil {
-			t.Fatal(saveErr)
+		if call.Metrics.Status != "failed" || call.Metrics.SemanticCalls != 1 ||
+			call.Metrics.RetryCount != 0 {
+			t.Fatalf("terminal orientation call = %#v", call)
 		}
-		return call
+		if _, found, loadErr := modelresearch.LoadStageResponse(call.CacheInput); loadErr != nil || found {
+			t.Fatalf("terminal response cache = found %t, err %v", found, loadErr)
+		}
 	}
-	first := run()
-	second := run()
-	if first.SaveCache || second.SaveCache || first.Metrics.CacheHit || second.Metrics.CacheHit {
-		t.Fatalf("recovered cache state = first %#v, second %#v", first, second)
-	}
-	if requests != 4 || first.Metrics.SemanticCalls != 1 || first.Metrics.RetryCount != 1 ||
-		first.Metrics.RequestBytes <= len(requestJSON) {
-		t.Fatalf("requests/metrics = %d/%#v", requests, first.Metrics)
+	run()
+	run()
+	if requests != 2 {
+		t.Fatalf("provider requests = %d, want one terminal request per run", requests)
 	}
 }
 

@@ -94,16 +94,25 @@ export REPOMAP_LLM_MODEL=company-code-model
 export REPOMAP_LLM_API_KEY=...
 export REPOMAP_LLM_AUTH=bearer
 export REPOMAP_LLM_TIMEOUT=90s
+# Optional sole output-ceiling override; the default is 64000.
+export REPOMAP_LLM_MAX_TOKENS=64000
 ```
 
 For an explicitly unauthenticated local endpoint, set
 `REPOMAP_LLM_AUTH=none`. No-auth always requires an explicit endpoint; it can
-never fall back to the public DeepSeek URL. Existing `DEEPSEEK_*` variables
-remain compatibility aliases.
+never fall back to the public DeepSeek URL. Existing `DEEPSEEK_*` endpoint,
+model, key, timeout, and auth variables remain compatibility aliases.
+`DEEPSEEK_MAX_TOKENS` is ignored; `REPOMAP_LLM_MAX_TOKENS` is the sole
+output-ceiling override.
 
 The two namespaces are never mixed. Once any `REPOMAP_LLM_*` variable is used,
 `REPOMAP_LLM_ENDPOINT` is required and stale `DEEPSEEK_*` credentials cannot be
 inherited accidentally.
+
+Every semantic request uses the exact same configured `max_tokens` value. The
+default is 64,000; stages never raise, lower, or double it. A provider
+`finish_reason=length` is a terminal resource-limit result, not a signal to
+resend the semantic request.
 
 The current compatibility contract is intentionally small: OpenAI-style
 `chat/completions` plus `response_format: {"type":"json_object"}`. Run the

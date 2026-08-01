@@ -109,7 +109,7 @@ func TestSemanticDiscoveryPromptJSONUsesPurposeSpecificDeepSeekThinking(t *testi
 			name:       "opportunity scan uses max",
 			version:    semanticdiscovery.OpportunityPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "bounded leaf uses high",
@@ -121,43 +121,43 @@ func TestSemanticDiscoveryPromptJSONUsesPurposeSpecificDeepSeekThinking(t *testi
 			name:       "fan in uses max and larger envelope",
 			version:    semanticdiscovery.FanInPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "monolithic comparison uses max",
 			version:    semanticdiscovery.MonolithicPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "golden mechanism uses max",
 			version:    semanticdiscovery.GoldenMechanismPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "legacy golden v3 remains accepted",
 			version:    semanticdiscovery.GoldenMechanismPromptVersionV3,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "repository onboarding editor uses max",
 			version:    semanticdiscovery.OnboardingEditorPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "repository brief and shape uses max",
 			version:    semanticdiscovery.StudyBriefPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryGlobalMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "repository study candidates uses max",
 			version:    semanticdiscovery.StudyCandidatesPromptVersion,
 			profile:    semanticdiscovery.ThinkingMax,
-			wantTokens: semanticDiscoveryStudyCandidatesMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 		{
 			name:       "bounded reading pack review disables thinking",
@@ -169,7 +169,7 @@ func TestSemanticDiscoveryPromptJSONUsesPurposeSpecificDeepSeekThinking(t *testi
 			name:       "bounded operating guide uses high",
 			version:    pavedpath.PromptVersion,
 			profile:    semanticdiscovery.ThinkingHigh,
-			wantTokens: semanticDiscoveryPavedPathMinMaxTokens,
+			wantTokens: client.MaxTokens,
 		},
 	}
 	for _, test := range tests {

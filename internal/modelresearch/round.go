@@ -23,10 +23,12 @@ type Prompt struct {
 type ProviderResult struct {
 	Content               []byte
 	Attempts              int
-	CompletionRetries     int
 	RequestBytes          int
+	ResponseBytes         int
 	InputTokens           int
 	OutputTokens          int
+	ReasoningTokens       int
+	FinishReason          string
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
 }
@@ -205,7 +207,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 					return round, err
 				}
 				recordTargetedSemanticExchange(
-					input, request, record.Response, 0,
+					input, request, record.Response, record.ResponseBytes, 0,
 					debugdump.SemanticStateCacheHit,
 					debugdump.SemanticValidationCache,
 				)
@@ -223,7 +225,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	started := time.Now()
 	result, callErr := input.Provider.Research(ctx, prompt)
 	round.LatencyMillis = time.Since(started).Milliseconds()
-	round.ResponseBytes = len(result.Content)
+	round.ResponseBytes = max(len(result.Content), result.ResponseBytes)
 	round.InputTokens = result.InputTokens
 	round.OutputTokens = result.OutputTokens
 	round.PromptCacheHitTokens = result.PromptCacheHitTokens
@@ -241,13 +243,14 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 			validationCode = debugdump.SemanticValidationCanceled
 		}
 		recordTargetedSemanticExchange(
-			input, request, result.Content, result.Attempts, state, validationCode,
+			input, request, providerFailureContentForExchange(callErr, result.Content),
+			max(len(result.Content), result.ResponseBytes), result.Attempts, state, validationCode,
 		)
 		return round, callErr
 	}
 	if err := validateProviderResponseArtifact(input.RunDir, result.Content); err != nil {
 		recordTargetedSemanticExchange(
-			input, request, result.Content, result.Attempts,
+			input, request, result.Content, max(len(result.Content), result.ResponseBytes), result.Attempts,
 			debugdump.SemanticStateRejected,
 			debugdump.SemanticValidationSecret,
 		)
@@ -257,7 +260,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 		round.Status = RoundRejected
 		round.StopReason = "invalid_response"
 		recordTargetedSemanticExchange(
-			input, request, result.Content, result.Attempts,
+			input, request, result.Content, max(len(result.Content), result.ResponseBytes), result.Attempts,
 			debugdump.SemanticStateRejected,
 			debugdump.SemanticValidationDecode,
 		)
@@ -270,7 +273,8 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 		validationCode = debugdump.SemanticValidationResponse
 	}
 	recordTargetedSemanticExchange(
-		input, request, result.Content, result.Attempts, state, validationCode,
+		input, request, result.Content, max(len(result.Content), result.ResponseBytes),
+		result.Attempts, state, validationCode,
 	)
 	if round.Status == RoundCompleted && input.RunsDir != "" {
 		record := cacheRecord{
@@ -336,6 +340,7 @@ func recordTargetedSemanticExchange(
 	input ExecuteInput,
 	request,
 	response []byte,
+	responseBytes int,
 	transportAttempts int,
 	state,
 	validationCode string,
@@ -365,9 +370,25 @@ func recordTargetedSemanticExchange(
 		if state == debugdump.SemanticStateCanceled {
 			unavailableCode = debugdump.SemanticUnavailableCanceled
 		}
-		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{Code: unavailableCode}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: responseBytes,
+		}
 	}
 	input.ExchangeWriter.RecordSemanticExchange(exchange)
+}
+
+// providerFailureContentForExchange is only for the existing redacting
+// semantic-exchange recorder. The interface keeps modelresearch independent
+// of the concrete provider package.
+func providerFailureContentForExchange(err error, fallback []byte) []byte {
+	type contentCarrier interface {
+		ProviderContent() []byte
+	}
+	var carrier contentCarrier
+	if errors.As(err, &carrier) {
+		return carrier.ProviderContent()
+	}
+	return fallback
 }
 
 func applyResponse(round *ResearchRound, bundle EvidenceBundle, raw []byte) error {
