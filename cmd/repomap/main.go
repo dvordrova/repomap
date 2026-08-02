@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -665,17 +666,68 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	}
 
 	var reportPath string
-	if _, err := runNavigatorForRun(
+	navigatorOutcome, navigatorErr := runNavigatorForRun(
 		ctx, runDir, dDir,
 		researchRepositoryContext(initialState, repo), researchPolicy,
 		*noCache, !*offline, humanOutput,
-	); err != nil {
+	)
+	if diagnosticErr := recordAtlasFirstStageDiagnostic(
+		runDir, navigatorAtlasFirstDiagnostic(navigatorOutcome, navigatorErr),
+	); diagnosticErr != nil {
+		if navigatorErr != nil {
+			return errors.Join(navigatorErr, diagnosticErr)
+		}
+		return diagnosticErr
+	}
+	if navigatorErr != nil {
 		state := "failed"
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(navigatorErr, context.Canceled) || errors.Is(navigatorErr, context.DeadlineExceeded) {
 			state = "canceled"
 		}
 		humanOutput.State("Navigator", state)
-		return fmt.Errorf("Atlas-first Navigator: %w", err)
+		if !isPublishableNavigatorFailure(navigatorErr) {
+			return fmt.Errorf("Atlas-first Navigator: %w", navigatorErr)
+		}
+		humanOutput.Warn(
+			"Navigator recommendation unavailable",
+			"state: failed",
+			"Architecture and Study remain independent and will continue",
+		)
+	}
+	var architectureOutcome architectureSynthesisOutcome
+	var architectureErr error
+	if *offline {
+		if err := persistArchitectureSynthesisUnavailable(runDir); err != nil {
+			return fmt.Errorf("persist offline Architecture state: %w", err)
+		}
+		humanOutput.State("Architecture", "unavailable", "provider calls: 0", "reason: offline requested")
+	} else {
+		architectureOutcome, architectureErr = synthesizeArchitectureForRun(
+			ctx, runDir, humanOutput, *noCache, reportLanguage,
+		)
+	}
+	if diagnosticErr := recordAtlasFirstStageDiagnostic(
+		runDir, architectureAtlasFirstDiagnostic(architectureOutcome, architectureErr, *offline),
+	); diagnosticErr != nil {
+		if architectureErr != nil {
+			return errors.Join(architectureErr, diagnosticErr)
+		}
+		return diagnosticErr
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if architectureErr != nil {
+		if !isPublishableArchitectureFailure(architectureErr) {
+			return architectureErr
+		}
+		if !errors.Is(architectureErr, errArchitectureSynthesisRejected) {
+			humanOutput.Warn(
+				"Architecture model stage failed",
+				"state: failed",
+				"the exact local Architecture Canvas remains available",
+			)
+		}
 	}
 	reconciliationStarted := time.Now()
 	humanOutput.Stage("Repository authority", "reconciling captured inputs")
@@ -703,6 +755,77 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	)
 	if authority.Freshness().State != freshness.FreshnessFresh {
 		humanOutput.Warn("repository snapshot is not fresh", "state: "+string(authority.Freshness().State))
+	}
+	if err := report.PrepareAuthorizedSourceCoverage(ctx, reportData, &authority); err != nil {
+		return fmt.Errorf("prepare exact Atlas Study source coverage: %w", err)
+	}
+
+	architectureAccepted := reportData.ArchitectureSynthesis != nil &&
+		(reportData.ArchitectureSynthesis.State == report.ArchitectureSynthesisSucceeded ||
+			reportData.ArchitectureSynthesis.State == report.ArchitectureSynthesisCached) &&
+		reportData.ArchitectureSynthesis.ProposalAccepted &&
+		!reportData.ArchitectureSynthesis.ProposalRejected &&
+		!reportData.ArchitectureSynthesis.FallbackSelected
+	var studyOutcome atlasStudyRunOutcome
+	var studyErr error
+	studyCalled := false
+	if architectureAccepted {
+		studyCalled = true
+		studyOutcome, studyErr = runAtlasStudyForRun(
+			ctx, reportData, runDir, dDir,
+			researchRepositoryContext(initialState, repo), researchPolicy,
+			*noCache, !*offline, atlasstudy.Language(reportLanguage), humanOutput,
+		)
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil && studyErr == nil {
+		if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
+			studyErr = errors.Join(ctxErr, cleanupErr)
+		} else {
+			studyErr = ctxErr
+		}
+	}
+	if diagnosticErr := recordAtlasFirstStageDiagnostic(
+		runDir, atlasStudyAtlasFirstDiagnostic(studyOutcome, studyErr, studyCalled),
+	); diagnosticErr != nil {
+		if studyErr != nil {
+			return errors.Join(studyErr, diagnosticErr)
+		}
+		return diagnosticErr
+	}
+	if studyErr != nil {
+		return studyErr
+	}
+
+	if studyOutcome.SemanticCalls > 0 {
+		studyReconciliationStarted := time.Now()
+		postStudyState, captureErr := captureRepo(ctx, repo)
+		if captureErr != nil {
+			return fmt.Errorf("capture repository state after Atlas Study: %w", captureErr)
+		}
+		if staticSourceHost != "" && postStudyState.Head != initialState.Head {
+			return fmt.Errorf(
+				"standalone %s reports require HEAD to remain at the captured commit until report publication",
+				staticSourceHost,
+			)
+		}
+		authority, err = report.ConfirmRunAuthorityScoped(
+			ctx, analysisRoot, initialState, postStudyState,
+			report.CapturedInputPaths(reportData), *strictSnapshot,
+		)
+		if err != nil {
+			return fmt.Errorf("confirm browser report authority after Atlas Study: %w", err)
+		}
+		if err := report.PrepareAuthorizedSourceCoverage(ctx, reportData, &authority); err != nil {
+			return fmt.Errorf("reprepare exact source coverage after Atlas Study: %w", err)
+		}
+		humanOutput.State(
+			"Repository authority", "reconfirmed after Study",
+			fmt.Sprintf("captured inputs: %d", len(report.CapturedInputPaths(reportData))),
+			formatRunOutputDuration(time.Since(studyReconciliationStarted).Milliseconds()),
+		)
+	}
+	if err := finalizeAtlasFirstStageDiagnostics(runDir); err != nil {
+		return err
 	}
 	generateAuthorizedReport := func() error {
 		if sourceEpisodeJSON != nil {

@@ -18,7 +18,7 @@ type navigatorArtifactFixture struct {
 	status     []byte
 }
 
-func TestNavigatorReportArtifactsBindOfflineEmptyAndSelectedStates(t *testing.T) {
+func TestNavigatorReportArtifactsBindOfflineEmptySelectedAndFailedStates(t *testing.T) {
 	tests := []struct {
 		name            string
 		state           navigator.ProductState
@@ -26,6 +26,7 @@ func TestNavigatorReportArtifactsBindOfflineEmptyAndSelectedStates(t *testing.T)
 		wantRequest     bool
 		wantResult      bool
 		wantUnavailable navigator.UnavailableCode
+		wantFailure     navigator.FailureCode
 		wantSelected    bool
 	}{
 		{
@@ -41,6 +42,21 @@ func TestNavigatorReportArtifactsBindOfflineEmptyAndSelectedStates(t *testing.T)
 			name: "selected", state: navigator.ProductStateSelected,
 			atlas: repositoryAtlasFixture(), wantRequest: true, wantResult: true, wantSelected: true,
 		},
+		{
+			name: "provider failure", state: navigator.ProductStateFailed,
+			atlas: repositoryAtlasFixture(), wantRequest: true,
+			wantFailure: navigator.FailureProvider,
+		},
+		{
+			name: "decode failure", state: navigator.ProductStateFailed,
+			atlas: repositoryAtlasFixture(), wantRequest: true,
+			wantFailure: navigator.FailureDecode,
+		},
+		{
+			name: "reference failure", state: navigator.ProductStateFailed,
+			atlas: repositoryAtlasFixture(), wantRequest: true,
+			wantFailure: navigator.FailureReference,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -52,7 +68,7 @@ func TestNavigatorReportArtifactsBindOfflineEmptyAndSelectedStates(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			fixture := makeNavigatorArtifactFixture(t, atlas, test.state)
+			fixture := makeNavigatorArtifactFixture(t, atlas, test.state, test.wantFailure)
 			runDir := t.TempDir()
 			writeTestFile(t, runDir, repositoryatlas.ArtifactFilename, string(atlasJSON))
 			writeNavigatorArtifactFixture(t, runDir, fixture)
@@ -62,6 +78,7 @@ func TestNavigatorReportArtifactsBindOfflineEmptyAndSelectedStates(t *testing.T)
 				t.Fatalf("readNavigatorReportProduct: %v", err)
 			}
 			if projected.State != test.state || projected.UnavailableCode != test.wantUnavailable ||
+				projected.FailureCode != test.wantFailure ||
 				(projected.Recommendation != nil) != test.wantSelected {
 				t.Fatalf("projection = %#v", projected)
 			}
@@ -75,7 +92,7 @@ func TestNavigatorReportArtifactsBindOfflineEmptyAndSelectedStates(t *testing.T)
 				t.Fatal(err)
 			}
 			manifest := validRunManifestFixture(t)
-			if manifest.Version != 8 || manifest.ReportFormatVersion != 28 {
+			if manifest.Version != 9 || manifest.ReportFormatVersion != 29 {
 				t.Fatalf("Atlas-first wire versions = %d/%d", manifest.Version, manifest.ReportFormatVersion)
 			}
 			manifest.OpenablePaths = nil
@@ -142,6 +159,80 @@ func TestNavigatorReportArtifactsRejectIncompleteClosedStates(t *testing.T) {
 		!strings.Contains(err.Error(), "must not have a provider request artifact") {
 		t.Fatalf("empty request error = %v", err)
 	}
+
+	failed := makeNavigatorArtifactFixture(
+		t, atlas, navigator.ProductStateFailed, navigator.FailureProvider,
+	)
+	runDir = t.TempDir()
+	writeNavigatorArtifactFixture(t, runDir, failed)
+	if err := os.Remove(filepath.Join(runDir, navigator.RequestArtifactFilename)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readNavigatorReportProduct(runDir, &atlas); err == nil ||
+		!strings.Contains(err.Error(), "requires its exact request artifact") {
+		t.Fatalf("missing failed request error = %v", err)
+	}
+
+	runDir = t.TempDir()
+	writeNavigatorArtifactFixture(t, runDir, failed)
+	selected := makeNavigatorArtifactFixture(t, atlas, navigator.ProductStateSelected)
+	writeTestFile(t, runDir, navigator.RecordArtifactFilename, string(selected.result))
+	if _, err := readNavigatorReportProduct(runDir, &atlas); err == nil ||
+		!strings.Contains(err.Error(), "must not have a recommendation artifact") {
+		t.Fatalf("failed result artifact error = %v", err)
+	}
+
+	runDir = t.TempDir()
+	writeNavigatorArtifactFixture(t, runDir, failed)
+	otherAtlas := atlas
+	otherAtlas.Units = append([]repositoryatlas.Unit(nil), atlas.Units...)
+	otherAtlas.Units[0].Name = "other-fixture"
+	other := makeNavigatorArtifactFixture(
+		t, otherAtlas, navigator.ProductStateFailed, navigator.FailureProvider,
+	)
+	writeTestFile(t, runDir, navigator.RequestArtifactFilename, string(other.request))
+	if _, err := readNavigatorReportProduct(runDir, &atlas); err == nil ||
+		!strings.Contains(err.Error(), "request and status identities do not match") {
+		t.Fatalf("mismatched failed request error = %v", err)
+	}
+}
+
+func TestNavigatorReportRejectsTerminalFailureCodes(t *testing.T) {
+	atlas := repositoryAtlasFixture()
+	for _, code := range []navigator.FailureCode{navigator.FailureResource, navigator.FailureCanceled} {
+		t.Run(string(code), func(t *testing.T) {
+			fixture := makeNavigatorArtifactFixture(t, atlas, navigator.ProductStateFailed, code)
+			runDir := t.TempDir()
+			writeNavigatorArtifactFixture(t, runDir, fixture)
+			if _, err := readNavigatorReportProduct(runDir, &atlas); err == nil ||
+				!strings.Contains(err.Error(), "is not publishable") {
+				t.Fatalf("read terminal failure error = %v", err)
+			}
+
+			reportJSON, err := json.Marshal(&ReportData{
+				FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
+				Navigator: &fixture.projection,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest := validRunManifestFixture(t)
+			manifest.OpenablePaths = nil
+			manifest.Components = nil
+			manifest.ReportSHA256 = manifestSHA256(reportJSON)
+			atlasJSON, err := repositoryatlas.CanonicalJSON(atlas)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest.MaterialInputs.RepositoryAtlasSHA256 = manifestSHA256(atlasJSON)
+			manifest.MaterialInputs.NavigatorRequestSHA256 = manifestSHA256(fixture.request)
+			manifest.MaterialInputs.NavigatorStatusSHA256 = manifestSHA256(fixture.status)
+			if err := manifest.VerifyReportJSON(reportJSON); err == nil ||
+				!strings.Contains(err.Error(), "failed Navigator report projection is invalid") {
+				t.Fatalf("manifest terminal failure error = %v", err)
+			}
+		})
+	}
 }
 
 func TestReadRunDirSkipsLegacyOrientationOnlyForAtlasFirstArtifacts(t *testing.T) {
@@ -194,6 +285,7 @@ func makeNavigatorArtifactFixture(
 	t *testing.T,
 	atlas repositoryatlas.Atlas,
 	state navigator.ProductState,
+	failureCodes ...navigator.FailureCode,
 ) navigatorArtifactFixture {
 	t.Helper()
 	product, err := navigator.CompileProduct(navigator.ProductInput{
@@ -246,6 +338,20 @@ func makeNavigatorArtifactFixture(
 		if err == nil {
 			status, err = product.SelectedStatus(record)
 		}
+	case navigator.ProductStateFailed:
+		request, requestErr := product.RequestRecord()
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		fixture.request, err = navigator.EncodeRequestRecord(request)
+		if err != nil {
+			break
+		}
+		failureCode := navigator.FailureProvider
+		if len(failureCodes) > 0 && failureCodes[0] != "" {
+			failureCode = failureCodes[0]
+		}
+		status, err = product.FailureStatus(failureCode)
 	default:
 		t.Fatalf("unsupported fixture state %q", state)
 	}
@@ -258,7 +364,7 @@ func makeNavigatorArtifactFixture(
 	}
 	projected := NavigatorReportProduct{
 		Version: navigator.ProductVersion, State: status.State,
-		UnavailableCode: status.UnavailableCode,
+		UnavailableCode: status.UnavailableCode, FailureCode: status.FailureCode,
 	}
 	if state == navigator.ProductStateSelected {
 		result, decodeErr := navigator.DecodeRecommendationRecord(fixture.result)

@@ -84,6 +84,166 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	}
 }
 
+func TestProjectSavedArchitectureCanvasPreservesExactD177Substrate(t *testing.T) {
+	t.Parallel()
+
+	scenario := architectureGroundingScenario{ID: "go:test", GOOS: "darwin", GOARCH: "arm64"}
+	producer := evidence.Provenance{Provider: "go_ssa", Version: "test", Operation: "fixture"}
+	data := &ReportData{
+		RepositoryGraph: &RepositoryGraph{
+			Modules: []ModuleInfo{{Path: "example.com/project"}},
+			PackageEdges: []EdgeInfo{
+				{From: "example.com/project/cmd", To: "example.com/project/internal/config"},
+				{From: "example.com/project/internal/config", To: "example.com/project/internal/runtime"},
+			},
+		},
+		ArchitectureGrounding: &ArchitectureGrounding{
+			Version:             ArchitectureGroundingVersion,
+			RepositoryArchetype: ArchitectureArchetype{Selected: componentmap.ArchetypeApplication},
+			GroundingMode:       componentmap.GroundingMixed,
+			BehaviorAnchors: []ArchitectureBehaviorAnchor{
+				architectureGroundingTestAnchor("process", componentmap.AnchorProcessEntry, "cmd/main.go", 10, "example.com/project/cmd.main", scenario, producer),
+				architectureGroundingTestAnchor("config", componentmap.AnchorConfigApply, "internal/config/config.go", 20, "example.com/project/internal/config.Apply", scenario, producer),
+			},
+			Relationships: []ArchitectureBehaviorHandoff{{
+				ID: "process-config", From: "process", To: "config", Kind: "bounded_direct_call",
+				Location:  evidence.Location{Path: "cmd/main.go", Line: 12, Column: 2},
+				Certainty: evidence.CertaintyStatic, Producer: producer,
+			}},
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "surface-main", Kind: "process_entry", ExecutableRole: ExecutableRolePrimaryApplication,
+			Resolution: "exact", Status: "available", Certainty: string(evidence.CertaintyStatic),
+			SurfaceRole: SurfaceRoleEntrySurface,
+			ProcessEntrypoint: SurfaceSymbol{
+				ID: "example.com/project/cmd.main", Package: "example.com/project/cmd", Name: "main",
+				Location: &SurfaceLocation{Path: "cmd/main.go", Line: 10, Column: 1},
+			},
+		}}},
+	}
+	if warning := projectCanonicalArchitectureCanvas(data); warning != "" {
+		t.Fatalf("project canonical canvas: %s", warning)
+	}
+	linkArchitectureProductObjects(data)
+
+	beforeInput, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeCandidates := flattenedArchitectureCandidates(data.ArchitectureCanvas)
+	if !reflect.DeepEqual(beforeCandidates, beforeInput.CandidateBundle.Candidates) {
+		t.Fatalf("canonical flattened candidates differ from exact input:\ncanvas=%#v\ninput=%#v", beforeCandidates, beforeInput.CandidateBundle.Candidates)
+	}
+	beforeRelations := beforeInput.CandidateBundle.Relations
+	beforeBindings := beforeInput.CandidateBundle.AnchorBindings
+	beforeAnchors := append([]componentmap.BehaviorAnchor(nil), data.ArchitectureCanvas.BehaviorAnchors...)
+	beforeStructuralFacts := append([]componentmap.LocalRelation(nil), data.ArchitectureCanvas.StructuralFacts...)
+	beforeSurfaces := exactArchitectureSurfaceEvidence(data.ArchitectureCanvas.Surfaces)
+
+	memberIDs := make([]componentmap.MemberID, 0, len(beforeInput.CandidateBundle.Candidates))
+	for _, candidate := range beforeInput.CandidateBundle.Candidates {
+		memberIDs = append(memberIDs, candidate.ID)
+	}
+	anchorIDs := make([]string, 0, len(beforeInput.CandidateBundle.BehaviorAnchors))
+	for _, anchor := range beforeInput.CandidateBundle.BehaviorAnchors {
+		anchorIDs = append(anchorIDs, anchor.ID)
+	}
+	response, err := json.Marshal(componentmap.Proposal{
+		Version: componentmap.ContractVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Model conceptual group", Description: "Provider-authored conceptual description",
+			Components: []componentmap.ProposedComponent{{
+				Name: "Model component", Description: "Provider-authored component description",
+				MemberIDs: memberIDs, AnchorIDs: anchorIDs,
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := componentmap.RecordSynthesisResponse(
+		beforeInput.CandidateBundle,
+		"revision-d177-substrate",
+		"openai-compatible/bearer",
+		"test-model",
+		12*time.Millisecond,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if warning := projectSavedArchitectureCanvasBytes(data, saved); warning != "" {
+		t.Fatalf("project accepted saved synthesis: %s", warning)
+	}
+	linkArchitectureProductObjects(data)
+
+	afterInput, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := flattenedArchitectureCandidates(data.ArchitectureCanvas); !reflect.DeepEqual(got, beforeCandidates) {
+		t.Fatalf("accepted synthesis changed exact Candidate values (including facts, participations, or parent):\nbefore=%#v\nafter=%#v", beforeCandidates, got)
+	}
+	if !reflect.DeepEqual(afterInput.CandidateBundle.Candidates, beforeInput.CandidateBundle.Candidates) ||
+		!reflect.DeepEqual(afterInput.CandidateBundle.Relations, beforeRelations) ||
+		!reflect.DeepEqual(afterInput.CandidateBundle.AnchorBindings, beforeBindings) {
+		t.Fatalf("accepted synthesis changed exact candidate-bundle substrate:\nbefore=%#v\nafter=%#v", beforeInput.CandidateBundle, afterInput.CandidateBundle)
+	}
+	if !reflect.DeepEqual(data.ArchitectureCanvas.BehaviorAnchors, beforeAnchors) ||
+		!reflect.DeepEqual(data.ArchitectureCanvas.StructuralFacts, beforeStructuralFacts) {
+		t.Fatalf("accepted synthesis changed local canvas evidence:\nanchors=%#v\nstructural=%#v", data.ArchitectureCanvas.BehaviorAnchors, data.ArchitectureCanvas.StructuralFacts)
+	}
+	if got := exactArchitectureSurfaceEvidence(data.ArchitectureCanvas.Surfaces); !reflect.DeepEqual(got, beforeSurfaces) {
+		t.Fatalf("accepted synthesis changed exact Surface IDs/evidence:\nbefore=%#v\nafter=%#v", beforeSurfaces, got)
+	}
+	if data.ArchitectureCanvas.ArchitectureSource != componentmap.SourceValidatedModel ||
+		len(data.ArchitectureCanvas.Subsystems) != 1 ||
+		data.ArchitectureCanvas.Subsystems[0].Name != "Model conceptual group" ||
+		len(data.ArchitectureCanvas.Components) != 1 ||
+		data.ArchitectureCanvas.Components[0].Name != "Model component" {
+		t.Fatalf("accepted synthesis did not replace only the conceptual grouping/wording: %#v", data.ArchitectureCanvas)
+	}
+}
+
+func flattenedArchitectureCandidates(canvas *ArchitectureCanvas) []componentmap.Candidate {
+	if canvas == nil {
+		return nil
+	}
+	result := make([]componentmap.Candidate, 0)
+	for _, component := range canvas.Components {
+		result = append(result, component.Members...)
+	}
+	slices.SortFunc(result, func(left, right componentmap.Candidate) int {
+		if left.ID.Kind != right.ID.Kind {
+			return strings.Compare(string(left.ID.Kind), string(right.ID.Kind))
+		}
+		return strings.Compare(left.ID.Value, right.ID.Value)
+	})
+	return result
+}
+
+type architectureSurfaceExactEvidence struct {
+	ID       string
+	Evidence []SurfaceLocation
+}
+
+func exactArchitectureSurfaceEvidence(surfaces []ArchitectureSurface) []architectureSurfaceExactEvidence {
+	result := make([]architectureSurfaceExactEvidence, 0, len(surfaces))
+	for _, surface := range surfaces {
+		result = append(result, architectureSurfaceExactEvidence{
+			ID: surface.ID, Evidence: append([]SurfaceLocation(nil), surface.Evidence...),
+		})
+	}
+	slices.SortFunc(result, func(left, right architectureSurfaceExactEvidence) int {
+		return strings.Compare(left.ID, right.ID)
+	})
+	return result
+}
+
 func TestBuildArchitectureCanvasKeepsExactSurfaceRoleWithoutPublishingDirectionOverlay(t *testing.T) {
 	t.Parallel()
 
@@ -285,7 +445,6 @@ func TestReadRunDirKeepsCanonicalArchitectureCanvasWhenSavedSynthesisIsUnavailab
 		len(data.ArchitectureCanvas.Components) != 2 || len(data.ArchitectureCanvas.Flows) != 0 {
 		t.Fatalf("canonical architecture canvas = %#v", data.ArchitectureCanvas)
 	}
-	canonicalIDs := architectureCanvasComponentIDs(data.ArchitectureCanvas)
 	writeArchitectureBuildSynthesis(t, runDir, data, "revision-proof")
 	data, err = ReadRunDir(runDir)
 	if err != nil {
@@ -297,18 +456,8 @@ func TestReadRunDirKeepsCanonicalArchitectureCanvasWhenSavedSynthesisIsUnavailab
 	}
 
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, []byte(`{"broken"`))
-	data, err = ReadRunDir(runDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback {
-		t.Fatalf("invalid saved synthesis erased the canonical canvas: %#v", data.ArchitectureCanvas)
-	}
-	if got := architectureCanvasComponentIDs(data.ArchitectureCanvas); !reflect.DeepEqual(got, canonicalIDs) {
-		t.Fatalf("component IDs after malformed synthesis = %v, want %v", got, canonicalIDs)
-	}
-	if containsWarning(data.Warnings, "architecture map unavailable") {
-		t.Fatalf("ordinary warnings exposed optional synthesis diagnostics: %#v", data.Warnings)
+	if _, err = ReadRunDir(runDir); err == nil {
+		t.Fatal("accepted Architecture status allowed a malformed saved synthesis")
 	}
 }
 
@@ -461,6 +610,20 @@ func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportDa
 		t.Fatal(err)
 	}
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, saved)
+	status := ArchitectureSynthesisStatus{
+		Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisSucceeded,
+		ProviderRequestCount: 1, ProviderCallSucceeded: true, ResponseParsed: true,
+		ProposalAccepted: result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
+			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
+		ProposalNormalized: result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
+		ArchitectureSource: string(result.Landscape.Source), ArchitectureLevel: result.Landscape.Level,
+		NormalizationCount: len(result.Landscape.Normalizations),
+	}
+	statusJSON, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisStatusFile, statusJSON)
 }
 
 func writeArchitectureBuildFixture(t *testing.T, dir, name string, data []byte) {

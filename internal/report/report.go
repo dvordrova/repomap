@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
@@ -24,7 +25,7 @@ import (
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 28
+const CurrentFormatVersion = 29
 
 const maxExactDiscoveryDeclarations = 16
 
@@ -182,6 +183,11 @@ type ReportData struct {
 	// guide over exact, locally validated code anchors. Its order is editorial,
 	// not a runtime sequence; canonical Mechanisms remain separate authority.
 	StudyMap *RepositoryStudyMap `json:"study_map,omitempty"`
+	// AtlasStudy is the closed publication state of the Atlas-first Brief and
+	// Study stage. Accepted content is projected separately through StudyMap;
+	// unavailable and failed states remain explicit without manufacturing an
+	// old repository_study_map result.
+	AtlasStudy *AtlasStudyReportStatus `json:"atlas_study,omitempty"`
 	// StudyPublication records whether the independent Study editing stage
 	// published a usable result. A failed stage remains explicit in the product
 	// report instead of being silently replaced by the remaining Overview.
@@ -258,8 +264,27 @@ type NavigatorReportProduct struct {
 	Version         int                             `json:"version"`
 	State           navigator.ProductState          `json:"state"`
 	UnavailableCode navigator.UnavailableCode       `json:"unavailable_code,omitempty"`
+	FailureCode     navigator.FailureCode           `json:"failure_code,omitempty"`
 	Recommendation  *navigator.RecommendationAction `json:"recommendation,omitempty"`
 }
+
+// AtlasStudyReportStatus deliberately excludes provider prose, raw errors and
+// private request identities. The exact request/result/status artifacts stay
+// hash-bound material inputs of the authorized report.
+type AtlasStudyReportStatus struct {
+	Version         int                       `json:"version"`
+	State           atlasstudy.ProductState   `json:"state"`
+	UnavailableCode AtlasStudyUnavailableCode `json:"unavailable_code,omitempty"`
+	FailureCode     atlasstudy.FailureCode    `json:"failure_code,omitempty"`
+	DirectionCount  int                       `json:"direction_count,omitempty"`
+}
+
+type AtlasStudyUnavailableCode string
+
+const (
+	AtlasStudyUnavailableOffline                AtlasStudyUnavailableCode = "offline"
+	AtlasStudyUnavailableArchitectureEnrichment AtlasStudyUnavailableCode = "architecture_enrichment_unavailable"
+)
 
 type runWarningDiagnostic struct {
 	WarningIndex   int
@@ -467,6 +492,7 @@ type RunInfo struct {
 	CompactContextBytes          int    `json:"compact_context_bytes,omitempty"`
 	ExternalRequestBytes         int    `json:"external_request_bytes,omitempty"`
 	ProviderRequestCount         int    `json:"provider_request_count,omitempty"`
+	ProviderAccountingComplete   bool   `json:"provider_accounting_complete,omitempty"`
 	CandidateDirectionCount      int    `json:"candidate_direction_count,omitempty"`
 	ProposedDirectionCount       int    `json:"proposed_direction_count,omitempty"`
 	AcceptedDirectionCount       int    `json:"accepted_direction_count,omitempty"`

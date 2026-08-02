@@ -22,7 +22,9 @@ const (
 	ResourceLimitRequestBytes  ResourceLimitKind = "request_bytes"
 	ResourceLimitResponseBytes ResourceLimitKind = "response_bytes"
 	ResourceLimitRecordBytes   ResourceLimitKind = "record_bytes"
+	ResourceLimitCatalogItems  ResourceLimitKind = "catalog_items"
 	ResourceLimitOutputTokens  ResourceLimitKind = "output_tokens"
+	ResourceLimitSemanticCalls ResourceLimitKind = "semantic_calls"
 )
 
 // ResourceLimitError is a terminal, non-retryable semantic resource outcome.

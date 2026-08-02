@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +23,77 @@ const (
 	architectureSynthesisCacheContract  = "architecture-external-cache-v2"
 )
 
+var errArchitectureSynthesisRejected = errors.New(
+	"architecture synthesis: provider proposal rejected by local validation",
+)
+
+// architectureResponseRejected marks a provider response that failed only the
+// closed semantic Architecture contract. It is intentionally not the marker
+// consumed by main: publication may continue only after the failed status has
+// itself been durably written.
+type architectureResponseRejected struct {
+	cause error
+}
+
+func (rejected *architectureResponseRejected) Error() string {
+	if rejected == nil || rejected.cause == nil {
+		return errArchitectureSynthesisRejected.Error()
+	}
+	return rejected.cause.Error()
+}
+
+func (rejected *architectureResponseRejected) Unwrap() error {
+	if rejected == nil {
+		return nil
+	}
+	return rejected.cause
+}
+
+func (rejected *architectureResponseRejected) Is(target error) bool {
+	return target == errArchitectureSynthesisRejected
+}
+
+type architectureProviderCallFailed struct {
+	cause error
+}
+
+func (failure *architectureProviderCallFailed) Error() string {
+	if failure == nil || failure.cause == nil {
+		return "architecture synthesis: provider call failed"
+	}
+	return failure.cause.Error()
+}
+
+func (failure *architectureProviderCallFailed) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
+type publishableArchitectureFailure struct {
+	cause error
+}
+
+func (failure *publishableArchitectureFailure) Error() string {
+	if failure == nil || failure.cause == nil {
+		return errArchitectureSynthesisRejected.Error()
+	}
+	return failure.cause.Error()
+}
+
+func (failure *publishableArchitectureFailure) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
+func isPublishableArchitectureFailure(err error) bool {
+	var failure *publishableArchitectureFailure
+	return errors.As(err, &failure)
+}
+
 type componentLandscapeSynthesizer interface {
 	ComponentSynthesisPromptJSON(componentmap.SynthesisPrompt) ([]byte, error)
 	SynthesizeComponentLandscapeMeasured(context.Context, componentmap.SynthesisPrompt) (modelresearch.ProviderResult, error)
@@ -36,6 +106,7 @@ type architectureSynthesisOutcome struct {
 	FallbackReason        componentmap.FallbackReason
 	ResponseBytes         int
 	Attempted             bool
+	TransportAttempts     int
 	ProviderCallSucceeded bool
 	ResponseParsed        bool
 	ValidationOutcome     componentmap.ValidationOutcome
@@ -50,36 +121,54 @@ type architectureSynthesisOutcome struct {
 func synthesizeArchitectureForRun(
 	ctx context.Context,
 	runDir string,
-	stderr io.Writer,
+	output *runOutput,
 	noCache bool,
+	outputLanguage string,
 ) (architectureSynthesisOutcome, error) {
+	if output == nil {
+		output = newRunOutput(nil)
+	}
+	output.Stage("Architecture", "synthesizing bounded conceptual grouping")
 	exchangeWriter, writerErr := debugdump.OpenWriter(runDir, true)
 	if writerErr == nil {
 		defer exchangeWriter.Close()
-		exchangeWriter.SetWarningWriter(stderr)
+		exchangeWriter.SetWarningWriter(runOutputWarningSink{
+			output: output, summary: "Architecture semantic exchange journal unavailable",
+		})
 	} else {
-		fmt.Fprintf(
-			stderr,
-			"warning: semantic exchange journal unavailable: stage=%s code=%s\n",
-			debugdump.SemanticStageArchitecture,
-			debugdump.SemanticExchangeWarningCode,
+		output.Warn(
+			"semantic exchange journal unavailable",
+			"stage: "+debugdump.SemanticStageArchitecture,
+			"code: "+debugdump.SemanticExchangeWarningCode,
 		)
 	}
 	client, err := deepseek.NewFromEnv()
 	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider configuration: %w", err)
+		stageErr := fmt.Errorf("architecture synthesis: provider configuration: %w", err)
+		if statusErr := persistArchitectureSynthesisStatus(
+			runDir, architectureSynthesisOutcome{}, stageErr,
+		); statusErr != nil {
+			return architectureSynthesisOutcome{}, errors.Join(stageErr, statusErr)
+		}
+		return architectureSynthesisOutcome{}, stageErr
 	}
 	client.OnWait = func(progress deepseek.WaitProgress) {
-		fmt.Fprintf(
-			stderr,
-			"repomap: %s still running after %s (Ctrl-C to cancel)\n",
-			progress.Stage,
-			progress.Elapsed.Round(time.Second),
+		output.Stage(
+			"Architecture",
+			progress.Stage+" is still running",
+			"elapsed: "+progress.Elapsed.Round(time.Second).String(),
+			"Ctrl-C to cancel",
 		)
 	}
 	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
 	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider cache identity: %w", err)
+		stageErr := fmt.Errorf("architecture synthesis: provider cache identity: %w", err)
+		if statusErr := persistArchitectureSynthesisStatus(
+			runDir, architectureSynthesisOutcome{}, stageErr,
+		); statusErr != nil {
+			return architectureSynthesisOutcome{}, errors.Join(stageErr, statusErr)
+		}
+		return architectureSynthesisOutcome{}, stageErr
 	}
 	outcome, err := prepareArchitectureSynthesisWithOptions(
 		ctx,
@@ -90,43 +179,36 @@ func synthesizeArchitectureForRun(
 		client,
 		architectureSynthesisOptions{
 			disableCache: noCache, exchangeWriter: exchangeWriter,
-			providerEndpointSHA256: endpointSHA,
+			providerEndpointSHA256: endpointSHA, outputLanguage: outputLanguage,
 		},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
 	}
-	if statusErr := persistArchitectureSynthesisStatus(runDir, outcome, err); statusErr != nil {
-		if err != nil {
-			return outcome, errors.Join(err, statusErr)
-		}
-		return outcome, statusErr
-	}
+	err = persistAndClassifyArchitectureSynthesisStatus(runDir, outcome, err)
 	if err != nil {
+		if errors.Is(err, errArchitectureSynthesisRejected) {
+			output.Warn(
+				"Architecture proposal rejected",
+				"state: failed",
+				"validation: response",
+				"the exact local Architecture Canvas remains available",
+			)
+		}
 		return outcome, err
 	}
+	state := "accepted"
 	if outcome.Cached {
-		fmt.Fprintf(
-			stderr,
-			"repomap: reused cached architecture response of %d bytes for a %d-byte request (original call: %d ms, %s)\n",
-			outcome.ResponseBytes,
-			outcome.InputBytes,
-			outcome.LatencyMillis,
-			formatTokenUsage(outcome.InputTokens, outcome.OutputTokens),
-		)
-	} else {
-		fmt.Fprintf(
-			stderr,
-			"repomap: architecture synthesis received %d bytes from a %d-byte request in %d ms (%s)\n",
-			outcome.ResponseBytes,
-			outcome.InputBytes,
-			outcome.LatencyMillis,
-			formatTokenUsage(outcome.InputTokens, outcome.OutputTokens),
-		)
+		state = "cached"
 	}
-	if outcome.FallbackReason != "" {
-		fmt.Fprintf(stderr, "repomap: architecture synthesis downgraded to local fallback: %s\n", outcome.FallbackReason)
-	}
+	output.State(
+		"Architecture",
+		state,
+		fmt.Sprintf("request bytes: %d", outcome.InputBytes),
+		fmt.Sprintf("response bytes: %d", outcome.ResponseBytes),
+		formatRunOutputTokens(outcome.InputTokens, outcome.OutputTokens),
+		formatRunOutputDuration(outcome.LatencyMillis),
+	)
 	return outcome, nil
 }
 
@@ -149,6 +231,7 @@ type architectureSynthesisOptions struct {
 	disableCache           bool
 	exchangeWriter         *debugdump.Writer
 	providerEndpointSHA256 string
+	outputLanguage         string
 }
 
 func prepareArchitectureSynthesisWithOptions(
@@ -218,8 +301,15 @@ func ensureArchitectureSynthesisWithOptions(
 	if !modelresearch.IsSHA256(options.providerEndpointSHA256) {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider endpoint identity is required")
 	}
-	const outputLanguage = "en"
-	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
+	outputLanguage, err := normalizeArchitectureSynthesisOutputLanguage(options.outputLanguage)
+	if err != nil {
+		return architectureSynthesisOutcome{}, err
+	}
+	runPath := filepath.Join(runDir, report.ArchitectureSynthesisFile)
+	if err := removeArchitectureSynthesisRunRecord(runPath); err != nil {
+		return architectureSynthesisOutcome{}, err
+	}
+	prompt, err := componentmap.BuildSynthesisPromptForLanguage(bundle, outputLanguage)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
@@ -238,7 +328,7 @@ func ensureArchitectureSynthesisWithOptions(
 	outcome := architectureSynthesisOutcome{InputBytes: len(requestJSON)}
 	if allowed, reason := policy.Allows(policy.Architecture, usage, len(requestJSON)); !allowed {
 		outcome.FallbackReason = componentmap.FallbackReason(reason)
-		budgetErr := fmt.Errorf("architecture synthesis: %s", reason)
+		budgetErr := architectureSynthesisBudgetError(reason, policy, usage, len(requestJSON))
 		if recordErr := recordArchitectureResearch(runDir, outcome, "skipped", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(budgetErr, recordErr)
 		}
@@ -262,7 +352,6 @@ func ensureArchitectureSynthesisWithOptions(
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
-	runPath := filepath.Join(runDir, report.ArchitectureSynthesisFile)
 	cachePath := filepath.Join(
 		filepath.Dir(runDir),
 		architectureSynthesisCacheDirectory,
@@ -283,6 +372,12 @@ func ensureArchitectureSynthesisWithOptions(
 					saved,
 				)
 				if replayErr != nil {
+					if isSemanticResourceLimit(replayErr) {
+						return outcome, fmt.Errorf(
+							"architecture synthesis: cached response resource limit: %w",
+							replayErr,
+						)
+					}
 					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove rejected cache: %w", removeErr)
 					}
@@ -295,6 +390,9 @@ func ensureArchitectureSynthesisWithOptions(
 						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove rejected cache: %w", removeErr)
 					}
 					continue
+				}
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return outcome, ctxErr
 				}
 				var cachedRecord componentmap.SynthesisRecord
 				if err := json.Unmarshal(saved, &cachedRecord); err != nil || cachedRecord.Call == nil {
@@ -325,6 +423,9 @@ func ensureArchitectureSynthesisWithOptions(
 					policy,
 					usage,
 				); err != nil {
+					if candidate.copyToRun {
+						_ = removeArchitectureSynthesisRunRecord(runPath)
+					}
 					return architectureSynthesisOutcome{}, err
 				}
 				return cachedOutcome, nil
@@ -347,6 +448,7 @@ func ensureArchitectureSynthesisWithOptions(
 	latency := time.Since(started)
 	outcome.LatencyMillis = latency.Milliseconds()
 	outcome.ResponseBytes = responseBytes
+	outcome.TransportAttempts = providerResult.Attempts
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -371,7 +473,7 @@ func ensureArchitectureSynthesisWithOptions(
 		if recordErr := recordArchitectureResearch(runDir, outcome, "failed", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(callErr, recordErr)
 		}
-		return outcome, callErr
+		return outcome, &architectureProviderCallFailed{cause: callErr}
 	}
 	result, err := componentmap.RecordSynthesisResponseForLanguage(
 		bundle,
@@ -395,7 +497,7 @@ func ensureArchitectureSynthesisWithOptions(
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(validationErr, recordErr)
 		}
-		return outcome, validationErr
+		return outcome, &architectureResponseRejected{cause: validationErr}
 	}
 	result.Record.Call.Metadata.InputTokens = providerResult.InputTokens
 	result.Record.Call.Metadata.OutputTokens = providerResult.OutputTokens
@@ -405,6 +507,7 @@ func ensureArchitectureSynthesisWithOptions(
 		FallbackReason:        result.Landscape.FallbackReason,
 		ResponseBytes:         responseBytes,
 		Attempted:             true,
+		TransportAttempts:     providerResult.Attempts,
 		ProviderCallSucceeded: true,
 		ResponseParsed:        architectureResponseParsed(result.Landscape),
 		ValidationOutcome:     result.Landscape.ValidationOutcome,
@@ -431,15 +534,24 @@ func ensureArchitectureSynthesisWithOptions(
 		state,
 		validationCode,
 	)
+	accepted := !result.Landscape.Fallback &&
+		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
+			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
+	if !accepted {
+		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
+			return outcome, errors.Join(
+				fmt.Errorf("architecture synthesis: provider proposal rejected"),
+				recordErr,
+			)
+		}
+		return outcome, &architectureResponseRejected{cause: errArchitectureSynthesisRejected}
+	}
 	saved, err := json.MarshalIndent(result.Record, "", "  ")
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: encode record: %w", err)
 	}
 	saved = append(saved, '\n')
-	cacheable := !result.Landscape.Fallback &&
-		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
-			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
-	if !options.disableCache && cacheable {
+	if !options.disableCache {
 		if err := writeArchitectureSynthesisRecord(cachePath, saved); err != nil {
 			return architectureSynthesisOutcome{}, err
 		}
@@ -455,9 +567,39 @@ func ensureArchitectureSynthesisWithOptions(
 		policy,
 		usage,
 	); err != nil {
+		_ = removeArchitectureSynthesisRunRecord(runPath)
 		return architectureSynthesisOutcome{}, err
 	}
 	return outcome, nil
+}
+
+func architectureSynthesisBudgetError(
+	reason string,
+	policy modelresearch.Policy,
+	usage modelresearch.Usage,
+	requestBytes int,
+) error {
+	details := modelresearch.ResourceLimitError{Stage: "architecture_synthesis"}
+	switch reason {
+	case "stage_byte_budget_exhausted":
+		details.Kind = modelresearch.ResourceLimitRequestBytes
+		details.Limit = policy.Architecture.MaxRequestBytes
+		details.Observed = requestBytes
+		details.ObservedKnown = true
+	case "total_byte_budget_exhausted":
+		details.Kind = modelresearch.ResourceLimitRequestBytes
+		details.Limit = policy.MaxTotalRequestBytes
+		details.Observed = usage.RequestBytes + requestBytes
+		details.ObservedKnown = true
+	case "call_budget_exhausted":
+		details.Kind = modelresearch.ResourceLimitSemanticCalls
+		details.Limit = policy.MaxSemanticCalls
+		details.Observed = usage.SemanticCalls
+		details.ObservedKnown = true
+	default:
+		return fmt.Errorf("architecture synthesis: unsupported budget outcome %q", reason)
+	}
+	return modelresearch.NewResourceLimitError(details, nil)
 }
 
 type architectureSynthesisCacheIdentity interface {
@@ -682,16 +824,50 @@ func architectureSynthesisStatus(
 	if outcome.Attempted {
 		status.ProviderRequestCount = 1
 	}
+	if errors.Is(synthesisErr, errArchitectureSynthesisRejected) {
+		status.FallbackSelected = false
+		status.FallbackReason = ""
+	}
+	// A failed optional enrichment never owns the visible Architecture. The
+	// canonical local Canvas is published separately under Decision 177, so a
+	// failed status must not carry an apparent selected architecture source.
+	status.ProposalAccepted = false
+	status.ProposalNormalized = false
+	status.ArchitectureSource = ""
+	status.ArchitectureLevel = 0
+	status.NormalizationCount = 0
+	status.FallbackSelected = false
+	status.FallbackReason = ""
 	message := synthesisErr.Error()
 	switch {
 	case strings.Contains(message, "response content is empty"):
 		status.ErrorCode = "empty_response"
-	case strings.Contains(message, "unusable"), strings.Contains(message, "validate response"):
+	case errors.Is(synthesisErr, errArchitectureSynthesisRejected),
+		strings.Contains(message, "unusable"), strings.Contains(message, "validate response"):
 		status.ErrorCode = "invalid_response"
 	default:
 		status.ErrorCode = "provider_error"
 	}
 	return status
+}
+
+func normalizeArchitectureSynthesisOutputLanguage(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "en":
+		return "en", nil
+	case "ru":
+		return "ru", nil
+	default:
+		return "", fmt.Errorf("architecture synthesis: output language must be \"en\" or \"ru\"")
+	}
+}
+
+func removeArchitectureSynthesisRunRecord(path string) error {
+	err := os.Remove(path)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return fmt.Errorf("architecture synthesis: remove unaccepted run record: %w", err)
 }
 
 func persistArchitectureSynthesisStatus(
@@ -706,6 +882,36 @@ func persistArchitectureSynthesisStatus(
 		runDir,
 		architectureSynthesisStatus(outcome, synthesisErr),
 	)
+}
+
+func persistAndClassifyArchitectureSynthesisStatus(
+	runDir string,
+	outcome architectureSynthesisOutcome,
+	synthesisErr error,
+) error {
+	statusErr := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr)
+	if statusErr != nil {
+		if synthesisErr != nil {
+			return errors.Join(synthesisErr, statusErr)
+		}
+		return statusErr
+	}
+	if errors.Is(synthesisErr, errArchitectureSynthesisRejected) {
+		return &publishableArchitectureFailure{cause: synthesisErr}
+	}
+	var providerFailure *architectureProviderCallFailed
+	if errors.As(synthesisErr, &providerFailure) {
+		return &publishableArchitectureFailure{cause: synthesisErr}
+	}
+	return synthesisErr
+}
+
+func persistArchitectureSynthesisUnavailable(runDir string) error {
+	return writeArchitectureSynthesisStatus(runDir, report.ArchitectureSynthesisStatus{
+		Version:         report.ArchitectureSynthesisStatusVersion,
+		State:           report.ArchitectureSynthesisUnavailable,
+		UnavailableCode: "offline",
+	})
 }
 
 func writeArchitectureSynthesisStatus(

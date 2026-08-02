@@ -114,6 +114,91 @@ func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 	}
 }
 
+func TestSavedEtcdSizedArchitectureParityGate(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("testdata/etcd_architecture_parity_v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Version     int             `json:"version"`
+		Bundle      CandidateBundle `json:"bundle"`
+		SavedRecord json.RawMessage `json:"saved_record"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Version != 1 {
+		t.Fatalf("fixture version = %d", fixture.Version)
+	}
+	var saved SynthesisRecord
+	if err := json.Unmarshal(fixture.SavedRecord, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Call == nil || saved.Call.ResponseState != ResponseCaptured ||
+		saved.Call.Metadata.OutputTokens <= 0 || saved.Call.ResponseBytes != len(saved.Call.Response) {
+		t.Fatalf("saved etcd call is incomplete: %#v", saved.Call)
+	}
+	request, requestJSON, err := BuildSynthesisRequest(fixture.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := BuildSynthesisPrompt(fixture.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponseForLanguage(
+		fixture.Bundle, "etcd-parity-v1", saved.Call.Metadata.Profile,
+		saved.Call.Metadata.Model, "en", 0, saved.Call.Response,
+	)
+	if err != nil {
+		t.Fatalf("saved etcd response did not complete against its bounded shape: %v", err)
+	}
+	if result.Landscape.Fallback ||
+		(result.Landscape.ValidationOutcome != ValidationAccepted &&
+			result.Landscape.ValidationOutcome != ValidationAcceptedNormalized) {
+		t.Fatalf("saved etcd response was not accepted: %#v", result.Landscape)
+	}
+	wantMembers := make(map[string]Candidate, len(fixture.Bundle.Candidates))
+	for _, candidate := range fixture.Bundle.Candidates {
+		wantMembers[candidate.ID.key()] = candidate
+	}
+	gotMembers := make(map[string][]Candidate, len(wantMembers))
+	for _, subsystem := range result.Landscape.Subsystems {
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				gotMembers[member.ID.key()] = append(gotMembers[member.ID.key()], member)
+			}
+		}
+	}
+	if len(gotMembers) != len(wantMembers) {
+		t.Fatalf("accepted member cardinality = %d, want %d", len(gotMembers), len(wantMembers))
+	}
+	for member, want := range wantMembers {
+		if len(gotMembers[member]) != 1 {
+			t.Fatalf("accepted membership %q count = %d, want exactly one", member, len(gotMembers[member]))
+		}
+		if !reflect.DeepEqual(gotMembers[member][0], want) {
+			t.Fatalf("accepted model grouping changed exact local candidate %q", member)
+		}
+	}
+	if !reflect.DeepEqual(result.Landscape.Relations, fixture.Bundle.Relations) {
+		t.Fatal("model grouping changed exact local relations")
+	}
+	if !reflect.DeepEqual(result.Landscape.AnchorBindings, fixture.Bundle.AnchorBindings) {
+		t.Fatal("model grouping changed exact local anchor bindings")
+	}
+	t.Logf(
+		"etcd parity: candidates=%d members=%d anchors=%d request_json=%d prompt_bytes=%d output_tokens=%d response_state=%s",
+		len(fixture.Bundle.Candidates), len(gotMembers), len(fixture.Bundle.BehaviorAnchors),
+		len(requestJSON), synthesisPromptSize(prompt), saved.Call.Metadata.OutputTokens,
+		saved.Call.ResponseState,
+	)
+	if request.Version != SynthesisRequestVersion {
+		t.Fatalf("request version = %d", request.Version)
+	}
+}
+
 func TestRejectedCaddyProposalUsesAnchorFirstFallback(t *testing.T) {
 	t.Parallel()
 
@@ -241,6 +326,42 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	}
 }
 
+func TestBuildSynthesisPromptLanguageKeepsEnglishBytesAndScopesRussianProse(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	canonicalEnglish, err := BuildSynthesisPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicitEnglish, err := BuildSynthesisPromptForLanguage(bundle, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(canonicalEnglish, explicitEnglish) {
+		t.Fatalf("explicit English prompt changed canonical bytes:\ncanonical=%#v\nexplicit=%#v", canonicalEnglish, explicitEnglish)
+	}
+
+	russian, err := BuildSynthesisPromptForLanguage(bundle, "ru")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if russian.Version != canonicalEnglish.Version || russian.User != canonicalEnglish.User {
+		t.Fatalf("Russian prompt changed versioned facts request: %#v", russian)
+	}
+	if russian.System == canonicalEnglish.System ||
+		!strings.Contains(russian.System, "name and description prose in Russian") ||
+		!strings.Contains(russian.System, "Preserve technical identifiers") {
+		t.Fatalf("Russian prompt has no narrow prose instruction: %q", russian.System)
+	}
+	if strings.Contains(canonicalEnglish.System, "prose in Russian") {
+		t.Fatal("canonical English prompt changed")
+	}
+	if _, err := BuildSynthesisPromptForLanguage(bundle, "fr"); err == nil {
+		t.Fatal("unsupported synthesis language was accepted")
+	}
+}
+
 func TestBuildSynthesisRequestRejectsObviousCredentialWithoutEcho(t *testing.T) {
 	t.Parallel()
 
@@ -310,6 +431,64 @@ func TestRecordSynthesisResponseReplaysDeterministically(t *testing.T) {
 	}
 	if !reflect.DeepEqual(legacyReplayed, result.Landscape) {
 		t.Fatalf("historical language-unknown replay differs:\nrecorded: %#v\nreplayed: %#v", result.Landscape, legacyReplayed)
+	}
+}
+
+func TestRussianSynthesisRecordBindsLanguagePromptAndReplays(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	response := validSynthesisProposalJSON(t, bundle)
+	result, err := RecordSynthesisResponseForLanguage(
+		bundle,
+		"revision-ru",
+		"deepseek-compatible",
+		"deepseek-v4-flash",
+		"ru",
+		2*time.Second,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Record.Call == nil || result.Record.Call.Metadata.OutputLanguage != "ru" {
+		t.Fatalf("Russian record metadata = %#v", result.Record.Call)
+	}
+	russianPrompt, err := BuildSynthesisPromptForLanguage(bundle, "ru")
+	if err != nil {
+		t.Fatal(err)
+	}
+	englishPrompt, err := BuildSynthesisPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Record.Call.Metadata.InputBytes != synthesisPromptSize(russianPrompt) ||
+		result.Record.Call.Metadata.InputBytes == synthesisPromptSize(englishPrompt) {
+		t.Fatalf("Russian prompt identity was not recorded: %#v", result.Record.Call.Metadata)
+	}
+
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesis(bundle, "revision-ru", saved)
+	if err != nil {
+		t.Fatalf("ReplaySynthesis(Russian) error = %v", err)
+	}
+	if !reflect.DeepEqual(replayed, result.Landscape) {
+		t.Fatal("Russian synthesis record did not replay deterministically")
+	}
+
+	tampered := result.Record
+	call := *tampered.Call
+	call.Metadata.OutputLanguage = "en"
+	tampered.Call = &call
+	tamperedJSON, err := json.Marshal(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplaySynthesis(bundle, "revision-ru", tamperedJSON); err == nil {
+		t.Fatal("replay accepted a Russian record relabeled as English")
 	}
 }
 

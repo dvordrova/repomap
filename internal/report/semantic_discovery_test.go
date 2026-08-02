@@ -13,8 +13,8 @@ import (
 )
 
 func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
-	if CurrentFormatVersion != 28 {
-		t.Fatalf("CurrentFormatVersion = %d, want 28 for the embedded Atlas-first Navigator", CurrentFormatVersion)
+	if CurrentFormatVersion != 29 {
+		t.Fatalf("CurrentFormatVersion = %d, want 29 for Atlas-first Study publication", CurrentFormatVersion)
 	}
 }
 

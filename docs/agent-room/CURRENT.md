@@ -1,15 +1,24 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/198-atlas-first-product-transition.md
+    decisions/199-atlas-first-architecture-study.md
 
 Status:
-    Decision 198 active; Atlas-first product transition authorized
+    Decision 199 active; Atlas-first Architecture and Study restoration authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 199 restores the useful model-assisted Architecture, Repository
+    Brief and Study products on top of the accepted Atlas-first run. It does
+    not restore raw-signal Orientation. Architecture reuses the existing
+    bounded component synthesis over local RepositoryGraph and grounding;
+    Study uses one compact request-local typed projection over accepted Atlas,
+    Architecture and exact reading anchors. Navigator, Architecture and Study
+    remain separate task-shaped questions with local validation and explicit
+    authority. The repository owner explicitly classified the D198 removal of
+    Architecture/Study as a product regression and approved this correction.
     Decision 198 replaces the ordinary raw-signal Orientation call with one
     Atlas-first, task-shaped Navigator recommendation, makes incompatible old
     semantic stages explicitly unavailable, fixes semantic cache identity and

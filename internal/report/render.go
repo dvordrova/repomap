@@ -566,10 +566,18 @@ func generate(
 		}
 	}
 	if authority != nil {
-		if err := completeOverviewSourceCoverage(context.Background(), data, authority); err != nil {
+		if err := PrepareAuthorizedSourceCoverage(context.Background(), data, authority); err != nil {
 			return err
 		}
 		data.CapturedInputCount = len(authority.inputs)
+		if data.RepositoryAtlas != nil {
+			data.AtlasStudy, data.StudyMap, err = readAtlasStudyReportProduct(runDir, data)
+			if err != nil {
+				return err
+			}
+			applyCanonicalStudyPublication(data)
+			prepareReplayedPresentationMetadata(data)
+		}
 	}
 
 	jsonPath := runDir + "/report.json"

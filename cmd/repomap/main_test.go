@@ -3,10 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +22,6 @@ import (
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
-	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/pavedpath"
@@ -229,417 +226,11 @@ func TestRunDefaultStopsWhenOrientationIsCanceled(t *testing.T) {
 
 	var userError bytes.Buffer
 	writeDefaultRunError(&userError, err)
-	if got := userError.String(); got != "repomap: canceled\n" {
+	if got := userError.String(); got != "Run:\n  state: canceled\n" {
 		t.Fatalf("cancellation message = %q", got)
 	}
 	if got := defaultRunExitCode(err); got != 130 {
 		t.Fatalf("cancellation exit code = %d, want 130", got)
-	}
-}
-
-func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
-	clearLLMEnv(t)
-	repo := t.TempDir()
-	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/friend-trial\n\ngo 1.24\n")
-	writeFile(t, filepath.Join(repo, "main.go"), "package main\n\nfunc main() {}\n")
-	runGit(t, repo, "init", "--quiet")
-	runGit(t, repo, "add", "--", "go.mod", "main.go")
-	commitTestRepository(t, repo)
-
-	orientation := map[string]any{
-		"project_guess": "tiny Go command",
-		"confidence":    0.9,
-		"high_level_map": []any{map[string]any{
-			"name":           "command",
-			"evidence":       []string{"main.go"},
-			"why_it_matters": "it owns process startup",
-		}},
-		"first_files_to_open": []any{map[string]any{
-			"path":   "main.go",
-			"reason": "process entrypoint",
-		}},
-		"candidate_flows": []any{map[string]any{
-			"name":              "Process startup",
-			"trigger":           "the executable starts",
-			"likely_entrypoint": "main.go",
-			"likely_files":      []string{"main.go"},
-			"why_interesting":   "shows the complete behavior of this tiny command",
-			"evidence":          []string{"main.go"},
-			"confidence":        0.9,
-		}},
-		"important_domain_words": []any{},
-		"questions_for_human":    []string{"Which behavior should we inspect next?"},
-		"unverified_paths":       []any{},
-		"warnings":               []string{},
-	}
-	orientationJSON, err := json.Marshal(orientation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	orientationFixture := orientationResponseFixture{
-		ProjectGuess: "tiny Go command", Confidence: 0.9,
-		Map:        []orientationMapFixture{{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "it owns process startup"}},
-		FirstFiles: []orientationFileFixture{{Path: "main.go", Reason: "process entrypoint"}},
-		Flows: []orientationFlowFixture{{
-			Name: "Process startup", Trigger: "the executable starts", EntrypointPath: "main.go",
-			LikelyPaths: []string{"main.go"}, EvidencePaths: []string{"main.go"},
-			WhyInteresting: "shows the complete behavior of this tiny command", Confidence: 0.9,
-		}},
-		Questions: []string{"Which behavior should we inspect next?"}, Warnings: []string{},
-	}
-
-	requestCount := 0
-	var requestBody []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		requestCount++
-		body, readErr := io.ReadAll(request.Body)
-		if requestCount == 1 {
-			requestBody = body
-		}
-		err = readErr
-		if err != nil {
-			t.Errorf("read request: %v", err)
-		}
-		responseContent := orientationJSON
-		if requestCount == 1 {
-			responseContent = orientationResponseForRequest(t, body, orientationFixture)
-		}
-		envelope, marshalErr := json.Marshal(map[string]any{
-			"choices": []any{map[string]any{
-				"message": map[string]any{
-					"role":    "assistant",
-					"content": string(responseContent),
-				},
-			}},
-		})
-		if marshalErr != nil {
-			t.Errorf("marshal envelope: %v", marshalErr)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(envelope)
-	}))
-	defer server.Close()
-
-	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
-	t.Setenv("REPOMAP_LLM_MODEL", "deepseek-v4-flash")
-	t.Setenv("REPOMAP_LLM_AUTH", "none")
-	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	var openedReport string
-	debugDir := t.TempDir()
-	err = runDefaultWithDeps(repo, []string{"--debug-dir", debugDir}, defaultRunDeps{
-		stdout: &stdout,
-		stderr: &stderr,
-		openReport: func(path string) error {
-			openedReport = path
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("runDefaultWithDeps() error = %v", err)
-	}
-
-	if requestCount != 2 {
-		t.Fatalf("provider request count = %d, want orientation plus one-package architecture grouping", requestCount)
-	}
-	for _, want := range []string{`"model":"deepseek-v4-flash"`, `"response_format":{"type":"json_object"}`} {
-		if !bytes.Contains(requestBody, []byte(want)) {
-			t.Fatalf("request body missing %q: %s", want, requestBody)
-		}
-	}
-	for _, want := range []string{"Project: tiny Go command", "Candidate directions:", "Process startup"} {
-		if !strings.Contains(stdout.String(), want) {
-			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
-		}
-	}
-	for _, want := range []string{
-		"repomap: collecting tracked repository facts from ",
-		"repomap: repository facts ready: ",
-		"repomap: compact local context ",
-		fmt.Sprintf("repomap: prepared %d-byte orientation request for deepseek-v4-flash", len(requestBody)),
-		"1 candidate direction(s) accepted, 0 rejected",
-		"Report: ",
-	} {
-		if !strings.Contains(stderr.String(), want) {
-			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
-		}
-	}
-	if !strings.Contains(stderr.String(), "discovering local Go runtime surfaces") {
-		t.Fatalf("default run did not enable runtime-surface discovery:\n%s", stderr.String())
-	}
-	if openedReport == "" {
-		t.Fatal("generated report was not opened")
-	}
-	if _, err := os.Stat(openedReport); err != nil {
-		t.Fatalf("opened report %q: %v", openedReport, err)
-	}
-	reportJSON, err := os.ReadFile(filepath.Join(filepath.Dir(openedReport), "report.json"))
-	if err != nil {
-		t.Fatalf("read report.json: %v", err)
-	}
-	for _, want := range [][]byte{
-		[]byte("Process startup"),
-		[]byte(`"high_level_map"`),
-		[]byte("it owns process startup"),
-		[]byte(`"first_files_to_open"`),
-		[]byte("Which behavior should we inspect next?"),
-		[]byte(`"compact_context_bytes"`),
-		[]byte(`"external_request_bytes"`),
-	} {
-		if !bytes.Contains(reportJSON, want) {
-			t.Fatalf("report.json does not retain %q: %s", want, reportJSON)
-		}
-	}
-	reportHTML, err := os.ReadFile(openedReport)
-	if err != nil {
-		t.Fatalf("read report HTML: %v", err)
-	}
-	for _, want := range [][]byte{
-		[]byte("Explore this direction"),
-		[]byte("Suggested files are selected from repository facts"),
-		[]byte("Compact local context"),
-		[]byte("Provider request bodies"),
-	} {
-		if !bytes.Contains(reportHTML, want) {
-			t.Fatalf("report HTML does not contain %q", want)
-		}
-	}
-	if bytes.Contains(reportHTML, []byte("· local evidence")) {
-		t.Fatal("report HTML exposes internal local-evidence status in navigation")
-	}
-}
-
-func TestRunDefaultCompletesPythonOrientationJourney(t *testing.T) {
-	clearLLMEnv(t)
-	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, "src/tool"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(repo, "tests"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(repo, "README.md"), "# Tiny Python service\n")
-	writeFile(t, filepath.Join(repo, "pyproject.toml"), "[project]\nname = \"tiny-python-service\"\n")
-	writeFile(t, filepath.Join(repo, "src/tool/__main__.py"), "from tool.service import run\n\nrun()\n")
-	writeFile(t, filepath.Join(repo, "src/tool/service.py"), "def run() -> None:\n    print(\"hello\")\n")
-	writeFile(t, filepath.Join(repo, "tests/test_service.py"), "from tool.service import run\n\ndef test_run() -> None:\n    run()\n")
-	runGit(t, repo, "init", "--quiet")
-	runGit(t, repo, "add", "--", "README.md", "pyproject.toml", "src/tool/__main__.py", "src/tool/service.py", "tests/test_service.py")
-	commitTestRepository(t, repo)
-
-	orientationJSON, err := json.Marshal(map[string]any{
-		"project_guess": "tiny Python service",
-		"confidence":    0.85,
-		"high_level_map": []any{map[string]any{
-			"name": "CLI entry", "role": "entry", "evidence": []string{"src/tool/__main__.py"},
-			"why_it_matters": "starts the utility",
-		}},
-		"first_files_to_open": []any{map[string]any{"path": "src/tool/__main__.py", "reason": "entrypoint"}},
-		"candidate_flows": []any{map[string]any{
-			"name": "CLI startup", "trigger": "python module execution",
-			"likely_entrypoint": "src/tool/__main__.py",
-			"likely_files":      []string{"src/tool/__main__.py", "src/tool/service.py"},
-			"why_interesting":   "shows startup and delegation",
-			"evidence":          []string{"src/tool/__main__.py", "src/tool/service.py"},
-			"confidence":        0.85,
-		}},
-		"important_domain_words": []any{}, "questions_for_human": []any{},
-		"research_questions": []any{map[string]any{
-			"id":                  "service-execution",
-			"purpose":             "find a useful exact service behavior starting point",
-			"question":            "How does the Python service execute its main operation?",
-			"candidate_ids":       []string{},
-			"evidence_categories": []string{"source_window"},
-		}},
-		"unverified_paths": []any{}, "warnings": []any{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pythonOrientationFixture := orientationResponseFixture{
-		ProjectGuess: "tiny Python service", Confidence: 0.85,
-		Map:        []orientationMapFixture{{Name: "CLI entry", Role: "entry", EvidencePath: "src/tool/__main__.py", WhyItMatters: "starts the utility"}},
-		FirstFiles: []orientationFileFixture{{Path: "src/tool/__main__.py", Reason: "entrypoint"}},
-		Flows: []orientationFlowFixture{{
-			Name: "CLI startup", Trigger: "python module execution", EntrypointPath: "src/tool/__main__.py",
-			LikelyPaths:    []string{"src/tool/__main__.py", "src/tool/service.py"},
-			EvidencePaths:  []string{"src/tool/__main__.py", "src/tool/service.py"},
-			WhyInteresting: "shows startup and delegation", Confidence: 0.85,
-		}},
-		Research: []orientationResearchFixture{{
-			ID: "service-execution", Purpose: "find a useful exact service behavior starting point",
-			Question: "How does the Python service execute its main operation?", EvidenceCategories: []string{"source_window"},
-		}},
-		Warnings: []string{},
-	}
-	requestCount := 0
-	opportunityCount := 0
-	var requestBody []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		requestCount++
-		body, readErr := io.ReadAll(request.Body)
-		if requestCount == 1 {
-			requestBody = body
-		}
-		err = readErr
-		if err != nil {
-			t.Errorf("read request: %v", err)
-			return
-		}
-		responseContent := orientationJSON
-		if requestCount == 1 {
-			responseContent = orientationResponseForRequest(t, body, pythonOrientationFixture)
-		}
-		if strings.Contains(string(body), "Propose central mechanism questions") {
-			opportunityCount++
-			var chatRequest struct {
-				Messages []struct {
-					Content string `json:"content"`
-				} `json:"messages"`
-			}
-			if decodeErr := json.Unmarshal(body, &chatRequest); decodeErr != nil {
-				t.Errorf("decode opportunity request: %v", decodeErr)
-				return
-			}
-			factID := ""
-			for _, message := range chatRequest.Messages {
-				_, payload, found := strings.Cut(
-					message.Content,
-					"\n\nVariable canonical saved-fact bundle JSON:\n",
-				)
-				if !found {
-					continue
-				}
-				var bundle struct {
-					Facts []struct {
-						ID string `json:"id"`
-					} `json:"facts"`
-				}
-				if decodeErr := json.Unmarshal([]byte(payload), &bundle); decodeErr != nil {
-					t.Errorf("decode opportunity bundle: %v", decodeErr)
-					return
-				}
-				for _, fact := range bundle.Facts {
-					if strings.HasPrefix(fact.ID, "frdf-") {
-						factID = fact.ID
-						break
-					}
-				}
-			}
-			if factID == "" {
-				t.Errorf("opportunity request has no exact Python declaration fact: %s", body)
-				return
-			}
-			responseContent, err = json.Marshal(map[string]any{
-				"version": 1,
-				"candidates": []any{map[string]any{
-					"kind":              "mechanism",
-					"title":             "Service execution",
-					"question_answered": "How does the service execute its main operation?",
-					"support_ids":       []string{factID},
-					"missing_information": []string{
-						"complete local proof is not available",
-					},
-					"expected_value": "high",
-					"confidence":     "medium",
-				}},
-			})
-			if err != nil {
-				t.Errorf("encode opportunity response: %v", err)
-				return
-			}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []any{map[string]any{"message": map[string]any{
-				"role": "assistant", "content": string(responseContent),
-			}}},
-		})
-	}))
-	defer server.Close()
-	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
-	t.Setenv("REPOMAP_LLM_MODEL", "deepseek-v4-flash")
-	t.Setenv("REPOMAP_LLM_AUTH", "none")
-	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	debugDir := t.TempDir()
-	if err := runDefaultWithDeps(repo, []string{"--debug-dir", debugDir, "--no-open", "--no-serve"}, defaultRunDeps{
-		stdout: &stdout,
-		stderr: &stderr,
-	}); err != nil {
-		t.Fatalf("runDefaultWithDeps() error = %v", err)
-	}
-	if requestCount < 2 {
-		t.Fatalf("provider request count = %d, want orientation and downstream evidence/editor calls", requestCount)
-	}
-	if opportunityCount != 0 {
-		t.Fatalf("ordinary Python journey scheduled %d semantic opportunity request(s), want none", opportunityCount)
-	}
-	requestText := string(requestBody)
-	for _, want := range []string{`\"language\":\"Python\"`, "src/tool/__main__.py", "src/tool/service.py", "tests/test_service.py"} {
-		if !strings.Contains(requestText, want) {
-			t.Fatalf("Python request missing %q: %s", want, requestText)
-		}
-	}
-	if strings.Contains(requestText, "senior Go engineer") || strings.Contains(requestText, "unfamiliar Go repository") {
-		t.Fatalf("Python request retained Go-only prompt: %s", requestText)
-	}
-	if !strings.Contains(stdout.String(), "Project: tiny Python service") ||
-		!strings.Contains(stderr.String(), "repomap: collecting tracked repository facts from ") {
-		t.Fatalf("stdout/stderr missing Python journey output\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
-	}
-
-	entries, err := os.ReadDir(debugDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var runDir string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			runDir = filepath.Join(debugDir, entry.Name())
-		}
-	}
-	if runDir == "" {
-		t.Fatalf("debug entries = %#v, want a run directory", entries)
-	}
-	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"tiny Python service",
-		"CLI startup",
-		"src/tool/__main__.py",
-		"src/tool/service.py",
-	} {
-		if !strings.Contains(string(reportJSON), want) {
-			t.Fatalf("report missing %q\nstderr: %s\nreport: %s", want, stderr.String(), reportJSON)
-		}
-	}
-	var generated report.ReportData
-	if err := json.Unmarshal(reportJSON, &generated); err != nil {
-		t.Fatal(err)
-	}
-	if len(generated.UserMechanisms) != 0 || len(generated.UserTopics) != 0 {
-		t.Fatalf(
-			"Python learning shelf = %d mechanisms / %d topics, want 0 / 0 without an accepted Study response",
-			len(generated.UserMechanisms),
-			len(generated.UserTopics),
-		)
-	}
-	foundServiceSource := false
-	for _, source := range generated.UserSources {
-		if source.Path == "src/tool/service.py" && source.EnclosingSymbol == "run" && source.StartLine == 1 {
-			foundServiceSource = true
-			break
-		}
-	}
-	if !foundServiceSource {
-		t.Fatalf("Python exact sources = %#v, want repository-relative src/tool/service.py run anchor", generated.UserSources)
 	}
 }
 
@@ -785,7 +376,8 @@ func TestRunDefaultGitLabURLCreatesStandalonePinnedReport(t *testing.T) {
 		metadata.EffectiveOptions.GitLabURL != "https://gitlab.example.test/group/project" {
 		t.Fatalf("effective GitLab options = %#v", metadata.EffectiveOptions)
 	}
-	if !strings.Contains(stderr.String(), "standalone GitLab report pinned to "+state.Head) {
+	if !strings.Contains(stderr.String(), "standalone host: GitLab") ||
+		!strings.Contains(stderr.String(), "captured revision: "+state.Head) {
 		t.Fatalf("stderr missing pinned revision:\n%s", stderr.String())
 	}
 }
@@ -864,7 +456,8 @@ func TestRunDefaultGitHubURLCreatesStandalonePinnedReport(t *testing.T) {
 		metadata.EffectiveOptions.GitHubURL != "https://github.com/example/static-github" {
 		t.Fatalf("effective GitHub options = %#v", metadata.EffectiveOptions)
 	}
-	if !strings.Contains(stderr.String(), "standalone GitHub report pinned to "+state.Head) {
+	if !strings.Contains(stderr.String(), "standalone host: GitHub") ||
+		!strings.Contains(stderr.String(), "captured revision: "+state.Head) {
 		t.Fatalf("stderr missing pinned revision:\n%s", stderr.String())
 	}
 }
@@ -947,9 +540,6 @@ func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(html, []byte(`"working_tree_paths":["main.go"]`)) {
-		t.Fatalf("standalone report did not mark dirty source as local-only")
-	}
 	if !bytes.Contains(html, []byte(`"working_tree_dirty":true`)) {
 		t.Fatalf("standalone report did not disclose the stable dirty checkout")
 	}
@@ -981,7 +571,9 @@ func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *
 		manifest.RepositoryState.Dirty[0].Path != "main.go" {
 		t.Fatalf("manifest dirty repository state = %#v", manifest.RepositoryState.Dirty)
 	}
-	if !strings.Contains(stderr.String(), "report includes 1 stable local change(s)") {
+	if !strings.Contains(stderr.String(), "report contains stable local changes") ||
+		!strings.Contains(stderr.String(), "changed inputs: 1") ||
+		!strings.Contains(stderr.String(), "changed source paths are local-only") {
 		t.Fatalf("stderr missing dirty report explanation:\n%s", stderr.String())
 	}
 }
@@ -1752,8 +1344,9 @@ func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
-	if !strings.Contains(stderr.String(), "--no-secrets disables ordinary input credential detection") ||
-		!strings.Contains(stderr.String(), "mandatory provider-response and persisted-artifact credential scans remain active") {
+	if !strings.Contains(stderr.String(), "ordinary input credential detection is disabled") ||
+		!strings.Contains(stderr.String(), "mandatory provider-response and persisted-artifact scans remain active") ||
+		!strings.Contains(stderr.String(), "selected tracked source may reach the model provider and debug artifacts") {
 		t.Fatalf("unsafe override warning is absent:\n%s", stderr.String())
 	}
 	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
@@ -1783,43 +1376,38 @@ func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runManifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
-		t.Fatalf("redacted model bundle selection identity is invalid: %v", err)
-	}
-	bundlePath := filepath.Join(runDir, "llm_bundle.json")
-	persistedBundle, err := os.ReadFile(bundlePath)
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(persistedBundle, []byte("actual-secret-value")) {
-		t.Fatalf("debug model bundle leaked the credential assignment: %s", persistedBundle)
+	if err := runManifest.VerifyReportJSON(reportJSON); err != nil {
+		t.Fatalf("run manifest does not bind Atlas-first report: %v", err)
 	}
-	selectionJSON, err := os.ReadFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename))
+	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	selection, err := llmbundle.DecodeOrientationContextSelection(selectionJSON)
-	if err != nil {
-		t.Fatal(err)
+	for name, content := range map[string][]byte{
+		"metadata": metadataJSON,
+		"manifest": manifestJSON,
+		"report":   reportJSON,
+		"html":     reportHTML,
+	} {
+		if bytes.Contains(content, []byte("actual-secret-value")) {
+			t.Fatalf("%s leaked the credential assignment", name)
+		}
 	}
-	persistedDigest := fmt.Sprintf("%x", sha256.Sum256(persistedBundle))
-	if selection.PersistedBundleSHA256 != persistedDigest ||
-		selection.PersistedBundleBytes != len(persistedBundle) ||
-		selection.CanonicalBundleSHA256 == selection.PersistedBundleSHA256 {
-		t.Fatalf("redacted canonical/persisted bundle identities = %#v", selection)
-	}
-	if err := os.WriteFile(bundlePath, append(append([]byte(nil), persistedBundle...), ' '), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := runManifest.VerifyOrientationContextSelectionArtifact(runDir); err == nil {
-		t.Fatal("run manifest accepted a tampered redacted model bundle")
+	for _, legacy := range []string{"llm_bundle.json", "orientation_context_selection.v2.json"} {
+		if _, err := os.Stat(filepath.Join(runDir, legacy)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Atlas-first offline run wrote removed raw Orientation artifact %s: %v", legacy, err)
+		}
 	}
 	if kind, found := secretscan.Detect("API_KEY=actual-secret-value"); !found || kind != "credential assignment" {
 		t.Fatalf("credential detection was not restored after run: %q, %v", kind, found)
 	}
 }
 
-func TestRunDefaultOfflineRussianRequestPreservesCanonicalEnglishAndShowsDegradation(t *testing.T) {
+func TestRunDefaultOfflineRussianRequestKeepsUILocaleWithoutModelLocalization(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/russian-report\n\ngo 1.24\n")
@@ -1862,21 +1450,8 @@ func TestRunDefaultOfflineRussianRequestPreservesCanonicalEnglishAndShowsDegrada
 	if bytes.Contains(reportJSON, []byte(`"report_language"`)) {
 		t.Fatalf("canonical report leaked requested locale: %s", reportJSON)
 	}
-	statusJSON, err := os.ReadFile(filepath.Join(
-		runDir,
-		report.PresentationLocalizationStatusFile,
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, marker := range [][]byte{
-		[]byte(`"requested_locale":"ru"`),
-		[]byte(`"state":"failed"`),
-		[]byte(`"reason_code":"offline_requested"`),
-	} {
-		if !bytes.Contains(statusJSON, marker) {
-			t.Fatalf("localization status is missing %q: %s", marker, statusJSON)
-		}
+	if _, err := os.Stat(filepath.Join(runDir, report.PresentationLocalizationStatusFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Atlas-first offline run wrote legacy whole-report localization status: %v", err)
 	}
 	reportHTML, err := os.ReadFile(filepath.Join(runDir, "report.html"))
 	if err != nil {
@@ -1884,11 +1459,13 @@ func TestRunDefaultOfflineRussianRequestPreservesCanonicalEnglishAndShowsDegrada
 	}
 	for _, marker := range [][]byte{
 		[]byte(`<html lang="ru">`),
-		[]byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`),
 	} {
 		if !bytes.Contains(reportHTML, marker) {
-			t.Fatalf("degraded RU product report with canonical-English prose is missing %q", marker)
+			t.Fatalf("RU Atlas-first report is missing UI locale marker %q", marker)
 		}
+	}
+	if !bytes.Contains(reportHTML, []byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`)) {
+		t.Fatal("offline RU report did not disclose that canonical model prose remains English")
 	}
 }
 
@@ -1942,7 +1519,7 @@ func TestRunDefaultOfflineRussianRequestDoesNotRecaptureAfterLocalization(t *tes
 	}
 }
 
-func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
+func TestRunDefaultAtlasFirstCallPlanExcludesLegacyStages(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, "internal/a"), 0o700); err != nil {
@@ -2056,13 +1633,11 @@ func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 	}
 
 	requests := run()
-	if len(requests) != 3 {
-		t.Fatalf("model request count = %d, want orientation, architecture, and one rejected guided tour attempt; sparse Study must stop before its provider call", len(requests))
+	if len(requests) != 1 {
+		t.Fatalf("model request count = %d, want one Architecture parity-bridge request after empty Navigator", len(requests))
 	}
 	wantStageMarkers := []string{
-		"senior software engineer helping orient",
 		"compact conceptual architecture landscape",
-		"optional editorial guide for one bounded repository tour",
 	}
 	for index, marker := range wantStageMarkers {
 		if !bytes.Contains(requests[index], []byte(marker)) {
@@ -2070,6 +1645,8 @@ func TestRunDefaultModelCallPlanExcludesSearchStages(t *testing.T) {
 		}
 	}
 	forbiddenStageMarkers := []string{
+		"senior software engineer helping orient",
+		"optional editorial guide for one bounded repository tour",
 		"Propose central mechanism questions",
 		"repository-owned ways to build, run, test, and operate",
 	}

@@ -1,3 +1,10 @@
 package main
 
-func main() {}
+func main() {
+	Start()
+	DispatchRequest()
+}
+
+func Start() {}
+
+func DispatchRequest() {}

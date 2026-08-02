@@ -34,6 +34,7 @@ type navigatorRunOutcome struct {
 	Empty             bool
 	ProviderSkipped   bool
 	Cached            bool
+	SemanticCalls     int
 	ActionCount       int
 	Selected          *navigator.RecommendationAction
 	RequestBytes      int
@@ -42,6 +43,34 @@ type navigatorRunOutcome struct {
 	OutputTokens      int
 	TransportAttempts int
 	LatencyMillis     int64
+}
+
+// publishableNavigatorFailure is emitted only after either a malformed
+// semantic response or a completed live provider-call failure has been reduced
+// to a closed failed status and that status has been durably published.
+// Configuration, request construction, cache, artifact, cancellation, and
+// resource failures must never acquire this marker.
+type publishableNavigatorFailure struct {
+	cause error
+}
+
+func (failure *publishableNavigatorFailure) Error() string {
+	if failure == nil || failure.cause == nil {
+		return "navigator semantic response rejected"
+	}
+	return failure.cause.Error()
+}
+
+func (failure *publishableNavigatorFailure) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
+func isPublishableNavigatorFailure(err error) bool {
+	var failure *publishableNavigatorFailure
+	return errors.As(err, &failure)
 }
 
 type navigatorAcceptedResponse struct {
@@ -83,7 +112,9 @@ func runNavigatorForRun(
 		Atlas: atlas, Limits: ordinaryNavigatorLimits(policy),
 	})
 	if err != nil {
-		return navigatorRunOutcome{}, fmt.Errorf("navigator run: compile product: %w", err)
+		return navigatorRunOutcome{}, fmt.Errorf(
+			"navigator run: compile product: %w", navigatorTerminalResource(err, 0),
+		)
 	}
 	outcome := navigatorRunOutcome{ActionCount: len(product.Actions())}
 	writer, err := debugdump.OpenWriter(runDir, true)
@@ -171,6 +202,17 @@ func runNavigatorForRun(
 		if found {
 			accepted, failure, validationErr := validateNavigatorResponse(product, cached.Content)
 			if validationErr == nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					recordNavigatorExchange(
+						writer, providerRequest, nil,
+						&debugdump.SemanticUnavailable{Code: debugdump.SemanticUnavailableCanceled},
+						debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
+						0, 0, debugdump.SemanticRequestPrepared,
+					)
+					return outcome, failNavigatorRun(
+						writer, product, navigator.FailureCanceled, ctxErr,
+					)
+				}
 				outcome.Cached = true
 				outcome.ResponseBytes = len(cached.Content)
 				outcome.InputTokens = cached.InputTokens
@@ -199,6 +241,20 @@ func runNavigatorForRun(
 					"provider calls: 0",
 				)
 				return outcome, nil
+			}
+			validationErr = navigatorTerminalResource(validationErr, config.MaxTokens)
+			if isSemanticResourceLimit(validationErr) {
+				recordNavigatorExchange(
+					writer, providerRequest, nil,
+					&debugdump.SemanticUnavailable{
+						Code: debugdump.SemanticUnavailableSize, OriginalBytes: len(cached.Content),
+					},
+					debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
+					0, 0, debugdump.SemanticRequestPrepared,
+				)
+				return outcome, failNavigatorRun(
+					writer, product, navigator.FailureResource, validationErr,
+				)
 			}
 			if err := modelresearch.InvalidateStageResponse(cacheInput); err != nil {
 				return outcome, failNavigatorRun(
@@ -234,6 +290,7 @@ func runNavigatorForRun(
 		"model: "+config.Model,
 	)
 	started := time.Now()
+	outcome.SemanticCalls = 1
 	providerResult, callErr := liveClient.NavigateMeasured(
 		ctx, compiled.WireJSON(), compiled.MaxWireBytes(),
 	)
@@ -242,6 +299,17 @@ func runNavigatorForRun(
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
 	outcome.TransportAttempts = providerResult.Attempts
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		recordNavigatorExchange(
+			writer, providerRequest, nil,
+			&debugdump.SemanticUnavailable{
+				Code: debugdump.SemanticUnavailableCanceled, OriginalBytes: outcome.ResponseBytes,
+			},
+			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
+			1, providerResult.Attempts, debugdump.SemanticRequestExactSent,
+		)
+		return outcome, failNavigatorRun(writer, product, navigator.FailureCanceled, ctxErr)
+	}
 	if callErr != nil {
 		code := navigator.FailureProvider
 		state := debugdump.SemanticStateProviderFailed
@@ -262,10 +330,27 @@ func runNavigatorForRun(
 			state, validation, 1, providerResult.Attempts,
 			debugdump.SemanticRequestExactSent,
 		)
+		if code == navigator.FailureProvider {
+			return outcome, failPublishableNavigatorRun(writer, product, code, callErr)
+		}
 		return outcome, failNavigatorRun(writer, product, code, callErr)
 	}
 	accepted, failure, validationErr := validateNavigatorResponse(product, providerResult.Content)
 	if validationErr != nil {
+		validationErr = navigatorTerminalResource(validationErr, config.MaxTokens)
+		if isSemanticResourceLimit(validationErr) {
+			recordNavigatorExchange(
+				writer, providerRequest, nil,
+				&debugdump.SemanticUnavailable{
+					Code: debugdump.SemanticUnavailableSize, OriginalBytes: outcome.ResponseBytes,
+				},
+				debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
+				1, providerResult.Attempts, debugdump.SemanticRequestExactSent,
+			)
+			return outcome, failNavigatorRun(
+				writer, product, navigator.FailureResource, validationErr,
+			)
+		}
 		code := navigator.FailureReference
 		validation := debugdump.SemanticValidationResponse
 		if failure == navigatorFailureSecret {
@@ -280,6 +365,9 @@ func runNavigatorForRun(
 			debugdump.SemanticStateRejected, validation,
 			1, providerResult.Attempts, debugdump.SemanticRequestExactSent,
 		)
+		if failure != navigatorFailureSecret {
+			return outcome, failPublishableNavigatorRun(writer, product, code, validationErr)
+		}
 		return outcome, failNavigatorRun(writer, product, code, validationErr)
 	}
 	recordNavigatorExchange(
@@ -320,6 +408,22 @@ func runNavigatorForRun(
 		formatRunOutputDuration(outcome.LatencyMillis),
 	)
 	return outcome, nil
+}
+
+func navigatorTerminalResource(err error, maxTokens int) error {
+	var local *navigator.ResourceLimitError
+	if !errors.As(err, &local) {
+		return err
+	}
+	details := modelresearch.ResourceLimitError{
+		Stage: "navigator", Kind: modelresearch.ResourceLimitRequestBytes,
+		Limit: local.Limit, Observed: local.Actual, ObservedKnown: true,
+		ConfiguredMaxTokens: maxTokens,
+	}
+	if local.Section == "response_bytes" {
+		details.Kind = modelresearch.ResourceLimitResponseBytes
+	}
+	return modelresearch.NewResourceLimitError(details, nil)
 }
 
 func ordinaryNavigatorLimits(policy modelresearch.Policy) navigator.Limits {
@@ -445,14 +549,34 @@ func failNavigatorRun(
 	code navigator.FailureCode,
 	cause error,
 ) error {
-	status, err := product.FailureStatus(code)
-	if err != nil {
-		return errors.Join(cause, err)
-	}
-	if err := persistNavigatorStatus(writer, status); err != nil {
+	if err := persistNavigatorFailureStatus(writer, product, code); err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause
+}
+
+func failPublishableNavigatorRun(
+	writer *debugdump.Writer,
+	product navigator.Product,
+	code navigator.FailureCode,
+	cause error,
+) error {
+	if err := persistNavigatorFailureStatus(writer, product, code); err != nil {
+		return errors.Join(cause, err)
+	}
+	return &publishableNavigatorFailure{cause: cause}
+}
+
+func persistNavigatorFailureStatus(
+	writer *debugdump.Writer,
+	product navigator.Product,
+	code navigator.FailureCode,
+) error {
+	status, err := product.FailureStatus(code)
+	if err != nil {
+		return err
+	}
+	return persistNavigatorStatus(writer, status)
 }
 
 func recordNavigatorExchange(
