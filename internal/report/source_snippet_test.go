@@ -1120,6 +1120,13 @@ func TestCompleteOverviewSourceCoverageProjectsEveryExactVisibleLocation(t *test
 			t.Fatalf("source[%d] invalid: %v", index, err)
 		}
 	}
+	beforeRebind := mustSourceProjectionJSON(t, data.UserSources)
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatalf("verify existing completeOverviewSourceCoverage(): %v", err)
+	}
+	if afterRebind := mustSourceProjectionJSON(t, data.UserSources); !bytes.Equal(afterRebind, beforeRebind) {
+		t.Fatalf("verified exact excerpts changed order or identity:\nbefore: %s\nafter:  %s", beforeRebind, afterRebind)
+	}
 
 	reprojected := overviewSourceCoverageReport(authority.repository.Head)
 	if err := completeOverviewSourceCoverage(context.Background(), reprojected, &authority); err != nil {
@@ -1128,6 +1135,166 @@ func TestCompleteOverviewSourceCoverageProjectsEveryExactVisibleLocation(t *test
 	if !reflect.DeepEqual(reprojected.UserSources, data.UserSources) {
 		t.Fatalf("coverage projection is not deterministic:\nfirst:  %#v\nsecond: %#v",
 			data.UserSources, reprojected.UserSources)
+	}
+}
+
+func TestCompleteOverviewSourceCoverageRebindsSelfConsistentStoredExcerpt(t *testing.T) {
+	t.Parallel()
+
+	authority := overviewSingleSourceAuthority(t, strings.Join([]string{
+		"package fixture", "", "func main() {", "\trun()", "}", "",
+	}, "\n"))
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		OpenablePaths:    []string{"main.go"},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "surface-main", SurfaceRole: SurfaceRoleEntrySurface,
+			ApplicationClass: SurfaceApplicationOwned,
+			Availability:     SurfaceAvailabilityAvailable,
+			ExecutableRole:   ExecutableRolePrimaryApplication,
+			HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 3},
+		}}},
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	if len(data.UserSources) != 1 {
+		t.Fatalf("source excerpts = %d, want 1", len(data.UserSources))
+	}
+
+	stored := cloneSourceSnippet(t, data.UserSources[0])
+	texts := make([]string, 0, len(stored.Lines))
+	for index := range stored.Lines {
+		if stored.Lines[index].Line == 3 {
+			stored.Lines[index].Text = "func tampered() {"
+		}
+		texts = append(texts, stored.Lines[index].Text)
+	}
+	stored.Content = strings.Join(texts, "\n")
+	stored.ContentSHA256 = sourceLinesSHA256(texts)
+	stored.PresentationSHA256 = sourceSnippetPresentationSHA(stored)
+	if err := stored.Validate(); err != nil {
+		t.Fatalf("self-consistent stale fixture is invalid: %v", err)
+	}
+	data.UserSources = []SourceSnippet{stored}
+
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatalf("completeOverviewSourceCoverage(): %v", err)
+	}
+	if len(data.UserSources) != 1 {
+		t.Fatalf("rebound source excerpts = %d, want 1: %#v", len(data.UserSources), data.UserSources)
+	}
+	if got := sourceLineByNumber(t, data.UserSources[0], 3).Text; got != "func main() {" {
+		t.Fatalf("rebound exact line = %q, want captured source", got)
+	}
+	if strings.Contains(data.UserSources[0].Content, "tampered") {
+		t.Fatalf("self-consistent stale source survived rebinding: %q", data.UserSources[0].Content)
+	}
+}
+
+func TestCompleteOverviewSourceCoverageExistingExcerptFailsAtomicallyWhenCaptureChanges(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Join([]string{
+		"package fixture", "", "func main() {", "\trun()", "}", "",
+	}, "\n")
+	authority := overviewSingleSourceAuthority(t, content)
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		OpenablePaths:    []string{"main.go"},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "surface-main", SurfaceRole: SurfaceRoleEntrySurface,
+			ApplicationClass: SurfaceApplicationOwned,
+			Availability:     SurfaceAvailabilityAvailable,
+			ExecutableRole:   ExecutableRolePrimaryApplication,
+			HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 3},
+		}}},
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	before := mustSourceProjectionJSON(t, data.UserSources)
+	writeTestFile(t, authority.analysisRoot, "main.go", content+"// changed after capture\n")
+
+	err := completeOverviewSourceCoverage(context.Background(), data, &authority)
+	if err == nil || !strings.Contains(err.Error(), "exact authorized read failed") {
+		t.Fatalf("completeOverviewSourceCoverage() error = %v, want captured-input failure", err)
+	}
+	if got := mustSourceProjectionJSON(t, data.UserSources); !bytes.Equal(got, before) {
+		t.Fatalf("failed source rebinding mutated caller:\nbefore: %s\nafter:  %s", before, got)
+	}
+}
+
+func TestCompleteOverviewSourceCoverageOmitsStaleNonTargetAndPreservesValidExtras(t *testing.T) {
+	t.Parallel()
+
+	authority := overviewSourceCoverageAuthority(t, map[string]map[int]string{
+		"a.go": {20: "// exact A"},
+		"b.go": {20: "// exact B"},
+		"c.go": {20: "// exact C"},
+	})
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		OpenablePaths:    []string{"a.go", "b.go", "c.go"},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{
+			{
+				ID: "surface-a", SurfaceRole: SurfaceRoleEntrySurface,
+				ApplicationClass: SurfaceApplicationOwned,
+				Availability:     SurfaceAvailabilityAvailable,
+				ExecutableRole:   ExecutableRolePrimaryApplication,
+				HandlerLocation:  &SurfaceLocation{Path: "a.go", Line: 20},
+			},
+			{
+				ID: "surface-b", SurfaceRole: SurfaceRoleEntrySurface,
+				ApplicationClass: SurfaceApplicationOwned,
+				Availability:     SurfaceAvailabilityAvailable,
+				ExecutableRole:   ExecutableRolePrimaryApplication,
+				HandlerLocation:  &SurfaceLocation{Path: "b.go", Line: 20},
+			},
+			{
+				ID: "surface-c", SurfaceRole: SurfaceRoleEntrySurface,
+				ApplicationClass: SurfaceApplicationOwned,
+				Availability:     SurfaceAvailabilityAvailable,
+				ExecutableRole:   ExecutableRolePrimaryApplication,
+				HandlerLocation:  &SurfaceLocation{Path: "c.go", Line: 20},
+			},
+		}},
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	if len(data.UserSources) != 3 {
+		t.Fatalf("source excerpts = %d, want 3: %#v", len(data.UserSources), data.UserSources)
+	}
+
+	validA := cloneSourceSnippet(t, data.UserSources[0])
+	staleB := cloneSourceSnippet(t, data.UserSources[1])
+	validC := cloneSourceSnippet(t, data.UserSources[2])
+	texts := make([]string, 0, len(staleB.Lines))
+	for index := range staleB.Lines {
+		if staleB.Lines[index].Line == 20 {
+			staleB.Lines[index].Text = "// stale B"
+		}
+		texts = append(texts, staleB.Lines[index].Text)
+	}
+	staleB.Content = strings.Join(texts, "\n")
+	staleB.ContentSHA256 = sourceLinesSHA256(texts)
+	staleB.PresentationSHA256 = sourceSnippetPresentationSHA(staleB)
+	if err := staleB.Validate(); err != nil {
+		t.Fatalf("self-consistent stale non-target fixture is invalid: %v", err)
+	}
+
+	data.DiscoveredSurfaces = nil
+	data.UserSources = []SourceSnippet{validA, staleB, validC}
+	want := mustSourceProjectionJSON(t, []SourceSnippet{validA, validC})
+	if targets := overviewSourceTargets(data); len(targets) != 0 {
+		t.Fatalf("non-target fixture unexpectedly has targets: %#v", targets)
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatalf("completeOverviewSourceCoverage(): %v", err)
+	}
+	if got := mustSourceProjectionJSON(t, data.UserSources); !bytes.Equal(got, want) {
+		t.Fatalf("non-target authority projection retained stale drawer source or changed valid extras:\nwant: %s\ngot:  %s", want, got)
 	}
 }
 
@@ -1178,17 +1345,19 @@ func TestCompleteOverviewSourceCoverageFailsClosedWithoutMutation(t *testing.T) 
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		content string
-		change  bool
-		want    string
+		name          string
+		content       string
+		change        bool
+		missingInputs bool
+		want          string
 	}{
 		{
 			name: "unsafe persisted excerpt",
 			content: strings.Join([]string{
 				"package fixture", "", "func main() {", "\tapiKey := \"sk-0123456789abcdefghijklmnop\"", "}", "",
 			}, "\n"),
-			want: "unsafe exact source excerpt",
+			missingInputs: true,
+			want:          "unsafe exact source excerpt",
 		},
 		{
 			name: "captured source changed",
@@ -1214,6 +1383,9 @@ func TestCompleteOverviewSourceCoverageFailsClosedWithoutMutation(t *testing.T) 
 				}}},
 			}
 			before := append([]SourceSnippet(nil), data.UserSources...)
+			if test.missingInputs {
+				authority.inputs = nil
+			}
 			if test.change {
 				writeTestFile(t, authority.analysisRoot, "main.go", test.content+"// changed\n")
 			}
@@ -1223,6 +1395,9 @@ func TestCompleteOverviewSourceCoverageFailsClosedWithoutMutation(t *testing.T) 
 			}
 			if !reflect.DeepEqual(data.UserSources, before) {
 				t.Fatalf("failed atomic projection mutated sources: %#v", data.UserSources)
+			}
+			if test.missingInputs && authority.inputs != nil {
+				t.Fatalf("failed atomic projection published captured inputs: %#v", authority.inputs)
 			}
 		})
 	}

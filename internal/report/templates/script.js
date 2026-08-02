@@ -5517,11 +5517,11 @@
 	// Overlapping saved excerpts are normal. Prefer the smallest exact
 	// containing interval, then stable persisted fields. Only two views of the
 	// same interval/revision with different source content are ambiguous.
-	function exactOverviewSourceResolutionForLocation(location) {
+	function exactOverviewSourceResolutionFromSnippets(location, snippets) {
 		if (!location || exactOverviewSourcePath(location.path) !== location.path ||
 			!Number.isInteger(location.line) || location.line <= 0) return { source: null, conflict: false };
 		var equivalent = {};
-		allEmbeddedSourceSnippets().forEach(function (snippet) {
+		(Array.isArray(snippets) ? snippets : []).forEach(function (snippet) {
 			if (!sourceSnippetHasCode(snippet) ||
 				exactOverviewSourcePath(snippet.path) !== location.path ||
 				!Number.isInteger(snippet.start_line) || !Number.isInteger(snippet.end_line) ||
@@ -5567,6 +5567,10 @@
 		}, conflict: false };
 	}
 
+	function exactOverviewSourceResolutionForLocation(location) {
+		return exactOverviewSourceResolutionFromSnippets(location, allEmbeddedSourceSnippets());
+	}
+
 	function exactOverviewSourceForLocation(location) {
 		return exactOverviewSourceResolutionForLocation(location).source;
 	}
@@ -5592,6 +5596,24 @@
 		return String(trigger && trigger.id || '');
 	}
 
+	var OVERVIEW_SURFACE_KIND_MESSAGE_IDS = {
+		async_task: 'main.overview.anatomy.surface_kind.async_task',
+		cli_command: 'main.overview.anatomy.surface_kind.cli_command',
+		http_route: 'main.overview.anatomy.surface_kind.http_route',
+		http_route_descriptor: 'main.overview.anatomy.surface_kind.http_route_descriptor',
+		http_route_frontier: 'main.overview.anatomy.surface_kind.http_route_frontier',
+		http_server: 'main.overview.anatomy.surface_kind.http_server',
+		process_entry: 'main.overview.anatomy.surface_kind.process_entry',
+		worker: 'main.overview.anatomy.surface_kind.worker',
+	};
+
+	function overviewSurfaceKindLabel(kind) {
+		return msg(
+			OVERVIEW_SURFACE_KIND_MESSAGE_IDS[String(kind || '')] ||
+				'main.overview.anatomy.surface_kind.other'
+		);
+	}
+
 	function overviewEntrySurfaceObjects() {
 		var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
 			? DATA.discovered_surfaces.triggers : [];
@@ -5612,7 +5634,7 @@
 			objects.push({
 				id: trigger.id,
 				title: overviewSurfaceTitle(trigger),
-				detail: String(trigger.kind || ''),
+				detail: overviewSurfaceKindLabel(trigger.kind),
 				snippet: source.snippet,
 				location: source.location,
 			});
@@ -5779,12 +5801,180 @@
 		}
 	}
 
-  function renderOverviewWorkspace() {
-    var root = document.getElementById('rm-overview');
-    if (!root) return;
-    root.replaceChildren();
-		renderStudyPublicationNotice(root);
-		var anatomy = repositoryOverviewAnatomy();
+	var REPOSITORY_ATLAS_UNIT_KIND_MESSAGE_IDS = {
+		app: 'main.atlas.workspace.unit_kind.app',
+		module: 'main.atlas.workspace.unit_kind.module',
+		package: 'main.atlas.workspace.unit_kind.package',
+		repository: 'main.atlas.workspace.unit_kind.repository',
+		service: 'main.atlas.workspace.unit_kind.service',
+	};
+
+	function repositoryAtlasUnitKindLabel(kind) {
+		return msg(
+			REPOSITORY_ATLAS_UNIT_KIND_MESSAGE_IDS[String(kind || '')] ||
+				'main.atlas.workspace.unit_kind.other'
+		);
+	}
+
+	function repositoryAtlasWorkspaceShelf() {
+		var atlas = DATA.repository_atlas;
+		if (!atlas || !Array.isArray(atlas.units) || !atlas.units.length) return null;
+		var unitCounts = {};
+		atlas.units.forEach(function (unit) {
+			if (unit && typeof unit.id === 'string' && unit.id) {
+				unitCounts[unit.id] = (unitCounts[unit.id] || 0) + 1;
+			}
+		});
+		var units = [];
+		var unitsByID = {};
+		atlas.units.forEach(function (unit) {
+			if (!unit || typeof unit.id !== 'string' || !unit.id || unitCounts[unit.id] !== 1 ||
+				typeof unit.name !== 'string' || !unit.name) return;
+			var view = { name: unit.name, kind: String(unit.kind || '') };
+			units.push(view);
+			unitsByID[unit.id] = view;
+		});
+
+		var entityCounts = {};
+		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
+			if (entity && typeof entity.id === 'string' && entity.id) {
+				entityCounts[entity.id] = (entityCounts[entity.id] || 0) + 1;
+			}
+		});
+		var entitiesByID = {};
+		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
+			if (!entity || typeof entity.id !== 'string' || !entity.id || entityCounts[entity.id] !== 1 ||
+				!unitsByID[entity.unit_id]) return;
+			entitiesByID[entity.id] = entity;
+		});
+
+		var evidenceCounts = {};
+		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
+			if (evidence && typeof evidence.id === 'string' && evidence.id) {
+				evidenceCounts[evidence.id] = (evidenceCounts[evidence.id] || 0) + 1;
+			}
+		});
+		var evidenceByID = {};
+		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
+			if (!evidence || typeof evidence.id !== 'string' || !evidence.id ||
+				evidenceCounts[evidence.id] !== 1 || !unitsByID[evidence.unit_id]) return;
+			evidenceByID[evidence.id] = evidence;
+		});
+
+		var eligible = 0;
+		var relations = [];
+		(Array.isArray(atlas.relations) ? atlas.relations : []).forEach(function (relation) {
+			if (!relation || relation.kind !== 'exposes' || relation.phase !== 'startup' ||
+				relation.authority !== 'resolved' || !unitsByID[relation.unit_id] ||
+				!relation.source || relation.source.kind !== 'surface' ||
+				!relation.target || relation.target.kind !== 'operation') return;
+			var sourceEntity = entitiesByID[relation.source.id];
+			var targetEntity = entitiesByID[relation.target.id];
+			if (!sourceEntity || sourceEntity.kind !== 'surface' ||
+				!targetEntity || targetEntity.kind !== 'operation') return;
+			eligible += 1;
+			var source = null;
+			(Array.isArray(relation.evidence_refs) ? relation.evidence_refs : []).some(function (ref) {
+				var evidence = evidenceByID[ref];
+				if (!evidence || !evidence.location) return false;
+				var resolution = exactOverviewSourceResolutionFromSnippets(evidence.location, USER_SOURCES);
+				if (!resolution.source || resolution.conflict) return false;
+				source = resolution.source;
+				return true;
+			});
+			if (!source) return;
+			relations.push({
+				unit: unitsByID[relation.unit_id],
+				authority: relation.authority,
+				snippet: source.snippet,
+				location: source.location,
+			});
+		});
+		return {
+			units: units,
+			relations: relations,
+			omittedRelations: eligible - relations.length,
+		};
+	}
+
+	function renderRepositoryAtlasWorkspaceShelf(root) {
+		var shelf = repositoryAtlasWorkspaceShelf();
+		var section = el('section', 'rm-workspace-section rm-atlas-shelf');
+		section.appendChild(renderViewHeading(
+			msg('main.atlas.workspace.kicker'),
+			msg('main.atlas.workspace.title'),
+			msg('main.atlas.workspace.copy')
+		));
+		if (!shelf || !shelf.units.length) {
+			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.workspace.unavailable')));
+			root.appendChild(section);
+			return;
+		}
+
+		section.appendChild(txt('h3', 'rm-atlas-shelf-heading', msg('main.atlas.workspace.units')));
+		var unitGrid = el('div', 'rm-atlas-unit-grid');
+		shelf.units.forEach(function (unit) {
+			var card = el('article', 'rm-atlas-unit-card');
+			card.appendChild(txt('strong', '', unit.name));
+			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
+			card.appendChild(txt('span', 'rm-atlas-authority', msg(
+				'main.atlas.workspace.authority',
+				{ authority: msg('main.atlas.workspace.authority.observed') }
+			)));
+			unitGrid.appendChild(card);
+		});
+		section.appendChild(unitGrid);
+
+		section.appendChild(txt(
+			'h3',
+			'rm-atlas-shelf-heading rm-atlas-relations-heading',
+			msg('main.atlas.workspace.startup_relations')
+		));
+		if (!shelf.relations.length) {
+			section.appendChild(txt(
+				'p',
+				'rm-empty-state',
+				msg('main.atlas.workspace.no_source_backed_relations')
+			));
+		} else {
+			var relationGrid = el('div', 'rm-atlas-relation-grid');
+			shelf.relations.forEach(function (relation) {
+				var card = el('article', 'rm-atlas-relation-card');
+				card.appendChild(txt('strong', 'rm-atlas-relation-unit', relation.unit.name));
+				var roles = el('div', 'rm-atlas-relation-roles');
+				roles.appendChild(txt('span', '', msg('main.atlas.workspace.process_entry')));
+				roles.appendChild(txt('span', '', msg('main.atlas.workspace.application_start')));
+				card.appendChild(roles);
+				card.appendChild(txt('span', 'rm-atlas-authority', msg(
+					'main.atlas.workspace.authority',
+					{ authority: msg('main.atlas.workspace.authority.resolved') }
+				)));
+				var sourceButton = txt('button', 'rm-atlas-source-action', msg('main.open.exact.source'));
+				sourceButton.type = 'button';
+				sourceButton.onclick = function () {
+					openSourceSnippet(relation.snippet, relation.location, false, { drawerFirst: true });
+				};
+				card.appendChild(sourceButton);
+				relationGrid.appendChild(card);
+			});
+			section.appendChild(relationGrid);
+		}
+		if (shelf.omittedRelations > 0) {
+			section.appendChild(txt('p', 'rm-atlas-omitted', msg(
+				'main.atlas.workspace.omitted_relations',
+				{ count: shelf.omittedRelations }
+			)));
+		}
+		root.appendChild(section);
+	}
+
+	function renderOverviewWorkspace() {
+	  var root = document.getElementById('rm-overview');
+	  if (!root) return;
+	  root.replaceChildren();
+			renderStudyPublicationNotice(root);
+			renderRepositoryAtlasWorkspaceShelf(root);
+			var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewAnatomy(root, anatomy);
 			return;
@@ -7694,8 +7884,11 @@
 			repositoryOverviewAnatomy: repositoryOverviewAnatomy,
 			overviewEntrySurfaceObjects: overviewEntrySurfaceObjects,
 			overviewComponentObjects: overviewComponentObjects,
+			overviewSurfaceKindLabel: overviewSurfaceKindLabel,
 			exactOverviewSourceForLocation: exactOverviewSourceForLocation,
 			renderRepositoryOverviewAnatomy: renderRepositoryOverviewAnatomy,
+			repositoryAtlasWorkspaceShelf: repositoryAtlasWorkspaceShelf,
+			renderRepositoryAtlasWorkspaceShelf: renderRepositoryAtlasWorkspaceShelf,
 // repomap-source-episode:start
 			renderSourceEpisode: renderSourceEpisode,
 			renderSourceEpisodeClaim: renderSourceEpisodeClaim,

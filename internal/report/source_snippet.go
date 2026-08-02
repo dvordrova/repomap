@@ -1222,10 +1222,10 @@ type overviewSourceTarget struct {
 	line int
 }
 
-// completeOverviewSourceCoverage atomically extends the existing editorial
-// source projection with exact authorized excerpts for every Overview object
-// that has a persisted visible source location. It never reduces the target
-// set to fit a presentation budget.
+// completeOverviewSourceCoverage atomically verifies the existing editorial
+// source projection and extends it with exact authorized excerpts for every
+// Overview object that has a persisted visible source location. It never
+// reduces the target set to fit a presentation budget.
 func completeOverviewSourceCoverage(
 	ctx context.Context,
 	data *ReportData,
@@ -1238,10 +1238,15 @@ func completeOverviewSourceCoverage(
 		return err
 	}
 	targets := overviewSourceTargets(data)
-	if len(targets) == 0 {
+	if len(targets) == 0 && len(data.UserSources) == 0 {
 		return nil
 	}
-	if authority.inputs == nil {
+	if strings.TrimSpace(data.CapturedRevision) != authority.repository.Head {
+		return fmt.Errorf("report source coverage: captured revision does not match authorized repository")
+	}
+	capturedInputs := authority.inputs
+	capturedInputsChanged := false
+	if capturedInputs == nil {
 		repositoryPaths, err := repositoryRelativeInputPaths(
 			authority.repository.Identity,
 			authority.analysisRoot,
@@ -1254,13 +1259,14 @@ func completeOverviewSourceCoverage(
 		if err != nil {
 			return fmt.Errorf("report source coverage: capture authorized inputs: %w", err)
 		}
-		authority.inputs = inputs
+		capturedInputs = inputs
+		capturedInputsChanged = true
 	}
 	catalog, err := sourcecatalog.New(sourcecatalog.Input{
 		RepositoryRoot: authority.repository.Identity,
 		AnalysisRoot:   authority.analysisRoot,
 		AllowedPaths:   data.OpenablePaths,
-		CapturedInputs: authority.inputs,
+		CapturedInputs: capturedInputs,
 	})
 	if err != nil {
 		return fmt.Errorf("report source coverage: authorized source catalog: %w", err)
@@ -1271,6 +1277,7 @@ func completeOverviewSourceCoverage(
 	}
 
 	projected := cloneOverviewSourceSnippets(data.UserSources)
+	verifiedExisting := make(map[string]struct{})
 	for _, target := range targets {
 		resolved, conflict := resolveOverviewSourceSnippet(projected, target)
 		if conflict {
@@ -1278,6 +1285,28 @@ func completeOverviewSourceCoverage(
 			return fmt.Errorf("report source coverage: conflicting exact saved excerpt")
 		}
 		if resolved {
+			var insertionIndex int
+			projected, resolved, insertionIndex, err = rebindOverviewSourceSnippets(
+				ctx,
+				data,
+				content,
+				projected,
+				target,
+				verifiedExisting,
+			)
+			if err != nil {
+				_ = content.Close()
+				return err
+			}
+			if resolved {
+				continue
+			}
+			snippet, snippetErr := authorizedOverviewSourceSnippet(ctx, data, content, target)
+			if snippetErr != nil {
+				_ = content.Close()
+				return snippetErr
+			}
+			projected = insertExactOverviewSourceSnippet(projected, snippet, insertionIndex)
 			continue
 		}
 		snippet, err := authorizedOverviewSourceSnippet(ctx, data, content, target)
@@ -1286,6 +1315,17 @@ func completeOverviewSourceCoverage(
 			return err
 		}
 		projected = mergeExactOverviewSourceSnippet(projected, snippet)
+	}
+	projected, err = retainAuthorizedOverviewSourceSnippets(
+		ctx,
+		data,
+		content,
+		projected,
+		verifiedExisting,
+	)
+	if err != nil {
+		_ = content.Close()
+		return err
 	}
 	if err := content.Close(); err != nil {
 		return fmt.Errorf("report source coverage: close authorized source content: %w", err)
@@ -1297,7 +1337,157 @@ func completeOverviewSourceCoverage(
 		}
 	}
 	data.UserSources = projected
+	if capturedInputsChanged {
+		authority.inputs = capturedInputs
+	}
 	return nil
+}
+
+// retainAuthorizedOverviewSourceSnippets removes any stale non-target excerpt
+// from the private projection while preserving the exact identity and order of
+// every excerpt that still matches the captured workspace. Authority failures
+// abort the whole projection rather than publishing a partially filtered list.
+func retainAuthorizedOverviewSourceSnippets(
+	ctx context.Context,
+	data *ReportData,
+	content *workspacecontent.Service,
+	sources []SourceSnippet,
+	verified map[string]struct{},
+) ([]SourceSnippet, error) {
+	result := make([]SourceSnippet, 0, len(sources))
+	for _, snippet := range sources {
+		_, matches := verified[snippet.PresentationSHA256]
+		if !matches {
+			var err error
+			matches, err = authorizedOverviewSourceSnippetMatches(ctx, data, content, snippet)
+			if err != nil {
+				return nil, err
+			}
+			if matches {
+				verified[snippet.PresentationSHA256] = struct{}{}
+			}
+		}
+		if matches {
+			result = append(result, snippet)
+		}
+	}
+	return result, nil
+}
+
+// rebindOverviewSourceSnippets admits an existing excerpt only after every
+// displayed source line has been read through the captured-input-authorized
+// content service. Stale excerpts are removed from the private projection and
+// replaced later at the first removed position; caller-owned data is untouched
+// until the complete projection succeeds.
+func rebindOverviewSourceSnippets(
+	ctx context.Context,
+	data *ReportData,
+	content *workspacecontent.Service,
+	sources []SourceSnippet,
+	target overviewSourceTarget,
+	verified map[string]struct{},
+) ([]SourceSnippet, bool, int, error) {
+	result := make([]SourceSnippet, 0, len(sources))
+	resolved := false
+	insertionIndex := -1
+	for _, snippet := range sources {
+		if !overviewSourceSnippetCoversTarget(snippet, target) {
+			result = append(result, snippet)
+			continue
+		}
+		_, matches := verified[snippet.PresentationSHA256]
+		if !matches {
+			var err error
+			matches, err = authorizedOverviewSourceSnippetMatches(ctx, data, content, snippet)
+			if err != nil {
+				return nil, false, -1, err
+			}
+			if matches {
+				verified[snippet.PresentationSHA256] = struct{}{}
+			}
+		}
+		if !matches {
+			if insertionIndex < 0 {
+				insertionIndex = len(result)
+			}
+			continue
+		}
+		resolved = true
+		result = append(result, snippet)
+	}
+	return result, resolved, insertionIndex, nil
+}
+
+func authorizedOverviewSourceSnippetMatches(
+	ctx context.Context,
+	data *ReportData,
+	content *workspacecontent.Service,
+	snippet SourceSnippet,
+) (bool, error) {
+	if err := snippet.Validate(); err != nil || snippet.Revision != reportSourceRevision(data) {
+		return false, nil
+	}
+	if _, found := secretscan.DetectAlways(snippet.Content); found {
+		return false, fmt.Errorf("report source coverage: unsafe exact source excerpt")
+	}
+	lines := snippet.Lines
+	if len(snippet.FullFunctionLines) > 0 {
+		lines = snippet.FullFunctionLines
+	}
+	for start := 0; start < len(lines); {
+		end := start + 1
+		for end < len(lines) && end-start < maxInlineSourceLines &&
+			lines[end].Line == lines[end-1].Line+1 {
+			end++
+		}
+		result, err := content.Read(ctx, workspacecontent.Request{
+			Path: snippet.Path,
+			Range: workspacecontent.Range{
+				StartLine: lines[start].Line,
+				EndLine:   lines[end-1].Line,
+				FocusLine: lines[start].Line,
+			},
+		})
+		if err != nil {
+			return false, fmt.Errorf("report source coverage: exact authorized read failed: %w", err)
+		}
+		authorized := make(map[int]string, len(result.Lines))
+		for _, line := range result.Lines {
+			if line.Truncated {
+				return false, fmt.Errorf("report source coverage: truncated exact source line")
+			}
+			authorized[line.Number] = line.Text
+		}
+		for _, line := range lines[start:end] {
+			if text, ok := authorized[line.Line]; !ok || text != line.Text {
+				return false, nil
+			}
+		}
+		start = end
+	}
+	return true, nil
+}
+
+func overviewSourceSnippetCoversTarget(snippet SourceSnippet, target overviewSourceTarget) bool {
+	return snippet.Path == target.path &&
+		sourceSnippetContainsRange(snippet.Lines, SourceHighlight{
+			StartLine: target.line,
+			EndLine:   target.line,
+		})
+}
+
+func insertExactOverviewSourceSnippet(
+	sources []SourceSnippet,
+	snippet SourceSnippet,
+	index int,
+) []SourceSnippet {
+	if index < 0 || index > len(sources) {
+		return mergeExactOverviewSourceSnippet(sources, snippet)
+	}
+	sources = append(sources, SourceSnippet{})
+	copy(sources[index+1:], sources[index:])
+	sources[index] = snippet
+	return sources
 }
 
 func cloneOverviewSourceSnippets(sources []SourceSnippet) []SourceSnippet {
@@ -1307,12 +1497,21 @@ func cloneOverviewSourceSnippets(sources []SourceSnippet) []SourceSnippet {
 	cloned := make([]SourceSnippet, len(sources))
 	for index, source := range sources {
 		cloned[index] = source
-		cloned[index].HighlightRanges = append([]SourceHighlight(nil), source.HighlightRanges...)
-		cloned[index].Lines = append([]SourceSnippetLine(nil), source.Lines...)
-		cloned[index].FullFunctionLines = append([]SourceSnippetLine(nil), source.FullFunctionLines...)
-		cloned[index].RelatedEvidenceIDs = append([]string(nil), source.RelatedEvidenceIDs...)
-		cloned[index].noticeCandidates = append([]sourceNoticeCandidate(nil), source.noticeCandidates...)
+		cloned[index].HighlightRanges = cloneOverviewSourceSlice(source.HighlightRanges)
+		cloned[index].Lines = cloneOverviewSourceSlice(source.Lines)
+		cloned[index].FullFunctionLines = cloneOverviewSourceSlice(source.FullFunctionLines)
+		cloned[index].RelatedEvidenceIDs = cloneOverviewSourceSlice(source.RelatedEvidenceIDs)
+		cloned[index].noticeCandidates = cloneOverviewSourceSlice(source.noticeCandidates)
 	}
+	return cloned
+}
+
+func cloneOverviewSourceSlice[T any](values []T) []T {
+	if values == nil {
+		return nil
+	}
+	cloned := make([]T, len(values))
+	copy(cloned, values)
 	return cloned
 }
 
@@ -1591,8 +1790,7 @@ func resolveOverviewSourceSnippet(sources []SourceSnippet, target overviewSource
 	matches := make([]match, 0)
 	seen := make(map[string]struct{})
 	for _, snippet := range sources {
-		if snippet.Path != target.path || target.line < snippet.StartLine || target.line > snippet.EndLine ||
-			len(snippet.Lines) == 0 {
+		if !overviewSourceSnippetCoversTarget(snippet, target) {
 			continue
 		}
 		identity := fmt.Sprintf("%s\x00%d\x00%d\x00%s\x00%s",

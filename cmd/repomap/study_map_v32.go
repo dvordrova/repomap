@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -179,6 +180,8 @@ type studyMapReviewCompletion struct {
 	index       int
 	directionID string
 	bundle      studymap.ReviewBundle
+	cacheTask   *studyMapReviewTaskInput
+	cacheReply  []byte
 	attempt     studyMapReviewAttempt
 	proposal    studymap.ReviewProposal
 	issue       studymap.ReviewIssue
@@ -210,22 +213,41 @@ type studyMapStageExchange struct {
 }
 
 func clearStudyMapV32Outputs(runDir string) error {
+	if err := clearStudyMapV32TerminalOutputs(runDir); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(runDir, studymap.BundleFile)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("study map: remove stale %s: %w", studymap.BundleFile, err)
+	}
+	return nil
+}
+
+// clearStudyMapV32TerminalOutputs removes every saved result, attempt and
+// status that could be mistaken for a reusable or publishable Study outcome.
+// The deterministic input bundle and the shared safe semantic exchange journal
+// remain available for diagnosing the terminal resource error.
+func clearStudyMapV32TerminalOutputs(runDir string) error {
 	files := []string{
 		studymap.RecordFile,
-		studymap.BundleFile,
 		studymap.AttemptFile,
 		studymap.StatusFile,
 		studyMapBriefShapeFile,
 		studyMapBriefShapeAttempt,
 		studyMapDirectionsFile,
 		studyMapDirectionsAttempt,
-		studyMapReviewsFile,
 		studyMapSourceAttemptFile,
 	}
 	for _, name := range files {
 		if err := os.Remove(filepath.Join(runDir, name)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("study map: remove stale %s: %w", name, err)
 		}
+	}
+	return clearStudyMapV32ReviewOutputs(runDir)
+}
+
+func clearStudyMapV32ReviewOutputs(runDir string) error {
+	if err := os.Remove(filepath.Join(runDir, studyMapReviewsFile)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("study map: remove stale %s: %w", studyMapReviewsFile, err)
 	}
 	if err := os.RemoveAll(filepath.Join(runDir, studyMapReviewAttemptsDir)); err != nil {
 		return fmt.Errorf("study map: remove stale review attempts: %w", err)
@@ -288,6 +310,12 @@ func prepareStudyMapWithProviderFactoryWithOptions(
 	started := time.Now()
 	status = studyMapStatus{Version: studyMapStatusVersion, State: "started"}
 	defer func() {
+		if isSemanticResourceLimit(returnErr) {
+			if err := clearStudyMapV32TerminalOutputs(runDir); err != nil {
+				returnErr = errors.Join(returnErr, err)
+			}
+			return
+		}
 		status.WallMillis = time.Since(started).Milliseconds()
 		if returnErr != nil && status.State == "started" {
 			status.State = "failed"
@@ -352,6 +380,9 @@ func prepareStudyMapWithProviderFactoryWithOptions(
 		ValidationState: "rejected", Metrics: status.Metrics,
 	}
 	if editErr != nil {
+		if isSemanticResourceLimit(editErr) {
+			return status, editErr
+		}
 		attempt.FailureReason = semanticDiscoveryReason(editErr.Error())
 		_ = writeGoldenJSON(filepath.Join(runDir, studymap.AttemptFile), attempt)
 		return status, editErr
@@ -395,7 +426,20 @@ func prepareStudyMapV32WithOptions(
 	bundle studymap.Bundle,
 	provider semanticDiscoveryEditor,
 	options studyMapRunOptions,
-) (studymap.Record, studymap.ReviewReduction, []semanticDiscoveryStageMetrics, error) {
+) (
+	resultRecord studymap.Record,
+	resultReduction studymap.ReviewReduction,
+	resultStages []semanticDiscoveryStageMetrics,
+	returnErr error,
+) {
+	defer func() {
+		if !isSemanticResourceLimit(returnErr) {
+			return
+		}
+		if err := clearStudyMapV32TerminalOutputs(runDir); err != nil {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
 	if ctx == nil || provider == nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, nil,
 			fmt.Errorf("study map: context and provider are required")
@@ -432,6 +476,11 @@ func prepareStudyMapV32WithOptions(
 			semanticStateForStudyMapStage(briefMetrics.Status),
 			semanticValidationForStudyMapStage(briefMetrics.Status),
 		)
+		if isSemanticResourceLimit(err) {
+			briefMetrics.Status = "failed_provider"
+			stages[0] = briefMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
@@ -450,13 +499,24 @@ func prepareStudyMapV32WithOptions(
 		}
 	}
 	if err != nil {
+		state := debugdump.SemanticStateRejected
+		validation := debugdump.SemanticValidationResponse
+		if isSemanticResourceLimit(err) {
+			state = debugdump.SemanticStateProviderFailed
+			validation = debugdump.SemanticValidationDecode
+		}
 		recordStudyMapStageSemanticExchange(
 			options.exchangeWriter,
 			debugdump.SemanticStageStudyBrief,
 			briefExchange,
-			debugdump.SemanticStateRejected,
-			debugdump.SemanticValidationResponse,
+			state,
+			validation,
 		)
+		if isSemanticResourceLimit(err) {
+			briefMetrics.Status = "failed_provider"
+			stages[0] = briefMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
 		briefMetrics.Status = "rejected"
 		briefAttempt.Metrics = briefMetrics
 		briefAttempt.ValidationState = briefMetrics.Status
@@ -495,6 +555,11 @@ func prepareStudyMapV32WithOptions(
 			semanticStateForStudyMapStage(directionMetrics.Status),
 			semanticValidationForStudyMapStage(directionMetrics.Status),
 		)
+		if isSemanticResourceLimit(err) {
+			directionMetrics.Status = "failed_provider"
+			stages[len(stages)-1] = directionMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
@@ -513,13 +578,24 @@ func prepareStudyMapV32WithOptions(
 		directionAttempt.DirectionDiagnostics = &directionDiagnostics
 	}
 	if err != nil {
+		state := debugdump.SemanticStateRejected
+		validation := debugdump.SemanticValidationResponse
+		if isSemanticResourceLimit(err) {
+			state = debugdump.SemanticStateProviderFailed
+			validation = debugdump.SemanticValidationDecode
+		}
 		recordStudyMapStageSemanticExchange(
 			options.exchangeWriter,
 			debugdump.SemanticStageStudyDirections,
 			directionExchange,
-			debugdump.SemanticStateRejected,
-			debugdump.SemanticValidationResponse,
+			state,
+			validation,
 		)
+		if isSemanticResourceLimit(err) {
+			directionMetrics.Status = "failed_provider"
+			stages[len(stages)-1] = directionMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
 		directionMetrics.Status = "rejected"
 		directionAttempt.Metrics = directionMetrics
 		directionAttempt.ValidationState = directionMetrics.Status
@@ -775,12 +851,20 @@ func reviewStudyMapDirectionsWithOptions(
 	provider semanticDiscoveryEditor,
 	options studyMapRunOptions,
 ) (
-	[]studymap.ReviewProposal,
-	[]studyMapReviewSummary,
-	[]semanticDiscoveryStageMetrics,
-	[]studymap.ReviewIssue,
-	error,
+	resultReviews []studymap.ReviewProposal,
+	resultSummaries []studyMapReviewSummary,
+	resultStages []semanticDiscoveryStageMetrics,
+	resultIssues []studymap.ReviewIssue,
+	returnErr error,
 ) {
+	defer func() {
+		if !isSemanticResourceLimit(returnErr) {
+			return
+		}
+		if err := clearStudyMapV32ReviewOutputs(runDir); err != nil {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
 	if err := os.Remove(filepath.Join(runDir, studyMapReviewsFile)); err != nil && !os.IsNotExist(err) {
 		return nil, nil, nil, nil, fmt.Errorf("study map: clear saved reviews: %w", err)
 	}
@@ -866,17 +950,31 @@ func reviewStudyMapDirectionsWithOptions(
 		ordered = append(ordered, completion)
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].index < ordered[j].index })
+	for _, completion := range ordered {
+		if isSemanticResourceLimit(completion.providerErr) {
+			return nil, nil, nil, nil, fmt.Errorf(
+				"study map: review %s provider call: %w",
+				completion.directionID,
+				completion.providerErr,
+			)
+		}
+	}
 	reviews := make([]studymap.ReviewProposal, 0, len(ordered))
 	summaries := make([]studyMapReviewSummary, 0, len(ordered))
 	stages := make([]semanticDiscoveryStageMetrics, 0, len(ordered))
 	issues := make([]studymap.ReviewIssue, 0, len(ordered))
 	for _, completion := range ordered {
-		if isSemanticResourceLimit(completion.providerErr) {
-			return nil, nil, stages, issues, fmt.Errorf(
-				"study map: review %s provider call: %w",
-				completion.directionID,
-				completion.providerErr,
-			)
+		if completion.cacheTask != nil && len(completion.cacheReply) > 0 {
+			if cache, ok := provider.(studyReviewCacheReplay); ok {
+				cache.storeStudyReview(
+					ctx,
+					completion.cacheTask.plan.prompt,
+					completion.cacheTask.plan.request,
+					bundle,
+					completion.cacheTask.direction,
+					completion.cacheReply,
+				)
+			}
 		}
 		if completion.unsafeKind != "" {
 			return nil, nil, stages, issues, fmt.Errorf(
@@ -1096,16 +1194,9 @@ func executeStudyMapReview(
 		task.direction,
 		result.Content,
 	) {
-		if cache, ok := provider.(studyReviewCacheReplay); ok {
-			cache.storeStudyReview(
-				ctx,
-				task.plan.prompt,
-				task.plan.request,
-				sourceBundle,
-				task.direction,
-				result.Content,
-			)
-		}
+		cacheTask := task
+		completion.cacheTask = &cacheTask
+		completion.cacheReply = append([]byte(nil), result.Content...)
 	}
 	return completion
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -27,6 +28,10 @@ func TestReplaySavedStudyMapV32FailsClosed(t *testing.T) {
 	if err := os.WriteFile(recordPath, []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	reviewsPath := filepath.Join(runDir, studyMapReviewsFile)
+	if err := os.WriteFile(reviewsPath, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	status, err := replaySavedStudyMapV32(runDir)
 	if err == nil {
@@ -35,12 +40,79 @@ func TestReplaySavedStudyMapV32FailsClosed(t *testing.T) {
 	if _, statErr := os.Stat(recordPath); !os.IsNotExist(statErr) {
 		t.Fatalf("stale Study Map survived failed replay: %v", statErr)
 	}
+	if _, statErr := os.Stat(reviewsPath); !os.IsNotExist(statErr) {
+		t.Fatalf("stale Study reviews survived failed replay: %v", statErr)
+	}
 	if status.State != "failed" || !status.LocalReplay || status.Selected != 0 {
 		t.Fatalf("status = %#v", status)
 	}
 }
 
-func TestLoadBoundStudyMapReviewsRevalidatesLegacyV1Attempt(t *testing.T) {
+func TestReplaySavedStudyMapV32RebuildsCurrentTypedReviewOutputs(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	runDir := t.TempDir()
+	record, reduction, stages, err := prepareStudyMapV32(
+		context.Background(),
+		runDir,
+		bundle,
+		&studyMapV32TypedRoundTripProvider{t: t, bundle: bundle, directions: directions},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.BundleFile), bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.AttemptFile), studyMapAttempt{
+		Version: 2, PromptVersion: "repository-study-map-split-v2",
+		BundleSHA256: bundleSHA, ValidationState: "accepted",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.StatusFile), studyMapStatus{
+		Version: studyMapStatusVersion, State: "published", Selected: len(record.Directions),
+		Stages: stages,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.RecordFile), record); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := replaySavedStudyMapV32(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != "published" || !status.LocalReplay || status.Selected != len(record.Directions) {
+		t.Fatalf("replay status = %#v", status)
+	}
+	replayedRaw, err := os.ReadFile(filepath.Join(runDir, studymap.RecordFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := studymap.DecodeRecord(replayedRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalV32Projection(replayed, record) {
+		t.Fatal("typed local replay changed the canonical Study record")
+	}
+	var reviews studyMapReviewArtifact
+	if err := readV32ReplayJSON(filepath.Join(runDir, studyMapReviewsFile), &reviews); err != nil {
+		t.Fatal(err)
+	}
+	if reviews.Reduction.Selected != reduction.Selected || len(reviews.Reviews) != reduction.Reviewed {
+		t.Fatalf("replayed reviews = %#v", reviews.Reduction)
+	}
+}
+
+func TestLoadBoundStudyMapReviewsRejectsLegacyPromptVersion(t *testing.T) {
 	t.Parallel()
 
 	bundle, directions := studyReviewCacheIndependentFixture(t)
@@ -63,7 +135,7 @@ func TestLoadBoundStudyMapReviewsRevalidatesLegacyV1Attempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	attempt := studyMapReviewAttempt{
-		Version: 1, PromptVersion: legacyReadingPackReviewPromptVersion,
+		Version: 1, PromptVersion: "repository-reading-pack-review-json-v1",
 		BundleSHA256: bundleSHA, DirectionID: direction.DirectionID,
 		ValidationState: "accepted", Bundle: &reviewBundle, Response: response,
 	}
@@ -76,11 +148,8 @@ func TestLoadBoundStudyMapReviewsRevalidatesLegacyV1Attempt(t *testing.T) {
 	reviews, summaries, issues, err := loadBoundStudyMapReviews(
 		runDir, bundle, directions, bundleSHA,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reviews) != 1 || len(summaries) != 1 || len(issues) != 0 {
-		t.Fatalf("legacy replay reviews/summaries/issues = %d/%d/%d", len(reviews), len(summaries), len(issues))
+	if err == nil || !strings.Contains(err.Error(), "reading review attempt binding mismatch") {
+		t.Fatalf("legacy replay reviews/summaries/issues/error = %d/%d/%d/%v", len(reviews), len(summaries), len(issues), err)
 	}
 }
 
@@ -111,14 +180,26 @@ func TestLoadBoundStudyMapInputsRevalidatesTypedBriefShapeAttempt(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerDirections := directions
-	providerDirections.Directions = append([]studymap.DirectionCandidate(nil), directions.Directions...)
-	for index := range providerDirections.Directions {
-		providerDirections.Directions[index].DirectionID = ""
-	}
-	directionResponse, err := json.Marshal(providerDirections)
+	directionCatalog, directionPrompt, err := buildStudyMapDirectionStage(bundle)
 	if err != nil {
 		t.Fatal(err)
+	}
+	directionResponse, err := studyMapTypedDirectionResponse(
+		t, directionPrompt.User, bundle, directions,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedDirections, directionDiagnostics, err :=
+		studymap.DecodeAndResolveDirectionProposalWithDiagnostics(
+			directionResponse,
+			directionCatalog,
+		)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalV32Projection(resolvedDirections, directions) {
+		t.Fatal("typed direction fixture did not resolve to canonical saved directions")
 	}
 	runDir := t.TempDir()
 	if err := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), studyMapV32StageAttempt{
@@ -131,6 +212,7 @@ func TestLoadBoundStudyMapInputsRevalidatesTypedBriefShapeAttempt(t *testing.T) 
 	if err := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), studyMapV32StageAttempt{
 		Version: 1, PromptVersion: semanticdiscovery.StudyCandidatesPromptVersion,
 		BundleSHA256: bundleSHA, ValidationState: "accepted", Response: directionResponse,
+		DirectionDiagnostics: &directionDiagnostics,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +231,27 @@ func TestLoadBoundStudyMapInputsRevalidatesTypedBriefShapeAttempt(t *testing.T) 
 	}
 	if !equalV32Projection(loadedBrief, brief) || !equalV32Projection(loadedDirections, directions) {
 		t.Fatalf("replayed Brief/Directions changed: %#v / %#v", loadedBrief, loadedDirections)
+	}
+
+	tamperedDirectionDiagnostics := directionDiagnostics
+	tamperedDirectionDiagnostics.Rejected++
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), studyMapV32StageAttempt{
+		Version: 1, PromptVersion: semanticdiscovery.StudyCandidatesPromptVersion,
+		BundleSHA256: bundleSHA, ValidationState: "accepted", Response: directionResponse,
+		DirectionDiagnostics: &tamperedDirectionDiagnostics,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadBoundStudyMapInputs(runDir, bundle, bundleSHA); err == nil ||
+		!strings.Contains(err.Error(), "direction diagnostics do not match") {
+		t.Fatalf("tampered direction diagnostics error = %v", err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), studyMapV32StageAttempt{
+		Version: 1, PromptVersion: semanticdiscovery.StudyCandidatesPromptVersion,
+		BundleSHA256: bundleSHA, ValidationState: "accepted", Response: directionResponse,
+		DirectionDiagnostics: &directionDiagnostics,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	diagnostics.ShapeRejected++
