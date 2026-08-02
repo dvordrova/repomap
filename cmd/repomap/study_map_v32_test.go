@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
@@ -115,6 +116,18 @@ type studyMapV32OversizeReviewProvider struct {
 	response []byte
 }
 
+type studyMapV32DirectionResourceProvider struct {
+	delegate *studyMapV32TypedRoundTripProvider
+	calls    int
+}
+
+type studyMapMixedReviewResourceProvider struct {
+	mu                sync.Mutex
+	resourceDirection string
+	calls             int
+	stores            int
+}
+
 func (stub *studyMapV32ResourceLimitProvider) SemanticDiscoveryPromptJSON(
 	prompt semanticdiscovery.Prompt,
 ) ([]byte, error) {
@@ -151,6 +164,99 @@ func (stub *studyMapV32OversizeReviewProvider) DiscoverSemanticsMeasured(
 	}, nil
 }
 
+func (stub *studyMapV32DirectionResourceProvider) SemanticDiscoveryPromptJSON(
+	prompt semanticdiscovery.Prompt,
+) ([]byte, error) {
+	return stub.delegate.SemanticDiscoveryPromptJSON(prompt)
+}
+
+func (stub *studyMapV32DirectionResourceProvider) DiscoverSemanticsMeasured(
+	ctx context.Context,
+	prompt semanticdiscovery.Prompt,
+) (modelresearch.ProviderResult, error) {
+	stub.calls++
+	if prompt.Version == semanticdiscovery.StudyCandidatesPromptVersion {
+		return modelresearch.ProviderResult{
+				Content: []byte(`{"version":1`), Attempts: 1,
+			}, &deepseek.ResourceLimitError{
+				Stage: "semantic_discovery", Kind: deepseek.ResourceLimitOutputTokens,
+				Limit: 128, Observed: 128, ObservedKnown: true,
+				FinishReason: "length",
+			}
+	}
+	return stub.delegate.DiscoverSemanticsMeasured(ctx, prompt)
+}
+
+func (stub *studyMapMixedReviewResourceProvider) SemanticDiscoveryPromptJSON(
+	prompt semanticdiscovery.Prompt,
+) ([]byte, error) {
+	return json.Marshal(prompt)
+}
+
+func (stub *studyMapMixedReviewResourceProvider) DiscoverSemanticsMeasured(
+	_ context.Context,
+	prompt semanticdiscovery.Prompt,
+) (modelresearch.ProviderResult, error) {
+	stub.mu.Lock()
+	stub.calls++
+	stub.mu.Unlock()
+	if strings.Contains(prompt.User, stub.resourceDirection) {
+		return modelresearch.ProviderResult{Attempts: 1}, &deepseek.ResourceLimitError{
+			Stage: "reading_pack_review", Kind: deepseek.ResourceLimitOutputTokens,
+			Limit: 128, Observed: 128, ObservedKnown: true, FinishReason: "length",
+		}
+	}
+	const marker = "Fixed bounded review bundle JSON:\n"
+	markerIndex := strings.LastIndex(prompt.User, marker)
+	if markerIndex < 0 {
+		return modelresearch.ProviderResult{}, errors.New("fixture review bundle is absent")
+	}
+	reviewBundle, err := studymap.DecodeReviewBundle([]byte(prompt.User[markerIndex+len(marker):]))
+	if err != nil {
+		return modelresearch.ProviderResult{}, err
+	}
+	proposal := studymap.ReviewProposal{
+		Version: studymap.ReviewProposalVersion, DirectionID: reviewBundle.DirectionID,
+	}
+	roles := []studymap.ReadingRole{
+		studymap.ReadingRolePublicOrCLIEntry,
+		studymap.ReadingRoleCoreOrchestration,
+		studymap.ReadingRoleEffectOrIntegrationBoundary,
+	}
+	for index, anchor := range reviewBundle.Anchors {
+		proposal.Reviews = append(proposal.Reviews, studymap.AnchorReview{
+			AnchorID: anchor.AnchorID, Fit: studymap.AnchorFitDirect,
+			SupportedObservation: "This fragment defines the selected function.",
+			Role:                 roles[index%len(roles)],
+			OverclaimReasons:     []studymap.OverclaimReason{studymap.OverclaimNone},
+		})
+	}
+	raw, err := json.Marshal(proposal)
+	return modelresearch.ProviderResult{Content: raw, Attempts: 1}, err
+}
+
+func (stub *studyMapMixedReviewResourceProvider) loadStudyReview(
+	semanticdiscovery.Prompt,
+	[]byte,
+	studymap.Bundle,
+	studymap.DirectionCandidate,
+) (modelresearch.ProviderResult, bool, error) {
+	return modelresearch.ProviderResult{}, false, nil
+}
+
+func (stub *studyMapMixedReviewResourceProvider) storeStudyReview(
+	context.Context,
+	semanticdiscovery.Prompt,
+	[]byte,
+	studymap.Bundle,
+	studymap.DirectionCandidate,
+	[]byte,
+) {
+	stub.mu.Lock()
+	stub.stores++
+	stub.mu.Unlock()
+}
+
 func TestPrepareStudyMapV32ResourceLimitSuppressesLaterStages(t *testing.T) {
 	t.Parallel()
 
@@ -167,9 +273,182 @@ func TestPrepareStudyMapV32ResourceLimitSuppressesLaterStages(t *testing.T) {
 	if provider.calls != 1 || len(stages) != 1 || stages[0].Status != "failed_provider" {
 		t.Fatalf("provider calls/stages = %d/%#v, want terminal first-stage failure", provider.calls, stages)
 	}
-	for _, name := range []string{studyMapBriefShapeFile, studyMapDirectionsFile, studyMapReviewsFile} {
+	for _, name := range []string{
+		studymap.RecordFile,
+		studymap.AttemptFile,
+		studymap.StatusFile,
+		studyMapBriefShapeFile,
+		studyMapBriefShapeAttempt,
+		studyMapDirectionsFile,
+		studyMapDirectionsAttempt,
+		studyMapReviewsFile,
+	} {
 		if _, statErr := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(statErr) {
-			t.Fatalf("later-stage artifact %s exists or stat failed: %v", name, statErr)
+			t.Fatalf("terminal resource artifact %s exists or stat failed: %v", name, statErr)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, studyMapReviewAttemptsDir)); !os.IsNotExist(statErr) {
+		t.Fatalf("terminal resource review attempts exist or stat failed: %v", statErr)
+	}
+}
+
+func TestPrepareStudyMapV32ResourceLimitRetainsOnlySafeExchange(t *testing.T) {
+	t.Parallel()
+
+	bundle, _ := studyMapV32ReviewFixture(t)
+	provider := &studyMapV32ResourceLimitProvider{}
+	runDir := t.TempDir()
+	writer := openSemanticJournalTestWriter(t, runDir)
+	_, _, _, err := prepareStudyMapV32WithOptions(
+		context.Background(),
+		runDir,
+		bundle,
+		provider,
+		studyMapRunOptions{exchangeWriter: writer},
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("prepareStudyMapV32WithOptions() error = %v, want ResourceLimitError", err)
+	}
+	entries := readSemanticJournalEntries(t, runDir)
+	if len(entries) != 1 || entries[0].record.Stage != debugdump.SemanticStageStudyBrief ||
+		entries[0].record.State != debugdump.SemanticStateProviderFailed ||
+		entries[0].record.SemanticCalls != 1 ||
+		entries[0].record.Response.Storage != "raw_unavailable" ||
+		entries[0].record.Response.UnavailableCode != debugdump.SemanticUnavailableNoContent {
+		t.Fatalf("resource-limited Study exchange = %#v", entries)
+	}
+	if bytes.Contains(entries[0].response, []byte(`{"version":1`)) {
+		t.Fatalf("resource-limited Study exchange persisted unowned provider content: %q", entries[0].response)
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, studyMapBriefShapeAttempt)); !os.IsNotExist(statErr) {
+		t.Fatalf("resource-limited Study retained one-off attempt: %v", statErr)
+	}
+}
+
+func TestPrepareStudyMapV32DecodeResourceLimitSuppressesArtifacts(t *testing.T) {
+	t.Parallel()
+
+	bundle, _ := studyMapV32ReviewFixture(t)
+	provider := &studyMapV32OversizeReviewProvider{
+		response: bytes.Repeat([]byte("x"), modelresearch.ProviderResponseByteLimit+1),
+	}
+	runDir := t.TempDir()
+	_, _, stages, err := prepareStudyMapV32(
+		context.Background(), runDir, bundle, provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("prepareStudyMapV32() error = %v, want ResourceLimitError", err)
+	}
+	if provider.calls != 1 || len(stages) != 1 || stages[0].Status != "failed_provider" {
+		t.Fatalf("decode resource calls/stages = %d/%#v", provider.calls, stages)
+	}
+	for _, name := range []string{
+		studyMapBriefShapeFile,
+		studyMapBriefShapeAttempt,
+		studyMapDirectionsFile,
+		studyMapDirectionsAttempt,
+		studyMapReviewsFile,
+	} {
+		if _, statErr := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("decode resource artifact %s exists or stat failed: %v", name, statErr)
+		}
+	}
+}
+
+func TestPrepareStudyMapV32DirectionResourceLimitRemovesAcceptedBrief(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	provider := &studyMapV32DirectionResourceProvider{
+		delegate: &studyMapV32TypedRoundTripProvider{
+			t: t, bundle: bundle, directions: directions,
+		},
+	}
+	runDir := t.TempDir()
+	_, _, stages, err := prepareStudyMapV32(
+		context.Background(), runDir, bundle, provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("prepareStudyMapV32() error = %v, want ResourceLimitError", err)
+	}
+	if provider.calls != 2 || len(stages) != 2 || stages[0].Status != "accepted" ||
+		stages[1].Status != "failed_provider" {
+		t.Fatalf("provider calls/stages = %d/%#v, want accepted Brief then terminal directions", provider.calls, stages)
+	}
+	for _, name := range []string{
+		studyMapBriefShapeFile,
+		studyMapBriefShapeAttempt,
+		studyMapDirectionsFile,
+		studyMapDirectionsAttempt,
+		studyMapReviewsFile,
+	} {
+		if _, statErr := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("terminal direction resource artifact %s exists or stat failed: %v", name, statErr)
+		}
+	}
+}
+
+func TestPrepareStudyMapResourceLimitDoesNotPublishTopLevelState(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	runDir := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "service.go"), `package fixture
+
+func Start(value string) string { return Middle(value) }
+func Middle(value string) string { return Finish(value) }
+func Finish(value string) string { return value + "!" }
+`)
+	writeFile(t, filepath.Join(runDir, "snapshot.json"), `{
+  "repo_name":"go-fixture",
+  "go_facts":{
+    "modules":[{"id":"module-fixture","module_path":"example.com/fixture","module_dir":".","display_name":"."}],
+    "packages":[{
+      "canonical_package_path":"example.com/fixture",
+      "name":"fixture",
+      "owning_module_id":"module-fixture",
+      "module_path":"example.com/fixture",
+      "package_directory":".",
+      "module_relative_path":".",
+      "display_path":".",
+      "locality":"local",
+      "files":["service.go"]
+    }]
+  }
+}`)
+	writeFile(t, filepath.Join(runDir, "llm_bundle.json"), `{"allowed_paths":["service.go"]}`)
+	provider := &studyMapV32ResourceLimitProvider{}
+	_, err := prepareStudyMapWithProviderFactory(
+		context.Background(),
+		runDir,
+		repoRoot,
+		func() (semanticDiscoveryEditor, error) { return provider, nil },
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("prepareStudyMapWithProviderFactory() error = %v, want ResourceLimitError", err)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want one terminal call", provider.calls)
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, studymap.BundleFile)); statErr != nil {
+		t.Fatalf("deterministic Study input bundle was not retained: %v", statErr)
+	}
+	for _, name := range []string{
+		studymap.RecordFile,
+		studymap.AttemptFile,
+		studymap.StatusFile,
+		studyMapBriefShapeFile,
+		studyMapBriefShapeAttempt,
+		studyMapDirectionsFile,
+		studyMapDirectionsAttempt,
+		studyMapReviewsFile,
+	} {
+		if _, statErr := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("terminal top-level resource artifact %s exists or stat failed: %v", name, statErr)
 		}
 	}
 }
@@ -213,12 +492,38 @@ func TestReviewStudyMapDirectionsDecodeResourceLimitIsTerminal(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(runDir, studyMapReviewsFile)); !os.IsNotExist(statErr) {
 		t.Fatalf("terminal resource limit published reviews: %v", statErr)
 	}
-	attempts, readErr := os.ReadDir(filepath.Join(runDir, studyMapReviewAttemptsDir))
-	if readErr != nil {
-		t.Fatal(readErr)
+	if _, statErr := os.Stat(filepath.Join(runDir, studyMapReviewAttemptsDir)); !os.IsNotExist(statErr) {
+		t.Fatalf("terminal resource limit published review attempts: %v", statErr)
 	}
-	if len(attempts) != 0 {
-		t.Fatalf("terminal resource limit published review attempts: %v", attempts)
+}
+
+func TestReviewStudyMapDirectionsResourceLimitDoesNotCacheValidSibling(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	directions.Directions = append(
+		[]studymap.DirectionCandidate(nil),
+		directions.Directions[:2]...,
+	)
+	provider := &studyMapMixedReviewResourceProvider{
+		resourceDirection: directions.Directions[1].DirectionID,
+	}
+	runDir := t.TempDir()
+	_, _, _, _, err := reviewStudyMapDirections(
+		context.Background(), runDir, bundle, directions, "fixture-bundle-sha", provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("reviewStudyMapDirections() error = %v, want ResourceLimitError", err)
+	}
+	provider.mu.Lock()
+	calls, stores := provider.calls, provider.stores
+	provider.mu.Unlock()
+	if calls != 2 || stores != 0 {
+		t.Fatalf("resource-limited review calls/cache stores = %d/%d, want 2/0", calls, stores)
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, studyMapReviewAttemptsDir)); !os.IsNotExist(statErr) {
+		t.Fatalf("resource-limited mixed review left attempt directory: %v", statErr)
 	}
 }
 

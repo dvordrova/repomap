@@ -94,6 +94,9 @@ func runV32RefreshCLI(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "repomap: running split Brief, candidate, and Reading Pack stages")
 		_, studyErr = prepareStudyMap(ctx, absRun, absRepo, client)
 	}
+	if terminalErr := v32RefreshResourceLimitError("Study", studyErr); terminalErr != nil {
+		return terminalErr
+	}
 	if studyErr != nil {
 		fmt.Fprintf(stderr, "warning: %v; the copied report will not publish an unreviewed Study Map\n", studyErr)
 	}
@@ -110,6 +113,9 @@ func runV32RefreshCLI(args []string, stdout, stderr io.Writer) error {
 			&manifest.RepositoryState,
 		)
 		operateErr = prepareErr
+		if terminalErr := v32RefreshResourceLimitError("Paved Paths", operateErr); terminalErr != nil {
+			return terminalErr
+		}
 		if operateErr != nil {
 			fmt.Fprintf(stderr, "warning: %v; retained %d exact operational landmark(s)\n",
 				operateErr, operateStatus.Landmarks)
@@ -143,6 +149,13 @@ func runV32RefreshCLI(args []string, stdout, stderr io.Writer) error {
 	reportPath := filepath.Join(absRun, "report.html")
 	fmt.Fprintf(stdout, "%s\n", reportPath)
 	return errors.Join(studyErr, operateErr)
+}
+
+func v32RefreshResourceLimitError(stage string, err error) error {
+	if !isSemanticResourceLimit(err) {
+		return nil
+	}
+	return fmt.Errorf("v32 refresh: %s resource limit: %w", stage, err)
 }
 
 func validateReviewedStudyMapV32(runDir string) error {

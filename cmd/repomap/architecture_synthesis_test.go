@@ -285,6 +285,111 @@ func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutpu
 	}
 }
 
+func TestEnsureArchitectureSynthesisResourceLimitDoesNotPublishPartialArtifacts(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		provider func() *architectureSynthesisStub
+	}{
+		{
+			name: "provider resource error",
+			provider: func() *architectureSynthesisStub {
+				return &architectureSynthesisStub{err: &modelresearch.ResourceLimitError{
+					Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitOutputTokens,
+					Limit: 64_000, ConfiguredMaxTokens: 64_000, FinishReason: "length",
+				}}
+			},
+		},
+		{
+			name: "response decoder resource error",
+			provider: func() *architectureSynthesisStub {
+				return &architectureSynthesisStub{
+					response: bytes.Repeat(
+						[]byte("x"),
+						modelresearch.ProviderResponseByteLimit+1,
+					),
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runsDir := t.TempDir()
+			runDir := filepath.Join(runsDir, "run")
+			if err := os.Mkdir(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			state := modelresearch.NewState(
+				modelresearch.DefaultPolicy(),
+				modelresearch.RepositoryContext{
+					Identity: "fixture", Revision: "revision-resource", Scenario: "go-default",
+				},
+			)
+			if err := modelresearch.WriteState(runDir, state); err != nil {
+				t.Fatal(err)
+			}
+			statePath := filepath.Join(runDir, modelresearch.StateFile)
+			beforeState, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			provider := test.provider()
+			outcome, synthesisErr := ensureArchitectureSynthesis(
+				context.Background(), architectureSynthesisTestBundle(), runDir,
+				"revision-resource", "openai-compatible/bearer", "test-model", provider,
+			)
+			var limitErr *modelresearch.ResourceLimitError
+			if !errors.As(synthesisErr, &limitErr) || provider.calls != 1 {
+				t.Fatalf("synthesis error/provider calls = %#v/%d", synthesisErr, provider.calls)
+			}
+			if err := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr); err != nil {
+				t.Fatal(err)
+			}
+			afterState, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(beforeState, afterState) {
+				t.Fatal("terminal resource error mutated model research stage metrics")
+			}
+			for _, name := range []string{
+				report.ArchitectureSynthesisFile,
+				report.ArchitectureSynthesisStatusFile,
+			} {
+				if _, err := os.Lstat(filepath.Join(runDir, name)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("terminal resource error published %s: %v", name, err)
+				}
+			}
+			cacheFiles, err := filepath.Glob(filepath.Join(
+				runsDir,
+				architectureSynthesisCacheDirectory,
+				"*.json",
+			))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cacheFiles) != 0 {
+				t.Fatalf("terminal resource error populated cache: %v", cacheFiles)
+			}
+		})
+	}
+}
+
+func TestPersistArchitectureSynthesisStatusRetainsNonResourceFailure(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	if err := persistArchitectureSynthesisStatus(
+		runDir,
+		architectureSynthesisOutcome{InputBytes: 1200, Attempted: true},
+		errors.New("architecture synthesis: provider call: unavailable"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile)); err != nil {
+		t.Fatalf("non-resource failure status was not retained: %v", err)
+	}
+}
+
 func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 	t.Parallel()
 

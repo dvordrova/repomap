@@ -52,6 +52,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-object-architecture:hover { background: #f1f5f9; }
 .rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
 .rm-overview-integrations-empty { margin: 0; }
+.rm-atlas-shelf { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.1rem; }
+.rm-atlas-shelf .rm-view-heading { margin-bottom: 1rem; }
+.rm-atlas-shelf-heading { color: #334155; font-size: .76rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
+.rm-atlas-relations-heading { margin-top: 1.25rem; }
+.rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.rm-atlas-unit-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .2rem; padding: .7rem .8rem; }
+.rm-atlas-unit-card strong { font-size: .82rem; overflow-wrap: anywhere; }
+.rm-atlas-unit-card span { color: var(--rm-dim); font-size: .68rem; }
+.rm-atlas-unit-card .rm-atlas-authority { color: #166534; }
+.rm-atlas-relation-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .6rem; padding: .8rem; }
+.rm-atlas-relation-unit { font-size: .82rem; overflow-wrap: anywhere; }
+.rm-atlas-relation-roles { display: grid; gap: .3rem; }
+.rm-atlas-relation-roles span { background: #eff6ff; border-radius: 6px; color: #1e3a8a; font-size: .72rem; padding: .38rem .5rem; }
+.rm-atlas-authority { color: #166534; font-size: .7rem; font-weight: 650; }
+.rm-atlas-source-action { background: transparent; border: 0; color: var(--rm-accent); cursor: pointer; font: inherit; font-size: .74rem; font-weight: 700; padding: 0; text-align: left; }
+.rm-atlas-source-action:hover { text-decoration: underline; }
+.rm-atlas-source-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 3px; }
+.rm-atlas-omitted { color: var(--rm-dim); font-size: .72rem; margin: .75rem 0 0; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }

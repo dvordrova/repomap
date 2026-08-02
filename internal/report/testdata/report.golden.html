@@ -59,6 +59,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-object-architecture:hover { background: #f1f5f9; }
 .rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
 .rm-overview-integrations-empty { margin: 0; }
+.rm-atlas-shelf { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.1rem; }
+.rm-atlas-shelf .rm-view-heading { margin-bottom: 1rem; }
+.rm-atlas-shelf-heading { color: #334155; font-size: .76rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
+.rm-atlas-relations-heading { margin-top: 1.25rem; }
+.rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.rm-atlas-unit-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .2rem; padding: .7rem .8rem; }
+.rm-atlas-unit-card strong { font-size: .82rem; overflow-wrap: anywhere; }
+.rm-atlas-unit-card span { color: var(--rm-dim); font-size: .68rem; }
+.rm-atlas-unit-card .rm-atlas-authority { color: #166534; }
+.rm-atlas-relation-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .6rem; padding: .8rem; }
+.rm-atlas-relation-unit { font-size: .82rem; overflow-wrap: anywhere; }
+.rm-atlas-relation-roles { display: grid; gap: .3rem; }
+.rm-atlas-relation-roles span { background: #eff6ff; border-radius: 6px; color: #1e3a8a; font-size: .72rem; padding: .38rem .5rem; }
+.rm-atlas-authority { color: #166534; font-size: .7rem; font-weight: 650; }
+.rm-atlas-source-action { background: transparent; border: 0; color: var(--rm-accent); cursor: pointer; font: inherit; font-size: .74rem; font-weight: 700; padding: 0; text-align: left; }
+.rm-atlas-source-action:hover { text-decoration: underline; }
+.rm-atlas-source-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 3px; }
+.rm-atlas-omitted { color: var(--rm-dim); font-size: .72rem; margin: .75rem 0 0; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
@@ -987,6 +1005,25 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace": { params: [], text: "Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace." },
     "main.repository.brief": { params: [], text: "Repository brief" },
     "main.repository.overview": { params: [], text: "Repository overview" },
+    "main.atlas.workspace.kicker": { params: [], text: "Repository Atlas" },
+    "main.atlas.workspace.title": { params: [], text: "Exact workspace topology" },
+    "main.atlas.workspace.copy": { params: [], text: "Saved repository units and locally resolved startup relations." },
+    "main.atlas.workspace.unavailable": { params: [], text: "Repository Atlas is unavailable for this run." },
+    "main.atlas.workspace.units": { params: [], text: "Units" },
+    "main.atlas.workspace.unit_kind.app": { params: [], text: "Application" },
+    "main.atlas.workspace.unit_kind.module": { params: [], text: "Module" },
+    "main.atlas.workspace.unit_kind.package": { params: [], text: "Package" },
+    "main.atlas.workspace.unit_kind.repository": { params: [], text: "Repository" },
+    "main.atlas.workspace.unit_kind.service": { params: [], text: "Service" },
+    "main.atlas.workspace.unit_kind.other": { params: [], text: "Other unit" },
+    "main.atlas.workspace.startup_relations": { params: [], text: "Resolved startup relations" },
+    "main.atlas.workspace.process_entry": { params: [], text: "Process entry surface" },
+    "main.atlas.workspace.application_start": { params: [], text: "Application start operation" },
+    "main.atlas.workspace.authority": { params: ["authority"], format: function (params) { return "Authority: " + params.authority; } },
+    "main.atlas.workspace.authority.observed": { params: [], text: "Observed · local facts" },
+    "main.atlas.workspace.authority.resolved": { params: [], text: "Resolved" },
+    "main.atlas.workspace.no_source_backed_relations": { params: [], text: "No resolved startup relation has an exact saved source excerpt for this run." },
+    "main.atlas.workspace.omitted_relations": { params: ["count"], format: function (params) { return "Not shown without an exact saved source excerpt: " + params.count + "."; } },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Saved taxonomy" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Entry surfaces" },
     "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Entry-surface objects from the saved catalog with an exact saved source excerpt." },
@@ -1002,6 +1039,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.study_directions_copy": { params: [], text: "Open a canonical saved direction as a reading route." },
     "main.overview.anatomy.inspect_same_component": { params: [], text: "Inspect this component in Architecture" },
     "main.overview.anatomy.omitted_ambiguous_or_unavailable": { params: ["count"], format: function (params) { return "Not shown because exact object or embedded-source identity is unavailable or conflicting: " + params.count + "."; } },
+    "main.overview.anatomy.surface_kind.async_task": { params: [], text: "Async task" },
+    "main.overview.anatomy.surface_kind.cli_command": { params: [], text: "CLI command" },
+    "main.overview.anatomy.surface_kind.http_route": { params: [], text: "HTTP route" },
+    "main.overview.anatomy.surface_kind.http_route_descriptor": { params: [], text: "HTTP route descriptor" },
+    "main.overview.anatomy.surface_kind.http_route_frontier": { params: [], text: "HTTP route frontier" },
+    "main.overview.anatomy.surface_kind.http_server": { params: [], text: "HTTP server start" },
+    "main.overview.anatomy.surface_kind.other": { params: [], text: "Other saved surface kind" },
+    "main.overview.anatomy.surface_kind.process_entry": { params: [], text: "Process entry" },
+    "main.overview.anatomy.surface_kind.worker": { params: [], text: "Worker" },
     "main.main.input": { params: [], text: "Main input" },
     "main.central.responsibility": { params: [], text: "Central responsibility" },
     "main.observable.result": { params: [], text: "Observable result" },
@@ -2226,6 +2272,25 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace": { params: [], text: "Выберите вопрос и начните с конкретных опор в исходниках. Порядок предназначен для изучения, а не изображает трассу выполнения." },
     "main.repository.brief": { params: [], text: "Кратко о репозитории" },
     "main.repository.overview": { params: [], text: "Обзор репозитория" },
+    "main.atlas.workspace.kicker": { params: [], text: "Атлас репозитория" },
+    "main.atlas.workspace.title": { params: [], text: "Точная топология рабочей области" },
+    "main.atlas.workspace.copy": { params: [], text: "Сохранённые юниты репозитория и локально подтверждённые связи запуска." },
+    "main.atlas.workspace.unavailable": { params: [], text: "Атлас репозитория недоступен для этого запуска." },
+    "main.atlas.workspace.units": { params: [], text: "Юниты" },
+    "main.atlas.workspace.unit_kind.app": { params: [], text: "Приложение" },
+    "main.atlas.workspace.unit_kind.module": { params: [], text: "Модуль" },
+    "main.atlas.workspace.unit_kind.package": { params: [], text: "Пакет" },
+    "main.atlas.workspace.unit_kind.repository": { params: [], text: "Репозиторий" },
+    "main.atlas.workspace.unit_kind.service": { params: [], text: "Сервис" },
+    "main.atlas.workspace.unit_kind.other": { params: [], text: "Другой юнит" },
+    "main.atlas.workspace.startup_relations": { params: [], text: "Подтверждённые связи запуска" },
+    "main.atlas.workspace.process_entry": { params: [], text: "Точка входа процесса" },
+    "main.atlas.workspace.application_start": { params: [], text: "Операция запуска приложения" },
+    "main.atlas.workspace.authority": { params: ["authority"], format: function (params) { return "Основание: " + params.authority; } },
+    "main.atlas.workspace.authority.observed": { params: [], text: "наблюдаемые локальные факты" },
+    "main.atlas.workspace.authority.resolved": { params: [], text: "локально подтверждено" },
+    "main.atlas.workspace.no_source_backed_relations": { params: [], text: "Для этого запуска нет подтверждённой связи запуска с точным сохранённым фрагментом исходника." },
+    "main.atlas.workspace.omitted_relations": { params: ["count"], format: function (params) { return "Не показаны без точного сохранённого фрагмента исходника: " + params.count + "."; } },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Сохранённая таксономия" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Точки входа" },
     "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Объекты точек входа из сохранённого каталога с точным сохранённым фрагментом исходника." },
@@ -2241,6 +2306,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.study_directions_copy": { params: [], text: "Откройте каноническое сохранённое направление как маршрут чтения." },
     "main.overview.anatomy.inspect_same_component": { params: [], text: "Изучить этот компонент в Архитектуре" },
     "main.overview.anatomy.omitted_ambiguous_or_unavailable": { params: ["count"], format: function (params) { return "Не показаны из-за отсутствующей или конфликтующей точной идентичности объекта либо встроенного исходника: " + params.count + "."; } },
+    "main.overview.anatomy.surface_kind.async_task": { params: [], text: "Асинхронная задача" },
+    "main.overview.anatomy.surface_kind.cli_command": { params: [], text: "CLI-команда" },
+    "main.overview.anatomy.surface_kind.http_route": { params: [], text: "HTTP-маршрут" },
+    "main.overview.anatomy.surface_kind.http_route_descriptor": { params: [], text: "Дескриптор HTTP-маршрута" },
+    "main.overview.anatomy.surface_kind.http_route_frontier": { params: [], text: "Граница HTTP-маршрутов" },
+    "main.overview.anatomy.surface_kind.http_server": { params: [], text: "Запуск HTTP-сервера" },
+    "main.overview.anatomy.surface_kind.other": { params: [], text: "Другой сохранённый тип точки запуска" },
+    "main.overview.anatomy.surface_kind.process_entry": { params: [], text: "Точка входа процесса" },
+    "main.overview.anatomy.surface_kind.worker": { params: [], text: "Воркер" },
     "main.main.input": { params: [], text: "Основной вход" },
     "main.central.responsibility": { params: [], text: "Главная ответственность" },
     "main.observable.result": { params: [], text: "Наблюдаемый результат" },
@@ -8799,11 +8873,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	// Overlapping saved excerpts are normal. Prefer the smallest exact
 	// containing interval, then stable persisted fields. Only two views of the
 	// same interval/revision with different source content are ambiguous.
-	function exactOverviewSourceResolutionForLocation(location) {
+	function exactOverviewSourceResolutionFromSnippets(location, snippets) {
 		if (!location || exactOverviewSourcePath(location.path) !== location.path ||
 			!Number.isInteger(location.line) || location.line <= 0) return { source: null, conflict: false };
 		var equivalent = {};
-		allEmbeddedSourceSnippets().forEach(function (snippet) {
+		(Array.isArray(snippets) ? snippets : []).forEach(function (snippet) {
 			if (!sourceSnippetHasCode(snippet) ||
 				exactOverviewSourcePath(snippet.path) !== location.path ||
 				!Number.isInteger(snippet.start_line) || !Number.isInteger(snippet.end_line) ||
@@ -8849,6 +8923,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}, conflict: false };
 	}
 
+	function exactOverviewSourceResolutionForLocation(location) {
+		return exactOverviewSourceResolutionFromSnippets(location, allEmbeddedSourceSnippets());
+	}
+
 	function exactOverviewSourceForLocation(location) {
 		return exactOverviewSourceResolutionForLocation(location).source;
 	}
@@ -8874,6 +8952,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return String(trigger && trigger.id || '');
 	}
 
+	var OVERVIEW_SURFACE_KIND_MESSAGE_IDS = {
+		async_task: 'main.overview.anatomy.surface_kind.async_task',
+		cli_command: 'main.overview.anatomy.surface_kind.cli_command',
+		http_route: 'main.overview.anatomy.surface_kind.http_route',
+		http_route_descriptor: 'main.overview.anatomy.surface_kind.http_route_descriptor',
+		http_route_frontier: 'main.overview.anatomy.surface_kind.http_route_frontier',
+		http_server: 'main.overview.anatomy.surface_kind.http_server',
+		process_entry: 'main.overview.anatomy.surface_kind.process_entry',
+		worker: 'main.overview.anatomy.surface_kind.worker',
+	};
+
+	function overviewSurfaceKindLabel(kind) {
+		return msg(
+			OVERVIEW_SURFACE_KIND_MESSAGE_IDS[String(kind || '')] ||
+				'main.overview.anatomy.surface_kind.other'
+		);
+	}
+
 	function overviewEntrySurfaceObjects() {
 		var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
 			? DATA.discovered_surfaces.triggers : [];
@@ -8894,7 +8990,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			objects.push({
 				id: trigger.id,
 				title: overviewSurfaceTitle(trigger),
-				detail: String(trigger.kind || ''),
+				detail: overviewSurfaceKindLabel(trigger.kind),
 				snippet: source.snippet,
 				location: source.location,
 			});
@@ -9061,12 +9157,180 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}
 	}
 
-  function renderOverviewWorkspace() {
-    var root = document.getElementById('rm-overview');
-    if (!root) return;
-    root.replaceChildren();
-		renderStudyPublicationNotice(root);
-		var anatomy = repositoryOverviewAnatomy();
+	var REPOSITORY_ATLAS_UNIT_KIND_MESSAGE_IDS = {
+		app: 'main.atlas.workspace.unit_kind.app',
+		module: 'main.atlas.workspace.unit_kind.module',
+		package: 'main.atlas.workspace.unit_kind.package',
+		repository: 'main.atlas.workspace.unit_kind.repository',
+		service: 'main.atlas.workspace.unit_kind.service',
+	};
+
+	function repositoryAtlasUnitKindLabel(kind) {
+		return msg(
+			REPOSITORY_ATLAS_UNIT_KIND_MESSAGE_IDS[String(kind || '')] ||
+				'main.atlas.workspace.unit_kind.other'
+		);
+	}
+
+	function repositoryAtlasWorkspaceShelf() {
+		var atlas = DATA.repository_atlas;
+		if (!atlas || !Array.isArray(atlas.units) || !atlas.units.length) return null;
+		var unitCounts = {};
+		atlas.units.forEach(function (unit) {
+			if (unit && typeof unit.id === 'string' && unit.id) {
+				unitCounts[unit.id] = (unitCounts[unit.id] || 0) + 1;
+			}
+		});
+		var units = [];
+		var unitsByID = {};
+		atlas.units.forEach(function (unit) {
+			if (!unit || typeof unit.id !== 'string' || !unit.id || unitCounts[unit.id] !== 1 ||
+				typeof unit.name !== 'string' || !unit.name) return;
+			var view = { name: unit.name, kind: String(unit.kind || '') };
+			units.push(view);
+			unitsByID[unit.id] = view;
+		});
+
+		var entityCounts = {};
+		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
+			if (entity && typeof entity.id === 'string' && entity.id) {
+				entityCounts[entity.id] = (entityCounts[entity.id] || 0) + 1;
+			}
+		});
+		var entitiesByID = {};
+		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
+			if (!entity || typeof entity.id !== 'string' || !entity.id || entityCounts[entity.id] !== 1 ||
+				!unitsByID[entity.unit_id]) return;
+			entitiesByID[entity.id] = entity;
+		});
+
+		var evidenceCounts = {};
+		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
+			if (evidence && typeof evidence.id === 'string' && evidence.id) {
+				evidenceCounts[evidence.id] = (evidenceCounts[evidence.id] || 0) + 1;
+			}
+		});
+		var evidenceByID = {};
+		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
+			if (!evidence || typeof evidence.id !== 'string' || !evidence.id ||
+				evidenceCounts[evidence.id] !== 1 || !unitsByID[evidence.unit_id]) return;
+			evidenceByID[evidence.id] = evidence;
+		});
+
+		var eligible = 0;
+		var relations = [];
+		(Array.isArray(atlas.relations) ? atlas.relations : []).forEach(function (relation) {
+			if (!relation || relation.kind !== 'exposes' || relation.phase !== 'startup' ||
+				relation.authority !== 'resolved' || !unitsByID[relation.unit_id] ||
+				!relation.source || relation.source.kind !== 'surface' ||
+				!relation.target || relation.target.kind !== 'operation') return;
+			var sourceEntity = entitiesByID[relation.source.id];
+			var targetEntity = entitiesByID[relation.target.id];
+			if (!sourceEntity || sourceEntity.kind !== 'surface' ||
+				!targetEntity || targetEntity.kind !== 'operation') return;
+			eligible += 1;
+			var source = null;
+			(Array.isArray(relation.evidence_refs) ? relation.evidence_refs : []).some(function (ref) {
+				var evidence = evidenceByID[ref];
+				if (!evidence || !evidence.location) return false;
+				var resolution = exactOverviewSourceResolutionFromSnippets(evidence.location, USER_SOURCES);
+				if (!resolution.source || resolution.conflict) return false;
+				source = resolution.source;
+				return true;
+			});
+			if (!source) return;
+			relations.push({
+				unit: unitsByID[relation.unit_id],
+				authority: relation.authority,
+				snippet: source.snippet,
+				location: source.location,
+			});
+		});
+		return {
+			units: units,
+			relations: relations,
+			omittedRelations: eligible - relations.length,
+		};
+	}
+
+	function renderRepositoryAtlasWorkspaceShelf(root) {
+		var shelf = repositoryAtlasWorkspaceShelf();
+		var section = el('section', 'rm-workspace-section rm-atlas-shelf');
+		section.appendChild(renderViewHeading(
+			msg('main.atlas.workspace.kicker'),
+			msg('main.atlas.workspace.title'),
+			msg('main.atlas.workspace.copy')
+		));
+		if (!shelf || !shelf.units.length) {
+			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.workspace.unavailable')));
+			root.appendChild(section);
+			return;
+		}
+
+		section.appendChild(txt('h3', 'rm-atlas-shelf-heading', msg('main.atlas.workspace.units')));
+		var unitGrid = el('div', 'rm-atlas-unit-grid');
+		shelf.units.forEach(function (unit) {
+			var card = el('article', 'rm-atlas-unit-card');
+			card.appendChild(txt('strong', '', unit.name));
+			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
+			card.appendChild(txt('span', 'rm-atlas-authority', msg(
+				'main.atlas.workspace.authority',
+				{ authority: msg('main.atlas.workspace.authority.observed') }
+			)));
+			unitGrid.appendChild(card);
+		});
+		section.appendChild(unitGrid);
+
+		section.appendChild(txt(
+			'h3',
+			'rm-atlas-shelf-heading rm-atlas-relations-heading',
+			msg('main.atlas.workspace.startup_relations')
+		));
+		if (!shelf.relations.length) {
+			section.appendChild(txt(
+				'p',
+				'rm-empty-state',
+				msg('main.atlas.workspace.no_source_backed_relations')
+			));
+		} else {
+			var relationGrid = el('div', 'rm-atlas-relation-grid');
+			shelf.relations.forEach(function (relation) {
+				var card = el('article', 'rm-atlas-relation-card');
+				card.appendChild(txt('strong', 'rm-atlas-relation-unit', relation.unit.name));
+				var roles = el('div', 'rm-atlas-relation-roles');
+				roles.appendChild(txt('span', '', msg('main.atlas.workspace.process_entry')));
+				roles.appendChild(txt('span', '', msg('main.atlas.workspace.application_start')));
+				card.appendChild(roles);
+				card.appendChild(txt('span', 'rm-atlas-authority', msg(
+					'main.atlas.workspace.authority',
+					{ authority: msg('main.atlas.workspace.authority.resolved') }
+				)));
+				var sourceButton = txt('button', 'rm-atlas-source-action', msg('main.open.exact.source'));
+				sourceButton.type = 'button';
+				sourceButton.onclick = function () {
+					openSourceSnippet(relation.snippet, relation.location, false, { drawerFirst: true });
+				};
+				card.appendChild(sourceButton);
+				relationGrid.appendChild(card);
+			});
+			section.appendChild(relationGrid);
+		}
+		if (shelf.omittedRelations > 0) {
+			section.appendChild(txt('p', 'rm-atlas-omitted', msg(
+				'main.atlas.workspace.omitted_relations',
+				{ count: shelf.omittedRelations }
+			)));
+		}
+		root.appendChild(section);
+	}
+
+	function renderOverviewWorkspace() {
+	  var root = document.getElementById('rm-overview');
+	  if (!root) return;
+	  root.replaceChildren();
+			renderStudyPublicationNotice(root);
+			renderRepositoryAtlasWorkspaceShelf(root);
+			var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewAnatomy(root, anatomy);
 			return;
@@ -10971,8 +11235,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			repositoryOverviewAnatomy: repositoryOverviewAnatomy,
 			overviewEntrySurfaceObjects: overviewEntrySurfaceObjects,
 			overviewComponentObjects: overviewComponentObjects,
+			overviewSurfaceKindLabel: overviewSurfaceKindLabel,
 			exactOverviewSourceForLocation: exactOverviewSourceForLocation,
 			renderRepositoryOverviewAnatomy: renderRepositoryOverviewAnatomy,
+			repositoryAtlasWorkspaceShelf: repositoryAtlasWorkspaceShelf,
+			renderRepositoryAtlasWorkspaceShelf: renderRepositoryAtlasWorkspaceShelf,
 			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
 			taskLensEnumLabel: taskLensEnumLabel,
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,

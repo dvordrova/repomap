@@ -16,14 +16,15 @@ import (
 	"github.com/dvordrova/repomap/internal/studymap"
 )
 
-const legacyReadingPackReviewPromptVersion = "repository-reading-pack-review-json-v1"
-
 const maxV32ReplayArtifactBytes = 32 << 20
 
 func replaySavedStudyMapV32(runDir string) (studyMapStatus, error) {
 	recordPath := filepath.Join(runDir, studymap.RecordFile)
-	if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
-		return studyMapStatus{}, err
+	reviewsPath := filepath.Join(runDir, studyMapReviewsFile)
+	for _, path := range []string{recordPath, reviewsPath} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return studyMapStatus{}, err
+		}
 	}
 	var status studyMapStatus
 	if err := readV32ReplayJSON(filepath.Join(runDir, studymap.StatusFile), &status); err != nil {
@@ -33,7 +34,11 @@ func replaySavedStudyMapV32(runDir string) (studyMapStatus, error) {
 	status.Selected = 0
 	var attempt studyMapAttempt
 	fail := func(cause error) (studyMapStatus, error) {
-		_ = os.Remove(recordPath)
+		for _, path := range []string{recordPath, reviewsPath} {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				cause = fmt.Errorf("%w; remove failed replay artifact: %v", cause, err)
+			}
+		}
 		status.State = "failed"
 		status.FailureReason = semanticDiscoveryReason(cause.Error())
 		if err := writeGoldenJSON(filepath.Join(runDir, studymap.StatusFile), status); err != nil {
@@ -79,11 +84,11 @@ func replaySavedStudyMapV32(runDir string) (studyMapStatus, error) {
 		Version: studyMapReviewArtifactVersion,
 		Reviews: reviews, Reduction: reduction, Attempts: summaries,
 	}
-	if err := writeGoldenJSON(filepath.Join(runDir, studyMapReviewsFile), reviewArtifact); err != nil {
-		return fail(err)
-	}
 	if buildErr != nil {
 		return fail(buildErr)
+	}
+	if err := writeGoldenJSON(reviewsPath, reviewArtifact); err != nil {
+		return fail(err)
 	}
 	status.State = "published"
 	status.FailureReason = ""
@@ -95,7 +100,7 @@ func replaySavedStudyMapV32(runDir string) (studyMapStatus, error) {
 	status.ProviderLatencyMillis = status.Metrics.LatencyMillis
 	status.LocalReplay = true
 	if err := writeGoldenJSON(filepath.Join(runDir, studymap.StatusFile), status); err != nil {
-		return status, err
+		return fail(err)
 	}
 	if err := writeGoldenJSON(recordPath, record); err != nil {
 		return fail(err)
@@ -164,13 +169,23 @@ func loadBoundStudyMapInputs(
 		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
 			fmt.Errorf("v32 replay: Brief diagnostics do not match the typed response")
 	}
-	directions, err = studymap.DecodeDirectionProposal(directionAttempt.Response)
+	directionCatalog, catalogErr := studymap.BuildDirectionReferenceCatalog(bundle)
+	if catalogErr != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, catalogErr
+	}
+	var directionDiagnostics studymap.DirectionProposalDiagnostics
+	directions, directionDiagnostics, err =
+		studymap.DecodeAndResolveDirectionProposalWithDiagnostics(
+			directionAttempt.Response,
+			directionCatalog,
+		)
 	if err != nil {
 		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
 	}
-	directions, err = studymap.NormalizeDirectionProposal(directions)
-	if err != nil {
-		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
+	if directionAttempt.DirectionDiagnostics == nil ||
+		!reflect.DeepEqual(*directionAttempt.DirectionDiagnostics, directionDiagnostics) {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
+			fmt.Errorf("v32 replay: direction diagnostics do not match the typed response")
 	}
 
 	briefRaw, err := readV32ReplayRaw(filepath.Join(runDir, studyMapBriefShapeFile))
@@ -216,7 +231,7 @@ func loadBoundStudyMapReviews(
 			return nil, nil, nil, err
 		}
 		if attempt.Version != 1 ||
-			!supportedReadingPackReviewPromptVersion(attempt.PromptVersion) ||
+			attempt.PromptVersion != semanticdiscovery.ReadingPackReviewPromptVersion ||
 			attempt.BundleSHA256 != bundleSHA || attempt.DirectionID != direction.DirectionID {
 			return nil, nil, nil, fmt.Errorf("v32 replay: reading review attempt binding mismatch")
 		}
@@ -248,11 +263,6 @@ func loadBoundStudyMapReviews(
 		reviews = append(reviews, proposal)
 	}
 	return reviews, summaries, issues, nil
-}
-
-func supportedReadingPackReviewPromptVersion(version string) bool {
-	return version == semanticdiscovery.ReadingPackReviewPromptVersion ||
-		version == legacyReadingPackReviewPromptVersion
 }
 
 func v32ReplayArtifactExists(path string) (bool, error) {

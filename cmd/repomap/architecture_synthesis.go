@@ -88,8 +88,7 @@ func synthesizeArchitectureForRun(
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
 	}
-	status := architectureSynthesisStatus(outcome, err)
-	if statusErr := writeArchitectureSynthesisStatus(runDir, status); statusErr != nil {
+	if statusErr := persistArchitectureSynthesisStatus(runDir, outcome, err); statusErr != nil {
 		if err != nil {
 			return outcome, errors.Join(err, statusErr)
 		}
@@ -332,6 +331,9 @@ func ensureArchitectureSynthesisWithOptions(
 			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
 		)
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
+		if isSemanticResourceLimit(callErr) {
+			return outcome, callErr
+		}
 		if recordErr := recordArchitectureResearch(runDir, outcome, "failed", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(callErr, recordErr)
 		}
@@ -353,6 +355,9 @@ func ensureArchitectureSynthesisWithOptions(
 			debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
 		)
 		validationErr := fmt.Errorf("architecture synthesis: validate response: %w", err)
+		if isSemanticResourceLimit(validationErr) {
+			return outcome, validationErr
+		}
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(validationErr, recordErr)
 		}
@@ -619,6 +624,20 @@ func architectureSynthesisStatus(
 		status.ErrorCode = "provider_error"
 	}
 	return status
+}
+
+func persistArchitectureSynthesisStatus(
+	runDir string,
+	outcome architectureSynthesisOutcome,
+	synthesisErr error,
+) error {
+	if isSemanticResourceLimit(synthesisErr) {
+		return nil
+	}
+	return writeArchitectureSynthesisStatus(
+		runDir,
+		architectureSynthesisStatus(outcome, synthesisErr),
+	)
 }
 
 func writeArchitectureSynthesisStatus(

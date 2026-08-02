@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -899,6 +900,14 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 const noStudyAPI = noStudyWindow.__REPOMAP_WORKSPACE_TEST__;
 const noStudyAnatomy = noStudyAPI.repositoryOverviewAnatomy();
 noStudyAPI.renderOverviewWorkspace();
+const savedSurfaceKinds = [
+  "async_task", "cli_command", "http_route", "http_route_descriptor",
+  "http_route_frontier", "http_server", "process_entry", "worker", "future_kind",
+];
+const enSurfaceKindLabels = savedSurfaceKinds.map((kind) => api.overviewSurfaceKindLabel(kind));
+document.documentElement.lang = "ru";
+const ruSurfaceKindLabels = savedSurfaceKinds.map((kind) => api.overviewSurfaceKindLabel(kind));
+document.documentElement.lang = "en";
 process.stdout.write(JSON.stringify({
   entries: anatomy.entries, components: anatomy.components,
   componentASourcePath: anatomy.components.objects.find((object) => object.id === "component-a").location.path,
@@ -916,6 +925,7 @@ process.stdout.write(JSON.stringify({
   fallbackAnatomy, fallbackText: text(fallbackRoot),
   noStudyAnatomy, noStudyText: text(noStudyRoot),
   noStudyDirectionCards: walk(noStudyRoot).filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card")).length,
+  enSurfaceKindLabels, ruSurfaceKindLabels,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "overview-anatomy-workspace-test.js")
@@ -965,18 +975,20 @@ process.stdout.write(JSON.stringify({
 				ComponentID string `json:"component_id"`
 			} `json:"mapTarget"`
 		} `json:"architectureState"`
-		ArchitectureHash  string `json:"architectureHash"`
-		ExactStart        string `json:"exactStart"`
-		ExactEnd          string `json:"exactEnd"`
-		Ambiguous         any    `json:"ambiguous"`
-		Basename          any    `json:"basename"`
-		Prefix            any    `json:"prefix"`
-		StringLine        any    `json:"stringLine"`
-		FallbackAnatomy   any    `json:"fallbackAnatomy"`
-		FallbackText      string `json:"fallbackText"`
-		NoStudyAnatomy    any    `json:"noStudyAnatomy"`
-		NoStudyText       string `json:"noStudyText"`
-		NoStudyDirections int    `json:"noStudyDirectionCards"`
+		ArchitectureHash  string   `json:"architectureHash"`
+		ExactStart        string   `json:"exactStart"`
+		ExactEnd          string   `json:"exactEnd"`
+		Ambiguous         any      `json:"ambiguous"`
+		Basename          any      `json:"basename"`
+		Prefix            any      `json:"prefix"`
+		StringLine        any      `json:"stringLine"`
+		FallbackAnatomy   any      `json:"fallbackAnatomy"`
+		FallbackText      string   `json:"fallbackText"`
+		NoStudyAnatomy    any      `json:"noStudyAnatomy"`
+		NoStudyText       string   `json:"noStudyText"`
+		NoStudyDirections int      `json:"noStudyDirectionCards"`
+		ENSurfaceKinds    []string `json:"enSurfaceKindLabels"`
+		RUSurfaceKinds    []string `json:"ruSurfaceKindLabels"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Overview anatomy workspace smoke: %v\n%s", err, output)
@@ -992,6 +1004,9 @@ process.stdout.write(JSON.stringify({
 	if strings.Count(strings.Join(got.CardText, "\n"), "Same visible entry") != 2 ||
 		strings.Count(strings.Join(got.CardText, "\n"), "Same visible component") != 2 {
 		t.Fatalf("same-label exact IDs collapsed: %#v", got.CardText)
+	}
+	if joined := strings.Join(got.CardText, "\n"); strings.Count(joined, "Process entry") != 2 || strings.Contains(joined, "process_entry") {
+		t.Fatalf("Overview Surface cards did not use typed kind labels: %#v", got.CardText)
 	}
 	for _, forbidden := range []string{"surface-ambiguous", "surface-dead", "surface-duplicate", "surface-dynamic", "surface-test", "surface-unknown", "component-ambiguous", "component-dead", "component-duplicate"} {
 		if strings.Contains(strings.Join(got.SurfaceIDs, "\n")+strings.Join(got.ComponentIDs, "\n"), forbidden) {
@@ -1045,6 +1060,20 @@ process.stdout.write(JSON.stringify({
 	if got.NoStudyAnatomy == nil || got.NoStudyDirections != 0 {
 		t.Fatalf("failed-Study report lost anatomy or invented Study directions: anatomy=%#v directions=%d text=%q",
 			got.NoStudyAnatomy, got.NoStudyDirections, got.NoStudyText)
+	}
+	wantENSurfaceKinds := []string{
+		"Async task", "CLI command", "HTTP route", "HTTP route descriptor",
+		"HTTP route frontier", "HTTP server start", "Process entry", "Worker",
+		"Other saved surface kind",
+	}
+	wantRUSurfaceKinds := []string{
+		"Асинхронная задача", "CLI-команда", "HTTP-маршрут", "Дескриптор HTTP-маршрута",
+		"Граница HTTP-маршрутов", "Запуск HTTP-сервера", "Точка входа процесса", "Воркер",
+		"Другой сохранённый тип точки запуска",
+	}
+	if !slices.Equal(got.ENSurfaceKinds, wantENSurfaceKinds) ||
+		!slices.Equal(got.RUSurfaceKinds, wantRUSurfaceKinds) {
+		t.Fatalf("Overview Surface labels = EN %#v RU %#v", got.ENSurfaceKinds, got.RUSurfaceKinds)
 	}
 	for _, token := range []string{
 		"Study unavailable for this run",
