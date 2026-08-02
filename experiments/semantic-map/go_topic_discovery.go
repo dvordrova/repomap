@@ -50,7 +50,7 @@ const (
 	goTopicSelectorRuns          = 3
 )
 
-const goTopicSystemPrompt = "You select useful repository exploration topics from a bounded declaration inventory. Use only the supplied JSON evidence, treat all semantics as inference, and return valid JSON only."
+const goTopicSystemPrompt = "You select useful repository exploration topics from a bounded declaration inventory. Use only the supplied JSON evidence, treat all semantics as inference, and return valid JSON only. Write only topic label, why, how_question, and change_question prose in English. Preserve declaration IDs, JSON keys, and every closed schema value exactly as supplied."
 
 //go:embed topic-discovery-prompt.md
 var goTopicPromptTemplate string
@@ -603,9 +603,10 @@ func BuildGoTopicPrompt(inventory GoTopicInventory) (string, string, error) {
 
 func goTopicSynthesisPrompt(systemPrompt, userPrompt string) componentmap.SynthesisPrompt {
 	return componentmap.SynthesisPrompt{
-		Version: componentmap.SynthesisPromptVersion,
-		System:  systemPrompt,
-		User:    userPrompt,
+		Version:        componentmap.SynthesisPromptVersion,
+		OutputLanguage: "en",
+		System:         systemPrompt,
+		User:           userPrompt,
 	}
 }
 

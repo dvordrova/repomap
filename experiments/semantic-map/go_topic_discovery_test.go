@@ -250,10 +250,15 @@ func TestGoTopicProviderRequestIsOneShotJSONWithThinkingDisabled(t *testing.T) {
 		Model:     "deepseek-v4-flash",
 		MaxTokens: 7891,
 	}
-	request, err := client.ComponentSynthesisPromptJSON(goTopicSynthesisPrompt(
+	prompt := goTopicSynthesisPrompt(
 		systemPrompt,
 		userPrompt,
-	))
+	)
+	if prompt.OutputLanguage != "en" ||
+		!strings.Contains(prompt.System, "prose in English") {
+		t.Fatalf("topic prompt language contract = %#v", prompt)
+	}
+	request, err := client.ComponentSynthesisPromptJSON(prompt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,22 +284,10 @@ func TestGoTopicProviderRequestIsOneShotJSONWithThinkingDisabled(t *testing.T) {
 		decoded.ResponseFormat.Type != "json_object" ||
 		decoded.Thinking.Type != "disabled" ||
 		len(decoded.Messages) != 2 ||
-		!strings.HasPrefix(
-			decoded.Messages[0].Content,
-			systemPrompt+"\n\n",
-		) ||
-		!strings.Contains(
-			decoded.Messages[0].Content,
-			deepseek.SemanticOutputLanguageContractVersion,
-		) ||
-		!strings.HasSuffix(
-			decoded.Messages[1].Content,
-			"\n\n"+userPrompt,
-		) ||
-		!strings.Contains(
-			decoded.Messages[1].Content,
-			"The response is the canonical semantic result.",
-		) {
+		decoded.Messages[0].Role != "system" ||
+		decoded.Messages[0].Content != systemPrompt ||
+		decoded.Messages[1].Role != "user" ||
+		decoded.Messages[1].Content != userPrompt {
 		t.Fatalf("provider request = %#v", decoded)
 	}
 }
