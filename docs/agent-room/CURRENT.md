@@ -1,15 +1,21 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/202-exact-architecture-input-and-complete-enrichment.md
+    decisions/203-architecture-coverage-calibration.md
 
 Status:
-    Decision 202 active; exact Architecture input and complete requested enrichment authorized
+    Decision 203 active; one exact Architecture coverage calibration authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 203 adds an exact typed required-member checklist and permits one
+    live Casdoor calibration only. It does not reinterpret structural file
+    containers as durable conceptual members. A second prompt-only retry is
+    forbidden: any repeated omission or mechanical file duplication moves the
+    contract to producer-owned conceptual members plus read-only structural
+    locators while D177 retains the complete local graph and source authority.
     Decision 202 makes the Architecture request and authorized replay consume
     one byte-identical exact Go package graph, requires complete coverage of
     every explicitly requested candidate member, and makes invalid optional

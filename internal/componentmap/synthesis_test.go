@@ -231,6 +231,17 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	if len(request.Candidates) != len(firstBundle.Candidates) {
 		t.Fatalf("request candidates = %d, want %d", len(request.Candidates), len(firstBundle.Candidates))
 	}
+	if len(request.RequiredMemberRefs) != len(request.Candidates) {
+		t.Fatalf("required checklist = %d, want %d", len(request.RequiredMemberRefs), len(request.Candidates))
+	}
+	for index, candidate := range request.Candidates {
+		if request.RequiredMemberRefs[index] != candidate.Ref {
+			t.Fatalf(
+				"required checklist[%d] = %#v, want candidate ref %#v",
+				index, request.RequiredMemberRefs[index], candidate.Ref,
+			)
+		}
+	}
 	if len(firstJSON) > maxSynthesisRequestBytes {
 		t.Fatalf("request bytes = %d, limit %d", len(firstJSON), maxSynthesisRequestBytes)
 	}
@@ -254,6 +265,7 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		}
 	}
 	if !strings.Contains(encoded, "supporting_relations") || !strings.Contains(encoded, "flow_anchor_bindings") ||
+		!strings.Contains(encoded, `"required_member_refs":[`) ||
 		!strings.Contains(encoded, `"ref":{"kind":"package","ref":"p1"}`) {
 		t.Fatalf("request omitted compact typed relations/bindings: %s", encoded)
 	}
@@ -282,7 +294,11 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis",
 		"Do not nest records or emit a second root object",
 		"silently validate the complete JSON syntax",
-		"Every supplied candidate member ref must appear in at least one component",
+		"Every supplied candidate member ref is present in that checklist and must appear in at least one component",
+		"Treat required_member_refs as the exhaustive flat coverage checklist",
+		"A candidate parent_ref is grouping context only and never satisfies coverage",
+		"self-check them separately by kind",
+		"their exact typed set equals required_member_refs",
 		"an incomplete proposal is rejected rather than repaired or supplemented locally",
 	} {
 		if !strings.Contains(prompt.System, required) {
@@ -341,6 +357,51 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	}
 	if russianKey == englishKey {
 		t.Fatalf("Russian cache key %q reused English identity", russianKey)
+	}
+}
+
+func TestSynthesisRequestRejectsRequiredChecklistMismatch(t *testing.T) {
+	t.Parallel()
+
+	request, _, err := BuildSynthesisRequest(landscapeTestBundle())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.RequiredMemberRefs) < 2 {
+		t.Fatalf("required checklist = %#v", request.RequiredMemberRefs)
+	}
+
+	tests := map[string]func(*SynthesisRequest){
+		"missing": func(request *SynthesisRequest) {
+			request.RequiredMemberRefs = request.RequiredMemberRefs[:len(request.RequiredMemberRefs)-1]
+		},
+		"duplicate": func(request *SynthesisRequest) {
+			request.RequiredMemberRefs[0] = request.RequiredMemberRefs[1]
+		},
+		"wrong kind": func(request *SynthesisRequest) {
+			if request.RequiredMemberRefs[0].Kind == MemberPackage {
+				request.RequiredMemberRefs[0].Kind = MemberFile
+			} else {
+				request.RequiredMemberRefs[0].Kind = MemberPackage
+			}
+		},
+		"wrong ref": func(request *SynthesisRequest) {
+			request.RequiredMemberRefs[0].Ref += "-unknown"
+		},
+		"reordered": func(request *SynthesisRequest) {
+			request.RequiredMemberRefs[0], request.RequiredMemberRefs[1] =
+				request.RequiredMemberRefs[1], request.RequiredMemberRefs[0]
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			mutated := request
+			mutated.RequiredMemberRefs = append([]SynthesisMemberRef(nil), request.RequiredMemberRefs...)
+			mutate(&mutated)
+			if err := validateSynthesisRequestCoverage(mutated); err == nil {
+				t.Fatal("mismatched required checklist was accepted")
+			}
+		})
 	}
 }
 
@@ -416,7 +477,7 @@ func TestSynthesisResponseRequiresCompleteDistinctCandidateCoverage(t *testing.T
 	}
 }
 
-func TestSynthesisV10CacheIdentityDoesNotReuseV9Record(t *testing.T) {
+func TestSynthesisV11CacheIdentityDoesNotReuseV10Record(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -429,7 +490,7 @@ func TestSynthesisV10CacheIdentityDoesNotReuseV9Record(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, requestJSON, err := BuildSynthesisRequest(bundle)
+	request, requestJSON, err := BuildSynthesisRequest(bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,19 +498,65 @@ func TestSynthesisV10CacheIdentityDoesNotReuseV9Record(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Mirror the exact v10 request struct rather than round-tripping through a
+	// map, whose key order could manufacture a false cache miss.
+	legacyRequestJSON, err := json.Marshal(struct {
+		RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
+		GroundingMode       GroundingMode             `json:"grounding_mode"`
+		BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
+		Flows               []SynthesisFlow           `json:"flows,omitempty"`
+		Candidates          []SynthesisCandidate      `json:"candidates"`
+		Relations           []SynthesisRelation       `json:"supporting_relations,omitempty"`
+		AnchorBindings      []SynthesisAnchorBinding  `json:"flow_anchor_bindings,omitempty"`
+	}{
+		RepositoryArchetype: request.RepositoryArchetype,
+		GroundingMode:       request.GroundingMode,
+		BehaviorAnchors:     request.BehaviorAnchors,
+		Flows:               request.Flows,
+		Candidates:          request.Candidates,
+		Relations:           request.Relations,
+		AnchorBindings:      request.AnchorBindings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(legacyRequestJSON, []byte(`"required_member_refs"`)) ||
+		!bytes.Contains(requestJSON, []byte(`"required_member_refs"`)) {
+		t.Fatal("v10/v11 request fixtures do not isolate the explicit coverage checklist")
+	}
+
+	// With every version field held at v11, replacing only the current wire by
+	// the exact v10 wire must still change the key. This proves that the new
+	// checklist bytes themselves participate in identity, independently of the
+	// explicit contract and prompt version bumps below.
+	v11LegacyWireHash := sha256.New()
+	fmt.Fprintf(
+		v11LegacyWireHash,
+		"componentmap-synthesis\nrevision=%s\nrequest_contract=%d\nproposal_contract=%d\nprompt=%s\nprofile=%s\nmodel=%s\n",
+		revision, SynthesisRequestVersion, ProposalVersion, SynthesisPromptVersion, profile, model,
+	)
+	fmt.Fprintf(
+		v11LegacyWireHash, "request=%s\nprivate_catalog=%s\n",
+		sha256String(legacyRequestJSON), catalog.identitySHA256,
+	)
+	v11LegacyWireKey := "component-synthesis-" + hex.EncodeToString(v11LegacyWireHash.Sum(nil))
+	if currentKey == v11LegacyWireKey {
+		t.Fatalf("v11 cache key %q did not bind required_member_refs bytes", currentKey)
+	}
+
 	legacyHash := sha256.New()
 	fmt.Fprintf(
 		legacyHash,
-		"componentmap-synthesis\nrevision=%s\nrequest_contract=6\nproposal_contract=6\nprompt=architecture-grounding-v9\nprofile=%s\nmodel=%s\n",
+		"componentmap-synthesis\nrevision=%s\nrequest_contract=7\nproposal_contract=7\nprompt=architecture-grounding-v10\nprofile=%s\nmodel=%s\n",
 		revision, profile, model,
 	)
 	fmt.Fprintf(
 		legacyHash, "request=%s\nprivate_catalog=%s\n",
-		sha256String(requestJSON), catalog.identitySHA256,
+		sha256String(legacyRequestJSON), catalog.identitySHA256,
 	)
 	legacyKey := "component-synthesis-" + hex.EncodeToString(legacyHash.Sum(nil))
 	if currentKey == legacyKey {
-		t.Fatalf("v10 cache key reused v9 identity %q", currentKey)
+		t.Fatalf("v11 cache key reused v10 identity %q", currentKey)
 	}
 
 	result, err := RecordSynthesisResponse(
@@ -1135,6 +1242,104 @@ func TestSavedCasdoorP21ManyToManyResponseIsRejectedWhenCoverageIsIncomplete(t *
 		t.Fatalf("tampered membership count replay error = %v", err)
 	}
 
+}
+
+func TestSavedCasdoorD202ResponseKeepsFileOmissionRejectedWithExplicitChecklist(t *testing.T) {
+	t.Parallel()
+
+	fixture, err := os.ReadFile("testdata/casdoor_architecture_20260802_215721_incomplete_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bytes.TrimSpace(fixture)
+	if len(raw) != 5334 {
+		t.Fatalf("saved D202 response bytes = %d, want 5334", len(raw))
+	}
+	digest := sha256.Sum256(raw)
+	if got := hex.EncodeToString(digest[:]); got != "c8d9e96c02d2d45d0402d31b6b883c130535e6171d8d186f1c5c4b538c39f63b" {
+		t.Fatalf("saved D202 response sha256 = %s", got)
+	}
+
+	bundle := savedCasdoorManyToManyBundle()
+	request, _, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.RequiredMemberRefs) != 50 {
+		t.Fatalf("required checklist = %d, want 50", len(request.RequiredMemberRefs))
+	}
+	checklistKinds := map[MemberKind]int{}
+	for index, ref := range request.RequiredMemberRefs {
+		checklistKinds[ref.Kind]++
+		if ref != request.Candidates[index].Ref {
+			t.Fatalf("required checklist[%d] = %#v, candidate ref = %#v", index, ref, request.Candidates[index].Ref)
+		}
+	}
+	if checklistKinds[MemberPackage] != 34 || checklistKinds[MemberSymbol] != 8 ||
+		checklistKinds[MemberFile] != 8 {
+		t.Fatalf("required checklist kinds = %#v", checklistKinds)
+	}
+
+	result, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-d202-incomplete", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, raw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
+		t.Fatalf("saved D202 file omission was not rejected closed: %#v", result.Landscape)
+	}
+	if !result.Membership.Counted || result.Membership.MemberOccurrences != 42 ||
+		result.Membership.DistinctMembers != 42 {
+		t.Fatalf("saved D202 membership counts = %#v", result.Membership)
+	}
+	savedRejected, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedRejected, err := ReplaySynthesisResult(bundle, "casdoor-d202-incomplete", savedRejected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(replayedRejected.Record.Call.Response, raw) ||
+		!reflect.DeepEqual(replayedRejected.Membership, result.Membership) ||
+		!reflect.DeepEqual(replayedRejected.Landscape, result.Landscape) {
+		t.Fatal("saved D202 42/50 response did not replay byte-exactly")
+	}
+
+	completeProposal := validSynthesisProposal(bundle)
+	completeProposal.Subsystems[0].Components[0].Hypothesis = true
+	completeRaw := synthesisWireProposalJSON(t, bundle, completeProposal)
+	complete, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-d203-complete", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, completeRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete.Landscape.Fallback || !complete.Membership.Counted ||
+		complete.Membership.DistinctMembers != len(request.RequiredMemberRefs) {
+		t.Fatalf(
+			"synthetic full-checklist response: fallback=%t outcome=%s membership=%#v diagnostics=%#v",
+			complete.Landscape.Fallback, complete.Landscape.ValidationOutcome,
+			complete.Membership, complete.Landscape.Diagnostics,
+		)
+	}
+	savedComplete, err := json.Marshal(complete.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedComplete, err := ReplaySynthesisResult(bundle, "casdoor-d203-complete", savedComplete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(replayedComplete.Record.Call.Response, completeRaw) ||
+		!reflect.DeepEqual(replayedComplete.Membership, complete.Membership) ||
+		!reflect.DeepEqual(replayedComplete.Landscape, complete.Landscape) {
+		t.Fatal("synthetic D203 50/50 response did not replay byte-exactly")
+	}
 }
 
 func savedCasdoorManyToManyBundle() CandidateBundle {

@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 7
-	SynthesisRecordVersion  = 7
-	SynthesisPromptVersion  = "architecture-grounding-v10"
+	SynthesisRequestVersion = 8
+	SynthesisRecordVersion  = 8
+	SynthesisPromptVersion  = "architecture-grounding-v11"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -114,6 +114,7 @@ type SynthesisAnchorBinding struct {
 type SynthesisRequest struct {
 	RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
 	GroundingMode       GroundingMode             `json:"grounding_mode"`
+	RequiredMemberRefs  []SynthesisMemberRef      `json:"required_member_refs"`
 	BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
 	Flows               []SynthesisFlow           `json:"flows,omitempty"`
 	Candidates          []SynthesisCandidate      `json:"candidates"`
@@ -416,6 +417,7 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	request := SynthesisRequest{
 		RepositoryArchetype: bundle.RepositoryArchetype,
 		GroundingMode:       bundle.GroundingMode,
+		RequiredMemberRefs:  make([]SynthesisMemberRef, 0, len(bundle.Candidates)),
 		BehaviorAnchors:     make([]SynthesisBehaviorAnchor, 0, len(bundle.BehaviorAnchors)),
 		Candidates:          make([]SynthesisCandidate, 0, len(bundle.Candidates)),
 		Flows:               make([]SynthesisFlow, 0, len(bundle.Flows)),
@@ -457,6 +459,7 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 			projected.Facts = append(projected.Facts, projectSynthesisFact(catalog, fact))
 		}
 		request.Candidates = append(request.Candidates, projected)
+		request.RequiredMemberRefs = append(request.RequiredMemberRefs, projected.Ref)
 	}
 	flows := append([]Flow(nil), bundle.Flows...)
 	sort.Slice(flows, func(i, j int) bool { return flows[i].ID < flows[j].ID })
@@ -491,6 +494,9 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 			MemberRef: catalog.membersByID[binding.MemberID], Certainty: binding.Certainty,
 		})
 	}
+	if err := validateSynthesisRequestCoverage(request); err != nil {
+		return SynthesisRequest{}, nil, err
+	}
 	if err := validateSynthesisRequestIdentityFields(catalog, request); err != nil {
 		return SynthesisRequest{}, nil, err
 	}
@@ -511,6 +517,37 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	return request, encoded, nil
 }
 
+// validateSynthesisRequestCoverage keeps the provider-visible checklist
+// mechanically identical to the complete ordered candidate ref set. Parent
+// refs are deliberately irrelevant: they are context, not independent
+// evidence that a candidate was assigned to a conceptual component.
+func validateSynthesisRequestCoverage(request SynthesisRequest) error {
+	if len(request.RequiredMemberRefs) != len(request.Candidates) {
+		return fmt.Errorf(
+			"componentmap: required_member_refs count %d does not match candidate count %d",
+			len(request.RequiredMemberRefs), len(request.Candidates),
+		)
+	}
+	seen := make(map[string]struct{}, len(request.RequiredMemberRefs))
+	for index, required := range request.RequiredMemberRefs {
+		if required.Ref == "" {
+			return fmt.Errorf("componentmap: required_member_refs[%d] is empty", index)
+		}
+		key := required.key()
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("componentmap: required_member_refs[%d] duplicates an earlier checklist ref", index)
+		}
+		seen[key] = struct{}{}
+		if required != request.Candidates[index].Ref {
+			return fmt.Errorf(
+				"componentmap: required_member_refs[%d] does not match candidates[%d].ref",
+				index, index,
+			)
+		}
+	}
+	return nil
+}
+
 type synthesisWireIdentityField struct {
 	name string
 	ref  string
@@ -518,6 +555,11 @@ type synthesisWireIdentityField struct {
 
 func synthesisRequestIdentityFields(request SynthesisRequest) []synthesisWireIdentityField {
 	fields := make([]synthesisWireIdentityField, 0)
+	for index, memberRef := range request.RequiredMemberRefs {
+		fields = append(fields, synthesisWireIdentityField{
+			name: fmt.Sprintf("required_member_refs[%d]", index), ref: memberRef.Ref,
+		})
+	}
 	for index, anchor := range request.BehaviorAnchors {
 		fields = append(fields, synthesisWireIdentityField{
 			name: fmt.Sprintf("behavior_anchors[%d].ref", index), ref: anchor.Ref.Ref,
@@ -707,7 +749,7 @@ Return exactly one compact JSON proposal object with one ordered records array. 
 
 The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Every supplied candidate member ref must appear in at least one component; an incomplete proposal is rejected rather than repaired or supplemented locally. Every component must contain at least one supplied member ref.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Treat required_member_refs as the exhaustive flat coverage checklist. Every supplied candidate member ref is present in that checklist and must appear in at least one component member_refs field; an incomplete proposal is rejected rather than repaired or supplemented locally. A candidate parent_ref is grouping context only and never satisfies coverage for either the parent or the candidate. Before returning, collect the distinct member_refs from every component, self-check them separately by kind, and verify that their exact typed set equals required_member_refs with no missing, unknown, or wrong-kind ref. Cross-cutting repeats count once for this coverage self-check. Every component must contain at least one supplied member ref.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. Every non-hypothesis component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
