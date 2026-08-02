@@ -479,6 +479,32 @@ func TestDeclarationFamilyAnchorsChunkAllMembersAtNAndNPlusOne(t *testing.T) {
 	}
 }
 
+func TestDeclarationFamilyCountsOnlyUniquePublishableDeclarations(t *testing.T) {
+	t.Parallel()
+
+	location := Location{Path: "certificate/certificate.go", Line: 7, Column: 1}
+	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+	a.recordDeclarationFamilyAnchors("tls_or_security_boundary", []Symbol{
+		{ID: "example.com/certificate.init", Package: "example.com/certificate", Name: "init"},
+		{ID: "example.com/certificate.Decode", Package: "example.com/certificate", Name: "Decode", Location: location},
+		{ID: "example.com/certificate.Decode$wrapper", Package: "example.com/certificate", Name: "Decode", Location: location},
+	})
+
+	if a.declarationFamilyMembersConsidered != 1 || len(a.architectureAnchors) != 1 {
+		t.Fatalf(
+			"declaration family considered/anchors = %d/%d, want one exact declaration",
+			a.declarationFamilyMembersConsidered,
+			len(a.architectureAnchors),
+		)
+	}
+	for _, current := range a.architectureAnchors {
+		if len(current.AssociatedMembers) != 1 || current.AssociatedMembers[0].Name != "Decode" ||
+			len(current.AssociatedMembers[0].EquivalentIDs) != 2 {
+			t.Fatalf("published declaration family = %#v", current)
+		}
+	}
+}
+
 func TestDeclarationFamilyPersistenceLimitPublishesIncompleteCoverage(t *testing.T) {
 	t.Parallel()
 
