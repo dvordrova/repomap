@@ -56,21 +56,22 @@ type llmBundleJSON struct {
 }
 
 type runMetadataJSON struct {
-	CreatedAt               string   `json:"created_at"`
-	Model                   string   `json:"model"`
-	PromptVersion           string   `json:"prompt_version"`
-	CompactContextBytes     int      `json:"compact_context_bytes"`
-	ExternalRequestBytes    int      `json:"external_request_bytes"`
-	ProviderRequestCount    int      `json:"provider_request_count"`
-	CandidateDirectionCount int      `json:"candidate_direction_count"`
-	AcceptedDirectionCount  int      `json:"accepted_direction_count"`
-	RejectedDirectionCount  int      `json:"rejected_direction_count"`
-	ProviderLatencyMillis   *int64   `json:"provider_latency_ms"`
-	SurfaceDiscoveryRan     bool     `json:"surface_discovery_ran"`
-	SurfaceDiscoveryCount   int      `json:"surface_discovery_count"`
-	SurfaceDiscoveryMillis  *int64   `json:"surface_discovery_ms"`
-	Warnings                []string `json:"warnings"`
-	EffectiveOptions        struct {
+	CreatedAt                  string   `json:"created_at"`
+	Model                      string   `json:"model"`
+	PromptVersion              string   `json:"prompt_version"`
+	CompactContextBytes        int      `json:"compact_context_bytes"`
+	ExternalRequestBytes       int      `json:"external_request_bytes"`
+	ProviderRequestCount       int      `json:"provider_request_count"`
+	ProviderAccountingComplete bool     `json:"provider_accounting_complete"`
+	CandidateDirectionCount    int      `json:"candidate_direction_count"`
+	AcceptedDirectionCount     int      `json:"accepted_direction_count"`
+	RejectedDirectionCount     int      `json:"rejected_direction_count"`
+	ProviderLatencyMillis      *int64   `json:"provider_latency_ms"`
+	SurfaceDiscoveryRan        bool     `json:"surface_discovery_ran"`
+	SurfaceDiscoveryCount      int      `json:"surface_discovery_count"`
+	SurfaceDiscoveryMillis     *int64   `json:"surface_discovery_ms"`
+	Warnings                   []string `json:"warnings"`
+	EffectiveOptions           struct {
 		ReportLanguage string `json:"report_language"`
 	} `json:"effective_options"`
 }
@@ -411,8 +412,6 @@ func readRunDir(
 		if data.Run == nil {
 			data.Run = &RunInfo{}
 		}
-		data.Run.ProviderRequestCount = state.Usage.SemanticCalls
-		data.Run.ExternalRequestBytes = state.Usage.RequestBytes
 	} else if !os.IsNotExist(err) {
 		parseWarnings = append(parseWarnings, fmt.Sprintf("model research: %v", err))
 	}
@@ -427,9 +426,7 @@ func readRunDir(
 		architectureStatus = &status
 	}
 	data.ArchitectureSynthesis = architectureStatus
-	if data.Run != nil && data.ArchitectureSynthesis != nil && data.ModelResearch == nil {
-		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
-	}
+	reconcileLegacyProviderAccounting(data)
 	data.RepositoryAtlas, err = readRepositoryAtlasArtifact(absDir)
 	if err != nil {
 		return nil, err
@@ -479,16 +476,10 @@ func readRunDir(
 	if architectureWarning := projectCanonicalArchitectureCanvas(data); architectureWarning != "" {
 		parseWarnings = append(parseWarnings, architectureWarning)
 	}
-	if architectureArtifacts == nil {
-		projectSavedArchitectureCanvas(
-			data,
-			filepath.Join(absDir, ArchitectureSynthesisFile),
-		)
-	} else {
-		projectSavedArchitectureCanvasBytes(
-			data,
-			architectureArtifacts.synthesis,
-		)
+	if err := replayAcceptedArchitectureForReport(
+		data, absDir, architectureArtifacts,
+	); err != nil {
+		return nil, err
 	}
 	linkArchitectureProductObjects(data)
 	if w := replaySavedGuidedTour(data, filepath.Join(absDir, GuidedStoryFile)); w != "" {
@@ -507,30 +498,95 @@ func readRunDir(
 		return data.Flows[i].ID < data.Flows[j].ID
 	})
 
-	data.Warnings = append(data.Warnings, parseWarnings...)
-	if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	data.StudyPublication, warning = readStudyPublicationStatus(
-		filepath.Join(absDir, studymap.StatusFile),
-	)
-	if warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	if warning = studyPublicationUserWarning(data.StudyPublication); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	if warning := replaySavedIncompleteStudy(
-		data,
-		filepath.Join(absDir, studymap.BundleFile),
-		filepath.Join(absDir, studymap.DirectionsAttemptFile),
-	); warning != "" {
-		data.Warnings = append(data.Warnings, warning)
-	}
-	applyCanonicalStudyPublication(data)
 	data.UserSources = projectOverviewSourceSnippets(data)
+	data.Warnings = append(data.Warnings, parseWarnings...)
+	if data.RepositoryAtlas != nil {
+		if authority == nil {
+			data.AtlasStudy, data.StudyMap, err = readAtlasStudyReportProduct(absDir, data)
+			if err != nil {
+				return nil, err
+			}
+			applyCanonicalStudyPublication(data)
+		}
+	} else {
+		if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		data.StudyPublication, warning = readStudyPublicationStatus(
+			filepath.Join(absDir, studymap.StatusFile),
+		)
+		if warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		if warning = studyPublicationUserWarning(data.StudyPublication); warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		if warning := replaySavedIncompleteStudy(
+			data,
+			filepath.Join(absDir, studymap.BundleFile),
+			filepath.Join(absDir, studymap.DirectionsAttemptFile),
+		); warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		applyCanonicalStudyPublication(data)
+	}
 	prepareReplayedPresentationMetadata(data)
 	return data, nil
+}
+
+func replayAcceptedArchitectureForReport(
+	data *ReportData,
+	runDir string,
+	artifacts *savedArchitectureArtifacts,
+) error {
+	status := data.ArchitectureSynthesis
+	accepted := status != nil &&
+		(status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached) &&
+		status.ProposalAccepted && !status.ProposalRejected && !status.FallbackSelected
+	var (
+		saved   []byte
+		present bool
+		err     error
+	)
+	if artifacts != nil {
+		saved = artifacts.synthesis
+		present = len(saved) > 0
+	} else {
+		artifactPath := filepath.Join(runDir, ArchitectureSynthesisFile)
+		var info os.FileInfo
+		info, err = os.Lstat(artifactPath)
+		switch {
+		case err == nil:
+			present = true
+			if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchitectureLocalizationSynthesisBytes {
+				return fmt.Errorf("architecture synthesis: saved record is not a bounded regular file")
+			}
+			saved, err = os.ReadFile(artifactPath)
+		case os.IsNotExist(err):
+			err = nil
+		default:
+			return fmt.Errorf("architecture synthesis: inspect saved record: %w", err)
+		}
+		if err != nil {
+			return fmt.Errorf("architecture synthesis: read saved record: %w", err)
+		}
+	}
+	if !accepted {
+		if present {
+			return fmt.Errorf("architecture synthesis: unaccepted status cannot authorize a saved synthesis")
+		}
+		return nil
+	}
+	if !present {
+		return fmt.Errorf("architecture synthesis: accepted status requires a saved synthesis")
+	}
+	if warning := projectSavedArchitectureCanvasBytes(data, saved); warning != "" {
+		return fmt.Errorf("architecture synthesis: %s", warning)
+	}
+	if err := validateAcceptedAtlasStudyArchitecture(data); err != nil {
+		return err
+	}
+	return nil
 }
 
 func projectCanonicalArchitectureCanvas(data *ReportData) string {
@@ -609,12 +665,16 @@ func parseLLMBundle(path string, data *ReportData) string {
 }
 
 func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) string {
+	info, readErr := os.Lstat(synthesisPath)
+	if readErr != nil {
+		return fmt.Sprintf("read saved synthesis: %v", readErr)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchitectureLocalizationSynthesisBytes {
+		return "saved synthesis is not a bounded regular file"
+	}
 	saved, readErr := os.ReadFile(synthesisPath)
 	if readErr != nil {
-		if os.IsNotExist(readErr) {
-			return ""
-		}
-		return ""
+		return fmt.Sprintf("read saved synthesis: %v", readErr)
 	}
 	return projectSavedArchitectureCanvasBytes(data, saved)
 }
@@ -626,7 +686,7 @@ func projectSavedArchitectureCanvasBytes(data *ReportData, saved []byte) string 
 	}
 	replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
 	if replayErr != nil {
-		return ""
+		return fmt.Sprintf("replay saved synthesis: %v", replayErr)
 	}
 	canvas, err := ProjectArchitectureCanvas(replayed)
 	if err != nil {
@@ -760,25 +820,44 @@ func parseRunMetadata(path string, data *ReportData) string {
 		return fmt.Sprintf("metadata unmarshal: %v", err)
 	}
 	data.Run = &RunInfo{
-		CreatedAt:               metadata.CreatedAt,
-		Model:                   metadata.Model,
-		PromptVersion:           metadata.PromptVersion,
-		CompactContextBytes:     metadata.CompactContextBytes,
-		ExternalRequestBytes:    metadata.ExternalRequestBytes,
-		ProviderRequestCount:    metadata.ProviderRequestCount,
-		CandidateDirectionCount: metadata.CandidateDirectionCount,
-		AcceptedDirectionCount:  metadata.AcceptedDirectionCount,
-		RejectedDirectionCount:  metadata.RejectedDirectionCount,
-		ProviderLatencyMillis:   metadata.ProviderLatencyMillis,
-		SurfaceDiscoveryRan:     metadata.SurfaceDiscoveryRan,
-		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
-		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
+		CreatedAt:                  metadata.CreatedAt,
+		Model:                      metadata.Model,
+		PromptVersion:              metadata.PromptVersion,
+		CompactContextBytes:        metadata.CompactContextBytes,
+		ExternalRequestBytes:       metadata.ExternalRequestBytes,
+		ProviderRequestCount:       metadata.ProviderRequestCount,
+		ProviderAccountingComplete: metadata.ProviderAccountingComplete,
+		CandidateDirectionCount:    metadata.CandidateDirectionCount,
+		AcceptedDirectionCount:     metadata.AcceptedDirectionCount,
+		RejectedDirectionCount:     metadata.RejectedDirectionCount,
+		ProviderLatencyMillis:      metadata.ProviderLatencyMillis,
+		SurfaceDiscoveryRan:        metadata.SurfaceDiscoveryRan,
+		SurfaceDiscoveryCount:      metadata.SurfaceDiscoveryCount,
+		SurfaceDiscoveryMillis:     metadata.SurfaceDiscoveryMillis,
 	}
 	if normalizedReportLanguage(metadata.EffectiveOptions.ReportLanguage) == "ru" {
 		data.requestedPresentationLocale = "ru"
 	}
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""
+}
+
+// reconcileLegacyProviderAccounting preserves the historical report reader's
+// reconstruction only for metadata written before the Atlas-first runtime
+// began persisting complete cross-stage provider totals. Completed metadata is
+// authoritative even when an older model-research state remains beside it.
+func reconcileLegacyProviderAccounting(data *ReportData) {
+	if data == nil || data.Run == nil || data.Run.ProviderAccountingComplete {
+		return
+	}
+	if data.ModelResearch != nil {
+		data.Run.ProviderRequestCount = data.ModelResearch.Usage.SemanticCalls
+		data.Run.ExternalRequestBytes = data.ModelResearch.Usage.RequestBytes
+		return
+	}
+	if data.ArchitectureSynthesis != nil {
+		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
+	}
 }
 
 func parseSnapshot(path string, data *ReportData) string {

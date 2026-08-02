@@ -187,10 +187,10 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		return SynthesisRequest{}, nil, fmt.Errorf("componentmap: encode synthesis request: %w", err)
 	}
 	if len(encoded) > maxSynthesisRequestBytes {
-		return SynthesisRequest{}, nil, fmt.Errorf(
-			"componentmap: synthesis request is %d bytes, limit is %d",
-			len(encoded), maxSynthesisRequestBytes,
-		)
+		return SynthesisRequest{}, nil, modelresearch.NewResourceLimitError(modelresearch.ResourceLimitError{
+			Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitRequestBytes,
+			Limit: maxSynthesisRequestBytes, Observed: len(encoded), ObservedKnown: true,
+		}, nil)
 	}
 	if synthesisJSONContainsCredential(encoded) {
 		return SynthesisRequest{}, nil, fmt.Errorf("componentmap: synthesis request contains an obvious credential")
@@ -242,6 +242,28 @@ func synthesisAllowedPaths(bundle CandidateBundle) []string {
 // local Landscape: evidence, relations, certainty, layout, and styling remain
 // local authority and cannot be returned by the model.
 func BuildSynthesisPrompt(bundle CandidateBundle) (SynthesisPrompt, error) {
+	return buildSynthesisPromptForLanguage(bundle, "en")
+}
+
+// BuildSynthesisPromptForLanguage keeps the canonical English prompt byte
+// stable while requesting Russian only for the four model-authored display
+// fields. Exact IDs, facts, relations, evidence and closed labels remain in
+// their canonical language-independent form.
+func BuildSynthesisPromptForLanguage(
+	bundle CandidateBundle,
+	outputLanguage string,
+) (SynthesisPrompt, error) {
+	language, err := normalizeSynthesisOutputLanguage(outputLanguage)
+	if err != nil {
+		return SynthesisPrompt{}, err
+	}
+	return buildSynthesisPromptForLanguage(bundle, language)
+}
+
+func buildSynthesisPromptForLanguage(
+	bundle CandidateBundle,
+	language string,
+) (SynthesisPrompt, error) {
 	_, requestJSON, err := BuildSynthesisRequest(bundle)
 	if err != nil {
 		return SynthesisPrompt{}, err
@@ -260,9 +282,18 @@ The only allowed proposal fields are version, subsystems, subsystem name/descrip
 Repository archetype and grounding mode are local facts. A primary pillar is one top-level subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, choose four to seven top-level primary subsystems when the supplied evidence supports that many, never more than eight. Prefer one to four nested components per subsystem and no more than eighteen in total. Every non-hypothesis nested component must cite at least one supplied behavior anchor ID. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
 Do not return edges, relations, flow definitions or transitions, fact payloads, repository paths, symbol details, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`, ProposalVersion)
+	if language == "ru" {
+		system += `
+
+Write only subsystem and component name and description prose in Russian. Preserve technical identifiers, product and library names, protocols, acronyms, supplied IDs, JSON keys, and every closed schema value exactly as supplied.`
+	}
 	user := "Bounded candidate request:\n" + string(requestJSON)
-	if len(system)+len(user) > maxSynthesisPromptBytes {
-		return SynthesisPrompt{}, fmt.Errorf("componentmap: synthesis prompt exceeds the local byte limit")
+	promptBytes := len(system) + len(user)
+	if promptBytes > maxSynthesisPromptBytes {
+		return SynthesisPrompt{}, modelresearch.NewResourceLimitError(modelresearch.ResourceLimitError{
+			Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitRequestBytes,
+			Limit: maxSynthesisPromptBytes, Observed: promptBytes, ObservedKnown: true,
+		}, nil)
 	}
 	return SynthesisPrompt{Version: SynthesisPromptVersion, System: system, User: user}, nil
 }
@@ -376,7 +407,7 @@ func RecordSynthesisResponseForLanguage(
 	if err != nil {
 		return SynthesisResult{}, err
 	}
-	prompt, err := BuildSynthesisPrompt(bundle)
+	prompt, err := BuildSynthesisPromptForLanguage(bundle, language)
 	if err != nil {
 		return SynthesisResult{}, err
 	}
@@ -564,10 +595,6 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	if err != nil {
 		return err
 	}
-	prompt, err := BuildSynthesisPrompt(bundle)
-	if err != nil {
-		return err
-	}
 	if record.RequestSHA256 != sha256String(requestJSON) {
 		return fmt.Errorf("componentmap: synthesis record request digest does not match")
 	}
@@ -575,7 +602,10 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 		return fmt.Errorf("componentmap: synthesis record has no represented call")
 	}
 	metadata := record.Call.Metadata
-	var expectedCacheKey string
+	var (
+		expectedCacheKey string
+		promptLanguage   = "en"
+	)
 	if metadata.OutputLanguage == "" {
 		// Records written before output-language identity existed are still
 		// valid historical report artifacts. After bounded replay validation,
@@ -593,7 +623,12 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 			metadata.Model,
 			language,
 		)
+		promptLanguage = language
 	}
+	if err != nil {
+		return err
+	}
+	prompt, err := BuildSynthesisPromptForLanguage(bundle, promptLanguage)
 	if err != nil {
 		return err
 	}

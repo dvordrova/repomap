@@ -1223,6 +1223,36 @@ type overviewSourceTarget struct {
 	line int
 }
 
+// PrepareAuthorizedSourceCoverage atomically installs the exact, authorized
+// source excerpts needed by every currently visible Overview object. Runtime
+// semantic stages may call it after repository authority is confirmed; final
+// report generation calls the same function again and must obtain the same
+// idempotent projection before replaying Atlas Study artifacts.
+func PrepareAuthorizedSourceCoverage(
+	ctx context.Context,
+	data *ReportData,
+	authority *RunAuthority,
+) error {
+	if data == nil || authority == nil {
+		return fmt.Errorf("report source coverage: authorized report data is required")
+	}
+	prepared := *data
+	prepared.UserSources = cloneOverviewSourceSnippets(data.UserSources)
+	prepared.CapturedRevision = authority.repository.Head
+	preparedAuthority := *authority
+	preparedAuthority.inputs = append([]freshness.CapturedInput(nil), authority.inputs...)
+	if authority.inputs == nil {
+		preparedAuthority.inputs = nil
+	}
+	if err := completeOverviewSourceCoverage(ctx, &prepared, &preparedAuthority); err != nil {
+		return err
+	}
+	data.UserSources = prepared.UserSources
+	data.CapturedRevision = prepared.CapturedRevision
+	authority.inputs = preparedAuthority.inputs
+	return nil
+}
+
 // completeOverviewSourceCoverage atomically verifies the existing editorial
 // source projection and extends it with exact authorized excerpts for every
 // Overview object that has a persisted visible source location. It never

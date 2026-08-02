@@ -78,7 +78,7 @@ func readSemanticJournalEntries(t *testing.T, runDir string) []semanticJournalEn
 	return entries
 }
 
-func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *testing.T) {
+func TestArchitectureSemanticJournalRecordsLiveCacheAndRejected(t *testing.T) {
 	bundle := architectureSynthesisTestBundle()
 	runsDir := t.TempDir()
 	response := architectureSynthesisTestResponse(t, bundle)
@@ -131,44 +131,18 @@ func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *tes
 		context.Background(), bundle, rejectedDir, "journal-rejected", "test", "model",
 		&architectureSynthesisStub{response: []byte("not json")},
 		architectureSynthesisOptions{disableCache: true, exchangeWriter: rejectedWriter, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
-	); err != nil {
-		t.Fatal(err)
+	); !errors.Is(err, errArchitectureSynthesisRejected) {
+		t.Fatalf("rejected Architecture error = %v, want closed rejection", err)
 	}
 	rejected := readSemanticJournalEntries(t, rejectedDir)
 	if len(rejected) != 1 || rejected[0].record.State != debugdump.SemanticStateRejected ||
 		rejected[0].record.ValidationCode != debugdump.SemanticValidationResponse {
 		t.Fatalf("rejected architecture journal = %#v", rejected)
 	}
+	if _, err := os.Stat(filepath.Join(rejectedDir, "architecture_synthesis.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rejected Architecture published an accepted artifact: %v", err)
+	}
 
-	sensitive := []byte(`api_key="company-secret-value-12345"`)
-	omittedProvider := &architectureSynthesisStub{response: sensitive}
-	omittedLiveDir := filepath.Join(runsDir, "omitted-live")
-	omittedCacheDir := filepath.Join(runsDir, "omitted-cache")
-	for _, dir := range []string{omittedLiveDir, omittedCacheDir} {
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := ensureArchitectureSynthesis(
-		context.Background(), bundle, omittedLiveDir, "journal-omitted", "test", "model", omittedProvider,
-	); err != nil {
-		t.Fatal(err)
-	}
-	omittedWriter := openSemanticJournalTestWriter(t, omittedCacheDir)
-	if _, err := ensureArchitectureSynthesisWithOptions(
-		context.Background(), bundle, omittedCacheDir, "journal-omitted", "test", "model", omittedProvider,
-		architectureSynthesisOptions{exchangeWriter: omittedWriter, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
-	); err != nil {
-		t.Fatal(err)
-	}
-	omitted := readSemanticJournalEntries(t, omittedCacheDir)
-	if len(omitted) != 1 || omitted[0].record.State != debugdump.SemanticStateCacheHit ||
-		omitted[0].record.Response.Storage != "raw_unavailable" ||
-		omitted[0].record.Response.UnavailableCode != debugdump.SemanticUnavailableOmitted ||
-		omitted[0].record.Response.OriginalBytes != len(sensitive) ||
-		bytes.Contains(omitted[0].response, []byte("company-secret")) {
-		t.Fatalf("omitted architecture cache journal = %#v", omitted)
-	}
 }
 
 func TestGuidedTourSemanticJournalPreservesSingleAttemptAndCacheContracts(t *testing.T) {

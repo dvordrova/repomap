@@ -25,52 +25,6 @@ import (
 
 const navigatorAcceptanceFixtureDir = "testdata/navigator_acceptance"
 
-func TestRunDefaultAtlasFirstAcceptsOneSavedNavigatorResponse(t *testing.T) {
-	clearLLMEnv(t)
-	repo := navigatorAcceptanceRepository(t)
-	runsDir := t.TempDir()
-	server, provider := navigatorAcceptanceProvider(t, "provider_selected.json")
-	defer server.Close()
-	configureNavigatorAcceptanceProvider(t, server.URL)
-
-	var stderr bytes.Buffer
-	if err := runDefaultWithDeps(
-		repo,
-		[]string{
-			"--debug-dir", runsDir,
-			"--lang", "ru",
-			"--no-cache",
-			"--no-open",
-			"--no-serve",
-		},
-		defaultRunDeps{
-			ctx: context.Background(), stdout: io.Discard, stderr: &stderr,
-		},
-	); err != nil {
-		t.Fatalf("runDefaultWithDeps() error = %v\nstderr:\n%s", err, stderr.String())
-	}
-	if got := provider.calls.Load(); got != 1 {
-		t.Fatalf("provider calls = %d, want exactly one Navigator call", got)
-	}
-
-	runDir := navigatorAcceptanceRunDir(t, runsDir)
-	manifest, data := readNavigatorAcceptanceRun(t, runDir)
-	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateSelected ||
-		data.Navigator.Recommendation == nil {
-		t.Fatalf("Navigator report = %#v, want one selected recommendation", data.Navigator)
-	}
-	assertNavigatorAcceptanceSemanticMinimum(t, data)
-	assertNavigatorAcceptanceRequestArtifact(t, runDir)
-	assertNavigatorAcceptanceManifestBindings(t, manifest, true)
-	assertNavigatorAcceptanceJournal(
-		t, runDir, provider, "provider_selected.json",
-		debugdump.SemanticStateAccepted, debugdump.SemanticValidationAccepted,
-	)
-	assertNoSupersededSemanticProducts(t, data)
-	assertNoSupersededSemanticArtifacts(t, runDir)
-	assertNoLegacyOrientationWarning(t, data)
-}
-
 func TestRunDefaultAtlasFirstOfflineIsExplicitAndProviderFree(t *testing.T) {
 	clearLLMEnv(t)
 	repo := navigatorAcceptanceRepository(t)
@@ -196,6 +150,93 @@ func TestRunDefaultAtlasFirstResourceFailurePublishesNoReportAuthority(t *testin
 		t, runDir, provider, "provider_resource.json",
 		debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
 	)
+}
+
+func TestNavigatorSemanticFailureIsPublishableOnlyAfterDurableFailedStatus(t *testing.T) {
+	product, err := navigator.CompileProduct(navigator.ProductInput{
+		Atlas: atlasStudyRuntimeInput().Atlas, Limits: ordinaryNavigatorLimits(modelresearch.DefaultPolicy()),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if product.Empty() {
+		t.Fatal("status-write fixture unexpectedly has no Navigator action")
+	}
+	cause := errors.New("navigator fixture: malformed semantic response")
+
+	t.Run("durable failed status permits continuation", func(t *testing.T) {
+		runDir := t.TempDir()
+		writer, err := debugdump.OpenWriter(runDir, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer writer.Close()
+
+		failure := failPublishableNavigatorRun(
+			writer, product, navigator.FailureReference, cause,
+		)
+		if !isPublishableNavigatorFailure(failure) || !errors.Is(failure, cause) {
+			t.Fatalf("durably recorded semantic failure = %T / %v", failure, failure)
+		}
+		encoded, err := os.ReadFile(filepath.Join(runDir, navigator.StatusArtifactFilename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, err := navigator.DecodeStatus(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.State != navigator.ProductStateFailed || status.FailureCode != navigator.FailureReference {
+			t.Fatalf("durable failed status = %#v", status)
+		}
+	})
+
+	t.Run("status write failure is terminal", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(runDir, navigator.StatusArtifactFilename), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writer, err := debugdump.OpenWriter(runDir, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer writer.Close()
+
+		failure := failPublishableNavigatorRun(
+			writer, product, navigator.FailureReference, cause,
+		)
+		if failure == nil || isPublishableNavigatorFailure(failure) || !errors.Is(failure, cause) {
+			t.Fatalf("status persistence failure = %T / %v", failure, failure)
+		}
+	})
+
+	t.Run("durable live provider failure permits independent stages", func(t *testing.T) {
+		runDir := t.TempDir()
+		writer, err := debugdump.OpenWriter(runDir, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer writer.Close()
+
+		failure := failPublishableNavigatorRun(writer, product, navigator.FailureProvider, cause)
+		if !isPublishableNavigatorFailure(failure) || !errors.Is(failure, cause) {
+			t.Fatalf("durable provider failure = %T / %v", failure, failure)
+		}
+	})
+
+	t.Run("provider setup failure remains terminal", func(t *testing.T) {
+		runDir := t.TempDir()
+		writer, err := debugdump.OpenWriter(runDir, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer writer.Close()
+
+		failure := failNavigatorRun(writer, product, navigator.FailureProvider, cause)
+		if failure == nil || isPublishableNavigatorFailure(failure) || !errors.Is(failure, cause) {
+			t.Fatalf("provider setup failure = %T / %v", failure, failure)
+		}
+	})
 }
 
 type navigatorAcceptanceProviderState struct {

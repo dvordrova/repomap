@@ -22,16 +22,16 @@ func TestTrackedSymlinkDefaultPublishesRegularSourceSubset(t *testing.T) {
 	assertTrackedSymlinkRegularSubset(t, result)
 }
 
-func TestEarlyCatalogRegularSubsetReachesOptionalModelStages(t *testing.T) {
+func TestEarlyCatalogRegularSubsetReachesArchitecture(t *testing.T) {
 	result := runTrackedSymlinkPublication(t)
-	if result.providerRequests < 2 {
+	if result.providerRequests != 1 {
 		t.Fatalf(
-			"provider requests = %d, want orientation plus an optional stage",
+			"provider requests = %d, want one Architecture parity-bridge request",
 			result.providerRequests,
 		)
 	}
-	if !strings.Contains(result.stderr, "repomap: synthesizing bounded architecture grouping") {
-		t.Fatalf("regular source subset did not reach an optional stage:\n%s", result.stderr)
+	if !bytes.Contains(result.requestBody, []byte("compact conceptual architecture landscape")) {
+		t.Fatalf("regular source subset did not reach Architecture: %s", result.requestBody)
 	}
 	if strings.Contains(
 		result.stderr,
@@ -254,7 +254,8 @@ func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 			requestBody = append([]byte(nil), body...)
 		}
 		responseContent := orientationJSON
-		if call == 1 {
+		if bytes.Contains(body, []byte("Orientation facts bundle JSON:")) {
+			t.Errorf("ordinary Atlas-first run scheduled removed raw Orientation: %s", body)
 			responseContent = orientationResponseForRequest(t, body, orientationFixture)
 		}
 		writer.Header().Set("Content-Type", "application/json")
@@ -308,13 +309,16 @@ func assertTrackedSymlinkRegularSubset(
 	t.Helper()
 	const linkPath = "client/v3/example_lease_test.go"
 
-	if result.providerRequests < 2 {
-		t.Fatalf("provider requests = %d, want at least 2", result.providerRequests)
+	if result.providerRequests != 1 {
+		t.Fatalf("provider requests = %d, want one Architecture parity-bridge request", result.providerRequests)
+	}
+	if !bytes.Contains(result.requestBody, []byte("compact conceptual architecture landscape")) {
+		t.Fatalf("provider request is not Architecture: %s", result.requestBody)
 	}
 	if bytes.Contains(result.requestBody, []byte(linkPath)) {
 		t.Fatalf("tracked symlink reached the initial bounded allowed scope: %s", result.requestBody)
 	}
-	if !strings.Contains(result.stderr, "Report: ") {
+	if !strings.Contains(result.stderr, "Report:\n") {
 		t.Fatalf("regular-subset report was not published:\n%s", result.stderr)
 	}
 	for _, name := range []string{"report.json", "report.html", report.RunManifestFilename} {

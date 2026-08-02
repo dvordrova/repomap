@@ -22,6 +22,8 @@ type architectureSynthesisStub struct {
 	err       error
 	maxTokens int
 	endpoint  string
+	prompts   []componentmap.SynthesisPrompt
+	onCall    func()
 }
 
 func (stub *architectureSynthesisStub) ArchitectureProviderEndpointSHA256() string {
@@ -35,10 +37,47 @@ func (stub *architectureSynthesisStub) ArchitectureProviderEndpointSHA256() stri
 
 func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeMeasured(
 	_ context.Context,
-	_ componentmap.SynthesisPrompt,
+	prompt componentmap.SynthesisPrompt,
 ) (modelresearch.ProviderResult, error) {
 	stub.calls++
+	stub.prompts = append(stub.prompts, prompt)
+	if stub.onCall != nil {
+		stub.onCall()
+	}
 	return modelresearch.ProviderResult{Content: append([]byte(nil), stub.response...), Attempts: 1}, stub.err
+}
+
+func TestArchitectureAcceptedRecordIsRemovedWhenResearchStateWriteFails(t *testing.T) {
+	t.Parallel()
+	runDir := t.TempDir()
+	policy := modelresearch.DefaultPolicy()
+	state := modelresearch.NewState(policy, modelresearch.RepositoryContext{
+		Identity: runDir, Revision: "revision", Scenario: "go-default",
+	})
+	if err := modelresearch.WriteState(runDir, state); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(runDir, modelresearch.StateFile)
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
+	provider.onCall = func() {
+		if err := os.Remove(statePath); err != nil {
+			t.Fatalf("remove research state: %v", err)
+		}
+		if err := os.Mkdir(statePath, 0o700); err != nil {
+			t.Fatalf("replace research state with directory: %v", err)
+		}
+	}
+	_, err := ensureArchitectureSynthesis(
+		context.Background(), bundle, runDir, "revision",
+		"openai-compatible/bearer", "fixture-model", provider,
+	)
+	if err == nil {
+		t.Fatal("accepted synthesis unexpectedly survived research-state failure")
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("accepted run synthesis remains after state failure: %v", statErr)
+	}
 }
 
 func (stub *architectureSynthesisStub) ComponentSynthesisPromptJSON(prompt componentmap.SynthesisPrompt) ([]byte, error) {
@@ -226,13 +265,13 @@ func TestEnsureArchitectureSynthesisCacheMissesAcrossProviderEndpoints(t *testin
 	}
 }
 
-func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T) {
+func TestEnsureArchitectureSynthesisCachesByRequestedOutputLanguage(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
 	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
 	runsDir := t.TempDir()
-	run := func(name string) architectureSynthesisOutcome {
+	run := func(name, language string) architectureSynthesisOutcome {
 		t.Helper()
 		runDir := filepath.Join(runsDir, name)
 		if err := os.Mkdir(runDir, 0o700); err != nil {
@@ -246,7 +285,10 @@ func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T
 			"openai-compatible/bearer",
 			"test-model",
 			provider,
-			architectureSynthesisOptions{providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
+			architectureSynthesisOptions{
+				providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+				outputLanguage:         language,
+			},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -254,20 +296,28 @@ func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T
 		return outcome
 	}
 
-	if outcome := run("canonical"); outcome.Cached {
+	if outcome := run("english-cold", "en"); outcome.Cached {
 		t.Fatalf("first canonical outcome = %#v, want provider call", outcome)
 	}
-	if outcome := run("english-render"); !outcome.Cached {
+	if outcome := run("english-warm", "en"); !outcome.Cached {
 		t.Fatalf("English presentation source = %#v, want canonical cache replay", outcome)
 	}
-	if outcome := run("russian-render"); !outcome.Cached {
-		t.Fatalf("Russian presentation source = %#v, want canonical cache replay", outcome)
+	if outcome := run("russian-cold", "ru"); outcome.Cached {
+		t.Fatalf("Russian presentation source = %#v, want language-isolated provider call", outcome)
 	}
-	if provider.calls != 1 {
-		t.Fatalf("provider calls = %d, want one canonical English call", provider.calls)
+	if outcome := run("russian-warm", "ru"); !outcome.Cached {
+		t.Fatalf("Russian presentation source = %#v, want Russian cache replay", outcome)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one English and one Russian call", provider.calls)
+	}
+	if len(provider.prompts) != 2 ||
+		strings.Contains(provider.prompts[0].System, "prose in Russian") ||
+		!strings.Contains(provider.prompts[1].System, "name and description prose in Russian") {
+		t.Fatalf("provider prompts = %#v", provider.prompts)
 	}
 
-	saved, err := os.ReadFile(filepath.Join(runsDir, "russian-render", report.ArchitectureSynthesisFile))
+	saved, err := os.ReadFile(filepath.Join(runsDir, "russian-warm", report.ArchitectureSynthesisFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,8 +325,8 @@ func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T
 	if err := json.Unmarshal(saved, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.Call == nil || record.Call.Metadata.OutputLanguage != "en" {
-		t.Fatalf("canonical cached record metadata = %#v", record.Call)
+	if record.Call == nil || record.Call.Metadata.OutputLanguage != "ru" {
+		t.Fatalf("Russian cached record metadata = %#v", record.Call)
 	}
 }
 
@@ -319,7 +369,7 @@ func TestEnsureArchitectureSynthesisNoCacheCallsProviderPerRun(t *testing.T) {
 	}
 }
 
-func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutput(t *testing.T) {
+func TestEnsureArchitectureSynthesisRejectsInvalidOutputWithoutPublishingOrCachingIt(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
@@ -329,26 +379,37 @@ func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutpu
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	staleRunPath := filepath.Join(runDir, report.ArchitectureSynthesisFile)
+	if err := os.WriteFile(staleRunPath, []byte("stale accepted record\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	outcome, err := ensureArchitectureSynthesis(
 		context.Background(), bundle, runDir, "revision-invalid",
 		"openai-compatible/bearer", "test-model", provider,
 	)
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, errArchitectureSynthesisRejected) {
+		t.Fatalf("ensureArchitectureSynthesis() error = %v, want closed rejection", err)
 	}
 	if outcome.FallbackReason != componentmap.FallbackRejectedMalformed || provider.calls != 1 {
 		t.Fatalf("outcome = %#v, calls = %d", outcome, provider.calls)
 	}
-	saved, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisFile))
+	if _, statErr := os.Stat(staleRunPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("rejected architecture artifact exists: %v", statErr)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, err); err != nil {
+		t.Fatal(err)
+	}
+	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	landscape, err := componentmap.ReplaySynthesis(bundle, "revision-invalid", saved)
-	if err != nil {
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusJSON, &status); err != nil {
 		t.Fatal(err)
 	}
-	if !landscape.Fallback || landscape.FallbackReason != componentmap.FallbackRejectedMalformed {
-		t.Fatalf("fallback landscape = %#v", landscape)
+	if status.State != report.ArchitectureSynthesisFailed || status.ErrorCode != "invalid_response" ||
+		!status.ProposalRejected || status.FallbackSelected || status.FallbackReason != "" {
+		t.Fatalf("closed rejection status = %#v", status)
 	}
 	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, architectureSynthesisCacheDirectory, "*.json"))
 	if err != nil {
@@ -365,7 +426,22 @@ func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutpu
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, cacheKey+".json"), saved, 0o600); err != nil {
+	fallback, err := componentmap.RecordSynthesisResponse(
+		bundle,
+		"revision-invalid",
+		"openai-compatible/bearer",
+		"test-model",
+		0,
+		[]byte("not json"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedFallback, err := json.Marshal(fallback.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, cacheKey+".json"), savedFallback, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	provider.response = architectureSynthesisTestResponse(t, bundle)
@@ -504,6 +580,70 @@ func TestPersistArchitectureSynthesisStatusRetainsNonResourceFailure(t *testing.
 	}
 }
 
+func TestArchitectureSemanticFailureIsPublishableOnlyAfterDurableFailedStatus(t *testing.T) {
+	cause := &architectureResponseRejected{
+		cause: errors.New("architecture synthesis: validate response: malformed fixture"),
+	}
+	outcome := architectureSynthesisOutcome{
+		InputBytes: 1200, Attempted: true,
+		ValidationOutcome: componentmap.ValidationRejected,
+	}
+
+	t.Run("durable failed status permits continuation", func(t *testing.T) {
+		runDir := t.TempDir()
+		failure := persistAndClassifyArchitectureSynthesisStatus(runDir, outcome, cause)
+		if !isPublishableArchitectureFailure(failure) ||
+			!errors.Is(failure, errArchitectureSynthesisRejected) {
+			t.Fatalf("durably recorded semantic failure = %T / %v", failure, failure)
+		}
+		encoded, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status report.ArchitectureSynthesisStatus
+		if err := json.Unmarshal(encoded, &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.State != report.ArchitectureSynthesisFailed || !status.ProposalRejected ||
+			status.ProposalAccepted {
+			t.Fatalf("durable failed Architecture status = %#v", status)
+		}
+	})
+
+	t.Run("status write failure is terminal", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		failure := persistAndClassifyArchitectureSynthesisStatus(runDir, outcome, cause)
+		if failure == nil || isPublishableArchitectureFailure(failure) ||
+			!errors.Is(failure, errArchitectureSynthesisRejected) {
+			t.Fatalf("status persistence failure = %T / %v", failure, failure)
+		}
+	})
+
+	t.Run("durable live provider failure permits local Canvas", func(t *testing.T) {
+		providerCause := &architectureProviderCallFailed{
+			cause: errors.New("architecture synthesis: live provider unavailable"),
+		}
+		failure := persistAndClassifyArchitectureSynthesisStatus(
+			t.TempDir(), outcome, providerCause,
+		)
+		if !isPublishableArchitectureFailure(failure) || !errors.Is(failure, providerCause) {
+			t.Fatalf("durable provider failure = %T / %v", failure, failure)
+		}
+	})
+
+	t.Run("provider setup failure remains terminal", func(t *testing.T) {
+		failure := persistAndClassifyArchitectureSynthesisStatus(
+			t.TempDir(), outcome, errors.New("architecture synthesis: provider unavailable"),
+		)
+		if failure == nil || isPublishableArchitectureFailure(failure) {
+			t.Fatalf("provider setup failure = %T / %v", failure, failure)
+		}
+	})
+}
+
 func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -524,12 +664,13 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		outcome    architectureSynthesisOutcome
-		accepted   bool
-		normalized bool
-		rejected   bool
-		fallback   bool
+		name         string
+		outcome      architectureSynthesisOutcome
+		accepted     bool
+		normalized   bool
+		rejected     bool
+		fallback     bool
+		synthesisErr error
 	}{
 		{
 			name: "accepted",
@@ -556,7 +697,7 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 			accepted: true, normalized: true,
 		},
 		{
-			name: "rejected fallback",
+			name: "rejected enrichment preserves local canvas",
 			outcome: architectureSynthesisOutcome{
 				ProviderCallSucceeded: true,
 				ResponseParsed:        true,
@@ -566,20 +707,23 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 				FallbackSelected:      true,
 				FallbackReason:        componentmap.FallbackRejectedUnknownAnchor,
 			},
-			rejected: true, fallback: true,
+			rejected: true, synthesisErr: errArchitectureSynthesisRejected,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			status := architectureSynthesisStatus(test.outcome, nil)
+			status := architectureSynthesisStatus(test.outcome, test.synthesisErr)
 			if err := status.Validate(); err != nil {
 				t.Fatalf("Validate() error = %v; status = %#v", err, status)
 			}
 			if status.ProposalAccepted != test.accepted || status.ProposalNormalized != test.normalized ||
 				status.ProposalRejected != test.rejected || status.FallbackSelected != test.fallback {
 				t.Fatalf("status = %#v", status)
+			}
+			if test.synthesisErr != nil && (status.ArchitectureSource != "" || status.ArchitectureLevel != 0) {
+				t.Fatalf("failed enrichment claimed visible Architecture ownership: %#v", status)
 			}
 		})
 	}
@@ -622,6 +766,50 @@ func TestEnsureArchitectureSynthesisRefetchesCorruptSavedRecord(t *testing.T) {
 	}
 	if _, err := componentmap.ReplaySynthesis(bundle, "revision-corrupt", saved); err != nil {
 		t.Fatalf("replacement cache does not replay: %v", err)
+	}
+}
+
+func TestEnsureArchitectureSynthesisCachedResourceLimitIsTerminal(t *testing.T) {
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{
+		err: errors.New("resource-invalid cache must not call provider"),
+	}
+	runsDir := t.TempDir()
+	runDir := filepath.Join(runsDir, "run")
+	cacheDir := filepath.Join(runsDir, architectureSynthesisCacheDirectory)
+	for _, dir := range []string{runDir, cacheDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cacheKey := architectureSynthesisTestCacheKey(
+		t, bundle, "revision-resource-cache",
+		"openai-compatible/bearer", "test-model", provider,
+	)
+	cachePath := filepath.Join(cacheDir, cacheKey+".json")
+	if err := os.WriteFile(
+		cachePath,
+		bytes.Repeat([]byte{'x'}, modelresearch.SemanticRecordByteLimit+1),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ensureArchitectureSynthesis(
+		context.Background(), bundle, runDir, "revision-resource-cache",
+		"openai-compatible/bearer", "test-model", provider,
+	)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) || limitErr.Kind != modelresearch.ResourceLimitRecordBytes ||
+		limitErr.Limit != modelresearch.SemanticRecordByteLimit || provider.calls != 0 {
+		t.Fatalf("cached resource error/provider calls = %#v / %d / %v", limitErr, provider.calls, err)
+	}
+	if info, statErr := os.Stat(cachePath); statErr != nil ||
+		info.Size() != int64(modelresearch.SemanticRecordByteLimit+1) {
+		t.Fatalf("terminal resource cache was removed or changed: info=%#v err=%v", info, statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("resource-invalid cache was applied to run: %v", statErr)
 	}
 }
 
@@ -715,11 +903,43 @@ func TestEnsureArchitectureSynthesisCannotExceedFourSemanticCalls(t *testing.T) 
 		context.Background(), architectureSynthesisTestBundle(), runDir, "revision-budget",
 		"openai-compatible/bearer", "test-model", provider,
 	)
-	if err == nil || !strings.Contains(err.Error(), "call_budget_exhausted") {
-		t.Fatalf("error = %v, want call budget exhaustion", err)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) || limitErr.Stage != "architecture_synthesis" ||
+		limitErr.Kind != modelresearch.ResourceLimitSemanticCalls ||
+		limitErr.Limit != policy.MaxSemanticCalls || limitErr.Observed != policy.MaxSemanticCalls {
+		t.Fatalf("error = %#v / %v, want typed call budget exhaustion", limitErr, err)
 	}
 	if provider.calls != 0 {
 		t.Fatalf("provider calls = %d, want zero", provider.calls)
+	}
+}
+
+func TestArchitectureSynthesisBudgetFailuresAreTypedTerminalResources(t *testing.T) {
+	t.Parallel()
+	policy := modelresearch.DefaultPolicy()
+	tests := []struct {
+		name    string
+		reason  string
+		usage   modelresearch.Usage
+		request int
+		kind    modelresearch.ResourceLimitKind
+		limit   int
+		seen    int
+	}{
+		{name: "stage bytes", reason: "stage_byte_budget_exhausted", request: policy.Architecture.MaxRequestBytes + 1, kind: modelresearch.ResourceLimitRequestBytes, limit: policy.Architecture.MaxRequestBytes, seen: policy.Architecture.MaxRequestBytes + 1},
+		{name: "total bytes", reason: "total_byte_budget_exhausted", usage: modelresearch.Usage{RequestBytes: policy.MaxTotalRequestBytes}, request: 1, kind: modelresearch.ResourceLimitRequestBytes, limit: policy.MaxTotalRequestBytes, seen: policy.MaxTotalRequestBytes + 1},
+		{name: "semantic calls", reason: "call_budget_exhausted", usage: modelresearch.Usage{SemanticCalls: policy.MaxSemanticCalls}, request: 1, kind: modelresearch.ResourceLimitSemanticCalls, limit: policy.MaxSemanticCalls, seen: policy.MaxSemanticCalls},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var resourceErr *modelresearch.ResourceLimitError
+			err := architectureSynthesisBudgetError(test.reason, policy, test.usage, test.request)
+			if !errors.As(err, &resourceErr) || resourceErr.Stage != "architecture_synthesis" ||
+				resourceErr.Kind != test.kind || resourceErr.Limit != test.limit ||
+				resourceErr.Observed != test.seen || !resourceErr.ObservedKnown {
+				t.Fatalf("budget error = %#v / %v", resourceErr, err)
+			}
+		})
 	}
 }
 
@@ -757,6 +977,9 @@ func TestPrepareArchitectureSynthesisSupportsLandscapeWithoutFlowProof(t *testin
 	}
 	if provider.calls != 1 || outcome.InputBytes == 0 {
 		t.Fatalf("provider calls/outcome = %d / %#v, want one bounded synthesis", provider.calls, outcome)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, nil); err != nil {
+		t.Fatal(err)
 	}
 
 	replayed, err := report.ReadRunDir(runDir)

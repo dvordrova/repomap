@@ -18,32 +18,33 @@ import (
 )
 
 type RunMeta struct {
-	RunID                   string           `json:"run_id"`
-	CreatedAt               string           `json:"created_at"`
-	RepoName                string           `json:"repo_name"`
-	RepoPath                string           `json:"repo_path"`
-	Command                 string           `json:"command"`
-	Model                   string           `json:"model"`
-	Endpoint                string           `json:"endpoint"`
-	PromptVersion           string           `json:"prompt_version,omitempty"`
-	CompactContextBytes     int              `json:"compact_context_bytes,omitempty"`
-	ExternalRequestBytes    int              `json:"external_request_bytes,omitempty"`
-	ProviderRequestCount    int              `json:"provider_request_count,omitempty"`
-	CandidateDirectionCount int              `json:"candidate_direction_count,omitempty"`
-	AcceptedDirectionCount  int              `json:"accepted_direction_count,omitempty"`
-	RejectedDirectionCount  int              `json:"rejected_direction_count,omitempty"`
-	ProviderLatencyMillis   *int64           `json:"provider_latency_ms,omitempty"`
-	SurfaceDiscoveryRan     bool             `json:"surface_discovery_ran,omitempty"`
-	SurfaceDiscoveryCount   int              `json:"surface_discovery_count,omitempty"`
-	SurfaceDiscoveryMillis  *int64           `json:"surface_discovery_ms,omitempty"`
-	Warnings                []string         `json:"warnings,omitempty"`
-	SnapshotOnly            bool             `json:"snapshot_only"`
-	LLMBundleOnly           bool             `json:"llm_bundle_only"`
-	AuthMode                string           `json:"auth_mode,omitempty"`
-	TimeoutMillis           int64            `json:"timeout_ms,omitempty"`
-	MaxTokens               int              `json:"max_tokens,omitempty"`
-	EffectiveOptions        EffectiveOptions `json:"effective_options,omitempty"`
-	RequestAttempts         []RequestAttempt `json:"request_attempts,omitempty"`
+	RunID                      string           `json:"run_id"`
+	CreatedAt                  string           `json:"created_at"`
+	RepoName                   string           `json:"repo_name"`
+	RepoPath                   string           `json:"repo_path"`
+	Command                    string           `json:"command"`
+	Model                      string           `json:"model"`
+	Endpoint                   string           `json:"endpoint"`
+	PromptVersion              string           `json:"prompt_version,omitempty"`
+	CompactContextBytes        int              `json:"compact_context_bytes,omitempty"`
+	ExternalRequestBytes       int              `json:"external_request_bytes,omitempty"`
+	ProviderRequestCount       int              `json:"provider_request_count,omitempty"`
+	ProviderAccountingComplete bool             `json:"provider_accounting_complete,omitempty"`
+	CandidateDirectionCount    int              `json:"candidate_direction_count,omitempty"`
+	AcceptedDirectionCount     int              `json:"accepted_direction_count,omitempty"`
+	RejectedDirectionCount     int              `json:"rejected_direction_count,omitempty"`
+	ProviderLatencyMillis      *int64           `json:"provider_latency_ms,omitempty"`
+	SurfaceDiscoveryRan        bool             `json:"surface_discovery_ran,omitempty"`
+	SurfaceDiscoveryCount      int              `json:"surface_discovery_count,omitempty"`
+	SurfaceDiscoveryMillis     *int64           `json:"surface_discovery_ms,omitempty"`
+	Warnings                   []string         `json:"warnings,omitempty"`
+	SnapshotOnly               bool             `json:"snapshot_only"`
+	LLMBundleOnly              bool             `json:"llm_bundle_only"`
+	AuthMode                   string           `json:"auth_mode,omitempty"`
+	TimeoutMillis              int64            `json:"timeout_ms,omitempty"`
+	MaxTokens                  int              `json:"max_tokens,omitempty"`
+	EffectiveOptions           EffectiveOptions `json:"effective_options,omitempty"`
+	RequestAttempts            []RequestAttempt `json:"request_attempts,omitempty"`
 }
 
 type EffectiveOptions struct {
@@ -79,6 +80,7 @@ const (
 
 	SemanticStageOrientation       = "orientation"
 	SemanticStageNavigator         = "navigator"
+	SemanticStageAtlasStudy        = "atlas_study"
 	SemanticStageTargetedResearch  = "targeted_research"
 	SemanticStageArchitecture      = "architecture_synthesis"
 	SemanticStageGuidedTour        = "guided_tour"
@@ -491,6 +493,7 @@ func validSemanticStage(stage string) bool {
 	switch stage {
 	case SemanticStageOrientation,
 		SemanticStageNavigator,
+		SemanticStageAtlasStudy,
 		SemanticStageTargetedResearch,
 		SemanticStageArchitecture,
 		SemanticStageGuidedTour,

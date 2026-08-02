@@ -12,7 +12,9 @@ const (
 	ResourceLimitRequestBytes  = modelresearch.ResourceLimitRequestBytes
 	ResourceLimitResponseBytes = modelresearch.ResourceLimitResponseBytes
 	ResourceLimitRecordBytes   = modelresearch.ResourceLimitRecordBytes
+	ResourceLimitCatalogItems  = modelresearch.ResourceLimitCatalogItems
 	ResourceLimitOutputTokens  = modelresearch.ResourceLimitOutputTokens
+	ResourceLimitSemanticCalls = modelresearch.ResourceLimitSemanticCalls
 )
 
 type ResourceLimitError = modelresearch.ResourceLimitError

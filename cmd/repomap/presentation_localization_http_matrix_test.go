@@ -20,7 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/reportserver"
 )
 
-func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
+func TestAtlasFirstOrdinaryRunDoesNotCallLegacyPresentationLocalization(t *testing.T) {
 	clearLLMEnv(t)
 	repository := presentationLocalizationHTTPRepository(t)
 	orientationJSON := presentationLocalizationHTTPOrientation(t)
@@ -71,104 +71,23 @@ func TestPresentationLocalizationHTTPCallMatrix(t *testing.T) {
 	t.Setenv("REPOMAP_LLM_API_KEY", "matrix-test-key")
 	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
 
-	missBefore := calls.snapshot()
-	missDebugDir := t.TempDir()
-	calls.setCurrentDebugDir(missDebugDir)
-	missRunDir, missDebugDir := runPresentationLocalizationHTTPMatrix(
-		t,
-		repository,
-		"ru",
-		false,
-		missDebugDir,
-	)
-	miss := calls.snapshot().minus(missBefore)
-	if miss.orientation != 1 || miss.localization != 1 {
-		t.Fatalf(
-			"RU cache-miss HTTP calls = %#v, want one orientation and one localization",
-			miss,
+	for _, language := range []string{"ru", "en"} {
+		before := calls.snapshot()
+		debugDir := t.TempDir()
+		calls.setCurrentDebugDir(debugDir)
+		runDir, _ := runPresentationLocalizationHTTPMatrix(
+			t, repository, language, true, debugDir,
 		)
-	}
-	assertPresentationLocalizationRunMaxTokens(t, missRunDir, 64_000)
-	assertPresentationLocalizationHTTPSucceeded(t, missRunDir, false)
-
-	// The prompt-only client must be able to identify the cache entry before
-	// constructing the live bearer client. A valid hit therefore works with
-	// no API key and makes no HTTP request at all.
-	t.Setenv("REPOMAP_LLM_API_KEY", "")
-	hitBefore := calls.snapshot()
-	canonical, err := report.ReadRunDir(missRunDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	localizationData, prepared, err := preparePresentationLocalizationForRun(
-		missRunDir,
-		canonical,
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hit, err := localizePreparedPresentationForRun(
-		context.Background(),
-		missRunDir,
-		filepath.Join(missDebugDir, presentationLocalizationCacheDir),
-		false,
-		io.Discard,
-		localizationData,
-		prepared,
-	)
-	if err != nil {
-		t.Fatalf("cache-hit localizePresentationForRun() error = %v", err)
-	}
-	if hit.State != report.PresentationLocalizationSucceeded || !hit.CacheHit {
-		t.Fatalf("cache-hit outcome without API key = %#v", hit)
-	}
-	if hitCalls := calls.snapshot().minus(hitBefore); hitCalls != (presentationLocalizationHTTPCallCount{}) {
-		t.Fatalf("RU cache-hit HTTP calls = %#v, want zero", hitCalls)
-	}
-
-	t.Setenv("REPOMAP_LLM_API_KEY", "matrix-test-key")
-	noCacheBefore := calls.snapshot()
-	noCacheDebugDir := t.TempDir()
-	calls.setCurrentDebugDir(noCacheDebugDir)
-	noCacheRunDir, _ := runPresentationLocalizationHTTPMatrix(
-		t,
-		repository,
-		"ru",
-		true,
-		noCacheDebugDir,
-	)
-	noCacheCalls := calls.snapshot().minus(noCacheBefore)
-	if noCacheCalls.orientation != 1 || noCacheCalls.localization != 1 {
-		t.Fatalf(
-			"RU --no-cache HTTP calls = %#v, want one orientation and one localization",
-			noCacheCalls,
-		)
-	}
-	assertPresentationLocalizationHTTPSucceeded(t, noCacheRunDir, false)
-
-	englishBefore := calls.snapshot()
-	englishDebugDir := t.TempDir()
-	calls.setCurrentDebugDir(englishDebugDir)
-	englishRunDir, _ := runPresentationLocalizationHTTPMatrix(
-		t,
-		repository,
-		"en",
-		true,
-		englishDebugDir,
-	)
-	englishCalls := calls.snapshot().minus(englishBefore)
-	if englishCalls.orientation != 1 || englishCalls.localization != 0 {
-		t.Fatalf(
-			"EN HTTP calls = %#v, want one orientation and no localization",
-			englishCalls,
-		)
-	}
-	if _, err := os.Stat(filepath.Join(
-		englishRunDir,
-		report.PresentationLocalizationStatusFile,
-	)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("EN run wrote presentation localization status: %v", err)
+		got := calls.snapshot().minus(before)
+		if got != (presentationLocalizationHTTPCallCount{other: 1}) {
+			t.Fatalf(
+				"%s Atlas-first HTTP calls = %#v, want one Architecture request and no raw Orientation/localization",
+				language, got,
+			)
+		}
+		if _, err := os.Stat(filepath.Join(runDir, report.PresentationLocalizationStatusFile)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s Atlas-first run wrote legacy presentation localization status: %v", language, err)
+		}
 	}
 }
 
@@ -186,11 +105,6 @@ func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
 			name:           "representative earlier optional architecture stage",
 			terminalStage:  "architecture",
 			wantErrorStage: "architecture_synthesis",
-		},
-		{
-			name:           "presentation localization after optional stages",
-			terminalStage:  "localization",
-			wantErrorStage: "localization",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -284,16 +198,11 @@ func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
 				t.Fatalf("semantic call sequence = %v, want final %q", sequence, test.terminalStage)
 			}
 			if test.terminalStage == "architecture" {
-				if len(sequence) != 2 || sequence[0] != "orientation" {
+				if len(sequence) != 1 {
 					t.Fatalf(
-						"architecture-limit call sequence = %v, want [orientation architecture]",
+						"architecture-limit call sequence = %v, want [architecture]",
 						sequence,
 					)
-				}
-			} else {
-				count := calls.snapshot()
-				if count.orientation != 1 || count.localization != 1 {
-					t.Fatalf("localization-limit HTTP calls = %#v; sequence=%v", count, sequence)
 				}
 			}
 			if opened != 0 || served != 0 {

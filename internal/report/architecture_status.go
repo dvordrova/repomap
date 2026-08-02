@@ -8,11 +8,12 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 2
+	ArchitectureSynthesisStatusVersion = 3
 
-	ArchitectureSynthesisSucceeded = "succeeded"
-	ArchitectureSynthesisCached    = "cached"
-	ArchitectureSynthesisFailed    = "failed"
+	ArchitectureSynthesisSucceeded   = "succeeded"
+	ArchitectureSynthesisCached      = "cached"
+	ArchitectureSynthesisFailed      = "failed"
+	ArchitectureSynthesisUnavailable = "unavailable"
 )
 
 // ArchitectureSynthesisStatus records whether the optional conceptual
@@ -36,21 +37,32 @@ type ArchitectureSynthesisStatus struct {
 	NormalizationCount    int    `json:"normalization_count,omitempty"`
 	FallbackReason        string `json:"fallback_reason,omitempty"`
 	ErrorCode             string `json:"error_code,omitempty"`
+	UnavailableCode       string `json:"unavailable_code,omitempty"`
 }
 
 func (status ArchitectureSynthesisStatus) Validate() error {
-	if status.Version != 1 && status.Version != ArchitectureSynthesisStatusVersion {
+	if status.Version < 1 || status.Version > ArchitectureSynthesisStatusVersion {
 		return fmt.Errorf("unsupported architecture synthesis status version %d", status.Version)
 	}
 	switch status.State {
 	case ArchitectureSynthesisSucceeded, ArchitectureSynthesisCached:
-		if status.ErrorCode != "" {
+		if status.ErrorCode != "" || status.UnavailableCode != "" {
 			return fmt.Errorf("successful architecture synthesis status cannot contain an error code")
 		}
 	case ArchitectureSynthesisFailed:
-		if status.ErrorCode == "" {
+		if status.ErrorCode == "" || status.UnavailableCode != "" {
 			return fmt.Errorf("failed architecture synthesis status requires an error code")
 		}
+	case ArchitectureSynthesisUnavailable:
+		if status.Version < 3 || status.UnavailableCode != "offline" || status.ErrorCode != "" ||
+			status.PromptBytes != 0 || status.LatencyMillis != 0 || status.ProviderRequestCount != 0 ||
+			status.ProviderCallSucceeded || status.ResponseParsed || status.ProposalAccepted ||
+			status.ProposalNormalized || status.ProposalRejected || status.FallbackSelected ||
+			status.ArchitectureSource != "" || status.ArchitectureLevel != 0 ||
+			status.NormalizationCount != 0 || status.FallbackReason != "" {
+			return fmt.Errorf("unavailable architecture synthesis status is inconsistent")
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported architecture synthesis state %q", status.State)
 	}
@@ -70,7 +82,23 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		return fmt.Errorf("architecture proposal cannot be accepted and rejected")
 	}
 	if status.State == ArchitectureSynthesisFailed {
+		if status.Version >= 3 && (status.ProposalAccepted || status.ProposalNormalized ||
+			status.FallbackSelected || status.FallbackReason != "" ||
+			status.ArchitectureSource != "" || status.ArchitectureLevel != 0 ||
+			status.NormalizationCount != 0) {
+			return fmt.Errorf("failed architecture synthesis status cannot publish enrichment")
+		}
 		return nil
+	}
+	if status.Version >= 3 {
+		expectedRequests := 1
+		if status.State == ArchitectureSynthesisCached {
+			expectedRequests = 0
+		}
+		if status.ProviderRequestCount != expectedRequests || !status.ProposalAccepted ||
+			status.ProposalRejected || status.FallbackSelected || status.FallbackReason != "" {
+			return fmt.Errorf("accepted architecture synthesis status is inconsistent")
+		}
 	}
 	if !status.ProviderCallSucceeded {
 		return fmt.Errorf("completed architecture synthesis requires a successful provider response")
@@ -113,17 +141,17 @@ func architectureSynthesisUserWarning(status *ArchitectureSynthesisStatus) strin
 		return ""
 	}
 	if status.Version >= 2 && status.FallbackSelected && status.ProposalRejected {
-		return "The model architecture proposal was rejected by local validation; a deterministic local fallback is shown."
+		return "The model architecture proposal was rejected by local validation; the exact local Architecture Canvas is shown."
 	}
 	if status.State != ArchitectureSynthesisFailed {
 		return ""
 	}
 	switch status.ErrorCode {
 	case "empty_response":
-		return "Architecture map was not generated because the grouping request returned no content."
+		return "Model-assisted Architecture grouping was not generated because the request returned no content; the exact local Architecture Canvas is shown."
 	case "invalid_response":
-		return "Architecture map was not generated because the grouping response could not be validated."
+		return "Model-assisted Architecture grouping was not accepted because the response could not be validated; the exact local Architecture Canvas is shown."
 	default:
-		return "Architecture map was not generated because the grouping request failed."
+		return "Model-assisted Architecture grouping was not generated because the request failed; the exact local Architecture Canvas is shown."
 	}
 }

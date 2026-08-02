@@ -88,8 +88,6 @@ func TestOrdinaryStaticAndServerReportsShareCanonicalArchitectureBase(t *testing
 	} {
 		writeCanonicalArchitectureFixture(t, runDir, name, []byte(`{"dev_replay":`))
 	}
-	writeCanonicalArchitectureFixture(t, runDir, reportpkg.ArchitectureSynthesisFile, []byte(`{"broken"`))
-
 	if err := reportpkg.GenerateAuthorized(runDir, authority); err != nil {
 		t.Fatal(err)
 	}

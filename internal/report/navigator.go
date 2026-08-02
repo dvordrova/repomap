@@ -59,7 +59,7 @@ func readNavigatorReportProduct(
 	}
 	product := &NavigatorReportProduct{
 		Version: navigator.ProductVersion, State: status.State,
-		UnavailableCode: status.UnavailableCode,
+		UnavailableCode: status.UnavailableCode, FailureCode: status.FailureCode,
 	}
 
 	switch status.State {
@@ -123,10 +123,39 @@ func readNavigatorReportProduct(
 		}
 		selected := cloneNavigatorRecommendation(*result.Selected)
 		product.Recommendation = &selected
+	case navigator.ProductStateFailed:
+		if !publishableNavigatorFailure(status.FailureCode) {
+			return nil, fmt.Errorf("navigator report: failed status code %q is not publishable", status.FailureCode)
+		}
+		if resultPresent {
+			return nil, fmt.Errorf("navigator report: failed result must not have a recommendation artifact")
+		}
+		if !requestPresent {
+			return nil, fmt.Errorf("navigator report: failed result requires its exact request artifact")
+		}
+		request, readErr := readNavigatorRequest(root)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if err := navigatorRequestMatchesStatus(request, status); err != nil {
+			return nil, err
+		}
+		if err := navigator.ValidateRequestRecordAgainstAtlas(request, *atlas); err != nil {
+			return nil, fmt.Errorf("navigator report: request does not match repository Atlas: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("navigator report: status state %q is not publishable", status.State)
 	}
 	return product, nil
+}
+
+func publishableNavigatorFailure(code navigator.FailureCode) bool {
+	switch code {
+	case navigator.FailureProvider, navigator.FailureDecode, navigator.FailureReference:
+		return true
+	default:
+		return false
+	}
 }
 
 func readNavigatorResult(
