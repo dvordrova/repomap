@@ -422,7 +422,8 @@ End-to-end report acceptance:
 4. Confirm the worker registration and loop locations open only through the
    manifest-authorized local server.
 5. Confirm a legacy saved report without surface artifacts still renders.
-6. Run `./scripts/check.sh` and `./scripts/etcd_check.sh ../etcd`.
+6. Run focused Go tests plus a direct built-binary offline etcd run and inspect
+   its manifest/report artifacts.
 
 Acceptance completed against a temporary git copy of the committed worker
 fixture:

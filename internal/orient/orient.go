@@ -20,11 +20,16 @@ import (
 )
 
 type Options struct {
-	RepoPath                  string
-	SnapshotOnly              bool
-	LLMBundleOnly             bool
-	LLMRequestOnly            bool
-	OutputJSON                bool
+	RepoPath       string
+	SnapshotOnly   bool
+	LLMBundleOnly  bool
+	LLMRequestOnly bool
+	OutputJSON     bool
+	// AtlasFirst is the ordinary product local-artifact path. It stops before
+	// raw Orientation signal/bundle construction and every legacy semantic
+	// stage, while still publishing snapshot, surface, and Repository Atlas
+	// artifacts through the existing confined writer.
+	AtlasFirst                bool
 	Offline                   bool
 	NoCache                   bool
 	FlowCount                 int
@@ -82,7 +87,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		RepoPath: opts.RepoPath,
 	})
 
-	s, err := snapshot.Build(snapshot.Options{
+	s, err := snapshot.BuildContext(ctx, snapshot.Options{
 		RepoPath:            opts.RepoPath,
 		MaxReadmeBytes:      opts.MaxReadmeBytes,
 		MaxTreeLines:        opts.MaxTreeLines,
@@ -107,6 +112,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return append(snapshotJSON, '\n'), nil
 		}
 		return snapshotJSON, nil
+	}
+	if opts.AtlasFirst {
+		return runAtlasFirstLocalArtifacts(ctx, opts, s, snapshotJSON, requireArtifacts)
 	}
 	orientationSignals, orientationSignalTrace := collectOrientationSignals(s, opts)
 	operationalWarnings := discoverOperationalCandidates(&s, orientationSignals)
@@ -638,6 +646,133 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 
 	text := formatHumanReadable(report, opts.DebugDir, runID)
 	return []byte(text), nil
+}
+
+func runAtlasFirstLocalArtifacts(
+	ctx context.Context,
+	opts Options,
+	s snapshot.Snapshot,
+	snapshotJSON []byte,
+	requireArtifacts bool,
+) ([]byte, error) {
+	runID := opts.RunID
+	if runID == "" {
+		runID = debugdump.GenerateRunID(s.RepoName)
+	}
+	runMeta := debugdump.RunMeta{
+		RunID: runID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		RepoName: s.RepoName, RepoPath: opts.RepoPath, Command: "atlas-first",
+		EffectiveOptions: opts.EffectiveOptions,
+	}
+	report := combinedReport{
+		RepoName: s.RepoName, ExplainedFlows: []explainedFlow{}, Warnings: []string{},
+	}
+	var dw *debugdump.Writer
+	var err error
+	if opts.DebugDir != "" {
+		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
+		if err != nil {
+			if requireArtifacts {
+				return nil, fmt.Errorf("create required debug writer: %w", err)
+			}
+		} else {
+			defer dw.Close()
+			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required debug metadata: %w", err)
+			}
+			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required debug snapshot: %w", err)
+			}
+		}
+	}
+
+	var successfulSurfaceResult *surfacediscovery.Result
+	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
+		surfaceStarted := time.Now()
+		emitProgress(opts, ProgressEvent{Stage: ProgressSurfaceStarted, RepoName: s.RepoName})
+		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
+				Phase: progress.Phase, PhaseState: progress.State, Activity: progress.Detail,
+				CompletedCount: progress.Completed, TotalCount: progress.Total,
+				LatencyMillis: progress.ElapsedMillis,
+			})
+		}
+		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
+			ctx, surfaceOptions, surfaceDiscoveryInput(s.RepoName, s.GoFacts),
+		)
+		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
+			return nil, surfaceErr
+		}
+		if surfaceErr == nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			surfaceErr = surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		surfaceLatency := time.Since(surfaceStarted).Milliseconds()
+		runMeta.SurfaceDiscoveryRan = true
+		runMeta.SurfaceDiscoveryMillis = &surfaceLatency
+		runMeta.SurfaceDiscoveryCount = len(surfaceResult.Catalog.Triggers)
+		if surfaceErr != nil {
+			warning := formatSurfaceDiscoveryWarning(surfaceErr)
+			report.Warnings = append(report.Warnings, warning)
+			runMeta.Warnings = append(runMeta.Warnings, warning)
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfaceFailed, RepoName: s.RepoName,
+				Warning: warning, LatencyMillis: surfaceLatency,
+			})
+		} else {
+			successfulSurfaceResult = &surfaceResult
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfaceReady, RepoName: s.RepoName,
+				SurfaceCount: len(surfaceResult.Catalog.Triggers), LatencyMillis: surfaceLatency,
+			})
+		}
+		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
+	}
+	if dw != nil {
+		catalog := surfacediscovery.TriggerCatalog{}
+		if successfulSurfaceResult != nil {
+			catalog = successfulSurfaceResult.Catalog
+		}
+		atlasInput := goadapter.Input{RepositoryName: s.RepoName, Catalog: catalog}
+		if s.GoFacts != nil {
+			atlasInput.Facts = *s.GoFacts
+		}
+		atlas, err := goadapter.Project(atlasInput)
+		if err != nil {
+			return nil, fmt.Errorf("project repository Atlas: %w", err)
+		}
+		encoded, err := repositoryatlas.CanonicalJSON(atlas)
+		if err != nil {
+			return nil, fmt.Errorf("encode repository Atlas: %w", err)
+		}
+		if err := dw.WriteValidatedFile(
+			repositoryatlas.ArtifactFilename,
+			encoded,
+			func(saved []byte) error {
+				_, validateErr := repositoryatlas.DecodeCanonicalJSON(saved)
+				return validateErr
+			},
+		); err != nil {
+			return nil, fmt.Errorf("write repository Atlas: %w", err)
+		}
+	}
+	if opts.OutputJSON {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append(out, '\n'), nil
+	}
+	return nil, nil
 }
 
 func orientationFileLimit(explicitLimit, inputCount int) int {

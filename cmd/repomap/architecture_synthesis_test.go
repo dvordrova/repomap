@@ -21,6 +21,16 @@ type architectureSynthesisStub struct {
 	response  []byte
 	err       error
 	maxTokens int
+	endpoint  string
+}
+
+func (stub *architectureSynthesisStub) ArchitectureProviderEndpointSHA256() string {
+	endpoint := stub.endpoint
+	if endpoint == "" {
+		endpoint = "https://architecture.test/v1/chat/completions"
+	}
+	digest, _ := modelresearch.ProviderEndpointSHA256(endpoint)
+	return digest
 }
 
 func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeMeasured(
@@ -68,7 +78,15 @@ func architectureSynthesisTestCacheKey(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return base + "-request-" + modelresearch.SHA256(request)
+	key, err := architectureSynthesisExternalCacheKey(
+		base,
+		provider.ArchitectureProviderEndpointSHA256(),
+		modelresearch.SHA256(request),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
 }
 
 func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
@@ -158,6 +176,54 @@ func TestEnsureArchitectureSynthesisCacheMissesAcrossConfiguredMaxTokens(t *test
 	if provider.calls != 2 {
 		t.Fatalf("provider calls = %d, want one call per exact max_tokens request", provider.calls)
 	}
+	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, architectureSynthesisCacheDirectory, "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cacheFiles) != 2 {
+		t.Fatalf("exact max_tokens cache variants = %v, want two coexisting records", cacheFiles)
+	}
+}
+
+func TestEnsureArchitectureSynthesisCacheMissesAcrossProviderEndpoints(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	response := architectureSynthesisTestResponse(t, bundle)
+	providerA := &architectureSynthesisStub{response: response, endpoint: "https://provider-a.test/v1/chat/completions"}
+	providerB := &architectureSynthesisStub{response: response, endpoint: "https://provider-b.test/v1/chat/completions"}
+	runsDir := t.TempDir()
+	run := func(name string, provider *architectureSynthesisStub) architectureSynthesisOutcome {
+		t.Helper()
+		runDir := filepath.Join(runsDir, name)
+		if err := os.MkdirAll(runDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		outcome, err := ensureArchitectureSynthesis(
+			context.Background(), bundle, runDir, "revision-endpoint",
+			"openai-compatible/bearer", "test-model", provider,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return outcome
+	}
+
+	if first := run("a-cold", providerA); first.Cached {
+		t.Fatalf("provider A cold outcome = %#v", first)
+	}
+	if warm := run("a-warm", providerA); !warm.Cached {
+		t.Fatalf("provider A warm outcome = %#v", warm)
+	}
+	if first := run("b-cold", providerB); first.Cached {
+		t.Fatalf("provider B reused provider A response: %#v", first)
+	}
+	if warm := run("b-warm", providerB); !warm.Cached {
+		t.Fatalf("provider B warm outcome = %#v", warm)
+	}
+	if providerA.calls != 1 || providerB.calls != 1 {
+		t.Fatalf("provider calls A/B = %d/%d, want one cold call each", providerA.calls, providerB.calls)
+	}
 }
 
 func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T) {
@@ -180,7 +246,7 @@ func TestEnsureArchitectureSynthesisCachesOneCanonicalEnglishResult(t *testing.T
 			"openai-compatible/bearer",
 			"test-model",
 			provider,
-			architectureSynthesisOptions{},
+			architectureSynthesisOptions{providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -229,7 +295,7 @@ func TestEnsureArchitectureSynthesisNoCacheCallsProviderPerRun(t *testing.T) {
 		outcome, err := ensureArchitectureSynthesisWithOptions(
 			context.Background(), bundle, dir, "revision-one",
 			"openai-compatible/bearer", "test-model", provider,
-			architectureSynthesisOptions{disableCache: true},
+			architectureSynthesisOptions{disableCache: true, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -258,7 +324,8 @@ func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutpu
 
 	bundle := architectureSynthesisTestBundle()
 	provider := &architectureSynthesisStub{response: []byte("not json")}
-	runDir := filepath.Join(t.TempDir(), "run")
+	runsDir := t.TempDir()
+	runDir := filepath.Join(runsDir, "run-one")
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +349,53 @@ func TestEnsureArchitectureSynthesisPersistsDeterministicFallbackForInvalidOutpu
 	}
 	if !landscape.Fallback || landscape.FallbackReason != componentmap.FallbackRejectedMalformed {
 		t.Fatalf("fallback landscape = %#v", landscape)
+	}
+	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, architectureSynthesisCacheDirectory, "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cacheFiles) != 0 {
+		t.Fatalf("rejected local fallback entered shared cache: %v", cacheFiles)
+	}
+
+	cacheKey := architectureSynthesisTestCacheKey(
+		t, bundle, "revision-invalid", "openai-compatible/bearer", "test-model", provider,
+	)
+	cacheDir := filepath.Join(runsDir, architectureSynthesisCacheDirectory)
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, cacheKey+".json"), saved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider.response = architectureSynthesisTestResponse(t, bundle)
+	secondRun := filepath.Join(runsDir, "run-two")
+	if err := os.Mkdir(secondRun, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	refetched, err := ensureArchitectureSynthesis(
+		context.Background(), bundle, secondRun, "revision-invalid",
+		"openai-compatible/bearer", "test-model", provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refetched.Cached || refetched.FallbackSelected || provider.calls != 2 {
+		t.Fatalf("rejected shared record was reused: outcome=%#v calls=%d", refetched, provider.calls)
+	}
+	thirdRun := filepath.Join(runsDir, "run-three")
+	if err := os.Mkdir(thirdRun, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	warm, err := ensureArchitectureSynthesis(
+		context.Background(), bundle, thirdRun, "revision-invalid",
+		"openai-compatible/bearer", "test-model", provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !warm.Cached || provider.calls != 2 {
+		t.Fatalf("accepted replacement was not reusable: outcome=%#v calls=%d", warm, provider.calls)
 	}
 }
 
@@ -561,7 +675,7 @@ func TestEnsureArchitectureSynthesisRefetchesLanguageUnknownActiveCache(t *testi
 		"openai-compatible/bearer",
 		"test-model",
 		provider,
-		architectureSynthesisOptions{},
+		architectureSynthesisOptions{providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -707,7 +821,7 @@ func TestPrepareArchitectureSynthesisSupportsOnePackageLibrary(t *testing.T) {
 	outcome, err := prepareArchitectureSynthesisWithOptions(
 		context.Background(), runDir, "revision-one-package",
 		"openai-compatible/bearer", "test-model", provider,
-		architectureSynthesisOptions{disableCache: true},
+		architectureSynthesisOptions{disableCache: true, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 	)
 	if err != nil {
 		t.Fatal(err)

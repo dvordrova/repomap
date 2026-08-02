@@ -110,6 +110,16 @@ var interestingWords = []string{
 }
 
 func Build(opts Options) (Snapshot, error) {
+	return BuildContext(context.Background(), opts)
+}
+
+func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
 	if opts.MaxReadmeBytes <= 0 {
 		opts.MaxReadmeBytes = 20000
 	}
@@ -119,14 +129,7 @@ func Build(opts Options) (Snapshot, error) {
 	if opts.MaxInterestingFiles <= 0 {
 		opts.MaxInterestingFiles = 200
 	}
-	if opts.MaxGoPkgs <= 0 {
-		opts.MaxGoPkgs = 300
-	}
-	if opts.MaxGoEdges <= 0 {
-		opts.MaxGoEdges = 500
-	}
-
-	listing, err := gitfiles.ListWithModes(opts.RepoPath)
+	listing, err := gitfiles.ListWithModesContext(ctx, opts.RepoPath)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -172,9 +175,13 @@ func Build(opts Options) (Snapshot, error) {
 	s.Readme = readReadme(opts.RepoPath, analysisFiles, opts.MaxReadmeBytes)
 
 	if s.Go.GoModExists || hasGoFiles(analysisFiles) {
-		facts, err := gofacts.Load(context.Background(), opts.RepoPath, analysisFiles, opts.MaxGoPkgs, opts.MaxGoEdges)
+		facts, err := gofacts.Load(ctx, opts.RepoPath, analysisFiles, opts.MaxGoPkgs, opts.MaxGoEdges)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return Snapshot{}, ctxErr
+			}
 			s.GoFacts = &gofacts.Facts{
+				Coverage: gofacts.Coverage{State: gofacts.CoverageUnavailable},
 				Warnings: []string{fmt.Sprintf("go facts load failed: %v", err)},
 			}
 		} else {

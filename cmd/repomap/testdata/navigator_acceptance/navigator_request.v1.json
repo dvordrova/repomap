@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "atlas_sha256": "34da75182d56fd6d581a66184012bbc75acc770f4ec0f0b6d4a558dae5617043",
+  "wire_sha256": "7ff07dcc36fb068d5a1c41f74d63caa8f8d309a81c0f17897dcd5546916c0da1",
+  "catalog_sha256": "20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d",
+  "catalog_ref": "navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d",
+  "question": "Which locally resolved application startup should a newcomer inspect first?",
+  "actions": [
+    {
+      "key": "startup-action-1bde289ccdba9bc76b3d658e",
+      "operation": "inspect exact startup evidence",
+      "surface": {
+        "kind": "surface",
+        "id": "trigger-ed9e5f67825f43d40c3f6028"
+      },
+      "application_operation": {
+        "kind": "operation",
+        "id": "operation-f32ee0565fe429746fb6c2c7"
+      },
+      "relation_id": "relation-4dfe6eef63793b759ffe9d4f",
+      "evidence_ids": [
+        "evidence-51e48b24d651beaf4a12028d"
+      ]
+    }
+  ],
+  "wire_json": "{\"version\":1,\"catalog_ref\":\"navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d\",\"question\":\"Which locally resolved application startup should a newcomer inspect first?\",\"scope_ref\":\"u3\",\"units\":[{\"ref\":\"u1\",\"kind\":\"module\",\"label\":\"example.com/navigator-acceptance\",\"parent_ref\":\"u3\"},{\"ref\":\"u2\",\"kind\":\"app\",\"label\":\"example.com/navigator-acceptance\",\"parent_ref\":\"u1\"},{\"ref\":\"u3\",\"kind\":\"repository\",\"label\":\"example.com/navigator-acceptance\"}],\"entities\":[{\"ref\":\"o1\",\"kind\":\"operation\",\"role\":\"application_start\",\"unit_ref\":\"u2\"},{\"ref\":\"s1\",\"kind\":\"surface\",\"role\":\"process_entry\",\"unit_ref\":\"u2\"}],\"seed_refs\":[\"s1\"],\"direct_trails\":[{\"ref\":\"t1\",\"source_ref\":\"s1\",\"target_ref\":\"o1\",\"kind\":\"exposes\",\"phase\":\"startup\",\"authority\":\"resolved\",\"evidence_refs\":[\"e1\"]}],\"intersections\":[],\"evidence\":[{\"ref\":\"e1\",\"subject_refs\":[\"o1\",\"s1\"],\"exact_locator\":true}],\"gaps\":[],\"actions\":[{\"ref\":\"a1\",\"operation\":\"inspect exact startup evidence\",\"target_ref\":\"s1\"}]}"
+}

@@ -131,26 +131,27 @@ type presentationLocalizationCacheObservation struct {
 }
 
 type presentationLocalizationOutcome struct {
-	State            string
-	ReasonCode       string
-	FailureStage     string
-	ValidationCode   string
-	UnsafeKind       string
-	TranslationIndex int
-	BatchTotal       int
-	BatchAttempted   int
-	BatchCompleted   int
-	FailedBatch      int
-	CacheHit         bool
-	CacheCorrupt     bool
-	CacheWriteErr    bool
-	RequestBytes     int
-	ResponseBytes    int
-	InputTokens      int
-	OutputTokens     int
-	Attempts         int
-	ProviderCalls    int
-	Batches          []presentationLocalizationBatchOutcome
+	State                   string
+	ReasonCode              string
+	FailureStage            string
+	ValidationCode          string
+	UnsafeKind              string
+	TranslationIndex        int
+	BatchTotal              int
+	BatchAttempted          int
+	BatchCompleted          int
+	FailedBatch             int
+	CacheHit                bool
+	CacheCorrupt            bool
+	CacheWriteErr           bool
+	RequestBytes            int
+	ResponseBytes           int
+	InputTokens             int
+	OutputTokens            int
+	Attempts                int
+	ProviderCalls           int
+	UnrequestedTranslations int
+	Batches                 []presentationLocalizationBatchOutcome
 }
 
 type presentationLocalizationExecutionOptions struct {
@@ -202,17 +203,18 @@ func presentationLocalizationErrorDetails(err error) (stage, validationCode, rea
 }
 
 type presentationLocalizationBatchOutcome struct {
-	Index                int
-	Count                int
-	FieldCount           int
-	PredictedOutputBytes int
-	CacheHit             bool
-	RequestBytes         int
-	ResponseBytes        int
-	InputTokens          int
-	OutputTokens         int
-	Attempts             int
-	ProviderCalls        int
+	Index                   int
+	Count                   int
+	FieldCount              int
+	PredictedOutputBytes    int
+	CacheHit                bool
+	RequestBytes            int
+	ResponseBytes           int
+	InputTokens             int
+	OutputTokens            int
+	Attempts                int
+	ProviderCalls           int
+	UnrequestedTranslations int
 }
 
 type presentationLocalizationBatchPlan struct {
@@ -558,7 +560,7 @@ func executePresentationLocalization(
 			)
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseSecretScan, report.LocalizationValidationUnsafeResponse)
 		}
-		projection, decodeErr := localization.DecodeRussianProviderResponse(
+		projection, responseDiagnostics, decodeErr := localization.DecodeRussianProviderResponseDetailed(
 			plan.Batch.Canonical,
 			plan.Batch.Input,
 			[]byte(providerResult.Content),
@@ -582,6 +584,9 @@ func executePresentationLocalization(
 			}
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseDecode, report.LocalizationValidationResponseDecode)
 		}
+		batchOutcome.UnrequestedTranslations = responseDiagnostics.UnrequestedTranslations
+		outcome.UnrequestedTranslations += responseDiagnostics.UnrequestedTranslations
+		outcome.Batches[len(outcome.Batches)-1] = batchOutcome
 		validation, validationErr := applyProjection(
 			plan.Batch.Canonical,
 			plan.Batch.Input,

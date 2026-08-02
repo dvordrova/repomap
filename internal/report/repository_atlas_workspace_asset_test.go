@@ -78,12 +78,14 @@ function run(report, language) {
   const unitCards = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-card"));
   const unitAuthorityBadges = unitCards.reduce((count, card) => count + walk(card).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-authority")).length, 0);
   const sourceButtons = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-source-action"));
+  const navigatorButtons = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-navigator-action"));
   const packageDisclosure = nodes.find((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-disclosure"));
   const packageCards = packageDisclosure ? walk(packageDisclosure).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-card")) : [];
   const packageSummary = packageDisclosure && walk(packageDisclosure).find((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-summary"));
   const section = root.children[0];
   const sectionClasses = section ? section.children.map((node) => String(node.className || "")) : [];
-  if (sourceButtons.length) sourceButtons[0].onclick();
+  if (navigatorButtons.length) navigatorButtons[0].onclick();
+  else if (sourceButtons.length) sourceButtons[0].onclick();
   return {
     units: shelf && shelf.units.length || 0,
     relations: shelf && shelf.relations.length || 0,
@@ -91,12 +93,14 @@ function run(report, language) {
     rendered: text(root),
     unitAuthorityBadges,
     sourceButtons: sourceButtons.length,
+    navigatorButtons: navigatorButtons.length,
     sourceState: api.workspaceStateSnapshot().sourceLocation,
     topologyCards: unitCards.length - packageCards.length,
     packageCards: packageCards.length,
     packageSummary: packageSummary ? String(packageSummary.textContent || "") : "",
     packageDisclosureOpen: !!(packageDisclosure && packageDisclosure.open),
     relationPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-relations-heading")),
+    navigatorPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-recommendation")),
     unitsPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-units-heading")),
     packagePosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-package-disclosure")),
   };
@@ -139,6 +143,24 @@ const report = {
 };
 const en = run(report, "en");
 const ru = run(report, "ru");
+const selectedReport = JSON.parse(JSON.stringify(report));
+selectedReport.navigator = {
+  version: 1, state: "selected",
+  recommendation: {
+    key: "startup-action-exact", operation: "inspect exact startup evidence",
+    surface: { kind: "surface", id: "entity-secret-surface" },
+    application_operation: { kind: "operation", id: "entity-secret-operation" },
+    relation_id: "relation-secret-covered", evidence_ids: ["evidence-secret-covered"],
+  },
+};
+const selectedEN = run(selectedReport, "en");
+const selectedRU = run(selectedReport, "ru");
+const offlineReport = JSON.parse(JSON.stringify(report));
+offlineReport.navigator = { version: 1, state: "unavailable", unavailable_code: "offline" };
+const offline = run(offlineReport, "en");
+const emptyReport = JSON.parse(JSON.stringify(report));
+emptyReport.navigator = { version: 1, state: "empty" };
+const empty = run(emptyReport, "en");
 const unavailable = run(Object.assign({}, report, { repository_atlas: null }), "en");
 const nonUserSourceReport = JSON.parse(JSON.stringify(report));
 nonUserSourceReport.user_sources = [];
@@ -171,7 +193,7 @@ for (let index = 0; index < 18; index++) {
 }
 const etcdEN = run(etcdReport, "en");
 const etcdRU = run(etcdReport, "ru");
-process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN, etcdRU }));
+process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, empty, unavailable, nonUserSource, etcdEN, etcdRU }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "repository-atlas-workspace-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -188,11 +210,13 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN
 		Rendered              string `json:"rendered"`
 		UnitAuthorityBadges   int    `json:"unitAuthorityBadges"`
 		SourceButtons         int    `json:"sourceButtons"`
+		NavigatorButtons      int    `json:"navigatorButtons"`
 		TopologyCards         int    `json:"topologyCards"`
 		PackageCards          int    `json:"packageCards"`
 		PackageSummary        string `json:"packageSummary"`
 		PackageDisclosureOpen bool   `json:"packageDisclosureOpen"`
 		RelationPosition      int    `json:"relationPosition"`
+		NavigatorPosition     int    `json:"navigatorPosition"`
 		UnitsPosition         int    `json:"unitsPosition"`
 		PackagePosition       int    `json:"packagePosition"`
 		SourceState           *struct {
@@ -204,6 +228,10 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN
 	var got struct {
 		EN            result `json:"en"`
 		RU            result `json:"ru"`
+		SelectedEN    result `json:"selectedEN"`
+		SelectedRU    result `json:"selectedRU"`
+		Offline       result `json:"offline"`
+		Empty         result `json:"empty"`
 		Unavailable   result `json:"unavailable"`
 		NonUserSource result `json:"nonUserSource"`
 		EtcdEN        result `json:"etcdEN"`
@@ -213,7 +241,7 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN
 		t.Fatalf("decode Repository Atlas workspace result: %v\n%s", err, output)
 	}
 	for language, current := range map[string]result{"en": got.EN, "ru": got.RU} {
-		if current.Units != 2 || current.UnitAuthorityBadges != current.Units || current.Relations != 1 || current.Omitted != 1 || current.SourceButtons != 1 {
+		if current.Units != 2 || current.UnitAuthorityBadges != 0 || current.Relations != 1 || current.Omitted != 1 || current.SourceButtons != 1 {
 			t.Fatalf("%s shelf counts = units %d unit authority badges %d relations %d omitted %d buttons %d", language, current.Units, current.UnitAuthorityBadges, current.Relations, current.Omitted, current.SourceButtons)
 		}
 		if current.SourceState == nil || current.SourceState.Path != "cmd/server/startup.go" || current.SourceState.Line != 10 || !current.SourceState.DrawerFirst {
@@ -228,15 +256,49 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN
 			}
 		}
 	}
-	for _, want := range []string{"Repository Atlas", "Casdoor", "identity server", "Authority: Observed · local facts", "Process entry surface", "Application start operation", "Authority: Resolved"} {
+	for _, want := range []string{"Repository Atlas", "Casdoor", "identity server", "Process entry surface", "Application start operation", "Authority: Resolved"} {
 		if !strings.Contains(got.EN.Rendered, want) {
 			t.Fatalf("English shelf missing %q in %q", want, got.EN.Rendered)
 		}
 	}
-	for _, want := range []string{"Атлас репозитория", "Casdoor", "identity server", "Основание: наблюдаемые локальные факты", "Точка входа процесса", "Операция запуска приложения", "Основание: локально подтверждено"} {
+	for _, want := range []string{"Атлас репозитория", "Casdoor", "identity server", "Точка входа процесса", "Операция запуска приложения", "Основание: локально подтверждено"} {
 		if !strings.Contains(got.RU.Rendered, want) {
 			t.Fatalf("Russian shelf missing %q in %q", want, got.RU.Rendered)
 		}
+	}
+	for language, current := range map[string]result{"en": got.SelectedEN, "ru": got.SelectedRU} {
+		if current.NavigatorButtons != 1 || current.NavigatorPosition < 0 ||
+			current.NavigatorPosition >= current.RelationPosition || current.SourceState == nil ||
+			current.SourceState.Path != "cmd/server/startup.go" || current.SourceState.Line != 10 ||
+			!current.SourceState.DrawerFirst {
+			t.Fatalf("%s selected Navigator state = %#v", language, current)
+		}
+		for _, forbidden := range []string{
+			"startup-action-exact", "entity-secret", "relation-secret", "evidence-secret",
+			"cmd/server/startup.go",
+		} {
+			if strings.Contains(current.Rendered, forbidden) {
+				t.Fatalf("%s Navigator leaked backend identity or path %q in %q", language, forbidden, current.Rendered)
+			}
+		}
+	}
+	for _, want := range []string{"Navigator", "Recommended starting point", "Inspect selected startup evidence"} {
+		if !strings.Contains(got.SelectedEN.Rendered, want) {
+			t.Fatalf("English Navigator missing %q in %q", want, got.SelectedEN.Rendered)
+		}
+	}
+	for _, want := range []string{"Навигатор", "Рекомендуемая точка старта", "Открыть свидетельство выбранного запуска"} {
+		if !strings.Contains(got.SelectedRU.Rendered, want) {
+			t.Fatalf("Russian Navigator missing %q in %q", want, got.SelectedRU.Rendered)
+		}
+	}
+	if got.Offline.NavigatorButtons != 0 ||
+		!strings.Contains(got.Offline.Rendered, "Navigator was not called because this run is offline") {
+		t.Fatalf("offline Navigator state = %#v", got.Offline)
+	}
+	if got.Empty.NavigatorButtons != 0 ||
+		!strings.Contains(got.Empty.Rendered, "No locally resolved application startup") {
+		t.Fatalf("empty Navigator state = %#v", got.Empty)
 	}
 	if !strings.Contains(got.Unavailable.Rendered, "Repository Atlas is unavailable for this run.") || got.Unavailable.SourceButtons != 0 {
 		t.Fatalf("unavailable Atlas state = %#v", got.Unavailable)
@@ -246,7 +308,7 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN
 	}
 	for language, current := range map[string]result{"en": got.EtcdEN, "ru": got.EtcdRU} {
 		if current.Units != 215 || current.TopologyCards != 32 || current.PackageCards != 183 ||
-			current.UnitAuthorityBadges != 215 || current.Relations != 18 || current.SourceButtons != 18 {
+			current.UnitAuthorityBadges != 0 || current.Relations != 18 || current.SourceButtons != 18 {
 			t.Fatalf("%s etcd shelf counts = %#v", language, current)
 		}
 		if current.PackageDisclosureOpen {

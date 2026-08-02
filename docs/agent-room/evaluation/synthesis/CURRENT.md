@@ -207,7 +207,7 @@ go test ./internal/report -run 'Test(ParseDiscoveredSurfaces|ProjectDiscoveredSu
 go test ./internal/experiment/surfacediscovery -run 'TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries' -count=1
 go test ./internal/flowproof/assemble -run 'Test.*(Process|Unavailable)' -count=1
 go test ./internal/orient -run TestReplaySavedSyncthingOrientationSeedsPartialTracesWithoutProvider -count=1
-./scripts/check.sh
+go vet ./internal/report/... ./internal/experiment/surfacediscovery/... ./internal/flowproof/assemble/... ./internal/orient/...
 ```
 
 The focused report, analyzer, assembler, and saved-orientation tests were run

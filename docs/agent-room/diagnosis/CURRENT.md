@@ -411,8 +411,8 @@ Regenerate offline analyzer artifacts at the pinned Restic revision and assert:
 
 ### Caddy retained-fixture check
 
-Revise `scripts/caddy_surface_check.sh` around semantics rather than old totals,
-then run it at the pinned revision. Assert:
+Use the focused Caddy surface fixtures and a direct built-binary run at the
+pinned revision. Assert:
 
 - no static wrapper contains `streaming.go:413 -> caddy.run$2`, and no server
   start inherits a `TrapSignals -> ... -> closeConnections -> run$2` chain;
@@ -428,8 +428,8 @@ then run it at the pinned revision. Assert:
   admitted dynamic receiver witness supports;
 - exact registrations are reached before any possible-candidate budget.
 
-Finally run `./scripts/check.sh`. No provider call or browser run is needed for
-this blocker diagnosis or its deterministic correction.
+Finally run the focused Go tests and `go vet` for changed packages. No provider
+call or browser run is needed for this blocker diagnosis or its deterministic correction.
 
 ## Risks
 

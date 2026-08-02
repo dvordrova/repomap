@@ -62,12 +62,10 @@ Run the focused checks before any model call:
 go test ./internal/experiment/surfacediscovery -run 'TestAnalyze(DirectRoute|RepositoryWrappersAndValues|BindsCapturedClosureFreeVar|CrossPackageWrapper|DoesNotCrossExecutableRoots|InterfaceTargets|CaddyAdminRouteProviders|DynamicAndNegativeControls|ImportReachableDetachedHTTPComposition)' -count=1
 go test ./internal/report -run 'Test(ParseDiscoveredSurfaces|ProjectDiscoveredSurfaces|.*Surface.*|.*Coherence.*)' -count=1
 go test ./internal/orient -run TestReplaySavedSyncthingOrientationSeedsPartialTracesWithoutProvider -count=1
-./scripts/caddy_surface_check.sh /Users/dvordrova/git/caddy
-./scripts/syncthing_surface_check.sh /Users/dvordrova/git/syncthing
-./scripts/check.sh
+go vet ./internal/surfacediscovery/... ./internal/report/... ./internal/orient/...
 ```
 
-The Caddy and Syncthing scripts should record their semantic failure honestly
+The Caddy and Syncthing fixtures should record their semantic failure honestly
 if their unchanged fixed-count/wrapper expectations still fail; do not relax
 them in this assessment. For Restic, use the retained offline command/artifact
 path and a semantic assertion over the changed wrapper chains; the prior
@@ -79,7 +77,7 @@ rerun.
 - **Core persisted canvas fixtures (Colima, Restic backup, Soft-Serve daemon):**
   skipped as separate external reruns. `7e901b7` changes analyzer admission,
   not FlowProof, report projection, canvas schema, or renderer code; existing
-  local report/canvas tests and `./scripts/check.sh` cover the unchanged shared
+  local report/canvas tests cover the unchanged shared
   contract. Restic remains selected above for its external surface behavior.
 - **Additional HTTP/Echo synthetic fixtures:** skipped. No HTTP projection or
   Echo production code changed; Caddy plus the existing wrapper/closure fixtures

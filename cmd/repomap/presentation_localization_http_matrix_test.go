@@ -252,7 +252,6 @@ func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
 			err := runDefaultWithDeps(repository, []string{
 				"--debug-dir", debugDir,
 				"--discover-surfaces=false",
-				"--guided-tour=false",
 				"--lang", "ru",
 				"--no-cache",
 			}, defaultRunDeps{
@@ -513,7 +512,6 @@ func runPresentationLocalizationHTTPMatrix(
 	args := []string{
 		"--debug-dir", debugDir,
 		"--discover-surfaces=false",
-		"--guided-tour=false",
 		"--lang", language,
 		"--no-open",
 		"--no-serve",

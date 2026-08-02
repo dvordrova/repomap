@@ -137,9 +137,9 @@ produced unversioned request/envelope/report directories has been removed; its
 measured failures remain recorded above. Any surviving older captured directory
 still lacks stable prompt, schema, parser, or evaluator version identifiers.
 
-`ollama_symbol_staged_experiment.sh` does record protocol, prompt, schema,
-reducer, evaluator, model, Ollama, options, and bundle-hash metadata. The older
-monolithic path was removed; any historical captures from it remain incomparable.
+The retired staged Ollama experiment recorded protocol, prompt, schema, reducer,
+evaluator, model, options, and bundle-hash metadata. Historical captures remain
+incomparable and the shell entrypoint is intentionally not maintained.
 
 The M3 quality task/result pair now records provider, model, prompt version,
 capture precision, model-context bytes/hash, nullable provider-request
@@ -158,8 +158,8 @@ from a post-parser `normalized_report`. Evaluator v3 rejects both an ambiguous
 many-candidate match and a drill-down path unrelated to every selected
 orientation candidate. Request preview and the live
 client now share the same compact serializer;
-`scripts/quality_capture_meta.sh` removes the artifact-only terminal newline
-where present and derives byte-identical context/request hashes without exposing
+The retired capture helper removed the artifact-only terminal newline where
+present and derived byte-identical context/request hashes without exposing
 credentials. The k6 orientation/source latencies were not instrumented, so they
 remain `null` rather than being reconstructed from filesystem timestamps. The
 compact request/context bodies remain ignored local capture artifacts; offline
@@ -167,11 +167,9 @@ replay pins the recorded values in its baseline test but cannot independently
 recompute them from the five committed replay artifacts.
 
 Future orientation and source runs retain measured provider/source-call latency
-in their ignored metadata. `scripts/quality_preflight.sh` also fails before
-network use when the exact symbol path is absent from the bounded orientation
-request, and records clean revision/toolchain plus exact context and request
-hashes for the linked target. It deliberately does not invent raw model
-responses or a passing task manifest.
+in their ignored metadata. The preflight behavior remains a testable contract:
+fail before network use when the exact symbol path is absent from bounded model
+context, and never invent raw responses or a passing task manifest.
 
 **Done when:** experiment metadata identifies provider plus stable prompt, schema,
 parser, and evaluator versions, so results remain comparable after any of those

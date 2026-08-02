@@ -45,13 +45,13 @@ func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
 	provider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, false)}
 
 	first, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	second, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +72,46 @@ func TestEnsureGuidedTourCachesOnlyValidatedProposal(t *testing.T) {
 	}
 }
 
+func TestEnsureGuidedTourCacheMissesAcrossProviderEndpoints(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle := guidedTourTestBundle()
+	response := guidedTourTestProposal(t, bundle, false)
+	providerA := &guidedTourEditorStub{response: response}
+	providerB := &guidedTourEditorStub{response: response}
+	endpointA := guidedTourTestEndpointSHA256(t)
+	endpointB, err := modelresearch.ProviderEndpointSHA256("https://guided-tour-b.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(name string, provider *guidedTourEditorStub, endpointSHA string) guidedTourOutcome {
+		t.Helper()
+		runDir := filepath.Join(runsDir, name)
+		outcome, err := ensureGuidedTour(
+			context.Background(), bundle, runDir, "test", "fixture-model", provider, endpointSHA,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return outcome
+	}
+
+	if cold := run("a-cold", providerA, endpointA); cold.Cached {
+		t.Fatalf("provider A cold outcome = %#v", cold)
+	}
+	if warm := run("a-warm", providerA, endpointA); !warm.Cached {
+		t.Fatalf("provider A warm outcome = %#v", warm)
+	}
+	if cold := run("b-cold", providerB, endpointB); cold.Cached {
+		t.Fatalf("provider B reused provider A response: %#v", cold)
+	}
+	if warm := run("b-warm", providerB, endpointB); !warm.Cached {
+		t.Fatalf("provider B warm outcome = %#v", warm)
+	}
+	if providerA.calls != 1 || providerB.calls != 1 {
+		t.Fatalf("provider calls A/B = %d/%d, want one cold call each", providerA.calls, providerB.calls)
+	}
+}
+
 func TestEnsureGuidedTourSelfHealsSemanticallyInvalidCache(t *testing.T) {
 	runDir := filepath.Join(t.TempDir(), "run")
 	bundle := guidedTourTestBundle()
@@ -84,7 +124,7 @@ func TestEnsureGuidedTourSelfHealsSemanticallyInvalidCache(t *testing.T) {
 
 	invalidProvider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, true)}
 	if _, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", invalidProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", invalidProvider, guidedTourTestEndpointSHA256(t),
 	); err == nil {
 		t.Fatal("semantically invalid replacement was accepted")
 	}
@@ -97,7 +137,7 @@ func TestEnsureGuidedTourSelfHealsSemanticallyInvalidCache(t *testing.T) {
 
 	provider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, false)}
 	refetched, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +148,7 @@ func TestEnsureGuidedTourSelfHealsSemanticallyInvalidCache(t *testing.T) {
 
 	warmProvider := &guidedTourEditorStub{}
 	warm, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +174,7 @@ func TestEnsureGuidedTourCachesOneCanonicalEnglishStory(t *testing.T) {
 			"test",
 			"fixture-model",
 			provider,
-			guidedTourRunOptions{},
+			guidedTourRunOptions{providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 		)
 		if runErr != nil {
 			t.Fatal(runErr)
@@ -185,7 +225,7 @@ func TestEnsureGuidedTourNoCacheCallsProviderPerRun(t *testing.T) {
 		runDir := filepath.Join(runsDir, name)
 		outcome, err := ensureGuidedTourWithOptions(
 			context.Background(), bundle, runDir, "test", "fixture-model", provider,
-			guidedTourRunOptions{disableCache: true},
+			guidedTourRunOptions{disableCache: true, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -215,7 +255,7 @@ func TestEnsureGuidedTourRejectsInventedReferenceWithoutSavingIt(t *testing.T) {
 	provider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, true)}
 
 	if _, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	); err == nil {
 		t.Fatal("ensureGuidedTour() error = nil")
 	}
@@ -252,7 +292,7 @@ func TestEnsureGuidedTourReportsTypedPathLikeRejection(t *testing.T) {
 	provider := &guidedTourEditorStub{response: rejected}
 	outcome, runErr := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "fixture-model", provider,
-		guidedTourRunOptions{disableCache: true},
+		guidedTourRunOptions{disableCache: true, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 	)
 	if runErr == nil {
 		t.Fatal("path-like proposal was accepted")
@@ -273,7 +313,7 @@ func TestEnsureGuidedTourDoesNotRetryRejectedProposal(t *testing.T) {
 
 	outcome, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "fixture-model", provider,
-		guidedTourRunOptions{disableCache: true},
+		guidedTourRunOptions{disableCache: true, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 	)
 	if err == nil {
 		t.Fatal("rejected proposal was accepted")
@@ -300,7 +340,7 @@ func TestEnsureGuidedTourResourceLimitIsOneCallAndNeverCachedOrApplied(t *testin
 		},
 	}
 	outcome, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	var limitErr *deepseek.ResourceLimitError
 	if !errors.As(err, &limitErr) {
@@ -340,7 +380,7 @@ func TestEnsureGuidedTourUpgradesLegacyRunForBoundedFifthCall(t *testing.T) {
 	provider := &guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, false)}
 
 	if _, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +393,7 @@ func TestEnsureGuidedTourUpgradesLegacyRunForBoundedFifthCall(t *testing.T) {
 		t.Fatalf("accepted model research = %#v", accepted)
 	}
 	replayed, err := ensureGuidedTour(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatalf("cache replay at the consumed fifth-call budget: %v", err)
@@ -428,10 +468,21 @@ func guidedTourMonolithicCacheInput(
 			},
 			Stage: "guided_story_editor", PromptVersion: guidedtour.PromptVersion,
 			Profile: profile, Model: model,
-			EvidenceBundleHash: bundleSHA, PolicyVersion: policy.Version,
+			ProviderEndpointSHA256: guidedTourTestEndpointSHA256(t),
+			RequestSHA256:          modelresearch.SHA256(request),
+			EvidenceBundleHash:     bundleSHA, PolicyVersion: policy.Version,
 		},
 		Request: request, EvidenceBundleHash: bundleSHA,
 	}
+}
+
+func guidedTourTestEndpointSHA256(t *testing.T) string {
+	t.Helper()
+	digest, err := modelresearch.ProviderEndpointSHA256("https://guided-tour.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
 }
 
 func guidedTourTestProposal(t *testing.T, bundle guidedtour.Bundle, invalid bool) []byte {

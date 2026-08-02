@@ -1319,7 +1319,8 @@ was not retained; rejected cards expose diagnostics, not invented claim text.
 
 ## Slow/global tests deliberately skipped
 
-- ./scripts/check.sh
+- go test ./...
+- go vet ./...
 - repository-wide analysis and package loading
 - SSA, call graph, runtime-surface discovery, and the known slow surface run
 - model/provider calls and targeted probes

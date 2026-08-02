@@ -36,14 +36,5 @@ The repomap workflow's fixture/oracle/audit agents are separately constrained by
 agent contracts and edit permissions. Global permission is broader and should only be
 used because these are trusted local directories.
 
-## Automatic helper
-
-Run:
-
-```bash
-./repomap-opencode-parallel-workflow/install-global-permissions.sh
-```
-
-The helper safely creates or merges a strict JSON global config. It refuses to rewrite an
-existing JSONC file so it does not destroy your comments; in that case, copy the snippet
-manually.
+Repomap does not install or mutate this global configuration automatically.
+Apply the snippet manually after reviewing its security implications.

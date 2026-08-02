@@ -251,7 +251,11 @@ func TestValidateResponseJSONResolvesExactRefsAndRejectsRepair(t *testing.T) {
 		!reflect.DeepEqual(resolved.RelationIDs, []string{"relation-a-canonical"}) ||
 		!reflect.DeepEqual(resolved.EvidenceIDs, []string{"evidence-a-canonical"}) ||
 		!reflect.DeepEqual(resolved.GapKeys, []string{"missing-shutdown"}) ||
-		!reflect.DeepEqual(resolved.ActionKeys, []string{"inspect-evidence"}) {
+		!reflect.DeepEqual(resolved.ActionKeys, []string{"inspect-evidence"}) ||
+		!reflect.DeepEqual(resolved.Actions, []ResolvedAction{{
+			Key: "inspect-evidence", Operation: "inspect exact supporting evidence",
+			Target: repositoryatlas.EntityRef{Kind: repositoryatlas.EntitySurface, ID: "surface-a-canonical"},
+		}}) {
 		t.Fatalf("resolved response = %#v", resolved)
 	}
 

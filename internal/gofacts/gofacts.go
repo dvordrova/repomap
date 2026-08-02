@@ -23,27 +23,59 @@ type Facts struct {
 	Modules               []ModuleFact           `json:"modules"`
 	Packages              []PackageFact          `json:"packages"`
 	PackagesCount         int                    `json:"packages_count"`
+	RetainedPackagesCount int                    `json:"retained_packages_count"`
 	EntrypointPackages    []Entrypoint           `json:"entrypoint_packages"`
 	CommandTraces         []CommandTrace         `json:"command_traces,omitempty"`
 	ModuleSummaries       []ModuleSummary        `json:"module_summaries"`
 	OrientationCandidates []OrientationCandidate `json:"orientation_candidates"`
 	InternalEdges         []Edge                 `json:"internal_edges"`
 	ExternalImportsTop    []ExtImport            `json:"external_imports_top"`
+	Coverage              Coverage               `json:"coverage"`
 	Warnings              []string               `json:"warnings,omitempty"`
 }
 
+type CoverageState string
+
+const (
+	CoverageComplete    CoverageState = "complete"
+	CoveragePartial     CoverageState = "partial"
+	CoverageUnavailable CoverageState = "unavailable"
+)
+
+// Coverage describes exact local Go-fact collection, independently from any
+// later model-visible projection. Discovered counts describe successful local
+// enumeration; retained counts describe the bounded persisted rows.
+type Coverage struct {
+	State              CoverageState `json:"state"`
+	ModulesDiscovered  int           `json:"modules_discovered"`
+	ModulesAvailable   int           `json:"modules_available"`
+	ModulesUnavailable int           `json:"modules_unavailable"`
+	PackagesDiscovered int           `json:"packages_discovered"`
+	PackagesRetained   int           `json:"packages_retained"`
+	EdgesDiscovered    int           `json:"edges_discovered"`
+	EdgesRetained      int           `json:"edges_retained"`
+}
+
+type ModuleCoverage struct {
+	State              CoverageState `json:"state"`
+	PackagesDiscovered int           `json:"packages_discovered"`
+	PackagesRetained   int           `json:"packages_retained"`
+}
+
 type ModuleFact struct {
-	ID                 string         `json:"id"`
-	ModulePath         string         `json:"module_path"`
-	ModuleDir          string         `json:"module_dir"`
-	GoMod              string         `json:"go_mod,omitempty"`
-	Main               bool           `json:"main"`
-	DisplayName        string         `json:"display_name"`
-	Replacement        *ModuleSource  `json:"replacement,omitempty"`
-	Replacements       []ModuleSource `json:"replacements,omitempty"`
-	PackagesCount      int            `json:"packages_count"`
-	EntrypointPackages []Entrypoint   `json:"entrypoint_packages"`
-	Warnings           []string       `json:"warnings,omitempty"`
+	ID                    string         `json:"id"`
+	ModulePath            string         `json:"module_path"`
+	ModuleDir             string         `json:"module_dir"`
+	GoMod                 string         `json:"go_mod,omitempty"`
+	Main                  bool           `json:"main"`
+	DisplayName           string         `json:"display_name"`
+	Replacement           *ModuleSource  `json:"replacement,omitempty"`
+	Replacements          []ModuleSource `json:"replacements,omitempty"`
+	PackagesCount         int            `json:"packages_count"`
+	RetainedPackagesCount int            `json:"retained_packages_count"`
+	EntrypointPackages    []Entrypoint   `json:"entrypoint_packages"`
+	Coverage              ModuleCoverage `json:"coverage"`
+	Warnings              []string       `json:"warnings,omitempty"`
 }
 
 type ModuleSource struct {
@@ -129,6 +161,7 @@ type goListPackage struct {
 	ImportPath      string
 	Dir             string
 	Name            string
+	Incomplete      bool
 	GoFiles         []string
 	CompiledGoFiles []string
 	CgoFiles        []string
@@ -144,6 +177,7 @@ type goListPackage struct {
 	Imports         []string
 	Module          *goListModule
 	Error           *goListError
+	DepsErrors      []goListError
 }
 
 type goListModule struct {
@@ -163,6 +197,12 @@ type modulePkgMeta struct {
 	modulePath       string
 	pkgs             []goListPackage
 	entrypointsCount int
+}
+
+type selectedModulePackages struct {
+	key        string
+	entrypoint []PackageFact
+	remaining  []PackageFact
 }
 
 func DiscoverGoModules(fileList []string, repoPath string) []string {
@@ -194,11 +234,11 @@ func DiscoverGoModules(fileList []string, repoPath string) []string {
 }
 
 func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxEdges int) (*Facts, error) {
-	if maxPkgs <= 0 {
-		maxPkgs = 300
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if maxEdges <= 0 {
-		maxEdges = 500
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	absRepoPath, err := filepath.Abs(repoPath)
@@ -212,7 +252,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 
 	moduleDirs := DiscoverGoModules(fileList, resolvedRepoPath)
 	if len(moduleDirs) == 0 {
-		return &Facts{}, nil
+		return &Facts{Coverage: Coverage{State: CoverageComplete}}, nil
 	}
 	repoReader, err := reporead.New(resolvedRepoPath)
 	if err != nil {
@@ -226,18 +266,24 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	var allCommandTraces []CommandTrace
 	var topWarnings []string
 	modules := make([]ModuleFact, 0, len(moduleDirs))
-	totalPkgs := 0
+	availableModules := 0
 
 	modMetas := make([]modulePkgMeta, 0, len(moduleDirs))
 
 	for _, modRelDir := range moduleDirs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := verifyModuleGoMod(repoReader, modRelDir); err != nil {
 			warning := fmt.Sprintf("unsafe go.mod; skipping go list: %v", err)
 			topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
 			modules = append(modules, ModuleFact{
-				ModulePath: modRelDir,
-				ModuleDir:  modRelDir,
-				Warnings:   []string{warning},
+				ID:          moduleFactID(modRelDir, modRelDir),
+				ModulePath:  modRelDir,
+				ModuleDir:   modRelDir,
+				DisplayName: moduleDisplayName(modRelDir, modRelDir),
+				Coverage:    ModuleCoverage{State: CoverageUnavailable},
+				Warnings:    []string{warning},
 			})
 			continue
 		}
@@ -249,10 +295,14 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 
 		moduleInfo, err := runGoModule(ctx, absDir)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			topWarnings = append(topWarnings, fmt.Sprintf("module %s: go list module failed: %v", modRelDir, err))
 			modules = append(modules, ModuleFact{
 				ID: moduleFactID(modRelDir, modRelDir), ModulePath: modRelDir, ModuleDir: modRelDir,
 				DisplayName: moduleDisplayName(modRelDir, modRelDir),
+				Coverage:    ModuleCoverage{State: CoverageUnavailable},
 				Warnings:    []string{fmt.Sprintf("go list module failed: %v", err)},
 			})
 			continue
@@ -261,31 +311,30 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		moduleID := moduleFactID(modulePath, modRelDir)
 		pkgs, modWarnings, err := runGoList(ctx, absDir)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			topWarnings = append(topWarnings, fmt.Sprintf("module %s: go list failed: %v", modRelDir, err))
 			modules = append(modules, ModuleFact{
 				ID: moduleID, ModulePath: modulePath,
 				ModuleDir:   modRelDir,
 				DisplayName: moduleDisplayName(modulePath, modRelDir), Main: moduleInfo.Main,
+				Coverage: ModuleCoverage{State: CoverageUnavailable},
 				Warnings: []string{fmt.Sprintf("go list failed: %v", err)},
 			})
 			continue
 		}
-
-		remaining := maxPkgs - totalPkgs
-		if remaining <= 0 {
-			topWarnings = append(topWarnings, fmt.Sprintf("reached max packages (%d); skipping module %s", maxPkgs, modulePath))
-			break
-		}
-		if len(pkgs) > remaining {
-			topWarnings = append(topWarnings, fmt.Sprintf("truncated packages for module %s: kept %d of %d (max %d total)", modulePath, remaining, len(pkgs), maxPkgs))
-			pkgs = pkgs[:remaining]
-		}
-
-		totalPkgs += len(pkgs)
+		availableModules++
 		allPkgs = append(allPkgs, pkgs...)
 		for _, pkg := range pkgs {
 			_, moduleRelativeDir, packageDir, normalizeErr := normalizePackagePaths(resolvedRepoPath, absDir, pkg.Dir)
 			if normalizeErr != nil || pkg.ImportPath == "" {
+				warning := fmt.Sprintf("package %q has unavailable repository ownership", pkg.ImportPath)
+				if normalizeErr != nil {
+					warning = fmt.Sprintf("package %q has unavailable repository ownership: %v", pkg.ImportPath, normalizeErr)
+				}
+				modWarnings = append(modWarnings, warning)
+				topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
 				continue
 			}
 			displayPath := filepath.ToSlash(moduleRelativeDir)
@@ -328,7 +377,11 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 			Replacements:       readModuleReplacements(repoReader, resolvedRepoPath, modRelDir),
 			PackagesCount:      len(pkgs),
 			EntrypointPackages: modEntrypoints,
-			Warnings:           modWarnings,
+			Coverage: ModuleCoverage{
+				State:              coverageStateForWarnings(modWarnings),
+				PackagesDiscovered: len(pkgs),
+			},
+			Warnings: modWarnings,
 		})
 
 		modMetas = append(modMetas, modulePkgMeta{
@@ -342,26 +395,67 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	known := buildKnownSet(allPkgs)
 
 	edges := buildInternalEdges(allPkgs, known)
-	if len(edges) > maxEdges {
+	discoveredEdges := len(edges)
+	if maxEdges > 0 && len(edges) > maxEdges {
 		topWarnings = append(topWarnings, fmt.Sprintf("truncated internal edges: kept %d of %d (max %d)", maxEdges, len(edges), maxEdges))
 		edges = edges[:maxEdges]
 	}
 
 	extImports := buildExternalImports(allPkgs, known)
-	sort.Slice(packageFacts, func(i, j int) bool { return packageFacts[i].PackageDir < packageFacts[j].PackageDir })
+	discoveredPackageFacts := len(packageFacts)
+	packageFacts = selectPackageFacts(packageFacts, allEntrypoints, maxPkgs)
+	if maxPkgs > 0 && len(packageFacts) < discoveredPackageFacts {
+		topWarnings = append(topWarnings, fmt.Sprintf(
+			"retained %d of %d discovered packages under explicit max %d",
+			len(packageFacts), len(allPkgs), maxPkgs,
+		))
+	}
+	retainedByModule := make(map[string]int, len(modules))
+	for _, pkg := range packageFacts {
+		retainedByModule[pkg.ModuleID]++
+	}
+	for index := range modules {
+		module := &modules[index]
+		if module.Coverage.State == CoverageUnavailable {
+			continue
+		}
+		module.RetainedPackagesCount = retainedByModule[module.ID]
+		module.Coverage.PackagesRetained = module.RetainedPackagesCount
+		if module.RetainedPackagesCount < module.PackagesCount {
+			module.Coverage.State = CoveragePartial
+		}
+	}
 	moduleSummaries := buildModuleSummaries(modMetas, known)
 	orientationCandidates := buildOrientationCandidates(allEntrypoints)
+	coverage := Coverage{
+		State:              CoverageComplete,
+		ModulesDiscovered:  len(moduleDirs),
+		ModulesAvailable:   availableModules,
+		ModulesUnavailable: len(moduleDirs) - availableModules,
+		PackagesDiscovered: len(allPkgs),
+		PackagesRetained:   len(packageFacts),
+		EdgesDiscovered:    discoveredEdges,
+		EdgesRetained:      len(edges),
+	}
+	if availableModules == 0 {
+		coverage.State = CoverageUnavailable
+	} else if coverage.ModulesUnavailable > 0 || coverage.PackagesRetained < coverage.PackagesDiscovered ||
+		coverage.EdgesRetained < coverage.EdgesDiscovered || hasPartialModuleCoverage(modules) {
+		coverage.State = CoveragePartial
+	}
 
 	return &Facts{
 		Modules:               modules,
 		Packages:              packageFacts,
-		PackagesCount:         totalPkgs,
+		PackagesCount:         len(allPkgs),
+		RetainedPackagesCount: len(packageFacts),
 		EntrypointPackages:    allEntrypoints,
 		CommandTraces:         allCommandTraces,
 		ModuleSummaries:       moduleSummaries,
 		OrientationCandidates: orientationCandidates,
 		InternalEdges:         edges,
 		ExternalImportsTop:    extImports,
+		Coverage:              coverage,
 		Warnings:              topWarnings,
 	}, nil
 }
@@ -536,8 +630,18 @@ func parseGoListOutput(r io.Reader) ([]goListPackage, []string, error) {
 		} else if err != nil {
 			return nil, nil, fmt.Errorf("decode package %d: %w", len(pkgs), err)
 		}
+		if pkg.Incomplete {
+			warnings = append(warnings, fmt.Sprintf("package %s: go list facts are incomplete", pkg.ImportPath))
+		}
 		if pkg.Error != nil {
 			warnings = append(warnings, fmt.Sprintf("package %s: %s", pkg.ImportPath, pkg.Error.Err))
+		}
+		for _, dependencyError := range pkg.DepsErrors {
+			warnings = append(warnings, fmt.Sprintf(
+				"package %s dependency: %s",
+				pkg.ImportPath,
+				dependencyError.Err,
+			))
 		}
 		pkgs = append(pkgs, pkg)
 	}
@@ -616,6 +720,103 @@ func buildKnownSet(pkgs []goListPackage) map[string]struct{} {
 		known[p.ImportPath] = struct{}{}
 	}
 	return known
+}
+
+func coverageStateForWarnings(warnings []string) CoverageState {
+	if len(warnings) > 0 {
+		return CoveragePartial
+	}
+	return CoverageComplete
+}
+
+func hasPartialModuleCoverage(modules []ModuleFact) bool {
+	for _, module := range modules {
+		if module.Coverage.State == CoveragePartial {
+			return true
+		}
+	}
+	return false
+}
+
+func selectPackageFacts(values []PackageFact, entrypoints []Entrypoint, max int) []PackageFact {
+	ordered := append([]PackageFact(nil), values...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return packageFactLess(ordered[i], ordered[j])
+	})
+	if max <= 0 || len(ordered) <= max {
+		return ordered
+	}
+
+	entrypointPackages := make(map[string]struct{}, len(entrypoints))
+	for _, entrypoint := range entrypoints {
+		entrypointPackages[entrypoint.ModulePath+"\x00"+entrypoint.ImportPath] = struct{}{}
+	}
+	byModule := make(map[string]*selectedModulePackages)
+	for _, pkg := range ordered {
+		key := pkg.ModulePath + "\x00" + pkg.ModuleID
+		group := byModule[key]
+		if group == nil {
+			group = &selectedModulePackages{key: key}
+			byModule[key] = group
+		}
+		if _, ok := entrypointPackages[pkg.ModulePath+"\x00"+pkg.CanonicalPath]; ok {
+			group.entrypoint = append(group.entrypoint, pkg)
+		} else {
+			group.remaining = append(group.remaining, pkg)
+		}
+	}
+	groups := make([]*selectedModulePackages, 0, len(byModule))
+	for _, group := range byModule {
+		groups = append(groups, group)
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].key < groups[j].key })
+
+	selected := make([]PackageFact, 0, max)
+	selected = appendPackageRounds(selected, groups, max, true)
+	selected = appendPackageRounds(selected, groups, max, false)
+	sort.Slice(selected, func(i, j int) bool {
+		return packageFactLess(selected[i], selected[j])
+	})
+	return selected
+}
+
+func appendPackageRounds(
+	selected []PackageFact,
+	groups []*selectedModulePackages,
+	max int,
+	entrypoints bool,
+) []PackageFact {
+	for round := 0; len(selected) < max; round++ {
+		appended := false
+		for _, group := range groups {
+			values := group.remaining
+			if entrypoints {
+				values = group.entrypoint
+			}
+			if round >= len(values) {
+				continue
+			}
+			selected = append(selected, values[round])
+			appended = true
+			if len(selected) == max {
+				return selected
+			}
+		}
+		if !appended {
+			return selected
+		}
+	}
+	return selected
+}
+
+func packageFactLess(left, right PackageFact) bool {
+	if left.PackageDir != right.PackageDir {
+		return left.PackageDir < right.PackageDir
+	}
+	if left.ModuleID != right.ModuleID {
+		return left.ModuleID < right.ModuleID
+	}
+	return left.CanonicalPath < right.CanonicalPath
 }
 
 func buildEntrypointCandidates(pkgs []goListPackage, repoRoot string, moduleRoot string, modRelDir string, modulePath string) []Entrypoint {

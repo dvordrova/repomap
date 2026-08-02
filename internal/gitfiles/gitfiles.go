@@ -2,6 +2,7 @@ package gitfiles
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,7 +15,11 @@ type Listing struct {
 }
 
 func List(repoPath string) ([]string, error) {
-	listing, err := ListWithModes(repoPath)
+	return ListContext(context.Background(), repoPath)
+}
+
+func ListContext(ctx context.Context, repoPath string) ([]string, error) {
+	listing, err := ListWithModesContext(ctx, repoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -24,14 +29,24 @@ func List(repoPath string) ([]string, error) {
 // ListWithModes separates visible tracked paths from stage-0 regular files
 // that may be used as analysis inputs.
 func ListWithModes(repoPath string) (Listing, error) {
-	if err := verifyGitRepo(repoPath); err != nil {
+	return ListWithModesContext(context.Background(), repoPath)
+}
+
+func ListWithModesContext(ctx context.Context, repoPath string) (Listing, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := verifyGitRepoContext(ctx, repoPath); err != nil {
 		return Listing{}, err
 	}
 
-	cmd := safeCommand(repoPath, "ls-files", "--stage", "-z")
+	cmd := safeCommandContext(ctx, repoPath, "ls-files", "--stage", "-z")
 	cmd.Env = isolatedEnvironment(os.Environ())
 	out, err := cmd.Output()
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Listing{}, ctxErr
+		}
 		if ee, ok := err.(*exec.ExitError); ok {
 			return Listing{}, fmt.Errorf("git ls-files failed: %s", strings.TrimSpace(string(ee.Stderr)))
 		}
@@ -62,10 +77,17 @@ func parseIndexListing(data []byte) (Listing, error) {
 }
 
 func verifyGitRepo(repoPath string) error {
-	cmd := safeCommand(repoPath, "rev-parse", "--is-inside-work-tree")
+	return verifyGitRepoContext(context.Background(), repoPath)
+}
+
+func verifyGitRepoContext(ctx context.Context, repoPath string) error {
+	cmd := safeCommandContext(ctx, repoPath, "rev-parse", "--is-inside-work-tree")
 	cmd.Env = isolatedEnvironment(os.Environ())
 	out, err := cmd.Output()
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("%s does not appear to be a git repository: %w", repoPath, err)
 	}
 	if strings.TrimSpace(string(out)) != "true" {
@@ -75,6 +97,10 @@ func verifyGitRepo(repoPath string) error {
 }
 
 func safeCommand(repoPath string, args ...string) *exec.Cmd {
+	return safeCommandContext(context.Background(), repoPath, args...)
+}
+
+func safeCommandContext(ctx context.Context, repoPath string, args ...string) *exec.Cmd {
 	commandArgs := []string{
 		"--no-pager",
 		"-c", "core.fsmonitor=false",
@@ -82,7 +108,7 @@ func safeCommand(repoPath string, args ...string) *exec.Cmd {
 		"-C", repoPath,
 	}
 	commandArgs = append(commandArgs, args...)
-	return exec.Command("git", commandArgs...)
+	return exec.CommandContext(ctx, "git", commandArgs...)
 }
 
 // A caller's alternate-index/worktree variables must not override the

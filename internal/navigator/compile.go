@@ -149,10 +149,17 @@ func Compile(input Input) (Compiled, error) {
 			private.outsideCanonical[id] = struct{}{}
 		}
 	}
+	resolvedActions := make(map[string]ResolvedAction, len(actions))
+	for _, action := range actions {
+		resolvedActions[action.Key] = ResolvedAction{
+			Key: action.Key, Operation: action.Operation, Target: action.Target,
+		}
+	}
 	return Compiled{
 		wire: wireJSON, wireSHA256: digestBytes(wireJSON),
 		catalogSHA256: catalogSHA, catalogRef: catalogRef,
-		maxResponseBytes: input.Limits.MaxResponseBytes, catalog: private,
+		maxWireBytes: input.Limits.MaxWireBytes, maxResponseBytes: input.Limits.MaxResponseBytes, catalog: private,
+		actions: resolvedActions,
 	}, nil
 }
 

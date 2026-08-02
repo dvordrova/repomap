@@ -37,19 +37,11 @@ final acceptance reviewer
 Only the feature-builder edits production code. Parallel agents gather facts, run
 fixtures, compare reports to independent truth, and review browser journeys.
 
-## Install
+## Archived reference
 
-From the repomap repository root:
-
-```bash
-./repomap-opencode-parallel-workflow/install.sh
-```
-
-Restart OpenCode, then:
-
-```text
-/go
-```
+This OpenCode bundle is retained as design/reference material only. Repomap no
+longer ships a shell installer for it, and it is not part of the product or CI
+workflow.
 
 ## Paths used by fixture agents
 
@@ -62,13 +54,8 @@ Workflow agents explicitly allow external access to:
 
 This prevents the workflow from repeatedly asking about those external directories.
 
-To apply the same external-directory allowlist to all OpenCode agents globally, run:
-
-```bash
-./repomap-opencode-parallel-workflow/install-global-permissions.sh
-```
-
-See `GLOBAL-PERMISSIONS.md` before doing that.
+See `GLOBAL-PERMISSIONS.md` for the explicit configuration snippet if you need
+the same allowlist manually.
 
 ## Parallel safety
 
@@ -82,5 +69,5 @@ See `GLOBAL-PERMISSIONS.md` before doing that.
 
 ## Models
 
-The installer resolves explicit OpenAI model IDs available through your ChatGPT
-Plus/Pro OpenAI login. Agents do not inherit the currently selected TUI model.
+The archived templates contain model placeholders and are not installed by the
+current repomap workflow.

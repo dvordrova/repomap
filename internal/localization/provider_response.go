@@ -31,6 +31,12 @@ type ProviderTranslation struct {
 	Text  *string
 }
 
+// ProviderResponseDiagnostics contains only closed structural counts. It never
+// carries provider-authored text.
+type ProviderResponseDiagnostics struct {
+	UnrequestedTranslations int
+}
+
 func NewProviderTranslation(index int, text string) ProviderTranslation {
 	return ProviderTranslation{Index: &index, Text: &text}
 }
@@ -71,20 +77,33 @@ func (translation *ProviderTranslation) UnmarshalJSON(data []byte) error {
 
 // DecodeRussianProviderResponse restores the stable ID-keyed internal
 // projection from one strict, complete, position-bound provider response.
-// Missing, extra, duplicate, or reordered entries fail closed before Apply.
+// Missing, duplicate, or reordered requested entries and any trailing entry
+// inside the requested namespace fail closed before Apply.
 func DecodeRussianProviderResponse(
 	canonical CanonicalArtifact,
 	input Input,
 	data []byte,
 ) (Projection, error) {
+	projection, _, err := DecodeRussianProviderResponseDetailed(canonical, input, data)
+	return projection, err
+}
+
+// DecodeRussianProviderResponseDetailed accepts the exact requested prefix
+// once and in order. Provider tuples after that prefix are ignored only when
+// every trailing index is outside the requested namespace.
+func DecodeRussianProviderResponseDetailed(
+	canonical CanonicalArtifact,
+	input Input,
+	data []byte,
+) (Projection, ProviderResponseDiagnostics, error) {
 	if err := validateCanonical(canonical); err != nil {
-		return Projection{}, err
+		return Projection{}, ProviderResponseDiagnostics{}, err
 	}
 	if err := validateInput(canonical, input); err != nil {
-		return Projection{}, err
+		return Projection{}, ProviderResponseDiagnostics{}, err
 	}
 	if len(data) > maxProviderResponseBytes {
-		return Projection{}, &modelresearch.ResourceLimitError{
+		return Projection{}, ProviderResponseDiagnostics{}, &modelresearch.ResourceLimitError{
 			Stage: "localization", Kind: modelresearch.ResourceLimitResponseBytes,
 			Limit: maxProviderResponseBytes, Observed: len(data), ObservedKnown: true,
 		}
@@ -92,37 +111,46 @@ func DecodeRussianProviderResponse(
 	if input.SourceLocale != LocaleEnglish ||
 		input.TargetLocale != LocaleRussian ||
 		len(data) == 0 || !utf8.Valid(data) {
-		return Projection{}, fmt.Errorf("localization: invalid provider response")
+		return Projection{}, ProviderResponseDiagnostics{}, fmt.Errorf("localization: invalid provider response")
 	}
 	var response ProviderResponse
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&response); err != nil {
-		return Projection{}, fmt.Errorf("localization: invalid provider response")
+		return Projection{}, ProviderResponseDiagnostics{}, fmt.Errorf("localization: invalid provider response")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return Projection{}, fmt.Errorf("localization: invalid provider response")
+		return Projection{}, ProviderResponseDiagnostics{}, fmt.Errorf("localization: invalid provider response")
 	}
 	if response.Version != ProviderResponseVersion ||
 		response.CanonicalSHA256 != canonical.SHA256 ||
 		response.Locale != input.TargetLocale ||
-		len(response.Translations) != len(input.Fields) {
-		return Projection{}, fmt.Errorf("localization: invalid provider response")
+		len(response.Translations) < len(input.Fields) {
+		return Projection{}, ProviderResponseDiagnostics{}, fmt.Errorf("localization: invalid provider response")
 	}
 
 	translations := make(map[string]string, len(input.Fields))
-	for index, translation := range response.Translations {
+	for index, translation := range response.Translations[:len(input.Fields)] {
 		if translation.Index == nil || *translation.Index != index ||
 			translation.Text == nil {
-			return Projection{}, fmt.Errorf("localization: invalid provider response")
+			return Projection{}, ProviderResponseDiagnostics{}, fmt.Errorf("localization: invalid provider response")
 		}
 		translations[input.Fields[index].ID] = *translation.Text
+	}
+	for _, translation := range response.Translations[len(input.Fields):] {
+		if translation.Index == nil || *translation.Index < len(input.Fields) ||
+			translation.Text == nil {
+			return Projection{}, ProviderResponseDiagnostics{}, fmt.Errorf("localization: invalid provider response")
+		}
+	}
+	diagnostics := ProviderResponseDiagnostics{
+		UnrequestedTranslations: len(response.Translations) - len(input.Fields),
 	}
 	return Projection{
 		Version:         ProjectionVersion,
 		CanonicalSHA256: canonical.SHA256,
 		Locale:          input.TargetLocale,
 		Translations:    translations,
-	}, nil
+	}, diagnostics, nil
 }

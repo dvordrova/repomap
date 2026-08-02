@@ -62,6 +62,7 @@ func ensureGuidedTourFanoutExperiment(
 	profile string,
 	model string,
 	provider guidedTourEditor,
+	providerEndpointSHA256 string,
 ) (outcome guidedTourOutcome, returnErr error) {
 	started := time.Now()
 	defer func() {
@@ -131,7 +132,9 @@ func ensureGuidedTourFanoutExperiment(
 				Repository: repository, Stage: "guided_story_leaf/" + task.ID,
 				PromptVersion: guidedtour.LeafPromptVersion,
 				Profile:       profile, Model: model,
-				EvidenceBundleHash: taskSHA, PolicyVersion: policy.Version,
+				ProviderEndpointSHA256: providerEndpointSHA256,
+				RequestSHA256:          modelresearch.SHA256(request),
+				EvidenceBundleHash:     taskSHA, PolicyVersion: policy.Version,
 			},
 			Request: request, EvidenceBundleHash: taskSHA,
 		}
@@ -317,7 +320,9 @@ func ensureGuidedTourFanoutExperiment(
 			Repository: repository, Stage: "guided_story_fan_in",
 			PromptVersion: guidedtour.FanInPromptVersion,
 			Profile:       profile, Model: model,
-			EvidenceBundleHash: finalFactsSHA, PolicyVersion: policy.Version,
+			ProviderEndpointSHA256: providerEndpointSHA256,
+			RequestSHA256:          modelresearch.SHA256(finalRequest),
+			EvidenceBundleHash:     finalFactsSHA, PolicyVersion: policy.Version,
 		},
 		Request: finalRequest, EvidenceBundleHash: finalFactsSHA,
 	}

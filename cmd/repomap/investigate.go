@@ -77,6 +77,7 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	humanOutput := newRunOutput(stderr)
 	stdout := deps.stdout
 	if stdout == nil {
 		stdout = os.Stdout
@@ -320,6 +321,7 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 		return err
 	}
 	defer writer.Close()
+	humanOutput.Artifacts(writer.RunDir())
 	bundleBytes, err := marshalTaskArtifact(bundle)
 	if err != nil {
 		return err

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,15 +28,17 @@ const (
 var ErrInvalidCachedRound = errors.New("model research: reject invalid cached round")
 
 type FingerprintInput struct {
-	Repository         RepositoryContext `json:"repository"`
-	Stage              string            `json:"stage"`
-	PromptVersion      string            `json:"prompt_version"`
-	CacheContract      string            `json:"cache_contract,omitempty"`
-	Profile            string            `json:"profile"`
-	Model              string            `json:"model"`
-	EvidenceBundleHash string            `json:"evidence_bundle_sha256"`
-	PolicyVersion      string            `json:"policy_version"`
-	OutputLanguage     string            `json:"output_language,omitempty"`
+	Repository             RepositoryContext `json:"repository"`
+	Stage                  string            `json:"stage"`
+	PromptVersion          string            `json:"prompt_version"`
+	CacheContract          string            `json:"cache_contract,omitempty"`
+	Profile                string            `json:"profile"`
+	Model                  string            `json:"model"`
+	ProviderEndpointSHA256 string            `json:"provider_endpoint_sha256"`
+	RequestSHA256          string            `json:"request_sha256"`
+	EvidenceBundleHash     string            `json:"evidence_bundle_sha256"`
+	PolicyVersion          string            `json:"policy_version"`
+	OutputLanguage         string            `json:"output_language,omitempty"`
 }
 
 type cacheRecord struct {
@@ -81,6 +85,41 @@ func SHA256(data []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// ProviderEndpointSHA256 returns a stable, non-secret identity for one
+// provider endpoint. The raw endpoint is never stored in a cache key or
+// record. Transport-irrelevant spelling differences are normalized before
+// hashing; user-info and fragments are rejected rather than silently hidden.
+func ProviderEndpointSHA256(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Opaque != "" || parsed.User != nil || parsed.Fragment != "" {
+		return "", fmt.Errorf("model research: invalid provider endpoint identity")
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	hostname := strings.ToLower(parsed.Hostname())
+	if (scheme != "http" && scheme != "https") || hostname == "" {
+		return "", fmt.Errorf("model research: invalid provider endpoint identity")
+	}
+	port := parsed.Port()
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		port = ""
+	}
+	host := hostname
+	if port != "" {
+		host = net.JoinHostPort(hostname, port)
+	} else if strings.Contains(hostname, ":") {
+		host = "[" + hostname + "]"
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return "", fmt.Errorf("model research: invalid provider endpoint identity")
+	}
+	canonical := url.URL{
+		Scheme: scheme, Host: host, Path: parsed.Path, RawPath: parsed.RawPath,
+		RawQuery: query.Encode(),
+	}
+	return SHA256([]byte(canonical.String())), nil
+}
+
 // CacheOutputLanguage keeps the historical default-English fingerprint while
 // isolating provider responses whose human-readable prose is requested in
 // Russian.
@@ -92,6 +131,9 @@ func CacheOutputLanguage(value string) string {
 }
 
 func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
+	if err := validateStageCacheInput(input); err != nil {
+		return StageResponse{}, false, err
+	}
 	cacheKey, err := CacheKey(input.Fingerprint)
 	if err != nil {
 		return StageResponse{}, false, err
@@ -104,6 +146,9 @@ func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
 		input.EvidenceBundleHash,
 	)
 	if errors.Is(err, ErrInvalidCachedRound) {
+		if removeErr := removeCache(input.RunsDir, cacheKey); removeErr != nil {
+			return StageResponse{}, false, removeErr
+		}
 		return StageResponse{}, false, nil
 	}
 	if err != nil || !found {
@@ -122,6 +167,9 @@ func LoadStageResponse(input StageCacheInput) (StageResponse, bool, error) {
 // InvalidateStageResponse removes only the exact generic stage-cache record.
 // Semantic validation remains owned by the consuming stage.
 func InvalidateStageResponse(input StageCacheInput) error {
+	if err := validateStageCacheInput(input); err != nil {
+		return err
+	}
 	cacheKey, err := CacheKey(input.Fingerprint)
 	if err != nil {
 		return err
@@ -130,6 +178,9 @@ func InvalidateStageResponse(input StageCacheInput) error {
 }
 
 func SaveStageResponse(input StageCacheInput, response StageResponse) (StageResponse, error) {
+	if err := validateStageCacheInput(input); err != nil {
+		return StageResponse{}, err
+	}
 	cacheKey, err := CacheKey(input.Fingerprint)
 	if err != nil {
 		return StageResponse{}, err
@@ -169,7 +220,9 @@ func BundleHash(bundle EvidenceBundle) (string, []byte, error) {
 }
 
 func CacheKey(input FingerprintInput) (string, error) {
-	if input.Stage == "" || input.PromptVersion == "" || input.Model == "" || input.EvidenceBundleHash == "" {
+	if input.Stage == "" || input.PromptVersion == "" || input.Model == "" ||
+		!IsSHA256(input.ProviderEndpointSHA256) || !IsSHA256(input.RequestSHA256) ||
+		!IsSHA256(input.EvidenceBundleHash) {
 		return "", fmt.Errorf("model research: incomplete cache fingerprint")
 	}
 	encoded, err := json.Marshal(input)
@@ -178,6 +231,25 @@ func CacheKey(input FingerprintInput) (string, error) {
 	}
 	digest := sha256.Sum256(encoded)
 	return "research-" + hex.EncodeToString(digest[:]), nil
+}
+
+func validateStageCacheInput(input StageCacheInput) error {
+	if input.Fingerprint.RequestSHA256 != requestHash(input.Request) ||
+		input.Fingerprint.EvidenceBundleHash != input.EvidenceBundleHash {
+		return fmt.Errorf("model research: cache fingerprint does not match exact request")
+	}
+	return nil
+}
+
+// IsSHA256 reports whether value is the canonical lowercase encoding used by
+// cache identities. It permits cache owners to validate a digest without
+// persisting or returning its raw source value.
+func IsSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil && value == strings.ToLower(value)
 }
 
 func requestHash(request []byte) string {

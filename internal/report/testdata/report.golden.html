@@ -61,13 +61,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-integrations-empty { margin: 0; }
 .rm-atlas-shelf { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.1rem; }
 .rm-atlas-shelf .rm-view-heading { margin-bottom: 1rem; }
+.rm-atlas-recommendation { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 10px; display: grid; gap: .6rem; margin-bottom: 1.1rem; padding: .9rem; }
+.rm-atlas-recommendation h3, .rm-atlas-recommendation p { margin: 0; }
+.rm-atlas-recommendation .rm-atlas-relation-roles { max-width: 34rem; }
+.rm-atlas-evidence-count { color: #475569; font-size: .7rem; }
+.rm-atlas-navigator-action { justify-self: start; }
 .rm-atlas-shelf-heading { color: #334155; font-size: .76rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
 .rm-atlas-relations-heading { margin-top: 1.25rem; }
 .rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .rm-atlas-unit-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .2rem; padding: .7rem .8rem; }
 .rm-atlas-unit-card strong { font-size: .82rem; overflow-wrap: anywhere; }
 .rm-atlas-unit-card span { color: var(--rm-dim); font-size: .68rem; }
-.rm-atlas-unit-card .rm-atlas-authority { color: #166534; }
 .rm-atlas-relation-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .6rem; padding: .8rem; }
 .rm-atlas-relation-unit { font-size: .82rem; overflow-wrap: anywhere; }
 .rm-atlas-relation-roles { display: grid; gap: .3rem; }
@@ -818,7 +822,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":27,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":28,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
@@ -1025,10 +1029,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.workspace.process_entry": { params: [], text: "Process entry surface" },
     "main.atlas.workspace.application_start": { params: [], text: "Application start operation" },
     "main.atlas.workspace.authority": { params: ["authority"], format: function (params) { return "Authority: " + params.authority; } },
-    "main.atlas.workspace.authority.observed": { params: [], text: "Observed · local facts" },
     "main.atlas.workspace.authority.resolved": { params: [], text: "Resolved" },
     "main.atlas.workspace.no_source_backed_relations": { params: [], text: "No resolved startup relation has an exact saved source excerpt for this run." },
     "main.atlas.workspace.omitted_relations": { params: ["count"], format: function (params) { return "Not shown without an exact saved source excerpt: " + params.count + "."; } },
+    "main.atlas.navigator.kicker": { params: [], text: "Navigator" },
+    "main.atlas.navigator.title": { params: [], text: "Recommended starting point" },
+    "main.atlas.navigator.unavailable_title": { params: [], text: "Recommendation unavailable" },
+    "main.atlas.navigator.copy": { params: [], text: "Start with the selected locally resolved application startup." },
+    "main.atlas.navigator.empty": { params: [], text: "No locally resolved application startup is available for this repository." },
+    "main.atlas.navigator.unavailable": { params: [], text: "Navigator is unavailable for this run." },
+    "main.atlas.navigator.unavailable_offline": { params: [], text: "Navigator was not called because this run is offline. Exact local Atlas facts remain available below." },
+    "main.atlas.navigator.source_unavailable": { params: [], text: "The selected startup has no exact saved source excerpt in this report." },
+    "main.atlas.navigator.evidence_count": { params: ["count"], format: function (params) { return "Exact evidence records: " + params.count; } },
+    "main.atlas.navigator.inspect_source": { params: [], text: "Inspect selected startup evidence" },
+    "main.atlas_first.unavailable": { params: [], text: "Not available for this Atlas-first run" },
+    "main.atlas_first.study_copy": { params: [], text: "This run did not call or fabricate the previous Study product." },
+    "main.atlas_first.architecture_copy": { params: [], text: "This run did not call or fabricate the previous model-authored Architecture product." },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Saved taxonomy" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Entry surfaces" },
     "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Entry-surface objects from the saved catalog with an exact saved source excerpt." },
@@ -2293,10 +2309,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.workspace.process_entry": { params: [], text: "Точка входа процесса" },
     "main.atlas.workspace.application_start": { params: [], text: "Операция запуска приложения" },
     "main.atlas.workspace.authority": { params: ["authority"], format: function (params) { return "Основание: " + params.authority; } },
-    "main.atlas.workspace.authority.observed": { params: [], text: "наблюдаемые локальные факты" },
     "main.atlas.workspace.authority.resolved": { params: [], text: "локально подтверждено" },
     "main.atlas.workspace.no_source_backed_relations": { params: [], text: "Для этого запуска нет подтверждённой связи запуска с точным сохранённым фрагментом исходника." },
     "main.atlas.workspace.omitted_relations": { params: ["count"], format: function (params) { return "Не показаны без точного сохранённого фрагмента исходника: " + params.count + "."; } },
+    "main.atlas.navigator.kicker": { params: [], text: "Навигатор" },
+    "main.atlas.navigator.title": { params: [], text: "Рекомендуемая точка старта" },
+    "main.atlas.navigator.unavailable_title": { params: [], text: "Рекомендация недоступна" },
+    "main.atlas.navigator.copy": { params: [], text: "Начните с выбранного локально подтверждённого запуска приложения." },
+    "main.atlas.navigator.empty": { params: [], text: "Для этого репозитория нет локально подтверждённого запуска приложения." },
+    "main.atlas.navigator.unavailable": { params: [], text: "Навигатор недоступен для этого запуска." },
+    "main.atlas.navigator.unavailable_offline": { params: [], text: "Навигатор не вызывался, потому что запуск выполнен офлайн. Ниже остаются доступными точные локальные факты Атласа." },
+    "main.atlas.navigator.source_unavailable": { params: [], text: "Для выбранного запуска в этом отчёте нет точного сохранённого фрагмента исходника." },
+    "main.atlas.navigator.evidence_count": { params: ["count"], format: function (params) { return "Точных свидетельств: " + params.count; } },
+    "main.atlas.navigator.inspect_source": { params: [], text: "Открыть свидетельство выбранного запуска" },
+    "main.atlas_first.unavailable": { params: [], text: "Недоступно для этого Atlas-first запуска" },
+    "main.atlas_first.study_copy": { params: [], text: "В этом запуске прежний продукт «Изучение» не вызывался и не имитировался." },
+    "main.atlas_first.architecture_copy": { params: [], text: "В этом запуске прежняя модельная «Архитектура» не вызывалась и не имитировалась." },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Сохранённая таксономия" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Точки входа" },
     "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Объекты точек входа из сохранённого каталога с точным сохранённым фрагментом исходника." },
@@ -3551,6 +3579,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
 	var USER_TOPICS = Array.isArray(DATA.user_topics) ? DATA.user_topics : [];
 	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
+	var NAVIGATOR = DATA.navigator || null;
+	var ATLAS_FIRST = !!(
+		NAVIGATOR && Number(NAVIGATOR.version) === 1 &&
+		(NAVIGATOR.state === 'selected' || NAVIGATOR.state === 'empty' ||
+			NAVIGATOR.state === 'unavailable')
+	);
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
 	var STUDY_PUBLICATION = DATA.study_publication || null;
@@ -3561,7 +3595,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			return Object.assign({}, direction, { incomplete: true });
 		})
 		: [];
-	var STUDY_DIRECTIONS = COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
+	var STUDY_DIRECTIONS = ATLAS_FIRST
+		? []
+		: COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
 	var OPERATIONS = DATA.operations || null;
 	var PAVED_PATHS = OPERATIONS && Array.isArray(OPERATIONS.paths) ? OPERATIONS.paths : [];
 	var OPERATIONAL_LANDMARKS = OPERATIONS && Array.isArray(OPERATIONS.landmarks) ? OPERATIONS.landmarks : [];
@@ -7457,6 +7493,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
 	function userArchitectureAvailable() {
+		if (ATLAS_FIRST) return false;
 		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
 		if (STUDY_MAP) return !!DATA.architecture_canvas;
 		if (REPOSITORY_GUIDE) {
@@ -7931,6 +7968,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var root = document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
+		if (ATLAS_FIRST) {
+			root.appendChild(renderViewHeading(
+				msg('main.study'),
+				msg('main.atlas_first.unavailable'),
+				msg('main.atlas_first.study_copy')
+			));
+			return;
+		}
 		var canonical = COMPLETE_STUDY_DIRECTIONS.length > 0;
 		var directions = canonical ? COMPLETE_STUDY_DIRECTIONS : INCOMPLETE_STUDY_DIRECTIONS;
 		root.appendChild(canonical
@@ -8034,6 +8079,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var root = document.getElementById('rm-study-detail');
 		if (!root) return;
 		root.replaceChildren();
+		if (ATLAS_FIRST) {
+			root.appendChild(renderViewHeading(
+				msg('main.study'),
+				msg('main.atlas_first.unavailable'),
+				msg('main.atlas_first.study_copy')
+			));
+			return;
+		}
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
 		var incomplete = !!direction.incomplete;
@@ -9250,6 +9303,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			});
 			if (!source) return;
 			relations.push({
+				id: relation.id,
+				surfaceID: relation.source.id,
+				applicationID: relation.target.id,
+				evidenceIDs: (relation.evidence_refs || []).slice(),
 				unit: unitsByID[relation.unit_id],
 				authority: relation.authority,
 				snippet: source.snippet,
@@ -9262,7 +9319,80 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			packageUnits: packageUnits,
 			relations: relations,
 			omittedRelations: eligible - relations.length,
+			recommendation: repositoryAtlasNavigatorRecommendation(relations),
 		};
+	}
+
+	function exactStringArraysEqual(left, right) {
+		if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+		for (var index = 0; index < left.length; index++) {
+			if (String(left[index] || '') !== String(right[index] || '')) return false;
+		}
+		return true;
+	}
+
+	function repositoryAtlasNavigatorRecommendation(relations) {
+		if (!ATLAS_FIRST || NAVIGATOR.state !== 'selected' || !NAVIGATOR.recommendation) return null;
+		var selected = NAVIGATOR.recommendation;
+		if (!selected.surface || selected.surface.kind !== 'surface' ||
+			!selected.application_operation || selected.application_operation.kind !== 'operation' ||
+			typeof selected.relation_id !== 'string' || !selected.relation_id ||
+			!Array.isArray(selected.evidence_ids) || !selected.evidence_ids.length) return null;
+		var matches = relations.filter(function (relation) {
+			return relation.id === selected.relation_id &&
+				relation.surfaceID === selected.surface.id &&
+				relation.applicationID === selected.application_operation.id &&
+				exactStringArraysEqual(relation.evidenceIDs, selected.evidence_ids);
+		});
+		return matches.length === 1 ? matches[0] : null;
+	}
+
+	function renderRepositoryAtlasNavigatorRecommendation(shelf) {
+		var section = el('section', 'rm-atlas-recommendation');
+		section.appendChild(txt('div', 'rm-view-kicker', msg('main.atlas.navigator.kicker')));
+		section.appendChild(txt('h3', '', msg(
+			NAVIGATOR && NAVIGATOR.state === 'unavailable'
+				? 'main.atlas.navigator.unavailable_title'
+				: 'main.atlas.navigator.title'
+		)));
+		if (NAVIGATOR && NAVIGATOR.state === 'empty') {
+			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.navigator.empty')));
+			return section;
+		}
+		if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
+			section.appendChild(txt('p', 'rm-empty-state', msg(
+				NAVIGATOR.unavailable_code === 'offline'
+					? 'main.atlas.navigator.unavailable_offline'
+					: 'main.atlas.navigator.unavailable'
+			)));
+			return section;
+		}
+		var recommendation = shelf && shelf.recommendation;
+		if (!recommendation) {
+			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.navigator.source_unavailable')));
+			return section;
+		}
+		section.appendChild(txt('p', '', msg('main.atlas.navigator.copy')));
+		section.appendChild(txt('strong', 'rm-atlas-relation-unit', recommendation.unit.name));
+		var roles = el('div', 'rm-atlas-relation-roles');
+		roles.appendChild(txt('span', '', msg('main.atlas.workspace.process_entry')));
+		roles.appendChild(txt('span', '', msg('main.atlas.workspace.application_start')));
+		section.appendChild(roles);
+		section.appendChild(txt('span', 'rm-atlas-evidence-count', msg(
+			'main.atlas.navigator.evidence_count',
+			{ count: recommendation.evidenceIDs.length }
+		)));
+		var sourceButton = txt(
+			'button',
+			'rm-primary-action rm-atlas-navigator-action',
+			msg('main.atlas.navigator.inspect_source')
+		);
+		sourceButton.type = 'button';
+		sourceButton.onclick = function () {
+			openSourceSnippet(recommendation.snippet, recommendation.location, false, { drawerFirst: true });
+		};
+		section.appendChild(sourceButton);
+		return section;
 	}
 
 	function renderRepositoryAtlasUnitGrid(units) {
@@ -9271,10 +9401,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			var card = el('article', 'rm-atlas-unit-card');
 			card.appendChild(txt('strong', '', unit.name));
 			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
-			card.appendChild(txt('span', 'rm-atlas-authority', msg(
-				'main.atlas.workspace.authority',
-				{ authority: msg('main.atlas.workspace.authority.observed') }
-			)));
 			unitGrid.appendChild(card);
 		});
 		return unitGrid;
@@ -9292,6 +9418,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.workspace.unavailable')));
 			root.appendChild(section);
 			return;
+		}
+		if (ATLAS_FIRST) {
+			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
 		}
 
 		section.appendChild(txt(
@@ -9358,6 +9487,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	  root.replaceChildren();
 			renderStudyPublicationNotice(root);
 			renderRepositoryAtlasWorkspaceShelf(root);
+			if (ATLAS_FIRST) return;
 			var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewAnatomy(root, anatomy);
@@ -9454,7 +9584,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
 	function renderStudyPublicationNotice(root) {
-		if (!root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
+		if (ATLAS_FIRST || !root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
 		var notice = el('section', 'rm-study-publication-notice');
 		notice.appendChild(txt('h2', '', msg('main.study.unavailable.for.this.run')));
 		notice.appendChild(txt(
@@ -10933,6 +11063,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var root = document.getElementById('rm-architecture');
     if (!root) return;
     root.replaceChildren();
+		if (ATLAS_FIRST) {
+			root.appendChild(renderViewHeading(
+				msg('main.architecture'),
+				msg('main.atlas_first.unavailable'),
+				msg('main.atlas_first.architecture_copy')
+			));
+			return;
+		}
     root.appendChild(renderViewHeading(
       msg('main.architecture'),
       msg('main.explore.the.repository.map'),
@@ -11211,7 +11349,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				addWorkspaceTab(msg('main.task'), 'investigate');
 			} else {
 				addWorkspaceTab(msg('main.overview'), 'overview');
-				if (USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
+				if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
 				if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
 				if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 			}

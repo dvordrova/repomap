@@ -79,37 +79,20 @@ tiny synthetic JSON compatibility request:
 ./repomap doctor llm --check
 ```
 
-Inspect the exact request body before the first repository call:
-
-```bash
-./repomap /path/to/repo --preview-request > /tmp/repomap-request.json
-wc -c /tmp/repomap-request.json
-```
-
-The preview file is the exact provider body, so the engineer can review both its
-contents and byte size before authorizing the first repository call.
-
-The normal first call performs one bounded orientation request, presents the
-full onboarding overview, and prepares a compact deterministic local evidence
-bundle for every validated direction. Clicking a direction reads that saved
-bundle; it makes no second provider call. `--flows N` additionally asks the
-model to expand the top N directions.
+The normal run builds the complete local Repository Atlas, then performs at
+most one bounded Navigator selection over exact locally-resolved application
+startups. Empty and offline outcomes make no provider call.
 
 ```bash
 ./repomap /path/to/repo
-./repomap /path/to/repo --flows 1
 ```
 
-Today the direction cards are actions over saved local file/test/package/import
-evidence, while `--flows 1` still expands the highest-ranked direction rather
-than a user-selected one. Deterministic exact-symbol candidates and the
-resumable source/test investigation handoff remain outside the main CLI. The
-current friend pass is a runnable onboarding baseline, not a claim that the
-complete progressive journey is wired.
+The Navigator selects only an advertised opaque action ref. The backend restores
+the canonical startup relation, endpoints, and evidence before publication.
 
 Debug artifacts default to the user cache rather than the analysed repository.
-Use `--no-debug` to retain nothing or `--debug-dir` to choose an explicit trusted
-location.
+Ordinary runs persist their authoritative `report.json`; use `--debug-dir` to
+choose an explicit trusted location.
 
 ## One workflow, three goal policies
 

@@ -432,16 +432,8 @@ The JSON wire contract is intentionally smaller than `internal/symbol.Report`:
 
 The tagged contract expresses the same information as repeated `KEY: VALUE`
 lines. `symbol_evaluation.json` scores observable contract adherence out of 100;
-it deliberately does not pretend to score semantic truth. Run and compare real
-prompt versions with:
-
-```bash
-./scripts/symbol_prompt_experiment.sh baseline ../etcd kvServer.Put json
-./scripts/symbol_prompt_experiment.sh tagged ../etcd kvServer.Put tagged
-./scripts/symbol_prompt_compare.sh \
-  tmp/prompt-experiments/baseline-json \
-  tmp/prompt-experiments/tagged-tagged
-```
+it deliberately does not pretend to score semantic truth. Historical prompt
+experiments are retained in Git history rather than as production shell tools.
 
 Stable bundle/response fixtures and an in-memory explainer live in
 `internal/deepseektest`; they let higher layers test without calling DeepSeek.
@@ -494,10 +486,10 @@ split-line, or truncated shapes are not promoted.
 - Non-2xx HTTP response: return status plus a bounded response body. Obvious
   credential-like content is replaced with a redaction marker rather than echoed
   into stderr or debug artifacts.
-- Orientation responses still require JSON. Focused symbol responses are parsed
+- Semantic responses still require their consumer-owned JSON contract. Focused symbol responses are parsed
   tolerantly and fail only when neither a JSON object nor tagged report can be recovered.
-- No key is required for `--snapshot-only`, `--llm-bundle-only`, or request
-  preview. Live bearer calls require the key from the active namespace.
+- No key is required for an ordinary `--offline` run. Live bearer calls require
+  the key from the active namespace.
 
 ## Retry behavior
 
@@ -513,19 +505,24 @@ split-line, or truncated shapes are not promoted.
 ## Debugging
 
 ```bash
-repomap orient --repo ../etcd --debug-dir .repomap-runs
-./scripts/debug_last_run.sh .repomap-runs
+repomap ../etcd --debug-dir .repomap-runs --no-open --no-serve
 ```
+
+The CLI prints the exact run directory near the start of the run. Inspect that
+directory directly; there is no second debug wrapper.
 
 Artifacts produced:
 - `metadata.json` — run metadata (model, endpoint, command)
 - `snapshot.json` — full local deterministic snapshot
-- `llm_bundle.json` — compact bounded bundle sent to DeepSeek
+- `repository_atlas.v1.json` — complete canonical local Repository Atlas
+- `navigator_request.v1.json` — bounded request-local Navigator projection and backend catalog
 - `semantic_exchanges/<id>/request.{json,txt}` — bounded redacted semantic request
 - `semantic_exchanges/<id>/response.{json,txt}` — bounded redacted response, when available and safe
 - `semantic_exchanges/<id>/response.marker.json` — closed unavailable or unsafe marker
 - `semantic_exchanges/<id>/exchange.v1.json` — closed committed outcome metadata
-- `orientation_report.json` — parsed/pretty orientation report
+- `navigator_status.v1.json` — closed Navigator state
+- `navigator_result.v1.json` — accepted or empty canonical recommendation
+- `report.json` — authoritative machine report
 - `error.txt` — error message if any step failed
 
 Never commit `.repomap-runs/`.

@@ -60,8 +60,10 @@ type Compiled struct {
 	wireSHA256       string
 	catalogSHA256    string
 	catalogRef       string
+	maxWireBytes     int
 	maxResponseBytes int
 	catalog          privateCatalog
+	actions          map[string]ResolvedAction
 }
 
 func (compiled Compiled) WireJSON() []byte {
@@ -71,6 +73,7 @@ func (compiled Compiled) WireJSON() []byte {
 func (compiled Compiled) WireSHA256() string    { return compiled.wireSHA256 }
 func (compiled Compiled) CatalogSHA256() string { return compiled.catalogSHA256 }
 func (compiled Compiled) CatalogRef() string    { return compiled.catalogRef }
+func (compiled Compiled) MaxWireBytes() int     { return compiled.maxWireBytes }
 
 type ResourceLimitError struct {
 	Section string
@@ -110,6 +113,16 @@ type ResolvedResponse struct {
 	EvidenceIDs           []string
 	GapKeys               []string
 	ActionKeys            []string
+	Actions               []ResolvedAction
+}
+
+// ResolvedAction restores only the backend-owned meaning and canonical target
+// that were advertised in this exact compiled request. Provider output can
+// select the request-local action ref, but cannot author either value.
+type ResolvedAction struct {
+	Key       string
+	Operation string
+	Target    repositoryatlas.EntityRef
 }
 
 // EntityRole gives a request-local entity ref bounded backend-owned meaning.

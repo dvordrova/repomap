@@ -76,6 +76,10 @@ func editGuidedTourForRun(
 			progress.Elapsed.Round(time.Second),
 		)
 	}
+	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+	if err != nil {
+		return guidedTourOutcome{}, fmt.Errorf("guided tour: provider cache identity: %w", err)
+	}
 	exchangeWriter, writerErr := debugdump.OpenWriter(runDir, true)
 	if writerErr == nil {
 		defer exchangeWriter.Close()
@@ -95,8 +99,9 @@ func editGuidedTourForRun(
 		client.Model,
 		client,
 		guidedTourRunOptions{
-			disableCache:   noCache,
-			exchangeWriter: exchangeWriter,
+			disableCache:           noCache,
+			exchangeWriter:         exchangeWriter,
+			providerEndpointSHA256: endpointSHA,
 		},
 	)
 }
@@ -107,12 +112,13 @@ func prepareGuidedTour(
 	profile string,
 	model string,
 	provider guidedTourEditor,
+	providerEndpointSHA256 string,
 ) (guidedTourOutcome, error) {
 	bundle, err := guidedTourBundleForRun(runDir)
 	if err != nil {
 		return guidedTourOutcome{}, err
 	}
-	return ensureGuidedTour(ctx, bundle, runDir, profile, model, provider)
+	return ensureGuidedTour(ctx, bundle, runDir, profile, model, provider, providerEndpointSHA256)
 }
 
 func guidedTourBundleForRun(runDir string) (guidedtour.Bundle, error) {
@@ -137,6 +143,7 @@ func ensureGuidedTour(
 	profile string,
 	model string,
 	provider guidedTourEditor,
+	providerEndpointSHA256 string,
 ) (guidedTourOutcome, error) {
 	return ensureGuidedTourWithOptions(
 		ctx,
@@ -145,15 +152,16 @@ func ensureGuidedTour(
 		profile,
 		model,
 		provider,
-		guidedTourRunOptions{},
+		guidedTourRunOptions{providerEndpointSHA256: providerEndpointSHA256},
 	)
 }
 
 type guidedTourRunOptions struct {
-	independentExperiment bool
-	disableCache          bool
-	outputFile            string
-	exchangeWriter        *debugdump.Writer
+	independentExperiment  bool
+	disableCache           bool
+	outputFile             string
+	exchangeWriter         *debugdump.Writer
+	providerEndpointSHA256 string
 }
 
 func ensureGuidedTourWithOptions(
@@ -221,7 +229,9 @@ func ensureGuidedTourWithOptions(
 			Repository: repository, Stage: "guided_story_editor",
 			PromptVersion: guidedtour.PromptVersion,
 			Profile:       profile, Model: model,
-			EvidenceBundleHash: bundleSHA, PolicyVersion: policy.Version,
+			ProviderEndpointSHA256: options.providerEndpointSHA256,
+			RequestSHA256:          modelresearch.SHA256(request),
+			EvidenceBundleHash:     bundleSHA, PolicyVersion: policy.Version,
 		},
 		Request: request, EvidenceBundleHash: bundleSHA,
 	}

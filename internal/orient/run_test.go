@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,69 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 )
+
+func TestRunCanceledContextStopsBeforeSnapshotPublication(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Run(ctx, Options{RepoPath: t.TempDir(), SnapshotOnly: true})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context canceled", err)
+	}
+}
+
+func TestRunSnapshotUsesZeroAsCompleteAndPositiveAsExplicitCap(t *testing.T) {
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":         "module example.com/all\n\ngo 1.24\n",
+		"alpha/alpha.go": "package alpha\n",
+		"beta/beta.go":   "package beta\n\nimport _ \"example.com/all/alpha\"\n",
+		"gamma/gamma.go": "package gamma\n\nimport _ \"example.com/all/alpha\"\n",
+	}
+	tracked := make([]string, 0, len(files))
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tracked = append(tracked, name)
+	}
+	runOrientGit(t, repo, "init", "--quiet")
+	runOrientGit(t, repo, append([]string{"add", "--"}, tracked...)...)
+
+	type result struct {
+		GoFacts struct {
+			Packages      []json.RawMessage `json:"packages"`
+			InternalEdges []json.RawMessage `json:"internal_edges"`
+			Coverage      struct {
+				State string `json:"state"`
+			} `json:"coverage"`
+		} `json:"go_facts"`
+	}
+	run := func(options Options) result {
+		t.Helper()
+		encoded, err := Run(context.Background(), options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got result
+		if err := json.Unmarshal(encoded, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	complete := run(Options{RepoPath: repo, SnapshotOnly: true})
+	if len(complete.GoFacts.Packages) != 3 || len(complete.GoFacts.InternalEdges) != 2 || complete.GoFacts.Coverage.State != "complete" {
+		t.Fatalf("zero-cap Go facts = packages %d edges %d coverage %q", len(complete.GoFacts.Packages), len(complete.GoFacts.InternalEdges), complete.GoFacts.Coverage.State)
+	}
+	capped := run(Options{RepoPath: repo, SnapshotOnly: true, MaxGoPkgs: 1, MaxGoEdges: 1})
+	if len(capped.GoFacts.Packages) != 1 || len(capped.GoFacts.InternalEdges) != 1 || capped.GoFacts.Coverage.State != "partial" {
+		t.Fatalf("explicitly capped Go facts = packages %d edges %d coverage %q", len(capped.GoFacts.Packages), len(capped.GoFacts.InternalEdges), capped.GoFacts.Coverage.State)
+	}
+}
 
 func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	repo := t.TempDir()

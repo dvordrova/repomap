@@ -86,6 +86,11 @@ func (compiled Compiled) ValidateResponseJSON(data []byte) (ResolvedResponse, er
 	}
 	for _, entry := range actionEntries {
 		resolved.ActionKeys = append(resolved.ActionKeys, entry.CanonicalID)
+		action, ok := compiled.actions[entry.CanonicalID]
+		if !ok {
+			return ResolvedResponse{}, fmt.Errorf("navigator response: resolved action catalog is unavailable")
+		}
+		resolved.Actions = append(resolved.Actions, action)
 	}
 	return resolved, nil
 }

@@ -78,6 +78,7 @@ const (
 	SemanticExchangeMetaFile = "exchange.v1.json"
 
 	SemanticStageOrientation       = "orientation"
+	SemanticStageNavigator         = "navigator"
 	SemanticStageTargetedResearch  = "targeted_research"
 	SemanticStageArchitecture      = "architecture_synthesis"
 	SemanticStageGuidedTour        = "guided_tour"
@@ -220,7 +221,6 @@ func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
 		return nil, fmt.Errorf("open debug run dir: %w", err)
 	}
 	runDir := filepath.Join(baseDir, runID)
-	fmt.Fprintf(os.Stderr, "debug artifacts: %s\n", runDir)
 	return &Writer{
 		BaseDir: baseDir, RunID: runID, Redacted: redacted,
 		runDir: runDir, root: runRoot, warningWriter: os.Stderr,
@@ -490,6 +490,7 @@ func validateSemanticExchange(exchange SemanticExchange) error {
 func validSemanticStage(stage string) bool {
 	switch stage {
 	case SemanticStageOrientation,
+		SemanticStageNavigator,
 		SemanticStageTargetedResearch,
 		SemanticStageArchitecture,
 		SemanticStageGuidedTour,

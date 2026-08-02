@@ -22,6 +22,7 @@ type savedProvider struct {
 	outputTokens          int
 	promptCacheHitTokens  int
 	promptCacheMissTokens int
+	requestMaxTokens      int
 }
 
 func TestPlanTargetedRoundsHonorsCanceledContext(t *testing.T) {
@@ -35,6 +36,12 @@ func TestPlanTargetedRoundsHonorsCanceledContext(t *testing.T) {
 }
 
 func (p *savedProvider) BuildResearchRequest(prompt Prompt) ([]byte, error) {
+	if p.requestMaxTokens > 0 {
+		return json.Marshal(struct {
+			Prompt    Prompt `json:"prompt"`
+			MaxTokens int    `json:"max_tokens"`
+		}{Prompt: prompt, MaxTokens: p.requestMaxTokens})
+	}
 	return json.Marshal(prompt)
 }
 
@@ -48,7 +55,7 @@ func (p *savedProvider) Research(context.Context, Prompt) (ProviderResult, error
 	}, p.err
 }
 
-func TestCacheKeyIsolatesRussianOutputWithoutChangingDefaultEnglish(t *testing.T) {
+func TestCacheKeyBindsExactRequestEndpointAndOutputLanguage(t *testing.T) {
 	t.Parallel()
 
 	input := FingerprintInput{
@@ -57,19 +64,13 @@ func TestCacheKeyIsolatesRussianOutputWithoutChangingDefaultEnglish(t *testing.T
 		},
 		Stage: "orientation", PromptVersion: "orientation-json-v1",
 		Profile: "test", Model: "fixture-model",
-		EvidenceBundleHash: strings.Repeat("a", 64), PolicyVersion: "policy-v1",
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		RequestSHA256:          SHA256([]byte(`{"request":"one"}`)),
+		EvidenceBundleHash:     strings.Repeat("a", 64), PolicyVersion: "policy-v1",
 	}
 	defaultKey, err := CacheKey(input)
 	if err != nil {
 		t.Fatal(err)
-	}
-	const historicalDefaultKey = "research-c0aa33c71345f8524a8f386026817d07eadaea76c5a1d990a1b13d8eadfd7c46"
-	if defaultKey != historicalDefaultKey {
-		t.Fatalf(
-			"default cache key = %q, want historical %q",
-			defaultKey,
-			historicalDefaultKey,
-		)
 	}
 	input.OutputLanguage = CacheOutputLanguage("en")
 	englishKey, err := CacheKey(input)
@@ -97,6 +98,57 @@ func TestCacheKeyIsolatesRussianOutputWithoutChangingDefaultEnglish(t *testing.T
 			input.OutputLanguage,
 			defaultKey,
 		)
+	}
+	input.OutputLanguage = ""
+	input.RequestSHA256 = SHA256([]byte(`{"request":"two"}`))
+	requestKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.RequestSHA256 = SHA256([]byte(`{"request":"one"}`))
+	otherEndpoint, err := ProviderEndpointSHA256("https://other-provider.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ProviderEndpointSHA256 = otherEndpoint
+	endpointKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestKey == defaultKey || endpointKey == defaultKey || endpointKey == requestKey {
+		t.Fatalf("request/endpoint cache identities collided: default=%q request=%q endpoint=%q", defaultKey, requestKey, endpointKey)
+	}
+}
+
+func TestProviderEndpointSHA256NormalizesWithoutPersistingRawEndpoint(t *testing.T) {
+	t.Parallel()
+
+	first, err := ProviderEndpointSHA256(" HTTPS://EXAMPLE.COM:443/v1/chat/completions?b=2&a=1 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ProviderEndpointSHA256("https://example.com/v1/chat/completions?a=1&b=2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second || !IsSHA256(first) {
+		t.Fatalf("normalized endpoint digests = %q/%q", first, second)
+	}
+	if _, err := ProviderEndpointSHA256("https://secret@example.com/v1/chat/completions"); err == nil {
+		t.Fatal("endpoint user-info was accepted")
+	}
+	fingerprint := FingerprintInput{
+		Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+		Stage:      "orientation", PromptVersion: "v1", Profile: "test", Model: "fixture",
+		ProviderEndpointSHA256: first, RequestSHA256: SHA256([]byte("request")),
+		EvidenceBundleHash: SHA256([]byte("bundle")), PolicyVersion: "policy-v1",
+	}
+	encoded, err := json.Marshal(fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "example.com") || !strings.Contains(string(encoded), first) {
+		t.Fatalf("fingerprint persisted unsafe endpoint identity: %s", encoded)
 	}
 }
 
@@ -483,6 +535,7 @@ func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 		Plan: planResult.Selected[0], Policy: input.Policy, Repository: RepositoryContext{
 			Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default",
 		}, RunsDir: t.TempDir(), Profile: "test", Model: "saved", Provider: provider,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -551,6 +604,7 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 			Plan: planResult.Selected[0], Policy: input.Policy,
 			Repository: repository,
 			RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 		})
 		if executeErr != nil {
 			t.Fatal(executeErr)
@@ -597,6 +651,7 @@ func TestExecuteRoundCachesTargetedResearchPerOutputLanguage(t *testing.T) {
 			Plan: planResult.Selected[0], Policy: input.Policy,
 			Repository: repository, OutputLanguage: language,
 			RunsDir: runsDir, Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 		})
 		if executeErr != nil {
 			t.Fatal(executeErr)
@@ -658,6 +713,7 @@ func TestExecuteRoundWithoutRunsDirDoesNotReuseOrPopulateCache(t *testing.T) {
 		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
 			Plan: planResult.Selected[0], Policy: input.Policy, Repository: repository,
 			Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 		})
 		if executeErr != nil {
 			t.Fatal(executeErr)
@@ -692,6 +748,7 @@ func TestExecuteRoundRefetchesInvalidCachedInput(t *testing.T) {
 			Plan: planResult.Selected[0], Policy: input.Policy,
 			Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 			RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 		})
 		if executeErr != nil {
 			t.Fatal(executeErr)
@@ -728,6 +785,8 @@ func TestStageResponseCachePreservesPromptCacheTokens(t *testing.T) {
 			Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
 			Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
 			Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+			RequestSHA256:          SHA256(request),
 		},
 		Request: request, EvidenceBundleHash: bundleHash,
 	}
@@ -765,6 +824,8 @@ func TestInvalidateStageResponseRemovesOnlyExactRecord(t *testing.T) {
 				Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
 				Stage:      stage, PromptVersion: "prompt-v1", Profile: "test",
 				Model: "fixture-model", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+				ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+				RequestSHA256:          SHA256(request),
 			},
 			Request: request, EvidenceBundleHash: bundleHash,
 		}
@@ -799,6 +860,8 @@ func TestStageResponseCacheDefaultsOmittedPromptCacheTokensToZero(t *testing.T) 
 		Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
 		Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
 		Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		RequestSHA256:          SHA256(request),
 	}
 	cacheKey, err := CacheKey(fingerprint)
 	if err != nil {
@@ -825,6 +888,15 @@ func TestStageResponseCacheDefaultsOmittedPromptCacheTokensToZero(t *testing.T) 
 	}
 }
 
+func modelResearchTestEndpointSHA256(t *testing.T) string {
+	t.Helper()
+	digest, err := ProviderEndpointSHA256("https://model-research.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
 func TestFailedRoundPreservesGroundedLocalEvidence(t *testing.T) {
 	input := basicPlanningInput(t)
 	planResult, err := PlanTargetedRounds(context.Background(), input)
@@ -836,6 +908,7 @@ func TestFailedRoundPreservesGroundedLocalEvidence(t *testing.T) {
 		Plan: planResult.Selected[0], Policy: input.Policy,
 		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 		Model:      "saved", Provider: provider,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 	})
 	if callErr == nil || round.Status != RoundFailed {
 		t.Fatalf("failed round = %#v, err=%v", round, callErr)

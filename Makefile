@@ -8,7 +8,7 @@ TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 RUN_ARGS ?=
 
-.PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build clean smoke etcd-check friend-check symbol-check symbol-prompt-experiment source-prompt-experiment research-budget-check doctor doctor-check generic-deepseek-doctor debug-last guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-json run-offline run-flows2 deepseek-check
+.PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build doctor doctor-check generic-deepseek-doctor guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-prepare golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-offline
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -20,11 +20,10 @@ test: ## Run go tests
 vet: ## Run go vet
 	go vet ./...
 
-check: ## Run tests and vet via reusable script
-	./scripts/check.sh
+check: test vet ## Run Go tests and vet directly
 
-quality-check: ## Replay saved quality tasks without a model call
-	./scripts/quality_check.sh
+quality-check: ## Run the maintained provider-free quality contracts
+	go test ./internal/quality ./cmd/quality-evaluate -count=1
 
 localization-check: ## Validate provider-free canonical and locale projection contracts
 	go test ./internal/localization -count=1
@@ -55,12 +54,9 @@ localization-record: ## Lookup or store one exact provider-free Architecture loc
 		go run ./cmd/repomap dev localization-record "$(RUN)"; \
 	fi
 
-.PHONY: surface-check syncthing-surface-check
+.PHONY: surface-check
 surface-check: ## Run config-driven Go surface discovery fixtures
 	go test ./internal/semantics/catalog ./internal/surfacediscovery ./internal/surfacebridge
-
-syncthing-surface-check: ## Validate partial package recovery and process surfaces against nearby Syncthing
-	./scripts/syncthing_surface_check.sh "$(SYNCTHING_REPO)"
 
 build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
@@ -96,34 +92,6 @@ elkjs-asset-refresh: ## Refresh pinned ELK.js from the verified npm tarball (no 
 		install -m 0644 "$$tmp_dir/package/lib/elk.bundled.js" 'internal/report/assets/elkjs/elk.bundled.js'; \
 		install -m 0644 "$$tmp_dir/package/LICENSE.md" 'internal/report/assets/elkjs/LICENSE.md'
 	@$(MAKE) --no-print-directory elkjs-asset-check
-
-clean: ## Remove project-local build, tmp, and debug artifacts
-	./scripts/clean.sh
-
-smoke: ## Smoke test via reusable script (no network)
-	./scripts/smoke.sh
-
-etcd-check: ## Validate against etcd clone via reusable script
-	./scripts/etcd_check.sh $(ETCD_REPO)
-
-friend-check: ## Replay the one-request browser onboarding journey
-	./scripts/friend_check.sh
-
-symbol-check: ## Build and inspect an offline DeepSeek prompt for etcd kvServer.Put
-	./scripts/symbol_check.sh $(ETCD_REPO) kvServer.Put
-
-symbol-prompt-experiment: ## Call DeepSeek for a versioned symbol prompt (LABEL=x FORMAT=json|tagged)
-	./scripts/symbol_prompt_experiment.sh "$(LABEL)" "$(ETCD_REPO)" kvServer.Put "$(or $(FORMAT),tagged)"
-
-source-prompt-experiment: ## Call DeepSeek for a source-stage prompt (LABEL=x SYMBOL=kvServer.Put)
-	./scripts/source_prompt_experiment.sh "$(LABEL)" "$(ETCD_REPO)" "$(or $(SYMBOL),kvServer.Put)"
-
-RESTIC_REPO ?= ../restic
-CADDY_REPO ?= ../caddy
-SYNCTHING_REPO ?= ../syncthing
-
-research-budget-check: ## Measure adaptive orientation budgets on Restic and Caddy
-	./scripts/research_budget_check.sh "$(RESTIC_REPO)" "$(CADDY_REPO)"
 
 # --- Primary UX targets ---
 
@@ -259,20 +227,11 @@ generic-deepseek-doctor: export REPOMAP_LLM_AUTH = bearer
 generic-deepseek-doctor: ## Calibrate generic provider config against DeepSeek
 	go run ./cmd/repomap doctor llm --check
 
-run: ## Orient ETCD_REPO with the configured OpenAI-compatible LLM
-	go run ./cmd/repomap $(ETCD_REPO) $(RUN_ARGS)
+run: build ## Run the built binary with the configured OpenAI-compatible LLM
+	$(BIN_DIR)/repomap $(ETCD_REPO) $(RUN_ARGS)
 
-run-json: ## Run full pipeline with JSON output
-	go run ./cmd/repomap $(ETCD_REPO) --json | jq .
-
-run-offline: ## Run local extraction only (no model call)
-	go run ./cmd/repomap $(ETCD_REPO) --offline
-
-run-flows2: ## Run with 2 opt-in explained flows
-	go run ./cmd/repomap $(ETCD_REPO) --flows 2
-
-debug-last: ## Inspect last debug run
-	./scripts/debug_last_run.sh
+run-offline: build ## Run the built binary locally without a model call
+	$(BIN_DIR)/repomap $(ETCD_REPO) --offline --no-open --no-serve
 
 # --- Task Lens v0 experiment harness ---
 
@@ -294,13 +253,10 @@ TASK_LENS_REVIEW_PORT ?= 8767
 TASK_LENS_FROZEN_HARNESS ?= $(TASK_LENS_ROOT)/freeze/harness/task_lens_harness.py
 TASK_LENS_FROZEN_EVAL ?= $(TASK_LENS_ROOT)/freeze/harness/task_lens_eval.py
 
-.PHONY: task-lens-init task-lens-harness-check task-lens-dev-prepare task-lens-dev-run task-lens-dev-seal task-lens-freeze task-lens-cheap-exits-declare task-lens-holdout-prepare task-lens-holdout-run task-lens-holdout-seal task-lens-gold-unlock task-lens-evaluate task-lens-review task-lens-review-serve
+.PHONY: task-lens-init task-lens-dev-prepare task-lens-dev-run task-lens-dev-seal task-lens-freeze task-lens-cheap-exits-declare task-lens-holdout-prepare task-lens-holdout-run task-lens-holdout-seal task-lens-gold-unlock task-lens-evaluate task-lens-review task-lens-review-serve
 
 task-lens-init: ## Initialize the Task Lens v0 review bundle without running product episodes
 	python3 scripts/task_lens_harness.py init --root "$(TASK_LENS_ROOT)"
-
-task-lens-harness-check: ## Run the synthetic protocol plus real-binary offline Task Lens smoke
-	./scripts/task_lens_harness_check.sh
 
 task-lens-dev-prepare: ## Prepare exact development worktrees and Git-free source exports
 	python3 scripts/task_lens_harness.py prepare \
@@ -377,8 +333,3 @@ task-lens-review: ## Print the stable supervisor-report and localhost review con
 
 task-lens-review-serve: ## Serve the static Task Lens v0 review (no analysis or model calls)
 	python3 -m http.server "$(TASK_LENS_REVIEW_PORT)" --bind 127.0.0.1 --directory "$(abspath $(TASK_LENS_ROOT))"
-
-# --- Legacy compat (kept for internal dev) ---
-
-deepseek-check: ## Live configured-LLM call (legacy target name)
-	./scripts/deepseek_check.sh $(ETCD_REPO)

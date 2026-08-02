@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/goldenmechanism"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
@@ -1557,6 +1558,21 @@ func overviewSourceTargets(data *ReportData) []overviewSourceTarget {
 			if location != nil {
 				appendTarget(location.Path, location.Line)
 			}
+		}
+	}
+
+	if data.RepositoryAtlas != nil && data.Navigator != nil &&
+		data.Navigator.Recommendation != nil {
+		evidenceByID := make(map[string]repositoryatlas.Evidence, len(data.RepositoryAtlas.Evidence))
+		for _, item := range data.RepositoryAtlas.Evidence {
+			evidenceByID[item.ID] = item
+		}
+		for _, evidenceID := range data.Navigator.Recommendation.EvidenceIDs {
+			item, ok := evidenceByID[evidenceID]
+			if !ok {
+				continue
+			}
+			appendTarget(item.Location.Path, item.Location.Line)
 		}
 	}
 

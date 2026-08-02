@@ -27,13 +27,16 @@ func TestRunManifestBindsRepositoryAtlasArtifactAndEmbeddedValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	navigatorFixture := makeNavigatorArtifactFixture(t, atlas, "selected")
 	reportJSON, err := json.Marshal(struct {
-		FormatVersion   int                   `json:"format_version"`
-		OpenablePaths   []string              `json:"openable_paths"`
-		Components      []Component           `json:"components"`
-		RepositoryAtlas repositoryatlas.Atlas `json:"repository_atlas"`
+		FormatVersion   int                    `json:"format_version"`
+		OpenablePaths   []string               `json:"openable_paths"`
+		Components      []Component            `json:"components"`
+		RepositoryAtlas repositoryatlas.Atlas  `json:"repository_atlas"`
+		Navigator       NavigatorReportProduct `json:"navigator"`
 	}{
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: atlas,
+		Navigator: navigatorFixture.projection,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,11 +46,15 @@ func TestRunManifestBindsRepositoryAtlasArtifactAndEmbeddedValue(t *testing.T) {
 	manifest.Components = nil
 	manifest.ReportSHA256 = manifestSHA256(reportJSON)
 	manifest.MaterialInputs.RepositoryAtlasSHA256 = manifestSHA256(encoded)
+	manifest.MaterialInputs.NavigatorRequestSHA256 = manifestSHA256(navigatorFixture.request)
+	manifest.MaterialInputs.NavigatorResultSHA256 = manifestSHA256(navigatorFixture.result)
+	manifest.MaterialInputs.NavigatorStatusSHA256 = manifestSHA256(navigatorFixture.status)
 
 	runDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(runDir, repositoryatlas.ArtifactFilename), encoded, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeNavigatorArtifactFixture(t, runDir, navigatorFixture)
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		t.Fatalf("VerifyReportJSON: %v", err)
 	}
