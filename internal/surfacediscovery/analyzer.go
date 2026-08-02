@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"go/version"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -2712,7 +2713,7 @@ func (a *analyzer) recordGlobalArchitectureAnchors() {
 }
 
 func (a *analyzer) recordDeclarationFamilyAnchors(kind string, candidates []Symbol) {
-	members := deduplicateArchitectureSymbols(candidates)
+	members := deduplicateArchitectureSymbols(publishableArchitectureDeclarationSymbols(candidates))
 	if len(members) == 0 {
 		return
 	}
@@ -2733,6 +2734,19 @@ func (a *analyzer) recordDeclarationFamilyAnchors(kind string, candidates []Symb
 			"Exact build-selected declarations share a local architecture classification; invocation and shared function signature are not implied.",
 		)
 	}
+}
+
+func publishableArchitectureDeclarationSymbols(candidates []Symbol) []Symbol {
+	result := make([]Symbol, 0, len(candidates))
+	for _, candidate := range candidates {
+		path := candidate.Location.Path
+		if candidate.ID == "" || path == "" || path == "." || candidate.Location.Line <= 0 ||
+			candidate.Location.Column < 0 || !fs.ValidPath(path) || strings.ContainsRune(path, '\\') {
+			continue
+		}
+		result = append(result, candidate)
+	}
+	return result
 }
 
 func (a *analyzer) architectureCallKind(target *ssa.Function) string {

@@ -566,6 +566,78 @@ func TestReadRunDirKeepsCanonicalArchitectureCanvasWhenSavedSynthesisIsUnavailab
 	}
 }
 
+func TestReadRunDirRetainsValidProducerArchitectureGroundingV4InCanvas(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writeArchitectureBuildFixture(t, runDir, "snapshot.json", []byte(`{"repo_name":"fixture"}`))
+	scenario := architectureGroundingScenario{ID: "go:test", GOOS: "darwin", GOARCH: "arm64"}
+	producer := evidence.Provenance{
+		Provider: "go_ssa", Version: "fixture-v4", Operation: "producer_grounding",
+	}
+	process := architectureGroundingTestAnchor(
+		"process", componentmap.AnchorProcessEntry,
+		"cmd/main.go", 10, "example.com/project/cmd.main", scenario, producer,
+	)
+	family := architectureGroundingTestAnchor(
+		"lifecycle-family", componentmap.AnchorLifecycleStart,
+		"service/start.go", 20, "example.com/project/service.Start", scenario, producer,
+	)
+	family.ProofMode = componentmap.AnchorProofDeclarationFamily
+	grounding := ArchitectureGrounding{
+		Version: ArchitectureGroundingVersion,
+		RepositoryArchetype: ArchitectureArchetype{
+			Selected: componentmap.ArchetypeApplication,
+			Evidence: []string{"Exact producer-owned process entry."},
+		},
+		GroundingMode:   componentmap.GroundingMixed,
+		BehaviorAnchors: []ArchitectureBehaviorAnchor{process, family},
+		Coverage: ArchitectureGroundingCoverage{
+			Complete:          true,
+			AnchorsConsidered: 2, AnchorsPublished: 2,
+			DeclarationFamilyMembersConsidered: 1,
+			DeclarationFamilyMembersPublished:  1,
+		},
+	}
+	encoded, err := json.Marshal(grounding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureBuildFixture(t, runDir, ArchitectureGroundingFile, encoded)
+
+	data, err := ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureGrounding == nil || !reflect.DeepEqual(*data.ArchitectureGrounding, grounding) {
+		t.Fatalf("producer grounding was substituted:\ngot  %#v\nwant %#v", data.ArchitectureGrounding, grounding)
+	}
+	if containsWarning(data.Warnings, "architecture grounding:") {
+		t.Fatalf("valid producer grounding emitted a replay warning: %#v", data.Warnings)
+	}
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		data.ArchitectureCanvas.GroundingMode != componentmap.GroundingMixed ||
+		len(data.ArchitectureCanvas.BehaviorAnchors) != 2 {
+		t.Fatalf("producer-grounded architecture canvas = %#v", data.ArchitectureCanvas)
+	}
+	anchorModes := make(map[string]componentmap.AnchorProofMode, len(data.ArchitectureCanvas.BehaviorAnchors))
+	for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
+		anchorModes[anchor.ID] = anchor.ProofMode
+	}
+	if anchorModes[process.ID] != componentmap.AnchorProofProcessEntry ||
+		anchorModes[family.ID] != componentmap.AnchorProofDeclarationFamily {
+		t.Fatalf("canvas behavior anchors = %#v", data.ArchitectureCanvas.BehaviorAnchors)
+	}
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.CandidateBundle.GroundingMode != componentmap.GroundingMixed ||
+		len(input.CandidateBundle.BehaviorAnchors) != 2 {
+		t.Fatalf("replayed producer grounding input = %#v", input.CandidateBundle)
+	}
+}
+
 func TestReadRunDirReportsFailedArchitectureSynthesisWithoutProductFallback(t *testing.T) {
 	t.Parallel()
 
