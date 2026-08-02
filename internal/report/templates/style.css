@@ -70,6 +70,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-source-action:hover { text-decoration: underline; }
 .rm-atlas-source-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 3px; }
 .rm-atlas-omitted { color: var(--rm-dim); font-size: .72rem; margin: .75rem 0 0; }
+.rm-atlas-units-heading { margin-top: 1.25rem; }
+.rm-atlas-package-disclosure { border-top: 1px solid var(--rm-border); margin-top: .8rem; padding-top: .7rem; }
+.rm-atlas-package-summary { color: #334155; cursor: pointer; font-size: .76rem; font-weight: 700; }
+.rm-atlas-package-disclosure .rm-atlas-unit-grid { margin-top: .7rem; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }

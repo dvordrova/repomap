@@ -5826,12 +5826,16 @@
 			}
 		});
 		var units = [];
+		var topologyUnits = [];
+		var packageUnits = [];
 		var unitsByID = {};
 		atlas.units.forEach(function (unit) {
 			if (!unit || typeof unit.id !== 'string' || !unit.id || unitCounts[unit.id] !== 1 ||
 				typeof unit.name !== 'string' || !unit.name) return;
 			var view = { name: unit.name, kind: String(unit.kind || '') };
 			units.push(view);
+			if (view.kind === 'package') packageUnits.push(view);
+			else topologyUnits.push(view);
 			unitsByID[unit.id] = view;
 		});
 
@@ -5892,9 +5896,26 @@
 		});
 		return {
 			units: units,
+			topologyUnits: topologyUnits,
+			packageUnits: packageUnits,
 			relations: relations,
 			omittedRelations: eligible - relations.length,
 		};
+	}
+
+	function renderRepositoryAtlasUnitGrid(units) {
+		var unitGrid = el('div', 'rm-atlas-unit-grid');
+		units.forEach(function (unit) {
+			var card = el('article', 'rm-atlas-unit-card');
+			card.appendChild(txt('strong', '', unit.name));
+			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
+			card.appendChild(txt('span', 'rm-atlas-authority', msg(
+				'main.atlas.workspace.authority',
+				{ authority: msg('main.atlas.workspace.authority.observed') }
+			)));
+			unitGrid.appendChild(card);
+		});
+		return unitGrid;
 	}
 
 	function renderRepositoryAtlasWorkspaceShelf(root) {
@@ -5910,20 +5931,6 @@
 			root.appendChild(section);
 			return;
 		}
-
-		section.appendChild(txt('h3', 'rm-atlas-shelf-heading', msg('main.atlas.workspace.units')));
-		var unitGrid = el('div', 'rm-atlas-unit-grid');
-		shelf.units.forEach(function (unit) {
-			var card = el('article', 'rm-atlas-unit-card');
-			card.appendChild(txt('strong', '', unit.name));
-			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
-			card.appendChild(txt('span', 'rm-atlas-authority', msg(
-				'main.atlas.workspace.authority',
-				{ authority: msg('main.atlas.workspace.authority.observed') }
-			)));
-			unitGrid.appendChild(card);
-		});
-		section.appendChild(unitGrid);
 
 		section.appendChild(txt(
 			'h3',
@@ -5964,6 +5971,21 @@
 				'main.atlas.workspace.omitted_relations',
 				{ count: shelf.omittedRelations }
 			)));
+		}
+
+		section.appendChild(txt('h3', 'rm-atlas-shelf-heading rm-atlas-units-heading', msg('main.atlas.workspace.units')));
+		if (shelf.topologyUnits.length) {
+			section.appendChild(renderRepositoryAtlasUnitGrid(shelf.topologyUnits));
+		}
+		if (shelf.packageUnits.length) {
+			var packageDisclosure = el('details', 'rm-atlas-package-disclosure');
+			packageDisclosure.appendChild(txt(
+				'summary',
+				'rm-atlas-package-summary',
+				msg('main.atlas.workspace.packages', { count: shelf.packageUnits.length })
+			));
+			packageDisclosure.appendChild(renderRepositoryAtlasUnitGrid(shelf.packageUnits));
+			section.appendChild(packageDisclosure);
 		}
 		root.appendChild(section);
 	}

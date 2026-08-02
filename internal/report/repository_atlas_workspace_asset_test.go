@@ -78,6 +78,11 @@ function run(report, language) {
   const unitCards = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-card"));
   const unitAuthorityBadges = unitCards.reduce((count, card) => count + walk(card).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-authority")).length, 0);
   const sourceButtons = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-source-action"));
+  const packageDisclosure = nodes.find((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-disclosure"));
+  const packageCards = packageDisclosure ? walk(packageDisclosure).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-card")) : [];
+  const packageSummary = packageDisclosure && walk(packageDisclosure).find((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-summary"));
+  const section = root.children[0];
+  const sectionClasses = section ? section.children.map((node) => String(node.className || "")) : [];
   if (sourceButtons.length) sourceButtons[0].onclick();
   return {
     units: shelf && shelf.units.length || 0,
@@ -87,6 +92,13 @@ function run(report, language) {
     unitAuthorityBadges,
     sourceButtons: sourceButtons.length,
     sourceState: api.workspaceStateSnapshot().sourceLocation,
+    topologyCards: unitCards.length - packageCards.length,
+    packageCards: packageCards.length,
+    packageSummary: packageSummary ? String(packageSummary.textContent || "") : "",
+    packageDisclosureOpen: !!(packageDisclosure && packageDisclosure.open),
+    relationPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-relations-heading")),
+    unitsPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-units-heading")),
+    packagePosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-package-disclosure")),
   };
 }
 const source = {
@@ -132,7 +144,34 @@ const nonUserSourceReport = JSON.parse(JSON.stringify(report));
 nonUserSourceReport.user_sources = [];
 nonUserSourceReport.study_map = { directions: [{ reading_anchors: [{ source }] }] };
 const nonUserSource = run(nonUserSourceReport, "en");
-process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource }));
+const etcdReport = {
+  user_mechanisms: [], user_topics: [], user_sources: [source],
+  openable_paths: ["cmd/server/startup.go"], source_ids: {},
+  repository_atlas: { version: 1, units: [], entities: [], evidence: [], relations: [] },
+};
+etcdReport.repository_atlas.units.push({ id: "etcd-repository", kind: "repository", name: "etcd" });
+etcdReport.repository_atlas.units.push({ id: "etcd-module", kind: "module", parent_id: "etcd-repository", name: "go.etcd.io/etcd" });
+for (let index = 0; index < 30; index++) {
+  etcdReport.repository_atlas.units.push({ id: "etcd-app-" + index, kind: index % 2 ? "service" : "app", parent_id: "etcd-module", name: "runtime " + index });
+}
+for (let index = 0; index < 183; index++) {
+  etcdReport.repository_atlas.units.push({ id: "etcd-package-" + index, kind: "package", parent_id: "etcd-module", name: "go.etcd.io/etcd/pkg/" + index });
+}
+for (let index = 0; index < 18; index++) {
+  etcdReport.repository_atlas.entities.push({ id: "etcd-surface-" + index, kind: "surface", unit_id: "etcd-app-" + index });
+  etcdReport.repository_atlas.entities.push({ id: "etcd-operation-" + index, kind: "operation", unit_id: "etcd-app-" + index });
+  etcdReport.repository_atlas.evidence.push({ id: "etcd-evidence-" + index, unit_id: "etcd-app-" + index, location: { path: "cmd/server/startup.go", line: 10 } });
+  etcdReport.repository_atlas.relations.push({
+    id: "etcd-relation-" + index, unit_id: "etcd-app-" + index,
+    kind: "exposes", phase: "startup", authority: "resolved",
+    source: { kind: "surface", id: "etcd-surface-" + index },
+    target: { kind: "operation", id: "etcd-operation-" + index },
+    evidence_refs: ["etcd-evidence-" + index],
+  });
+}
+const etcdEN = run(etcdReport, "en");
+const etcdRU = run(etcdReport, "ru");
+process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, etcdEN, etcdRU }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "repository-atlas-workspace-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -143,13 +182,20 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource }));
 		t.Fatalf("run Repository Atlas workspace smoke: %v\n%s", err, output)
 	}
 	type result struct {
-		Units               int    `json:"units"`
-		Relations           int    `json:"relations"`
-		Omitted             int    `json:"omitted"`
-		Rendered            string `json:"rendered"`
-		UnitAuthorityBadges int    `json:"unitAuthorityBadges"`
-		SourceButtons       int    `json:"sourceButtons"`
-		SourceState         *struct {
+		Units                 int    `json:"units"`
+		Relations             int    `json:"relations"`
+		Omitted               int    `json:"omitted"`
+		Rendered              string `json:"rendered"`
+		UnitAuthorityBadges   int    `json:"unitAuthorityBadges"`
+		SourceButtons         int    `json:"sourceButtons"`
+		TopologyCards         int    `json:"topologyCards"`
+		PackageCards          int    `json:"packageCards"`
+		PackageSummary        string `json:"packageSummary"`
+		PackageDisclosureOpen bool   `json:"packageDisclosureOpen"`
+		RelationPosition      int    `json:"relationPosition"`
+		UnitsPosition         int    `json:"unitsPosition"`
+		PackagePosition       int    `json:"packagePosition"`
+		SourceState           *struct {
 			Path        string `json:"path"`
 			Line        int    `json:"line"`
 			DrawerFirst bool   `json:"drawerFirst"`
@@ -160,6 +206,8 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource }));
 		RU            result `json:"ru"`
 		Unavailable   result `json:"unavailable"`
 		NonUserSource result `json:"nonUserSource"`
+		EtcdEN        result `json:"etcdEN"`
+		EtcdRU        result `json:"etcdRU"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Repository Atlas workspace result: %v\n%s", err, output)
@@ -195,6 +243,25 @@ process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource }));
 	}
 	if got.NonUserSource.Relations != 0 || got.NonUserSource.Omitted != 2 || got.NonUserSource.SourceButtons != 0 {
 		t.Fatalf("non-UserSource evidence became clickable: %#v", got.NonUserSource)
+	}
+	for language, current := range map[string]result{"en": got.EtcdEN, "ru": got.EtcdRU} {
+		if current.Units != 215 || current.TopologyCards != 32 || current.PackageCards != 183 ||
+			current.UnitAuthorityBadges != 215 || current.Relations != 18 || current.SourceButtons != 18 {
+			t.Fatalf("%s etcd shelf counts = %#v", language, current)
+		}
+		if current.PackageDisclosureOpen {
+			t.Fatalf("%s package disclosure is initially open", language)
+		}
+		if current.RelationPosition < 0 || current.UnitsPosition < 0 || current.PackagePosition < 0 ||
+			current.RelationPosition >= current.UnitsPosition || current.UnitsPosition >= current.PackagePosition {
+			t.Fatalf("%s shelf order relation=%d units=%d packages=%d", language, current.RelationPosition, current.UnitsPosition, current.PackagePosition)
+		}
+	}
+	if got.EtcdEN.PackageSummary != "Packages (183)" {
+		t.Fatalf("English package disclosure = %q", got.EtcdEN.PackageSummary)
+	}
+	if got.EtcdRU.PackageSummary != "Пакеты (183)" {
+		t.Fatalf("Russian package disclosure = %q", got.EtcdRU.PackageSummary)
 	}
 }
 
