@@ -11,19 +11,21 @@ import (
 )
 
 const (
-	Version       = 3
-	PromptVersion = "atlas-study-prompt-v9"
+	Version       = 4
+	PromptVersion = "atlas-study-prompt-v10"
 
-	RequestArtifactFilename = "atlas_study_request.v3.json"
-	ResultArtifactFilename  = "atlas_study_result.v3.json"
-	StatusArtifactFilename  = "atlas_study_status.v3.json"
+	RequestArtifactFilename = "atlas_study_request.v4.json"
+	ResultArtifactFilename  = "atlas_study_result.v4.json"
+	StatusArtifactFilename  = "atlas_study_status.v4.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
 	MaxStatusArtifactBytes  = 64 << 10
 
-	MaxDirections           = studymap.MaxCandidates
-	MaxDirectionDiagnostics = 12
+	MaxDirections            = studymap.MaxCandidates
+	MaxDirectionDiagnostics  = 12
+	MaxDomainTerms           = 8
+	MaxDomainTermDiagnostics = 12
 )
 
 type Language string
@@ -376,9 +378,39 @@ type DirectionIssue struct {
 	Code     DirectionIssueCode `json:"code"`
 }
 
+type DomainTermIssueCode string
+
+const (
+	DomainTermIssueUnrequestedOutput DomainTermIssueCode = "unrequested_output"
+	DomainTermIssueDecodeCandidate   DomainTermIssueCode = "decode_candidate"
+	DomainTermIssueInvalidSupport    DomainTermIssueCode = "invalid_support"
+	DomainTermIssueInvalidTerm       DomainTermIssueCode = "invalid_term"
+	DomainTermIssueInvalidMeaning    DomainTermIssueCode = "invalid_meaning"
+)
+
+func (code DomainTermIssueCode) Valid() bool {
+	switch code {
+	case DomainTermIssueUnrequestedOutput, DomainTermIssueDecodeCandidate,
+		DomainTermIssueInvalidSupport,
+		DomainTermIssueInvalidTerm, DomainTermIssueInvalidMeaning:
+		return true
+	default:
+		return false
+	}
+}
+
+type DomainTermIssue struct {
+	Position int                 `json:"position"`
+	Code     DomainTermIssueCode `json:"code"`
+}
+
 type Diagnostics struct {
-	DirectionsReceived int              `json:"directions_received"`
-	DirectionsAccepted int              `json:"directions_accepted"`
-	DirectionsRejected int              `json:"directions_rejected"`
-	Issues             []DirectionIssue `json:"issues,omitempty"`
+	DirectionsReceived  int               `json:"directions_received"`
+	DirectionsAccepted  int               `json:"directions_accepted"`
+	DirectionsRejected  int               `json:"directions_rejected"`
+	Issues              []DirectionIssue  `json:"issues,omitempty"`
+	DomainTermsReceived int               `json:"domain_terms_received"`
+	DomainTermsAccepted int               `json:"domain_terms_accepted"`
+	DomainTermsRejected int               `json:"domain_terms_rejected"`
+	DomainTermIssues    []DomainTermIssue `json:"domain_term_issues,omitempty"`
 }

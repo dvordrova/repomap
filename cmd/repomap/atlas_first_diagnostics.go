@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/report"
 )
 
 const maxAtlasFirstMetadataBytes = 4 << 20
@@ -58,6 +59,8 @@ func architectureAtlasFirstDiagnostic(
 	state := "accepted"
 	switch {
 	case offline:
+		state = "unavailable"
+	case report.IsExactWorkspaceGraphUnavailable(stageErr):
 		state = "unavailable"
 	case errors.Is(stageErr, context.Canceled), errors.Is(stageErr, context.DeadlineExceeded):
 		state = "canceled"

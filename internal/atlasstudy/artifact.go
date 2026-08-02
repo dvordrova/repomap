@@ -165,7 +165,7 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 	if !slices.Equal(record.ShapeComponentRefs, wantShape) {
 		return fmt.Errorf("atlas study result artifact: Shape does not match cited components")
 	}
-	if err := validateDiagnostics(record.Diagnostics, len(record.Directions)); err != nil {
+	if err := validateDiagnostics(record.Diagnostics, len(record.Directions), len(record.Brief.DomainTerms)); err != nil {
 		return err
 	}
 	return nil
@@ -559,6 +559,9 @@ func (product Product) validateResolvedBrief(brief Brief) error {
 			return fmt.Errorf("atlas study result artifact: brief.%s: %w", item.name, err)
 		}
 	}
+	if len(brief.DomainTerms) > MaxDomainTerms {
+		return fmt.Errorf("atlas study result artifact: invalid domain term count")
+	}
 	for _, term := range brief.DomainTerms {
 		if err := product.validateResolvedSupport(term.SupportRefs); err != nil {
 			return err
@@ -668,11 +671,19 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 	return nil
 }
 
-func validateDiagnostics(diagnostics Diagnostics, accepted int) error {
-	if diagnostics.DirectionsReceived < accepted || diagnostics.DirectionsReceived < 1 ||
-		diagnostics.DirectionsAccepted != accepted ||
-		diagnostics.DirectionsRejected != diagnostics.DirectionsReceived-accepted ||
-		len(diagnostics.Issues) > MaxDirectionDiagnostics {
+func validateDiagnostics(diagnostics Diagnostics, acceptedDirections, acceptedTerms int) error {
+	wantDomainTermIssues := diagnostics.DomainTermsRejected
+	if wantDomainTermIssues > MaxDomainTermDiagnostics {
+		wantDomainTermIssues = MaxDomainTermDiagnostics
+	}
+	if diagnostics.DirectionsReceived < acceptedDirections || diagnostics.DirectionsReceived < 1 ||
+		diagnostics.DirectionsAccepted != acceptedDirections ||
+		diagnostics.DirectionsRejected != diagnostics.DirectionsReceived-acceptedDirections ||
+		len(diagnostics.Issues) > MaxDirectionDiagnostics ||
+		diagnostics.DomainTermsReceived < acceptedTerms ||
+		diagnostics.DomainTermsAccepted != acceptedTerms ||
+		diagnostics.DomainTermsRejected != diagnostics.DomainTermsReceived-acceptedTerms ||
+		len(diagnostics.DomainTermIssues) != wantDomainTermIssues {
 		return fmt.Errorf("atlas study result artifact: invalid diagnostics")
 	}
 	previous := -1
@@ -680,6 +691,17 @@ func validateDiagnostics(diagnostics Diagnostics, accepted int) error {
 		if issue.Position < 0 || issue.Position >= diagnostics.DirectionsReceived ||
 			issue.Position <= previous || !issue.Code.Valid() {
 			return fmt.Errorf("atlas study result artifact: invalid diagnostic issue")
+		}
+		previous = issue.Position
+	}
+	previous = -1
+	for _, issue := range diagnostics.DomainTermIssues {
+		if issue.Position < 0 || issue.Position >= diagnostics.DomainTermsReceived ||
+			issue.Position <= previous || !issue.Code.Valid() {
+			return fmt.Errorf("atlas study result artifact: invalid domain term diagnostic issue")
+		}
+		if (issue.Position >= MaxDomainTerms) != (issue.Code == DomainTermIssueUnrequestedOutput) {
+			return fmt.Errorf("atlas study result artifact: inconsistent domain term diagnostic issue")
 		}
 		previous = issue.Position
 	}
@@ -766,5 +788,6 @@ func cloneDirections(values []Direction) []Direction {
 
 func cloneDiagnostics(value Diagnostics) Diagnostics {
 	value.Issues = append([]DirectionIssue(nil), value.Issues...)
+	value.DomainTermIssues = append([]DomainTermIssue(nil), value.DomainTermIssues...)
 	return value
 }

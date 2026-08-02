@@ -271,7 +271,9 @@ func TestCompilePublishesDistinctBriefSupportChoicesWithoutUnitRefs(t *testing.T
 	}
 	prompt := product.BuildPrompt()
 	if !strings.Contains(prompt.System, "selected only from brief_support_choices") ||
-		!strings.Contains(prompt.System, "including every unit ref") {
+		!strings.Contains(prompt.System, "including every unit ref") ||
+		!strings.Contains(prompt.System, fmt.Sprintf("0-%d optional domain_terms", MaxDomainTerms)) ||
+		!strings.Contains(prompt.System, "Terms beyond that explicit count are unrequested output") {
 		t.Fatalf("Brief support prompt contract is not structurally explicit: %q", prompt.System)
 	}
 }
@@ -506,9 +508,14 @@ func TestResolveResponseAllowsOnlyScopedExactReadingLocatorEchoes(t *testing.T) 
 	brief = locatorTerm["brief"].(map[string]any)
 	term = brief["domain_terms"].([]any)[0].(map[string]any)
 	term["term"] = "internal/config/load.go"
-	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, locatorTerm)); err == nil ||
-		!strings.Contains(err.Error(), "canonical identity or source locator") {
-		t.Fatalf("domain-term name locator echo = %v", err)
+	result, diagnostics, err = product.ResolveResponseJSON(marshalTestJSON(t, locatorTerm))
+	if err != nil || len(result.Brief.DomainTerms) != 0 ||
+		diagnostics.DomainTermsReceived != 1 || diagnostics.DomainTermsAccepted != 0 ||
+		diagnostics.DomainTermsRejected != 1 ||
+		!reflect.DeepEqual(diagnostics.DomainTermIssues, []DomainTermIssue{{
+			Position: 0, Code: DomainTermIssueInvalidTerm,
+		}}) {
+		t.Fatalf("domain-term name locator echo = %v / %#v", err, diagnostics)
 	}
 
 	wrongTarget := cloneResponseMap(response)
@@ -527,6 +534,106 @@ func TestResolveResponseAllowsOnlyScopedExactReadingLocatorEchoes(t *testing.T) 
 	if _, err := Compile(collision); err == nil ||
 		!strings.Contains(err.Error(), "canonical identity or source locator") {
 		t.Fatalf("locator/canonical identity collision = %v", err)
+	}
+}
+
+func TestResolveResponseDropsInvalidOptionalDomainTermsAndPreservesSiblings(t *testing.T) {
+	product := mustCompileTestProduct(t, testInput())
+	response := responseMap(t, validResponse(t, product))
+	brief := response["brief"].(map[string]any)
+	document := refFor(t, product, RefDocument, "document-purpose-canonical")
+	configTarget := refFor(t, product, RefReadingTarget, "anchor-config-canonical")
+	brief["domain_terms"] = []any{
+		map[string]any{
+			"term": "identity workflow", "meaning": "A bounded user-facing identity operation.",
+			"support_refs": []string{document},
+		},
+		map[string]any{
+			"term": "unknown support", "meaning": "This optional item cites no advertised support.",
+			"support_refs": []string{"a999"},
+		},
+		map[string]any{
+			"term": "unsupported locator", "meaning": "Configuration is loaded in internal/config/load.go.",
+			"support_refs": []string{document},
+		},
+		map[string]any{
+			"term": "unknown field", "meaning": "This optional item has a malformed shape.",
+			"support_refs": []string{document}, "unexpected": true,
+		},
+		map[string]any{
+			"term": "configuration seam", "meaning": "Configuration is loaded in internal/config/load.go.",
+			"support_refs": []string{configTarget},
+		},
+	}
+
+	result, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, response))
+	if err != nil {
+		t.Fatalf("ResolveResponseJSON: %v", err)
+	}
+	if len(result.Directions) != 1 || result.Brief.WhatItIs.Text == "" ||
+		len(result.Brief.DomainTerms) != 2 ||
+		result.Brief.DomainTerms[0].Term != "identity workflow" ||
+		result.Brief.DomainTerms[1].Term != "configuration seam" {
+		t.Fatalf("valid Brief siblings were not preserved: %#v", result)
+	}
+	wantIssues := []DomainTermIssue{
+		{Position: 1, Code: DomainTermIssueInvalidSupport},
+		{Position: 2, Code: DomainTermIssueInvalidMeaning},
+		{Position: 3, Code: DomainTermIssueDecodeCandidate},
+	}
+	if diagnostics.DomainTermsReceived != 5 || diagnostics.DomainTermsAccepted != 2 ||
+		diagnostics.DomainTermsRejected != 3 ||
+		!reflect.DeepEqual(diagnostics.DomainTermIssues, wantIssues) {
+		t.Fatalf("domain-term diagnostics = %#v, want issues %#v", diagnostics, wantIssues)
+	}
+	encoded, err := EncodeResultRecord(result)
+	if err != nil {
+		t.Fatalf("EncodeResultRecord: %v", err)
+	}
+	decoded, err := DecodeResultRecord(encoded)
+	if err != nil {
+		t.Fatalf("DecodeResultRecord: %v", err)
+	}
+	if err := product.ValidateResultRecord(decoded); err != nil {
+		t.Fatalf("ValidateResultRecord: %v", err)
+	}
+}
+
+func TestResolveResponseBoundsUnrequestedDomainTermDiagnostics(t *testing.T) {
+	product := mustCompileTestProduct(t, testInput())
+	response := responseMap(t, validResponse(t, product))
+	brief := response["brief"].(map[string]any)
+	document := refFor(t, product, RefDocument, "document-purpose-canonical")
+	count := MaxDomainTerms + MaxDomainTermDiagnostics + 3
+	terms := make([]any, 0, count)
+	for index := 0; index < count; index++ {
+		terms = append(terms, map[string]any{
+			"term":         fmt.Sprintf("term %02d", index),
+			"meaning":      "A bounded optional repository term.",
+			"support_refs": []string{document},
+		})
+	}
+	brief["domain_terms"] = terms
+
+	result, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, response))
+	if err != nil {
+		t.Fatalf("ResolveResponseJSON: %v", err)
+	}
+	if len(result.Brief.DomainTerms) != MaxDomainTerms ||
+		diagnostics.DomainTermsReceived != count ||
+		diagnostics.DomainTermsAccepted != MaxDomainTerms ||
+		diagnostics.DomainTermsRejected != count-MaxDomainTerms ||
+		len(diagnostics.DomainTermIssues) != MaxDomainTermDiagnostics ||
+		diagnostics.DomainTermIssues[0] != (DomainTermIssue{
+			Position: MaxDomainTerms, Code: DomainTermIssueUnrequestedOutput,
+		}) || diagnostics.DomainTermIssues[MaxDomainTermDiagnostics-1] != (DomainTermIssue{
+		Position: MaxDomainTerms + MaxDomainTermDiagnostics - 1,
+		Code:     DomainTermIssueUnrequestedOutput,
+	}) {
+		t.Fatalf("bounded domain-term diagnostics = %#v", diagnostics)
+	}
+	if err := product.ValidateResultRecord(result); err != nil {
+		t.Fatalf("ValidateResultRecord: %v", err)
 	}
 }
 
@@ -747,7 +854,7 @@ func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoute
 	}
 }
 
-func TestSavedCasdoor175017ResponsePreservesAllTermsAndDiagnosesRoutesIndependently(t *testing.T) {
+func TestSavedCasdoor175017ResponseDropsNinthUnrequestedTermAndDiagnosesRoutesIndependently(t *testing.T) {
 	product := mustCompileTestProduct(t, casdoor175017ResponseInput())
 	saved, err := os.ReadFile("testdata/casdoor_20260802_175017_response.json")
 	if err != nil {
@@ -761,17 +868,22 @@ func TestSavedCasdoor175017ResponsePreservesAllTermsAndDiagnosesRoutesIndependen
 	if err := decodeStrict(saved, &envelope); err != nil {
 		t.Fatalf("saved live response is not strict JSON: %v", err)
 	}
-	brief, err := product.resolveBrief(envelope.Brief)
+	brief, termDiagnostics, err := product.resolveBrief(envelope.Brief)
 	if err != nil {
 		t.Fatalf("saved live Brief: %v", err)
 	}
-	if len(brief.DomainTerms) != 9 || brief.DomainTerms[8].Term != "Face ID" {
-		t.Fatalf("saved live domain terms = %#v", brief.DomainTerms)
+	if len(brief.DomainTerms) != MaxDomainTerms || brief.DomainTerms[7].Term != "MFA" ||
+		termDiagnostics.DomainTermsReceived != 9 || termDiagnostics.DomainTermsAccepted != MaxDomainTerms ||
+		termDiagnostics.DomainTermsRejected != 1 ||
+		!reflect.DeepEqual(termDiagnostics.DomainTermIssues, []DomainTermIssue{{
+			Position: MaxDomainTerms, Code: DomainTermIssueUnrequestedOutput,
+		}}) {
+		t.Fatalf("saved live domain terms/diagnostics = %#v / %#v", brief.DomainTerms, termDiagnostics)
 	}
-	directions, diagnostics := product.resolveDirections(envelope.Directions)
-	if len(directions) != 0 || diagnostics.DirectionsReceived != 5 ||
-		diagnostics.DirectionsAccepted != 0 || diagnostics.DirectionsRejected != 5 {
-		t.Fatalf("saved live direction result = %d / %#v", len(directions), diagnostics)
+	directions, directionDiagnostics := product.resolveDirections(envelope.Directions)
+	if len(directions) != 0 || directionDiagnostics.DirectionsReceived != 5 ||
+		directionDiagnostics.DirectionsAccepted != 0 || directionDiagnostics.DirectionsRejected != 5 {
+		t.Fatalf("saved live direction result = %d / %#v", len(directions), directionDiagnostics)
 	}
 	wantRawIssues := []DirectionIssue{
 		{Position: 0, Code: IssueWrongKindPrincipalRef},
@@ -780,14 +892,17 @@ func TestSavedCasdoor175017ResponsePreservesAllTermsAndDiagnosesRoutesIndependen
 		{Position: 3, Code: IssueWrongKindPrincipalRef},
 		{Position: 4, Code: IssueInvalidPrincipalCount},
 	}
-	if !reflect.DeepEqual(diagnostics.Issues, wantRawIssues) {
-		t.Fatalf("saved live route diagnostics = %#v, want %#v", diagnostics.Issues, wantRawIssues)
+	if !reflect.DeepEqual(directionDiagnostics.Issues, wantRawIssues) {
+		t.Fatalf("saved live route diagnostics = %#v, want %#v", directionDiagnostics.Issues, wantRawIssues)
 	}
 	_, returnedDiagnostics, err := product.ResolveResponseJSON(saved)
 	var decodeErr *ResponseDecodeError
 	if err == nil || errors.As(err, &decodeErr) ||
 		!strings.Contains(err.Error(), "no valid Study directions") ||
-		!reflect.DeepEqual(returnedDiagnostics, diagnostics) {
+		returnedDiagnostics.DomainTermsReceived != 9 ||
+		returnedDiagnostics.DomainTermsAccepted != MaxDomainTerms ||
+		!reflect.DeepEqual(returnedDiagnostics.DomainTermIssues, termDiagnostics.DomainTermIssues) ||
+		!reflect.DeepEqual(returnedDiagnostics.Issues, directionDiagnostics.Issues) {
 		t.Fatalf("saved live validation failure = %v / %#v", err, returnedDiagnostics)
 	}
 
@@ -800,9 +915,12 @@ func TestSavedCasdoor175017ResponsePreservesAllTermsAndDiagnosesRoutesIndependen
 	if err != nil {
 		t.Fatalf("manually corrected sibling routes: %v", err)
 	}
-	if len(result.Brief.DomainTerms) != 9 || len(result.Directions) != 3 ||
+	if len(result.Brief.DomainTerms) != MaxDomainTerms || len(result.Directions) != 3 ||
 		correctedDiagnostics.DirectionsAccepted != 3 ||
-		correctedDiagnostics.DirectionsRejected != 2 {
+		correctedDiagnostics.DirectionsRejected != 2 ||
+		correctedDiagnostics.DomainTermsReceived != 9 ||
+		correctedDiagnostics.DomainTermsAccepted != MaxDomainTerms ||
+		correctedDiagnostics.DomainTermsRejected != 1 {
 		t.Fatalf("corrected result = terms:%d directions:%d diagnostics:%#v",
 			len(result.Brief.DomainTerms), len(result.Directions), correctedDiagnostics)
 	}
@@ -830,6 +948,7 @@ func TestSavedCasdoor190133ResponsePreservesBriefAndAcceptsScopedLocatorRoute(t 
 	if err := json.Unmarshal(requestJSON, &request); err != nil {
 		t.Fatal(err)
 	}
+	request.CatalogRef = fmt.Sprintf("atlas-study-v%d-%s", Version, request.CatalogSHA256)
 	product := productFromArtifact(
 		request.AtlasSHA256, request.ArchitectureSHA256, request.WireSHA256,
 		request.CatalogSHA256, request.CatalogRef, request.Language, request.Catalog,
@@ -871,10 +990,14 @@ func TestSavedCasdoor193502ResponsePublishesBriefAndUsefulRoutesWithoutWireRefs(
 	if got := digest(requestJSON); got != "a4550a1f40338d2691402551582ecd563e2d07017f56fa9116f8eca38348f10f" {
 		t.Fatalf("saved request SHA-256 = %s", got)
 	}
-	request, err := DecodeRequestRecord(requestJSON)
-	if err != nil {
-		t.Fatalf("DecodeRequestRecord: %v", err)
+	if _, err := DecodeRequestRecord(requestJSON); err == nil {
+		t.Fatal("stale prompt-v9 request replayed under the item-local domain-term contract")
 	}
+	var request RequestRecord
+	if err := json.Unmarshal(requestJSON, &request); err != nil {
+		t.Fatal(err)
+	}
+	request.CatalogRef = fmt.Sprintf("atlas-study-v%d-%s", Version, request.CatalogSHA256)
 	product := productFromArtifact(
 		request.AtlasSHA256, request.ArchitectureSHA256, request.WireSHA256,
 		request.CatalogSHA256, request.CatalogRef, request.Language, request.Catalog,

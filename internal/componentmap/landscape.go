@@ -16,8 +16,8 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion = 6
-	ProposalVersion = 6
+	ContractVersion = 7
+	ProposalVersion = 7
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -45,6 +45,42 @@ const (
 	maxPathBytes                      = 4_096
 	maxProvenanceBytes                = 1_024
 )
+
+// CandidateBundleLimitKind identifies one complete local input collection
+// whose numeric ceiling was exhausted before any provider request could be
+// constructed. These are input-availability boundaries, not malformed model
+// output and not permission to retain a prefix of the collection.
+type CandidateBundleLimitKind string
+
+const (
+	CandidateBundleLimitCandidates       CandidateBundleLimitKind = "candidates"
+	CandidateBundleLimitFlows            CandidateBundleLimitKind = "flows"
+	CandidateBundleLimitRelations        CandidateBundleLimitKind = "relations"
+	CandidateBundleLimitAnchorBindings   CandidateBundleLimitKind = "anchor_bindings"
+	CandidateBundleLimitBehaviorAnchors  CandidateBundleLimitKind = "behavior_anchors"
+	CandidateBundleLimitResearchFindings CandidateBundleLimitKind = "research_findings"
+)
+
+// CandidateBundleLimitError is a provider-free, typed input-exhaustion
+// outcome. Observed is the complete locally produced cardinality and Limit is
+// the contract ceiling; callers must not convert it into silent truncation.
+type CandidateBundleLimitError struct {
+	Kind     CandidateBundleLimitKind
+	Observed int
+	Limit    int
+}
+
+func (err *CandidateBundleLimitError) Error() string {
+	if err == nil {
+		return "componentmap: candidate bundle input limit exhausted"
+	}
+	return fmt.Sprintf(
+		"componentmap: candidate bundle %s count %d exceeds limit %d",
+		err.Kind,
+		err.Observed,
+		err.Limit,
+	)
+}
 
 // MemberKind gives an opaque ID enough local type information to prevent a
 // package ID and a file ID from accidentally referring to the same member.
@@ -529,19 +565,29 @@ func (bundle CandidateBundle) Validate() error {
 		return fmt.Errorf("componentmap: candidate bundle is empty")
 	}
 	if len(bundle.Candidates) > maxCandidates {
-		return fmt.Errorf("componentmap: candidate bundle exceeds %d candidates", maxCandidates)
+		return &CandidateBundleLimitError{
+			Kind: CandidateBundleLimitCandidates, Observed: len(bundle.Candidates), Limit: maxCandidates,
+		}
 	}
 	if len(bundle.Flows) > maxFlows {
-		return fmt.Errorf("componentmap: candidate bundle exceeds %d flows", maxFlows)
+		return &CandidateBundleLimitError{
+			Kind: CandidateBundleLimitFlows, Observed: len(bundle.Flows), Limit: maxFlows,
+		}
 	}
 	if len(bundle.Relations) > maxRelations {
-		return fmt.Errorf("componentmap: candidate bundle exceeds %d structural relations", maxRelations)
+		return &CandidateBundleLimitError{
+			Kind: CandidateBundleLimitRelations, Observed: len(bundle.Relations), Limit: maxRelations,
+		}
 	}
 	if len(bundle.AnchorBindings) > maxAnchorBindings {
-		return fmt.Errorf("componentmap: candidate bundle exceeds %d flow-anchor bindings", maxAnchorBindings)
+		return &CandidateBundleLimitError{
+			Kind: CandidateBundleLimitAnchorBindings, Observed: len(bundle.AnchorBindings), Limit: maxAnchorBindings,
+		}
 	}
 	if len(bundle.ResearchFindings) > maxResearchFindings {
-		return fmt.Errorf("componentmap: candidate bundle exceeds %d research findings", maxResearchFindings)
+		return &CandidateBundleLimitError{
+			Kind: CandidateBundleLimitResearchFindings, Observed: len(bundle.ResearchFindings), Limit: maxResearchFindings,
+		}
 	}
 	if len(bundle.ResearchFindings) > 0 && strings.TrimSpace(bundle.ResearchPolicyVersion) == "" {
 		return fmt.Errorf("componentmap: research findings require a policy version")
@@ -553,7 +599,9 @@ func (bundle CandidateBundle) Validate() error {
 		return fmt.Errorf("componentmap: invalid grounding mode %q", bundle.GroundingMode)
 	}
 	if len(bundle.BehaviorAnchors) > maxBehaviorAnchors {
-		return fmt.Errorf("componentmap: candidate bundle exceeds %d behavior anchors", maxBehaviorAnchors)
+		return &CandidateBundleLimitError{
+			Kind: CandidateBundleLimitBehaviorAnchors, Observed: len(bundle.BehaviorAnchors), Limit: maxBehaviorAnchors,
+		}
 	}
 	if bundle.GroundingMode != GroundingPackages && len(bundle.BehaviorAnchors) == 0 {
 		return fmt.Errorf("componentmap: grounded architecture has no behavior anchors")
@@ -895,7 +943,6 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		Relations:      cloneLocalRelations(bundle.Relations),
 		AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
 	}
-	componentCount := 0
 	componentBudget := maxComponents - 1
 	for _, proposedSubsystem := range proposedSubsystems {
 		if componentBudget == 0 {
@@ -962,7 +1009,6 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				return Landscape{}, diagnostics, false
 			}
 			seenComponentIDs[id] = struct{}{}
-			componentCount++
 			subsystem.Components = append(subsystem.Components, Component{
 				ID: id, Name: componentName, Description: componentDescription,
 				Members: members, AnchorIDs: anchorIDs, Hypothesis: proposedComponent.Hypothesis,
@@ -981,50 +1027,15 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.no_usable_subsystems", "no proposed subsystem retained a unique known member")
 		return Landscape{}, diagnostics, false
 	}
-	for _, anchor := range bundle.BehaviorAnchors {
-		if anchor.Kind != AnchorProcessEntry {
-			continue
-		}
-		for _, memberID := range anchor.MemberIDs {
-			if _, included := seenMembers[memberID]; included {
-				continue
-			}
-			invalid(
-				"proposal.omitted_process_entry_member",
-				"proposal omitted an exact process-entry member from the conceptual architecture",
-			)
-		}
-	}
 	if len(seenMembers) != len(bundle.Candidates) {
-		missing := make([]Candidate, 0, len(bundle.Candidates)-len(seenMembers))
-		for _, candidate := range bundle.Candidates {
-			if _, included := seenMembers[candidate.ID]; included {
-				continue
-			}
-			missing = append(missing, cloneCandidate(candidate))
-		}
-		sortCandidates(missing)
-		if len(landscape.Subsystems) == maxSubsystems || componentCount == maxComponents {
-			invalid("proposal.omitted_members_exceed_bounds", "proposal omitted local members and no bounded remainder fits")
-			return Landscape{}, diagnostics, false
-		}
-		remainder := Component{
-			ID:          componentID(candidateIDs(missing)),
-			Name:        "Other locally known members",
-			Description: "Exact local candidates omitted by conceptual synthesis; retained without inferred grouping.",
-			Members:     missing,
-		}
-		landscape.Subsystems = append(landscape.Subsystems, Subsystem{
-			ID:          subsystemID([]ComponentID{remainder.ID}),
-			Name:        "Unassigned local evidence",
-			Description: "Local evidence intentionally preserved outside the proposed conceptual groups.",
-			Category:    SubsystemCategoryDiagnostic,
-			Components:  []Component{remainder},
-		})
-		diagnostics = append(diagnostics, newDiagnostic(
-			"proposal.omitted_members_preserved",
-			"conceptual synthesis omitted local candidates; they remain visible in a deterministic remainder",
-		))
+		invalid(
+			"proposal.incomplete_member_coverage",
+			fmt.Sprintf(
+				"proposal covers %d of %d requested distinct candidate members",
+				len(seenMembers), len(bundle.Candidates),
+			),
+		)
+		return Landscape{}, diagnostics, false
 	}
 	landscape.Diagnostics = diagnostics
 	landscape.ConceptualMemberships = conceptualMembershipsFromSubsystems(landscape.Subsystems)
@@ -1041,8 +1052,21 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 	memberReferenceCount := 0
 	memberReferenceCounts := make(map[MemberID]int)
 	distinctReferencedMembers := make(map[MemberID]struct{})
+	knownMembers := candidateIndex(bundle)
 	for _, subsystem := range proposal.Subsystems {
+		if len(subsystem.Components) == 0 {
+			return []Diagnostic{newDiagnostic(
+				"proposal.invalid_subsystem",
+				"proposal contains an empty or malformed subsystem",
+			)}
+		}
 		for _, component := range subsystem.Components {
+			if len(component.MemberIDs) == 0 {
+				return []Diagnostic{newDiagnostic(
+					"proposal.invalid_component",
+					"proposal contains an empty or malformed component",
+				)}
+			}
 			if len(component.MemberIDs) > maxCandidates {
 				return []Diagnostic{newDiagnostic(
 					"proposal.invalid_members",
@@ -1064,6 +1088,12 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 						"proposal contains a malformed member id",
 					)}
 				}
+				if _, known := knownMembers[memberID]; !known {
+					return []Diagnostic{newDiagnostic(
+						"proposal.unknown_member_id",
+						"proposal references a member id absent from the local candidate bundle",
+					)}
+				}
 				if _, duplicate := seenComponentMembers[memberID]; duplicate {
 					return []Diagnostic{newDiagnostic(
 						"proposal.duplicate_member_id",
@@ -1082,16 +1112,13 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 			}
 		}
 	}
-	omittedMembers := 0
-	for _, candidate := range bundle.Candidates {
-		if _, included := distinctReferencedMembers[candidate.ID]; !included {
-			omittedMembers++
-		}
-	}
-	if memberReferenceCount+omittedMembers > maxConceptualMemberships {
+	if len(distinctReferencedMembers) != len(bundle.Candidates) {
 		return []Diagnostic{newDiagnostic(
-			"proposal.membership_limit_exceeded",
-			"proposal plus the deterministic omitted-member remainder exceeds the conceptual membership limit",
+			"proposal.incomplete_member_coverage",
+			fmt.Sprintf(
+				"proposal covers %d of %d requested distinct candidate members",
+				len(distinctReferencedMembers), len(bundle.Candidates),
+			),
 		)}
 	}
 	return nil

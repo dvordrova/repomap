@@ -32,6 +32,7 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.duplicate_component_identity",
 		"proposal.membership_limit_exceeded",
 		"proposal.member_participation_limit_exceeded",
+		"proposal.incomplete_member_coverage",
 		"proposal.unknown_member_id",
 		"proposal.unknown_anchor_id",
 		"proposal.invalid_subsystem",

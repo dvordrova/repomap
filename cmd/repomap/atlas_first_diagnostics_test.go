@@ -7,7 +7,22 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/report"
 )
+
+func TestArchitectureDiagnosticReportsExactGraphUnavailableWithoutProviderCall(t *testing.T) {
+	t.Parallel()
+
+	diagnostic := architectureAtlasFirstDiagnostic(
+		architectureSynthesisOutcome{},
+		&report.ExactWorkspaceGraphUnavailableError{},
+		false,
+	)
+	if diagnostic.State != "unavailable" || diagnostic.SemanticCalls != 0 ||
+		diagnostic.TransportAttempts != 0 || diagnostic.RequestBytes != 0 {
+		t.Fatalf("exact-graph diagnostic = %#v", diagnostic)
+	}
+}
 
 func TestAtlasFirstStageDiagnosticsAreExactIdempotentAndExplicitlyComplete(t *testing.T) {
 	runDir := t.TempDir()

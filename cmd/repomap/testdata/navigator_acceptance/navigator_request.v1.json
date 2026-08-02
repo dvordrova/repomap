@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "atlas_sha256": "34da75182d56fd6d581a66184012bbc75acc770f4ec0f0b6d4a558dae5617043",
+  "atlas_sha256": "1898aeea3c62d209fe2590f3ef2fb665789d81e3dac291b9ca3cacffe7fddfb7",
   "wire_sha256": "7ff07dcc36fb068d5a1c41f74d63caa8f8d309a81c0f17897dcd5546916c0da1",
   "catalog_sha256": "20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d",
   "catalog_ref": "navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d",
