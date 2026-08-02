@@ -2290,7 +2290,7 @@ func writeFile(t *testing.T, path, contents string) {
 func sourceEpisodeCLIFixture(t *testing.T) (path string, raw []byte, revision, episodeID, question string) {
 	t.Helper()
 	path, err := filepath.Abs(filepath.Join(
-		"..", "..", "experiments", "source-episode", "django-atomic", "episode.json",
+		"..", "..", "internal", "report", "testdata", "source_episode", "django-atomic", "episode.json",
 	))
 	if err != nil {
 		t.Fatal(err)

@@ -14,14 +14,7 @@ func TestPresentationTextInventoryIncludesApprovedSourceEpisodeProse(t *testing.
 
 	raw, episode := readSourceEpisodeFixture(
 		t,
-		filepath.Join(
-			"..",
-			"..",
-			"experiments",
-			"source-episode",
-			"etcd-put",
-			"episode.json",
-		),
+		filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
 	)
 	canonical := authorizedSourceEpisodeReport(episode)
 	if err := AttachSourceEpisodePresentation(canonical, raw); err != nil {

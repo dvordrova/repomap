@@ -1,16 +1,21 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/196-atlas-first-navigation.md
+    decisions/197-production-repository-cleanup.md
 
 Status:
-    Decision 196 active; Atlas-first Navigator and truthful workspace authorized
+    Decision 197 implemented; next product-transition decision required
 
 Approved by:
     Repository owner in the current session
 
 Notes:
-    Decision 196 retains the accepted Decision 195 UI/source-coverage and
+    Decision 197 removes or graduates experiments and playgrounds only after
+    the completed caller/contract inventory. It does not add a new analysis or
+    UI layer. Decision 196's accepted Atlas workspace remains installed;
+    Navigator production wiring is held for the separate product-transition
+    decision because it cannot truthfully emit the old Orientation semantic
+    shape. Decision 196 retains the accepted Decision 195 UI/source-coverage and
     semantic-output checkpoints, but replaces its raw-complete-facts
     Orientation lane with a local Atlas-first, task-shaped Navigator
     projection. Atlas grows locally and is persisted as normal-run evidence;
