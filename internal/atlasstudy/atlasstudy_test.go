@@ -1,6 +1,7 @@
 package atlasstudy
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,7 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	}
 	for _, hidden := range []string{
 		"unit-repository-canonical", "component-api-canonical", "surface-start-canonical",
-		"anchor-start-canonical", "cmd/server/main.go", "RunServer",
+		"anchor-start-canonical",
 	} {
 		if strings.Contains(wire, hidden) {
 			t.Fatalf("provider wire exposed %q: %s", hidden, wire)
@@ -40,6 +41,8 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 		`"ref":"u1"`, `"ref":"ss1"`, `"ref":"c1"`, `"ref":"sf1"`,
 		`"ref":"a1"`, `"ref":"e1"`, `"ref":"d1"`,
 		`"authority":"resolved"`, `"language":"en"`,
+		`"allowed_paths":["cmd/server/main.go","internal/config/load.go","internal/server/routes.go"]`,
+		`"path":"cmd/server/main.go","line":20`,
 	} {
 		if !strings.Contains(wire, visible) {
 			t.Fatalf("provider wire missing %q: %s", visible, wire)
@@ -47,6 +50,18 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	}
 	if want := fmt.Sprintf("Return 1-%d directions", MaxDirections); !strings.Contains(product.BuildPrompt().System, want) {
 		t.Fatalf("provider prompt does not use the production route bound %q", want)
+	}
+	for _, exactRule := range []string{
+		"every such path is repeated in allowed_paths",
+		"Identity fields return only short refs",
+		"never copy a short ref into prose",
+		"component c* or surface sf* ref",
+		"Never use unit u*, subsystem ss*, reading-target a*, evidence e*, or document d* refs as direction principals",
+		"Every reading target_ref must be an a* reading_target ref",
+	} {
+		if !strings.Contains(product.BuildPrompt().System, exactRule) {
+			t.Fatalf("provider prompt is missing closed typed-ref rule %q", exactRule)
+		}
 	}
 	if prompt := product.BuildPrompt(); prompt.Language != LanguageEnglish ||
 		!strings.Contains(prompt.User, "Requested prose language: en.") {
@@ -56,6 +71,9 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	target := catalogObject(t, catalog, RefReadingTarget, "anchor-start-canonical")
 	if target.Location == nil || target.Location.Path != "cmd/server/main.go" || target.Symbol != "RunServer" {
 		t.Fatalf("private target locator = %#v", target)
+	}
+	if strings.Contains(wire, `"symbol":"RunServer"`) {
+		t.Fatalf("ambiguous bare symbol leaked into provider locator context: %s", wire)
 	}
 
 	reordered := cloneTestInput(input)
@@ -98,7 +116,7 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 		t.Fatalf("common source symbol collided with ordinary prose: %v", err)
 	}
 	if !strings.Contains(string(commonProduct.WireJSON()), "Run the service") ||
-		strings.Contains(string(commonProduct.WireJSON()), "cmd/server/main.go") {
+		!strings.Contains(string(commonProduct.WireJSON()), `"path":"cmd/server/main.go"`) {
 		t.Fatalf("common-symbol wire safety = %s", commonProduct.WireJSON())
 	}
 }
@@ -144,6 +162,30 @@ func TestCompileUsesCompleteReadingLocatorIdentity(t *testing.T) {
 			test.change(&input.ReadingTargets[1])
 			if _, err := Compile(input); err != nil {
 				t.Fatalf("distinct %s locator rejected: %v", test.name, err)
+			}
+		})
+	}
+}
+
+func TestCompileRejectsMalformedModelVisibleReadingSymbols(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		symbol string
+	}{
+		{name: "invalid utf8", symbol: string([]byte{0xff, '.', 'R'})},
+		{name: "line feed", symbol: "example.com/server.\nRun"},
+		{name: "carriage return", symbol: "example.com/server.\rRun"},
+		{name: "over bound", symbol: strings.Repeat("x", DefaultLimits().MaxTextBytes+1) + ".Run"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			input := cloneTestInput(testInput())
+			input.ReadingTargets[0].Symbol = test.symbol
+			if _, err := Compile(input); err == nil || !strings.Contains(err.Error(), "reading target symbol") {
+				t.Fatalf("malformed model-visible symbol error = %v", err)
 			}
 		})
 	}
@@ -371,6 +413,123 @@ func TestResolveResponseProducesSupportedBriefExactDirectionsAndCanonicalArtifac
 	}
 }
 
+func TestResolveBriefAcceptsCompleteUniqueSupportSetWithoutMagicCountCap(t *testing.T) {
+	product := mustCompileTestProduct(t, testInput())
+	var support []string
+	for _, object := range product.Catalog() {
+		if briefSupportKind(object.Kind) {
+			support = append(support, object.Ref)
+		}
+	}
+	if len(support) < 9 {
+		t.Fatalf("fixture support catalog = %d, want at least 9", len(support))
+	}
+	response := responseMap(t, validResponse(t, product))
+	brief := response["brief"].(map[string]any)
+	brief["what_it_is"].(map[string]any)["support_refs"] = support
+	result, _, err := product.ResolveResponseJSON(marshalTestJSON(t, response))
+	if err != nil {
+		t.Fatalf("complete support set: %v", err)
+	}
+	if got := len(result.Brief.WhatItIs.SupportRefs); got != len(support) {
+		t.Fatalf("resolved support = %d, want %d", got, len(support))
+	}
+}
+
+func TestResolveResponseAllowsOnlyScopedExactReadingLocatorEchoes(t *testing.T) {
+	input := testInput()
+	for index := range input.ReadingTargets {
+		if input.ReadingTargets[index].ID == "anchor-config-canonical" {
+			input.ReadingTargets[index].Symbol = "example.com/config.Load"
+		}
+	}
+	product := mustCompileTestProduct(t, input)
+	response := responseMap(t, validResponse(t, product))
+	direction := response["directions"].([]any)[0].(map[string]any)
+	direction["learning_outcome"] = "The reader can inspect internal/config/load.go as the configuration seam."
+	reading := direction["reading"].([]any)
+	reading[0].(map[string]any)["what_to_look_for"] =
+		"Inspect example.com/config.Load at internal/config/load.go."
+	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, response)); err != nil {
+		t.Fatalf("scoped exact locator echo: %v", err)
+	}
+
+	shortRefCopy := cloneResponseMap(response)
+	direction = shortRefCopy["directions"].([]any)[0].(map[string]any)
+	direction["learning_outcome"] = "The reader can map this route to c1."
+	_, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, shortRefCopy))
+	if err == nil || diagnostics.DirectionsAccepted != 0 || len(diagnostics.Issues) != 1 ||
+		diagnostics.Issues[0].Code != IssueInvalidOutcome {
+		t.Fatalf("request-local ref leaked into direction prose = %v / %#v", err, diagnostics)
+	}
+
+	briefScoped := responseMap(t, validResponse(t, product))
+	brief := briefScoped["brief"].(map[string]any)
+	target := refFor(t, product, RefReadingTarget, "anchor-config-canonical")
+	statement := brief["what_it_is"].(map[string]any)
+	statement["text"] = "Read internal/config/load.go and example.com/config.Load to understand configuration."
+	statement["support_refs"] = []string{target}
+	term := brief["domain_terms"].([]any)[0].(map[string]any)
+	term["meaning"] = "Configuration loaded by example.com/config.Load in internal/config/load.go."
+	term["support_refs"] = []string{target}
+	result, _, err := product.ResolveResponseJSON(marshalTestJSON(t, briefScoped))
+	if err != nil {
+		t.Fatalf("support-scoped Brief locator echo: %v", err)
+	}
+	encoded, err := EncodeResultRecord(result)
+	if err != nil {
+		t.Fatalf("encode support-scoped result: %v", err)
+	}
+	if _, err := DecodeResultRecord(encoded); err != nil {
+		t.Fatalf("standalone support-scoped result: %v", err)
+	}
+
+	unsupportedBrief := cloneResponseMap(briefScoped)
+	brief = unsupportedBrief["brief"].(map[string]any)
+	statement = brief["what_it_is"].(map[string]any)
+	statement["support_refs"] = []string{refFor(t, product, RefDocument, "document-purpose-canonical")}
+	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, unsupportedBrief)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("Brief locator without matching reading support = %v", err)
+	}
+
+	foreignBrief := cloneResponseMap(briefScoped)
+	brief = foreignBrief["brief"].(map[string]any)
+	statement = brief["what_it_is"].(map[string]any)
+	statement["text"] = "Read internal/server/routes.go to understand configuration."
+	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, foreignBrief)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("Brief locator from unsupported reading target = %v", err)
+	}
+
+	locatorTerm := cloneResponseMap(briefScoped)
+	brief = locatorTerm["brief"].(map[string]any)
+	term = brief["domain_terms"].([]any)[0].(map[string]any)
+	term["term"] = "internal/config/load.go"
+	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, locatorTerm)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("domain-term name locator echo = %v", err)
+	}
+
+	wrongTarget := cloneResponseMap(response)
+	direction = wrongTarget["directions"].([]any)[0].(map[string]any)
+	reading = direction["reading"].([]any)
+	reading[0].(map[string]any)["what_to_look_for"] =
+		"Inspect internal/server/routes.go instead."
+	_, diagnostics, err = product.ResolveResponseJSON(marshalTestJSON(t, wrongTarget))
+	if err == nil || diagnostics.DirectionsAccepted != 0 || len(diagnostics.Issues) != 1 ||
+		diagnostics.Issues[0].Code != IssueInvalidReadingCopy {
+		t.Fatalf("cross-target locator echo = %v / %#v", err, diagnostics)
+	}
+
+	collision := testInput()
+	collision.ReadingTargets[0].Location.Path = "component-api-canonical"
+	if _, err := Compile(collision); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("locator/canonical identity collision = %v", err)
+	}
+}
+
 func TestResolveResponseFailsClosedForRequiredBriefAndKeepsCatalogIdentityPrivate(t *testing.T) {
 	product := mustCompileTestProduct(t, testInput())
 	valid := responseMap(t, validResponse(t, product))
@@ -390,6 +549,11 @@ func TestResolveResponseFailsClosedForRequiredBriefAndKeepsCatalogIdentityPrivat
 		if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, withPrivateEcho)); err == nil ||
 			!strings.Contains(err.Error(), "unknown field") {
 			t.Fatalf("private output field %q error = %v", field, err)
+		} else {
+			var decodeErr *ResponseDecodeError
+			if !errors.As(err, &decodeErr) {
+				t.Fatalf("private output field %q was not classified as decode: %v", field, err)
+			}
 		}
 	}
 
@@ -401,6 +565,46 @@ func TestResolveResponseFailsClosedForRequiredBriefAndKeepsCatalogIdentityPrivat
 	var reference *ReferenceError
 	if !errors.As(err, &reference) || reference.Code != "raw_canonical_ref" {
 		t.Fatalf("raw canonical support error = %v", err)
+	}
+
+	shortRefProse := cloneResponseMap(valid)
+	brief = shortRefProse["brief"].(map[string]any)
+	statement = brief["what_it_is"].(map[string]any)
+	statement["text"] = "The service begins at c1."
+	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, shortRefProse)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("request-local ref leaked into Brief prose: %v", err)
+	}
+
+	locatorEcho := cloneResponseMap(valid)
+	brief = locatorEcho["brief"].(map[string]any)
+	statement = brief["what_it_is"].(map[string]any)
+	statement["text"] = "Start by reading cmd/server/main.go before continuing."
+	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, locatorEcho)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("model echoed an input-only source locator: %v", err)
+	}
+	targetOnlyInput := cloneTestInput(testInput())
+	targetOnlyInput.ReadingTargets[0].Location.Path = "internal/target-only/start.go"
+	targetOnlyProduct := mustCompileTestProduct(t, targetOnlyInput)
+	targetOnlyEcho := responseMap(t, validResponse(t, targetOnlyProduct))
+	brief = targetOnlyEcho["brief"].(map[string]any)
+	statement = brief["what_it_is"].(map[string]any)
+	statement["text"] = "Start by reading internal/target-only/start.go before continuing."
+	if _, _, err := targetOnlyProduct.ResolveResponseJSON(marshalTestJSON(t, targetOnlyEcho)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("model echoed a target-only source locator: %v", err)
+	}
+	qualifiedInput := testInput()
+	qualifiedInput.ReadingTargets[0].Symbol = "example.com/server.RunServer"
+	qualifiedProduct := mustCompileTestProduct(t, qualifiedInput)
+	qualifiedEcho := responseMap(t, validResponse(t, qualifiedProduct))
+	brief = qualifiedEcho["brief"].(map[string]any)
+	statement = brief["what_it_is"].(map[string]any)
+	statement["text"] = "Inspect example.com/server.RunServer before continuing."
+	if _, _, err := qualifiedProduct.ResolveResponseJSON(marshalTestJSON(t, qualifiedEcho)); err == nil ||
+		!strings.Contains(err.Error(), "canonical identity or source locator") {
+		t.Fatalf("model echoed an input-only qualified symbol: %v", err)
 	}
 
 	wrongKind := cloneResponseMap(valid)
@@ -517,15 +721,16 @@ func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoute
 	if err != nil {
 		t.Fatalf("corrected saved 14:44 response: %v", err)
 	}
-	if diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 3 ||
-		diagnostics.DirectionsRejected != 3 || len(result.Directions) != 3 ||
-		len(diagnostics.Issues) != 3 {
+	if diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 2 ||
+		diagnostics.DirectionsRejected != 4 || len(result.Directions) != 2 ||
+		len(diagnostics.Issues) != 4 {
 		t.Fatalf("corrected saved-response result/diagnostics = %d / %#v", len(result.Directions), diagnostics)
 	}
 	wantIssues := []DirectionIssue{
-		{Position: 3, Code: IssueInvalidReadingCount},
+		{Position: 1, Code: IssueWrongKindPrincipalRef},
+		{Position: 3, Code: IssuePrincipalNotAdvertised},
 		{Position: 4, Code: IssueInvalidReadingCount},
-		{Position: 5, Code: IssueReadingPrincipalMissing},
+		{Position: 5, Code: IssuePrincipalNotAdvertised},
 	}
 	if !reflect.DeepEqual(diagnostics.Issues, wantIssues) {
 		t.Fatalf("corrected saved-response route diagnostics = %#v, want %#v", diagnostics.Issues, wantIssues)
@@ -539,6 +744,173 @@ func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoute
 				t.Fatalf("corrected Brief retained disallowed support %#v", support)
 			}
 		}
+	}
+}
+
+func TestSavedCasdoor175017ResponsePreservesAllTermsAndDiagnosesRoutesIndependently(t *testing.T) {
+	product := mustCompileTestProduct(t, casdoor175017ResponseInput())
+	saved, err := os.ReadFile("testdata/casdoor_20260802_175017_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest([]byte(strings.TrimSuffix(string(saved), "\n"))); got != "446f1110993403b41f2592054500242616bec8433a4a21569caa12d41efc7fca" {
+		t.Fatalf("saved live response content SHA-256 = %s", got)
+	}
+
+	var envelope responseEnvelope
+	if err := decodeStrict(saved, &envelope); err != nil {
+		t.Fatalf("saved live response is not strict JSON: %v", err)
+	}
+	brief, err := product.resolveBrief(envelope.Brief)
+	if err != nil {
+		t.Fatalf("saved live Brief: %v", err)
+	}
+	if len(brief.DomainTerms) != 9 || brief.DomainTerms[8].Term != "Face ID" {
+		t.Fatalf("saved live domain terms = %#v", brief.DomainTerms)
+	}
+	directions, diagnostics := product.resolveDirections(envelope.Directions)
+	if len(directions) != 0 || diagnostics.DirectionsReceived != 5 ||
+		diagnostics.DirectionsAccepted != 0 || diagnostics.DirectionsRejected != 5 {
+		t.Fatalf("saved live direction result = %d / %#v", len(directions), diagnostics)
+	}
+	wantRawIssues := []DirectionIssue{
+		{Position: 0, Code: IssueWrongKindPrincipalRef},
+		{Position: 1, Code: IssueWrongKindPrincipalRef},
+		{Position: 2, Code: IssueInvalidPrincipalCount},
+		{Position: 3, Code: IssueWrongKindPrincipalRef},
+		{Position: 4, Code: IssueInvalidPrincipalCount},
+	}
+	if !reflect.DeepEqual(diagnostics.Issues, wantRawIssues) {
+		t.Fatalf("saved live route diagnostics = %#v, want %#v", diagnostics.Issues, wantRawIssues)
+	}
+	_, returnedDiagnostics, err := product.ResolveResponseJSON(saved)
+	var decodeErr *ResponseDecodeError
+	if err == nil || errors.As(err, &decodeErr) ||
+		!strings.Contains(err.Error(), "no valid Study directions") ||
+		!reflect.DeepEqual(returnedDiagnostics, diagnostics) {
+		t.Fatalf("saved live validation failure = %v / %#v", err, returnedDiagnostics)
+	}
+
+	corrected := responseMap(t, saved)
+	routes := corrected["directions"].([]any)
+	routes[2].(map[string]any)["principal_refs"] = []any{"c4"}
+	routes[3].(map[string]any)["principal_refs"] = []any{"c2", "c3", "c4"}
+	routes[4].(map[string]any)["principal_refs"] = []any{"c4"}
+	result, correctedDiagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, corrected))
+	if err != nil {
+		t.Fatalf("manually corrected sibling routes: %v", err)
+	}
+	if len(result.Brief.DomainTerms) != 9 || len(result.Directions) != 3 ||
+		correctedDiagnostics.DirectionsAccepted != 3 ||
+		correctedDiagnostics.DirectionsRejected != 2 {
+		t.Fatalf("corrected result = terms:%d directions:%d diagnostics:%#v",
+			len(result.Brief.DomainTerms), len(result.Directions), correctedDiagnostics)
+	}
+	wantCorrectedIssues := []DirectionIssue{
+		{Position: 0, Code: IssueWrongKindPrincipalRef},
+		{Position: 1, Code: IssueWrongKindPrincipalRef},
+	}
+	if !reflect.DeepEqual(correctedDiagnostics.Issues, wantCorrectedIssues) {
+		t.Fatalf("corrected sibling diagnostics = %#v", correctedDiagnostics.Issues)
+	}
+}
+
+func TestSavedCasdoor190133ResponsePreservesBriefAndAcceptsScopedLocatorRoute(t *testing.T) {
+	requestJSON, err := os.ReadFile("testdata/casdoor_20260802_190133_request_v6.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(requestJSON); got != "fa221b6119a090515e0bfdc770d9318d362ba008e7c9ffdacf3d53192d54ecb2" {
+		t.Fatalf("saved request SHA-256 = %s", got)
+	}
+	if _, err := DecodeRequestRecord(requestJSON); err == nil {
+		t.Fatal("stale prompt-v6 request replayed under the current prompt contract")
+	}
+	var request RequestRecord
+	if err := json.Unmarshal(requestJSON, &request); err != nil {
+		t.Fatal(err)
+	}
+	product := productFromArtifact(
+		request.AtlasSHA256, request.ArchitectureSHA256, request.WireSHA256,
+		request.CatalogSHA256, request.CatalogRef, request.Language, request.Catalog,
+	)
+	product.wire = []byte(request.WireJSON)
+	response, err := os.ReadFile("testdata/casdoor_20260802_190133_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(bytes.TrimSuffix(response, []byte("\n"))); got != "fbe083abe67397e128a9c05723c3d251bab8f34a8be7e5c0bc86a357c6567d5b" {
+		t.Fatalf("saved response content SHA-256 = %s", got)
+	}
+	result, diagnostics, err := product.ResolveResponseJSON(response)
+	if err != nil {
+		t.Fatalf("saved response: %v", err)
+	}
+	if len(result.Brief.WhatItIs.SupportRefs) != 10 || len(result.Directions) != 1 ||
+		diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 1 ||
+		diagnostics.DirectionsRejected != 5 {
+		t.Fatalf("saved response result = %#v / %#v", result, diagnostics)
+	}
+	wantIssues := []DirectionIssue{
+		{Position: 1, Code: IssuePrincipalNotAdvertised},
+		{Position: 2, Code: IssueInvalidReadingCount},
+		{Position: 3, Code: IssueInvalidReadingCount},
+		{Position: 4, Code: IssuePrincipalNotAdvertised},
+		{Position: 5, Code: IssuePrincipalNotAdvertised},
+	}
+	if !reflect.DeepEqual(diagnostics.Issues, wantIssues) {
+		t.Fatalf("saved response diagnostics = %#v, want %#v", diagnostics.Issues, wantIssues)
+	}
+}
+
+func TestSavedCasdoor193502ResponsePublishesBriefAndUsefulRoutesWithoutWireRefs(t *testing.T) {
+	requestJSON, err := os.ReadFile("testdata/casdoor_20260802_193502_request_v9.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(requestJSON); got != "a4550a1f40338d2691402551582ecd563e2d07017f56fa9116f8eca38348f10f" {
+		t.Fatalf("saved request SHA-256 = %s", got)
+	}
+	request, err := DecodeRequestRecord(requestJSON)
+	if err != nil {
+		t.Fatalf("DecodeRequestRecord: %v", err)
+	}
+	product := productFromArtifact(
+		request.AtlasSHA256, request.ArchitectureSHA256, request.WireSHA256,
+		request.CatalogSHA256, request.CatalogRef, request.Language, request.Catalog,
+	)
+	product.wire = []byte(request.WireJSON)
+	response, err := os.ReadFile("testdata/casdoor_20260802_193502_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(response); got != "0190db2f9068a2bf220fff83b4be0a42ba61d98b1f9e2c10c362f64e89d8a361" {
+		t.Fatalf("saved response SHA-256 = %s", got)
+	}
+	result, diagnostics, err := product.ResolveResponseJSON(response)
+	if err != nil {
+		t.Fatalf("saved response: %v", err)
+	}
+	if len(result.Brief.DomainTerms) != 3 || len(result.Directions) != 2 ||
+		diagnostics.DirectionsReceived != 5 || diagnostics.DirectionsAccepted != 2 ||
+		diagnostics.DirectionsRejected != 3 {
+		t.Fatalf("saved response result = %#v / %#v", result, diagnostics)
+	}
+	for _, direction := range result.Directions {
+		for _, wireRef := range []string{" c1", " c2", " c3", " c4", " c5", " c6", " c7"} {
+			if strings.Contains(direction.Question, wireRef) ||
+				strings.Contains(direction.WhyItMatters, wireRef) ||
+				strings.Contains(direction.LearningOutcome, wireRef) {
+				t.Fatalf("accepted direction leaked request-local ref %q: %#v", wireRef, direction)
+			}
+		}
+	}
+	encoded, err := EncodeResultRecord(result)
+	if err != nil {
+		t.Fatalf("EncodeResultRecord: %v", err)
+	}
+	if _, err := DecodeResultRecord(encoded); err != nil {
+		t.Fatalf("DecodeResultRecord: %v", err)
 	}
 }
 
@@ -591,6 +963,11 @@ func TestStatusStateMatrixIsClosedAndBoundToExactInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	statuses = append(statuses, failed)
+	validationFailed, err := product.FailureStatus(FailureValidation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statuses = append(statuses, validationFailed)
 	for _, status := range statuses {
 		if err := product.ValidateStatus(status); err != nil {
 			t.Fatalf("ValidateStatus(%s): %v", status.State, err)
@@ -734,6 +1111,69 @@ func casdoor144414ShapeInput() Input {
 			id,
 		)
 	}
+	return input
+}
+
+func casdoor175017ResponseInput() Input {
+	input := cloneTestInput(testInput())
+	input.Language = LanguageRussian
+	input.Architecture = ArchitectureInput{
+		Version: 6, Source: "local_anchors", Title: "Casdoor architecture",
+		Subsystems: []Subsystem{
+			{ID: "subsystem-01", Name: "Security", Authority: repositoryatlas.AuthorityResolved, ComponentIDs: []string{"component-02"}},
+			{ID: "subsystem-02", Name: "Entry and dispatch", Authority: repositoryatlas.AuthorityResolved, ComponentIDs: []string{"component-03"}},
+			{ID: "subsystem-03", Name: "Supporting evidence", Authority: repositoryatlas.AuthorityResolved, ComponentIDs: []string{"component-01"}},
+			{ID: "subsystem-04", Name: "Runtime and extensions", Authority: repositoryatlas.AuthorityResolved, ComponentIDs: []string{"component-04", "component-05"}},
+		},
+		Components: []Component{
+			{ID: "component-01", SubsystemID: "subsystem-03", Name: "Supporting repository evidence", Authority: repositoryatlas.AuthorityResolved, ReadingTargetIDs: []string{"reading-04"}},
+			{ID: "component-02", SubsystemID: "subsystem-01", Name: "TLS and security boundary", Authority: repositoryatlas.AuthorityResolved, ReadingTargetIDs: []string{"reading-08"}},
+			{ID: "component-03", SubsystemID: "subsystem-02", Name: "Primary application", Authority: repositoryatlas.AuthorityResolved, ReadingTargetIDs: []string{"reading-04"}},
+			{ID: "component-04", SubsystemID: "subsystem-04", Name: "Lifecycle startup", Authority: repositoryatlas.AuthorityResolved, ReadingTargetIDs: []string{"reading-01", "reading-02", "reading-03", "reading-05", "reading-06", "reading-09", "reading-10"}},
+			{ID: "component-05", SubsystemID: "subsystem-04", Name: "Lifecycle contracts", Authority: repositoryatlas.AuthorityResolved, ReadingTargetIDs: []string{"reading-07"}},
+		},
+	}
+	input.Surfaces = []Surface{{
+		ID: "surface-start-canonical", UnitID: "unit-app-canonical", Name: "main", Kind: "process_entry",
+		Authority: repositoryatlas.AuthorityResolved, ReadingTargetIDs: []string{"reading-04"},
+	}}
+	targetPrincipals := [][]CanonicalRef{
+		{{Kind: RefComponent, ID: "component-04"}},
+		{{Kind: RefComponent, ID: "component-04"}},
+		{{Kind: RefComponent, ID: "component-04"}},
+		{{Kind: RefComponent, ID: "component-01"}, {Kind: RefComponent, ID: "component-03"}, {Kind: RefSurface, ID: "surface-start-canonical"}},
+		{{Kind: RefComponent, ID: "component-04"}},
+		{{Kind: RefComponent, ID: "component-04"}},
+		{{Kind: RefComponent, ID: "component-05"}},
+		{{Kind: RefComponent, ID: "component-02"}},
+		{{Kind: RefComponent, ID: "component-04"}},
+		{{Kind: RefComponent, ID: "component-04"}},
+	}
+	input.ReadingTargets = nil
+	for index, principals := range targetPrincipals {
+		ordinal := index + 1
+		owner := principals[0]
+		related := make([]string, 0, len(principals))
+		for _, principal := range principals {
+			if principal.Kind == RefComponent {
+				related = append(related, principal.ID)
+			}
+		}
+		input.ReadingTargets = append(input.ReadingTargets, ReadingTarget{
+			ID: fmt.Sprintf("reading-%02d", ordinal), Owner: owner,
+			RelatedComponentIDs: related, PrincipalRefs: principals,
+			Kind: ReadingTargetFunction, Label: fmt.Sprintf("Repository target %02d", ordinal),
+			Fact: "Exact bounded repository reading target.", Authority: repositoryatlas.AuthorityObserved,
+			Location: evidence.Location{Path: fmt.Sprintf("internal/fixture/target_%02d.go", ordinal), Line: ordinal},
+			Symbol:   fmt.Sprintf("Target%02d", ordinal),
+		})
+	}
+	input.Evidence = nil
+	input.Documents = []DocumentClaim{{
+		ID: "document-01", Label: "Casdoor overview",
+		Claim:     "Casdoor provides identity and access management capabilities.",
+		Authority: repositoryatlas.AuthorityObserved,
+	}}
 	return input
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,9 +14,142 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 )
+
+func TestAtlasStudyCasdoorShapedPackageDrawerSourcesDoNotExpandReadingCatalog(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	baseline, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(baseline.ReadingTargets) != 3 {
+		t.Fatalf("baseline reading targets = %d", len(baseline.ReadingTargets))
+	}
+
+	facts := gofacts.Facts{Modules: []gofacts.ModuleFact{{
+		ID: "unit-module-fixture", ModulePath: "github.com/casdoor/casdoor", ModuleDir: ".",
+	}}}
+	declarations := make(map[string]evidence.Location)
+	for index := 0; index < 34; index++ {
+		name := fmt.Sprintf("pkg%02d", index)
+		canonicalPath := "github.com/casdoor/casdoor/" + name
+		sourcePath := name + "/package.go"
+		facts.Packages = append(facts.Packages, gofacts.PackageFact{
+			CanonicalPath: canonicalPath, Name: name,
+			ModuleID: "unit-module-fixture", ModulePath: "github.com/casdoor/casdoor",
+			Files: []string{sourcePath},
+		})
+		declarations[canonicalPath] = evidence.Location{Path: sourcePath, Line: 15, Column: 1}
+		data.OpenablePaths = append(data.OpenablePaths, sourcePath)
+	}
+	projected, err := goadapter.Project(goadapter.Input{
+		RepositoryName: "github.com/casdoor/casdoor", Facts: facts,
+		PackageDeclarations: declarations,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceByPath := make(map[string]repositoryatlas.Evidence)
+	for _, unit := range projected.Units {
+		if unit.Kind == repositoryatlas.UnitPackage {
+			data.RepositoryAtlas.Units = append(data.RepositoryAtlas.Units, unit)
+		}
+	}
+	for _, item := range projected.Evidence {
+		if item.Provenance.Operation == goadapter.PackageDeclarationEvidenceOperation {
+			data.RepositoryAtlas.Evidence = append(data.RepositoryAtlas.Evidence, item)
+			evidenceByPath[item.Location.Path] = item
+		}
+	}
+	for _, pkg := range facts.Packages {
+		item, ok := evidenceByPath[pkg.Files[0]]
+		if !ok {
+			t.Fatalf("package evidence missing for %s", pkg.CanonicalPath)
+		}
+		source := atlasStudySourceFixture(
+			t, item.Location.Path, item.Location.Line, pkg.Name, "package "+pkg.Name,
+		)
+		source.RelatedEvidenceIDs = []string{item.ID}
+		source.PresentationSHA256 = sourceSnippetPresentationSHA(source)
+		data.UserSources = append(data.UserSources, source)
+	}
+
+	withPackageDrawers, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withPackageDrawers.ReadingTargets) != len(baseline.ReadingTargets) {
+		t.Fatalf("34 package drawer sources changed Study targets: before=%d after=%d",
+			len(baseline.ReadingTargets), len(withPackageDrawers.ReadingTargets))
+	}
+	assertAtlasStudyJSONReplayParity(t, data, withPackageDrawers)
+
+	data.UserSources[4].RelatedEvidenceIDs = append(
+		data.UserSources[4].RelatedEvidenceIDs, "evidence-fixture-source",
+	)
+	data.UserSources[4].PresentationSHA256 = sourceSnippetPresentationSHA(data.UserSources[4])
+	data.UserSources[5].RelatedEvidenceIDs = append(
+		data.UserSources[5].RelatedEvidenceIDs, "unknown-evidence-id",
+	)
+	data.UserSources[5].PresentationSHA256 = sourceSnippetPresentationSHA(data.UserSources[5])
+	for _, source := range data.UserSources[3:6] {
+		line := atlasStudySourceFocusLine(source)
+		data.ArchitectureCanvas.Components[0].Members[0].Facts = append(
+			data.ArchitectureCanvas.Components[0].Members[0].Facts,
+			componentmap.LocalFact{
+				Kind: componentmap.FactRepositoryPath, Value: source.Path,
+				Location: &evidence.Location{Path: source.Path, Line: line},
+			},
+		)
+	}
+	mixed, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mixed.ReadingTargets) != len(baseline.ReadingTargets)+3 {
+		t.Fatalf("mixed/unknown related identities erased eligible sources: before=%d after=%d",
+			len(baseline.ReadingTargets), len(mixed.ReadingTargets))
+	}
+	assertAtlasStudyJSONReplayParity(t, data, mixed)
+
+	withoutGraph := *data
+	withoutGraph.RepositoryGraph = nil
+	withoutGraphInput, err := BuildAtlasStudyInput(&withoutGraph, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("self-contained package evidence required capped RepositoryGraph: %v", err)
+	}
+	if !reflect.DeepEqual(withoutGraphInput.ReadingTargets, mixed.ReadingTargets) {
+		t.Fatalf("RepositoryGraph changed package-evidence Study filtering")
+	}
+}
+
+func assertAtlasStudyJSONReplayParity(
+	t *testing.T,
+	data *ReportData,
+	want atlasstudy.Input,
+) {
+	t.Helper()
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replayed ReportData
+	if err := json.Unmarshal(raw, &replayed); err != nil {
+		t.Fatal(err)
+	}
+	got, err := BuildAtlasStudyInput(&replayed, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("JSON replay BuildAtlasStudyInput: %v", err)
+	}
+	if !reflect.DeepEqual(got.ReadingTargets, want.ReadingTargets) {
+		t.Fatalf("runtime/replay reading targets differ:\nruntime: %#v\nreplay:  %#v",
+			want.ReadingTargets, got.ReadingTargets)
+	}
+}
 
 func TestBuildAtlasStudyInputUsesExactAtlasArchitectureAndSavedSource(t *testing.T) {
 	data := atlasStudyReportFixture(t)
@@ -59,12 +193,6 @@ func TestBuildAtlasStudyInputUsesExactAtlasArchitectureAndSavedSource(t *testing
 	}
 	wire := product.WireJSON()
 	for _, private := range [][]byte{
-		[]byte(`cmd/app/main.go`),
-		[]byte(`internal/app/run.go`),
-		[]byte(`internal/app/result.go`),
-		[]byte(`example.com/fixture/cmd/app.main`),
-		[]byte(`example.com/fixture/internal/app.Run`),
-		[]byte(`example.com/fixture/internal/app.Result`),
 		[]byte(`"component-fixture-app"`),
 		[]byte(`"surface-fixture-1"`),
 	} {
@@ -73,8 +201,63 @@ func TestBuildAtlasStudyInputUsesExactAtlasArchitectureAndSavedSource(t *testing
 		}
 	}
 	if !bytes.Contains(wire, []byte(`"reading_targets"`)) ||
-		!bytes.Contains(wire, []byte(`"documented_claims"`)) {
+		!bytes.Contains(wire, []byte(`"documented_claims"`)) ||
+		!bytes.Contains(wire, []byte(`"allowed_paths":["cmd/app/main.go","internal/app/result.go","internal/app/run.go"]`)) ||
+		!bytes.Contains(wire, []byte(`"path":"cmd/app/main.go","line":7,"symbol":"example.com/fixture/cmd/app.main"`)) {
 		t.Fatalf("provider wire lost bounded Study facts: %s", wire)
+	}
+}
+
+func TestAtlasStudyReadingTargetContextUsesExactSavedGoSyntax(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		line       string
+		wantSymbol string
+		wantKind   atlasstudy.ReadingTargetKind
+		wantLabel  string
+		wantFact   string
+	}{
+		{
+			name: "function declaration", line: "func Start() {", wantSymbol: "Start",
+			wantKind: atlasstudy.ReadingTargetFunction, wantLabel: "Function Start",
+			wantFact: "Exact saved Go function declaration.",
+		},
+		{
+			name: "method declaration", line: "func (server *Server) Start() {", wantSymbol: "Start",
+			wantKind: atlasstudy.ReadingTargetMethod, wantLabel: "Method Start",
+			wantFact: "Exact saved Go method declaration.",
+		},
+		{
+			name:       "qualified package call",
+			line:       "err := http.ListenAndServe(fmt.Sprintf(\":%d\", port), mux)",
+			wantSymbol: "http.ListenAndServe", wantKind: atlasstudy.ReadingTargetFile,
+			wantLabel: "Qualified Go call site", wantFact: "Exact saved source at a qualified Go call.",
+		},
+		{
+			name: "qualified receiver call", line: "err := server.ListenAndServeTLS(\"\", \"\")",
+			wantSymbol: "server.ListenAndServeTLS", wantKind: atlasstudy.ReadingTargetFile,
+			wantLabel: "Qualified Go call site", wantFact: "Exact saved source at a qualified Go call.",
+		},
+		{
+			name: "type declaration is not a function", line: "type Server struct {}",
+			wantKind: atlasstudy.ReadingTargetFile, wantLabel: "Repository source",
+			wantFact: "Exact saved repository source.",
+		},
+		{
+			name: "nested selector is not the direct call", line: "serve(fmt.Sprintf(\"%d\", port))",
+			wantKind: atlasstudy.ReadingTargetFile, wantLabel: "Repository source",
+			wantFact: "Exact saved repository source.",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := atlasStudySourceFixture(t, "service/proxy.go", 42, "", test.line)
+			symbol, kind, label, fact := atlasStudyReadingTargetContext(source, 42, false, nil)
+			if symbol != test.wantSymbol || kind != test.wantKind || label != test.wantLabel || fact != test.wantFact {
+				t.Fatalf("context = %q, %q, %q, %q", symbol, kind, label, fact)
+			}
+		})
 	}
 }
 
@@ -154,6 +337,29 @@ func TestBuildAtlasStudyInputDeduplicatesEquivalentLocatorAndOmitsConflict(t *te
 		for _, target := range input.ReadingTargets {
 			if target.Location.Path == data.UserSources[0].Path {
 				t.Fatalf("conflicted locator survived as reading target: %#v", target)
+			}
+		}
+	})
+
+	t.Run("conflicting empty-symbol source", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		original := data.UserSources[0]
+		first := atlasStudySourceFixture(
+			t, original.Path, atlasStudySourceFocusLine(original), "", "func Start() {}",
+		)
+		second := atlasStudySourceFixture(
+			t, original.Path, atlasStudySourceFocusLine(original), "", "func Stop() {}",
+		)
+		data.UserSources[0] = first
+		data.UserSources = append(data.UserSources, second)
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatalf("BuildAtlasStudyInput: %v", err)
+		}
+		for _, target := range input.ReadingTargets {
+			if target.Location.Path == original.Path &&
+				target.Location.Line == atlasStudySourceFocusLine(original) {
+				t.Fatalf("conflicting empty-symbol sources split into targets: %#v", input.ReadingTargets)
 			}
 		}
 	})
@@ -278,6 +484,37 @@ func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 	data.DocumentedPurpose += " Changed after the request was saved."
 	if _, _, err := readAtlasStudyReportProduct(runDir, data); err == nil {
 		t.Fatal("request bound to prior report input was accepted after purpose tamper")
+	}
+}
+
+func TestReadAtlasStudyReportProductResolvesDerivedExactTargetContext(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	for index := range data.UserSources {
+		if data.UserSources[index].Path == "internal/app/run.go" {
+			data.UserSources[index] = atlasStudySourceFixture(
+				t, "internal/app/run.go", 11, "",
+				"err := http.ListenAndServe(\":8080\", mux)",
+			)
+		}
+	}
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("BuildAtlasStudyInput: %v", err)
+	}
+	found := false
+	for _, target := range input.ReadingTargets {
+		if target.Location.Path == "internal/app/run.go" {
+			found = target.Symbol == "http.ListenAndServe" &&
+				target.Label == "Qualified Go call site"
+		}
+	}
+	if !found {
+		t.Fatalf("derived exact target context = %#v", input.ReadingTargets)
+	}
+	runDir := t.TempDir()
+	writeAcceptedAtlasStudyArtifacts(t, runDir, data)
+	if _, studyMap, err := readAtlasStudyReportProduct(runDir, data); err != nil || studyMap == nil {
+		t.Fatalf("derived exact target report replay = %#v, %v", studyMap, err)
 	}
 }
 

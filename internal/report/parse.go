@@ -800,6 +800,9 @@ func collectOpenablePaths(data *ReportData) {
 			add(anchor.Path)
 		}
 	}
+	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
+		add(item.Location.Path)
+	}
 	data.OpenablePaths = data.OpenablePaths[:0]
 	for path := range paths {
 		data.OpenablePaths = append(data.OpenablePaths, path)

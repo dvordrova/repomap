@@ -21,6 +21,30 @@ Notes:
     unavailable local products. Decision 200 identities are not reinterpreted,
     and no raw Orientation, old fan-out, fuzzy repair, primary/related model
     owner, legacy reader, migration or UI workaround is restored.
+    The current Architecture provider response is one complete flat ordered
+    `records` array: response-local subsystem refs (`gN`) and component records
+    that cite exact request-local typed member and anchor refs. It is not a
+    nested ownership graph; repeated membership across components means
+    conceptual participation and never changes local D177 facts or relations.
+    The current Atlas Study request exposes each reading target's exact
+    repository-relative path, positive line and optional qualified symbol as
+    read-only locator context, plus an `allowed_paths` set equal to the exact
+    sorted target-path set. It exposes no source bytes. Identity fields return
+    only short request-local typed refs. Direction prose may repeat an exact
+    locator only when its resolved reading target advertised it. Supported
+    Brief statement text and domain-term meanings may do the same only for
+    reading targets named by their exact support refs; domain-term names may
+    not. Every echo remains decorative and is never parsed as authority.
+    Canonical identities,
+    artifact/catalog identity and ref restoration remain private and exact.
+    The owner-authorized product continuation adds one optional exact
+    package-declaration Evidence locator per locally proven Go package. It is
+    used for drawer-first package navigation but does not widen the Study
+    reading catalog unless the same locator is independently selected by a
+    semantic Surface, Navigator or Architecture target. Atlas-first Overview
+    renders exact anatomy and accepted Study routes before a compact inventory;
+    identical repository/module/application names share one display card with
+    role tags while canonical IDs and relations remain distinct.
     After provider-free acceptance and exact installation, the repository
     owner explicitly authorized the root supervisor to run the live Casdoor
     comparison with existing credentials and iterate on material product

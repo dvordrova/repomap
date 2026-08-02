@@ -68,11 +68,15 @@ func (c *Client) AtlasStudyMeasured(
 	stopWaiting := c.startWaitProgress(ctx, "Atlas-backed Brief and Study")
 	defer stopWaiting()
 	completion, attempts, callErr := executeChatWithTransportRetries(
-		ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true,
+		ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, false,
 	)
 	result := providerResultFromCompletion(completion, attempts, len(body)*attempts)
 	if callErr != nil {
+		callErr = annotateIncompleteCompletion(callErr, "atlas_study")
 		return result, annotateResourceLimit(callErr, "atlas_study", c.MaxTokens)
+	}
+	if err := requireSingleStoppedCompletion("atlas_study", completion); err != nil {
+		return result, err
 	}
 	return result, nil
 }

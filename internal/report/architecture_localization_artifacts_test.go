@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/localization"
 )
 
@@ -576,6 +577,9 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 			"likely_files":["cmd/main.go"]
 		}]
 	}`))
+	if normalized {
+		architectureLocalizationWriteNormalizedGrounding(t, runDir)
+	}
 
 	data, err := ReadRunDir(runDir)
 	if err != nil {
@@ -585,23 +589,48 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	memberRefs, _ := architectureTestWireRefs(t, input.CandidateBundle)
-	components := make([]architectureTestWireComponent, 0, len(memberRefs))
-	for index, memberRef := range memberRefs {
+	request, _, err := componentmap.BuildSynthesisRequest(input.CandidateBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	components := make([]architectureTestWireComponent, 0, len(request.Candidates))
+	componentByRef := make(map[string]int, len(request.Candidates))
+	for index, candidate := range request.Candidates {
 		if index >= len(input.CandidateBundle.Candidates) {
 			t.Fatalf("request-local candidate %d has no exact fixture member", index)
 		}
 		candidateName := input.CandidateBundle.Candidates[index].Name
+		componentByRef[string(candidate.Ref.Kind)+"\x00"+candidate.Ref.Ref] = len(components)
 		components = append(components, architectureTestWireComponent{
 			Name:        "Runtime member " + candidateName,
 			Description: "Owns " + candidateName + " in the exact saved fixture.",
-			MemberRefs:  []componentmap.SynthesisMemberRef{memberRef},
+			MemberRefs:  []componentmap.SynthesisMemberRef{candidate.Ref},
 			Hypothesis:  input.CandidateBundle.GroundingMode != componentmap.GroundingPackages,
 		})
 	}
+	for _, anchor := range request.BehaviorAnchors {
+		for _, memberRef := range anchor.MemberRefs {
+			index, ok := componentByRef[string(memberRef.Kind)+"\x00"+memberRef.Ref]
+			if !ok {
+				t.Fatalf("behavior anchor member ref is outside the exact fixture catalog: %#v", memberRef)
+			}
+			components[index].AnchorRefs = append(components[index].AnchorRefs, anchor.Ref)
+			components[index].Hypothesis = false
+		}
+	}
 	description := "Groups the exact saved fixture runtime."
 	if normalized {
-		description = strings.Repeat("bounded architecture description ", 48)
+		normalizedIndex := -1
+		for index, component := range components {
+			if len(component.AnchorRefs) == 0 && component.MemberRefs[0].Kind == componentmap.MemberPackage {
+				normalizedIndex = index
+				break
+			}
+		}
+		if normalizedIndex < 0 {
+			t.Fatal("normalized fixture has no unanchored package-only component")
+		}
+		components[normalizedIndex].Hypothesis = false
 	}
 	response := marshalArchitectureTestWireResponse(t, architectureTestWireResponse{
 		Subsystems: []architectureTestWireSubsystem{{
@@ -669,6 +698,41 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	}
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisStatusFile, statusJSON)
 	return runDir
+}
+
+func architectureLocalizationWriteNormalizedGrounding(t *testing.T, runDir string) {
+	t.Helper()
+	location := evidence.Location{Path: "cmd/main.go", Line: 1, Column: 1}
+	grounding := ArchitectureGrounding{
+		Version: ArchitectureGroundingVersion,
+		RepositoryArchetype: ArchitectureArchetype{
+			Selected: componentmap.ArchetypeApplication,
+			Evidence: []string{"Exact fixture process entry."},
+		},
+		GroundingMode: componentmap.GroundingMixed,
+		BehaviorAnchors: []ArchitectureBehaviorAnchor{{
+			ID: "fixture-process-entry", Kind: componentmap.AnchorProcessEntry,
+			Label: "Fixture process entry", Location: location,
+			Scenario: architectureGroundingScenario{
+				ID: "go:test", GOOS: "darwin", GOARCH: "arm64",
+			},
+			Producer: evidence.Provenance{
+				Provider: "go_syntax", Version: "fixture-v1", Operation: "process_entry",
+				Location: &location,
+			},
+			Certainty: evidence.CertaintyStatic,
+			AssociatedMembers: []ArchitectureAnchorMember{{
+				ID: "example.com/project/cmd.main", Package: "example.com/project/cmd",
+				Name: "main", Location: location,
+			}},
+			Limitations: []string{"Static fixture evidence; execution is not observed."},
+		}},
+	}
+	encoded, err := json.Marshal(grounding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureBuildFixture(t, runDir, ArchitectureGroundingFile, encoded)
 }
 
 func readArchitectureLocalizationPayloadSet(

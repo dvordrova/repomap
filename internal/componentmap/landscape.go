@@ -447,7 +447,7 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		operations  []NormalizationOperation
 		usable      bool
 	)
-	if rawDiagnostics := proposalMembershipDiagnostics(proposal); len(rawDiagnostics) > 0 {
+	if rawDiagnostics := proposalMembershipDiagnostics(bundle, proposal); len(rawDiagnostics) > 0 {
 		// Membership cardinality belongs to the exact resolved response. Check it
 		// before hierarchy normalization can merge components and deduplicate a
 		// cross-cutting member into an apparently bounded relation.
@@ -876,7 +876,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.invalid_subsystem_count", "proposal has no subsystems")
 		return Landscape{}, diagnostics, false
 	}
-	if membershipDiagnostics := proposalMembershipDiagnostics(proposal); len(membershipDiagnostics) > 0 {
+	if membershipDiagnostics := proposalMembershipDiagnostics(bundle, proposal); len(membershipDiagnostics) > 0 {
 		diagnostics = append(diagnostics, membershipDiagnostics...)
 		return Landscape{}, diagnostics, false
 	}
@@ -1034,12 +1034,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 // proposalMembershipDiagnostics validates the exact resolved response before
 // any readable-shape normalization. It deliberately returns at most one fatal
 // diagnostic so rejection remains closed and bounded.
-func proposalMembershipDiagnostics(proposal Proposal) []Diagnostic {
+func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []Diagnostic {
 	if proposal.Version != ProposalVersion || len(proposal.Subsystems) == 0 {
 		return nil
 	}
 	memberReferenceCount := 0
 	memberReferenceCounts := make(map[MemberID]int)
+	distinctReferencedMembers := make(map[MemberID]struct{})
 	for _, subsystem := range proposal.Subsystems {
 		for _, component := range subsystem.Components {
 			if len(component.MemberIDs) > maxCandidates {
@@ -1070,6 +1071,7 @@ func proposalMembershipDiagnostics(proposal Proposal) []Diagnostic {
 					)}
 				}
 				seenComponentMembers[memberID] = struct{}{}
+				distinctReferencedMembers[memberID] = struct{}{}
 				memberReferenceCounts[memberID]++
 				if memberReferenceCounts[memberID] > maxConceptualMembershipsPerMember {
 					return []Diagnostic{newDiagnostic(
@@ -1079,6 +1081,18 @@ func proposalMembershipDiagnostics(proposal Proposal) []Diagnostic {
 				}
 			}
 		}
+	}
+	omittedMembers := 0
+	for _, candidate := range bundle.Candidates {
+		if _, included := distinctReferencedMembers[candidate.ID]; !included {
+			omittedMembers++
+		}
+	}
+	if memberReferenceCount+omittedMembers > maxConceptualMemberships {
+		return []Diagnostic{newDiagnostic(
+			"proposal.membership_limit_exceeded",
+			"proposal plus the deterministic omitted-member remainder exceeds the conceptual membership limit",
+		)}
 	}
 	return nil
 }

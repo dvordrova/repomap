@@ -5841,10 +5841,79 @@
 		);
 	}
 
+	var REPOSITORY_ATLAS_COALESCED_UNIT_KINDS = {
+		app: true,
+		module: true,
+		repository: true,
+	};
+
+	var REPOSITORY_ATLAS_UNIT_KIND_ORDER = {
+		repository: 0,
+		module: 1,
+		app: 2,
+	};
+
+	function repositoryAtlasTopologyDisplayUnits(units) {
+		var groupsByName = Object.create(null);
+		units.forEach(function (unit) {
+			if (!REPOSITORY_ATLAS_COALESCED_UNIT_KINDS[unit.kind]) return;
+			if (!groupsByName[unit.name]) groupsByName[unit.name] = [];
+			groupsByName[unit.name].push(unit);
+		});
+		var emitted = Object.create(null);
+		var displayUnits = [];
+		units.forEach(function (unit) {
+			var peers = groupsByName[unit.name] || [];
+			var kinds = Object.create(null);
+			var coalescible = peers.length > 1 && peers.every(function (peer) {
+				if (kinds[peer.kind]) return false;
+				kinds[peer.kind] = true;
+				return true;
+			});
+			if (!coalescible) {
+				displayUnits.push({ name: unit.name, kinds: [unit.kind], unitIDs: [unit.id] });
+				return;
+			}
+			if (emitted[unit.name]) return;
+			emitted[unit.name] = true;
+			displayUnits.push({
+				name: unit.name,
+				kinds: peers.map(function (peer) { return peer.kind; }).sort(function (left, right) {
+					return (REPOSITORY_ATLAS_UNIT_KIND_ORDER[left] || 0) -
+						(REPOSITORY_ATLAS_UNIT_KIND_ORDER[right] || 0) || left.localeCompare(right);
+				}),
+				unitIDs: peers.map(function (peer) { return peer.id; }),
+			});
+		});
+		return displayUnits;
+	}
+
+	function repositoryAtlasPackageGroups(packageUnits, unitsByID) {
+		var groups = [];
+		var groupsByKey = Object.create(null);
+		packageUnits.forEach(function (unit) {
+			var parent = unitsByID[unit.parentID];
+			var exactModuleParent = parent && parent.kind === 'module' ? parent : null;
+			var key = exactModuleParent ? 'module\u0000' + exactModuleParent.id : 'unparented';
+			if (!groupsByKey[key]) {
+				groupsByKey[key] = { module: exactModuleParent, units: [] };
+				groups.push(groupsByKey[key]);
+			}
+			groupsByKey[key].units.push(unit);
+		});
+		groups.forEach(function (group) {
+			var prefix = group.module && group.module.name || '';
+			group.prefix = prefix && group.units.every(function (unit) {
+				return unit.name === prefix || unit.name.indexOf(prefix + '/') === 0;
+			}) ? prefix : '';
+		});
+		return groups;
+	}
+
 	function repositoryAtlasWorkspaceShelf() {
 		var atlas = DATA.repository_atlas;
 		if (!atlas || !Array.isArray(atlas.units) || !atlas.units.length) return null;
-		var unitCounts = {};
+		var unitCounts = Object.create(null);
 		atlas.units.forEach(function (unit) {
 			if (unit && typeof unit.id === 'string' && unit.id) {
 				unitCounts[unit.id] = (unitCounts[unit.id] || 0) + 1;
@@ -5853,41 +5922,78 @@
 		var units = [];
 		var topologyUnits = [];
 		var packageUnits = [];
-		var unitsByID = {};
+		var unitsByID = Object.create(null);
 		atlas.units.forEach(function (unit) {
 			if (!unit || typeof unit.id !== 'string' || !unit.id || unitCounts[unit.id] !== 1 ||
 				typeof unit.name !== 'string' || !unit.name) return;
-			var view = { name: unit.name, kind: String(unit.kind || '') };
+			var view = {
+				id: unit.id,
+				parentID: typeof unit.parent_id === 'string' ? unit.parent_id : '',
+				name: unit.name,
+				kind: String(unit.kind || ''),
+			};
 			units.push(view);
 			if (view.kind === 'package') packageUnits.push(view);
 			else topologyUnits.push(view);
 			unitsByID[unit.id] = view;
 		});
 
-		var entityCounts = {};
+		var entityCounts = Object.create(null);
 		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
 			if (entity && typeof entity.id === 'string' && entity.id) {
 				entityCounts[entity.id] = (entityCounts[entity.id] || 0) + 1;
 			}
 		});
-		var entitiesByID = {};
+		var entitiesByID = Object.create(null);
 		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
 			if (!entity || typeof entity.id !== 'string' || !entity.id || entityCounts[entity.id] !== 1 ||
 				!unitsByID[entity.unit_id]) return;
 			entitiesByID[entity.id] = entity;
 		});
 
-		var evidenceCounts = {};
+		var evidenceCounts = Object.create(null);
 		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
 			if (evidence && typeof evidence.id === 'string' && evidence.id) {
 				evidenceCounts[evidence.id] = (evidenceCounts[evidence.id] || 0) + 1;
 			}
 		});
-		var evidenceByID = {};
+		var evidenceByID = Object.create(null);
 		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
 			if (!evidence || typeof evidence.id !== 'string' || !evidence.id ||
 				evidenceCounts[evidence.id] !== 1 || !unitsByID[evidence.unit_id]) return;
 			evidenceByID[evidence.id] = evidence;
+		});
+		var unitSources = Object.create(null);
+		var unitSourceConflicts = Object.create(null);
+		Object.keys(evidenceByID).forEach(function (evidenceID) {
+			var evidence = evidenceByID[evidenceID];
+			if (!evidence.location || !evidence.provenance ||
+				evidence.provenance.provider !== 'gofacts' ||
+				evidence.provenance.version !== 'package-declaration-v1' ||
+				evidence.provenance.operation !== 'package_declaration') return;
+			var resolution = exactOverviewSourceResolutionFromSnippets(evidence.location, USER_SOURCES);
+			if (resolution.conflict) {
+				unitSourceConflicts[evidence.unit_id] = true;
+				return;
+			}
+			if (!resolution.source) return;
+			var relatedEvidenceIDs = resolution.source.snippet &&
+				Array.isArray(resolution.source.snippet.related_evidence_ids)
+				? resolution.source.snippet.related_evidence_ids : [];
+			if (relatedEvidenceIDs.indexOf(evidenceID) < 0) return;
+			if (!unitSources[evidence.unit_id]) unitSources[evidence.unit_id] = Object.create(null);
+			var location = resolution.source.location;
+			var key = location.path + '\u0000' + String(location.line) + '\u0000' +
+				String(location.column || 0) + '\u0000' + overviewSnippetStableKey(resolution.source.snippet);
+			unitSources[evidence.unit_id][key] = resolution.source;
+		});
+		packageUnits.forEach(function (unit) {
+			var sources = Object.keys(unitSources[unit.id] || {}).sort().map(function (key) {
+				return unitSources[unit.id][key];
+			});
+			unit.source = !unitSourceConflicts[unit.id] && sources.length === 1 ? sources[0] : null;
+			unit.sourceState = unitSourceConflicts[unit.id] || sources.length > 1
+				? 'conflict' : unit.source ? 'available' : 'unavailable';
 		});
 
 		var eligible = 0;
@@ -5926,7 +6032,9 @@
 		return {
 			units: units,
 			topologyUnits: topologyUnits,
+			topologyDisplayUnits: repositoryAtlasTopologyDisplayUnits(topologyUnits),
 			packageUnits: packageUnits,
+			packageGroups: repositoryAtlasPackageGroups(packageUnits, unitsByID),
 			relations: relations,
 			omittedRelations: eligible - relations.length,
 			recommendation: repositoryAtlasNavigatorRecommendation(relations),
@@ -6010,10 +6118,139 @@
 		units.forEach(function (unit) {
 			var card = el('article', 'rm-atlas-unit-card');
 			card.appendChild(txt('strong', '', unit.name));
-			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
+			var tags = el('div', 'rm-atlas-unit-tags');
+			(Array.isArray(unit.kinds) ? unit.kinds : [unit.kind]).forEach(function (kind) {
+				tags.appendChild(txt('span', 'rm-atlas-unit-tag', repositoryAtlasUnitKindLabel(kind)));
+			});
+			card.appendChild(tags);
 			unitGrid.appendChild(card);
 		});
 		return unitGrid;
+	}
+
+	function repositoryAtlasPackageSourceStateLabel(state, packageName) {
+		return msg(
+			state === 'conflict'
+				? 'main.atlas.workspace.package_source_conflict_label'
+				: 'main.atlas.workspace.package_source_unavailable_label',
+			{ package: packageName }
+		);
+	}
+
+	function renderRepositoryAtlasPackageList(groups) {
+		var container = el('div', 'rm-atlas-package-groups');
+		groups.forEach(function (group) {
+			var packageGroup = el('section', 'rm-atlas-package-group');
+			var unavailableCount = 0;
+			var conflictCount = 0;
+			if (group.prefix) {
+				packageGroup.appendChild(txt('code', 'rm-atlas-package-prefix', group.prefix + '/'));
+			}
+			var list = el('ul', 'rm-atlas-package-list');
+			group.units.forEach(function (unit) {
+				var item = el('li', 'rm-atlas-package-row');
+				var label = group.prefix
+					? (unit.name === group.prefix ? msg('main.atlas.workspace.package_root') :
+						unit.name.slice(group.prefix.length + 1))
+					: unit.name;
+				if (unit.source) {
+					var action = el('button', 'rm-atlas-package-action');
+					action.type = 'button';
+					action.setAttribute('aria-label', msg(
+						'main.atlas.workspace.open_package_source',
+						{ package: unit.name }
+					));
+					action.appendChild(txt('code', 'rm-atlas-package-name', label));
+					action.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
+					action.onclick = function () {
+						openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
+					};
+					item.appendChild(action);
+				} else {
+					var unavailable = el('span', 'rm-atlas-package-unavailable');
+					var sourceStateLabel = repositoryAtlasPackageSourceStateLabel(unit.sourceState, unit.name);
+					if (unit.sourceState === 'conflict') conflictCount += 1;
+					else unavailableCount += 1;
+					unavailable.setAttribute('aria-disabled', 'true');
+					unavailable.setAttribute('aria-label', sourceStateLabel);
+					unavailable.setAttribute('title', sourceStateLabel);
+					unavailable.setAttribute('data-rm-source-state', unit.sourceState || 'unavailable');
+					unavailable.appendChild(txt('code', 'rm-atlas-package-name', label));
+					item.appendChild(unavailable);
+				}
+				list.appendChild(item);
+			});
+			packageGroup.appendChild(list);
+			if (unavailableCount || conflictCount) {
+				var summary = el('p', 'rm-atlas-package-source-summary');
+				if (unavailableCount) summary.appendChild(txt(
+					'span',
+					'',
+					msg('main.atlas.workspace.package_sources_unavailable_count', { count: unavailableCount })
+				));
+				if (conflictCount) summary.appendChild(txt(
+					'span',
+					'',
+					msg('main.atlas.workspace.package_sources_conflict_count', { count: conflictCount })
+				));
+				packageGroup.appendChild(summary);
+			}
+			container.appendChild(packageGroup);
+		});
+		return container;
+	}
+
+	function repositoryAtlasNavigatorCompactStatus(shelf) {
+		if (!ATLAS_FIRST || shelf.recommendation) return null;
+		if (NAVIGATOR && NAVIGATOR.state === 'empty') {
+			return { code: 'empty', messageID: 'main.atlas.navigator.empty' };
+		}
+		if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
+			return {
+				code: NAVIGATOR.unavailable_code || 'unavailable',
+				messageID: NAVIGATOR.unavailable_code === 'offline'
+					? 'main.atlas.navigator.unavailable_offline'
+					: 'main.atlas.navigator.unavailable',
+			};
+		}
+		return { code: 'source_unavailable', messageID: 'main.atlas.navigator.source_unavailable' };
+	}
+
+	function renderRepositoryAtlasCompactDiagnostics(shelf) {
+		var navigatorStatus = repositoryAtlasNavigatorCompactStatus(shelf);
+		var startupUnavailable = !shelf.relations.length;
+		if (!navigatorStatus && !startupUnavailable) return null;
+		var diagnostics = el('section', 'rm-atlas-compact-status');
+		diagnostics.appendChild(txt('strong', 'rm-atlas-compact-status__title', msg(
+			'main.atlas.workspace.compact_status'
+		)));
+		var list = el('ul', 'rm-atlas-compact-status__list');
+		if (navigatorStatus) {
+			var navigatorItem = el('li', 'rm-atlas-compact-status__item');
+			navigatorItem.setAttribute('data-rm-status-code', navigatorStatus.code);
+			navigatorItem.appendChild(txt('span', 'rm-atlas-compact-status__label', msg(
+				'main.atlas.navigator.kicker'
+			)));
+			navigatorItem.appendChild(txt('span', '', msg(navigatorStatus.messageID)));
+			list.appendChild(navigatorItem);
+		}
+		if (startupUnavailable) {
+			var startupItem = el('li', 'rm-atlas-compact-status__item');
+			startupItem.setAttribute('data-rm-status-code', 'no_exact_source_backed_relations');
+			startupItem.appendChild(txt('span', 'rm-atlas-compact-status__label', msg(
+				'main.atlas.workspace.startup_relations'
+			)));
+			startupItem.appendChild(txt('span', '', msg(
+				'main.atlas.workspace.no_source_backed_relations'
+			)));
+			if (shelf.omittedRelations > 0) startupItem.appendChild(txt('span', '', msg(
+				'main.atlas.workspace.omitted_relations',
+				{ count: shelf.omittedRelations }
+			)));
+			list.appendChild(startupItem);
+		}
+		diagnostics.appendChild(list);
+		return diagnostics;
 	}
 
 	function renderRepositoryAtlasWorkspaceShelf(root) {
@@ -6029,22 +6266,30 @@
 			root.appendChild(section);
 			return;
 		}
-		if (ATLAS_FIRST) {
-			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
+		section.appendChild(txt('h3', 'rm-atlas-shelf-heading rm-atlas-units-heading', msg('main.atlas.workspace.units')));
+		if (shelf.topologyDisplayUnits.length) {
+			section.appendChild(renderRepositoryAtlasUnitGrid(shelf.topologyDisplayUnits));
+		}
+		if (shelf.packageUnits.length) {
+			var packageDisclosure = el('details', 'rm-atlas-package-disclosure');
+			packageDisclosure.appendChild(txt(
+				'summary',
+				'rm-atlas-package-summary',
+				msg('main.atlas.workspace.packages', { count: shelf.packageUnits.length })
+			));
+			packageDisclosure.appendChild(renderRepositoryAtlasPackageList(shelf.packageGroups));
+			section.appendChild(packageDisclosure);
 		}
 
-		section.appendChild(txt(
-			'h3',
-			'rm-atlas-shelf-heading rm-atlas-relations-heading',
-			msg('main.atlas.workspace.startup_relations')
-		));
-		if (!shelf.relations.length) {
+		if (ATLAS_FIRST && shelf.recommendation) {
+			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
+		}
+		if (shelf.relations.length) {
 			section.appendChild(txt(
-				'p',
-				'rm-empty-state',
-				msg('main.atlas.workspace.no_source_backed_relations')
+				'h3',
+				'rm-atlas-shelf-heading rm-atlas-relations-heading',
+				msg('main.atlas.workspace.startup_relations')
 			));
-		} else {
 			var relationGrid = el('div', 'rm-atlas-relation-grid');
 			shelf.relations.forEach(function (relation) {
 				var card = el('article', 'rm-atlas-relation-card');
@@ -6067,38 +6312,29 @@
 			});
 			section.appendChild(relationGrid);
 		}
-		if (shelf.omittedRelations > 0) {
+		if (shelf.relations.length && shelf.omittedRelations > 0) {
 			section.appendChild(txt('p', 'rm-atlas-omitted', msg(
 				'main.atlas.workspace.omitted_relations',
 				{ count: shelf.omittedRelations }
 			)));
 		}
-
-		section.appendChild(txt('h3', 'rm-atlas-shelf-heading rm-atlas-units-heading', msg('main.atlas.workspace.units')));
-		if (shelf.topologyUnits.length) {
-			section.appendChild(renderRepositoryAtlasUnitGrid(shelf.topologyUnits));
-		}
-		if (shelf.packageUnits.length) {
-			var packageDisclosure = el('details', 'rm-atlas-package-disclosure');
-			packageDisclosure.appendChild(txt(
-				'summary',
-				'rm-atlas-package-summary',
-				msg('main.atlas.workspace.packages', { count: shelf.packageUnits.length })
-			));
-			packageDisclosure.appendChild(renderRepositoryAtlasUnitGrid(shelf.packageUnits));
-			section.appendChild(packageDisclosure);
-		}
+		var compactDiagnostics = renderRepositoryAtlasCompactDiagnostics(shelf);
+		if (compactDiagnostics) section.appendChild(compactDiagnostics);
 		root.appendChild(section);
 	}
 
 	function renderOverviewWorkspace() {
-	  var root = document.getElementById('rm-overview');
-	  if (!root) return;
-	  root.replaceChildren();
-			renderStudyPublicationNotice(root);
+		var root = document.getElementById('rm-overview');
+		if (!root) return;
+		root.replaceChildren();
+		renderStudyPublicationNotice(root);
+		var anatomy = repositoryOverviewAnatomy();
+		if (ATLAS_FIRST) {
+			if (anatomy) renderRepositoryOverviewAnatomy(root, anatomy);
 			renderRepositoryAtlasWorkspaceShelf(root);
-			if (ATLAS_FIRST) return;
-			var anatomy = repositoryOverviewAnatomy();
+			return;
+		}
+		renderRepositoryAtlasWorkspaceShelf(root);
 		if (anatomy) {
 			renderRepositoryOverviewAnatomy(root, anatomy);
 			return;

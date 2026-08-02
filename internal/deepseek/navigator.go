@@ -129,11 +129,15 @@ func (c *Client) NavigateMeasured(
 	stopWaiting := c.startWaitProgress(ctx, "Atlas-first navigation")
 	defer stopWaiting()
 	completion, attempts, callErr := executeChatWithTransportRetries(
-		ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true,
+		ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, false,
 	)
 	result := providerResultFromCompletion(completion, attempts, len(body)*attempts)
 	if callErr != nil {
+		callErr = annotateIncompleteCompletion(callErr, "navigator")
 		return result, annotateResourceLimit(callErr, "navigator", c.MaxTokens)
+	}
+	if err := requireSingleStoppedCompletion("navigator", completion); err != nil {
+		return result, err
 	}
 	return result, nil
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/goldenmechanism"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
@@ -1219,8 +1220,70 @@ func projectOverviewSourceSnippets(data *ReportData) []SourceSnippet {
 }
 
 type overviewSourceTarget struct {
-	path string
-	line int
+	path               string
+	line               int
+	relatedEvidenceIDs []string
+}
+
+func exactRepositoryAtlasPackageEvidence(data *ReportData) []repositoryatlas.Evidence {
+	if data == nil || data.RepositoryAtlas == nil {
+		return nil
+	}
+	unitIDCounts := make(map[string]int, len(data.RepositoryAtlas.Units))
+	unitNameCounts := make(map[string]int)
+	unitsByID := make(map[string]repositoryatlas.Unit, len(data.RepositoryAtlas.Units))
+	for _, unit := range data.RepositoryAtlas.Units {
+		unitIDCounts[unit.ID]++
+		unitsByID[unit.ID] = unit
+		if unit.Kind == repositoryatlas.UnitPackage {
+			unitNameCounts[unit.Name]++
+		}
+	}
+	declarationsByUnit := make(map[string][]repositoryatlas.Evidence)
+	for _, item := range data.RepositoryAtlas.Evidence {
+		if item.Provenance.Operation == goadapter.PackageDeclarationEvidenceOperation {
+			declarationsByUnit[item.UnitID] = append(declarationsByUnit[item.UnitID], item)
+		}
+	}
+	validByUnit := make(map[string]repositoryatlas.Evidence, len(declarationsByUnit))
+	locatorCounts := make(map[string]int, len(declarationsByUnit))
+	for _, unit := range data.RepositoryAtlas.Units {
+		if unit.Kind != repositoryatlas.UnitPackage || unitIDCounts[unit.ID] != 1 ||
+			unitNameCounts[unit.Name] != 1 {
+			continue
+		}
+		declarations := declarationsByUnit[unit.ID]
+		if len(declarations) != 1 ||
+			!goadapter.IsPersistedPackageDeclarationEvidence(declarations[0], unit) {
+			continue
+		}
+		validByUnit[unit.ID] = declarations[0]
+		locatorCounts[packageDeclarationEvidenceLocatorKey(declarations[0])]++
+	}
+	result := make([]repositoryatlas.Evidence, 0, len(validByUnit))
+	for unitID, item := range validByUnit {
+		if unitIDCounts[unitID] != 1 || unitsByID[unitID].Kind != repositoryatlas.UnitPackage ||
+			locatorCounts[packageDeclarationEvidenceLocatorKey(item)] != 1 {
+			continue
+		}
+		result = append(result, item)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func packageDeclarationEvidenceLocatorKey(item repositoryatlas.Evidence) string {
+	return fmt.Sprintf(
+		"%s\x00%d\x00%d", item.Location.Path, item.Location.Line, item.Location.Column,
+	)
+}
+
+func exactRepositoryAtlasPackageEvidenceIDs(data *ReportData) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
+		result[item.ID] = struct{}{}
+	}
+	return result
 }
 
 // PrepareAuthorizedSourceCoverage atomically installs the exact, authorized
@@ -1444,7 +1507,9 @@ func rebindOverviewSourceSnippets(
 			continue
 		}
 		resolved = true
-		result = append(result, snippet)
+		bound := bindOverviewSourceTargetEvidence(snippet, target)
+		verified[bound.PresentationSHA256] = struct{}{}
+		result = append(result, bound)
 	}
 	return result, resolved, insertionIndex, nil
 }
@@ -1547,6 +1612,21 @@ func cloneOverviewSourceSlice[T any](values []T) []T {
 }
 
 func overviewSourceTargets(data *ReportData) []overviewSourceTarget {
+	return overviewSourceTargetsWithPackageEvidence(data, true)
+}
+
+func overviewSemanticSourceTargetKeys(data *ReportData) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, target := range overviewSourceTargetsWithPackageEvidence(data, false) {
+		result[overviewSourceTargetKey(target.path, target.line)] = struct{}{}
+	}
+	return result
+}
+
+func overviewSourceTargetsWithPackageEvidence(
+	data *ReportData,
+	includePackageEvidence bool,
+) []overviewSourceTarget {
 	if data == nil {
 		return nil
 	}
@@ -1555,20 +1635,30 @@ func overviewSourceTargets(data *ReportData) []overviewSourceTarget {
 		openable[sourcePath] = struct{}{}
 	}
 	result := make([]overviewSourceTarget, 0)
-	seen := make(map[overviewSourceTarget]struct{})
-	appendTarget := func(sourcePath string, line int) {
-		target := overviewSourceTarget{path: sourcePath, line: line}
+	seen := make(map[string]int)
+	appendTarget := func(
+		sourcePath string,
+		line int,
+		evidenceIDs ...string,
+	) {
 		if sourcePath == "" || line <= 0 {
 			return
 		}
 		if _, ok := openable[sourcePath]; !ok {
 			return
 		}
-		if _, duplicate := seen[target]; duplicate {
+		key := overviewSourceTargetKey(sourcePath, line)
+		if index, duplicate := seen[key]; duplicate {
+			result[index].relatedEvidenceIDs = sortedUniqueSourceEvidenceIDs(append(
+				result[index].relatedEvidenceIDs, evidenceIDs...,
+			))
 			return
 		}
-		seen[target] = struct{}{}
-		result = append(result, target)
+		seen[key] = len(result)
+		result = append(result, overviewSourceTarget{
+			path: sourcePath, line: line,
+			relatedEvidenceIDs: sortedUniqueSourceEvidenceIDs(evidenceIDs),
+		})
 	}
 
 	if data.DiscoveredSurfaces != nil {
@@ -1603,6 +1693,11 @@ func overviewSourceTargets(data *ReportData) []overviewSourceTarget {
 				continue
 			}
 			appendTarget(item.Location.Path, item.Location.Line)
+		}
+	}
+	if includePackageEvidence {
+		for _, item := range exactRepositoryAtlasPackageEvidence(data) {
+			appendTarget(item.Location.Path, item.Location.Line, item.ID)
 		}
 	}
 
@@ -1658,15 +1753,15 @@ func overviewArchitectureComponentLocations(
 	openable map[string]struct{},
 ) []SurfaceLocation {
 	locations := make([]SurfaceLocation, 0)
-	seen := make(map[overviewSourceTarget]struct{})
+	seen := make(map[string]struct{})
 	appendLocation := func(sourcePath string, line, column int) {
-		key := overviewSourceTarget{path: sourcePath, line: line}
 		if sourcePath == "" || line <= 0 {
 			return
 		}
 		if _, ok := openable[sourcePath]; !ok {
 			return
 		}
+		key := overviewSourceTargetKey(sourcePath, line)
 		if _, duplicate := seen[key]; duplicate {
 			return
 		}
@@ -1786,7 +1881,23 @@ func authorizedOverviewSourceSnippet(
 	if _, found := secretscan.DetectAlways(snippet.Content); found {
 		return SourceSnippet{}, fmt.Errorf("report source coverage: unsafe exact source excerpt")
 	}
+	snippet = bindOverviewSourceTargetEvidence(snippet, target)
 	return snippet, nil
+}
+
+func bindOverviewSourceTargetEvidence(
+	snippet SourceSnippet,
+	target overviewSourceTarget,
+) SourceSnippet {
+	if len(target.relatedEvidenceIDs) == 0 {
+		return snippet
+	}
+	snippet.RelatedEvidenceIDs = sortedUniqueSourceEvidenceIDs(append(
+		append([]string(nil), snippet.RelatedEvidenceIDs...),
+		target.relatedEvidenceIDs...,
+	))
+	snippet.PresentationSHA256 = sourceSnippetPresentationSHA(snippet)
+	return snippet
 }
 
 func mergeExactOverviewSourceSnippet(sources []SourceSnippet, snippet SourceSnippet) []SourceSnippet {
@@ -1800,6 +1911,10 @@ func mergeExactOverviewSourceSnippet(sources []SourceSnippet, snippet SourceSnip
 		merged := append([]SourceHighlight(nil), current.HighlightRanges...)
 		merged = append(merged, snippet.HighlightRanges...)
 		current.HighlightRanges = normalizeSourceHighlightRanges(merged)
+		current.RelatedEvidenceIDs = sortedUniqueSourceEvidenceIDs(append(
+			append([]string(nil), current.RelatedEvidenceIDs...),
+			snippet.RelatedEvidenceIDs...,
+		))
 		for lineIndex := range current.Lines {
 			current.Lines[lineIndex].Highlight = sourceLineIsHighlighted(
 				current.Lines[lineIndex].Line,
@@ -1810,6 +1925,10 @@ func mergeExactOverviewSourceSnippet(sources []SourceSnippet, snippet SourceSnip
 		return sources
 	}
 	return append(sources, snippet)
+}
+
+func overviewSourceTargetKey(sourcePath string, line int) string {
+	return fmt.Sprintf("%s\x00%d", sourcePath, line)
 }
 
 func normalizeSourceHighlightRanges(values []SourceHighlight) []SourceHighlight {
@@ -2020,6 +2139,22 @@ func sortedSourceEvidenceIDs(values map[string]struct{}) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func sortedUniqueSourceEvidenceIDs(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return sortedSourceEvidenceIDs(set)
 }
 
 func selectOverviewSourceDeclaration(

@@ -516,27 +516,34 @@ func atlasFirstAcceptanceArchitectureResponse(
 		anchors = append(anchors, anchor.Ref)
 	}
 	type architectureWireComponent struct {
-		Name        string                            `json:"name"`
-		Description string                            `json:"description"`
-		MemberRefs  []componentmap.SynthesisMemberRef `json:"member_refs"`
-		AnchorRefs  []componentmap.SynthesisAnchorRef `json:"anchor_refs,omitempty"`
-		Hypothesis  bool                              `json:"hypothesis,omitempty"`
+		Kind         string                            `json:"kind"`
+		SubsystemRef string                            `json:"subsystem_ref"`
+		Name         string                            `json:"name"`
+		Description  string                            `json:"description"`
+		MemberRefs   []componentmap.SynthesisMemberRef `json:"member_refs"`
+		AnchorRefs   []componentmap.SynthesisAnchorRef `json:"anchor_refs"`
+		Hypothesis   bool                              `json:"hypothesis"`
 	}
 	type architectureWireSubsystem struct {
-		Name        string                      `json:"name"`
-		Description string                      `json:"description"`
-		Components  []architectureWireComponent `json:"components"`
+		Kind        string `json:"kind"`
+		Ref         string `json:"ref"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
 	proposal := struct {
-		Subsystems []architectureWireSubsystem `json:"subsystems"`
+		Records []any `json:"records"`
 	}{
-		Subsystems: []architectureWireSubsystem{{
-			Name: "Repository system", Description: "Conceptual grouping over exact local facts.",
-			Components: []architectureWireComponent{{
+		Records: []any{
+			architectureWireSubsystem{
+				Kind: "subsystem", Ref: "g1",
+				Name: "Repository system", Description: "Conceptual grouping over exact local facts.",
+			},
+			architectureWireComponent{
+				Kind: "component", SubsystemRef: "g1",
 				Name: "Repository core", Description: "Groups the supplied local responsibilities.",
 				MemberRefs: members, AnchorRefs: anchors, Hypothesis: len(anchors) == 0,
-			}},
-		}},
+			},
+		},
 	}
 	content, err := json.Marshal(proposal)
 	if err != nil {

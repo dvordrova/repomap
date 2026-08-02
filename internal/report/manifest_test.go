@@ -103,17 +103,17 @@ func TestRunManifestBindsRepositoryAtlasArtifactAndEmbeddedValue(t *testing.T) {
 	})
 }
 
-func TestVersionNineManifestIsRejectedBeforeAtlasStudyV2Artifacts(t *testing.T) {
+func TestVersionTenManifestIsRejectedBeforeAtlasStudyV3Artifacts(t *testing.T) {
 	t.Parallel()
 
 	manifest := validRunManifestFixture(t)
-	manifest.Version = 9
+	manifest.Version = 10
 	err := manifest.VerifyAtlasStudyArtifacts(
-		filepath.Join(t.TempDir(), "missing-v2-run"),
-		[]byte(`{"format_version":29}`),
+		filepath.Join(t.TempDir(), "missing-v3-run"),
+		[]byte(`{"format_version":30}`),
 	)
-	if err == nil || !strings.Contains(err.Error(), "unsupported version 9") {
-		t.Fatalf("v9 Atlas Study v2 authority error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unsupported version 10") {
+		t.Fatalf("v10 Atlas Study v3 authority error = %v", err)
 	}
 }
 

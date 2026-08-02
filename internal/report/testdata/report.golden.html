@@ -71,7 +71,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .rm-atlas-unit-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .2rem; padding: .7rem .8rem; }
 .rm-atlas-unit-card strong { font-size: .82rem; overflow-wrap: anywhere; }
-.rm-atlas-unit-card span { color: var(--rm-dim); font-size: .68rem; }
+.rm-atlas-unit-tags { display: flex; flex-wrap: wrap; gap: .3rem; }
+.rm-atlas-unit-tag { background: #eef2ff; border-radius: 999px; color: #3730a3; font-size: .64rem; font-weight: 650; padding: .18rem .42rem; }
 .rm-atlas-relation-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .6rem; padding: .8rem; }
 .rm-atlas-relation-unit { font-size: .82rem; overflow-wrap: anywhere; }
 .rm-atlas-relation-roles { display: grid; gap: .3rem; }
@@ -84,7 +85,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-units-heading { margin-top: 1.25rem; }
 .rm-atlas-package-disclosure { border-top: 1px solid var(--rm-border); margin-top: .8rem; padding-top: .7rem; }
 .rm-atlas-package-summary { color: #334155; cursor: pointer; font-size: .76rem; font-weight: 700; }
-.rm-atlas-package-disclosure .rm-atlas-unit-grid { margin-top: .7rem; }
+.rm-atlas-package-groups { display: grid; gap: .75rem; margin-top: .7rem; }
+.rm-atlas-package-group { display: grid; gap: .35rem; }
+.rm-atlas-package-prefix { color: #475569; font-size: .69rem; overflow-wrap: anywhere; padding: 0 .25rem; }
+.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.rm-atlas-package-row { min-width: 0; }
+.rm-atlas-package-action, .rm-atlas-package-unavailable { align-items: center; border-radius: 6px; box-sizing: border-box; display: flex; gap: .45rem; justify-content: space-between; min-height: 1.8rem; padding: .3rem .45rem; width: 100%; }
+.rm-atlas-package-action { background: #fff; border: 1px solid var(--rm-border); color: var(--rm-fg); cursor: pointer; font: inherit; text-align: left; }
+.rm-atlas-package-action:hover { border-color: var(--rm-accent); color: var(--rm-accent); }
+.rm-atlas-package-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.rm-atlas-package-unavailable { border: 1px solid transparent; color: #64748b; }
+.rm-atlas-package-name { color: inherit; font-size: .69rem; min-width: 0; overflow-wrap: anywhere; }
+.rm-atlas-package-open { color: var(--rm-accent); font-size: .7rem; }
+.rm-atlas-package-source-summary { color: #94a3b8; display: flex; flex-wrap: wrap; font-size: .62rem; gap: .25rem .7rem; margin: .2rem .25rem 0; }
+.rm-atlas-compact-status { border-top: 1px solid var(--rm-border); display: grid; gap: .42rem; margin-top: .8rem; padding-top: .65rem; }
+.rm-atlas-compact-status__title { color: #475569; font-size: .68rem; }
+.rm-atlas-compact-status__list { display: grid; gap: .3rem; list-style: none; margin: 0; padding: 0; }
+.rm-atlas-compact-status__item { color: #64748b; display: grid; font-size: .66rem; gap: .15rem .5rem; grid-template-columns: auto minmax(0, 1fr); line-height: 1.4; }
+.rm-atlas-compact-status__label { color: #475569; font-weight: 700; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
@@ -706,6 +724,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   .rm-repository-nav .rm-tabs { flex-direction: row; overflow-x: auto; position: static; }
   .rm-repository-nav .rm-tab { flex: 0 0 auto; }
   .rm-main-content { padding: 1.25rem 1rem; }
+	.rm-atlas-package-list { grid-template-columns: minmax(0, 1fr); }
+	.rm-atlas-package-action, .rm-atlas-package-unavailable { min-width: 0; }
   .rm-repository-area-grid, .rm-mechanism-grid, .rm-operation-grid, .rm-operation-landmark-grid { grid-template-columns: minmax(0, 1fr); }
 	.rm-operation-literal { align-items: stretch; flex-direction: column; }
 	.rm-operation-literal .rm-secondary-action { align-self: flex-start; }
@@ -822,7 +842,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":29,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":30,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
@@ -1017,8 +1037,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.workspace.title": { params: [], text: "Exact workspace topology" },
     "main.atlas.workspace.copy": { params: [], text: "Saved repository units and locally resolved startup relations." },
     "main.atlas.workspace.unavailable": { params: [], text: "Repository Atlas is unavailable for this run." },
+    "main.atlas.workspace.compact_status": { params: [], text: "Status" },
     "main.atlas.workspace.units": { params: [], text: "Units" },
     "main.atlas.workspace.packages": { params: ["count"], format: function (params) { return "Packages (" + params.count + ")"; } },
+    "main.atlas.workspace.package_root": { params: [], text: "root package" },
+    "main.atlas.workspace.open_package_source": { params: ["package"], format: function (params) { return "Open exact saved source for " + params.package; } },
+    "main.atlas.workspace.package_source_unavailable_label": { params: ["package"], format: function (params) { return "No exact saved source for " + params.package; } },
+    "main.atlas.workspace.package_source_conflict_label": { params: ["package"], format: function (params) { return "Package declaration evidence conflicts for " + params.package; } },
+    "main.atlas.workspace.package_sources_unavailable_count": { params: ["count"], format: function (params) { return params.count + " without an exact saved source."; } },
+    "main.atlas.workspace.package_sources_conflict_count": { params: ["count"], format: function (params) { return params.count + " hidden because package declaration evidence conflicts."; } },
     "main.atlas.workspace.unit_kind.app": { params: [], text: "Application" },
     "main.atlas.workspace.unit_kind.module": { params: [], text: "Module" },
     "main.atlas.workspace.unit_kind.package": { params: [], text: "Package" },
@@ -2297,8 +2324,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.workspace.title": { params: [], text: "Точная топология рабочей области" },
     "main.atlas.workspace.copy": { params: [], text: "Сохранённые юниты репозитория и локально подтверждённые связи запуска." },
     "main.atlas.workspace.unavailable": { params: [], text: "Атлас репозитория недоступен для этого запуска." },
+    "main.atlas.workspace.compact_status": { params: [], text: "Статус" },
     "main.atlas.workspace.units": { params: [], text: "Юниты" },
     "main.atlas.workspace.packages": { params: ["count"], format: function (params) { return "Пакеты (" + params.count + ")"; } },
+    "main.atlas.workspace.package_root": { params: [], text: "корневой пакет" },
+    "main.atlas.workspace.open_package_source": { params: ["package"], format: function (params) { return "Открыть точный сохранённый исходник пакета " + params.package; } },
+    "main.atlas.workspace.package_source_unavailable_label": { params: ["package"], format: function (params) { return "Для пакета " + params.package + " нет точного сохранённого исходника"; } },
+    "main.atlas.workspace.package_source_conflict_label": { params: ["package"], format: function (params) { return "Свидетельства объявления пакета " + params.package + " конфликтуют"; } },
+    "main.atlas.workspace.package_sources_unavailable_count": { params: ["count"], format: function (params) { return "Без точного сохранённого исходника: " + params.count + "."; } },
+    "main.atlas.workspace.package_sources_conflict_count": { params: ["count"], format: function (params) { return "Скрыты из-за конфликта свидетельств объявления пакета: " + params.count + "."; } },
     "main.atlas.workspace.unit_kind.app": { params: [], text: "Приложение" },
     "main.atlas.workspace.unit_kind.module": { params: [], text: "Модуль" },
     "main.atlas.workspace.unit_kind.package": { params: [], text: "Пакет" },
@@ -9231,10 +9265,79 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		);
 	}
 
+	var REPOSITORY_ATLAS_COALESCED_UNIT_KINDS = {
+		app: true,
+		module: true,
+		repository: true,
+	};
+
+	var REPOSITORY_ATLAS_UNIT_KIND_ORDER = {
+		repository: 0,
+		module: 1,
+		app: 2,
+	};
+
+	function repositoryAtlasTopologyDisplayUnits(units) {
+		var groupsByName = Object.create(null);
+		units.forEach(function (unit) {
+			if (!REPOSITORY_ATLAS_COALESCED_UNIT_KINDS[unit.kind]) return;
+			if (!groupsByName[unit.name]) groupsByName[unit.name] = [];
+			groupsByName[unit.name].push(unit);
+		});
+		var emitted = Object.create(null);
+		var displayUnits = [];
+		units.forEach(function (unit) {
+			var peers = groupsByName[unit.name] || [];
+			var kinds = Object.create(null);
+			var coalescible = peers.length > 1 && peers.every(function (peer) {
+				if (kinds[peer.kind]) return false;
+				kinds[peer.kind] = true;
+				return true;
+			});
+			if (!coalescible) {
+				displayUnits.push({ name: unit.name, kinds: [unit.kind], unitIDs: [unit.id] });
+				return;
+			}
+			if (emitted[unit.name]) return;
+			emitted[unit.name] = true;
+			displayUnits.push({
+				name: unit.name,
+				kinds: peers.map(function (peer) { return peer.kind; }).sort(function (left, right) {
+					return (REPOSITORY_ATLAS_UNIT_KIND_ORDER[left] || 0) -
+						(REPOSITORY_ATLAS_UNIT_KIND_ORDER[right] || 0) || left.localeCompare(right);
+				}),
+				unitIDs: peers.map(function (peer) { return peer.id; }),
+			});
+		});
+		return displayUnits;
+	}
+
+	function repositoryAtlasPackageGroups(packageUnits, unitsByID) {
+		var groups = [];
+		var groupsByKey = Object.create(null);
+		packageUnits.forEach(function (unit) {
+			var parent = unitsByID[unit.parentID];
+			var exactModuleParent = parent && parent.kind === 'module' ? parent : null;
+			var key = exactModuleParent ? 'module\u0000' + exactModuleParent.id : 'unparented';
+			if (!groupsByKey[key]) {
+				groupsByKey[key] = { module: exactModuleParent, units: [] };
+				groups.push(groupsByKey[key]);
+			}
+			groupsByKey[key].units.push(unit);
+		});
+		groups.forEach(function (group) {
+			var prefix = group.module && group.module.name || '';
+			group.prefix = prefix && group.units.every(function (unit) {
+				return unit.name === prefix || unit.name.indexOf(prefix + '/') === 0;
+			}) ? prefix : '';
+		});
+		return groups;
+	}
+
 	function repositoryAtlasWorkspaceShelf() {
 		var atlas = DATA.repository_atlas;
 		if (!atlas || !Array.isArray(atlas.units) || !atlas.units.length) return null;
-		var unitCounts = {};
+		var unitCounts = Object.create(null);
 		atlas.units.forEach(function (unit) {
 			if (unit && typeof unit.id === 'string' && unit.id) {
 				unitCounts[unit.id] = (unitCounts[unit.id] || 0) + 1;
@@ -9243,41 +9346,78 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var units = [];
 		var topologyUnits = [];
 		var packageUnits = [];
-		var unitsByID = {};
+		var unitsByID = Object.create(null);
 		atlas.units.forEach(function (unit) {
 			if (!unit || typeof unit.id !== 'string' || !unit.id || unitCounts[unit.id] !== 1 ||
 				typeof unit.name !== 'string' || !unit.name) return;
-			var view = { name: unit.name, kind: String(unit.kind || '') };
+			var view = {
+				id: unit.id,
+				parentID: typeof unit.parent_id === 'string' ? unit.parent_id : '',
+				name: unit.name,
+				kind: String(unit.kind || ''),
+			};
 			units.push(view);
 			if (view.kind === 'package') packageUnits.push(view);
 			else topologyUnits.push(view);
 			unitsByID[unit.id] = view;
 		});
 
-		var entityCounts = {};
+		var entityCounts = Object.create(null);
 		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
 			if (entity && typeof entity.id === 'string' && entity.id) {
 				entityCounts[entity.id] = (entityCounts[entity.id] || 0) + 1;
 			}
 		});
-		var entitiesByID = {};
+		var entitiesByID = Object.create(null);
 		(Array.isArray(atlas.entities) ? atlas.entities : []).forEach(function (entity) {
 			if (!entity || typeof entity.id !== 'string' || !entity.id || entityCounts[entity.id] !== 1 ||
 				!unitsByID[entity.unit_id]) return;
 			entitiesByID[entity.id] = entity;
 		});
 
-		var evidenceCounts = {};
+		var evidenceCounts = Object.create(null);
 		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
 			if (evidence && typeof evidence.id === 'string' && evidence.id) {
 				evidenceCounts[evidence.id] = (evidenceCounts[evidence.id] || 0) + 1;
 			}
 		});
-		var evidenceByID = {};
+		var evidenceByID = Object.create(null);
 		(Array.isArray(atlas.evidence) ? atlas.evidence : []).forEach(function (evidence) {
 			if (!evidence || typeof evidence.id !== 'string' || !evidence.id ||
 				evidenceCounts[evidence.id] !== 1 || !unitsByID[evidence.unit_id]) return;
 			evidenceByID[evidence.id] = evidence;
+		});
+		var unitSources = Object.create(null);
+		var unitSourceConflicts = Object.create(null);
+		Object.keys(evidenceByID).forEach(function (evidenceID) {
+			var evidence = evidenceByID[evidenceID];
+			if (!evidence.location || !evidence.provenance ||
+				evidence.provenance.provider !== 'gofacts' ||
+				evidence.provenance.version !== 'package-declaration-v1' ||
+				evidence.provenance.operation !== 'package_declaration') return;
+			var resolution = exactOverviewSourceResolutionFromSnippets(evidence.location, USER_SOURCES);
+			if (resolution.conflict) {
+				unitSourceConflicts[evidence.unit_id] = true;
+				return;
+			}
+			if (!resolution.source) return;
+			var relatedEvidenceIDs = resolution.source.snippet &&
+				Array.isArray(resolution.source.snippet.related_evidence_ids)
+				? resolution.source.snippet.related_evidence_ids : [];
+			if (relatedEvidenceIDs.indexOf(evidenceID) < 0) return;
+			if (!unitSources[evidence.unit_id]) unitSources[evidence.unit_id] = Object.create(null);
+			var location = resolution.source.location;
+			var key = location.path + '\u0000' + String(location.line) + '\u0000' +
+				String(location.column || 0) + '\u0000' + overviewSnippetStableKey(resolution.source.snippet);
+			unitSources[evidence.unit_id][key] = resolution.source;
+		});
+		packageUnits.forEach(function (unit) {
+			var sources = Object.keys(unitSources[unit.id] || {}).sort().map(function (key) {
+				return unitSources[unit.id][key];
+			});
+			unit.source = !unitSourceConflicts[unit.id] && sources.length === 1 ? sources[0] : null;
+			unit.sourceState = unitSourceConflicts[unit.id] || sources.length > 1
+				? 'conflict' : unit.source ? 'available' : 'unavailable';
 		});
 
 		var eligible = 0;
@@ -9316,7 +9456,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return {
 			units: units,
 			topologyUnits: topologyUnits,
+			topologyDisplayUnits: repositoryAtlasTopologyDisplayUnits(topologyUnits),
 			packageUnits: packageUnits,
+			packageGroups: repositoryAtlasPackageGroups(packageUnits, unitsByID),
 			relations: relations,
 			omittedRelations: eligible - relations.length,
 			recommendation: repositoryAtlasNavigatorRecommendation(relations),
@@ -9400,10 +9542,139 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		units.forEach(function (unit) {
 			var card = el('article', 'rm-atlas-unit-card');
 			card.appendChild(txt('strong', '', unit.name));
-			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
+			var tags = el('div', 'rm-atlas-unit-tags');
+			(Array.isArray(unit.kinds) ? unit.kinds : [unit.kind]).forEach(function (kind) {
+				tags.appendChild(txt('span', 'rm-atlas-unit-tag', repositoryAtlasUnitKindLabel(kind)));
+			});
+			card.appendChild(tags);
 			unitGrid.appendChild(card);
 		});
 		return unitGrid;
+	}
+
+	function repositoryAtlasPackageSourceStateLabel(state, packageName) {
+		return msg(
+			state === 'conflict'
+				? 'main.atlas.workspace.package_source_conflict_label'
+				: 'main.atlas.workspace.package_source_unavailable_label',
+			{ package: packageName }
+		);
+	}
+
+	function renderRepositoryAtlasPackageList(groups) {
+		var container = el('div', 'rm-atlas-package-groups');
+		groups.forEach(function (group) {
+			var packageGroup = el('section', 'rm-atlas-package-group');
+			var unavailableCount = 0;
+			var conflictCount = 0;
+			if (group.prefix) {
+				packageGroup.appendChild(txt('code', 'rm-atlas-package-prefix', group.prefix + '/'));
+			}
+			var list = el('ul', 'rm-atlas-package-list');
+			group.units.forEach(function (unit) {
+				var item = el('li', 'rm-atlas-package-row');
+				var label = group.prefix
+					? (unit.name === group.prefix ? msg('main.atlas.workspace.package_root') :
+						unit.name.slice(group.prefix.length + 1))
+					: unit.name;
+				if (unit.source) {
+					var action = el('button', 'rm-atlas-package-action');
+					action.type = 'button';
+					action.setAttribute('aria-label', msg(
+						'main.atlas.workspace.open_package_source',
+						{ package: unit.name }
+					));
+					action.appendChild(txt('code', 'rm-atlas-package-name', label));
+					action.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
+					action.onclick = function () {
+						openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
+					};
+					item.appendChild(action);
+				} else {
+					var unavailable = el('span', 'rm-atlas-package-unavailable');
+					var sourceStateLabel = repositoryAtlasPackageSourceStateLabel(unit.sourceState, unit.name);
+					if (unit.sourceState === 'conflict') conflictCount += 1;
+					else unavailableCount += 1;
+					unavailable.setAttribute('aria-disabled', 'true');
+					unavailable.setAttribute('aria-label', sourceStateLabel);
+					unavailable.setAttribute('title', sourceStateLabel);
+					unavailable.setAttribute('data-rm-source-state', unit.sourceState || 'unavailable');
+					unavailable.appendChild(txt('code', 'rm-atlas-package-name', label));
+					item.appendChild(unavailable);
+				}
+				list.appendChild(item);
+			});
+			packageGroup.appendChild(list);
+			if (unavailableCount || conflictCount) {
+				var summary = el('p', 'rm-atlas-package-source-summary');
+				if (unavailableCount) summary.appendChild(txt(
+					'span',
+					'',
+					msg('main.atlas.workspace.package_sources_unavailable_count', { count: unavailableCount })
+				));
+				if (conflictCount) summary.appendChild(txt(
+					'span',
+					'',
+					msg('main.atlas.workspace.package_sources_conflict_count', { count: conflictCount })
+				));
+				packageGroup.appendChild(summary);
+			}
+			container.appendChild(packageGroup);
+		});
+		return container;
+	}
+
+	function repositoryAtlasNavigatorCompactStatus(shelf) {
+		if (!ATLAS_FIRST || shelf.recommendation) return null;
+		if (NAVIGATOR && NAVIGATOR.state === 'empty') {
+			return { code: 'empty', messageID: 'main.atlas.navigator.empty' };
+		}
+		if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
+			return {
+				code: NAVIGATOR.unavailable_code || 'unavailable',
+				messageID: NAVIGATOR.unavailable_code === 'offline'
+					? 'main.atlas.navigator.unavailable_offline'
+					: 'main.atlas.navigator.unavailable',
+			};
+		}
+		return { code: 'source_unavailable', messageID: 'main.atlas.navigator.source_unavailable' };
+	}
+
+	function renderRepositoryAtlasCompactDiagnostics(shelf) {
+		var navigatorStatus = repositoryAtlasNavigatorCompactStatus(shelf);
+		var startupUnavailable = !shelf.relations.length;
+		if (!navigatorStatus && !startupUnavailable) return null;
+		var diagnostics = el('section', 'rm-atlas-compact-status');
+		diagnostics.appendChild(txt('strong', 'rm-atlas-compact-status__title', msg(
+			'main.atlas.workspace.compact_status'
+		)));
+		var list = el('ul', 'rm-atlas-compact-status__list');
+		if (navigatorStatus) {
+			var navigatorItem = el('li', 'rm-atlas-compact-status__item');
+			navigatorItem.setAttribute('data-rm-status-code', navigatorStatus.code);
+			navigatorItem.appendChild(txt('span', 'rm-atlas-compact-status__label', msg(
+				'main.atlas.navigator.kicker'
+			)));
+			navigatorItem.appendChild(txt('span', '', msg(navigatorStatus.messageID)));
+			list.appendChild(navigatorItem);
+		}
+		if (startupUnavailable) {
+			var startupItem = el('li', 'rm-atlas-compact-status__item');
+			startupItem.setAttribute('data-rm-status-code', 'no_exact_source_backed_relations');
+			startupItem.appendChild(txt('span', 'rm-atlas-compact-status__label', msg(
+				'main.atlas.workspace.startup_relations'
+			)));
+			startupItem.appendChild(txt('span', '', msg(
+				'main.atlas.workspace.no_source_backed_relations'
+			)));
+			if (shelf.omittedRelations > 0) startupItem.appendChild(txt('span', '', msg(
+				'main.atlas.workspace.omitted_relations',
+				{ count: shelf.omittedRelations }
+			)));
+			list.appendChild(startupItem);
+		}
+		diagnostics.appendChild(list);
+		return diagnostics;
 	}
 
 	function renderRepositoryAtlasWorkspaceShelf(root) {
@@ -9419,22 +9690,30 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			root.appendChild(section);
 			return;
 		}
-		if (ATLAS_FIRST) {
-			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
+		section.appendChild(txt('h3', 'rm-atlas-shelf-heading rm-atlas-units-heading', msg('main.atlas.workspace.units')));
+		if (shelf.topologyDisplayUnits.length) {
+			section.appendChild(renderRepositoryAtlasUnitGrid(shelf.topologyDisplayUnits));
+		}
+		if (shelf.packageUnits.length) {
+			var packageDisclosure = el('details', 'rm-atlas-package-disclosure');
+			packageDisclosure.appendChild(txt(
+				'summary',
+				'rm-atlas-package-summary',
+				msg('main.atlas.workspace.packages', { count: shelf.packageUnits.length })
+			));
+			packageDisclosure.appendChild(renderRepositoryAtlasPackageList(shelf.packageGroups));
+			section.appendChild(packageDisclosure);
 		}
 
-		section.appendChild(txt(
-			'h3',
-			'rm-atlas-shelf-heading rm-atlas-relations-heading',
-			msg('main.atlas.workspace.startup_relations')
-		));
-		if (!shelf.relations.length) {
+		if (ATLAS_FIRST && shelf.recommendation) {
+			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
+		}
+		if (shelf.relations.length) {
 			section.appendChild(txt(
-				'p',
-				'rm-empty-state',
-				msg('main.atlas.workspace.no_source_backed_relations')
+				'h3',
+				'rm-atlas-shelf-heading rm-atlas-relations-heading',
+				msg('main.atlas.workspace.startup_relations')
 			));
-		} else {
 			var relationGrid = el('div', 'rm-atlas-relation-grid');
 			shelf.relations.forEach(function (relation) {
 				var card = el('article', 'rm-atlas-relation-card');
@@ -9457,38 +9736,29 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			});
 			section.appendChild(relationGrid);
 		}
-		if (shelf.omittedRelations > 0) {
+		if (shelf.relations.length && shelf.omittedRelations > 0) {
 			section.appendChild(txt('p', 'rm-atlas-omitted', msg(
 				'main.atlas.workspace.omitted_relations',
 				{ count: shelf.omittedRelations }
 			)));
 		}
-
-		section.appendChild(txt('h3', 'rm-atlas-shelf-heading rm-atlas-units-heading', msg('main.atlas.workspace.units')));
-		if (shelf.topologyUnits.length) {
-			section.appendChild(renderRepositoryAtlasUnitGrid(shelf.topologyUnits));
-		}
-		if (shelf.packageUnits.length) {
-			var packageDisclosure = el('details', 'rm-atlas-package-disclosure');
-			packageDisclosure.appendChild(txt(
-				'summary',
-				'rm-atlas-package-summary',
-				msg('main.atlas.workspace.packages', { count: shelf.packageUnits.length })
-			));
-			packageDisclosure.appendChild(renderRepositoryAtlasUnitGrid(shelf.packageUnits));
-			section.appendChild(packageDisclosure);
-		}
+		var compactDiagnostics = renderRepositoryAtlasCompactDiagnostics(shelf);
+		if (compactDiagnostics) section.appendChild(compactDiagnostics);
 		root.appendChild(section);
 	}
 
 	function renderOverviewWorkspace() {
-	  var root = document.getElementById('rm-overview');
-	  if (!root) return;
-	  root.replaceChildren();
-			renderStudyPublicationNotice(root);
+		var root = document.getElementById('rm-overview');
+		if (!root) return;
+		root.replaceChildren();
+		renderStudyPublicationNotice(root);
+		var anatomy = repositoryOverviewAnatomy();
+		if (ATLAS_FIRST) {
+			if (anatomy) renderRepositoryOverviewAnatomy(root, anatomy);
 			renderRepositoryAtlasWorkspaceShelf(root);
-			if (ATLAS_FIRST) return;
-			var anatomy = repositoryOverviewAnatomy();
+			return;
+		}
+		renderRepositoryAtlasWorkspaceShelf(root);
 		if (anatomy) {
 			renderRepositoryOverviewAnatomy(root, anatomy);
 			return;

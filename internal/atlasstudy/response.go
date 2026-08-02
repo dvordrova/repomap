@@ -16,6 +16,25 @@ type ReferenceError struct {
 	Code     string
 }
 
+// ResponseDecodeError identifies malformed provider JSON. A syntactically
+// valid response that violates the closed Atlas Study contract is a response
+// validation failure instead, even when no direction can be accepted.
+type ResponseDecodeError struct{ Err error }
+
+func (err *ResponseDecodeError) Error() string {
+	if err == nil || err.Err == nil {
+		return "atlas study response: decode"
+	}
+	return "atlas study response: decode: " + err.Err.Error()
+}
+
+func (err *ResponseDecodeError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Err
+}
+
 func (err *ReferenceError) Error() string {
 	if err == nil {
 		return "atlas study response: invalid reference"
@@ -79,7 +98,7 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 	}
 	var envelope responseEnvelope
 	if err := decodeStrict(data, &envelope); err != nil {
-		return ResultRecord{}, Diagnostics{}, fmt.Errorf("atlas study response: decode: %w", err)
+		return ResultRecord{}, Diagnostics{}, &ResponseDecodeError{Err: err}
 	}
 	if !envelope.RepositoryType.Valid() {
 		return ResultRecord{}, Diagnostics{}, fmt.Errorf("atlas study response: invalid repository type")
@@ -102,15 +121,17 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 
 func (product Product) resolveBrief(provider providerBrief) (Brief, error) {
 	resolve := func(field string, statement providerStatement) (SupportedStatement, error) {
-		if err := product.validateModelText(statement.Text, 1024, true, true); err != nil {
-			return SupportedStatement{}, fmt.Errorf("atlas study response: %s: %w", field, err)
-		}
 		refs, err := product.resolveSupportRefs(field+".support_refs", statement.SupportRefs)
 		if err != nil {
 			return SupportedStatement{}, err
 		}
 		if len(refs) == 0 {
 			return SupportedStatement{}, fmt.Errorf("atlas study response: %s requires support", field)
+		}
+		if err := product.validateModelTextWithTargetLocators(
+			statement.Text, 1024, true, true, product.supportReadingTargets(refs),
+		); err != nil {
+			return SupportedStatement{}, fmt.Errorf("atlas study response: %s: %w", field, err)
 		}
 		return SupportedStatement{Text: statement.Text, SupportRefs: refs}, nil
 	}
@@ -134,17 +155,8 @@ func (product Product) resolveBrief(provider providerBrief) (Brief, error) {
 	if err != nil {
 		return Brief{}, err
 	}
-	if len(provider.DomainTerms) > 8 {
-		return Brief{}, fmt.Errorf("atlas study response: too many domain terms")
-	}
 	terms := make([]DomainTerm, 0, len(provider.DomainTerms))
 	for index, term := range provider.DomainTerms {
-		if err := product.validateModelText(term.Term, 128, true, false); err != nil {
-			return Brief{}, fmt.Errorf("atlas study response: domain_terms[%d].term: %w", index, err)
-		}
-		if err := product.validateModelText(term.Meaning, 512, true, true); err != nil {
-			return Brief{}, fmt.Errorf("atlas study response: domain_terms[%d].meaning: %w", index, err)
-		}
 		refs, err := product.resolveSupportRefs(
 			fmt.Sprintf("brief.domain_terms[%d].support_refs", index), term.SupportRefs,
 		)
@@ -154,6 +166,14 @@ func (product Product) resolveBrief(provider providerBrief) (Brief, error) {
 		if len(refs) == 0 {
 			return Brief{}, fmt.Errorf("atlas study response: domain term requires support")
 		}
+		if err := product.validateModelText(term.Term, 128, true, false); err != nil {
+			return Brief{}, fmt.Errorf("atlas study response: domain_terms[%d].term: %w", index, err)
+		}
+		if err := product.validateModelTextWithTargetLocators(
+			term.Meaning, 512, true, true, product.supportReadingTargets(refs),
+		); err != nil {
+			return Brief{}, fmt.Errorf("atlas study response: domain_terms[%d].meaning: %w", index, err)
+		}
 		terms = append(terms, DomainTerm{Term: term.Term, Meaning: term.Meaning, SupportRefs: refs})
 	}
 	return Brief{
@@ -162,9 +182,20 @@ func (product Product) resolveBrief(provider providerBrief) (Brief, error) {
 	}, nil
 }
 
+func (product Product) supportReadingTargets(refs []CanonicalRef) []CatalogObject {
+	targets := make([]CatalogObject, 0, len(refs))
+	for _, ref := range refs {
+		object, ok := product.byCanonical[ref]
+		if ok && object.Kind == RefReadingTarget {
+			targets = append(targets, object)
+		}
+	}
+	return targets
+}
+
 func (product Product) resolveSupportRefs(field string, refs []string) ([]CanonicalRef, error) {
-	if len(refs) == 0 || len(refs) > 8 {
-		return nil, fmt.Errorf("atlas study response: %s count is outside 1..8", field)
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("atlas study response: %s requires support", field)
 	}
 	result := make([]CanonicalRef, 0, len(refs))
 	seen := make(map[string]struct{}, len(refs))
@@ -232,15 +263,8 @@ func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, 
 }
 
 func (product Product) resolveDirection(position int, provider providerDirection) (Direction, DirectionIssueCode) {
-	if err := product.validateModelText(provider.Question, 512, true, false); err != nil ||
-		!naturalQuestion(provider.Question) {
+	if !naturalQuestion(provider.Question) {
 		return Direction{}, "invalid_question"
-	}
-	if err := product.validateModelText(provider.WhyItMatters, 1024, true, true); err != nil {
-		return Direction{}, "invalid_why"
-	}
-	if err := product.validateModelText(provider.LearningOutcome, 1024, true, true); err != nil {
-		return Direction{}, "invalid_outcome"
 	}
 	if !provider.TargetJob.Valid() {
 		return Direction{}, "invalid_target_job"
@@ -267,11 +291,14 @@ func (product Product) resolveDirection(position int, provider providerDirection
 			return Direction{}, referenceCode(err)
 		}
 		switch object.Kind {
-		case RefUnit, RefSubsystem, RefComponent, RefSurface:
+		case RefComponent, RefSurface:
 		default:
 			return Direction{}, "wrong_kind_principal_ref"
 		}
 		canonical := CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}
+		if !product.advertisesPrincipal(canonical) {
+			return Direction{}, "principal_not_advertised"
+		}
 		principals = append(principals, canonical)
 		principalSet[canonical] = struct{}{}
 		hasComponent = hasComponent || object.Kind == RefComponent
@@ -284,7 +311,9 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		return Direction{}, "invalid_reading_count"
 	}
 	reading := make([]ResolvedReading, 0, len(provider.Reading))
+	readingObjects := make([]CatalogObject, 0, len(provider.Reading))
 	seenTargets := make(map[string]struct{}, len(provider.Reading))
+	coveredPrincipals := make(map[CanonicalRef]struct{}, len(principalSet))
 	for index, item := range provider.Reading {
 		if _, duplicate := seenTargets[item.TargetRef]; duplicate {
 			return Direction{}, "duplicate_reading_target"
@@ -302,16 +331,44 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		if !intersectsPrincipalSet(object.PrincipalRefs, principalSet) {
 			return Direction{}, "reading_principal_not_selected"
 		}
+		for _, principal := range object.PrincipalRefs {
+			if _, selected := principalSet[principal]; selected {
+				coveredPrincipals[principal] = struct{}{}
+			}
+		}
 		if !item.Label.Valid() {
 			return Direction{}, "invalid_reading_label"
-		}
-		if err := product.validateModelText(item.WhatToLookFor, 768, true, true); err != nil {
-			return Direction{}, "invalid_reading_copy"
 		}
 		reading = append(reading, ResolvedReading{
 			Target: CanonicalRef{Kind: object.Kind, ID: object.CanonicalID},
 			Label:  item.Label, WhatToLookFor: item.WhatToLookFor,
 		})
+		readingObjects = append(readingObjects, object)
+	}
+	if len(coveredPrincipals) != len(principalSet) {
+		return Direction{}, "principal_not_advertised"
+	}
+	if err := product.validateModelTextWithTargetLocators(
+		provider.Question, 512, true, false, readingObjects,
+	); err != nil {
+		return Direction{}, "invalid_question"
+	}
+	if err := product.validateModelTextWithTargetLocators(
+		provider.WhyItMatters, 1024, true, true, readingObjects,
+	); err != nil {
+		return Direction{}, "invalid_why"
+	}
+	if err := product.validateModelTextWithTargetLocators(
+		provider.LearningOutcome, 1024, true, true, readingObjects,
+	); err != nil {
+		return Direction{}, "invalid_outcome"
+	}
+	for index, item := range provider.Reading {
+		if err := product.validateModelTextWithTargetLocators(
+			item.WhatToLookFor, 768, true, true, readingObjects[index:index+1],
+		); err != nil {
+			return Direction{}, "invalid_reading_copy"
+		}
 	}
 	direction := Direction{
 		Question: provider.Question, WhyItMatters: provider.WhyItMatters,
@@ -320,6 +377,20 @@ func (product Product) resolveDirection(position int, provider providerDirection
 	}
 	direction.ID = stableDirectionID(direction)
 	return direction, ""
+}
+
+func (product Product) advertisesPrincipal(principal CanonicalRef) bool {
+	for _, object := range product.catalog {
+		if object.Kind != RefReadingTarget {
+			continue
+		}
+		for _, advertised := range object.PrincipalRefs {
+			if advertised == principal {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func intersectsPrincipalSet(
@@ -348,10 +419,42 @@ func (product Product) resolveRef(field string, position int, ref string) (Catal
 }
 
 func (product Product) validateModelText(value string, limit int, required, rejectOrder bool) error {
+	return product.validateModelTextWithTargetLocators(value, limit, required, rejectOrder, nil)
+}
+
+func (product Product) validateModelTextWithTargetLocators(
+	value string,
+	limit int,
+	required bool,
+	rejectOrder bool,
+	targets []CatalogObject,
+) error {
 	if limit > product.input.Limits.MaxTextBytes {
 		limit = product.input.Limits.MaxTextBytes
 	}
-	if err := validateVisibleText(value, limit, required, product.privateIdentities); err != nil {
+	identities := product.privateIdentities
+	if len(targets) != 0 {
+		identities = make(map[string]struct{}, len(product.privateIdentities))
+		for identity := range product.privateIdentities {
+			identities[identity] = struct{}{}
+		}
+		for _, target := range targets {
+			if target.Kind != RefReadingTarget {
+				continue
+			}
+			if target.Location != nil {
+				if _, private := product.alwaysPrivate[target.Location.Path]; !private {
+					delete(identities, target.Location.Path)
+				}
+			}
+			if symbol := modelVisibleTargetSymbol(target.Symbol); symbol != "" {
+				if _, private := product.alwaysPrivate[symbol]; !private {
+					delete(identities, symbol)
+				}
+			}
+		}
+	}
+	if err := validateVisibleText(value, limit, required, identities); err != nil {
 		return err
 	}
 	if rejectOrder && impliesRuntimeOrder(value) {

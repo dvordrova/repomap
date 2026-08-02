@@ -285,6 +285,35 @@ var (
 	errResponseEnvelopeMalformed = errors.New("llm response envelope is malformed")
 )
 
+// IncompleteCompletionError reports an envelope that cannot represent one
+// complete semantic answer. FinishReason is a closed diagnostic value; an
+// unknown provider value is never echoed.
+type IncompleteCompletionError struct {
+	Stage        string
+	ChoiceCount  int
+	FinishReason string
+}
+
+func (err *IncompleteCompletionError) Error() string {
+	if err == nil {
+		return "llm response completion is incomplete"
+	}
+	stage := strings.TrimSpace(err.Stage)
+	if stage == "" {
+		stage = "semantic"
+	}
+	reason := err.FinishReason
+	if reason == "" {
+		reason = "unavailable"
+	}
+	return fmt.Sprintf(
+		"llm %s response completion is incomplete (choices=%d, finish_reason=%s)",
+		stage,
+		err.ChoiceCount,
+		reason,
+	)
+}
+
 func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
 	request := c.canonicalSemanticRequest(
 		`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
@@ -588,6 +617,7 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
 		measured.Content = append([]byte(nil), result.Content...)
 		measured.FinishReason = result.FinishReason
+		measured.ChoiceCount = result.ChoiceCount
 		if err == nil {
 			return measured, nil
 		}
@@ -620,6 +650,7 @@ func providerResultFromCompletion(
 		InputTokens:   completion.InputTokens, OutputTokens: completion.OutputTokens,
 		ReasoningTokens:       completion.ReasoningTokens,
 		FinishReason:          completion.FinishReason,
+		ChoiceCount:           completion.ChoiceCount,
 		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
 		PromptCacheMissTokens: completion.PromptCacheMissTokens,
 	}
@@ -676,8 +707,10 @@ type chatCompletion struct {
 	OutputTokens          int
 	ReasoningTokens       int
 	FinishReason          string
+	ChoiceCount           int
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
+	finishReasonClass     string
 }
 
 func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) (chatCompletion, bool, error) {
@@ -739,6 +772,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	}
 	completion := chatCompletion{
 		ResponseBytes:         len(respBody),
+		ChoiceCount:           len(parsed.Choices),
 		UsageReported:         usageReported,
 		InputTokens:           usage.PromptTokens,
 		OutputTokens:          usage.CompletionTokens,
@@ -746,11 +780,14 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		PromptCacheHitTokens:  usage.PromptCacheHitTokens,
 		PromptCacheMissTokens: usage.PromptCacheMissTokens,
 	}
-	if len(parsed.Choices) == 0 {
-		return completion, false, fmt.Errorf("llm response contains no choices")
+	if completion.ChoiceCount != 1 {
+		return completion, false, &IncompleteCompletionError{
+			ChoiceCount: completion.ChoiceCount, FinishReason: "unavailable",
+		}
 	}
 	choice := parsed.Choices[0]
 	completion.FinishReason = knownFinishReason(choice.FinishReason)
+	completion.finishReasonClass = closedFinishReason(choice.FinishReason)
 	content := strings.TrimSpace(choice.Message.Content)
 	completion.Content = []byte(content)
 	if choice.FinishReason == "length" {
@@ -794,6 +831,37 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	}
 
 	return completion, false, nil
+}
+
+func requireSingleStoppedCompletion(stage string, completion chatCompletion) error {
+	if completion.ChoiceCount == 1 && completion.finishReasonClass == "stop" {
+		return nil
+	}
+	return &IncompleteCompletionError{
+		Stage: stage, ChoiceCount: completion.ChoiceCount,
+		FinishReason: completion.finishReasonClass,
+	}
+}
+
+func annotateIncompleteCompletion(err error, stage string) error {
+	var incomplete *IncompleteCompletionError
+	if !errors.As(err, &incomplete) {
+		return err
+	}
+	return &IncompleteCompletionError{
+		Stage: stage, ChoiceCount: incomplete.ChoiceCount,
+		FinishReason: incomplete.FinishReason,
+	}
+}
+
+func closedFinishReason(reason string) string {
+	if known := knownFinishReason(reason); known != "" {
+		return known
+	}
+	if strings.TrimSpace(reason) == "" {
+		return "missing"
+	}
+	return "unknown"
 }
 
 func knownFinishReason(reason string) string {

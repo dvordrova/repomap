@@ -2,6 +2,8 @@ package componentmap
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -182,7 +184,7 @@ func TestRejectedCaddyProposalUsesAnchorFirstFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	wire := synthesisWireProposalFromCanonical(t, bundle, proposal)
-	wire.Subsystems[0].Components[0].AnchorRefs = []SynthesisAnchorRef{{
+	wire.Records[1].AnchorRefs = []SynthesisAnchorRef{{
 		Kind: AnchorRegistryLookup, Ref: "a999",
 	}}
 	response, err := json.Marshal(wire)
@@ -263,6 +265,24 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	for _, required := range []string{"request-local typed", "member_refs", "anchor_refs", "Do not return versions", "coordinates", "provenance"} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis instruction misses %q", required)
+		}
+	}
+	for _, required := range []string{
+		`{"records":[{"kind":"subsystem","ref":"g1"`,
+		`{"kind":"component","subsystem_ref":"g1"`,
+		`{"kind":"subsystem","ref":"g2"`,
+		"one ordered records array",
+		"prefer four to seven distinct subsystem records when the supplied evidence supports that many",
+		"Tiny, library, and package-landscape requests may honestly use one to three",
+		"exactly one complete JSON object",
+		"Its only root field is records",
+		"A subsystem record contains exactly kind, ref, name, and description",
+		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis",
+		"Do not nest records or emit a second root object",
+		"silently validate the complete JSON syntax",
+	} {
+		if !strings.Contains(prompt.System, required) {
+			t.Errorf("synthesis nesting contract misses %q", required)
 		}
 	}
 
@@ -721,9 +741,8 @@ func TestSynthesisResponseRejectsNonExactMemberRefs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			wire := base
-			wire.Subsystems = append([]synthesisWireSubsystem(nil), base.Subsystems...)
-			wire.Subsystems[0].Components = append([]synthesisWireComponent(nil), base.Subsystems[0].Components...)
-			wire.Subsystems[0].Components[0].MemberRefs = []SynthesisMemberRef{test.ref}
+			wire.Records = append([]synthesisWireRecord(nil), base.Records...)
+			wire.Records[1].MemberRefs = []SynthesisMemberRef{test.ref}
 			response, err := json.Marshal(wire)
 			if err != nil {
 				t.Fatal(err)
@@ -739,7 +758,7 @@ func TestSynthesisResponseRejectsNonExactMemberRefs(t *testing.T) {
 		})
 	}
 
-	rawCanonical := []byte(`{"subsystems":[{"name":"Repository","components":[{"name":"Object","member_ids":[{"kind":"package","value":"member-package-private-canonical"}]}]}]}`)
+	rawCanonical := []byte(`{"records":[{"kind":"subsystem","ref":"g1","name":"Repository","description":""},{"kind":"component","subsystem_ref":"g1","name":"Object","description":"","member_ids":[{"kind":"package","value":"member-package-private-canonical"}],"anchor_refs":[],"hypothesis":true}]}`)
 	result, err := RecordSynthesisResponse(bundle, "revision-raw", "test", "test", time.Millisecond, rawCanonical)
 	if err != nil {
 		t.Fatal(err)
@@ -763,9 +782,8 @@ func TestSynthesisResponseRejectsForbiddenBackendIdentityFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	root["version"] = ProposalVersion
-	subsystems := root["subsystems"].([]any)
-	components := subsystems[0].(map[string]any)["components"].([]any)
-	components[0].(map[string]any)["member_ids"] = []any{map[string]any{
+	records := root["records"].([]any)
+	records[1].(map[string]any)["member_ids"] = []any{map[string]any{
 		"kind": "package", "value": bundle.Candidates[0].ID.Value,
 	}}
 	mixed, err := json.Marshal(root)
@@ -798,13 +816,11 @@ func TestFreshCasdoorSharedMemberRefIsAcceptedManyToMany(t *testing.T) {
 	}
 	objectRef := catalog.membersByID[bundle.Candidates[0].ID]
 	certificateRef := catalog.membersByID[bundle.Candidates[1].ID]
-	wire := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{
-		{Name: "Security and Identity", Components: []synthesisWireComponent{{
-			Name: "Certificate Management", MemberRefs: []SynthesisMemberRef{objectRef, certificateRef}, Hypothesis: true,
-		}}},
-		{Name: "Domain Objects", Components: []synthesisWireComponent{{
-			Name: "Object Model", MemberRefs: []SynthesisMemberRef{objectRef}, Hypothesis: true,
-		}}},
+	wire := synthesisWireProposal{Records: []synthesisWireRecord{
+		{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Security and Identity"},
+		{Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Certificate Management", MemberRefs: []SynthesisMemberRef{objectRef, certificateRef}, Hypothesis: true},
+		{Kind: synthesisWireSubsystemRecord, Ref: "g2", Name: "Domain Objects"},
+		{Kind: synthesisWireComponentRecord, SubsystemRef: "g2", Name: "Object Model", MemberRefs: []SynthesisMemberRef{objectRef}, Hypothesis: true},
 	}}
 	response, err := json.Marshal(wire)
 	if err != nil {
@@ -835,7 +851,7 @@ func TestFreshCasdoorSharedMemberRefIsAcceptedManyToMany(t *testing.T) {
 	}
 }
 
-func TestAcceptedNormalizedSynthesisCountsCanonicalMembershipRelation(t *testing.T) {
+func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T) {
 	t.Parallel()
 
 	bundle := CandidateBundle{
@@ -855,29 +871,31 @@ func TestAcceptedNormalizedSynthesisCountsCanonicalMembershipRelation(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	components := make([]synthesisWireComponent, MaxComponentsPerSubsystem+1)
+	components := make([]synthesisWireRecord, MaxComponentsPerSubsystem+1)
 	for index := 0; index < MaxComponentsPerSubsystem-1; index++ {
-		components[index] = synthesisWireComponent{
+		components[index] = synthesisWireRecord{
+			Kind: synthesisWireComponentRecord, SubsystemRef: "g1",
 			Name:       fmt.Sprintf("Responsibility %02d", index),
 			MemberRefs: []SynthesisMemberRef{catalog.membersByID[bundle.Candidates[index].ID]},
 		}
 	}
 	sharedRef := catalog.membersByID[bundle.Candidates[9].ID]
-	components[7] = synthesisWireComponent{
-		Name: "Cross-cut A",
+	components[7] = synthesisWireRecord{
+		Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Cross-cut A",
 		MemberRefs: []SynthesisMemberRef{
 			catalog.membersByID[bundle.Candidates[7].ID], sharedRef,
 		},
 	}
-	components[8] = synthesisWireComponent{
-		Name: "Cross-cut B",
+	components[8] = synthesisWireRecord{
+		Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Cross-cut B",
 		MemberRefs: []SynthesisMemberRef{
 			catalog.membersByID[bundle.Candidates[8].ID], sharedRef,
 		},
 	}
-	response, err := json.Marshal(synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
-		Name: "Repository", Components: components,
-	}}})
+	records := append([]synthesisWireRecord{{
+		Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Repository",
+	}}, components...)
+	response, err := json.Marshal(synthesisWireProposal{Records: records})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -887,19 +905,16 @@ func TestAcceptedNormalizedSynthesisCountsCanonicalMembershipRelation(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedNormalized {
-		t.Fatalf("normalized synthesis result = %#v", result.Landscape)
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "response.invalid_proposal") {
+		t.Fatalf("over-bound synthesis result = %#v", result.Landscape)
 	}
-	if !result.Membership.Counted || result.Membership.MemberOccurrences != 10 ||
-		result.Membership.DistinctMembers != 10 {
-		t.Fatalf("accepted canonical membership counts = %#v, want 10/10", result.Membership)
+	if result.Membership.Counted || result.Membership.MemberOccurrences != 0 || result.Membership.DistinctMembers != 0 {
+		t.Fatalf("over-bound response was partially counted: %#v", result.Membership)
 	}
-	if result.Record.Call == nil || result.Record.Call.Metadata.MemberOccurrences != 10 ||
-		result.Record.Call.Metadata.DistinctMembers != 10 {
-		t.Fatalf("saved accepted membership counts = %#v, want canonical 10/10", result.Record.Call)
-	}
-	if len(result.Landscape.ConceptualMemberships) != 10 {
-		t.Fatalf("canonical conceptual memberships = %d, want 10", len(result.Landscape.ConceptualMemberships))
+	if result.Record.Call == nil || result.Record.Call.Metadata.MembershipCounted ||
+		result.Record.Call.Metadata.MemberOccurrences != 0 || result.Record.Call.Metadata.DistinctMembers != 0 {
+		t.Fatalf("saved over-bound membership counts = %#v", result.Record.Call)
 	}
 	saved, err := json.Marshal(result.Record)
 	if err != nil {
@@ -917,13 +932,29 @@ func TestAcceptedNormalizedSynthesisCountsCanonicalMembershipRelation(t *testing
 func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
+	legacyRaw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	bundle := savedCasdoorManyToManyBundle()
+	legacy, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-many-to-many-legacy-v1", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, legacyRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !legacy.Landscape.Fallback || legacy.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(legacy.Landscape.Diagnostics, "response.invalid_proposal") || legacy.Membership.Counted {
+		t.Fatalf("old nested response was reinterpreted under the records contract: %#v", legacy)
+	}
+
+	raw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_records_v2.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	result, err := RecordSynthesisResponseForLanguage(
-		bundle, "casdoor-many-to-many-v1", "openai-compatible/bearer",
+		bundle, "casdoor-many-to-many-records-v2", "openai-compatible/bearer",
 		"deepseek-v4-flash", "ru", time.Millisecond, raw,
 	)
 	if err != nil {
@@ -971,7 +1002,7 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := ReplaySynthesisResult(bundle, "casdoor-many-to-many-v1", saved)
+	replayed, err := ReplaySynthesisResult(bundle, "casdoor-many-to-many-records-v2", saved)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,28 +1018,22 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReplaySynthesisResult(bundle, "casdoor-many-to-many-v1", tamperedSaved); err == nil ||
+	if _, err := ReplaySynthesisResult(bundle, "casdoor-many-to-many-records-v2", tamperedSaved); err == nil ||
 		!strings.Contains(err.Error(), "membership counts do not replay") {
 		t.Fatalf("tampered membership count replay error = %v", err)
 	}
 
-	wire, _, err := decodeSynthesisWireProposalJSON(raw)
+	wire, err := decodeSynthesisWireProposalJSON(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for left, right := 0, len(wire.Subsystems)-1; left < right; left, right = left+1, right-1 {
-		wire.Subsystems[left], wire.Subsystems[right] = wire.Subsystems[right], wire.Subsystems[left]
+	for left, right := 0, len(wire.Records)-1; left < right; left, right = left+1, right-1 {
+		wire.Records[left], wire.Records[right] = wire.Records[right], wire.Records[left]
 	}
-	for subsystemIndex := range wire.Subsystems {
-		components := wire.Subsystems[subsystemIndex].Components
-		for left, right := 0, len(components)-1; left < right; left, right = left+1, right-1 {
-			components[left], components[right] = components[right], components[left]
-		}
-		for componentIndex := range components {
-			refs := components[componentIndex].MemberRefs
-			for left, right := 0, len(refs)-1; left < right; left, right = left+1, right-1 {
-				refs[left], refs[right] = refs[right], refs[left]
-			}
+	for recordIndex := range wire.Records {
+		refs := wire.Records[recordIndex].MemberRefs
+		for left, right := 0, len(refs)-1; left < right; left, right = left+1, right-1 {
+			refs[left], refs[right] = refs[right], refs[left]
 		}
 	}
 	reorderedRaw, err := json.Marshal(wire)
@@ -1016,7 +1041,7 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 		t.Fatal(err)
 	}
 	reordered, err := RecordSynthesisResponseForLanguage(
-		bundle, "casdoor-many-to-many-v1", "openai-compatible/bearer",
+		bundle, "casdoor-many-to-many-records-v2", "openai-compatible/bearer",
 		"deepseek-v4-flash", "ru", time.Millisecond, reorderedRaw,
 	)
 	if err != nil {
@@ -1104,12 +1129,10 @@ func TestAnchorRefsRejectWithinComponentDuplicateButAllowSharedContext(t *testin
 	anchorRef := catalog.anchorsByID[bundle.BehaviorAnchors[0].ID]
 	firstRef := catalog.membersByID[bundle.Candidates[0].ID]
 	secondRef := catalog.membersByID[bundle.Candidates[1].ID]
-	duplicate := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
-		Name: "Runtime", Components: []synthesisWireComponent{{
-			Name: "Duplicate anchor", MemberRefs: []SynthesisMemberRef{firstRef},
-			AnchorRefs: []SynthesisAnchorRef{anchorRef, anchorRef},
-		}},
-	}}}
+	duplicate := synthesisWireProposal{Records: []synthesisWireRecord{
+		{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Runtime"},
+		{Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Duplicate anchor", MemberRefs: []SynthesisMemberRef{firstRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef, anchorRef}},
+	}}
 	response, err := json.Marshal(duplicate)
 	if err != nil {
 		t.Fatal(err)
@@ -1131,12 +1154,10 @@ func TestAnchorRefsRejectWithinComponentDuplicateButAllowSharedContext(t *testin
 		{name: "wrong kind", ref: SynthesisAnchorRef{Kind: AnchorLifecycleStart, Ref: "a1"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			invalid := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
-				Name: "Runtime", Components: []synthesisWireComponent{{
-					Name: "Invalid anchor", MemberRefs: []SynthesisMemberRef{firstRef},
-					AnchorRefs: []SynthesisAnchorRef{test.ref},
-				}},
-			}}}
+			invalid := synthesisWireProposal{Records: []synthesisWireRecord{
+				{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Runtime"},
+				{Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Invalid anchor", MemberRefs: []SynthesisMemberRef{firstRef}, AnchorRefs: []SynthesisAnchorRef{test.ref}},
+			}}
 			response, err := json.Marshal(invalid)
 			if err != nil {
 				t.Fatal(err)
@@ -1152,12 +1173,11 @@ func TestAnchorRefsRejectWithinComponentDuplicateButAllowSharedContext(t *testin
 		})
 	}
 
-	shared := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
-		Name: "Runtime", Components: []synthesisWireComponent{
-			{Name: "First", MemberRefs: []SynthesisMemberRef{firstRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef}},
-			{Name: "Second", MemberRefs: []SynthesisMemberRef{secondRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef}},
-		},
-	}}}
+	shared := synthesisWireProposal{Records: []synthesisWireRecord{
+		{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Runtime"},
+		{Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "First", MemberRefs: []SynthesisMemberRef{firstRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef}},
+		{Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Second", MemberRefs: []SynthesisMemberRef{secondRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef}},
+	}}
 	response, err = json.Marshal(shared)
 	if err != nil {
 		t.Fatal(err)
@@ -1312,7 +1332,7 @@ func TestRussianSynthesisRecordBindsLanguagePromptAndReplays(t *testing.T) {
 	}
 }
 
-func TestSynthesisResponseExtractionKeepsWeakModelFormattingRecoverable(t *testing.T) {
+func TestSynthesisResponseRejectsWrappersWithoutRepair(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -1320,17 +1340,14 @@ func TestSynthesisResponseExtractionKeepsWeakModelFormattingRecoverable(t *testi
 	tests := []struct {
 		name     string
 		response []byte
-		warning  string
 	}{
 		{
 			name:     "markdown fence",
 			response: []byte("Here is the map:\n```json\n" + string(proposal) + "\n```\n"),
-			warning:  "response.fenced_json_extracted",
 		},
 		{
 			name:     "surrounding prose",
 			response: []byte("The bounded proposal follows.\n" + string(proposal) + "\nEnd of proposal."),
-			warning:  "response.embedded_json_extracted",
 		},
 	}
 
@@ -1342,11 +1359,11 @@ func TestSynthesisResponseExtractionKeepsWeakModelFormattingRecoverable(t *testi
 			if err != nil {
 				t.Fatalf("RecordSynthesisResponse() error = %v", err)
 			}
-			if result.Landscape.Fallback {
-				t.Fatalf("formatted valid response used fallback: %#v", result.Landscape.Diagnostics)
+			if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected {
+				t.Fatalf("wrapped response was repaired: %#v", result.Landscape)
 			}
-			if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, test.warning) {
-				t.Fatalf("diagnostics = %#v, want %q", result.Landscape.Diagnostics, test.warning)
+			if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "response.invalid_proposal") {
+				t.Fatalf("diagnostics = %#v, want strict invalid proposal", result.Landscape.Diagnostics)
 			}
 			if !reflect.DeepEqual(result.Record.Call.Metadata.ValidationWarnings, result.Landscape.Diagnostics) {
 				t.Fatalf("saved warnings do not match local validation: %#v", result.Record.Call.Metadata)
@@ -1361,6 +1378,84 @@ func TestSynthesisResponseExtractionKeepsWeakModelFormattingRecoverable(t *testi
 			}
 			if !reflect.DeepEqual(replayed, result.Landscape) {
 				t.Fatal("formatted response did not replay deterministically")
+			}
+		})
+	}
+}
+
+func TestSynthesisWireRejectsDuplicateNullAndInvalidUnicodeFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "duplicate root field",
+			raw:  `{"records":[],"records":[]}`,
+		},
+		{
+			name: "null description",
+			raw:  `{"records":[{"kind":"subsystem","ref":"g1","name":"n","description":null}]}`,
+		},
+		{
+			name: "null component values",
+			raw:  `{"records":[{"kind":"subsystem","ref":"g1","name":"n","description":""},{"kind":"component","subsystem_ref":"g1","name":"c","description":"","member_refs":null,"anchor_refs":null,"hypothesis":null}]}`,
+		},
+		{
+			name: "invalid unicode surrogate",
+			raw:  `{"records":[{"kind":"subsystem","ref":"g1","name":"\ud800","description":""}]}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := decodeSynthesisWireProposalJSON([]byte(test.raw)); err == nil {
+				t.Fatal("strict wire decoder accepted malformed field encoding")
+			}
+		})
+	}
+}
+
+func TestSynthesisResponseMembershipCountsUsesOnlyExactCurrentFlatWire(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		raw         string
+		counted     bool
+		occurrences int
+		distinct    int
+	}{
+		{
+			name: "flat many to many membership",
+			raw: `{"records":[` +
+				`{"kind":"subsystem","ref":"g1","name":"Application","description":""},` +
+				`{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[],"hypothesis":true},` +
+				`{"kind":"component","subsystem_ref":"g1","name":"Storage","description":"","member_refs":[{"kind":"package","ref":"p1"},{"kind":"file","ref":"f1"}],"anchor_refs":[],"hypothesis":true}` +
+				`]}`,
+			counted: true, occurrences: 3, distinct: 2,
+		},
+		{
+			name: "retired nested response",
+			raw:  `{"subsystems":[{"components":[{"member_ids":[{"kind":"package","value":"a"}]}]}]}`,
+		},
+		{
+			name: "unknown component field",
+			raw:  `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[],"hypothesis":true,"owner_ref":"p1"}]}`,
+		},
+		{
+			name: "duplicate ref field",
+			raw:  `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1","ref":"p2"}],"anchor_refs":[],"hypothesis":true}]}`,
+		},
+		{name: "fenced response", raw: "```json\n{}\n```"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			counted, occurrences, distinct := SynthesisResponseMembershipCounts([]byte(test.raw))
+			if counted != test.counted || occurrences != test.occurrences || distinct != test.distinct {
+				t.Fatalf("counts = %t/%d/%d, want %t/%d/%d", counted, occurrences, distinct, test.counted, test.occurrences, test.distinct)
 			}
 		})
 	}
@@ -1396,6 +1491,9 @@ func TestInvalidSynthesisOutputFallsBackAndReplays(t *testing.T) {
 			if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, test.diagnostic) {
 				t.Fatalf("diagnostics = %#v, want %q", result.Landscape.Diagnostics, test.diagnostic)
 			}
+			if hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.unsupported_version") {
+				t.Fatalf("response failure gained an unrelated empty-proposal diagnostic: %#v", result.Landscape.Diagnostics)
+			}
 			if result.Record.Call.ResponseState != test.state || result.Record.Call.Metadata.FallbackReason != FallbackRejectedMalformed {
 				t.Fatalf("saved call = %#v", result.Record.Call)
 			}
@@ -1411,6 +1509,88 @@ func TestInvalidSynthesisOutputFallsBackAndReplays(t *testing.T) {
 				t.Fatal("invalid response fallback did not replay deterministically")
 			}
 		})
+	}
+}
+
+func TestMinimizedCasdoorMalformedFragmentsRejectWithoutFirstObjectAcceptance(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile("testdata/casdoor_architecture_malformed_fragments_minimized_v1.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := landscapeTestBundle()
+	result, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-malformed-fragments-v1", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, raw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		result.Landscape.FallbackReason != FallbackRejectedMalformed {
+		t.Fatalf("malformed live response result = %#v", result.Landscape)
+	}
+	if len(result.Landscape.Diagnostics) != 1 ||
+		result.Landscape.Diagnostics[0].Code != "response.ambiguous_json" {
+		t.Fatalf("malformed live response diagnostics = %#v", result.Landscape.Diagnostics)
+	}
+	if result.Membership.Counted || result.Membership.MemberOccurrences != 0 || result.Membership.DistinctMembers != 0 {
+		t.Fatalf("first recoverable object was partially accepted: %#v", result.Membership)
+	}
+	if result.Record.Call == nil || result.Record.Call.ResponseState != ResponseCaptured ||
+		!bytes.Equal(result.Record.Call.Response, raw) {
+		t.Fatalf("malformed live response was not saved exactly: %#v", result.Record.Call)
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesisResult(bundle, "casdoor-malformed-fragments-v1", saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(replayed.Landscape, result.Landscape) ||
+		!reflect.DeepEqual(replayed.Membership, result.Membership) {
+		t.Fatal("malformed live response did not replay exactly")
+	}
+}
+
+func TestSavedCasdoor1750ResponseIsByteExactAndRejectsWithoutFirstObjectAcceptance(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile("testdata/casdoor_architecture_20260802_175017_response.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 2004 {
+		t.Fatalf("saved live response bytes = %d, want 2004", len(raw))
+	}
+	digest := sha256.Sum256(raw)
+	if got := hex.EncodeToString(digest[:]); got != "a3f8aea4320cab5c65bde693d3898a1b6f0322c56eba2cd21e97907631888895" {
+		t.Fatalf("saved live response sha256 = %s", got)
+	}
+	bundle := landscapeTestBundle()
+	result, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-20260802-175017", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, raw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		result.Landscape.FallbackReason != FallbackRejectedMalformed {
+		t.Fatalf("saved live response result = %#v", result.Landscape)
+	}
+	if len(result.Landscape.Diagnostics) != 1 ||
+		result.Landscape.Diagnostics[0].Code != "response.ambiguous_json" {
+		t.Fatalf("saved live response diagnostics = %#v", result.Landscape.Diagnostics)
+	}
+	if result.Membership.Counted || result.Membership.MemberOccurrences != 0 || result.Membership.DistinctMembers != 0 {
+		t.Fatalf("saved live response first object was partially accepted: %#v", result.Membership)
+	}
+	if result.Record.Call == nil || !bytes.Equal(result.Record.Call.Response, raw) {
+		t.Fatalf("saved live response was not retained exactly: %#v", result.Record.Call)
 	}
 }
 
@@ -1454,7 +1634,7 @@ func TestSynthesisResponseUsesSharedEnvelopeAndResourceLimitIsTerminal(t *testin
 	}
 }
 
-func TestUnknownSynthesisResponseFieldsAreIgnoredWithWarning(t *testing.T) {
+func TestUnknownSynthesisResponseFieldsRejectWholeProposal(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -1465,11 +1645,9 @@ func TestUnknownSynthesisResponseFieldsAreIgnoredWithWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordSynthesisResponse() error = %v", err)
 	}
-	if result.Landscape.Fallback {
-		t.Fatalf("harmless unknown field caused fallback: %#v", result.Landscape.Diagnostics)
-	}
-	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "response.unknown_fields_ignored") {
-		t.Fatalf("diagnostics = %#v, want unknown-field warning", result.Landscape.Diagnostics)
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "response.invalid_proposal") {
+		t.Fatalf("unknown root field did not reject the whole proposal: %#v", result.Landscape)
 	}
 }
 
@@ -1647,14 +1825,16 @@ func synthesisWireProposalFromCanonical(
 	if err != nil {
 		t.Fatalf("buildSynthesisPrivateCatalog() error = %v", err)
 	}
-	wire := synthesisWireProposal{Subsystems: make([]synthesisWireSubsystem, 0, len(proposal.Subsystems))}
-	for _, subsystem := range proposal.Subsystems {
-		wireSubsystem := synthesisWireSubsystem{
+	wire := synthesisWireProposal{Records: make([]synthesisWireRecord, 0, len(proposal.Subsystems)+proposalComponentCount(proposal))}
+	for subsystemIndex, subsystem := range proposal.Subsystems {
+		subsystemRef := fmt.Sprintf("g%d", subsystemIndex+1)
+		wire.Records = append(wire.Records, synthesisWireRecord{
+			Kind: synthesisWireSubsystemRecord, Ref: subsystemRef,
 			Name: subsystem.Name, Description: subsystem.Description,
-			Components: make([]synthesisWireComponent, 0, len(subsystem.Components)),
-		}
+		})
 		for _, component := range subsystem.Components {
-			wireComponent := synthesisWireComponent{
+			wireComponent := synthesisWireRecord{
+				Kind: synthesisWireComponentRecord, SubsystemRef: subsystemRef,
 				Name: component.Name, Description: component.Description, Hypothesis: component.Hypothesis,
 				MemberRefs: make([]SynthesisMemberRef, 0, len(component.MemberIDs)),
 				AnchorRefs: make([]SynthesisAnchorRef, 0, len(component.AnchorIDs)),
@@ -1673,9 +1853,8 @@ func synthesisWireProposalFromCanonical(
 				}
 				wireComponent.AnchorRefs = append(wireComponent.AnchorRefs, ref)
 			}
-			wireSubsystem.Components = append(wireSubsystem.Components, wireComponent)
+			wire.Records = append(wire.Records, wireComponent)
 		}
-		wire.Subsystems = append(wire.Subsystems, wireSubsystem)
 	}
 	return wire
 }

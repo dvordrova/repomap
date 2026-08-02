@@ -7,10 +7,108 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
+
+func TestProjectAddsOneExactPackageDeclarationEvidence(t *testing.T) {
+	input := singleAppInput(
+		"fixture", "module-fixture", "example.com/fixture", ".",
+		"example.com/fixture/cmd/app", "cmd/app", "cmd/app/main.go", 7, "trigger-app",
+	)
+	input.Facts.Packages[0].Files = []string{"cmd/app/z.go", "cmd/app/main.go"}
+	input.PackageDeclarations = map[string]evidence.Location{
+		"example.com/fixture/cmd/app": {Path: "cmd/app/main.go", Line: 1, Column: 1},
+	}
+	atlas, err := Project(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageUnit := unitOfKind(t, atlas, repositoryatlas.UnitPackage)
+	var declarations []repositoryatlas.Evidence
+	for _, item := range atlas.Evidence {
+		if item.Provenance.Operation == PackageDeclarationEvidenceOperation {
+			declarations = append(declarations, item)
+		}
+	}
+	if len(declarations) != 1 {
+		t.Fatalf("package declaration evidence = %#v", declarations)
+	}
+	item := declarations[0]
+	if item.UnitID != packageUnit.ID || item.Symbol != "main" ||
+		item.Location != (evidence.Location{Path: "cmd/app/main.go", Line: 1, Column: 1}) ||
+		item.Provenance.Provider != PackageDeclarationEvidenceProvider ||
+		item.Provenance.Version != PackageDeclarationEvidenceVersion ||
+		item.Provenance.Operation != "package_declaration" ||
+		!IsPersistedPackageDeclarationEvidence(item, packageUnit) ||
+		!IsExactPackageDeclarationEvidence(item, packageUnit, input.Facts.Packages[0]) {
+		t.Fatalf("package declaration evidence = %#v, unit = %#v", item, packageUnit)
+	}
+
+	tampered := item
+	tampered.Provenance.Operation = "package-declaration"
+	if IsExactPackageDeclarationEvidence(tampered, packageUnit, input.Facts.Packages[0]) {
+		t.Fatal("non-canonical provenance operation was accepted")
+	}
+	tamperedUnit := packageUnit
+	tamperedUnit.Name = "example.com/fixture/cmd/other"
+	if IsPersistedPackageDeclarationEvidence(item, tamperedUnit) {
+		t.Fatal("package evidence survived a Unit identity change")
+	}
+}
+
+func TestProjectOmitsInvalidOrAmbiguousPackageDeclarationsWithoutDroppingUnits(t *testing.T) {
+	input := Input{
+		RepositoryName: "fixture",
+		Facts: gofacts.Facts{
+			Modules: []gofacts.ModuleFact{{
+				ID: "module-fixture", ModulePath: "example.com/fixture", ModuleDir: ".",
+			}},
+			Packages: []gofacts.PackageFact{
+				{
+					CanonicalPath: "example.com/fixture/alpha", Name: "alpha",
+					ModuleID: "module-fixture", ModulePath: "example.com/fixture",
+					Files: []string{"shared.go"},
+				},
+				{
+					CanonicalPath: "example.com/fixture/beta", Name: "beta",
+					ModuleID: "module-fixture", ModulePath: "example.com/fixture",
+					Files: []string{"shared.go"},
+				},
+				{
+					CanonicalPath: "example.com/fixture/gamma", Name: "gamma",
+					ModuleID: "module-fixture", ModulePath: "example.com/fixture",
+					Files: []string{"gamma.go"},
+				},
+			},
+		},
+		PackageDeclarations: map[string]evidence.Location{
+			"example.com/fixture/alpha": {Path: "shared.go", Line: 1, Column: 1},
+			"example.com/fixture/beta":  {Path: "shared.go", Line: 1, Column: 1},
+			"example.com/fixture/gamma": {Path: "outside.go", Line: 1, Column: 1},
+		},
+	}
+	atlas, err := Project(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageUnits := 0
+	for _, unit := range atlas.Units {
+		if unit.Kind == repositoryatlas.UnitPackage {
+			packageUnits++
+		}
+	}
+	if packageUnits != 3 {
+		t.Fatalf("package Units = %d, want 3", packageUnits)
+	}
+	for _, item := range atlas.Evidence {
+		if item.Provenance.Operation == PackageDeclarationEvidenceOperation {
+			t.Fatalf("ambiguous or outside-package declaration was emitted: %#v", item)
+		}
+	}
+}
 
 func TestProjectBuildsTruthfulProcessEntrySlice(t *testing.T) {
 	atlas, err := Project(singleAppInput(

@@ -62,7 +62,48 @@ func marshalArchitectureTestWireResponse(
 	response architectureTestWireResponse,
 ) []byte {
 	t.Helper()
-	encoded, err := json.Marshal(response)
+	type subsystemRecord struct {
+		Kind        string `json:"kind"`
+		Ref         string `json:"ref"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	type componentRecord struct {
+		Kind         string                            `json:"kind"`
+		SubsystemRef string                            `json:"subsystem_ref"`
+		Name         string                            `json:"name"`
+		Description  string                            `json:"description"`
+		MemberRefs   []componentmap.SynthesisMemberRef `json:"member_refs"`
+		AnchorRefs   []componentmap.SynthesisAnchorRef `json:"anchor_refs"`
+		Hypothesis   bool                              `json:"hypothesis"`
+	}
+	records := make([]any, 0, len(response.Subsystems)*2)
+	for index, subsystem := range response.Subsystems {
+		ref := fmt.Sprintf("g%d", index+1)
+		records = append(records, subsystemRecord{
+			Kind: "subsystem", Ref: ref,
+			Name: subsystem.Name, Description: subsystem.Description,
+		})
+		for _, component := range subsystem.Components {
+			memberRefs := append([]componentmap.SynthesisMemberRef(nil), component.MemberRefs...)
+			if memberRefs == nil {
+				memberRefs = []componentmap.SynthesisMemberRef{}
+			}
+			anchorRefs := append([]componentmap.SynthesisAnchorRef(nil), component.AnchorRefs...)
+			if anchorRefs == nil {
+				anchorRefs = []componentmap.SynthesisAnchorRef{}
+			}
+			records = append(records, componentRecord{
+				Kind: "component", SubsystemRef: ref,
+				Name: component.Name, Description: component.Description,
+				MemberRefs: memberRefs, AnchorRefs: anchorRefs,
+				Hypothesis: component.Hypothesis,
+			})
+		}
+	}
+	encoded, err := json.Marshal(struct {
+		Records []any `json:"records"`
+	}{Records: records})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,21 +32,24 @@ type architectureSynthesisStub struct {
 }
 
 type architectureSynthesisWireResponse struct {
-	Subsystems []architectureSynthesisWireSubsystem `json:"subsystems"`
+	Records []any `json:"records"`
 }
 
 type architectureSynthesisWireSubsystem struct {
-	Name        string                               `json:"name"`
-	Description string                               `json:"description,omitempty"`
-	Components  []architectureSynthesisWireComponent `json:"components"`
+	Kind        string `json:"kind"`
+	Ref         string `json:"ref"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type architectureSynthesisWireComponent struct {
-	Name        string                            `json:"name"`
-	Description string                            `json:"description,omitempty"`
-	MemberRefs  []componentmap.SynthesisMemberRef `json:"member_refs"`
-	AnchorRefs  []componentmap.SynthesisAnchorRef `json:"anchor_refs,omitempty"`
-	Hypothesis  bool                              `json:"hypothesis,omitempty"`
+	Kind         string                            `json:"kind"`
+	SubsystemRef string                            `json:"subsystem_ref"`
+	Name         string                            `json:"name"`
+	Description  string                            `json:"description"`
+	MemberRefs   []componentmap.SynthesisMemberRef `json:"member_refs"`
+	AnchorRefs   []componentmap.SynthesisAnchorRef `json:"anchor_refs"`
+	Hypothesis   bool                              `json:"hypothesis"`
 }
 
 func architectureSynthesisOutcomeFixture(
@@ -323,7 +326,7 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	}
 }
 
-func TestArchitectureResponseMembershipCountsExactCanonicalAndRequestLocalShapes(t *testing.T) {
+func TestArchitectureResponseMembershipCountsRejectsLegacyAndCountsFlatRequestLocalShape(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		response   string
@@ -332,18 +335,20 @@ func TestArchitectureResponseMembershipCountsExactCanonicalAndRequestLocalShapes
 		distinct   int
 	}{
 		{
-			name:     "canonical bridge duplicate",
+			name:     "legacy canonical nested response",
 			response: `{"subsystems":[{"components":[{"member_ids":[{"kind":"package","value":"a"}]},{"member_ids":[{"kind":"package","value":"a"},{"kind":"file","value":"b"}]}]}]}`,
-			counted:  true, occurrence: 3, distinct: 2,
 		},
 		{
-			name:     "request local refs",
-			response: `{"subsystems":[{"components":[{"member_refs":[{"kind":"package","ref":"p1"},{"kind":"file","ref":"f1"}]}]}]}`,
+			name:     "flat request local refs",
+			response: `{"records":[{"kind":"subsystem","ref":"g1","name":"Repository","description":""},{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"},{"kind":"file","ref":"f1"}],"anchor_refs":[],"hypothesis":true}]}`,
 			counted:  true, occurrence: 2, distinct: 2,
 		},
 		{name: "not exact json", response: "```json\n{}\n```"},
 		{name: "mixed identities", response: `{"subsystems":[{"components":[{"member_ids":[],"member_refs":[]}]}]}`},
-		{name: "non-closed ref", response: `{"subsystems":[{"components":[{"member_refs":[{"kind":"package","ref":"p1","path":"private"}]}]}]}`},
+		{name: "non-closed ref", response: `{"records":[{"kind":"subsystem","ref":"g1","name":"Repository","description":""},{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1","path":"private"}],"anchor_refs":[],"hypothesis":true}]}`},
+		{name: "unknown root field", response: `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[],"hypothesis":true}],"subsystems":[]}`},
+		{name: "unknown component field", response: `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[],"hypothesis":true,"owner_ref":"p1"}]}`},
+		{name: "duplicate member ref field", response: `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1","ref":"p2"}],"anchor_refs":[],"hypothesis":true}]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			counted, occurrence, distinct := architectureResponseMembershipCounts([]byte(test.response))
@@ -394,16 +399,24 @@ func TestEnsureArchitectureSynthesisPersistsResolvedManyToManyMembershipEvidence
 		t.Fatalf("request candidates = %d", len(request.Candidates))
 	}
 	response, err := json.Marshal(architectureSynthesisWireResponse{
-		Subsystems: []architectureSynthesisWireSubsystem{{
-			Name: "Repository",
-			Components: []architectureSynthesisWireComponent{
-				{Name: "Runtime", MemberRefs: []componentmap.SynthesisMemberRef{request.Candidates[0].Ref}},
-				{Name: "Storage", MemberRefs: []componentmap.SynthesisMemberRef{
+		Records: []any{
+			architectureSynthesisWireSubsystem{
+				Kind: "subsystem", Ref: "g1", Name: "Repository",
+			},
+			architectureSynthesisWireComponent{
+				Kind: "component", SubsystemRef: "g1", Name: "Runtime",
+				MemberRefs: []componentmap.SynthesisMemberRef{request.Candidates[0].Ref},
+				AnchorRefs: []componentmap.SynthesisAnchorRef{},
+			},
+			architectureSynthesisWireComponent{
+				Kind: "component", SubsystemRef: "g1", Name: "Storage",
+				MemberRefs: []componentmap.SynthesisMemberRef{
 					request.Candidates[0].Ref,
 					request.Candidates[1].Ref,
-				}},
+				},
+				AnchorRefs: []componentmap.SynthesisAnchorRef{},
 			},
-		}},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -734,7 +747,7 @@ func TestEnsureArchitectureSynthesisRejectsInvalidOutputWithoutPublishingOrCachi
 	}
 	if status.State != report.ArchitectureSynthesisFailed || status.ErrorCode != "invalid_response" ||
 		!status.ProposalRejected || status.FallbackSelected || status.FallbackReason != "" ||
-		strings.Join(status.ValidationCodes, ",") != "response.no_json,proposal.unsupported_version" {
+		strings.Join(status.ValidationCodes, ",") != "response.no_json" {
 		t.Fatalf("closed rejection status = %#v", status)
 	}
 	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, architectureSynthesisCacheDirectory, "*.json"))
@@ -1419,13 +1432,16 @@ func architectureSynthesisTestResponse(t *testing.T, bundle componentmap.Candida
 		anchorRefs = append(anchorRefs, anchor.Ref)
 	}
 	proposal := architectureSynthesisWireResponse{
-		Subsystems: []architectureSynthesisWireSubsystem{{
-			Name: "Application",
-			Components: []architectureSynthesisWireComponent{{
+		Records: []any{
+			architectureSynthesisWireSubsystem{
+				Kind: "subsystem", Ref: "g1", Name: "Application",
+			},
+			architectureSynthesisWireComponent{
+				Kind: "component", SubsystemRef: "g1",
 				Name: "Runtime", MemberRefs: memberRefs, AnchorRefs: anchorRefs,
 				Hypothesis: len(anchorRefs) == 0 && bundle.GroundingMode != componentmap.GroundingPackages,
-			}},
-		}},
+			},
+		},
 	}
 	encoded, err := json.Marshal(proposal)
 	if err != nil {

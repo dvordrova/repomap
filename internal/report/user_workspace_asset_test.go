@@ -843,6 +843,46 @@ const architectureState = api.workspaceStateSnapshot();
 const architectureHash = window.location.hash;
 const exactStart = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 10 });
 const exactEnd = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 12 });
+function renderIsolatedOverview(isolatedReport) {
+  const isolatedRoot = new Element("section");
+  const isolatedWindow = {
+    location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+    __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  };
+  const isolatedDocument = {
+    createElement(tag) { return new Element(tag); },
+    createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+    getElementById(id) {
+      if (id === "rm-report-data") return { textContent: JSON.stringify(isolatedReport) };
+      if (id === "rm-overview") return isolatedRoot;
+      return null;
+    },
+    querySelector() { return null; }, querySelectorAll() { return []; },
+  };
+  isolatedDocument.documentElement = { lang: "en" };
+  isolatedWindow.document = isolatedDocument;
+  vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window: isolatedWindow });
+  vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+    window: isolatedWindow, document: isolatedDocument, URLSearchParams, Set, Map, AbortController, Promise,
+  });
+  isolatedWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
+  const isolatedNodes = walk(isolatedRoot);
+  return {
+    sections: isolatedRoot.children.map((node) => String(node.className || "")),
+    studyDirectionCount: isolatedNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card")).length,
+    surfaceCount: isolatedNodes.filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === "surface").length,
+    componentCount: isolatedNodes.filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === "component").length,
+    rendered: text(isolatedRoot),
+  };
+}
+const atlasFirstReport = JSON.parse(JSON.stringify(report));
+atlasFirstReport.navigator = { version: 1, state: "empty" };
+atlasFirstReport.repository_atlas = {
+  version: 1,
+  units: [{ id: "atlas-repository", kind: "repository", name: "fixture" }],
+  entities: [], evidence: [], relations: [],
+};
+const atlasFirstOverview = renderIsolatedOverview(atlasFirstReport);
 const fallbackReport = JSON.parse(JSON.stringify(report));
 fallbackReport.user_sources = [componentA];
 const fallbackRoot = new Element("section");
@@ -922,6 +962,7 @@ process.stdout.write(JSON.stringify({
   basename: api.exactOverviewSourceForLocation({ path: "a.go", line: 10 }),
   prefix: api.exactOverviewSourceForLocation({ path: "./surface-a.go", line: 10 }),
   stringLine: api.exactOverviewSourceForLocation({ path: "surface-a.go", line: "10" }),
+  atlasFirstOverview,
   fallbackAnatomy, fallbackText: text(fallbackRoot),
   noStudyAnatomy, noStudyText: text(noStudyRoot),
   noStudyDirectionCards: walk(noStudyRoot).filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card")).length,
@@ -975,13 +1016,20 @@ process.stdout.write(JSON.stringify({
 				ComponentID string `json:"component_id"`
 			} `json:"mapTarget"`
 		} `json:"architectureState"`
-		ArchitectureHash  string   `json:"architectureHash"`
-		ExactStart        string   `json:"exactStart"`
-		ExactEnd          string   `json:"exactEnd"`
-		Ambiguous         any      `json:"ambiguous"`
-		Basename          any      `json:"basename"`
-		Prefix            any      `json:"prefix"`
-		StringLine        any      `json:"stringLine"`
+		ArchitectureHash   string `json:"architectureHash"`
+		ExactStart         string `json:"exactStart"`
+		ExactEnd           string `json:"exactEnd"`
+		Ambiguous          any    `json:"ambiguous"`
+		Basename           any    `json:"basename"`
+		Prefix             any    `json:"prefix"`
+		StringLine         any    `json:"stringLine"`
+		AtlasFirstOverview struct {
+			Sections            []string `json:"sections"`
+			StudyDirectionCount int      `json:"studyDirectionCount"`
+			SurfaceCount        int      `json:"surfaceCount"`
+			ComponentCount      int      `json:"componentCount"`
+			Rendered            string   `json:"rendered"`
+		} `json:"atlasFirstOverview"`
 		FallbackAnatomy   any      `json:"fallbackAnatomy"`
 		FallbackText      string   `json:"fallbackText"`
 		NoStudyAnatomy    any      `json:"noStudyAnatomy"`
@@ -1027,6 +1075,20 @@ process.stdout.write(JSON.stringify({
 				t.Fatalf("taxonomy card implies a join through %q: %q", forbidden, card)
 			}
 		}
+	}
+	anatomyPosition, atlasPosition := -1, -1
+	for index, className := range got.AtlasFirstOverview.Sections {
+		if anatomyPosition < 0 && strings.Contains(className, "rm-overview-anatomy-zone") {
+			anatomyPosition = index
+		}
+		if atlasPosition < 0 && strings.Contains(className, "rm-atlas-shelf") {
+			atlasPosition = index
+		}
+	}
+	if anatomyPosition < 0 || atlasPosition < 0 || anatomyPosition >= atlasPosition ||
+		got.AtlasFirstOverview.StudyDirectionCount != 1 || got.AtlasFirstOverview.SurfaceCount != 2 ||
+		got.AtlasFirstOverview.ComponentCount != 2 {
+		t.Fatalf("Atlas-first Overview order/dedup = %#v", got.AtlasFirstOverview)
 	}
 	if got.DrawerState.View != "overview" || got.DrawerState.SourceLocation == nil ||
 		got.DrawerState.SourceLocation.Path != "surface-a.go" || got.DrawerState.SourceLocation.Line != 10 ||

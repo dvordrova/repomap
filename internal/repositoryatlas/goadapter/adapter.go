@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"go/token"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,10 +19,17 @@ import (
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
+const (
+	PackageDeclarationEvidenceProvider  = "gofacts"
+	PackageDeclarationEvidenceVersion   = "package-declaration-v1"
+	PackageDeclarationEvidenceOperation = "package_declaration"
+)
+
 type Input struct {
-	RepositoryName string
-	Facts          gofacts.Facts
-	Catalog        surfacediscovery.TriggerCatalog
+	RepositoryName      string
+	Facts               gofacts.Facts
+	Catalog             surfacediscovery.TriggerCatalog
+	PackageDeclarations map[string]evidence.Location
 }
 
 type exactEntrypoint struct {
@@ -48,7 +57,9 @@ func Project(input Input) (repositoryatlas.Atlas, error) {
 	if err != nil {
 		return repositoryatlas.Atlas{}, err
 	}
-	if _, err := projectPackages(&atlas, input.Facts.Packages, modules); err != nil {
+	if _, err := projectPackages(
+		&atlas, input.Facts.Packages, modules, input.PackageDeclarations,
+	); err != nil {
 		return repositoryatlas.Atlas{}, err
 	}
 	entrypoints := projectEntrypoints(&atlas, input.Facts.EntrypointPackages, modules)
@@ -87,7 +98,18 @@ func projectPackages(
 	atlas *repositoryatlas.Atlas,
 	values []gofacts.PackageFact,
 	modules map[string]gofacts.ModuleFact,
+	declarations map[string]evidence.Location,
 ) (map[string]gofacts.PackageFact, error) {
+	validDeclarations := make(map[string]evidence.Location, len(declarations))
+	declarationCounts := make(map[string]int, len(declarations))
+	for _, pkg := range values {
+		location, ok := declarations[pkg.CanonicalPath]
+		if !ok || !exactPackageDeclarationLocation(pkg, location) {
+			continue
+		}
+		validDeclarations[pkg.CanonicalPath] = location
+		declarationCounts[packageDeclarationLocationKey(location)]++
+	}
 	packages := make(map[string]gofacts.PackageFact, len(values))
 	for _, pkg := range values {
 		if pkg.CanonicalPath == "" || pkg.ModuleID == "" {
@@ -106,8 +128,107 @@ func projectPackages(
 			ID: unitID, Kind: repositoryatlas.UnitPackage,
 			ParentID: pkg.ModuleID, Name: pkg.CanonicalPath,
 		})
+		location, hasDeclaration := validDeclarations[pkg.CanonicalPath]
+		if hasDeclaration && declarationCounts[packageDeclarationLocationKey(location)] == 1 {
+			atlas.Evidence = append(atlas.Evidence, packageDeclarationEvidence(unitID, pkg, location))
+		}
 	}
 	return packages, nil
+}
+
+// IsExactPackageDeclarationEvidence recognizes only the adapter-owned package
+// declaration fact. It is shared by report projections so presentation and
+// Study filtering cannot infer package evidence from a path, basename, or
+// package-shaped Unit alone.
+func IsExactPackageDeclarationEvidence(
+	item repositoryatlas.Evidence,
+	unit repositoryatlas.Unit,
+	pkg gofacts.PackageFact,
+) bool {
+	if !IsPersistedPackageDeclarationEvidence(item, unit) ||
+		unit.Name != pkg.CanonicalPath || unit.ParentID != pkg.ModuleID ||
+		item.Symbol != pkg.Name || !exactPackageDeclarationLocation(pkg, item.Location) {
+		return false
+	}
+	return true
+}
+
+// IsPersistedPackageDeclarationEvidence verifies the self-contained canonical
+// Atlas representation after producer-owned PackageFact.Files are no longer
+// present. It does not infer package membership from a path; it recognizes the
+// exact stable evidence record already emitted by this adapter.
+func IsPersistedPackageDeclarationEvidence(
+	item repositoryatlas.Evidence,
+	unit repositoryatlas.Unit,
+) bool {
+	if unit.Kind != repositoryatlas.UnitPackage || unit.ID == "" || unit.Name == "" || unit.ParentID == "" ||
+		unit.ID != stableID("unit-package", unit.ParentID, unit.Name) ||
+		item.UnitID != unit.ID || !token.IsIdentifier(item.Symbol) ||
+		item.Provenance.Provider != PackageDeclarationEvidenceProvider ||
+		item.Provenance.Version != PackageDeclarationEvidenceVersion ||
+		item.Provenance.Operation != PackageDeclarationEvidenceOperation ||
+		item.Provenance.Detail != "" || item.Provenance.Location != nil ||
+		!validPersistedPackageDeclarationLocation(item.Location) {
+		return false
+	}
+	return item.ID == packageDeclarationEvidenceID(unit.ID, item.Symbol, item.Location)
+}
+
+func packageDeclarationEvidence(
+	unitID string,
+	pkg gofacts.PackageFact,
+	location evidence.Location,
+) repositoryatlas.Evidence {
+	return repositoryatlas.Evidence{
+		ID:     packageDeclarationEvidenceID(unitID, pkg.Name, location),
+		UnitID: unitID, Location: location, Symbol: pkg.Name,
+		Provenance: evidence.Provenance{
+			Provider:  PackageDeclarationEvidenceProvider,
+			Version:   PackageDeclarationEvidenceVersion,
+			Operation: PackageDeclarationEvidenceOperation,
+		},
+	}
+}
+
+func packageDeclarationEvidenceID(
+	unitID string,
+	symbol string,
+	location evidence.Location,
+) string {
+	return stableID(
+		"evidence", "package-declaration", unitID, symbol,
+		location.Path, strconv.Itoa(location.Line), strconv.Itoa(location.Column),
+		PackageDeclarationEvidenceProvider, PackageDeclarationEvidenceVersion,
+		PackageDeclarationEvidenceOperation,
+	)
+}
+
+func validPersistedPackageDeclarationLocation(location evidence.Location) bool {
+	cleaned := path.Clean(location.Path)
+	return location.Path != "" && cleaned == location.Path && cleaned != "." &&
+		!path.IsAbs(location.Path) && !strings.Contains(location.Path, "\\") &&
+		!strings.ContainsAny(location.Path, "\x00\r\n") &&
+		!strings.HasPrefix(cleaned, "../") && strings.HasSuffix(location.Path, ".go") &&
+		location.Line > 0 && location.Column > 0 && location.EndLine == 0 && location.EndColumn == 0
+}
+
+func exactPackageDeclarationLocation(pkg gofacts.PackageFact, location evidence.Location) bool {
+	if pkg.Name == "" || location.Path == "" || !strings.HasSuffix(location.Path, ".go") ||
+		location.Line <= 0 || location.Column <= 0 || location.EndLine != 0 || location.EndColumn != 0 {
+		return false
+	}
+	for _, sourcePath := range pkg.Files {
+		if sourcePath == location.Path {
+			return true
+		}
+	}
+	return false
+}
+
+func packageDeclarationLocationKey(location evidence.Location) string {
+	return strings.Join([]string{
+		location.Path, strconv.Itoa(location.Line), strconv.Itoa(location.Column),
+	}, "\x00")
 }
 
 func projectEntrypoints(

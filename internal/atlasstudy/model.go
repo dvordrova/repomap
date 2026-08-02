@@ -1,7 +1,7 @@
 // Package atlasstudy defines the Atlas-first repository Brief and Study
-// contract. It keeps canonical repository identities and exact source
-// locations in a private request-local catalog while exposing only short
-// typed refs and bounded semantic facts to a model provider.
+// contract. It keeps canonical repository identities private while exposing a
+// bounded task-shaped reading catalog with exact paths, lines, optional
+// qualified symbols and short typed refs to a model provider.
 package atlasstudy
 
 import (
@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	Version       = 2
-	PromptVersion = "atlas-study-prompt-v3"
+	Version       = 3
+	PromptVersion = "atlas-study-prompt-v9"
 
-	RequestArtifactFilename = "atlas_study_request.v2.json"
-	ResultArtifactFilename  = "atlas_study_result.v2.json"
-	StatusArtifactFilename  = "atlas_study_status.v2.json"
+	RequestArtifactFilename = "atlas_study_request.v3.json"
+	ResultArtifactFilename  = "atlas_study_result.v3.json"
+	StatusArtifactFilename  = "atlas_study_status.v3.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
@@ -161,8 +161,10 @@ func (kind ReadingTargetKind) Valid() bool {
 	}
 }
 
-// ReadingTarget retains the exact locator only in the private request
-// artifact. The model-visible wire contains Label, Kind, Authority and Fact.
+// ReadingTarget retains the canonical identity and complete locator in the
+// private request artifact. The model-visible wire receives only the bounded
+// repository-relative path, focus line and optional exact symbol beside a
+// short request-local ref; responses may return only that ref.
 type ReadingTarget struct {
 	ID                  string                    `json:"id"`
 	Owner               CanonicalRef              `json:"owner,omitempty"`
@@ -336,6 +338,7 @@ const (
 	IssueInvalidLearningStage    DirectionIssueCode = "invalid_learning_stage"
 	IssueInvalidPrincipalCount   DirectionIssueCode = "invalid_principal_count"
 	IssueDuplicatePrincipalRef   DirectionIssueCode = "duplicate_principal_ref"
+	IssuePrincipalNotAdvertised  DirectionIssueCode = "principal_not_advertised"
 	IssueRawCanonicalRef         DirectionIssueCode = "raw_canonical_ref"
 	IssueUnknownRef              DirectionIssueCode = "unknown_ref"
 	IssueWrongKindPrincipalRef   DirectionIssueCode = "wrong_kind_principal_ref"
@@ -355,7 +358,8 @@ func (code DirectionIssueCode) Valid() bool {
 	case IssueUnrequestedOutput, IssueDecodeCandidate, IssueInvalidQuestion,
 		IssueInvalidWhy, IssueInvalidOutcome, IssueInvalidTargetJob,
 		IssueInvalidLearningStage, IssueInvalidPrincipalCount,
-		IssueDuplicatePrincipalRef, IssueRawCanonicalRef, IssueUnknownRef,
+		IssueDuplicatePrincipalRef, IssuePrincipalNotAdvertised,
+		IssueRawCanonicalRef, IssueUnknownRef,
 		IssueWrongKindPrincipalRef, IssueComponentMissing,
 		IssueInvalidReadingCount, IssueDuplicateReadingTarget,
 		IssueWrongKindReadingRef, IssueReadingPrincipalMissing,

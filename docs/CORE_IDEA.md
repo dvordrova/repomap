@@ -129,6 +129,24 @@ goroutine lifecycle. Whole-repository SSA and VTA remain outside this path.
 - the backend restores and validates canonical identities and exact evidence;
 - empty and offline outcomes are explicit and make no provider call.
 
+Architecture and Study are independent task-shaped questions over this local
+base. The Architecture provider returns one complete flat ordered record list:
+response-local subsystem refs plus components that cite exact request-local
+typed member and anchor refs. Model grouping is conceptual participation, not
+ownership, and it cannot replace or mutate the canonical local canvas or its
+relations.
+
+Atlas Study receives a compact reading catalog. Each reading target includes
+its exact repository-relative path, positive line and optional qualified
+symbol as read-only locator context, and `allowed_paths` is exactly the sorted
+set of those target paths. It receives no source bytes, full file contents or
+raw graph. Identity fields select only short request-local typed refs. A Study
+direction may repeat an exact locator only when one of its resolved reading
+targets advertised it; that prose is never parsed as authority. Canonical
+identities and exact validation remain local. A rejected or absent Architecture
+enrichment therefore does not block Study when the validated local canvas and
+reading catalog are otherwise usable.
+
 Named user choice now reaches the first saved local neighborhood. In a served
 report, one manifest-authorized component anchor can lazily request bounded Go
 function/method candidates, confirm the selected declaration at its exact

@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	CurrentRunManifestVersion = 10
+	CurrentRunManifestVersion = 11
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
