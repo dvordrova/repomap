@@ -246,8 +246,8 @@ func TestWorkspacePackageGraphPreservesArchitectureComponentAndSearchConsumers(t
 	}
 
 	if CurrentFormatVersion != 29 ||
-		SemanticSearchIndexVersion != 5 ||
-		CurrentRunManifestVersion != 9 {
+		SemanticSearchIndexVersion != 6 ||
+		CurrentRunManifestVersion != 10 {
 		t.Fatalf(
 			"wire versions changed: report=%d search=%d manifest=%d",
 			CurrentFormatVersion,

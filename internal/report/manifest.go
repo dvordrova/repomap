@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	CurrentRunManifestVersion = 9
+	CurrentRunManifestVersion = 10
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -655,15 +655,6 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	hasAtlasStudyRequest := m.MaterialInputs.AtlasStudyRequestSHA256 != ""
 	hasAtlasStudyResult := m.MaterialInputs.AtlasStudyResultSHA256 != ""
 	hasAtlasStudyStatus := m.MaterialInputs.AtlasStudyStatusSHA256 != ""
-	acceptedArchitecture := report.Architecture != nil &&
-		(report.Architecture.State == ArchitectureSynthesisSucceeded ||
-			report.Architecture.State == ArchitectureSynthesisCached) &&
-		report.Architecture.ProposalAccepted && !report.Architecture.ProposalRejected &&
-		!report.Architecture.FallbackSelected
-	if acceptedArchitecture && (report.AtlasStudy == nil ||
-		report.AtlasStudy.State == atlasstudy.ProductStateUnavailable) {
-		return fmt.Errorf("report manifest: accepted Architecture requires a terminal called Atlas Study state")
-	}
 	if report.AtlasStudy == nil && (hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus) {
 		return fmt.Errorf("report manifest: Atlas Study artifact identity does not match report")
 	}
@@ -684,7 +675,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			if hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus ||
 				report.StudyMap != nil ||
 				(report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableOffline &&
-					report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableArchitectureEnrichment) ||
+					report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
 				report.AtlasStudy.FailureCode != "" || report.AtlasStudy.DirectionCount != 0 {
 				return fmt.Errorf("report manifest: unavailable Atlas Study projection is invalid")
 			}
@@ -898,6 +889,9 @@ func (m RunManifest) VerifyNavigatorArtifacts(runDir string, reportJSON []byte) 
 // are enforced by the shared Atlas Study report reader after the byte identity
 // checks below succeed.
 func (m RunManifest) VerifyAtlasStudyArtifacts(runDir string, reportJSON []byte) error {
+	if m.Version != CurrentRunManifestVersion {
+		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
+	}
 	artifacts := []struct {
 		name  string
 		want  string

@@ -69,7 +69,7 @@ func TestWorkspaceEntrypointProjectionPreservesLegacyBytesAndConsumers(t *testin
 			}},
 		},
 		Components:          []Component{{ID: "component-app", Name: "App"}},
-		ArchitectureCanvas:  &ArchitectureCanvas{},
+		ArchitectureCanvas:  &ArchitectureCanvas{Version: ArchitectureCanvasVersion},
 		SemanticSearch:      &SemanticSearchIndex{Version: SemanticSearchIndexVersion},
 		Run:                 &RunInfo{PromptVersion: "saved-run"},
 		OpenablePaths:       []string{"cmd/app/main.go"},
@@ -105,8 +105,8 @@ func TestWorkspaceEntrypointProjectionPreservesLegacyBytesAndConsumers(t *testin
 		t.Fatal("semantic Search projection changed")
 	}
 	if CurrentFormatVersion != 29 ||
-		SemanticSearchIndexVersion != 5 ||
-		CurrentRunManifestVersion != 9 {
+		SemanticSearchIndexVersion != 6 ||
+		CurrentRunManifestVersion != 10 {
 		t.Fatalf(
 			"wire versions changed: report=%d search=%d manifest=%d",
 			CurrentFormatVersion,

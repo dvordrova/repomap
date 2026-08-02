@@ -103,6 +103,20 @@ func TestRunManifestBindsRepositoryAtlasArtifactAndEmbeddedValue(t *testing.T) {
 	})
 }
 
+func TestVersionNineManifestIsRejectedBeforeAtlasStudyV2Artifacts(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	manifest.Version = 9
+	err := manifest.VerifyAtlasStudyArtifacts(
+		filepath.Join(t.TempDir(), "missing-v2-run"),
+		[]byte(`{"format_version":29}`),
+	)
+	if err == nil || !strings.Contains(err.Error(), "unsupported version 9") {
+		t.Fatalf("v9 Atlas Study v2 authority error = %v", err)
+	}
+}
+
 func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T) {
 	repository := newRunManifestRepository(t)
 	initialState, err := freshness.CaptureRepository(context.Background(), repository)

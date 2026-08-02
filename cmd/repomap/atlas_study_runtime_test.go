@@ -93,6 +93,53 @@ func TestRunAtlasStudyProductReplaysOnlyAcceptedExactCache(t *testing.T) {
 	}
 }
 
+func TestAtlasStudyCacheV2RejectsLegacyContractAndDifferentCatalog(t *testing.T) {
+	input := atlasStudyRuntimeInput()
+	product := atlasStudyRuntimeProduct(t, input)
+	client := newAtlasStudyRuntimeClient(atlasStudyRuntimeResponse(t, product, false), nil)
+	runsDir := t.TempDir()
+	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.config.Endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := atlasStudyStageCacheInput(
+		runsDir, atlasStudyRuntimeRepository(), modelresearch.DefaultPolicy(),
+		client.config, endpointSHA, product, client.request,
+	)
+	if current.Fingerprint.CacheContract != "atlas-study-accepted-v2" {
+		t.Fatalf("current Atlas Study cache contract = %q", current.Fingerprint.CacheContract)
+	}
+	legacy := current
+	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v1"
+	if _, err := modelresearch.SaveStageResponse(legacy, modelresearch.StageResponse{
+		Content: []byte(`{"legacy":true}`),
+	}); err != nil {
+		t.Fatalf("save isolated legacy cache: %v", err)
+	}
+	if _, found, err := modelresearch.LoadStageResponse(current); err != nil || found {
+		t.Fatalf("v2 lookup read v1 cache: found=%t err=%v", found, err)
+	}
+
+	if _, err := modelresearch.SaveStageResponse(current, modelresearch.StageResponse{
+		Content: []byte(`{"current":true}`),
+	}); err != nil {
+		t.Fatalf("save current cache: %v", err)
+	}
+	driftedInput := atlasStudyRuntimeInput()
+	driftedInput.ReadingTargets[0].Fact += " Changed exact catalog fact."
+	driftedProduct := atlasStudyRuntimeProduct(t, driftedInput)
+	drifted := atlasStudyStageCacheInput(
+		runsDir, atlasStudyRuntimeRepository(), modelresearch.DefaultPolicy(),
+		client.config, endpointSHA, driftedProduct, client.request,
+	)
+	if current.Fingerprint.EvidenceBundleHash == drifted.Fingerprint.EvidenceBundleHash {
+		t.Fatal("different exact Study catalog retained the same cache identity")
+	}
+	if _, found, err := modelresearch.LoadStageResponse(drifted); err != nil || found {
+		t.Fatalf("different catalog read current cache: found=%t err=%v", found, err)
+	}
+}
+
 func TestRunAtlasStudyProductCanceledContextDoesNotApplyExactCache(t *testing.T) {
 	product := atlasStudyRuntimeProduct(t, atlasStudyRuntimeInput())
 	response := atlasStudyRuntimeResponse(t, product, false)
@@ -464,9 +511,9 @@ func atlasStudyRuntimeInput() atlasstudy.Input {
 			Kind: "process_entry", Authority: repositoryatlas.AuthorityResolved,
 		}},
 		ReadingTargets: []atlasstudy.ReadingTarget{
-			{ID: "anchor-start-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, Kind: atlasstudy.ReadingTargetEntrypoint, Label: "Server startup", Fact: "Initializes the application shell.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "cmd/server/main.go", Line: 20}, Symbol: "RunServer"},
-			{ID: "anchor-config-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, Kind: atlasstudy.ReadingTargetFunction, Label: "Configuration", Fact: "Loads settings.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/config/load.go", Line: 14}, Symbol: "Load"},
-			{ID: "anchor-route-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, Kind: atlasstudy.ReadingTargetFunction, Label: "Routes", Fact: "Registers handlers.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/server/routes.go", Line: 31}, Symbol: "RegisterRoutes"},
+			{ID: "anchor-start-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, RelatedComponentIDs: []string{"component-api-runtime"}, PrincipalRefs: []atlasstudy.CanonicalRef{{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}}, Kind: atlasstudy.ReadingTargetEntrypoint, Label: "Server startup", Fact: "Initializes the application shell.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "cmd/server/main.go", Line: 20}, Symbol: "RunServer"},
+			{ID: "anchor-config-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, RelatedComponentIDs: []string{"component-api-runtime"}, PrincipalRefs: []atlasstudy.CanonicalRef{{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}}, Kind: atlasstudy.ReadingTargetFunction, Label: "Configuration", Fact: "Loads settings.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/config/load.go", Line: 14}, Symbol: "Load"},
+			{ID: "anchor-route-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, RelatedComponentIDs: []string{"component-api-runtime"}, PrincipalRefs: []atlasstudy.CanonicalRef{{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}}, Kind: atlasstudy.ReadingTargetFunction, Label: "Routes", Fact: "Registers handlers.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/server/routes.go", Line: 31}, Symbol: "RegisterRoutes"},
 		},
 		Evidence: []atlasstudy.EvidenceFact{{
 			ID:          "evidence-start-runtime",

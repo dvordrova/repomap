@@ -39,6 +39,33 @@
   return value == null ? "" : String(value);
  }
 
+ function participatingComponentIDs(record, componentByID) {
+  const ids = [];
+  const seen = new Set();
+  array(record && record.participating_component_ids).forEach((value) => {
+   const id = text(value);
+   if (!id || seen.has(id) || !componentByID.has(id)) return;
+   seen.add(id);
+   ids.push(id);
+  });
+  return ids;
+ }
+
+ function architectureStepComponentState(step, componentByID) {
+  const owner = text(step && step.component_id);
+  const exactOwner = owner && componentByID.has(owner) ? owner : "";
+  const participants = participatingComponentIDs(step, componentByID);
+  const related = new Set(participants);
+  if (exactOwner) related.add(exactOwner);
+  return {
+   owner: exactOwner,
+   participants: participants,
+   related: Array.from(related),
+   lane: exactOwner || (participants.length === 1 ? participants[0] : UNASSIGNED_ID),
+   selection: exactOwner || (participants.length === 1 ? participants[0] : ""),
+  };
+ }
+
  function productMessage(message, id, params) {
   const api = typeof message === "function"
    ? message
@@ -614,7 +641,9 @@
     array(flow.steps).forEach((step) => {
      if (!step || !step.id) return;
      this.flowStepsByKey.set(flowStepKey(flowID, step.id), step);
-     if (step.component_id) componentIDs.add(text(step.component_id));
+     architectureStepComponentState(step, this.componentByID).related.forEach((componentID) => {
+      componentIDs.add(componentID);
+     });
     });
     this.flowComponentIDs.set(flowID, componentIDs);
    });
@@ -1299,11 +1328,19 @@
     return aspect >= 1.05 && aspect <= 2.8 && width <= viewportWidth * 1.8;
    }
 
-  flowStepOwner(flowID, stepID) {
+  flowStepComponentState(flowID, stepID) {
    const step = this.flowStepsByKey.get(flowStepKey(flowID, stepID));
-   if (!step) return "";
-   const componentID = text(step.component_id);
-   return componentID && this.componentByID.has(componentID) ? componentID : UNASSIGNED_ID;
+   return step
+    ? architectureStepComponentState(step, this.componentByID)
+    : { owner: "", participants: [], related: [], lane: "", selection: "" };
+  }
+
+  flowStepLaneComponent(flowID, stepID) {
+   return this.flowStepComponentState(flowID, stepID).lane;
+  }
+
+  flowStepSelectionComponent(flowID, stepID) {
+   return this.flowStepComponentState(flowID, stepID).selection;
   }
 
    composeGraphLandscape(layout, projection) {
@@ -1646,7 +1683,7 @@
     const flowID = text(flow.id);
     const buckets = new Map();
     array(flow.steps).forEach((step) => {
-     const owner = this.flowStepOwner(flowID, step.id);
+     const owner = this.flowStepLaneComponent(flowID, step.id);
      if (!owner) return;
      if (!buckets.has(owner)) buckets.set(owner, []);
      buckets.get(owner).push({ kind: "step", value: step });
@@ -1728,7 +1765,12 @@
    );
    this.listen(button, "click", (event) => {
     event.stopPropagation();
-    this.setSelection({ flow: flowID, component: text(step.component_id), step: text(step.id), edge: "" }, true);
+    this.setSelection({
+     flow: flowID,
+     component: this.flowStepSelectionComponent(flowID, step.id),
+     step: text(step.id),
+     edge: "",
+    }, true);
    });
    this.stepElements.set(flowStepKey(flowID, step.id), button);
   }
@@ -1809,8 +1851,8 @@
   localFlowLanes() {
    const local = [];
    this.flowEdges.forEach((edge) => {
-    const owner = this.flowStepOwner(edge.flow_id, edge.from);
-    if (owner && owner === this.flowStepOwner(edge.flow_id, edge.to)) local.push({ edge: edge, owner: owner });
+    const owner = this.flowStepLaneComponent(edge.flow_id, edge.from);
+    if (owner && owner === this.flowStepLaneComponent(edge.flow_id, edge.to)) local.push({ edge: edge, owner: owner });
    });
    local.sort((a, b) => {
     const left = text(a.edge.flow_id) + "\u0000" + a.owner + "\u0000" + text(a.edge.id);
@@ -1829,7 +1871,7 @@
   }
 
   localFlowRoute(edge, lane) {
-   const owner = this.flowStepOwner(edge.flow_id, edge.from);
+   const owner = this.flowStepLaneComponent(edge.flow_id, edge.from);
    const position = this.nodePositions.get(owner);
    if (!position) return "";
    const from = this.stepGeometry.get(flowStepKey(edge.flow_id, edge.from));
@@ -1887,8 +1929,8 @@
 
    this.flowEdges.forEach((edge) => {
     const key = selectionKey(edge.flow_id, edge.id);
-    const fromOwner = this.flowStepOwner(edge.flow_id, edge.from);
-    const isLocal = fromOwner && fromOwner === this.flowStepOwner(edge.flow_id, edge.to);
+    const fromOwner = this.flowStepLaneComponent(edge.flow_id, edge.from);
+    const isLocal = fromOwner && fromOwner === this.flowStepLaneComponent(edge.flow_id, edge.to);
     const route = isLocal
       ? this.localFlowRoute(edge, localLanes.get(key) || 0)
       : this.crossFlowRoute(edge) || this.edgeRoutes.get(layoutFlowEdgeID(edge.flow_id, edge.id));
@@ -1992,18 +2034,25 @@
     null,
     step.label || step.qualified_name || (this.userMode ? this.msg("architecture.fallback.code_step") : step.id)
    ));
-   const component = this.componentByID.get(text(step.component_id));
+   const state = architectureStepComponentState(step, this.componentByID);
+   const componentNames = state.related.map((componentID) => {
+    const component = this.componentByID.get(componentID);
+    return component && (component.name || (this.userMode ? "" : component.id));
+   }).filter(Boolean);
    copy.appendChild(element(
     "span",
     "rm-arch__focus-step-meta",
-    [component && (component.name || (this.userMode ? "" : component.id)), locationLabel(step.location)].filter(Boolean).join(" · ") ||
+    [componentNames.join(", "), locationLabel(step.location)].filter(Boolean).join(" · ") ||
      (this.userMode
       ? this.msg("architecture.fallback.implementation_step")
       : this.msg("architecture.fallback.exact_saved_anchor"))
    ));
    button.appendChild(copy);
    this.listen(button, "click", () => this.setSelection({
-    flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
+    flow: text(flow.id),
+    component: this.flowStepSelectionComponent(flow.id, step.id),
+    step: text(step.id),
+    edge: "",
    }, true));
    return button;
   }
@@ -2793,7 +2842,7 @@
    });
    const flow = this.flowByID.get(flowID);
    const hasUnassigned = Boolean(flow) && (
-    array(flow.steps).some((step) => !step.component_id) ||
+    array(flow.steps).some((step) => this.flowStepLaneComponent(flowID, step.id) === UNASSIGNED_ID) ||
     this.frontiers.some((frontier) => text(frontier.flow_id) === flowID)
    );
    if (hasUnassigned) {
@@ -3033,8 +3082,12 @@
     if (!this.flowByID.has(flowID)) return;
     const step = this.flowStepsByKey.get(flowStepKey(flowID, stepID));
     if (!step) return;
-    this.setSelection({
-     flow: flowID, component: text(step.component_id), surface: "", step: stepID, edge: "",
+   this.setSelection({
+     flow: flowID,
+     component: this.flowStepSelectionComponent(flowID, stepID),
+     surface: "",
+     step: stepID,
+     edge: "",
     }, true);
     requestAnimationFrame(() => {
      if (this.selection.flow !== flowID || this.selection.step !== stepID) return;
@@ -3209,7 +3262,9 @@
    });
    if (this.unassignedRail) {
     const hasUnassigned = hasFlow && (
-     array(this.flowByID.get(flowID) && this.flowByID.get(flowID).steps).some((step) => !step.component_id) ||
+     array(this.flowByID.get(flowID) && this.flowByID.get(flowID).steps).some(
+      (step) => this.flowStepLaneComponent(flowID, step.id) === UNASSIGNED_ID
+     ) ||
      this.frontiers.some((frontier) => text(frontier.flow_id) === flowID)
     );
     this.unassignedRail.classList.toggle("is-visible", hasUnassigned);
@@ -3796,6 +3851,20 @@
    }
   }
 
+  appendParticipantComponentLinks(record, excludedComponentID) {
+   const componentIDs = participatingComponentIDs(record, this.componentByID)
+    .filter((componentID) => componentID !== text(excludedComponentID));
+   if (componentIDs.length === 0) return;
+   const section = this.inspectorSection(this.msg("architecture.label.participating_components"));
+   componentIDs.forEach((componentID) => {
+    const component = this.componentByID.get(componentID);
+    const button = element("button", "rm-arch__edge-jump", component.name || component.id);
+    button.type = "button";
+    this.listen(button, "click", () => this.openComponent(componentID));
+    section.appendChild(button);
+   });
+  }
+
   inspectUserSurface(surface) {
    this.inspectorHeading(
     this.msg("architecture.fallback.runtime_surface"),
@@ -3810,6 +3879,7 @@
     this.listen(button, "click", () => this.openComponent(owner.id));
     section.appendChild(button);
    }
+   this.appendParticipantComponentLinks(surface, owner && owner.id);
    const locations = array(surface.evidence).filter((location) => locationLabel(location));
    if (locations.length > 0 || surface.owning_executable) {
     const section = this.inspectorSection(this.msg("architecture.section.code"));
@@ -3855,7 +3925,10 @@
     const detail = [step.qualified_name, locationLabel(step.location)].filter(Boolean).join(" · ");
     if (detail) button.appendChild(element("span", null, detail));
     this.listen(button, "click", () => this.setSelection({
-     flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
+     flow: text(flow.id),
+     component: this.flowStepSelectionComponent(flow.id, step.id),
+     step: text(step.id),
+     edge: "",
     }, true));
     section.appendChild(button);
    });
@@ -3883,6 +3956,7 @@
     this.listen(button, "click", () => this.openComponent(component.id));
     section.appendChild(button);
    }
+   this.appendParticipantComponentLinks(step, component && component.id);
    const locations = [step.location, step.binding && step.binding.location].filter((location) => locationLabel(location));
    if (locations.length > 0) {
     const source = this.inspectorSection(this.msg("architecture.section.source"));
@@ -4246,6 +4320,7 @@
      this.msg("architecture.copy.unassigned_surface")
     ));
    }
+   this.appendParticipantComponentLinks(surface, owner && owner.id);
 
    const progression = this.inspectorSection(this.msg("architecture.label.saved_trace"));
    const trace = this.flowByID.get(text(surface.related_saved_trace_id));
@@ -4419,7 +4494,10 @@
    button.appendChild(element("strong", null, step.label || step.id));
    button.appendChild(element("span", null, branchLabel(branch && branch.kind, this.message)));
    this.listen(button, "click", () => this.setSelection({
-    flow: text(flow.id), component: text(step.component_id), step: text(step.id), edge: "",
+    flow: text(flow.id),
+    component: this.flowStepSelectionComponent(flow.id, step.id),
+    step: text(step.id),
+    edge: "",
    }, true));
    return button;
   }
@@ -4662,6 +4740,10 @@
    architectureProvenanceProductMessageID: architectureProvenanceProductMessageID,
    architectureScenarioProductMessageID: architectureScenarioProductMessageID,
    architecturePresentationText: architecturePresentationText,
+   architectureStepComponentState: (step, componentIDs) => architectureStepComponentState(
+    step,
+    new Map(array(componentIDs).map((componentID) => [text(componentID), true]))
+   ),
   });
  }
 })(window);

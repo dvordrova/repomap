@@ -308,6 +308,18 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "plural conceptual participants never become choose-first ownership",
+			asset: js,
+			tokens: []string{
+				"participatingComponentIDs(record, componentByID)",
+				"architectureStepComponentState(step, componentByID)",
+				"participants.length === 1 ? participants[0] : UNASSIGNED_ID",
+				"participants.length === 1 ? participants[0] : \"\"",
+				"appendParticipantComponentLinks(record, excludedComponentID)",
+				"this.flowStepSelectionComponent(flow.id, step.id)",
+			},
+		},
+		{
 			name:  "optional guided tour reuses canvas selection and exact evidence",
 			asset: js + css,
 			tokens: []string{

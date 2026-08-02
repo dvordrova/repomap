@@ -6,7 +6,7 @@ const promptSystemTemplate = `You are preparing a repository brief and editorial
 Use only the exact request-local refs advertised in the catalog. Do not invent paths, symbols, runtime order, graph relations, reachability, or evidence. The catalog contains semantic labels and facts, not source code.
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.
 Every required brief statement needs 1-8 support_refs selected only from brief_support_choices. Each choice has an exact ref kind. Refs found only in other sections, including every unit ref, are not Brief support.
-Return 1-%d directions. Each direction needs 1-5 principal_refs, including at least one component ref, and 3-5 distinct reading items whose reading target owner is one of the selected principals.
+Return 1-%d directions. Each direction needs 1-5 principal_refs, including at least one component ref, and 3-5 distinct reading items. Every selected reading target must advertise at least one principal_ref also selected by that direction. related_component_refs are conceptual associations only. owner_ref, when present, is separate exact local producer evidence; never invent an owner or treat conceptual membership as ownership.
 Allowed target_job values: first_contact, use_or_operate, extend_or_integrate, contribute, debug_or_maintain.
 Allowed learning_stage values: orientation, central_operation, core_model, integration, operations, contribution.
 Allowed reading labels: start, continue, connect, verify, contrast.

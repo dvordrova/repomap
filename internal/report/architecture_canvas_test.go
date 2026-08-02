@@ -164,14 +164,82 @@ func TestProjectArchitectureCanvasUsesExactBindingNotPathCoincidence(t *testing.
 	flow := architectureFlow(t, canvas, "backup")
 	scan := architectureStep(t, flow, "scan")
 	handler := architectureStep(t, flow, "handler")
-	if handler.ComponentID == "" {
+	if handler.Binding == nil || handler.ComponentID != "" || len(handler.ParticipatingComponentIDs) != 1 {
 		t.Fatal("exact handler binding was not projected")
 	}
-	if scan.ComponentID != "" || scan.Binding != nil {
+	if scan.ComponentID != "" || len(scan.ParticipatingComponentIDs) != 0 || scan.Binding != nil {
 		t.Fatalf("path coincidence assigned Scan to handler component: %#v", scan)
 	}
 	if !architectureHasAnchorFrontier(canvas, "unassigned_component", "scan") {
 		t.Fatalf("frontiers = %#v, want unassigned Scan binding", canvas.Frontiers)
+	}
+}
+
+func TestProjectArchitectureCanvasSharedBindingUsesParticipantsWithoutOwnershipOrCrossProduct(t *testing.T) {
+	t.Parallel()
+
+	project := func(reverse bool) ArchitectureCanvas {
+		bundle := architectureBundle()
+		bundle.Relations[0].Kind = componentmap.StructuralRelationBehaviorHandoff
+		cmd := architectureMember(componentmap.MemberPackage, "cmd")
+		archiver := architectureMember(componentmap.MemberPackage, "archiver")
+		subsystems := []componentmap.ProposedSubsystem{
+			{
+				Name: "Command Surface",
+				Components: []componentmap.ProposedComponent{{
+					Name: "Backup command and scan", MemberIDs: []componentmap.MemberID{cmd, archiver},
+				}},
+			},
+			{
+				Name: "Repository Engine",
+				Components: []componentmap.ProposedComponent{{
+					Name: "Repository scanner", MemberIDs: []componentmap.MemberID{archiver},
+				}},
+			},
+		}
+		if reverse {
+			subsystems[0], subsystems[1] = subsystems[1], subsystems[0]
+		}
+		landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+			Version: componentmap.ProposalVersion, Subsystems: subsystems,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+			CandidateBundle: bundle,
+			Landscape:       landscape,
+			Flows: []ArchitectureFlowInput{{
+				ID: "backup", Name: "Backup operation",
+				Session: flowproof.Session{Version: flowproof.SessionVersion, Proof: architectureResticProof()},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return canvas
+	}
+
+	first := project(false)
+	second := project(true)
+	firstStep := architectureStep(t, architectureFlow(t, first, "backup"), "scan")
+	secondStep := architectureStep(t, architectureFlow(t, second, "backup"), "scan")
+	if firstStep.Binding == nil || firstStep.ComponentID != "" || len(firstStep.ParticipatingComponentIDs) != 2 {
+		t.Fatalf("shared bound step = %#v", firstStep)
+	}
+	if !reflect.DeepEqual(firstStep.ParticipatingComponentIDs, secondStep.ParticipatingComponentIDs) {
+		t.Fatalf(
+			"participant order changed with proposal order: first=%v second=%v",
+			firstStep.ParticipatingComponentIDs,
+			secondStep.ParticipatingComponentIDs,
+		)
+	}
+	if len(first.StructuralFacts) != 1 || len(first.StructuralEdges) != 0 ||
+		!architectureHasDiagnostic(first, "structural.non_unique_conceptual_endpoint") {
+		t.Fatalf("shared endpoint created a cross-product edge: %#v", first)
+	}
+	if architectureHasAnchorFrontier(first, "ambiguous_component", "scan") {
+		t.Fatalf("valid shared binding was presented as unresolved: %#v", first.Frontiers)
 	}
 }
 

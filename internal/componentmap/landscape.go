@@ -16,10 +16,8 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion       = 5
-	ProposalVersion       = 5
-	legacyProposalVersion = 4
-	oldestProposalVersion = 3
+	ContractVersion = 6
+	ProposalVersion = 6
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -32,15 +30,20 @@ const (
 	maxFlowsPerCandidate = 16
 	maxSubsystems        = 16
 	maxComponents        = 32
-	maxProvenanceItems   = 8
-	maxScenarioContexts  = 8
-	maxResearchFindings  = 64
-	maxNameBytes         = 256
-	maxDescriptionBytes  = 1_024
-	maxOpaqueIDBytes     = 128
-	maxFactValueBytes    = 2_048
-	maxPathBytes         = 4_096
-	maxProvenanceBytes   = 1_024
+	// Conceptual membership is many-to-many. Bound relation cardinality
+	// independently from the number of exact local candidates so a single
+	// cross-cutting member cannot consume an unbounded response budget.
+	maxConceptualMemberships          = 2_048
+	maxConceptualMembershipsPerMember = 8
+	maxProvenanceItems                = 8
+	maxScenarioContexts               = 8
+	maxResearchFindings               = 64
+	maxNameBytes                      = 256
+	maxDescriptionBytes               = 1_024
+	maxOpaqueIDBytes                  = 128
+	maxFactValueBytes                 = 2_048
+	maxPathBytes                      = 4_096
+	maxProvenanceBytes                = 1_024
 )
 
 // MemberKind gives an opaque ID enough local type information to prevent a
@@ -320,6 +323,14 @@ type ComponentID string
 
 type SubsystemID string
 
+// ConceptualMembership is the canonical many-to-many relation produced by
+// validated conceptual synthesis. Component.Members is a materialized
+// compatibility projection of this relation over the exact local bundle.
+type ConceptualMembership struct {
+	ComponentID ComponentID `json:"component_id"`
+	MemberID    MemberID    `json:"member_id"`
+}
+
 // Component contains exact candidates reconstructed from the local bundle.
 // Its ID is independent of proposal wording and ordering.
 type Component struct {
@@ -409,6 +420,7 @@ const (
 type Landscape struct {
 	Version                int                      `json:"version"`
 	Subsystems             []Subsystem              `json:"subsystems"`
+	ConceptualMemberships  []ConceptualMembership   `json:"conceptual_memberships"`
 	Relations              []LocalRelation          `json:"relations,omitempty"`
 	AnchorBindings         []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
 	Diagnostics            []Diagnostic             `json:"diagnostics,omitempty"`
@@ -429,9 +441,23 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		return Landscape{}, err
 	}
 
-	normalized, operations, shapeDiagnostics := normalizeProposalShape(bundle, proposal)
-	landscape, diagnostics, usable := applyProposal(bundle, normalized)
-	diagnostics = append(shapeDiagnostics, diagnostics...)
+	var (
+		landscape   Landscape
+		diagnostics []Diagnostic
+		operations  []NormalizationOperation
+		usable      bool
+	)
+	if rawDiagnostics := proposalMembershipDiagnostics(proposal); len(rawDiagnostics) > 0 {
+		// Membership cardinality belongs to the exact resolved response. Check it
+		// before hierarchy normalization can merge components and deduplicate a
+		// cross-cutting member into an apparently bounded relation.
+		diagnostics = rawDiagnostics
+	} else {
+		normalized, shapeOperations, shapeDiagnostics := normalizeProposalShape(bundle, proposal)
+		operations = shapeOperations
+		landscape, diagnostics, usable = applyProposal(bundle, normalized)
+		diagnostics = append(shapeDiagnostics, diagnostics...)
+	}
 	if !usable && !hasFatalDiagnostics(diagnostics) {
 		return Landscape{}, fmt.Errorf("componentmap: rejected proposal has no fatal diagnostic")
 	}
@@ -779,6 +805,7 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				return fmt.Errorf("componentmap: grounded component lacks an anchor or explicit hypothesis")
 			}
 			memberIDs := make([]MemberID, 0, len(component.Members))
+			seenComponentMembers := make(map[MemberID]struct{}, len(component.Members))
 			for _, member := range component.Members {
 				exact, exists := known[member.ID]
 				if !exists {
@@ -787,9 +814,10 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				if !reflect.DeepEqual(member, exact) {
 					return fmt.Errorf("componentmap: component changed local member %q", member.ID.key())
 				}
-				if _, exists := seenMembers[member.ID]; exists {
-					return fmt.Errorf("componentmap: duplicate membership for %q", member.ID.key())
+				if _, exists := seenComponentMembers[member.ID]; exists {
+					return fmt.Errorf("componentmap: component repeats membership for %q", member.ID.key())
 				}
+				seenComponentMembers[member.ID] = struct{}{}
 				seenMembers[member.ID] = struct{}{}
 				memberIDs = append(memberIDs, member.ID)
 			}
@@ -809,6 +837,23 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	if componentCount > maxComponents {
 		return fmt.Errorf("componentmap: landscape exceeds %d components", maxComponents)
 	}
+	expectedMemberships := conceptualMembershipsFromSubsystems(landscape.Subsystems)
+	if len(expectedMemberships) > maxConceptualMemberships {
+		return fmt.Errorf("componentmap: landscape exceeds %d conceptual memberships", maxConceptualMemberships)
+	}
+	perMember := make(map[MemberID]int, len(seenMembers))
+	for _, membership := range expectedMemberships {
+		perMember[membership.MemberID]++
+		if perMember[membership.MemberID] > maxConceptualMembershipsPerMember {
+			return fmt.Errorf(
+				"componentmap: member %q exceeds %d conceptual memberships",
+				membership.MemberID.key(), maxConceptualMembershipsPerMember,
+			)
+		}
+	}
+	if !reflect.DeepEqual(landscape.ConceptualMemberships, expectedMemberships) {
+		return fmt.Errorf("componentmap: conceptual membership relation does not match component projection")
+	}
 	if len(seenMembers) != len(bundle.Candidates) {
 		return fmt.Errorf(
 			"componentmap: landscape covers %d of %d local candidates",
@@ -823,8 +868,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	invalid := func(code, message string) {
 		diagnostics = append(diagnostics, newDiagnostic(code, message))
 	}
-	if proposal.Version != ProposalVersion && proposal.Version != legacyProposalVersion &&
-		proposal.Version != oldestProposalVersion {
+	if proposal.Version != ProposalVersion {
 		invalid("proposal.unsupported_version", "proposal version is missing or unsupported")
 		return Landscape{}, diagnostics, false
 	}
@@ -832,27 +876,9 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.invalid_subsystem_count", "proposal has no subsystems")
 		return Landscape{}, diagnostics, false
 	}
-	memberReferenceCount := 0
-	proposedComponentCount := 0
-	for _, subsystem := range proposal.Subsystems {
-		for _, component := range subsystem.Components {
-			proposedComponentCount++
-			if len(component.MemberIDs) > maxCandidates {
-				invalid("proposal.invalid_members", "proposal membership exceeds the candidate limit")
-				return Landscape{}, diagnostics, false
-			}
-			memberReferenceCount += len(component.MemberIDs)
-			if memberReferenceCount > maxCandidates {
-				invalid("proposal.invalid_members", "proposal membership exceeds the candidate limit")
-				return Landscape{}, diagnostics, false
-			}
-			for _, memberID := range component.MemberIDs {
-				if validateMemberID(memberID) != nil {
-					invalid("proposal.invalid_member_id", "proposal contains a malformed member id")
-					return Landscape{}, diagnostics, false
-				}
-			}
-		}
+	if membershipDiagnostics := proposalMembershipDiagnostics(proposal); len(membershipDiagnostics) > 0 {
+		diagnostics = append(diagnostics, membershipDiagnostics...)
+		return Landscape{}, diagnostics, false
 	}
 	proposedSubsystems := proposal.Subsystems
 
@@ -862,6 +888,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		knownAnchors[anchor.ID] = struct{}{}
 	}
 	seenMembers := make(map[MemberID]struct{})
+	seenComponentIDs := make(map[ComponentID]struct{})
 	landscape := Landscape{
 		Version:        ContractVersion,
 		Subsystems:     make([]Subsystem, 0, len(proposal.Subsystems)),
@@ -903,10 +930,6 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 					invalid("proposal.unknown_member_id", "proposal references a member id absent from the local candidate bundle")
 					return Landscape{}, diagnostics, false
 				}
-				if _, exists := seenMembers[memberID]; exists {
-					invalid("proposal.conflicting_membership", "proposal assigns one exact member to more than one component")
-					return Landscape{}, diagnostics, false
-				}
 				seenMembers[memberID] = struct{}{}
 				members = append(members, cloneCandidate(candidate))
 			}
@@ -933,9 +956,15 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				return Landscape{}, diagnostics, false
 			}
 			sortCandidates(members)
+			id := componentID(candidateIDs(members))
+			if _, duplicate := seenComponentIDs[id]; duplicate {
+				invalid("proposal.duplicate_component_identity", "proposal contains two components with the same exact member set")
+				return Landscape{}, diagnostics, false
+			}
+			seenComponentIDs[id] = struct{}{}
 			componentCount++
 			subsystem.Components = append(subsystem.Components, Component{
-				ID: componentID(candidateIDs(members)), Name: componentName, Description: componentDescription,
+				ID: id, Name: componentName, Description: componentDescription,
 				Members: members, AnchorIDs: anchorIDs, Hypothesis: proposedComponent.Hypothesis,
 				SourceIDs: append([]ComponentID(nil), proposedComponent.sourceIDs...),
 			})
@@ -998,7 +1027,60 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		))
 	}
 	landscape.Diagnostics = diagnostics
+	landscape.ConceptualMemberships = conceptualMembershipsFromSubsystems(landscape.Subsystems)
 	return landscape, diagnostics, true
+}
+
+// proposalMembershipDiagnostics validates the exact resolved response before
+// any readable-shape normalization. It deliberately returns at most one fatal
+// diagnostic so rejection remains closed and bounded.
+func proposalMembershipDiagnostics(proposal Proposal) []Diagnostic {
+	if proposal.Version != ProposalVersion || len(proposal.Subsystems) == 0 {
+		return nil
+	}
+	memberReferenceCount := 0
+	memberReferenceCounts := make(map[MemberID]int)
+	for _, subsystem := range proposal.Subsystems {
+		for _, component := range subsystem.Components {
+			if len(component.MemberIDs) > maxCandidates {
+				return []Diagnostic{newDiagnostic(
+					"proposal.invalid_members",
+					"proposal membership exceeds the candidate limit",
+				)}
+			}
+			memberReferenceCount += len(component.MemberIDs)
+			if memberReferenceCount > maxConceptualMemberships {
+				return []Diagnostic{newDiagnostic(
+					"proposal.membership_limit_exceeded",
+					"proposal exceeds the conceptual membership limit",
+				)}
+			}
+			seenComponentMembers := make(map[MemberID]struct{}, len(component.MemberIDs))
+			for _, memberID := range component.MemberIDs {
+				if validateMemberID(memberID) != nil {
+					return []Diagnostic{newDiagnostic(
+						"proposal.invalid_member_id",
+						"proposal contains a malformed member id",
+					)}
+				}
+				if _, duplicate := seenComponentMembers[memberID]; duplicate {
+					return []Diagnostic{newDiagnostic(
+						"proposal.duplicate_member_id",
+						"proposal repeats one exact member within a component",
+					)}
+				}
+				seenComponentMembers[memberID] = struct{}{}
+				memberReferenceCounts[memberID]++
+				if memberReferenceCounts[memberID] > maxConceptualMembershipsPerMember {
+					return []Diagnostic{newDiagnostic(
+						"proposal.member_participation_limit_exceeded",
+						"one exact member exceeds the conceptual participation limit",
+					)}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 type localGroup struct {
@@ -1013,10 +1095,14 @@ func buildDeterministicLocalLandscape(
 	bundle CandidateBundle,
 	packageSource ArchitectureSource,
 ) Landscape {
+	var landscape Landscape
 	if useAnchorFirstLocalGrouping(bundle) {
-		return anchorFirstLocalLandscape(bundle)
+		landscape = anchorFirstLocalLandscape(bundle)
+	} else {
+		landscape = packageLocalLandscape(bundle, packageSource)
 	}
-	return packageLocalLandscape(bundle, packageSource)
+	landscape.ConceptualMemberships = conceptualMembershipsFromSubsystems(landscape.Subsystems)
+	return landscape
 }
 
 func packageLocalLandscape(bundle CandidateBundle, source ArchitectureSource) Landscape {
@@ -2113,4 +2199,25 @@ func componentIDs(components []Component) []ComponentID {
 		result[index] = component.ID
 	}
 	return result
+}
+
+func conceptualMembershipsFromSubsystems(subsystems []Subsystem) []ConceptualMembership {
+	memberships := make([]ConceptualMembership, 0)
+	for _, subsystem := range subsystems {
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				memberships = append(memberships, ConceptualMembership{
+					ComponentID: component.ID,
+					MemberID:    member.ID,
+				})
+			}
+		}
+	}
+	sort.Slice(memberships, func(i, j int) bool {
+		if memberships[i].ComponentID != memberships[j].ComponentID {
+			return memberships[i].ComponentID < memberships[j].ComponentID
+		}
+		return memberships[i].MemberID.key() < memberships[j].MemberID.key()
+	})
+	return memberships
 }

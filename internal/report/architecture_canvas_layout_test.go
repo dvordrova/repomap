@@ -71,6 +71,20 @@ process.stdout.write(JSON.stringify({
     api.centeredTransform({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 0.65),
     api.centeredTransform({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 0.65),
   ],
+  stepStates: [
+    api.architectureStepComponentState(
+      { participating_component_ids: ["a", "b", "a"] },
+      ["a", "b"]
+    ),
+    api.architectureStepComponentState(
+      { participating_component_ids: ["b"] },
+      ["a", "b"]
+    ),
+    api.architectureStepComponentState(
+      { component_id: "a", participating_component_ids: ["a", "b"] },
+      ["a", "b"]
+    ),
+  ],
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "layout-test.js")
@@ -96,6 +110,13 @@ process.stdout.write(JSON.stringify({
 			Y     float64 `json:"y"`
 			Scale float64 `json:"scale"`
 		} `json:"transforms"`
+		StepStates []struct {
+			Owner        string   `json:"owner"`
+			Participants []string `json:"participants"`
+			Related      []string `json:"related"`
+			Lane         string   `json:"lane"`
+			Selection    string   `json:"selection"`
+		} `json:"stepStates"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("decode Landscape layout contract: %v\n%s", err, output)
@@ -129,6 +150,26 @@ process.stdout.write(JSON.stringify({
 	}
 	if len(result.Transforms) != 2 || result.Transforms[0] != result.Transforms[1] {
 		t.Errorf("repeated centered transforms differ: %v", result.Transforms)
+	}
+	if len(result.StepStates) != 3 {
+		t.Fatalf("step component states = %#v", result.StepStates)
+	}
+	multiple := result.StepStates[0]
+	if multiple.Owner != "" || multiple.Lane != "__repomap_unassigned__" || multiple.Selection != "" ||
+		!reflect.DeepEqual(multiple.Participants, []string{"a", "b"}) ||
+		!reflect.DeepEqual(multiple.Related, []string{"a", "b"}) {
+		t.Errorf("multiple-participant step chose or duplicated a component: %#v", multiple)
+	}
+	single := result.StepStates[1]
+	if single.Owner != "" || single.Lane != "b" || single.Selection != "b" ||
+		!reflect.DeepEqual(single.Participants, []string{"b"}) {
+		t.Errorf("single-participant step state = %#v", single)
+	}
+	owned := result.StepStates[2]
+	if owned.Owner != "a" || owned.Lane != "a" || owned.Selection != "a" ||
+		!reflect.DeepEqual(owned.Participants, []string{"a", "b"}) ||
+		!reflect.DeepEqual(owned.Related, []string{"a", "b"}) {
+		t.Errorf("independently owned step state = %#v", owned)
 	}
 }
 

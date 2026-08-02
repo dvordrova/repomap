@@ -1,7 +1,7 @@
 {
   "version": 1,
   "bundle": {
-    "version": 5,
+    "version": 6,
     "repository_archetype": "modular_platform_server",
     "grounding_mode": "behavior_grounded",
     "behavior_anchors": [

@@ -281,7 +281,7 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	if err := json.Unmarshal(statusJSON, &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Version != 4 || status.RequestBytes != len(wantBody) ||
+	if status.Version != report.ArchitectureSynthesisStatusVersion || status.RequestBytes != len(wantBody) ||
 		status.ResponseBytes != len(provider.response) ||
 		status.ResponseContentBytes != len(provider.response) ||
 		status.CandidateCount != 1 || status.AnchorCount != 0 ||
@@ -377,7 +377,7 @@ func TestArchitectureSynthesisDiagnosticCodesRetainsAllDistinctCodes(t *testing.
 	}
 }
 
-func TestEnsureArchitectureSynthesisPersistsConflictingMembershipEvidence(t *testing.T) {
+func TestEnsureArchitectureSynthesisPersistsResolvedManyToManyMembershipEvidence(t *testing.T) {
 	bundle := architectureSynthesisTestBundle()
 	second := bundle.Candidates[0]
 	second.ID = componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-storage"}
@@ -418,12 +418,12 @@ func TestEnsureArchitectureSynthesisPersistsConflictingMembershipEvidence(t *tes
 			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
 		},
 	)
-	if !errors.Is(err, errArchitectureSynthesisRejected) {
-		t.Fatalf("conflicting synthesis error = %v", err)
+	if err != nil {
+		t.Fatalf("many-to-many synthesis error = %v", err)
 	}
 	if !outcome.MembershipCounted || outcome.MemberOccurrences != 3 || outcome.DistinctMembers != 2 ||
-		strings.Join(outcome.ValidationCodes, ",") != "proposal.conflicting_membership" {
-		t.Fatalf("conflicting synthesis evidence = %#v", outcome)
+		len(outcome.ValidationCodes) != 0 {
+		t.Fatalf("many-to-many synthesis evidence = %#v", outcome)
 	}
 	if err := persistArchitectureSynthesisStatus(runDir, outcome, err); err != nil {
 		t.Fatal(err)
@@ -436,10 +436,9 @@ func TestEnsureArchitectureSynthesisPersistsConflictingMembershipEvidence(t *tes
 	if err := json.Unmarshal(encoded, &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.State != report.ArchitectureSynthesisFailed || status.MemberOccurrences != 3 ||
-		status.DistinctMembers != 2 ||
-		strings.Join(status.ValidationCodes, ",") != "proposal.conflicting_membership" {
-		t.Fatalf("persisted conflicting synthesis status = %#v", status)
+	if status.State != report.ArchitectureSynthesisSucceeded || status.MemberOccurrences != 3 ||
+		status.DistinctMembers != 2 || !status.ProposalAccepted || len(status.ValidationCodes) != 0 {
+		t.Fatalf("persisted many-to-many synthesis status = %#v", status)
 	}
 }
 
@@ -452,11 +451,6 @@ func TestEnsureArchitectureSynthesisRejectsIncompleteParityEvidenceBeforeWrites(
 		finishReason string
 		wantCode     string
 	}{
-		{
-			name:     "normalized fenced response has no exact membership envelope",
-			response: append(append([]byte("```json\n"), validResponse...), []byte("\n```")...),
-			wantCode: "response.membership_unavailable",
-		},
 		{
 			name:     "provider did not report complete response",
 			response: validResponse, finishReason: "content_filter",

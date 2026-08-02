@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 4
-	SynthesisRecordVersion  = 4
-	SynthesisPromptVersion  = "architecture-grounding-v6"
+	SynthesisRequestVersion = 5
+	SynthesisRecordVersion  = 5
+	SynthesisPromptVersion  = "architecture-grounding-v7"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -155,6 +155,9 @@ type SynthesisMetadata struct {
 	FinishReason           string                   `json:"finish_reason,omitempty"`
 	TransportAttempts      int                      `json:"transport_attempts"`
 	ResponseComplete       bool                     `json:"response_complete"`
+	MembershipCounted      bool                     `json:"response_membership_counted"`
+	MemberOccurrences      int                      `json:"response_member_occurrences,omitempty"`
+	DistinctMembers        int                      `json:"response_distinct_members,omitempty"`
 	ValidationWarnings     []Diagnostic             `json:"validation_warnings,omitempty"`
 	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
 	ArchitectureSource     ArchitectureSource       `json:"architecture_source"`
@@ -185,8 +188,18 @@ type SynthesisRecord struct {
 }
 
 type SynthesisResult struct {
-	Landscape Landscape
-	Record    SynthesisRecord
+	Landscape  Landscape
+	Record     SynthesisRecord
+	Membership SynthesisMembershipCounts
+}
+
+// SynthesisMembershipCounts is exact response cardinality after request-local
+// refs have been resolved against the private catalog. It is not inferred by
+// reparsing provider bytes in a downstream owner.
+type SynthesisMembershipCounts struct {
+	Counted           bool
+	MemberOccurrences int
+	DistinctMembers   int
 }
 
 type synthesisPrivateCatalog struct {
@@ -691,7 +704,7 @@ Local semantic facts, compact structural relations, flow participation, and cert
 Return exactly one compact JSON proposal object with this shape:
 {"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false}]}]}
 
-The only allowed proposal fields are subsystems, subsystem name/description/components, component name/description/member_refs/anchor_refs/hypothesis, and ref kind/ref. Array order is the conceptual display order. Assign each supplied member ref at most once. Never repeat a member ref within or across components; for a cross-cutting member choose its single best conceptual home. Never repeat an anchor ref within one component. Omit an uncertain member rather than duplicating it because local validation retains omissions separately. Every component must contain at least one supplied member ref.
+The only allowed proposal fields are subsystems, subsystem name/description/components, component name/description/member_refs/anchor_refs/hypothesis, and ref kind/ref. Array order is the conceptual display order. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Omit an uncertain member because local validation retains omissions separately. Every component must contain at least one supplied member ref.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one top-level subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, choose four to seven top-level primary subsystems when the supplied evidence supports that many, never more than eight. Prefer one to four nested components per subsystem and no more than eighteen in total. Every non-hypothesis nested component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -857,7 +870,7 @@ func RecordSynthesisResponseForLanguage(
 		state = ResponseSensitiveOmitted
 		response = nil
 	}
-	landscape, err := evaluateSynthesisResponse(bundle, state, response)
+	landscape, membership, err := evaluateSynthesisResponse(bundle, state, response)
 	if err != nil {
 		return SynthesisResult{}, err
 	}
@@ -873,6 +886,9 @@ func RecordSynthesisResponseForLanguage(
 				Profile:       profile, Model: model,
 				OutputLanguage: language,
 				InputBytes:     synthesisPromptSize(prompt), LatencyMillis: latency.Milliseconds(),
+				MembershipCounted:      membership.Counted,
+				MemberOccurrences:      membership.MemberOccurrences,
+				DistinctMembers:        membership.DistinctMembers,
 				ValidationWarnings:     cloneDiagnostics(landscape.Diagnostics),
 				ValidationOutcome:      landscape.ValidationOutcome,
 				ArchitectureSource:     landscape.Source,
@@ -887,17 +903,27 @@ func RecordSynthesisResponseForLanguage(
 	if err := validateSynthesisRecord(bundle, repositoryRevision, record); err != nil {
 		return SynthesisResult{}, err
 	}
-	return SynthesisResult{Landscape: landscape, Record: record}, nil
+	return SynthesisResult{Landscape: landscape, Record: record, Membership: membership}, nil
 }
 
 // ReplaySynthesis strictly decodes one saved record, rebuilds the exact local
 // request, and re-applies the saved provider response without a provider call.
 func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []byte) (Landscape, error) {
+	result, err := ReplaySynthesisResult(bundle, repositoryRevision, saved)
+	if err != nil {
+		return Landscape{}, err
+	}
+	return result.Landscape, nil
+}
+
+// ReplaySynthesisResult revalidates the saved response and returns the same
+// authoritative resolved membership counts that were recorded originally.
+func ReplaySynthesisResult(bundle CandidateBundle, repositoryRevision string, saved []byte) (SynthesisResult, error) {
 	if len(saved) == 0 {
-		return Landscape{}, fmt.Errorf("componentmap: saved synthesis record is empty or too large")
+		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis record is empty or too large")
 	}
 	if len(saved) > maxSynthesisRecordBytes {
-		return Landscape{}, synthesisResourceLimit(
+		return SynthesisResult{}, synthesisResourceLimit(
 			modelresearch.ResourceLimitRecordBytes,
 			maxSynthesisRecordBytes,
 			len(saved),
@@ -905,95 +931,34 @@ func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []
 	}
 	var record SynthesisRecord
 	if err := decodeStrictJSON(saved, &record); err != nil {
-		return Landscape{}, fmt.Errorf("componentmap: decode synthesis record: %w", err)
+		return SynthesisResult{}, fmt.Errorf("componentmap: decode synthesis record: %w", err)
 	}
 	if err := validateSynthesisRecord(bundle, repositoryRevision, record); err != nil {
-		return Landscape{}, err
+		return SynthesisResult{}, err
 	}
 
-	landscape, err := evaluateSynthesisResponse(bundle, record.Call.ResponseState, record.Call.Response)
+	landscape, membership, err := evaluateSynthesisResponse(bundle, record.Call.ResponseState, record.Call.Response)
 	if err != nil {
-		return Landscape{}, err
+		return SynthesisResult{}, err
 	}
 	if !diagnosticsEqual(record.Call.Metadata.ValidationWarnings, landscape.Diagnostics) {
-		return Landscape{}, fmt.Errorf("componentmap: saved synthesis validation warnings do not replay")
+		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis validation warnings do not replay")
 	}
 	if record.Call.Metadata.FallbackReason != landscape.FallbackReason {
-		return Landscape{}, fmt.Errorf("componentmap: saved synthesis fallback reason does not replay")
+		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis fallback reason does not replay")
 	}
 	metadata := record.Call.Metadata
 	if metadata.ValidationOutcome != landscape.ValidationOutcome || metadata.ArchitectureSource != landscape.Source ||
 		metadata.ArchitectureLevel != landscape.Level || !reflect.DeepEqual(metadata.Normalizations, landscape.Normalizations) ||
 		metadata.OriginalProposalSHA256 != landscape.OriginalProposalSHA256 {
-		return Landscape{}, fmt.Errorf("componentmap: saved synthesis validation outcome does not replay")
+		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis validation outcome does not replay")
 	}
-	return landscape, nil
-}
-
-// ReplayLegacyCapturedSynthesis revalidates a captured v1 response against the
-// current local bundle. This is intentionally limited to persisted approved
-// component-landscape-v2 and architecture-grounding-v3 records; no old
-// validation outcome, cache key, or warning is trusted.
-func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landscape, error) {
-	if len(saved) == 0 {
-		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis record is empty or too large")
+	if metadata.MembershipCounted != membership.Counted ||
+		metadata.MemberOccurrences != membership.MemberOccurrences ||
+		metadata.DistinctMembers != membership.DistinctMembers {
+		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis membership counts do not replay")
 	}
-	if len(saved) > maxSynthesisRecordBytes {
-		return Landscape{}, synthesisResourceLimit(
-			modelresearch.ResourceLimitRecordBytes,
-			maxSynthesisRecordBytes,
-			len(saved),
-		)
-	}
-	var record struct {
-		Version            int    `json:"version"`
-		RepositoryRevision string `json:"repository_revision"`
-		CacheKey           string `json:"cache_key"`
-		RequestSHA256      string `json:"request_sha256"`
-		Call               *struct {
-			Metadata struct {
-				PromptVersion      string         `json:"prompt_version"`
-				Profile            string         `json:"profile"`
-				Model              string         `json:"model"`
-				InputBytes         int            `json:"input_bytes"`
-				LatencyMillis      int64          `json:"latency_ms"`
-				ValidationWarnings []Diagnostic   `json:"validation_warnings"`
-				FallbackReason     FallbackReason `json:"fallback_reason"`
-			} `json:"metadata"`
-			ResponseState ResponseState `json:"response_state"`
-			ResponseBytes int           `json:"response_bytes"`
-			Response      []byte        `json:"response"`
-		} `json:"call"`
-	}
-	if err := decodeStrictJSON(saved, &record); err != nil {
-		return Landscape{}, fmt.Errorf("componentmap: decode legacy synthesis record: %w", err)
-	}
-	if record.Version != 1 || record.Call == nil ||
-		(record.Call.Metadata.PromptVersion != "component-landscape-v2" &&
-			record.Call.Metadata.PromptVersion != "architecture-grounding-v3") {
-		return Landscape{}, fmt.Errorf("componentmap: unsupported legacy synthesis record")
-	}
-	if record.Call.ResponseState != ResponseCaptured || record.Call.ResponseBytes != len(record.Call.Response) ||
-		len(record.Call.Response) == 0 || len(record.Call.Response) > maxSynthesisResponseBytes {
-		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response is not a bounded capture")
-	}
-	if synthesisResponseContainsCredential(record.Call.Response) {
-		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response violates the obvious credential policy")
-	}
-	response := record.Call.Response
-	object, _, responseErr := extractProposalObject(response)
-	if responseErr != nil {
-		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response is invalid")
-	}
-	var proposal Proposal
-	if err := decodeStrictJSON(object, &proposal); err != nil {
-		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis proposal is invalid")
-	}
-	if record.Call.Metadata.PromptVersion == "component-landscape-v2" && proposal.Version != 2 {
-		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis proposal is invalid")
-	}
-	proposal.Version = ProposalVersion
-	return Apply(bundle, proposal)
+	return SynthesisResult{Landscape: landscape, Record: record, Membership: membership}, nil
 }
 
 func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, record SynthesisRecord) error {
@@ -1075,6 +1040,13 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	if metadata.InputTokens < 0 || metadata.OutputTokens < 0 {
 		return fmt.Errorf("componentmap: synthesis record token counts cannot be negative")
 	}
+	if metadata.MemberOccurrences < 0 || metadata.DistinctMembers < 0 ||
+		metadata.DistinctMembers > metadata.MemberOccurrences ||
+		(metadata.MemberOccurrences > 0 && !metadata.MembershipCounted) ||
+		(metadata.MembershipCounted && metadata.MemberOccurrences > 0 && metadata.DistinctMembers == 0) ||
+		(!metadata.MembershipCounted && (metadata.MemberOccurrences != 0 || metadata.DistinctMembers != 0)) {
+		return fmt.Errorf("componentmap: synthesis record membership counts are inconsistent")
+	}
 	if metadata.TransportAttempts < 0 {
 		return fmt.Errorf("componentmap: synthesis record transport attempts cannot be negative")
 	}
@@ -1145,42 +1117,57 @@ func normalizeSynthesisOutputLanguage(value string) (string, error) {
 	}
 }
 
-func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, response []byte) (Landscape, error) {
+func evaluateSynthesisResponse(
+	bundle CandidateBundle,
+	state ResponseState,
+	response []byte,
+) (Landscape, SynthesisMembershipCounts, error) {
 	if state == ResponseOversize {
-		return Landscape{}, synthesisResourceLimit(
+		return Landscape{}, SynthesisMembershipCounts{}, synthesisResourceLimit(
 			modelresearch.ResourceLimitResponseBytes,
 			maxSynthesisResponseBytes,
 			maxSynthesisResponseBytes+1,
 		)
 	}
 	if state == ResponseSensitiveOmitted {
-		return synthesisResponseFallback(bundle, newDiagnostic(
+		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(
 			"response.sensitive_omitted",
 			"provider response matched the obvious credential policy and was not retained",
 		))
+		return landscape, SynthesisMembershipCounts{}, err
 	}
 	object, normalization, responseErr := extractProposalObject(response)
 	if responseErr != nil {
-		return synthesisResponseFallback(bundle, newDiagnostic(responseErr.code, responseErr.message))
+		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(responseErr.code, responseErr.message))
+		return landscape, SynthesisMembershipCounts{}, err
 	}
 	wireProposal, unknownFields, err := decodeSynthesisWireProposalJSON(object)
 	if err != nil {
-		return synthesisResponseFallback(bundle, newDiagnostic(
+		landscape, fallbackErr := synthesisResponseFallback(bundle, newDiagnostic(
 			"response.invalid_proposal",
 			"recovered json does not satisfy the bounded proposal schema",
 		))
+		return landscape, SynthesisMembershipCounts{}, fallbackErr
 	}
 	catalog, err := buildSynthesisPrivateCatalog(bundle)
 	if err != nil {
-		return Landscape{}, err
+		return Landscape{}, SynthesisMembershipCounts{}, err
 	}
 	proposal, resolveErr := resolveSynthesisWireProposal(catalog, wireProposal)
 	if resolveErr != nil {
-		return synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
+		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
+		return landscape, SynthesisMembershipCounts{}, err
 	}
+	membership := synthesisMembershipCounts(proposal)
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
-		return Landscape{}, err
+		return Landscape{}, SynthesisMembershipCounts{}, err
+	}
+	if landscape.ValidationOutcome != ValidationRejected {
+		// Accepted status describes the canonical model-authored relation after
+		// local readable-shape normalization, not a raw response cardinality that
+		// normalization may have merged. The deterministic remainder is excluded.
+		membership = acceptedSynthesisMembershipCounts(landscape)
 	}
 	warnings := make([]Diagnostic, 0, 2)
 	if normalization != nil {
@@ -1195,10 +1182,49 @@ func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, resp
 	if len(warnings) > 0 {
 		landscape.Diagnostics = append(warnings, landscape.Diagnostics...)
 		if err := landscape.Validate(bundle); err != nil {
-			return Landscape{}, err
+			return Landscape{}, SynthesisMembershipCounts{}, err
 		}
 	}
-	return landscape, nil
+	return landscape, membership, nil
+}
+
+func synthesisMembershipCounts(proposal Proposal) SynthesisMembershipCounts {
+	distinct := make(map[MemberID]struct{})
+	occurrences := 0
+	for _, subsystem := range proposal.Subsystems {
+		for _, component := range subsystem.Components {
+			for _, memberID := range component.MemberIDs {
+				occurrences++
+				distinct[memberID] = struct{}{}
+			}
+		}
+	}
+	return SynthesisMembershipCounts{
+		Counted:           len(proposal.Subsystems) > 0,
+		MemberOccurrences: occurrences,
+		DistinctMembers:   len(distinct),
+	}
+}
+
+func acceptedSynthesisMembershipCounts(landscape Landscape) SynthesisMembershipCounts {
+	distinct := make(map[MemberID]struct{})
+	occurrences := 0
+	for _, subsystem := range landscape.Subsystems {
+		if subsystem.Category == SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				occurrences++
+				distinct[member.ID] = struct{}{}
+			}
+		}
+	}
+	return SynthesisMembershipCounts{
+		Counted:           true,
+		MemberOccurrences: occurrences,
+		DistinctMembers:   len(distinct),
+	}
 }
 
 func synthesisResponseFallback(bundle CandidateBundle, warning Diagnostic) (Landscape, error) {

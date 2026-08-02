@@ -315,7 +315,7 @@ func validateRequestRecord(record RequestRecord) error {
 	if record.Version != Version || record.PromptVersion != PromptVersion ||
 		!validArtifactSHA(record.AtlasSHA256) || !validArtifactSHA(record.ArchitectureSHA256) ||
 		!validArtifactSHA(record.WireSHA256) || !validArtifactSHA(record.CatalogSHA256) ||
-		record.CatalogRef != "atlas-study-v1-"+record.CatalogSHA256 || !record.Language.Valid() ||
+		record.CatalogRef != "atlas-study-v2-"+record.CatalogSHA256 || !record.Language.Valid() ||
 		len(record.Catalog) == 0 || record.WireJSON == "" || !json.Valid([]byte(record.WireJSON)) ||
 		digest([]byte(record.WireJSON)) != record.WireSHA256 {
 		return fmt.Errorf("atlas study request artifact: invalid identity or wire")
@@ -328,7 +328,7 @@ func validateResultIdentity(record ResultRecord) error {
 		record.PromptVersion != PromptVersion || !validArtifactSHA(record.AtlasSHA256) ||
 		!validArtifactSHA(record.ArchitectureSHA256) || !validArtifactSHA(record.WireSHA256) ||
 		!validArtifactSHA(record.CatalogSHA256) ||
-		record.CatalogRef != "atlas-study-v1-"+record.CatalogSHA256 || !record.Language.Valid() ||
+		record.CatalogRef != "atlas-study-v2-"+record.CatalogSHA256 || !record.Language.Valid() ||
 		len(record.Catalog) == 0 {
 		return fmt.Errorf("atlas study result artifact: invalid identity")
 	}
@@ -339,7 +339,7 @@ func validateStatus(status Status) error {
 	if status.Version != Version || status.PromptVersion != PromptVersion ||
 		!validArtifactSHA(status.AtlasSHA256) || !validArtifactSHA(status.ArchitectureSHA256) ||
 		!validArtifactSHA(status.WireSHA256) || !validArtifactSHA(status.CatalogSHA256) ||
-		status.CatalogRef != "atlas-study-v1-"+status.CatalogSHA256 || !status.Language.Valid() ||
+		status.CatalogRef != "atlas-study-v2-"+status.CatalogSHA256 || !status.Language.Valid() ||
 		status.DirectionCount < 0 || status.DirectionCount > MaxDirections {
 		return fmt.Errorf("atlas study status artifact: invalid identity")
 	}
@@ -403,11 +403,14 @@ func validateCatalog(values []CatalogObject) error {
 		seenRefs[object.Ref] = struct{}{}
 		previousRank, previousID = rank, object.CanonicalID
 		if object.Kind == RefReadingTarget {
-			if object.Owner == nil || object.Location == nil || !repositoryLocation(*object.Location) {
+			if object.Location == nil || !repositoryLocation(*object.Location) ||
+				len(object.PrincipalRefs) == 0 || !uniqueCanonicalRefs(object.PrincipalRefs) ||
+				!uniqueCanonicalRefs(object.RelatedComponentRefs) {
 				return fmt.Errorf("atlas study artifact: reading target lacks exact private locator")
 			}
-		} else if object.Owner != nil {
-			return fmt.Errorf("atlas study artifact: non-target object has a private owner")
+		} else if object.Owner != nil || len(object.RelatedComponentRefs) != 0 ||
+			len(object.PrincipalRefs) != 0 {
+			return fmt.Errorf("atlas study artifact: non-target object has private target associations")
 		}
 		if object.Location != nil && object.Kind != RefReadingTarget && object.Kind != RefEvidence {
 			return fmt.Errorf("atlas study artifact: unexpected private locator")
@@ -426,14 +429,35 @@ func validateCatalog(values []CatalogObject) error {
 		}
 	}
 	for _, object := range values {
+		principalSet := make(map[CanonicalRef]struct{}, len(object.PrincipalRefs))
+		for _, principal := range object.PrincipalRefs {
+			if principal.Kind != RefComponent && principal.Kind != RefSurface {
+				return fmt.Errorf("atlas study artifact: target has wrong-kind principal")
+			}
+			if _, ok := seenCanonical[principal]; !ok {
+				return fmt.Errorf("atlas study artifact: target principal is outside private catalog")
+			}
+			principalSet[principal] = struct{}{}
+		}
+		for _, related := range object.RelatedComponentRefs {
+			if related.Kind != RefComponent {
+				return fmt.Errorf("atlas study artifact: target has wrong-kind related component")
+			}
+			if _, ok := principalSet[related]; !ok {
+				return fmt.Errorf("atlas study artifact: related component is not a target principal")
+			}
+		}
 		if object.Owner == nil {
 			continue
 		}
-		if object.Owner.Kind != RefComponent && object.Owner.Kind != RefSurface {
+		if object.Owner.Kind != RefComponent {
 			return fmt.Errorf("atlas study artifact: target has wrong-kind owner")
 		}
-		if _, ok := seenCanonical[*object.Owner]; !ok {
-			return fmt.Errorf("atlas study artifact: target owner is outside private catalog")
+		if _, ok := principalSet[*object.Owner]; !ok {
+			return fmt.Errorf("atlas study artifact: target owner is not a principal")
+		}
+		if !containsCanonicalRef(object.RelatedComponentRefs, *object.Owner) {
+			return fmt.Errorf("atlas study artifact: target owner is not a related component")
 		}
 	}
 	return nil
@@ -568,11 +592,11 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		}
 		seenReading[reading.Target] = struct{}{}
 		object, ok := product.byCanonical[reading.Target]
-		if !ok || object.Kind != RefReadingTarget || object.Owner == nil {
+		if !ok || object.Kind != RefReadingTarget || len(object.PrincipalRefs) == 0 {
 			return fmt.Errorf("unknown or wrong-kind reading target")
 		}
-		if _, ok := principalSet[*object.Owner]; !ok {
-			return fmt.Errorf("reading owner is not a principal")
+		if !intersectsPrincipalSet(object.PrincipalRefs, principalSet) {
+			return fmt.Errorf("reading target has no selected principal")
 		}
 		if !reading.Label.Valid() ||
 			product.validateModelText(reading.WhatToLookFor, 768, true, true) != nil {

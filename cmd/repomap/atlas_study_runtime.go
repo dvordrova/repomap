@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	atlasStudyCacheContract = "atlas-study-accepted-v1"
+	atlasStudyCacheContract = "atlas-study-accepted-v2"
 	atlasStudyCacheStage    = "atlas_study"
 )
 
@@ -56,8 +56,9 @@ func defaultAtlasStudyClientFactory(requireCredentials bool) (atlasStudyClient, 
 // runAtlasStudyForRun owns the single Atlas-backed Repository Brief and Study
 // question. The caller supplies the same authority-confirmed, source-covered
 // ReportData later used by final Generate. BuildAtlasStudyInput then reads only
-// its Atlas, accepted model Architecture and exact saved sources; Navigator is
-// neither an input nor a prerequisite.
+// its Atlas, usable canonical visible Architecture Canvas (D177 local or
+// accepted enrichment) and exact saved sources; Navigator is neither an input
+// nor a prerequisite.
 func runAtlasStudyForRun(
 	ctx context.Context,
 	preparedData *report.ReportData,
