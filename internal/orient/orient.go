@@ -304,10 +304,17 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if successfulSurfaceResult != nil {
 			catalog = successfulSurfaceResult.Catalog
 		}
+		packageDeclarations, err := exactPackageDeclarationLocations(
+			ctx, opts.RepoPath, s.FilteredFiles, *s.GoFacts,
+		)
+		if err != nil {
+			return nil, err
+		}
 		atlas, err := goadapter.Project(goadapter.Input{
-			RepositoryName: s.RepoName,
-			Facts:          *s.GoFacts,
-			Catalog:        catalog,
+			RepositoryName:      s.RepoName,
+			Facts:               *s.GoFacts,
+			Catalog:             catalog,
+			PackageDeclarations: packageDeclarations,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("project repository Atlas: %w", err)
@@ -746,6 +753,13 @@ func runAtlasFirstLocalArtifacts(
 		if s.GoFacts != nil {
 			atlasInput.Facts = *s.GoFacts
 		}
+		packageDeclarations, err := exactPackageDeclarationLocations(
+			ctx, opts.RepoPath, s.FilteredFiles, atlasInput.Facts,
+		)
+		if err != nil {
+			return nil, err
+		}
+		atlasInput.PackageDeclarations = packageDeclarations
 		atlas, err := goadapter.Project(atlasInput)
 		if err != nil {
 			return nil, fmt.Errorf("project repository Atlas: %w", err)

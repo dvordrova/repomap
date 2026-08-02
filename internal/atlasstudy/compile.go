@@ -46,6 +46,7 @@ type Product struct {
 	byRef              map[string]CatalogObject
 	byCanonical        map[CanonicalRef]CatalogObject
 	privateIdentities  map[string]struct{}
+	alwaysPrivate      map[string]struct{}
 }
 
 func (product Product) WireJSON() []byte { return append([]byte(nil), product.wire...) }
@@ -64,6 +65,7 @@ func (product Product) Catalog() []CatalogObject {
 type wireProjection struct {
 	Version             int                      `json:"version"`
 	Language            Language                 `json:"language"`
+	AllowedPaths        []string                 `json:"allowed_paths"`
 	Architecture        wireArchitecture         `json:"architecture"`
 	BriefSupportChoices []wireBriefSupportChoice `json:"brief_support_choices"`
 	Units               []wireUnit               `json:"units"`
@@ -129,6 +131,9 @@ type wireTarget struct {
 	Kind                 ReadingTargetKind         `json:"kind"`
 	Label                string                    `json:"label"`
 	Fact                 string                    `json:"fact"`
+	Path                 string                    `json:"path"`
+	Line                 int                       `json:"line"`
+	Symbol               string                    `json:"symbol,omitempty"`
 	Authority            repositoryatlas.Authority `json:"authority"`
 }
 
@@ -187,7 +192,7 @@ func Compile(input Input) (Product, error) {
 	if err != nil {
 		return Product{}, err
 	}
-	projection, err := buildWire(canonical, refs, identities)
+	projection, err := buildWire(canonical, refs, allPrivateIdentities(canonical, false))
 	if err != nil {
 		return Product{}, err
 	}
@@ -205,16 +210,21 @@ func Compile(input Input) (Product, error) {
 		return Product{}, fmt.Errorf("atlas study: encode private catalog: %w", err)
 	}
 	catalogSHA := digest(materialJSON)
-	catalogRef := "atlas-study-v2-" + catalogSHA
+	catalogRef := fmt.Sprintf("atlas-study-v%d-%s", Version, catalogSHA)
 	wireJSON := projectionJSON
 	if err := enforceLimit("wire_bytes", canonical.Limits.MaxWireBytes, len(wireJSON)); err != nil {
 		return Product{}, err
 	}
 	byRef := make(map[string]CatalogObject, len(objects))
 	byCanonical := make(map[CanonicalRef]CatalogObject, len(objects))
+	alwaysPrivate := allPrivateIdentities(canonical, false)
 	for _, object := range objects {
 		byRef[object.Ref] = object
 		byCanonical[CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}] = object
+		// Request-local refs are valid only in typed identity fields. They are
+		// never product prose and must not leak into Brief or Study copy.
+		identities[object.Ref] = struct{}{}
+		alwaysPrivate[object.Ref] = struct{}{}
 	}
 	return Product{
 		input: canonical, wire: wireJSON, wireSHA256: digest(wireJSON),
@@ -222,6 +232,7 @@ func Compile(input Input) (Product, error) {
 		atlasSHA256: atlasSHA, architectureSHA256: architectureSHA,
 		catalog: objects, byRef: byRef, byCanonical: byCanonical,
 		privateIdentities: identities,
+		alwaysPrivate:     alwaysPrivate,
 	}, nil
 }
 
@@ -310,7 +321,7 @@ func compileCatalog(input Input) (
 	); err != nil {
 		return nil, nil, nil, fmt.Errorf("atlas study: Architecture source: %w", err)
 	}
-	identities := allPrivateIdentities(input)
+	identities := allPrivateIdentities(input, true)
 	objects := make([]CatalogObject, 0,
 		len(input.Atlas.Units)+len(input.Architecture.Subsystems)+
 			len(input.Architecture.Components)+len(input.Surfaces)+
@@ -426,6 +437,9 @@ func compileCatalog(input Input) (
 	targets := make(map[string]ReadingTarget, len(input.ReadingTargets))
 	locators := make(map[readingLocatorIdentity]string, len(input.ReadingTargets))
 	for _, target := range input.ReadingTargets {
+		if err := validateReadingTargetSymbol(target.Symbol, input.Limits.MaxTextBytes); err != nil {
+			return nil, nil, nil, err
+		}
 		if !target.Kind.Valid() || !repositoryLocation(target.Location) ||
 			len(target.PrincipalRefs) == 0 || !uniqueCanonicalRefs(target.PrincipalRefs) ||
 			!uniqueSorted(target.RelatedComponentIDs) {
@@ -552,6 +566,14 @@ func buildWire(
 		Version: Version, Language: input.Language,
 		Architecture: wireArchitecture{Title: input.Architecture.Title, Subtitle: input.Architecture.Subtitle},
 	}
+	allowedPaths := make(map[string]struct{}, len(input.ReadingTargets))
+	for _, target := range input.ReadingTargets {
+		allowedPaths[target.Location.Path] = struct{}{}
+	}
+	for sourcePath := range allowedPaths {
+		wire.AllowedPaths = append(wire.AllowedPaths, sourcePath)
+	}
+	sort.Strings(wire.AllowedPaths)
 	addBriefSupport := func(kind RefKind, ref string) {
 		if briefSupportKind(kind) {
 			wire.BriefSupportChoices = append(wire.BriefSupportChoices, wireBriefSupportChoice{
@@ -609,7 +631,8 @@ func buildWire(
 		ref := refs[CanonicalRef{Kind: RefReadingTarget, ID: target.ID}]
 		item := wireTarget{
 			Ref: ref, Kind: target.Kind, Label: target.Label,
-			Fact: target.Fact, Authority: target.Authority,
+			Fact: target.Fact, Path: target.Location.Path, Line: target.Location.Line,
+			Symbol: modelVisibleTargetSymbol(target.Symbol), Authority: target.Authority,
 		}
 		if target.Owner != (CanonicalRef{}) {
 			item.OwnerRef = refs[target.Owner]
@@ -657,8 +680,20 @@ func buildWire(
 	return wire, nil
 }
 
-func allPrivateIdentities(input Input) map[string]struct{} {
+func allPrivateIdentities(input Input, includeTargetLocators bool) map[string]struct{} {
 	result := make(map[string]struct{})
+	// Exact bounded reading-target locators are intentionally model-visible
+	// task context when includeTargetLocators is false. The full set remains
+	// private to response prose validation, so the model may return only the
+	// corresponding short request-local ref.
+	allowedPaths := make(map[string]struct{}, len(input.ReadingTargets))
+	allowedSymbols := make(map[string]struct{}, len(input.ReadingTargets))
+	for _, target := range input.ReadingTargets {
+		allowedPaths[target.Location.Path] = struct{}{}
+		if symbol := modelVisibleTargetSymbol(target.Symbol); symbol != "" {
+			allowedSymbols[symbol] = struct{}{}
+		}
+	}
 	add := func(value string) {
 		value = strings.TrimSpace(value)
 		if value != "" {
@@ -673,7 +708,9 @@ func allPrivateIdentities(input Input) map[string]struct{} {
 	}
 	for _, item := range input.Atlas.Evidence {
 		add(item.ID)
-		add(item.Location.Path)
+		if _, visible := allowedPaths[item.Location.Path]; includeTargetLocators || !visible {
+			add(item.Location.Path)
+		}
 	}
 	for _, relation := range input.Atlas.Relations {
 		add(relation.ID)
@@ -689,11 +726,14 @@ func allPrivateIdentities(input Input) map[string]struct{} {
 	}
 	for _, target := range input.ReadingTargets {
 		add(target.ID)
-		add(target.Location.Path)
-		// A qualified source symbol is a private repository identity. A bare
-		// word such as "Run" is also ordinary semantic prose, so treating it as
-		// an identity would reject truthful labels and facts by coincidence.
-		if strings.ContainsAny(target.Symbol, "./()") {
+		if includeTargetLocators {
+			add(target.Location.Path)
+		}
+		// Qualified symbols outside the exact bounded reading catalog remain
+		// private. Exact target symbols are deliberately exposed beside their
+		// short ref and cannot be returned as identities.
+		if _, visible := allowedSymbols[target.Symbol]; (includeTargetLocators || !visible) &&
+			strings.ContainsAny(target.Symbol, "./()") {
 			add(target.Symbol)
 		}
 	}
@@ -704,6 +744,28 @@ func allPrivateIdentities(input Input) map[string]struct{} {
 		add(document.ID)
 	}
 	return result
+}
+
+func modelVisibleTargetSymbol(symbol string) string {
+	// Qualified symbols are unambiguous exact locator context. Bare identifiers
+	// such as "Run" are ordinary prose and cannot be safely forbidden in model
+	// text without false positives, so the wire omits them.
+	if strings.ContainsAny(symbol, "./()") {
+		return symbol
+	}
+	return ""
+}
+
+func validateReadingTargetSymbol(symbol string, limit int) error {
+	if strings.TrimSpace(symbol) != symbol || !utf8.ValidString(symbol) || len(symbol) > limit {
+		return fmt.Errorf("atlas study: reading target symbol must be bounded exact UTF-8 text")
+	}
+	for _, value := range symbol {
+		if unicode.IsControl(value) {
+			return fmt.Errorf("atlas study: reading target symbol contains a control character")
+		}
+	}
+	return nil
 }
 
 func validateTargetAssociations(

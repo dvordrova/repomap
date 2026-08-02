@@ -141,7 +141,7 @@ func TestAtlasStudyMeasuredRetriesOnlyImmutableTransport(t *testing.T) {
 		if len(bodies) == 1 {
 			return localizationHTTPResponse(request, http.StatusServiceUnavailable, `{"error":"busy"}`), nil
 		}
-		return localizationHTTPResponse(request, http.StatusOK, localizationProviderEnvelope(response)), nil
+		return localizationHTTPResponse(request, http.StatusOK, completionProviderEnvelope(response, "stop", 1, true)), nil
 	})}
 	result, err := client.AtlasStudyMeasured(t.Context(), prompt, 1<<20)
 	if err != nil {
@@ -177,5 +177,53 @@ func TestAtlasStudyOutputLengthIsTypedTerminalWithoutSemanticRetry(t *testing.T)
 		limitErr.Stage != "atlas_study" || limitErr.Kind != modelresearch.ResourceLimitOutputTokens ||
 		limitErr.Limit != client.MaxTokens || limitErr.FinishReason != "length" {
 		t.Fatalf("Atlas Study terminal result/error = calls %d / %#v / %#v / %v", calls, result, limitErr, err)
+	}
+}
+
+func TestAtlasStudyRequiresExactlyOneStoppedCompletion(t *testing.T) {
+	t.Parallel()
+	const response = `{"repository_type":"library_framework","brief":{},"directions":[]}`
+	tests := []struct {
+		name         string
+		finishReason string
+		choiceCount  int
+		wantAccepted bool
+	}{
+		{name: "stopped", finishReason: "stop", choiceCount: 1, wantAccepted: true},
+		{name: "filtered", finishReason: "content_filter", choiceCount: 1},
+		{name: "multiple", finishReason: "stop", choiceCount: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var calls int
+			client := &Client{
+				Endpoint: "https://provider.example.test/v1/chat/completions", Auth: authNone,
+				Model: "fixture-model", MaxTokens: 64_000,
+				HTTPClient: &http.Client{Transport: localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+					calls++
+					return localizationHTTPResponse(
+						request,
+						http.StatusOK,
+						completionProviderEnvelope(response, test.finishReason, test.choiceCount, true),
+					), nil
+				})},
+			}
+			result, err := client.AtlasStudyMeasured(t.Context(), atlasStudyPromptFixture(), 1<<20)
+			if calls != 1 || result.Attempts != 1 || result.ChoiceCount != test.choiceCount {
+				t.Fatalf("completion calls/result = %d/%#v", calls, result)
+			}
+			if test.wantAccepted {
+				if err != nil || result.FinishReason != "stop" || string(result.Content) != response {
+					t.Fatalf("stopped completion result/error = %#v / %v", result, err)
+				}
+				return
+			}
+			var incomplete *IncompleteCompletionError
+			if !errors.As(err, &incomplete) || incomplete.Stage != "atlas_study" ||
+				incomplete.ChoiceCount != test.choiceCount {
+				t.Fatalf("incomplete result/error = %#v / %#v / %v", result, incomplete, err)
+			}
+		})
 	}
 }

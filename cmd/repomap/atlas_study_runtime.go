@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	atlasStudyCacheContract = "atlas-study-accepted-v2"
+	atlasStudyCacheContract = "atlas-study-accepted-v4"
 	atlasStudyCacheStage    = "atlas_study"
 )
 
@@ -465,9 +465,10 @@ func validateAtlasStudyResponse(
 			return result, diagnostics, "", debugdump.SemanticValidationAccepted, nil
 		}
 	}
-	failure := atlasstudy.FailureDecode
-	if diagnostics.DirectionsReceived > 0 {
-		failure = atlasstudy.FailureReference
+	failure := atlasstudy.FailureValidation
+	var decodeErr *atlasstudy.ResponseDecodeError
+	if errors.As(err, &decodeErr) {
+		failure = atlasstudy.FailureDecode
 	}
 	var refErr *atlasstudy.ReferenceError
 	if errors.As(err, &refErr) {

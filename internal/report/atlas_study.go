@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"html"
 	"io/fs"
 	"os"
@@ -265,6 +268,8 @@ func atlasStudyReadingTargets(
 	for _, surface := range surfaces {
 		advertisedSurfaces[surface.ID] = struct{}{}
 	}
+	packageDeclarationEvidence := exactRepositoryAtlasPackageEvidenceIDs(data)
+	semanticTargetKeys := overviewSemanticSourceTargetKeys(data)
 	sources := append([]SourceSnippet(nil), data.UserSources...)
 	sort.SliceStable(sources, func(i, j int) bool {
 		if sources[i].Path != sources[j].Path {
@@ -279,41 +284,68 @@ func atlasStudyReadingTargets(
 		}
 		return sources[i].PresentationSHA256 < sources[j].PresentationSHA256
 	})
-	targetsByLocator := make(map[string]atlasstudy.ReadingTarget, len(sources))
-	sourcesByLocator := make(map[string][]SourceSnippet, len(sources))
+	resolvedSourcesByLocator := make(map[string][]SourceSnippet, len(sources))
+	sourcesByStoredLocator := make(map[string][]SourceSnippet, len(sources))
 	for _, source := range sources {
+		if atlasStudyPackageDeclarationDrawerOnly(
+			source, packageDeclarationEvidence, semanticTargetKeys,
+		) {
+			continue
+		}
 		line := atlasStudySourceFocusLine(source)
 		if _, ok := openable[source.Path]; !ok || line <= 0 || source.Validate() != nil {
 			continue
 		}
+		storedLocatorKey := strings.Join([]string{
+			source.Path, fmt.Sprint(line), strings.TrimSpace(source.EnclosingSymbol),
+		}, "\x00")
+		sourcesByStoredLocator[storedLocatorKey] = append(
+			sourcesByStoredLocator[storedLocatorKey], source,
+		)
+	}
+	for _, candidates := range sourcesByStoredLocator {
+		selected, found, conflict := resolveAtlasStudySourceCandidates(candidates)
+		if !found || conflict {
+			continue
+		}
+		line := atlasStudySourceFocusLine(selected)
 		association := atlasStudyReadingAssociation(
-			data, advertisedSurfaces, source.Path, line,
+			data, advertisedSurfaces, selected.Path, line,
 		)
 		if len(association.principalRefs) == 0 {
 			continue
 		}
-		kind := atlasStudyReadingTargetKind(source.EnclosingSymbol, association.processEntry)
+		symbol, kind, _, _ := atlasStudyReadingTargetContext(
+			selected, line, association.processEntry, association.surfaceLabels,
+		)
 		locatorKey := strings.Join([]string{
-			string(kind), source.Path, fmt.Sprint(line), source.EnclosingSymbol,
+			string(kind), selected.Path, fmt.Sprint(line), symbol,
 		}, "\x00")
-		sourcesByLocator[locatorKey] = append(sourcesByLocator[locatorKey], source)
-		if _, exists := targetsByLocator[locatorKey]; exists {
+		resolvedSourcesByLocator[locatorKey] = append(
+			resolvedSourcesByLocator[locatorKey], selected,
+		)
+	}
+	targetsByLocator := make(map[string]atlasstudy.ReadingTarget, len(resolvedSourcesByLocator))
+	for locatorKey, candidates := range resolvedSourcesByLocator {
+		selected, found, conflict := resolveAtlasStudySourceCandidates(candidates)
+		if !found || conflict {
 			continue
 		}
-		label, fact := atlasStudyReadingTargetText(kind, association.surfaceLabels)
+		line := atlasStudySourceFocusLine(selected)
+		association := atlasStudyReadingAssociation(
+			data, advertisedSurfaces, selected.Path, line,
+		)
+		symbol, kind, label, fact := atlasStudyReadingTargetContext(
+			selected, line, association.processEntry, association.surfaceLabels,
+		)
 		targetsByLocator[locatorKey] = atlasstudy.ReadingTarget{
 			ID:    "reading-target-" + atlasStudyDigest(locatorKey),
 			Owner: association.owner, RelatedComponentIDs: association.relatedComponentIDs,
 			PrincipalRefs: association.principalRefs,
 			Kind:          kind, Label: label, Fact: fact,
 			Authority: repositoryatlas.AuthorityObserved,
-			Location:  evidence.Location{Path: source.Path, Line: line},
-			Symbol:    source.EnclosingSymbol,
-		}
-	}
-	for locatorKey, candidates := range sourcesByLocator {
-		if _, found, conflict := resolveAtlasStudySourceCandidates(candidates); !found || conflict {
-			delete(targetsByLocator, locatorKey)
+			Location:  evidence.Location{Path: selected.Path, Line: line},
+			Symbol:    symbol,
 		}
 	}
 	result := make([]atlasstudy.ReadingTarget, 0, len(targetsByLocator))
@@ -322,6 +354,31 @@ func atlasStudyReadingTargets(
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+// atlasStudyPackageDeclarationDrawerOnly keeps the package catalog clickable
+// without multiplying the semantic reading catalog. It suppresses a snippet
+// only when every attached identity resolves to the exact adapter-owned
+// package-declaration Evidence. Unknown or mixed identities never erase a
+// potentially Study-eligible source.
+func atlasStudyPackageDeclarationDrawerOnly(
+	source SourceSnippet,
+	exactPackageEvidence map[string]struct{},
+	semanticTargetKeys map[string]struct{},
+) bool {
+	if len(source.RelatedEvidenceIDs) == 0 {
+		return false
+	}
+	line := atlasStudySourceFocusLine(source)
+	if _, semantic := semanticTargetKeys[overviewSourceTargetKey(source.Path, line)]; semantic {
+		return false
+	}
+	for _, evidenceID := range source.RelatedEvidenceIDs {
+		if _, exact := exactPackageEvidence[evidenceID]; !exact {
+			return false
+		}
+	}
+	return true
 }
 
 type atlasStudyReadingAssociations struct {
@@ -482,6 +539,109 @@ func atlasStudyReadingTargetKind(symbol string, processEntry bool) atlasstudy.Re
 		return atlasstudy.ReadingTargetFunction
 	}
 	return atlasstudy.ReadingTargetFile
+}
+
+func atlasStudyReadingTargetContext(
+	source SourceSnippet,
+	line int,
+	processEntry bool,
+	surfaceLabels []string,
+) (string, atlasstudy.ReadingTargetKind, string, string) {
+	symbol := strings.TrimSpace(source.EnclosingSymbol)
+	sourceLine := atlasStudyExactSourceLine(source, line)
+	declaration := false
+	method := false
+	call := false
+	if symbol == "" && sourceLanguage(source.Path) == "go" && sourceLine != "" {
+		trimmedLine := strings.TrimSpace(sourceLine)
+		if strings.HasPrefix(trimmedLine, "func ") {
+			value, _, _, ok := boundedSourceDeclaration(source.Path, sourceLine)
+			if ok {
+				symbol = value
+				declaration = true
+				method = strings.HasPrefix(trimmedLine, "func (")
+			}
+		}
+		if symbol == "" {
+			if value, ok := atlasStudyQualifiedGoCall(sourceLine); ok {
+				symbol = value
+				call = true
+			}
+		}
+	}
+	kind := atlasStudyReadingTargetKind(symbol, processEntry)
+	if method && !processEntry {
+		kind = atlasstudy.ReadingTargetMethod
+	}
+	if len(surfaceLabels) == 1 {
+		return symbol, kind, surfaceLabels[0], "Exact saved source for this advertised application surface."
+	}
+	if declaration {
+		if method {
+			return symbol, kind, "Method " + symbol, "Exact saved Go method declaration."
+		}
+		return symbol, kind, "Function " + symbol, "Exact saved Go function declaration."
+	}
+	if call {
+		if !processEntry {
+			kind = atlasstudy.ReadingTargetFile
+		}
+		return symbol, kind, "Qualified Go call site", "Exact saved source at a qualified Go call."
+	}
+	label, fact := atlasStudyReadingTargetText(kind, surfaceLabels)
+	return symbol, kind, label, fact
+}
+
+func atlasStudyExactSourceLine(source SourceSnippet, line int) string {
+	for _, candidate := range source.Lines {
+		if candidate.Line == line {
+			return candidate.Text
+		}
+	}
+	return ""
+}
+
+func atlasStudyQualifiedGoCall(value string) (string, bool) {
+	parsed, err := parser.ParseFile(
+		token.NewFileSet(), "reading-target.go",
+		"package readingtarget\nfunc inspect() {\n"+value+"\n}\n", 0,
+	)
+	if err != nil || len(parsed.Decls) != 1 {
+		return "", false
+	}
+	declaration, ok := parsed.Decls[0].(*ast.FuncDecl)
+	if !ok || declaration.Body == nil || len(declaration.Body.List) != 1 {
+		return "", false
+	}
+	var call *ast.CallExpr
+	switch statement := declaration.Body.List[0].(type) {
+	case *ast.AssignStmt:
+		if len(statement.Rhs) == 1 {
+			call, _ = statement.Rhs[0].(*ast.CallExpr)
+		}
+	case *ast.ExprStmt:
+		call, _ = statement.X.(*ast.CallExpr)
+	case *ast.ReturnStmt:
+		if len(statement.Results) == 1 {
+			call, _ = statement.Results[0].(*ast.CallExpr)
+		}
+	case *ast.GoStmt:
+		call = statement.Call
+	case *ast.DeferStmt:
+		call = statement.Call
+	}
+	if call == nil {
+		return "", false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	receiver, ok := selector.X.(*ast.Ident)
+	if !ok || receiver.Name == "" || selector.Sel == nil || selector.Sel.Name == "" {
+		return "", false
+	}
+	return receiver.Name + "." + selector.Sel.Name, true
 }
 
 func atlasStudyReadingTargetText(
@@ -874,9 +1034,15 @@ func exactAtlasStudySource(
 ) (SourceSnippet, error) {
 	var matches []SourceSnippet
 	for _, source := range data.UserSources {
+		derivedSymbol, _, _, _ := atlasStudyReadingTargetContext(
+			source,
+			target.Location.Line,
+			target.Kind == atlasstudy.ReadingTargetEntrypoint,
+			nil,
+		)
 		if source.Path != target.Location.Path ||
 			atlasStudySourceFocusLine(source) != target.Location.Line ||
-			source.EnclosingSymbol != target.Symbol || source.Validate() != nil {
+			derivedSymbol != target.Symbol || source.Validate() != nil {
 			continue
 		}
 		matches = append(matches, source)

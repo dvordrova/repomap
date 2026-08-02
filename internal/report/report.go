@@ -25,7 +25,7 @@ import (
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 29
+const CurrentFormatVersion = 30
 
 const maxExactDiscoveryDeclarations = 16
 

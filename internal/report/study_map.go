@@ -586,14 +586,17 @@ func studyDirectionCoverage(direction StudyDirection) *StudyDirectionCoverage {
 		coverage.Status = "partial"
 		coverage.Reasons = append(coverage.Reasons, "path_only_document_present")
 	}
-	coverage.QuestionTerms = studyQuestionTermCoverage(direction)
-	coverage.TotalQuestionTerms = len(coverage.QuestionTerms)
-	for _, term := range coverage.QuestionTerms {
+	questionTerms := studyQuestionTermCoverage(direction)
+	if len(questionTerms) > 0 {
+		coverage.QuestionTerms = questionTerms
+	}
+	coverage.TotalQuestionTerms = len(questionTerms)
+	for _, term := range questionTerms {
 		if term.Status == "matched" {
 			coverage.MatchedQuestionTerms++
 		}
 	}
-	coverage.QuestionCoverageStatus = studyQuestionCoverageStatus(coverage.QuestionTerms)
+	coverage.QuestionCoverageStatus = studyQuestionCoverageStatus(questionTerms)
 	switch coverage.QuestionCoverageStatus {
 	case "no_terms_extracted":
 		coverage.Reasons = append(coverage.Reasons, "question_terms_not_extracted")

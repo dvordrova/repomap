@@ -825,72 +825,12 @@ func prependArchitectureSynthesisDiagnosticCode(codes []string, code string) []s
 }
 
 // architectureResponseMembershipCounts extracts only cardinality from an
-// exact JSON proposal. It deliberately does not recover fenced or partial JSON
-// and does not resolve or repair any member identity. Both the retired
-// canonical member_ids shape and the current request-local member_refs shape
-// are understood so a rejected response can retain closed parity evidence.
+// exact current flat-wire JSON proposal. It deliberately does not recover
+// fenced or partial JSON, accept retired shapes, or resolve or repair any
+// member identity. This lets a rejected current response retain closed parity
+// evidence without reinterpreting legacy provider bytes.
 func architectureResponseMembershipCounts(raw []byte) (bool, int, int) {
-	var response struct {
-		Subsystems []struct {
-			Components []struct {
-				MemberIDs  []json.RawMessage `json:"member_ids"`
-				MemberRefs []json.RawMessage `json:"member_refs"`
-			} `json:"components"`
-		} `json:"subsystems"`
-	}
-	if len(raw) == 0 || json.Unmarshal(raw, &response) != nil || len(response.Subsystems) == 0 {
-		return false, 0, 0
-	}
-
-	seenComponent := false
-	occurrences := 0
-	distinct := make(map[string]struct{})
-	for _, subsystem := range response.Subsystems {
-		for _, component := range subsystem.Components {
-			seenComponent = true
-			if (component.MemberIDs == nil) == (component.MemberRefs == nil) {
-				return false, 0, 0
-			}
-			members := component.MemberRefs
-			requestLocal := true
-			if members == nil {
-				members = component.MemberIDs
-				requestLocal = false
-			}
-			for _, member := range members {
-				identity, ok := architectureResponseMemberIdentity(member, requestLocal)
-				if !ok {
-					return false, 0, 0
-				}
-				occurrences++
-				distinct[identity] = struct{}{}
-			}
-		}
-	}
-	if !seenComponent {
-		return false, 0, 0
-	}
-	return true, occurrences, len(distinct)
-}
-
-func architectureResponseMemberIdentity(raw json.RawMessage, requestLocal bool) (string, bool) {
-	var fields map[string]json.RawMessage
-	if len(raw) == 0 || json.Unmarshal(raw, &fields) != nil || len(fields) != 2 {
-		return "", false
-	}
-	identityField := "ref"
-	shape := "request_ref"
-	if !requestLocal {
-		identityField = "value"
-		shape = "canonical_id"
-	}
-	var kind, identity string
-	if json.Unmarshal(fields["kind"], &kind) != nil ||
-		json.Unmarshal(fields[identityField], &identity) != nil ||
-		kind == "" || identity == "" {
-		return "", false
-	}
-	return shape + "\x00" + kind + "\x00" + identity, true
+	return componentmap.SynthesisResponseMembershipCounts(raw)
 }
 
 func architectureResearchStatus(outcome architectureSynthesisOutcome) string {

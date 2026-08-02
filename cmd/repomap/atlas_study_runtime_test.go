@@ -93,7 +93,7 @@ func TestRunAtlasStudyProductReplaysOnlyAcceptedExactCache(t *testing.T) {
 	}
 }
 
-func TestAtlasStudyCacheV2RejectsLegacyContractAndDifferentCatalog(t *testing.T) {
+func TestAtlasStudyCacheV4RejectsPreviousContractAndDifferentCatalog(t *testing.T) {
 	input := atlasStudyRuntimeInput()
 	product := atlasStudyRuntimeProduct(t, input)
 	client := newAtlasStudyRuntimeClient(atlasStudyRuntimeResponse(t, product, false), nil)
@@ -106,18 +106,18 @@ func TestAtlasStudyCacheV2RejectsLegacyContractAndDifferentCatalog(t *testing.T)
 		runsDir, atlasStudyRuntimeRepository(), modelresearch.DefaultPolicy(),
 		client.config, endpointSHA, product, client.request,
 	)
-	if current.Fingerprint.CacheContract != "atlas-study-accepted-v2" {
+	if current.Fingerprint.CacheContract != "atlas-study-accepted-v4" {
 		t.Fatalf("current Atlas Study cache contract = %q", current.Fingerprint.CacheContract)
 	}
 	legacy := current
-	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v1"
+	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v3"
 	if _, err := modelresearch.SaveStageResponse(legacy, modelresearch.StageResponse{
 		Content: []byte(`{"legacy":true}`),
 	}); err != nil {
 		t.Fatalf("save isolated legacy cache: %v", err)
 	}
 	if _, found, err := modelresearch.LoadStageResponse(current); err != nil || found {
-		t.Fatalf("v2 lookup read v1 cache: found=%t err=%v", found, err)
+		t.Fatalf("v4 lookup read v3 cache: found=%t err=%v", found, err)
 	}
 
 	if _, err := modelresearch.SaveStageResponse(current, modelresearch.StageResponse{
@@ -222,16 +222,48 @@ func TestRunAtlasStudyProductInvalidResponseIsClosedAndNotCached(t *testing.T) {
 		t.Fatalf("ordinary invalid response must be a closed product state: %v", err)
 	}
 	if outcome.State != atlasstudy.ProductStateFailed ||
-		outcome.FailureCode != atlasstudy.FailureReference || client.calls != 1 {
+		outcome.FailureCode != atlasstudy.FailureValidation || client.calls != 1 {
 		t.Fatalf("invalid response outcome = %#v / calls=%d", outcome, client.calls)
 	}
 	atlasStudyRuntimeAssertNoFile(t, runDir, atlasstudy.ResultArtifactFilename)
 	status := atlasStudyRuntimeReadStatus(t, runDir)
 	if status.State != atlasstudy.ProductStateFailed ||
-		status.FailureCode != atlasstudy.FailureReference {
+		status.FailureCode != atlasstudy.FailureValidation {
 		t.Fatalf("invalid response status = %#v", status)
 	}
 	atlasStudyRuntimeAssertCacheAbsent(t, runsDir, product, client)
+}
+
+func TestValidateAtlasStudyResponseDistinguishesDecodeReferenceAndValidation(t *testing.T) {
+	product := atlasStudyRuntimeProduct(t, atlasStudyRuntimeInput())
+
+	_, _, failure, _, err := validateAtlasStudyResponse(product, []byte(`{"broken":`))
+	if err == nil || failure != atlasstudy.FailureDecode {
+		t.Fatalf("malformed JSON classification = %q / %v", failure, err)
+	}
+
+	var wrongRef map[string]any
+	if err := json.Unmarshal(atlasStudyRuntimeResponse(t, product, false), &wrongRef); err != nil {
+		t.Fatal(err)
+	}
+	wrongRef["brief"].(map[string]any)["what_it_is"].(map[string]any)["support_refs"] = []any{"unknown"}
+	_, _, failure, _, err = validateAtlasStudyResponse(product, atlasStudyRuntimeJSON(t, wrongRef))
+	if err == nil || failure != atlasstudy.FailureReference {
+		t.Fatalf("wrong-ref classification = %q / %v", failure, err)
+	}
+
+	var semantic map[string]any
+	if err := json.Unmarshal(atlasStudyRuntimeResponse(t, product, false), &semantic); err != nil {
+		t.Fatal(err)
+	}
+	semantic["directions"].([]any)[0].(map[string]any)["question"] = "Not a natural question"
+	_, diagnostics, failure, _, err := validateAtlasStudyResponse(
+		product, atlasStudyRuntimeJSON(t, semantic),
+	)
+	if err == nil || failure != atlasstudy.FailureValidation ||
+		diagnostics.DirectionsReceived != 1 || diagnostics.Issues[0].Code != atlasstudy.IssueInvalidQuestion {
+		t.Fatalf("semantic validation classification = %q / %#v / %v", failure, diagnostics, err)
+	}
 }
 
 func TestRunAtlasStudyProductResourceLimitIsTypedTerminal(t *testing.T) {

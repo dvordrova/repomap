@@ -16,10 +16,156 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/goldenmechanism"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
+
+func TestPackageDeclarationEvidenceAddsExactOpenableDrawerSource(t *testing.T) {
+	t.Parallel()
+	authority := overviewSourceCoverageAuthority(t, map[string]map[int]string{
+		"widget.go": {2: "package widget"},
+	})
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-fixture", ModulePath: "example.com/fixture", ModuleDir: ".",
+		}},
+		Packages: []gofacts.PackageFact{{
+			CanonicalPath: "example.com/fixture/pkg", Name: "widget",
+			ModuleID: "module-fixture", ModulePath: "example.com/fixture",
+			Files: []string{"widget.go"},
+		}},
+	}
+	atlas, err := goadapter.Project(goadapter.Input{
+		RepositoryName: "example.com/fixture", Facts: facts,
+		PackageDeclarations: map[string]evidence.Location{
+			"example.com/fixture/pkg": {Path: "widget.go", Line: 2, Column: 1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		RepositoryAtlas:  &atlas,
+	}
+	collectOpenablePaths(data)
+	if !reflect.DeepEqual(data.OpenablePaths, []string{"widget.go"}) {
+		t.Fatalf("openable paths = %#v", data.OpenablePaths)
+	}
+	packageEvidence := exactRepositoryAtlasPackageEvidence(data)
+	if len(packageEvidence) != 1 ||
+		packageEvidence[0].Provenance.Operation != goadapter.PackageDeclarationEvidenceOperation {
+		t.Fatalf("exact package evidence = %#v", packageEvidence)
+	}
+	wantTargets := []overviewSourceTarget{{
+		path: "widget.go", line: 2,
+		relatedEvidenceIDs: []string{packageEvidence[0].ID},
+	}}
+	if got := overviewSourceTargets(data); !reflect.DeepEqual(got, wantTargets) {
+		t.Fatalf("package overview targets = %#v, want %#v", got, wantTargets)
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	if len(data.UserSources) != 1 ||
+		!reflect.DeepEqual(data.UserSources[0].RelatedEvidenceIDs, []string{packageEvidence[0].ID}) ||
+		data.UserSources[0].Path != "widget.go" || data.UserSources[0].StartLine > 2 ||
+		data.UserSources[0].EndLine < 2 {
+		t.Fatalf("package drawer source = %#v", data.UserSources)
+	}
+	before := mustSourceProjectionJSON(t, data.UserSources)
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	if after := mustSourceProjectionJSON(t, data.UserSources); !bytes.Equal(before, after) {
+		t.Fatalf("package drawer source is not idempotent:\nbefore: %s\nafter: %s", before, after)
+	}
+
+	semanticAfterPackage := *data
+	semanticAfterPackage.ArchitectureCanvas = &ArchitectureCanvas{Components: []ArchitectureComponent{{
+		ID: "component-widget",
+		Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{{
+			Location: &evidence.Location{Path: "widget.go", Line: 2},
+		}}}},
+	}}}
+	assertOverviewMixedTargetKeepsPackageEvidence(
+		t, overviewSourceTargets(&semanticAfterPackage), packageEvidence[0].ID,
+	)
+
+	semanticBeforePackage := *data
+	semanticBeforePackage.DiscoveredSurfaces = &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+		ID: "surface-widget", SurfaceRole: SurfaceRoleEntrySurface,
+		ApplicationClass: SurfaceApplicationOwned, Availability: SurfaceAvailabilityAvailable,
+		ExecutableRole:  ExecutableRolePrimaryApplication,
+		HandlerLocation: &SurfaceLocation{Path: "widget.go", Line: 2},
+	}}}
+	assertOverviewMixedTargetKeepsPackageEvidence(
+		t, overviewSourceTargets(&semanticBeforePackage), packageEvidence[0].ID,
+	)
+}
+
+func TestExactPackageDeclarationEvidenceIsIndependentOfBoundedRepositoryGraph(t *testing.T) {
+	t.Parallel()
+	facts := gofacts.Facts{Modules: []gofacts.ModuleFact{{
+		ID: "module-large", ModulePath: "example.com/large", ModuleDir: ".",
+	}}}
+	declarations := make(map[string]evidence.Location)
+	for index := 0; index < 601; index++ {
+		name := fmt.Sprintf("p%03d", index)
+		canonicalPath := "example.com/large/" + name
+		sourcePath := name + "/package.go"
+		facts.Packages = append(facts.Packages, gofacts.PackageFact{
+			CanonicalPath: canonicalPath, Name: name,
+			ModuleID: "module-large", ModulePath: "example.com/large",
+			Files: []string{sourcePath},
+		})
+		declarations[canonicalPath] = evidence.Location{Path: sourcePath, Line: 1, Column: 1}
+	}
+	atlas, err := goadapter.Project(goadapter.Input{
+		RepositoryName: "example.com/large", Facts: facts,
+		PackageDeclarations: declarations,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := &ReportData{RepositoryAtlas: &atlas, RepositoryGraph: &RepositoryGraph{}}
+	for _, pkg := range facts.Packages[:600] {
+		data.RepositoryGraph.Packages = append(data.RepositoryGraph.Packages, PackageInfo{
+			CanonicalPath: pkg.CanonicalPath, Name: pkg.Name,
+			ModuleID: pkg.ModuleID, ModulePath: pkg.ModulePath,
+			Files: append([]string(nil), pkg.Files...),
+		})
+	}
+	if got := len(exactRepositoryAtlasPackageEvidence(data)); got != 601 {
+		t.Fatalf("exact package evidence = %d, want 601 despite 600-row graph", got)
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replayed ReportData
+	if err := json.Unmarshal(raw, &replayed); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(exactRepositoryAtlasPackageEvidence(&replayed)); got != 601 {
+		t.Fatalf("replayed exact package evidence = %d, want 601", got)
+	}
+}
+
+func assertOverviewMixedTargetKeepsPackageEvidence(
+	t *testing.T,
+	targets []overviewSourceTarget,
+	evidenceID string,
+) {
+	t.Helper()
+	if len(targets) != 1 ||
+		!reflect.DeepEqual(targets[0].relatedEvidenceIDs, []string{evidenceID}) {
+		t.Fatalf("mixed package/semantic target lost exact package evidence: %#v", targets)
+	}
+}
 
 func TestProjectUserMechanismGroupsSourceBySymbolAndBoundsRelatedCards(t *testing.T) {
 	t.Parallel()

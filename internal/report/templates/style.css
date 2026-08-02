@@ -64,7 +64,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .rm-atlas-unit-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .2rem; padding: .7rem .8rem; }
 .rm-atlas-unit-card strong { font-size: .82rem; overflow-wrap: anywhere; }
-.rm-atlas-unit-card span { color: var(--rm-dim); font-size: .68rem; }
+.rm-atlas-unit-tags { display: flex; flex-wrap: wrap; gap: .3rem; }
+.rm-atlas-unit-tag { background: #eef2ff; border-radius: 999px; color: #3730a3; font-size: .64rem; font-weight: 650; padding: .18rem .42rem; }
 .rm-atlas-relation-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .6rem; padding: .8rem; }
 .rm-atlas-relation-unit { font-size: .82rem; overflow-wrap: anywhere; }
 .rm-atlas-relation-roles { display: grid; gap: .3rem; }
@@ -77,7 +78,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-units-heading { margin-top: 1.25rem; }
 .rm-atlas-package-disclosure { border-top: 1px solid var(--rm-border); margin-top: .8rem; padding-top: .7rem; }
 .rm-atlas-package-summary { color: #334155; cursor: pointer; font-size: .76rem; font-weight: 700; }
-.rm-atlas-package-disclosure .rm-atlas-unit-grid { margin-top: .7rem; }
+.rm-atlas-package-groups { display: grid; gap: .75rem; margin-top: .7rem; }
+.rm-atlas-package-group { display: grid; gap: .35rem; }
+.rm-atlas-package-prefix { color: #475569; font-size: .69rem; overflow-wrap: anywhere; padding: 0 .25rem; }
+.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.rm-atlas-package-row { min-width: 0; }
+.rm-atlas-package-action, .rm-atlas-package-unavailable { align-items: center; border-radius: 6px; box-sizing: border-box; display: flex; gap: .45rem; justify-content: space-between; min-height: 1.8rem; padding: .3rem .45rem; width: 100%; }
+.rm-atlas-package-action { background: #fff; border: 1px solid var(--rm-border); color: var(--rm-fg); cursor: pointer; font: inherit; text-align: left; }
+.rm-atlas-package-action:hover { border-color: var(--rm-accent); color: var(--rm-accent); }
+.rm-atlas-package-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.rm-atlas-package-unavailable { border: 1px solid transparent; color: #64748b; }
+.rm-atlas-package-name { color: inherit; font-size: .69rem; min-width: 0; overflow-wrap: anywhere; }
+.rm-atlas-package-open { color: var(--rm-accent); font-size: .7rem; }
+.rm-atlas-package-source-summary { color: #94a3b8; display: flex; flex-wrap: wrap; font-size: .62rem; gap: .25rem .7rem; margin: .2rem .25rem 0; }
+.rm-atlas-compact-status { border-top: 1px solid var(--rm-border); display: grid; gap: .42rem; margin-top: .8rem; padding-top: .65rem; }
+.rm-atlas-compact-status__title { color: #475569; font-size: .68rem; }
+.rm-atlas-compact-status__list { display: grid; gap: .3rem; list-style: none; margin: 0; padding: 0; }
+.rm-atlas-compact-status__item { color: #64748b; display: grid; font-size: .66rem; gap: .15rem .5rem; grid-template-columns: auto minmax(0, 1fr); line-height: 1.4; }
+.rm-atlas-compact-status__label { color: #475569; font-weight: 700; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
@@ -730,6 +748,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   .rm-repository-nav .rm-tabs { flex-direction: row; overflow-x: auto; position: static; }
   .rm-repository-nav .rm-tab { flex: 0 0 auto; }
   .rm-main-content { padding: 1.25rem 1rem; }
+	.rm-atlas-package-list { grid-template-columns: minmax(0, 1fr); }
+	.rm-atlas-package-action, .rm-atlas-package-unavailable { min-width: 0; }
   .rm-repository-area-grid, .rm-mechanism-grid, .rm-operation-grid, .rm-operation-landmark-grid { grid-template-columns: minmax(0, 1fr); }
 	.rm-operation-literal { align-items: stretch; flex-direction: column; }
 	.rm-operation-literal .rm-secondary-action { align-self: flex-start; }

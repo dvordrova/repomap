@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 5
-	SynthesisRecordVersion  = 5
-	SynthesisPromptVersion  = "architecture-grounding-v7"
+	SynthesisRequestVersion = 6
+	SynthesisRecordVersion  = 6
+	SynthesisPromptVersion  = "architecture-grounding-v9"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -32,6 +32,7 @@ const (
 	maxRevisionBytes          = 256
 	maxProfileBytes           = 128
 	maxModelBytes             = 256
+	maxSynthesisWireRecords   = MaxPrimarySubsystems + MaxTotalNestedComponents
 )
 
 // SynthesisMemberRef is one short request-local typed member identity. The Ref
@@ -701,12 +702,14 @@ func buildSynthesisPromptForLanguage(
 Use member, anchor, and flow refs as opaque request-local typed values. Copy a ref only into a response field of the same kind. Do not rewrite refs, infer new refs, or mention members absent from the request.
 Local semantic facts, compact structural relations, flow participation, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
-Return exactly one compact JSON proposal object with this shape:
-{"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false}]}]}
+Return exactly one compact JSON proposal object with one ordered records array. Use this exact tagged-record grammar:
+{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","member_refs":[{"kind":"package","ref":"p2"}],"anchor_refs":[],"hypothesis":true}]}
 
-The only allowed proposal fields are subsystems, subsystem name/description/components, component name/description/member_refs/anchor_refs/hypothesis, and ref kind/ref. Array order is the conceptual display order. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Omit an uncertain member because local validation retains omissions separately. Every component must contain at least one supplied member ref.
+The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
-Repository archetype and grounding mode are local facts. A primary pillar is one top-level subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, choose four to seven top-level primary subsystems when the supplied evidence supports that many, never more than eight. Prefer one to four nested components per subsystem and no more than eighteen in total. Every non-hypothesis nested component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Omit an uncertain member because local validation retains omissions separately. Every component must contain at least one supplied member ref.
+
+Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. Every non-hypothesis component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
 Do not return versions, catalog identity, hashes, canonical IDs, edges, relations, flow definitions or transitions, fact payloads, repository paths, qualified symbols, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`
 	if language == "ru" {
@@ -1141,7 +1144,7 @@ func evaluateSynthesisResponse(
 		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(responseErr.code, responseErr.message))
 		return landscape, SynthesisMembershipCounts{}, err
 	}
-	wireProposal, unknownFields, err := decodeSynthesisWireProposalJSON(object)
+	wireProposal, err := decodeSynthesisWireProposalJSON(object)
 	if err != nil {
 		landscape, fallbackErr := synthesisResponseFallback(bundle, newDiagnostic(
 			"response.invalid_proposal",
@@ -1169,15 +1172,9 @@ func evaluateSynthesisResponse(
 		// normalization may have merged. The deterministic remainder is excluded.
 		membership = acceptedSynthesisMembershipCounts(landscape)
 	}
-	warnings := make([]Diagnostic, 0, 2)
+	warnings := make([]Diagnostic, 0, 1)
 	if normalization != nil {
 		warnings = append(warnings, *normalization)
-	}
-	if unknownFields {
-		warnings = append(warnings, newDiagnostic(
-			"response.unknown_fields_ignored",
-			"ignored bounded response fields outside the conceptual proposal contract",
-		))
 	}
 	if len(warnings) > 0 {
 		landscape.Diagnostics = append(warnings, landscape.Diagnostics...)
@@ -1228,17 +1225,12 @@ func acceptedSynthesisMembershipCounts(landscape Landscape) SynthesisMembershipC
 }
 
 func synthesisResponseFallback(bundle CandidateBundle, warning Diagnostic) (Landscape, error) {
-	landscape, err := Apply(bundle, Proposal{})
-	if err != nil {
-		return Landscape{}, err
-	}
-	landscape.Diagnostics = append([]Diagnostic{warning}, landscape.Diagnostics...)
-	switch warning.Code {
-	case "proposal.unknown_member_id":
-		landscape.FallbackReason = FallbackRejectedUnknownMember
-	case "proposal.unknown_anchor_id":
-		landscape.FallbackReason = FallbackRejectedUnknownAnchor
-	}
+	landscape := buildDeterministicLocalLandscape(bundle, SourcePackageFallback)
+	landscape.Diagnostics = []Diagnostic{warning}
+	landscape.ValidationOutcome = ValidationRejected
+	landscape.FallbackReason = fallbackReasonForDiagnostics(landscape.Diagnostics, len(bundle.BehaviorAnchors) > 0)
+	landscape.Fallback = true
+	landscape.OriginalProposalSHA256 = proposalSHA256(Proposal{})
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
 	}
@@ -1255,36 +1247,19 @@ func extractProposalObject(raw []byte) ([]byte, *Diagnostic, *synthesisResponseE
 	if len(trimmed) == 0 {
 		return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no json object"}
 	}
-	if json.Valid(trimmed) {
-		if trimmed[0] != '{' {
-			return nil, nil, &synthesisResponseError{code: "response.invalid_proposal", message: "provider response is json but not a proposal object"}
-		}
-		return append([]byte(nil), trimmed...), nil, nil
-	}
-
-	fenced := fencedJSONObjectCandidates(trimmed)
-	switch len(fenced) {
-	case 1:
+	if !json.Valid(trimmed) {
 		if len(jsonObjectCandidates(trimmed, 2)) > 1 {
 			return nil, nil, &synthesisResponseError{code: "response.ambiguous_json", message: "provider response contains several json objects"}
 		}
-		diagnostic := newDiagnostic("response.fenced_json_extracted", "accepted one bounded proposal object from a markdown fence")
-		return fenced[0], &diagnostic, nil
-	case 0:
-	default:
-		return nil, nil, &synthesisResponseError{code: "response.ambiguous_json", message: "provider response contains several fenced json objects"}
+		if !bytes.Contains(trimmed, []byte("{")) {
+			return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no json object"}
+		}
+		return nil, nil, &synthesisResponseError{code: "response.invalid_proposal", message: "provider response is not exactly one complete json object"}
 	}
-
-	embedded := jsonObjectCandidates(trimmed, 2)
-	switch len(embedded) {
-	case 1:
-		diagnostic := newDiagnostic("response.embedded_json_extracted", "accepted one bounded proposal object embedded in provider prose")
-		return embedded[0], &diagnostic, nil
-	case 0:
-		return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no recoverable json object"}
-	default:
-		return nil, nil, &synthesisResponseError{code: "response.ambiguous_json", message: "provider response contains several json objects"}
+	if trimmed[0] != '{' {
+		return nil, nil, &synthesisResponseError{code: "response.invalid_proposal", message: "provider response is json but not a proposal object"}
 	}
+	return append([]byte(nil), trimmed...), nil, nil
 }
 
 func synthesisResourceLimit(
@@ -1298,284 +1273,516 @@ func synthesisResourceLimit(
 	}
 }
 
+type synthesisWireRecordKind string
+
+const (
+	synthesisWireSubsystemRecord synthesisWireRecordKind = "subsystem"
+	synthesisWireComponentRecord synthesisWireRecordKind = "component"
+)
+
 type synthesisWireProposal struct {
-	Subsystems []synthesisWireSubsystem `json:"subsystems"`
+	Records []synthesisWireRecord `json:"records"`
 }
 
-type synthesisWireSubsystem struct {
-	Name        string                   `json:"name"`
-	Description string                   `json:"description,omitempty"`
-	Components  []synthesisWireComponent `json:"components"`
+// synthesisWireRecord is an in-memory tagged union. MarshalJSON emits only the
+// fields owned by its exact kind so tests exercise the same one-grammar wire
+// accepted from providers.
+type synthesisWireRecord struct {
+	Kind         synthesisWireRecordKind
+	Ref          string
+	SubsystemRef string
+	Name         string
+	Description  string
+	MemberRefs   []SynthesisMemberRef
+	AnchorRefs   []SynthesisAnchorRef
+	Hypothesis   bool
 }
 
-type synthesisWireComponent struct {
-	Name        string               `json:"name"`
-	Description string               `json:"description,omitempty"`
-	MemberRefs  []SynthesisMemberRef `json:"member_refs"`
-	AnchorRefs  []SynthesisAnchorRef `json:"anchor_refs,omitempty"`
-	Hypothesis  bool                 `json:"hypothesis,omitempty"`
+func (record synthesisWireRecord) MarshalJSON() ([]byte, error) {
+	switch record.Kind {
+	case synthesisWireSubsystemRecord:
+		return json.Marshal(struct {
+			Kind        synthesisWireRecordKind `json:"kind"`
+			Ref         string                  `json:"ref"`
+			Name        string                  `json:"name"`
+			Description string                  `json:"description"`
+		}{record.Kind, record.Ref, record.Name, record.Description})
+	case synthesisWireComponentRecord:
+		memberRefs := record.MemberRefs
+		if memberRefs == nil {
+			memberRefs = []SynthesisMemberRef{}
+		}
+		anchorRefs := record.AnchorRefs
+		if anchorRefs == nil {
+			anchorRefs = []SynthesisAnchorRef{}
+		}
+		return json.Marshal(struct {
+			Kind         synthesisWireRecordKind `json:"kind"`
+			SubsystemRef string                  `json:"subsystem_ref"`
+			Name         string                  `json:"name"`
+			Description  string                  `json:"description"`
+			MemberRefs   []SynthesisMemberRef    `json:"member_refs"`
+			AnchorRefs   []SynthesisAnchorRef    `json:"anchor_refs"`
+			Hypothesis   bool                    `json:"hypothesis"`
+		}{record.Kind, record.SubsystemRef, record.Name, record.Description, memberRefs, anchorRefs, record.Hypothesis})
+	default:
+		return nil, fmt.Errorf("componentmap: unsupported synthesis wire record kind")
+	}
 }
 
-// decodeSynthesisWireProposalJSON is strict about every known field type while
-// tolerating harmless commentary fields. Canonical IDs have no field in the
-// active response shape and are never copied from provider bytes.
-func decodeSynthesisWireProposalJSON(raw []byte) (synthesisWireProposal, bool, error) {
+// decodeSynthesisWireProposalJSON rejects every field outside the exact
+// tagged-record contract. Canonical IDs have no field in the active response
+// shape and are never copied from provider bytes.
+func decodeSynthesisWireProposalJSON(raw []byte) (synthesisWireProposal, error) {
+	if !utf8.Valid(raw) {
+		return synthesisWireProposal{}, fmt.Errorf("proposal is not valid utf-8")
+	}
+	if err := rejectDuplicateSynthesisJSONKeys(raw); err != nil {
+		return synthesisWireProposal{}, err
+	}
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &root); err != nil || root == nil {
-		return synthesisWireProposal{}, false, fmt.Errorf("proposal is not an object")
+		return synthesisWireProposal{}, fmt.Errorf("proposal is not an object")
 	}
-	if hasForbiddenSynthesisFields(root,
-		"version", "catalog", "catalog_ref", "catalog_hash", "private_catalog_sha256",
-		"request_sha256", "allowed_paths",
-	) {
-		return synthesisWireProposal{}, false, fmt.Errorf("proposal contains backend-owned identity fields")
+	if !hasExactSynthesisFields(root, "records") {
+		return synthesisWireProposal{}, fmt.Errorf("proposal root fields do not match the records contract")
 	}
-	unknown := hasUnknownFields(root, "subsystems")
-
-	var proposal synthesisWireProposal
-	if value, exists := root["subsystems"]; exists {
-		var rawSubsystems []json.RawMessage
-		if err := json.Unmarshal(value, &rawSubsystems); err != nil {
-			return synthesisWireProposal{}, unknown, fmt.Errorf("proposal subsystems have invalid type")
+	var rawRecords []json.RawMessage
+	if err := json.Unmarshal(root["records"], &rawRecords); err != nil {
+		return synthesisWireProposal{}, fmt.Errorf("proposal records have invalid type")
+	}
+	if len(rawRecords) == 0 || len(rawRecords) > maxSynthesisWireRecords {
+		return synthesisWireProposal{}, fmt.Errorf("proposal record count is outside the bounded contract")
+	}
+	proposal := synthesisWireProposal{Records: make([]synthesisWireRecord, 0, len(rawRecords))}
+	for _, rawRecord := range rawRecords {
+		record, err := decodeSynthesisWireRecord(rawRecord)
+		if err != nil {
+			return synthesisWireProposal{}, err
 		}
-		proposal.Subsystems = make([]synthesisWireSubsystem, 0, len(rawSubsystems))
-		for _, rawSubsystem := range rawSubsystems {
-			subsystem, itemUnknown, err := decodeSynthesisWireSubsystem(rawSubsystem)
-			if err != nil {
-				return synthesisWireProposal{}, unknown || itemUnknown, err
-			}
-			unknown = unknown || itemUnknown
-			proposal.Subsystems = append(proposal.Subsystems, subsystem)
-		}
+		proposal.Records = append(proposal.Records, record)
 	}
-	return proposal, unknown, nil
+	return proposal, nil
 }
 
-func decodeSynthesisWireSubsystem(raw json.RawMessage) (synthesisWireSubsystem, bool, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return synthesisWireSubsystem{}, false, fmt.Errorf("proposal subsystem is not an object")
-	}
-	if hasForbiddenSynthesisFields(fields, "id", "version", "catalog_ref", "hash") {
-		return synthesisWireSubsystem{}, false, fmt.Errorf("proposal subsystem contains backend-owned identity fields")
-	}
-	unknown := hasUnknownFields(fields, "name", "description", "components")
-	name, err := decodeProposalString(fields, "name")
+// SynthesisResponseMembershipCounts returns raw conceptual-membership
+// cardinality only when raw uses the exact current flat response grammar. It
+// deliberately performs no catalog resolution, normalization, or repair, so a
+// rejected current response can retain diagnostic counts without accepting
+// retired or malformed provider bytes.
+func SynthesisResponseMembershipCounts(raw []byte) (bool, int, int) {
+	proposal, err := decodeSynthesisWireProposalJSON(raw)
 	if err != nil {
-		return synthesisWireSubsystem{}, unknown, err
+		return false, 0, 0
 	}
-	description, err := decodeProposalString(fields, "description")
-	if err != nil {
-		return synthesisWireSubsystem{}, unknown, err
-	}
-	result := synthesisWireSubsystem{Name: name, Description: description}
-	if value, exists := fields["components"]; exists {
-		var rawComponents []json.RawMessage
-		if err := json.Unmarshal(value, &rawComponents); err != nil {
-			return synthesisWireSubsystem{}, unknown, fmt.Errorf("proposal components have invalid type")
+	seenComponent := false
+	occurrences := 0
+	distinct := make(map[string]struct{})
+	for _, record := range proposal.Records {
+		if record.Kind != synthesisWireComponentRecord {
+			continue
 		}
-		result.Components = make([]synthesisWireComponent, 0, len(rawComponents))
-		for _, rawComponent := range rawComponents {
-			component, itemUnknown, err := decodeSynthesisWireComponent(rawComponent)
-			if err != nil {
-				return synthesisWireSubsystem{}, unknown || itemUnknown, err
-			}
-			unknown = unknown || itemUnknown
-			result.Components = append(result.Components, component)
+		seenComponent = true
+		for _, memberRef := range record.MemberRefs {
+			occurrences++
+			distinct[memberRef.key()] = struct{}{}
 		}
 	}
-	return result, unknown, nil
+	if !seenComponent {
+		return false, 0, 0
+	}
+	return true, occurrences, len(distinct)
 }
 
-func decodeSynthesisWireComponent(raw json.RawMessage) (synthesisWireComponent, bool, error) {
+func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return synthesisWireComponent{}, false, fmt.Errorf("proposal component is not an object")
+		return synthesisWireRecord{}, fmt.Errorf("proposal record is not an object")
 	}
-	if hasForbiddenSynthesisFields(fields,
-		"id", "member_ids", "anchor_ids", "catalog_ref", "hash", "location", "provenance",
-	) {
-		return synthesisWireComponent{}, false, fmt.Errorf("proposal component contains backend-owned identity fields")
-	}
-	unknown := hasUnknownFields(fields, "name", "description", "member_refs", "anchor_refs", "hypothesis")
-	name, err := decodeProposalString(fields, "name")
+	kindValue, err := decodeRequiredProposalString(fields, "kind")
 	if err != nil {
-		return synthesisWireComponent{}, unknown, err
+		return synthesisWireRecord{}, err
 	}
-	description, err := decodeProposalString(fields, "description")
-	if err != nil {
-		return synthesisWireComponent{}, unknown, err
-	}
-	result := synthesisWireComponent{Name: name, Description: description}
-	if value, exists := fields["member_refs"]; exists {
+	kind := synthesisWireRecordKind(kindValue)
+	switch kind {
+	case synthesisWireSubsystemRecord:
+		if !hasExactSynthesisFields(fields, "kind", "ref", "name", "description") {
+			return synthesisWireRecord{}, fmt.Errorf("proposal subsystem record fields do not match the bounded contract")
+		}
+		ref, err := decodeRequiredProposalString(fields, "ref")
+		if err != nil {
+			return synthesisWireRecord{}, err
+		}
+		name, err := decodeRequiredProposalString(fields, "name")
+		if err != nil {
+			return synthesisWireRecord{}, err
+		}
+		description, err := decodeRequiredProposalDescription(fields, "description")
+		if err != nil {
+			return synthesisWireRecord{}, err
+		}
+		return synthesisWireRecord{
+			Kind: kind, Ref: ref, Name: name, Description: description,
+		}, nil
+	case synthesisWireComponentRecord:
+		if !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "anchor_refs", "hypothesis",
+		) {
+			return synthesisWireRecord{}, fmt.Errorf("proposal component record fields do not match the bounded contract")
+		}
+		subsystemRef, err := decodeRequiredProposalString(fields, "subsystem_ref")
+		if err != nil {
+			return synthesisWireRecord{}, err
+		}
+		name, err := decodeRequiredProposalString(fields, "name")
+		if err != nil {
+			return synthesisWireRecord{}, err
+		}
+		description, err := decodeRequiredProposalDescription(fields, "description")
+		if err != nil {
+			return synthesisWireRecord{}, err
+		}
+		if isJSONNull(fields["member_refs"]) || isJSONNull(fields["anchor_refs"]) || isJSONNull(fields["hypothesis"]) {
+			return synthesisWireRecord{}, fmt.Errorf("proposal component fields must not be null")
+		}
 		var rawMemberRefs []json.RawMessage
-		if err := json.Unmarshal(value, &rawMemberRefs); err != nil {
-			return synthesisWireComponent{}, unknown, fmt.Errorf("proposal member refs have invalid type")
+		if err := json.Unmarshal(fields["member_refs"], &rawMemberRefs); err != nil {
+			return synthesisWireRecord{}, fmt.Errorf("proposal member refs have invalid type")
 		}
-		result.MemberRefs = make([]SynthesisMemberRef, 0, len(rawMemberRefs))
+		memberRefs := make([]SynthesisMemberRef, 0, len(rawMemberRefs))
 		for _, rawMemberRef := range rawMemberRefs {
-			memberRef, itemUnknown, err := decodeSynthesisMemberRef(rawMemberRef)
+			memberRef, err := decodeSynthesisMemberRef(rawMemberRef)
 			if err != nil {
-				return synthesisWireComponent{}, unknown || itemUnknown, err
+				return synthesisWireRecord{}, err
 			}
-			unknown = unknown || itemUnknown
-			result.MemberRefs = append(result.MemberRefs, memberRef)
+			memberRefs = append(memberRefs, memberRef)
 		}
-	}
-	if value, exists := fields["anchor_refs"]; exists {
 		var rawAnchorRefs []json.RawMessage
-		if err := json.Unmarshal(value, &rawAnchorRefs); err != nil {
-			return synthesisWireComponent{}, unknown, fmt.Errorf("proposal anchor refs have invalid type")
+		if err := json.Unmarshal(fields["anchor_refs"], &rawAnchorRefs); err != nil {
+			return synthesisWireRecord{}, fmt.Errorf("proposal anchor refs have invalid type")
 		}
-		result.AnchorRefs = make([]SynthesisAnchorRef, 0, len(rawAnchorRefs))
+		anchorRefs := make([]SynthesisAnchorRef, 0, len(rawAnchorRefs))
 		for _, rawAnchorRef := range rawAnchorRefs {
-			anchorRef, itemUnknown, err := decodeSynthesisAnchorRef(rawAnchorRef)
+			anchorRef, err := decodeSynthesisAnchorRef(rawAnchorRef)
 			if err != nil {
-				return synthesisWireComponent{}, unknown || itemUnknown, err
+				return synthesisWireRecord{}, err
 			}
-			unknown = unknown || itemUnknown
-			result.AnchorRefs = append(result.AnchorRefs, anchorRef)
+			anchorRefs = append(anchorRefs, anchorRef)
 		}
-	}
-	if value, exists := fields["hypothesis"]; exists {
-		if err := json.Unmarshal(value, &result.Hypothesis); err != nil {
-			return synthesisWireComponent{}, unknown, fmt.Errorf("proposal hypothesis has invalid type")
+		var hypothesis bool
+		if err := json.Unmarshal(fields["hypothesis"], &hypothesis); err != nil {
+			return synthesisWireRecord{}, fmt.Errorf("proposal hypothesis has invalid type")
 		}
+		return synthesisWireRecord{
+			Kind: kind, SubsystemRef: subsystemRef, Name: name, Description: description,
+			MemberRefs: memberRefs, AnchorRefs: anchorRefs, Hypothesis: hypothesis,
+		}, nil
+	default:
+		return synthesisWireRecord{}, fmt.Errorf("proposal record kind is invalid")
 	}
-	return result, unknown, nil
 }
 
-func decodeSynthesisMemberRef(raw json.RawMessage) (SynthesisMemberRef, bool, error) {
+func decodeSynthesisMemberRef(raw json.RawMessage) (SynthesisMemberRef, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return SynthesisMemberRef{}, false, fmt.Errorf("proposal member ref is not an object")
+		return SynthesisMemberRef{}, fmt.Errorf("proposal member ref is not an object")
 	}
-	if hasForbiddenSynthesisFields(fields, "id", "value", "member_id", "canonical_id") {
-		return SynthesisMemberRef{}, false, fmt.Errorf("proposal member ref contains backend-owned identity fields")
+	if !hasExactSynthesisFields(fields, "kind", "ref") {
+		return SynthesisMemberRef{}, fmt.Errorf("proposal member ref fields do not match the bounded contract")
 	}
-	unknown := hasUnknownFields(fields, "kind", "ref")
-	kind, err := decodeProposalString(fields, "kind")
+	kind, err := decodeRequiredProposalString(fields, "kind")
 	if err != nil {
-		return SynthesisMemberRef{}, unknown, err
+		return SynthesisMemberRef{}, err
 	}
-	ref, err := decodeProposalString(fields, "ref")
+	ref, err := decodeRequiredProposalString(fields, "ref")
 	if err != nil {
-		return SynthesisMemberRef{}, unknown, err
+		return SynthesisMemberRef{}, err
 	}
-	return SynthesisMemberRef{Kind: MemberKind(kind), Ref: ref}, unknown, nil
+	return SynthesisMemberRef{Kind: MemberKind(kind), Ref: ref}, nil
 }
 
-func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, bool, error) {
+func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return SynthesisAnchorRef{}, false, fmt.Errorf("proposal anchor ref is not an object")
+		return SynthesisAnchorRef{}, fmt.Errorf("proposal anchor ref is not an object")
 	}
-	if hasForbiddenSynthesisFields(fields, "id", "value", "anchor_id", "canonical_id") {
-		return SynthesisAnchorRef{}, false, fmt.Errorf("proposal anchor ref contains backend-owned identity fields")
+	if !hasExactSynthesisFields(fields, "kind", "ref") {
+		return SynthesisAnchorRef{}, fmt.Errorf("proposal anchor ref fields do not match the bounded contract")
 	}
-	unknown := hasUnknownFields(fields, "kind", "ref")
-	kind, err := decodeProposalString(fields, "kind")
+	kind, err := decodeRequiredProposalString(fields, "kind")
 	if err != nil {
-		return SynthesisAnchorRef{}, unknown, err
+		return SynthesisAnchorRef{}, err
 	}
-	ref, err := decodeProposalString(fields, "ref")
+	ref, err := decodeRequiredProposalString(fields, "ref")
 	if err != nil {
-		return SynthesisAnchorRef{}, unknown, err
+		return SynthesisAnchorRef{}, err
 	}
-	return SynthesisAnchorRef{Kind: BehaviorAnchorKind(kind), Ref: ref}, unknown, nil
+	return SynthesisAnchorRef{Kind: BehaviorAnchorKind(kind), Ref: ref}, nil
 }
 
 func resolveSynthesisWireProposal(
 	catalog synthesisPrivateCatalog,
 	wire synthesisWireProposal,
 ) (Proposal, *synthesisResponseError) {
-	proposal := Proposal{Version: ProposalVersion, Subsystems: make([]ProposedSubsystem, 0, len(wire.Subsystems))}
-	for _, wireSubsystem := range wire.Subsystems {
-		subsystem := ProposedSubsystem{
-			Name: wireSubsystem.Name, Description: wireSubsystem.Description,
-			Components: make([]ProposedComponent, 0, len(wireSubsystem.Components)),
+	proposal := Proposal{Version: ProposalVersion}
+	subsystemIndexes := make(map[string]int)
+	componentCounts := make(map[string]int)
+	totalComponents := 0
+	for _, record := range wire.Records {
+		if err := validateSynthesisResponseDisplay(record); err != nil {
+			return Proposal{}, &synthesisResponseError{
+				code: "response.invalid_proposal", message: "proposal display text is outside the bounded contract",
+			}
 		}
-		for _, wireComponent := range wireSubsystem.Components {
-			component := ProposedComponent{
-				Name: wireComponent.Name, Description: wireComponent.Description,
-				Hypothesis: wireComponent.Hypothesis,
-				MemberIDs:  make([]MemberID, 0, len(wireComponent.MemberRefs)),
-				AnchorIDs:  make([]string, 0, len(wireComponent.AnchorRefs)),
+		switch record.Kind {
+		case synthesisWireSubsystemRecord:
+			if !validSynthesisSubsystemRef(record.Ref) {
+				return Proposal{}, &synthesisResponseError{
+					code: "response.invalid_proposal", message: "proposal subsystem ref is malformed",
+				}
 			}
-			for _, memberRef := range wireComponent.MemberRefs {
-				if expectedKind, exists := catalog.memberKinds[memberRef.Ref]; exists && expectedKind != memberRef.Kind {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.unknown_member_id", message: "proposal member ref has the wrong request-local kind",
-					}
+			if _, duplicate := subsystemIndexes[record.Ref]; duplicate {
+				return Proposal{}, &synthesisResponseError{
+					code: "response.invalid_proposal", message: "proposal repeats a response-local subsystem ref",
 				}
-				memberID, exists := catalog.membersByRef[memberRef.key()]
-				if !exists {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.unknown_member_id", message: "proposal references an unknown request-local member ref",
-					}
-				}
-				component.MemberIDs = append(component.MemberIDs, memberID)
 			}
-			seenAnchors := make(map[string]struct{}, len(wireComponent.AnchorRefs))
-			for _, anchorRef := range wireComponent.AnchorRefs {
-				if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.unknown_anchor_id", message: "proposal anchor ref has the wrong request-local kind",
-					}
+			subsystemIndexes[record.Ref] = len(proposal.Subsystems)
+			proposal.Subsystems = append(proposal.Subsystems, ProposedSubsystem{
+				Name: record.Name, Description: record.Description,
+			})
+		case synthesisWireComponentRecord:
+			if !validSynthesisSubsystemRef(record.SubsystemRef) {
+				return Proposal{}, &synthesisResponseError{
+					code: "response.invalid_proposal", message: "proposal component subsystem ref is malformed",
 				}
-				anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
-				if !exists {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.unknown_anchor_id", message: "proposal references an unknown request-local anchor ref",
-					}
-				}
-				if _, duplicate := seenAnchors[anchorID]; duplicate {
-					return Proposal{}, &synthesisResponseError{
-						code: "response.invalid_proposal", message: "proposal repeats an anchor ref within one component",
-					}
-				}
-				seenAnchors[anchorID] = struct{}{}
-				component.AnchorIDs = append(component.AnchorIDs, anchorID)
 			}
-			subsystem.Components = append(subsystem.Components, component)
+			if len(record.AnchorRefs) > maxAnchorMembers {
+				return Proposal{}, &synthesisResponseError{
+					code: "response.invalid_proposal", message: "proposal component anchor count exceeds the bounded contract",
+				}
+			}
+			componentCounts[record.SubsystemRef]++
+			totalComponents++
 		}
-		proposal.Subsystems = append(proposal.Subsystems, subsystem)
+	}
+	if len(proposal.Subsystems) == 0 || len(proposal.Subsystems) > MaxPrimarySubsystems {
+		return Proposal{}, &synthesisResponseError{
+			code: "response.invalid_proposal", message: "proposal subsystem count is outside the bounded contract",
+		}
+	}
+	if totalComponents == 0 || totalComponents > MaxTotalNestedComponents {
+		return Proposal{}, &synthesisResponseError{
+			code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
+		}
+	}
+	for subsystemRef, componentCount := range componentCounts {
+		if _, exists := subsystemIndexes[subsystemRef]; !exists {
+			return Proposal{}, &synthesisResponseError{
+				code: "response.invalid_proposal", message: "proposal component references an unknown response-local subsystem ref",
+			}
+		}
+		if componentCount > MaxComponentsPerSubsystem {
+			return Proposal{}, &synthesisResponseError{
+				code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
+			}
+		}
+	}
+	for _, record := range wire.Records {
+		if record.Kind != synthesisWireComponentRecord {
+			continue
+		}
+		if !validSynthesisSubsystemRef(record.SubsystemRef) {
+			return Proposal{}, &synthesisResponseError{
+				code: "response.invalid_proposal", message: "proposal component subsystem ref is malformed",
+			}
+		}
+		subsystemIndex, exists := subsystemIndexes[record.SubsystemRef]
+		if !exists {
+			return Proposal{}, &synthesisResponseError{
+				code: "response.invalid_proposal", message: "proposal component references an unknown response-local subsystem ref",
+			}
+		}
+		component := ProposedComponent{
+			Name: record.Name, Description: record.Description,
+			Hypothesis: record.Hypothesis,
+			MemberIDs:  make([]MemberID, 0, len(record.MemberRefs)),
+			AnchorIDs:  make([]string, 0, len(record.AnchorRefs)),
+		}
+		for _, memberRef := range record.MemberRefs {
+			if expectedKind, exists := catalog.memberKinds[memberRef.Ref]; exists && expectedKind != memberRef.Kind {
+				return Proposal{}, &synthesisResponseError{
+					code: "proposal.unknown_member_id", message: "proposal member ref has the wrong request-local kind",
+				}
+			}
+			memberID, exists := catalog.membersByRef[memberRef.key()]
+			if !exists {
+				return Proposal{}, &synthesisResponseError{
+					code: "proposal.unknown_member_id", message: "proposal references an unknown request-local member ref",
+				}
+			}
+			component.MemberIDs = append(component.MemberIDs, memberID)
+		}
+		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
+		for _, anchorRef := range record.AnchorRefs {
+			if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
+				return Proposal{}, &synthesisResponseError{
+					code: "proposal.unknown_anchor_id", message: "proposal anchor ref has the wrong request-local kind",
+				}
+			}
+			anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
+			if !exists {
+				return Proposal{}, &synthesisResponseError{
+					code: "proposal.unknown_anchor_id", message: "proposal references an unknown request-local anchor ref",
+				}
+			}
+			if _, duplicate := seenAnchors[anchorID]; duplicate {
+				return Proposal{}, &synthesisResponseError{
+					code: "response.invalid_proposal", message: "proposal repeats an anchor ref within one component",
+				}
+			}
+			seenAnchors[anchorID] = struct{}{}
+			component.AnchorIDs = append(component.AnchorIDs, anchorID)
+		}
+		proposal.Subsystems[subsystemIndex].Components = append(
+			proposal.Subsystems[subsystemIndex].Components, component,
+		)
+	}
+	for _, subsystem := range proposal.Subsystems {
+		if len(subsystem.Components) == 0 {
+			return Proposal{}, &synthesisResponseError{
+				code: "response.invalid_proposal", message: "proposal subsystem has no component records",
+			}
+		}
 	}
 	return proposal, nil
 }
 
-func decodeProposalString(fields map[string]json.RawMessage, name string) (string, error) {
+func decodeRequiredProposalString(fields map[string]json.RawMessage, name string) (string, error) {
+	return decodeRequiredProposalText(fields, name, true)
+}
+
+func decodeRequiredProposalDescription(fields map[string]json.RawMessage, name string) (string, error) {
+	return decodeRequiredProposalText(fields, name, false)
+}
+
+func decodeRequiredProposalText(fields map[string]json.RawMessage, name string, nonEmpty bool) (string, error) {
 	value, exists := fields[name]
-	if !exists {
-		return "", nil
+	if !exists || isJSONNull(value) {
+		return "", fmt.Errorf("proposal is missing a required string field")
 	}
 	var result string
 	if err := json.Unmarshal(value, &result); err != nil {
 		return "", fmt.Errorf("proposal field has invalid string type")
 	}
+	if strings.ContainsRune(result, utf8.RuneError) {
+		return "", fmt.Errorf("proposal field contains invalid unicode")
+	}
+	if nonEmpty && result == "" {
+		return "", fmt.Errorf("proposal has an empty required string field")
+	}
 	return result, nil
 }
 
-func hasUnknownFields(fields map[string]json.RawMessage, allowed ...string) bool {
-	known := make(map[string]struct{}, len(allowed))
-	for _, field := range allowed {
-		known[field] = struct{}{}
-	}
-	for field := range fields {
-		if _, exists := known[field]; !exists {
-			return true
-		}
-	}
-	return false
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
-func hasForbiddenSynthesisFields(fields map[string]json.RawMessage, forbidden ...string) bool {
-	for _, field := range forbidden {
-		if _, exists := fields[field]; exists {
-			return true
+func rejectDuplicateSynthesisJSONKeys(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := consumeUniqueSynthesisJSONValue(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("proposal contains trailing json")
+		}
+		return fmt.Errorf("proposal contains invalid trailing json: %w", err)
+	}
+	return nil
+}
+
+func consumeUniqueSynthesisJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("proposal contains invalid json: %w", err)
+	}
+	delimiter, compound := token.(json.Delim)
+	if !compound {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return fmt.Errorf("proposal contains invalid object key: %w", err)
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("proposal contains a non-string object key")
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return fmt.Errorf("proposal repeats json field %q", key)
+			}
+			seen[key] = struct{}{}
+			if err := consumeUniqueSynthesisJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil || closing != json.Delim('}') {
+			return fmt.Errorf("proposal contains an unterminated object")
+		}
+	case '[':
+		for decoder.More() {
+			if err := consumeUniqueSynthesisJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil || closing != json.Delim(']') {
+			return fmt.Errorf("proposal contains an unterminated array")
+		}
+	default:
+		return fmt.Errorf("proposal contains an unexpected json delimiter")
+	}
+	return nil
+}
+
+func validateSynthesisResponseDisplay(record synthesisWireRecord) error {
+	if strings.TrimSpace(record.Name) != record.Name || strings.TrimSpace(record.Description) != record.Description {
+		return fmt.Errorf("proposal display text has surrounding whitespace")
+	}
+	if err := validateDisplayText("proposal record name", record.Name, maxNameBytes, true); err != nil {
+		return err
+	}
+	return validateDisplayText("proposal record description", record.Description, maxDescriptionBytes, false)
+}
+
+func hasExactSynthesisFields(fields map[string]json.RawMessage, expected ...string) bool {
+	if len(fields) != len(expected) {
+		return false
+	}
+	for _, field := range expected {
+		if _, exists := fields[field]; !exists {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func validSynthesisSubsystemRef(ref string) bool {
+	if len(ref) < 2 || len(ref) > maxOpaqueIDBytes || ref[0] != 'g' || ref[1] == '0' {
+		return false
+	}
+	for _, char := range ref[1:] {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func fencedJSONObjectCandidates(raw []byte) [][]byte {

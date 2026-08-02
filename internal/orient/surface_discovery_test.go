@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 )
 
 func TestRunPersistsOptInSurfaceArtifactsBesideReportRun(t *testing.T) {
@@ -69,7 +70,17 @@ func main() {
 			for _, entity := range atlas.Entities {
 				entityKinds[entity.Kind]++
 			}
-			if len(atlas.Entities) != 2 || len(atlas.Evidence) != 1 || len(atlas.Relations) != 1 ||
+			processEvidence, packageEvidence := 0, 0
+			for _, item := range atlas.Evidence {
+				switch item.Provenance.Operation {
+				case "build_selected_main_declaration":
+					processEvidence++
+				case goadapter.PackageDeclarationEvidenceOperation:
+					packageEvidence++
+				}
+			}
+			if len(atlas.Entities) != 2 || processEvidence != 1 || packageEvidence != 1 ||
+				len(atlas.Relations) != 1 ||
 				entityKinds[repositoryatlas.EntitySurface] != 1 ||
 				entityKinds[repositoryatlas.EntityOperation] != 1 ||
 				atlas.Relations[0].Authority != repositoryatlas.AuthorityResolved {

@@ -30,6 +30,7 @@ type ProviderResult struct {
 	OutputTokens          int
 	ReasoningTokens       int
 	FinishReason          string
+	ChoiceCount           int
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
 }

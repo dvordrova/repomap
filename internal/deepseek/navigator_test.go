@@ -198,7 +198,7 @@ func TestNavigateMeasuredRetriesOnlyImmutableTransportAndResolvesLocally(t *test
 		if len(bodies) == 1 {
 			return localizationHTTPResponse(request, http.StatusServiceUnavailable, `{"error":"busy"}`), nil
 		}
-		return localizationHTTPResponse(request, http.StatusOK, localizationProviderEnvelope(string(responseJSON))), nil
+		return localizationHTTPResponse(request, http.StatusOK, completionProviderEnvelope(string(responseJSON), "stop", 1, true)), nil
 	})}
 	result, err := client.NavigateMeasured(t.Context(), compiled.WireJSON(), compiled.MaxWireBytes())
 	if err != nil {
@@ -240,7 +240,7 @@ func TestNavigateSemanticDecodeFailureIsNotRetried(t *testing.T) {
 		Model: "fixture-model", MaxTokens: 2048,
 		HTTPClient: &http.Client{Transport: localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 			calls++
-			return localizationHTTPResponse(request, http.StatusOK, localizationProviderEnvelope(string(invalidJSON))), nil
+			return localizationHTTPResponse(request, http.StatusOK, completionProviderEnvelope(string(invalidJSON), "stop", 1, true)), nil
 		})},
 	}
 	result, err := client.NavigateMeasured(t.Context(), compiled.WireJSON(), compiled.MaxWireBytes())
@@ -284,6 +284,82 @@ func TestNavigateOutputResourceFailureIsTerminalAndAnnotated(t *testing.T) {
 		limitErr.FinishReason != "length" {
 		t.Fatalf("resource calls/result/error = %d/%#v/%#v", calls, result, limitErr)
 	}
+}
+
+func TestNavigateRequiresExactlyOneStoppedCompletion(t *testing.T) {
+	t.Parallel()
+	_, compiled := navigatorFixture(t)
+	responseJSON, err := json.Marshal(navigatorProviderResponse(t, compiled))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name          string
+		finishReason  string
+		includeFinish bool
+		choiceCount   int
+		wantAccepted  bool
+		wantReason    string
+	}{
+		{name: "stopped", finishReason: "stop", includeFinish: true, choiceCount: 1, wantAccepted: true},
+		{name: "content filter", finishReason: "content_filter", includeFinish: true, choiceCount: 1, wantReason: "content_filter"},
+		{name: "tool calls", finishReason: "tool_calls", includeFinish: true, choiceCount: 1, wantReason: "tool_calls"},
+		{name: "provider resource", finishReason: "insufficient_system_resource", includeFinish: true, choiceCount: 1, wantReason: "insufficient_system_resource"},
+		{name: "missing", choiceCount: 1, wantReason: "missing"},
+		{name: "unknown", finishReason: "future_reason", includeFinish: true, choiceCount: 1, wantReason: "unknown"},
+		{name: "multiple choices", finishReason: "stop", includeFinish: true, choiceCount: 2, wantReason: "unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var calls int
+			client := &Client{
+				Endpoint: "https://provider.example.test/v1/chat/completions", Auth: authNone,
+				Model: "fixture-model", MaxTokens: 2048,
+				HTTPClient: &http.Client{Transport: localizationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+					calls++
+					return localizationHTTPResponse(
+						request,
+						http.StatusOK,
+						completionProviderEnvelope(string(responseJSON), test.finishReason, test.choiceCount, test.includeFinish),
+					), nil
+				})},
+			}
+			result, err := client.NavigateMeasured(t.Context(), compiled.WireJSON(), compiled.MaxWireBytes())
+			if calls != 1 || result.Attempts != 1 || result.ChoiceCount != test.choiceCount {
+				t.Fatalf("completion calls/result = %d/%#v", calls, result)
+			}
+			if test.wantAccepted {
+				if err != nil || result.FinishReason != "stop" || !bytes.Equal(result.Content, responseJSON) {
+					t.Fatalf("stopped completion result/error = %#v / %v", result, err)
+				}
+				return
+			}
+			var incomplete *IncompleteCompletionError
+			if !errors.As(err, &incomplete) || incomplete.Stage != "navigator" ||
+				incomplete.ChoiceCount != test.choiceCount || incomplete.FinishReason != test.wantReason {
+				t.Fatalf("incomplete result/error = %#v / %#v / %v", result, incomplete, err)
+			}
+			var limitErr *ResourceLimitError
+			if errors.As(err, &limitErr) {
+				t.Fatalf("incomplete completion became a resource error: %#v", limitErr)
+			}
+		})
+	}
+}
+
+func completionProviderEnvelope(content, finishReason string, choiceCount int, includeFinish bool) string {
+	encodedContent, _ := json.Marshal(content)
+	choices := make([]string, 0, choiceCount)
+	for range choiceCount {
+		finish := ""
+		if includeFinish {
+			encodedFinish, _ := json.Marshal(finishReason)
+			finish = `"finish_reason":` + string(encodedFinish) + `,`
+		}
+		choices = append(choices, `{`+finish+`"message":{"content":`+string(encodedContent)+`}}`)
+	}
+	return `{"choices":[` + strings.Join(choices, ",") + `],"usage":{"prompt_tokens":7,"completion_tokens":3}}`
 }
 
 func navigatorFixture(t *testing.T) (navigator.Product, navigator.Compiled) {

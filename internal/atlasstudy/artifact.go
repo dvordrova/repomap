@@ -29,11 +29,12 @@ const UnavailableOffline UnavailableCode = "offline"
 type FailureCode string
 
 const (
-	FailureProvider  FailureCode = "provider_failed"
-	FailureDecode    FailureCode = "response_decode_failed"
-	FailureReference FailureCode = "response_reference_failed"
-	FailureResource  FailureCode = "resource_exhausted"
-	FailureCanceled  FailureCode = "canceled"
+	FailureProvider   FailureCode = "provider_failed"
+	FailureDecode     FailureCode = "response_decode_failed"
+	FailureReference  FailureCode = "response_reference_failed"
+	FailureValidation FailureCode = "response_validation_failed"
+	FailureResource   FailureCode = "resource_exhausted"
+	FailureCanceled   FailureCode = "canceled"
 )
 
 type RequestRecord struct {
@@ -197,7 +198,8 @@ func (product Product) FailureStatus(code FailureCode) (Status, error) {
 
 func (code FailureCode) Valid() bool {
 	switch code {
-	case FailureProvider, FailureDecode, FailureReference, FailureResource, FailureCanceled:
+	case FailureProvider, FailureDecode, FailureReference, FailureValidation,
+		FailureResource, FailureCanceled:
 		return true
 	default:
 		return false
@@ -315,7 +317,7 @@ func validateRequestRecord(record RequestRecord) error {
 	if record.Version != Version || record.PromptVersion != PromptVersion ||
 		!validArtifactSHA(record.AtlasSHA256) || !validArtifactSHA(record.ArchitectureSHA256) ||
 		!validArtifactSHA(record.WireSHA256) || !validArtifactSHA(record.CatalogSHA256) ||
-		record.CatalogRef != "atlas-study-v2-"+record.CatalogSHA256 || !record.Language.Valid() ||
+		record.CatalogRef != fmt.Sprintf("atlas-study-v%d-%s", Version, record.CatalogSHA256) || !record.Language.Valid() ||
 		len(record.Catalog) == 0 || record.WireJSON == "" || !json.Valid([]byte(record.WireJSON)) ||
 		digest([]byte(record.WireJSON)) != record.WireSHA256 {
 		return fmt.Errorf("atlas study request artifact: invalid identity or wire")
@@ -328,7 +330,7 @@ func validateResultIdentity(record ResultRecord) error {
 		record.PromptVersion != PromptVersion || !validArtifactSHA(record.AtlasSHA256) ||
 		!validArtifactSHA(record.ArchitectureSHA256) || !validArtifactSHA(record.WireSHA256) ||
 		!validArtifactSHA(record.CatalogSHA256) ||
-		record.CatalogRef != "atlas-study-v2-"+record.CatalogSHA256 || !record.Language.Valid() ||
+		record.CatalogRef != fmt.Sprintf("atlas-study-v%d-%s", Version, record.CatalogSHA256) || !record.Language.Valid() ||
 		len(record.Catalog) == 0 {
 		return fmt.Errorf("atlas study result artifact: invalid identity")
 	}
@@ -339,7 +341,7 @@ func validateStatus(status Status) error {
 	if status.Version != Version || status.PromptVersion != PromptVersion ||
 		!validArtifactSHA(status.AtlasSHA256) || !validArtifactSHA(status.ArchitectureSHA256) ||
 		!validArtifactSHA(status.WireSHA256) || !validArtifactSHA(status.CatalogSHA256) ||
-		status.CatalogRef != "atlas-study-v2-"+status.CatalogSHA256 || !status.Language.Valid() ||
+		status.CatalogRef != fmt.Sprintf("atlas-study-v%d-%s", Version, status.CatalogSHA256) || !status.Language.Valid() ||
 		status.DirectionCount < 0 || status.DirectionCount > MaxDirections {
 		return fmt.Errorf("atlas study status artifact: invalid identity")
 	}
@@ -377,6 +379,9 @@ func validateCatalog(values []CatalogObject) error {
 		identities[object.CanonicalID] = struct{}{}
 		if object.Location != nil {
 			identities[object.Location.Path] = struct{}{}
+		}
+		if modelVisibleTargetSymbol(object.Symbol) != "" {
+			identities[object.Symbol] = struct{}{}
 		}
 	}
 	for _, object := range values {
@@ -486,12 +491,43 @@ func productFromArtifact(
 	byRef := make(map[string]CatalogObject, len(catalog))
 	byCanonical := make(map[CanonicalRef]CatalogObject, len(catalog))
 	identities := make(map[string]struct{})
+	alwaysPrivate := make(map[string]struct{})
+	visiblePaths := make(map[string]struct{})
+	visibleSymbols := make(map[string]struct{})
+	for _, object := range catalog {
+		if object.Kind != RefReadingTarget {
+			continue
+		}
+		if object.Location != nil {
+			visiblePaths[object.Location.Path] = struct{}{}
+		}
+		if symbol := modelVisibleTargetSymbol(object.Symbol); symbol != "" {
+			visibleSymbols[symbol] = struct{}{}
+		}
+	}
+	addAlwaysPrivate := func(value string) {
+		if value == "" {
+			return
+		}
+		identities[value] = struct{}{}
+		alwaysPrivate[value] = struct{}{}
+	}
 	for _, object := range catalog {
 		byRef[object.Ref] = object
 		byCanonical[CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}] = object
-		identities[object.CanonicalID] = struct{}{}
+		addAlwaysPrivate(object.Ref)
+		addAlwaysPrivate(object.CanonicalID)
 		if object.Location != nil {
 			identities[object.Location.Path] = struct{}{}
+			if _, visible := visiblePaths[object.Location.Path]; !visible {
+				alwaysPrivate[object.Location.Path] = struct{}{}
+			}
+		}
+		if symbol := modelVisibleTargetSymbol(object.Symbol); symbol != "" {
+			identities[symbol] = struct{}{}
+			if _, visible := visibleSymbols[symbol]; !visible {
+				alwaysPrivate[symbol] = struct{}{}
+			}
 		}
 	}
 	return Product{
@@ -499,7 +535,7 @@ func productFromArtifact(
 		wireSHA256: wireSHA, catalogSHA256: catalogSHA, catalogRef: catalogRef,
 		atlasSHA256: atlasSHA, architectureSHA256: architectureSHA,
 		catalog: cloneCatalog(catalog), byRef: byRef, byCanonical: byCanonical,
-		privateIdentities: identities,
+		privateIdentities: identities, alwaysPrivate: alwaysPrivate,
 	}
 }
 
@@ -513,24 +549,27 @@ func (product Product) validateResolvedBrief(brief Brief) error {
 		{"observable_result", brief.ObservableResult},
 	}
 	for _, item := range statements {
-		if err := product.validateModelText(item.value.Text, 1024, true, true); err != nil {
-			return fmt.Errorf("atlas study result artifact: brief.%s: %w", item.name, err)
-		}
 		if err := product.validateResolvedSupport(item.value.SupportRefs); err != nil {
 			return err
 		}
-	}
-	if len(brief.DomainTerms) > 8 {
-		return fmt.Errorf("atlas study result artifact: too many domain terms")
+		if err := product.validateModelTextWithTargetLocators(
+			item.value.Text, 1024, true, true,
+			product.supportReadingTargets(item.value.SupportRefs),
+		); err != nil {
+			return fmt.Errorf("atlas study result artifact: brief.%s: %w", item.name, err)
+		}
 	}
 	for _, term := range brief.DomainTerms {
+		if err := product.validateResolvedSupport(term.SupportRefs); err != nil {
+			return err
+		}
 		if err := product.validateModelText(term.Term, 128, true, false); err != nil {
 			return err
 		}
-		if err := product.validateModelText(term.Meaning, 512, true, true); err != nil {
-			return err
-		}
-		if err := product.validateResolvedSupport(term.SupportRefs); err != nil {
+		if err := product.validateModelTextWithTargetLocators(
+			term.Meaning, 512, true, true,
+			product.supportReadingTargets(term.SupportRefs),
+		); err != nil {
 			return err
 		}
 	}
@@ -538,7 +577,7 @@ func (product Product) validateResolvedBrief(brief Brief) error {
 }
 
 func (product Product) validateResolvedSupport(refs []CanonicalRef) error {
-	if len(refs) == 0 || len(refs) > 8 || !uniqueCanonicalRefs(refs) {
+	if len(refs) == 0 || !uniqueCanonicalRefs(refs) {
 		return fmt.Errorf("atlas study result artifact: invalid support count")
 	}
 	seen := make(map[CanonicalRef]struct{}, len(refs))
@@ -557,9 +596,6 @@ func (product Product) validateResolvedSupport(refs []CanonicalRef) error {
 
 func (product Product) validateResolvedDirection(direction Direction) error {
 	if direction.ID != stableDirectionID(direction) || !naturalQuestion(direction.Question) ||
-		product.validateModelText(direction.Question, 512, true, false) != nil ||
-		product.validateModelText(direction.WhyItMatters, 1024, true, true) != nil ||
-		product.validateModelText(direction.LearningOutcome, 1024, true, true) != nil ||
 		!direction.TargetJob.Valid() || !direction.LearningStage.Valid() ||
 		len(direction.PrincipalRefs) == 0 || len(direction.PrincipalRefs) > 5 ||
 		len(direction.Reading) < 3 || len(direction.Reading) > 5 {
@@ -576,9 +612,11 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		}
 		principalSet[ref] = struct{}{}
 		object, ok := product.byCanonical[ref]
-		if !ok || (object.Kind != RefUnit && object.Kind != RefSubsystem &&
-			object.Kind != RefComponent && object.Kind != RefSurface) {
+		if !ok || (object.Kind != RefComponent && object.Kind != RefSurface) {
 			return fmt.Errorf("unknown or wrong-kind principal")
+		}
+		if !product.advertisesPrincipal(ref) {
+			return fmt.Errorf("principal is not advertised by a reading target")
 		}
 		hasComponent = hasComponent || object.Kind == RefComponent
 	}
@@ -586,6 +624,8 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		return fmt.Errorf("component principal missing")
 	}
 	seenReading := make(map[CanonicalRef]struct{}, len(direction.Reading))
+	coveredPrincipals := make(map[CanonicalRef]struct{}, len(principalSet))
+	readingObjects := make([]CatalogObject, 0, len(direction.Reading))
 	for _, reading := range direction.Reading {
 		if _, duplicate := seenReading[reading.Target]; duplicate {
 			return fmt.Errorf("duplicate reading target")
@@ -598,10 +638,32 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		if !intersectsPrincipalSet(object.PrincipalRefs, principalSet) {
 			return fmt.Errorf("reading target has no selected principal")
 		}
-		if !reading.Label.Valid() ||
-			product.validateModelText(reading.WhatToLookFor, 768, true, true) != nil {
+		for _, principal := range object.PrincipalRefs {
+			if _, selected := principalSet[principal]; selected {
+				coveredPrincipals[principal] = struct{}{}
+			}
+		}
+		if !reading.Label.Valid() {
 			return fmt.Errorf("invalid reading guidance")
 		}
+		if product.validateModelTextWithTargetLocators(
+			reading.WhatToLookFor, 768, true, true, []CatalogObject{object},
+		) != nil {
+			return fmt.Errorf("invalid reading guidance")
+		}
+		readingObjects = append(readingObjects, object)
+	}
+	if len(coveredPrincipals) != len(principalSet) {
+		return fmt.Errorf("principal is not advertised by the selected reading targets")
+	}
+	if product.validateModelTextWithTargetLocators(
+		direction.Question, 512, true, false, readingObjects,
+	) != nil || product.validateModelTextWithTargetLocators(
+		direction.WhyItMatters, 1024, true, true, readingObjects,
+	) != nil || product.validateModelTextWithTargetLocators(
+		direction.LearningOutcome, 1024, true, true, readingObjects,
+	) != nil {
+		return fmt.Errorf("invalid canonical direction")
 	}
 	return nil
 }

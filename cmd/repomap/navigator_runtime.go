@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	navigatorCacheContract = "atlas-first-navigator-accepted-v1"
+	navigatorCacheContract = "atlas-first-navigator-accepted-v2"
 	navigatorCacheStage    = "navigator"
 	canonicalOutputEnglish = "en"
 
