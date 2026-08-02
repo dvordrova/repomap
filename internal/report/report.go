@@ -18,12 +18,13 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 27
+const CurrentFormatVersion = 28
 
 const maxExactDiscoveryDeclarations = 16
 
@@ -149,7 +150,11 @@ type ReportData struct {
 	// beside the report. It contains only locally proven Units, entities,
 	// observations, evidence and relations; files and symbols remain evidence
 	// locators rather than entities.
-	RepositoryAtlas    *repositoryatlas.Atlas       `json:"repository_atlas,omitempty"`
+	RepositoryAtlas *repositoryatlas.Atlas `json:"repository_atlas,omitempty"`
+	// Navigator is the deliberately small report projection of the exact
+	// persisted Atlas-first result. The full request and action catalog remain
+	// separate, hash-bound run artifacts.
+	Navigator          *NavigatorReportProduct      `json:"navigator,omitempty"`
 	Components         []Component                  `json:"components,omitempty"`
 	ComponentRelations []ComponentRelation          `json:"component_relations,omitempty"`
 	ArchitectureCanvas *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
@@ -244,6 +249,16 @@ type ReportData struct {
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// NavigatorReportProduct carries only the product state and, when selected,
+// the backend-owned action already validated against the exact persisted
+// Repository Atlas. It contains no provider-authored prose.
+type NavigatorReportProduct struct {
+	Version         int                             `json:"version"`
+	State           navigator.ProductState          `json:"state"`
+	UnavailableCode navigator.UnavailableCode       `json:"unavailable_code,omitempty"`
+	Recommendation  *navigator.RecommendationAction `json:"recommendation,omitempty"`
 }
 
 type runWarningDiagnostic struct {

@@ -1563,6 +1563,54 @@ func TestPresentationLocalizationFailureWarningAddsOnlyClosedUnsafeAttribution(t
 	}
 }
 
+func TestPresentationLocalizationRecordsAndWarnsAboutUnrequestedTail(t *testing.T) {
+	t.Parallel()
+
+	data, prepared := presentationLocalizationFixture(t)
+	responseJSON := presentationLocalizationProjectionJSON(t, prepared)
+	var response localization.ProviderResponse
+	if err := json.Unmarshal(responseJSON, &response); err != nil {
+		t.Fatal(err)
+	}
+	requested := len(response.Translations)
+	response.Translations = append(
+		response.Translations,
+		localization.NewProviderTranslation(requested, "Незапрошенный хвост"),
+	)
+	responseJSON, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		responseJSON,
+	)
+	outcome, err := executePresentationLocalization(
+		context.Background(), t.TempDir(), filepath.Join(t.TempDir(), "cache"), true,
+		data, prepared, provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != report.PresentationLocalizationSucceeded ||
+		outcome.UnrequestedTranslations != 1 || len(outcome.Batches) != 1 ||
+		outcome.Batches[0].UnrequestedTranslations != 1 || outcome.BatchCompleted != 1 {
+		t.Fatalf("unrequested-tail outcome = %#v", outcome)
+	}
+	var warning bytes.Buffer
+	writePresentationLocalizationUnrequestedWarning(&warning, outcome)
+	want := "warning: ignored 1 unrequested trailing Russian localization translation(s); requested translations were validated and applied\n"
+	if warning.String() != want {
+		t.Fatalf("unrequested-tail warning = %q, want %q", warning.String(), want)
+	}
+	var quiet bytes.Buffer
+	writePresentationLocalizationUnrequestedWarning(&quiet, presentationLocalizationOutcome{})
+	if quiet.Len() != 0 {
+		t.Fatalf("zero-count warning = %q", quiet.String())
+	}
+}
+
 func TestPresentationLocalizationJournalFailureCannotEscapeOrChangeOutcome(t *testing.T) {
 	t.Parallel()
 

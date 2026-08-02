@@ -91,7 +91,7 @@ func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *tes
 	liveWriter := openSemanticJournalTestWriter(t, liveDir)
 	if _, err := ensureArchitectureSynthesisWithOptions(
 		context.Background(), bundle, liveDir, "journal-revision", "test", "model", provider,
-		architectureSynthesisOptions{exchangeWriter: liveWriter},
+		architectureSynthesisOptions{exchangeWriter: liveWriter, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *tes
 	cacheWriter := openSemanticJournalTestWriter(t, cacheDir)
 	outcome, err := ensureArchitectureSynthesisWithOptions(
 		context.Background(), bundle, cacheDir, "journal-revision", "test", "model", provider,
-		architectureSynthesisOptions{exchangeWriter: cacheWriter},
+		architectureSynthesisOptions{exchangeWriter: cacheWriter, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *tes
 	if _, err := ensureArchitectureSynthesisWithOptions(
 		context.Background(), bundle, rejectedDir, "journal-rejected", "test", "model",
 		&architectureSynthesisStub{response: []byte("not json")},
-		architectureSynthesisOptions{disableCache: true, exchangeWriter: rejectedWriter},
+		architectureSynthesisOptions{disableCache: true, exchangeWriter: rejectedWriter, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestArchitectureSemanticJournalRecordsLiveCacheRejectedAndOmittedRaw(t *tes
 	omittedWriter := openSemanticJournalTestWriter(t, omittedCacheDir)
 	if _, err := ensureArchitectureSynthesisWithOptions(
 		context.Background(), bundle, omittedCacheDir, "journal-omitted", "test", "model", omittedProvider,
-		architectureSynthesisOptions{exchangeWriter: omittedWriter},
+		architectureSynthesisOptions{exchangeWriter: omittedWriter, providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256()},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestGuidedTourSemanticJournalPreservesSingleAttemptAndCacheContracts(t *tes
 	provider := &guidedTourEditorStub{response: acceptedResponse}
 	outcome, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "model", provider,
-		guidedTourRunOptions{exchangeWriter: writer},
+		guidedTourRunOptions{exchangeWriter: writer, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +202,7 @@ func TestGuidedTourSemanticJournalPreservesSingleAttemptAndCacheContracts(t *tes
 	cacheWriter := openSemanticJournalTestWriter(t, cacheDir)
 	cachedOutcome, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, cacheDir, "test", "model", provider,
-		guidedTourRunOptions{exchangeWriter: cacheWriter},
+		guidedTourRunOptions{exchangeWriter: cacheWriter, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestGuidedTourResourceLimitRecordsOneFailedExchange(t *testing.T) {
 	}
 	_, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "model", provider,
-		guidedTourRunOptions{disableCache: true, exchangeWriter: writer},
+		guidedTourRunOptions{disableCache: true, exchangeWriter: writer, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 	)
 	var limitErr *deepseek.ResourceLimitError
 	if !errors.As(err, &limitErr) {
@@ -264,7 +264,7 @@ func TestGuidedTourSemanticJournalFailureDoesNotChangeAcceptedOutcome(t *testing
 	outcome, err := ensureGuidedTourWithOptions(
 		context.Background(), bundle, runDir, "test", "model",
 		&guidedTourEditorStub{response: guidedTourTestProposal(t, bundle, false)},
-		guidedTourRunOptions{disableCache: true, exchangeWriter: writer},
+		guidedTourRunOptions{disableCache: true, exchangeWriter: writer, providerEndpointSHA256: guidedTourTestEndpointSHA256(t)},
 	)
 	if err != nil || outcome.ValidationState != "accepted" {
 		t.Fatalf("accepted Guided Tour changed by journal failure: outcome=%#v err=%v", outcome, err)

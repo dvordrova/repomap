@@ -35,19 +35,27 @@ import (
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
-func TestRemovedDumpLLMFlagIsRejected(t *testing.T) {
-	var stderr bytes.Buffer
-	err := runDefaultWithDeps(
-		t.TempDir(),
-		[]string{"--dump-llm"},
-		defaultRunDeps{stdout: io.Discard, stderr: &stderr},
-	)
-	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
-		t.Fatalf("default removed flag error = %v", err)
-	}
-	if err := runOrient([]string{"--dump-llm"}); err == nil ||
-		!strings.Contains(err.Error(), "flag provided but not defined") {
-		t.Fatalf("orient removed flag error = %v", err)
+func TestRemovedOrdinaryProductFlagsAreRejected(t *testing.T) {
+	for _, args := range [][]string{
+		{"--dump-llm"},
+		{"--json"},
+		{"--preview-request"},
+		{"--out", "preview.json"},
+		{"--flows", "1"},
+		{"--guided-tour=false"},
+		{"--no-debug"},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			var stderr bytes.Buffer
+			err := runDefaultWithDeps(
+				t.TempDir(),
+				args,
+				defaultRunDeps{stdout: io.Discard, stderr: &stderr},
+			)
+			if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+				t.Fatalf("removed flag %q error = %v", args[0], err)
+			}
+		})
 	}
 }
 
@@ -318,26 +326,6 @@ func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
 	t.Setenv("REPOMAP_LLM_AUTH", "none")
 	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
 
-	var preview bytes.Buffer
-	previewOpened := false
-	err = runDefaultWithDeps(repo, []string{"--preview-request"}, defaultRunDeps{
-		stdout: &preview,
-		stderr: io.Discard,
-		openReport: func(string) error {
-			previewOpened = true
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("preview request: %v", err)
-	}
-	if requestCount != 0 {
-		t.Fatalf("preview made %d provider request(s), want 0", requestCount)
-	}
-	if previewOpened {
-		t.Fatal("preview opened a report")
-	}
-
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	var openedReport string
@@ -356,9 +344,6 @@ func TestRunDefaultCompletesOrientationAndArchitectureJourney(t *testing.T) {
 
 	if requestCount != 2 {
 		t.Fatalf("provider request count = %d, want orientation plus one-package architecture grouping", requestCount)
-	}
-	if !bytes.Equal(preview.Bytes(), requestBody) {
-		t.Fatalf("preview differs from outbound request\npreview: %s\nrequest: %s", preview.Bytes(), requestBody)
 	}
 	for _, want := range []string{`"model":"deepseek-v4-flash"`, `"response_format":{"type":"json_object"}`} {
 		if !bytes.Contains(requestBody, []byte(want)) {
@@ -1569,18 +1554,6 @@ func TestRunServeSourceEpisodeRequiresSelectedRunAndPassesBytes(t *testing.T) {
 }
 
 func TestSourceEpisodeCLIInputFailsClosed(t *testing.T) {
-	sourceEpisodePath, _, _, _, _ := sourceEpisodeCLIFixture(t)
-	t.Run("default requires generated run", func(t *testing.T) {
-		err := runDefaultWithDeps(t.TempDir(), []string{
-			"--offline",
-			"--no-debug",
-			"--source-episode", sourceEpisodePath,
-		}, defaultRunDeps{stdout: io.Discard, stderr: io.Discard})
-		if err == nil || !strings.Contains(err.Error(), "--source-episode requires a generated report run") {
-			t.Fatalf("error = %v", err)
-		}
-	})
-
 	t.Run("oversized", func(t *testing.T) {
 		inputPath := filepath.Join(t.TempDir(), "oversized.json")
 		if err := os.WriteFile(inputPath, bytes.Repeat([]byte("x"), report.MaxSourceEpisodeBytes+1), 0o600); err != nil {
@@ -1655,16 +1628,27 @@ func TestRunDefaultAcceptsRepositoryAfterFlags(t *testing.T) {
 	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
 	runGit(t, repo, "init", "--quiet")
 	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
 
 	var stdout bytes.Buffer
-	if err := runDefaultWithDeps(".", []string{"--offline", "--no-debug", repo}, defaultRunDeps{
+	debugDir := t.TempDir()
+	if err := runDefaultWithDeps(".", []string{
+		"--offline", "--no-open", "--no-serve", "--debug-dir", debugDir, repo,
+	}, defaultRunDeps{
 		stdout: &stdout,
 		stderr: io.Discard,
 	}); err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "offline mode") {
-		t.Fatalf("stdout does not describe offline run:\n%s", stdout.String())
+	if stdout.Len() != 0 {
+		t.Fatalf("ordinary run wrote stale machine stdout:\n%s", stdout.String())
+	}
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "report.json")); err != nil {
+		t.Fatalf("authoritative report.json is unavailable: %v", err)
 	}
 }
 

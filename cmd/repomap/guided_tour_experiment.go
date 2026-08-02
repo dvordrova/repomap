@@ -15,6 +15,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/guidedtour"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -41,12 +42,17 @@ func runGuidedTourExperiment(runDir string, stderr io.Writer) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+	if err != nil {
+		return fmt.Errorf("guided tour experiment: provider cache identity: %w", err)
+	}
 	comparison, err := prepareGuidedTourExperiment(
 		ctx,
 		absDir,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
+		endpointSHA,
 	)
 	if err != nil {
 		return err
@@ -84,6 +90,10 @@ func runGuidedTourFanout(runDir string, stderr io.Writer) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+	if err != nil {
+		return fmt.Errorf("guided tour fan-out: provider cache identity: %w", err)
+	}
 	data, err := report.ReadRunDir(absDir)
 	if err != nil {
 		return fmt.Errorf("guided tour fan-out: read saved run: %w", err)
@@ -99,6 +109,7 @@ func runGuidedTourFanout(runDir string, stderr io.Writer) error {
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
+		endpointSHA,
 	)
 	fmt.Fprintf(
 		stderr,
@@ -120,6 +131,7 @@ func prepareGuidedTourExperiment(
 	profile string,
 	model string,
 	provider guidedTourEditor,
+	providerEndpointSHA256 string,
 ) (guidedtour.Comparison, error) {
 	data, err := report.ReadRunDir(runDir)
 	if err != nil {
@@ -129,7 +141,7 @@ func prepareGuidedTourExperiment(
 	if err != nil {
 		return guidedtour.Comparison{}, fmt.Errorf("guided tour experiment: build bounded candidates: %w", err)
 	}
-	return compareGuidedTourStrategies(ctx, bundle, runDir, profile, model, provider)
+	return compareGuidedTourStrategies(ctx, bundle, runDir, profile, model, provider, providerEndpointSHA256)
 }
 
 func compareGuidedTourStrategies(
@@ -139,6 +151,7 @@ func compareGuidedTourStrategies(
 	profile string,
 	model string,
 	provider guidedTourEditor,
+	providerEndpointSHA256 string,
 ) (guidedtour.Comparison, error) {
 	bundleSHA, _, err := guidedtour.BundleHash(bundle)
 	if err != nil {
@@ -153,8 +166,9 @@ func compareGuidedTourStrategies(
 		model,
 		provider,
 		guidedTourRunOptions{
-			independentExperiment: true,
-			outputFile:            guidedTourMonolithicFile,
+			independentExperiment:  true,
+			outputFile:             guidedTourMonolithicFile,
+			providerEndpointSHA256: providerEndpointSHA256,
 		},
 	)
 	fanout, fanoutErr := ensureGuidedTourFanoutExperiment(
@@ -164,6 +178,7 @@ func compareGuidedTourStrategies(
 		profile,
 		model,
 		provider,
+		providerEndpointSHA256,
 	)
 	var monolithicCoverage guidedtour.StoryCoverage
 	if monolithicErr == nil {

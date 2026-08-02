@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 type Input struct {
@@ -48,13 +48,10 @@ func Project(input Input) (repositoryatlas.Atlas, error) {
 	if err != nil {
 		return repositoryatlas.Atlas{}, err
 	}
-	packages, err := projectPackages(&atlas, input.Facts.Packages, modules)
-	if err != nil {
+	if _, err := projectPackages(&atlas, input.Facts.Packages, modules); err != nil {
 		return repositoryatlas.Atlas{}, err
 	}
-	entrypoints := projectEntrypoints(
-		&atlas, input.Facts.EntrypointPackages, modules, packages,
-	)
+	entrypoints := projectEntrypoints(&atlas, input.Facts.EntrypointPackages, modules)
 	projectProcessEntries(&atlas, input.Catalog.Triggers, entrypoints)
 
 	canonical, err := repositoryatlas.Canonical(atlas)
@@ -117,18 +114,19 @@ func projectEntrypoints(
 	atlas *repositoryatlas.Atlas,
 	values []gofacts.Entrypoint,
 	modules map[string]gofacts.ModuleFact,
-	packages map[string]gofacts.PackageFact,
 ) map[string]exactEntrypoint {
+	modulesByOwnership := make(map[string][]gofacts.ModuleFact, len(modules))
+	for _, module := range modules {
+		key := module.ModulePath + "\x00" + module.ModuleDir
+		modulesByOwnership[key] = append(modulesByOwnership[key], module)
+	}
 	candidates := make(map[string][]exactEntrypoint)
 	for _, entrypoint := range values {
-		pkg, exists := packages[entrypoint.ImportPath]
-		if !exists || pkg.ModulePath != entrypoint.ModulePath || pkg.PackageDir != entrypoint.PackageDir {
+		matches := modulesByOwnership[entrypoint.ModulePath+"\x00"+entrypoint.ModuleDir]
+		if len(matches) != 1 {
 			continue
 		}
-		module, exists := modules[pkg.ModuleID]
-		if !exists || module.ModulePath != entrypoint.ModulePath || module.ModuleDir != entrypoint.ModuleDir {
-			continue
-		}
+		module := matches[0]
 		for _, anchor := range entrypoint.Anchors {
 			if anchor.Version != gofacts.EntrypointAnchorVersion ||
 				anchor.Kind != gofacts.EntrypointAnchorGoMain || anchor.Path == "" || anchor.Line <= 0 {
@@ -174,6 +172,7 @@ func projectProcessEntries(
 ) {
 	for _, record := range values {
 		if record.Kind != "process_entry" || record.ID == "" || record.ProvisionalID ||
+			record.Availability != surfacediscovery.AvailabilityAvailable ||
 			record.Resolution != "exact" || record.Certainty != "static" {
 			continue
 		}

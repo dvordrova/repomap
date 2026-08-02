@@ -45,14 +45,15 @@ type ExecuteInput struct {
 	Repository RepositoryContext
 	// OutputLanguage participates only in cache identity. The provider owns
 	// the actual prompt contract.
-	OutputLanguage  string
-	RunsDir         string
-	RunDir          string
-	Profile         string
-	Model           string
-	Provider        Provider
-	ExchangeWriter  *debugdump.Writer
-	ExchangeOrdinal int
+	OutputLanguage         string
+	RunsDir                string
+	RunDir                 string
+	Profile                string
+	Model                  string
+	ProviderEndpointSHA256 string
+	Provider               Provider
+	ExchangeWriter         *debugdump.Writer
+	ExchangeOrdinal        int
 }
 
 type researchResponse struct {
@@ -61,7 +62,7 @@ type researchResponse struct {
 	Summary             string       `json:"summary,omitempty"`
 }
 
-const targetedResearchCacheContractVersion = "targeted-research-cache-v3"
+const targetedResearchCacheContractVersion = "targeted-research-cache-v4"
 
 func BuildPrompt(bundle EvidenceBundle) (Prompt, error) {
 	if bundle.Version != ContractVersion || bundle.PolicyVersion != PolicyVersion ||
@@ -163,7 +164,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 		return round, nil
 	}
 
-	cacheFingerprint := targetedResearchCacheFingerprint(input, bundleSHA)
+	cacheFingerprint := targetedResearchCacheFingerprint(input, bundleSHA, round.ProviderRequestSHA256)
 	cacheKey, err := CacheKey(cacheFingerprint)
 	if err != nil {
 		return round, err
@@ -296,11 +297,13 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	return round, nil
 }
 
-func targetedResearchCacheFingerprint(input ExecuteInput, bundleSHA string) FingerprintInput {
+func targetedResearchCacheFingerprint(input ExecuteInput, bundleSHA, requestSHA string) FingerprintInput {
 	return FingerprintInput{
 		Repository: input.Repository, Stage: "targeted_research", PromptVersion: PromptVersion,
 		CacheContract: targetedResearchCacheContractVersion,
-		Profile:       input.Profile, Model: input.Model, EvidenceBundleHash: bundleSHA,
+		Profile:       input.Profile, Model: input.Model,
+		ProviderEndpointSHA256: input.ProviderEndpointSHA256,
+		RequestSHA256:          requestSHA, EvidenceBundleHash: bundleSHA,
 		PolicyVersion:  input.Policy.Version,
 		OutputLanguage: CacheOutputLanguage(input.OutputLanguage),
 	}

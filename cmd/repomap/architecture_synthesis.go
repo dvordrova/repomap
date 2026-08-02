@@ -21,6 +21,7 @@ import (
 const (
 	architectureSynthesisCacheDirectory = ".component-synthesis"
 	architectureSynthesisRevision       = "captured-bundle-v1"
+	architectureSynthesisCacheContract  = "architecture-external-cache-v2"
 )
 
 type componentLandscapeSynthesizer interface {
@@ -76,6 +77,10 @@ func synthesizeArchitectureForRun(
 			progress.Elapsed.Round(time.Second),
 		)
 	}
+	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+	if err != nil {
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider cache identity: %w", err)
+	}
 	outcome, err := prepareArchitectureSynthesisWithOptions(
 		ctx,
 		runDir,
@@ -83,7 +88,10 @@ func synthesizeArchitectureForRun(
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
-		architectureSynthesisOptions{disableCache: noCache, exchangeWriter: exchangeWriter},
+		architectureSynthesisOptions{
+			disableCache: noCache, exchangeWriter: exchangeWriter,
+			providerEndpointSHA256: endpointSHA,
+		},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return outcome, ctxErr
@@ -130,14 +138,17 @@ func prepareArchitectureSynthesis(
 	model string,
 	provider componentLandscapeSynthesizer,
 ) (architectureSynthesisOutcome, error) {
+	endpointSHA := architectureSynthesisProviderEndpointSHA256(provider)
 	return prepareArchitectureSynthesisWithOptions(
-		ctx, runDir, repositoryRevision, profile, model, provider, architectureSynthesisOptions{},
+		ctx, runDir, repositoryRevision, profile, model, provider,
+		architectureSynthesisOptions{providerEndpointSHA256: endpointSHA},
 	)
 }
 
 type architectureSynthesisOptions struct {
-	disableCache   bool
-	exchangeWriter *debugdump.Writer
+	disableCache           bool
+	exchangeWriter         *debugdump.Writer
+	providerEndpointSHA256 string
 }
 
 func prepareArchitectureSynthesisWithOptions(
@@ -184,8 +195,10 @@ func ensureArchitectureSynthesis(
 	model string,
 	provider componentLandscapeSynthesizer,
 ) (architectureSynthesisOutcome, error) {
+	endpointSHA := architectureSynthesisProviderEndpointSHA256(provider)
 	return ensureArchitectureSynthesisWithOptions(
-		ctx, bundle, runDir, repositoryRevision, profile, model, provider, architectureSynthesisOptions{},
+		ctx, bundle, runDir, repositoryRevision, profile, model, provider,
+		architectureSynthesisOptions{providerEndpointSHA256: endpointSHA},
 	)
 }
 
@@ -201,6 +214,9 @@ func ensureArchitectureSynthesisWithOptions(
 ) (architectureSynthesisOutcome, error) {
 	if provider == nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider is required")
+	}
+	if !modelresearch.IsSHA256(options.providerEndpointSHA256) {
+		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: provider endpoint identity is required")
 	}
 	const outputLanguage = "en"
 	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
@@ -238,7 +254,14 @@ func ensureArchitectureSynthesisWithOptions(
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
-	cacheKey := baseCacheKey + "-request-" + modelresearch.SHA256(requestJSON)
+	cacheKey, err := architectureSynthesisExternalCacheKey(
+		baseCacheKey,
+		options.providerEndpointSHA256,
+		modelresearch.SHA256(requestJSON),
+	)
+	if err != nil {
+		return architectureSynthesisOutcome{}, err
+	}
 	runPath := filepath.Join(runDir, report.ArchitectureSynthesisFile)
 	cachePath := filepath.Join(
 		filepath.Dir(runDir),
@@ -260,6 +283,17 @@ func ensureArchitectureSynthesisWithOptions(
 					saved,
 				)
 				if replayErr != nil {
+					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove rejected cache: %w", removeErr)
+					}
+					continue
+				}
+				if cachedOutcome.FallbackSelected ||
+					(cachedOutcome.ValidationOutcome != componentmap.ValidationAccepted &&
+						cachedOutcome.ValidationOutcome != componentmap.ValidationAcceptedNormalized) {
+					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove rejected cache: %w", removeErr)
+					}
 					continue
 				}
 				var cachedRecord componentmap.SynthesisRecord
@@ -402,7 +436,10 @@ func ensureArchitectureSynthesisWithOptions(
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: encode record: %w", err)
 	}
 	saved = append(saved, '\n')
-	if !options.disableCache {
+	cacheable := !result.Landscape.Fallback &&
+		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
+			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
+	if !options.disableCache && cacheable {
 		if err := writeArchitectureSynthesisRecord(cachePath, saved); err != nil {
 			return architectureSynthesisOutcome{}, err
 		}
@@ -421,6 +458,37 @@ func ensureArchitectureSynthesisWithOptions(
 		return architectureSynthesisOutcome{}, err
 	}
 	return outcome, nil
+}
+
+type architectureSynthesisCacheIdentity interface {
+	ArchitectureProviderEndpointSHA256() string
+}
+
+func architectureSynthesisProviderEndpointSHA256(provider componentLandscapeSynthesizer) string {
+	owner, ok := provider.(architectureSynthesisCacheIdentity)
+	if !ok {
+		return ""
+	}
+	return owner.ArchitectureProviderEndpointSHA256()
+}
+
+func architectureSynthesisExternalCacheKey(baseKey, endpointSHA, requestSHA string) (string, error) {
+	if strings.TrimSpace(baseKey) == "" || !modelresearch.IsSHA256(endpointSHA) || !modelresearch.IsSHA256(requestSHA) {
+		return "", fmt.Errorf("architecture synthesis: incomplete external cache identity")
+	}
+	identity, err := json.Marshal(struct {
+		Contract       string `json:"contract"`
+		BaseKey        string `json:"base_key"`
+		EndpointSHA256 string `json:"endpoint_sha256"`
+		RequestSHA256  string `json:"request_sha256"`
+	}{
+		Contract: architectureSynthesisCacheContract, BaseKey: baseKey,
+		EndpointSHA256: endpointSHA, RequestSHA256: requestSHA,
+	})
+	if err != nil {
+		return "", fmt.Errorf("architecture synthesis: encode external cache identity: %w", err)
+	}
+	return "architecture-cache-" + modelresearch.SHA256(identity), nil
 }
 
 func recordArchitectureSemanticExchange(

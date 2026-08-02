@@ -1,16 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/197-production-repository-cleanup.md
+    decisions/198-atlas-first-product-transition.md
 
 Status:
-    Decision 197 implemented; next product-transition decision required
+    Decision 198 active; Atlas-first product transition authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
-    Decision 197 removes or graduates experiments and playgrounds only after
+    Decision 198 replaces the ordinary raw-signal Orientation call with one
+    Atlas-first, task-shaped Navigator recommendation, makes incompatible old
+    semantic stages explicitly unavailable, fixes semantic cache identity and
+    accepted-only writes, and removes silent local multi-module coverage loss.
+    No raw graph/signals, compatibility fallback, legacy reader, migration or
+    live-provider development call is allowed. Decision 197 removed or
+    graduated experiments and playgrounds only after
     the completed caller/contract inventory. It does not add a new analysis or
     UI layer. Decision 196's accepted Atlas workspace remains installed;
     Navigator production wiring is held for the separate product-transition

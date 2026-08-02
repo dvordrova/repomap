@@ -910,12 +910,13 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 			ArtifactsSignature: artifactSignature,
 			RequestedLocale:    meta.EffectiveOptions.ReportLanguage,
 		}
-		manifestJSON, manifestErr := readRootFile(root, path.Join(entry.Name(), report.RunManifestFilename), maxArtifactBytes)
+		runDir := filepath.Join(h.runsDir, entry.Name())
+		manifest, manifestErr := report.ReadRunManifest(runDir)
 		if manifestErr == nil {
-			manifest, decodeErr := report.DecodeRunManifest(manifestJSON)
-			if decodeErr == nil && manifest.VerifyReportJSON(reportJSON) == nil &&
-				manifest.VerifyTaskInvestigationArtifacts(filepath.Join(h.runsDir, entry.Name())) == nil &&
-				manifest.VerifyOrientationContextSelectionArtifact(filepath.Join(h.runsDir, entry.Name())) == nil {
+			// ReadRunManifest verifies the complete persisted authority, while
+			// this second digest check binds it to the report bytes already read
+			// through the parent directory root above.
+			if manifest.VerifyReportJSON(reportJSON) == nil {
 				analysisRoot, rootErr := manifest.ResolveAnalysisRoot()
 				if rootErr == nil {
 					run.Manifest = &manifest

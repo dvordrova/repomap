@@ -58,7 +58,9 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 		Repository: repository, Stage: "orientation",
 		PromptVersion: deepseek.OrientationPromptVersionJSON,
 		Profile:       "test", Model: client.Model,
-		EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+		ProviderEndpointSHA256: orientTestEndpointSHA256(t, client.Endpoint),
+		RequestSHA256:          modelresearch.SHA256(requestJSON),
+		EvidenceBundleHash:     bundleHash, PolicyVersion: policy.Version,
 		CacheContract: orientationCacheContractVersion,
 	}
 	cacheKey, err := modelresearch.CacheKey(fingerprint)
@@ -112,6 +114,68 @@ func TestObtainOrientationRefetchesInvalidCache(t *testing.T) {
 	}
 }
 
+func TestObtainOrientationCacheMissesAcrossProviderEndpoints(t *testing.T) {
+	requestCounts := []int{0, 0}
+	servers := make([]*httptest.Server, 0, 2)
+	for index := range requestCounts {
+		index := index
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requestCounts[index]++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"fresh\":true}"}}]}`)
+		}))
+		servers = append(servers, server)
+		defer server.Close()
+	}
+	client := func(endpointIndex int) *deepseek.Client {
+		return &deepseek.Client{
+			HTTPClient: servers[endpointIndex].Client(), Model: "fixture-model", MaxTokens: 128,
+			Endpoint: servers[endpointIndex].URL, Auth: "none",
+		}
+	}
+	baseDir := t.TempDir()
+	writer, err := debugdump.NewWriter(baseDir, "endpoint-cache", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	repository := modelresearch.RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"}
+	policy := modelresearch.DefaultPolicy()
+	bundleJSON := []byte(`{"bounded":"evidence"}`)
+	requestJSON := []byte(`{"provider":"request"}`)
+	bundleHash := modelresearch.SHA256(bundleJSON)
+
+	first, err := obtainOrientation(
+		context.Background(), client(0), writer, policy, repository, "test",
+		bundleJSON, bundleHash, requestJSON, true, acceptCachedOrientation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveOrientationResponse(first); err != nil {
+		t.Fatal(err)
+	}
+	warm, err := obtainOrientation(
+		context.Background(), client(0), writer, policy, repository, "test",
+		bundleJSON, bundleHash, requestJSON, true, acceptCachedOrientation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondEndpoint, err := obtainOrientation(
+		context.Background(), client(1), writer, policy, repository, "test",
+		bundleJSON, bundleHash, requestJSON, true, acceptCachedOrientation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Metrics.CacheHit || !warm.Metrics.CacheHit || secondEndpoint.Metrics.CacheHit ||
+		requestCounts[0] != 1 || requestCounts[1] != 1 {
+		t.Fatalf("endpoint cache outcomes first/warm/second=%t/%t/%t requests=%v",
+			first.Metrics.CacheHit, warm.Metrics.CacheHit, secondEndpoint.Metrics.CacheHit, requestCounts)
+	}
+}
+
 func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -144,7 +208,9 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 			Repository: repository, Stage: "orientation",
 			PromptVersion: deepseek.OrientationPromptVersionJSON,
 			Profile:       "test", Model: client.Model,
-			EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+			ProviderEndpointSHA256: orientTestEndpointSHA256(t, client.Endpoint),
+			RequestSHA256:          modelresearch.SHA256(requestJSON),
+			EvidenceBundleHash:     bundleHash, PolicyVersion: policy.Version,
 			CacheContract: orientationCacheContractVersion,
 		},
 		Request: requestJSON, EvidenceBundleHash: bundleHash,
@@ -227,6 +293,15 @@ func TestObtainOrientationRefetchesSemanticallyInvalidCache(t *testing.T) {
 			warm,
 		)
 	}
+}
+
+func orientTestEndpointSHA256(t *testing.T, endpoint string) string {
+	t.Helper()
+	digest, err := modelresearch.ProviderEndpointSHA256(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
 }
 
 func TestObtainOrientationLengthCompletionIsTerminalAndNotCached(t *testing.T) {

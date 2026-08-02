@@ -120,16 +120,14 @@ budgets. Current Go executors load only the package enclosing an already chosen
 callsite, use type information to resolve the target, and inspect one bounded
 goroutine lifecycle. Whole-repository SSA and VTA remain outside this path.
 
-### 4. Focused flow analysis (implemented, opt-in)
+### 4. Atlas-first Navigator (implemented)
 
-- the default browser run saves a bounded deterministic file/test/package/import
-  neighborhood for every validated direction, with no additional provider call;
-- selecting a direction renders that saved local evidence;
-- `--flows N` expands only the top N candidate directions;
-- repomap gathers focused files/tests/docs/source signals for each selected flow;
-- the provider explains only the focused bundle;
-- known fields are normalized, verified paths are allowlisted, and unsafe or
-  incomplete reports are rejected locally.
+- the default run saves a complete canonical Repository Atlas locally;
+- the first product question derives only exact resolved application-startup
+  relations and compiles one backend-owned action per eligible relation;
+- the provider sees only a bounded request-local projection with opaque refs;
+- the backend restores and validates canonical identities and exact evidence;
+- empty and offline outcomes are explicit and make no provider call.
 
 Named user choice now reaches the first saved local neighborhood. In a served
 report, one manifest-authorized component anchor can lazily request bounded Go
@@ -204,25 +202,16 @@ vocabulary remains available for a future explicitly approved analyzer
 integration; no direct analyzer command is currently documented as a product
 workflow.
 
-The first focused vertical slice resolves one exact symbol, expands only its
-direct static callers/callees, and produces a bounded DeepSeek request:
-
-```bash
-./scripts/symbol_check.sh ../etcd kvServer.Put
-```
+The former focused symbol vertical remains covered by its package and command
+tests; it is not a supported ordinary product entrypoint.
 
 The raw local evidence graph is retained for debugging but is never sent.
 DeepSeek receives only `symbol_bundle.json`; every report claim must cite its
 evidence IDs, and the response is rejected if it invents paths, evidence,
 caller/callee identities, observed runtime behavior, or test files.
 
-The completed source-grounded slice is explicit and independently replayable:
-
-```bash
-./scripts/source_artifacts_check.sh ../etcd kvServer.Put  # local source bundle
-./scripts/source_check.sh                                 # fixed DeepSeek replay
-./scripts/source_prompt_experiment.sh LABEL ../etcd kvServer.Put  # live API
-```
+The completed source-grounded contracts are independently replayable through
+their Go fixtures and evaluator tests without a shell harness.
 
 Source lines remain bounded lexical evidence, never a claim that the whole
 function body was parsed. For validation-shaped calls, the local source cube can

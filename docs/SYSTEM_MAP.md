@@ -327,23 +327,20 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 - Question: are modules, entrypoints, docs, and important edges sufficient for a
   first look at a large Go repository?
-- Run: `./scripts/etcd_check.sh ../etcd`.
-- Inspect: `tmp/etcd-snapshot.json` and `tmp/etcd-llm-bundle.json`.
-- Pass signal: facts exist, entrypoints have `open_files`, and the LLM bundle has
-  no raw `file_tree` or raw `internal_edges`; every model-visible file path is
-  present in `allowed_paths`.
+- Build `repomap`, run that binary on etcd with `--offline --no-open --no-serve`,
+  and inspect the emitted Atlas, manifest and report artifacts.
+- Pass signal: the run succeeds, the Atlas is non-empty, hashes bind the report,
+  and no provider exchange exists.
 - Challenge independently: change ranking limits or one fixture in
   `snapshot`, `gofacts`, or `llmbundle`; no provider call is needed.
 
-### C2 — Flow ranking without an LLM
+### C2 — Navigator startup selection without an LLM
 
-- Question: can deterministic heuristics choose useful files for one runtime
-  flow, or are the hard-coded aliases hiding weak evidence?
-- Run: `go run ./cmd/repomap ../etcd --offline --flows 4 --json`.
-- Inspect: selected files/tests/docs and their explicit reasons.
-- Pass signal: a flow is navigable without invented paths.
-- Challenge independently: add a flow fixture to `internal/flowexplain` and
-  compare rankings before changing prompts.
+- Question: does the backend derive only exact resolved application startups?
+- Run: `go test ./internal/navigator`.
+- Inspect: the provider-free startup action and response-reference fixtures.
+- Pass signal: canonical actions and evidence are restored only from advertised refs.
+- Challenge independently: add an Atlas fixture without an eligible startup relation.
 
 ### C4 — Evidence vocabulary
 
@@ -358,7 +355,7 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 ### C5 — Symbol bundle selection
 
 - Question: is depth-one target evidence the right minimum useful context?
-- Run: `./scripts/symbol_check.sh ../etcd kvServer.Put`.
+- Run the focused tests for the symbol bundle compiler and evaluator.
 - Inspect: `evidence_graph.json` versus `symbol_bundle.json`.
 - Pass signal: the bundle is bounded, contains `open`-able allowed paths, and
   omits the raw analyzer graph.
@@ -387,15 +384,8 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 
 - Question: what quality/latency/size trade-off does one model provide on the
   same evidence?
-- DeepSeek run: `./scripts/symbol_prompt_experiment.sh LABEL ../etcd kvServer.Put json`.
-- Staged 1.5B run:
-  `./scripts/ollama_symbol_staged_experiment.sh MODEL BUNDLE OUTPUT_DIR`.
-- Verify a saved staged run without another model call:
-  `./scripts/ollama_staged_check.sh OUTPUT_DIR`.
-- Compare two DeepSeek prompt experiments with
-  `./scripts/symbol_prompt_compare.sh LEFT_DIR RIGHT_DIR`.
-- The obsolete monolithic Ollama prompt experiment was removed; the constrained
-  staged protocol is the only maintained local-model regression path.
+- Historical DeepSeek/Ollama prompt experiments are not production entrypoints;
+  their evidence remains recoverable from Git history.
 - Pass signal: request, raw response, warnings, metrics where available, and
   evaluation are replayable with no credentials in artifacts.
 - Challenge independently: swap model, schema, or compact prompt one at a time.
@@ -441,10 +431,7 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   `goal -> resolve symbol -> read source -> assess source -> find tests -> wait`
   over the exact M1 cube outputs. The reducer owns no context, filesystem,
   analyzer, model client, or presentation call.
-- Run locally: `./scripts/investigation_check.sh ../etcd kvServer.Put`.
-- Run the DeepSeek branch: `./scripts/investigation_check.sh ../etcd kvServer.Put tmp/investigation-check deepseek`.
-- Run orientation handoff plus passive resume:
-  `./scripts/investigation_handoff_check.sh ../etcd kvServer.Put`.
+- Run the reducer, artifact and restart contracts through their focused Go tests.
 - `--resume SESSION` loads separate hash-verified facts and claims, reconciles
   repository/tool/options/prompt context, writes, and presents the pending
   action. Capability execution requires `--continue`; a pending
@@ -497,8 +484,8 @@ Each card is intentionally runnable without completing the rest of the roadmap.
   DeepSeek reference calibration replay offline.
 - Question: does the same product journey select useful directions and support a
   grounded drill-down across materially different large Go repositories?
-- Run the committed baseline without network access:
-  `./scripts/quality_check.sh`.
+- Run the committed provider-free quality contracts with
+  `go test ./internal/quality ./cmd/quality-evaluate -count=1`.
 - Current etcd signal: five directions covered, 21 unique structured paths
   grounded, four `kvServer.Put` predicates present, two useful test-reference
   paths found, and the source contract at 100/100 with zero parser warnings.

@@ -128,27 +128,11 @@ synthetic JSON request:
 ./repomap doctor llm --check
 ```
 
-## Inspect before sending
-
-See the compact semantic bundle or the exact provider request body without an
-API call:
-
-```bash
-./repomap orient --repo ../etcd --llm-bundle-only > /tmp/etcd-bundle.json
-./repomap ../etcd --preview-request > /tmp/etcd-request.json
-wc -c /tmp/etcd-request.json
-```
-
-The preview is the exact JSON body, so its file size is the outbound body size.
-The request is bounded; repomap never sends the raw file tree, full import graph,
-or full repository contents. Obvious credential markers fail closed before
-remote use.
-
 ## Explore a repository
 
-The default performs one orientation request, preserves validated candidate
-directions in the browser report, and stops without making per-direction model
-calls:
+The default builds a complete local Repository Atlas, derives the exact
+locally-resolved application-startup actions, and may ask the configured model
+to select one bounded Navigator action:
 
 ```bash
 ./repomap
@@ -158,12 +142,9 @@ cd /path/to/python-repository
 repomap
 ```
 
-The browser starts with the project purpose, system map, first files, important
-terms, questions for a teammate, and alternative directions. Selecting a
-direction opens a compact local evidence neighborhood (ranked files, tests,
-packages, and import edges) prepared without another API call. The report also
-shows compact-context bytes, the complete external request size, provider
-latency, and the model used.
+The browser starts with the Atlas workspace and its Navigator recommendation.
+Canonical repository identities and source evidence remain backend-owned; the
+provider sees only the bounded request-local projection and opaque refs.
 
 When served by repomap, grounded file paths are visibly clickable and open the
 corresponding repository file (including a cited line when present) through the
@@ -184,13 +165,6 @@ Each run includes `onboarding-feedback.md` beside the report. It is never
 overwritten when the report is regenerated and gives the evaluating engineer a
 small place to record what was correct, missing, or misleading.
 
-Expand the top direction when you want more detail:
-
-```bash
-./repomap ../etcd --flows 1
-./repomap ../etcd --flows 1 --json | jq .
-```
-
 Run local extraction without model calls:
 
 ```bash
@@ -202,8 +176,8 @@ Go repository, the Go tool may use the module proxy or toolchain source already
 configured by the engineer.
 
 Debug artifacts default to the OS user-cache directory, not the analysed
-repository. Use `--no-debug` to retain nothing or `--debug-dir` to choose a
-trusted location.
+repository. Ordinary runs persist their authoritative `report.json`; use
+`--debug-dir` to choose its trusted location.
 
 ## What can be trusted
 
@@ -239,17 +213,16 @@ distinguishes that target from what already works and from later feature work.
 ## Development
 
 ```bash
-./scripts/check.sh
-./scripts/smoke.sh
-./scripts/etcd_check.sh ../etcd
-./scripts/quality_check.sh
-./scripts/friend_check.sh
-./scripts/friend_artifact_check.sh PATH_TO_RUN_DIR
+go test ./...
+go vet ./...
+go build -trimpath -o .bin/repomap ./cmd/repomap
+.bin/repomap ../etcd --offline --no-open --no-serve
 # Calibrate the atomic generic namespace against the DeepSeek reference:
 make generic-deepseek-doctor
-# Before a new live baseline, after choosing a linked source-capable symbol:
-./scripts/quality_preflight.sh LABEL PATH_TO_REPO EXACT_SYMBOL
 ```
+
+Product acceptance uses the built binary and its generated artifacts. Shell
+wrappers are intentionally not part of the repository workflow.
 
 Contributor architecture and current execution order:
 

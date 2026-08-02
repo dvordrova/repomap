@@ -50,6 +50,12 @@
 	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
 	var USER_TOPICS = Array.isArray(DATA.user_topics) ? DATA.user_topics : [];
 	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
+	var NAVIGATOR = DATA.navigator || null;
+	var ATLAS_FIRST = !!(
+		NAVIGATOR && Number(NAVIGATOR.version) === 1 &&
+		(NAVIGATOR.state === 'selected' || NAVIGATOR.state === 'empty' ||
+			NAVIGATOR.state === 'unavailable')
+	);
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
 	var STUDY_PUBLICATION = DATA.study_publication || null;
@@ -60,7 +66,9 @@
 			return Object.assign({}, direction, { incomplete: true });
 		})
 		: [];
-	var STUDY_DIRECTIONS = COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
+	var STUDY_DIRECTIONS = ATLAS_FIRST
+		? []
+		: COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
 // repomap-source-episode:start
 	var SOURCE_EPISODE = DATA.source_episode || null;
 // repomap-source-episode:end
@@ -3959,6 +3967,7 @@
   }
 
 	function userArchitectureAvailable() {
+		if (ATLAS_FIRST) return false;
 		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
 		if (STUDY_MAP) return !!DATA.architecture_canvas;
 		if (REPOSITORY_GUIDE) {
@@ -4433,6 +4442,14 @@
 		var root = document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
+		if (ATLAS_FIRST) {
+			root.appendChild(renderViewHeading(
+				msg('main.study'),
+				msg('main.atlas_first.unavailable'),
+				msg('main.atlas_first.study_copy')
+			));
+			return;
+		}
 		var canonical = COMPLETE_STUDY_DIRECTIONS.length > 0;
 		var directions = canonical ? COMPLETE_STUDY_DIRECTIONS : INCOMPLETE_STUDY_DIRECTIONS;
 		root.appendChild(canonical
@@ -4672,6 +4689,14 @@
 		var root = document.getElementById('rm-study-detail');
 		if (!root) return;
 		root.replaceChildren();
+		if (ATLAS_FIRST) {
+			root.appendChild(renderViewHeading(
+				msg('main.study'),
+				msg('main.atlas_first.unavailable'),
+				msg('main.atlas_first.study_copy')
+			));
+			return;
+		}
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
 		var incomplete = !!direction.incomplete;
@@ -5888,6 +5913,10 @@
 			});
 			if (!source) return;
 			relations.push({
+				id: relation.id,
+				surfaceID: relation.source.id,
+				applicationID: relation.target.id,
+				evidenceIDs: (relation.evidence_refs || []).slice(),
 				unit: unitsByID[relation.unit_id],
 				authority: relation.authority,
 				snippet: source.snippet,
@@ -5900,7 +5929,80 @@
 			packageUnits: packageUnits,
 			relations: relations,
 			omittedRelations: eligible - relations.length,
+			recommendation: repositoryAtlasNavigatorRecommendation(relations),
 		};
+	}
+
+	function exactStringArraysEqual(left, right) {
+		if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+		for (var index = 0; index < left.length; index++) {
+			if (String(left[index] || '') !== String(right[index] || '')) return false;
+		}
+		return true;
+	}
+
+	function repositoryAtlasNavigatorRecommendation(relations) {
+		if (!ATLAS_FIRST || NAVIGATOR.state !== 'selected' || !NAVIGATOR.recommendation) return null;
+		var selected = NAVIGATOR.recommendation;
+		if (!selected.surface || selected.surface.kind !== 'surface' ||
+			!selected.application_operation || selected.application_operation.kind !== 'operation' ||
+			typeof selected.relation_id !== 'string' || !selected.relation_id ||
+			!Array.isArray(selected.evidence_ids) || !selected.evidence_ids.length) return null;
+		var matches = relations.filter(function (relation) {
+			return relation.id === selected.relation_id &&
+				relation.surfaceID === selected.surface.id &&
+				relation.applicationID === selected.application_operation.id &&
+				exactStringArraysEqual(relation.evidenceIDs, selected.evidence_ids);
+		});
+		return matches.length === 1 ? matches[0] : null;
+	}
+
+	function renderRepositoryAtlasNavigatorRecommendation(shelf) {
+		var section = el('section', 'rm-atlas-recommendation');
+		section.appendChild(txt('div', 'rm-view-kicker', msg('main.atlas.navigator.kicker')));
+		section.appendChild(txt('h3', '', msg(
+			NAVIGATOR && NAVIGATOR.state === 'unavailable'
+				? 'main.atlas.navigator.unavailable_title'
+				: 'main.atlas.navigator.title'
+		)));
+		if (NAVIGATOR && NAVIGATOR.state === 'empty') {
+			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.navigator.empty')));
+			return section;
+		}
+		if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
+			section.appendChild(txt('p', 'rm-empty-state', msg(
+				NAVIGATOR.unavailable_code === 'offline'
+					? 'main.atlas.navigator.unavailable_offline'
+					: 'main.atlas.navigator.unavailable'
+			)));
+			return section;
+		}
+		var recommendation = shelf && shelf.recommendation;
+		if (!recommendation) {
+			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.navigator.source_unavailable')));
+			return section;
+		}
+		section.appendChild(txt('p', '', msg('main.atlas.navigator.copy')));
+		section.appendChild(txt('strong', 'rm-atlas-relation-unit', recommendation.unit.name));
+		var roles = el('div', 'rm-atlas-relation-roles');
+		roles.appendChild(txt('span', '', msg('main.atlas.workspace.process_entry')));
+		roles.appendChild(txt('span', '', msg('main.atlas.workspace.application_start')));
+		section.appendChild(roles);
+		section.appendChild(txt('span', 'rm-atlas-evidence-count', msg(
+			'main.atlas.navigator.evidence_count',
+			{ count: recommendation.evidenceIDs.length }
+		)));
+		var sourceButton = txt(
+			'button',
+			'rm-primary-action rm-atlas-navigator-action',
+			msg('main.atlas.navigator.inspect_source')
+		);
+		sourceButton.type = 'button';
+		sourceButton.onclick = function () {
+			openSourceSnippet(recommendation.snippet, recommendation.location, false, { drawerFirst: true });
+		};
+		section.appendChild(sourceButton);
+		return section;
 	}
 
 	function renderRepositoryAtlasUnitGrid(units) {
@@ -5909,10 +6011,6 @@
 			var card = el('article', 'rm-atlas-unit-card');
 			card.appendChild(txt('strong', '', unit.name));
 			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
-			card.appendChild(txt('span', 'rm-atlas-authority', msg(
-				'main.atlas.workspace.authority',
-				{ authority: msg('main.atlas.workspace.authority.observed') }
-			)));
 			unitGrid.appendChild(card);
 		});
 		return unitGrid;
@@ -5930,6 +6028,9 @@
 			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.workspace.unavailable')));
 			root.appendChild(section);
 			return;
+		}
+		if (ATLAS_FIRST) {
+			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
 		}
 
 		section.appendChild(txt(
@@ -5996,6 +6097,7 @@
 	  root.replaceChildren();
 			renderStudyPublicationNotice(root);
 			renderRepositoryAtlasWorkspaceShelf(root);
+			if (ATLAS_FIRST) return;
 			var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewAnatomy(root, anatomy);
@@ -6097,7 +6199,7 @@
   }
 
 	function renderStudyPublicationNotice(root) {
-		if (!root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
+		if (ATLAS_FIRST || !root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
 		var notice = el('section', 'rm-study-publication-notice');
 		notice.appendChild(txt('h2', '', msg('main.study.unavailable.for.this.run')));
 		notice.appendChild(txt(
@@ -7576,6 +7678,14 @@
     var root = document.getElementById('rm-architecture');
     if (!root) return;
     root.replaceChildren();
+		if (ATLAS_FIRST) {
+			root.appendChild(renderViewHeading(
+				msg('main.architecture'),
+				msg('main.atlas_first.unavailable'),
+				msg('main.atlas_first.architecture_copy')
+			));
+			return;
+		}
     root.appendChild(renderViewHeading(
       msg('main.architecture'),
       msg('main.explore.the.repository.map'),
@@ -7854,7 +7964,7 @@
 				addWorkspaceTab(msg('main.task'), 'investigate');
 			} else {
 				addWorkspaceTab(msg('main.overview'), 'overview');
-				if (USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
+				if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
 				if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
 				if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 			}

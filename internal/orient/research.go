@@ -67,13 +67,19 @@ func obtainOrientation(
 	}
 	bundleHash := evidenceBundleHash
 	if dw != nil && useCache {
+		endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+		if err != nil {
+			return call, fmt.Errorf("orientation cache: %w", err)
+		}
 		call.CacheInput = modelresearch.StageCacheInput{
 			RunsDir: dw.BaseDir,
 			Fingerprint: modelresearch.FingerprintInput{
 				Repository: repository, Stage: "orientation",
 				PromptVersion: deepseek.OrientationPromptVersionJSON,
 				Profile:       profile, Model: client.Model,
-				EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+				ProviderEndpointSHA256: endpointSHA,
+				RequestSHA256:          modelresearch.SHA256(requestJSON),
+				EvidenceBundleHash:     bundleHash, PolicyVersion: policy.Version,
 				CacheContract: orientationCacheContractVersion,
 			},
 			Request: requestJSON, EvidenceBundleHash: bundleHash,
@@ -205,10 +211,15 @@ func runTargetedResearch(
 		if opts.NoCache {
 			runsDir = ""
 		}
+		endpointSHA, endpointErr := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+		if endpointErr != nil {
+			return warnings, fmt.Errorf("targeted model research cache: %w", endpointErr)
+		}
 		round, callErr := modelresearch.ExecuteRound(ctx, modelresearch.ExecuteInput{
 			Plan: planned, Policy: state.Policy, Usage: state.Usage, Repository: state.Repository,
 			RunsDir: runsDir, RunDir: dw.RunDir(),
-			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
+			Profile: "openai-compatible/" + client.Auth, Model: client.Model,
+			ProviderEndpointSHA256: endpointSHA, Provider: client,
 			ExchangeWriter: dw, ExchangeOrdinal: plannedIndex + 1,
 		})
 		if err := ctx.Err(); err != nil {

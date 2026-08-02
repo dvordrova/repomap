@@ -385,22 +385,12 @@ func (h *handler) readAuthorizedRun(runID string, root *os.Root) (runRecord, err
 	if err := json.Unmarshal(reportJSON, &reportData); err != nil || reportData.FormatVersion != report.CurrentFormatVersion {
 		return runRecord{}, fmt.Errorf("invalid report")
 	}
-	manifestJSON, err := readRootFile(root, report.RunManifestFilename, maxArtifactBytes)
-	if err != nil {
-		return runRecord{}, err
-	}
-	manifest, err := report.DecodeRunManifest(manifestJSON)
+	runDir := filepath.Join(h.runsDir, runID)
+	manifest, err := report.ReadRunManifest(runDir)
 	if err != nil {
 		return runRecord{}, err
 	}
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
-		return runRecord{}, err
-	}
-	runDir := filepath.Join(h.runsDir, runID)
-	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
-		return runRecord{}, err
-	}
-	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
 		return runRecord{}, err
 	}
 	analysisRoot, err := manifest.ResolveAnalysisRoot()

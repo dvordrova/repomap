@@ -83,7 +83,7 @@ func TestCompareGuidedTourStrategiesRecordsRejectedMonolithAndContinuesFanout(t 
 	provider.monolithicResponse = mustJSON(t, proposal)
 
 	comparison, err := compareGuidedTourStrategies(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestCompareGuidedTourStrategiesPersistsExactCoverageAndMetrics(t *testing.T
 	provider := guidedTourFanoutTestProvider(t, bundle, "")
 
 	comparison, err := compareGuidedTourStrategies(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestEnsureGuidedTourFanoutExperimentCachesValidatedLeavesAndFanIn(t *testin
 	provider := guidedTourFanoutTestProvider(t, bundle, "")
 
 	first, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -264,7 +264,7 @@ func TestEnsureGuidedTourFanoutExperimentCachesValidatedLeavesAndFanIn(t *testin
 
 	replayProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	second, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", replayProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", replayProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +280,7 @@ func TestEnsureGuidedTourFanoutLeafResourceLimitIsTerminalWithoutPartialPublicat
 	bundle := guidedTourTestBundle()
 	provider := guidedTourFanoutTestProvider(t, bundle, "")
 	tasks, leafCaches, fanInCache := guidedTourFanoutCacheInputs(
-		t, bundle, runDir, "test", "fixture-model", provider,
+		t, bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	provider.leafErrors[tasks[0].ID] = &modelresearch.ResourceLimitError{
 		Stage: "guided_tour", Kind: modelresearch.ResourceLimitOutputTokens,
@@ -289,7 +289,7 @@ func TestEnsureGuidedTourFanoutLeafResourceLimitIsTerminalWithoutPartialPublicat
 	seedGuidedTourFanoutOutputs(t, runDir)
 
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	var limitErr *modelresearch.ResourceLimitError
 	if !errors.As(err, &limitErr) || limitErr.Stage != "guided_tour" ||
@@ -316,7 +316,7 @@ func TestEnsureGuidedTourFanoutFanInResourceLimitIsTerminalWithoutPartialPublica
 	bundle := guidedTourTestBundle()
 	provider := guidedTourFanoutTestProvider(t, bundle, "")
 	tasks, _, fanInCache := guidedTourFanoutCacheInputs(
-		t, bundle, runDir, "test", "fixture-model", provider,
+		t, bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	provider.finalError = &modelresearch.ResourceLimitError{
 		Stage: "guided_tour", Kind: modelresearch.ResourceLimitOutputTokens,
@@ -325,7 +325,7 @@ func TestEnsureGuidedTourFanoutFanInResourceLimitIsTerminalWithoutPartialPublica
 	seedGuidedTourFanoutOutputs(t, runDir)
 
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	var limitErr *modelresearch.ResourceLimitError
 	if !errors.As(err, &limitErr) || limitErr.Stage != "guided_tour" ||
@@ -373,12 +373,12 @@ func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidLeafCache(t *testing.
 	bundle := guidedTourTestBundle()
 	provider := guidedTourFanoutTestProvider(t, bundle, "")
 	if _, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	); err != nil {
 		t.Fatal(err)
 	}
 	tasks, leafCaches, _ := guidedTourFanoutCacheInputs(
-		t, bundle, runDir, "test", "fixture-model", provider,
+		t, bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	rejected := guidedTourLeafTestArtifact(tasks[0])
 	rejected.Observations[0].SupportIDs[0] = "invented-beat"
@@ -391,7 +391,7 @@ func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidLeafCache(t *testing.
 
 	replacementProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", replacementProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", replacementProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +404,7 @@ func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidLeafCache(t *testing.
 
 	warmProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	warm, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -420,12 +420,12 @@ func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidFanInCache(t *testing
 	bundle := guidedTourTestBundle()
 	provider := guidedTourFanoutTestProvider(t, bundle, "")
 	if _, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	); err != nil {
 		t.Fatal(err)
 	}
 	tasks, _, fanInCache := guidedTourFanoutCacheInputs(
-		t, bundle, runDir, "test", "fixture-model", provider,
+		t, bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if _, err := modelresearch.SaveStageResponse(
 		fanInCache,
@@ -436,7 +436,7 @@ func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidFanInCache(t *testing
 
 	replacementProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", replacementProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", replacementProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -449,7 +449,7 @@ func TestEnsureGuidedTourFanoutSelfHealsSemanticallyInvalidFanInCache(t *testing
 
 	warmProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	warm, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", warmProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -475,7 +475,7 @@ func TestEnsureGuidedTourFanoutCachesOnlyNormalizedLeafProse(t *testing.T) {
 	provider.leafResponses[tasks[0].ID] = mustJSON(t, artifact)
 
 	first, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -516,7 +516,7 @@ func TestEnsureGuidedTourFanoutCachesOnlyNormalizedLeafProse(t *testing.T) {
 
 	replayProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	replayed, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", replayProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", replayProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -536,7 +536,7 @@ func TestEnsureGuidedTourFanoutExperimentDegradesAfterOneRejectedLeaf(t *testing
 	provider := guidedTourFanoutTestProvider(t, bundle, tasks[0].ID)
 
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -590,7 +590,7 @@ func TestEnsureGuidedTourFanoutExperimentRunsFanInForMissingOnlyLeaves(t *testin
 	}
 
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err == nil || !strings.Contains(err.Error(), "insufficient evidence") {
 		t.Fatalf("ensureGuidedTourFanoutExperiment() error = %v", err)
@@ -621,7 +621,7 @@ func TestEnsureGuidedTourFanoutExperimentRunsFanInForMissingOnlyLeaves(t *testin
 
 	replayProvider := guidedTourFanoutTestProvider(t, bundle, "")
 	replayed, replayErr := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", replayProvider,
+		context.Background(), bundle, runDir, "test", "fixture-model", replayProvider, guidedTourTestEndpointSHA256(t),
 	)
 	if replayErr == nil || !strings.Contains(replayErr.Error(), "insufficient evidence") {
 		t.Fatalf("cached ensureGuidedTourFanoutExperiment() error = %v", replayErr)
@@ -673,7 +673,7 @@ func TestEnsureGuidedTourFanoutRejectsOversizedSerializedFanInRequest(t *testing
 	provider.fanInRequestBytes = modelresearch.DefaultPolicy().GuidedTour.MaxRequestBytes + 1
 
 	outcome, err := ensureGuidedTourFanoutExperiment(
-		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+		context.Background(), bundle, runDir, "test", "fixture-model", provider, guidedTourTestEndpointSHA256(t),
 	)
 	if err == nil || !strings.Contains(err.Error(), "stage_byte_budget_exhausted") {
 		t.Fatalf("ensureGuidedTourFanoutExperiment() error = %v", err)
@@ -785,6 +785,7 @@ func guidedTourFanoutCacheInputs(
 	profile string,
 	model string,
 	provider guidedTourEditor,
+	providerEndpointSHA256 string,
 ) ([]guidedtour.LeafTask, map[string]modelresearch.StageCacheInput, modelresearch.StageCacheInput) {
 	t.Helper()
 	bundleSHA, _, err := guidedtour.BundleHash(bundle)
@@ -827,7 +828,9 @@ func guidedTourFanoutCacheInputs(
 				Repository: repository, Stage: "guided_story_leaf/" + task.ID,
 				PromptVersion: guidedtour.LeafPromptVersion,
 				Profile:       profile, Model: model,
-				EvidenceBundleHash: taskSHA, PolicyVersion: policy.Version,
+				ProviderEndpointSHA256: providerEndpointSHA256,
+				RequestSHA256:          modelresearch.SHA256(request),
+				EvidenceBundleHash:     taskSHA, PolicyVersion: policy.Version,
 			},
 			Request: request, EvidenceBundleHash: taskSHA,
 		}
@@ -850,7 +853,9 @@ func guidedTourFanoutCacheInputs(
 			Repository: repository, Stage: "guided_story_fan_in",
 			PromptVersion: guidedtour.FanInPromptVersion,
 			Profile:       profile, Model: model,
-			EvidenceBundleHash: finalFactsSHA, PolicyVersion: policy.Version,
+			ProviderEndpointSHA256: providerEndpointSHA256,
+			RequestSHA256:          modelresearch.SHA256(finalRequest),
+			EvidenceBundleHash:     finalFactsSHA, PolicyVersion: policy.Version,
 		},
 		Request: finalRequest, EvidenceBundleHash: finalFactsSHA,
 	}

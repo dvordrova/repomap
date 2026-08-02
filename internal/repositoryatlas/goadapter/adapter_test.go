@@ -7,9 +7,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestProjectBuildsTruthfulProcessEntrySlice(t *testing.T) {
@@ -195,6 +195,56 @@ func TestProjectOmitsUnprovedProcessSlice(t *testing.T) {
 	}
 }
 
+func TestProjectKeepsExactAppWhenPackageRowsWereExplicitlyCapped(t *testing.T) {
+	input := singleAppInput(
+		"fixture", "module-fixture", "example.com/fixture", ".",
+		"example.com/fixture/cmd/app", "cmd/app", "cmd/app/main.go", 7, "trigger-app",
+	)
+	input.Facts.Packages = nil
+	atlas, err := Project(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(atlas.Entities) != 2 || len(atlas.Relations) != 1 {
+		t.Fatalf("exact process slice disappeared with capped package rows: %#v", atlas)
+	}
+	app := unitOfKind(t, atlas, repositoryatlas.UnitApp)
+	module := unitOfKind(t, atlas, repositoryatlas.UnitModule)
+	if app.ParentID != module.ID || app.Name != "example.com/fixture/cmd/app" {
+		t.Fatalf("exact app ownership = %#v / %#v", app, module)
+	}
+	for _, unit := range atlas.Units {
+		if unit.Kind == repositoryatlas.UnitPackage {
+			t.Fatalf("adapter invented capped package unit: %#v", unit)
+		}
+	}
+}
+
+func TestProjectRejectsNonAvailableProcessEntries(t *testing.T) {
+	for _, availability := range []string{
+		"",
+		surfacediscovery.AvailabilityUnknown,
+		surfacediscovery.AvailabilityUnavailable,
+	} {
+		availability := availability
+		t.Run("availability="+availability, func(t *testing.T) {
+			input := singleAppInput(
+				"fixture", "module-fixture", "example.com/fixture", ".",
+				"example.com/fixture/cmd/app", "cmd/app", "cmd/app/main.go", 7, "trigger-app",
+			)
+			input.Catalog.Triggers[0].Availability = availability
+			atlas, err := Project(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(atlas.Entities) != 0 || len(atlas.Evidence) != 0 ||
+				len(atlas.Observations) != 0 || len(atlas.Relations) != 0 {
+				t.Fatalf("non-available process entry became Atlas relation: %#v", atlas)
+			}
+		})
+	}
+}
+
 func singleAppInput(
 	repositoryName, moduleID, modulePath, moduleDir, packagePath, packageDir, sourcePath string,
 	line int,
@@ -222,6 +272,7 @@ func singleAppInput(
 		},
 		Catalog: surfacediscovery.TriggerCatalog{Triggers: []surfacediscovery.TriggerRecord{{
 			ID: triggerID, Kind: "process_entry", Identity: surfacediscovery.Identity{Name: "main"},
+			Availability: surfacediscovery.AvailabilityAvailable,
 			ProcessEntrypoint: surfacediscovery.Symbol{
 				ID: packagePath + ".main", Package: packagePath, Name: "main", Location: location,
 			},

@@ -4,10 +4,83 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
+
+func TestDecodeRussianProviderResponseDiscardsOnlyTrailingUnrequestedIndices(t *testing.T) {
+	t.Parallel()
+
+	specs := make([]FieldSpec, 64)
+	for index := range specs {
+		specs[index] = FieldSpec{
+			OwnerKind: OwnerComponent,
+			OwnerID:   fmt.Sprintf("component-%02d", index),
+			Name:      FieldSummary,
+			Text:      fmt.Sprintf("English text %d", index),
+		}
+	}
+	canonical, err := NewCanonical(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := make([]ProviderTranslation, 0, len(input.Fields)+1)
+	for index := range input.Fields {
+		entries = append(entries, NewProviderTranslation(index, fmt.Sprintf("Русский текст %d", index)))
+	}
+	entries = append(entries, NewProviderTranslation(64, "Незапрошенный хвост"))
+	encoded, err := json.Marshal(ProviderResponse{
+		Version: ProviderResponseVersion, CanonicalSHA256: canonical.SHA256,
+		Locale: LocaleRussian, Translations: entries,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, diagnostics, err := DecodeRussianProviderResponseDetailed(canonical, input, encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnostics.UnrequestedTranslations != 1 || len(projection.Translations) != 64 {
+		t.Fatalf("decoded shape = diagnostics %#v translations %d", diagnostics, len(projection.Translations))
+	}
+	for _, translated := range projection.Translations {
+		if translated == "Незапрошенный хвост" {
+			t.Fatal("unrequested translation entered the stable projection")
+		}
+	}
+	if _, err := DecodeRussianProviderResponse(canonical, input, encoded); err != nil {
+		t.Fatalf("source-compatible decoder rejected safe unrequested tail: %v", err)
+	}
+
+	for _, test := range []struct {
+		name  string
+		index int
+	}{
+		{name: "duplicate requested", index: 63},
+		{name: "negative", index: -1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalidEntries := append([]ProviderTranslation(nil), entries[:64]...)
+			invalidEntries = append(invalidEntries, NewProviderTranslation(test.index, "Недопустимый хвост"))
+			invalid, err := json.Marshal(ProviderResponse{
+				Version: ProviderResponseVersion, CanonicalSHA256: canonical.SHA256,
+				Locale: LocaleRussian, Translations: invalidEntries,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := DecodeRussianProviderResponseDetailed(canonical, input, invalid); err == nil {
+				t.Fatal("invalid trailing translation unexpectedly decoded")
+			}
+		})
+	}
+}
 
 func TestDecodeRussianProviderResponseRestoresStableFieldIDs(t *testing.T) {
 	t.Parallel()

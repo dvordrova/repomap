@@ -1,11 +1,35 @@
 package gitfiles
 
 import (
+	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestListWithModesContextTerminatesGitCommand(t *testing.T) {
+	fakeBin := t.TempDir()
+	fakeGit := filepath.Join(fakeBin, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := ListWithModesContext(ctx, t.TempDir())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ListWithModesContext error = %v, want context deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("canceled Git subprocess returned after %v", elapsed)
+	}
+}
 
 func TestSplitNull(t *testing.T) {
 	cases := []struct {

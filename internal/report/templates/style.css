@@ -54,13 +54,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-integrations-empty { margin: 0; }
 .rm-atlas-shelf { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.1rem; }
 .rm-atlas-shelf .rm-view-heading { margin-bottom: 1rem; }
+.rm-atlas-recommendation { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 10px; display: grid; gap: .6rem; margin-bottom: 1.1rem; padding: .9rem; }
+.rm-atlas-recommendation h3, .rm-atlas-recommendation p { margin: 0; }
+.rm-atlas-recommendation .rm-atlas-relation-roles { max-width: 34rem; }
+.rm-atlas-evidence-count { color: #475569; font-size: .7rem; }
+.rm-atlas-navigator-action { justify-self: start; }
 .rm-atlas-shelf-heading { color: #334155; font-size: .76rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
 .rm-atlas-relations-heading { margin-top: 1.25rem; }
 .rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .rm-atlas-unit-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .2rem; padding: .7rem .8rem; }
 .rm-atlas-unit-card strong { font-size: .82rem; overflow-wrap: anywhere; }
 .rm-atlas-unit-card span { color: var(--rm-dim); font-size: .68rem; }
-.rm-atlas-unit-card .rm-atlas-authority { color: #166534; }
 .rm-atlas-relation-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 9px; display: grid; gap: .6rem; padding: .8rem; }
 .rm-atlas-relation-unit { font-size: .82rem; overflow-wrap: anywhere; }
 .rm-atlas-relation-roles { display: grid; gap: .3rem; }

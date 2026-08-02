@@ -26,7 +26,8 @@ func TestExecuteRoundRecordsLiveAndValidatedCachedExchange(t *testing.T) {
 		Plan: plan, Policy: policy, Repository: repository,
 		RunsDir: runsDir, RunDir: coldWriter.RunDir(),
 		Profile: "test", Model: "saved", Provider: provider,
-		ExchangeWriter: coldWriter, ExchangeOrdinal: 1,
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
+		ExchangeWriter:         coldWriter, ExchangeOrdinal: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +64,8 @@ func TestExecuteRoundRecordsLiveAndValidatedCachedExchange(t *testing.T) {
 		Plan: plan, Policy: policy, Repository: repository,
 		RunsDir: runsDir, RunDir: warmWriter.RunDir(),
 		Profile: "test", Model: "saved", Provider: provider,
-		ExchangeWriter: warmWriter, ExchangeOrdinal: 1,
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
+		ExchangeWriter:         warmWriter, ExchangeOrdinal: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +102,8 @@ func TestExecuteRoundJournalFailureWarnsWithoutChangingAcceptedResult(t *testing
 		Plan: plan, Policy: policy,
 		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 		RunDir:     writer.RunDir(), Profile: "test", Model: "saved", Provider: provider,
-		ExchangeWriter: writer, ExchangeOrdinal: 1,
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
+		ExchangeWriter:         writer, ExchangeOrdinal: 1,
 	})
 	if err != nil || round.Status != RoundCompleted || provider.calls != 1 {
 		t.Fatalf("accepted result changed by journal failure: round=%#v calls=%d err=%v", round, provider.calls, err)
@@ -121,6 +124,7 @@ func TestExecuteRoundCachesOnlyAcceptedTargetedResponse(t *testing.T) {
 		Plan: plan, Policy: policy,
 		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 		RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
 	}
 
 	rejected, err := ExecuteRound(context.Background(), input)
@@ -162,6 +166,57 @@ func TestExecuteRoundCachesOnlyAcceptedTargetedResponse(t *testing.T) {
 	}
 }
 
+func TestExecuteRoundCacheBindsEndpointAndExactRequest(t *testing.T) {
+	plan, policy := targetedCacheTestPlan(t)
+	runsDir := t.TempDir()
+	provider := &savedProvider{
+		response: targetedCacheValidResponse(t, plan), requestMaxTokens: 8_000,
+	}
+	endpointA := targetedCacheEndpointSHA256(t)
+	endpointB, err := ProviderEndpointSHA256("https://targeted-cache-b.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := ExecuteInput{
+		Plan: plan, Policy: policy,
+		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
+		RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+		ProviderEndpointSHA256: endpointA,
+	}
+	run := func() ResearchRound {
+		t.Helper()
+		round, err := ExecuteRound(context.Background(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return round
+	}
+
+	if cold := run(); cold.Cached {
+		t.Fatalf("endpoint A cold round = %#v", cold)
+	}
+	if warm := run(); !warm.Cached {
+		t.Fatalf("endpoint A warm round = %#v", warm)
+	}
+	input.ProviderEndpointSHA256 = endpointB
+	if cold := run(); cold.Cached {
+		t.Fatalf("endpoint B reused endpoint A response: %#v", cold)
+	}
+	input.ProviderEndpointSHA256 = endpointA
+	provider.requestMaxTokens = 16_000
+	if cold := run(); cold.Cached {
+		t.Fatalf("changed exact request reused prior response: %#v", cold)
+	}
+	provider.requestMaxTokens = 8_000
+	if warm := run(); !warm.Cached {
+		t.Fatalf("original exact request did not retain its cache: %#v", warm)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("provider calls = %d, want endpoint A + endpoint B + request variant", provider.calls)
+	}
+	assertTargetedCacheFileCount(t, runsDir, 3)
+}
+
 func TestExecuteRoundDoesNotCacheMalformedTargetedResponse(t *testing.T) {
 	plan, policy := targetedCacheTestPlan(t)
 	runsDir := t.TempDir()
@@ -170,6 +225,7 @@ func TestExecuteRoundDoesNotCacheMalformedTargetedResponse(t *testing.T) {
 		Plan: plan, Policy: policy,
 		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 		RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
 	})
 	if err == nil || round.Status != RoundRejected || round.StopReason != "invalid_response" {
 		t.Fatalf("malformed round = %#v, err = %v", round, err)
@@ -184,6 +240,7 @@ func TestExecuteRoundEvictsSemanticRejectedCacheBeforeRecompute(t *testing.T) {
 	input := ExecuteInput{
 		Plan: plan, Policy: policy, Repository: repository,
 		RunsDir: runsDir, Profile: "test", Model: "saved",
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
 	}
 	invalid := []byte(`{
   "findings":[{"id":"invalid","interpretation":"unsupported evidence","hypothesis_assessment":"supported","evidence_ids":["unknown-evidence"]}],
@@ -243,6 +300,7 @@ func TestExecuteRoundRemovesSemanticRejectedCacheWhenRecomputeFails(t *testing.T
 		Plan: plan, Policy: policy,
 		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 		RunsDir:    runsDir, Profile: "test", Model: "saved",
+		ProviderEndpointSHA256: targetedCacheEndpointSHA256(t),
 	}
 	cacheKey := seedTargetedCacheRecord(t, input, []byte(`{
   "findings":[{"id":"invalid","interpretation":"unsupported evidence","hypothesis_assessment":"supported","evidence_ids":["unknown-evidence"]}],
@@ -274,7 +332,12 @@ func TestTargetedResearchCacheIdentityIncludesCurrentContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current := targetedResearchCacheFingerprint(input, bundleSHA)
+	request, err := (&savedProvider{}).BuildResearchRequest(Prompt{Version: "cache-contract"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ProviderEndpointSHA256 = targetedCacheEndpointSHA256(t)
+	current := targetedResearchCacheFingerprint(input, bundleSHA, requestHash(request))
 	currentKey, err := CacheKey(current)
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +393,10 @@ func seedTargetedCacheRecord(t *testing.T, input ExecuteInput, response []byte) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	fingerprint := targetedResearchCacheFingerprint(input, bundleSHA)
+	if input.ProviderEndpointSHA256 == "" {
+		input.ProviderEndpointSHA256 = targetedCacheEndpointSHA256(t)
+	}
+	fingerprint := targetedResearchCacheFingerprint(input, bundleSHA, requestHash(request))
 	cacheKey, err := CacheKey(fingerprint)
 	if err != nil {
 		t.Fatal(err)
@@ -345,6 +411,15 @@ func seedTargetedCacheRecord(t *testing.T, input ExecuteInput, response []byte) 
 		t.Fatal(err)
 	}
 	return cacheKey
+}
+
+func targetedCacheEndpointSHA256(t *testing.T) string {
+	t.Helper()
+	digest, err := ProviderEndpointSHA256("https://targeted-cache.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
 }
 
 func assertTargetedCacheFileCount(t *testing.T, runsDir string, want int) {
