@@ -342,7 +342,7 @@ func TestApplyBoundsManyToManyMembershipIndependentlyFromCandidates(t *testing.T
 	for index := 0; index < maxCandidates; index++ {
 		id := MemberID{Kind: MemberFile, Value: fmt.Sprintf("bounded-member-%03d", index)}
 		large.Candidates = append(large.Candidates, Candidate{
-			ID: id, Name: fmt.Sprintf("member-%03d.go", index),
+			ID: id, Role: CandidateRoleConceptualMember, Name: fmt.Sprintf("member-%03d.go", index),
 			Facts: []LocalFact{testLocalFact(FactRepositoryPath, fmt.Sprintf("member-%03d.go", index), fmt.Sprintf("member-%03d.go", index), 1)},
 		})
 	}
@@ -410,7 +410,7 @@ func TestApplyBoundsExcessComponentsAndPreservesRemainder(t *testing.T) {
 	for index := range components {
 		id := testMemberID(MemberFile, fmt.Sprintf("member-%02d", index))
 		bundle.Candidates = append(bundle.Candidates, Candidate{
-			ID: id, Name: fmt.Sprintf("member-%02d.go", index),
+			ID: id, Role: CandidateRoleConceptualMember, Name: fmt.Sprintf("member-%02d.go", index),
 			Facts: []LocalFact{testLocalFact(FactRepositoryPath, fmt.Sprintf("member-%02d.go", index), fmt.Sprintf("member-%02d.go", index), 1)},
 		})
 		components[index] = ProposedComponent{
@@ -653,37 +653,37 @@ func TestProcessEntryFallbackSeparatesExecutableRoles(t *testing.T) {
 	testFile := MemberID{Kind: MemberFile, Value: "test-file"}
 	testSymbol := MemberID{Kind: MemberSymbol, Value: "test-symbol"}
 	known := map[MemberID]Candidate{
-		appPackage: {ID: appPackage, Name: "cmd/project"},
-		appFile:    {ID: appFile, Name: "cmd/project/main.go", ParentID: &appPackage},
+		appPackage: {ID: appPackage, Role: CandidateRoleConceptualMember, Name: "cmd/project"},
+		appFile:    {ID: appFile, Role: CandidateRoleConceptualMember, Name: "cmd/project/main.go", ParentID: &appPackage},
 		appSymbol: {
-			ID: appSymbol, Name: "example.com/project/v2/app.main", ParentID: &appFile,
+			ID: appSymbol, Role: CandidateRoleConceptualMember, Name: "example.com/project/v2/app.main", ParentID: &appFile,
 			Facts: []LocalFact{
 				{Kind: FactDeclaration, Value: "example.com/project/v2/app.main"},
 				{Kind: FactExecutableRole, Value: "primary_application"},
 			},
 		},
-		servicePackage: {ID: servicePackage, Name: "cmd/server"},
-		serviceFile:    {ID: serviceFile, Name: "cmd/server/main.go", ParentID: &servicePackage, Participations: []FlowParticipation{{FlowID: "serve"}}},
+		servicePackage: {ID: servicePackage, Role: CandidateRoleConceptualMember, Name: "cmd/server"},
+		serviceFile:    {ID: serviceFile, Role: CandidateRoleConceptualMember, Name: "cmd/server/main.go", ParentID: &servicePackage, Participations: []FlowParticipation{{FlowID: "serve"}}},
 		serviceSymbol: {
-			ID: serviceSymbol, Name: "example.com/project/cmd/server.main", ParentID: &serviceFile,
+			ID: serviceSymbol, Role: CandidateRoleConceptualMember, Name: "example.com/project/cmd/server.main", ParentID: &serviceFile,
 			Facts: []LocalFact{
 				{Kind: FactDeclaration, Value: "example.com/project/cmd/server.main"},
 				{Kind: FactExecutableRole, Value: "secondary_service"},
 			},
 		},
-		toolPackage: {ID: toolPackage, Name: "cmd/inspect"},
-		toolFile:    {ID: toolFile, Name: "cmd/inspect/main.go", ParentID: &toolPackage},
+		toolPackage: {ID: toolPackage, Role: CandidateRoleConceptualMember, Name: "cmd/inspect"},
+		toolFile:    {ID: toolFile, Role: CandidateRoleConceptualMember, Name: "cmd/inspect/main.go", ParentID: &toolPackage},
 		toolSymbol: {
-			ID: toolSymbol, Name: "example.com/project/cmd/inspect.main", ParentID: &toolFile,
+			ID: toolSymbol, Role: CandidateRoleConceptualMember, Name: "example.com/project/cmd/inspect.main", ParentID: &toolFile,
 			Facts: []LocalFact{
 				{Kind: FactDeclaration, Value: "example.com/project/cmd/inspect.main"},
 				{Kind: FactExecutableRole, Value: "tooling"},
 			},
 		},
-		testPackage: {ID: testPackage, Name: "cmd/helper"},
-		testFile:    {ID: testFile, Name: "cmd/helper/main.go", ParentID: &testPackage},
+		testPackage: {ID: testPackage, Role: CandidateRoleConceptualMember, Name: "cmd/helper"},
+		testFile:    {ID: testFile, Role: CandidateRoleConceptualMember, Name: "cmd/helper/main.go", ParentID: &testPackage},
 		testSymbol: {
-			ID: testSymbol, Name: "example.com/project/cmd/helper.main", ParentID: &testFile,
+			ID: testSymbol, Role: CandidateRoleConceptualMember, Name: "example.com/project/cmd/helper.main", ParentID: &testFile,
 			Facts: []LocalFact{
 				{Kind: FactDeclaration, Value: "example.com/project/cmd/helper.main"},
 				{Kind: FactExecutableRole, Value: "test_or_helper"},
@@ -691,10 +691,10 @@ func TestProcessEntryFallbackSeparatesExecutableRoles(t *testing.T) {
 		},
 	}
 	components := processEntryLocalComponents([]BehaviorAnchor{
-		{ID: "app-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{appSymbol}},
-		{ID: "service-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{serviceSymbol}},
-		{ID: "tool-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{toolSymbol}},
-		{ID: "test-entry", Kind: AnchorProcessEntry, MemberIDs: []MemberID{testSymbol}},
+		{ID: "app-entry", Kind: AnchorProcessEntry, ProofMode: AnchorProofProcessEntry, MemberIDs: []MemberID{appSymbol}},
+		{ID: "service-entry", Kind: AnchorProcessEntry, ProofMode: AnchorProofProcessEntry, MemberIDs: []MemberID{serviceSymbol}},
+		{ID: "tool-entry", Kind: AnchorProcessEntry, ProofMode: AnchorProofProcessEntry, MemberIDs: []MemberID{toolSymbol}},
+		{ID: "test-entry", Kind: AnchorProcessEntry, ProofMode: AnchorProofProcessEntry, MemberIDs: []MemberID{testSymbol}},
 	}, known, make(map[MemberID]struct{}))
 	if len(components) != 4 || components[0].Name != "Primary application" ||
 		components[1].Name != "Secondary services" || components[2].Name != "Tool entrypoints" ||
@@ -731,8 +731,9 @@ func TestApplyRejectsOmittedProcessEntryWithIncompleteCoverage(t *testing.T) {
 	entrypointID := testMemberID(MemberEntrypoint, "backup-command")
 	bundle.BehaviorAnchors = []BehaviorAnchor{{
 		ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
-		Location: evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
-		Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+		ProofMode: AnchorProofProcessEntry,
+		Location:  evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+		Scenario:  ScenarioContext{ID: "go:test", Name: "test build"},
 		Producer: evidence.Provenance{
 			Provider: "fixture", Version: "v1", Operation: "process_entry",
 		},
@@ -769,6 +770,7 @@ func TestApplyNormalizesKnownPackageOnlyGroundedComponent(t *testing.T) {
 	bundle.GroundingMode = GroundingMixed
 	bundle.BehaviorAnchors = []BehaviorAnchor{{
 		ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
+		ProofMode:   AnchorProofProcessEntry,
 		Location:    evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
 		Scenario:    ScenarioContext{ID: "go:test", Name: "test build"},
 		Producer:    evidence.Provenance{Provider: "fixture", Version: "v1", Operation: "process_entry"},
@@ -825,6 +827,143 @@ func TestApplyNormalizesKnownPackageOnlyGroundedComponent(t *testing.T) {
 	}
 }
 
+func TestDeclarationFamilyAnchorIsStaticContextNotOperationalGrounding(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.GroundingMode = GroundingMixed
+	family := declarationFamilyTestAnchor(testMemberID(MemberPackage, "repo"))
+	bundle.BehaviorAnchors = []BehaviorAnchor{family}
+	proposal := Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Runtime",
+			Components: []ProposedComponent{{
+				Name: "All repository responsibilities", MemberIDs: candidateIDs(bundle.Candidates),
+				AnchorIDs: []string{family.ID},
+			}},
+		}},
+	}
+
+	rejected, err := Apply(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rejected.Fallback || rejected.FallbackReason != FallbackRejectedUngrounded ||
+		!hasLandscapeDiagnostic(rejected.Diagnostics, "proposal.ungrounded_primary_component") {
+		t.Fatalf("family-only proposal = %#v", rejected)
+	}
+
+	proposal.Subsystems[0].Components[0].Hypothesis = true
+	hypothesis, err := Apply(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	component := hypothesis.Subsystems[0].Components[0]
+	if hypothesis.Fallback || component.Hypothesis != true ||
+		!reflect.DeepEqual(component.AnchorIDs, []string{family.ID}) {
+		t.Fatalf("explicit family-context hypothesis = %#v", hypothesis)
+	}
+
+	bundle.BehaviorAnchors[0].ProofMode = AnchorProofCallTarget
+	proposal.Subsystems[0].Components[0].Hypothesis = false
+	operational, err := Apply(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operational.Fallback || operational.Subsystems[0].Components[0].Hypothesis {
+		t.Fatalf("call-target grounded proposal = %#v", operational)
+	}
+}
+
+func TestDeclarationFamilyPackageContextNormalizesAndLocalDerivationStaysHypothetical(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	bundle.GroundingMode = GroundingMixed
+	entrypointID := testMemberID(MemberEntrypoint, "backup-command")
+	process := bundle.BehaviorAnchors[0]
+	process.ID = "process"
+	family := declarationFamilyTestAnchor(testMemberID(MemberPackage, "repo"))
+	bundle.BehaviorAnchors = []BehaviorAnchor{process, family}
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Runtime",
+			Components: []ProposedComponent{
+				{Name: "Command", MemberIDs: []MemberID{entrypointID}, AnchorIDs: []string{process.ID}},
+				{Name: "Repository family", MemberIDs: []MemberID{testMemberID(MemberPackage, "repo")}, AnchorIDs: []string{family.ID}},
+				{
+					Name: "Other exact members", MemberIDs: candidateIDsExcept(
+						bundle, entrypointID, testMemberID(MemberPackage, "repo"),
+					),
+					Hypothesis: true,
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedNormalized ||
+		len(result.Normalizations) != 1 ||
+		result.Normalizations[0].Code != "normalized_package_only_hypothesis" {
+		t.Fatalf("family-context normalization = %#v", result)
+	}
+	var normalizedFamily bool
+	for _, subsystem := range result.Subsystems {
+		for _, component := range subsystem.Components {
+			if component.Name == "Repository family" {
+				normalizedFamily = component.Hypothesis &&
+					reflect.DeepEqual(component.AnchorIDs, []string{family.ID})
+			}
+		}
+	}
+	if !normalizedFamily {
+		t.Fatal("declaration-family context was lost or treated as operational")
+	}
+
+	localBundle := landscapeTestBundle()
+	localBundle.GroundingMode = GroundingMixed
+	localFamily := declarationFamilyTestAnchor(testMemberID(MemberPackage, "repo"))
+	localBundle.BehaviorAnchors = []BehaviorAnchor{localFamily}
+	local, err := Canonical(localBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var familyComponent *Component
+	for subsystemIndex := range local.Subsystems {
+		for componentIndex := range local.Subsystems[subsystemIndex].Components {
+			component := &local.Subsystems[subsystemIndex].Components[componentIndex]
+			if reflect.DeepEqual(component.AnchorIDs, []string{localFamily.ID}) {
+				familyComponent = component
+			}
+		}
+	}
+	if familyComponent == nil || !familyComponent.Hypothesis {
+		t.Fatalf("local family context = %#v", local)
+	}
+	familyComponent.Hypothesis = false
+	if err := local.Validate(localBundle); err == nil || !strings.Contains(err.Error(), "operational anchor") {
+		t.Fatalf("family-only non-hypothesis landscape validation = %v", err)
+	}
+}
+
+func declarationFamilyTestAnchor(memberID MemberID) BehaviorAnchor {
+	return BehaviorAnchor{
+		ID: "declaration-family", Kind: AnchorExtensionFamily,
+		ProofMode: AnchorProofDeclarationFamily,
+		Label:     "Exact declaration family",
+		Location:  evidence.Location{Path: "repository.go", Line: 1, Column: 1},
+		Scenario:  ScenarioContext{ID: "go:test", Name: "test build"},
+		Producer: evidence.Provenance{
+			Provider: "fixture", Version: "v1", Operation: "declaration_family",
+		},
+		Certainty: evidence.CertaintyStatic, MemberIDs: []MemberID{memberID},
+		Limitations: []string{"Static declaration family; runtime use is not observed."},
+	}
+}
+
 func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.T) {
 	t.Parallel()
 
@@ -842,6 +981,7 @@ func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.
 			bundle.GroundingMode = GroundingMixed
 			bundle.BehaviorAnchors = []BehaviorAnchor{{
 				ID: "process", Kind: AnchorProcessEntry, Label: "process entry",
+				ProofMode:   AnchorProofProcessEntry,
 				Location:    evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
 				Scenario:    ScenarioContext{ID: "go:test", Name: "test build"},
 				Producer:    evidence.Provenance{Provider: "fixture", Version: "v1", Operation: "process_entry"},
@@ -876,6 +1016,7 @@ func candidateBundleWithPackages(count int) CandidateBundle {
 		packagePath := fmt.Sprintf("example.com/project/package-%03d", index)
 		bundle.Candidates = append(bundle.Candidates, Candidate{
 			ID:   MemberID{Kind: MemberPackage, Value: fmt.Sprintf("package-%03d", index)},
+			Role: CandidateRoleConceptualMember,
 			Name: packagePath,
 			Facts: []LocalFact{{
 				Kind: FactDeclaration, Value: packagePath, Certainty: evidence.CertaintyStatic,
@@ -921,6 +1062,7 @@ func candidateBundleWithBehaviorAnchors(count int) CandidateBundle {
 	for index := 0; index < count; index++ {
 		bundle.BehaviorAnchors = append(bundle.BehaviorAnchors, BehaviorAnchor{
 			ID: fmt.Sprintf("anchor-%03d", index), Kind: AnchorUnresolvedFrontier,
+			ProofMode:   AnchorProofDeclarationFamily,
 			Label:       fmt.Sprintf("Exact local anchor %d", index),
 			Location:    evidence.Location{Path: "package/file.go", Line: index + 1, Column: 1},
 			Scenario:    ScenarioContext{ID: "go-default", Name: "Default Go build"},
@@ -942,8 +1084,9 @@ func landscapeTestBundle() CandidateBundle {
 		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
 		BehaviorAnchors: []BehaviorAnchor{{
 			ID: "run-backup", Kind: AnchorProcessEntry, Label: "backup process entry",
-			Location: evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
-			Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+			ProofMode: AnchorProofProcessEntry,
+			Location:  evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+			Scenario:  ScenarioContext{ID: "go:test", Name: "test build"},
 			Producer: evidence.Provenance{
 				Provider: "fixture", Version: "v1", Operation: "classify_process_entry",
 			},
@@ -956,25 +1099,27 @@ func landscapeTestBundle() CandidateBundle {
 		}},
 		Candidates: []Candidate{
 			{
-				ID: commandPackageID, Name: "command package",
+				ID: commandPackageID, Role: CandidateRoleConceptualMember, Name: "command package",
 				Facts: []LocalFact{testLocalFact(FactDeclaration, "github.com/example/cmd", "cmd/main.go", 1)},
 			},
 			{
-				ID: packageID, Name: "repository package",
+				ID: packageID, Role: CandidateRoleConceptualMember, Name: "repository package",
 				Facts: []LocalFact{testLocalFact(FactDeclaration, "github.com/example/repository", "repository.go", 1)},
 			},
 			{
-				ID: testMemberID(MemberFile, "repo-file"), Name: "repository.go", ParentID: &packageID,
+				ID: testMemberID(MemberFile, "repo-file"), Role: CandidateRoleConceptualMember,
+				Name: "repository.go", ParentID: &packageID,
 				Participations: []FlowParticipation{testFlowParticipation(flowID, "repository.go", 1)},
 				Facts:          []LocalFact{testLocalFact(FactRepositoryPath, "repository.go", "repository.go", 1)},
 			},
 			{
-				ID: entrypointID, Name: "backup command", ParentID: &commandPackageID,
+				ID: entrypointID, Role: CandidateRoleConceptualMember,
+				Name: "backup command", ParentID: &commandPackageID,
 				Participations: []FlowParticipation{testFlowParticipation(flowID, "cmd/backup.go", 20)},
 				Facts:          []LocalFact{testLocalFact(FactDeclaration, "runBackup", "cmd/backup.go", 20)},
 			},
 			{
-				ID: testMemberID(MemberFlow, "backup-flow"), Name: "backup",
+				ID: testMemberID(MemberFlow, "backup-flow"), Role: CandidateRoleConceptualMember, Name: "backup",
 				Participations: []FlowParticipation{testFlowParticipation(flowID, "cmd/backup.go", 20)},
 				Facts:          []LocalFact{testLocalFact(FactFlowParticipation, "backup", "cmd/backup.go", 20)},
 			},
@@ -1019,6 +1164,9 @@ func candidateIDsExcept(bundle CandidateBundle, excluded ...MemberID) []MemberID
 	}
 	result := make([]MemberID, 0, len(bundle.Candidates)-len(excludedSet))
 	for _, candidate := range bundle.Candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
 		if _, skip := excludedSet[candidate.ID]; skip {
 			continue
 		}

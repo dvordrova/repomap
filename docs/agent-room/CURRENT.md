@@ -1,15 +1,28 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/203-architecture-coverage-calibration.md
+    decisions/205-operational-anchor-and-study-integrity.md
 
 Status:
-    Decision 203 active; one exact Architecture coverage calibration authorized
+    Decision 205 active; operational anchor and Study integrity authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 205 gives every behavior anchor a producer-owned proof mode,
+    prevents name-only declaration families from becoming primary operational
+    Canvas or Study evidence, removes silent family prefixes behind truthful
+    grounding coverage, deduplicates identical reading sets, and makes Unicode
+    route diagnostics local-evidence-only. Family declarations remain exact
+    clickable local evidence; they are not erased or promoted to runtime facts.
+    Decision 204 replaces the failed calibration shape with producer-owned
+    conceptual-member and structural-locator roles. Only conceptual refs are
+    model-grouped and counted for exact response coverage. Structural locators
+    remain complete local read-only containment/source context, participate in
+    zero or more components through exact local links, and never become model
+    membership or ownership. Status records local/requested/structural counts
+    separately and earlier contract identities miss closed.
     Decision 203 adds an exact typed required-member checklist and permits one
     live Casdoor calibration only. It does not reinterpret structural file
     containers as durable conceptual members. A second prompt-only retry is

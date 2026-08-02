@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -159,6 +160,7 @@ func TestProcessEntryArchitectureAnchorDeduplicatesSyntaxAndSSAColumns(t *testin
 	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
 
 	syntaxID := a.recordArchitectureAnchorMembersWithProvenance(
+		componentmap.AnchorProofProcessEntry,
 		"process_entry",
 		"process entry "+symbol.ID,
 		Location{Path: "cmd/project/main.go", Line: 12},
@@ -167,6 +169,7 @@ func TestProcessEntryArchitectureAnchorDeduplicatesSyntaxAndSSAColumns(t *testin
 		Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
 	)
 	ssaID := a.recordArchitectureAnchor(
+		componentmap.AnchorProofProcessEntry,
 		"process_entry",
 		"process entry "+symbol.ID,
 		Location{Path: "cmd/project/main.go", Line: 12, Column: 6},
@@ -197,6 +200,7 @@ func TestProcessEntryArchitectureAnchorDeduplicatesAtCollectionLimit(t *testing.
 	symbol := Symbol{ID: "example.com/project/cmd/project.main", Package: "example.com/project/cmd/project", Name: "main"}
 	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
 	id := a.recordArchitectureAnchorMembersWithProvenance(
+		componentmap.AnchorProofProcessEntry,
 		"process_entry", "process entry "+symbol.ID,
 		Location{Path: "cmd/project/main.go", Line: 12}, []Symbol{symbol}, "exact declaration",
 		Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
@@ -207,12 +211,315 @@ func TestProcessEntryArchitectureAnchorDeduplicatesAtCollectionLimit(t *testing.
 	}
 
 	got := a.recordArchitectureAnchor(
+		componentmap.AnchorProofProcessEntry,
 		"process_entry", "process entry "+symbol.ID,
 		Location{Path: "cmd/project/main.go", Line: 12, Column: 6}, symbol, "typed declaration",
 	)
 	if got != id {
 		t.Fatalf("deduplicated process anchor ID at collection limit = %q, want %q", got, id)
 	}
+}
+
+func TestArchitectureCollectionCoverageCountsUniqueCandidatesRejectedAtCap(t *testing.T) {
+	t.Parallel()
+
+	anchors := make(map[string]BehaviorAnchor, maxCollectedArchitectureAnchors)
+	for index := 0; index < maxCollectedArchitectureAnchors; index++ {
+		id := fmt.Sprintf("anchor-existing-%04d", index)
+		anchors[id] = BehaviorAnchor{ID: id}
+	}
+	relationships := make(map[string]BehaviorRelationship, maxCollectedArchitectureRelationships)
+	for index := 0; index < maxCollectedArchitectureRelationships; index++ {
+		id := fmt.Sprintf("relationship-existing-%04d", index)
+		relationships[id] = BehaviorRelationship{ID: id}
+	}
+	a := analyzer{
+		architectureAnchors:                 anchors,
+		architectureRelationships:           relationships,
+		architectureAnchorsConsidered:       len(anchors),
+		architectureRelationshipsConsidered: len(relationships),
+	}
+	symbol := Symbol{
+		ID: "example.com/project/service.Worker.Start", Package: "example.com/project/service",
+		Name: "Start", Location: Location{Path: "service/worker.go", Line: 17, Column: 2},
+	}
+	if got := a.recordArchitectureAnchor(
+		componentmap.AnchorProofDeclarationFamily,
+		"lifecycle_start", "declaration family", symbol.Location, symbol, "declaration only",
+	); got != "" {
+		t.Fatalf("anchor rejected at collection cap = %q, want empty", got)
+	}
+	a.recordArchitectureRelationship(
+		"anchor-from-new", "anchor-to-new", Location{Path: "service/worker.go", Line: 31},
+	)
+
+	if a.architectureAnchorsConsidered != maxCollectedArchitectureAnchors+1 ||
+		a.architectureRelationshipsConsidered != maxCollectedArchitectureRelationships+1 ||
+		!a.architectureAnchorCollectionLimited || !a.architectureRelationshipCollectionLimited {
+		t.Fatalf(
+			"collection coverage = anchors %d limited=%t, relationships %d limited=%t",
+			a.architectureAnchorsConsidered, a.architectureAnchorCollectionLimited,
+			a.architectureRelationshipsConsidered, a.architectureRelationshipCollectionLimited,
+		)
+	}
+}
+
+func TestArchitectureGroundingUsesOnlyOperationalProofModes(t *testing.T) {
+	t.Parallel()
+
+	anchor := func(id, kind string, proofMode componentmap.AnchorProofMode) BehaviorAnchor {
+		return BehaviorAnchor{
+			ID: id, Kind: kind, ProofMode: proofMode,
+			AssociatedMembers: []Symbol{{
+				ID: "example.com/project/" + id, Package: "example.com/project", Name: id,
+				Location: Location{Path: "architecture.go", Line: len(id) + 1, Column: 1},
+			}},
+		}
+	}
+	finish := func(anchors []BehaviorAnchor, edges [][2]string) ArchitectureGrounding {
+		t.Helper()
+		a := analyzer{
+			ctx:                       context.Background(),
+			architectureAnchors:       make(map[string]BehaviorAnchor, len(anchors)),
+			architectureRelationships: make(map[string]BehaviorRelationship, len(edges)),
+		}
+		for _, current := range anchors {
+			a.architectureAnchors[current.ID] = current
+			a.architectureAnchorsConsidered++
+			if current.ProofMode == componentmap.AnchorProofDeclarationFamily {
+				a.declarationFamilyMembersConsidered += len(current.AssociatedMembers)
+			}
+		}
+		for index, edge := range edges {
+			id := fmt.Sprintf("edge-%d", index)
+			a.architectureRelationships[id] = BehaviorRelationship{ID: id, From: edge[0], To: edge[1]}
+			a.architectureRelationshipsConsidered++
+		}
+		a.finishArchitectureGrounding(nil)
+		return a.result.Grounding
+	}
+
+	process := anchor("process", "process_entry", componentmap.AnchorProofProcessEntry)
+	targetKinds := []string{"config_ingress", "lifecycle_start", "registry_write", "request_dispatch_root"}
+	directEdges := make([][2]string, 0, len(targetKinds))
+	for index := range targetKinds {
+		directEdges = append(directEdges, [2]string{"process", fmt.Sprintf("target-%d", index)})
+	}
+
+	t.Run("declaration families remain inventory only", func(t *testing.T) {
+		anchors := []BehaviorAnchor{process}
+		for index, kind := range targetKinds {
+			anchors = append(anchors, anchor(fmt.Sprintf("target-%d", index), kind, componentmap.AnchorProofDeclarationFamily))
+		}
+		grounding := finish(anchors, directEdges)
+		if grounding.GroundingMode != "package_landscape" {
+			t.Fatalf("grounding mode = %q, want package_landscape", grounding.GroundingMode)
+		}
+		if grounding.RepositoryArchetype.Selected != "application" {
+			t.Fatalf("archetype = %q, declaration families selected a runtime-shaped archetype", grounding.RepositoryArchetype.Selected)
+		}
+		if len(grounding.Anchors) != len(anchors) ||
+			grounding.Coverage.DeclarationFamilyMembersConsidered != len(targetKinds) ||
+			grounding.Coverage.DeclarationFamilyMembersPublished != len(targetKinds) {
+			t.Fatalf("declaration-family inventory/coverage = anchors %d, coverage %#v", len(grounding.Anchors), grounding.Coverage)
+		}
+	})
+
+	t.Run("direct process and call targets ground behavior", func(t *testing.T) {
+		anchors := []BehaviorAnchor{process}
+		for index, kind := range targetKinds {
+			anchors = append(anchors, anchor(fmt.Sprintf("target-%d", index), kind, componentmap.AnchorProofCallTarget))
+		}
+		grounding := finish(anchors, directEdges)
+		if grounding.GroundingMode != "behavior_grounded" {
+			t.Fatalf("grounding mode = %q, want behavior_grounded", grounding.GroundingMode)
+		}
+		if grounding.RepositoryArchetype.Selected != "modular_platform_server" {
+			t.Fatalf("archetype = %q, want modular_platform_server", grounding.RepositoryArchetype.Selected)
+		}
+	})
+
+	t.Run("declaration family cannot bridge operational reachability", func(t *testing.T) {
+		anchors := []BehaviorAnchor{process, anchor("family-bridge", "command_dispatch", componentmap.AnchorProofDeclarationFamily)}
+		edges := [][2]string{{"process", "family-bridge"}}
+		for index, kind := range targetKinds {
+			id := fmt.Sprintf("target-%d", index)
+			anchors = append(anchors, anchor(id, kind, componentmap.AnchorProofCallTarget))
+			edges = append(edges, [2]string{"family-bridge", id})
+		}
+		grounding := finish(anchors, edges)
+		if grounding.GroundingMode != "mixed" {
+			t.Fatalf("grounding mode = %q, want mixed without family-mediated reachability", grounding.GroundingMode)
+		}
+	})
+}
+
+func TestAnalyzeLibraryRecordsExactDirectStaticCallTargetWithoutProcessEntry(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "go.mod"), `module example.com/config
+
+go 1.24
+`)
+	writeFixtureFile(t, filepath.Join(root, "config.go"), `package config
+
+func Build() {
+	Load()
+}
+
+func Load() {}
+`)
+
+	result, err := Analyze(DefaultOptions(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callTargets := 0
+	for _, current := range result.Grounding.Anchors {
+		if current.Kind != "config_ingress" || current.ProofMode != componentmap.AnchorProofCallTarget {
+			continue
+		}
+		callTargets++
+		if current.Location.Path != "config.go" || current.Location.Line != 4 ||
+			len(current.AssociatedMembers) != 1 || current.AssociatedMembers[0].Name != "Load" {
+			t.Fatalf("library call-target anchor = %#v", current)
+		}
+	}
+	if callTargets != 1 {
+		t.Fatalf("library call-target anchors = %d, want one; grounding=%#v", callTargets, result.Grounding)
+	}
+	if result.Grounding.GroundingMode != "package_landscape" ||
+		result.Grounding.RepositoryArchetype.Selected != "library_framework" {
+		t.Fatalf("library grounding claimed runtime reachability: %#v", result.Grounding)
+	}
+}
+
+func TestArchitectureAnchorIDIsStableAcrossMemberOrder(t *testing.T) {
+	t.Parallel()
+
+	location := Location{Path: "service/start.go", Line: 12, Column: 3}
+	members := []Symbol{
+		{ID: "example.com/project/service.Alpha", Package: "example.com/project/service", Name: "Alpha", Location: location},
+		{ID: "example.com/project/service.Beta", Package: "example.com/project/service", Name: "Beta", Location: Location{Path: "service/start.go", Line: 27, Column: 3}},
+	}
+	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+	firstID := a.recordArchitectureAnchorMembers(
+		componentmap.AnchorProofDeclarationFamily,
+		"lifecycle_start", "first label", location, members, "declaration family",
+	)
+	reorderedID := a.recordArchitectureAnchorMembers(
+		componentmap.AnchorProofDeclarationFamily,
+		"lifecycle_start", "different display label", location,
+		[]Symbol{members[1], members[0]}, "declaration family",
+	)
+	if firstID == "" || reorderedID != firstID || len(a.architectureAnchors) != 1 {
+		t.Fatalf("reordered member IDs = %q/%q, anchors=%d", firstID, reorderedID, len(a.architectureAnchors))
+	}
+	got := a.architectureAnchors[firstID].AssociatedMembers
+	if len(got) != 2 || got[0].ID != members[0].ID || got[1].ID != members[1].ID {
+		t.Fatalf("canonical associated members = %#v", got)
+	}
+}
+
+func TestArchitectureAnchorIDChangesWhenNonFirstMemberChanges(t *testing.T) {
+	t.Parallel()
+
+	location := Location{Path: "service/start.go", Line: 12, Column: 3}
+	first := Symbol{ID: "example.com/project/service.Alpha", Package: "example.com/project/service", Name: "Alpha", Location: location}
+	second := Symbol{ID: "example.com/project/service.Beta", Package: "example.com/project/service", Name: "Beta", Location: Location{Path: "service/start.go", Line: 27, Column: 3}}
+	replacement := Symbol{ID: "example.com/project/service.Gamma", Package: "example.com/project/service", Name: "Gamma", Location: Location{Path: "service/start.go", Line: 41, Column: 3}}
+	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+	firstID := a.recordArchitectureAnchorMembers(
+		componentmap.AnchorProofDeclarationFamily,
+		"lifecycle_start", "declaration family", location, []Symbol{first, second}, "declaration family",
+	)
+	changedID := a.recordArchitectureAnchorMembers(
+		componentmap.AnchorProofDeclarationFamily,
+		"lifecycle_start", "declaration family", location, []Symbol{first, replacement}, "declaration family",
+	)
+	if firstID == "" || changedID == "" || changedID == firstID || len(a.architectureAnchors) != 2 {
+		t.Fatalf("changed member IDs = %q/%q, anchors=%d", firstID, changedID, len(a.architectureAnchors))
+	}
+}
+
+func TestDeclarationFamilyAnchorsChunkAllMembersAtNAndNPlusOne(t *testing.T) {
+	t.Parallel()
+
+	for _, memberCount := range []int{MaxArchitectureAnchorMembers, MaxArchitectureAnchorMembers + 1} {
+		memberCount := memberCount
+		t.Run(fmt.Sprintf("members_%d", memberCount), func(t *testing.T) {
+			t.Parallel()
+			a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+			a.recordDeclarationFamilyAnchors("lifecycle_start", architectureFamilyTestSymbols(memberCount))
+
+			wantAnchors := (memberCount + MaxArchitectureAnchorMembers - 1) / MaxArchitectureAnchorMembers
+			if len(a.architectureAnchors) != wantAnchors || a.declarationFamilyMembersConsidered != memberCount {
+				t.Fatalf("family anchors/members = %d/%d, want %d/%d", len(a.architectureAnchors), a.declarationFamilyMembersConsidered, wantAnchors, memberCount)
+			}
+			publishedMembers := 0
+			seen := make(map[string]struct{}, memberCount)
+			for _, anchor := range a.architectureAnchors {
+				if anchor.ProofMode != componentmap.AnchorProofDeclarationFamily ||
+					len(anchor.AssociatedMembers) == 0 || len(anchor.AssociatedMembers) > MaxArchitectureAnchorMembers {
+					t.Fatalf("family anchor = %#v", anchor)
+				}
+				publishedMembers += len(anchor.AssociatedMembers)
+				for _, member := range anchor.AssociatedMembers {
+					if _, duplicate := seen[member.ID]; duplicate {
+						t.Fatalf("duplicate family member %q", member.ID)
+					}
+					seen[member.ID] = struct{}{}
+				}
+			}
+			if publishedMembers != memberCount || len(seen) != memberCount {
+				t.Fatalf("published family members = %d/%d, want %d", publishedMembers, len(seen), memberCount)
+			}
+		})
+	}
+}
+
+func TestDeclarationFamilyPersistenceLimitPublishesIncompleteCoverage(t *testing.T) {
+	t.Parallel()
+
+	memberCount := maxArchitectureAnchorsPerKind*MaxArchitectureAnchorMembers + 1
+	a := analyzer{architectureAnchors: make(map[string]BehaviorAnchor)}
+	a.recordDeclarationFamilyAnchors("lifecycle_start", architectureFamilyTestSymbols(memberCount))
+	considered := make([]BehaviorAnchor, 0, len(a.architectureAnchors))
+	for _, anchor := range a.architectureAnchors {
+		considered = append(considered, anchor)
+	}
+	published, _, bounded := boundArchitectureGrounding(considered, nil)
+	publishedMembers := 0
+	for _, anchor := range published {
+		publishedMembers += len(anchor.AssociatedMembers)
+	}
+	coverage := a.architectureGroundingCoverage(
+		len(considered), len(published), 0, 0, publishedMembers, bounded,
+	)
+	if !bounded || coverage.Complete ||
+		!slices.Contains(coverage.Reasons, GroundingCoveragePersistenceLimit) ||
+		coverage.AnchorsConsidered != maxArchitectureAnchorsPerKind+1 ||
+		coverage.AnchorsPublished != maxArchitectureAnchorsPerKind ||
+		coverage.DeclarationFamilyMembersConsidered != memberCount ||
+		coverage.DeclarationFamilyMembersPublished != maxArchitectureAnchorsPerKind*MaxArchitectureAnchorMembers {
+		t.Fatalf("bounded declaration-family coverage = %#v", coverage)
+	}
+}
+
+func architectureFamilyTestSymbols(count int) []Symbol {
+	result := make([]Symbol, 0, count)
+	for index := count - 1; index >= 0; index-- {
+		result = append(result, Symbol{
+			ID:      fmt.Sprintf("example.com/project/service.Worker%03d.Start", index),
+			Package: "example.com/project/service",
+			Name:    "Start",
+			Location: Location{
+				Path: "service/workers.go", Line: index + 1, Column: 1,
+			},
+		})
+	}
+	return result
 }
 
 func TestAnalyzeContextReturnsPromptlyWhenCanceledDuringAnalysis(t *testing.T) {
@@ -818,11 +1125,33 @@ func TestAnalyzeGroundsModularServerFromEntrypointComposition(t *testing.T) {
 		t.Fatalf("functions inspected = %d, want composition traversal beyond main", result.Coverage.FunctionsInspected)
 	}
 	kinds := make(map[string]bool)
+	deadProofModes := make(map[componentmap.AnchorProofMode]int)
+	lifecycleStartProofModes := make(map[componentmap.AnchorProofMode]int)
 	for _, anchor := range result.Grounding.Anchors {
 		kinds[anchor.Kind] = true
 		if anchor.Location.Path == "" || anchor.Location.Line == 0 || len(anchor.AssociatedMembers) == 0 || len(anchor.Limitations) == 0 {
 			t.Fatalf("incomplete anchor = %#v", anchor)
 		}
+		for _, member := range anchor.AssociatedMembers {
+			if member.Package == "example.com/modular/internal/dead" && member.Name == "Start" {
+				deadProofModes[anchor.ProofMode]++
+				if anchor.ProofMode == componentmap.AnchorProofDeclarationFamily &&
+					!strings.Contains(anchor.Limitations[0], "shared function signature are not implied") {
+					t.Fatalf("mixed-signature family overclaims its proof: %#v", anchor)
+				}
+			}
+			if member.Package == "example.com/modular/internal/lifecycle" && member.Name == "Start" {
+				lifecycleStartProofModes[anchor.ProofMode]++
+			}
+		}
+	}
+	if deadProofModes[componentmap.AnchorProofDeclarationFamily] != 2 ||
+		deadProofModes[componentmap.AnchorProofCallTarget] != 0 {
+		t.Fatalf("unreachable mixed-signature Start proofs = %#v", deadProofModes)
+	}
+	if lifecycleStartProofModes[componentmap.AnchorProofDeclarationFamily] != 1 ||
+		lifecycleStartProofModes[componentmap.AnchorProofCallTarget] != 1 {
+		t.Fatalf("direct lifecycle.Start proofs = %#v", lifecycleStartProofModes)
 	}
 	for _, kind := range []string{
 		"process_entry", "command_dispatch", "config_ingress", "registry_write",

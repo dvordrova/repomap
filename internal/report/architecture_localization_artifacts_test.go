@@ -589,6 +589,9 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if normalized && input.CandidateBundle.GroundingMode != componentmap.GroundingMixed {
+		t.Fatalf("normalized fixture grounding mode = %q, want %q", input.CandidateBundle.GroundingMode, componentmap.GroundingMixed)
+	}
 	request, _, err := componentmap.BuildSynthesisRequest(input.CandidateBundle)
 	if err != nil {
 		t.Fatal(err)
@@ -651,14 +654,33 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	result, err = componentmap.BindSynthesisProviderIdentity(
+		input.CandidateBundle,
+		"revision-localization",
+		result,
+		componentmap.SynthesisProviderIdentity{
+			RequestSHA256:  strings.Repeat("a", 64),
+			EndpointSHA256: strings.Repeat("b", 64),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result.Landscape.Fallback {
 		t.Fatalf("fixture synthesis fell back: %#v", result.Landscape)
 	}
 	if normalized && result.Landscape.ValidationOutcome != componentmap.ValidationAcceptedNormalized {
 		t.Fatalf("normalized fixture outcome = %q", result.Landscape.ValidationOutcome)
 	}
+	if normalized && (len(result.Landscape.Normalizations) != 1 ||
+		result.Landscape.Normalizations[0].Code != "normalized_package_only_hypothesis") {
+		t.Fatalf("normalized fixture operations = %#v", result.Landscape.Normalizations)
+	}
 	if !normalized && result.Landscape.ValidationOutcome != componentmap.ValidationAccepted {
 		t.Fatalf("accepted fixture outcome = %q", result.Landscape.ValidationOutcome)
+	}
+	if !normalized && len(result.Landscape.Normalizations) != 0 {
+		t.Fatalf("accepted fixture unexpectedly normalized = %#v", result.Landscape.Normalizations)
 	}
 	result.Record.Call.Metadata.UsageReported = true
 	result.Record.Call.Metadata.InputTokens = 25
@@ -681,10 +703,13 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	)
 	status.ResponseBytes = result.Record.Call.ResponseBytes
 	status.ResponseContentBytes = len(result.Record.Call.Response)
-	status.CandidateCount = len(input.CandidateBundle.Candidates)
+	conceptualCount, structuralLocatorCount := input.CandidateBundle.CandidateRoleCounts()
+	status.LocalCandidateCount = len(input.CandidateBundle.Candidates)
+	status.RequestedConceptualCount = conceptualCount
+	status.StructuralLocatorCount = structuralLocatorCount
 	status.AnchorCount = len(input.CandidateBundle.BehaviorAnchors)
-	status.MemberOccurrences = len(input.CandidateBundle.Candidates)
-	status.DistinctMembers = len(input.CandidateBundle.Candidates)
+	status.MemberOccurrences = conceptualCount
+	status.DistinctMembers = conceptualCount
 	status.ProposalNormalized = metadata.ValidationOutcome == componentmap.ValidationAcceptedNormalized
 	status.ArchitectureSource = string(metadata.ArchitectureSource)
 	status.ArchitectureLevel = metadata.ArchitectureLevel
@@ -710,9 +735,13 @@ func architectureLocalizationWriteNormalizedGrounding(t *testing.T, runDir strin
 			Evidence: []string{"Exact fixture process entry."},
 		},
 		GroundingMode: componentmap.GroundingMixed,
+		Coverage: ArchitectureGroundingCoverage{
+			Complete: true, AnchorsConsidered: 1, AnchorsPublished: 1,
+		},
 		BehaviorAnchors: []ArchitectureBehaviorAnchor{{
 			ID: "fixture-process-entry", Kind: componentmap.AnchorProcessEntry,
-			Label: "Fixture process entry", Location: location,
+			ProofMode: componentmap.AnchorProofProcessEntry,
+			Label:     "Fixture process entry", Location: location,
 			Scenario: architectureGroundingScenario{
 				ID: "go:test", GOOS: "darwin", GOARCH: "arm64",
 			},

@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 6
+const ArchitectureCanvasVersion = 7
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -49,6 +49,7 @@ type ArchitectureCanvas struct {
 	BehaviorAnchors        []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
 	Subsystems             []ArchitectureSubsystem               `json:"subsystems"`
 	Components             []ArchitectureComponent               `json:"components"`
+	StructuralLocators     []ArchitectureStructuralLocator       `json:"structural_locators,omitempty"`
 	Surfaces               []ArchitectureSurface                 `json:"surfaces,omitempty"`
 	Suggestions            []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
 	StructuralFacts        []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
@@ -81,6 +82,15 @@ type ArchitectureComponent struct {
 	AnchorIDs                 []string                   `json:"anchor_ids,omitempty"`
 	Hypothesis                bool                       `json:"hypothesis,omitempty"`
 	SourceIDs                 []componentmap.ComponentID `json:"source_component_ids,omitempty"`
+}
+
+// ArchitectureStructuralLocator retains an exact producer-owned source or
+// containment node without turning it into a model-authored conceptual
+// member. ParticipatingComponentIDs is the complete sorted union recovered
+// locally through exact ParentID containment; it never claims ownership.
+type ArchitectureStructuralLocator struct {
+	Locator                   componentmap.Candidate     `json:"locator"`
+	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
 }
 
 // ArchitectureSurface is a presentation join over an existing deterministic
@@ -264,11 +274,20 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 	}
 	canvas.Title, canvas.Subtitle = architectureGroundingWording(canvas.ArchitectureSource, canvas.GroundingMode)
 	index := projectArchitectureLandscape(input.CandidateBundle, input.Landscape, &canvas)
+	projectArchitectureStructuralLocators(input.CandidateBundle, input.Landscape, &index, &canvas)
 	projectArchitectureStructuralFacts(input.Landscape.Relations, index.memberComponents, &canvas)
 	projectArchitectureFlows(input.Flows, index, &canvas)
 
 	sort.Slice(canvas.StructuralFacts, func(i, j int) bool {
 		return canvas.StructuralFacts[i].ID < canvas.StructuralFacts[j].ID
+	})
+	sort.Slice(canvas.StructuralLocators, func(i, j int) bool {
+		left := canvas.StructuralLocators[i].Locator.ID
+		right := canvas.StructuralLocators[j].Locator.ID
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		return left.Value < right.Value
 	})
 	sort.Slice(canvas.StructuralEdges, func(i, j int) bool {
 		return canvas.StructuralEdges[i].ID < canvas.StructuralEdges[j].ID
@@ -283,6 +302,60 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 	sort.Slice(canvas.Frontiers, func(i, j int) bool { return canvas.Frontiers[i].ID < canvas.Frontiers[j].ID })
 	sort.Slice(canvas.Diagnostics, func(i, j int) bool { return canvas.Diagnostics[i].ID < canvas.Diagnostics[j].ID })
 	return canvas, nil
+}
+
+func projectArchitectureStructuralLocators(
+	bundle componentmap.CandidateBundle,
+	landscape componentmap.Landscape,
+	index *architectureCanvasIndex,
+	canvas *ArchitectureCanvas,
+) {
+	if len(landscape.StructuralLocators) == 0 {
+		return
+	}
+	known := make(map[componentmap.MemberID]componentmap.Candidate, len(bundle.Candidates))
+	for _, candidate := range bundle.Candidates {
+		known[candidate.ID] = candidate
+	}
+
+	for _, locator := range landscape.StructuralLocators {
+		participants := make([]componentmap.ComponentID, 0)
+		// Exact conceptual ancestors provide local containment context.
+		for parentID := locator.ParentID; parentID != nil; {
+			parent, exists := known[*parentID]
+			if !exists {
+				break
+			}
+			if parent.Role == componentmap.CandidateRoleConceptualMember {
+				participants = append(participants, index.memberComponents[parent.ID]...)
+			}
+			parentID = parent.ParentID
+		}
+		// Exact conceptual descendants provide the other side of a structural
+		// source container. No path, name or proposal ordering participates.
+		for _, candidate := range bundle.Candidates {
+			if candidate.Role != componentmap.CandidateRoleConceptualMember {
+				continue
+			}
+			for parentID := candidate.ParentID; parentID != nil; {
+				if *parentID == locator.ID {
+					participants = append(participants, index.memberComponents[candidate.ID]...)
+					break
+				}
+				parent, exists := known[*parentID]
+				if !exists {
+					break
+				}
+				parentID = parent.ParentID
+			}
+		}
+		participants = uniqueArchitectureComponentIDs(participants)
+		index.memberComponents[locator.ID] = append([]componentmap.ComponentID(nil), participants...)
+		canvas.StructuralLocators = append(canvas.StructuralLocators, ArchitectureStructuralLocator{
+			Locator:                   cloneArchitectureCandidate(locator),
+			ParticipatingComponentIDs: append([]componentmap.ComponentID(nil), participants...),
+		})
+	}
 }
 
 func projectArchitectureLandscape(
@@ -1112,6 +1185,38 @@ func cloneArchitectureSlot(slot flowproof.Slot) flowproof.Slot {
 	cloned := slot
 	cloned.EvidenceIDs = append([]string(nil), slot.EvidenceIDs...)
 	cloned.Provenance = cloneArchitectureProvenance(slot.Provenance)
+	return cloned
+}
+
+func cloneArchitectureCandidate(candidate componentmap.Candidate) componentmap.Candidate {
+	cloned := candidate
+	if candidate.ParentID != nil {
+		parentID := *candidate.ParentID
+		cloned.ParentID = &parentID
+	}
+	if candidate.Facts != nil {
+		cloned.Facts = make([]componentmap.LocalFact, len(candidate.Facts))
+		for index, fact := range candidate.Facts {
+			cloned.Facts[index] = cloneArchitectureLocalFact(fact)
+		}
+	}
+	if candidate.Participations != nil {
+		cloned.Participations = make([]componentmap.FlowParticipation, len(candidate.Participations))
+		for index, participation := range candidate.Participations {
+			cloned.Participations[index] = participation
+			cloned.Participations[index].Evidence = cloneArchitectureLocalFact(participation.Evidence)
+		}
+	}
+	return cloned
+}
+
+func cloneArchitectureLocalFact(fact componentmap.LocalFact) componentmap.LocalFact {
+	cloned := fact
+	cloned.Location = cloneArchitectureLocation(fact.Location)
+	cloned.Provenance = cloneArchitectureProvenance(fact.Provenance)
+	for index := range cloned.Provenance {
+		cloned.Provenance[index].Location = cloneArchitectureLocation(cloned.Provenance[index].Location)
+	}
 	return cloned
 }
 

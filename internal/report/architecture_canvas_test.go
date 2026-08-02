@@ -243,6 +243,170 @@ func TestProjectArchitectureCanvasSharedBindingUsesParticipantsWithoutOwnershipO
 	}
 }
 
+func TestProjectArchitectureCanvasKeepsStructuralLocatorSeparateWithPluralExactParticipants(t *testing.T) {
+	t.Parallel()
+
+	packageID := architectureMember(componentmap.MemberPackage, "service")
+	fileID := architectureMember(componentmap.MemberFile, "service.go")
+	symbolID := architectureMember(componentmap.MemberSymbol, "Serve")
+	bundle := componentmap.CandidateBundle{
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeApplication,
+		GroundingMode:       componentmap.GroundingPackages,
+		Candidates: []componentmap.Candidate{
+			{
+				ID: packageID, Role: componentmap.CandidateRoleConceptualMember, Name: "service",
+				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "service", "service.go", 1)},
+			},
+			{
+				ID: fileID, Role: componentmap.CandidateRoleStructuralLocator, Name: "service.go", ParentID: &packageID,
+				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "service.go", "service.go", 1)},
+			},
+			{
+				ID: symbolID, Role: componentmap.CandidateRoleConceptualMember, Name: "Serve", ParentID: &fileID,
+				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactDeclaration, "Serve", "service.go", 20)},
+			},
+		},
+		Relations: []componentmap.LocalRelation{{
+			ID: "package-to-handler", From: packageID, To: symbolID,
+			Kind: componentmap.StructuralRelationBehaviorHandoff, Certainty: evidence.CertaintyStatic,
+			Provenance: architectureProvenance("fixture", "containment_witness", "service.go", 20),
+			Scenarios:  []componentmap.ScenarioContext{{ID: "fixture", Name: "fixture"}},
+		}},
+	}
+	project := func(reverse bool) ArchitectureCanvas {
+		subsystems := []componentmap.ProposedSubsystem{
+			{Name: "Service package", Components: []componentmap.ProposedComponent{{Name: "Service package", MemberIDs: []componentmap.MemberID{packageID}}}},
+			{Name: "Request handling", Components: []componentmap.ProposedComponent{{Name: "Request handling", MemberIDs: []componentmap.MemberID{symbolID}}}},
+		}
+		if reverse {
+			subsystems[0], subsystems[1] = subsystems[1], subsystems[0]
+		}
+		landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+			Version: componentmap.ProposalVersion, Subsystems: subsystems,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+			CandidateBundle: bundle, Landscape: landscape,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return canvas
+	}
+
+	first := project(false)
+	second := project(true)
+	if len(first.StructuralLocators) != 1 {
+		t.Fatalf("structural locators = %#v", first.StructuralLocators)
+	}
+	locator := first.StructuralLocators[0]
+	if locator.Locator.ID != fileID || locator.Locator.Role != componentmap.CandidateRoleStructuralLocator ||
+		len(locator.ParticipatingComponentIDs) != 2 {
+		t.Fatalf("structural locator projection = %#v", locator)
+	}
+	if !reflect.DeepEqual(locator.ParticipatingComponentIDs, second.StructuralLocators[0].ParticipatingComponentIDs) {
+		t.Fatalf(
+			"structural locator participants changed with proposal order: first=%v second=%v",
+			locator.ParticipatingComponentIDs,
+			second.StructuralLocators[0].ParticipatingComponentIDs,
+		)
+	}
+	for _, component := range first.Components {
+		for _, member := range component.Members {
+			if member.ID == fileID {
+				t.Fatalf("structural locator became a conceptual member: %#v", component)
+			}
+		}
+	}
+	if len(first.StructuralFacts) != 1 || first.StructuralFacts[0].ID != "package-to-handler" {
+		t.Fatalf("local structural facts changed: %#v", first.StructuralFacts)
+	}
+
+	localLandscape, err := componentmap.Canonical(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localCanvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+		CandidateBundle: bundle, Landscape: localLandscape,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localCanvas.StructuralLocators) != 1 ||
+		localCanvas.StructuralLocators[0].Locator.ID != fileID ||
+		len(localCanvas.StructuralLocators[0].ParticipatingComponentIDs) == 0 {
+		t.Fatalf("local Canvas lost structural locator participation: %#v", localCanvas.StructuralLocators)
+	}
+	for _, component := range localCanvas.Components {
+		for _, member := range component.Members {
+			if member.ID == fileID {
+				t.Fatalf("local Canvas made structural locator conceptual: %#v", component)
+			}
+		}
+	}
+	rejectedLandscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedCanvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+		CandidateBundle: bundle, Landscape: rejectedLandscape,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rejectedCanvas.StructuralLocators) != 1 ||
+		rejectedCanvas.StructuralLocators[0].Locator.ID != fileID ||
+		!reflect.DeepEqual(
+			rejectedCanvas.StructuralLocators[0].ParticipatingComponentIDs,
+			localCanvas.StructuralLocators[0].ParticipatingComponentIDs,
+		) {
+		t.Fatalf(
+			"rejected/local Canvas structural locator mismatch: rejected=%#v local=%#v",
+			rejectedCanvas.StructuralLocators,
+			localCanvas.StructuralLocators,
+		)
+	}
+}
+
+func TestProjectArchitectureCanvasKeepsProducerOwnedFileAsModuleConceptual(t *testing.T) {
+	t.Parallel()
+
+	fileID := architectureMember(componentmap.MemberFile, "module.go")
+	bundle := componentmap.CandidateBundle{
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeLibraryFramework,
+		GroundingMode:       componentmap.GroundingPackages,
+		Candidates: []componentmap.Candidate{{
+			ID: fileID, Role: componentmap.CandidateRoleConceptualMember, Name: "module.go",
+			Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "module.go", "module.go", 1)},
+		}},
+	}
+	landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Library module", Components: []componentmap.ProposedComponent{{
+				Name: "Library module", MemberIDs: []componentmap.MemberID{fileID},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{CandidateBundle: bundle, Landscape: landscape})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canvas.StructuralLocators) != 0 || len(canvas.Components) != 1 ||
+		len(canvas.Components[0].Members) != 1 || canvas.Components[0].Members[0].ID != fileID {
+		t.Fatalf("file-as-module conceptual projection = %#v", canvas)
+	}
+}
+
 func TestProjectArchitectureCanvasUsesLandscapeSubsystemsAndFlowLabels(t *testing.T) {
 	t.Parallel()
 
@@ -400,14 +564,14 @@ func architectureBundle() componentmap.CandidateBundle {
 		}},
 		Candidates: []componentmap.Candidate{
 			{
-				ID: cmd, Name: "cmd/restic",
+				ID: cmd, Role: componentmap.CandidateRoleConceptualMember, Name: "cmd/restic",
 				Participations: []componentmap.FlowParticipation{{
 					FlowID: "backup", Evidence: architectureFact(componentmap.FactFlowParticipation, "backup", "cmd/restic/cmd_backup.go", 500),
 				}},
 				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "cmd/restic", "cmd/restic/cmd_backup.go", 1)},
 			},
 			{
-				ID: archiver, Name: "internal/archiver",
+				ID: archiver, Role: componentmap.CandidateRoleConceptualMember, Name: "internal/archiver",
 				Participations: []componentmap.FlowParticipation{{
 					FlowID: "backup", Evidence: architectureFact(componentmap.FactFlowParticipation, "backup", "internal/archiver/scanner.go", 44),
 				}},

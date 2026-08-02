@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"go/ast"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/semantics/catalog"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/callgraph"
@@ -30,58 +32,63 @@ import (
 )
 
 type analyzer struct {
-	ctx                       context.Context
-	opts                      Options
-	input                     Input
-	processEntrypoints        []processEntrypoint
-	catalog                   catalog.Catalog
-	program                   *ssa.Program
-	packages                  []*ssa.Package
-	packageFacts              map[string]*packages.Package
-	graph                     *callgraph.Graph
-	allFunctions              map[*ssa.Function]bool
-	relevant                  map[*ssa.Function]bool
-	relevanceDistance         map[*ssa.Function]int
-	callTargets               map[ssa.CallInstruction][]*ssa.Function
-	root                      string
-	modulePath                string
-	modulePaths               map[string]bool
-	scenario                  Scenario
-	result                    Result
-	tasks                     int
-	active                    map[*ssa.Function]bool
-	matchedSeeds              []string
-	starts                    []dispatchStart
-	assignments               map[string]Value
-	valuesByAddress           map[string]Value
-	summaryByID               map[string]SemanticSummary
-	fileDigests               map[string]SourceDigest
-	functionByID              map[string]*ssa.Function
-	functionIDs               map[*ssa.Function]string
-	functionImplementationIDs map[*ssa.Function]string
-	loopCache                 map[*ssa.Function][]loopDescriptor
-	loopSeen                  map[string]bool
-	compositionVisited        map[*ssa.Function]bool
-	architectureAnchors       map[string]BehaviorAnchor
-	architectureRelationships map[string]BehaviorRelationship
-	walkedFunctions           map[*ssa.Function]bool
-	callbackReferences        map[*ssa.Function]bool
-	callbackReferenceIDs      map[string]bool
-	entrypointPackages        map[*ssa.Function]map[string]bool
-	closureBindings           map[*ssa.Function][]ssa.Value
-	closureBindingAmbiguous   map[*ssa.Function]bool
-	freeVarBindings           map[*ssa.FreeVar]ssa.Value
-	freeVarBindingAmbiguous   map[*ssa.FreeVar]bool
-	parameterBindings         map[*ssa.Parameter]ssa.Value
-	parameterBindingAmbiguous map[*ssa.Parameter]bool
-	uniqueStoreValues         map[ssa.Value]ssa.Value
-	storeValueAmbiguous       map[ssa.Value]bool
-	valueEvalActive           map[ssa.Value]bool
-	valueReturnActive         map[*ssa.Function]bool
-	valueEvalSteps            int
-	detachedWalk              bool
-	currentPhase              string
-	currentPhaseStarted       time.Time
+	ctx                                       context.Context
+	opts                                      Options
+	input                                     Input
+	processEntrypoints                        []processEntrypoint
+	catalog                                   catalog.Catalog
+	program                                   *ssa.Program
+	packages                                  []*ssa.Package
+	packageFacts                              map[string]*packages.Package
+	graph                                     *callgraph.Graph
+	allFunctions                              map[*ssa.Function]bool
+	relevant                                  map[*ssa.Function]bool
+	relevanceDistance                         map[*ssa.Function]int
+	callTargets                               map[ssa.CallInstruction][]*ssa.Function
+	root                                      string
+	modulePath                                string
+	modulePaths                               map[string]bool
+	scenario                                  Scenario
+	result                                    Result
+	tasks                                     int
+	active                                    map[*ssa.Function]bool
+	matchedSeeds                              []string
+	starts                                    []dispatchStart
+	assignments                               map[string]Value
+	valuesByAddress                           map[string]Value
+	summaryByID                               map[string]SemanticSummary
+	fileDigests                               map[string]SourceDigest
+	functionByID                              map[string]*ssa.Function
+	functionIDs                               map[*ssa.Function]string
+	functionImplementationIDs                 map[*ssa.Function]string
+	loopCache                                 map[*ssa.Function][]loopDescriptor
+	loopSeen                                  map[string]bool
+	compositionVisited                        map[*ssa.Function]bool
+	architectureAnchors                       map[string]BehaviorAnchor
+	architectureRelationships                 map[string]BehaviorRelationship
+	architectureAnchorsConsidered             int
+	architectureRelationshipsConsidered       int
+	architectureAnchorCollectionLimited       bool
+	architectureRelationshipCollectionLimited bool
+	declarationFamilyMembersConsidered        int
+	walkedFunctions                           map[*ssa.Function]bool
+	callbackReferences                        map[*ssa.Function]bool
+	callbackReferenceIDs                      map[string]bool
+	entrypointPackages                        map[*ssa.Function]map[string]bool
+	closureBindings                           map[*ssa.Function][]ssa.Value
+	closureBindingAmbiguous                   map[*ssa.Function]bool
+	freeVarBindings                           map[*ssa.FreeVar]ssa.Value
+	freeVarBindingAmbiguous                   map[*ssa.FreeVar]bool
+	parameterBindings                         map[*ssa.Parameter]ssa.Value
+	parameterBindingAmbiguous                 map[*ssa.Parameter]bool
+	uniqueStoreValues                         map[ssa.Value]ssa.Value
+	storeValueAmbiguous                       map[ssa.Value]bool
+	valueEvalActive                           map[ssa.Value]bool
+	valueReturnActive                         map[*ssa.Function]bool
+	valueEvalSteps                            int
+	detachedWalk                              bool
+	currentPhase                              string
+	currentPhaseStarted                       time.Time
 }
 
 const (
@@ -225,6 +232,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		)
 		a.entrypointPackages[entrypoint] = importedPackagePaths(entrypoint)
 		entryAnchorID := a.recordArchitectureAnchor(
+			componentmap.AnchorProofProcessEntry,
 			"process_entry",
 			"process entry "+a.functionID(entrypoint),
 			a.location(entrypoint.Pos()),
@@ -1080,6 +1088,7 @@ func (a *analyzer) walk(
 				nextParentAnchorID := parentAnchorID
 				if architectureKind != "" {
 					anchorID := a.recordArchitectureAnchor(
+						componentmap.AnchorProofCallTarget,
 						architectureKind,
 						architectureKind+" "+a.functionID(target),
 						a.location(call.Pos()),
@@ -1090,6 +1099,7 @@ func (a *analyzer) walk(
 					nextParentAnchorID = anchorID
 					if architectureKind == "registry_write" {
 						extensionID := a.recordArchitectureAnchor(
+							componentmap.AnchorProofCallTarget,
 							"extension_family",
 							"extension registration via "+a.functionID(target),
 							a.location(call.Pos()),
@@ -1327,16 +1337,20 @@ func (a *analyzer) terminalTargetEligible(call ssa.CallInstruction, target *ssa.
 }
 
 // callTargetEligible admits only call-graph candidates that are compatible with
-// the exact SSA call and the selected executable's build/import closure. CHA can
-// otherwise join equal-shaped callbacks from independent main packages, which is
-// not evidence that one executable reaches the other's behavior.
+// the exact SSA call. Executable walks additionally constrain targets to the
+// selected executable's build/import closure. A library has no process entry,
+// but an exact repository-local direct static call still proves a call boundary;
+// it does not prove runtime reachability.
 func (a *analyzer) callTargetEligible(
 	call ssa.CallInstruction,
 	target, entrypoint *ssa.Function,
 	env environment,
 ) bool {
-	if !a.callTargetWitness(call, target, env) || entrypoint == nil {
+	if !a.callTargetWitness(call, target, env) {
 		return false
+	}
+	if entrypoint == nil {
+		return a.repositoryDirectStaticCall(call, target)
 	}
 	packages := a.entrypointPackages[entrypoint]
 	if packages == nil {
@@ -1344,6 +1358,12 @@ func (a *analyzer) callTargetEligible(
 		a.entrypointPackages[entrypoint] = packages
 	}
 	return packages[functionPackagePath(target)]
+}
+
+func (a *analyzer) repositoryDirectStaticCall(call ssa.CallInstruction, target *ssa.Function) bool {
+	return call != nil && target != nil && call.Parent() != nil &&
+		call.Common().StaticCallee() == target &&
+		a.isRepositoryFunction(call.Parent()) && a.isRepositoryFunction(target)
 }
 
 func (a *analyzer) callTargetWitness(call ssa.CallInstruction, target *ssa.Function, env environment) bool {
@@ -2641,7 +2661,7 @@ func (a *analyzer) recordGlobalArchitectureAnchors() {
 		if function.Signature.Recv() != nil && (name == "provision" || name == "validate" || name == "cleanup") {
 			kind = "lifecycle_interface"
 		}
-		if kind != "" && kind != "command_dispatch" && kind != "registry_write" && len(families[kind]) < 32 {
+		if kind != "" && kind != "command_dispatch" && kind != "registry_write" {
 			families[kind] = append(families[kind], a.symbol(function))
 		}
 		for _, block := range function.Blocks {
@@ -2650,26 +2670,33 @@ func (a *analyzer) recordGlobalArchitectureAnchors() {
 				if !ok {
 					continue
 				}
-				for _, target := range a.callTargets[call] {
-					if a.architectureCallKind(target) != "registry_write" {
-						continue
-					}
-					location := a.location(call.Pos())
-					registryID := a.recordArchitectureAnchor(
-						"registry_write",
-						"registry write "+a.functionID(target),
-						location,
-						a.symbol(target),
-						"Exact initialization or repository call to a registry-shaped target; later lookup and construction remain separate evidence.",
-					)
+				target := call.Common().StaticCallee()
+				if !a.repositoryDirectStaticCall(call, target) {
+					continue
+				}
+				kind := a.architectureCallKind(target)
+				if kind == "" {
+					continue
+				}
+				location := a.location(call.Pos())
+				anchorID := a.recordArchitectureAnchor(
+					componentmap.AnchorProofCallTarget,
+					kind,
+					kind+" "+a.functionID(target),
+					location,
+					a.symbol(target),
+					"Exact repository-local direct static call boundary; runtime reachability is not implied.",
+				)
+				if kind == "registry_write" {
 					extensionID := a.recordArchitectureAnchor(
+						componentmap.AnchorProofCallTarget,
 						"extension_family",
 						"extension registration via "+a.functionID(target),
 						location,
 						a.symbol(target),
 						"Registration establishes an extension boundary, not execution or complete implementation coverage.",
 					)
-					a.recordArchitectureRelationship(registryID, extensionID, location)
+					a.recordArchitectureRelationship(anchorID, extensionID, location)
 				}
 			}
 		}
@@ -2680,19 +2707,30 @@ func (a *analyzer) recordGlobalArchitectureAnchors() {
 	}
 	sort.Strings(kinds)
 	for _, kind := range kinds {
-		members := deduplicateArchitectureSymbols(families[kind])
-		if len(members) > 8 {
-			members = members[:8]
-		}
-		if len(members) == 0 {
-			continue
+		a.recordDeclarationFamilyAnchors(kind, families[kind])
+	}
+}
+
+func (a *analyzer) recordDeclarationFamilyAnchors(kind string, candidates []Symbol) {
+	members := deduplicateArchitectureSymbols(candidates)
+	if len(members) == 0 {
+		return
+	}
+	a.declarationFamilyMembersConsidered += len(members)
+	for start := 0; start < len(members); start += MaxArchitectureAnchorMembers {
+		end := min(start+MaxArchitectureAnchorMembers, len(members))
+		chunk := members[start:end]
+		label := "discovered " + kind + " declaration family"
+		if len(members) > MaxArchitectureAnchorMembers {
+			label += fmt.Sprintf(" %d", start/MaxArchitectureAnchorMembers+1)
 		}
 		a.recordArchitectureAnchorMembers(
+			componentmap.AnchorProofDeclarationFamily,
 			kind,
-			"discovered "+kind+" family",
-			members[0].Location,
-			members,
-			"Exact build-selected declarations share a bounded architecture-shaped signature; invocation and complete family coverage are not implied.",
+			label,
+			chunk[0].Location,
+			chunk,
+			"Exact build-selected declarations share a local architecture classification; invocation and shared function signature are not implied.",
 		)
 	}
 }
@@ -2742,30 +2780,33 @@ func (a *analyzer) shouldFollowComposition(target *ssa.Function, architectureKin
 }
 
 func (a *analyzer) recordArchitectureAnchor(
+	proofMode componentmap.AnchorProofMode,
 	kind, label string,
 	location Location,
 	member Symbol,
 	limitation string,
 ) string {
 	return a.recordArchitectureAnchorMembersWithProvenance(
-		kind, label, location, []Symbol{member}, limitation,
+		proofMode, kind, label, location, []Symbol{member}, limitation,
 		Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "classify_architecture_anchor"},
 	)
 }
 
 func (a *analyzer) recordArchitectureAnchorMembers(
+	proofMode componentmap.AnchorProofMode,
 	kind, label string,
 	location Location,
 	members []Symbol,
 	limitation string,
 ) string {
 	return a.recordArchitectureAnchorMembersWithProvenance(
-		kind, label, location, members, limitation,
+		proofMode, kind, label, location, members, limitation,
 		Provenance{Provider: "go_ssa", Version: AnalyzerVersion, Operation: "classify_architecture_anchor"},
 	)
 }
 
 func (a *analyzer) recordArchitectureAnchorMembersWithProvenance(
+	proofMode componentmap.AnchorProofMode,
 	kind, label string,
 	location Location,
 	members []Symbol,
@@ -2778,30 +2819,91 @@ func (a *analyzer) recordArchitectureAnchorMembersWithProvenance(
 	if len(members) == 0 {
 		return ""
 	}
-	member := members[0]
+	canonicalMembers := canonicalArchitectureAnchorMembers(members)
+	member := canonicalMembers[0]
 	identity := locationKey(location)
 	if kind == "process_entry" {
 		identity = fmt.Sprintf("%s:%d", location.Path, location.Line)
 	} else if kind == "registry_write" || kind == "extension_family" {
 		identity = member.ID
 	}
-	digest := sha256.Sum256([]byte(strings.Join([]string{
-		"architecture-anchor-v1", kind, identity, member.ID,
-	}, "\x00")))
-	id := "anchor-" + hex.EncodeToString(digest[:12])
+	digest := sha256.New()
+	writeArchitectureAnchorIdentityField(digest, "architecture-anchor-v3")
+	writeArchitectureAnchorIdentityField(digest, string(proofMode))
+	writeArchitectureAnchorIdentityField(digest, kind)
+	writeArchitectureAnchorIdentityField(digest, identity)
+	var memberCount [8]byte
+	binary.BigEndian.PutUint64(memberCount[:], uint64(len(canonicalMembers)))
+	_, _ = digest.Write(memberCount[:])
+	for _, canonicalMember := range canonicalMembers {
+		writeArchitectureAnchorIdentityField(digest, canonicalMember.ID)
+		writeArchitectureAnchorIdentityField(digest, canonicalMember.Package)
+		writeArchitectureAnchorIdentityField(digest, canonicalMember.Name)
+		writeArchitectureAnchorIdentityField(digest, canonicalMember.Location.Path)
+		writeArchitectureAnchorIdentityField(digest, strconv.Itoa(canonicalMember.Location.Line))
+		memberColumn := canonicalMember.Location.Column
+		if proofMode == componentmap.AnchorProofProcessEntry {
+			// The syntax producer reports declaration columns as zero while SSA
+			// reports the identifier column. Path+line is the shared exact local
+			// process-entry identity used to deduplicate those two typed proofs.
+			memberColumn = 0
+		}
+		writeArchitectureAnchorIdentityField(digest, strconv.Itoa(memberColumn))
+		var equivalentCount [8]byte
+		binary.BigEndian.PutUint64(equivalentCount[:], uint64(len(canonicalMember.EquivalentIDs)))
+		_, _ = digest.Write(equivalentCount[:])
+		for _, equivalentID := range canonicalMember.EquivalentIDs {
+			writeArchitectureAnchorIdentityField(digest, equivalentID)
+		}
+	}
+	digestBytes := digest.Sum(nil)
+	id := "anchor-" + hex.EncodeToString(digestBytes[:12])
 	if _, exists := a.architectureAnchors[id]; exists {
 		return id
 	}
+	a.architectureAnchorsConsidered++
 	if len(a.architectureAnchors) >= maxCollectedArchitectureAnchors {
+		a.architectureAnchorCollectionLimited = true
 		a.addBudget("architecture_anchor_collection")
 		return ""
 	}
 	a.architectureAnchors[id] = BehaviorAnchor{
-		ID: id, Kind: kind, Label: label, Location: location, Scenario: a.scenario,
+		ID: id, Kind: kind, ProofMode: proofMode, Label: label, Location: location, Scenario: a.scenario,
 		Producer:  producer,
-		Certainty: "static", AssociatedMembers: append([]Symbol(nil), members...), Limitations: []string{limitation},
+		Certainty: "static", AssociatedMembers: canonicalMembers, Limitations: []string{limitation},
 	}
 	return id
+}
+
+func canonicalArchitectureAnchorMembers(members []Symbol) []Symbol {
+	result := append([]Symbol(nil), members...)
+	for index := range result {
+		result[index].EquivalentIDs = append([]string(nil), result[index].EquivalentIDs...)
+		sort.Strings(result[index].EquivalentIDs)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		left := result[i]
+		right := result[j]
+		leftKey := strings.Join([]string{
+			left.ID, left.Package, left.Name, left.Location.Path,
+			strconv.Itoa(left.Location.Line), strconv.Itoa(left.Location.Column),
+			strings.Join(left.EquivalentIDs, "\x00"),
+		}, "\x00")
+		rightKey := strings.Join([]string{
+			right.ID, right.Package, right.Name, right.Location.Path,
+			strconv.Itoa(right.Location.Line), strconv.Itoa(right.Location.Column),
+			strings.Join(right.EquivalentIDs, "\x00"),
+		}, "\x00")
+		return leftKey < rightKey
+	})
+	return result
+}
+
+func writeArchitectureAnchorIdentityField(writer io.Writer, value string) {
+	var length [8]byte
+	binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+	_, _ = writer.Write(length[:])
+	_, _ = io.WriteString(writer, value)
 }
 
 func (a *analyzer) recordArchitectureRelationship(from, to string, location Location) {
@@ -2815,7 +2917,9 @@ func (a *analyzer) recordArchitectureRelationship(from, to string, location Loca
 	id := "handoff-" + hex.EncodeToString(digest[:12])
 	relationship, exists := a.architectureRelationships[id]
 	if !exists {
+		a.architectureRelationshipsConsidered++
 		if len(a.architectureRelationships) >= maxCollectedArchitectureRelationships {
+			a.architectureRelationshipCollectionLimited = true
 			a.addBudget("architecture_relationship_collection")
 			return
 		}
@@ -2939,19 +3043,32 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	if groundingBounded {
 		a.addBudget("architecture_anchors")
 	}
-	kinds := make(map[string]bool)
+	declarationFamilyMembersPublished := 0
 	for _, anchor := range anchors {
-		kinds[anchor.Kind] = true
+		if anchor.ProofMode == componentmap.AnchorProofDeclarationFamily {
+			declarationFamilyMembersPublished += len(anchor.AssociatedMembers)
+		}
 	}
-	anchorKindByID := make(map[string]string, len(anchors))
+	groundingCoverage := a.architectureGroundingCoverage(
+		a.architectureAnchorsConsidered,
+		len(anchors),
+		a.architectureRelationshipsConsidered,
+		len(relationships),
+		declarationFamilyMembersPublished,
+		groundingBounded,
+	)
+	operationalAnchorIDs := make(map[string]bool, len(anchors))
 	reachable := make(map[string]bool)
 	queue := make([]string, 0)
 	for _, anchor := range anchors {
 		if a.ctx.Err() != nil {
 			return
 		}
-		anchorKindByID[anchor.ID] = anchor.Kind
-		if anchor.Kind == "process_entry" {
+		if !architectureOperationalProofMode(anchor.ProofMode) {
+			continue
+		}
+		operationalAnchorIDs[anchor.ID] = true
+		if anchor.Kind == "process_entry" && anchor.ProofMode == componentmap.AnchorProofProcessEntry {
 			reachable[anchor.ID] = true
 			queue = append(queue, anchor.ID)
 		}
@@ -2963,59 +3080,19 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		current := queue[0]
 		queue = queue[1:]
 		for _, relationship := range relationships {
-			if relationship.From != current || reachable[relationship.To] {
+			if relationship.From != current || !operationalAnchorIDs[relationship.To] || reachable[relationship.To] {
 				continue
 			}
 			reachable[relationship.To] = true
 			queue = append(queue, relationship.To)
 		}
 	}
-	reachableKinds := make(map[string]bool)
-	for anchorID := range reachable {
-		if a.ctx.Err() != nil {
-			return
-		}
-		reachableKinds[anchorKindByID[anchorID]] = true
-	}
-
-	pillars := 0
-	reachablePillars := 0
-	groups := [][]string{
-		{"command_dispatch"},
-		{"config_ingress", "config_adapter", "config_apply"},
-		{"registry_write", "registry_lookup", "extension_family"},
-		{"lifecycle_interface", "lifecycle_start"},
-		{"admin_control_plane"},
-		{"request_dispatch_root", "application_data_plane"},
-		{"tls_or_security_boundary"},
-	}
-	for _, group := range groups {
-		if a.ctx.Err() != nil {
-			return
-		}
-		for _, kind := range group {
-			if kinds[kind] {
-				pillars++
-				break
-			}
-		}
-		for _, kind := range group {
-			if reachableKinds[kind] {
-				reachablePillars++
-				break
-			}
-		}
-	}
-	mode := "package_landscape"
-	if kinds["process_entry"] && reachablePillars >= 4 {
-		mode = "behavior_grounded"
-	} else if kinds["process_entry"] && pillars >= 2 {
-		mode = "mixed"
-	}
+	kinds, reachableKinds := architectureOperationalKindSets(anchors, reachable)
+	mode := architectureGroundingMode(kinds, reachableKinds)
 
 	processEntryCount := 0
 	for _, anchor := range anchors {
-		if anchor.Kind == "process_entry" {
+		if anchor.Kind == "process_entry" && anchor.ProofMode == componentmap.AnchorProofProcessEntry {
 			processEntryCount++
 		}
 	}
@@ -3031,8 +3108,7 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		archetype = "library_framework"
 		evidenceItems = append(evidenceItems, "all exact process entrypoints are examples or test helpers; a non-main library package is build-selected")
 		alternatives = append(alternatives, "application")
-	case (kinds["registry_write"] || kinds["extension_family"]) &&
-		(kinds["request_dispatch_root"] || kinds["admin_control_plane"]):
+	case architectureHasModularPlatformServerShape(kinds):
 		archetype = "modular_platform_server"
 		evidenceItems = append(evidenceItems, "exact registry/extension and server/control-plane anchors")
 		alternatives = append(alternatives, "application")
@@ -3058,11 +3134,103 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		Version:             ArchitectureGroundingVersion,
 		RepositoryArchetype: ArchetypeAssessment{Selected: archetype, Evidence: evidenceItems, Alternatives: alternatives},
 		GroundingMode:       mode, Anchors: anchors, Relationships: relationships,
+		Coverage: groundingCoverage,
 	}
 	if a.ctx.Err() != nil {
 		return
 	}
 	a.result.normalize()
+}
+
+func architectureOperationalKindSets(
+	anchors []BehaviorAnchor,
+	reachable map[string]bool,
+) (map[string]bool, map[string]bool) {
+	kinds := make(map[string]bool)
+	reachableKinds := make(map[string]bool)
+	for _, anchor := range anchors {
+		if !architectureOperationalProofMode(anchor.ProofMode) {
+			continue
+		}
+		kinds[anchor.Kind] = true
+		if reachable[anchor.ID] {
+			reachableKinds[anchor.Kind] = true
+		}
+	}
+	return kinds, reachableKinds
+}
+
+func architectureOperationalProofMode(proofMode componentmap.AnchorProofMode) bool {
+	return proofMode == componentmap.AnchorProofProcessEntry ||
+		proofMode == componentmap.AnchorProofCallTarget
+}
+
+func architectureGroundingMode(kinds, reachableKinds map[string]bool) string {
+	pillars := architecturePillarCount(kinds)
+	reachablePillars := architecturePillarCount(reachableKinds)
+	if kinds["process_entry"] && reachablePillars >= 4 {
+		return "behavior_grounded"
+	}
+	if kinds["process_entry"] && pillars >= 2 {
+		return "mixed"
+	}
+	return "package_landscape"
+}
+
+func architecturePillarCount(kinds map[string]bool) int {
+	groups := [][]string{
+		{"command_dispatch"},
+		{"config_ingress", "config_adapter", "config_apply"},
+		{"registry_write", "registry_lookup", "extension_family"},
+		{"lifecycle_interface", "lifecycle_start"},
+		{"admin_control_plane"},
+		{"request_dispatch_root", "application_data_plane"},
+		{"tls_or_security_boundary"},
+	}
+	pillars := 0
+	for _, group := range groups {
+		for _, kind := range group {
+			if kinds[kind] {
+				pillars++
+				break
+			}
+		}
+	}
+	return pillars
+}
+
+func architectureHasModularPlatformServerShape(kinds map[string]bool) bool {
+	return (kinds["registry_write"] || kinds["extension_family"]) &&
+		(kinds["request_dispatch_root"] || kinds["admin_control_plane"])
+}
+
+func (a *analyzer) architectureGroundingCoverage(
+	anchorsConsidered int,
+	anchorsPublished int,
+	relationshipsConsidered int,
+	relationshipsPublished int,
+	declarationFamilyMembersPublished int,
+	persistenceLimited bool,
+) GroundingCoverage {
+	coverageReasons := make([]GroundingCoverageReason, 0, 2)
+	collectionLimited := a.architectureAnchorCollectionLimited ||
+		a.architectureRelationshipCollectionLimited
+	if collectionLimited {
+		coverageReasons = append(coverageReasons, GroundingCoverageCollectionLimit)
+	}
+	if persistenceLimited {
+		coverageReasons = append(coverageReasons, GroundingCoveragePersistenceLimit)
+	}
+	return GroundingCoverage{
+		Complete:                           !collectionLimited && !persistenceLimited,
+		Reasons:                            coverageReasons,
+		AnchorsConsidered:                  anchorsConsidered,
+		AnchorsPublished:                   anchorsPublished,
+		RelationshipsConsidered:            relationshipsConsidered,
+		RelationshipsPublished:             relationshipsPublished,
+		DeclarationFamilyMembersConsidered: a.declarationFamilyMembersConsidered,
+		DeclarationFamilyMembersPublished:  declarationFamilyMembersPublished,
+	}
 }
 
 func (a *analyzer) hasOnlyAuxiliaryProcessEntrypoints(processEntryCount int) bool {

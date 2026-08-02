@@ -659,7 +659,8 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: Atlas Study artifact identity does not match report")
 	}
 	if report.AtlasStudy != nil {
-		if !hasRepositoryAtlas || report.AtlasStudy.Version != atlasstudy.Version {
+		if !hasRepositoryAtlas || report.AtlasStudy.Version != atlasstudy.Version ||
+			report.AtlasStudy.ProjectionVersion != AtlasStudyReportProjectionVersion {
 			return fmt.Errorf("report manifest: Atlas Study report projection is incomplete")
 		}
 		switch report.AtlasStudy.State {
@@ -668,7 +669,11 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 				report.StudyMap == nil ||
 				report.AtlasStudy.UnavailableCode != "" || report.AtlasStudy.FailureCode != "" ||
 				report.AtlasStudy.DirectionCount < 1 ||
-				report.AtlasStudy.DirectionCount != len(report.StudyMap.Directions) {
+				report.AtlasStudy.PublishedDirectionCount < 1 ||
+				report.AtlasStudy.PublishedDirectionCount != len(report.StudyMap.Directions) ||
+				report.AtlasStudy.HiddenDirectionCount != len(report.StudyMap.HiddenDirections) ||
+				report.AtlasStudy.DirectionCount != report.AtlasStudy.PublishedDirectionCount+
+					report.AtlasStudy.HiddenDirectionCount {
 				return fmt.Errorf("report manifest: accepted Atlas Study projection is invalid")
 			}
 		case atlasstudy.ProductStateUnavailable:
@@ -676,7 +681,8 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 				report.StudyMap != nil ||
 				(report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableOffline &&
 					report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
-				report.AtlasStudy.FailureCode != "" || report.AtlasStudy.DirectionCount != 0 {
+				report.AtlasStudy.FailureCode != "" || report.AtlasStudy.DirectionCount != 0 ||
+				report.AtlasStudy.PublishedDirectionCount != 0 || report.AtlasStudy.HiddenDirectionCount != 0 {
 				return fmt.Errorf("report manifest: unavailable Atlas Study projection is invalid")
 			}
 		case atlasstudy.ProductStateFailed:
@@ -686,7 +692,8 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 				!report.AtlasStudy.FailureCode.Valid() ||
 				report.AtlasStudy.FailureCode == atlasstudy.FailureResource ||
 				report.AtlasStudy.FailureCode == atlasstudy.FailureCanceled ||
-				report.AtlasStudy.DirectionCount != 0 {
+				report.AtlasStudy.DirectionCount != 0 ||
+				report.AtlasStudy.PublishedDirectionCount != 0 || report.AtlasStudy.HiddenDirectionCount != 0 {
 				return fmt.Errorf("report manifest: failed Atlas Study projection is invalid")
 			}
 		default:

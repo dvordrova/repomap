@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -555,6 +556,7 @@ func (a *analyzer) recordProcessEntrypoints() {
 			limitation = "Exact build-selected main declaration; deeper typed analysis is unavailable under the recorded build scenario."
 		}
 		a.recordArchitectureAnchorMembersWithProvenance(
+			componentmap.AnchorProofProcessEntry,
 			"process_entry",
 			"process entry "+symbol.ID,
 			location,

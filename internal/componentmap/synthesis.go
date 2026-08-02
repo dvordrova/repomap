@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 8
-	SynthesisRecordVersion  = 8
-	SynthesisPromptVersion  = "architecture-grounding-v11"
+	SynthesisRequestVersion = 9
+	SynthesisRecordVersion  = 9
+	SynthesisPromptVersion  = "architecture-grounding-v12"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -80,9 +80,21 @@ type SynthesisCandidate struct {
 
 type SynthesisBehaviorAnchor struct {
 	Ref        SynthesisAnchorRef   `json:"ref"`
+	ProofMode  AnchorProofMode      `json:"proof_mode"`
 	Label      string               `json:"label"`
 	Certainty  evidence.Certainty   `json:"certainty"`
 	MemberRefs []SynthesisMemberRef `json:"member_refs"`
+}
+
+// SynthesisStructuralLocator is complete read-only containment context. Its
+// ref is never a conceptual member ref and therefore cannot be returned in a
+// provider component. ParentRefs and ChildRefs name only exact conceptual
+// candidates from this same request.
+type SynthesisStructuralLocator struct {
+	Ref        SynthesisMemberRef   `json:"ref"`
+	Label      string               `json:"label"`
+	ParentRefs []SynthesisMemberRef `json:"parent_refs"`
+	ChildRefs  []SynthesisMemberRef `json:"child_refs"`
 }
 
 // SynthesisFlow keeps a flow request-local while retaining only semantic
@@ -112,14 +124,15 @@ type SynthesisAnchorBinding struct {
 // deliberately absent; they are bound privately by prompt/cache/record
 // identity.
 type SynthesisRequest struct {
-	RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
-	GroundingMode       GroundingMode             `json:"grounding_mode"`
-	RequiredMemberRefs  []SynthesisMemberRef      `json:"required_member_refs"`
-	BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
-	Flows               []SynthesisFlow           `json:"flows,omitempty"`
-	Candidates          []SynthesisCandidate      `json:"candidates"`
-	Relations           []SynthesisRelation       `json:"supporting_relations,omitempty"`
-	AnchorBindings      []SynthesisAnchorBinding  `json:"flow_anchor_bindings,omitempty"`
+	RepositoryArchetype RepositoryArchetype          `json:"repository_archetype"`
+	GroundingMode       GroundingMode                `json:"grounding_mode"`
+	RequiredMemberRefs  []SynthesisMemberRef         `json:"required_member_refs"`
+	BehaviorAnchors     []SynthesisBehaviorAnchor    `json:"behavior_anchors,omitempty"`
+	Flows               []SynthesisFlow              `json:"flows,omitempty"`
+	Candidates          []SynthesisCandidate         `json:"candidates"`
+	StructuralContext   []SynthesisStructuralLocator `json:"structural_context,omitempty"`
+	Relations           []SynthesisRelation          `json:"supporting_relations,omitempty"`
+	AnchorBindings      []SynthesisAnchorBinding     `json:"flow_anchor_bindings,omitempty"`
 }
 
 // SynthesisPrompt is the provider-neutral instruction plus the exact bounded
@@ -181,12 +194,23 @@ type SynthesisCall struct {
 // SynthesisRecord intentionally has one optional Call field rather than call
 // history. This represents one call for one exact bounded synthesis request.
 type SynthesisRecord struct {
-	Version              int            `json:"version"`
-	RepositoryRevision   string         `json:"repository_revision"`
-	CacheKey             string         `json:"cache_key"`
-	RequestSHA256        string         `json:"request_sha256"`
-	PrivateCatalogSHA256 string         `json:"private_catalog_sha256"`
-	Call                 *SynthesisCall `json:"call,omitempty"`
+	Version                int            `json:"version"`
+	RepositoryRevision     string         `json:"repository_revision"`
+	CacheKey               string         `json:"cache_key"`
+	RequestSHA256          string         `json:"request_sha256"`
+	PrivateCatalogSHA256   string         `json:"private_catalog_sha256"`
+	ProviderRequestSHA256  string         `json:"provider_request_sha256"`
+	ProviderEndpointSHA256 string         `json:"provider_endpoint_sha256"`
+	Call                   *SynthesisCall `json:"call,omitempty"`
+}
+
+// SynthesisProviderIdentity binds a saved semantic result to the exact
+// external request body and provider endpoint identity used for the call. The
+// endpoint digest must be computed from non-secret canonical endpoint identity;
+// Authorization and credentials never belong in this record.
+type SynthesisProviderIdentity struct {
+	RequestSHA256  string
+	EndpointSHA256 string
 }
 
 type SynthesisResult struct {
@@ -208,6 +232,7 @@ type synthesisPrivateCatalog struct {
 	membersByID        map[MemberID]SynthesisMemberRef
 	membersByRef       map[string]MemberID
 	memberKinds        map[string]MemberKind
+	memberRoles        map[string]CandidateRole
 	anchorsByID        map[string]SynthesisAnchorRef
 	anchorsByRef       map[string]string
 	anchorKinds        map[string]BehaviorAnchorKind
@@ -217,13 +242,16 @@ type synthesisPrivateCatalog struct {
 }
 
 type synthesisCatalogMemberIdentity struct {
-	Ref SynthesisMemberRef `json:"ref"`
-	ID  MemberID           `json:"id"`
+	Ref      SynthesisMemberRef `json:"ref"`
+	ID       MemberID           `json:"id"`
+	Role     CandidateRole      `json:"role"`
+	ParentID *MemberID          `json:"parent_id,omitempty"`
 }
 
 type synthesisCatalogAnchorIdentity struct {
-	Ref SynthesisAnchorRef `json:"ref"`
-	ID  string             `json:"id"`
+	Ref       SynthesisAnchorRef `json:"ref"`
+	ID        string             `json:"id"`
+	ProofMode AnchorProofMode    `json:"proof_mode"`
 }
 
 type synthesisCatalogFlowIdentity struct {
@@ -245,6 +273,7 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		membersByID:        make(map[MemberID]SynthesisMemberRef, len(bundle.Candidates)),
 		membersByRef:       make(map[string]MemberID, len(bundle.Candidates)),
 		memberKinds:        make(map[string]MemberKind, len(bundle.Candidates)),
+		memberRoles:        make(map[string]CandidateRole, len(bundle.Candidates)),
 		anchorsByID:        make(map[string]SynthesisAnchorRef, len(bundle.BehaviorAnchors)),
 		anchorsByRef:       make(map[string]string, len(bundle.BehaviorAnchors)),
 		anchorKinds:        make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
@@ -289,7 +318,10 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		catalog.membersByID[candidate.ID] = ref
 		catalog.membersByRef[ref.key()] = candidate.ID
 		catalog.memberKinds[ref.Ref] = ref.Kind
-		identity.Members = append(identity.Members, synthesisCatalogMemberIdentity{Ref: ref, ID: candidate.ID})
+		catalog.memberRoles[ref.key()] = candidate.Role
+		identity.Members = append(identity.Members, synthesisCatalogMemberIdentity{
+			Ref: ref, ID: candidate.ID, Role: candidate.Role, ParentID: cloneMemberID(candidate.ParentID),
+		})
 	}
 	anchors := append([]BehaviorAnchor(nil), bundle.BehaviorAnchors...)
 	sort.Slice(anchors, func(i, j int) bool { return anchors[i].ID < anchors[j].ID })
@@ -301,7 +333,9 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		catalog.anchorsByID[anchor.ID] = ref
 		catalog.anchorsByRef[ref.key()] = anchor.ID
 		catalog.anchorKinds[ref.Ref] = ref.Kind
-		identity.Anchors = append(identity.Anchors, synthesisCatalogAnchorIdentity{Ref: ref, ID: anchor.ID})
+		identity.Anchors = append(identity.Anchors, synthesisCatalogAnchorIdentity{
+			Ref: ref, ID: anchor.ID, ProofMode: anchor.ProofMode,
+		})
 	}
 	flows := append([]Flow(nil), bundle.Flows...)
 	sort.Slice(flows, func(i, j int) bool { return flows[i].ID < flows[j].ID })
@@ -331,6 +365,14 @@ func allocateSynthesisRequestRef(prefix string, ordinal int, reserved map[string
 		reserved[ref] = struct{}{}
 		return ref, ordinal
 	}
+}
+
+func cloneMemberID(id *MemberID) *MemberID {
+	if id == nil {
+		return nil
+	}
+	cloned := *id
+	return &cloned
 }
 
 func (ref SynthesisMemberRef) key() string {
@@ -420,6 +462,7 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		RequiredMemberRefs:  make([]SynthesisMemberRef, 0, len(bundle.Candidates)),
 		BehaviorAnchors:     make([]SynthesisBehaviorAnchor, 0, len(bundle.BehaviorAnchors)),
 		Candidates:          make([]SynthesisCandidate, 0, len(bundle.Candidates)),
+		StructuralContext:   make([]SynthesisStructuralLocator, 0),
 		Flows:               make([]SynthesisFlow, 0, len(bundle.Flows)),
 		Relations:           make([]SynthesisRelation, 0, len(bundle.Relations)),
 		AnchorBindings:      make([]SynthesisAnchorBinding, 0, len(bundle.AnchorBindings)),
@@ -433,19 +476,31 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		}
 		sort.Slice(memberRefs, func(i, j int) bool { return memberRefs[i].key() < memberRefs[j].key() })
 		request.BehaviorAnchors = append(request.BehaviorAnchors, SynthesisBehaviorAnchor{
-			Ref: catalog.anchorsByID[anchor.ID], Label: synthesisAnchorLabel(catalog, anchor.Kind),
+			Ref: catalog.anchorsByID[anchor.ID], ProofMode: anchor.ProofMode,
+			Label:     synthesisAnchorLabel(catalog, anchor.Kind),
 			Certainty: anchor.Certainty, MemberRefs: memberRefs,
 		})
 	}
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
+	candidatesByID := make(map[MemberID]Candidate, len(candidates))
+	childrenByParent := make(map[MemberID][]Candidate)
 	for _, candidate := range candidates {
+		candidatesByID[candidate.ID] = candidate
+		if candidate.ParentID != nil {
+			childrenByParent[*candidate.ParentID] = append(childrenByParent[*candidate.ParentID], candidate)
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
 		projected := SynthesisCandidate{
 			Ref: catalog.membersByID[candidate.ID], Label: synthesisCandidateLabel(catalog, candidate),
 			Participations: make([]SynthesisFlowParticipation, 0, len(candidate.Participations)),
 			Facts:          make([]SynthesisFact, 0, len(candidate.Facts)),
 		}
-		if candidate.ParentID != nil {
+		if candidate.ParentID != nil && candidatesByID[*candidate.ParentID].Role == CandidateRoleConceptualMember {
 			parent := catalog.membersByID[*candidate.ParentID]
 			projected.ParentRef = &parent
 		}
@@ -460,6 +515,25 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		}
 		request.Candidates = append(request.Candidates, projected)
 		request.RequiredMemberRefs = append(request.RequiredMemberRefs, projected.Ref)
+	}
+	for _, candidate := range candidates {
+		if candidate.Role != CandidateRoleStructuralLocator {
+			continue
+		}
+		locator := SynthesisStructuralLocator{
+			Ref: catalog.membersByID[candidate.ID], Label: synthesisCandidateLabel(catalog, candidate),
+			ParentRefs: make([]SynthesisMemberRef, 0, 1),
+			ChildRefs:  make([]SynthesisMemberRef, 0, len(childrenByParent[candidate.ID])),
+		}
+		if candidate.ParentID != nil {
+			locator.ParentRefs = append(locator.ParentRefs, catalog.membersByID[*candidate.ParentID])
+		}
+		for _, child := range childrenByParent[candidate.ID] {
+			locator.ChildRefs = append(locator.ChildRefs, catalog.membersByID[child.ID])
+		}
+		sort.Slice(locator.ParentRefs, func(i, j int) bool { return locator.ParentRefs[i].key() < locator.ParentRefs[j].key() })
+		sort.Slice(locator.ChildRefs, func(i, j int) bool { return locator.ChildRefs[i].key() < locator.ChildRefs[j].key() })
+		request.StructuralContext = append(request.StructuralContext, locator)
 	}
 	flows := append([]Flow(nil), bundle.Flows...)
 	sort.Slice(flows, func(i, j int) bool { return flows[i].ID < flows[j].ID })
@@ -477,6 +551,10 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	relations := append([]LocalRelation(nil), bundle.Relations...)
 	sort.Slice(relations, func(i, j int) bool { return relations[i].ID < relations[j].ID })
 	for _, relation := range relations {
+		if candidatesByID[relation.From].Role != CandidateRoleConceptualMember ||
+			candidatesByID[relation.To].Role != CandidateRoleConceptualMember {
+			continue
+		}
 		request.Relations = append(request.Relations, SynthesisRelation{
 			From: catalog.membersByID[relation.From], To: catalog.membersByID[relation.To],
 			Kind: relation.Kind, Certainty: relation.Certainty,
@@ -545,6 +623,56 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 			)
 		}
 	}
+	seenLocatorRefs := make(map[string]struct{}, len(request.StructuralContext))
+	allRefs := make(map[string]struct{}, len(seen)+len(request.StructuralContext))
+	for key := range seen {
+		allRefs[key] = struct{}{}
+	}
+	for index, locator := range request.StructuralContext {
+		if locator.Ref.Ref == "" {
+			return fmt.Errorf("componentmap: structural_context[%d].ref is empty", index)
+		}
+		key := locator.Ref.key()
+		if _, conceptual := seen[key]; conceptual {
+			return fmt.Errorf("componentmap: structural_context[%d].ref is also a conceptual candidate", index)
+		}
+		if _, duplicate := allRefs[key]; duplicate {
+			return fmt.Errorf("componentmap: structural_context[%d].ref duplicates an earlier locator", index)
+		}
+		allRefs[key] = struct{}{}
+	}
+	for index, locator := range request.StructuralContext {
+		if err := validateDisplayText("structural locator label", locator.Label, maxNameBytes, true); err != nil {
+			return fmt.Errorf("componentmap: structural_context[%d]: %w", index, err)
+		}
+		key := locator.Ref.key()
+		if _, duplicate := seenLocatorRefs[key]; duplicate {
+			return fmt.Errorf("componentmap: structural_context[%d].ref duplicates an earlier locator", index)
+		}
+		seenLocatorRefs[key] = struct{}{}
+		seenParents := make(map[string]struct{}, len(locator.ParentRefs))
+		for parentIndex, parentRef := range locator.ParentRefs {
+			parentKey := parentRef.key()
+			if _, known := allRefs[parentKey]; !known {
+				return fmt.Errorf("componentmap: structural_context[%d].parent_refs[%d] is not a request member", index, parentIndex)
+			}
+			if _, duplicate := seenParents[parentKey]; duplicate {
+				return fmt.Errorf("componentmap: structural_context[%d] repeats a parent ref", index)
+			}
+			seenParents[parentKey] = struct{}{}
+		}
+		seenChildren := make(map[string]struct{}, len(locator.ChildRefs))
+		for childIndex, childRef := range locator.ChildRefs {
+			childKey := childRef.key()
+			if _, known := allRefs[childKey]; !known {
+				return fmt.Errorf("componentmap: structural_context[%d].child_refs[%d] is not a request member", index, childIndex)
+			}
+			if _, duplicate := seenChildren[childKey]; duplicate {
+				return fmt.Errorf("componentmap: structural_context[%d] repeats a child ref", index)
+			}
+			seenChildren[childKey] = struct{}{}
+		}
+	}
 	return nil
 }
 
@@ -567,6 +695,21 @@ func synthesisRequestIdentityFields(request SynthesisRequest) []synthesisWireIde
 		for memberIndex, memberRef := range anchor.MemberRefs {
 			fields = append(fields, synthesisWireIdentityField{
 				name: fmt.Sprintf("behavior_anchors[%d].member_refs[%d]", index, memberIndex), ref: memberRef.Ref,
+			})
+		}
+	}
+	for index, locator := range request.StructuralContext {
+		fields = append(fields, synthesisWireIdentityField{
+			name: fmt.Sprintf("structural_context[%d].ref", index), ref: locator.Ref.Ref,
+		})
+		for parentIndex, parentRef := range locator.ParentRefs {
+			fields = append(fields, synthesisWireIdentityField{
+				name: fmt.Sprintf("structural_context[%d].parent_refs[%d]", index, parentIndex), ref: parentRef.Ref,
+			})
+		}
+		for childIndex, childRef := range locator.ChildRefs {
+			fields = append(fields, synthesisWireIdentityField{
+				name: fmt.Sprintf("structural_context[%d].child_refs[%d]", index, childIndex), ref: childRef.Ref,
 			})
 		}
 	}
@@ -634,6 +777,11 @@ func synthesisFactLabel(catalog synthesisPrivateCatalog, fact LocalFact) string 
 	var label string
 	switch fact.Kind {
 	case FactRepositoryPath:
+		if !strings.Contains(value, "/") {
+			// A root-level repository path is already its own basename. Exposing
+			// it would violate the path-free Architecture wire contract.
+			return catalog.synthesisLabelOrFallback("", fallback)
+		}
 		label = path.Base(value)
 		if label == "." || label == "/" || label == "" {
 			return catalog.synthesisLabelOrFallback("", fallback)
@@ -683,6 +831,11 @@ func synthesisCandidateLabel(catalog synthesisPrivateCatalog, candidate Candidat
 func synthesisSemanticLabel(catalog synthesisPrivateCatalog, kind MemberKind, value string) string {
 	value = catalog.sanitizeCanonicalOpaqueTokens(value)
 	if value == "" {
+		return ""
+	}
+	if kind == MemberFile && !strings.Contains(value, "/") {
+		// File producers commonly use the repository-relative path as Name.
+		// For a root-level file there is no safe basename-only projection.
 		return ""
 	}
 	if strings.Contains(value, "/") {
@@ -741,15 +894,15 @@ func buildSynthesisPromptForLanguage(
 	}
 	system := `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use member, anchor, and flow refs as opaque request-local typed values. Copy a ref only into a response field of the same kind. Do not rewrite refs, infer new refs, or mention members absent from the request.
-Local semantic facts, compact structural relations, flow participation, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
+Use conceptual member, anchor, and flow refs as opaque request-local typed values. Copy a ref only into a response field of the same kind. Do not rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs.
+Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with one ordered records array. Use this exact tagged-record grammar:
 {"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","member_refs":[{"kind":"package","ref":"p2"}],"anchor_refs":[],"hypothesis":true}]}
 
 The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Treat required_member_refs as the exhaustive flat coverage checklist. Every supplied candidate member ref is present in that checklist and must appear in at least one component member_refs field; an incomplete proposal is rejected rather than repaired or supplemented locally. A candidate parent_ref is grouping context only and never satisfies coverage for either the parent or the candidate. Before returning, collect the distinct member_refs from every component, self-check them separately by kind, and verify that their exact typed set equals required_member_refs with no missing, unknown, or wrong-kind ref. Cross-cutting repeats count once for this coverage self-check. Every component must contain at least one supplied member ref.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Treat required_member_refs as the exhaustive flat coverage checklist for conceptual candidates only. Every supplied candidate member ref is present in that checklist and must appear in at least one component member_refs field; an incomplete proposal is rejected rather than repaired or supplemented locally. A candidate parent_ref and every structural_context parent_refs/child_refs link are grouping context only and never satisfy conceptual coverage. Never return a structural_context ref. Before returning, collect the distinct member_refs from every component, self-check them separately by kind, and verify that their exact typed set equals required_member_refs with no missing, structural-locator, unknown, or wrong-kind ref. Cross-cutting repeats count once for this coverage self-check. Every component must contain at least one supplied conceptual member ref.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. Every non-hypothesis component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -872,6 +1025,56 @@ func RecordSynthesisResponseForLanguage(
 	latency time.Duration,
 	rawResponse []byte,
 ) (SynthesisResult, error) {
+	return recordSynthesisResponseForLanguage(
+		bundle,
+		repositoryRevision,
+		profile,
+		model,
+		outputLanguage,
+		latency,
+		rawResponse,
+	)
+}
+
+// RecordSynthesisResponseForLanguageAndProvider evaluates an already-received
+// response and binds the resulting persistable record to the exact external
+// provider request body and non-secret endpoint identity. Runtime/cache owners
+// should use this entrypoint; RecordSynthesisResponseForLanguage remains useful
+// for provider-neutral evaluation before an explicit binding is available.
+func RecordSynthesisResponseForLanguageAndProvider(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	profile string,
+	model string,
+	outputLanguage string,
+	providerIdentity SynthesisProviderIdentity,
+	latency time.Duration,
+	rawResponse []byte,
+) (SynthesisResult, error) {
+	result, err := recordSynthesisResponseForLanguage(
+		bundle,
+		repositoryRevision,
+		profile,
+		model,
+		outputLanguage,
+		latency,
+		rawResponse,
+	)
+	if err != nil {
+		return SynthesisResult{}, err
+	}
+	return BindSynthesisProviderIdentity(bundle, repositoryRevision, result, providerIdentity)
+}
+
+func recordSynthesisResponseForLanguage(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	profile string,
+	model string,
+	outputLanguage string,
+	latency time.Duration,
+	rawResponse []byte,
+) (SynthesisResult, error) {
 	if latency < 0 {
 		return SynthesisResult{}, fmt.Errorf("componentmap: synthesis latency cannot be negative")
 	}
@@ -945,10 +1148,30 @@ func RecordSynthesisResponseForLanguage(
 			ResponseState: state, ResponseBytes: len(rawResponse), Response: response,
 		},
 	}
-	if err := validateSynthesisRecord(bundle, repositoryRevision, record); err != nil {
+	if err := validateSynthesisRecord(bundle, repositoryRevision, record, false); err != nil {
 		return SynthesisResult{}, err
 	}
 	return SynthesisResult{Landscape: landscape, Record: record, Membership: membership}, nil
+}
+
+// BindSynthesisProviderIdentity returns an independently validated copy of a
+// provider-neutral result whose record is safe to persist or replay. It does
+// not retain endpoint text, request bytes, credentials, or Authorization.
+func BindSynthesisProviderIdentity(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	result SynthesisResult,
+	identity SynthesisProviderIdentity,
+) (SynthesisResult, error) {
+	if err := validateSynthesisProviderIdentity(identity); err != nil {
+		return SynthesisResult{}, err
+	}
+	result.Record.ProviderRequestSHA256 = identity.RequestSHA256
+	result.Record.ProviderEndpointSHA256 = identity.EndpointSHA256
+	if err := validateSynthesisRecord(bundle, repositoryRevision, result.Record, true); err != nil {
+		return SynthesisResult{}, err
+	}
+	return result, nil
 }
 
 // ReplaySynthesis strictly decodes one saved record, rebuilds the exact local
@@ -964,6 +1187,31 @@ func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []
 // ReplaySynthesisResult revalidates the saved response and returns the same
 // authoritative resolved membership counts that were recorded originally.
 func ReplaySynthesisResult(bundle CandidateBundle, repositoryRevision string, saved []byte) (SynthesisResult, error) {
+	return replaySynthesisResult(bundle, repositoryRevision, SynthesisProviderIdentity{}, false, saved)
+}
+
+// ReplaySynthesisResultForProvider additionally proves that a persisted record
+// belongs to the exact external request body and endpoint identity selected by
+// the active cache owner. A digest mismatch is a closed cache miss/rejection.
+func ReplaySynthesisResultForProvider(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	providerIdentity SynthesisProviderIdentity,
+	saved []byte,
+) (SynthesisResult, error) {
+	if err := validateSynthesisProviderIdentity(providerIdentity); err != nil {
+		return SynthesisResult{}, err
+	}
+	return replaySynthesisResult(bundle, repositoryRevision, providerIdentity, true, saved)
+}
+
+func replaySynthesisResult(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	providerIdentity SynthesisProviderIdentity,
+	requireExpectedProvider bool,
+	saved []byte,
+) (SynthesisResult, error) {
 	if len(saved) == 0 {
 		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis record is empty or too large")
 	}
@@ -978,8 +1226,12 @@ func ReplaySynthesisResult(bundle CandidateBundle, repositoryRevision string, sa
 	if err := decodeStrictJSON(saved, &record); err != nil {
 		return SynthesisResult{}, fmt.Errorf("componentmap: decode synthesis record: %w", err)
 	}
-	if err := validateSynthesisRecord(bundle, repositoryRevision, record); err != nil {
+	if err := validateSynthesisRecord(bundle, repositoryRevision, record, true); err != nil {
 		return SynthesisResult{}, err
+	}
+	if requireExpectedProvider && (record.ProviderRequestSHA256 != providerIdentity.RequestSHA256 ||
+		record.ProviderEndpointSHA256 != providerIdentity.EndpointSHA256) {
+		return SynthesisResult{}, fmt.Errorf("componentmap: synthesis record external provider identity does not match")
 	}
 
 	landscape, membership, err := evaluateSynthesisResponse(bundle, record.Call.ResponseState, record.Call.Response)
@@ -1006,7 +1258,12 @@ func ReplaySynthesisResult(bundle CandidateBundle, repositoryRevision string, sa
 	return SynthesisResult{Landscape: landscape, Record: record, Membership: membership}, nil
 }
 
-func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, record SynthesisRecord) error {
+func validateSynthesisRecord(
+	bundle CandidateBundle,
+	repositoryRevision string,
+	record SynthesisRecord,
+	requireProviderIdentity bool,
+) error {
 	if record.Version != SynthesisRecordVersion {
 		return fmt.Errorf("componentmap: unsupported synthesis record version %d", record.Version)
 	}
@@ -1029,6 +1286,19 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	}
 	if record.PrivateCatalogSHA256 != catalog.identitySHA256 {
 		return fmt.Errorf("componentmap: synthesis record private catalog digest does not match")
+	}
+	if requireProviderIdentity {
+		if err := validateSynthesisProviderIdentity(SynthesisProviderIdentity{
+			RequestSHA256: record.ProviderRequestSHA256, EndpointSHA256: record.ProviderEndpointSHA256,
+		}); err != nil {
+			return err
+		}
+	} else if record.ProviderRequestSHA256 != "" || record.ProviderEndpointSHA256 != "" {
+		if err := validateSynthesisProviderIdentity(SynthesisProviderIdentity{
+			RequestSHA256: record.ProviderRequestSHA256, EndpointSHA256: record.ProviderEndpointSHA256,
+		}); err != nil {
+			return err
+		}
 	}
 	if record.Call == nil {
 		return fmt.Errorf("componentmap: synthesis record has no represented call")
@@ -1147,6 +1417,16 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 		}
 	default:
 		return fmt.Errorf("componentmap: invalid synthesis response state %q", record.Call.ResponseState)
+	}
+	return nil
+}
+
+func validateSynthesisProviderIdentity(identity SynthesisProviderIdentity) error {
+	if !modelresearch.IsSHA256(identity.RequestSHA256) {
+		return fmt.Errorf("componentmap: synthesis provider request digest is missing or malformed")
+	}
+	if !modelresearch.IsSHA256(identity.EndpointSHA256) {
+		return fmt.Errorf("componentmap: synthesis provider endpoint digest is missing or malformed")
 	}
 	return nil
 }
@@ -1662,6 +1942,11 @@ func resolveSynthesisWireProposal(
 					code: "proposal.unknown_member_id", message: "proposal references an unknown request-local member ref",
 				}
 			}
+			if catalog.memberRoles[memberRef.key()] != CandidateRoleConceptualMember {
+				return Proposal{}, &synthesisResponseError{
+					code: "proposal.unknown_member_id", message: "proposal returned a structural locator as conceptual membership",
+				}
+			}
 			component.MemberIDs = append(component.MemberIDs, memberID)
 		}
 		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
@@ -1922,7 +2207,7 @@ func synthesisPromptSize(prompt SynthesisPrompt) int {
 }
 
 func synthesisJSONContainsCredential(encoded []byte) bool {
-	if _, sensitive := secretscan.Detect(string(encoded)); sensitive {
+	if _, sensitive := secretscan.DetectAlways(string(encoded)); sensitive {
 		return true
 	}
 	var value any
@@ -1933,7 +2218,7 @@ func synthesisJSONContainsCredential(encoded []byte) bool {
 	inspect = func(current any) bool {
 		switch typed := current.(type) {
 		case string:
-			_, sensitive := secretscan.Detect(typed)
+			_, sensitive := secretscan.DetectAlways(typed)
 			return sensitive
 		case []any:
 			for _, item := range typed {
@@ -1954,7 +2239,7 @@ func synthesisJSONContainsCredential(encoded []byte) bool {
 }
 
 func synthesisResponseContainsCredential(response []byte) bool {
-	if _, sensitive := secretscan.Detect(string(response)); sensitive {
+	if _, sensitive := secretscan.DetectAlways(string(response)); sensitive {
 		return true
 	}
 	for _, object := range jsonObjectCandidates(response, 2) {

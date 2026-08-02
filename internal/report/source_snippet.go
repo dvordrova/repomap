@@ -1718,6 +1718,11 @@ func overviewSourceTargetsWithPackageEvidence(
 			appendTarget(location.Path, location.Line)
 		}
 	}
+	for _, locator := range data.ArchitectureCanvas.StructuralLocators {
+		for _, location := range overviewArchitectureStructuralLocatorLocations(locator, openable) {
+			appendTarget(location.Path, location.Line)
+		}
+	}
 	return result
 }
 
@@ -1837,6 +1842,44 @@ func overviewArchitectureComponentLocations(
 			return locations[i].Path < locations[j].Path
 		}
 		return locations[i].Line < locations[j].Line
+	})
+	return locations
+}
+
+func overviewArchitectureStructuralLocatorLocations(
+	structural ArchitectureStructuralLocator,
+	openable map[string]struct{},
+) []SurfaceLocation {
+	if structural.Locator.Role != componentmap.CandidateRoleStructuralLocator {
+		return nil
+	}
+	locations := make([]SurfaceLocation, 0)
+	seen := make(map[string]struct{})
+	for _, fact := range structural.Locator.Facts {
+		if fact.Kind != componentmap.FactRepositoryPath || fact.Location == nil ||
+			fact.Location.Line <= 0 || fact.Value != fact.Location.Path {
+			continue
+		}
+		if _, ok := openable[fact.Location.Path]; !ok {
+			continue
+		}
+		key := overviewSourceTargetKey(fact.Location.Path, fact.Location.Line)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		locations = append(locations, SurfaceLocation{
+			Path: fact.Location.Path, Line: fact.Location.Line, Column: fact.Location.Column,
+		})
+	}
+	sort.Slice(locations, func(i, j int) bool {
+		if locations[i].Path != locations[j].Path {
+			return locations[i].Path < locations[j].Path
+		}
+		if locations[i].Line != locations[j].Line {
+			return locations[i].Line < locations[j].Line
+		}
+		return locations[i].Column < locations[j].Column
 	})
 	return locations
 }

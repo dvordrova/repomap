@@ -485,7 +485,8 @@ func atlasFirstAcceptanceRequestStage(
 	switch {
 	case strings.Contains(combined, "atlas-navigator-startup-json-v1"):
 		return atlasFirstStageNavigator, combined, nil
-	case strings.Contains(combined, "Use member, anchor, and flow refs as opaque request-local typed values.") &&
+	case strings.Contains(combined, "Use conceptual member, anchor, and flow refs as opaque request-local typed values.") &&
+		strings.Contains(combined, "Refs under structural_context are read-only locator context") &&
 		strings.Contains(combined, "Bounded candidate request:\n"):
 		return atlasFirstStageArchitecture, combined, nil
 	case strings.Contains(combined, "Catalog JSON:\n") &&
@@ -862,7 +863,15 @@ func assertAtlasFirstLocalSubstrateUnchanged(t *testing.T, data *report.ReportDa
 		}
 		return gotCandidates[i].ID.Value < gotCandidates[j].ID.Value
 	})
-	wantCandidates := append([]componentmap.Candidate(nil), input.CandidateBundle.Candidates...)
+	wantCandidates := make([]componentmap.Candidate, 0, len(input.CandidateBundle.Candidates))
+	wantStructuralLocators := make([]componentmap.Candidate, 0, len(input.CandidateBundle.Candidates))
+	for _, candidate := range input.CandidateBundle.Candidates {
+		if candidate.Role == componentmap.CandidateRoleStructuralLocator {
+			wantStructuralLocators = append(wantStructuralLocators, candidate)
+			continue
+		}
+		wantCandidates = append(wantCandidates, candidate)
+	}
 	sort.Slice(wantCandidates, func(i, j int) bool {
 		if wantCandidates[i].ID.Kind != wantCandidates[j].ID.Kind {
 			return wantCandidates[i].ID.Kind < wantCandidates[j].ID.Kind
@@ -871,6 +880,25 @@ func assertAtlasFirstLocalSubstrateUnchanged(t *testing.T, data *report.ReportDa
 	})
 	if !reflect.DeepEqual(gotCandidates, wantCandidates) {
 		t.Fatalf("model grouping changed exact local candidates\ngot:  %#v\nwant: %#v", gotCandidates, wantCandidates)
+	}
+	gotStructuralLocators := make([]componentmap.Candidate, 0, len(data.ArchitectureCanvas.StructuralLocators))
+	for _, locator := range data.ArchitectureCanvas.StructuralLocators {
+		gotStructuralLocators = append(gotStructuralLocators, locator.Locator)
+	}
+	sort.Slice(gotStructuralLocators, func(i, j int) bool {
+		if gotStructuralLocators[i].ID.Kind != gotStructuralLocators[j].ID.Kind {
+			return gotStructuralLocators[i].ID.Kind < gotStructuralLocators[j].ID.Kind
+		}
+		return gotStructuralLocators[i].ID.Value < gotStructuralLocators[j].ID.Value
+	})
+	sort.Slice(wantStructuralLocators, func(i, j int) bool {
+		if wantStructuralLocators[i].ID.Kind != wantStructuralLocators[j].ID.Kind {
+			return wantStructuralLocators[i].ID.Kind < wantStructuralLocators[j].ID.Kind
+		}
+		return wantStructuralLocators[i].ID.Value < wantStructuralLocators[j].ID.Value
+	})
+	if !reflect.DeepEqual(gotStructuralLocators, wantStructuralLocators) {
+		t.Fatalf("model grouping changed exact structural locators\ngot:  %#v\nwant: %#v", gotStructuralLocators, wantStructuralLocators)
 	}
 }
 

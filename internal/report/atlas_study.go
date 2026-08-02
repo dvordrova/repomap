@@ -17,6 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/studymap"
@@ -312,7 +313,7 @@ func atlasStudyReadingTargets(
 		association := atlasStudyReadingAssociation(
 			data, advertisedSurfaces, selected.Path, line,
 		)
-		if len(association.principalRefs) == 0 {
+		if !association.operationalSupport || len(association.principalRefs) == 0 {
 			continue
 		}
 		symbol, kind, _, _ := atlasStudyReadingTargetContext(
@@ -387,6 +388,7 @@ type atlasStudyReadingAssociations struct {
 	principalRefs       []atlasstudy.CanonicalRef
 	surfaceLabels       []string
 	processEntry        bool
+	operationalSupport  bool
 }
 
 func atlasStudyReadingAssociation(
@@ -396,6 +398,7 @@ func atlasStudyReadingAssociation(
 	line int,
 ) atlasStudyReadingAssociations {
 	knownComponents := make(map[string]struct{}, len(data.ArchitectureCanvas.Components))
+	memberFacts := make(map[componentmap.MemberID][]componentmap.LocalFact)
 	relatedComponents := make(map[string]struct{})
 	principalRefs := make(map[atlasstudy.CanonicalRef]struct{})
 	exactOwners := make(map[string]struct{})
@@ -403,6 +406,9 @@ func atlasStudyReadingAssociation(
 	for _, component := range data.ArchitectureCanvas.Components {
 		componentID := string(component.ID)
 		knownComponents[componentID] = struct{}{}
+		for _, member := range component.Members {
+			memberFacts[member.ID] = append(memberFacts[member.ID], member.Facts...)
+		}
 		if atlasStudyComponentOwnsPath(data, component, sourcePath) {
 			relatedComponents[componentID] = struct{}{}
 			principalRefs[atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: componentID}] = struct{}{}
@@ -410,17 +416,21 @@ func atlasStudyReadingAssociation(
 	}
 	result := atlasStudyReadingAssociations{}
 	for _, surface := range data.ArchitectureCanvas.Surfaces {
-		if _, advertised := advertisedSurfaces[surface.ID]; !advertised {
+		if surface.Resolution != "exact" {
 			continue
 		}
 		for _, location := range surface.Evidence {
-			if location.Path == sourcePath && location.Line == line {
+			if line > 0 && location.Path == sourcePath && location.Line == line {
+				result.operationalSupport = true
+				if surface.Kind == "process_entry" {
+					result.processEntry = true
+				}
+				if _, advertised := advertisedSurfaces[surface.ID]; !advertised {
+					break
+				}
 				principalRefs[atlasstudy.CanonicalRef{Kind: atlasstudy.RefSurface, ID: surface.ID}] = struct{}{}
 				if label := strings.TrimSpace(surface.Name); label != "" {
 					surfaceLabels[label] = struct{}{}
-				}
-				if surface.Kind == "process_entry" {
-					result.processEntry = true
 				}
 				ownerID := string(surface.OwningComponentID)
 				if _, known := knownComponents[ownerID]; ownerID != "" && known {
@@ -440,17 +450,55 @@ func atlasStudyReadingAssociation(
 			}
 		}
 	}
+	if atlasStudyNavigatorSupportsLocation(data, sourcePath, line) {
+		result.operationalSupport = true
+	}
 	for _, flow := range data.ArchitectureCanvas.Flows {
 		for _, step := range flow.Steps {
-			if step.Location == nil || step.Location.Path != sourcePath || step.Location.Line != line {
+			if line <= 0 || step.Location == nil || step.Location.Path != sourcePath || step.Location.Line != line {
 				continue
 			}
+			result.operationalSupport = true
 			ownerID := string(step.ComponentID)
 			if _, known := knownComponents[ownerID]; ownerID != "" && known {
 				exactOwners[ownerID] = struct{}{}
 				relatedComponents[ownerID] = struct{}{}
 				principalRefs[atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: ownerID}] = struct{}{}
 			}
+		}
+	}
+	for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
+		if line <= 0 || (anchor.ProofMode != componentmap.AnchorProofProcessEntry &&
+			anchor.ProofMode != componentmap.AnchorProofCallTarget) {
+			continue
+		}
+		supported := anchor.Location.Path == sourcePath && anchor.Location.Line == line
+		if !supported {
+			for _, memberID := range anchor.MemberIDs {
+				for _, fact := range memberFacts[memberID] {
+					if fact.Location == nil || fact.Location.Line <= 0 ||
+						(fact.Kind != componentmap.FactDeclaration && fact.Kind != componentmap.FactRepositoryPath) {
+						continue
+					}
+					if fact.Location.Path == sourcePath && fact.Location.Line == line {
+						supported = true
+						break
+					}
+				}
+				if supported {
+					break
+				}
+			}
+		}
+		if !supported {
+			continue
+		}
+		switch anchor.ProofMode {
+		case componentmap.AnchorProofProcessEntry:
+			result.operationalSupport = true
+			result.processEntry = true
+		case componentmap.AnchorProofCallTarget:
+			result.operationalSupport = true
 		}
 	}
 	if len(exactOwners) == 1 {
@@ -476,6 +524,26 @@ func atlasStudyReadingAssociation(
 	}
 	sort.Strings(result.surfaceLabels)
 	return result
+}
+
+func atlasStudyNavigatorSupportsLocation(data *ReportData, sourcePath string, line int) bool {
+	if data == nil || data.Navigator == nil || data.RepositoryAtlas == nil || line <= 0 ||
+		data.Navigator.State != navigator.ProductStateSelected || data.Navigator.Recommendation == nil {
+		return false
+	}
+	evidenceIDs := make(map[string]struct{}, len(data.Navigator.Recommendation.EvidenceIDs))
+	for _, evidenceID := range data.Navigator.Recommendation.EvidenceIDs {
+		if evidenceID != "" {
+			evidenceIDs[evidenceID] = struct{}{}
+		}
+	}
+	for _, item := range data.RepositoryAtlas.Evidence {
+		if _, selected := evidenceIDs[item.ID]; selected &&
+			item.Location.Path == sourcePath && item.Location.Line == line {
+			return true
+		}
+	}
+	return false
 }
 
 func atlasStudyComponentOwnsPath(
@@ -832,7 +900,8 @@ func readAtlasStudyReportProduct(
 		return nil, nil, fmt.Errorf("atlas study report: status binding: %w", err)
 	}
 	reportStatus := &AtlasStudyReportStatus{
-		Version: status.Version, State: status.State,
+		Version: status.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+		State:           status.State,
 		UnavailableCode: AtlasStudyUnavailableCode(status.UnavailableCode),
 		FailureCode:     status.FailureCode, DirectionCount: status.DirectionCount,
 	}
@@ -855,6 +924,11 @@ func readAtlasStudyReportProduct(
 		if projectErr != nil {
 			return nil, nil, projectErr
 		}
+		// DirectionCount remains the exact accepted result/status count.
+		// Publication counts are an explicit versioned report projection; exact
+		// duplicate reading sets remain available as hidden diagnostics.
+		reportStatus.PublishedDirectionCount = len(studyMap.Directions)
+		reportStatus.HiddenDirectionCount = len(studyMap.HiddenDirections)
 		return reportStatus, studyMap, nil
 	case atlasstudy.ProductStateUnavailable, atlasstudy.ProductStateFailed:
 		if hasResult {
@@ -896,14 +970,16 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 	if status := data.ArchitectureSynthesis; status != nil &&
 		status.State == ArchitectureSynthesisUnavailable && status.UnavailableCode == "offline" {
 		return &AtlasStudyReportStatus{
-			Version: atlasstudy.Version, State: atlasstudy.ProductStateUnavailable,
+			Version: atlasstudy.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableOffline,
 		}
 	}
 	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
 	if err == nil && !AtlasStudyInputHasMinimumCatalog(input) {
 		return &AtlasStudyReportStatus{
-			Version: atlasstudy.Version, State: atlasstudy.ProductStateUnavailable,
+			Version: atlasstudy.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
 		}
 	}
@@ -982,7 +1058,12 @@ func projectAtlasStudyMap(
 		}
 		studyMap.Shape = append(studyMap.Shape, projected)
 	}
+	seenReadingSets := make(map[string]struct{}, len(result.Directions))
 	for _, direction := range result.Directions {
+		readingSetKey, err := atlasStudyDirectionReadingSetKey(direction, targets)
+		if err != nil {
+			return nil, err
+		}
 		projected := StudyDirection{
 			ID: direction.ID, Question: direction.Question,
 			WhyItMatters: direction.WhyItMatters, LearningOutcome: direction.LearningOutcome,
@@ -1023,9 +1104,34 @@ func projectAtlasStudyMap(
 			projected.Areas = append(projected.Areas, projectedArea)
 		}
 		projected.DebugCoverage = studyDirectionCoverage(projected)
+		if _, duplicate := seenReadingSets[readingSetKey]; duplicate {
+			markStudyDirectionUserVisible(&projected, false, "duplicate_reading_set")
+			studyMap.HiddenDirections = append(studyMap.HiddenDirections, projected)
+			continue
+		}
+		seenReadingSets[readingSetKey] = struct{}{}
 		studyMap.Directions = append(studyMap.Directions, projected)
 	}
 	return studyMap, nil
+}
+
+func atlasStudyDirectionReadingSetKey(
+	direction atlasstudy.Direction,
+	targets map[string]atlasstudy.ReadingTarget,
+) (string, error) {
+	locators := make([]string, 0, len(direction.Reading))
+	for _, reading := range direction.Reading {
+		target, ok := targets[reading.Target.ID]
+		if reading.Target.Kind != atlasstudy.RefReadingTarget || !ok {
+			return "", fmt.Errorf("atlas study report: direction references unavailable reading target")
+		}
+		locators = append(locators, strings.Join([]string{
+			target.ID, string(target.Kind), target.Location.Path,
+			fmt.Sprint(target.Location.Line), target.Symbol,
+		}, "\x00"))
+	}
+	sort.Strings(locators)
+	return strings.Join(locators, "\x01"), nil
 }
 
 func exactAtlasStudySource(

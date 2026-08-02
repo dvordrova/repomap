@@ -100,33 +100,35 @@ type componentLandscapeSynthesizer interface {
 }
 
 type architectureSynthesisOutcome struct {
-	Cached                bool
-	InputBytes            int
-	LatencyMillis         int64
-	FallbackReason        componentmap.FallbackReason
-	ResponseBytes         int
-	ResponseContentBytes  int
-	Attempted             bool
-	TransportAttempts     int
-	ProviderCallSucceeded bool
-	ResponseParsed        bool
-	ValidationOutcome     componentmap.ValidationOutcome
-	ArchitectureSource    componentmap.ArchitectureSource
-	ArchitectureLevel     int
-	NormalizationCount    int
-	FallbackSelected      bool
-	InputTokens           int
-	OutputTokens          int
-	UsageReported         bool
-	FinishReason          string
-	ResponseComplete      bool
-	ResponseState         componentmap.ResponseState
-	CandidateCount        int
-	AnchorCount           int
-	MembershipCounted     bool
-	MemberOccurrences     int
-	DistinctMembers       int
-	ValidationCodes       []string
+	Cached                   bool
+	InputBytes               int
+	LatencyMillis            int64
+	FallbackReason           componentmap.FallbackReason
+	ResponseBytes            int
+	ResponseContentBytes     int
+	Attempted                bool
+	TransportAttempts        int
+	ProviderCallSucceeded    bool
+	ResponseParsed           bool
+	ValidationOutcome        componentmap.ValidationOutcome
+	ArchitectureSource       componentmap.ArchitectureSource
+	ArchitectureLevel        int
+	NormalizationCount       int
+	FallbackSelected         bool
+	InputTokens              int
+	OutputTokens             int
+	UsageReported            bool
+	FinishReason             string
+	ResponseComplete         bool
+	ResponseState            componentmap.ResponseState
+	LocalCandidateCount      int
+	RequestedConceptualCount int
+	StructuralLocatorCount   int
+	AnchorCount              int
+	MembershipCounted        bool
+	MemberOccurrences        int
+	DistinctMembers          int
+	ValidationCodes          []string
 }
 
 func synthesizeArchitectureForRun(
@@ -390,6 +392,10 @@ func ensureArchitectureSynthesisWithOptions(
 	if err != nil {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: build provider request: %w", err)
 	}
+	providerIdentity := componentmap.SynthesisProviderIdentity{
+		RequestSHA256:  modelresearch.SHA256(requestJSON),
+		EndpointSHA256: options.providerEndpointSHA256,
+	}
 	policy := modelresearch.DefaultPolicy()
 	usage := modelresearch.Usage{}
 	if state, stateErr := modelresearch.ReadState(runDir); stateErr == nil {
@@ -398,10 +404,13 @@ func ensureArchitectureSynthesisWithOptions(
 	} else if !errors.Is(stateErr, os.ErrNotExist) {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: read research budget: %w", stateErr)
 	}
+	conceptualCount, structuralLocatorCount := bundle.CandidateRoleCounts()
 	outcome := architectureSynthesisOutcome{
-		InputBytes:     len(requestJSON),
-		CandidateCount: len(bundle.Candidates),
-		AnchorCount:    len(bundle.BehaviorAnchors),
+		InputBytes:               len(requestJSON),
+		LocalCandidateCount:      len(bundle.Candidates),
+		RequestedConceptualCount: conceptualCount,
+		StructuralLocatorCount:   structuralLocatorCount,
+		AnchorCount:              len(bundle.BehaviorAnchors),
 	}
 	if allowed, reason := policy.Allows(policy.Architecture, usage, len(requestJSON)); !allowed {
 		outcome.FallbackReason = componentmap.FallbackReason(reason)
@@ -423,8 +432,8 @@ func ensureArchitectureSynthesisWithOptions(
 	}
 	cacheKey, err := architectureSynthesisExternalCacheKey(
 		baseCacheKey,
-		options.providerEndpointSHA256,
-		modelresearch.SHA256(requestJSON),
+		providerIdentity.EndpointSHA256,
+		providerIdentity.RequestSHA256,
 	)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
@@ -446,6 +455,7 @@ func ensureArchitectureSynthesisWithOptions(
 					bundle,
 					repositoryRevision,
 					outputLanguage,
+					providerIdentity,
 					saved,
 				)
 				if replayErr != nil {
@@ -477,7 +487,9 @@ func ensureArchitectureSynthesisWithOptions(
 				}
 				cachedOutcome.Cached = true
 				cachedOutcome.InputBytes = len(requestJSON)
-				cachedOutcome.CandidateCount = len(bundle.Candidates)
+				cachedOutcome.LocalCandidateCount = len(bundle.Candidates)
+				cachedOutcome.RequestedConceptualCount = conceptualCount
+				cachedOutcome.StructuralLocatorCount = structuralLocatorCount
 				cachedOutcome.AnchorCount = len(bundle.BehaviorAnchors)
 				if architectureSynthesisAcceptedEvidenceCode(cachedOutcome) != "" {
 					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
@@ -567,12 +579,13 @@ func ensureArchitectureSynthesisWithOptions(
 		}
 		return outcome, &architectureProviderCallFailed{cause: callErr}
 	}
-	result, err := componentmap.RecordSynthesisResponseForLanguage(
+	result, err := componentmap.RecordSynthesisResponseForLanguageAndProvider(
 		bundle,
 		repositoryRevision,
 		profile,
 		model,
 		outputLanguage,
+		providerIdentity,
 		latency,
 		raw,
 	)
@@ -607,32 +620,34 @@ func ensureArchitectureSynthesisWithOptions(
 		membershipCounted, memberOccurrences, distinctMembers = architectureResponseMembershipCounts(raw)
 	}
 	outcome = architectureSynthesisOutcome{
-		InputBytes:            len(requestJSON),
-		LatencyMillis:         result.Record.Call.Metadata.LatencyMillis,
-		FallbackReason:        result.Landscape.FallbackReason,
-		ResponseBytes:         result.Record.Call.ResponseBytes,
-		ResponseContentBytes:  len(result.Record.Call.Response),
-		Attempted:             true,
-		TransportAttempts:     providerResult.Attempts,
-		ProviderCallSucceeded: true,
-		ResponseParsed:        architectureResponseParsed(result.Landscape),
-		ValidationOutcome:     result.Landscape.ValidationOutcome,
-		ArchitectureSource:    result.Landscape.Source,
-		ArchitectureLevel:     result.Landscape.Level,
-		NormalizationCount:    len(result.Landscape.Normalizations),
-		FallbackSelected:      result.Landscape.Fallback,
-		InputTokens:           providerResult.InputTokens,
-		OutputTokens:          providerResult.OutputTokens,
-		UsageReported:         providerResult.UsageReported,
-		FinishReason:          providerResult.FinishReason,
-		ResponseComplete:      providerResult.FinishReason == "stop",
-		ResponseState:         result.Record.Call.ResponseState,
-		CandidateCount:        len(bundle.Candidates),
-		AnchorCount:           len(bundle.BehaviorAnchors),
-		ValidationCodes:       architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
-		MembershipCounted:     membershipCounted,
-		MemberOccurrences:     memberOccurrences,
-		DistinctMembers:       distinctMembers,
+		InputBytes:               len(requestJSON),
+		LatencyMillis:            result.Record.Call.Metadata.LatencyMillis,
+		FallbackReason:           result.Landscape.FallbackReason,
+		ResponseBytes:            result.Record.Call.ResponseBytes,
+		ResponseContentBytes:     len(result.Record.Call.Response),
+		Attempted:                true,
+		TransportAttempts:        providerResult.Attempts,
+		ProviderCallSucceeded:    true,
+		ResponseParsed:           architectureResponseParsed(result.Landscape),
+		ValidationOutcome:        result.Landscape.ValidationOutcome,
+		ArchitectureSource:       result.Landscape.Source,
+		ArchitectureLevel:        result.Landscape.Level,
+		NormalizationCount:       len(result.Landscape.Normalizations),
+		FallbackSelected:         result.Landscape.Fallback,
+		InputTokens:              providerResult.InputTokens,
+		OutputTokens:             providerResult.OutputTokens,
+		UsageReported:            providerResult.UsageReported,
+		FinishReason:             providerResult.FinishReason,
+		ResponseComplete:         providerResult.FinishReason == "stop",
+		ResponseState:            result.Record.Call.ResponseState,
+		LocalCandidateCount:      len(bundle.Candidates),
+		RequestedConceptualCount: conceptualCount,
+		StructuralLocatorCount:   structuralLocatorCount,
+		AnchorCount:              len(bundle.BehaviorAnchors),
+		ValidationCodes:          architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
+		MembershipCounted:        membershipCounted,
+		MemberOccurrences:        memberOccurrences,
+		DistinctMembers:          distinctMembers,
 	}
 	accepted := !result.Landscape.Fallback &&
 		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
@@ -921,9 +936,15 @@ func replayArchitectureSynthesisOutcome(
 	bundle componentmap.CandidateBundle,
 	repositoryRevision string,
 	outputLanguage string,
+	providerIdentity componentmap.SynthesisProviderIdentity,
 	saved []byte,
 ) (architectureSynthesisOutcome, error) {
-	result, err := componentmap.ReplaySynthesisResult(bundle, repositoryRevision, saved)
+	result, err := componentmap.ReplaySynthesisResultForProvider(
+		bundle,
+		repositoryRevision,
+		providerIdentity,
+		saved,
+	)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
@@ -937,30 +958,34 @@ func replayArchitectureSynthesisOutcome(
 			"architecture synthesis: saved record output language does not match active request",
 		)
 	}
+	conceptualCount, structuralLocatorCount := bundle.CandidateRoleCounts()
 	return architectureSynthesisOutcome{
-		InputBytes:            record.Call.Metadata.InputBytes,
-		LatencyMillis:         record.Call.Metadata.LatencyMillis,
-		FallbackReason:        landscape.FallbackReason,
-		ProviderCallSucceeded: true,
-		ResponseParsed:        architectureResponseParsed(landscape),
-		ValidationOutcome:     landscape.ValidationOutcome,
-		ArchitectureSource:    landscape.Source,
-		ArchitectureLevel:     landscape.Level,
-		NormalizationCount:    len(landscape.Normalizations),
-		FallbackSelected:      landscape.Fallback,
-		UsageReported:         record.Call.Metadata.UsageReported,
-		InputTokens:           record.Call.Metadata.InputTokens,
-		OutputTokens:          record.Call.Metadata.OutputTokens,
-		FinishReason:          record.Call.Metadata.FinishReason,
-		ResponseComplete:      record.Call.Metadata.ResponseComplete,
-		TransportAttempts:     0,
-		ResponseState:         record.Call.ResponseState,
-		ResponseBytes:         record.Call.ResponseBytes,
-		ResponseContentBytes:  len(record.Call.Response),
-		ValidationCodes:       architectureSynthesisDiagnosticCodes(landscape.Diagnostics),
-		MembershipCounted:     result.Membership.Counted,
-		MemberOccurrences:     result.Membership.MemberOccurrences,
-		DistinctMembers:       result.Membership.DistinctMembers,
+		InputBytes:               record.Call.Metadata.InputBytes,
+		LatencyMillis:            record.Call.Metadata.LatencyMillis,
+		FallbackReason:           landscape.FallbackReason,
+		ProviderCallSucceeded:    true,
+		ResponseParsed:           architectureResponseParsed(landscape),
+		ValidationOutcome:        landscape.ValidationOutcome,
+		ArchitectureSource:       landscape.Source,
+		ArchitectureLevel:        landscape.Level,
+		NormalizationCount:       len(landscape.Normalizations),
+		FallbackSelected:         landscape.Fallback,
+		UsageReported:            record.Call.Metadata.UsageReported,
+		InputTokens:              record.Call.Metadata.InputTokens,
+		OutputTokens:             record.Call.Metadata.OutputTokens,
+		FinishReason:             record.Call.Metadata.FinishReason,
+		ResponseComplete:         record.Call.Metadata.ResponseComplete,
+		TransportAttempts:        0,
+		ResponseState:            record.Call.ResponseState,
+		ResponseBytes:            record.Call.ResponseBytes,
+		ResponseContentBytes:     len(record.Call.Response),
+		ValidationCodes:          architectureSynthesisDiagnosticCodes(landscape.Diagnostics),
+		MembershipCounted:        result.Membership.Counted,
+		MemberOccurrences:        result.Membership.MemberOccurrences,
+		DistinctMembers:          result.Membership.DistinctMembers,
+		LocalCandidateCount:      len(bundle.Candidates),
+		RequestedConceptualCount: conceptualCount,
+		StructuralLocatorCount:   structuralLocatorCount,
 	}, nil
 }
 
@@ -969,34 +994,36 @@ func architectureSynthesisStatus(
 	synthesisErr error,
 ) report.ArchitectureSynthesisStatus {
 	status := report.ArchitectureSynthesisStatus{
-		Version:               report.ArchitectureSynthesisStatusVersion,
-		RequestBytes:          outcome.InputBytes,
-		ResponseBytes:         outcome.ResponseBytes,
-		ResponseContentBytes:  outcome.ResponseContentBytes,
-		LatencyMillis:         outcome.LatencyMillis,
-		TransportAttempts:     outcome.TransportAttempts,
-		CandidateCount:        outcome.CandidateCount,
-		AnchorCount:           outcome.AnchorCount,
-		MembershipCounted:     outcome.MembershipCounted,
-		MemberOccurrences:     outcome.MemberOccurrences,
-		DistinctMembers:       outcome.DistinctMembers,
-		UsageReported:         outcome.UsageReported,
-		InputTokens:           outcome.InputTokens,
-		OutputTokens:          outcome.OutputTokens,
-		FinishReason:          outcome.FinishReason,
-		ResponseComplete:      outcome.ResponseComplete,
-		ResponseState:         string(outcome.ResponseState),
-		ValidationCodes:       append([]string(nil), outcome.ValidationCodes...),
-		ProviderCallSucceeded: outcome.ProviderCallSucceeded,
-		ResponseParsed:        outcome.ResponseParsed,
-		ProposalAccepted:      outcome.ValidationOutcome == componentmap.ValidationAccepted || outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ProposalNormalized:    outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ProposalRejected:      outcome.ValidationOutcome == componentmap.ValidationRejected,
-		FallbackSelected:      outcome.FallbackSelected,
-		ArchitectureSource:    string(outcome.ArchitectureSource),
-		ArchitectureLevel:     outcome.ArchitectureLevel,
-		NormalizationCount:    outcome.NormalizationCount,
-		FallbackReason:        string(outcome.FallbackReason),
+		Version:                  report.ArchitectureSynthesisStatusVersion,
+		RequestBytes:             outcome.InputBytes,
+		ResponseBytes:            outcome.ResponseBytes,
+		ResponseContentBytes:     outcome.ResponseContentBytes,
+		LatencyMillis:            outcome.LatencyMillis,
+		TransportAttempts:        outcome.TransportAttempts,
+		LocalCandidateCount:      outcome.LocalCandidateCount,
+		RequestedConceptualCount: outcome.RequestedConceptualCount,
+		StructuralLocatorCount:   outcome.StructuralLocatorCount,
+		AnchorCount:              outcome.AnchorCount,
+		MembershipCounted:        outcome.MembershipCounted,
+		MemberOccurrences:        outcome.MemberOccurrences,
+		DistinctMembers:          outcome.DistinctMembers,
+		UsageReported:            outcome.UsageReported,
+		InputTokens:              outcome.InputTokens,
+		OutputTokens:             outcome.OutputTokens,
+		FinishReason:             outcome.FinishReason,
+		ResponseComplete:         outcome.ResponseComplete,
+		ResponseState:            string(outcome.ResponseState),
+		ValidationCodes:          append([]string(nil), outcome.ValidationCodes...),
+		ProviderCallSucceeded:    outcome.ProviderCallSucceeded,
+		ResponseParsed:           outcome.ResponseParsed,
+		ProposalAccepted:         outcome.ValidationOutcome == componentmap.ValidationAccepted || outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
+		ProposalNormalized:       outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
+		ProposalRejected:         outcome.ValidationOutcome == componentmap.ValidationRejected,
+		FallbackSelected:         outcome.FallbackSelected,
+		ArchitectureSource:       string(outcome.ArchitectureSource),
+		ArchitectureLevel:        outcome.ArchitectureLevel,
+		NormalizationCount:       outcome.NormalizationCount,
+		FallbackReason:           string(outcome.FallbackReason),
 	}
 	if synthesisErr == nil {
 		if outcome.Cached {

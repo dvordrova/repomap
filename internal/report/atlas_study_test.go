@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -96,10 +97,17 @@ func TestAtlasStudyCasdoorShapedPackageDrawerSourcesDoNotExpandReadingCatalog(t 
 		data.UserSources[5].RelatedEvidenceIDs, "unknown-evidence-id",
 	)
 	data.UserSources[5].PresentationSHA256 = sourceSnippetPresentationSHA(data.UserSources[5])
+	data.ArchitectureCanvas.Components[0].Members = append(
+		data.ArchitectureCanvas.Components[0].Members,
+		componentmap.Candidate{
+			ID: componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "unanchored-package-membership"},
+		},
+	)
+	unanchoredMember := len(data.ArchitectureCanvas.Components[0].Members) - 1
 	for _, source := range data.UserSources[3:6] {
 		line := atlasStudySourceFocusLine(source)
-		data.ArchitectureCanvas.Components[0].Members[0].Facts = append(
-			data.ArchitectureCanvas.Components[0].Members[0].Facts,
+		data.ArchitectureCanvas.Components[0].Members[unanchoredMember].Facts = append(
+			data.ArchitectureCanvas.Components[0].Members[unanchoredMember].Facts,
 			componentmap.LocalFact{
 				Kind: componentmap.FactRepositoryPath, Value: source.Path,
 				Location: &evidence.Location{Path: source.Path, Line: line},
@@ -110,8 +118,8 @@ func TestAtlasStudyCasdoorShapedPackageDrawerSourcesDoNotExpandReadingCatalog(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mixed.ReadingTargets) != len(baseline.ReadingTargets)+3 {
-		t.Fatalf("mixed/unknown related identities erased eligible sources: before=%d after=%d",
+	if len(mixed.ReadingTargets) != len(baseline.ReadingTargets) {
+		t.Fatalf("component membership without operational proof expanded Study targets: before=%d after=%d",
 			len(baseline.ReadingTargets), len(mixed.ReadingTargets))
 	}
 	assertAtlasStudyJSONReplayParity(t, data, mixed)
@@ -125,6 +133,125 @@ func TestAtlasStudyCasdoorShapedPackageDrawerSourcesDoNotExpandReadingCatalog(t 
 	if !reflect.DeepEqual(withoutGraphInput.ReadingTargets, mixed.ReadingTargets) {
 		t.Fatalf("RepositoryGraph changed package-evidence Study filtering")
 	}
+}
+
+func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *testing.T) {
+	const (
+		path = "internal/app/run.go"
+		line = 11
+	)
+	build := func(t *testing.T, data *ReportData) atlasstudy.Input {
+		t.Helper()
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return input
+	}
+	setRunProof := func(t *testing.T, data *ReportData, mode componentmap.AnchorProofMode) {
+		t.Helper()
+		for index := range data.ArchitectureCanvas.BehaviorAnchors {
+			anchor := &data.ArchitectureCanvas.BehaviorAnchors[index]
+			if anchor.ID == "anchor-run" {
+				anchor.ProofMode = mode
+				return
+			}
+		}
+		t.Fatal("run behavior anchor missing")
+	}
+	hasRunTarget := func(input atlasstudy.Input) bool {
+		for _, target := range input.ReadingTargets {
+			if target.Location.Path == path && target.Location.Line == line {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("call target member declaration is retained when anchor is a different call site", func(t *testing.T) {
+		input := build(t, atlasStudyReportFixture(t))
+		if !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("call-target catalog = %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("declaration family alone is suppressed", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
+		input := build(t, data)
+		if hasRunTarget(input) || len(input.ReadingTargets) != 2 || AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("family-only catalog = %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("exact surface wins over declaration family", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
+		data.ArchitectureCanvas.Surfaces = append(data.ArchitectureCanvas.Surfaces, ArchitectureSurface{
+			ID: "surface-run-local", Kind: "request_entry", Resolution: "exact", Status: "available",
+			Evidence: []SurfaceLocation{{Path: path, Line: line}},
+		})
+		if input := build(t, data); !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("surface-supported catalog = %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("exact flow wins over declaration family", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
+		data.ArchitectureCanvas.Flows = []ArchitectureFlow{{
+			ID: "flow-run", Name: "Run", Steps: []ArchitectureFlowStep{{
+				ID: "flow-run-step", Location: &evidence.Location{Path: path, Line: line},
+			}},
+		}}
+		if input := build(t, data); !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("flow-supported catalog = %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("exact Navigator evidence wins over declaration family", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
+		navigatorEvidence := data.RepositoryAtlas.Evidence[0]
+		navigatorEvidence.ID = "evidence-navigator-run"
+		navigatorEvidence.Location = evidence.Location{Path: path, Line: line}
+		data.RepositoryAtlas.Evidence = append(data.RepositoryAtlas.Evidence, navigatorEvidence)
+		data.Navigator = &NavigatorReportProduct{
+			Version: navigator.ProductVersion, State: navigator.ProductStateSelected,
+			Recommendation: &navigator.RecommendationAction{
+				EvidenceIDs: []string{navigatorEvidence.ID},
+			},
+		}
+		if input := build(t, data); !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("Navigator-supported catalog = %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("structural locator and component membership alone are suppressed", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
+		data.ArchitectureCanvas.BehaviorAnchors = slices.DeleteFunc(
+			data.ArchitectureCanvas.BehaviorAnchors,
+			func(anchor componentmap.BehaviorAnchor) bool {
+				return anchor.ID == "anchor-run"
+			},
+		)
+		data.ArchitectureCanvas.StructuralLocators = append(
+			data.ArchitectureCanvas.StructuralLocators,
+			ArchitectureStructuralLocator{Locator: componentmap.Candidate{
+				ID:   componentmap.MemberID{Kind: componentmap.MemberFile, Value: "structural-run"},
+				Role: componentmap.CandidateRoleStructuralLocator, Name: path,
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactRepositoryPath, Value: path,
+					Location: &evidence.Location{Path: path, Line: line},
+				}},
+			}},
+		)
+		input := build(t, data)
+		if hasRunTarget(input) || len(input.ReadingTargets) != 2 || AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("locator-only catalog = %#v", input.ReadingTargets)
+		}
+	})
 }
 
 func assertAtlasStudyJSONReplayParity(
@@ -471,7 +598,9 @@ func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 		t.Fatalf("readAtlasStudyReportProduct: %v", err)
 	}
 	if status == nil || status.State != atlasstudy.ProductStateAccepted ||
-		status.DirectionCount != 1 || studyMap == nil || len(studyMap.Directions) != 1 ||
+		status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
+		status.DirectionCount != 1 || status.PublishedDirectionCount != 1 ||
+		status.HiddenDirectionCount != 0 || studyMap == nil || len(studyMap.Directions) != 1 ||
 		len(studyMap.Directions[0].ReadingAnchors) != 3 || len(studyMap.Shape) != 1 {
 		t.Fatalf("accepted report projection = %#v / %#v", status, studyMap)
 	}
@@ -484,6 +613,67 @@ func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 	data.DocumentedPurpose += " Changed after the request was saved."
 	if _, _, err := readAtlasStudyReportProduct(runDir, data); err == nil {
 		t.Fatal("request bound to prior report input was accepted after purpose tamper")
+	}
+}
+
+func TestProjectAtlasStudyMapDeduplicatesExactReadingSetsAndKeepsDiagnostic(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("BuildAtlasStudyInput: %v", err)
+	}
+	if len(input.ReadingTargets) != 3 {
+		t.Fatalf("reading targets = %d, want 3", len(input.ReadingTargets))
+	}
+	readings := make([]atlasstudy.ResolvedReading, 0, len(input.ReadingTargets))
+	for _, target := range input.ReadingTargets {
+		readings = append(readings, atlasstudy.ResolvedReading{
+			Target: atlasstudy.CanonicalRef{Kind: atlasstudy.RefReadingTarget, ID: target.ID},
+			Label:  atlasstudy.ReadingContinue, WhatToLookFor: "Inspect local evidence.",
+		})
+	}
+	reversed := append([]atlasstudy.ResolvedReading(nil), readings...)
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+	result := atlasstudy.ResultRecord{
+		Version: atlasstudy.Version, RepositoryType: atlasstudy.RepositoryService,
+		Directions: []atlasstudy.Direction{
+			{ID: "first-accepted", Question: "First wording?", Reading: readings},
+			{ID: "later-duplicate", Question: "Different wording, same reading set?", Reading: reversed},
+		},
+	}
+	studyMap, err := projectAtlasStudyMap(data, input, result)
+	if err != nil {
+		t.Fatalf("projectAtlasStudyMap: %v", err)
+	}
+	if len(studyMap.Directions) != 1 || studyMap.Directions[0].ID != "first-accepted" ||
+		len(studyMap.HiddenDirections) != 1 || studyMap.HiddenDirections[0].ID != "later-duplicate" {
+		t.Fatalf("visible/diagnostic directions = %#v / %#v",
+			studyMap.Directions, studyMap.HiddenDirections)
+	}
+	hiddenCoverage := studyMap.HiddenDirections[0].DebugCoverage
+	if hiddenCoverage == nil || hiddenCoverage.UserVisible ||
+		!containsString(hiddenCoverage.Reasons, "duplicate_reading_set") ||
+		len(studyMap.Directions)+len(studyMap.HiddenDirections) != len(result.Directions) {
+		t.Fatalf("duplicate diagnostic = %#v", hiddenCoverage)
+	}
+}
+
+func TestReadAtlasStudyReportProductCountsDistinctPublishedDirections(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	runDir := t.TempDir()
+	writeAcceptedAtlasStudyArtifactsWithDirectionCopies(t, runDir, data, 2)
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+	if err != nil {
+		t.Fatalf("readAtlasStudyReportProduct: %v", err)
+	}
+	if status == nil || status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
+		status.DirectionCount != 2 || status.PublishedDirectionCount != 1 ||
+		status.HiddenDirectionCount != 1 || studyMap == nil ||
+		len(studyMap.Directions) != 1 || len(studyMap.HiddenDirections) != 1 ||
+		len(studyMap.Directions)+len(studyMap.HiddenDirections) != 2 {
+		t.Fatalf("published/raw diagnostic count = status:%#v map:%#v", status, studyMap)
 	}
 }
 
@@ -681,7 +871,8 @@ func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichm
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
 		Navigator: &navigatorFixture.projection,
 		AtlasStudy: &AtlasStudyReportStatus{
-			Version: atlasstudy.Version, State: atlasstudy.ProductStateUnavailable,
+			Version: atlasstudy.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
 		},
 	})
@@ -776,6 +967,16 @@ func compileAtlasStudyFixture(t *testing.T, data *ReportData) atlasstudy.Product
 
 func writeAcceptedAtlasStudyArtifacts(t *testing.T, runDir string, data *ReportData) {
 	t.Helper()
+	writeAcceptedAtlasStudyArtifactsWithDirectionCopies(t, runDir, data, 1)
+}
+
+func writeAcceptedAtlasStudyArtifactsWithDirectionCopies(
+	t *testing.T,
+	runDir string,
+	data *ReportData,
+	directionCopies int,
+) {
+	t.Helper()
 	product := compileAtlasStudyFixture(t, data)
 	request, err := product.RequestRecord()
 	if err != nil {
@@ -808,6 +1009,22 @@ func writeAcceptedAtlasStudyArtifacts(t *testing.T, runDir string, data *ReportD
 			"what_to_look_for": "Inspect the advertised local responsibility.",
 		})
 	}
+	directions := []map[string]any{{
+		"question":         "How is the fixture responsibility organized?",
+		"why_it_matters":   "This identifies the bounded conceptual area.",
+		"learning_outcome": "Recognize the exact saved reading anchors.",
+		"target_job":       "first_contact", "learning_stage": "orientation",
+		"principal_refs": []string{componentRef}, "reading": reading,
+	}}
+	for index := 1; index < directionCopies; index++ {
+		directions = append(directions, map[string]any{
+			"question":         fmt.Sprintf("How is the same fixture route organized, version %d?", index+1),
+			"why_it_matters":   "This is deliberately different prose for the same exact reading set.",
+			"learning_outcome": "Recognize that the local reading locations are unchanged.",
+			"target_job":       "first_contact", "learning_stage": "orientation",
+			"principal_refs": []string{componentRef}, "reading": reading,
+		})
+	}
 	response, err := json.Marshal(map[string]any{
 		"repository_type": "service_application",
 		"brief": map[string]any{
@@ -817,13 +1034,7 @@ func writeAcceptedAtlasStudyArtifacts(t *testing.T, runDir string, data *ReportD
 			"central_responsibility": statement("It handles the advertised fixture responsibility."),
 			"observable_result":      statement("It exposes a visible fixture result."),
 		},
-		"directions": []map[string]any{{
-			"question":         "How is the fixture responsibility organized?",
-			"why_it_matters":   "This identifies the bounded conceptual area.",
-			"learning_outcome": "Recognize the exact saved reading anchors.",
-			"target_job":       "first_contact", "learning_stage": "orientation",
-			"principal_refs": []string{componentRef}, "reading": reading,
-		}},
+		"directions": directions,
 	})
 	if err != nil {
 		t.Fatalf("marshal response: %v", err)
@@ -935,6 +1146,29 @@ func atlasStudyReportFixture(t *testing.T) *ReportData {
 			ArchitectureSource: componentmap.SourceValidatedModel,
 			ArchitectureLevel:  2,
 			Title:              "Fixture architecture",
+			BehaviorAnchors: []componentmap.BehaviorAnchor{
+				{
+					ID: "anchor-entry", Kind: componentmap.AnchorProcessEntry,
+					ProofMode: componentmap.AnchorProofProcessEntry,
+					Location:  evidence.Location{Path: "cmd/app/main.go", Line: 7},
+					Certainty: evidence.CertaintyStatic,
+				},
+				{
+					ID: "anchor-run", Kind: componentmap.AnchorRequestDispatchRoot,
+					ProofMode: componentmap.AnchorProofCallTarget,
+					Location:  evidence.Location{Path: "cmd/app/main.go", Line: 17},
+					MemberIDs: []componentmap.MemberID{{
+						Kind: componentmap.MemberFile, Value: "member-file",
+					}},
+					Certainty: evidence.CertaintyStatic,
+				},
+				{
+					ID: "anchor-result", Kind: componentmap.AnchorApplicationData,
+					ProofMode: componentmap.AnchorProofCallTarget,
+					Location:  evidence.Location{Path: "internal/app/result.go", Line: 19},
+					Certainty: evidence.CertaintyStatic,
+				},
+			},
 			Subsystems: []ArchitectureSubsystem{{
 				ID: "subsystem-app", Name: "Application",
 				ComponentIDs: []componentmap.ComponentID{"component-fixture-app"},
