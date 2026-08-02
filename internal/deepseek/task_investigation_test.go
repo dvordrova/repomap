@@ -112,7 +112,8 @@ func TestInvestigateTaskMeasuredRetriesRetryableTransportFailures(t *testing.T) 
 				t.Fatalf("Content = %q", result.Content)
 			}
 			if result.InputTokens != 11 || result.OutputTokens != 7 ||
-				result.PromptCacheHitTokens != 3 || result.PromptCacheMissTokens != 8 {
+				result.PromptCacheHitTokens != 3 || result.PromptCacheMissTokens != 8 ||
+				!result.UsageReported {
 				t.Fatalf("token usage = %#v", result)
 			}
 		})

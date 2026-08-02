@@ -80,6 +80,7 @@ func (c *Client) InvestigateTaskMeasured(
 		)
 		usage.RequestBytes += len(body)
 		usage.ResponseBytes += result.ResponseBytes
+		usage.UsageReported = usage.UsageReported || result.UsageReported
 		usage.InputTokens += result.InputTokens
 		usage.OutputTokens += result.OutputTokens
 		usage.ReasoningTokens += result.ReasoningTokens

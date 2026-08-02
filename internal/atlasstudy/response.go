@@ -177,15 +177,22 @@ func (product Product) resolveSupportRefs(field string, refs []string) ([]Canoni
 		if err != nil {
 			return nil, err
 		}
-		switch object.Kind {
-		case RefSubsystem, RefComponent, RefSurface, RefReadingTarget, RefEvidence, RefDocument:
-		default:
+		if !briefSupportKind(object.Kind) {
 			return nil, &ReferenceError{Field: field, Position: position, Code: "wrong_kind_ref"}
 		}
 		result = append(result, CanonicalRef{Kind: object.Kind, ID: object.CanonicalID})
 	}
 	sort.Slice(result, func(i, j int) bool { return canonicalRefLess(result[i], result[j]) })
 	return result, nil
+}
+
+func briefSupportKind(kind RefKind) bool {
+	switch kind {
+	case RefSubsystem, RefComponent, RefSurface, RefReadingTarget, RefEvidence, RefDocument:
+		return true
+	default:
+		return false
+	}
 }
 
 func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, Diagnostics) {

@@ -501,8 +501,51 @@ func TestOrientMeasuredReportsPromptCacheTokens(t *testing.T) {
 		t.Fatalf("OrientMeasured() error = %v", err)
 	}
 	if result.InputTokens != 120 || result.OutputTokens != 17 ||
-		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 {
+		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 ||
+		!result.UsageReported {
 		t.Fatalf("OrientMeasured() token usage = %#v", result)
+	}
+}
+
+func TestOrientMeasuredDistinguishesMissingUsageFromReportedZeros(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		providerBody  string
+		usageReported bool
+	}{
+		{
+			name:         "missing usage",
+			providerBody: `{"choices":[{"message":{"content":"{}"}}]}`,
+		},
+		{
+			name:          "reported zero usage",
+			providerBody:  `{"choices":[{"message":{"content":"{}"}}],"usage":{}}`,
+			usageReported: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, test.providerBody)
+			}))
+			defer server.Close()
+
+			client := &Client{
+				HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
+				Model: "fixture-model", MaxTokens: 64_000,
+			}
+			result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.UsageReported != test.usageReported ||
+				result.InputTokens != 0 || result.OutputTokens != 0 {
+				t.Fatalf("usage presence = %#v, want reported=%t", result, test.usageReported)
+			}
+		})
 	}
 }
 

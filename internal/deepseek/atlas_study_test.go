@@ -15,9 +15,11 @@ import (
 
 func atlasStudyPromptFixture() atlasstudy.Prompt {
 	return atlasstudy.Prompt{
-		Version: atlasstudy.PromptVersion,
-		System:  "Use only the supplied short typed refs and return JSON.",
-		User:    `Requested prose language: en. Catalog JSON: {"components":[{"ref":"c0001"}]}`,
+		Version:  atlasstudy.PromptVersion,
+		Language: atlasstudy.LanguageEnglish,
+		System:   "Use only the supplied short typed refs and return JSON.",
+		User: `Requested prose language: en. Catalog JSON: {"brief_support_choices":[{"ref":"c0001","kind":"component"}],` +
+			`"units":[{"ref":"u0001","kind":"package"}],"components":[{"ref":"c0001"}]}`,
 	}
 }
 
@@ -41,9 +43,63 @@ func TestAtlasStudyPromptJSONUsesOneExactJSONRequest(t *testing.T) {
 		t.Fatalf("Atlas Study request = %#v", request)
 	}
 	if !strings.Contains(request.Messages[0].Content, "short typed refs") ||
-		!strings.Contains(request.Messages[1].Content, `"c0001"`) ||
-		!strings.Contains(request.Messages[1].Content, canonicalEnglishUserContract) {
+		!strings.Contains(request.Messages[1].Content, `"brief_support_choices":[{"ref":"c0001","kind":"component"}]`) ||
+		!strings.Contains(request.Messages[1].Content, `"units":[{"ref":"u0001","kind":"package"}]`) ||
+		strings.Contains(request.Messages[0].Content, canonicalEnglishSystemContract) ||
+		strings.Contains(request.Messages[1].Content, canonicalEnglishUserContract) {
 		t.Fatalf("Atlas Study request lost exact prompt contracts: %#v", request.Messages)
+	}
+}
+
+func TestAtlasStudyPromptJSONUsesOneStageOwnedLanguageContract(t *testing.T) {
+	t.Parallel()
+	client := &Client{Model: "fixture-model", MaxTokens: 64_000}
+	bodies := make(map[atlasstudy.Language][]byte)
+
+	for _, test := range []struct {
+		name     string
+		language atlasstudy.Language
+		line     string
+	}{
+		{name: "English", language: atlasstudy.LanguageEnglish, line: "Requested prose language: en."},
+		{name: "Russian", language: atlasstudy.LanguageRussian, line: "Requested prose language: ru."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prompt := atlasStudyPromptFixture()
+			prompt.Language = test.language
+			prompt.User = test.line + ` Catalog JSON: {"components":[{"ref":"c0001"}]}`
+			body, err := client.AtlasStudyPromptJSON(prompt, 1<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request chatRequest
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Fatal(err)
+			}
+			joined := request.Messages[0].Content + "\n" + request.Messages[1].Content
+			if strings.Count(joined, "Requested prose language:") != 1 ||
+				!strings.Contains(joined, test.line) {
+				t.Fatalf("Atlas Study language contract = %q", joined)
+			}
+			if strings.Contains(joined, canonicalEnglishSystemContract) ||
+				strings.Contains(joined, canonicalEnglishUserContract) ||
+				strings.Contains(joined, "human-readable prose value in English") {
+				t.Fatalf("Atlas Study retained shared English wrapper: %q", joined)
+			}
+			bodies[test.language] = body
+		})
+	}
+	if bytes.Equal(bodies[atlasstudy.LanguageEnglish], bodies[atlasstudy.LanguageRussian]) {
+		t.Fatal("Atlas Study provider body did not bind the stage-owned output language")
+	}
+}
+
+func TestAtlasStudyPromptJSONRejectsUnknownStageOwnedLanguage(t *testing.T) {
+	t.Parallel()
+	prompt := atlasStudyPromptFixture()
+	prompt.Language = "future"
+	if _, err := (&Client{Model: "fixture-model", MaxTokens: 64_000}).AtlasStudyPromptJSON(prompt, 1<<20); err == nil {
+		t.Fatal("AtlasStudyPromptJSON() accepted unknown prompt language")
 	}
 }
 

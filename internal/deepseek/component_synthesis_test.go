@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 func TestComponentSynthesisPromptJSONPreservesExactChatContract(t *testing.T) {
@@ -17,9 +20,10 @@ func TestComponentSynthesisPromptJSONPreservesExactChatContract(t *testing.T) {
 
 	client := &Client{Model: "company-model", MaxTokens: 6000}
 	prompt := componentmap.SynthesisPrompt{
-		Version: componentmap.SynthesisPromptVersion,
-		System:  "exact system instruction\nwith a second line",
-		User:    "exact bounded request\n{\"candidate\":\"opaque-1\"}",
+		Version:        componentmap.SynthesisPromptVersion,
+		OutputLanguage: "en",
+		System:         "exact system instruction\nwith a second line",
+		User:           "exact bounded request\n{\"candidate\":\"opaque-1\"}",
 	}
 
 	got, err := client.ComponentSynthesisPromptJSON(prompt)
@@ -31,11 +35,11 @@ func TestComponentSynthesisPromptJSONPreservesExactChatContract(t *testing.T) {
 		Messages: []chatMessage{
 			{
 				Role:    "system",
-				Content: prompt.System + "\n\n" + canonicalEnglishSystemContract,
+				Content: prompt.System,
 			},
 			{
 				Role:    "user",
-				Content: canonicalEnglishUserContract + "\n\n" + prompt.User,
+				Content: prompt.User,
 			},
 		},
 		Temperature:    float64Pointer(0.1),
@@ -59,9 +63,10 @@ func TestComponentSynthesisPromptJSONDisablesThinkingForDeepSeek(t *testing.T) {
 		MaxTokens: 6000,
 	}
 	prompt := componentmap.SynthesisPrompt{
-		Version: componentmap.SynthesisPromptVersion,
-		System:  "system json contract",
-		User:    "bounded json request",
+		Version:        componentmap.SynthesisPromptVersion,
+		OutputLanguage: "en",
+		System:         "system json contract",
+		User:           "bounded json request",
 	}
 
 	encoded, err := client.ComponentSynthesisPromptJSON(prompt)
@@ -77,6 +82,50 @@ func TestComponentSynthesisPromptJSONDisablesThinkingForDeepSeek(t *testing.T) {
 	}
 }
 
+func TestComponentSynthesisPromptJSONUsesOneStageOwnedLanguageContract(t *testing.T) {
+	t.Parallel()
+	client := &Client{Model: "company-model", MaxTokens: 64_000}
+	bodies := make(map[string][]byte)
+
+	for _, test := range []struct {
+		language  string
+		directive string
+		forbidden string
+	}{
+		{language: "en", directive: "name and description prose in English", forbidden: "prose in Russian"},
+		{language: "ru", directive: "name and description prose in Russian", forbidden: "prose in English"},
+	} {
+		t.Run(test.language, func(t *testing.T) {
+			prompt := componentmap.SynthesisPrompt{
+				Version: componentmap.SynthesisPromptVersion, OutputLanguage: test.language,
+				System: "Return JSON. Write only subsystem and component " + test.directive + ".",
+				User:   `Bounded candidate request: {"candidates":[]}`,
+			}
+			body, err := client.ComponentSynthesisPromptJSON(prompt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request chatRequest
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Fatal(err)
+			}
+			joined := request.Messages[0].Content + "\n" + request.Messages[1].Content
+			if strings.Count(joined, test.directive) != 1 || strings.Contains(joined, test.forbidden) {
+				t.Fatalf("component synthesis language contract = %q", joined)
+			}
+			if strings.Contains(joined, canonicalEnglishSystemContract) ||
+				strings.Contains(joined, canonicalEnglishUserContract) ||
+				strings.Contains(joined, "CANONICAL OUTPUT LANGUAGE CONTRACT") {
+				t.Fatalf("component synthesis retained shared language wrapper: %q", joined)
+			}
+			bodies[test.language] = body
+		})
+	}
+	if bytes.Equal(bodies["en"], bodies["ru"]) {
+		t.Fatal("component synthesis provider body did not bind the stage-owned output language")
+	}
+}
+
 func TestComponentSynthesisPromptRejectsInvalidContract(t *testing.T) {
 	t.Parallel()
 
@@ -88,25 +137,37 @@ func TestComponentSynthesisPromptRejectsInvalidContract(t *testing.T) {
 		{
 			name: "unsupported version",
 			prompt: componentmap.SynthesisPrompt{
-				Version: "component-landscape-future",
-				System:  "system",
-				User:    "user",
+				Version:        "component-landscape-future",
+				OutputLanguage: "en",
+				System:         "system",
+				User:           "user",
+			},
+		},
+		{
+			name: "unsupported output language",
+			prompt: componentmap.SynthesisPrompt{
+				Version:        componentmap.SynthesisPromptVersion,
+				OutputLanguage: "future",
+				System:         "system",
+				User:           "user",
 			},
 		},
 		{
 			name: "blank system",
 			prompt: componentmap.SynthesisPrompt{
-				Version: componentmap.SynthesisPromptVersion,
-				System:  " \n\t",
-				User:    "user",
+				Version:        componentmap.SynthesisPromptVersion,
+				OutputLanguage: "en",
+				System:         " \n\t",
+				User:           "user",
 			},
 		},
 		{
 			name: "blank user",
 			prompt: componentmap.SynthesisPrompt{
-				Version: componentmap.SynthesisPromptVersion,
-				System:  "system",
-				User:    " \n\t",
+				Version:        componentmap.SynthesisPromptVersion,
+				OutputLanguage: "en",
+				System:         "system",
+				User:           " \n\t",
 			},
 		},
 	}
@@ -152,9 +213,10 @@ func TestSynthesizeComponentLandscapePreservesInvalidProviderContent(t *testing.
 		Auth:       authNone,
 	}
 	prompt := componentmap.SynthesisPrompt{
-		Version: componentmap.SynthesisPromptVersion,
-		System:  "system json contract",
-		User:    "user bounded json request",
+		Version:        componentmap.SynthesisPromptVersion,
+		OutputLanguage: "en",
+		System:         "system json contract",
+		User:           "user bounded json request",
 	}
 	wantRequest, err := client.ComponentSynthesisPromptJSON(prompt)
 	if err != nil {
@@ -183,8 +245,8 @@ func TestSynthesizeComponentLandscapePreservesInvalidProviderContent(t *testing.
 		t.Fatalf("response_format = %#v", sent.ResponseFormat)
 	}
 	if len(sent.Messages) != 2 ||
-		sent.Messages[0].Content != prompt.System+"\n\n"+canonicalEnglishSystemContract ||
-		sent.Messages[1].Content != canonicalEnglishUserContract+"\n\n"+prompt.User {
+		sent.Messages[0].Content != prompt.System ||
+		sent.Messages[1].Content != prompt.User {
 		t.Fatalf("sent messages = %#v", sent.Messages)
 	}
 }
@@ -207,9 +269,10 @@ func TestSynthesizeComponentLandscapeMakesOneProviderAttempt(t *testing.T) {
 		Auth:       authNone,
 	}
 	prompt := componentmap.SynthesisPrompt{
-		Version: componentmap.SynthesisPromptVersion,
-		System:  "system json contract",
-		User:    "user bounded json request",
+		Version:        componentmap.SynthesisPromptVersion,
+		OutputLanguage: "en",
+		System:         "system json contract",
+		User:           "user bounded json request",
 	}
 
 	if _, err := client.SynthesizeComponentLandscape(context.Background(), prompt); err == nil {
@@ -217,5 +280,73 @@ func TestSynthesizeComponentLandscapeMakesOneProviderAttempt(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("provider calls = %d, want 1", calls)
+	}
+}
+
+func TestSynthesizeComponentLandscapeBodyMeasuredSendsExactImmutableBody(t *testing.T) {
+	t.Parallel()
+
+	var requestBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}],"usage":{}}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
+		Model: "company-model", MaxTokens: 64_000,
+	}
+	prompt := componentmap.SynthesisPrompt{
+		Version: componentmap.SynthesisPromptVersion, OutputLanguage: "en",
+		System: "Return JSON. Write only subsystem and component name and description prose in English.",
+		User:   `Bounded candidate request: {"candidates":[]}`,
+	}
+	exactBody, err := client.ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.SynthesizeComponentLandscapeBodyMeasured(t.Context(), exactBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(requestBody, exactBody) {
+		t.Fatalf("sent body differs from exact inspected body\nsent: %s\nwant: %s", requestBody, exactBody)
+	}
+	if result.Attempts != 1 || result.RequestBytes != len(exactBody) ||
+		string(result.Content) != "{}" || !result.UsageReported ||
+		result.InputTokens != 0 || result.OutputTokens != 0 {
+		t.Fatalf("measured exact-body result = %#v", result)
+	}
+
+	if _, err := client.SynthesizeComponentLandscapeBodyMeasured(t.Context(), nil); err == nil {
+		t.Fatal("SynthesizeComponentLandscapeBodyMeasured() accepted an empty exact body")
+	}
+}
+
+func TestSynthesizeComponentLandscapeBodyMeasuredKeepsTerminalResourceSemantics(t *testing.T) {
+	t.Parallel()
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"length","message":{"content":"{}"}}],"usage":{}}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
+		Model: "company-model", MaxTokens: 64_000,
+	}
+	exactBody := []byte(`{"model":"company-model","messages":[]}`)
+	result, err := client.SynthesizeComponentLandscapeBodyMeasured(t.Context(), exactBody)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) || calls != 1 || result.Attempts != 1 ||
+		!result.UsageReported || limitErr.Stage != "architecture_synthesis" ||
+		limitErr.Kind != modelresearch.ResourceLimitOutputTokens ||
+		limitErr.Limit != client.MaxTokens || !limitErr.ObservedKnown ||
+		limitErr.Observed != 0 || limitErr.FinishReason != "length" {
+		t.Fatalf("terminal exact-body result/error = calls %d / %#v / %#v / %v", calls, result, limitErr, err)
 	}
 }

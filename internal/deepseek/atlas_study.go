@@ -26,10 +26,13 @@ func (c *Client) AtlasStudyPromptJSON(
 	if prompt.Version != atlasstudy.PromptVersion {
 		return nil, fmt.Errorf("llm: unsupported Atlas Study prompt version %q", prompt.Version)
 	}
+	if prompt.Language != atlasstudy.LanguageEnglish && prompt.Language != atlasstudy.LanguageRussian {
+		return nil, fmt.Errorf("llm: unsupported Atlas Study prompt language %q", prompt.Language)
+	}
 	if strings.TrimSpace(prompt.System) == "" || strings.TrimSpace(prompt.User) == "" {
 		return nil, fmt.Errorf("llm: Atlas Study prompt is incomplete")
 	}
-	request := c.canonicalSemanticRequest(prompt.User, prompt.System, true)
+	request := c.semanticRequest(prompt.User, prompt.System, true)
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
 		request.Thinking = &thinkingConfig{Type: "disabled"}
 	}

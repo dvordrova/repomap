@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -47,6 +48,10 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	if want := fmt.Sprintf("Return 1-%d directions", MaxDirections); !strings.Contains(product.BuildPrompt().System, want) {
 		t.Fatalf("provider prompt does not use the production route bound %q", want)
 	}
+	if prompt := product.BuildPrompt(); prompt.Language != LanguageEnglish ||
+		!strings.Contains(prompt.User, "Requested prose language: en.") {
+		t.Fatalf("English provider prompt language = %#v", prompt)
+	}
 	catalog := product.Catalog()
 	target := catalogObject(t, catalog, RefReadingTarget, "anchor-start-canonical")
 	if target.Location == nil || target.Location.Path != "cmd/server/main.go" || target.Symbol != "RunServer" {
@@ -79,6 +84,10 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 		product.CatalogSHA256() == ruProduct.CatalogSHA256() {
 		t.Fatal("language did not bind request identity")
 	}
+	if prompt := ruProduct.BuildPrompt(); prompt.Language != LanguageRussian ||
+		!strings.Contains(prompt.User, "Requested prose language: ru.") {
+		t.Fatalf("Russian provider prompt language = %#v", prompt)
+	}
 
 	commonSymbol := cloneTestInput(input)
 	commonSymbol.ReadingTargets[0].Symbol = "Run"
@@ -91,6 +100,60 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	if !strings.Contains(string(commonProduct.WireJSON()), "Run the service") ||
 		strings.Contains(string(commonProduct.WireJSON()), "cmd/server/main.go") {
 		t.Fatalf("common-symbol wire safety = %s", commonProduct.WireJSON())
+	}
+}
+
+func TestCompilePublishesDistinctBriefSupportChoicesWithoutUnitRefs(t *testing.T) {
+	t.Parallel()
+	product := mustCompileTestProduct(t, testInput())
+	var wire wireProjection
+	if err := json.Unmarshal(product.WireJSON(), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.BriefSupportChoices) == 0 {
+		t.Fatal("provider wire has no explicit Brief support choices")
+	}
+	wantChoices := make(map[string]RefKind)
+	for _, object := range product.Catalog() {
+		if briefSupportKind(object.Kind) {
+			wantChoices[object.Ref] = object.Kind
+		}
+	}
+	if len(wire.BriefSupportChoices) != len(wantChoices) {
+		t.Fatalf("provider-visible Brief support choices = %d, want complete allowlist of %d", len(wire.BriefSupportChoices), len(wantChoices))
+	}
+	wantKinds := map[RefKind]bool{
+		RefSubsystem: false, RefComponent: false, RefSurface: false,
+		RefReadingTarget: false, RefEvidence: false, RefDocument: false,
+	}
+	seen := make(map[string]struct{}, len(wire.BriefSupportChoices))
+	for _, choice := range wire.BriefSupportChoices {
+		if choice.Ref == "" || !briefSupportKind(choice.Kind) || choice.Kind == RefUnit {
+			t.Fatalf("invalid provider-visible Brief support choice: %#v", choice)
+		}
+		if _, duplicate := seen[choice.Ref]; duplicate {
+			t.Fatalf("duplicate provider-visible Brief support ref %q", choice.Ref)
+		}
+		seen[choice.Ref] = struct{}{}
+		if wantKind, found := wantChoices[choice.Ref]; !found || wantKind != choice.Kind {
+			t.Fatalf("provider-visible Brief support choice is not exact catalog allowlist: %#v", choice)
+		}
+		wantKinds[choice.Kind] = true
+	}
+	for kind, found := range wantKinds {
+		if !found {
+			t.Fatalf("provider-visible Brief support choices omit %s", kind)
+		}
+	}
+	for _, unit := range wire.Units {
+		if _, selectable := seen[unit.Ref]; selectable {
+			t.Fatalf("unit ref %q is selectable as Brief support", unit.Ref)
+		}
+	}
+	prompt := product.BuildPrompt()
+	if !strings.Contains(prompt.System, "selected only from brief_support_choices") ||
+		!strings.Contains(prompt.System, "including every unit ref") {
+		t.Fatalf("Brief support prompt contract is not structurally explicit: %q", prompt.System)
 	}
 }
 
@@ -344,6 +407,64 @@ func TestResolveResponseDropsOnlyInvalidDirectionItemsWithBoundedDiagnostics(t *
 	}
 }
 
+func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoutesAfterCorrection(t *testing.T) {
+	product := mustCompileTestProduct(t, casdoor144414ShapeInput())
+	saved, err := os.ReadFile("testdata/casdoor_20260802_144414_response_shape.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = product.ResolveResponseJSON(saved)
+	var reference *ReferenceError
+	if !errors.As(err, &reference) || reference.Field != "brief.what_it_is.support_refs" ||
+		reference.Position != 0 || reference.Code != "wrong_kind_ref" {
+		t.Fatalf("saved 14:44 wrong-kind Brief support error = %#v / %v", reference, err)
+	}
+
+	corrected := responseMap(t, saved)
+	brief := corrected["brief"].(map[string]any)
+	component1 := refFor(t, product, RefComponent, "component-api-canonical")
+	component5 := refFor(t, product, RefComponent, "component-extra-05")
+	component6 := refFor(t, product, RefComponent, "component-extra-06")
+	surface := refFor(t, product, RefSurface, "surface-start-canonical")
+	document := refFor(t, product, RefDocument, "document-purpose-canonical")
+	brief["what_it_is"].(map[string]any)["support_refs"] = []any{document}
+	brief["problem"].(map[string]any)["support_refs"] = []any{document, component1}
+	brief["main_input"].(map[string]any)["support_refs"] = []any{surface, component5}
+	brief["central_responsibility"].(map[string]any)["support_refs"] = []any{component5, component6}
+	brief["observable_result"].(map[string]any)["support_refs"] = []any{document, component5}
+	for _, rawTerm := range brief["domain_terms"].([]any) {
+		rawTerm.(map[string]any)["support_refs"] = []any{document}
+	}
+
+	result, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, corrected))
+	if err != nil {
+		t.Fatalf("corrected saved 14:44 response: %v", err)
+	}
+	if diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 3 ||
+		diagnostics.DirectionsRejected != 3 || len(result.Directions) != 3 ||
+		len(diagnostics.Issues) != 3 {
+		t.Fatalf("corrected saved-response result/diagnostics = %d / %#v", len(result.Directions), diagnostics)
+	}
+	wantIssues := []DirectionIssue{
+		{Position: 3, Code: IssueInvalidReadingCount},
+		{Position: 4, Code: IssueInvalidReadingCount},
+		{Position: 5, Code: IssueReadingOwnerMissing},
+	}
+	if !reflect.DeepEqual(diagnostics.Issues, wantIssues) {
+		t.Fatalf("corrected saved-response route diagnostics = %#v, want %#v", diagnostics.Issues, wantIssues)
+	}
+	for _, statement := range []SupportedStatement{
+		result.Brief.WhatItIs, result.Brief.Problem, result.Brief.MainInput,
+		result.Brief.CentralResponsibility, result.Brief.ObservableResult,
+	} {
+		for _, support := range statement.SupportRefs {
+			if support.Kind == RefUnit || !briefSupportKind(support.Kind) {
+				t.Fatalf("corrected Brief retained disallowed support %#v", support)
+			}
+		}
+	}
+}
+
 func TestCompileAndDecodeEnforceTerminalResourceAndCanonicalArtifacts(t *testing.T) {
 	input := testInput()
 	input.Limits.MaxWireBytes = 32
@@ -479,6 +600,62 @@ func testInput() Input {
 		}},
 		Limits: DefaultLimits(),
 	}
+}
+
+func casdoor144414ShapeInput() Input {
+	input := cloneTestInput(testInput())
+	input.Language = LanguageRussian
+	for index := 1; index <= 21; index++ {
+		input.Atlas.Units = append(input.Atlas.Units, repositoryatlas.Unit{
+			ID:       fmt.Sprintf("unit-package-%02d", index),
+			Kind:     repositoryatlas.UnitPackage,
+			ParentID: "unit-module-canonical",
+			Name:     fmt.Sprintf("Fixture package %02d", index),
+		})
+	}
+	for index := 3; index <= 6; index++ {
+		id := fmt.Sprintf("component-extra-%02d", index)
+		input.Architecture.Components = append(input.Architecture.Components, Component{
+			ID: id, SubsystemID: "subsystem-core-canonical",
+			Name:        fmt.Sprintf("Fixture component %02d", index),
+			Description: "Provides one bounded repository responsibility.",
+			Authority:   repositoryatlas.AuthorityResolved,
+		})
+		input.Architecture.Subsystems[0].ComponentIDs = append(
+			input.Architecture.Subsystems[0].ComponentIDs,
+			id,
+		)
+	}
+	ownerByOrdinal := map[int]string{
+		4: "component-api-canonical", 5: "component-extra-05",
+		6: "component-extra-05", 7: "component-extra-06",
+		8: "component-extra-06", 9: "component-api-canonical",
+		10: "component-api-canonical", 11: "component-extra-03",
+	}
+	componentIndex := make(map[string]int, len(input.Architecture.Components))
+	for index, component := range input.Architecture.Components {
+		componentIndex[component.ID] = index
+	}
+	for ordinal := 4; ordinal <= 11; ordinal++ {
+		id := fmt.Sprintf("anchor-z%02d-canonical", ordinal)
+		owner := ownerByOrdinal[ordinal]
+		input.ReadingTargets = append(input.ReadingTargets, ReadingTarget{
+			ID: id, Owner: CanonicalRef{Kind: RefComponent, ID: owner},
+			Kind: ReadingTargetFunction, Label: fmt.Sprintf("Fixture target %02d", ordinal),
+			Fact:      "Shows one exact local reading target.",
+			Authority: repositoryatlas.AuthorityObserved,
+			Location: evidence.Location{
+				Path: fmt.Sprintf("internal/fixture/target_%02d.go", ordinal), Line: ordinal,
+			},
+			Symbol: fmt.Sprintf("Target%02d", ordinal),
+		})
+		index := componentIndex[owner]
+		input.Architecture.Components[index].ReadingTargetIDs = append(
+			input.Architecture.Components[index].ReadingTargetIDs,
+			id,
+		)
+	}
+	return input
 }
 
 func validResponse(t *testing.T, product Product) []byte {
