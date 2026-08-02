@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 const (
@@ -25,10 +26,10 @@ const (
 	MinReviewedDirections = MinDirections
 	MaxReviewedDirections = MaxDirections
 
-	maxEditingArtifactBytes = 4 << 20
-	maxReviewBundleBytes    = 64 << 10
-	maxReviewSourceBytes    = 16 << 10
-	maxReviewSourceLines    = 60
+	maxEditingArtifactBytes    = modelresearch.ProviderResponseByteLimit
+	maxReviewBundleRecordBytes = modelresearch.SemanticRecordByteLimit
+	maxReviewSourceBytes       = 16 << 10
+	maxReviewSourceLines       = 60
 
 	// Provider recovery examines only a bounded number of object starts before
 	// the existing strict envelope and semantic validators take over.
@@ -431,8 +432,15 @@ func DecodeDirectionProposalWithDiagnostics(
 }
 
 func decodeBoundedDirectionItems(raw json.RawMessage) ([]json.RawMessage, error) {
-	if len(raw) == 0 || len(raw) > maxEditingArtifactBytes {
+	if len(raw) == 0 {
 		return nil, fmt.Errorf("study map: direction candidates are outside bounds")
+	}
+	if len(raw) > maxEditingArtifactBytes {
+		return nil, studyResponseResourceLimit(
+			"direction proposal",
+			maxEditingArtifactBytes,
+			len(raw),
+		)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	token, err := decoder.Token()
@@ -527,7 +535,7 @@ func NormalizeDirectionProposal(proposal DirectionProposal) (DirectionProposal, 
 
 func DecodeReviewBundle(raw []byte) (ReviewBundle, error) {
 	var bundle ReviewBundle
-	if err := decodeEditingJSON(raw, maxReviewBundleBytes, "review bundle", &bundle); err != nil {
+	if err := decodeEditingJSON(raw, maxReviewBundleRecordBytes, "review bundle", &bundle); err != nil {
 		return ReviewBundle{}, err
 	}
 	if err := bundle.Validate(); err != nil {
@@ -1204,9 +1212,9 @@ func validateBriefShapeStructure(proposal BriefShapeProposal) error {
 	if !validRepositoryType(proposal.RepositoryType) || !completeBrief(proposal.Brief) {
 		return fmt.Errorf("study map: invalid brief and shape proposal")
 	}
-	if len(proposal.ShapeAreaIDs) < 1 || len(proposal.ShapeAreaIDs) > 7 ||
+	if len(proposal.ShapeAreaIDs) > 7 ||
 		len(uniqueStrings(proposal.ShapeAreaIDs)) != len(proposal.ShapeAreaIDs) {
-		return fmt.Errorf("study map: shape must contain one to seven unique areas")
+		return fmt.Errorf("study map: shape must contain zero to seven unique areas")
 	}
 	for _, areaID := range proposal.ShapeAreaIDs {
 		if !validOpaque(areaID) {
@@ -1843,7 +1851,16 @@ func boundedIssueDetail(value string) string {
 }
 
 func decodeEditingJSON(raw []byte, limit int, label string, target any) error {
-	if len(raw) == 0 || len(raw) > limit {
+	if len(raw) == 0 {
+		return fmt.Errorf("study map: %s is outside bounds", label)
+	}
+	if len(raw) > limit {
+		if limit == maxEditingArtifactBytes {
+			return studyResponseResourceLimit(label, limit, len(raw))
+		}
+		if limit == maxReviewBundleRecordBytes {
+			return studyRecordResourceLimit(limit, len(raw))
+		}
 		return fmt.Errorf("study map: %s is outside bounds", label)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -1861,13 +1878,30 @@ func decodeEditingJSON(raw []byte, limit int, label string, target any) error {
 	return nil
 }
 
+func studyRecordResourceLimit(
+	limit int,
+	observed int,
+) *modelresearch.ResourceLimitError {
+	return &modelresearch.ResourceLimitError{
+		Stage: "reading_pack_review", Kind: modelresearch.ResourceLimitRecordBytes,
+		Limit: limit, Observed: observed, ObservedKnown: true,
+	}
+}
+
 func recoverEditingProviderJSON(
 	raw []byte,
 	label string,
 	validate func([]byte) error,
 ) ([]byte, error) {
-	if len(raw) == 0 || len(raw) > maxEditingArtifactBytes {
+	if len(raw) == 0 {
 		return nil, fmt.Errorf("study map: %s is outside bounds", label)
+	}
+	if len(raw) > maxEditingArtifactBytes {
+		return nil, studyResponseResourceLimit(
+			label,
+			maxEditingArtifactBytes,
+			len(raw),
+		)
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if validate(trimmed) == nil {
@@ -1909,4 +1943,24 @@ func recoverEditingProviderJSON(
 		return nil, fmt.Errorf("study map: no recoverable %s", label)
 	}
 	return accepted, nil
+}
+
+func studyResponseResourceLimit(
+	label string,
+	limit int,
+	observed int,
+) *modelresearch.ResourceLimitError {
+	stage := "repository_study_map"
+	switch {
+	case strings.Contains(label, "brief"):
+		stage = "repository_brief_shape"
+	case strings.Contains(label, "direction"):
+		stage = "study_direction_candidates"
+	case strings.Contains(label, "review"):
+		stage = "reading_pack_review"
+	}
+	return &modelresearch.ResourceLimitError{
+		Stage: stage, Kind: modelresearch.ResourceLimitResponseBytes,
+		Limit: limit, Observed: observed, ObservedKnown: true,
+	}
 }

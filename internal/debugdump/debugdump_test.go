@@ -650,6 +650,59 @@ func TestWriteFileUsesTempThenRename(t *testing.T) {
 	}
 }
 
+func TestWriteValidatedFileValidatesExactPostRedactionBytes(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "validated", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	input := []byte(`{"api_key":"company-secret-token-value","value":"safe"}`)
+	var validated []byte
+	if err := w.WriteValidatedFile("artifact.json", input, func(prepared []byte) error {
+		validated = append([]byte(nil), prepared...)
+		if bytes.Contains(prepared, []byte("company-secret-token-value")) ||
+			!bytes.Contains(prepared, []byte("[redacted]")) {
+			return fmt.Errorf("prepared bytes were not redacted")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, "validated", "artifact.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved, validated) {
+		t.Fatalf("saved bytes differ from validated bytes: %q / %q", saved, validated)
+	}
+}
+
+func TestWriteValidatedFileDoesNotPublishRejectedPreparedBytes(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "validated-reject", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	err = w.WriteValidatedFile(
+		"artifact.json",
+		[]byte("Authorization: Bearer company-secret-token-value"),
+		func(prepared []byte) error {
+			if !bytes.Contains(prepared, []byte("[redacted:")) {
+				t.Fatalf("validator did not observe the redacted marker: %q", prepared)
+			}
+			return fmt.Errorf("canonical artifact rejected")
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "canonical artifact rejected") {
+		t.Fatalf("validation error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "validated-reject", "artifact.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("rejected artifact was published: %v", statErr)
+	}
+}
+
 func TestWriteFileAtomicallyReplacesPublishedArtifact(t *testing.T) {
 	dir := t.TempDir()
 	w, err := NewWriter(dir, "run", false)

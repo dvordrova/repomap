@@ -13,8 +13,8 @@ import (
 )
 
 func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
-	if CurrentFormatVersion != 26 {
-		t.Fatalf("CurrentFormatVersion = %d, want 26 for the optional Task Lens workspace", CurrentFormatVersion)
+	if CurrentFormatVersion != 27 {
+		t.Fatalf("CurrentFormatVersion = %d, want 27 for the embedded Repository Atlas", CurrentFormatVersion)
 	}
 }
 

@@ -3850,6 +3850,7 @@
       column: Number(selection.column) || 0,
       presentation_sha256: selection.snippet.presentation_sha256 || '',
       expanded: !!selection.expanded,
+			drawer_first: !!selection.drawerFirst,
     };
   }
 
@@ -3873,6 +3874,7 @@
       column: Number(reference.column) || 0,
       snippet: snippet,
       expanded: false,
+			drawerFirst: !!reference.drawer_first,
     };
   }
 
@@ -5484,11 +5486,309 @@
 		root.appendChild(details);
 	}
 
+	function exactOverviewSourcePath(value) {
+		if (typeof value !== 'string' || !value || !OPENABLE_PATH_SET[value] ||
+			value.charAt(0) === '/' || value.charAt(value.length - 1) === '/' ||
+			value.indexOf('\\') >= 0 || value.indexOf('\u0000') >= 0) return '';
+		var segments = value.split('/');
+		for (var index = 0; index < segments.length; index++) {
+			if (!segments[index] || segments[index] === '.' || segments[index] === '..') return '';
+		}
+		return value;
+	}
+
+	function overviewSnippetContentIdentity(snippet) {
+		if (typeof snippet.content_sha256 === 'string' && snippet.content_sha256) {
+			return 'sha256:' + snippet.content_sha256;
+		}
+		return 'lines:' + JSON.stringify(snippet.lines || []);
+	}
+
+	function overviewSnippetStableKey(snippet) {
+		return [
+			snippet.path,
+			String(snippet.start_line),
+			String(snippet.end_line),
+			String(snippet.revision || ''),
+			overviewSnippetContentIdentity(snippet),
+		].join('\u0000');
+	}
+
+	// Overlapping saved excerpts are normal. Prefer the smallest exact
+	// containing interval, then stable persisted fields. Only two views of the
+	// same interval/revision with different source content are ambiguous.
+	function exactOverviewSourceResolutionForLocation(location) {
+		if (!location || exactOverviewSourcePath(location.path) !== location.path ||
+			!Number.isInteger(location.line) || location.line <= 0) return { source: null, conflict: false };
+		var equivalent = {};
+		allEmbeddedSourceSnippets().forEach(function (snippet) {
+			if (!sourceSnippetHasCode(snippet) ||
+				exactOverviewSourcePath(snippet.path) !== location.path ||
+				!Number.isInteger(snippet.start_line) || !Number.isInteger(snippet.end_line) ||
+				snippet.start_line <= 0 || snippet.end_line < snippet.start_line ||
+				location.line < snippet.start_line || location.line > snippet.end_line) return;
+			var key = overviewSnippetStableKey(snippet);
+			var current = equivalent[key];
+			if (!current || String(snippet.presentation_sha256 || '').localeCompare(
+				String(current.presentation_sha256 || '')
+			) < 0) equivalent[key] = snippet;
+		});
+		var matches = Object.keys(equivalent).map(function (key) { return equivalent[key]; });
+		if (!matches.length) return { source: null, conflict: false };
+		matches.sort(function (left, right) {
+			return (left.end_line - left.start_line) - (right.end_line - right.start_line) ||
+				left.start_line - right.start_line || left.end_line - right.end_line ||
+				String(left.revision || '').localeCompare(String(right.revision || '')) ||
+				overviewSnippetContentIdentity(left).localeCompare(overviewSnippetContentIdentity(right)) ||
+				String(left.presentation_sha256 || '').localeCompare(String(right.presentation_sha256 || ''));
+		});
+		var smallestSpan = matches[0].end_line - matches[0].start_line;
+		var survivors = matches.filter(function (snippet) {
+			return snippet.end_line - snippet.start_line === smallestSpan;
+		});
+		var intervalIdentities = {};
+		var conflict = survivors.some(function (snippet) {
+			var interval = snippet.path + '\u0000' + String(snippet.start_line) + '\u0000' +
+				String(snippet.end_line);
+			var identity = String(snippet.revision || '') + '\u0000' + overviewSnippetContentIdentity(snippet);
+			if (intervalIdentities[interval] && intervalIdentities[interval] !== identity) return true;
+			intervalIdentities[interval] = identity;
+			return false;
+		});
+		if (conflict) return { source: null, conflict: true };
+		var selected = survivors[0];
+		return { source: {
+			snippet: selected,
+			location: {
+				path: location.path,
+				line: location.line,
+				column: Number.isInteger(location.column) && location.column > 0 ? location.column : 0,
+			},
+		}, conflict: false };
+	}
+
+	function exactOverviewSourceForLocation(location) {
+		return exactOverviewSourceResolutionForLocation(location).source;
+	}
+
+	function overviewSurfaceLocation(trigger) {
+		if (!trigger) return null;
+		return trigger.handler_location || trigger.registration_site || trigger.descriptor_site ||
+			trigger.server_start_site || (trigger.process_entrypoint && trigger.process_entrypoint.location) || null;
+	}
+
+	function overviewSurfaceTitle(trigger) {
+		var identity = trigger && trigger.identity || {};
+		var method = typeof identity.method === 'string' ? identity.method : '';
+		var pathValue = identity.path && identity.path.known && typeof identity.path.text === 'string'
+			? identity.path.text : '';
+		var route = [method, pathValue].filter(Boolean).join(' ');
+		if (route) return route;
+		if (typeof identity.name === 'string' && identity.name) return identity.name;
+		if (trigger && trigger.handler && trigger.handler.known && typeof trigger.handler.text === 'string' &&
+			trigger.handler.text) return trigger.handler.text;
+		if (trigger && trigger.process_entrypoint && typeof trigger.process_entrypoint.name === 'string' &&
+			trigger.process_entrypoint.name) return trigger.process_entrypoint.name;
+		return String(trigger && trigger.id || '');
+	}
+
+	function overviewEntrySurfaceObjects() {
+		var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
+			? DATA.discovered_surfaces.triggers : [];
+		var eligible = triggers.filter(function (trigger) {
+			return !!(trigger && typeof trigger.id === 'string' && trigger.id &&
+				trigger.surface_role === 'entry_surface' &&
+				trigger.application_classification === 'application_surface' &&
+				trigger.availability === 'available' && trigger.executable_role !== 'test_or_helper' &&
+				trigger.provisional_id !== true);
+		});
+		var counts = {};
+		eligible.forEach(function (trigger) { counts[trigger.id] = (counts[trigger.id] || 0) + 1; });
+		var objects = [];
+		eligible.forEach(function (trigger) {
+			if (counts[trigger.id] !== 1) return;
+			var source = exactOverviewSourceForLocation(overviewSurfaceLocation(trigger));
+			if (!source) return;
+			objects.push({
+				id: trigger.id,
+				title: overviewSurfaceTitle(trigger),
+				detail: String(trigger.kind || ''),
+				snippet: source.snippet,
+				location: source.location,
+			});
+		});
+		return {
+			objects: objects,
+			total: Object.keys(counts).length,
+			omitted: Object.keys(counts).length - objects.length,
+		};
+	}
+
+	function overviewComponentObjects() {
+		var canvas = DATA.architecture_canvas || {};
+		var components = Array.isArray(canvas.components) ? canvas.components : [];
+		var contexts = architectureComponentContexts();
+		var counts = {};
+		components.forEach(function (component) {
+			if (component && typeof component.id === 'string' && component.id) {
+				counts[component.id] = (counts[component.id] || 0) + 1;
+			}
+		});
+		var objects = [];
+		components.forEach(function (component) {
+			if (!component || !component.id || counts[component.id] !== 1) return;
+			var context = contexts[component.id] || {};
+			var resolved = [];
+			var resolvedSeen = {};
+			var conflict = false;
+			(Array.isArray(context.sources) ? context.sources : []).forEach(function (source) {
+				var resolution = exactOverviewSourceResolutionForLocation(source && source.location);
+				if (resolution.conflict) {
+					conflict = true;
+					return;
+				}
+				if (!resolution.source) return;
+				var location = resolution.source.location;
+				var key = location.path + '\u0000' + String(location.line) + '\u0000' +
+					String(location.column || 0) + '\u0000' +
+					overviewSnippetStableKey(resolution.source.snippet);
+				if (resolvedSeen[key]) return;
+				resolvedSeen[key] = true;
+				resolved.push(resolution.source);
+			});
+			if (conflict || !resolved.length) return;
+			objects.push({
+				id: component.id,
+				title: String(component.name || component.id),
+				detail: String(component.description || ''),
+				snippet: resolved[0].snippet,
+				location: resolved[0].location,
+			});
+		});
+		return {
+			objects: objects,
+			total: Object.keys(counts).length,
+			omitted: Object.keys(counts).length - objects.length,
+		};
+	}
+
+	function repositoryOverviewAnatomy() {
+		if (!DATA.architecture_canvas || !DATA.discovered_surfaces) return null;
+		var entries = overviewEntrySurfaceObjects();
+		var components = overviewComponentObjects();
+		if (!entries.objects.length || !components.objects.length) return null;
+		return { entries: entries, components: components, integrations: [] };
+	}
+
+	function renderOverviewObjectCard(object, kind) {
+		var card = el('article', 'rm-overview-object-card');
+		card.setAttribute('data-rm-object-kind', kind);
+		card.setAttribute('data-rm-object-id', object.id);
+		var primary = el('button', 'rm-overview-object-primary');
+		primary.type = 'button';
+		primary.appendChild(txt('strong', '', object.title));
+		if (object.detail) primary.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
+		primary.appendChild(txt('code', 'rm-overview-object-location', formatCodeLocation(object.location)));
+		primary.appendChild(txt('span', 'rm-overview-object-action', msg('main.open.exact.source')));
+		primary.onclick = function () {
+			openSourceSnippet(object.snippet, object.location, false, { drawerFirst: true });
+		};
+		card.appendChild(primary);
+		if (kind === 'component' && userArchitectureAvailable()) {
+			var architecture = txt(
+				'button',
+				'rm-overview-object-architecture',
+				msg('main.overview.anatomy.inspect_same_component')
+			);
+			architecture.type = 'button';
+			architecture.onclick = function () {
+				openArchitectureTarget({ kind: 'component', component_id: object.id }, null);
+			};
+			card.appendChild(architecture);
+		}
+		return card;
+	}
+
+	function renderOverviewAnatomyZone(kicker, title, copy, collection, kind) {
+		var section = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
+		section.appendChild(renderViewHeading(kicker, title, copy));
+		var grid = el('div', 'rm-overview-object-grid');
+		collection.objects.forEach(function (object) {
+			grid.appendChild(renderOverviewObjectCard(object, kind));
+		});
+		section.appendChild(grid);
+		if (collection.omitted > 0) {
+			section.appendChild(txt('p', 'rm-overview-anatomy-omitted', msg(
+				'main.overview.anatomy.omitted_ambiguous_or_unavailable',
+				{ count: collection.omitted }
+			)));
+		}
+		return section;
+	}
+
+	function renderRepositoryOverviewAnatomy(root, anatomy) {
+		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
+		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
+		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
+		hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+		root.appendChild(hero);
+
+		root.appendChild(renderOverviewAnatomyZone(
+			msg('main.overview.anatomy.entry_surfaces_kicker'),
+			msg('main.overview.anatomy.entry_surfaces'),
+			msg('main.overview.anatomy.entry_surfaces_copy'),
+			anatomy.entries,
+			'surface'
+		));
+		root.appendChild(renderOverviewAnatomyZone(
+			msg('main.overview.anatomy.components_kicker'),
+			msg('main.overview.anatomy.components'),
+			msg('main.overview.anatomy.components_copy'),
+			anatomy.components,
+			'component'
+		));
+
+		var integrations = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
+		integrations.appendChild(renderViewHeading(
+			msg('main.overview.anatomy.integrations_kicker'),
+			msg('main.overview.anatomy.integrations'),
+			msg('main.overview.anatomy.integrations_copy')
+		));
+		integrations.appendChild(txt(
+			'p',
+			'rm-empty-state rm-overview-integrations-empty',
+			msg('main.overview.anatomy.no_saved_integrations')
+		));
+		root.appendChild(integrations);
+
+		if (COMPLETE_STUDY_DIRECTIONS.length) {
+			var directions = el('section', 'rm-workspace-section rm-overview-study-routes');
+			directions.appendChild(renderViewHeading(
+				msg('main.overview.anatomy.study_kicker'),
+				msg('main.overview.anatomy.study_directions'),
+				msg('main.overview.anatomy.study_directions_copy')
+			));
+			var directionGrid = el('div', 'rm-mechanism-grid');
+			COMPLETE_STUDY_DIRECTIONS.forEach(function (direction, index) {
+				directionGrid.appendChild(renderStudyDirectionCard(direction, index));
+			});
+			directions.appendChild(directionGrid);
+			root.appendChild(directions);
+		}
+	}
+
   function renderOverviewWorkspace() {
     var root = document.getElementById('rm-overview');
     if (!root) return;
     root.replaceChildren();
 		renderStudyPublicationNotice(root);
+		var anatomy = repositoryOverviewAnatomy();
+		if (anatomy) {
+			renderRepositoryOverviewAnatomy(root, anatomy);
+			return;
+		}
 		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
 			renderStudyMapOverview(root);
 			return;
@@ -6617,9 +6917,10 @@
 		}
 	}
 
-  function openSourceSnippet(snippet, location, expanded) {
+  function openSourceSnippet(snippet, location, expanded, options) {
+    options = options || {};
     var resolved = sourceSnippetLocation(snippet, location);
-    if (openStaticSource(resolved, snippet && snippet.end_line)) return;
+    if (!options.drawerFirst && openStaticSource(resolved, snippet && snippet.end_line)) return;
     if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
     var next = reduceWorkspaceState(workspaceState, {
       type: 'open_source',
@@ -6629,6 +6930,7 @@
         column: resolved.column,
         snippet: snippet,
         expanded: !!expanded,
+			drawerFirst: !!options.drawerFirst,
       },
     }, USER_MECHANISMS);
     var reference = sourceDrawerHistoryReference(next.sourceLocation);
@@ -6674,7 +6976,7 @@
     var content = document.getElementById('rm-source-drawer-content');
     var close = document.getElementById('rm-source-drawer-close');
     if (!workspace || !drawer || !content) return;
-    if (staticSourceMode()) {
+    if (staticSourceMode() && !(workspaceState.sourceLocation && workspaceState.sourceLocation.drawerFirst)) {
       workspaceState.sourceLocation = null;
       drawer.hidden = true;
       workspace.classList.remove('has-source-drawer');
@@ -7389,6 +7691,11 @@
       renderUserMechanismCard: renderUserMechanismCard,
       renderImplementationDetails: renderImplementationDetails,
       renderOverviewWorkspace: renderOverviewWorkspace,
+			repositoryOverviewAnatomy: repositoryOverviewAnatomy,
+			overviewEntrySurfaceObjects: overviewEntrySurfaceObjects,
+			overviewComponentObjects: overviewComponentObjects,
+			exactOverviewSourceForLocation: exactOverviewSourceForLocation,
+			renderRepositoryOverviewAnatomy: renderRepositoryOverviewAnatomy,
 // repomap-source-episode:start
 			renderSourceEpisode: renderSourceEpisode,
 			renderSourceEpisodeClaim: renderSourceEpisodeClaim,

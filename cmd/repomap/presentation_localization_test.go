@@ -1088,6 +1088,69 @@ func TestPresentationLocalizationResourceLimitIsTerminal(t *testing.T) {
 	}
 }
 
+func TestPresentationLocalizationDecodeResourceLimitIsTerminal(t *testing.T) {
+	data, prepared := presentationLocalizationFixture(t)
+	runDir := t.TempDir()
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	provider := newFakePresentationLocalizationProvider(
+		"https://translation.example.test/v1/chat/completions",
+		"translation-model",
+		bytes.Repeat([]byte("x"), modelresearch.ProviderResponseByteLimit+1),
+	)
+	applyCalls := 0
+	outcome, err := executePresentationLocalization(
+		context.Background(),
+		runDir,
+		cacheRoot,
+		false,
+		data,
+		prepared,
+		provider,
+		presentationLocalizationExecutionOptions{
+			ApplyProjection: func(
+				localization.CanonicalArtifact,
+				localization.Input,
+				localization.Projection,
+			) (localization.Result, error) {
+				applyCalls++
+				return localization.Result{}, nil
+			},
+		},
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("executePresentationLocalization() error = %v, want ResourceLimitError", err)
+	}
+	if limitErr.Kind != deepseek.ResourceLimitResponseBytes ||
+		limitErr.Limit != modelresearch.ProviderResponseByteLimit ||
+		provider.executeCalls != 1 || applyCalls != 0 {
+		t.Fatalf(
+			"resource error/provider/apply calls = %#v/%d/%d",
+			limitErr, provider.executeCalls, applyCalls,
+		)
+	}
+	if outcome.State != report.PresentationLocalizationFailed ||
+		outcome.ReasonCode != report.LocalizationFailureInvalidProjection ||
+		outcome.FailureStage != report.LocalizationStageResponseDecode ||
+		outcome.BatchCompleted != 0 || outcome.FailedBatch != 1 {
+		t.Fatalf("terminal decode outcome = %#v", outcome)
+	}
+	if entries, readErr := os.ReadDir(cacheRoot); readErr == nil && len(entries) != 0 {
+		t.Fatalf("resource-limited localization populated cache: %v", entries)
+	} else if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	projectionFiles, globErr := filepath.Glob(
+		filepath.Join(runDir, "presentation_localization_projection.*.json"),
+	)
+	if globErr != nil {
+		t.Fatal(globErr)
+	}
+	if len(projectionFiles) != 0 {
+		t.Fatalf("resource-limited projection exists: %v", projectionFiles)
+	}
+}
+
 func TestPresentationLocalizationRejectsStrictlyInvalidBatchAfterOneProviderRequest(
 	t *testing.T,
 ) {

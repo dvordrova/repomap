@@ -32,7 +32,7 @@ const (
 	studyMapReviewArtifactVersion = 1
 )
 
-const studyMapV32SystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and opaque repository IDs are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, repository ID, or runtime order.`
+const studyMapV32SystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and request-local typed references are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, typed reference, or runtime order.`
 
 const studyMapDirectionSystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and request-local typed references are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, typed reference, or runtime order.`
 
@@ -46,19 +46,20 @@ const studyMapBriefShapeTask = `
 Task: produce only the repository Brief and Shape. Return exactly:
 {
   "version": 1,
+  "catalog_ref": "copy the exact top-level catalog_ref from the bounded repository bundle",
   "repository_type": "service_application | library_framework | cli_tool | monorepo | mixed",
   "brief": {
-    "what_it_is": {"text": "short answer", "support_ids": ["exact supplied ids"]},
-    "problem": {"text": "problem it addresses", "support_ids": ["exact supplied ids"]},
-    "main_input": {"text": "main input or trigger", "support_ids": ["exact supplied ids"]},
-    "central_responsibility": {"text": "central responsibility", "support_ids": ["exact supplied ids"]},
-    "observable_result": {"text": "observable result", "support_ids": ["exact supplied ids"]},
-    "domain_terms": [{"term": "term", "meaning": "short meaning", "support_ids": ["exact supplied ids"]}]
+    "what_it_is": {"text": "short answer", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "problem": {"text": "problem it addresses", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "main_input": {"text": "main input or trigger", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "central_responsibility": {"text": "central responsibility", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "observable_result": {"text": "observable result", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "domain_terms": [{"term": "term", "meaning": "short meaning", "support_refs": ["exact supplied anchor, document, or area refs"]}]
   },
-  "shape_area_ids": ["one to seven exact supplied area ids"]
+  "shape_area_refs": ["zero to seven exact supplied area refs"]
 }
 
-Use only supplied IDs. Keep every sentence short and independently useful. Leave out a domain term rather than guessing, but provide all five Brief statements from supported repository objects.`
+Copy the exact catalog_ref once. Copy every short typed reference exactly and only into a field that permits its kind. Never return a backend canonical ID. Keep every sentence short and independently useful. Leave out a domain term rather than guessing, but provide all five Brief statements from supported repository objects.`
 
 const studyMapDirectionTask = `
 
@@ -126,15 +127,16 @@ Review every supplied anchor exactly once. Choose ` + "`none`" + ` alone when no
 ` + studyMapReviewBundleMarker
 
 type studyMapV32StageAttempt struct {
-	Version              int                                    `json:"version"`
-	PromptVersion        string                                 `json:"prompt_version"`
-	BundleSHA256         string                                 `json:"bundle_sha256"`
-	ValidationState      string                                 `json:"validation_state"`
-	FailureReason        string                                 `json:"failure_reason,omitempty"`
-	Metrics              semanticDiscoveryStageMetrics          `json:"metrics"`
-	DirectionDiagnostics *studymap.DirectionProposalDiagnostics `json:"direction_diagnostics,omitempty"`
-	Response             json.RawMessage                        `json:"response,omitempty"`
-	RawResponse          string                                 `json:"raw_response,omitempty"`
+	Version              int                                      `json:"version"`
+	PromptVersion        string                                   `json:"prompt_version"`
+	BundleSHA256         string                                   `json:"bundle_sha256"`
+	ValidationState      string                                   `json:"validation_state"`
+	FailureReason        string                                   `json:"failure_reason,omitempty"`
+	Metrics              semanticDiscoveryStageMetrics            `json:"metrics"`
+	BriefDiagnostics     *studymap.BriefShapeReferenceDiagnostics `json:"brief_diagnostics,omitempty"`
+	DirectionDiagnostics *studymap.DirectionProposalDiagnostics   `json:"direction_diagnostics,omitempty"`
+	Response             json.RawMessage                          `json:"response,omitempty"`
+	RawResponse          string                                   `json:"raw_response,omitempty"`
 }
 
 type studyMapReviewAttempt struct {
@@ -409,23 +411,17 @@ func prepareStudyMapV32WithOptions(
 	if err != nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
 	}
-	promptBundle, err := json.Marshal(bundle.PromptBundle())
+	briefCatalog, briefPrompt, err := buildStudyMapBriefShapeStage(bundle)
 	if err != nil {
-		return studymap.Record{}, studymap.ReviewReduction{}, nil,
-			fmt.Errorf("study map: encode provider bundle: %w", err)
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
 	}
-	shared := studyMapV32SharedInput + string(promptBundle)
 	directionCatalog, directionPrompt, err := buildStudyMapDirectionStage(bundle)
 	if err != nil {
 		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
 	}
 
 	briefRaw, briefMetrics, briefAttempt, briefExchange, err := executeStudyMapV32Stage(
-		ctx, provider, semanticdiscovery.Prompt{
-			Version: semanticdiscovery.StudyBriefPromptVersion, System: studyMapV32SystemPrompt,
-			User: shared + studyMapBriefShapeTask, ThinkingProfile: semanticdiscovery.ThinkingMax,
-			ProgressLabel: "repository brief and shape editing",
-		}, "repository_brief_shape", bundleSHA,
+		ctx, provider, briefPrompt, "repository_brief_shape", bundleSHA,
 	)
 	stages := []semanticDiscoveryStageMetrics{briefMetrics}
 	if err != nil {
@@ -439,14 +435,19 @@ func prepareStudyMapV32WithOptions(
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
-	recoveredBrief, recoveryErr := studymap.RecoverBriefShapeProviderJSON(briefRaw)
+	recoveredBrief, recoveryErr := studymap.RecoverBriefShapeReferenceProviderJSON(briefRaw)
 	var brief studymap.BriefShapeProposal
+	var briefDiagnostics studymap.BriefShapeReferenceDiagnostics
 	if recoveryErr != nil {
 		err = recoveryErr
 	} else {
 		briefAttempt.RawResponse = ""
 		briefAttempt.Response = append(json.RawMessage(nil), recoveredBrief...)
-		brief, err = studymap.DecodeBriefShapeProposal(recoveredBrief)
+		brief, briefDiagnostics, err =
+			studymap.DecodeAndResolveBriefShapeProposal(recoveredBrief, briefCatalog)
+		if briefDiagnostics.ShapeReceived > 0 || len(briefDiagnostics.Issues) > 0 {
+			briefAttempt.BriefDiagnostics = &briefDiagnostics
+		}
 	}
 	if err != nil {
 		recordStudyMapStageSemanticExchange(
@@ -568,6 +569,22 @@ func prepareStudyMapV32WithOptions(
 		return studymap.Record{}, reduction, stages, err
 	}
 	return record, reduction, stages, nil
+}
+
+func buildStudyMapBriefShapeStage(
+	bundle studymap.Bundle,
+) (studymap.BriefShapeReferenceCatalog, semanticdiscovery.Prompt, error) {
+	catalog, err := studymap.BuildBriefShapeReferenceCatalog(bundle)
+	if err != nil {
+		return studymap.BriefShapeReferenceCatalog{}, semanticdiscovery.Prompt{}, err
+	}
+	return catalog, semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.StudyBriefPromptVersion,
+		System:          studyMapV32SystemPrompt,
+		User:            studyMapV32SharedInput + string(catalog.PromptBundleJSON()) + studyMapBriefShapeTask,
+		ThinkingProfile: semanticdiscovery.ThinkingMax,
+		ProgressLabel:   "repository brief and shape editing",
+	}, nil
 }
 
 func buildStudyMapDirectionStage(
@@ -1029,6 +1046,18 @@ func executeStudyMapReview(
 		completion.attempt.RawResponse = string(result.Content)
 	}
 	proposal, err := studymap.DecodeReviewProposal(result.Content)
+	if isSemanticResourceLimit(err) {
+		metrics.Status = "failed_provider"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		completion.attempt.FailureReason = semanticDiscoveryReason(err.Error())
+		completion.providerErr = err
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, nil, cached,
+			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationDecode,
+		)
+		return completion
+	}
 	if err != nil || proposal.DirectionID != task.bundle.DirectionID {
 		metrics.Status = "rejected"
 		completion.attempt.Metrics = metrics

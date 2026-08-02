@@ -1,8 +1,12 @@
 package localization
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 func TestDecodeRussianProviderResponseRestoresStableFieldIDs(t *testing.T) {
@@ -46,6 +50,45 @@ func TestDecodeRussianProviderResponseRestoresStableFieldIDs(t *testing.T) {
 		if got := projection.Translations[field.ID]; got != *entries[index].Text {
 			t.Fatalf("translation for %q = %q, want %q", field.ID, got, *entries[index].Text)
 		}
+	}
+}
+
+func TestDecodeRussianProviderResponseUsesSharedEnvelope(t *testing.T) {
+	t.Parallel()
+
+	canonical, err := NewCanonical(fixtureSpecs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInput(canonical, LocaleRussian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := make([]ProviderTranslation, len(input.Fields))
+	for index := range entries {
+		entries[index] = NewProviderTranslation(index, "Русский текст")
+	}
+	valid, err := json.Marshal(ProviderResponse{
+		Version: ProviderResponseVersion, CanonicalSHA256: canonical.SHA256,
+		Locale: LocaleRussian, Translations: entries,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aboveFormerCap := append(bytes.Repeat([]byte(" "), (2<<20)+1), valid...)
+	if _, err := DecodeRussianProviderResponse(canonical, input, aboveFormerCap); err != nil {
+		t.Fatalf("response above former stage cap rejected: %v", err)
+	}
+
+	oversize := bytes.Repeat([]byte("x"), maxProviderResponseBytes+1)
+	_, err = DecodeRussianProviderResponse(canonical, input, oversize)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Stage != "localization" ||
+		limitErr.Kind != modelresearch.ResourceLimitResponseBytes ||
+		limitErr.Limit != maxProviderResponseBytes ||
+		limitErr.Observed != len(oversize) {
+		t.Fatalf("terminal response limit = %#v", err)
 	}
 }
 

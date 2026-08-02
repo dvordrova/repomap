@@ -20,13 +20,14 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	CurrentRunManifestVersion = 6
+	CurrentRunManifestVersion = 7
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -64,6 +65,7 @@ type MaterialInputs struct {
 	SelectedRevision                  string `json:"selected_revision"`
 	ModelBundleSHA256                 string `json:"model_bundle_sha256,omitempty"`
 	OrientationContextSelectionSHA256 string `json:"orientation_context_selection_sha256,omitempty"`
+	RepositoryAtlasSHA256             string `json:"repository_atlas_sha256,omitempty"`
 	TaskBundleSHA256                  string `json:"task_bundle_sha256,omitempty"`
 	TaskAttemptSHA256                 string `json:"task_attempt_sha256,omitempty"`
 	TaskPackSHA256                    string `json:"task_pack_sha256,omitempty"`
@@ -165,6 +167,10 @@ func (m RunManifest) Validate() error {
 	}
 	if hasOrientationSelection && !validManifestSHA256(m.MaterialInputs.OrientationContextSelectionSHA256) {
 		return fmt.Errorf("report manifest: orientation context selection sha256 is invalid")
+	}
+	if m.MaterialInputs.RepositoryAtlasSHA256 != "" &&
+		!validManifestSHA256(m.MaterialInputs.RepositoryAtlasSHA256) {
+		return fmt.Errorf("report manifest: repository Atlas sha256 is invalid")
 	}
 	taskDigests := []string{
 		m.MaterialInputs.TaskBundleSHA256,
@@ -520,9 +526,10 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: report sha256 mismatch")
 	}
 	var report struct {
-		FormatVersion     int         `json:"format_version"`
-		OpenablePaths     []string    `json:"openable_paths"`
-		Components        []Component `json:"components"`
+		FormatVersion     int                    `json:"format_version"`
+		OpenablePaths     []string               `json:"openable_paths"`
+		Components        []Component            `json:"components"`
+		RepositoryAtlas   *repositoryatlas.Atlas `json:"repository_atlas"`
 		TaskInvestigation *struct {
 			BundleSHA256                 string `json:"bundle_sha256"`
 			AttemptSHA256                string `json:"attempt_sha256"`
@@ -537,6 +544,15 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	}
 	if report.FormatVersion != m.ReportFormatVersion {
 		return fmt.Errorf("report manifest: report format version mismatch")
+	}
+	hasRepositoryAtlas := m.MaterialInputs.RepositoryAtlasSHA256 != ""
+	if (report.RepositoryAtlas != nil) != hasRepositoryAtlas {
+		return fmt.Errorf("report manifest: repository Atlas identity does not match report")
+	}
+	if report.RepositoryAtlas != nil {
+		if _, err := repositoryatlas.CanonicalJSON(*report.RepositoryAtlas); err != nil {
+			return fmt.Errorf("report manifest: repository Atlas: %w", err)
+		}
 	}
 	authority, err := componentAuthority(report.Components)
 	if err != nil {
@@ -637,6 +653,44 @@ func (m RunManifest) VerifyOrientationContextSelectionArtifact(runDir string) er
 	return nil
 }
 
+// VerifyRepositoryAtlasArtifact binds the exact canonical Atlas file to the
+// Atlas value embedded in the authorized report. Neither copy is accepted as
+// an independent source of truth.
+func (m RunManifest) VerifyRepositoryAtlasArtifact(runDir string, reportJSON []byte) error {
+	want := m.MaterialInputs.RepositoryAtlasSHA256
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open repository Atlas run: %w", err)
+	}
+	defer root.Close()
+	if want == "" {
+		if _, statErr := root.Lstat(repositoryatlas.ArtifactFilename); statErr == nil {
+			return fmt.Errorf("report manifest: unbound repository Atlas artifact is present")
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return fmt.Errorf("report manifest: inspect repository Atlas artifact: %w", statErr)
+		}
+		return nil
+	}
+	encoded, err := readManifestFile(root, repositoryatlas.ArtifactFilename, repositoryatlas.MaxArtifactBytes)
+	if err != nil || manifestSHA256(encoded) != want {
+		return fmt.Errorf("report manifest: repository Atlas artifact sha256 mismatch")
+	}
+	atlas, err := repositoryatlas.DecodeCanonicalJSON(encoded)
+	if err != nil {
+		return fmt.Errorf("report manifest: repository Atlas artifact: %w", err)
+	}
+	var persisted struct {
+		RepositoryAtlas *repositoryatlas.Atlas `json:"repository_atlas"`
+	}
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		return fmt.Errorf("report manifest: decode report repository Atlas: %w", err)
+	}
+	if persisted.RepositoryAtlas == nil || !reflect.DeepEqual(atlas, *persisted.RepositoryAtlas) {
+		return fmt.Errorf("report manifest: repository Atlas artifact does not match report")
+	}
+	return nil
+}
+
 func orientationSelectionMatchesModelBundle(
 	selection llmbundle.OrientationContextSelection,
 	modelBundle []byte,
@@ -716,6 +770,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	return manifest, nil
 }
 
@@ -781,6 +838,10 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err != nil {
 		return err
 	}
+	repositoryAtlasDigest, err := savedRepositoryAtlasSHA256(runDir)
+	if err != nil {
+		return err
+	}
 	manifest := RunManifest{
 		Version:               CurrentRunManifestVersion,
 		RepositoryState:       authority.repository,
@@ -797,6 +858,7 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 			SelectedRevision:                  authority.repository.Head,
 			ModelBundleSHA256:                 modelBundleDigest,
 			OrientationContextSelectionSHA256: orientationSelectionDigest,
+			RepositoryAtlasSHA256:             repositoryAtlasDigest,
 			TaskBundleSHA256:                  savedArtifactSHA256(runDir, tasklens.BundleFile),
 			TaskAttemptSHA256:                 savedArtifactSHA256(runDir, tasklens.AttemptFile),
 			TaskPackSHA256:                    savedArtifactSHA256(runDir, tasklens.PackFile),
@@ -811,6 +873,9 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		return err
 	}
 	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
+		return err
+	}
+	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
 		return err
 	}
 	return writeRunManifestAtomic(runDir, manifest)
@@ -898,6 +963,33 @@ func savedModelBundleSHA256(runDir string) (string, error) {
 	data, err := readManifestFile(root, "llm_bundle.json", maxManifestReportBytes)
 	if err != nil {
 		return "", fmt.Errorf("report manifest: read model bundle: %w", err)
+	}
+	return manifestSHA256(data), nil
+}
+
+func savedRepositoryAtlasSHA256(runDir string) (string, error) {
+	path := filepath.Join(runDir, repositoryatlas.ArtifactFilename)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("report manifest: inspect repository Atlas: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > repositoryatlas.MaxArtifactBytes {
+		return "", fmt.Errorf("report manifest: repository Atlas must be a bounded regular file")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open repository Atlas run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(root, repositoryatlas.ArtifactFilename, repositoryatlas.MaxArtifactBytes)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: read repository Atlas: %w", err)
+	}
+	if _, err := repositoryatlas.DecodeCanonicalJSON(data); err != nil {
+		return "", fmt.Errorf("report manifest: repository Atlas: %w", err)
 	}
 	return manifestSHA256(data), nil
 }

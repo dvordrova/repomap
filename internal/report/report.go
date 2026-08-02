@@ -19,10 +19,11 @@ import (
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/orient"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 26
+const CurrentFormatVersion = 27
 
 const maxExactDiscoveryDeclarations = 16
 
@@ -142,8 +143,13 @@ type ReportData struct {
 	// SourceIDs is an ephemeral server-rendered map from authorized
 	// repository-relative paths to opaque navigation IDs. WriteReportJSON
 	// deliberately excludes it from persisted report evidence.
-	SourceIDs          map[string]string            `json:"source_ids,omitempty"`
-	RepositoryGraph    *RepositoryGraph             `json:"repository_graph,omitempty"`
+	SourceIDs       map[string]string `json:"source_ids,omitempty"`
+	RepositoryGraph *RepositoryGraph  `json:"repository_graph,omitempty"`
+	// RepositoryAtlas is the exact language-neutral canonical Atlas persisted
+	// beside the report. It contains only locally proven Units, entities,
+	// observations, evidence and relations; files and symbols remain evidence
+	// locators rather than entities.
+	RepositoryAtlas    *repositoryatlas.Atlas       `json:"repository_atlas,omitempty"`
 	Components         []Component                  `json:"components,omitempty"`
 	ComponentRelations []ComponentRelation          `json:"component_relations,omitempty"`
 	ArchitectureCanvas *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`

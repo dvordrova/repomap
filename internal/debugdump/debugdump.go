@@ -266,6 +266,28 @@ func (w *Writer) WriteFile(name string, data []byte) error {
 	return w.writeRootFile(name, data)
 }
 
+// WriteValidatedFile applies the writer's existing persisted-artifact
+// redaction first, validates those exact prepared bytes, and only then
+// publishes them. Callers use this for canonical artifacts whose redacted
+// representation must remain a valid instance of their contract.
+func (w *Writer) WriteValidatedFile(
+	name string,
+	data []byte,
+	validate func([]byte) error,
+) error {
+	if validate == nil {
+		return fmt.Errorf("debug artifact validator is required")
+	}
+	prepared := data
+	if w != nil && w.Redacted {
+		prepared = redactJSON(prepared)
+	}
+	if err := validate(append([]byte(nil), prepared...)); err != nil {
+		return fmt.Errorf("validate %s: %w", name, err)
+	}
+	return w.writePreparedRootFile(name, prepared)
+}
+
 func (w *Writer) writeRootFile(name string, data []byte) error {
 	if w != nil && w.Redacted {
 		data = redactJSON(data)

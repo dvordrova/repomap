@@ -3,12 +3,14 @@ package guidedtour
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 func TestPlanLeafTasksDeterministicAndBounded(t *testing.T) {
@@ -295,6 +297,66 @@ func TestParseLeafArtifactStrictJSON(t *testing.T) {
 				t.Fatalf("ParseLeafArtifact() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestFanoutParsersUseSharedResponseEnvelopeAndTypedTerminalLimit(t *testing.T) {
+	task := fanoutCandidateTasks(t)[0]
+	leaf, err := json.Marshal(fanoutTestArtifact(task))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseLeafArtifact(append(bytes.Repeat([]byte(" "), (32<<10)+1), leaf...)); err != nil {
+		t.Fatalf("leaf above former stage cap rejected: %v", err)
+	}
+	assertGuidedTourFanoutResponseLimit(
+		t,
+		"guided_tour_leaf",
+		maxLeafArtifactBytes,
+		func(raw []byte) error {
+			_, err := ParseLeafArtifact(raw)
+			return err
+		},
+	)
+
+	fanIn, err := json.Marshal(FanInArtifact{
+		Version: FanInArtifactVersion, Verdict: FanInVerdictInsufficientEvidence,
+		Explanation: "The supplied facts do not establish a story", Proposal: nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseFanInArtifact(append(bytes.Repeat([]byte(" "), (96<<10)+1), fanIn...)); err != nil {
+		t.Fatalf("fan-in above former stage cap rejected: %v", err)
+	}
+	assertGuidedTourFanoutResponseLimit(
+		t,
+		"guided_tour_fan_in",
+		maxFanInArtifactBytes,
+		func(raw []byte) error {
+			_, err := ParseFanInArtifact(raw)
+			return err
+		},
+	)
+}
+
+func assertGuidedTourFanoutResponseLimit(
+	t *testing.T,
+	stage string,
+	limit int,
+	parse func([]byte) error,
+) {
+	t.Helper()
+	observed := limit + 1
+	err := parse(bytes.Repeat([]byte("x"), observed))
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Stage != stage ||
+		limitErr.Kind != modelresearch.ResourceLimitResponseBytes ||
+		limitErr.Limit != limit ||
+		limitErr.Observed != observed ||
+		!limitErr.ObservedKnown {
+		t.Fatalf("terminal response limit = %#v", err)
 	}
 }
 

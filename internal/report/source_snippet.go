@@ -1,6 +1,7 @@
 package report
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,9 +11,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/goldenmechanism"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
+	"github.com/dvordrova/repomap/internal/workspacecontent"
 )
 
 const (
@@ -26,7 +32,6 @@ const (
 	maxSourceNotices             = 2
 	maxSourceNoticeTextBytes     = 180
 	maxSourceLandmarkReasonBytes = 240
-	maxOverviewSourceSnippets    = 8
 	omittedSourceLinesMarker     = "… lines omitted …"
 	legacyOmittedLinesMarker     = "…"
 	boundedPrimaryPathSyntaxKind = "bounded_primary_path_syntax"
@@ -1193,7 +1198,7 @@ func projectOverviewSourceSnippets(data *ReportData) []SourceSnippet {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		return overviewSourceCandidateLess(candidates[i], candidates[j])
 	})
-	result := make([]SourceSnippet, 0, min(len(candidates), maxOverviewSourceSnippets))
+	result := make([]SourceSnippet, 0, len(candidates))
 	seenPaths := make(map[string]struct{})
 	for _, candidate := range candidates {
 		if _, duplicate := seenPaths[candidate.snippet.Path]; duplicate {
@@ -1208,11 +1213,423 @@ func projectOverviewSourceSnippets(data *ReportData) []SourceSnippet {
 			continue
 		}
 		result = append(result, candidate.snippet)
-		if len(result) >= maxOverviewSourceSnippets {
-			break
+	}
+	return result
+}
+
+type overviewSourceTarget struct {
+	path string
+	line int
+}
+
+// completeOverviewSourceCoverage atomically extends the existing editorial
+// source projection with exact authorized excerpts for every Overview object
+// that has a persisted visible source location. It never reduces the target
+// set to fit a presentation budget.
+func completeOverviewSourceCoverage(
+	ctx context.Context,
+	data *ReportData,
+	authority *RunAuthority,
+) error {
+	if data == nil || authority == nil {
+		return fmt.Errorf("report source coverage: authorized report data is required")
+	}
+	if err := authority.validate(); err != nil {
+		return err
+	}
+	targets := overviewSourceTargets(data)
+	if len(targets) == 0 {
+		return nil
+	}
+	if authority.inputs == nil {
+		repositoryPaths, err := repositoryRelativeInputPaths(
+			authority.repository.Identity,
+			authority.analysisRoot,
+			data.OpenablePaths,
+		)
+		if err != nil {
+			return err
+		}
+		inputs, err := freshness.CaptureInputs(ctx, authority.repository, repositoryPaths)
+		if err != nil {
+			return fmt.Errorf("report source coverage: capture authorized inputs: %w", err)
+		}
+		authority.inputs = inputs
+	}
+	catalog, err := sourcecatalog.New(sourcecatalog.Input{
+		RepositoryRoot: authority.repository.Identity,
+		AnalysisRoot:   authority.analysisRoot,
+		AllowedPaths:   data.OpenablePaths,
+		CapturedInputs: authority.inputs,
+	})
+	if err != nil {
+		return fmt.Errorf("report source coverage: authorized source catalog: %w", err)
+	}
+	content, err := workspacecontent.New(catalog)
+	if err != nil {
+		return fmt.Errorf("report source coverage: open authorized source content: %w", err)
+	}
+
+	projected := cloneOverviewSourceSnippets(data.UserSources)
+	for _, target := range targets {
+		resolved, conflict := resolveOverviewSourceSnippet(projected, target)
+		if conflict {
+			_ = content.Close()
+			return fmt.Errorf("report source coverage: conflicting exact saved excerpt")
+		}
+		if resolved {
+			continue
+		}
+		snippet, err := authorizedOverviewSourceSnippet(ctx, data, content, target)
+		if err != nil {
+			_ = content.Close()
+			return err
+		}
+		projected = mergeExactOverviewSourceSnippet(projected, snippet)
+	}
+	if err := content.Close(); err != nil {
+		return fmt.Errorf("report source coverage: close authorized source content: %w", err)
+	}
+	for _, target := range targets {
+		resolved, conflict := resolveOverviewSourceSnippet(projected, target)
+		if conflict || !resolved {
+			return fmt.Errorf("report source coverage: incomplete exact saved excerpt projection")
+		}
+	}
+	data.UserSources = projected
+	return nil
+}
+
+func cloneOverviewSourceSnippets(sources []SourceSnippet) []SourceSnippet {
+	if sources == nil {
+		return nil
+	}
+	cloned := make([]SourceSnippet, len(sources))
+	for index, source := range sources {
+		cloned[index] = source
+		cloned[index].HighlightRanges = append([]SourceHighlight(nil), source.HighlightRanges...)
+		cloned[index].Lines = append([]SourceSnippetLine(nil), source.Lines...)
+		cloned[index].FullFunctionLines = append([]SourceSnippetLine(nil), source.FullFunctionLines...)
+		cloned[index].RelatedEvidenceIDs = append([]string(nil), source.RelatedEvidenceIDs...)
+		cloned[index].noticeCandidates = append([]sourceNoticeCandidate(nil), source.noticeCandidates...)
+	}
+	return cloned
+}
+
+func overviewSourceTargets(data *ReportData) []overviewSourceTarget {
+	if data == nil {
+		return nil
+	}
+	openable := make(map[string]struct{}, len(data.OpenablePaths))
+	for _, sourcePath := range data.OpenablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	result := make([]overviewSourceTarget, 0)
+	seen := make(map[overviewSourceTarget]struct{})
+	appendTarget := func(sourcePath string, line int) {
+		target := overviewSourceTarget{path: sourcePath, line: line}
+		if sourcePath == "" || line <= 0 {
+			return
+		}
+		if _, ok := openable[sourcePath]; !ok {
+			return
+		}
+		if _, duplicate := seen[target]; duplicate {
+			return
+		}
+		seen[target] = struct{}{}
+		result = append(result, target)
+	}
+
+	if data.DiscoveredSurfaces != nil {
+		idCounts := make(map[string]int)
+		for index := range data.DiscoveredSurfaces.Triggers {
+			trigger := &data.DiscoveredSurfaces.Triggers[index]
+			if overviewEntrySurfaceEligible(trigger) {
+				idCounts[trigger.ID]++
+			}
+		}
+		for index := range data.DiscoveredSurfaces.Triggers {
+			trigger := &data.DiscoveredSurfaces.Triggers[index]
+			if !overviewEntrySurfaceEligible(trigger) || idCounts[trigger.ID] != 1 {
+				continue
+			}
+			location := overviewEntrySurfaceLocation(trigger)
+			if location != nil {
+				appendTarget(location.Path, location.Line)
+			}
+		}
+	}
+
+	if data.ArchitectureCanvas == nil {
+		return result
+	}
+	componentIDCounts := make(map[string]int)
+	for _, component := range data.ArchitectureCanvas.Components {
+		if component.ID != "" {
+			componentIDCounts[string(component.ID)]++
+		}
+	}
+	for _, component := range data.ArchitectureCanvas.Components {
+		if component.ID == "" || componentIDCounts[string(component.ID)] != 1 {
+			continue
+		}
+		for _, location := range overviewArchitectureComponentLocations(data, component, openable) {
+			appendTarget(location.Path, location.Line)
 		}
 	}
 	return result
+}
+
+func overviewEntrySurfaceEligible(trigger *DiscoveredTrigger) bool {
+	return trigger != nil && trigger.ID != "" && !trigger.ProvisionalID &&
+		trigger.SurfaceRole == SurfaceRoleEntrySurface &&
+		trigger.ApplicationClass == SurfaceApplicationOwned &&
+		trigger.Availability == SurfaceAvailabilityAvailable &&
+		trigger.ExecutableRole != ExecutableRoleTestOrHelper
+}
+
+func overviewEntrySurfaceLocation(trigger *DiscoveredTrigger) *SurfaceLocation {
+	if trigger == nil {
+		return nil
+	}
+	for _, location := range []*SurfaceLocation{
+		trigger.HandlerLocation,
+		trigger.RegistrationSite,
+		trigger.DescriptorSite,
+		trigger.ServerStartSite,
+		trigger.ProcessEntrypoint.Location,
+	} {
+		if location != nil {
+			return location
+		}
+	}
+	return nil
+}
+
+func overviewArchitectureComponentLocations(
+	data *ReportData,
+	component ArchitectureComponent,
+	openable map[string]struct{},
+) []SurfaceLocation {
+	locations := make([]SurfaceLocation, 0)
+	seen := make(map[overviewSourceTarget]struct{})
+	appendLocation := func(sourcePath string, line, column int) {
+		key := overviewSourceTarget{path: sourcePath, line: line}
+		if sourcePath == "" || line <= 0 {
+			return
+		}
+		if _, ok := openable[sourcePath]; !ok {
+			return
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return
+		}
+		seen[key] = struct{}{}
+		locations = append(locations, SurfaceLocation{Path: sourcePath, Line: line, Column: column})
+	}
+
+	componentFiles := make(map[string]struct{})
+	packageByPath := make(map[string]PackageInfo)
+	if data.RepositoryGraph != nil {
+		for _, pkg := range data.RepositoryGraph.Packages {
+			if pkg.CanonicalPath != "" {
+				packageByPath[pkg.CanonicalPath] = pkg
+			}
+		}
+	}
+	for _, member := range component.Members {
+		if member.ID.Kind == "package" {
+			for _, fact := range member.Facts {
+				if fact.Kind != "declaration" {
+					continue
+				}
+				pkg, ok := packageByPath[fact.Value]
+				if !ok {
+					continue
+				}
+				for _, sourcePath := range pkg.Files {
+					if _, ok := openable[sourcePath]; ok {
+						componentFiles[sourcePath] = struct{}{}
+					}
+				}
+				break
+			}
+		}
+		for _, fact := range member.Facts {
+			if fact.Location == nil {
+				continue
+			}
+			if _, ok := openable[fact.Location.Path]; !ok {
+				continue
+			}
+			componentFiles[fact.Location.Path] = struct{}{}
+			appendLocation(fact.Location.Path, fact.Location.Line, fact.Location.Column)
+		}
+	}
+	hasPreciseMemberSource := len(locations) > 0
+	hasExactComponentFiles := len(componentFiles) > 0
+	if !hasPreciseMemberSource {
+		anchorByID := make(map[string]componentmap.BehaviorAnchor)
+		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
+			if anchor.ID != "" {
+				anchorByID[anchor.ID] = anchor
+			}
+		}
+		for _, anchorID := range component.AnchorIDs {
+			anchor, ok := anchorByID[anchorID]
+			if !ok || anchor.Location.Line <= 0 {
+				continue
+			}
+			if _, ok := openable[anchor.Location.Path]; !ok {
+				continue
+			}
+			if hasExactComponentFiles {
+				if _, ok := componentFiles[anchor.Location.Path]; !ok {
+					continue
+				}
+			}
+			appendLocation(anchor.Location.Path, anchor.Location.Line, anchor.Location.Column)
+		}
+	}
+	sort.SliceStable(locations, func(i, j int) bool {
+		if locations[i].Path != locations[j].Path {
+			return locations[i].Path < locations[j].Path
+		}
+		return locations[i].Line < locations[j].Line
+	})
+	return locations
+}
+
+func authorizedOverviewSourceSnippet(
+	ctx context.Context,
+	data *ReportData,
+	content *workspacecontent.Service,
+	target overviewSourceTarget,
+) (SourceSnippet, error) {
+	result, err := content.Read(ctx, workspacecontent.Request{
+		Path: target.path,
+		Range: workspacecontent.Range{
+			StartLine: target.line,
+			EndLine:   target.line,
+			FocusLine: target.line,
+		},
+	})
+	if err != nil {
+		return SourceSnippet{}, fmt.Errorf("report source coverage: exact authorized read failed: %w", err)
+	}
+	lines := make([]savedSourceLine, 0, len(result.Lines))
+	texts := make([]string, 0, len(result.Lines))
+	for _, line := range result.Lines {
+		if line.Truncated {
+			return SourceSnippet{}, fmt.Errorf("report source coverage: truncated exact source line")
+		}
+		lines = append(lines, savedSourceLine{line: line.Number, text: line.Text})
+		texts = append(texts, line.Text)
+	}
+	group := sourceSnippetGroup{
+		candidate: savedSourceCandidate{
+			path: target.path, lines: lines,
+			contentSHA: sourceLinesSHA256(texts),
+		},
+		evidence: []semanticdiscovery.EvidenceRef{{Path: target.path, Line: target.line}},
+	}
+	snippet, ok := sourceSnippetFromGroup(data, group, overviewSourceRole(data, target.path))
+	if !ok {
+		return SourceSnippet{}, fmt.Errorf("report source coverage: cannot project exact source excerpt")
+	}
+	if _, found := secretscan.DetectAlways(snippet.Content); found {
+		return SourceSnippet{}, fmt.Errorf("report source coverage: unsafe exact source excerpt")
+	}
+	return snippet, nil
+}
+
+func mergeExactOverviewSourceSnippet(sources []SourceSnippet, snippet SourceSnippet) []SourceSnippet {
+	for index := range sources {
+		current := &sources[index]
+		if current.Path != snippet.Path || current.StartLine != snippet.StartLine ||
+			current.EndLine != snippet.EndLine || current.Revision != snippet.Revision ||
+			current.ContentSHA256 != snippet.ContentSHA256 || current.Content != snippet.Content {
+			continue
+		}
+		merged := append([]SourceHighlight(nil), current.HighlightRanges...)
+		merged = append(merged, snippet.HighlightRanges...)
+		current.HighlightRanges = normalizeSourceHighlightRanges(merged)
+		for lineIndex := range current.Lines {
+			current.Lines[lineIndex].Highlight = sourceLineIsHighlighted(
+				current.Lines[lineIndex].Line,
+				current.HighlightRanges,
+			)
+		}
+		current.PresentationSHA256 = sourceSnippetPresentationSHA(*current)
+		return sources
+	}
+	return append(sources, snippet)
+}
+
+func normalizeSourceHighlightRanges(values []SourceHighlight) []SourceHighlight {
+	lines := make([]int, 0)
+	seen := make(map[int]struct{})
+	for _, value := range values {
+		for line := value.StartLine; line <= value.EndLine; line++ {
+			if _, duplicate := seen[line]; duplicate {
+				continue
+			}
+			seen[line] = struct{}{}
+			lines = append(lines, line)
+		}
+	}
+	sort.Ints(lines)
+	return sourceHighlightRanges(lines)
+}
+
+func resolveOverviewSourceSnippet(sources []SourceSnippet, target overviewSourceTarget) (bool, bool) {
+	type match struct {
+		snippet SourceSnippet
+		span    int
+	}
+	matches := make([]match, 0)
+	seen := make(map[string]struct{})
+	for _, snippet := range sources {
+		if snippet.Path != target.path || target.line < snippet.StartLine || target.line > snippet.EndLine ||
+			len(snippet.Lines) == 0 {
+			continue
+		}
+		identity := fmt.Sprintf("%s\x00%d\x00%d\x00%s\x00%s",
+			snippet.Path, snippet.StartLine, snippet.EndLine, snippet.Revision, snippet.ContentSHA256)
+		if _, duplicate := seen[identity]; duplicate {
+			continue
+		}
+		seen[identity] = struct{}{}
+		matches = append(matches, match{snippet: snippet, span: snippet.EndLine - snippet.StartLine})
+	}
+	if len(matches) == 0 {
+		return false, false
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].span != matches[j].span {
+			return matches[i].span < matches[j].span
+		}
+		if matches[i].snippet.StartLine != matches[j].snippet.StartLine {
+			return matches[i].snippet.StartLine < matches[j].snippet.StartLine
+		}
+		return matches[i].snippet.PresentationSHA256 < matches[j].snippet.PresentationSHA256
+	})
+	minimumSpan := matches[0].span
+	intervalIdentity := make(map[string]string)
+	for _, candidate := range matches {
+		if candidate.span != minimumSpan {
+			break
+		}
+		interval := fmt.Sprintf("%s\x00%d\x00%d", candidate.snippet.Path,
+			candidate.snippet.StartLine, candidate.snippet.EndLine)
+		identity := candidate.snippet.Revision + "\x00" + candidate.snippet.ContentSHA256
+		if previous := intervalIdentity[interval]; previous != "" && previous != identity {
+			return false, true
+		}
+		intervalIdentity[interval] = identity
+	}
+	return true, false
 }
 
 func overviewSourceRecommendations(files []FileItem) map[string]overviewSourceRecommendation {

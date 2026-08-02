@@ -1,15 +1,38 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/194-honest-global-semantic-output-ceiling.md
+    decisions/196-atlas-first-navigation.md
 
 Status:
-    Decision 194 active; honest global semantic output ceiling authorized
+    Decision 196 active; Atlas-first Navigator and truthful workspace authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 196 retains the accepted Decision 195 UI/source-coverage and
+    semantic-output checkpoints, but replaces its raw-complete-facts
+    Orientation lane with a local Atlas-first, task-shaped Navigator
+    projection. Atlas grows locally and is persisted as normal-run evidence;
+    the model receives only bounded question-shaped summaries, local refs,
+    representative exact evidence and a backend-owned action catalog. Raw
+    signals, full source, raw file tree and raw internal edges remain local.
+    The workspace shows Authority-labelled observed/resolved/inferred/partial/
+    conflicted/unknown facts and honest empty states. Optional live A/B is
+    last and requires explicit owner approval. Decision 195 removes silent active-product loss behind unrelated length and
+    cardinality limits. It lands in four sequential reviewed checkpoints:
+    complete exact saved-source coverage for every eligible visible Overview
+    Surface and Architecture Component location; one truthful semantic output
+    ceiling with typed terminal exhaustion and no fallback/publication; one
+    1 MiB-default globally overridable compact-input budget with complete facts
+    or a pre-call typed terminal outcome; and explicit classification of all
+    remaining production analysis ceilings. Existing captured-input/report/
+    manifest source authority, compact provider boundary, semantic validation,
+    secret rejection, schema and typed-identity invariants remain fail closed.
+    No source contents, raw full tree, or raw internal edges become model input.
+    No live LLM, PATH replacement, legacy reader, migration, binary build,
+    commit, or push is part of an unaccepted checkpoint. Decision 194 remains
+    the semantic output-envelope foundation incorporated by this decision.
     Decision 194 makes REPOMAP_LLM_MAX_TOKENS the one truthful hard ceiling
     for every semantic provider request, with a 64,000-token default and no
     automatic stage floors, raises, doubling, or semantic completion/proposal

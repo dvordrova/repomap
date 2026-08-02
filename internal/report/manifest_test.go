@@ -12,9 +12,89 @@ import (
 
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 )
+
+func TestRunManifestBindsRepositoryAtlasArtifactAndEmbeddedValue(t *testing.T) {
+	atlas := repositoryAtlasFixture()
+	encoded, err := repositoryatlas.CanonicalJSON(atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atlas, err = repositoryatlas.DecodeCanonicalJSON(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON, err := json.Marshal(struct {
+		FormatVersion   int                   `json:"format_version"`
+		OpenablePaths   []string              `json:"openable_paths"`
+		Components      []Component           `json:"components"`
+		RepositoryAtlas repositoryatlas.Atlas `json:"repository_atlas"`
+	}{
+		FormatVersion: CurrentFormatVersion, RepositoryAtlas: atlas,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := validRunManifestFixture(t)
+	manifest.OpenablePaths = nil
+	manifest.Components = nil
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+	manifest.MaterialInputs.RepositoryAtlasSHA256 = manifestSHA256(encoded)
+
+	runDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runDir, repositoryatlas.ArtifactFilename), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		t.Fatalf("VerifyReportJSON: %v", err)
+	}
+	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
+		t.Fatalf("VerifyRepositoryAtlasArtifact: %v", err)
+	}
+
+	t.Run("tampered artifact", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(runDir, repositoryatlas.ArtifactFilename), append(encoded, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err == nil ||
+			!strings.Contains(err.Error(), "sha256 mismatch") {
+			t.Fatalf("VerifyRepositoryAtlasArtifact error = %v", err)
+		}
+	})
+
+	t.Run("unbound artifact", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(runDir, repositoryatlas.ArtifactFilename), encoded, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		unbound := manifest
+		unbound.MaterialInputs.RepositoryAtlasSHA256 = ""
+		if err := unbound.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err == nil ||
+			!strings.Contains(err.Error(), "unbound repository Atlas artifact") {
+			t.Fatalf("VerifyRepositoryAtlasArtifact error = %v", err)
+		}
+	})
+
+	t.Run("embedded value differs", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(runDir, repositoryatlas.ArtifactFilename), encoded, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		other := atlas
+		other.Relations = nil
+		otherReport, err := json.Marshal(struct {
+			RepositoryAtlas repositoryatlas.Atlas `json:"repository_atlas"`
+		}{RepositoryAtlas: other})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := manifest.VerifyRepositoryAtlasArtifact(runDir, otherReport); err == nil ||
+			!strings.Contains(err.Error(), "does not match report") {
+			t.Fatalf("VerifyRepositoryAtlasArtifact error = %v", err)
+		}
+	})
+}
 
 func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T) {
 	repository := newRunManifestRepository(t)

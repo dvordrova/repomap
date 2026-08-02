@@ -39,6 +39,19 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-hero { background: linear-gradient(145deg, #f8fbff, #f5f3ff); border: 1px solid #cbd5e1; border-radius: 12px; padding: clamp(1.25rem, 3vw, 2rem); }
 .rm-overview-hero h2 { font-size: clamp(1.6rem, 3vw, 2.35rem); line-height: 1.15; margin: .35rem 0 .8rem; }
 .rm-overview-hero p { color: #475569; font-size: .95rem; max-width: 54rem; }
+.rm-overview-anatomy-zone { display: grid; gap: .75rem; }
+.rm-overview-object-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.rm-overview-object-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; display: grid; overflow: hidden; }
+.rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; width: 100%; }
+.rm-overview-object-primary:hover { background: #f8fafc; }
+.rm-overview-object-primary:focus-visible, .rm-overview-object-architecture:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: -2px; }
+.rm-overview-object-detail { color: var(--rm-dim); font-size: .78rem; }
+.rm-overview-object-location { color: #475569; font-size: .75rem; overflow-wrap: anywhere; }
+.rm-overview-object-action { color: var(--rm-accent); font-size: .78rem; font-weight: 650; }
+.rm-overview-object-architecture { background: #f8fafc; border: 0; border-top: 1px solid var(--rm-border); color: #334155; cursor: pointer; font-size: .76rem; padding: .65rem 1rem; text-align: left; }
+.rm-overview-object-architecture:hover { background: #f1f5f9; }
+.rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
+.rm-overview-integrations-empty { margin: 0; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }

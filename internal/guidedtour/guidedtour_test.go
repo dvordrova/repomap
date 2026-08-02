@@ -3,11 +3,13 @@ package guidedtour
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 func TestBundleHashCanonical(t *testing.T) {
@@ -115,6 +117,30 @@ func TestParseProposalStrictJSON(t *testing.T) {
 				t.Fatalf("ParseProposal() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestParseProposalUsesSharedResponseEnvelope(t *testing.T) {
+	t.Parallel()
+
+	valid, err := json.Marshal(testProposal())
+	if err != nil {
+		t.Fatal(err)
+	}
+	aboveFormerCap := append(bytes.Repeat([]byte(" "), (64<<10)+1), valid...)
+	if _, err := ParseProposal(aboveFormerCap); err != nil {
+		t.Fatalf("proposal above former stage cap rejected: %v", err)
+	}
+
+	oversize := bytes.Repeat([]byte("x"), maxProposalBytes+1)
+	_, err = ParseProposal(oversize)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Stage != "guided_tour" ||
+		limitErr.Kind != modelresearch.ResourceLimitResponseBytes ||
+		limitErr.Limit != maxProposalBytes ||
+		limitErr.Observed != len(oversize) {
+		t.Fatalf("terminal response limit = %#v", err)
 	}
 }
 
@@ -523,6 +549,31 @@ func TestRecordRoundTripAndReplay(t *testing.T) {
 	stale.RepoName = "another-repository"
 	if _, err := ReplayRecord(stale, encoded); err == nil || !strings.Contains(err.Error(), "hash does not match") {
 		t.Fatalf("ReplayRecord() stale error = %v", err)
+	}
+}
+
+func TestGuidedTourRecordUsesSharedArtifactCeiling(t *testing.T) {
+	t.Parallel()
+
+	bundle := testBundle(t)
+	encoded, err := EncodeRecord(bundle, testProposal())
+	if err != nil {
+		t.Fatal(err)
+	}
+	aboveFormerCap := append(bytes.Repeat([]byte(" "), (128<<10)+1), encoded...)
+	if _, err := DecodeRecord(aboveFormerCap); err != nil {
+		t.Fatalf("record above former stage cap rejected: %v", err)
+	}
+
+	oversize := bytes.Repeat([]byte("x"), maxRecordBytes+1)
+	_, err = DecodeRecord(oversize)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Stage != "guided_tour" ||
+		limitErr.Kind != modelresearch.ResourceLimitRecordBytes ||
+		limitErr.Limit != maxRecordBytes ||
+		limitErr.Observed != len(oversize) {
+		t.Fatalf("record limit = %#v", err)
 	}
 }
 

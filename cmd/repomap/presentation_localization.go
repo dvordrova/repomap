@@ -572,6 +572,14 @@ func executePresentationLocalization(
 				debugdump.SemanticStateRejected, debugdump.SemanticValidationDecode,
 				1, providerResult.Attempts,
 			)
+			if isSemanticResourceLimit(decodeErr) {
+				return failTerminal(
+					decodeErr,
+					report.LocalizationFailureInvalidProjection,
+					report.LocalizationStageResponseDecode,
+					report.LocalizationValidationResponseDecode,
+				)
+			}
 			return fail(report.LocalizationFailureInvalidProjection, report.LocalizationStageResponseDecode, report.LocalizationValidationResponseDecode)
 		}
 		validation, validationErr := applyProjection(

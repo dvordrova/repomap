@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 const (
@@ -25,8 +27,8 @@ const (
 	maxLeafObservations    = 6
 	maxLeafMissingEvidence = 6
 	maxLeafTaskBytes       = 1 << 20
-	maxLeafArtifactBytes   = 32 << 10
-	maxFanInArtifactBytes  = 96 << 10
+	maxLeafArtifactBytes   = modelresearch.ProviderResponseByteLimit
+	maxFanInArtifactBytes  = modelresearch.ProviderResponseByteLimit
 	// The provider request ceiling is 256 KiB. Keep enough headroom for the
 	// stable instructions and for escaping this JSON inside the outer chat JSON.
 	maxFanInPayloadBytes = 96 << 10
@@ -337,8 +339,15 @@ func BuildLeafPrompt(task LeafTask) (Prompt, error) {
 }
 
 func ParseLeafArtifact(raw []byte) (LeafArtifact, error) {
-	if len(raw) == 0 || len(raw) > maxLeafArtifactBytes {
+	if len(raw) == 0 {
 		return LeafArtifact{}, fmt.Errorf("guided tour: leaf artifact is empty or too large")
+	}
+	if len(raw) > maxLeafArtifactBytes {
+		return LeafArtifact{}, guidedTourFanoutResourceLimit(
+			"guided_tour_leaf",
+			maxLeafArtifactBytes,
+			len(raw),
+		)
 	}
 	var artifact LeafArtifact
 	if err := decodeStrictJSON(raw, &artifact); err != nil {
@@ -652,8 +661,15 @@ Rules:
 }
 
 func ParseFanInArtifact(raw []byte) (FanInArtifact, error) {
-	if len(raw) == 0 || len(raw) > maxFanInArtifactBytes {
+	if len(raw) == 0 {
 		return FanInArtifact{}, fmt.Errorf("guided tour: fan-in artifact is empty or too large")
+	}
+	if len(raw) > maxFanInArtifactBytes {
+		return FanInArtifact{}, guidedTourFanoutResourceLimit(
+			"guided_tour_fan_in",
+			maxFanInArtifactBytes,
+			len(raw),
+		)
 	}
 	var wire struct {
 		Version     int                `json:"version"`
@@ -686,6 +702,13 @@ func ParseFanInArtifact(raw []byte) (FanInArtifact, error) {
 	}
 	artifact.Proposal = &proposal
 	return artifact, nil
+}
+
+func guidedTourFanoutResourceLimit(stage string, limit, observed int) *modelresearch.ResourceLimitError {
+	return &modelresearch.ResourceLimitError{
+		Stage: stage, Kind: modelresearch.ResourceLimitResponseBytes,
+		Limit: limit, Observed: observed, ObservedKnown: true,
+	}
 }
 
 func ValidateFanInArtifact(bundle Bundle, results []LeafResult, artifact FanInArtifact) error {

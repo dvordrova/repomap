@@ -2,14 +2,20 @@ package report
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/goldenmechanism"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
@@ -1030,12 +1036,13 @@ func TestProjectOverviewSourceSnippetsRanksLandmarksBeforeDeduplication(t *testi
 	}
 }
 
-func TestProjectOverviewSourceSnippetsRanksBeforeLimit(t *testing.T) {
+func TestProjectOverviewSourceSnippetsKeepsEveryRankedPath(t *testing.T) {
 	t.Parallel()
 
-	items := make([]modelresearch.EvidenceItem, 0, maxOverviewSourceSnippets+2)
+	const coreSourceCount = 10
+	items := make([]modelresearch.EvidenceItem, 0, coreSourceCount+1)
 	paths := make([]string, 0, cap(items))
-	for index := 0; index < maxOverviewSourceSnippets+1; index++ {
+	for index := 0; index < coreSourceCount; index++ {
 		sourcePath := fmt.Sprintf("internal/core_%02d.go", index)
 		items = append(items, overviewSourceEvidence(
 			fmt.Sprintf("evidence-core-%02d", index), sourcePath, 1,
@@ -1056,12 +1063,489 @@ func TestProjectOverviewSourceSnippetsRanksBeforeLimit(t *testing.T) {
 	}
 
 	got := projectOverviewSourceSnippets(data)
-	if len(got) != maxOverviewSourceSnippets {
-		t.Fatalf("landmark count = %d, want %d", len(got), maxOverviewSourceSnippets)
+	if len(got) != len(paths) {
+		t.Fatalf("landmark count = %d, want every one of %d", len(got), len(paths))
 	}
 	if got[0].Path != publicPath || got[0].LandmarkKind != SourceLandmarkPublicAPI {
 		t.Fatalf("late public API did not outrank earlier generic windows: %#v", got[0])
 	}
+}
+
+func TestCompleteOverviewSourceCoverageProjectsEveryExactVisibleLocation(t *testing.T) {
+	t.Parallel()
+
+	authority := overviewSourceCoverageAuthority(t, map[string]map[int]string{
+		"main.go": {
+			15: "func main() {",
+			16: "\trun()",
+			17: "}",
+		},
+		"component.go": {
+			6:  "func Load() error {",
+			7:  "\treturn nil",
+			8:  "}",
+			24: "func Store() error {",
+			25: "\treturn nil",
+			26: "}",
+		},
+	})
+	data := overviewSourceCoverageReport(authority.repository.Head)
+
+	wantTargets := []overviewSourceTarget{
+		{path: "main.go", line: 15},
+		{path: "component.go", line: 6},
+		{path: "component.go", line: 24},
+	}
+	if got := overviewSourceTargets(data); !reflect.DeepEqual(got, wantTargets) {
+		t.Fatalf("overviewSourceTargets() = %#v, want %#v", got, wantTargets)
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatalf("completeOverviewSourceCoverage(): %v", err)
+	}
+	if len(data.UserSources) != len(wantTargets) {
+		t.Fatalf("source excerpts = %d, want %d: %#v", len(data.UserSources), len(wantTargets), data.UserSources)
+	}
+	for index, target := range wantTargets {
+		resolved, conflict := resolveOverviewSourceSnippet(data.UserSources, target)
+		if !resolved || conflict {
+			t.Fatalf("target %d %s:%d resolution = %t, conflict=%t", index,
+				target.path, target.line, resolved, conflict)
+		}
+	}
+	for index, snippet := range data.UserSources {
+		if snippet.Revision != authority.repository.Head {
+			t.Fatalf("source[%d] revision = %q, want %q", index, snippet.Revision, authority.repository.Head)
+		}
+		if err := snippet.Validate(); err != nil {
+			t.Fatalf("source[%d] invalid: %v", index, err)
+		}
+	}
+
+	reprojected := overviewSourceCoverageReport(authority.repository.Head)
+	if err := completeOverviewSourceCoverage(context.Background(), reprojected, &authority); err != nil {
+		t.Fatalf("repeat completeOverviewSourceCoverage(): %v", err)
+	}
+	if !reflect.DeepEqual(reprojected.UserSources, data.UserSources) {
+		t.Fatalf("coverage projection is not deterministic:\nfirst:  %#v\nsecond: %#v",
+			data.UserSources, reprojected.UserSources)
+	}
+}
+
+func TestOverviewSourceTargetsUsesAnchorsOnlyWithoutPreciseComponentMembers(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		OpenablePaths: []string{"anchor.go", "member.go"},
+		RepositoryGraph: &RepositoryGraph{Packages: []PackageInfo{{
+			CanonicalPath: "example/pkg", Files: []string{"member.go"},
+		}}},
+		ArchitectureCanvas: &ArchitectureCanvas{
+			BehaviorAnchors: []componentmap.BehaviorAnchor{
+				{ID: "anchor-member", Location: evidence.Location{Path: "member.go", Line: 30}},
+				{ID: "anchor-outside", Location: evidence.Location{Path: "anchor.go", Line: 40}},
+			},
+			Components: []ArchitectureComponent{
+				{
+					ID: "component-package",
+					Members: []componentmap.Candidate{{
+						ID: componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "pkg"},
+						Facts: []componentmap.LocalFact{{
+							Kind: componentmap.FactDeclaration, Value: "example/pkg",
+						}},
+					}},
+					AnchorIDs: []string{"anchor-outside", "anchor-member"},
+				},
+				{
+					ID: "component-precise",
+					Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{{
+						Location: &evidence.Location{Path: "member.go", Line: 12},
+					}}}},
+					AnchorIDs: []string{"anchor-member"},
+				},
+			},
+		},
+	}
+	want := []overviewSourceTarget{
+		{path: "member.go", line: 30},
+		{path: "member.go", line: 12},
+	}
+	if got := overviewSourceTargets(data); !reflect.DeepEqual(got, want) {
+		t.Fatalf("overviewSourceTargets() = %#v, want %#v", got, want)
+	}
+}
+
+func TestCompleteOverviewSourceCoverageFailsClosedWithoutMutation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		change  bool
+		want    string
+	}{
+		{
+			name: "unsafe persisted excerpt",
+			content: strings.Join([]string{
+				"package fixture", "", "func main() {", "\tapiKey := \"sk-0123456789abcdefghijklmnop\"", "}", "",
+			}, "\n"),
+			want: "unsafe exact source excerpt",
+		},
+		{
+			name: "captured source changed",
+			content: strings.Join([]string{
+				"package fixture", "", "func main() {", "}", "",
+			}, "\n"),
+			change: true,
+			want:   "exact authorized read failed",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authority := overviewSingleSourceAuthority(t, test.content)
+			data := &ReportData{
+				CapturedRevision: authority.repository.Head,
+				OpenablePaths:    []string{"main.go"},
+				DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+					ID: "surface-main", SurfaceRole: SurfaceRoleEntrySurface,
+					ApplicationClass: SurfaceApplicationOwned,
+					Availability:     SurfaceAvailabilityAvailable,
+					ExecutableRole:   ExecutableRolePrimaryApplication,
+					HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 3},
+				}}},
+			}
+			before := append([]SourceSnippet(nil), data.UserSources...)
+			if test.change {
+				writeTestFile(t, authority.analysisRoot, "main.go", test.content+"// changed\n")
+			}
+			err := completeOverviewSourceCoverage(context.Background(), data, &authority)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("completeOverviewSourceCoverage() error = %v, want %q", err, test.want)
+			}
+			if !reflect.DeepEqual(data.UserSources, before) {
+				t.Fatalf("failed atomic projection mutated sources: %#v", data.UserSources)
+			}
+		})
+	}
+}
+
+func TestCompleteOverviewSourceCoverageRejectsConflictingExactSavedExcerpt(t *testing.T) {
+	t.Parallel()
+
+	authority := overviewSingleSourceAuthority(t, strings.Join([]string{
+		"package fixture", "", "func main() {", "\trun()", "}", "",
+	}, "\n"))
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		OpenablePaths:    []string{"main.go"},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "surface-main", SurfaceRole: SurfaceRoleEntrySurface,
+			ApplicationClass: SurfaceApplicationOwned,
+			Availability:     SurfaceAvailabilityAvailable,
+			ExecutableRole:   ExecutableRolePrimaryApplication,
+			HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 3},
+		}}},
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	original := data.UserSources[0]
+	conflicting := original
+	conflicting.Lines = append([]SourceSnippetLine(nil), original.Lines...)
+	conflicting.Lines[0].Text += " // conflicting"
+	texts := make([]string, 0, len(conflicting.Lines))
+	for _, line := range conflicting.Lines {
+		texts = append(texts, line.Text)
+	}
+	conflicting.Content = strings.Join(texts, "\n")
+	conflicting.ContentSHA256 = sourceLinesSHA256(texts)
+	conflicting.PresentationSHA256 = sourceSnippetPresentationSHA(conflicting)
+	if err := conflicting.Validate(); err != nil {
+		t.Fatalf("conflicting fixture invalid: %v", err)
+	}
+	data.UserSources = []SourceSnippet{original, conflicting}
+	before := append([]SourceSnippet(nil), data.UserSources...)
+	err := completeOverviewSourceCoverage(context.Background(), data, &authority)
+	if err == nil || !strings.Contains(err.Error(), "conflicting exact saved excerpt") {
+		t.Fatalf("completeOverviewSourceCoverage() error = %v, want conflict", err)
+	}
+	if !reflect.DeepEqual(data.UserSources, before) {
+		t.Fatalf("conflict failure mutated sources: %#v", data.UserSources)
+	}
+}
+
+func TestCompleteOverviewSourceCoverageLateFailurePreservesExistingNestedSources(t *testing.T) {
+	t.Parallel()
+
+	authority := overviewSourceCoverageAuthority(t, map[string]map[int]string{
+		"main.go": {
+			3: "func main() {",
+			4: "\trun()",
+			5: "}",
+		},
+		"unsafe.go": {
+			20: "func connect() {",
+			21: "\tapiKey := \"sk-0123456789abcdefghijklmnop\"",
+			22: "}",
+		},
+	})
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		OpenablePaths:    []string{"main.go", "unsafe.go"},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "surface-main", SurfaceRole: SurfaceRoleEntrySurface,
+			ApplicationClass: SurfaceApplicationOwned,
+			Availability:     SurfaceAvailabilityAvailable,
+			ExecutableRole:   ExecutableRolePrimaryApplication,
+			HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 3},
+		}}},
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	data.ArchitectureCanvas = &ArchitectureCanvas{Components: []ArchitectureComponent{{
+		ID: "component-unsafe",
+		Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{{
+			Location: &evidence.Location{Path: "unsafe.go", Line: 20},
+		}}}},
+	}}}
+	before, err := json.Marshal(data.UserSources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = completeOverviewSourceCoverage(context.Background(), data, &authority)
+	if err == nil || !strings.Contains(err.Error(), "unsafe exact source excerpt") {
+		t.Fatalf("completeOverviewSourceCoverage() error = %v, want late unsafe failure", err)
+	}
+	after, err := json.Marshal(data.UserSources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("late atomic failure mutated existing nested source:\nbefore: %s\nafter:  %s", before, after)
+	}
+
+	cloned := cloneOverviewSourceSnippets(data.UserSources)
+	cloned[0].Lines[0].Highlight = !cloned[0].Lines[0].Highlight
+	cloned[0].HighlightRanges[0].StartLine++
+	if reflect.DeepEqual(cloned, data.UserSources) || bytes.Equal(mustSourceProjectionJSON(t, cloned), before) {
+		t.Fatal("nested clone mutation did not diverge from fixture")
+	}
+	if got := mustSourceProjectionJSON(t, data.UserSources); !bytes.Equal(got, before) {
+		t.Fatalf("nested clone aliases original source:\nbefore: %s\nafter:  %s", before, got)
+	}
+}
+
+func overviewSourceCoverageReport(revision string) *ReportData {
+	return &ReportData{
+		CapturedRevision: revision,
+		OpenablePaths:    []string{"component.go", "main.go"},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{
+			{
+				ID: "surface-main", SurfaceRole: SurfaceRoleEntrySurface,
+				ApplicationClass: SurfaceApplicationOwned,
+				Availability:     SurfaceAvailabilityAvailable,
+				ExecutableRole:   ExecutableRolePrimaryApplication,
+				HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 15},
+			},
+			{
+				ID: "surface-unknown", SurfaceRole: SurfaceRoleEntrySurface,
+				ApplicationClass: SurfaceApplicationOwned,
+				Availability:     SurfaceAvailabilityUnknown,
+				ExecutableRole:   ExecutableRolePrimaryApplication,
+				HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 20},
+			},
+		}},
+		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{{
+			ID: "component-store",
+			Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{
+				{Location: &evidence.Location{Path: "component.go", Line: 24}},
+				{Location: &evidence.Location{Path: "component.go", Line: 6}},
+				{Location: &evidence.Location{Path: "component.go", Line: 24}},
+			}}},
+		}}},
+	}
+}
+
+func overviewSourceCoverageAuthority(
+	t *testing.T,
+	files map[string]map[int]string,
+) RunAuthority {
+	t.Helper()
+	repository := t.TempDir()
+	paths := make([]string, 0, len(files))
+	for sourcePath, replacements := range files {
+		lines := make([]string, 40)
+		for index := range lines {
+			lines[index] = fmt.Sprintf("// line %d", index+1)
+		}
+		for line, text := range replacements {
+			lines[line-1] = text
+		}
+		writeTestFile(t, repository, sourcePath, strings.Join(lines, "\n")+"\n")
+		paths = append(paths, sourcePath)
+	}
+	sort.Strings(paths)
+	return captureOverviewSourceAuthority(t, repository, paths)
+}
+
+func overviewSingleSourceAuthority(t *testing.T, content string) RunAuthority {
+	t.Helper()
+	repository := t.TempDir()
+	writeTestFile(t, repository, "main.go", content)
+	return captureOverviewSourceAuthority(t, repository, []string{"main.go"})
+}
+
+func captureOverviewSourceAuthority(t *testing.T, repository string, paths []string) RunAuthority {
+	t.Helper()
+	runManifestGit(t, repository, "init", "--quiet")
+	runManifestGit(t, repository, "add", ".")
+	runManifestGit(t, repository,
+		"-c", "user.name=repomap test",
+		"-c", "user.email=repomap@example.invalid",
+		"-c", "commit.gpgsign=false",
+		"commit", "--quiet", "-m", "source coverage fixture",
+	)
+	repositoryState, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs, err := freshness.CaptureInputs(context.Background(), repositoryState, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return RunAuthority{
+		analysisRoot: repositoryState.Identity,
+		repository:   repositoryState,
+		inputs:       inputs,
+		freshness:    freshness.NewFreshnessResult(freshness.FreshnessFresh),
+		confirmed:    true,
+	}
+}
+
+func TestExactRepositoryOverviewSourceCoverage(t *testing.T) {
+	runDir := os.Getenv("REPOMAP_EXACT_SOURCE_RUN_DIR")
+	repository := os.Getenv("REPOMAP_EXACT_SOURCE_REPOSITORY")
+	if runDir == "" || repository == "" {
+		t.Skip("set REPOMAP_EXACT_SOURCE_RUN_DIR and REPOMAP_EXACT_SOURCE_REPOSITORY")
+	}
+
+	beforeReportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data ReportData
+	if err := json.Unmarshal(beforeReportJSON, &data); err != nil {
+		t.Fatal(err)
+	}
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.CapturedRevision != state.Head {
+		t.Fatalf("report revision = %q, current repository = %q", data.CapturedRevision, state.Head)
+	}
+	authority, err := ConfirmRunAuthorityScoped(
+		context.Background(), repository, state, state, data.OpenablePaths, true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	targets := overviewSourceTargets(&data)
+	resolvedBefore := 0
+	for _, target := range targets {
+		resolved, conflict := resolveOverviewSourceSnippet(data.UserSources, target)
+		if conflict {
+			t.Fatalf("saved source conflict before projection at %s:%d", target.path, target.line)
+		}
+		if resolved {
+			resolvedBefore++
+		}
+	}
+	beforeHTML, err := RenderHTML(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeSourceCount := len(data.UserSources)
+	if err := completeOverviewSourceCoverage(context.Background(), &data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		resolved, conflict := resolveOverviewSourceSnippet(data.UserSources, target)
+		if conflict || !resolved {
+			t.Fatalf("incomplete target after projection at %s:%d", target.path, target.line)
+		}
+	}
+	afterPersisted := reportDataForPersistence(&data)
+	afterPersisted.SourceIDs = nil
+	afterPersisted.SourceContextIDs = nil
+	afterReportJSON, err := json.MarshalIndent(afterPersisted, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterReportJSON = append(afterReportJSON, '\n')
+	if len(afterReportJSON) > maxManifestReportBytes {
+		t.Fatalf("exact report requires %d bytes, limit %d", len(afterReportJSON), maxManifestReportBytes)
+	}
+	afterHTML, err := RenderHTML(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	surfaceObjects, componentObjects := overviewExactSourceObjectCounts(&data)
+	t.Logf(
+		"EXACT_SOURCE_COVERAGE repo=%s targets=%d resolved_before=%d surface_objects=%d component_objects=%d sources_before=%d sources_after=%d source_delta=%d report_before=%d report_after=%d report_delta=%d html_before=%d html_after=%d html_delta=%d",
+		data.RepoName, len(targets), resolvedBefore, surfaceObjects, componentObjects,
+		beforeSourceCount, len(data.UserSources), len(data.UserSources)-beforeSourceCount,
+		len(beforeReportJSON), len(afterReportJSON), len(afterReportJSON)-len(beforeReportJSON),
+		len(beforeHTML), len(afterHTML), len(afterHTML)-len(beforeHTML),
+	)
+}
+
+func overviewExactSourceObjectCounts(data *ReportData) (int, int) {
+	if data == nil {
+		return 0, 0
+	}
+	openable := make(map[string]struct{}, len(data.OpenablePaths))
+	for _, sourcePath := range data.OpenablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	surfaceCount := 0
+	if data.DiscoveredSurfaces != nil {
+		idCounts := make(map[string]int)
+		for index := range data.DiscoveredSurfaces.Triggers {
+			trigger := &data.DiscoveredSurfaces.Triggers[index]
+			if overviewEntrySurfaceEligible(trigger) {
+				idCounts[trigger.ID]++
+			}
+		}
+		for index := range data.DiscoveredSurfaces.Triggers {
+			trigger := &data.DiscoveredSurfaces.Triggers[index]
+			location := overviewEntrySurfaceLocation(trigger)
+			if !overviewEntrySurfaceEligible(trigger) || idCounts[trigger.ID] != 1 ||
+				location == nil || location.Line <= 0 {
+				continue
+			}
+			if _, ok := openable[location.Path]; ok {
+				surfaceCount++
+			}
+		}
+	}
+	componentCount := 0
+	if data.ArchitectureCanvas != nil {
+		idCounts := make(map[string]int)
+		for _, component := range data.ArchitectureCanvas.Components {
+			if component.ID != "" {
+				idCounts[string(component.ID)]++
+			}
+		}
+		for _, component := range data.ArchitectureCanvas.Components {
+			if component.ID != "" && idCounts[string(component.ID)] == 1 &&
+				len(overviewArchitectureComponentLocations(data, component, openable)) > 0 {
+				componentCount++
+			}
+		}
+	}
+	return surfaceCount, componentCount
 }
 
 func TestBoundedSourceDeclarationClassifiesCallableLandmarks(t *testing.T) {

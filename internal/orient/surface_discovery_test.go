@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 func TestRunPersistsOptInSurfaceArtifactsBesideReportRun(t *testing.T) {
@@ -46,6 +47,7 @@ func main() {
 	for _, name := range []string{
 		"trigger_catalog.json", "surface_coverage.json",
 		"semantic_summaries.json", "surface_summary.md",
+		repositoryatlas.ArtifactFilename,
 	} {
 		data, err := os.ReadFile(filepath.Join(runDirectory, name))
 		if err != nil {
@@ -58,6 +60,54 @@ func main() {
 			!strings.Contains(string(data), `"kind": "process_entry_declaration"`)) {
 			t.Fatalf("catalog does not contain the gofacts process-entry surface: %s", data)
 		}
+		if name == repositoryatlas.ArtifactFilename {
+			atlas, err := repositoryatlas.DecodeCanonicalJSON(data)
+			if err != nil {
+				t.Fatalf("decode repository Atlas: %v", err)
+			}
+			entityKinds := map[repositoryatlas.EntityKind]int{}
+			for _, entity := range atlas.Entities {
+				entityKinds[entity.Kind]++
+			}
+			if len(atlas.Entities) != 2 || len(atlas.Evidence) != 1 || len(atlas.Relations) != 1 ||
+				entityKinds[repositoryatlas.EntitySurface] != 1 ||
+				entityKinds[repositoryatlas.EntityOperation] != 1 ||
+				atlas.Relations[0].Authority != repositoryatlas.AuthorityResolved {
+				t.Fatalf("repository Atlas process entry projection = %#v", atlas)
+			}
+		}
+	}
+}
+
+func TestRunPersistsUnitTopologyWithoutSurfaceDiscovery(t *testing.T) {
+	repository := t.TempDir()
+	writeSurfaceTestFile(t, repository, "go.mod", "module example.com/orient-atlas\n\ngo 1.24\n")
+	writeSurfaceTestFile(t, repository, "main.go", "package main\n\nfunc main() {}\n")
+	runOrientGit(t, repository, "init", "--quiet")
+	runOrientGit(t, repository, "add", "--", "go.mod", "main.go")
+
+	debugDirectory := t.TempDir()
+	_, err := Run(context.Background(), Options{
+		RepoPath: repository, Offline: true, OutputJSON: true,
+		DebugDir: debugDirectory, RunID: "atlas-units", RequireArtifacts: true,
+		MaxReadmeBytes: 1024, MaxReadmeLLMBytes: 512, MaxTreeLines: 50,
+		MaxInterestingFiles: 50, MaxGoPkgs: 50, MaxGoEdges: 50,
+		MaxLLMEntrypoints: 10, MaxLLMModules: 10, MaxLLMFiles: 20,
+		MaxLLMEdges: 20, MaxLLMSignals: 10, MaxLLMSignalsPerFile: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(debugDirectory, "atlas-units", repositoryatlas.ArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	atlas, err := repositoryatlas.DecodeCanonicalJSON(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(atlas.Units) != 4 || len(atlas.Entities) != 0 || len(atlas.Relations) != 0 {
+		t.Fatalf("unit-only repository Atlas = %#v", atlas)
 	}
 }
 

@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
-const maxRecordBytes = 128 << 10
+const maxRecordBytes = modelresearch.SemanticRecordByteLimit
 
 // EncodeRecord validates a proposal against its exact bundle and records the
 // canonical bundle digest needed for deterministic replay.
@@ -30,7 +32,7 @@ func EncodeRecord(bundle Bundle, proposal Proposal) ([]byte, error) {
 		return nil, fmt.Errorf("guided tour: encode record: %w", err)
 	}
 	if len(encoded) > maxRecordBytes {
-		return nil, fmt.Errorf("guided tour: encoded record is too large")
+		return nil, guidedTourRecordResourceLimit(len(encoded))
 	}
 	return encoded, nil
 }
@@ -38,8 +40,11 @@ func EncodeRecord(bundle Bundle, proposal Proposal) ([]byte, error) {
 // DecodeRecord strictly decodes the persisted record contract. Bundle-bound
 // reference validation is repeated by ReplayRecord.
 func DecodeRecord(raw []byte) (Record, error) {
-	if len(raw) == 0 || len(raw) > maxRecordBytes {
+	if len(raw) == 0 {
 		return Record{}, fmt.Errorf("guided tour: record is empty or too large")
+	}
+	if len(raw) > maxRecordBytes {
+		return Record{}, guidedTourRecordResourceLimit(len(raw))
 	}
 	var record Record
 	if err := decodeStrictJSON(raw, &record); err != nil {
@@ -58,6 +63,13 @@ func DecodeRecord(raw []byte) (Record, error) {
 		return Record{}, fmt.Errorf("guided tour: record proposal is invalid: %w", err)
 	}
 	return record, nil
+}
+
+func guidedTourRecordResourceLimit(observed int) *modelresearch.ResourceLimitError {
+	return &modelresearch.ResourceLimitError{
+		Stage: "guided_tour", Kind: modelresearch.ResourceLimitRecordBytes,
+		Limit: maxRecordBytes, Observed: observed, ObservedKnown: true,
+	}
 }
 
 // ReplayRecord verifies the canonical bundle digest, then revalidates and

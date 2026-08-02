@@ -122,61 +122,55 @@ func loadBoundStudyMapInputs(
 		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
 			fmt.Errorf("v32 replay: incomplete split Study input attempts")
 	}
+	if !briefAttemptExists {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
+			fmt.Errorf("v32 replay: typed split Study input attempts are required")
+	}
 
 	var brief studymap.BriefShapeProposal
 	var directions studymap.DirectionProposal
-	if briefAttemptExists {
-		var briefAttempt studyMapV32StageAttempt
-		if err := readV32ReplayJSON(briefAttemptPath, &briefAttempt); err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		var directionAttempt studyMapV32StageAttempt
-		if err := readV32ReplayJSON(directionAttemptPath, &directionAttempt); err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		if briefAttempt.Version != 1 || directionAttempt.Version != 1 ||
-			briefAttempt.PromptVersion != semanticdiscovery.StudyBriefPromptVersion ||
-			directionAttempt.PromptVersion != semanticdiscovery.StudyCandidatesPromptVersion ||
-			briefAttempt.BundleSHA256 != bundleSHA || directionAttempt.BundleSHA256 != bundleSHA ||
-			briefAttempt.ValidationState != "accepted" || directionAttempt.ValidationState != "accepted" {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
-				fmt.Errorf("v32 replay: split Study inputs are not accepted for this bundle")
-		}
-		brief, err = studymap.DecodeBriefShapeProposal(briefAttempt.Response)
-		if err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		directions, err = studymap.DecodeDirectionProposal(directionAttempt.Response)
-		if err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		directions, err = studymap.NormalizeDirectionProposal(directions)
-		if err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-	} else {
-		var sourceAttempt studyMapAttempt
-		if err := readV32ReplayJSON(filepath.Join(runDir, studyMapSourceAttemptFile), &sourceAttempt); err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		if sourceAttempt.Version != 1 ||
-			sourceAttempt.PromptVersion != semanticdiscovery.StudyMapPromptVersion ||
-			sourceAttempt.BundleSHA256 != bundleSHA || sourceAttempt.ValidationState != "accepted" {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
-				fmt.Errorf("v32 replay: source Study attempt is not accepted for this bundle")
-		}
-		proposal, err := studymap.DecodeProposal(sourceAttempt.Response)
-		if err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		sourceRecord, err := studymap.BuildRecord(bundle, proposal)
-		if err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
-		brief, directions, err = studyMapV32InputsFromRecord(sourceRecord)
-		if err != nil {
-			return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
-		}
+	var briefAttempt studyMapV32StageAttempt
+	if err := readV32ReplayJSON(briefAttemptPath, &briefAttempt); err != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
+	}
+	var directionAttempt studyMapV32StageAttempt
+	if err := readV32ReplayJSON(directionAttemptPath, &directionAttempt); err != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
+	}
+	if briefAttempt.Version != 1 || directionAttempt.Version != 1 ||
+		briefAttempt.PromptVersion != semanticdiscovery.StudyBriefPromptVersion ||
+		directionAttempt.PromptVersion != semanticdiscovery.StudyCandidatesPromptVersion ||
+		briefAttempt.BundleSHA256 != bundleSHA || directionAttempt.BundleSHA256 != bundleSHA ||
+		briefAttempt.ValidationState != "accepted" || directionAttempt.ValidationState != "accepted" {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
+			fmt.Errorf("v32 replay: split Study inputs are not accepted for this bundle")
+	}
+	briefCatalog, catalogErr := studymap.BuildBriefShapeReferenceCatalog(bundle)
+	if catalogErr != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, catalogErr
+	}
+	var briefDiagnostics studymap.BriefShapeReferenceDiagnostics
+	brief, briefDiagnostics, err = studymap.DecodeAndResolveBriefShapeProposal(
+		briefAttempt.Response,
+		briefCatalog,
+	)
+	if err != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
+	}
+	if (briefAttempt.BriefDiagnostics == nil &&
+		(briefDiagnostics.ShapeReceived != 0 || len(briefDiagnostics.Issues) != 0)) ||
+		(briefAttempt.BriefDiagnostics != nil &&
+			!reflect.DeepEqual(*briefAttempt.BriefDiagnostics, briefDiagnostics)) {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{},
+			fmt.Errorf("v32 replay: Brief diagnostics do not match the typed response")
+	}
+	directions, err = studymap.DecodeDirectionProposal(directionAttempt.Response)
+	if err != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
+	}
+	directions, err = studymap.NormalizeDirectionProposal(directions)
+	if err != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
 	}
 
 	briefRaw, err := readV32ReplayRaw(filepath.Join(runDir, studyMapBriefShapeFile))
