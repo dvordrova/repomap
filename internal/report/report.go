@@ -27,6 +27,8 @@ import (
 
 const CurrentFormatVersion = 30
 
+const AtlasStudyReportProjectionVersion = 2
+
 const maxExactDiscoveryDeclarations = 16
 
 // ExactDiscoveryAnchor is a deterministic declaration found inside one
@@ -272,11 +274,14 @@ type NavigatorReportProduct struct {
 // private request identities. The exact request/result/status artifacts stay
 // hash-bound material inputs of the authorized report.
 type AtlasStudyReportStatus struct {
-	Version         int                       `json:"version"`
-	State           atlasstudy.ProductState   `json:"state"`
-	UnavailableCode AtlasStudyUnavailableCode `json:"unavailable_code,omitempty"`
-	FailureCode     atlasstudy.FailureCode    `json:"failure_code,omitempty"`
-	DirectionCount  int                       `json:"direction_count,omitempty"`
+	Version                 int                       `json:"version"`
+	ProjectionVersion       int                       `json:"projection_version"`
+	State                   atlasstudy.ProductState   `json:"state"`
+	UnavailableCode         AtlasStudyUnavailableCode `json:"unavailable_code,omitempty"`
+	FailureCode             atlasstudy.FailureCode    `json:"failure_code,omitempty"`
+	DirectionCount          int                       `json:"direction_count,omitempty"`
+	PublishedDirectionCount int                       `json:"published_direction_count,omitempty"`
+	HiddenDirectionCount    int                       `json:"hidden_direction_count,omitempty"`
 }
 
 type AtlasStudyUnavailableCode string

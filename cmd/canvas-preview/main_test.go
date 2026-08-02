@@ -100,7 +100,7 @@ func TestResticBackupV2FixturePreservesAuditedTopology(t *testing.T) {
 	if canvas == nil {
 		t.Fatal("architecture_canvas is missing")
 	}
-	if canvas.Version != report.ArchitectureCanvasVersion || canvas.LandscapeVersion != componentmap.ContractVersion || canvas.FlowProofVersion != flowproof.Version {
+	if canvas.Version != 6 || canvas.LandscapeVersion != 6 || canvas.FlowProofVersion != 3 {
 		t.Fatalf("canvas versions = %d/%d/%d", canvas.Version, canvas.LandscapeVersion, canvas.FlowProofVersion)
 	}
 	if len(canvas.Components) != 9 || len(canvas.Subsystems) != 4 {
@@ -157,7 +157,18 @@ func TestResticBackupV2FixturePreservesAuditedTopology(t *testing.T) {
 		t.Fatalf("frontiers = %#v, want explicit process-termination frontier", canvas.Frontiers)
 	}
 
-	html, err := loadPreviewHTML(fixturePath)
+	canvas.Version = report.ArchitectureCanvasVersion
+	canvas.LandscapeVersion = componentmap.ContractVersion
+	canvas.FlowProofVersion = flowproof.Version
+	currentData, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentFixturePath := filepath.Join(t.TempDir(), "restic-backup-v2.json")
+	if err := os.WriteFile(currentFixturePath, currentData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	html, err := loadPreviewHTML(currentFixturePath)
 	if err != nil {
 		t.Fatal(err)
 	}

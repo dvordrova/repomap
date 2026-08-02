@@ -176,6 +176,7 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	if err != nil {
 		t.Fatal(err)
 	}
+	result = bindArchitectureBuildSynthesisProviderIdentity(t, input.CandidateBundle, "revision-test", result)
 	saved, err := json.Marshal(result.Record)
 	if err != nil {
 		t.Fatal(err)
@@ -271,6 +272,7 @@ func TestProjectSavedArchitectureCanvasPreservesExactD177Substrate(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	result = bindArchitectureBuildSynthesisProviderIdentity(t, beforeInput.CandidateBundle, "revision-d177-substrate", result)
 	saved, err := json.Marshal(result.Record)
 	if err != nil {
 		t.Fatal(err)
@@ -315,6 +317,9 @@ func flattenedArchitectureCandidates(canvas *ArchitectureCanvas) []componentmap.
 	result := make([]componentmap.Candidate, 0)
 	for _, component := range canvas.Components {
 		result = append(result, component.Members...)
+	}
+	for _, locator := range canvas.StructuralLocators {
+		result = append(result, locator.Locator)
 	}
 	slices.SortFunc(result, func(left, right componentmap.Candidate) int {
 		if left.ID.Kind != right.ID.Kind {
@@ -363,6 +368,7 @@ func TestBuildArchitectureCanvasKeepsExactSurfaceRoleWithoutPublishingDirectionO
 			GroundingMode:       componentmap.GroundingBehavior,
 			BehaviorAnchors: []ArchitectureBehaviorAnchor{{
 				ID: "inspect-entry", Kind: componentmap.AnchorProcessEntry,
+				ProofMode: componentmap.AnchorProofProcessEntry,
 				Label: "process entry example.com/project/cmd/inspect.main", Location: location,
 				Scenario:  architectureGroundingScenario{ID: "go:test", GOOS: "test", GOARCH: "test"},
 				Producer:  evidence.Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
@@ -708,6 +714,7 @@ func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportDa
 	result.Record.Call.Metadata.FinishReason = "stop"
 	result.Record.Call.Metadata.TransportAttempts = 1
 	result.Record.Call.Metadata.ResponseComplete = true
+	result = bindArchitectureBuildSynthesisProviderIdentity(t, input.CandidateBundle, revision, result)
 	saved, err := json.Marshal(result.Record)
 	if err != nil {
 		t.Fatal(err)
@@ -717,10 +724,13 @@ func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportDa
 	status.RequestBytes = architectureTestExactProviderRequestBytes(t, input.CandidateBundle, "en")
 	status.ResponseBytes = result.Record.Call.ResponseBytes
 	status.ResponseContentBytes = len(result.Record.Call.Response)
-	status.CandidateCount = len(input.CandidateBundle.Candidates)
+	conceptualCount, structuralLocatorCount := input.CandidateBundle.CandidateRoleCounts()
+	status.LocalCandidateCount = len(input.CandidateBundle.Candidates)
+	status.RequestedConceptualCount = conceptualCount
+	status.StructuralLocatorCount = structuralLocatorCount
 	status.AnchorCount = len(input.CandidateBundle.BehaviorAnchors)
-	status.MemberOccurrences = len(input.CandidateBundle.Candidates)
-	status.DistinctMembers = len(input.CandidateBundle.Candidates)
+	status.MemberOccurrences = conceptualCount
+	status.DistinctMembers = conceptualCount
 	status.ProposalAccepted = result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
 		result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized
 	status.ProposalNormalized = result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized
@@ -732,6 +742,45 @@ func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportDa
 		t.Fatal(err)
 	}
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisStatusFile, statusJSON)
+}
+
+func bindArchitectureBuildSynthesisProviderIdentity(
+	t *testing.T,
+	bundle componentmap.CandidateBundle,
+	revision string,
+	result componentmap.SynthesisResult,
+) componentmap.SynthesisResult {
+	t.Helper()
+	client := &deepseek.Client{
+		Endpoint:  "https://example.invalid/chat/completions",
+		Model:     "test-model",
+		MaxTokens: 64_000,
+	}
+	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := client.ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := componentmap.BindSynthesisProviderIdentity(
+		bundle,
+		revision,
+		result,
+		componentmap.SynthesisProviderIdentity{
+			RequestSHA256:  modelresearch.SHA256(body),
+			EndpointSHA256: endpointSHA,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bound
 }
 
 func writeArchitectureBuildFixture(t *testing.T, dir, name string, data []byte) {
@@ -972,8 +1021,12 @@ func architectureGroundingTestAnchor(
 	producer evidence.Provenance,
 ) ArchitectureBehaviorAnchor {
 	location := evidence.Location{Path: path, Line: line, Column: 1}
+	proofMode := componentmap.AnchorProofCallTarget
+	if kind == componentmap.AnchorProcessEntry {
+		proofMode = componentmap.AnchorProofProcessEntry
+	}
 	return ArchitectureBehaviorAnchor{
-		ID: id, Kind: kind, Label: symbol, Location: location, Scenario: scenario,
+		ID: id, Kind: kind, ProofMode: proofMode, Label: symbol, Location: location, Scenario: scenario,
 		Producer: producer, Certainty: evidence.CertaintyStatic,
 		AssociatedMembers: []ArchitectureAnchorMember{{ID: symbol, Package: symbol, Name: symbol, Location: location}},
 		Limitations:       []string{"Static fixture evidence; runtime execution is not observed."},

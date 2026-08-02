@@ -615,16 +615,22 @@ func TestStudyDirectionCoverageMapsQuestionTermsToLocalSources(t *testing.T) {
 		},
 	})
 
-	if coverage.QuestionCoverageStatus != "all_terms_matched" {
+	if coverage.QuestionCoverageStatus != "partial_terms_matched" {
 		t.Fatalf("question coverage status = %q, coverage = %#v", coverage.QuestionCoverageStatus, coverage)
 	}
 	for _, term := range coverage.QuestionTerms {
+		if term.Term == "routing" {
+			if term.Status != "unmatched" || len(term.SupportTargets) != 0 {
+				t.Fatalf("model reading copy supported routing: %#v", term)
+			}
+			continue
+		}
 		if term.Status != "matched" || len(term.SupportTargets) == 0 {
-			t.Fatalf("term %q coverage = %#v", term.Term, term)
+			t.Fatalf("local term %q coverage = %#v", term.Term, term)
 		}
 	}
-	if containsString(coverage.Reasons, "question_term_uncovered") {
-		t.Fatalf("unexpected uncovered term reason: %#v", coverage.Reasons)
+	if !containsString(coverage.Reasons, "question_term_uncovered") {
+		t.Fatalf("missing local-only uncovered term reason: %#v", coverage.Reasons)
 	}
 }
 
@@ -646,7 +652,7 @@ func TestStudyDirectionCoverageFlagsUnmatchedQuestionTerms(t *testing.T) {
 		},
 	})
 
-	if coverage.QuestionCoverageStatus != "partial_terms_matched" ||
+	if coverage.QuestionCoverageStatus != "no_terms_matched" ||
 		!containsString(coverage.Reasons, "question_term_uncovered") {
 		t.Fatalf("question coverage = %#v", coverage)
 	}
@@ -658,6 +664,63 @@ func TestStudyDirectionCoverageFlagsUnmatchedQuestionTerms(t *testing.T) {
 	}
 	if !unmatched["update"] || !unmatched["database"] || !unmatched["row"] {
 		t.Fatalf("unmatched terms = %#v in coverage %#v", unmatched, coverage)
+	}
+}
+
+func TestStudyDirectionCoverageTokenizesRussianLocalEvidence(t *testing.T) {
+	t.Parallel()
+
+	coverage := studyDirectionCoverage(StudyDirection{
+		Question: "Как маршрутизация проверяет авторизацию?",
+		ReadingAnchors: []StudyReadingAnchor{{
+			Location: UserCodeLocation{Path: "internal/auth/router.go", Line: 17},
+			Source: SourceSnippet{
+				Path: "internal/auth/router.go", EnclosingSymbol: "проверитьАвторизацию",
+				Content: "маршрутизация проверяет авторизацию",
+			},
+		}},
+	})
+
+	statuses := make(map[string]string, len(coverage.QuestionTerms))
+	for _, term := range coverage.QuestionTerms {
+		statuses[term.Term] = term.Status
+	}
+	if statuses["маршрутизация"] != "matched" || statuses["авторизацию"] != "matched" {
+		t.Fatalf("Russian question coverage = %#v", coverage)
+	}
+	if _, extractedStopWord := statuses["как"]; extractedStopWord {
+		t.Fatalf("Russian stop word became a diagnostic term: %#v", coverage.QuestionTerms)
+	}
+}
+
+func TestStudyDirectionCoverageDoesNotUseModelProseAsCircularSupport(t *testing.T) {
+	t.Parallel()
+
+	coverage := studyDirectionCoverage(StudyDirection{
+		Question:        "Как работает авторизация?",
+		WhyItMatters:    "Авторизация важна.",
+		LearningOutcome: "Понять авторизацию.",
+		ReadingAnchors: []StudyReadingAnchor{{
+			Label: "Авторизация", WhatToLookFor: "Найдите авторизацию.",
+			Location: UserCodeLocation{Path: "internal/handler.go", Line: 10},
+			Source: SourceSnippet{
+				Path: "internal/handler.go", EnclosingSymbol: "handler",
+				Content: "func handler() {}",
+			},
+		}},
+		Documents: []StudyDocumentReference{{
+			Label: "Авторизация", Location: UserCodeLocation{Path: "docs/handler.md"},
+		}},
+		Areas: []RepositoryStudyArea{{
+			Name: "Авторизация", Responsibility: "Обрабатывает авторизацию.",
+			CodeLocation: &UserCodeLocation{Path: "internal/handler.go", Line: 10},
+		}},
+	})
+
+	for _, term := range coverage.QuestionTerms {
+		if term.Term == "авторизация" && term.Status != "unmatched" {
+			t.Fatalf("model-authored prose circularly supported the question: %#v", term)
+		}
 	}
 }
 

@@ -9,14 +9,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/componentmap"
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v10"
+	AnalyzerVersion              = "surface-ssa-v11"
 	TriggerCatalogVersion        = 7
 	CoverageVersion              = 7
 	CatalogVersion               = 1
-	ArchitectureGroundingVersion = 3
+	ArchitectureGroundingVersion = 4
+	// MaxArchitectureAnchorMembers is the producer-owned complete chunk size
+	// for one persisted behavior anchor. Larger declaration families are split
+	// deterministically; they are never silently prefix-truncated.
+	MaxArchitectureAnchorMembers = 16
 )
 
 type Options struct {
@@ -286,6 +292,25 @@ type ArchitectureGrounding struct {
 	GroundingMode       string                 `json:"grounding_mode"`
 	Anchors             []BehaviorAnchor       `json:"behavior_anchors"`
 	Relationships       []BehaviorRelationship `json:"relationships"`
+	Coverage            GroundingCoverage      `json:"coverage"`
+}
+
+type GroundingCoverageReason string
+
+const (
+	GroundingCoverageCollectionLimit  GroundingCoverageReason = "collection_limit"
+	GroundingCoveragePersistenceLimit GroundingCoverageReason = "persistence_limit"
+)
+
+type GroundingCoverage struct {
+	Complete                           bool                      `json:"complete"`
+	Reasons                            []GroundingCoverageReason `json:"reasons"`
+	AnchorsConsidered                  int                       `json:"anchors_considered"`
+	AnchorsPublished                   int                       `json:"anchors_published"`
+	RelationshipsConsidered            int                       `json:"relationships_considered"`
+	RelationshipsPublished             int                       `json:"relationships_published"`
+	DeclarationFamilyMembersConsidered int                       `json:"declaration_family_members_considered"`
+	DeclarationFamilyMembersPublished  int                       `json:"declaration_family_members_published"`
 }
 
 type ArchetypeAssessment struct {
@@ -295,15 +320,16 @@ type ArchetypeAssessment struct {
 }
 
 type BehaviorAnchor struct {
-	ID                string     `json:"id"`
-	Kind              string     `json:"kind"`
-	Label             string     `json:"label"`
-	Location          Location   `json:"location"`
-	Scenario          Scenario   `json:"scenario"`
-	Producer          Provenance `json:"producer"`
-	Certainty         string     `json:"certainty"`
-	AssociatedMembers []Symbol   `json:"associated_members"`
-	Limitations       []string   `json:"limitations"`
+	ID                string                       `json:"id"`
+	Kind              string                       `json:"kind"`
+	ProofMode         componentmap.AnchorProofMode `json:"proof_mode"`
+	Label             string                       `json:"label"`
+	Location          Location                     `json:"location"`
+	Scenario          Scenario                     `json:"scenario"`
+	Producer          Provenance                   `json:"producer"`
+	Certainty         string                       `json:"certainty"`
+	AssociatedMembers []Symbol                     `json:"associated_members"`
+	Limitations       []string                     `json:"limitations"`
 }
 
 type BehaviorRelationship struct {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -308,7 +309,11 @@ func truncateDisplayText(value string, limit int) string {
 	if len(value) <= limit {
 		return value
 	}
-	return strings.TrimSpace(value[:limit-3]) + "..."
+	cut := limit - len("...")
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(value[:cut]) + "..."
 }
 
 func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) FallbackReason {
@@ -383,7 +388,7 @@ func useAnchorFirstLocalGrouping(bundle CandidateBundle) bool {
 	}
 	kinds := make(map[BehaviorAnchorKind]struct{}, len(bundle.BehaviorAnchors))
 	for _, anchor := range bundle.BehaviorAnchors {
-		if anchor.Kind != AnchorUnresolvedFrontier {
+		if anchor.ProofMode != AnchorProofDeclarationFamily && anchor.Kind != AnchorUnresolvedFrontier {
 			kinds[anchor.Kind] = struct{}{}
 		}
 	}

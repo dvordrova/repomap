@@ -1487,6 +1487,74 @@ func TestOverviewSourceTargetsUsesAnchorsOnlyWithoutPreciseComponentMembers(t *t
 	}
 }
 
+func TestOverviewSourceTargetsRetainsExactStructuralLocatorsWithoutOwnership(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		OpenablePaths: []string{"a.go", "b.go"},
+		ArchitectureCanvas: &ArchitectureCanvas{StructuralLocators: []ArchitectureStructuralLocator{
+			{
+				Locator: componentmap.Candidate{
+					ID:   componentmap.MemberID{Kind: componentmap.MemberFile, Value: "a"},
+					Role: componentmap.CandidateRoleStructuralLocator, Name: "a.go",
+					Facts: []componentmap.LocalFact{
+						{Kind: componentmap.FactRepositoryPath, Value: "a.go", Location: &evidence.Location{Path: "a.go", Line: 17}},
+						{Kind: componentmap.FactRepositoryPath, Value: "a.go", Location: &evidence.Location{Path: "a.go", Line: 17}},
+					},
+				},
+				// Empty participation is intentionally valid: source navigation is
+				// producer-owned and independent from conceptual grouping.
+			},
+			{
+				Locator: componentmap.Candidate{
+					ID:   componentmap.MemberID{Kind: componentmap.MemberFile, Value: "b"},
+					Role: componentmap.CandidateRoleStructuralLocator, Name: "b.go",
+					Facts: []componentmap.LocalFact{
+						{Kind: componentmap.FactRepositoryPath, Value: "b.go", Location: &evidence.Location{Path: "b.go", Line: 23}},
+						{Kind: componentmap.FactRepositoryPath, Value: "b.go", Location: &evidence.Location{Path: "b.go"}},
+						{Kind: componentmap.FactRepositoryPath, Value: "other.go", Location: &evidence.Location{Path: "b.go", Line: 99}},
+					},
+				},
+				ParticipatingComponentIDs: []componentmap.ComponentID{"component-b", "component-a"},
+			},
+		}},
+	}
+	want := []overviewSourceTarget{{path: "a.go", line: 17}, {path: "b.go", line: 23}}
+	if got := overviewSourceTargets(data); !reflect.DeepEqual(got, want) {
+		t.Fatalf("structural locator source targets = %#v, want %#v", got, want)
+	}
+}
+
+func TestCompleteOverviewSourceCoverageOpensZeroParticipantStructuralLocator(t *testing.T) {
+	t.Parallel()
+
+	authority := overviewSourceCoverageAuthority(t, map[string]map[int]string{
+		"locator.go": {9: "func exactLocator() {}"},
+	})
+	data := &ReportData{
+		CapturedRevision: authority.repository.Head,
+		OpenablePaths:    []string{"locator.go"},
+		ArchitectureCanvas: &ArchitectureCanvas{StructuralLocators: []ArchitectureStructuralLocator{{
+			Locator: componentmap.Candidate{
+				ID:   componentmap.MemberID{Kind: componentmap.MemberFile, Value: "locator"},
+				Role: componentmap.CandidateRoleStructuralLocator, Name: "locator.go",
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactRepositoryPath, Value: "locator.go",
+					Location: &evidence.Location{Path: "locator.go", Line: 9},
+				}},
+			},
+		}}},
+	}
+	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatal(err)
+	}
+	target := overviewSourceTarget{path: "locator.go", line: 9}
+	resolved, conflict := resolveOverviewSourceSnippet(data.UserSources, target)
+	if conflict || !resolved {
+		t.Fatalf("zero-participant structural locator source unresolved: sources=%#v", data.UserSources)
+	}
+}
+
 func TestCompleteOverviewSourceCoverageFailsClosedWithoutMutation(t *testing.T) {
 	t.Parallel()
 

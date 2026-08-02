@@ -8,7 +8,7 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 6
+	ArchitectureSynthesisStatusVersion = 7
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -87,37 +87,43 @@ type ArchitectureSynthesisStatus struct {
 	State   string `json:"state"`
 	// PromptBytes is retained only for reading status versions 1-3. Version 4
 	// names the exact provider body truthfully as RequestBytes.
-	PromptBytes           int      `json:"prompt_bytes,omitempty"`
-	RequestBytes          int      `json:"request_bytes,omitempty"`
-	ResponseBytes         int      `json:"response_bytes,omitempty"`
-	ResponseContentBytes  int      `json:"response_content_bytes,omitempty"`
-	LatencyMillis         int64    `json:"latency_ms,omitempty"`
-	ProviderRequestCount  int      `json:"provider_request_count,omitempty"`
-	TransportAttempts     int      `json:"transport_attempts,omitempty"`
-	CandidateCount        int      `json:"candidate_count,omitempty"`
-	AnchorCount           int      `json:"anchor_count,omitempty"`
-	MembershipCounted     bool     `json:"response_membership_counted,omitempty"`
-	MemberOccurrences     int      `json:"response_member_occurrences,omitempty"`
-	DistinctMembers       int      `json:"response_distinct_members,omitempty"`
-	UsageReported         bool     `json:"usage_reported,omitempty"`
-	InputTokens           int      `json:"input_tokens,omitempty"`
-	OutputTokens          int      `json:"output_tokens,omitempty"`
-	FinishReason          string   `json:"finish_reason,omitempty"`
-	ResponseComplete      bool     `json:"response_complete,omitempty"`
-	ResponseState         string   `json:"response_state,omitempty"`
-	ValidationCodes       []string `json:"validation_diagnostic_codes,omitempty"`
-	ProviderCallSucceeded bool     `json:"provider_call_succeeded,omitempty"`
-	ResponseParsed        bool     `json:"response_parsed,omitempty"`
-	ProposalAccepted      bool     `json:"proposal_accepted,omitempty"`
-	ProposalNormalized    bool     `json:"proposal_normalized,omitempty"`
-	ProposalRejected      bool     `json:"proposal_rejected,omitempty"`
-	FallbackSelected      bool     `json:"fallback_selected,omitempty"`
-	ArchitectureSource    string   `json:"architecture_source,omitempty"`
-	ArchitectureLevel     int      `json:"architecture_level,omitempty"`
-	NormalizationCount    int      `json:"normalization_count,omitempty"`
-	FallbackReason        string   `json:"fallback_reason,omitempty"`
-	ErrorCode             string   `json:"error_code,omitempty"`
-	UnavailableCode       string   `json:"unavailable_code,omitempty"`
+	PromptBytes          int   `json:"prompt_bytes,omitempty"`
+	RequestBytes         int   `json:"request_bytes,omitempty"`
+	ResponseBytes        int   `json:"response_bytes,omitempty"`
+	ResponseContentBytes int   `json:"response_content_bytes,omitempty"`
+	LatencyMillis        int64 `json:"latency_ms,omitempty"`
+	ProviderRequestCount int   `json:"provider_request_count,omitempty"`
+	TransportAttempts    int   `json:"transport_attempts,omitempty"`
+	// CandidateCount is retained only for reading status versions 1-6. Version
+	// 7 separates the complete local candidate set from the smaller exact set
+	// of conceptual members requested from the provider.
+	CandidateCount           int      `json:"candidate_count,omitempty"`
+	LocalCandidateCount      int      `json:"local_candidate_count,omitempty"`
+	RequestedConceptualCount int      `json:"requested_conceptual_count,omitempty"`
+	StructuralLocatorCount   int      `json:"structural_locator_count,omitempty"`
+	AnchorCount              int      `json:"anchor_count,omitempty"`
+	MembershipCounted        bool     `json:"response_membership_counted,omitempty"`
+	MemberOccurrences        int      `json:"response_member_occurrences,omitempty"`
+	DistinctMembers          int      `json:"response_distinct_members,omitempty"`
+	UsageReported            bool     `json:"usage_reported,omitempty"`
+	InputTokens              int      `json:"input_tokens,omitempty"`
+	OutputTokens             int      `json:"output_tokens,omitempty"`
+	FinishReason             string   `json:"finish_reason,omitempty"`
+	ResponseComplete         bool     `json:"response_complete,omitempty"`
+	ResponseState            string   `json:"response_state,omitempty"`
+	ValidationCodes          []string `json:"validation_diagnostic_codes,omitempty"`
+	ProviderCallSucceeded    bool     `json:"provider_call_succeeded,omitempty"`
+	ResponseParsed           bool     `json:"response_parsed,omitempty"`
+	ProposalAccepted         bool     `json:"proposal_accepted,omitempty"`
+	ProposalNormalized       bool     `json:"proposal_normalized,omitempty"`
+	ProposalRejected         bool     `json:"proposal_rejected,omitempty"`
+	FallbackSelected         bool     `json:"fallback_selected,omitempty"`
+	ArchitectureSource       string   `json:"architecture_source,omitempty"`
+	ArchitectureLevel        int      `json:"architecture_level,omitempty"`
+	NormalizationCount       int      `json:"normalization_count,omitempty"`
+	FallbackReason           string   `json:"fallback_reason,omitempty"`
+	ErrorCode                string   `json:"error_code,omitempty"`
+	UnavailableCode          string   `json:"unavailable_code,omitempty"`
 }
 
 func (status ArchitectureSynthesisStatus) Validate() error {
@@ -142,7 +148,9 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			status.NormalizationCount != 0 || status.FallbackReason != "" ||
 			status.RequestBytes != 0 || status.ResponseBytes != 0 ||
 			status.ResponseContentBytes != 0 || status.TransportAttempts != 0 ||
-			status.CandidateCount != 0 || status.AnchorCount != 0 ||
+			status.CandidateCount != 0 || status.LocalCandidateCount != 0 ||
+			status.RequestedConceptualCount != 0 || status.StructuralLocatorCount != 0 ||
+			status.AnchorCount != 0 ||
 			status.MembershipCounted || status.MemberOccurrences != 0 ||
 			status.DistinctMembers != 0 || status.UsageReported ||
 			status.InputTokens != 0 || status.OutputTokens != 0 ||
@@ -158,6 +166,8 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		status.ResponseContentBytes < 0 || status.LatencyMillis < 0 ||
 		status.ProviderRequestCount < 0 || status.ProviderRequestCount > 1 ||
 		status.TransportAttempts < 0 || status.CandidateCount < 0 ||
+		status.LocalCandidateCount < 0 || status.RequestedConceptualCount < 0 ||
+		status.StructuralLocatorCount < 0 ||
 		status.AnchorCount < 0 || status.MemberOccurrences < 0 ||
 		status.DistinctMembers < 0 || status.InputTokens < 0 || status.OutputTokens < 0 {
 		return fmt.Errorf("architecture synthesis status contains invalid metrics")
@@ -225,8 +235,23 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	if status.PromptBytes != 0 {
 		return fmt.Errorf("architecture synthesis status v4+ cannot use legacy prompt bytes")
 	}
+	if status.Version >= 7 {
+		if status.CandidateCount != 0 {
+			return fmt.Errorf("architecture synthesis status v7+ cannot use legacy candidate count")
+		}
+		if status.LocalCandidateCount != status.RequestedConceptualCount+status.StructuralLocatorCount {
+			return fmt.Errorf("architecture synthesis local candidate role counts are inconsistent")
+		}
+	} else if status.LocalCandidateCount != 0 || status.RequestedConceptualCount != 0 ||
+		status.StructuralLocatorCount != 0 {
+		return fmt.Errorf("historical architecture synthesis status cannot use v7 candidate role counts")
+	}
 	if status.ProviderRequestCount == 1 {
-		if status.RequestBytes == 0 || status.CandidateCount == 0 || status.TransportAttempts == 0 {
+		candidateEvidence := status.CandidateCount
+		if status.Version >= 7 {
+			candidateEvidence = status.RequestedConceptualCount
+		}
+		if status.RequestBytes == 0 || candidateEvidence == 0 || status.TransportAttempts == 0 {
 			return fmt.Errorf("live architecture synthesis status requires exact request evidence")
 		}
 	} else if status.TransportAttempts != 0 {
@@ -282,7 +307,8 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	if (status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached) &&
 		(!status.ResponseComplete || !status.MembershipCounted || status.MemberOccurrences == 0 ||
 			(status.Version == 4 && status.MemberOccurrences != status.DistinctMembers) ||
-			(status.Version >= 6 && status.DistinctMembers != status.CandidateCount) ||
+			(status.Version == 6 && status.DistinctMembers != status.CandidateCount) ||
+			(status.Version >= 7 && status.DistinctMembers != status.RequestedConceptualCount) ||
 			status.ResponseState != "captured") {
 		return fmt.Errorf("accepted live Architecture requires complete exact membership evidence")
 	}

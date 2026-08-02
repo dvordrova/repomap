@@ -10,7 +10,8 @@ func architectureSynthesisV4AcceptedFixture() ArchitectureSynthesisStatus {
 		Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisSucceeded,
 		RequestBytes: 100, ResponseBytes: 90, ResponseContentBytes: 80,
 		ProviderRequestCount: 1, TransportAttempts: 1,
-		CandidateCount: 2, AnchorCount: 1,
+		LocalCandidateCount: 3, RequestedConceptualCount: 2, StructuralLocatorCount: 1,
+		AnchorCount:       1,
 		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
 		UsageReported: true, InputTokens: 25, OutputTokens: 11,
 		FinishReason: "stop", ResponseComplete: true, ResponseState: "captured",
@@ -56,6 +57,9 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 		{"response content bytes", func(value *ArchitectureSynthesisStatus) { value.ResponseContentBytes = 1 }},
 		{"transport attempts", func(value *ArchitectureSynthesisStatus) { value.TransportAttempts = 1 }},
 		{"candidate count", func(value *ArchitectureSynthesisStatus) { value.CandidateCount = 1 }},
+		{"local candidate count", func(value *ArchitectureSynthesisStatus) { value.LocalCandidateCount = 1 }},
+		{"requested conceptual count", func(value *ArchitectureSynthesisStatus) { value.RequestedConceptualCount = 1 }},
+		{"structural locator count", func(value *ArchitectureSynthesisStatus) { value.StructuralLocatorCount = 1 }},
 		{"anchor count", func(value *ArchitectureSynthesisStatus) { value.AnchorCount = 1 }},
 		{"membership count", func(value *ArchitectureSynthesisStatus) {
 			value.MembershipCounted = true
@@ -95,7 +99,7 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
-func TestArchitectureSynthesisV6SuccessRequiresAcceptedEnrichmentAndCompleteDistinctCoverage(t *testing.T) {
+func TestArchitectureSynthesisV7SuccessRequiresExactConceptualCoverageAndTruthfulLocalRoles(t *testing.T) {
 	t.Parallel()
 	base := architectureSynthesisV4AcceptedFixture()
 	if err := base.Validate(); err != nil {
@@ -114,7 +118,9 @@ func TestArchitectureSynthesisV6SuccessRequiresAcceptedEnrichmentAndCompleteDist
 		"fallback":                   func(value *ArchitectureSynthesisStatus) { value.FallbackSelected = true; value.FallbackReason = "x" },
 		"wrong succeeded count":      func(value *ArchitectureSynthesisStatus) { value.ProviderRequestCount = 0 },
 		"missing request bytes":      func(value *ArchitectureSynthesisStatus) { value.RequestBytes = 0 },
-		"missing candidate count":    func(value *ArchitectureSynthesisStatus) { value.CandidateCount = 0 },
+		"missing conceptual count":   func(value *ArchitectureSynthesisStatus) { value.RequestedConceptualCount = 0 },
+		"wrong local role sum":       func(value *ArchitectureSynthesisStatus) { value.LocalCandidateCount++ },
+		"legacy candidate count":     func(value *ArchitectureSynthesisStatus) { value.CandidateCount = value.LocalCandidateCount },
 		"missing transport evidence": func(value *ArchitectureSynthesisStatus) { value.TransportAttempts = 0 },
 		"uncounted membership": func(value *ArchitectureSynthesisStatus) {
 			value.MembershipCounted = false
@@ -126,7 +132,7 @@ func TestArchitectureSynthesisV6SuccessRequiresAcceptedEnrichmentAndCompleteDist
 			value.DistinctMembers = 0
 		},
 		"incomplete distinct coverage": func(value *ArchitectureSynthesisStatus) {
-			value.DistinctMembers = value.CandidateCount - 1
+			value.DistinctMembers = value.RequestedConceptualCount - 1
 		},
 		"incomplete stop": func(value *ArchitectureSynthesisStatus) { value.ResponseComplete = false },
 		"completion unknown": func(value *ArchitectureSynthesisStatus) {
@@ -150,8 +156,32 @@ func TestArchitectureSynthesisV6SuccessRequiresAcceptedEnrichmentAndCompleteDist
 	}
 	legacyV4 := manyToMany
 	legacyV4.Version = 4
+	legacyV4.CandidateCount = legacyV4.RequestedConceptualCount
+	legacyV4.LocalCandidateCount = 0
+	legacyV4.RequestedConceptualCount = 0
+	legacyV4.StructuralLocatorCount = 0
 	if err := legacyV4.Validate(); err == nil {
 		t.Fatal("v4 status reinterpreted many-to-many membership under the v5 contract")
+	}
+}
+
+func TestArchitectureSynthesisV7DoesNotReinterpretHistoricalCandidateCoverage(t *testing.T) {
+	t.Parallel()
+
+	historical := architectureSynthesisV4AcceptedFixture()
+	historical.Version = 6
+	historical.CandidateCount = historical.RequestedConceptualCount
+	historical.LocalCandidateCount = 0
+	historical.RequestedConceptualCount = 0
+	historical.StructuralLocatorCount = 0
+	if err := historical.Validate(); err != nil {
+		t.Fatalf("historical v6 Architecture status is unreadable: %v", err)
+	}
+
+	current := historical
+	current.Version = ArchitectureSynthesisStatusVersion
+	if err := current.Validate(); err == nil {
+		t.Fatal("v7 status reinterpreted the historical candidate count as conceptual coverage")
 	}
 }
 
@@ -159,7 +189,8 @@ func TestArchitectureSynthesisV4UncalledFailureRejectsProviderResponseEvidence(t
 	base := ArchitectureSynthesisStatus{
 		Version: ArchitectureSynthesisStatusVersion,
 		State:   ArchitectureSynthesisFailed, ErrorCode: "provider_error",
-		RequestBytes: 100, CandidateCount: 2,
+		RequestBytes: 100, LocalCandidateCount: 3, RequestedConceptualCount: 2,
+		StructuralLocatorCount: 1,
 	}
 	if err := base.Validate(); err != nil {
 		t.Fatalf("valid pre-provider failure: %v", err)
@@ -264,6 +295,10 @@ func TestArchitectureSynthesisV6RejectsRetiredDiagnosticsWhileV5RemainsReadable(
 		t.Run(code, func(t *testing.T) {
 			historical := architectureSynthesisV4AcceptedFixture()
 			historical.Version = 5
+			historical.CandidateCount = historical.RequestedConceptualCount
+			historical.LocalCandidateCount = 0
+			historical.RequestedConceptualCount = 0
+			historical.StructuralLocatorCount = 0
 			historical.ValidationCodes = []string{code}
 			if err := historical.Validate(); err != nil {
 				t.Fatalf("historical v5 diagnostic %q is unreadable: %v", code, err)
@@ -297,8 +332,8 @@ func TestArchitectureSynthesisV4RejectsUnknownHistoricalAndDuplicateDiagnosticCo
 
 	duplicate := architectureSynthesisV4AcceptedFixture()
 	duplicate.ValidationCodes = []string{
-		"proposal.omitted_members_preserved",
-		"proposal.omitted_members_preserved",
+		"proposal.invalid_members",
+		"proposal.invalid_members",
 	}
 	if err := duplicate.Validate(); err == nil {
 		t.Fatal("Architecture status accepted duplicate validation diagnostic codes")
@@ -311,7 +346,8 @@ func TestArchitectureFailureWarningKeepsLocalCanvasAuthoritative(t *testing.T) {
 		Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisFailed,
 		ErrorCode: "invalid_response", ProposalRejected: true,
 		RequestBytes: 100, ResponseBytes: 90, ResponseContentBytes: 80,
-		ProviderRequestCount: 1, TransportAttempts: 1, CandidateCount: 2,
+		ProviderRequestCount: 1, TransportAttempts: 1,
+		LocalCandidateCount: 3, RequestedConceptualCount: 2, StructuralLocatorCount: 1,
 		MembershipCounted: true, MemberOccurrences: 3, DistinctMembers: 2,
 		UsageReported: true, InputTokens: 25, OutputTokens: 11,
 		FinishReason: "stop", ResponseComplete: true, ResponseState: "captured",

@@ -65,7 +65,7 @@ func architectureSynthesisOutcomeFixture(
 		ValidationOutcome: validation, ArchitectureSource: componentmap.SourceValidatedModel,
 		ArchitectureLevel: 2, UsageReported: true, InputTokens: 100, OutputTokens: 50,
 		FinishReason: "stop", ResponseComplete: true, ResponseState: componentmap.ResponseCaptured,
-		CandidateCount: 2, AnchorCount: 1,
+		LocalCandidateCount: 2, RequestedConceptualCount: 2, AnchorCount: 1,
 		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
 	}
 }
@@ -276,6 +276,24 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 		!bytes.Equal(provider.bodies[0], wantBody) || outcome.InputBytes != len(wantBody) {
 		t.Fatalf("exact provider body/call outcome = calls %d bodies %d outcome %#v", provider.calls, len(provider.bodies), outcome)
 	}
+	savedRecord, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var synthesisRecord componentmap.SynthesisRecord
+	if err := json.Unmarshal(savedRecord, &synthesisRecord); err != nil {
+		t.Fatal(err)
+	}
+	if synthesisRecord.ProviderRequestSHA256 != modelresearch.SHA256(wantBody) ||
+		synthesisRecord.ProviderEndpointSHA256 != provider.ArchitectureProviderEndpointSHA256() {
+		t.Fatalf(
+			"provider identity = request %q endpoint %q, want exact sent body %q and endpoint %q",
+			synthesisRecord.ProviderRequestSHA256,
+			synthesisRecord.ProviderEndpointSHA256,
+			modelresearch.SHA256(wantBody),
+			provider.ArchitectureProviderEndpointSHA256(),
+		)
+	}
 	if err := persistArchitectureSynthesisStatus(runDir, outcome, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +308,8 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	if status.Version != report.ArchitectureSynthesisStatusVersion || status.RequestBytes != len(wantBody) ||
 		status.ResponseBytes != len(provider.response) ||
 		status.ResponseContentBytes != len(provider.response) ||
-		status.CandidateCount != 1 || status.AnchorCount != 0 ||
+		status.LocalCandidateCount != 1 || status.RequestedConceptualCount != 1 ||
+		status.StructuralLocatorCount != 0 || status.AnchorCount != 0 ||
 		!status.MembershipCounted || status.MemberOccurrences != 1 || status.DistinctMembers != 1 ||
 		!status.UsageReported || status.InputTokens != 101 || status.OutputTokens != 53 ||
 		status.FinishReason != "stop" || !status.ResponseComplete ||
@@ -606,6 +625,107 @@ func TestEnsureArchitectureSynthesisCacheMissesAcrossProviderEndpoints(t *testin
 	}
 }
 
+func TestEnsureArchitectureSynthesisRefetchesCacheWithTamperedProviderIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		tamper func(*componentmap.SynthesisRecord)
+	}{
+		{
+			name: "exact provider request body",
+			tamper: func(record *componentmap.SynthesisRecord) {
+				record.ProviderRequestSHA256 = modelresearch.SHA256([]byte("different provider request"))
+			},
+		},
+		{
+			name: "provider endpoint identity",
+			tamper: func(record *componentmap.SynthesisRecord) {
+				record.ProviderEndpointSHA256 = modelresearch.SHA256([]byte("different provider endpoint"))
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			bundle := architectureSynthesisTestBundle()
+			provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
+			runsDir := t.TempDir()
+			coldRun := filepath.Join(runsDir, "cold")
+			warmRun := filepath.Join(runsDir, "warm")
+			for _, runDir := range []string{coldRun, warmRun} {
+				if err := os.Mkdir(runDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			cold, err := ensureArchitectureSynthesis(
+				context.Background(), bundle, coldRun, "revision-provider-identity",
+				"openai-compatible/bearer", "test-model", provider,
+			)
+			if err != nil || cold.Cached || provider.calls != 1 {
+				t.Fatalf("cold outcome/calls = %#v / %d / %v", cold, provider.calls, err)
+			}
+			cacheKey := architectureSynthesisTestCacheKey(
+				t, bundle, "revision-provider-identity",
+				"openai-compatible/bearer", "test-model", provider,
+			)
+			cachePath := filepath.Join(runsDir, architectureSynthesisCacheDirectory, cacheKey+".json")
+			saved, err := os.ReadFile(cachePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record componentmap.SynthesisRecord
+			if err := json.Unmarshal(saved, &record); err != nil {
+				t.Fatal(err)
+			}
+			test.tamper(&record)
+			tampered, err := json.MarshalIndent(record, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tampered = append(tampered, '\n')
+			if err := os.WriteFile(cachePath, tampered, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			refetched, err := ensureArchitectureSynthesis(
+				context.Background(), bundle, warmRun, "revision-provider-identity",
+				"openai-compatible/bearer", "test-model", provider,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if refetched.Cached || provider.calls != 2 {
+				t.Fatalf("tampered cache outcome/calls = %#v / %d, want one exact refetch", refetched, provider.calls)
+			}
+
+			replacement, err := os.ReadFile(cachePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt, err := componentmap.BuildSynthesisPrompt(bundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requestBody, err := provider.ComponentSynthesisPromptJSON(prompt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = componentmap.ReplaySynthesisResultForProvider(
+				bundle,
+				"revision-provider-identity",
+				componentmap.SynthesisProviderIdentity{
+					RequestSHA256:  modelresearch.SHA256(requestBody),
+					EndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+				},
+				replacement,
+			)
+			if err != nil {
+				t.Fatalf("replacement cache does not bind the exact provider exchange: %v", err)
+			}
+		})
+	}
+}
+
 func TestEnsureArchitectureSynthesisCachesByRequestedOutputLanguage(t *testing.T) {
 	t.Parallel()
 
@@ -913,7 +1033,8 @@ func TestPersistArchitectureSynthesisStatusRetainsNonResourceFailure(t *testing.
 	if err := persistArchitectureSynthesisStatus(
 		runDir,
 		architectureSynthesisOutcome{
-			InputBytes: 1200, Attempted: true, TransportAttempts: 1, CandidateCount: 2,
+			InputBytes: 1200, Attempted: true, TransportAttempts: 1,
+			LocalCandidateCount: 2, RequestedConceptualCount: 2,
 		},
 		errors.New("architecture synthesis: provider call: unavailable"),
 	); err != nil {
@@ -993,7 +1114,7 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 	status := architectureSynthesisStatus(
 		architectureSynthesisOutcome{
 			InputBytes: 1200, LatencyMillis: 4321, Attempted: true,
-			TransportAttempts: 1, CandidateCount: 2,
+			TransportAttempts: 1, LocalCandidateCount: 2, RequestedConceptualCount: 2,
 		},
 		errors.New("architecture synthesis: provider call: llm response content is empty"),
 	)
@@ -1003,6 +1124,32 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 		status.RequestBytes != 1200 ||
 		status.LatencyMillis != 4321 {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestArchitectureSynthesisStatusSeparatesLocalCandidatesFromRequestedConceptualCoverage(t *testing.T) {
+	t.Parallel()
+
+	outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationAccepted)
+	outcome.LocalCandidateCount = 50
+	outcome.RequestedConceptualCount = 42
+	outcome.StructuralLocatorCount = 8
+	outcome.MemberOccurrences = 42
+	outcome.DistinctMembers = 42
+	status := architectureSynthesisStatus(outcome, nil)
+	if err := status.Validate(); err != nil {
+		t.Fatalf("truthful 50/42/8 Architecture status: %v; status=%#v", err, status)
+	}
+	if status.CandidateCount != 0 || status.LocalCandidateCount != 50 ||
+		status.RequestedConceptualCount != 42 || status.StructuralLocatorCount != 8 ||
+		status.DistinctMembers != 42 {
+		t.Fatalf("Architecture role/coverage status = %#v", status)
+	}
+
+	incomplete := status
+	incomplete.DistinctMembers = 41
+	if err := incomplete.Validate(); err == nil {
+		t.Fatal("Architecture status accepted 41/42 conceptual response coverage")
 	}
 }
 
@@ -1718,7 +1865,7 @@ func architectureSynthesisTestBundle() componentmap.CandidateBundle {
 		RepositoryArchetype: componentmap.ArchetypeApplication,
 		GroundingMode:       componentmap.GroundingPackages,
 		Candidates: []componentmap.Candidate{{
-			ID: memberID, Name: "local runtime",
+			ID: memberID, Role: componentmap.CandidateRoleConceptualMember, Name: "local runtime",
 			Facts: []componentmap.LocalFact{{
 				Kind: componentmap.FactDeclaration, Value: "runtime package",
 				Certainty: evidence.CertaintyStatic,

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -674,6 +675,10 @@ func studyQuestionTerms(question string) []string {
 		"this": {}, "through": {}, "to": {},
 		"under": {}, "use": {}, "using": {}, "what": {}, "when": {}, "where": {},
 		"which": {}, "with": {}, "work": {}, "works": {},
+		"без": {}, "в": {}, "во": {}, "для": {}, "до": {}, "и": {}, "из": {},
+		"или": {}, "как": {}, "к": {}, "на": {}, "над": {}, "о": {}, "об": {},
+		"от": {}, "по": {}, "при": {}, "с": {}, "со": {}, "у": {}, "через": {},
+		"что": {}, "это": {},
 	}
 	seen := map[string]struct{}{}
 	var terms []string
@@ -682,7 +687,7 @@ func studyQuestionTerms(question string) []string {
 			continue
 		}
 		term := studyQuestionTerm(token)
-		if len(term) < 3 {
+		if utf8.RuneCountInString(term) < 3 {
 			continue
 		}
 		if _, stop := stopWords[term]; stop {
@@ -725,9 +730,10 @@ func studyQuestionTermSupportTargets(direction StudyDirection, term string) []St
 		targets = append(targets, target)
 	}
 	for _, anchor := range direction.ReadingAnchors {
+		// Only exact local locator/source material may support the lexical
+		// diagnostic. Label and WhatToLookFor are model prose; counting them
+		// would let a question prove itself circularly.
 		if studyTextMatchesTerm(strings.Join([]string{
-			anchor.Label,
-			anchor.WhatToLookFor,
 			anchor.Location.Path,
 			anchor.Source.EnclosingSymbol,
 			anchor.Source.Content,
@@ -747,7 +753,6 @@ func studyQuestionTermSupportTargets(direction StudyDirection, term string) []St
 			content = document.Source.Content
 		}
 		if studyTextMatchesTerm(strings.Join([]string{
-			document.Label,
 			document.Location.Path,
 			content,
 		}, "\n"), term) {
@@ -768,8 +773,6 @@ func studyQuestionTermSupportTargets(direction StudyDirection, term string) []St
 			sourceContent = area.Source.Content
 		}
 		if studyTextMatchesTerm(strings.Join([]string{
-			area.Name,
-			area.Responsibility,
 			path,
 			sourceContent,
 		}, "\n"), term) {
@@ -819,7 +822,7 @@ func studyCoverageTokenSet(text string) map[string]struct{} {
 
 func studyCoverageTokens(text string) []string {
 	fields := strings.FieldsFunc(text, func(r rune) bool {
-		return r < '0' || r > '9' && r < 'A' || r > 'Z' && r < 'a' || r > 'z'
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
 	tokens := make([]string, 0, len(fields))
 	for _, field := range fields {

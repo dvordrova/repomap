@@ -11,13 +11,15 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 const (
-	ArchitectureGroundingFile          = "architecture_grounding.json"
-	ArchitectureGroundingVersion       = 3
-	legacyArchitectureGroundingVersion = 2
-	maxArchitectureGroundingSize       = 4 * 1024 * 1024
+	ArchitectureGroundingFile            = "architecture_grounding.json"
+	ArchitectureGroundingVersion         = 4
+	previousArchitectureGroundingVersion = 3
+	legacyArchitectureGroundingVersion   = 2
+	maxArchitectureGroundingSize         = 4 * 1024 * 1024
 )
 
 type ArchitectureGrounding struct {
@@ -26,6 +28,18 @@ type ArchitectureGrounding struct {
 	GroundingMode       componentmap.GroundingMode    `json:"grounding_mode"`
 	BehaviorAnchors     []ArchitectureBehaviorAnchor  `json:"behavior_anchors"`
 	Relationships       []ArchitectureBehaviorHandoff `json:"relationships"`
+	Coverage            ArchitectureGroundingCoverage `json:"coverage"`
+}
+
+type ArchitectureGroundingCoverage struct {
+	Complete                           bool                                       `json:"complete"`
+	Reasons                            []surfacediscovery.GroundingCoverageReason `json:"reasons"`
+	AnchorsConsidered                  int                                        `json:"anchors_considered"`
+	AnchorsPublished                   int                                        `json:"anchors_published"`
+	RelationshipsConsidered            int                                        `json:"relationships_considered"`
+	RelationshipsPublished             int                                        `json:"relationships_published"`
+	DeclarationFamilyMembersConsidered int                                        `json:"declaration_family_members_considered"`
+	DeclarationFamilyMembersPublished  int                                        `json:"declaration_family_members_published"`
 }
 
 type ArchitectureArchetype struct {
@@ -37,6 +51,7 @@ type ArchitectureArchetype struct {
 type ArchitectureBehaviorAnchor struct {
 	ID                string                          `json:"id"`
 	Kind              componentmap.BehaviorAnchorKind `json:"kind"`
+	ProofMode         componentmap.AnchorProofMode    `json:"proof_mode"`
 	Label             string                          `json:"label"`
 	Location          evidence.Location               `json:"location"`
 	Scenario          architectureGroundingScenario   `json:"scenario"`
@@ -104,8 +119,17 @@ func parseArchitectureGrounding(runDir string) (*ArchitectureGrounding, string) 
 
 func validateArchitectureGrounding(grounding ArchitectureGrounding) error {
 	if grounding.Version != 1 && grounding.Version != legacyArchitectureGroundingVersion &&
+		grounding.Version != previousArchitectureGroundingVersion &&
 		grounding.Version != ArchitectureGroundingVersion {
 		return fmt.Errorf("unsupported version %d", grounding.Version)
+	}
+	if grounding.Version < ArchitectureGroundingVersion &&
+		(len(grounding.BehaviorAnchors) != 0 || len(grounding.Relationships) != 0) {
+		// Historical anchors did not carry producer-owned proof mode. Treating
+		// their semantic kind as proof would recreate the name-based inference
+		// removed by Decision 205. The caller will install the package-grounded
+		// local D177 canvas instead of reinterpreting these bytes.
+		return fmt.Errorf("legacy behavior grounding has no typed proof mode")
 	}
 	if !validArchitectureArchetype(grounding.RepositoryArchetype.Selected) {
 		return fmt.Errorf("unsupported repository archetype")
@@ -121,8 +145,13 @@ func validateArchitectureGrounding(grounding ArchitectureGrounding) error {
 		if strings.TrimSpace(anchor.ID) == "" || strings.TrimSpace(anchor.Label) == "" ||
 			!validArchitectureBehaviorAnchorKind(anchor.Kind) || !validGroundingLocation(anchor.Location) ||
 			!anchor.Certainty.Valid() || anchor.Scenario.ID == "" || len(anchor.AssociatedMembers) == 0 ||
-			len(anchor.AssociatedMembers) > 16 || len(anchor.Limitations) == 0 || len(anchor.Limitations) > 8 {
+			len(anchor.AssociatedMembers) > surfacediscovery.MaxArchitectureAnchorMembers ||
+			len(anchor.Limitations) == 0 || len(anchor.Limitations) > 8 {
 			return fmt.Errorf("behavior anchor is incomplete")
+		}
+		if grounding.Version >= ArchitectureGroundingVersion &&
+			!validArchitectureAnchorProofMode(anchor.Kind, anchor.ProofMode) {
+			return fmt.Errorf("behavior anchor proof mode is invalid")
 		}
 		if _, duplicate := anchorIDs[anchor.ID]; duplicate {
 			return fmt.Errorf("behavior anchor ids are not unique")
@@ -153,6 +182,64 @@ func validateArchitectureGrounding(grounding ArchitectureGrounding) error {
 			}
 		}
 	}
+	if grounding.Version >= ArchitectureGroundingVersion {
+		if err := validateArchitectureGroundingCoverage(grounding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validArchitectureAnchorProofMode(
+	kind componentmap.BehaviorAnchorKind,
+	mode componentmap.AnchorProofMode,
+) bool {
+	switch mode {
+	case componentmap.AnchorProofProcessEntry:
+		return kind == componentmap.AnchorProcessEntry
+	case componentmap.AnchorProofCallTarget, componentmap.AnchorProofDeclarationFamily:
+		return kind != componentmap.AnchorProcessEntry && validArchitectureBehaviorAnchorKind(kind)
+	default:
+		return false
+	}
+}
+
+func validateArchitectureGroundingCoverage(grounding ArchitectureGrounding) error {
+	coverage := grounding.Coverage
+	if coverage.AnchorsConsidered < coverage.AnchorsPublished ||
+		coverage.AnchorsPublished != len(grounding.BehaviorAnchors) ||
+		coverage.RelationshipsConsidered < coverage.RelationshipsPublished ||
+		coverage.RelationshipsPublished != len(grounding.Relationships) ||
+		coverage.DeclarationFamilyMembersConsidered < coverage.DeclarationFamilyMembersPublished {
+		return fmt.Errorf("grounding coverage counts are inconsistent")
+	}
+	publishedFamilyMembers := 0
+	for _, anchor := range grounding.BehaviorAnchors {
+		if anchor.ProofMode == componentmap.AnchorProofDeclarationFamily {
+			publishedFamilyMembers += len(anchor.AssociatedMembers)
+		}
+	}
+	if coverage.DeclarationFamilyMembersPublished != publishedFamilyMembers {
+		return fmt.Errorf("grounding declaration-family coverage is inconsistent")
+	}
+	seenReasons := make(map[surfacediscovery.GroundingCoverageReason]struct{}, len(coverage.Reasons))
+	for _, reason := range coverage.Reasons {
+		if reason != surfacediscovery.GroundingCoverageCollectionLimit &&
+			reason != surfacediscovery.GroundingCoveragePersistenceLimit {
+			return fmt.Errorf("grounding coverage reason is invalid")
+		}
+		if _, duplicate := seenReasons[reason]; duplicate {
+			return fmt.Errorf("grounding coverage repeats a reason")
+		}
+		seenReasons[reason] = struct{}{}
+	}
+	countsComplete := coverage.AnchorsConsidered == coverage.AnchorsPublished &&
+		coverage.RelationshipsConsidered == coverage.RelationshipsPublished &&
+		coverage.DeclarationFamilyMembersConsidered == coverage.DeclarationFamilyMembersPublished
+	if coverage.Complete != (countsComplete && len(coverage.Reasons) == 0) ||
+		!coverage.Complete && len(coverage.Reasons) == 0 {
+		return fmt.Errorf("grounding coverage completeness is inconsistent")
+	}
 	return nil
 }
 
@@ -182,6 +269,9 @@ func ensureArchitectureGrounding(data *ReportData) {
 			Evidence: []string{"No persisted behavior-grounding artifact was available."},
 		},
 		GroundingMode: componentmap.GroundingPackages,
+		Coverage: ArchitectureGroundingCoverage{
+			Complete: true, Reasons: []surfacediscovery.GroundingCoverageReason{},
+		},
 	}
 }
 

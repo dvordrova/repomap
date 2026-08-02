@@ -16,8 +16,8 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion = 7
-	ProposalVersion = 7
+	ContractVersion = 8
+	ProposalVersion = 8
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -101,6 +101,20 @@ func (kind MemberKind) valid() bool {
 	default:
 		return false
 	}
+}
+
+// CandidateRole separates locally retained architecture evidence from the
+// exact set the provider is allowed to group conceptually. The producer owns
+// this classification; it is never inferred from MemberKind by synthesis.
+type CandidateRole string
+
+const (
+	CandidateRoleConceptualMember  CandidateRole = "conceptual_member"
+	CandidateRoleStructuralLocator CandidateRole = "structural_locator"
+)
+
+func (role CandidateRole) valid() bool {
+	return role == CandidateRoleConceptualMember || role == CandidateRoleStructuralLocator
 }
 
 // MemberID is deliberately opaque to conceptual synthesis. Callers may use
@@ -188,11 +202,35 @@ func (kind BehaviorAnchorKind) valid() bool {
 	}
 }
 
+// AnchorProofMode records the exact local proof shape behind one behavior
+// anchor. It is producer-owned and must not be inferred from display prose.
+type AnchorProofMode string
+
+const (
+	AnchorProofProcessEntry      AnchorProofMode = "process_entry"
+	AnchorProofCallTarget        AnchorProofMode = "call_target"
+	AnchorProofDeclarationFamily AnchorProofMode = "declaration_family"
+)
+
+func (mode AnchorProofMode) validFor(kind BehaviorAnchorKind) bool {
+	switch mode {
+	case AnchorProofProcessEntry:
+		return kind == AnchorProcessEntry
+	case AnchorProofDeclarationFamily:
+		return kind.valid() && kind != AnchorProcessEntry
+	case AnchorProofCallTarget:
+		return kind.valid() && kind != AnchorProcessEntry
+	default:
+		return false
+	}
+}
+
 // BehaviorAnchor is exact local architecture evidence. The provider may group
 // or name anchors by ID but cannot create or alter them.
 type BehaviorAnchor struct {
 	ID          string              `json:"id"`
 	Kind        BehaviorAnchorKind  `json:"kind"`
+	ProofMode   AnchorProofMode     `json:"proof_mode"`
 	Label       string              `json:"label"`
 	Location    evidence.Location   `json:"location"`
 	Scenario    ScenarioContext     `json:"scenario"`
@@ -244,6 +282,7 @@ type FlowParticipation struct {
 // Participations are bounded grouping inputs, not inferred architectural edges.
 type Candidate struct {
 	ID             MemberID            `json:"id"`
+	Role           CandidateRole       `json:"role"`
 	Name           string              `json:"name"`
 	ParentID       *MemberID           `json:"parent_id,omitempty"`
 	Participations []FlowParticipation `json:"flow_participations,omitempty"`
@@ -456,6 +495,7 @@ const (
 type Landscape struct {
 	Version                int                      `json:"version"`
 	Subsystems             []Subsystem              `json:"subsystems"`
+	StructuralLocators     []Candidate              `json:"structural_locators,omitempty"`
 	ConceptualMemberships  []ConceptualMembership   `json:"conceptual_memberships"`
 	Relations              []LocalRelation          `json:"relations,omitempty"`
 	AnchorBindings         []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
@@ -467,6 +507,21 @@ type Landscape struct {
 	OriginalProposalSHA256 string                   `json:"original_proposal_sha256,omitempty"`
 	Fallback               bool                     `json:"fallback"`
 	FallbackReason         FallbackReason           `json:"fallback_reason,omitempty"`
+}
+
+// CandidateRoleCounts reports the complete local bundle split without
+// mutating or projecting either role. Validate remains the authority for
+// whether every candidate carries one supported producer-owned role.
+func (bundle CandidateBundle) CandidateRoleCounts() (conceptualMembers, structuralLocators int) {
+	for _, candidate := range bundle.Candidates {
+		switch candidate.Role {
+		case CandidateRoleConceptualMember:
+			conceptualMembers++
+		case CandidateRoleStructuralLocator:
+			structuralLocators++
+		}
+	}
+	return conceptualMembers, structuralLocators
 }
 
 // Apply validates a proposal against exact local candidates. Evidence-integrity
@@ -490,9 +545,12 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		diagnostics = rawDiagnostics
 	} else {
 		normalized, shapeOperations, shapeDiagnostics := normalizeProposalShape(bundle, proposal)
-		operations = shapeOperations
-		landscape, diagnostics, usable = applyProposal(bundle, normalized)
-		diagnostics = append(shapeDiagnostics, diagnostics...)
+		groundingOperations, groundingDiagnostics := normalizeStaticContextHypotheses(bundle, &normalized)
+		operations = append(shapeOperations, groundingOperations...)
+		var applyDiagnostics []Diagnostic
+		landscape, applyDiagnostics, usable = applyProposal(bundle, normalized)
+		diagnostics = append(shapeDiagnostics, groundingDiagnostics...)
+		diagnostics = append(diagnostics, applyDiagnostics...)
 	}
 	if !usable && !hasFatalDiagnostics(diagnostics) {
 		return Landscape{}, fmt.Errorf("componentmap: rejected proposal has no fatal diagnostic")
@@ -501,7 +559,10 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		landscape = buildDeterministicLocalLandscape(bundle, SourcePackageFallback)
 		landscape.Diagnostics = diagnostics
 		landscape.ValidationOutcome = ValidationRejected
-		landscape.FallbackReason = fallbackReasonForDiagnostics(diagnostics, len(bundle.BehaviorAnchors) > 0)
+		landscape.FallbackReason = fallbackReasonForDiagnostics(
+			diagnostics,
+			hasAnyOperationalBehaviorAnchor(bundle.BehaviorAnchors),
+		)
 		landscape.Fallback = true
 	} else if len(operations) > 0 {
 		landscape.ValidationOutcome = ValidationAcceptedNormalized
@@ -520,6 +581,44 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		return Landscape{}, err
 	}
 	return landscape, nil
+}
+
+// normalizeStaticContextHypotheses extends the existing package-only
+// normalization to components that cite declaration-family anchors. Those
+// anchors remain exact static context, but do not prove operational grounding.
+func normalizeStaticContextHypotheses(
+	bundle CandidateBundle,
+	proposal *Proposal,
+) ([]NormalizationOperation, []Diagnostic) {
+	if proposal == nil || bundle.GroundingMode == GroundingPackages {
+		return nil, nil
+	}
+	knownMembers := candidateIndex(bundle)
+	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
+	var operations []NormalizationOperation
+	var diagnostics []Diagnostic
+	for subsystemIndex := range proposal.Subsystems {
+		for componentIndex := range proposal.Subsystems[subsystemIndex].Components {
+			component := &proposal.Subsystems[subsystemIndex].Components[componentIndex]
+			if component.Hypothesis || len(component.AnchorIDs) == 0 ||
+				componentHasUnknownBehaviorAnchor(component.AnchorIDs, knownAnchors) ||
+				hasOperationalBehaviorAnchor(component.AnchorIDs, knownAnchors) ||
+				!knownPackageOnlyMembers(knownMembers, component.MemberIDs) {
+				continue
+			}
+			component.Hypothesis = true
+			operations = append(operations, NormalizationOperation{
+				Code:               "normalized_package_only_hypothesis",
+				Message:            "marked one package-only conceptual component without operational grounding as an explicit hypothesis",
+				SourceComponentIDs: append([]ComponentID(nil), component.sourceIDs...),
+			})
+			diagnostics = append(diagnostics, newDiagnostic(
+				"proposal.normalized_package_only_hypothesis",
+				"marked a package-only conceptual component without operational grounding as an explicit hypothesis",
+			))
+		}
+	}
+	return operations, diagnostics
 }
 
 // Deterministic builds a usable landscape without treating an intentionally
@@ -627,6 +726,13 @@ func (bundle CandidateBundle) Validate() error {
 			return fmt.Errorf("componentmap: duplicate member id %q", candidate.ID.key())
 		}
 		members[candidate.ID] = candidate
+	}
+	conceptualCount, structuralCount := bundle.CandidateRoleCounts()
+	if conceptualCount == 0 {
+		return fmt.Errorf("componentmap: candidate bundle has no conceptual members")
+	}
+	if conceptualCount+structuralCount != len(bundle.Candidates) {
+		return fmt.Errorf("componentmap: candidate bundle has an invalid producer-owned candidate role")
 	}
 	for _, candidate := range bundle.Candidates {
 		if candidate.ParentID != nil {
@@ -803,10 +909,11 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	}
 
 	known := candidateIndex(bundle)
-	knownAnchors := make(map[string]struct{}, len(bundle.BehaviorAnchors))
-	for _, anchor := range bundle.BehaviorAnchors {
-		knownAnchors[anchor.ID] = struct{}{}
+	expectedStructural := structuralLocatorCandidates(bundle)
+	if !reflect.DeepEqual(landscape.StructuralLocators, expectedStructural) {
+		return fmt.Errorf("componentmap: landscape changed or omitted local structural locators")
 	}
+	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
 	seenMembers := make(map[MemberID]struct{}, len(bundle.Candidates))
 	seenComponents := make(map[ComponentID]struct{})
 	componentCount := 0
@@ -849,8 +956,8 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				seenAnchorIDs[anchorID] = struct{}{}
 			}
 			if bundle.GroundingMode != GroundingPackages && subsystem.Category != SubsystemCategoryDiagnostic &&
-				len(component.AnchorIDs) == 0 && !component.Hypothesis {
-				return fmt.Errorf("componentmap: grounded component lacks an anchor or explicit hypothesis")
+				!hasOperationalBehaviorAnchor(component.AnchorIDs, knownAnchors) && !component.Hypothesis {
+				return fmt.Errorf("componentmap: grounded component lacks an operational anchor or explicit hypothesis")
 			}
 			memberIDs := make([]MemberID, 0, len(component.Members))
 			seenComponentMembers := make(map[MemberID]struct{}, len(component.Members))
@@ -861,6 +968,9 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				}
 				if !reflect.DeepEqual(member, exact) {
 					return fmt.Errorf("componentmap: component changed local member %q", member.ID.key())
+				}
+				if member.Role != CandidateRoleConceptualMember {
+					return fmt.Errorf("componentmap: component contains structural locator %q", member.ID.key())
 				}
 				if _, exists := seenComponentMembers[member.ID]; exists {
 					return fmt.Errorf("componentmap: component repeats membership for %q", member.ID.key())
@@ -902,10 +1012,11 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	if !reflect.DeepEqual(landscape.ConceptualMemberships, expectedMemberships) {
 		return fmt.Errorf("componentmap: conceptual membership relation does not match component projection")
 	}
-	if len(seenMembers) != len(bundle.Candidates) {
+	expectedCovered, _ := bundle.CandidateRoleCounts()
+	if len(seenMembers) != expectedCovered {
 		return fmt.Errorf(
-			"componentmap: landscape covers %d of %d local candidates",
-			len(seenMembers), len(bundle.Candidates),
+			"componentmap: landscape covers %d of %d required members",
+			len(seenMembers), expectedCovered,
 		)
 	}
 	return nil
@@ -930,18 +1041,16 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	}
 	proposedSubsystems := proposal.Subsystems
 
-	known := candidateIndex(bundle)
-	knownAnchors := make(map[string]struct{}, len(bundle.BehaviorAnchors))
-	for _, anchor := range bundle.BehaviorAnchors {
-		knownAnchors[anchor.ID] = struct{}{}
-	}
+	known := conceptualCandidateIndex(bundle)
+	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
 	seenMembers := make(map[MemberID]struct{})
 	seenComponentIDs := make(map[ComponentID]struct{})
 	landscape := Landscape{
-		Version:        ContractVersion,
-		Subsystems:     make([]Subsystem, 0, len(proposal.Subsystems)),
-		Relations:      cloneLocalRelations(bundle.Relations),
-		AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+		Version:            ContractVersion,
+		Subsystems:         make([]Subsystem, 0, len(proposal.Subsystems)),
+		StructuralLocators: structuralLocatorCandidates(bundle),
+		Relations:          cloneLocalRelations(bundle.Relations),
+		AnchorBindings:     cloneFlowAnchorBindings(bundle.AnchorBindings),
 	}
 	componentBudget := maxComponents - 1
 	for _, proposedSubsystem := range proposedSubsystems {
@@ -998,8 +1107,9 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				anchorIDs = append(anchorIDs, anchorID)
 			}
 			sort.Strings(anchorIDs)
-			if bundle.GroundingMode != GroundingPackages && len(anchorIDs) == 0 && !proposedComponent.Hypothesis {
-				invalid("proposal.ungrounded_primary_component", "a primary component lacks a supplied behavior anchor or explicit hypothesis")
+			if bundle.GroundingMode != GroundingPackages &&
+				!hasOperationalBehaviorAnchor(anchorIDs, knownAnchors) && !proposedComponent.Hypothesis {
+				invalid("proposal.ungrounded_primary_component", "a primary component lacks a supplied operational behavior anchor or explicit hypothesis")
 				return Landscape{}, diagnostics, false
 			}
 			sortCandidates(members)
@@ -1027,12 +1137,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.no_usable_subsystems", "no proposed subsystem retained a unique known member")
 		return Landscape{}, diagnostics, false
 	}
-	if len(seenMembers) != len(bundle.Candidates) {
+	conceptualCount, _ := bundle.CandidateRoleCounts()
+	if len(seenMembers) != conceptualCount {
 		invalid(
 			"proposal.incomplete_member_coverage",
 			fmt.Sprintf(
-				"proposal covers %d of %d requested distinct candidate members",
-				len(seenMembers), len(bundle.Candidates),
+				"proposal covers %d of %d requested distinct conceptual members",
+				len(seenMembers), conceptualCount,
 			),
 		)
 		return Landscape{}, diagnostics, false
@@ -1052,7 +1163,8 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 	memberReferenceCount := 0
 	memberReferenceCounts := make(map[MemberID]int)
 	distinctReferencedMembers := make(map[MemberID]struct{})
-	knownMembers := candidateIndex(bundle)
+	knownMembers := conceptualCandidateIndex(bundle)
+	conceptualCount, _ := bundle.CandidateRoleCounts()
 	for _, subsystem := range proposal.Subsystems {
 		if len(subsystem.Components) == 0 {
 			return []Diagnostic{newDiagnostic(
@@ -1112,12 +1224,12 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 			}
 		}
 	}
-	if len(distinctReferencedMembers) != len(bundle.Candidates) {
+	if len(distinctReferencedMembers) != conceptualCount {
 		return []Diagnostic{newDiagnostic(
 			"proposal.incomplete_member_coverage",
 			fmt.Sprintf(
-				"proposal covers %d of %d requested distinct candidate members",
-				len(distinctReferencedMembers), len(bundle.Candidates),
+				"proposal covers %d of %d requested distinct conceptual members",
+				len(distinctReferencedMembers), conceptualCount,
 			),
 		)}
 	}
@@ -1157,6 +1269,9 @@ func packageLocalLandscape(bundle CandidateBundle, source ArchitectureSource) La
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
 	for _, candidate := range candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
 		key, category, name := localGroupingBasis(candidate, known, flowNames)
 		group := groupsByKey[key]
 		if group == nil {
@@ -1193,13 +1308,16 @@ func packageLocalLandscape(bundle CandidateBundle, source ArchitectureSource) La
 	}
 
 	byCategory := make(map[string][]Component)
+	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
 	for _, group := range groups {
 		id := componentID(candidateIDs(group.members))
+		anchorIDs := behaviorAnchorsForMembers(bundle.BehaviorAnchors, group.members)
 		byCategory[group.category] = append(byCategory[group.category], Component{
 			ID: id, Name: group.name, Description: group.description,
-			Members: group.members, AnchorIDs: behaviorAnchorsForMembers(bundle.BehaviorAnchors, group.members),
-			Hypothesis: bundle.GroundingMode != GroundingPackages && len(behaviorAnchorsForMembers(bundle.BehaviorAnchors, group.members)) == 0,
-			SourceIDs:  []ComponentID{id},
+			Members: group.members, AnchorIDs: anchorIDs,
+			Hypothesis: bundle.GroundingMode != GroundingPackages &&
+				!hasOperationalBehaviorAnchor(anchorIDs, knownAnchors),
+			SourceIDs: []ComponentID{id},
 		})
 	}
 	categories := make([]string, 0, len(byCategory))
@@ -1226,7 +1344,8 @@ func packageLocalLandscape(bundle CandidateBundle, source ArchitectureSource) La
 	}
 	return Landscape{
 		Version: ContractVersion, Subsystems: subsystems,
-		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+		StructuralLocators: structuralLocatorCandidates(bundle),
+		Relations:          cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
 		Source: source, Level: 4,
 	}
 }
@@ -1249,6 +1368,9 @@ func anchorFirstLocalLandscape(bundle CandidateBundle) Landscape {
 	known := candidateIndex(bundle)
 	anchorsByKind := make(map[BehaviorAnchorKind][]BehaviorAnchor)
 	for _, anchor := range bundle.BehaviorAnchors {
+		if anchor.ProofMode == AnchorProofDeclarationFamily {
+			continue
+		}
 		anchorsByKind[anchor.Kind] = append(anchorsByKind[anchor.Kind], anchor)
 	}
 	for kind := range anchorsByKind {
@@ -1299,6 +1421,9 @@ func anchorFirstLocalLandscape(bundle CandidateBundle) Landscape {
 
 	remainder := make([]Candidate, 0)
 	for _, candidate := range bundle.Candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
 		if _, exists := owned[candidate.ID]; !exists {
 			remainder = append(remainder, cloneCandidate(candidate))
 		}
@@ -1321,7 +1446,8 @@ func anchorFirstLocalLandscape(bundle CandidateBundle) Landscape {
 	}
 	return Landscape{
 		Version: ContractVersion, Subsystems: subsystems,
-		Relations: cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
+		StructuralLocators: structuralLocatorCandidates(bundle),
+		Relations:          cloneLocalRelations(bundle.Relations), AnchorBindings: cloneFlowAnchorBindings(bundle.AnchorBindings),
 		Source: SourceLocalAnchors, Level: 3,
 	}
 }
@@ -1543,9 +1669,13 @@ func addAnchorLocalMember(
 		if !exists {
 			return
 		}
-		if _, alreadyOwned := owned[currentID]; !alreadyOwned {
+		if candidate.Role == CandidateRoleConceptualMember {
+			if _, alreadyOwned := owned[currentID]; !alreadyOwned {
+				owned[currentID] = struct{}{}
+				selected[currentID] = struct{}{}
+			}
+		} else {
 			owned[currentID] = struct{}{}
-			selected[currentID] = struct{}{}
 		}
 		if candidate.ParentID == nil {
 			return
@@ -1692,6 +1822,9 @@ func validateCandidate(candidate Candidate) error {
 	if err := validateMemberID(candidate.ID); err != nil {
 		return err
 	}
+	if !candidate.Role.valid() {
+		return fmt.Errorf("invalid candidate role %q", candidate.Role)
+	}
 	if err := validateDisplayText("candidate name", candidate.Name, maxNameBytes, true); err != nil {
 		return err
 	}
@@ -1784,6 +1917,12 @@ func validateBehaviorAnchor(anchor BehaviorAnchor, known map[MemberID]Candidate)
 	if !anchor.Kind.valid() {
 		return fmt.Errorf("invalid behavior anchor kind %q", anchor.Kind)
 	}
+	if !anchor.ProofMode.validFor(anchor.Kind) {
+		return fmt.Errorf("behavior anchor proof mode %q is invalid for kind %q", anchor.ProofMode, anchor.Kind)
+	}
+	if anchor.ProofMode == AnchorProofDeclarationFamily && anchor.Certainty != evidence.CertaintyStatic {
+		return fmt.Errorf("declaration-family anchor cannot imply observed or verified runtime behavior")
+	}
 	if err := validateDisplayText("behavior anchor label", anchor.Label, maxNameBytes, true); err != nil {
 		return err
 	}
@@ -1805,8 +1944,12 @@ func validateBehaviorAnchor(anchor BehaviorAnchor, known map[MemberID]Candidate)
 	}
 	seenMembers := make(map[MemberID]struct{}, len(anchor.MemberIDs))
 	for _, memberID := range anchor.MemberIDs {
-		if _, exists := known[memberID]; !exists {
+		candidate, exists := known[memberID]
+		if !exists {
 			return fmt.Errorf("behavior anchor references unknown member")
+		}
+		if candidate.Role != CandidateRoleConceptualMember {
+			return fmt.Errorf("behavior anchor references a structural locator instead of a conceptual member")
 		}
 		if _, duplicate := seenMembers[memberID]; duplicate {
 			return fmt.Errorf("behavior anchor repeats a member")
@@ -1822,6 +1965,45 @@ func validateBehaviorAnchor(anchor BehaviorAnchor, known map[MemberID]Candidate)
 		}
 	}
 	return nil
+}
+
+func behaviorAnchorIndex(anchors []BehaviorAnchor) map[string]BehaviorAnchor {
+	result := make(map[string]BehaviorAnchor, len(anchors))
+	for _, anchor := range anchors {
+		result[anchor.ID] = anchor
+	}
+	return result
+}
+
+func behaviorAnchorProvidesOperationalGrounding(anchor BehaviorAnchor) bool {
+	return anchor.ProofMode == AnchorProofProcessEntry || anchor.ProofMode == AnchorProofCallTarget
+}
+
+func hasAnyOperationalBehaviorAnchor(anchors []BehaviorAnchor) bool {
+	for _, anchor := range anchors {
+		if behaviorAnchorProvidesOperationalGrounding(anchor) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOperationalBehaviorAnchor(anchorIDs []string, known map[string]BehaviorAnchor) bool {
+	for _, anchorID := range anchorIDs {
+		if behaviorAnchorProvidesOperationalGrounding(known[anchorID]) {
+			return true
+		}
+	}
+	return false
+}
+
+func componentHasUnknownBehaviorAnchor(anchorIDs []string, known map[string]BehaviorAnchor) bool {
+	for _, anchorID := range anchorIDs {
+		if _, exists := known[anchorID]; !exists {
+			return true
+		}
+	}
+	return false
 }
 
 func behaviorAnchorsForMembers(anchors []BehaviorAnchor, members []Candidate) []string {
@@ -1925,6 +2107,9 @@ func validateFlowAnchorBinding(
 	}
 	if !candidateParticipatesIn(candidate, binding.FlowID) {
 		return fmt.Errorf("bound member has no witnessed participation in the flow")
+	}
+	if candidate.Role != CandidateRoleConceptualMember {
+		return fmt.Errorf("binding references a structural locator instead of a conceptual member")
 	}
 	if binding.Certainty != evidence.CertaintyStatic &&
 		binding.Certainty != evidence.CertaintyObserved &&
@@ -2107,6 +2292,27 @@ func candidateIndex(bundle CandidateBundle) map[MemberID]Candidate {
 	for _, candidate := range bundle.Candidates {
 		result[candidate.ID] = candidate
 	}
+	return result
+}
+
+func conceptualCandidateIndex(bundle CandidateBundle) map[MemberID]Candidate {
+	result := make(map[MemberID]Candidate)
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role == CandidateRoleConceptualMember {
+			result[candidate.ID] = candidate
+		}
+	}
+	return result
+}
+
+func structuralLocatorCandidates(bundle CandidateBundle) []Candidate {
+	result := make([]Candidate, 0)
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role == CandidateRoleStructuralLocator {
+			result = append(result, cloneCandidate(candidate))
+		}
+	}
+	sortCandidates(result)
 	return result
 }
 
