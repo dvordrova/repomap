@@ -3,6 +3,8 @@ package report
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -12,6 +14,61 @@ import (
 
 	"github.com/dvordrova/repomap/internal/freshness"
 )
+
+func TestSourceEpisodeFixturesRemainPinnedAndValid(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		path     string
+		digest   string
+		approval sourceEpisodeApproval
+	}{
+		{
+			name:   "go etcd",
+			path:   filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
+			digest: "1f41085eea5fc0c59ddbb7ae66b7e3a67c82b8b588babd97edfe71ec873aa21a",
+			approval: sourceEpisodeApproval{
+				episodeID:  "etcd-put-recoverability",
+				repository: "etcd-io/etcd",
+				revision:   "58f45a9ff1c083130830eb02b0cc7d9783609095",
+			},
+		},
+		{
+			name:   "python django",
+			path:   filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
+			digest: "9599553a777e8d8fd582bb1874dd4ab534c1f24d9d87e82cfce09cc775281665",
+			approval: sourceEpisodeApproval{
+				episodeID:  "django-nested-atomic",
+				repository: "django/django",
+				revision:   "3e389b7ddaf08109900da5415ddaac5a355a170f",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw, episode := readSourceEpisodeFixture(t, test.path)
+			digest := sha256.Sum256(raw)
+			if got := hex.EncodeToString(digest[:]); got != test.digest {
+				t.Fatalf("fixture SHA-256 = %s, want %s", got, test.digest)
+			}
+			approval, ok := approvedSourceEpisodes[test.digest]
+			if !ok {
+				t.Fatalf("fixture digest %s is absent from the product approval catalog", test.digest)
+			}
+			if approval != test.approval {
+				t.Fatalf("fixture approval = %#v, want %#v", approval, test.approval)
+			}
+			if err := validateSourceEpisode(episode, approval); err != nil {
+				t.Fatalf("fixture violates the product source-episode schema: %v", err)
+			}
+		})
+	}
+}
 
 func TestSourceEpisodeProjectionRendersAcceptedGoAndPythonFixtures(t *testing.T) {
 	t.Parallel()
@@ -24,13 +81,13 @@ func TestSourceEpisodeProjectionRendersAcceptedGoAndPythonFixtures(t *testing.T)
 	}{
 		{
 			name:       "go etcd",
-			path:       filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+			path:       filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
 			episodeID:  "etcd-put-recoverability",
 			repository: "etcd-io/etcd",
 		},
 		{
 			name:       "python django",
-			path:       filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+			path:       filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 			episodeID:  "django-nested-atomic",
 			repository: "django/django",
 		},
@@ -125,11 +182,11 @@ func TestGenerateAuthorizedWithSourceEpisodeKeepsPersistedAuthorityOrdinary(t *t
 	}{
 		{
 			name: "go etcd",
-			path: filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+			path: filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
 		},
 		{
 			name: "python django",
-			path: filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+			path: filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 		},
 	}
 	for _, test := range tests {
@@ -273,7 +330,7 @@ func TestGenerateAuthorizedWithSourceEpisodeRejectsCrossRevisionBeforeMutation(t
 
 	raw, episode := readSourceEpisodeFixture(
 		t,
-		filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+		filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 	)
 	runDir, authority := sourceEpisodeGenerationFixture(t, episode)
 	if err := GenerateAuthorized(runDir, authority); err != nil {
@@ -309,13 +366,13 @@ func TestSourceEpisodeProjectionPreservesWeakSignalsWithoutSourceAuthority(t *te
 		uncertainty string
 	}{
 		{
-			path:        filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+			path:        filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
 			claimTitle:  "The WAL-side recovery bytes are a raft entry carrying the encoded request",
 			claimState:  "inferred",
 			uncertainty: "Successful handler return does not prove when the client process receives response bytes.",
 		},
 		{
-			path:        filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+			path:        filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 			claimTitle:  "Treat `on_commit()` as a post-commit handoff, not a delivery guarantee",
 			claimState:  "inferred",
 			uncertainty: "The in-memory callback queue does not establish delivery if the process exits after database commit but before or during callback execution.",
@@ -368,7 +425,7 @@ func TestSourceEpisodeValidationPublishesAnchorlessWeakSignals(t *testing.T) {
 
 	raw, episode := readSourceEpisodeFixture(
 		t,
-		filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+		filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 	)
 	approval := approvedSourceEpisodes[sourceEpisodeFixtureDigest(t, raw)]
 	episode.Claims = append([]sourceEpisodeClaim(nil), episode.Claims...)
@@ -395,7 +452,7 @@ func TestSourceEpisodeProjectionRejectsUnapprovedOrUnsafeInput(t *testing.T) {
 
 	raw, episode := readSourceEpisodeFixture(
 		t,
-		filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+		filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 	)
 	data := authorizedSourceEpisodeReport(episode)
 
@@ -569,7 +626,7 @@ process.stdout.write(JSON.stringify({
 	}{
 		{
 			name: "go etcd",
-			path: filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+			path: filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
 			required: []string{
 				"The WAL-side recovery bytes are a raft entry carrying the encoded request",
 				"Client acknowledgment and this Ready loop's WAL Save completion are not ordered here",
@@ -578,7 +635,7 @@ process.stdout.write(JSON.stringify({
 		},
 		{
 			name: "python django",
-			path: filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+			path: filepath.Join("testdata", "source_episode", "django-atomic", "episode.json"),
 			required: []string{
 				"Treat `on_commit()` as a post-commit handoff, not a delivery guarantee",
 				"The in-memory callback queue does not establish delivery",
@@ -733,8 +790,8 @@ func TestWriteSourceEpisodePreviews(t *testing.T) {
 		name string
 		path string
 	}{
-		{"01-etcd-put.html", filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json")},
-		{"02-django-atomic.html", filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json")},
+		{"01-etcd-put.html", filepath.Join("testdata", "source_episode", "etcd-put", "episode.json")},
+		{"02-django-atomic.html", filepath.Join("testdata", "source_episode", "django-atomic", "episode.json")},
 	}
 	for _, test := range tests {
 		raw, episode := readSourceEpisodeFixture(t, test.path)
@@ -837,19 +894,12 @@ func authorizedSourceEpisodeReport(episode sourceEpisodeInput) *ReportData {
 
 func sourceEpisodeFixtureDigest(t *testing.T, raw []byte) string {
 	t.Helper()
-	for digest, approval := range approvedSourceEpisodes {
-		if approval.episodeID == func() string {
-			var episode sourceEpisodeInput
-			if err := json.Unmarshal(raw, &episode); err != nil {
-				t.Fatal(err)
-			}
-			return episode.EpisodeID
-		}() {
-			return digest
-		}
+	digest := sha256.Sum256(raw)
+	encoded := hex.EncodeToString(digest[:])
+	if _, ok := approvedSourceEpisodes[encoded]; !ok {
+		t.Fatalf("fixture SHA-256 %s is not approved", encoded)
 	}
-	t.Fatal("fixture is not approved")
-	return ""
+	return encoded
 }
 
 func sourceEpisodeContainsString(values []string, target string) bool {

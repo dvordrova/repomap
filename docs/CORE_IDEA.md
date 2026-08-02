@@ -198,23 +198,11 @@ language-neutral evidence graph before they are connected to the product:
 - language-specific adapters implement the same `analyzer.Provider` port and
   emit the same graph
 
-The first adapter is an isolated Go/gopls playground. Fuzzy workspace-symbol
-matches are `possible`; direct call-hierarchy edges are `static`. Static means
-"supported by analysis under this build configuration", not "observed at
-runtime". The playground writes JSON for machines and Markdown for human
-inspection:
-
-```sh
-go run ./cmd/gopls-playground \
-  --repo ../etcd \
-  --query kvServer.Put \
-  --out tmp/evidence-examples/etcd.json \
-  --summary-out tmp/evidence-examples/etcd.md
-```
-
-Run `./scripts/gopls_examples.sh --fetch` to produce the same artifacts for
-etcd, k6, Prometheus, NATS Server, and golangci-lint. Fetched clones and
-generated artifacts stay under `tmp/` and are not part of the LLM bundle.
+The former isolated Go/gopls playground and its example-fetch script were
+retired because they were not part of the supported product path. The evidence
+vocabulary remains available for a future explicitly approved analyzer
+integration; no direct analyzer command is currently documented as a product
+workflow.
 
 The first focused vertical slice resolves one exact symbol, expands only its
 direct static callers/callees, and produces a bounded DeepSeek request:

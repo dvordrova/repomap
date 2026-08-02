@@ -147,11 +147,8 @@ disclosure, not a large model-authored poster. The first bounded adoption is:
   separate `researchtrail.LocalIndex`.
 
 The adapter is deliberately presentation-neutral. It knows no HTML, colors,
-layout, filesystem, provider, or repository I/O. Its first offline gate is:
-
-```bash
-make research-trail-replay
-```
+layout, filesystem, provider, or repository I/O. Its former standalone replay
+command was retired because it was not a supported product workflow.
 
 The saved Pebble chain currently composes into 79 nodes, 59 typed evidence
 edges, four ordered research steps, three stage transitions, and 60 local

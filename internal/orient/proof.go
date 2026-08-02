@@ -3,11 +3,11 @@ package orient
 import (
 	"context"
 
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	flowproofassemble "github.com/dvordrova/repomap/internal/flowproof/assemble"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func localFlowProofInput(snapshot snapshot.Snapshot, surfaceResult *surfacediscovery.Result) flowproofassemble.Input {

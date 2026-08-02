@@ -82,12 +82,12 @@ func TestHandlerServesSourceEpisodeOnlyForInitialRun(t *testing.T) {
 	}{
 		{
 			name:               "etcd changed workspace",
-			path:               filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+			path:               filepath.Join("..", "report", "testdata", "source_episode", "etcd-put", "episode.json"),
 			changeAfterCapture: true,
 		},
 		{
 			name: "django",
-			path: filepath.Join("..", "..", "experiments", "source-episode", "django-atomic", "episode.json"),
+			path: filepath.Join("..", "report", "testdata", "source_episode", "django-atomic", "episode.json"),
 		},
 	}
 
@@ -238,7 +238,7 @@ func TestHandlerRejectsInvalidSourceEpisodeBinding(t *testing.T) {
 	t.Run("cross revision", func(t *testing.T) {
 		raw, fixture := readServerSourceEpisodeFixture(
 			t,
-			filepath.Join("..", "..", "experiments", "source-episode", "etcd-put", "episode.json"),
+			filepath.Join("..", "report", "testdata", "source_episode", "etcd-put", "episode.json"),
 		)
 		anchor := firstServerSourceEpisodeAnchor(t, fixture)
 		repo := t.TempDir()

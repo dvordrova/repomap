@@ -13,10 +13,10 @@ import (
 
 	"github.com/dvordrova/repomap/internal/analyzer/golang/gotypes"
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 // Input is the explicit local proof boundary. CommandTraces must come from the

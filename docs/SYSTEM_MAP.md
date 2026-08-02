@@ -172,7 +172,6 @@ target test references, with no model claim.
 | --- | --- | --- | --- |
 | `cmd/repomap` | works | CLI flags, provider doctor/request preview, wiring, output destination | analysis rules or model prompts |
 | `internal/orient` | works, debt | current end-to-end orientation workflow | future shared investigation state |
-| `cmd/gopls-playground` | isolated | direct analyzer experiments and human graph summaries | product orchestration |
 | `cmd/symbol-playground` | isolated | exact-symbol experiment and optional DeepSeek call | provider neutrality or persistence |
 | `cmd/symbol-evaluate` | isolated | replaying and scoring a saved model response | making network calls |
 | `cmd/investigation-playground` | isolated | start/handoff/resume wiring, capability execution, saved artifacts | reducer rules or provider registry |
@@ -345,25 +344,6 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Pass signal: a flow is navigable without invented paths.
 - Challenge independently: add a flow fixture to `internal/flowexplain` and
   compare rankings before changing prompts.
-
-### C3 — gopls static graph
-
-- Question: does gopls resolve the intended symbol and useful direct neighbours
-  under a stated build scenario?
-- Run:
-
-  ```sh
-  go run ./cmd/gopls-playground \
-    --repo ../etcd \
-    --query kvServer.Put \
-    --out tmp/evidence-examples/etcd.json \
-    --summary-out tmp/evidence-examples/etcd.md
-  ```
-
-- Pass signal: unique exact target, provenance on every relation, bounded calls,
-  and explicit warnings about static/runtime limits.
-- Challenge independently: run `./scripts/gopls_examples.sh --fetch` against
-  etcd, k6, Prometheus, NATS Server, and golangci-lint.
 
 ### C4 — Evidence vocabulary
 

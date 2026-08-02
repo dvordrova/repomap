@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	flowproofassemble "github.com/dvordrova/repomap/internal/flowproof/assemble"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestReplaySavedSyncthingOrientationSeedsPartialTracesWithoutProvider(t *testing.T) {

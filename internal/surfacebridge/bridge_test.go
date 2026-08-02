@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestFlowSeedDoesNotInventDownstreamProof(t *testing.T) {

@@ -106,14 +106,7 @@ func TestPrepareRunPresentationSourceEpisodeOrderingIsStable(t *testing.T) {
 
 	raw, episode := readSourceEpisodeFixture(
 		t,
-		filepath.Join(
-			"..",
-			"..",
-			"experiments",
-			"source-episode",
-			"etcd-put",
-			"episode.json",
-		),
+		filepath.Join("testdata", "source_episode", "etcd-put", "episode.json"),
 	)
 	canonical := authorizedSourceEpisodeReport(episode)
 	canonical.SourceIDs = nil
