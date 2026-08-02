@@ -1459,6 +1459,12 @@ func TestRunDefaultSourceEpisodeGeneratesStaticHTMLAndPassesServerBytes(t *testi
 	runGit(t, repo, "init", "--quiet")
 	runGit(t, repo, "add", "--", "go.mod", "main.go")
 	commitTestRepository(t, repo)
+	// The approved source episode pins an immutable external revision whose
+	// tree is intentionally absent from this local fixture. Keep the local
+	// analysis inputs dirty so CaptureInputs authorizes their exact captured
+	// content hashes before the test substitutes that external HEAD.
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/source-episode\n\ngo 1.24\n\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n\n")
 
 	captureAtAcceptedRevision := func(ctx context.Context, root string) (freshness.RepositoryState, error) {
 		state, err := freshness.CaptureRepository(ctx, root)

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/pavedpath"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/studymap"
 )
 
@@ -80,6 +81,109 @@ func TestLoadBoundStudyMapReviewsRevalidatesLegacyV1Attempt(t *testing.T) {
 	}
 	if len(reviews) != 1 || len(summaries) != 1 || len(issues) != 0 {
 		t.Fatalf("legacy replay reviews/summaries/issues = %d/%d/%d", len(reviews), len(summaries), len(issues))
+	}
+}
+
+func TestLoadBoundStudyMapInputsRevalidatesTypedBriefShapeAttempt(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	bundle.Documents = []studymap.Document{{
+		ID: "doc-shape-invalid", Path: "README.md", Label: "README",
+		Excerpt: "Repository documentation.",
+	}}
+	bundle.AllowedPaths = append(bundle.AllowedPaths, "README.md")
+	catalog, prompt, err := buildStudyMapBriefShapeStage(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typedBrief, err := studyMapTypedBriefShapeResponse(
+		t, prompt.User, bundle, "document_in_shape",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief, diagnostics, err := studymap.DecodeAndResolveBriefShapeProposal(typedBrief, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerDirections := directions
+	providerDirections.Directions = append([]studymap.DirectionCandidate(nil), directions.Directions...)
+	for index := range providerDirections.Directions {
+		providerDirections.Directions[index].DirectionID = ""
+	}
+	directionResponse, err := json.Marshal(providerDirections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := t.TempDir()
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), studyMapV32StageAttempt{
+		Version: 1, PromptVersion: semanticdiscovery.StudyBriefPromptVersion,
+		BundleSHA256: bundleSHA, ValidationState: "accepted",
+		BriefDiagnostics: &diagnostics, Response: typedBrief,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), studyMapV32StageAttempt{
+		Version: 1, PromptVersion: semanticdiscovery.StudyCandidatesPromptVersion,
+		BundleSHA256: bundleSHA, ValidationState: "accepted", Response: directionResponse,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeFile), brief); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeNormalizedDirectionProposal(
+		filepath.Join(runDir, studyMapDirectionsFile), directions,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loadedBrief, loadedDirections, err := loadBoundStudyMapInputs(runDir, bundle, bundleSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalV32Projection(loadedBrief, brief) || !equalV32Projection(loadedDirections, directions) {
+		t.Fatalf("replayed Brief/Directions changed: %#v / %#v", loadedBrief, loadedDirections)
+	}
+
+	diagnostics.ShapeRejected++
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), studyMapV32StageAttempt{
+		Version: 1, PromptVersion: semanticdiscovery.StudyBriefPromptVersion,
+		BundleSHA256: bundleSHA, ValidationState: "accepted",
+		BriefDiagnostics: &diagnostics, Response: typedBrief,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadBoundStudyMapInputs(runDir, bundle, bundleSHA); err == nil ||
+		!strings.Contains(err.Error(), "Brief diagnostics do not match") {
+		t.Fatalf("tampered Brief diagnostics error = %v", err)
+	}
+}
+
+func TestLoadBoundStudyMapInputsRejectsMonolithicSourceAttempt(t *testing.T) {
+	t.Parallel()
+
+	bundle, _ := studyMapV32ReviewFixture(t)
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := t.TempDir()
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapSourceAttemptFile), studyMapAttempt{
+		Version: 1, PromptVersion: semanticdiscovery.StudyMapPromptVersion,
+		BundleSHA256: bundleSHA, ValidationState: "accepted",
+		Response: json.RawMessage(`{"version":1}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadBoundStudyMapInputs(runDir, bundle, bundleSHA); err == nil ||
+		!strings.Contains(err.Error(), "typed split Study input attempts are required") {
+		t.Fatalf("monolithic source replay error = %v", err)
 	}
 }
 

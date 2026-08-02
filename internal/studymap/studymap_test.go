@@ -5,15 +5,75 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
 )
+
+func TestStudyMapUsesSharedResponseAndRecordCeilings(t *testing.T) {
+	bundle, proposal := studyMapFixture(t)
+	proposalRaw, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aboveFormerProposalCap := append(bytes.Repeat([]byte(" "), (4<<20)+1), proposalRaw...)
+	if _, err := DecodeProposal(aboveFormerProposalCap); err != nil {
+		t.Fatalf("proposal above former stage cap rejected: %v", err)
+	}
+
+	responseOversize := bytes.Repeat([]byte("x"), modelresearch.ProviderResponseByteLimit+1)
+	_, err = DecodeProposal(responseOversize)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Kind != modelresearch.ResourceLimitResponseBytes ||
+		limitErr.Limit != modelresearch.ProviderResponseByteLimit ||
+		limitErr.Observed != len(responseOversize) {
+		t.Fatalf("proposal limit = %#v", err)
+	}
+
+	record, err := BuildRecord(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordRaw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aboveFormerRecordCap := append(bytes.Repeat([]byte(" "), (4<<20)+1), recordRaw...)
+	if _, err := DecodeRecord(aboveFormerRecordCap); err != nil {
+		t.Fatalf("record above former stage cap rejected: %v", err)
+	}
+	bundleRaw, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aboveFormerBundleCap := append(bytes.Repeat([]byte(" "), (4<<20)+1), bundleRaw...)
+	if _, err := DecodeBundle(aboveFormerBundleCap); err != nil {
+		t.Fatalf("bundle above former stage cap rejected: %v", err)
+	}
+
+	recordOversize := bytes.Repeat([]byte("x"), maxRecordBytes+1)
+	for label, decode := range map[string]func([]byte) error{
+		"record": func(raw []byte) error { _, decodeErr := DecodeRecord(raw); return decodeErr },
+		"bundle": func(raw []byte) error { _, decodeErr := DecodeBundle(raw); return decodeErr },
+	} {
+		err := decode(recordOversize)
+		limitErr = nil
+		if !errors.As(err, &limitErr) ||
+			limitErr.Kind != modelresearch.ResourceLimitRecordBytes ||
+			limitErr.Limit != maxRecordBytes ||
+			limitErr.Observed != len(recordOversize) {
+			t.Errorf("%s limit = %#v", label, err)
+		}
+	}
+}
 
 func TestAnchorSourceUnionPreservesGoAndValidatesExactNonGoSource(t *testing.T) {
 	t.Parallel()
@@ -133,6 +193,26 @@ func TestBuildRecordRetainsOneAreaShapeForSmallLibrary(t *testing.T) {
 	}
 	if !reflect.DeepEqual(record.ShapeAreaIDs, proposal.ShapeAreaIDs) {
 		t.Fatalf("shape areas = %v, want %v", record.ShapeAreaIDs, proposal.ShapeAreaIDs)
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestBuildRecordPreservesExplicitEmptyShape(t *testing.T) {
+	t.Parallel()
+
+	bundle, proposal := studyMapFixture(t)
+	proposal.ShapeAreaIDs = nil
+	record, err := BuildRecord(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.ShapeAreaIDs) != 0 {
+		t.Fatalf("shape areas = %v, want explicit empty Shape", record.ShapeAreaIDs)
+	}
+	if len(record.Directions) == 0 {
+		t.Fatal("empty Shape incorrectly gated independently valid Directions")
 	}
 	if err := record.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)

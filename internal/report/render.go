@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -53,8 +54,15 @@ func init() {
 }
 
 func WriteReportJSON(data *ReportData, path string) error {
+	return writeReportJSON(data, path, maxManifestReportBytes)
+}
+
+func writeReportJSON(data *ReportData, path string, maxBytes int) error {
 	if data == nil {
 		return fmt.Errorf("report: data is required")
+	}
+	if maxBytes <= 0 {
+		return fmt.Errorf("report: positive artifact byte limit is required")
 	}
 	persisted := reportDataForPersistence(data)
 	// SourceIDs are issued by the local report server after manifest
@@ -65,7 +73,29 @@ func WriteReportJSON(data *ReportData, path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
+	b = append(b, '\n')
+	if len(b) > maxBytes {
+		return &ReportResourceLimitError{
+			LimitBytes:  maxBytes,
+			ActualBytes: len(b),
+		}
+	}
+	return os.WriteFile(path, b, 0o644)
+}
+
+// ReportResourceLimitError is a terminal report-publication resource outcome.
+// It deliberately exposes only byte counts, never report or source content.
+type ReportResourceLimitError struct {
+	LimitBytes  int
+	ActualBytes int
+}
+
+func (err *ReportResourceLimitError) Error() string {
+	if err == nil {
+		return "report: resource limit exceeded"
+	}
+	return fmt.Sprintf("report: exact artifact requires %d bytes; limit is %d bytes",
+		err.ActualBytes, err.LimitBytes)
 }
 
 func WriteReportHTML(data *ReportData, path string) error {
@@ -534,6 +564,12 @@ func generate(
 		if err := AttachSourceEpisodePresentation(data, sourceEpisodeJSON); err != nil {
 			return err
 		}
+	}
+	if authority != nil {
+		if err := completeOverviewSourceCoverage(context.Background(), data, authority); err != nil {
+			return err
+		}
+		data.CapturedInputCount = len(authority.inputs)
 	}
 
 	jsonPath := runDir + "/report.json"

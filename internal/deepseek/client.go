@@ -275,7 +275,7 @@ const maxRetries = 3
 
 const maxProviderErrorBytes = 8 * 1024
 
-const maxProviderResponseBytes = 16 * 1024 * 1024
+const maxProviderResponseBytes = modelresearch.ProviderResponseByteLimit
 
 var (
 	errJSONCompletionInvalid     = errors.New("llm response content is not valid JSON")
@@ -727,7 +727,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	content := strings.TrimSpace(choice.Message.Content)
 	completion.Content = []byte(content)
 	if choice.FinishReason == "length" {
-		return completion, false, &ResourceLimitError{
+		return completion, false, modelresearch.NewResourceLimitError(ResourceLimitError{
 			Kind:            ResourceLimitOutputTokens,
 			Observed:        parsed.Usage.CompletionTokens,
 			ObservedKnown:   parsed.Usage.CompletionTokens > 0,
@@ -735,8 +735,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			OutputTokens:    parsed.Usage.CompletionTokens,
 			ReasoningTokens: parsed.Usage.CompletionTokenDetails.ReasoningTokens,
 			FinishReason:    "length",
-			responseContent: append([]byte(nil), completion.Content...),
-		}
+		}, completion.Content)
 	}
 	if content == "" {
 		details := make([]string, 0, 4)

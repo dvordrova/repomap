@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
@@ -24,8 +25,8 @@ const (
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
-	maxSynthesisResponseBytes = 256 << 10
-	maxSynthesisRecordBytes   = 512 << 10
+	maxSynthesisResponseBytes = modelresearch.ProviderResponseByteLimit
+	maxSynthesisRecordBytes   = modelresearch.SemanticRecordByteLimit
 	maxSynthesisWarnings      = 128
 	maxRevisionBytes          = 256
 	maxProfileBytes           = 128
@@ -383,13 +384,17 @@ func RecordSynthesisResponseForLanguage(
 	if err != nil {
 		return SynthesisResult{}, err
 	}
+	if len(rawResponse) > maxSynthesisResponseBytes {
+		return SynthesisResult{}, synthesisResourceLimit(
+			modelresearch.ResourceLimitResponseBytes,
+			maxSynthesisResponseBytes,
+			len(rawResponse),
+		)
+	}
 
 	state := ResponseCaptured
 	response := append([]byte(nil), rawResponse...)
-	if len(rawResponse) > maxSynthesisResponseBytes {
-		state = ResponseOversize
-		response = nil
-	} else if synthesisResponseContainsCredential(rawResponse) {
+	if synthesisResponseContainsCredential(rawResponse) {
 		state = ResponseSensitiveOmitted
 		response = nil
 	}
@@ -428,8 +433,15 @@ func RecordSynthesisResponseForLanguage(
 // ReplaySynthesis strictly decodes one saved record, rebuilds the exact local
 // request, and re-applies the saved provider response without a provider call.
 func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []byte) (Landscape, error) {
-	if len(saved) == 0 || len(saved) > maxSynthesisRecordBytes {
+	if len(saved) == 0 {
 		return Landscape{}, fmt.Errorf("componentmap: saved synthesis record is empty or too large")
+	}
+	if len(saved) > maxSynthesisRecordBytes {
+		return Landscape{}, synthesisResourceLimit(
+			modelresearch.ResourceLimitRecordBytes,
+			maxSynthesisRecordBytes,
+			len(saved),
+		)
 	}
 	var record SynthesisRecord
 	if err := decodeStrictJSON(saved, &record); err != nil {
@@ -463,8 +475,15 @@ func ReplaySynthesis(bundle CandidateBundle, repositoryRevision string, saved []
 // component-landscape-v2 and architecture-grounding-v3 records; no old
 // validation outcome, cache key, or warning is trusted.
 func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landscape, error) {
-	if len(saved) == 0 || len(saved) > maxSynthesisRecordBytes {
+	if len(saved) == 0 {
 		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis record is empty or too large")
+	}
+	if len(saved) > maxSynthesisRecordBytes {
+		return Landscape{}, synthesisResourceLimit(
+			modelresearch.ResourceLimitRecordBytes,
+			maxSynthesisRecordBytes,
+			len(saved),
+		)
 	}
 	var record struct {
 		Version            int    `json:"version"`
@@ -624,7 +643,14 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	}
 	switch record.Call.ResponseState {
 	case ResponseCaptured:
-		if record.Call.ResponseBytes != len(record.Call.Response) || len(record.Call.Response) > maxSynthesisResponseBytes {
+		if len(record.Call.Response) > maxSynthesisResponseBytes {
+			return synthesisResourceLimit(
+				modelresearch.ResourceLimitResponseBytes,
+				maxSynthesisResponseBytes,
+				len(record.Call.Response),
+			)
+		}
+		if record.Call.ResponseBytes != len(record.Call.Response) {
 			return fmt.Errorf("componentmap: captured synthesis response byte count is invalid")
 		}
 		if synthesisResponseContainsCredential(record.Call.Response) {
@@ -657,10 +683,11 @@ func normalizeSynthesisOutputLanguage(value string) (string, error) {
 
 func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, response []byte) (Landscape, error) {
 	if state == ResponseOversize {
-		return synthesisResponseFallback(bundle, newDiagnostic(
-			"response.too_large",
-			"provider response exceeded the bounded synthesis response limit and was not retained",
-		))
+		return Landscape{}, synthesisResourceLimit(
+			modelresearch.ResourceLimitResponseBytes,
+			maxSynthesisResponseBytes,
+			maxSynthesisResponseBytes+1,
+		)
 	}
 	if state == ResponseSensitiveOmitted {
 		return synthesisResponseFallback(bundle, newDiagnostic(
@@ -720,11 +747,6 @@ type synthesisResponseError struct {
 }
 
 func extractProposalObject(raw []byte) ([]byte, *Diagnostic, *synthesisResponseError) {
-	if len(raw) > maxSynthesisResponseBytes {
-		return nil, nil, &synthesisResponseError{
-			code: "response.too_large", message: "provider response exceeded the bounded synthesis response limit",
-		}
-	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no json object"}
@@ -758,6 +780,17 @@ func extractProposalObject(raw []byte) ([]byte, *Diagnostic, *synthesisResponseE
 		return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no recoverable json object"}
 	default:
 		return nil, nil, &synthesisResponseError{code: "response.ambiguous_json", message: "provider response contains several json objects"}
+	}
+}
+
+func synthesisResourceLimit(
+	kind modelresearch.ResourceLimitKind,
+	limit int,
+	observed int,
+) *modelresearch.ResourceLimitError {
+	return &modelresearch.ResourceLimitError{
+		Stage: "architecture_synthesis", Kind: kind,
+		Limit: limit, Observed: observed, ObservedKnown: true,
 	}
 }
 

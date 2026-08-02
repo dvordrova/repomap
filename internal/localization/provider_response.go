@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 const (
 	ProviderResponseVersion  = 1
-	maxProviderResponseBytes = 2 << 20
+	maxProviderResponseBytes = modelresearch.ProviderResponseByteLimit
 )
 
 // ProviderResponse is the compact provider-facing projection envelope. Stable
@@ -81,10 +83,15 @@ func DecodeRussianProviderResponse(
 	if err := validateInput(canonical, input); err != nil {
 		return Projection{}, err
 	}
+	if len(data) > maxProviderResponseBytes {
+		return Projection{}, &modelresearch.ResourceLimitError{
+			Stage: "localization", Kind: modelresearch.ResourceLimitResponseBytes,
+			Limit: maxProviderResponseBytes, Observed: len(data), ObservedKnown: true,
+		}
+	}
 	if input.SourceLocale != LocaleEnglish ||
 		input.TargetLocale != LocaleRussian ||
-		len(data) == 0 || len(data) > maxProviderResponseBytes ||
-		!utf8.Valid(data) {
+		len(data) == 0 || !utf8.Valid(data) {
 		return Projection{}, fmt.Errorf("localization: invalid provider response")
 	}
 	var response ProviderResponse

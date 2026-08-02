@@ -3,6 +3,7 @@ package studymap
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
 )
 
@@ -182,6 +184,60 @@ func TestBriefShapeAcceptsOneExactAreaForSmallLibrary(t *testing.T) {
 	}
 	if !reflect.DeepEqual(decoded.ShapeAreaIDs, proposal.ShapeAreaIDs) {
 		t.Fatalf("shape areas = %v, want %v", decoded.ShapeAreaIDs, proposal.ShapeAreaIDs)
+	}
+}
+
+func TestStudyResponsesUseSharedEnvelopeAndReturnTypedLimit(t *testing.T) {
+	t.Parallel()
+
+	_, legacy := studyMapFixture(t)
+	brief := mustEditingJSON(t, briefShapeFromLegacy(legacy))
+	aboveFormerCap := append(bytes.Repeat([]byte(" "), (4<<20)+1), brief...)
+	if _, err := DecodeBriefShapeProposal(aboveFormerCap); err != nil {
+		t.Fatalf("brief above former stage cap rejected: %v", err)
+	}
+
+	oversize := bytes.Repeat([]byte("x"), maxEditingArtifactBytes+1)
+	_, err := DecodeBriefShapeProposal(oversize)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Stage != "repository_brief_shape" ||
+		limitErr.Kind != modelresearch.ResourceLimitResponseBytes ||
+		limitErr.Limit != maxEditingArtifactBytes ||
+		limitErr.Observed != len(oversize) {
+		t.Fatalf("terminal response limit = %#v", err)
+	}
+
+	directions := directionsFromLegacy(t, legacy)
+	review := mustEditingJSON(t, directReview(directions.Directions[0]))
+	aboveFormerCap = append(bytes.Repeat([]byte(" "), (4<<20)+1), review...)
+	if _, err := DecodeReviewProposal(aboveFormerCap); err != nil {
+		t.Fatalf("review above former stage cap rejected: %v", err)
+	}
+	_, err = DecodeReviewProposal(oversize)
+	limitErr = nil
+	if !errors.As(err, &limitErr) || limitErr.Stage != "reading_pack_review" {
+		t.Fatalf("review terminal response limit = %#v", err)
+	}
+
+	bundle, _ := studyMapFixture(t)
+	reviewBundle, err := BuildReviewBundle(bundle, directions.Directions[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewBundleRaw := mustEditingJSON(t, reviewBundle)
+	aboveFormerRecordCap := append(bytes.Repeat([]byte(" "), (64<<10)+1), reviewBundleRaw...)
+	if _, err := DecodeReviewBundle(aboveFormerRecordCap); err != nil {
+		t.Fatalf("review bundle above former stage cap rejected: %v", err)
+	}
+	recordOversize := bytes.Repeat([]byte("x"), maxReviewBundleRecordBytes+1)
+	_, err = DecodeReviewBundle(recordOversize)
+	limitErr = nil
+	if !errors.As(err, &limitErr) ||
+		limitErr.Kind != modelresearch.ResourceLimitRecordBytes ||
+		limitErr.Limit != maxReviewBundleRecordBytes ||
+		limitErr.Observed != len(recordOversize) {
+		t.Fatalf("review bundle record limit = %#v", err)
 	}
 }
 

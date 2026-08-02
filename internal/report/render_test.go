@@ -3,6 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -16,6 +17,23 @@ import (
 )
 
 var update = flag.Bool("update", false, "update golden files")
+
+func TestWriteReportJSONResourceLimitIsTypedAndDoesNotPublish(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "report.json")
+	err := writeReportJSON(&ReportData{RepoName: "exact-report"}, path, 32)
+	var limitErr *ReportResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("writeReportJSON() error = %v, want ReportResourceLimitError", err)
+	}
+	if limitErr.LimitBytes != 32 || limitErr.ActualBytes <= limitErr.LimitBytes {
+		t.Fatalf("resource evidence = %#v", limitErr)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("resource failure published report: %v", statErr)
+	}
+}
 
 func TestWriteReportHTML_Golden(t *testing.T) {
 	latency := int64(432)

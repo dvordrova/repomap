@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,9 +47,12 @@ type guidedTourLeafCall struct {
 }
 
 type guidedTourLeafCompletion struct {
-	result   guidedtour.LeafResult
-	response modelresearch.StageResponse
-	failure  *guidedTourLeafFailure
+	result      guidedtour.LeafResult
+	response    modelresearch.StageResponse
+	cacheInput  modelresearch.StageCacheInput
+	failure     *guidedTourLeafFailure
+	taskID      string
+	terminalErr error
 }
 
 func ensureGuidedTourFanoutExperiment(
@@ -152,6 +156,13 @@ func ensureGuidedTourFanoutExperiment(
 			parseErr = guidedtour.ValidateLeafArtifact(task, artifact)
 		}
 		if parseErr != nil {
+			if isSemanticResourceLimit(parseErr) {
+				return terminateGuidedTourFanoutResourceLimit(
+					runDir,
+					outcome,
+					fmt.Errorf("guided tour fan-out: cached leaf resource limit: %w", parseErr),
+				)
+			}
 			if err := modelresearch.InvalidateStageResponse(cacheInput); err != nil {
 				return outcome, fmt.Errorf(
 					"guided tour fan-out: invalidate rejected leaf cache %q: %w",
@@ -216,10 +227,40 @@ func ensureGuidedTourFanoutExperiment(
 	}
 	wait.Wait()
 	close(completionChannel)
+	terminal := make([]guidedTourLeafCompletion, 0)
+	successful := make([]guidedTourLeafCompletion, 0)
 	for completion := range completionChannel {
 		addGuidedTourResponseMetrics(&outcome, completion.response)
+		if completion.terminalErr != nil {
+			terminal = append(terminal, completion)
+			continue
+		}
 		if completion.failure != nil {
 			failures = append(failures, *completion.failure)
+			continue
+		}
+		successful = append(successful, completion)
+	}
+	if len(terminal) > 0 {
+		sort.Slice(terminal, func(i, j int) bool {
+			return terminal[i].taskID < terminal[j].taskID
+		})
+		return terminateGuidedTourFanoutResourceLimit(
+			runDir,
+			outcome,
+			fmt.Errorf("guided tour fan-out: leaf resource limit: %w", terminal[0].terminalErr),
+		)
+	}
+	sort.Slice(successful, func(i, j int) bool {
+		return successful[i].taskID < successful[j].taskID
+	})
+	for _, completion := range successful {
+		if _, err := modelresearch.SaveStageResponse(completion.cacheInput, completion.response); err != nil {
+			failures = append(failures, guidedTourLeafFailure{
+				TaskID: completion.result.Task.ID,
+				Kind:   completion.result.Task.Kind,
+				Reason: "validated leaf cache write failed",
+			})
 			continue
 		}
 		validResults = append(validResults, completion.result)
@@ -296,6 +337,13 @@ func ensureGuidedTourFanoutExperiment(
 			cached.Content,
 		)
 		if cacheErr != nil {
+			if isSemanticResourceLimit(cacheErr) {
+				return terminateGuidedTourFanoutResourceLimit(
+					runDir,
+					outcome,
+					fmt.Errorf("guided tour fan-out: cached fan-in resource limit: %w", cacheErr),
+				)
+			}
 			if err := modelresearch.InvalidateStageResponse(finalCache); err != nil {
 				outcome.ValidationState = "invalid_fan_in_cache"
 				return outcome, fmt.Errorf("guided tour fan-out: invalidate rejected fan-in cache: %w", err)
@@ -356,7 +404,11 @@ func ensureGuidedTourFanoutExperiment(
 	}
 	if callErr != nil {
 		outcome.ValidationState = "failed_fan_in"
-		return outcome, fmt.Errorf("guided tour fan-out: fan-in provider call: %w", callErr)
+		wrapped := fmt.Errorf("guided tour fan-out: fan-in provider call: %w", callErr)
+		if isSemanticResourceLimit(callErr) {
+			return terminateGuidedTourFanoutResourceLimit(runDir, outcome, wrapped)
+		}
+		return outcome, wrapped
 	}
 	artifact, err := validateGuidedTourFanInResponse(
 		bundle,
@@ -365,7 +417,11 @@ func ensureGuidedTourFanoutExperiment(
 	)
 	if err != nil {
 		outcome.ValidationState = "rejected_fan_in"
-		return outcome, fmt.Errorf("guided tour fan-out: validate fan-in response: %w", err)
+		wrapped := fmt.Errorf("guided tour fan-out: validate fan-in response: %w", err)
+		if isSemanticResourceLimit(err) {
+			return terminateGuidedTourFanoutResourceLimit(runDir, outcome, wrapped)
+		}
+		return outcome, wrapped
 	}
 	if _, err := modelresearch.SaveStageResponse(finalCache, finalResponse); err != nil {
 		return outcome, fmt.Errorf("guided tour fan-out: save validated fan-in cache: %w", err)
@@ -428,6 +484,15 @@ func executeGuidedTourLeaf(
 		LatencyMillis:         time.Since(started).Milliseconds(),
 	}
 	if err != nil {
+		if isSemanticResourceLimit(err) {
+			return guidedTourLeafCompletion{
+				response: response, taskID: call.task.ID,
+				terminalErr: fmt.Errorf(
+					"guided tour fan-out: leaf provider call: %w",
+					err,
+				),
+			}
+		}
 		return guidedTourLeafCompletion{
 			response: response,
 			failure: &guidedTourLeafFailure{
@@ -441,6 +506,15 @@ func executeGuidedTourLeaf(
 		err = guidedtour.ValidateLeafArtifact(call.task, artifact)
 	}
 	if err != nil {
+		if isSemanticResourceLimit(err) {
+			return guidedTourLeafCompletion{
+				response: response, taskID: call.task.ID,
+				terminalErr: fmt.Errorf(
+					"guided tour fan-out: validate leaf response: %w",
+					err,
+				),
+			}
+		}
 		return guidedTourLeafCompletion{
 			response: response,
 			failure: &guidedTourLeafFailure{
@@ -463,17 +537,11 @@ func executeGuidedTourLeaf(
 		}
 	}
 	response.Content = canonicalArtifact
-	if _, err := modelresearch.SaveStageResponse(call.cacheInput, response); err != nil {
-		return guidedTourLeafCompletion{
-			response: response,
-			failure: &guidedTourLeafFailure{
-				TaskID: call.task.ID, Kind: call.task.Kind, Reason: "validated leaf cache write failed",
-			},
-		}
-	}
 	return guidedTourLeafCompletion{
-		result:   guidedtour.LeafResult{Task: call.task, Artifact: artifact},
-		response: response,
+		result:     guidedtour.LeafResult{Task: call.task, Artifact: artifact},
+		response:   response,
+		cacheInput: call.cacheInput,
+		taskID:     call.task.ID,
 	}
 }
 
@@ -546,13 +614,28 @@ func addGuidedTourResponseMetrics(
 }
 
 func removeGuidedTourFanoutOutputs(runDir string) error {
-	for _, name := range []string{guidedTourFanoutFile, guidedTourFanInFile} {
+	for _, name := range []string{
+		guidedTourFanoutFile,
+		guidedTourFanoutLeavesFile,
+		guidedTourFanInFile,
+	} {
 		artifactPath := filepath.Join(runDir, name)
 		if err := os.Remove(artifactPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("guided tour fan-out: remove stale %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+func terminateGuidedTourFanoutResourceLimit(
+	runDir string,
+	outcome guidedTourOutcome,
+	err error,
+) (guidedTourOutcome, error) {
+	if cleanupErr := removeGuidedTourFanoutOutputs(runDir); cleanupErr != nil {
+		return outcome, errors.Join(err, cleanupErr)
+	}
+	return outcome, err
 }
 
 func writeGuidedTourFanInArtifact(

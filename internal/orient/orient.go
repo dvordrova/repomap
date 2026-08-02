@@ -14,6 +14,8 @@ import (
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -287,6 +289,34 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
+	}
+	if dw != nil && s.GoFacts != nil {
+		catalog := surfacediscovery.TriggerCatalog{}
+		if successfulSurfaceResult != nil {
+			catalog = successfulSurfaceResult.Catalog
+		}
+		atlas, err := goadapter.Project(goadapter.Input{
+			RepositoryName: s.RepoName,
+			Facts:          *s.GoFacts,
+			Catalog:        catalog,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("project repository Atlas: %w", err)
+		}
+		encoded, err := repositoryatlas.CanonicalJSON(atlas)
+		if err != nil {
+			return nil, fmt.Errorf("encode repository Atlas: %w", err)
+		}
+		if err := dw.WriteValidatedFile(
+			repositoryatlas.ArtifactFilename,
+			encoded,
+			func(saved []byte) error {
+				_, validateErr := repositoryatlas.DecodeCanonicalJSON(saved)
+				return validateErr
+			},
+		); err != nil {
+			return nil, fmt.Errorf("write repository Atlas: %w", err)
 		}
 	}
 

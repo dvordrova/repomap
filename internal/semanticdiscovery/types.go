@@ -20,7 +20,7 @@ const (
 	GoldenMechanismPromptVersion   = "semantic-golden-mechanism-json-v4"
 	OnboardingEditorPromptVersion  = "repository-onboarding-editor-json-v1"
 	StudyMapPromptVersion          = "repository-study-map-json-v1"
-	StudyBriefPromptVersion        = "repository-brief-shape-json-v2"
+	StudyBriefPromptVersion        = "repository-brief-shape-json-v3"
 	StudyCandidatesPromptVersion   = "repository-study-candidates-json-v5"
 	ReadingPackReviewPromptVersion = "repository-reading-pack-review-json-v2"
 

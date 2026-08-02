@@ -3,6 +3,7 @@ package componentmap
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
@@ -379,7 +381,6 @@ func TestInvalidSynthesisOutputFallsBackAndReplays(t *testing.T) {
 		{name: "junk", response: []byte("not json at all"), diagnostic: "response.no_json", state: ResponseCaptured},
 		{name: "ambiguous objects", response: append(append(append([]byte(nil), proposal...), '\n'), proposal...), diagnostic: "response.ambiguous_json", state: ResponseCaptured},
 		{name: "invalid proposal type", response: []byte(`{"version":2,"subsystems":"not-an-array"}`), diagnostic: "response.invalid_proposal", state: ResponseCaptured},
-		{name: "oversize", response: bytes.Repeat([]byte("x"), maxSynthesisResponseBytes+1), diagnostic: "response.too_large", state: ResponseOversize},
 	}
 
 	for _, test := range tests {
@@ -399,9 +400,6 @@ func TestInvalidSynthesisOutputFallsBackAndReplays(t *testing.T) {
 			if result.Record.Call.ResponseState != test.state || result.Record.Call.Metadata.FallbackReason != FallbackRejectedMalformed {
 				t.Fatalf("saved call = %#v", result.Record.Call)
 			}
-			if test.state == ResponseOversize && (len(result.Record.Call.Response) != 0 || result.Record.Call.ResponseBytes != len(test.response)) {
-				t.Fatalf("oversize response was not bounded: %#v", result.Record.Call)
-			}
 			saved, err := json.Marshal(result.Record)
 			if err != nil {
 				t.Fatal(err)
@@ -414,6 +412,46 @@ func TestInvalidSynthesisOutputFallsBackAndReplays(t *testing.T) {
 				t.Fatal("invalid response fallback did not replay deterministically")
 			}
 		})
+	}
+}
+
+func TestSynthesisResponseUsesSharedEnvelopeAndResourceLimitIsTerminal(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	proposal := validSynthesisProposalJSON(t, bundle)
+	response := append(bytes.Repeat([]byte(" "), (256<<10)+1), proposal...)
+	result, err := RecordSynthesisResponse(
+		bundle, "revision-a", "test", "test", time.Millisecond, response,
+	)
+	if err != nil {
+		t.Fatalf("response above former stage cap rejected: %v", err)
+	}
+	if result.Landscape.Fallback || result.Record.Call.ResponseState != ResponseCaptured {
+		t.Fatalf("response above former stage cap used fallback/omission: %#v", result)
+	}
+
+	oversize := bytes.Repeat([]byte("x"), maxSynthesisResponseBytes+1)
+	limited, err := RecordSynthesisResponse(
+		bundle, "revision-a", "test", "test", time.Millisecond, oversize,
+	)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) ||
+		limitErr.Kind != modelresearch.ResourceLimitResponseBytes ||
+		limitErr.Limit != maxSynthesisResponseBytes ||
+		limitErr.Observed != len(oversize) ||
+		limited.Landscape.Fallback || limited.Record.Call != nil {
+		t.Fatalf("terminal response limit = result %#v, error %#v", limited, limitErr)
+	}
+
+	_, err = ReplaySynthesis(
+		bundle,
+		"revision-a",
+		bytes.Repeat([]byte("x"), maxSynthesisRecordBytes+1),
+	)
+	limitErr = nil
+	if !errors.As(err, &limitErr) || limitErr.Kind != modelresearch.ResourceLimitRecordBytes {
+		t.Fatalf("record limit error = %#v, want typed record resource limit", err)
 	}
 }
 

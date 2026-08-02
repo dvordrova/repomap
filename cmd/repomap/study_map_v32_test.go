@@ -110,6 +110,11 @@ type studyMapV32ResourceLimitProvider struct {
 	calls int
 }
 
+type studyMapV32OversizeReviewProvider struct {
+	calls    int
+	response []byte
+}
+
 func (stub *studyMapV32ResourceLimitProvider) SemanticDiscoveryPromptJSON(
 	prompt semanticdiscovery.Prompt,
 ) ([]byte, error) {
@@ -128,6 +133,22 @@ func (stub *studyMapV32ResourceLimitProvider) DiscoverSemanticsMeasured(
 			Limit: 128, Observed: 128, ObservedKnown: true,
 			FinishReason: "length",
 		}
+}
+
+func (stub *studyMapV32OversizeReviewProvider) SemanticDiscoveryPromptJSON(
+	prompt semanticdiscovery.Prompt,
+) ([]byte, error) {
+	return json.Marshal(prompt)
+}
+
+func (stub *studyMapV32OversizeReviewProvider) DiscoverSemanticsMeasured(
+	_ context.Context,
+	_ semanticdiscovery.Prompt,
+) (modelresearch.ProviderResult, error) {
+	stub.calls++
+	return modelresearch.ProviderResult{
+		Content: stub.response, Attempts: 1, ResponseBytes: len(stub.response),
+	}, nil
 }
 
 func TestPrepareStudyMapV32ResourceLimitSuppressesLaterStages(t *testing.T) {
@@ -150,6 +171,54 @@ func TestPrepareStudyMapV32ResourceLimitSuppressesLaterStages(t *testing.T) {
 		if _, statErr := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(statErr) {
 			t.Fatalf("later-stage artifact %s exists or stat failed: %v", name, statErr)
 		}
+	}
+}
+
+func TestReviewStudyMapDirectionsDecodeResourceLimitIsTerminal(t *testing.T) {
+	bundle, directions := studyMapV32ReviewFixture(t)
+	directions.Directions = append(
+		[]studymap.DirectionCandidate(nil),
+		directions.Directions[:1]...,
+	)
+	provider := &studyMapV32OversizeReviewProvider{
+		response: bytes.Repeat(
+			[]byte("x"),
+			modelresearch.ProviderResponseByteLimit+1,
+		),
+	}
+	runDir := t.TempDir()
+	reviews, summaries, stages, issues, err := reviewStudyMapDirections(
+		context.Background(),
+		runDir,
+		bundle,
+		directions,
+		"fixture-bundle-sha",
+		provider,
+	)
+	var limitErr *deepseek.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("reviewStudyMapDirections() error = %v, want ResourceLimitError", err)
+	}
+	if limitErr.Kind != deepseek.ResourceLimitResponseBytes ||
+		limitErr.Limit != modelresearch.ProviderResponseByteLimit ||
+		provider.calls != 1 {
+		t.Fatalf("resource error/provider calls = %#v/%d", limitErr, provider.calls)
+	}
+	if len(reviews) != 0 || len(summaries) != 0 || len(stages) != 0 || len(issues) != 0 {
+		t.Fatalf(
+			"terminal results = reviews:%d summaries:%d stages:%d issues:%d",
+			len(reviews), len(summaries), len(stages), len(issues),
+		)
+	}
+	if _, statErr := os.Stat(filepath.Join(runDir, studyMapReviewsFile)); !os.IsNotExist(statErr) {
+		t.Fatalf("terminal resource limit published reviews: %v", statErr)
+	}
+	attempts, readErr := os.ReadDir(filepath.Join(runDir, studyMapReviewAttemptsDir))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("terminal resource limit published review attempts: %v", attempts)
 	}
 }
 
@@ -254,6 +323,7 @@ type studyMapV32TypedRoundTripProvider struct {
 	t          *testing.T
 	bundle     studymap.Bundle
 	directions studymap.DirectionProposal
+	briefMode  string
 
 	mu              sync.Mutex
 	briefSystem     string
@@ -290,19 +360,9 @@ func (stub *studyMapV32TypedRoundTripProvider) DiscoverSemanticsMeasured(
 	var err error
 	switch prompt.Version {
 	case semanticdiscovery.StudyBriefPromptVersion:
-		anchorID := stub.bundle.Anchors[0].ID
-		raw, err = json.Marshal(studymap.BriefShapeProposal{
-			Version:        studymap.BriefShapeProposalVersion,
-			RepositoryType: studymap.RepositoryLibrary,
-			Brief: studymap.Brief{
-				WhatItIs:              studymap.BriefStatement{Text: "This is a bounded source fixture.", SupportIDs: []string{anchorID}},
-				Problem:               studymap.BriefStatement{Text: "It demonstrates exact Study editing.", SupportIDs: []string{anchorID}},
-				MainInput:             studymap.BriefStatement{Text: "A developer starts from source.", SupportIDs: []string{anchorID}},
-				CentralResponsibility: studymap.BriefStatement{Text: "The source defines bounded work.", SupportIDs: []string{anchorID}},
-				ObservableResult:      studymap.BriefStatement{Text: "The source exposes a result.", SupportIDs: []string{anchorID}},
-			},
-			ShapeAreaIDs: []string{stub.bundle.Areas[0].ID},
-		})
+		raw, err = studyMapTypedBriefShapeResponse(
+			stub.t, prompt.User, stub.bundle, stub.briefMode,
+		)
 	case semanticdiscovery.StudyCandidatesPromptVersion:
 		raw, err = studyMapTypedDirectionResponse(stub.t, prompt.User, stub.bundle, stub.directions)
 	case semanticdiscovery.ReadingPackReviewPromptVersion:
@@ -381,16 +441,16 @@ func TestPrepareStudyMapV32UsesTypedDirectionSeamAndKeepsCanonicalPublication(t 
 	directionPrompt := provider.directionPrompt
 	reviewPrompts := append([]string(nil), provider.reviewPrompts...)
 	provider.mu.Unlock()
-	promptBundle, err := json.Marshal(bundle.PromptBundle())
-	if err != nil {
-		t.Fatal(err)
-	}
 	if briefSystem != studyMapV32SystemPrompt ||
-		briefPrompt != studyMapV32SharedInput+string(promptBundle)+studyMapBriefShapeTask ||
-		!strings.Contains(briefSystem, "opaque repository IDs") ||
-		strings.Contains(briefSystem, "request-local typed references") ||
-		!strings.Contains(briefPrompt, bundle.Anchors[0].ID) {
-		t.Fatal("BriefShape provider request changed at the candidate-only typed-reference seam")
+		!strings.Contains(briefSystem, "request-local typed references") ||
+		!strings.Contains(briefPrompt, `"catalog_ref":"b_`) ||
+		!strings.Contains(briefPrompt, `"anchor_ref":"a1"`) {
+		t.Fatal("BriefShape provider request did not use exact typed references")
+	}
+	for _, anchor := range bundle.Anchors {
+		if strings.Contains(briefPrompt, anchor.ID) {
+			t.Fatalf("BriefShape provider prompt leaked canonical anchor id %q", anchor.ID)
+		}
 	}
 	if directionSystem != studyMapDirectionSystemPrompt ||
 		!strings.Contains(directionSystem, "request-local typed references") {
@@ -419,6 +479,171 @@ func TestPrepareStudyMapV32UsesTypedDirectionSeamAndKeepsCanonicalPublication(t 
 	if err := record.Validate(); err != nil {
 		t.Fatalf("typed direction publication did not produce a valid canonical record: %v", err)
 	}
+}
+
+func TestPrepareStudyMapV32OmitsDocumentFromShapeAndPublishesSixAreas(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	for index := 1; index < 6; index++ {
+		bundle.Areas = append(bundle.Areas, studymap.Area{
+			ID:             fmt.Sprintf("area-extra-%d", index),
+			Name:           fmt.Sprintf("Extra %d", index),
+			Responsibility: "An additional exact repository area.",
+		})
+	}
+	bundle.Documents = []studymap.Document{{
+		ID: "doc-b335630551682c19", Path: "README.md", Label: "README",
+		Excerpt: "Repository documentation.",
+	}}
+	bundle.AllowedPaths = append(bundle.AllowedPaths, "README.md")
+	provider := &studyMapV32TypedRoundTripProvider{
+		t: t, bundle: bundle, directions: directions,
+		briefMode: "document_in_shape",
+	}
+	runDir := t.TempDir()
+	record, reduction, stages, err := prepareStudyMapV32(
+		context.Background(), runDir, bundle, provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.ShapeAreaIDs) != 6 || len(record.Directions) == 0 ||
+		reduction.Reviewed != len(directions.Directions) ||
+		len(stages) != 2+len(directions.Directions) {
+		t.Fatalf(
+			"Casdoor-shape areas/directions/reviewed/stages = %d/%d/%d/%d",
+			len(record.ShapeAreaIDs), len(record.Directions), reduction.Reviewed, len(stages),
+		)
+	}
+	var attempt studyMapV32StageAttempt
+	if err := readV32ReplayJSON(
+		filepath.Join(runDir, studyMapBriefShapeAttempt), &attempt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if attempt.ValidationState != "accepted" || attempt.BriefDiagnostics == nil ||
+		attempt.BriefDiagnostics.ShapeAccepted != 6 ||
+		attempt.BriefDiagnostics.ShapeRejected != 1 ||
+		len(attempt.BriefDiagnostics.Issues) != 1 ||
+		attempt.BriefDiagnostics.Issues[0].Code != "wrong_kind_area_ref" {
+		t.Fatalf("Casdoor-shape attempt = %#v", attempt)
+	}
+	for _, areaID := range record.ShapeAreaIDs {
+		if areaID == bundle.Documents[0].ID {
+			t.Fatal("document identity entered canonical Shape")
+		}
+	}
+}
+
+func TestPrepareStudyMapV32PublishesDirectionsWithExplicitEmptyShape(t *testing.T) {
+	t.Parallel()
+
+	bundle, directions := studyMapV32ReviewFixture(t)
+	bundle.Documents = []studymap.Document{{
+		ID: "doc-shape-invalid", Path: "README.md", Label: "README",
+		Excerpt: "Repository documentation.",
+	}}
+	bundle.AllowedPaths = append(bundle.AllowedPaths, "README.md")
+	provider := &studyMapV32TypedRoundTripProvider{
+		t: t, bundle: bundle, directions: directions,
+		briefMode: "all_invalid_shape",
+	}
+	runDir := t.TempDir()
+	record, reduction, stages, err := prepareStudyMapV32(
+		context.Background(), runDir, bundle, provider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.ShapeAreaIDs) != 0 || len(record.Directions) == 0 ||
+		reduction.Reviewed != len(directions.Directions) ||
+		len(stages) != 2+len(directions.Directions) {
+		t.Fatalf(
+			"empty-shape areas/directions/reviewed/stages = %d/%d/%d/%d",
+			len(record.ShapeAreaIDs), len(record.Directions), reduction.Reviewed, len(stages),
+		)
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("empty Shape blocked the reviewed canonical record: %v", err)
+	}
+	var attempt studyMapV32StageAttempt
+	if err := readV32ReplayJSON(
+		filepath.Join(runDir, studyMapBriefShapeAttempt), &attempt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if attempt.ValidationState != "accepted" || attempt.BriefDiagnostics == nil ||
+		attempt.BriefDiagnostics.ShapeAccepted != 0 ||
+		attempt.BriefDiagnostics.ShapeRejected != 1 {
+		t.Fatalf("empty-shape attempt = %#v", attempt)
+	}
+}
+
+func studyMapTypedBriefShapeResponse(
+	t *testing.T,
+	user string,
+	bundle studymap.Bundle,
+	mode string,
+) ([]byte, error) {
+	t.Helper()
+	input := strings.TrimPrefix(user, studyMapV32SharedInput)
+	marker := strings.Index(input, "\n\nTask:")
+	if marker < 0 {
+		return nil, errors.New("typed Brief/Shape fixture bundle marker is absent")
+	}
+	var wire struct {
+		CatalogRef string `json:"catalog_ref"`
+		Areas      []struct {
+			AreaRef string `json:"area_ref"`
+		} `json:"areas"`
+		Anchors []struct {
+			AnchorRef string `json:"anchor_ref"`
+		} `json:"code_anchors"`
+		Documents []struct {
+			DocumentRef string `json:"document_ref"`
+		} `json:"documents"`
+	}
+	if err := json.Unmarshal([]byte(input[:marker]), &wire); err != nil {
+		return nil, err
+	}
+	if len(wire.Anchors) == 0 {
+		return nil, errors.New("typed Brief/Shape fixture has no anchor ref")
+	}
+	statement := func(text string) map[string]any {
+		return map[string]any{"text": text, "support_refs": []string{wire.Anchors[0].AnchorRef}}
+	}
+	shape := make([]string, 0, len(wire.Areas)+1)
+	for _, area := range wire.Areas {
+		shape = append(shape, area.AreaRef)
+	}
+	switch mode {
+	case "":
+	case "document_in_shape":
+		if len(wire.Documents) == 0 {
+			return nil, errors.New("typed Brief/Shape fixture has no document ref")
+		}
+		shape = append(shape, wire.Documents[0].DocumentRef)
+	case "all_invalid_shape":
+		if len(wire.Documents) == 0 {
+			return nil, errors.New("typed Brief/Shape fixture has no document ref")
+		}
+		shape = []string{wire.Documents[0].DocumentRef}
+	default:
+		return nil, fmt.Errorf("unknown typed Brief/Shape fixture mode %q", mode)
+	}
+	return json.Marshal(map[string]any{
+		"version": 1, "catalog_ref": wire.CatalogRef,
+		"repository_type": studymap.RepositoryLibrary,
+		"brief": map[string]any{
+			"what_it_is":             statement("This is a bounded source fixture."),
+			"problem":                statement("It demonstrates exact Study editing."),
+			"main_input":             statement("A developer starts from source."),
+			"central_responsibility": statement("The source defines bounded work."),
+			"observable_result":      statement("The source exposes a result."),
+		},
+		"shape_area_refs": shape,
+	})
 }
 
 func studyMapTypedDirectionResponse(

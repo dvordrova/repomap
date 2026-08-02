@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/artifactrole"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
 )
@@ -44,7 +45,7 @@ const (
 	MaxDocuments  = 12
 	MaxMechanisms = 12
 
-	maxRecordBytes = 4 << 20
+	maxRecordBytes = modelresearch.SemanticRecordByteLimit
 
 	maxExactSourceLines     = 512
 	maxExactSourceLineBytes = 64 << 10
@@ -295,8 +296,15 @@ func (bundle Bundle) PromptBundle() PromptBundle {
 }
 
 func DecodeProposal(raw []byte) (Proposal, error) {
-	if len(raw) == 0 || len(raw) > maxRecordBytes {
+	if len(raw) == 0 {
 		return Proposal{}, fmt.Errorf("study map: proposal is outside bounds")
+	}
+	if len(raw) > modelresearch.ProviderResponseByteLimit {
+		return Proposal{}, studyMapResourceLimit(
+			modelresearch.ResourceLimitResponseBytes,
+			modelresearch.ProviderResponseByteLimit,
+			len(raw),
+		)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -317,8 +325,15 @@ func DecodeProposal(raw []byte) (Proposal, error) {
 }
 
 func DecodeRecord(raw []byte) (Record, error) {
-	if len(raw) == 0 || len(raw) > maxRecordBytes {
+	if len(raw) == 0 {
 		return Record{}, fmt.Errorf("study map: record is outside bounds")
+	}
+	if len(raw) > maxRecordBytes {
+		return Record{}, studyMapResourceLimit(
+			modelresearch.ResourceLimitRecordBytes,
+			maxRecordBytes,
+			len(raw),
+		)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -338,8 +353,15 @@ func DecodeRecord(raw []byte) (Record, error) {
 // DecodeBundle decodes one saved local Study bundle. Unlike PromptBundle, this
 // artifact may contain bounded source functions used for local presentation.
 func DecodeBundle(raw []byte) (Bundle, error) {
-	if len(raw) == 0 || len(raw) > maxRecordBytes {
+	if len(raw) == 0 {
 		return Bundle{}, fmt.Errorf("study map: bundle is outside bounds")
+	}
+	if len(raw) > maxRecordBytes {
+		return Bundle{}, studyMapResourceLimit(
+			modelresearch.ResourceLimitRecordBytes,
+			maxRecordBytes,
+			len(raw),
+		)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -355,6 +377,17 @@ func DecodeBundle(raw []byte) (Bundle, error) {
 		return Bundle{}, err
 	}
 	return bundle, nil
+}
+
+func studyMapResourceLimit(
+	kind modelresearch.ResourceLimitKind,
+	limit int,
+	observed int,
+) *modelresearch.ResourceLimitError {
+	return &modelresearch.ResourceLimitError{
+		Stage: "repository_study_map", Kind: kind,
+		Limit: limit, Observed: observed, ObservedKnown: true,
+	}
 }
 
 func BundleHash(bundle Bundle) (string, error) {
@@ -396,9 +429,6 @@ func BuildRecord(bundle Bundle, proposal Proposal) (Record, error) {
 		repositoryType = RepositoryMixed
 	}
 	shape := validShapeAreaIDs(proposal.ShapeAreaIDs, index)
-	if len(shape) == 0 {
-		shape = defaultShapeAreaIDs(bundle.Areas)
-	}
 
 	valid := make([]Direction, 0, len(proposal.Candidates))
 	for candidateIndex, candidate := range proposal.Candidates {
@@ -562,8 +592,8 @@ func (record Record) Validate() error {
 		!completeBrief(record.Brief) {
 		return fmt.Errorf("study map: saved repository brief is invalid")
 	}
-	if len(record.ShapeAreaIDs) < 1 || len(record.ShapeAreaIDs) > 7 {
-		return fmt.Errorf("study map: repository shape must contain one to seven areas")
+	if len(record.ShapeAreaIDs) > 7 {
+		return fmt.Errorf("study map: repository shape must contain zero to seven areas")
 	}
 	for _, areaID := range record.ShapeAreaIDs {
 		if _, ok := index.areas[areaID]; !ok {
@@ -1046,17 +1076,6 @@ func exactSourceLanguage(sourcePath string) string {
 	default:
 		return ""
 	}
-}
-
-func defaultShapeAreaIDs(areas []Area) []string {
-	result := make([]string, 0, min(7, len(areas)))
-	for _, area := range areas {
-		result = append(result, area.ID)
-		if len(result) == 7 {
-			break
-		}
-	}
-	return result
 }
 
 func validShapeAreaIDs(ids []string, index bundleIndex) []string {

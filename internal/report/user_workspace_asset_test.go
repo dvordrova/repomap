@@ -643,6 +643,448 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+func TestUserWorkspaceOverviewAnatomyUsesOnlyExactUnambiguousSavedSource(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+class Element {
+  constructor(tag) {
+    this.tagName = tag;
+    this.className = "";
+    this.textContent = "";
+    this.children = [];
+    this.attributes = {};
+    this.hidden = false;
+    this.id = "";
+    this.classList = {
+      add: (name) => { if (!this.className.split(/\s+/).includes(name)) this.className = (this.className + " " + name).trim(); },
+      remove: (name) => { this.className = this.className.split(/\s+/).filter((value) => value && value !== name).join(" "); },
+      toggle: (name, force) => { if (force) this.classList.add(name); else this.classList.remove(name); },
+    };
+  }
+  get childNodes() { return this.children; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name] || ""; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  appendChild(child) { this.children.push(child); return child; }
+  append(...children) { this.children.push(...children); }
+  prepend(child) { this.children.unshift(child); }
+  replaceChildren(...children) { this.children = children; }
+  querySelector() { return null; }
+  remove() {}
+}
+function snippet(path, line, sha) {
+  return {
+    path, start_line: line, end_line: line + 2, role: "core",
+    highlight_ranges: [{ start_line: line, end_line: line }],
+    content_sha256: sha.repeat(64), presentation_sha256: sha.repeat(64),
+    lines: [
+      { line, text: "func saved() {}", highlight: true },
+      { line: line + 1, text: "" },
+      { line: line + 2, text: "// saved" },
+    ],
+  };
+}
+function member(path, line) {
+  return {
+    id: { kind: "symbol", value: "member-" + path + "-" + line },
+    name: path,
+    facts: [{ kind: "declaration", value: path, location: { path, line } }],
+  };
+}
+function component(id, name, path, line) {
+  return { id, name, description: "Saved component", members: [member(path, line)] };
+}
+function surface(id, path, line, overrides) {
+  return Object.assign({
+    id, kind: "process_entry", surface_role: "entry_surface",
+    application_classification: "application_surface", executable_role: "primary_application",
+    availability: "available", provisional_id: false,
+    identity: { name: "Same visible entry" }, registration_site: { path, line },
+    process_entrypoint: { name: "main", location: { path, line } },
+  }, overrides || {});
+}
+const sourceA = snippet("surface-a.go", 10, "a");
+const sourceAWide = snippet("surface-a.go", 9, "7");
+sourceAWide.end_line = 14;
+const sourceB = snippet("surface-b.go", 20, "b");
+const sourceBView = JSON.parse(JSON.stringify(sourceB));
+sourceBView.presentation_sha256 = "8".repeat(64);
+const componentA = snippet("component-a.go", 30, "c");
+const componentASecond = snippet("component-a2.go", 35, "6");
+const componentB = snippet("component-b.go", 40, "d");
+const ambiguousOne = snippet("ambiguous.go", 50, "e");
+const ambiguousTwo = snippet("ambiguous.go", 50, "f");
+const report = {
+  repo_name: "fixture", project_guess: "Saved repository orientation.",
+  user_mechanisms: [], user_sources: [
+    sourceA, sourceAWide, sourceB, JSON.parse(JSON.stringify(sourceB)), sourceBView,
+    componentA, componentASecond, componentB, ambiguousOne, ambiguousTwo,
+  ],
+  openable_paths: [
+    "surface-a.go", "surface-b.go", "component-a.go", "component-a2.go", "component-b.go",
+    "ambiguous.go", "dead.go", "duplicate.go", "study.go", "./surface-a.go",
+  ],
+  source_ids: {},
+  github_source_links: {
+    repository_url: "https://github.com/example/fixture",
+    revision: "1".repeat(40), working_tree_paths: [],
+  },
+  architecture_canvas: {
+    version: 5, subsystems: [], behavior_anchors: [], surfaces: [], flows: [],
+    components: [
+      Object.assign(component("component-a", "Same visible component", "component-a.go", 30), {
+        members: [member("component-a.go", 30), member("component-a2.go", 35)],
+      }),
+      component("component-b", "Same visible component", "component-b.go", 40),
+      component("component-ambiguous", "Ambiguous", "ambiguous.go", 50),
+      component("component-dead", "Dead", "dead.go", 60),
+      component("component-duplicate", "Duplicate one", "duplicate.go", 70),
+      component("component-duplicate", "Duplicate two", "duplicate.go", 70),
+    ],
+  },
+  discovered_surfaces: { triggers: [
+    surface("surface-a", "surface-a.go", 10),
+    surface("surface-b", "surface-b.go", 20),
+    surface("surface-ambiguous", "ambiguous.go", 50),
+    surface("surface-dead", "dead.go", 60),
+    surface("surface-duplicate", "duplicate.go", 70),
+    surface("surface-duplicate", "duplicate.go", 70),
+    surface("surface-dynamic", "surface-a.go", 10, { surface_role: "dynamic_frontier" }),
+    surface("surface-test", "surface-a.go", 10, { executable_role: "test_or_helper" }),
+    surface("surface-unavailable", "surface-a.go", 10, { availability: "unavailable" }),
+    surface("surface-unknown", "surface-a.go", 10, { availability: "unknown" }),
+    surface("surface-provisional", "surface-a.go", 10, { provisional_id: true }),
+  ] },
+  study_map: { directions: [{
+    id: "study-exact", question: "Where should I read next?",
+    why_it_matters: "This is a saved reading route.", learning_outcome: "You can inspect it.",
+    principal_anchors: [{ path: "study.go", symbol: "Study", line: 80 }],
+    reading_anchors: [{
+      label: "Start here", what_to_look_for: "Read the saved declaration.",
+      location: { path: "study.go", line: 80 }, source: snippet("study.go", 80, "9"),
+    }],
+  }] },
+};
+const roots = {
+  "rm-overview": new Element("section"),
+  "rm-study-detail": new Element("section"),
+  "rm-study-overview": new Element("section"),
+  "rm-architecture": new Element("section"),
+  "rm-source-drawer": new Element("aside"),
+  "rm-source-drawer-content": new Element("div"),
+  "rm-source-drawer-close": new Element("button"),
+};
+const workspace = new Element("main");
+let openedURLs = 0;
+const window = {
+  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  history: {
+    state: null,
+    pushState(state, _, hash) { this.state = state; window.location.hash = hash; },
+    replaceState(state, _, hash) { this.state = state; window.location.hash = hash; },
+    back() {},
+  },
+  open() { openedURLs += 1; },
+  scrollTo() {},
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const document = {
+  createElement(tag) { return new Element(tag); },
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
+    return roots[id] || null;
+  },
+  querySelector(selector) { return selector === ".rm-workspace" ? workspace : null; },
+  querySelectorAll() { return []; },
+};
+document.documentElement = { lang: "en" };
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window, document, URLSearchParams, Set, Map, AbortController, Promise,
+});
+const api = window.__REPOMAP_WORKSPACE_TEST__;
+function walk(root) {
+  const result = [];
+  (function visit(node) { result.push(node); (node.children || []).forEach(visit); })(root);
+  return result;
+}
+function text(root) { return walk(root).map((node) => String(node.textContent || "")).join(""); }
+function cards(kind) {
+  return walk(roots["rm-overview"]).filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === kind);
+}
+const anatomy = api.repositoryOverviewAnatomy();
+api.renderOverviewWorkspace();
+const surfaceCards = cards("surface");
+const componentCards = cards("component");
+const renderedText = text(roots["rm-overview"]);
+surfaceCards[0].children[0].onclick();
+const drawerState = api.workspaceStateSnapshot();
+const drawerHash = window.location.hash;
+const drawerHistory = window.history.state && window.history.state.sourceDrawer;
+const drawerHidden = roots["rm-source-drawer"].hidden;
+const studyCard = walk(roots["rm-overview"]).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card"));
+studyCard.onclick();
+const studyState = api.workspaceStateSnapshot();
+const studyHash = window.location.hash;
+componentCards[0].children[1].onclick();
+const architectureState = api.workspaceStateSnapshot();
+const architectureHash = window.location.hash;
+const exactStart = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 10 });
+const exactEnd = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 12 });
+const fallbackReport = JSON.parse(JSON.stringify(report));
+fallbackReport.user_sources = [componentA];
+const fallbackRoot = new Element("section");
+const fallbackWindow = {
+  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const fallbackDocument = {
+  createElement(tag) { return new Element(tag); },
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(fallbackReport) };
+    if (id === "rm-overview") return fallbackRoot;
+    return null;
+  },
+  querySelector() { return null; }, querySelectorAll() { return []; },
+};
+fallbackDocument.documentElement = { lang: "en" };
+fallbackWindow.document = fallbackDocument;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window: fallbackWindow });
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window: fallbackWindow, document: fallbackDocument, URLSearchParams, Set, Map, AbortController, Promise,
+});
+const fallbackAPI = fallbackWindow.__REPOMAP_WORKSPACE_TEST__;
+const fallbackAnatomy = fallbackAPI.repositoryOverviewAnatomy();
+fallbackAPI.renderOverviewWorkspace();
+const noStudyReport = JSON.parse(JSON.stringify(report));
+delete noStudyReport.study_map;
+delete noStudyReport.incomplete_study;
+noStudyReport.study_publication = {
+  version: 1, state: "failed",
+  failure_reason: "study map: shape references unknown area \"doc-b335630551682c19\"",
+};
+const noStudyRoot = new Element("section");
+const noStudyWindow = {
+  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+};
+const noStudyDocument = {
+  createElement(tag) { return new Element(tag); },
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(noStudyReport) };
+    if (id === "rm-overview") return noStudyRoot;
+    return null;
+  },
+  querySelector() { return null; }, querySelectorAll() { return []; },
+};
+noStudyDocument.documentElement = { lang: "en" };
+noStudyWindow.document = noStudyDocument;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window: noStudyWindow });
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window: noStudyWindow, document: noStudyDocument, URLSearchParams, Set, Map, AbortController, Promise,
+});
+const noStudyAPI = noStudyWindow.__REPOMAP_WORKSPACE_TEST__;
+const noStudyAnatomy = noStudyAPI.repositoryOverviewAnatomy();
+noStudyAPI.renderOverviewWorkspace();
+process.stdout.write(JSON.stringify({
+  entries: anatomy.entries, components: anatomy.components,
+  componentASourcePath: anatomy.components.objects.find((object) => object.id === "component-a").location.path,
+  surfaceIDs: surfaceCards.map((card) => card.attributes["data-rm-object-id"]),
+  componentIDs: componentCards.map((card) => card.attributes["data-rm-object-id"]),
+  cardText: surfaceCards.concat(componentCards).map(text), renderedText,
+  drawerState, drawerHash, drawerHistory, drawerHidden, openedURLs,
+  studyState, studyHash, architectureState, architectureHash,
+  exactStart: exactStart && exactStart.snippet.presentation_sha256,
+  exactEnd: exactEnd && exactEnd.snippet.presentation_sha256,
+  ambiguous: api.exactOverviewSourceForLocation({ path: "ambiguous.go", line: 50 }),
+  basename: api.exactOverviewSourceForLocation({ path: "a.go", line: 10 }),
+  prefix: api.exactOverviewSourceForLocation({ path: "./surface-a.go", line: 10 }),
+  stringLine: api.exactOverviewSourceForLocation({ path: "surface-a.go", line: "10" }),
+  fallbackAnatomy, fallbackText: text(fallbackRoot),
+  noStudyAnatomy, noStudyText: text(noStudyRoot),
+  noStudyDirectionCards: walk(noStudyRoot).filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card")).length,
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "overview-anatomy-workspace-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run Overview anatomy workspace smoke: %v\n%s", err, output)
+	}
+	var got struct {
+		Entries struct {
+			Total   int `json:"total"`
+			Omitted int `json:"omitted"`
+		} `json:"entries"`
+		Components struct {
+			Total   int `json:"total"`
+			Omitted int `json:"omitted"`
+		} `json:"components"`
+		SurfaceIDs           []string `json:"surfaceIDs"`
+		ComponentIDs         []string `json:"componentIDs"`
+		ComponentASourcePath string   `json:"componentASourcePath"`
+		CardText             []string `json:"cardText"`
+		RenderedText         string   `json:"renderedText"`
+		DrawerState          struct {
+			View           string `json:"view"`
+			SourceLocation *struct {
+				Path        string `json:"path"`
+				Line        int    `json:"line"`
+				DrawerFirst bool   `json:"drawerFirst"`
+			} `json:"sourceLocation"`
+		} `json:"drawerState"`
+		DrawerHash    string `json:"drawerHash"`
+		DrawerHistory struct {
+			Path        string `json:"path"`
+			Line        int    `json:"line"`
+			DrawerFirst bool   `json:"drawer_first"`
+		} `json:"drawerHistory"`
+		DrawerHidden      bool                               `json:"drawerHidden"`
+		OpenedURLs        int                                `json:"openedURLs"`
+		StudyState        struct{ View, DirectionID string } `json:"studyState"`
+		StudyHash         string                             `json:"studyHash"`
+		ArchitectureState struct {
+			View      string `json:"view"`
+			MapTarget struct {
+				Kind        string `json:"kind"`
+				ComponentID string `json:"component_id"`
+			} `json:"mapTarget"`
+		} `json:"architectureState"`
+		ArchitectureHash  string `json:"architectureHash"`
+		ExactStart        string `json:"exactStart"`
+		ExactEnd          string `json:"exactEnd"`
+		Ambiguous         any    `json:"ambiguous"`
+		Basename          any    `json:"basename"`
+		Prefix            any    `json:"prefix"`
+		StringLine        any    `json:"stringLine"`
+		FallbackAnatomy   any    `json:"fallbackAnatomy"`
+		FallbackText      string `json:"fallbackText"`
+		NoStudyAnatomy    any    `json:"noStudyAnatomy"`
+		NoStudyText       string `json:"noStudyText"`
+		NoStudyDirections int    `json:"noStudyDirectionCards"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode Overview anatomy workspace smoke: %v\n%s", err, output)
+	}
+	if strings.Join(got.SurfaceIDs, ",") != "surface-a,surface-b" ||
+		strings.Join(got.ComponentIDs, ",") != "component-a,component-b" {
+		t.Fatalf("exact-ID cards = surfaces %#v components %#v", got.SurfaceIDs, got.ComponentIDs)
+	}
+	if got.Entries.Total != 5 || got.Entries.Omitted != 3 ||
+		got.Components.Total != 5 || got.Components.Omitted != 3 {
+		t.Fatalf("bounded anatomy counts = entries %#v components %#v", got.Entries, got.Components)
+	}
+	if strings.Count(strings.Join(got.CardText, "\n"), "Same visible entry") != 2 ||
+		strings.Count(strings.Join(got.CardText, "\n"), "Same visible component") != 2 {
+		t.Fatalf("same-label exact IDs collapsed: %#v", got.CardText)
+	}
+	for _, forbidden := range []string{"surface-ambiguous", "surface-dead", "surface-duplicate", "surface-dynamic", "surface-test", "surface-unknown", "component-ambiguous", "component-dead", "component-duplicate"} {
+		if strings.Contains(strings.Join(got.SurfaceIDs, "\n")+strings.Join(got.ComponentIDs, "\n"), forbidden) {
+			t.Fatalf("Overview rendered rejected or dead object %q", forbidden)
+		}
+	}
+	if got.ComponentASourcePath != "component-a.go" {
+		t.Fatalf("component with two exact sources chose %q, want first deterministic Architecture source", got.ComponentASourcePath)
+	}
+	for _, token := range []string{"Entry surfaces", "Components", "No saved exact integration evidence", "Study directions", "Where should I read next?"} {
+		if !strings.Contains(got.RenderedText, token) {
+			t.Errorf("Overview anatomy is missing %q: %q", token, got.RenderedText)
+		}
+	}
+	for _, card := range got.CardText {
+		for _, forbidden := range []string{"→", "execution", "reachability", "connected", "depends on"} {
+			if strings.Contains(strings.ToLower(card), strings.ToLower(forbidden)) {
+				t.Fatalf("taxonomy card implies a join through %q: %q", forbidden, card)
+			}
+		}
+	}
+	if got.DrawerState.View != "overview" || got.DrawerState.SourceLocation == nil ||
+		got.DrawerState.SourceLocation.Path != "surface-a.go" || got.DrawerState.SourceLocation.Line != 10 ||
+		!got.DrawerState.SourceLocation.DrawerFirst || got.DrawerHash != "#/overview" ||
+		got.DrawerHistory.Path != "surface-a.go" || got.DrawerHistory.Line != 10 ||
+		!got.DrawerHistory.DrawerFirst || got.DrawerHidden || got.OpenedURLs != 0 {
+		t.Fatalf("primary click did not stay in exact embedded drawer: state %#v hash %q history %#v hidden=%t opened=%d",
+			got.DrawerState, got.DrawerHash, got.DrawerHistory, got.DrawerHidden, got.OpenedURLs)
+	}
+	if got.StudyState.View != "study" || got.StudyState.DirectionID != "study-exact" ||
+		got.StudyHash != "#/study/study-exact" {
+		t.Fatalf("Study route = state %#v hash %q", got.StudyState, got.StudyHash)
+	}
+	if got.ArchitectureState.View != "architecture" || got.ArchitectureState.MapTarget.Kind != "component" ||
+		got.ArchitectureState.MapTarget.ComponentID != "component-a" ||
+		got.ArchitectureHash != "#/architecture?focus=component%3Acomponent-a" {
+		t.Fatalf("same-ID Architecture focus = state %#v hash %q", got.ArchitectureState, got.ArchitectureHash)
+	}
+	if got.ExactStart != strings.Repeat("a", 64) || got.ExactEnd != strings.Repeat("a", 64) ||
+		got.Ambiguous != nil || got.Basename != nil ||
+		got.Prefix != nil || got.StringLine != nil {
+		t.Fatalf("exact source resolver accepted repair/conflict or missed most-specific overlap: start=%q end=%q ambiguous=%#v basename=%#v prefix=%#v string=%#v",
+			got.ExactStart, got.ExactEnd, got.Ambiguous, got.Basename, got.Prefix, got.StringLine)
+	}
+	if got.FallbackAnatomy != nil || !strings.Contains(got.FallbackText, "Repository brief") ||
+		!strings.Contains(got.FallbackText, "A useful path through the repository") ||
+		strings.Contains(got.FallbackText, "Entry surfaces") {
+		t.Fatalf("missing-zone report did not preserve Study fallback: anatomy=%#v text=%q",
+			got.FallbackAnatomy, got.FallbackText)
+	}
+	if got.NoStudyAnatomy == nil || got.NoStudyDirections != 0 {
+		t.Fatalf("failed-Study report lost anatomy or invented Study directions: anatomy=%#v directions=%d text=%q",
+			got.NoStudyAnatomy, got.NoStudyDirections, got.NoStudyText)
+	}
+	for _, token := range []string{
+		"Study unavailable for this run",
+		"No Study directions were published because the editing stage did not pass its required checks.",
+		"Entry surfaces",
+		"Components",
+	} {
+		if !strings.Contains(got.NoStudyText, token) {
+			t.Errorf("failed-Study anatomy is missing %q: %q", token, got.NoStudyText)
+		}
+	}
+	for _, forbidden := range []string{"Repository brief", "Where should I read next?"} {
+		if strings.Contains(got.NoStudyText, forbidden) {
+			t.Fatalf("failed-Study anatomy exposed fallback or invented Study content %q: %q", forbidden, got.NoStudyText)
+		}
+	}
+}
+
+func TestUserWorkspaceOverviewAnatomyPreservesStudyFallbackWithoutBothZones(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, marker := range []string{
+		"if (!entries.objects.length || !components.objects.length) return null;",
+		"var anatomy = repositoryOverviewAnatomy();",
+		"renderStudyMapOverview(root);",
+		"if (conflict) return { source: null, conflict: true };",
+		"if (conflict || !resolved.length) return;",
+		"exactOverviewSourcePath(snippet.path) !== location.path",
+	} {
+		if !strings.Contains(script, marker) {
+			t.Fatalf("Overview fallback/exact-source guard is missing %q", marker)
+		}
+	}
+}
+
 func TestUserWorkspaceSourceRendererShowsCodeAndExactReferences(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -1820,10 +2262,10 @@ func TestUserWorkspaceCodeFirstAssetContract(t *testing.T) {
 		"function uniqueSourceSnippets(",
 		"function remainingExactReferences(",
 		"function renderExactReferences(",
-			"'main.primary_implementation'",
+		"'main.primary_implementation'",
 		"'main.open.in.editor'",
 		"'main.copy.file.line'",
-			"'main.source.show_code'",
+		"'main.source.show_code'",
 		"'main.show.full.function'",
 		"'main.chrome.what.to.notice'",
 		"'main.open.code.path'",

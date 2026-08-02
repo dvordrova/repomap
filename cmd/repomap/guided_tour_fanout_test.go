@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,8 +18,10 @@ import (
 type guidedTourFanoutStub struct {
 	mu                 sync.Mutex
 	leafResponses      map[string][]byte
+	leafErrors         map[string]error
 	monolithicResponse []byte
 	finalResponse      []byte
+	finalError         error
 	fanInRequestBytes  int
 	callsByVersion     map[string]int
 }
@@ -54,14 +57,14 @@ func (stub *guidedTourFanoutStub) EditGuidedTourMeasured(
 		return modelresearch.ProviderResult{
 			Content: stub.finalResponse, InputTokens: 80, OutputTokens: 40, Attempts: 1,
 			PromptCacheHitTokens: 20, PromptCacheMissTokens: 60,
-		}, nil
+		}, stub.finalError
 	}
 	for taskID, response := range stub.leafResponses {
 		if strings.Contains(prompt.User, taskID) {
 			return modelresearch.ProviderResult{
 				Content: response, InputTokens: 40, OutputTokens: 20, Attempts: 1,
 				PromptCacheHitTokens: 30, PromptCacheMissTokens: 10,
-			}, nil
+			}, stub.leafErrors[taskID]
 		}
 	}
 	return modelresearch.ProviderResult{}, fmt.Errorf("unexpected guided tour prompt")
@@ -269,6 +272,99 @@ func TestEnsureGuidedTourFanoutExperimentCachesValidatedLeavesAndFanIn(t *testin
 	if !second.Cached || second.ValidationState != "cached" || second.SemanticCalls != 0 ||
 		second.CacheHits != 3 || replayProvider.callCount() != 0 {
 		t.Fatalf("second outcome = %#v, provider calls = %d", second, replayProvider.callCount())
+	}
+}
+
+func TestEnsureGuidedTourFanoutLeafResourceLimitIsTerminalWithoutPartialPublication(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	provider := guidedTourFanoutTestProvider(t, bundle, "")
+	tasks, leafCaches, fanInCache := guidedTourFanoutCacheInputs(
+		t, bundle, runDir, "test", "fixture-model", provider,
+	)
+	provider.leafErrors[tasks[0].ID] = &modelresearch.ResourceLimitError{
+		Stage: "guided_tour", Kind: modelresearch.ResourceLimitOutputTokens,
+		Limit: 64_000, Observed: 64_000, ObservedKnown: true,
+	}
+	seedGuidedTourFanoutOutputs(t, runDir)
+
+	outcome, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) || limitErr.Stage != "guided_tour" ||
+		limitErr.Kind != modelresearch.ResourceLimitOutputTokens {
+		t.Fatalf("terminal leaf error = %#v", err)
+	}
+	if outcome.SemanticCalls != len(tasks) ||
+		provider.callsByVersion[guidedtour.FanInPromptVersion] != 0 {
+		t.Fatalf("leaf terminal outcome = %#v, calls = %#v", outcome, provider.callsByVersion)
+	}
+	assertNoGuidedTourFanoutOutputs(t, runDir)
+	for taskID, cacheInput := range leafCaches {
+		if _, found, loadErr := modelresearch.LoadStageResponse(cacheInput); loadErr != nil || found {
+			t.Fatalf("leaf cache %q after terminal limit: found=%t err=%v", taskID, found, loadErr)
+		}
+	}
+	if _, found, loadErr := modelresearch.LoadStageResponse(fanInCache); loadErr != nil || found {
+		t.Fatalf("fan-in cache after leaf terminal limit: found=%t err=%v", found, loadErr)
+	}
+}
+
+func TestEnsureGuidedTourFanoutFanInResourceLimitIsTerminalWithoutPartialPublication(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "run")
+	bundle := guidedTourTestBundle()
+	provider := guidedTourFanoutTestProvider(t, bundle, "")
+	tasks, _, fanInCache := guidedTourFanoutCacheInputs(
+		t, bundle, runDir, "test", "fixture-model", provider,
+	)
+	provider.finalError = &modelresearch.ResourceLimitError{
+		Stage: "guided_tour", Kind: modelresearch.ResourceLimitOutputTokens,
+		Limit: 64_000, Observed: 64_000, ObservedKnown: true,
+	}
+	seedGuidedTourFanoutOutputs(t, runDir)
+
+	outcome, err := ensureGuidedTourFanoutExperiment(
+		context.Background(), bundle, runDir, "test", "fixture-model", provider,
+	)
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(err, &limitErr) || limitErr.Stage != "guided_tour" ||
+		limitErr.Kind != modelresearch.ResourceLimitOutputTokens {
+		t.Fatalf("terminal fan-in error = %#v", err)
+	}
+	if outcome.SemanticCalls != len(tasks)+1 ||
+		provider.callsByVersion[guidedtour.FanInPromptVersion] != 1 {
+		t.Fatalf("fan-in terminal outcome = %#v, calls = %#v", outcome, provider.callsByVersion)
+	}
+	assertNoGuidedTourFanoutOutputs(t, runDir)
+	if _, found, loadErr := modelresearch.LoadStageResponse(fanInCache); loadErr != nil || found {
+		t.Fatalf("fan-in cache after terminal limit: found=%t err=%v", found, loadErr)
+	}
+}
+
+func seedGuidedTourFanoutOutputs(t *testing.T, runDir string) {
+	t.Helper()
+	for _, name := range []string{
+		guidedTourFanoutFile,
+		guidedTourFanoutLeavesFile,
+		guidedTourFanInFile,
+	} {
+		if err := writeGuidedTourArtifact(filepath.Join(runDir, name), []byte("stale")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func assertNoGuidedTourFanoutOutputs(t *testing.T, runDir string) {
+	t.Helper()
+	for _, name := range []string{
+		guidedTourFanoutFile,
+		guidedTourFanoutLeavesFile,
+		guidedTourFanInFile,
+	} {
+		if _, err := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("fan-out output %q remains after terminal limit: %v", name, err)
+		}
 	}
 }
 
@@ -671,6 +767,7 @@ func guidedTourFanoutTestProvider(
 	}
 	return &guidedTourFanoutStub{
 		leafResponses:      responses,
+		leafErrors:         make(map[string]error),
 		monolithicResponse: guidedTourTestProposal(t, bundle, false),
 		finalResponse: guidedTourFanInTestResponse(
 			t,

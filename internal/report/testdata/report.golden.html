@@ -46,6 +46,19 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-hero { background: linear-gradient(145deg, #f8fbff, #f5f3ff); border: 1px solid #cbd5e1; border-radius: 12px; padding: clamp(1.25rem, 3vw, 2rem); }
 .rm-overview-hero h2 { font-size: clamp(1.6rem, 3vw, 2.35rem); line-height: 1.15; margin: .35rem 0 .8rem; }
 .rm-overview-hero p { color: #475569; font-size: .95rem; max-width: 54rem; }
+.rm-overview-anatomy-zone { display: grid; gap: .75rem; }
+.rm-overview-object-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.rm-overview-object-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; display: grid; overflow: hidden; }
+.rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; width: 100%; }
+.rm-overview-object-primary:hover { background: #f8fafc; }
+.rm-overview-object-primary:focus-visible, .rm-overview-object-architecture:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: -2px; }
+.rm-overview-object-detail { color: var(--rm-dim); font-size: .78rem; }
+.rm-overview-object-location { color: #475569; font-size: .75rem; overflow-wrap: anywhere; }
+.rm-overview-object-action { color: var(--rm-accent); font-size: .78rem; font-weight: 650; }
+.rm-overview-object-architecture { background: #f8fafc; border: 0; border-top: 1px solid var(--rm-border); color: #334155; cursor: pointer; font-size: .76rem; padding: .65rem 1rem; text-align: left; }
+.rm-overview-object-architecture:hover { background: #f1f5f9; }
+.rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
+.rm-overview-integrations-empty { margin: 0; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
@@ -783,7 +796,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":26,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":27,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
@@ -974,6 +987,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace": { params: [], text: "Choose a question and begin with concrete source anchors. The order is for learning, not an execution trace." },
     "main.repository.brief": { params: [], text: "Repository brief" },
     "main.repository.overview": { params: [], text: "Repository overview" },
+    "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Saved taxonomy" },
+    "main.overview.anatomy.entry_surfaces": { params: [], text: "Entry surfaces" },
+    "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Entry-surface objects from the saved catalog with an exact saved source excerpt." },
+    "main.overview.anatomy.components_kicker": { params: [], text: "Saved architecture" },
+    "main.overview.anatomy.components": { params: [], text: "Components" },
+    "main.overview.anatomy.components_copy": { params: [], text: "Canonical Architecture components with an exact saved source excerpt." },
+    "main.overview.anatomy.integrations_kicker": { params: [], text: "Saved evidence" },
+    "main.overview.anatomy.integrations": { params: [], text: "Integrations" },
+    "main.overview.anatomy.integrations_copy": { params: [], text: "Only exact integration objects already proven by this saved report can appear here." },
+    "main.overview.anatomy.no_saved_integrations": { params: [], text: "No saved exact integration evidence is available in this report." },
+    "main.overview.anatomy.study_kicker": { params: [], text: "Reading routes" },
+    "main.overview.anatomy.study_directions": { params: [], text: "Study directions" },
+    "main.overview.anatomy.study_directions_copy": { params: [], text: "Open a canonical saved direction as a reading route." },
+    "main.overview.anatomy.inspect_same_component": { params: [], text: "Inspect this component in Architecture" },
+    "main.overview.anatomy.omitted_ambiguous_or_unavailable": { params: ["count"], format: function (params) { return "Not shown because exact object or embedded-source identity is unavailable or conflicting: " + params.count + "."; } },
     "main.main.input": { params: [], text: "Main input" },
     "main.central.responsibility": { params: [], text: "Central responsibility" },
     "main.observable.result": { params: [], text: "Observable result" },
@@ -2198,6 +2226,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace": { params: [], text: "Выберите вопрос и начните с конкретных опор в исходниках. Порядок предназначен для изучения, а не изображает трассу выполнения." },
     "main.repository.brief": { params: [], text: "Кратко о репозитории" },
     "main.repository.overview": { params: [], text: "Обзор репозитория" },
+    "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Сохранённая таксономия" },
+    "main.overview.anatomy.entry_surfaces": { params: [], text: "Точки входа" },
+    "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Объекты точек входа из сохранённого каталога с точным сохранённым фрагментом исходника." },
+    "main.overview.anatomy.components_kicker": { params: [], text: "Сохранённая архитектура" },
+    "main.overview.anatomy.components": { params: [], text: "Компоненты" },
+    "main.overview.anatomy.components_copy": { params: [], text: "Канонические компоненты Архитектуры с точным сохранённым фрагментом исходника." },
+    "main.overview.anatomy.integrations_kicker": { params: [], text: "Сохранённые свидетельства" },
+    "main.overview.anatomy.integrations": { params: [], text: "Интеграции" },
+    "main.overview.anatomy.integrations_copy": { params: [], text: "Здесь могут появиться только точные объекты интеграций, уже подтверждённые этим сохранённым отчётом." },
+    "main.overview.anatomy.no_saved_integrations": { params: [], text: "В этом отчёте нет сохранённых точных свидетельств интеграций." },
+    "main.overview.anatomy.study_kicker": { params: [], text: "Маршруты чтения" },
+    "main.overview.anatomy.study_directions": { params: [], text: "Направления изучения" },
+    "main.overview.anatomy.study_directions_copy": { params: [], text: "Откройте каноническое сохранённое направление как маршрут чтения." },
+    "main.overview.anatomy.inspect_same_component": { params: [], text: "Изучить этот компонент в Архитектуре" },
+    "main.overview.anatomy.omitted_ambiguous_or_unavailable": { params: ["count"], format: function (params) { return "Не показаны из-за отсутствующей или конфликтующей точной идентичности объекта либо встроенного исходника: " + params.count + "."; } },
     "main.main.input": { params: [], text: "Основной вход" },
     "main.central.responsibility": { params: [], text: "Главная ответственность" },
     "main.observable.result": { params: [], text: "Наблюдаемый результат" },
@@ -7225,6 +7268,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       column: Number(selection.column) || 0,
       presentation_sha256: selection.snippet.presentation_sha256 || '',
       expanded: !!selection.expanded,
+			drawer_first: !!selection.drawerFirst,
     };
   }
 
@@ -7248,6 +7292,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       column: Number(reference.column) || 0,
       snippet: snippet,
       expanded: false,
+			drawerFirst: !!reference.drawer_first,
     };
   }
 
@@ -8723,11 +8768,309 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		root.appendChild(details);
 	}
 
+	function exactOverviewSourcePath(value) {
+		if (typeof value !== 'string' || !value || !OPENABLE_PATH_SET[value] ||
+			value.charAt(0) === '/' || value.charAt(value.length - 1) === '/' ||
+			value.indexOf('\\') >= 0 || value.indexOf('\u0000') >= 0) return '';
+		var segments = value.split('/');
+		for (var index = 0; index < segments.length; index++) {
+			if (!segments[index] || segments[index] === '.' || segments[index] === '..') return '';
+		}
+		return value;
+	}
+
+	function overviewSnippetContentIdentity(snippet) {
+		if (typeof snippet.content_sha256 === 'string' && snippet.content_sha256) {
+			return 'sha256:' + snippet.content_sha256;
+		}
+		return 'lines:' + JSON.stringify(snippet.lines || []);
+	}
+
+	function overviewSnippetStableKey(snippet) {
+		return [
+			snippet.path,
+			String(snippet.start_line),
+			String(snippet.end_line),
+			String(snippet.revision || ''),
+			overviewSnippetContentIdentity(snippet),
+		].join('\u0000');
+	}
+
+	// Overlapping saved excerpts are normal. Prefer the smallest exact
+	// containing interval, then stable persisted fields. Only two views of the
+	// same interval/revision with different source content are ambiguous.
+	function exactOverviewSourceResolutionForLocation(location) {
+		if (!location || exactOverviewSourcePath(location.path) !== location.path ||
+			!Number.isInteger(location.line) || location.line <= 0) return { source: null, conflict: false };
+		var equivalent = {};
+		allEmbeddedSourceSnippets().forEach(function (snippet) {
+			if (!sourceSnippetHasCode(snippet) ||
+				exactOverviewSourcePath(snippet.path) !== location.path ||
+				!Number.isInteger(snippet.start_line) || !Number.isInteger(snippet.end_line) ||
+				snippet.start_line <= 0 || snippet.end_line < snippet.start_line ||
+				location.line < snippet.start_line || location.line > snippet.end_line) return;
+			var key = overviewSnippetStableKey(snippet);
+			var current = equivalent[key];
+			if (!current || String(snippet.presentation_sha256 || '').localeCompare(
+				String(current.presentation_sha256 || '')
+			) < 0) equivalent[key] = snippet;
+		});
+		var matches = Object.keys(equivalent).map(function (key) { return equivalent[key]; });
+		if (!matches.length) return { source: null, conflict: false };
+		matches.sort(function (left, right) {
+			return (left.end_line - left.start_line) - (right.end_line - right.start_line) ||
+				left.start_line - right.start_line || left.end_line - right.end_line ||
+				String(left.revision || '').localeCompare(String(right.revision || '')) ||
+				overviewSnippetContentIdentity(left).localeCompare(overviewSnippetContentIdentity(right)) ||
+				String(left.presentation_sha256 || '').localeCompare(String(right.presentation_sha256 || ''));
+		});
+		var smallestSpan = matches[0].end_line - matches[0].start_line;
+		var survivors = matches.filter(function (snippet) {
+			return snippet.end_line - snippet.start_line === smallestSpan;
+		});
+		var intervalIdentities = {};
+		var conflict = survivors.some(function (snippet) {
+			var interval = snippet.path + '\u0000' + String(snippet.start_line) + '\u0000' +
+				String(snippet.end_line);
+			var identity = String(snippet.revision || '') + '\u0000' + overviewSnippetContentIdentity(snippet);
+			if (intervalIdentities[interval] && intervalIdentities[interval] !== identity) return true;
+			intervalIdentities[interval] = identity;
+			return false;
+		});
+		if (conflict) return { source: null, conflict: true };
+		var selected = survivors[0];
+		return { source: {
+			snippet: selected,
+			location: {
+				path: location.path,
+				line: location.line,
+				column: Number.isInteger(location.column) && location.column > 0 ? location.column : 0,
+			},
+		}, conflict: false };
+	}
+
+	function exactOverviewSourceForLocation(location) {
+		return exactOverviewSourceResolutionForLocation(location).source;
+	}
+
+	function overviewSurfaceLocation(trigger) {
+		if (!trigger) return null;
+		return trigger.handler_location || trigger.registration_site || trigger.descriptor_site ||
+			trigger.server_start_site || (trigger.process_entrypoint && trigger.process_entrypoint.location) || null;
+	}
+
+	function overviewSurfaceTitle(trigger) {
+		var identity = trigger && trigger.identity || {};
+		var method = typeof identity.method === 'string' ? identity.method : '';
+		var pathValue = identity.path && identity.path.known && typeof identity.path.text === 'string'
+			? identity.path.text : '';
+		var route = [method, pathValue].filter(Boolean).join(' ');
+		if (route) return route;
+		if (typeof identity.name === 'string' && identity.name) return identity.name;
+		if (trigger && trigger.handler && trigger.handler.known && typeof trigger.handler.text === 'string' &&
+			trigger.handler.text) return trigger.handler.text;
+		if (trigger && trigger.process_entrypoint && typeof trigger.process_entrypoint.name === 'string' &&
+			trigger.process_entrypoint.name) return trigger.process_entrypoint.name;
+		return String(trigger && trigger.id || '');
+	}
+
+	function overviewEntrySurfaceObjects() {
+		var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
+			? DATA.discovered_surfaces.triggers : [];
+		var eligible = triggers.filter(function (trigger) {
+			return !!(trigger && typeof trigger.id === 'string' && trigger.id &&
+				trigger.surface_role === 'entry_surface' &&
+				trigger.application_classification === 'application_surface' &&
+				trigger.availability === 'available' && trigger.executable_role !== 'test_or_helper' &&
+				trigger.provisional_id !== true);
+		});
+		var counts = {};
+		eligible.forEach(function (trigger) { counts[trigger.id] = (counts[trigger.id] || 0) + 1; });
+		var objects = [];
+		eligible.forEach(function (trigger) {
+			if (counts[trigger.id] !== 1) return;
+			var source = exactOverviewSourceForLocation(overviewSurfaceLocation(trigger));
+			if (!source) return;
+			objects.push({
+				id: trigger.id,
+				title: overviewSurfaceTitle(trigger),
+				detail: String(trigger.kind || ''),
+				snippet: source.snippet,
+				location: source.location,
+			});
+		});
+		return {
+			objects: objects,
+			total: Object.keys(counts).length,
+			omitted: Object.keys(counts).length - objects.length,
+		};
+	}
+
+	function overviewComponentObjects() {
+		var canvas = DATA.architecture_canvas || {};
+		var components = Array.isArray(canvas.components) ? canvas.components : [];
+		var contexts = architectureComponentContexts();
+		var counts = {};
+		components.forEach(function (component) {
+			if (component && typeof component.id === 'string' && component.id) {
+				counts[component.id] = (counts[component.id] || 0) + 1;
+			}
+		});
+		var objects = [];
+		components.forEach(function (component) {
+			if (!component || !component.id || counts[component.id] !== 1) return;
+			var context = contexts[component.id] || {};
+			var resolved = [];
+			var resolvedSeen = {};
+			var conflict = false;
+			(Array.isArray(context.sources) ? context.sources : []).forEach(function (source) {
+				var resolution = exactOverviewSourceResolutionForLocation(source && source.location);
+				if (resolution.conflict) {
+					conflict = true;
+					return;
+				}
+				if (!resolution.source) return;
+				var location = resolution.source.location;
+				var key = location.path + '\u0000' + String(location.line) + '\u0000' +
+					String(location.column || 0) + '\u0000' +
+					overviewSnippetStableKey(resolution.source.snippet);
+				if (resolvedSeen[key]) return;
+				resolvedSeen[key] = true;
+				resolved.push(resolution.source);
+			});
+			if (conflict || !resolved.length) return;
+			objects.push({
+				id: component.id,
+				title: String(component.name || component.id),
+				detail: String(component.description || ''),
+				snippet: resolved[0].snippet,
+				location: resolved[0].location,
+			});
+		});
+		return {
+			objects: objects,
+			total: Object.keys(counts).length,
+			omitted: Object.keys(counts).length - objects.length,
+		};
+	}
+
+	function repositoryOverviewAnatomy() {
+		if (!DATA.architecture_canvas || !DATA.discovered_surfaces) return null;
+		var entries = overviewEntrySurfaceObjects();
+		var components = overviewComponentObjects();
+		if (!entries.objects.length || !components.objects.length) return null;
+		return { entries: entries, components: components, integrations: [] };
+	}
+
+	function renderOverviewObjectCard(object, kind) {
+		var card = el('article', 'rm-overview-object-card');
+		card.setAttribute('data-rm-object-kind', kind);
+		card.setAttribute('data-rm-object-id', object.id);
+		var primary = el('button', 'rm-overview-object-primary');
+		primary.type = 'button';
+		primary.appendChild(txt('strong', '', object.title));
+		if (object.detail) primary.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
+		primary.appendChild(txt('code', 'rm-overview-object-location', formatCodeLocation(object.location)));
+		primary.appendChild(txt('span', 'rm-overview-object-action', msg('main.open.exact.source')));
+		primary.onclick = function () {
+			openSourceSnippet(object.snippet, object.location, false, { drawerFirst: true });
+		};
+		card.appendChild(primary);
+		if (kind === 'component' && userArchitectureAvailable()) {
+			var architecture = txt(
+				'button',
+				'rm-overview-object-architecture',
+				msg('main.overview.anatomy.inspect_same_component')
+			);
+			architecture.type = 'button';
+			architecture.onclick = function () {
+				openArchitectureTarget({ kind: 'component', component_id: object.id }, null);
+			};
+			card.appendChild(architecture);
+		}
+		return card;
+	}
+
+	function renderOverviewAnatomyZone(kicker, title, copy, collection, kind) {
+		var section = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
+		section.appendChild(renderViewHeading(kicker, title, copy));
+		var grid = el('div', 'rm-overview-object-grid');
+		collection.objects.forEach(function (object) {
+			grid.appendChild(renderOverviewObjectCard(object, kind));
+		});
+		section.appendChild(grid);
+		if (collection.omitted > 0) {
+			section.appendChild(txt('p', 'rm-overview-anatomy-omitted', msg(
+				'main.overview.anatomy.omitted_ambiguous_or_unavailable',
+				{ count: collection.omitted }
+			)));
+		}
+		return section;
+	}
+
+	function renderRepositoryOverviewAnatomy(root, anatomy) {
+		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
+		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
+		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
+		hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+		root.appendChild(hero);
+
+		root.appendChild(renderOverviewAnatomyZone(
+			msg('main.overview.anatomy.entry_surfaces_kicker'),
+			msg('main.overview.anatomy.entry_surfaces'),
+			msg('main.overview.anatomy.entry_surfaces_copy'),
+			anatomy.entries,
+			'surface'
+		));
+		root.appendChild(renderOverviewAnatomyZone(
+			msg('main.overview.anatomy.components_kicker'),
+			msg('main.overview.anatomy.components'),
+			msg('main.overview.anatomy.components_copy'),
+			anatomy.components,
+			'component'
+		));
+
+		var integrations = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
+		integrations.appendChild(renderViewHeading(
+			msg('main.overview.anatomy.integrations_kicker'),
+			msg('main.overview.anatomy.integrations'),
+			msg('main.overview.anatomy.integrations_copy')
+		));
+		integrations.appendChild(txt(
+			'p',
+			'rm-empty-state rm-overview-integrations-empty',
+			msg('main.overview.anatomy.no_saved_integrations')
+		));
+		root.appendChild(integrations);
+
+		if (COMPLETE_STUDY_DIRECTIONS.length) {
+			var directions = el('section', 'rm-workspace-section rm-overview-study-routes');
+			directions.appendChild(renderViewHeading(
+				msg('main.overview.anatomy.study_kicker'),
+				msg('main.overview.anatomy.study_directions'),
+				msg('main.overview.anatomy.study_directions_copy')
+			));
+			var directionGrid = el('div', 'rm-mechanism-grid');
+			COMPLETE_STUDY_DIRECTIONS.forEach(function (direction, index) {
+				directionGrid.appendChild(renderStudyDirectionCard(direction, index));
+			});
+			directions.appendChild(directionGrid);
+			root.appendChild(directions);
+		}
+	}
+
   function renderOverviewWorkspace() {
     var root = document.getElementById('rm-overview');
     if (!root) return;
     root.replaceChildren();
 		renderStudyPublicationNotice(root);
+		var anatomy = repositoryOverviewAnatomy();
+		if (anatomy) {
+			renderRepositoryOverviewAnatomy(root, anatomy);
+			return;
+		}
 		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
 			renderStudyMapOverview(root);
 			return;
@@ -9851,9 +10194,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}
 	}
 
-  function openSourceSnippet(snippet, location, expanded) {
+  function openSourceSnippet(snippet, location, expanded, options) {
+    options = options || {};
     var resolved = sourceSnippetLocation(snippet, location);
-    if (openStaticSource(resolved, snippet && snippet.end_line)) return;
+    if (!options.drawerFirst && openStaticSource(resolved, snippet && snippet.end_line)) return;
     if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
     var next = reduceWorkspaceState(workspaceState, {
       type: 'open_source',
@@ -9863,6 +10207,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         column: resolved.column,
         snippet: snippet,
         expanded: !!expanded,
+			drawerFirst: !!options.drawerFirst,
       },
     }, USER_MECHANISMS);
     var reference = sourceDrawerHistoryReference(next.sourceLocation);
@@ -9908,7 +10253,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var content = document.getElementById('rm-source-drawer-content');
     var close = document.getElementById('rm-source-drawer-close');
     if (!workspace || !drawer || !content) return;
-    if (staticSourceMode()) {
+    if (staticSourceMode() && !(workspaceState.sourceLocation && workspaceState.sourceLocation.drawerFirst)) {
       workspaceState.sourceLocation = null;
       drawer.hidden = true;
       workspace.classList.remove('has-source-drawer');
@@ -10623,6 +10968,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       renderUserMechanismCard: renderUserMechanismCard,
       renderImplementationDetails: renderImplementationDetails,
       renderOverviewWorkspace: renderOverviewWorkspace,
+			repositoryOverviewAnatomy: repositoryOverviewAnatomy,
+			overviewEntrySurfaceObjects: overviewEntrySurfaceObjects,
+			overviewComponentObjects: overviewComponentObjects,
+			exactOverviewSourceForLocation: exactOverviewSourceForLocation,
+			renderRepositoryOverviewAnatomy: renderRepositoryOverviewAnatomy,
 			renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
 			taskLensEnumLabel: taskLensEnumLabel,
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,

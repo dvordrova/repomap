@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/modelresearch"
 )
 
 const ValidationRulePathLikeReference = "path_like_reference"
@@ -40,7 +42,7 @@ func ValidationIssueDetails(err error) (field, rule string, ok bool) {
 }
 
 const (
-	maxProposalBytes           = 64 << 10
+	maxProposalBytes           = modelresearch.ProviderResponseByteLimit
 	maxProposalTitleBytes      = 256
 	maxProposalSummaryBytes    = 2 << 10
 	maxProposalExplainBytes    = 4 << 10
@@ -86,8 +88,14 @@ var editorialClauseBoundaryPattern = regexp.MustCompile(
 // ParseProposal strictly decodes the model response shape. Semantic and
 // reference validation is performed by ValidateProposal.
 func ParseProposal(raw []byte) (Proposal, error) {
-	if len(raw) == 0 || len(raw) > maxProposalBytes {
+	if len(raw) == 0 {
 		return Proposal{}, fmt.Errorf("guided tour: proposal is empty or too large")
+	}
+	if len(raw) > maxProposalBytes {
+		return Proposal{}, &modelresearch.ResourceLimitError{
+			Stage: "guided_tour", Kind: modelresearch.ResourceLimitResponseBytes,
+			Limit: maxProposalBytes, Observed: len(raw), ObservedKnown: true,
+		}
 	}
 	var proposal Proposal
 	if err := decodeStrictJSON(raw, &proposal); err != nil {

@@ -447,6 +447,10 @@ func readRunDir(
 	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
 	parseWarnings = append(parseWarnings, surfaceWarnings...)
 	mergeCommandSurfaceCatalog(data)
+	data.RepositoryAtlas, err = readRepositoryAtlasArtifact(absDir)
+	if err != nil {
+		return nil, err
+	}
 	data.ArchitectureGrounding, warning = parseArchitectureGrounding(absDir)
 	if warning != "" {
 		parseWarnings = append(parseWarnings, warning)
@@ -460,6 +464,9 @@ func readRunDir(
 	parseWarnings = append(parseWarnings, flowWarnings...)
 	canonicalizeReportEvidence(data)
 	collectOpenablePaths(data)
+	if err := validateRepositoryAtlasForReport(data); err != nil {
+		return nil, err
+	}
 	attachAuthorizedWorkspacePackageGraph(data, authority)
 	attachAuthorizedWorkspaceEntrypointIndex(data, authority)
 	buildComponents(data)
