@@ -77,6 +77,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-source-action:hover { text-decoration: underline; }
 .rm-atlas-source-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 3px; }
 .rm-atlas-omitted { color: var(--rm-dim); font-size: .72rem; margin: .75rem 0 0; }
+.rm-atlas-units-heading { margin-top: 1.25rem; }
+.rm-atlas-package-disclosure { border-top: 1px solid var(--rm-border); margin-top: .8rem; padding-top: .7rem; }
+.rm-atlas-package-summary { color: #334155; cursor: pointer; font-size: .76rem; font-weight: 700; }
+.rm-atlas-package-disclosure .rm-atlas-unit-grid { margin-top: .7rem; }
 .rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
 .rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
 .rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
@@ -1010,6 +1014,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.workspace.copy": { params: [], text: "Saved repository units and locally resolved startup relations." },
     "main.atlas.workspace.unavailable": { params: [], text: "Repository Atlas is unavailable for this run." },
     "main.atlas.workspace.units": { params: [], text: "Units" },
+    "main.atlas.workspace.packages": { params: ["count"], format: function (params) { return "Packages (" + params.count + ")"; } },
     "main.atlas.workspace.unit_kind.app": { params: [], text: "Application" },
     "main.atlas.workspace.unit_kind.module": { params: [], text: "Module" },
     "main.atlas.workspace.unit_kind.package": { params: [], text: "Package" },
@@ -2277,6 +2282,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.workspace.copy": { params: [], text: "Сохранённые юниты репозитория и локально подтверждённые связи запуска." },
     "main.atlas.workspace.unavailable": { params: [], text: "Атлас репозитория недоступен для этого запуска." },
     "main.atlas.workspace.units": { params: [], text: "Юниты" },
+    "main.atlas.workspace.packages": { params: ["count"], format: function (params) { return "Пакеты (" + params.count + ")"; } },
     "main.atlas.workspace.unit_kind.app": { params: [], text: "Приложение" },
     "main.atlas.workspace.unit_kind.module": { params: [], text: "Модуль" },
     "main.atlas.workspace.unit_kind.package": { params: [], text: "Пакет" },
@@ -9182,12 +9188,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			}
 		});
 		var units = [];
+		var topologyUnits = [];
+		var packageUnits = [];
 		var unitsByID = {};
 		atlas.units.forEach(function (unit) {
 			if (!unit || typeof unit.id !== 'string' || !unit.id || unitCounts[unit.id] !== 1 ||
 				typeof unit.name !== 'string' || !unit.name) return;
 			var view = { name: unit.name, kind: String(unit.kind || '') };
 			units.push(view);
+			if (view.kind === 'package') packageUnits.push(view);
+			else topologyUnits.push(view);
 			unitsByID[unit.id] = view;
 		});
 
@@ -9248,9 +9258,26 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		});
 		return {
 			units: units,
+			topologyUnits: topologyUnits,
+			packageUnits: packageUnits,
 			relations: relations,
 			omittedRelations: eligible - relations.length,
 		};
+	}
+
+	function renderRepositoryAtlasUnitGrid(units) {
+		var unitGrid = el('div', 'rm-atlas-unit-grid');
+		units.forEach(function (unit) {
+			var card = el('article', 'rm-atlas-unit-card');
+			card.appendChild(txt('strong', '', unit.name));
+			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
+			card.appendChild(txt('span', 'rm-atlas-authority', msg(
+				'main.atlas.workspace.authority',
+				{ authority: msg('main.atlas.workspace.authority.observed') }
+			)));
+			unitGrid.appendChild(card);
+		});
+		return unitGrid;
 	}
 
 	function renderRepositoryAtlasWorkspaceShelf(root) {
@@ -9266,20 +9293,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			root.appendChild(section);
 			return;
 		}
-
-		section.appendChild(txt('h3', 'rm-atlas-shelf-heading', msg('main.atlas.workspace.units')));
-		var unitGrid = el('div', 'rm-atlas-unit-grid');
-		shelf.units.forEach(function (unit) {
-			var card = el('article', 'rm-atlas-unit-card');
-			card.appendChild(txt('strong', '', unit.name));
-			card.appendChild(txt('span', '', repositoryAtlasUnitKindLabel(unit.kind)));
-			card.appendChild(txt('span', 'rm-atlas-authority', msg(
-				'main.atlas.workspace.authority',
-				{ authority: msg('main.atlas.workspace.authority.observed') }
-			)));
-			unitGrid.appendChild(card);
-		});
-		section.appendChild(unitGrid);
 
 		section.appendChild(txt(
 			'h3',
@@ -9320,6 +9333,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				'main.atlas.workspace.omitted_relations',
 				{ count: shelf.omittedRelations }
 			)));
+		}
+
+		section.appendChild(txt('h3', 'rm-atlas-shelf-heading rm-atlas-units-heading', msg('main.atlas.workspace.units')));
+		if (shelf.topologyUnits.length) {
+			section.appendChild(renderRepositoryAtlasUnitGrid(shelf.topologyUnits));
+		}
+		if (shelf.packageUnits.length) {
+			var packageDisclosure = el('details', 'rm-atlas-package-disclosure');
+			packageDisclosure.appendChild(txt(
+				'summary',
+				'rm-atlas-package-summary',
+				msg('main.atlas.workspace.packages', { count: shelf.packageUnits.length })
+			));
+			packageDisclosure.appendChild(renderRepositoryAtlasUnitGrid(shelf.packageUnits));
+			section.appendChild(packageDisclosure);
 		}
 		root.appendChild(section);
 	}
