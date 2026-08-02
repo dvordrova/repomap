@@ -12,7 +12,7 @@ import (
 
 const (
 	Version       = 1
-	PromptVersion = "atlas-study-prompt-v1"
+	PromptVersion = "atlas-study-prompt-v2"
 
 	RequestArtifactFilename = "atlas_study_request.v1.json"
 	ResultArtifactFilename  = "atlas_study_result.v1.json"
@@ -198,9 +198,10 @@ type Input struct {
 }
 
 type Prompt struct {
-	Version string `json:"version"`
-	System  string `json:"system"`
-	User    string `json:"user"`
+	Version  string   `json:"version"`
+	Language Language `json:"language"`
+	System   string   `json:"system"`
+	User     string   `json:"user"`
 }
 
 type RepositoryType string

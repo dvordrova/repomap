@@ -19,7 +19,12 @@ import (
 func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 	t.Parallel()
 
-	bundle, response := caddyArchitectureReplayFixture(t)
+	bundle, canonicalResponse := caddyArchitectureReplayFixture(t)
+	var canonicalProposal Proposal
+	if err := json.Unmarshal(canonicalResponse, &canonicalProposal); err != nil {
+		t.Fatal(err)
+	}
+	response := synthesisWireProposalJSON(t, bundle, canonicalProposal)
 	result, err := RecordSynthesisResponse(
 		bundle, "caddy-saved-run", "openai-compatible/bearer", "deepseek-v4-flash", 0, response,
 	)
@@ -70,7 +75,7 @@ func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 				"validation_warnings": []map[string]string{{"code": "proposal.excess_primary_pillars", "message": "grounded architecture exceeds eight primary pillars"}},
 				"fallback_reason":     "proposal_invalid_or_empty",
 			},
-			"response_state": "captured", "response_bytes": len(response), "response": response,
+			"response_state": "captured", "response_bytes": len(canonicalResponse), "response": canonicalResponse,
 		},
 	})
 	if err != nil {
@@ -84,7 +89,7 @@ func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 		t.Fatalf("legacy captured response replay = %#v", legacyReplayed)
 	}
 	var legacyProposal map[string]any
-	if err := json.Unmarshal(response, &legacyProposal); err != nil {
+	if err := json.Unmarshal(canonicalResponse, &legacyProposal); err != nil {
 		t.Fatal(err)
 	}
 	legacyProposal["version"] = 2
@@ -114,7 +119,7 @@ func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 	}
 }
 
-func TestSavedEtcdSizedArchitectureParityGate(t *testing.T) {
+func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile("testdata/etcd_architecture_parity_v1.json")
 	if err != nil {
@@ -137,8 +142,13 @@ func TestSavedEtcdSizedArchitectureParityGate(t *testing.T) {
 	}
 	if saved.Call == nil || saved.Call.ResponseState != ResponseCaptured ||
 		saved.Call.Metadata.OutputTokens <= 0 || saved.Call.ResponseBytes != len(saved.Call.Response) {
-		t.Fatalf("saved etcd call is incomplete: %#v", saved.Call)
+		t.Fatalf("saved legacy etcd source capture is incomplete: %#v", saved.Call)
 	}
+	var canonicalProposal Proposal
+	if err := json.Unmarshal(saved.Call.Response, &canonicalProposal); err != nil {
+		t.Fatalf("decode saved etcd canonical proposal: %v", err)
+	}
+	response := synthesisWireProposalJSON(t, fixture.Bundle, canonicalProposal)
 	request, requestJSON, err := BuildSynthesisRequest(fixture.Bundle)
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +159,7 @@ func TestSavedEtcdSizedArchitectureParityGate(t *testing.T) {
 	}
 	result, err := RecordSynthesisResponseForLanguage(
 		fixture.Bundle, "etcd-parity-v1", saved.Call.Metadata.Profile,
-		saved.Call.Metadata.Model, "en", 0, saved.Call.Response,
+		saved.Call.Metadata.Model, "en", 0, response,
 	)
 	if err != nil {
 		t.Fatalf("saved etcd response did not complete against its bounded shape: %v", err)
@@ -158,6 +168,15 @@ func TestSavedEtcdSizedArchitectureParityGate(t *testing.T) {
 		(result.Landscape.ValidationOutcome != ValidationAccepted &&
 			result.Landscape.ValidationOutcome != ValidationAcceptedNormalized) {
 		t.Fatalf("saved etcd response was not accepted: %#v", result.Landscape)
+	}
+	requestText := string(requestJSON)
+	for _, forbidden := range []string{
+		`"allowed_paths"`, `"location"`, `"provenance"`, `"scenario"`,
+		`"provider"`, "go.etcd.io/", "member-", "anchor-",
+	} {
+		if strings.Contains(requestText, forbidden) {
+			t.Fatalf("etcd-sized short-ref request leaked private field/value %q", forbidden)
+		}
 	}
 	wantMembers := make(map[string]Candidate, len(fixture.Bundle.Candidates))
 	for _, candidate := range fixture.Bundle.Candidates {
@@ -188,27 +207,36 @@ func TestSavedEtcdSizedArchitectureParityGate(t *testing.T) {
 	if !reflect.DeepEqual(result.Landscape.AnchorBindings, fixture.Bundle.AnchorBindings) {
 		t.Fatal("model grouping changed exact local anchor bindings")
 	}
+	if result.Record.PrivateCatalogSHA256 == "" || len(result.Record.PrivateCatalogSHA256) != 64 ||
+		result.Record.Call == nil || result.Record.Call.ResponseState != ResponseCaptured {
+		t.Fatalf("active etcd structural record lacks private catalog/captured response state: %#v", result.Record)
+	}
+	if result.Record.Call.Metadata.OutputTokens != 0 || result.Record.Call.Metadata.ResponseComplete {
+		t.Fatalf("mechanically converted response claimed live short-ref completion: %#v", result.Record.Call.Metadata)
+	}
 	t.Logf(
-		"etcd parity: candidates=%d members=%d anchors=%d request_json=%d prompt_bytes=%d output_tokens=%d response_state=%s",
+		"etcd short-ref structural bridge: candidates=%d members=%d anchors=%d request_json=%d prompt_bytes=%d response_bytes=%d legacy_reference_output_tokens=%d live_completion_proven=false",
 		len(fixture.Bundle.Candidates), len(gotMembers), len(fixture.Bundle.BehaviorAnchors),
-		len(requestJSON), synthesisPromptSize(prompt), saved.Call.Metadata.OutputTokens,
-		saved.Call.ResponseState,
+		len(requestJSON), synthesisPromptSize(prompt), len(response), saved.Call.Metadata.OutputTokens,
 	)
-	if request.Version != SynthesisRequestVersion {
-		t.Fatalf("request version = %d", request.Version)
+	if len(request.Candidates) != len(fixture.Bundle.Candidates) {
+		t.Fatalf("request candidates = %d, want %d", len(request.Candidates), len(fixture.Bundle.Candidates))
 	}
 }
 
 func TestRejectedCaddyProposalUsesAnchorFirstFallback(t *testing.T) {
 	t.Parallel()
 
-	bundle, response := caddyArchitectureReplayFixture(t)
+	bundle, canonicalResponse := caddyArchitectureReplayFixture(t)
 	var proposal Proposal
-	if err := json.Unmarshal(response, &proposal); err != nil {
+	if err := json.Unmarshal(canonicalResponse, &proposal); err != nil {
 		t.Fatal(err)
 	}
-	proposal.Subsystems[0].Components[0].AnchorIDs = []string{"anchor-invented"}
-	response, err := json.Marshal(proposal)
+	wire := synthesisWireProposalFromCanonical(t, bundle, proposal)
+	wire.Subsystems[0].Components[0].AnchorRefs = []SynthesisAnchorRef{{
+		Kind: AnchorRegistryLookup, Ref: "a999",
+	}}
+	response, err := json.Marshal(wire)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,29 +275,43 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	if !bytes.Equal(firstJSON, secondJSON) {
 		t.Fatal("synthesis request depends on top-level candidate order")
 	}
-	if request.Version != SynthesisRequestVersion || request.ContractVersion != ContractVersion || request.PromptVersion != SynthesisPromptVersion {
-		t.Fatalf("request versions = %#v", request)
+	if len(request.Candidates) != len(firstBundle.Candidates) {
+		t.Fatalf("request candidates = %d, want %d", len(request.Candidates), len(firstBundle.Candidates))
 	}
 	if len(firstJSON) > maxSynthesisRequestBytes {
 		t.Fatalf("request bytes = %d, limit %d", len(firstJSON), maxSynthesisRequestBytes)
 	}
 	encoded := string(firstJSON)
-	for _, forbidden := range []string{"file_tree", "coordinates", "styles", "command package", "repository package"} {
+	for _, forbidden := range []string{
+		"file_tree", "coordinates", "styles", "allowed_paths", "location", "provenance", "scenario",
+		"cmd-imports-repo", "cmd/root.go", "internal/repo/repo.go",
+	} {
 		if strings.Contains(encoded, forbidden) {
 			t.Errorf("provider request leaked forbidden presentation/raw field %q: %s", forbidden, encoded)
 		}
 	}
-	if !strings.Contains(encoded, "cmd-imports-repo") || !strings.Contains(encoded, "flow_anchor_bindings") {
-		t.Fatalf("request omitted exact local relations/bindings: %s", encoded)
+	for _, candidate := range firstBundle.Candidates {
+		if strings.HasPrefix(candidate.ID.Value, "member-") && strings.Contains(encoded, candidate.ID.Value) {
+			t.Errorf("provider request leaked canonical member id %q", candidate.ID.Value)
+		}
+	}
+	for _, anchor := range firstBundle.BehaviorAnchors {
+		if strings.Contains(encoded, anchor.ID) {
+			t.Errorf("provider request leaked canonical anchor id %q", anchor.ID)
+		}
+	}
+	if !strings.Contains(encoded, "supporting_relations") || !strings.Contains(encoded, "flow_anchor_bindings") ||
+		!strings.Contains(encoded, `"ref":{"kind":"package","ref":"p1"}`) {
+		t.Fatalf("request omitted compact typed relations/bindings: %s", encoded)
 	}
 	prompt, err := BuildSynthesisPrompt(firstBundle)
 	if err != nil {
 		t.Fatalf("BuildSynthesisPrompt() error = %v", err)
 	}
-	if prompt.Version != SynthesisPromptVersion || !strings.Contains(prompt.User, encoded) {
+	if prompt.Version != SynthesisPromptVersion || prompt.OutputLanguage != "en" || !strings.Contains(prompt.User, encoded) {
 		t.Fatalf("prompt is not bound to the versioned request: %#v", prompt)
 	}
-	for _, required := range []string{"opaque", "member_ids", "Do not return edges", "coordinates", "provenance"} {
+	for _, required := range []string{"request-local typed", "member_refs", "anchor_refs", "Do not return versions", "coordinates", "provenance"} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis instruction misses %q", required)
 		}
@@ -326,6 +368,204 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	}
 }
 
+func TestBuildSynthesisRequestKeepsCanonicalFlowIDPrivate(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	oldFlowID := bundle.Flows[0].ID
+	privateFlowID := FlowID("flow-canonical-private-7f8fce")
+	bundle.Flows[0].ID = privateFlowID
+	for candidateIndex := range bundle.Candidates {
+		for participationIndex := range bundle.Candidates[candidateIndex].Participations {
+			participation := &bundle.Candidates[candidateIndex].Participations[participationIndex]
+			if participation.FlowID == oldFlowID {
+				participation.FlowID = privateFlowID
+				participation.Evidence.Value = string(privateFlowID)
+			}
+		}
+		for factIndex := range bundle.Candidates[candidateIndex].Facts {
+			fact := &bundle.Candidates[candidateIndex].Facts[factIndex]
+			if fact.Kind == FactFlowParticipation && fact.Value == string(oldFlowID) {
+				fact.Value = string(privateFlowID)
+			}
+		}
+	}
+	for bindingIndex := range bundle.AnchorBindings {
+		if bundle.AnchorBindings[bindingIndex].FlowID == oldFlowID {
+			bundle.AnchorBindings[bindingIndex].FlowID = privateFlowID
+		}
+	}
+
+	request, encoded, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(privateFlowID)) {
+		t.Fatalf("provider request leaked canonical flow id %q: %s", privateFlowID, encoded)
+	}
+	if len(request.Flows) != 1 || request.Flows[0].Ref != "q1" || request.Flows[0].Label != "Backup" {
+		t.Fatalf("request-local flow projection = %#v", request.Flows)
+	}
+}
+
+func TestBuildSynthesisRequestRejectsUnknownBindingAnchorBeforeProjection(t *testing.T) {
+	t.Parallel()
+
+	bundle := adversarialPrivateIdentitySynthesisBundle()
+	baseline, _, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatalf("valid exact-anchor fixture: %v", err)
+	}
+	if len(baseline.AnchorBindings) != 1 || baseline.AnchorBindings[0].AnchorRef.Ref == "" {
+		t.Fatalf("valid binding projection = %#v", baseline.AnchorBindings)
+	}
+
+	bundle.AnchorBindings[0].AnchorID = "cobalt-unregistered-anchor-91f2"
+	request, encoded, err := BuildSynthesisRequest(bundle)
+	if err == nil || !strings.Contains(err.Error(), "unknown behavior anchor") {
+		t.Fatalf("unknown binding anchor error = %v", err)
+	}
+	if !reflect.DeepEqual(request, SynthesisRequest{}) || encoded != nil {
+		t.Fatalf("unknown anchor reached model wire: request=%#v encoded=%s", request, encoded)
+	}
+	key, err := SynthesisCacheKey("revision-private-anchor", bundle)
+	if err == nil || key != "" {
+		t.Fatalf("unknown anchor reached cache identity: key=%q error=%v", key, err)
+	}
+}
+
+func TestBuildSynthesisRequestHidesArbitraryCanonicalIDsWithoutRewritingOrdinaryProse(t *testing.T) {
+	t.Parallel()
+
+	bundle := adversarialPrivateIdentitySynthesisBundle()
+	request, encoded, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateValues := []string{
+		bundle.Candidates[0].ID.Value,
+		bundle.Candidates[1].ID.Value,
+		bundle.BehaviorAnchors[0].ID,
+		string(bundle.Flows[0].ID),
+	}
+	for _, privateValue := range privateValues {
+		if bytes.Contains(encoded, []byte(privateValue)) {
+			t.Fatalf("provider wire leaked arbitrary canonical identity %q: %s", privateValue, encoded)
+		}
+	}
+
+	ordinaryLabelFound := false
+	embeddedCandidateLabelFound := false
+	embeddedFactLabelFound := false
+	for _, candidate := range request.Candidates {
+		if candidate.Label == "member-facing helper" {
+			ordinaryLabelFound = true
+		}
+		if candidate.Label == "runtime" {
+			embeddedCandidateLabelFound = true
+		}
+		for _, fact := range candidate.Facts {
+			if fact.Label == "handles safely" {
+				embeddedFactLabelFound = true
+			}
+			for _, privateValue := range privateValues {
+				if slicesContainExactOpaqueToken(fact.Label, privateValue) {
+					t.Fatalf("candidate fact label leaked canonical identity %q", privateValue)
+				}
+			}
+		}
+	}
+	if !ordinaryLabelFound {
+		t.Fatalf("identity-aware projection rewrote ordinary member-prefixed prose: %#v", request.Candidates)
+	}
+	if !embeddedCandidateLabelFound || !embeddedFactLabelFound {
+		t.Fatalf("embedded canonical tokens were not removed exactly: %#v", request.Candidates)
+	}
+	if len(request.Flows) != 1 || request.Flows[0].Label != "startup" {
+		t.Fatalf("embedded canonical flow label projection = %#v", request.Flows)
+	}
+
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nearMatch := bundle.Candidates[0].ID.Value + "-suffix"
+	if got := synthesisSemanticLabel(catalog, MemberSymbol, nearMatch); got != nearMatch {
+		t.Fatalf("exact token sanitizer rewrote non-identical prose %q as %q", nearMatch, got)
+	}
+}
+
+func TestBuildSynthesisRequestAllocatesCollisionFreeDeterministicRefs(t *testing.T) {
+	t.Parallel()
+
+	bundle := requestLocalRefCollisionSynthesisBundle()
+	request, encoded, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateValues := map[string]struct{}{
+		bundle.Candidates[0].ID.Value: {},
+		bundle.Candidates[1].ID.Value: {},
+		bundle.BehaviorAnchors[0].ID:  {},
+		string(bundle.Flows[0].ID):    {},
+	}
+	for _, field := range synthesisRequestIdentityFields(request) {
+		if _, collision := privateValues[field.ref]; collision {
+			t.Fatalf("wire identity %s reused private canonical value %q: %s", field.name, field.ref, encoded)
+		}
+	}
+	if got := []string{request.Candidates[0].Ref.Ref, request.Candidates[1].Ref.Ref}; !reflect.DeepEqual(got, []string{"p3", "p4"}) {
+		t.Fatalf("member refs = %v, want collision-free [p3 p4]", got)
+	}
+	if len(request.BehaviorAnchors) != 1 || request.BehaviorAnchors[0].Ref.Ref != "a2" ||
+		len(request.Flows) != 1 || request.Flows[0].Ref != "q2" {
+		t.Fatalf("anchor/flow refs did not skip private identities: anchors=%#v flows=%#v", request.BehaviorAnchors, request.Flows)
+	}
+	for _, forbidden := range []string{`"ref":"p1"`, `"ref":"p2"`, `"ref":"a1"`, `"flow_ref":"q1"`} {
+		if bytes.Contains(encoded, []byte(forbidden)) {
+			t.Fatalf("wire reused private canonical identity field %q: %s", forbidden, encoded)
+		}
+	}
+
+	reordered := bundle
+	reordered.Candidates = append([]Candidate(nil), bundle.Candidates...)
+	reordered.Candidates[0], reordered.Candidates[1] = reordered.Candidates[1], reordered.Candidates[0]
+	_, reorderedJSON, err := BuildSynthesisRequest(reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, reorderedJSON) {
+		t.Fatalf("collision-free refs depend on candidate input order:\nfirst=%s\nsecond=%s", encoded, reorderedJSON)
+	}
+	firstKey, err := SynthesisCacheKey("collision-revision", bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondKey, err := SynthesisCacheKey("collision-revision", reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstKey != secondKey {
+		t.Fatalf("deterministic private catalog/cache identity changed across order: %q != %q", firstKey, secondKey)
+	}
+}
+
+func TestSynthesisRequestIdentityScanRejectsExactCanonicalWireRefWithoutEcho(t *testing.T) {
+	t.Parallel()
+
+	catalog := synthesisPrivateCatalog{canonicalOpaqueIDs: map[string]struct{}{"p1": {}}}
+	request := SynthesisRequest{Candidates: []SynthesisCandidate{{
+		Ref: SynthesisMemberRef{Kind: MemberPackage, Ref: "p1"}, Label: "runtime",
+	}}}
+	err := validateSynthesisRequestIdentityFields(catalog, request)
+	if err == nil || !strings.Contains(err.Error(), "collides with a private canonical identity") {
+		t.Fatalf("exact canonical wire ref error = %v", err)
+	}
+	if strings.Contains(err.Error(), "p1") {
+		t.Fatalf("identity collision error echoed private identity: %v", err)
+	}
+}
+
 func TestBuildSynthesisPromptLanguageKeepsEnglishBytesAndScopesRussianProse(t *testing.T) {
 	t.Parallel()
 
@@ -346,7 +586,8 @@ func TestBuildSynthesisPromptLanguageKeepsEnglishBytesAndScopesRussianProse(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if russian.Version != canonicalEnglish.Version || russian.User != canonicalEnglish.User {
+	if russian.Version != canonicalEnglish.Version || russian.User != canonicalEnglish.User ||
+		russian.OutputLanguage != "ru" || canonicalEnglish.OutputLanguage != "en" {
 		t.Fatalf("Russian prompt changed versioned facts request: %#v", russian)
 	}
 	if russian.System == canonicalEnglish.System ||
@@ -354,11 +595,360 @@ func TestBuildSynthesisPromptLanguageKeepsEnglishBytesAndScopesRussianProse(t *t
 		!strings.Contains(russian.System, "Preserve technical identifiers") {
 		t.Fatalf("Russian prompt has no narrow prose instruction: %q", russian.System)
 	}
-	if strings.Contains(canonicalEnglish.System, "prose in Russian") {
-		t.Fatal("canonical English prompt changed")
+	if !strings.Contains(canonicalEnglish.System, "name and description prose in English") ||
+		strings.Contains(canonicalEnglish.System, "prose in Russian") {
+		t.Fatal("canonical English prompt does not own an explicit English prose contract")
 	}
 	if _, err := BuildSynthesisPromptForLanguage(bundle, "fr"); err == nil {
 		t.Fatal("unsupported synthesis language was accepted")
+	}
+}
+
+func adversarialPrivateIdentitySynthesisBundle() CandidateBundle {
+	primaryID := MemberID{Kind: MemberPackage, Value: "quartz-private-member-91f2"}
+	ordinaryID := MemberID{Kind: MemberPackage, Value: "cobalt-private-member-84d7"}
+	flowID := FlowID("violet-private-flow-62ac")
+	anchorID := "amber-private-anchor-07bd"
+	location := evidence.Location{Path: "main.go", Line: 12, Column: 1}
+	return CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingMixed,
+		BehaviorAnchors: []BehaviorAnchor{{
+			ID: anchorID, Kind: AnchorProcessEntry, Label: "application entry",
+			Location: location, Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+			Producer: evidence.Provenance{
+				Provider: "fixture", Version: "v1", Operation: "classify_process_entry",
+			},
+			Certainty: evidence.CertaintyStatic, MemberIDs: []MemberID{primaryID},
+			Limitations: []string{"Static fixture evidence; runtime execution is not observed."},
+		}},
+		Candidates: []Candidate{
+			{
+				ID: primaryID, Name: "runtime " + primaryID.Value,
+				Participations: []FlowParticipation{testFlowParticipation(flowID, "main.go", 12)},
+				Facts: []LocalFact{
+					testLocalFact(FactDeclaration, "handles "+anchorID+" safely", "main.go", 12),
+					testLocalFact(FactExecutableRole, ordinaryID.Value, "main.go", 12),
+					testLocalFact(FactContainment, string(flowID), "main.go", 12),
+				},
+			},
+			{
+				ID: ordinaryID, Name: "member-facing helper",
+				Facts: []LocalFact{testLocalFact(FactDeclaration, "ordinary helper declaration", "helper.go", 4)},
+			},
+		},
+		Flows: []Flow{{
+			ID: flowID, Name: "startup " + primaryID.Value,
+			Facts: []LocalFact{testLocalFact(FactDeclaration, anchorID, "main.go", 12)},
+		}},
+		AnchorBindings: []FlowAnchorBinding{{
+			FlowID: flowID, AnchorID: anchorID, MemberID: primaryID,
+			Location: &location, Certainty: evidence.CertaintyStatic,
+			Provenance: []evidence.Provenance{{
+				Provider: "fixture", Version: "v1", Operation: "bind_flow_anchor",
+			}},
+		}},
+	}
+}
+
+func requestLocalRefCollisionSynthesisBundle() CandidateBundle {
+	primaryID := MemberID{Kind: MemberPackage, Value: "p1"}
+	secondaryID := MemberID{Kind: MemberPackage, Value: "p2"}
+	flowID := FlowID("q1")
+	anchorID := "a1"
+	location := evidence.Location{Path: "main.go", Line: 12, Column: 1}
+	return CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingMixed,
+		BehaviorAnchors: []BehaviorAnchor{{
+			ID: anchorID, Kind: AnchorProcessEntry, Label: "application entry",
+			Location: location, Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+			Producer: evidence.Provenance{
+				Provider: "fixture", Version: "v1", Operation: "classify_process_entry",
+			},
+			Certainty: evidence.CertaintyStatic, MemberIDs: []MemberID{primaryID},
+			Limitations: []string{"Static fixture evidence; runtime execution is not observed."},
+		}},
+		Candidates: []Candidate{
+			{
+				ID: primaryID, Name: "runtime",
+				Participations: []FlowParticipation{testFlowParticipation(flowID, "main.go", 12)},
+				Facts:          []LocalFact{testLocalFact(FactDeclaration, "runtime", "main.go", 12)},
+			},
+			{
+				ID: secondaryID, Name: "storage", ParentID: &primaryID,
+				Facts: []LocalFact{testLocalFact(FactDeclaration, "storage", "storage.go", 4)},
+			},
+		},
+		Flows: []Flow{{
+			ID: flowID, Name: "startup",
+			Facts: []LocalFact{testLocalFact(FactDeclaration, "startup", "main.go", 12)},
+		}},
+		Relations: []LocalRelation{{
+			ID: "runtime-owns-storage", From: primaryID, To: secondaryID,
+			Kind: StructuralRelationPackageImport, Certainty: evidence.CertaintyStatic,
+			Provenance: []evidence.Provenance{{
+				Provider: "fixture", Version: "v1", Operation: "relate_members",
+			}},
+			Scenarios: []ScenarioContext{{ID: "go:test", Name: "test build"}},
+		}},
+		AnchorBindings: []FlowAnchorBinding{{
+			FlowID: flowID, AnchorID: anchorID, MemberID: primaryID,
+			Location: &location, Certainty: evidence.CertaintyStatic,
+			Provenance: []evidence.Provenance{{
+				Provider: "fixture", Version: "v1", Operation: "bind_flow_anchor",
+			}},
+		}},
+	}
+}
+
+func slicesContainExactOpaqueToken(value, opaque string) bool {
+	for _, field := range strings.Fields(value) {
+		if field == opaque {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPrivateCatalogSeparatesEqualShortWiresAndReplay(t *testing.T) {
+	t.Parallel()
+
+	first := minimalPackageSynthesisBundle("member-package-first-private-id")
+	second := minimalPackageSynthesisBundle("member-package-second-private-id")
+	_, firstWire, err := BuildSynthesisRequest(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secondWire, err := BuildSynthesisRequest(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstWire, secondWire) {
+		t.Fatalf("semantic short wire changed with private canonical mapping:\nfirst=%s\nsecond=%s", firstWire, secondWire)
+	}
+	firstKey, err := SynthesisCacheKeyForProviderAndLanguage("same-revision", first, "test", "test", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondKey, err := SynthesisCacheKeyForProviderAndLanguage("same-revision", second, "test", "test", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstKey == secondKey {
+		t.Fatal("equal provider wire reused a cache key across different private canonical mappings")
+	}
+	response := validSynthesisProposalJSON(t, first)
+	result, err := RecordSynthesisResponse(first, "same-revision", "test", "test", time.Millisecond, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Record.PrivateCatalogSHA256 == "" {
+		t.Fatal("saved synthesis record omitted private catalog identity")
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplaySynthesis(second, "same-revision", saved); err == nil ||
+		!strings.Contains(err.Error(), "private catalog") {
+		t.Fatalf("replay with substituted private mapping error = %v", err)
+	}
+}
+
+func TestSynthesisResponseRejectsNonExactMemberRefs(t *testing.T) {
+	t.Parallel()
+
+	bundle := minimalPackageSynthesisBundle("member-package-private-canonical")
+	base := synthesisWireProposalFromCanonical(t, bundle, validSynthesisProposal(bundle))
+	tests := []struct {
+		name string
+		ref  SynthesisMemberRef
+	}{
+		{name: "unknown", ref: SynthesisMemberRef{Kind: MemberPackage, Ref: "p9"}},
+		{name: "prefix", ref: SynthesisMemberRef{Kind: MemberPackage, Ref: "p"}},
+		{name: "raw canonical", ref: SynthesisMemberRef{Kind: MemberPackage, Ref: bundle.Candidates[0].ID.Value}},
+		{name: "wrong kind", ref: SynthesisMemberRef{Kind: MemberSymbol, Ref: "p1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			wire := base
+			wire.Subsystems = append([]synthesisWireSubsystem(nil), base.Subsystems...)
+			wire.Subsystems[0].Components = append([]synthesisWireComponent(nil), base.Subsystems[0].Components...)
+			wire.Subsystems[0].Components[0].MemberRefs = []SynthesisMemberRef{test.ref}
+			response, err := json.Marshal(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := RecordSynthesisResponse(bundle, "revision-ref", "test", "test", time.Millisecond, response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Landscape.Fallback || result.Landscape.FallbackReason != FallbackRejectedUnknownMember ||
+				!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.unknown_member_id") {
+				t.Fatalf("non-exact ref was not rejected closed: %#v", result.Landscape)
+			}
+		})
+	}
+
+	rawCanonical := []byte(`{"subsystems":[{"name":"Repository","components":[{"name":"Object","member_ids":[{"kind":"package","value":"member-package-private-canonical"}]}]}]}`)
+	result, err := RecordSynthesisResponse(bundle, "revision-raw", "test", "test", time.Millisecond, rawCanonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected {
+		t.Fatalf("legacy canonical provider shape entered active synthesis: %#v", result.Landscape)
+	}
+}
+
+func TestSynthesisResponseRejectsForbiddenBackendIdentityFields(t *testing.T) {
+	t.Parallel()
+
+	bundle := minimalPackageSynthesisBundle("member-package-private-canonical")
+	valid := synthesisWireProposalFromCanonical(t, bundle, validSynthesisProposal(bundle))
+	validJSON, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(validJSON, &root); err != nil {
+		t.Fatal(err)
+	}
+	root["version"] = ProposalVersion
+	subsystems := root["subsystems"].([]any)
+	components := subsystems[0].(map[string]any)["components"].([]any)
+	components[0].(map[string]any)["member_ids"] = []any{map[string]any{
+		"kind": "package", "value": bundle.Candidates[0].ID.Value,
+	}}
+	mixed, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "revision-mixed", "test", "test", time.Millisecond, mixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "response.invalid_proposal") {
+		t.Fatalf("mixed short-ref/backend response was not rejected closed: %#v", result.Landscape)
+	}
+}
+
+func TestFreshCasdoorDuplicateMemberRefRemainsClosedRejection(t *testing.T) {
+	t.Parallel()
+
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
+		Candidates: []Candidate{
+			{ID: MemberID{Kind: MemberPackage, Value: "member-package-3c4e406309b6c4ce0e8eb848"}, Name: "object", Facts: []LocalFact{testLocalFact(FactDeclaration, "object", "object/object.go", 1)}},
+			{ID: MemberID{Kind: MemberPackage, Value: "member-package-2c3c1568bf99db9806ef2f8e"}, Name: "certificate", Facts: []LocalFact{testLocalFact(FactDeclaration, "certificate", "certificate/certificate.go", 1)}},
+		},
+	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectRef := catalog.membersByID[bundle.Candidates[0].ID]
+	certificateRef := catalog.membersByID[bundle.Candidates[1].ID]
+	wire := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{
+		{Name: "Security and Identity", Components: []synthesisWireComponent{{
+			Name: "Certificate Management", MemberRefs: []SynthesisMemberRef{objectRef, certificateRef}, Hypothesis: true,
+		}}},
+		{Name: "Domain Objects", Components: []synthesisWireComponent{{
+			Name: "Object Model", MemberRefs: []SynthesisMemberRef{objectRef}, Hypothesis: true,
+		}}},
+	}}
+	response, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "casdoor-20260802-133147", "test", "test", time.Millisecond, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.FallbackReason != FallbackRejectedOwnership ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.conflicting_membership") {
+		t.Fatalf("fresh Casdoor duplicate was not rejected as conflicting membership: %#v", result.Landscape)
+	}
+	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
+		t.Fatal("rejected duplicate changed local relations")
+	}
+}
+
+func TestAnchorRefsRejectWithinComponentDuplicateButAllowSharedContext(t *testing.T) {
+	t.Parallel()
+
+	bundle := groundedTwoMemberSynthesisBundle()
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchorRef := catalog.anchorsByID[bundle.BehaviorAnchors[0].ID]
+	firstRef := catalog.membersByID[bundle.Candidates[0].ID]
+	secondRef := catalog.membersByID[bundle.Candidates[1].ID]
+	duplicate := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
+		Name: "Runtime", Components: []synthesisWireComponent{{
+			Name: "Duplicate anchor", MemberRefs: []SynthesisMemberRef{firstRef},
+			AnchorRefs: []SynthesisAnchorRef{anchorRef, anchorRef},
+		}},
+	}}}
+	response, err := json.Marshal(duplicate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "duplicate-anchor", "test", "test", time.Millisecond, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected {
+		t.Fatalf("duplicate anchor ref within one component was accepted: %#v", result.Landscape)
+	}
+	for _, test := range []struct {
+		name string
+		ref  SynthesisAnchorRef
+	}{
+		{name: "unknown", ref: SynthesisAnchorRef{Kind: AnchorProcessEntry, Ref: "a9"}},
+		{name: "prefix", ref: SynthesisAnchorRef{Kind: AnchorProcessEntry, Ref: "a"}},
+		{name: "raw canonical", ref: SynthesisAnchorRef{Kind: AnchorProcessEntry, Ref: bundle.BehaviorAnchors[0].ID}},
+		{name: "wrong kind", ref: SynthesisAnchorRef{Kind: AnchorLifecycleStart, Ref: "a1"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
+				Name: "Runtime", Components: []synthesisWireComponent{{
+					Name: "Invalid anchor", MemberRefs: []SynthesisMemberRef{firstRef},
+					AnchorRefs: []SynthesisAnchorRef{test.ref},
+				}},
+			}}}
+			response, err := json.Marshal(invalid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := RecordSynthesisResponse(bundle, "invalid-anchor", "test", "test", time.Millisecond, response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Landscape.Fallback || result.Landscape.FallbackReason != FallbackRejectedUnknownAnchor ||
+				!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.unknown_anchor_id") {
+				t.Fatalf("non-exact anchor ref was not rejected closed: %#v", result.Landscape)
+			}
+		})
+	}
+
+	shared := synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
+		Name: "Runtime", Components: []synthesisWireComponent{
+			{Name: "First", MemberRefs: []SynthesisMemberRef{firstRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef}},
+			{Name: "Second", MemberRefs: []SynthesisMemberRef{secondRef}, AnchorRefs: []SynthesisAnchorRef{anchorRef}},
+		},
+	}}}
+	response, err = json.Marshal(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = RecordSynthesisResponse(bundle, "shared-anchor", "test", "test", time.Millisecond, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome == ValidationRejected {
+		t.Fatalf("same exact anchor used as context by distinct components was rejected: %#v", result.Landscape)
 	}
 }
 
@@ -382,6 +972,11 @@ func TestRecordSynthesisResponseReplaysDeterministically(t *testing.T) {
 
 	bundle := landscapeTestBundle()
 	response := validSynthesisProposalJSON(t, bundle)
+	for _, forbidden := range []string{`"version"`, `"catalog"`, `"hash"`, `"member_ids"`, `"anchor_ids"`} {
+		if strings.Contains(string(response), forbidden) {
+			t.Fatalf("active provider response shape contains private/backend field %q: %s", forbidden, response)
+		}
+	}
 	result, err := RecordSynthesisResponse(
 		bundle,
 		"revision-a",
@@ -405,6 +1000,12 @@ func TestRecordSynthesisResponseReplaysDeterministically(t *testing.T) {
 		len(metadata.ValidationWarnings) != 0 || metadata.FallbackReason != "" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
+	result.Record.Call.Metadata.UsageReported = true
+	result.Record.Call.Metadata.InputTokens = 120
+	result.Record.Call.Metadata.OutputTokens = 40
+	result.Record.Call.Metadata.FinishReason = "stop"
+	result.Record.Call.Metadata.TransportAttempts = 2
+	result.Record.Call.Metadata.ResponseComplete = true
 
 	saved, err := json.Marshal(result.Record)
 	if err != nil {
@@ -463,7 +1064,7 @@ func TestRussianSynthesisRecordBindsLanguagePromptAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Record.Call.Metadata.InputBytes != synthesisPromptSize(russianPrompt) ||
-		result.Record.Call.Metadata.InputBytes == synthesisPromptSize(englishPrompt) {
+		russianPrompt.OutputLanguage == englishPrompt.OutputLanguage || russianPrompt.System == englishPrompt.System {
 		t.Fatalf("Russian prompt identity was not recorded: %#v", result.Record.Call.Metadata)
 	}
 
@@ -670,9 +1271,10 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 		MemberIDs:   []MemberID{bundle.Candidates[0].ID},
 		Limitations: []string{"Static test evidence; execution is not observed."},
 	}}
+	bundle.AnchorBindings = nil
 
 	proposal := Proposal{
-		Version: ContractVersion,
+		Version: ProposalVersion,
 		Subsystems: []ProposedSubsystem{{
 			Name: "Runtime",
 			Components: []ProposedComponent{{
@@ -680,10 +1282,7 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 			}},
 		}},
 	}
-	raw, err := json.Marshal(proposal)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := synthesisWireProposalJSON(t, bundle, proposal)
 	result, err := RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -696,10 +1295,7 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 	proposal.Subsystems[0].Components[0] = ProposedComponent{
 		Name: "Source file", MemberIDs: []MemberID{bundle.Candidates[2].ID},
 	}
-	raw, err = json.Marshal(proposal)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw = synthesisWireProposalJSON(t, bundle, proposal)
 	result, err = RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -712,10 +1308,7 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 		Name: "Process", MemberIDs: []MemberID{bundle.Candidates[0].ID},
 	}
 	proposal.Subsystems[0].Components[0].AnchorIDs = []string{"process"}
-	raw, err = json.Marshal(proposal)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw = synthesisWireProposalJSON(t, bundle, proposal)
 	result, err = RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -730,15 +1323,9 @@ func TestSensitiveSynthesisResponseIsNotSavedOrEchoed(t *testing.T) {
 
 	bundle := landscapeTestBundle()
 	secret := "company-secret-value-12345"
-	var proposal Proposal
-	if err := json.Unmarshal(validSynthesisProposalJSON(t, bundle), &proposal); err != nil {
-		t.Fatal(err)
-	}
+	proposal := validSynthesisProposal(bundle)
 	proposal.Subsystems[0].Description = `api_key="` + secret + `"`
-	response, err := json.Marshal(proposal)
-	if err != nil {
-		t.Fatal(err)
-	}
+	response := synthesisWireProposalJSON(t, bundle, proposal)
 	result, err := RecordSynthesisResponse(bundle, "revision-a", "local-openai", "weak-model", time.Second, response)
 	if err != nil {
 		t.Fatalf("RecordSynthesisResponse() error = %v", err)
@@ -800,23 +1387,113 @@ func TestReplaySynthesisRejectsPluralCallHistory(t *testing.T) {
 func validSynthesisProposalJSON(t *testing.T, bundle CandidateBundle) []byte {
 	t.Helper()
 
+	return synthesisWireProposalJSON(t, bundle, validSynthesisProposal(bundle))
+}
+
+func validSynthesisProposal(bundle CandidateBundle) Proposal {
 	memberIDs := make([]MemberID, len(bundle.Candidates))
 	for index, candidate := range bundle.Candidates {
 		memberIDs[index] = candidate.ID
 	}
-	encoded, err := json.Marshal(Proposal{
-		Version: ContractVersion,
+	return Proposal{
+		Version: ProposalVersion,
 		Subsystems: []ProposedSubsystem{{
 			Name: "Repository",
 			Components: []ProposedComponent{{
 				Name: "Local architecture", Description: "Conceptual grouping over exact local candidates.", MemberIDs: memberIDs,
 			}},
 		}},
-	})
+	}
+}
+
+func synthesisWireProposalJSON(t *testing.T, bundle CandidateBundle, proposal Proposal) []byte {
+	t.Helper()
+
+	wire := synthesisWireProposalFromCanonical(t, bundle, proposal)
+	encoded, err := json.Marshal(wire)
 	if err != nil {
-		t.Fatalf("json.Marshal(proposal) error = %v", err)
+		t.Fatalf("json.Marshal(wire proposal) error = %v", err)
 	}
 	return encoded
+}
+
+func synthesisWireProposalFromCanonical(
+	t *testing.T,
+	bundle CandidateBundle,
+	proposal Proposal,
+) synthesisWireProposal {
+	t.Helper()
+
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatalf("buildSynthesisPrivateCatalog() error = %v", err)
+	}
+	wire := synthesisWireProposal{Subsystems: make([]synthesisWireSubsystem, 0, len(proposal.Subsystems))}
+	for _, subsystem := range proposal.Subsystems {
+		wireSubsystem := synthesisWireSubsystem{
+			Name: subsystem.Name, Description: subsystem.Description,
+			Components: make([]synthesisWireComponent, 0, len(subsystem.Components)),
+		}
+		for _, component := range subsystem.Components {
+			wireComponent := synthesisWireComponent{
+				Name: component.Name, Description: component.Description, Hypothesis: component.Hypothesis,
+				MemberRefs: make([]SynthesisMemberRef, 0, len(component.MemberIDs)),
+				AnchorRefs: make([]SynthesisAnchorRef, 0, len(component.AnchorIDs)),
+			}
+			for _, memberID := range component.MemberIDs {
+				ref, exists := catalog.membersByID[memberID]
+				if !exists {
+					t.Fatalf("canonical fixture references unknown member %q", memberID.key())
+				}
+				wireComponent.MemberRefs = append(wireComponent.MemberRefs, ref)
+			}
+			for _, anchorID := range component.AnchorIDs {
+				ref, exists := catalog.anchorsByID[anchorID]
+				if !exists {
+					t.Fatalf("canonical fixture references unknown anchor %q", anchorID)
+				}
+				wireComponent.AnchorRefs = append(wireComponent.AnchorRefs, ref)
+			}
+			wireSubsystem.Components = append(wireSubsystem.Components, wireComponent)
+		}
+		wire.Subsystems = append(wire.Subsystems, wireSubsystem)
+	}
+	return wire
+}
+
+func minimalPackageSynthesisBundle(canonicalID string) CandidateBundle {
+	return CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
+		Candidates: []Candidate{{
+			ID: MemberID{Kind: MemberPackage, Value: canonicalID}, Name: "object",
+			Facts: []LocalFact{testLocalFact(FactDeclaration, "object", "object/object.go", 1)},
+		}},
+	}
+}
+
+func groundedTwoMemberSynthesisBundle() CandidateBundle {
+	first := Candidate{
+		ID: MemberID{Kind: MemberPackage, Value: "member-package-first"}, Name: "first",
+		Facts: []LocalFact{testLocalFact(FactDeclaration, "first", "first/first.go", 1)},
+	}
+	second := Candidate{
+		ID: MemberID{Kind: MemberPackage, Value: "member-package-second"}, Name: "second",
+		Facts: []LocalFact{testLocalFact(FactDeclaration, "second", "second/second.go", 1)},
+	}
+	location := evidence.Location{Path: "main.go", Line: 10, Column: 1}
+	return CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingMixed,
+		Candidates: []Candidate{first, second},
+		BehaviorAnchors: []BehaviorAnchor{{
+			ID: "anchor-process", Kind: AnchorProcessEntry, Label: "process entry", Location: location,
+			Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+			Producer: evidence.Provenance{
+				Provider: "test", Version: "v1", Operation: "fixture", Location: &location,
+			},
+			Certainty: evidence.CertaintyStatic, MemberIDs: []MemberID{first.ID, second.ID},
+			Limitations: []string{"Static fixture evidence; runtime execution is not observed."},
+		}},
+	}
 }
 
 func caddyArchitectureReplayFixture(t *testing.T) (CandidateBundle, []byte) {

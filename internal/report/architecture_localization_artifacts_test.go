@@ -585,29 +585,31 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	components := make([]componentmap.ProposedComponent, 0, len(input.CandidateBundle.Candidates))
-	for _, candidate := range input.CandidateBundle.Candidates {
-		components = append(components, componentmap.ProposedComponent{
-			Name:        "Runtime member " + candidate.Name,
-			Description: "Owns " + candidate.Name + " in the exact saved fixture.",
-			MemberIDs:   []componentmap.MemberID{candidate.ID},
+	memberRefs, _ := architectureTestWireRefs(t, input.CandidateBundle)
+	components := make([]architectureTestWireComponent, 0, len(memberRefs))
+	for index, memberRef := range memberRefs {
+		if index >= len(input.CandidateBundle.Candidates) {
+			t.Fatalf("request-local candidate %d has no exact fixture member", index)
+		}
+		candidateName := input.CandidateBundle.Candidates[index].Name
+		components = append(components, architectureTestWireComponent{
+			Name:        "Runtime member " + candidateName,
+			Description: "Owns " + candidateName + " in the exact saved fixture.",
+			MemberRefs:  []componentmap.SynthesisMemberRef{memberRef},
+			Hypothesis:  input.CandidateBundle.GroundingMode != componentmap.GroundingPackages,
 		})
 	}
 	description := "Groups the exact saved fixture runtime."
 	if normalized {
 		description = strings.Repeat("bounded architecture description ", 48)
 	}
-	response, err := json.Marshal(componentmap.Proposal{
-		Version: componentmap.ContractVersion,
-		Subsystems: []componentmap.ProposedSubsystem{{
+	response := marshalArchitectureTestWireResponse(t, architectureTestWireResponse{
+		Subsystems: []architectureTestWireSubsystem{{
 			Name:        "Runtime",
 			Description: description,
 			Components:  components,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	result, err := componentmap.RecordSynthesisResponseForLanguage(
 		input.CandidateBundle,
 		"revision-localization",
@@ -629,6 +631,12 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	if !normalized && result.Landscape.ValidationOutcome != componentmap.ValidationAccepted {
 		t.Fatalf("accepted fixture outcome = %q", result.Landscape.ValidationOutcome)
 	}
+	result.Record.Call.Metadata.UsageReported = true
+	result.Record.Call.Metadata.InputTokens = 25
+	result.Record.Call.Metadata.OutputTokens = 11
+	result.Record.Call.Metadata.FinishReason = "stop"
+	result.Record.Call.Metadata.TransportAttempts = 1
+	result.Record.Call.Metadata.ResponseComplete = true
 	recordJSON, err := json.Marshal(result.Record)
 	if err != nil {
 		t.Fatal(err)
@@ -636,18 +644,22 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, recordJSON)
 
 	metadata := result.Record.Call.Metadata
-	status := ArchitectureSynthesisStatus{
-		Version:               ArchitectureSynthesisStatusVersion,
-		State:                 ArchitectureSynthesisSucceeded,
-		ProviderRequestCount:  1,
-		ProviderCallSucceeded: true,
-		ResponseParsed:        true,
-		ProposalAccepted:      true,
-		ProposalNormalized:    metadata.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ArchitectureSource:    string(metadata.ArchitectureSource),
-		ArchitectureLevel:     metadata.ArchitectureLevel,
-		NormalizationCount:    len(metadata.Normalizations),
-	}
+	status := architectureSynthesisV4AcceptedFixture()
+	status.RequestBytes = architectureTestExactProviderRequestBytes(
+		t,
+		input.CandidateBundle,
+		localization.LocaleEnglish,
+	)
+	status.ResponseBytes = result.Record.Call.ResponseBytes
+	status.ResponseContentBytes = len(result.Record.Call.Response)
+	status.CandidateCount = len(input.CandidateBundle.Candidates)
+	status.AnchorCount = len(input.CandidateBundle.BehaviorAnchors)
+	status.MemberOccurrences = len(input.CandidateBundle.Candidates)
+	status.DistinctMembers = len(input.CandidateBundle.Candidates)
+	status.ProposalNormalized = metadata.ValidationOutcome == componentmap.ValidationAcceptedNormalized
+	status.ArchitectureSource = string(metadata.ArchitectureSource)
+	status.ArchitectureLevel = metadata.ArchitectureLevel
+	status.NormalizationCount = len(metadata.Normalizations)
 	if err := status.Validate(); err != nil {
 		t.Fatal(err)
 	}

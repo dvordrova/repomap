@@ -12,11 +12,86 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 )
+
+type architectureTestWireResponse struct {
+	Subsystems []architectureTestWireSubsystem `json:"subsystems"`
+}
+
+type architectureTestWireSubsystem struct {
+	Name        string                          `json:"name"`
+	Description string                          `json:"description,omitempty"`
+	Components  []architectureTestWireComponent `json:"components"`
+}
+
+type architectureTestWireComponent struct {
+	Name        string                            `json:"name"`
+	Description string                            `json:"description,omitempty"`
+	MemberRefs  []componentmap.SynthesisMemberRef `json:"member_refs"`
+	AnchorRefs  []componentmap.SynthesisAnchorRef `json:"anchor_refs,omitempty"`
+	Hypothesis  bool                              `json:"hypothesis,omitempty"`
+}
+
+func architectureTestWireRefs(
+	t *testing.T,
+	bundle componentmap.CandidateBundle,
+) ([]componentmap.SynthesisMemberRef, []componentmap.SynthesisAnchorRef) {
+	t.Helper()
+	request, _, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := make([]componentmap.SynthesisMemberRef, 0, len(request.Candidates))
+	for _, candidate := range request.Candidates {
+		members = append(members, candidate.Ref)
+	}
+	anchors := make([]componentmap.SynthesisAnchorRef, 0, len(request.BehaviorAnchors))
+	for _, anchor := range request.BehaviorAnchors {
+		anchors = append(anchors, anchor.Ref)
+	}
+	return members, anchors
+}
+
+func marshalArchitectureTestWireResponse(
+	t *testing.T,
+	response architectureTestWireResponse,
+) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func architectureTestExactProviderRequestBytes(
+	t *testing.T,
+	bundle componentmap.CandidateBundle,
+	outputLanguage string,
+) int {
+	t.Helper()
+	prompt, err := componentmap.BuildSynthesisPromptForLanguage(bundle, outputLanguage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := (&deepseek.Client{
+		Endpoint:  "https://example.invalid/chat/completions",
+		Model:     "test-model",
+		MaxTokens: 64_000,
+	}).ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promptBytes := len(prompt.System) + len(prompt.User); len(body) <= promptBytes {
+		t.Fatalf("exact provider body bytes = %d, prompt bytes = %d", len(body), promptBytes)
+	}
+	return len(body)
+}
 
 func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *testing.T) {
 	t.Parallel()
@@ -39,22 +114,15 @@ func TestReplayArchitectureSynthesisChangesOnlyValidatedConceptualMembership(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	memberIDs := make([]componentmap.MemberID, 0, len(input.CandidateBundle.Candidates))
-	for _, candidate := range input.CandidateBundle.Candidates {
-		memberIDs = append(memberIDs, candidate.ID)
-	}
-	response, err := json.Marshal(componentmap.Proposal{
-		Version: componentmap.ContractVersion,
-		Subsystems: []componentmap.ProposedSubsystem{{
+	memberRefs, _ := architectureTestWireRefs(t, input.CandidateBundle)
+	response := marshalArchitectureTestWireResponse(t, architectureTestWireResponse{
+		Subsystems: []architectureTestWireSubsystem{{
 			Name: "Data protection",
-			Components: []componentmap.ProposedComponent{{
-				Name: "Backup execution", MemberIDs: memberIDs,
+			Components: []architectureTestWireComponent{{
+				Name: "Backup execution", MemberRefs: memberRefs,
 			}},
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	result, err := componentmap.RecordSynthesisResponse(
 		input.CandidateBundle,
 		"revision-test",
@@ -140,27 +208,16 @@ func TestProjectSavedArchitectureCanvasPreservesExactD177Substrate(t *testing.T)
 	beforeStructuralFacts := append([]componentmap.LocalRelation(nil), data.ArchitectureCanvas.StructuralFacts...)
 	beforeSurfaces := exactArchitectureSurfaceEvidence(data.ArchitectureCanvas.Surfaces)
 
-	memberIDs := make([]componentmap.MemberID, 0, len(beforeInput.CandidateBundle.Candidates))
-	for _, candidate := range beforeInput.CandidateBundle.Candidates {
-		memberIDs = append(memberIDs, candidate.ID)
-	}
-	anchorIDs := make([]string, 0, len(beforeInput.CandidateBundle.BehaviorAnchors))
-	for _, anchor := range beforeInput.CandidateBundle.BehaviorAnchors {
-		anchorIDs = append(anchorIDs, anchor.ID)
-	}
-	response, err := json.Marshal(componentmap.Proposal{
-		Version: componentmap.ContractVersion,
-		Subsystems: []componentmap.ProposedSubsystem{{
+	memberRefs, anchorRefs := architectureTestWireRefs(t, beforeInput.CandidateBundle)
+	response := marshalArchitectureTestWireResponse(t, architectureTestWireResponse{
+		Subsystems: []architectureTestWireSubsystem{{
 			Name: "Model conceptual group", Description: "Provider-authored conceptual description",
-			Components: []componentmap.ProposedComponent{{
+			Components: []architectureTestWireComponent{{
 				Name: "Model component", Description: "Provider-authored component description",
-				MemberIDs: memberIDs, AnchorIDs: anchorIDs,
+				MemberRefs: memberRefs, AnchorRefs: anchorRefs,
 			}},
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	result, err := componentmap.RecordSynthesisResponse(
 		beforeInput.CandidateBundle,
 		"revision-d177-substrate",
@@ -578,22 +635,20 @@ func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportDa
 	if err != nil {
 		t.Fatal(err)
 	}
-	components := make([]componentmap.ProposedComponent, 0, len(input.CandidateBundle.Candidates))
-	for index, candidate := range input.CandidateBundle.Candidates {
-		components = append(components, componentmap.ProposedComponent{
-			Name:      fmt.Sprintf("Component %d", index+1),
-			MemberIDs: []componentmap.MemberID{candidate.ID},
+	memberRefs, _ := architectureTestWireRefs(t, input.CandidateBundle)
+	components := make([]architectureTestWireComponent, 0, len(memberRefs))
+	for index, memberRef := range memberRefs {
+		components = append(components, architectureTestWireComponent{
+			Name:       fmt.Sprintf("Component %d", index+1),
+			MemberRefs: []componentmap.SynthesisMemberRef{memberRef},
+			Hypothesis: input.CandidateBundle.GroundingMode != componentmap.GroundingPackages,
 		})
 	}
-	response, err := json.Marshal(componentmap.Proposal{
-		Version: componentmap.ContractVersion,
-		Subsystems: []componentmap.ProposedSubsystem{{
+	response := marshalArchitectureTestWireResponse(t, architectureTestWireResponse{
+		Subsystems: []architectureTestWireSubsystem{{
 			Name: "Runtime", Components: components,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	result, err := componentmap.RecordSynthesisResponse(
 		input.CandidateBundle,
 		revision,
@@ -605,20 +660,31 @@ func writeArchitectureBuildSynthesis(t *testing.T, runDir string, data *ReportDa
 	if err != nil {
 		t.Fatal(err)
 	}
+	result.Record.Call.Metadata.UsageReported = true
+	result.Record.Call.Metadata.InputTokens = 25
+	result.Record.Call.Metadata.OutputTokens = 11
+	result.Record.Call.Metadata.FinishReason = "stop"
+	result.Record.Call.Metadata.TransportAttempts = 1
+	result.Record.Call.Metadata.ResponseComplete = true
 	saved, err := json.Marshal(result.Record)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, saved)
-	status := ArchitectureSynthesisStatus{
-		Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisSucceeded,
-		ProviderRequestCount: 1, ProviderCallSucceeded: true, ResponseParsed: true,
-		ProposalAccepted: result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
-			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ProposalNormalized: result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ArchitectureSource: string(result.Landscape.Source), ArchitectureLevel: result.Landscape.Level,
-		NormalizationCount: len(result.Landscape.Normalizations),
-	}
+	status := architectureSynthesisV4AcceptedFixture()
+	status.RequestBytes = architectureTestExactProviderRequestBytes(t, input.CandidateBundle, "en")
+	status.ResponseBytes = result.Record.Call.ResponseBytes
+	status.ResponseContentBytes = len(result.Record.Call.Response)
+	status.CandidateCount = len(input.CandidateBundle.Candidates)
+	status.AnchorCount = len(input.CandidateBundle.BehaviorAnchors)
+	status.MemberOccurrences = len(input.CandidateBundle.Candidates)
+	status.DistinctMembers = len(input.CandidateBundle.Candidates)
+	status.ProposalAccepted = result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
+		result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized
+	status.ProposalNormalized = result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized
+	status.ArchitectureSource = string(result.Landscape.Source)
+	status.ArchitectureLevel = result.Landscape.Level
+	status.NormalizationCount = len(result.Landscape.Normalizations)
 	statusJSON, err := json.Marshal(status)
 	if err != nil {
 		t.Fatal(err)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"reflect"
 	"sort"
 	"strings"
@@ -19,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 3
-	SynthesisRecordVersion  = 3
-	SynthesisPromptVersion  = "architecture-grounding-v5"
+	SynthesisRequestVersion = 4
+	SynthesisRecordVersion  = 4
+	SynthesisPromptVersion  = "architecture-grounding-v6"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -33,48 +34,100 @@ const (
 	maxModelBytes             = 256
 )
 
-// SynthesisCandidate is the provider-visible candidate shape. Display names
-// without provenance are deliberately omitted; the provider receives only an
-// opaque typed ID and exact local facts and bindings.
+// SynthesisMemberRef is one short request-local typed member identity. The Ref
+// is meaningful only within the exact private catalog compiled for one
+// request. Canonical member IDs never enter the provider wire.
+type SynthesisMemberRef struct {
+	Kind MemberKind `json:"kind"`
+	Ref  string     `json:"ref"`
+}
+
+// SynthesisAnchorRef is one short request-local typed grounding identity.
+// Canonical anchor IDs stay in the private catalog.
+type SynthesisAnchorRef struct {
+	Kind BehaviorAnchorKind `json:"kind"`
+	Ref  string             `json:"ref"`
+}
+
+// SynthesisFlowRef keeps local flow identity request-scoped. Flow labels may
+// help grouping, but the canonical saved flow ID stays private.
+type SynthesisFlowRef string
+
+// SynthesisFact is the provider-visible semantic projection of one local
+// fact. Exact locations and provenance remain backend owned.
+type SynthesisFact struct {
+	Kind      FactKind           `json:"kind"`
+	Label     string             `json:"label"`
+	Certainty evidence.Certainty `json:"certainty"`
+}
+
+type SynthesisFlowParticipation struct {
+	FlowRef  SynthesisFlowRef `json:"flow_ref"`
+	Evidence SynthesisFact    `json:"evidence"`
+}
+
+// SynthesisCandidate is the provider-visible candidate shape. It exposes one
+// short typed ref plus bounded semantic labels, never canonical IDs, exact
+// paths, locations, providers or scenarios.
 type SynthesisCandidate struct {
-	ID             MemberID            `json:"id"`
-	ParentID       *MemberID           `json:"parent_id,omitempty"`
-	Participations []FlowParticipation `json:"flow_participations,omitempty"`
-	Facts          []LocalFact         `json:"facts"`
+	Ref            SynthesisMemberRef           `json:"ref"`
+	ParentRef      *SynthesisMemberRef          `json:"parent_ref,omitempty"`
+	Label          string                       `json:"label"`
+	Participations []SynthesisFlowParticipation `json:"flow_participations,omitempty"`
+	Facts          []SynthesisFact              `json:"facts"`
 }
 
-// SynthesisFlow keeps a flow opaque while retaining its exact local facts.
+type SynthesisBehaviorAnchor struct {
+	Ref        SynthesisAnchorRef   `json:"ref"`
+	Label      string               `json:"label"`
+	Certainty  evidence.Certainty   `json:"certainty"`
+	MemberRefs []SynthesisMemberRef `json:"member_refs"`
+}
+
+// SynthesisFlow keeps a flow request-local while retaining only semantic
+// labels and closed local fact classifications.
 type SynthesisFlow struct {
-	ID    FlowID      `json:"id"`
-	Facts []LocalFact `json:"facts"`
+	Ref   SynthesisFlowRef `json:"ref"`
+	Label string           `json:"label"`
+	Facts []SynthesisFact  `json:"facts"`
 }
 
-// SynthesisRequest is the complete model-visible payload. Its type has no
-// place for raw repository trees, report styles, layout coordinates, or model-
-// supplied relations.
+type SynthesisRelation struct {
+	From      SynthesisMemberRef     `json:"from"`
+	To        SynthesisMemberRef     `json:"to"`
+	Kind      StructuralRelationKind `json:"kind"`
+	Certainty evidence.Certainty     `json:"certainty"`
+}
+
+type SynthesisAnchorBinding struct {
+	FlowRef   SynthesisFlowRef   `json:"flow_ref"`
+	AnchorRef SynthesisAnchorRef `json:"anchor_ref"`
+	MemberRef SynthesisMemberRef `json:"member_ref"`
+	Certainty evidence.Certainty `json:"certainty"`
+}
+
+// SynthesisRequest is the complete model-visible payload. Version, catalog,
+// canonical identity, exact source authority and provider provenance are
+// deliberately absent; they are bound privately by prompt/cache/record
+// identity.
 type SynthesisRequest struct {
-	Version               int                      `json:"version"`
-	ContractVersion       int                      `json:"contract_version"`
-	PromptVersion         string                   `json:"prompt_version"`
-	RepositoryArchetype   RepositoryArchetype      `json:"repository_archetype"`
-	GroundingMode         GroundingMode            `json:"grounding_mode"`
-	AllowedPaths          []string                 `json:"allowed_paths"`
-	BehaviorAnchors       []BehaviorAnchor         `json:"behavior_anchors,omitempty"`
-	Flows                 []SynthesisFlow          `json:"flows,omitempty"`
-	Candidates            []SynthesisCandidate     `json:"candidates"`
-	Relations             []LocalRelation          `json:"supporting_relations,omitempty"`
-	AnchorBindings        []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
-	ResearchFindings      []ResearchInterpretation `json:"accepted_research_findings,omitempty"`
-	ResearchPolicyVersion string                   `json:"research_policy_version,omitempty"`
+	RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
+	GroundingMode       GroundingMode             `json:"grounding_mode"`
+	BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
+	Flows               []SynthesisFlow           `json:"flows,omitempty"`
+	Candidates          []SynthesisCandidate      `json:"candidates"`
+	Relations           []SynthesisRelation       `json:"supporting_relations,omitempty"`
+	AnchorBindings      []SynthesisAnchorBinding  `json:"flow_anchor_bindings,omitempty"`
 }
 
 // SynthesisPrompt is the provider-neutral instruction plus the exact bounded
 // request JSON. Transport adapters may wrap these strings in their native chat
 // format but must not add repository material.
 type SynthesisPrompt struct {
-	Version string `json:"version"`
-	System  string `json:"system"`
-	User    string `json:"user"`
+	Version        string `json:"version"`
+	OutputLanguage string `json:"output_language"`
+	System         string `json:"system"`
+	User           string `json:"user"`
 }
 
 // ResponseState keeps oversized provider output replayable without storing an
@@ -96,8 +149,12 @@ type SynthesisMetadata struct {
 	OutputLanguage         string                   `json:"output_language"`
 	InputBytes             int                      `json:"input_bytes"`
 	LatencyMillis          int64                    `json:"latency_ms"`
+	UsageReported          bool                     `json:"usage_reported"`
 	InputTokens            int                      `json:"input_tokens,omitempty"`
 	OutputTokens           int                      `json:"output_tokens,omitempty"`
+	FinishReason           string                   `json:"finish_reason,omitempty"`
+	TransportAttempts      int                      `json:"transport_attempts"`
+	ResponseComplete       bool                     `json:"response_complete"`
 	ValidationWarnings     []Diagnostic             `json:"validation_warnings,omitempty"`
 	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
 	ArchitectureSource     ArchitectureSource       `json:"architecture_source"`
@@ -119,11 +176,12 @@ type SynthesisCall struct {
 // SynthesisRecord intentionally has one optional Call field rather than call
 // history. This represents one call for one exact bounded synthesis request.
 type SynthesisRecord struct {
-	Version            int            `json:"version"`
-	RepositoryRevision string         `json:"repository_revision"`
-	CacheKey           string         `json:"cache_key"`
-	RequestSHA256      string         `json:"request_sha256"`
-	Call               *SynthesisCall `json:"call,omitempty"`
+	Version              int            `json:"version"`
+	RepositoryRevision   string         `json:"repository_revision"`
+	CacheKey             string         `json:"cache_key"`
+	RequestSHA256        string         `json:"request_sha256"`
+	PrivateCatalogSHA256 string         `json:"private_catalog_sha256"`
+	Call                 *SynthesisCall `json:"call,omitempty"`
 }
 
 type SynthesisResult struct {
@@ -131,56 +189,297 @@ type SynthesisResult struct {
 	Record    SynthesisRecord
 }
 
+type synthesisPrivateCatalog struct {
+	membersByID        map[MemberID]SynthesisMemberRef
+	membersByRef       map[string]MemberID
+	memberKinds        map[string]MemberKind
+	anchorsByID        map[string]SynthesisAnchorRef
+	anchorsByRef       map[string]string
+	anchorKinds        map[string]BehaviorAnchorKind
+	flowsByID          map[FlowID]SynthesisFlowRef
+	canonicalOpaqueIDs map[string]struct{}
+	identitySHA256     string
+}
+
+type synthesisCatalogMemberIdentity struct {
+	Ref SynthesisMemberRef `json:"ref"`
+	ID  MemberID           `json:"id"`
+}
+
+type synthesisCatalogAnchorIdentity struct {
+	Ref SynthesisAnchorRef `json:"ref"`
+	ID  string             `json:"id"`
+}
+
+type synthesisCatalogFlowIdentity struct {
+	Ref SynthesisFlowRef `json:"ref"`
+	ID  FlowID           `json:"id"`
+}
+
+type synthesisCatalogIdentity struct {
+	Members []synthesisCatalogMemberIdentity `json:"members"`
+	Anchors []synthesisCatalogAnchorIdentity `json:"anchors,omitempty"`
+	Flows   []synthesisCatalogFlowIdentity   `json:"flows,omitempty"`
+}
+
+func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatalog, error) {
+	if err := bundle.Validate(); err != nil {
+		return synthesisPrivateCatalog{}, err
+	}
+	catalog := synthesisPrivateCatalog{
+		membersByID:        make(map[MemberID]SynthesisMemberRef, len(bundle.Candidates)),
+		membersByRef:       make(map[string]MemberID, len(bundle.Candidates)),
+		memberKinds:        make(map[string]MemberKind, len(bundle.Candidates)),
+		anchorsByID:        make(map[string]SynthesisAnchorRef, len(bundle.BehaviorAnchors)),
+		anchorsByRef:       make(map[string]string, len(bundle.BehaviorAnchors)),
+		anchorKinds:        make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
+		flowsByID:          make(map[FlowID]SynthesisFlowRef, len(bundle.Flows)),
+		canonicalOpaqueIDs: make(map[string]struct{}, len(bundle.Candidates)+len(bundle.BehaviorAnchors)+len(bundle.Flows)),
+	}
+	identity := synthesisCatalogIdentity{
+		Members: make([]synthesisCatalogMemberIdentity, 0, len(bundle.Candidates)),
+		Anchors: make([]synthesisCatalogAnchorIdentity, 0, len(bundle.BehaviorAnchors)),
+		Flows:   make([]synthesisCatalogFlowIdentity, 0, len(bundle.Flows)),
+	}
+	// Reserve every backend-owned identity before allocating any model-visible
+	// ref. Canonical IDs are opaque, so a perfectly valid local ID may itself be
+	// "p1", "a1", or another value from the short-ref namespace.
+	for _, candidate := range bundle.Candidates {
+		catalog.canonicalOpaqueIDs[candidate.ID.Value] = struct{}{}
+	}
+	for _, anchor := range bundle.BehaviorAnchors {
+		catalog.canonicalOpaqueIDs[anchor.ID] = struct{}{}
+	}
+	for _, flow := range bundle.Flows {
+		catalog.canonicalOpaqueIDs[string(flow.ID)] = struct{}{}
+	}
+	reservedRefs := make(map[string]struct{}, len(catalog.canonicalOpaqueIDs)+len(bundle.Candidates)+len(bundle.BehaviorAnchors)+len(bundle.Flows))
+	for canonicalID := range catalog.canonicalOpaqueIDs {
+		reservedRefs[canonicalID] = struct{}{}
+	}
+	candidates := append([]Candidate(nil), bundle.Candidates...)
+	sortCandidates(candidates)
+	memberOrdinals := make(map[MemberKind]int)
+	for _, candidate := range candidates {
+		refValue, nextOrdinal := allocateSynthesisRequestRef(
+			synthesisMemberRefPrefix(candidate.ID.Kind),
+			memberOrdinals[candidate.ID.Kind],
+			reservedRefs,
+		)
+		memberOrdinals[candidate.ID.Kind] = nextOrdinal
+		ref := SynthesisMemberRef{
+			Kind: candidate.ID.Kind,
+			Ref:  refValue,
+		}
+		catalog.membersByID[candidate.ID] = ref
+		catalog.membersByRef[ref.key()] = candidate.ID
+		catalog.memberKinds[ref.Ref] = ref.Kind
+		identity.Members = append(identity.Members, synthesisCatalogMemberIdentity{Ref: ref, ID: candidate.ID})
+	}
+	anchors := append([]BehaviorAnchor(nil), bundle.BehaviorAnchors...)
+	sort.Slice(anchors, func(i, j int) bool { return anchors[i].ID < anchors[j].ID })
+	anchorOrdinal := 0
+	for _, anchor := range anchors {
+		refValue, nextOrdinal := allocateSynthesisRequestRef("a", anchorOrdinal, reservedRefs)
+		anchorOrdinal = nextOrdinal
+		ref := SynthesisAnchorRef{Kind: anchor.Kind, Ref: refValue}
+		catalog.anchorsByID[anchor.ID] = ref
+		catalog.anchorsByRef[ref.key()] = anchor.ID
+		catalog.anchorKinds[ref.Ref] = ref.Kind
+		identity.Anchors = append(identity.Anchors, synthesisCatalogAnchorIdentity{Ref: ref, ID: anchor.ID})
+	}
+	flows := append([]Flow(nil), bundle.Flows...)
+	sort.Slice(flows, func(i, j int) bool { return flows[i].ID < flows[j].ID })
+	flowOrdinal := 0
+	for _, flow := range flows {
+		refValue, nextOrdinal := allocateSynthesisRequestRef("q", flowOrdinal, reservedRefs)
+		flowOrdinal = nextOrdinal
+		ref := SynthesisFlowRef(refValue)
+		catalog.flowsByID[flow.ID] = ref
+		identity.Flows = append(identity.Flows, synthesisCatalogFlowIdentity{Ref: ref, ID: flow.ID})
+	}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return synthesisPrivateCatalog{}, fmt.Errorf("componentmap: encode private synthesis catalog: %w", err)
+	}
+	catalog.identitySHA256 = sha256String(encoded)
+	return catalog, nil
+}
+
+func allocateSynthesisRequestRef(prefix string, ordinal int, reserved map[string]struct{}) (string, int) {
+	for {
+		ordinal++
+		ref := fmt.Sprintf("%s%d", prefix, ordinal)
+		if _, blocked := reserved[ref]; blocked {
+			continue
+		}
+		reserved[ref] = struct{}{}
+		return ref, ordinal
+	}
+}
+
+func (ref SynthesisMemberRef) key() string {
+	return string(ref.Kind) + "\x00" + ref.Ref
+}
+
+func (ref SynthesisAnchorRef) key() string {
+	return string(ref.Kind) + "\x00" + ref.Ref
+}
+
+func (catalog synthesisPrivateCatalog) containsCanonicalOpaqueID(value string) bool {
+	_, exists := catalog.canonicalOpaqueIDs[strings.TrimSpace(value)]
+	return exists
+}
+
+func (catalog synthesisPrivateCatalog) sanitizeCanonicalOpaqueTokens(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	fields := strings.Fields(trimmed)
+	containsCanonical := false
+	kept := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if catalog.containsCanonicalOpaqueID(field) {
+			containsCanonical = true
+			continue
+		}
+		kept = append(kept, field)
+	}
+	if !containsCanonical {
+		return trimmed
+	}
+	return strings.Join(kept, " ")
+}
+
+func (catalog synthesisPrivateCatalog) synthesisLabelOrFallback(value, fallback string) string {
+	if label := catalog.sanitizeCanonicalOpaqueTokens(value); label != "" {
+		return label
+	}
+	if label := catalog.sanitizeCanonicalOpaqueTokens(fallback); label != "" {
+		return label
+	}
+	for ordinal := 1; ; ordinal++ {
+		label := fmt.Sprintf("local-label-%d", ordinal)
+		if !catalog.containsCanonicalOpaqueID(label) {
+			return label
+		}
+	}
+}
+
+func synthesisMemberRefPrefix(kind MemberKind) string {
+	switch kind {
+	case MemberPackage:
+		return "p"
+	case MemberFile:
+		return "f"
+	case MemberSymbol:
+		return "s"
+	case MemberEntrypoint:
+		return "e"
+	case MemberFlow:
+		return "w"
+	default:
+		return "m"
+	}
+}
+
 // BuildSynthesisRequest validates and canonically orders the bounded local
 // inputs before encoding the exact bytes intended for a provider.
 func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, error) {
-	if err := bundle.Validate(); err != nil {
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
 		return SynthesisRequest{}, nil, err
 	}
-
+	for index, binding := range bundle.AnchorBindings {
+		if _, exists := catalog.anchorsByID[binding.AnchorID]; !exists {
+			return SynthesisRequest{}, nil, fmt.Errorf(
+				"componentmap: flow_anchor_bindings[%d]: binding references unknown behavior anchor",
+				index,
+			)
+		}
+	}
 	request := SynthesisRequest{
-		Version:               SynthesisRequestVersion,
-		ContractVersion:       ContractVersion,
-		PromptVersion:         SynthesisPromptVersion,
-		RepositoryArchetype:   bundle.RepositoryArchetype,
-		GroundingMode:         bundle.GroundingMode,
-		AllowedPaths:          synthesisAllowedPaths(bundle),
-		BehaviorAnchors:       cloneBehaviorAnchors(bundle.BehaviorAnchors),
-		Candidates:            make([]SynthesisCandidate, 0, len(bundle.Candidates)),
-		Flows:                 make([]SynthesisFlow, 0, len(bundle.Flows)),
-		Relations:             cloneLocalRelations(bundle.Relations),
-		AnchorBindings:        cloneFlowAnchorBindings(bundle.AnchorBindings),
-		ResearchFindings:      cloneResearchInterpretations(bundle.ResearchFindings),
-		ResearchPolicyVersion: bundle.ResearchPolicyVersion,
+		RepositoryArchetype: bundle.RepositoryArchetype,
+		GroundingMode:       bundle.GroundingMode,
+		BehaviorAnchors:     make([]SynthesisBehaviorAnchor, 0, len(bundle.BehaviorAnchors)),
+		Candidates:          make([]SynthesisCandidate, 0, len(bundle.Candidates)),
+		Flows:               make([]SynthesisFlow, 0, len(bundle.Flows)),
+		Relations:           make([]SynthesisRelation, 0, len(bundle.Relations)),
+		AnchorBindings:      make([]SynthesisAnchorBinding, 0, len(bundle.AnchorBindings)),
+	}
+	anchors := append([]BehaviorAnchor(nil), bundle.BehaviorAnchors...)
+	sort.Slice(anchors, func(i, j int) bool { return anchors[i].ID < anchors[j].ID })
+	for _, anchor := range anchors {
+		memberRefs := make([]SynthesisMemberRef, 0, len(anchor.MemberIDs))
+		for _, memberID := range anchor.MemberIDs {
+			memberRefs = append(memberRefs, catalog.membersByID[memberID])
+		}
+		sort.Slice(memberRefs, func(i, j int) bool { return memberRefs[i].key() < memberRefs[j].key() })
+		request.BehaviorAnchors = append(request.BehaviorAnchors, SynthesisBehaviorAnchor{
+			Ref: catalog.anchorsByID[anchor.ID], Label: synthesisAnchorLabel(catalog, anchor.Kind),
+			Certainty: anchor.Certainty, MemberRefs: memberRefs,
+		})
 	}
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
 	for _, candidate := range candidates {
-		cloned := cloneCandidate(candidate)
-		request.Candidates = append(request.Candidates, SynthesisCandidate{
-			ID: cloned.ID, ParentID: cloned.ParentID,
-			Participations: cloned.Participations, Facts: cloned.Facts,
-		})
+		projected := SynthesisCandidate{
+			Ref: catalog.membersByID[candidate.ID], Label: synthesisCandidateLabel(catalog, candidate),
+			Participations: make([]SynthesisFlowParticipation, 0, len(candidate.Participations)),
+			Facts:          make([]SynthesisFact, 0, len(candidate.Facts)),
+		}
+		if candidate.ParentID != nil {
+			parent := catalog.membersByID[*candidate.ParentID]
+			projected.ParentRef = &parent
+		}
+		for _, participation := range candidate.Participations {
+			projected.Participations = append(projected.Participations, SynthesisFlowParticipation{
+				FlowRef:  catalog.flowsByID[participation.FlowID],
+				Evidence: projectSynthesisFact(catalog, participation.Evidence),
+			})
+		}
+		for _, fact := range candidate.Facts {
+			projected.Facts = append(projected.Facts, projectSynthesisFact(catalog, fact))
+		}
+		request.Candidates = append(request.Candidates, projected)
 	}
 	flows := append([]Flow(nil), bundle.Flows...)
 	sort.Slice(flows, func(i, j int) bool { return flows[i].ID < flows[j].ID })
 	for _, flow := range flows {
-		facts := make([]LocalFact, len(flow.Facts))
-		for index, fact := range flow.Facts {
-			facts[index] = cloneLocalFact(fact)
+		facts := make([]SynthesisFact, 0, len(flow.Facts))
+		for _, fact := range flow.Facts {
+			facts = append(facts, projectSynthesisFact(catalog, fact))
 		}
-		request.Flows = append(request.Flows, SynthesisFlow{ID: flow.ID, Facts: facts})
+		label := synthesisSemanticLabel(catalog, MemberFlow, flow.Name)
+		label = catalog.synthesisLabelOrFallback(label, "flow")
+		request.Flows = append(request.Flows, SynthesisFlow{
+			Ref: catalog.flowsByID[flow.ID], Label: label, Facts: facts,
+		})
 	}
-	sort.Slice(request.Relations, func(i, j int) bool { return request.Relations[i].ID < request.Relations[j].ID })
-	sort.Slice(request.BehaviorAnchors, func(i, j int) bool { return request.BehaviorAnchors[i].ID < request.BehaviorAnchors[j].ID })
-	sort.Slice(request.AnchorBindings, func(i, j int) bool {
-		left := string(request.AnchorBindings[i].FlowID) + "\x00" + request.AnchorBindings[i].AnchorID + "\x00" + request.AnchorBindings[i].MemberID.key()
-		right := string(request.AnchorBindings[j].FlowID) + "\x00" + request.AnchorBindings[j].AnchorID + "\x00" + request.AnchorBindings[j].MemberID.key()
+	relations := append([]LocalRelation(nil), bundle.Relations...)
+	sort.Slice(relations, func(i, j int) bool { return relations[i].ID < relations[j].ID })
+	for _, relation := range relations {
+		request.Relations = append(request.Relations, SynthesisRelation{
+			From: catalog.membersByID[relation.From], To: catalog.membersByID[relation.To],
+			Kind: relation.Kind, Certainty: relation.Certainty,
+		})
+	}
+	bindings := append([]FlowAnchorBinding(nil), bundle.AnchorBindings...)
+	sort.Slice(bindings, func(i, j int) bool {
+		left := string(bindings[i].FlowID) + "\x00" + bindings[i].AnchorID + "\x00" + bindings[i].MemberID.key()
+		right := string(bindings[j].FlowID) + "\x00" + bindings[j].AnchorID + "\x00" + bindings[j].MemberID.key()
 		return left < right
 	})
-	sort.Slice(request.ResearchFindings, func(i, j int) bool {
-		return request.ResearchFindings[i].ID < request.ResearchFindings[j].ID
-	})
+	for _, binding := range bindings {
+		request.AnchorBindings = append(request.AnchorBindings, SynthesisAnchorBinding{
+			FlowRef: catalog.flowsByID[binding.FlowID], AnchorRef: catalog.anchorsByID[binding.AnchorID],
+			MemberRef: catalog.membersByID[binding.MemberID], Certainty: binding.Certainty,
+		})
+	}
+	if err := validateSynthesisRequestIdentityFields(catalog, request); err != nil {
+		return SynthesisRequest{}, nil, err
+	}
 
 	encoded, err := json.Marshal(request)
 	if err != nil {
@@ -198,43 +497,159 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	return request, encoded, nil
 }
 
-func synthesisAllowedPaths(bundle CandidateBundle) []string {
-	paths := make(map[string]struct{})
-	add := func(location *evidence.Location) {
-		if location != nil && location.Path != "" {
-			paths[location.Path] = struct{}{}
+type synthesisWireIdentityField struct {
+	name string
+	ref  string
+}
+
+func synthesisRequestIdentityFields(request SynthesisRequest) []synthesisWireIdentityField {
+	fields := make([]synthesisWireIdentityField, 0)
+	for index, anchor := range request.BehaviorAnchors {
+		fields = append(fields, synthesisWireIdentityField{
+			name: fmt.Sprintf("behavior_anchors[%d].ref", index), ref: anchor.Ref.Ref,
+		})
+		for memberIndex, memberRef := range anchor.MemberRefs {
+			fields = append(fields, synthesisWireIdentityField{
+				name: fmt.Sprintf("behavior_anchors[%d].member_refs[%d]", index, memberIndex), ref: memberRef.Ref,
+			})
 		}
 	}
-	for _, anchor := range bundle.BehaviorAnchors {
-		add(&anchor.Location)
-		add(anchor.Producer.Location)
+	for index, flow := range request.Flows {
+		fields = append(fields, synthesisWireIdentityField{
+			name: fmt.Sprintf("flows[%d].ref", index), ref: string(flow.Ref),
+		})
 	}
-	for _, candidate := range bundle.Candidates {
+	for index, candidate := range request.Candidates {
+		fields = append(fields, synthesisWireIdentityField{
+			name: fmt.Sprintf("candidates[%d].ref", index), ref: candidate.Ref.Ref,
+		})
+		if candidate.ParentRef != nil {
+			fields = append(fields, synthesisWireIdentityField{
+				name: fmt.Sprintf("candidates[%d].parent_ref", index), ref: candidate.ParentRef.Ref,
+			})
+		}
+		for participationIndex, participation := range candidate.Participations {
+			fields = append(fields, synthesisWireIdentityField{
+				name: fmt.Sprintf("candidates[%d].flow_participations[%d].flow_ref", index, participationIndex),
+				ref:  string(participation.FlowRef),
+			})
+		}
+	}
+	for index, relation := range request.Relations {
+		fields = append(fields,
+			synthesisWireIdentityField{name: fmt.Sprintf("supporting_relations[%d].from", index), ref: relation.From.Ref},
+			synthesisWireIdentityField{name: fmt.Sprintf("supporting_relations[%d].to", index), ref: relation.To.Ref},
+		)
+	}
+	for index, binding := range request.AnchorBindings {
+		fields = append(fields,
+			synthesisWireIdentityField{name: fmt.Sprintf("flow_anchor_bindings[%d].flow_ref", index), ref: string(binding.FlowRef)},
+			synthesisWireIdentityField{name: fmt.Sprintf("flow_anchor_bindings[%d].anchor_ref", index), ref: binding.AnchorRef.Ref},
+			synthesisWireIdentityField{name: fmt.Sprintf("flow_anchor_bindings[%d].member_ref", index), ref: binding.MemberRef.Ref},
+		)
+	}
+	return fields
+}
+
+func validateSynthesisRequestIdentityFields(catalog synthesisPrivateCatalog, request SynthesisRequest) error {
+	for _, field := range synthesisRequestIdentityFields(request) {
+		if field.ref == "" {
+			return fmt.Errorf("componentmap: synthesis request %s is empty", field.name)
+		}
+		if catalog.containsCanonicalOpaqueID(field.ref) {
+			return fmt.Errorf("componentmap: synthesis request %s collides with a private canonical identity", field.name)
+		}
+	}
+	return nil
+}
+
+func projectSynthesisFact(catalog synthesisPrivateCatalog, fact LocalFact) SynthesisFact {
+	return SynthesisFact{
+		Kind: fact.Kind, Label: synthesisFactLabel(catalog, fact), Certainty: fact.Certainty,
+	}
+}
+
+func synthesisFactLabel(catalog synthesisPrivateCatalog, fact LocalFact) string {
+	fallback := synthesisFactFallbackLabel(fact.Kind)
+	value := catalog.sanitizeCanonicalOpaqueTokens(fact.Value)
+	if value == "" {
+		return catalog.synthesisLabelOrFallback("", fallback)
+	}
+	var label string
+	switch fact.Kind {
+	case FactRepositoryPath:
+		label = path.Base(value)
+		if label == "." || label == "/" || label == "" {
+			return catalog.synthesisLabelOrFallback("", fallback)
+		}
+	case FactExecutableRole:
+		label = value
+	case FactFlowParticipation:
+		// The request-local flow ref already binds this evidence to the exact
+		// backend-owned flow. Production LocalFact.Value is the canonical FlowID
+		// and must not cross the provider boundary as a display label.
+		return catalog.synthesisLabelOrFallback("", fallback)
+	default:
+		label = synthesisSemanticLabel(catalog, MemberSymbol, value)
+	}
+	label = catalog.sanitizeCanonicalOpaqueTokens(label)
+	return catalog.synthesisLabelOrFallback(label, fallback)
+}
+
+func synthesisFactFallbackLabel(kind FactKind) string {
+	switch kind {
+	case FactRepositoryPath:
+		return "source file"
+	case FactExecutableRole:
+		return "executable role"
+	case FactFlowParticipation:
+		return "flow participation"
+	case FactContainment:
+		return "containment"
+	default:
+		return "declaration"
+	}
+}
+
+func synthesisCandidateLabel(catalog synthesisPrivateCatalog, candidate Candidate) string {
+	label := synthesisSemanticLabel(catalog, candidate.ID.Kind, candidate.Name)
+	if label == "" {
 		for _, fact := range candidate.Facts {
-			add(fact.Location)
-			for _, provenance := range fact.Provenance {
-				add(provenance.Location)
+			if fact.Kind == FactDeclaration || fact.Kind == FactRepositoryPath {
+				label = synthesisFactLabel(catalog, fact)
+				break
 			}
 		}
 	}
-	for _, relation := range bundle.Relations {
-		add(relation.Location)
-		for _, provenance := range relation.Provenance {
-			add(provenance.Location)
+	return catalog.synthesisLabelOrFallback(label, strings.ReplaceAll(string(candidate.ID.Kind), "_", " "))
+}
+
+func synthesisSemanticLabel(catalog synthesisPrivateCatalog, kind MemberKind, value string) string {
+	value = catalog.sanitizeCanonicalOpaqueTokens(value)
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, "/") {
+		value = path.Base(value)
+	}
+	if kind == MemberSymbol || kind == MemberEntrypoint {
+		if index := strings.IndexByte(value, '.'); index >= 0 && index+1 < len(value) {
+			value = value[index+1:]
 		}
 	}
-	for _, binding := range bundle.AnchorBindings {
-		add(binding.Location)
-		for _, provenance := range binding.Provenance {
-			add(provenance.Location)
-		}
+	value = catalog.sanitizeCanonicalOpaqueTokens(value)
+	if value == "" {
+		return ""
 	}
-	result := make([]string, 0, len(paths))
-	for path := range paths {
-		result = append(result, path)
+	if len(value) > maxNameBytes {
+		value = truncateDisplayText(value, maxNameBytes)
 	}
-	sort.Strings(result)
-	return result
+	return catalog.sanitizeCanonicalOpaqueTokens(value)
+}
+
+func synthesisAnchorLabel(catalog synthesisPrivateCatalog, kind BehaviorAnchorKind) string {
+	label := strings.ReplaceAll(string(kind), "_", " ")
+	return catalog.synthesisLabelOrFallback(label, "architecture anchor")
 }
 
 // BuildSynthesisPrompt exposes the actual versioned synthesis instruction used
@@ -245,10 +660,10 @@ func BuildSynthesisPrompt(bundle CandidateBundle) (SynthesisPrompt, error) {
 	return buildSynthesisPromptForLanguage(bundle, "en")
 }
 
-// BuildSynthesisPromptForLanguage keeps the canonical English prompt byte
-// stable while requesting Russian only for the four model-authored display
-// fields. Exact IDs, facts, relations, evidence and closed labels remain in
-// their canonical language-independent form.
+// BuildSynthesisPromptForLanguage keeps the facts wire identical while making
+// one explicit stage-owned language contract for the four model-authored
+// display fields. Refs, facts, relations and closed labels remain language
+// independent.
 func BuildSynthesisPromptForLanguage(
 	bundle CandidateBundle,
 	outputLanguage string,
@@ -268,24 +683,27 @@ func buildSynthesisPromptForLanguage(
 	if err != nil {
 		return SynthesisPrompt{}, err
 	}
-	system := fmt.Sprintf(`You create a compact conceptual architecture landscape from bounded local repository facts.
+	system := `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use candidate IDs as opaque values. Do not rewrite them, infer new IDs, or mention members absent from the request.
-Local facts, structural relations, flow participation, certainty, provenance, scenarios, and source locations are read-only evidence. They help grouping but must never be returned, upgraded, replaced, or converted into execution order.
-accepted_research_findings are validated model interpretations bound to supplied exact member, flow, anchor, and evidence IDs. They may guide conceptual grouping and responsibility names, but they are not local facts and cannot create or strengthen evidence.
+Use member, anchor, and flow refs as opaque request-local typed values. Copy a ref only into a response field of the same kind. Do not rewrite refs, infer new refs, or mention members absent from the request.
+Local semantic facts, compact structural relations, flow participation, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with this shape:
-{"version":%d,"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_ids":[{"kind":"package","value":"opaque supplied value"}],"anchor_ids":["supplied-anchor-id"],"hypothesis":false}]}]}
+{"subsystems":[{"name":"short name","description":"short purpose","components":[{"name":"short name","description":"short purpose","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false}]}]}
 
-The only allowed proposal fields are version, subsystems, subsystem name/description/components, component name/description/member_ids/anchor_ids/hypothesis, and member kind/value. Member and anchor IDs must be copied exactly from the request. Array order is the conceptual display order. Assign each supplied candidate at most once. Never repeat a member ID across components; for a cross-cutting member choose its single best conceptual home. Omit an uncertain member rather than duplicating it because local validation retains omissions separately. Every component must contain at least one supplied member ID.
+The only allowed proposal fields are subsystems, subsystem name/description/components, component name/description/member_refs/anchor_refs/hypothesis, and ref kind/ref. Array order is the conceptual display order. Assign each supplied member ref at most once. Never repeat a member ref within or across components; for a cross-cutting member choose its single best conceptual home. Never repeat an anchor ref within one component. Omit an uncertain member rather than duplicating it because local validation retains omissions separately. Every component must contain at least one supplied member ref.
 
-Repository archetype and grounding mode are local facts. A primary pillar is one top-level subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, choose four to seven top-level primary subsystems when the supplied evidence supports that many, never more than eight. Prefer one to four nested components per subsystem and no more than eighteen in total. Every non-hypothesis nested component must cite at least one supplied behavior anchor ID. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+Repository archetype and grounding mode are local facts. A primary pillar is one top-level subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, choose four to seven top-level primary subsystems when the supplied evidence supports that many, never more than eight. Prefer one to four nested components per subsystem and no more than eighteen in total. Every non-hypothesis nested component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
-Do not return edges, relations, flow definitions or transitions, fact payloads, repository paths, symbol details, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`, ProposalVersion)
+Do not return versions, catalog identity, hashes, canonical IDs, edges, relations, flow definitions or transitions, fact payloads, repository paths, qualified symbols, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`
 	if language == "ru" {
 		system += `
 
-Write only subsystem and component name and description prose in Russian. Preserve technical identifiers, product and library names, protocols, acronyms, supplied IDs, JSON keys, and every closed schema value exactly as supplied.`
+Write only subsystem and component name and description prose in Russian. Preserve technical identifiers, product and library names, protocols, acronyms, supplied refs, JSON keys, and every closed schema value exactly as supplied.`
+	} else {
+		system += `
+
+Write only subsystem and component name and description prose in English. Preserve technical identifiers, product and library names, protocols, acronyms, supplied refs, JSON keys, and every closed schema value exactly as supplied.`
 	}
 	user := "Bounded candidate request:\n" + string(requestJSON)
 	promptBytes := len(system) + len(user)
@@ -295,7 +713,10 @@ Write only subsystem and component name and description prose in Russian. Preser
 			Limit: maxSynthesisPromptBytes, Observed: promptBytes, ObservedKnown: true,
 		}, nil)
 	}
-	return SynthesisPrompt{Version: SynthesisPromptVersion, System: system, User: user}, nil
+	return SynthesisPrompt{
+		Version: SynthesisPromptVersion, OutputLanguage: language,
+		System: system, User: user,
+	}, nil
 }
 
 // SynthesisCacheKey binds one conceptual synthesis to the exact bounded local
@@ -305,8 +726,7 @@ func SynthesisCacheKey(repositoryRevision string, bundle CandidateBundle) (strin
 }
 
 // SynthesisCacheKeyForProvider additionally binds the cache to the configured
-// provider profile and model. ResearchPolicyVersion is part of the canonical
-// request whenever a normal adaptive run builds the bundle.
+// provider profile, model and private canonical ref catalog.
 func SynthesisCacheKeyForProvider(repositoryRevision string, bundle CandidateBundle, profile, model string) (string, error) {
 	return synthesisCacheKeyForProvider(repositoryRevision, bundle, profile, model, "")
 }
@@ -346,13 +766,17 @@ func synthesisCacheKeyForProvider(
 	if err != nil {
 		return "", err
 	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		return "", err
+	}
 	hash := sha256.New()
-	fmt.Fprintf(hash, "componentmap-synthesis\nrevision=%s\ncontract=%d\nprompt=%s\nprofile=%s\nmodel=%s\n",
-		repositoryRevision, ContractVersion, SynthesisPromptVersion, profile, model)
+	fmt.Fprintf(hash, "componentmap-synthesis\nrevision=%s\nrequest_contract=%d\nproposal_contract=%d\nprompt=%s\nprofile=%s\nmodel=%s\n",
+		repositoryRevision, SynthesisRequestVersion, ProposalVersion, SynthesisPromptVersion, profile, model)
 	if outputLanguage != "" {
 		fmt.Fprintf(hash, "language=%s\n", outputLanguage)
 	}
-	fmt.Fprintf(hash, "request=%s\n", sha256String(requestJSON))
+	fmt.Fprintf(hash, "request=%s\nprivate_catalog=%s\n", sha256String(requestJSON), catalog.identitySHA256)
 	return "component-synthesis-" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
@@ -407,6 +831,10 @@ func RecordSynthesisResponseForLanguage(
 	if err != nil {
 		return SynthesisResult{}, err
 	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		return SynthesisResult{}, err
+	}
 	prompt, err := BuildSynthesisPromptForLanguage(bundle, language)
 	if err != nil {
 		return SynthesisResult{}, err
@@ -434,10 +862,11 @@ func RecordSynthesisResponseForLanguage(
 		return SynthesisResult{}, err
 	}
 	record := SynthesisRecord{
-		Version:            SynthesisRecordVersion,
-		RepositoryRevision: repositoryRevision,
-		CacheKey:           cacheKey,
-		RequestSHA256:      sha256String(requestJSON),
+		Version:              SynthesisRecordVersion,
+		RepositoryRevision:   repositoryRevision,
+		CacheKey:             cacheKey,
+		RequestSHA256:        sha256String(requestJSON),
+		PrivateCatalogSHA256: catalog.identitySHA256,
 		Call: &SynthesisCall{
 			Metadata: SynthesisMetadata{
 				PromptVersion: SynthesisPromptVersion,
@@ -552,33 +981,19 @@ func ReplayLegacyCapturedSynthesis(bundle CandidateBundle, saved []byte) (Landsc
 		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response violates the obvious credential policy")
 	}
 	response := record.Call.Response
-	if record.Call.Metadata.PromptVersion == "component-landscape-v2" {
-		object, _, responseErr := extractProposalObject(response)
-		if responseErr != nil {
-			return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response is invalid")
-		}
-		proposal, _, err := decodeProposalJSON(object)
-		if err != nil || proposal.Version != 2 {
-			return Landscape{}, fmt.Errorf("componentmap: legacy synthesis proposal is invalid")
-		}
-		proposal.Version = ProposalVersion
-		response, err = json.Marshal(proposal)
-		if err != nil {
-			return Landscape{}, fmt.Errorf("componentmap: encode upgraded legacy synthesis proposal: %w", err)
-		}
+	object, _, responseErr := extractProposalObject(response)
+	if responseErr != nil {
+		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis response is invalid")
 	}
-	result, err := RecordSynthesisResponse(
-		bundle,
-		record.RepositoryRevision,
-		record.Call.Metadata.Profile,
-		record.Call.Metadata.Model,
-		time.Duration(record.Call.Metadata.LatencyMillis)*time.Millisecond,
-		response,
-	)
-	if err != nil {
-		return Landscape{}, err
+	var proposal Proposal
+	if err := decodeStrictJSON(object, &proposal); err != nil {
+		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis proposal is invalid")
 	}
-	return result.Landscape, nil
+	if record.Call.Metadata.PromptVersion == "component-landscape-v2" && proposal.Version != 2 {
+		return Landscape{}, fmt.Errorf("componentmap: legacy synthesis proposal is invalid")
+	}
+	proposal.Version = ProposalVersion
+	return Apply(bundle, proposal)
 }
 
 func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, record SynthesisRecord) error {
@@ -595,8 +1010,15 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	if err != nil {
 		return err
 	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		return err
+	}
 	if record.RequestSHA256 != sha256String(requestJSON) {
 		return fmt.Errorf("componentmap: synthesis record request digest does not match")
+	}
+	if record.PrivateCatalogSHA256 != catalog.identitySHA256 {
+		return fmt.Errorf("componentmap: synthesis record private catalog digest does not match")
 	}
 	if record.Call == nil {
 		return fmt.Errorf("componentmap: synthesis record has no represented call")
@@ -652,6 +1074,13 @@ func validateSynthesisRecord(bundle CandidateBundle, repositoryRevision string, 
 	}
 	if metadata.InputTokens < 0 || metadata.OutputTokens < 0 {
 		return fmt.Errorf("componentmap: synthesis record token counts cannot be negative")
+	}
+	if metadata.TransportAttempts < 0 {
+		return fmt.Errorf("componentmap: synthesis record transport attempts cannot be negative")
+	}
+	if len(metadata.FinishReason) > maxProfileBytes || strings.TrimSpace(metadata.FinishReason) != metadata.FinishReason ||
+		strings.ContainsAny(metadata.FinishReason, "\r\n\t") {
+		return fmt.Errorf("componentmap: synthesis record finish reason is malformed")
 	}
 	if len(metadata.ValidationWarnings) > maxSynthesisWarnings {
 		return fmt.Errorf("componentmap: synthesis record has too many validation warnings")
@@ -734,12 +1163,20 @@ func evaluateSynthesisResponse(bundle CandidateBundle, state ResponseState, resp
 	if responseErr != nil {
 		return synthesisResponseFallback(bundle, newDiagnostic(responseErr.code, responseErr.message))
 	}
-	proposal, unknownFields, err := decodeProposalJSON(object)
+	wireProposal, unknownFields, err := decodeSynthesisWireProposalJSON(object)
 	if err != nil {
 		return synthesisResponseFallback(bundle, newDiagnostic(
 			"response.invalid_proposal",
 			"recovered json does not satisfy the bounded proposal schema",
 		))
+	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		return Landscape{}, err
+	}
+	proposal, resolveErr := resolveSynthesisWireProposal(catalog, wireProposal)
+	if resolveErr != nil {
+		return synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
 	}
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
@@ -770,6 +1207,12 @@ func synthesisResponseFallback(bundle CandidateBundle, warning Diagnostic) (Land
 		return Landscape{}, err
 	}
 	landscape.Diagnostics = append([]Diagnostic{warning}, landscape.Diagnostics...)
+	switch warning.Code {
+	case "proposal.unknown_member_id":
+		landscape.FallbackReason = FallbackRejectedUnknownMember
+	case "proposal.unknown_anchor_id":
+		landscape.FallbackReason = FallbackRejectedUnknownAnchor
+	}
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
 	}
@@ -829,32 +1272,51 @@ func synthesisResourceLimit(
 	}
 }
 
-// decodeProposalJSON is strict about all known field types while tolerating a
-// weak model's harmless commentary fields. Unknown values are never copied to
-// the Proposal and their names/content are not echoed in diagnostics.
-func decodeProposalJSON(raw []byte) (Proposal, bool, error) {
+type synthesisWireProposal struct {
+	Subsystems []synthesisWireSubsystem `json:"subsystems"`
+}
+
+type synthesisWireSubsystem struct {
+	Name        string                   `json:"name"`
+	Description string                   `json:"description,omitempty"`
+	Components  []synthesisWireComponent `json:"components"`
+}
+
+type synthesisWireComponent struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	MemberRefs  []SynthesisMemberRef `json:"member_refs"`
+	AnchorRefs  []SynthesisAnchorRef `json:"anchor_refs,omitempty"`
+	Hypothesis  bool                 `json:"hypothesis,omitempty"`
+}
+
+// decodeSynthesisWireProposalJSON is strict about every known field type while
+// tolerating harmless commentary fields. Canonical IDs have no field in the
+// active response shape and are never copied from provider bytes.
+func decodeSynthesisWireProposalJSON(raw []byte) (synthesisWireProposal, bool, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &root); err != nil || root == nil {
-		return Proposal{}, false, fmt.Errorf("proposal is not an object")
+		return synthesisWireProposal{}, false, fmt.Errorf("proposal is not an object")
 	}
-	unknown := hasUnknownFields(root, "version", "subsystems")
+	if hasForbiddenSynthesisFields(root,
+		"version", "catalog", "catalog_ref", "catalog_hash", "private_catalog_sha256",
+		"request_sha256", "allowed_paths",
+	) {
+		return synthesisWireProposal{}, false, fmt.Errorf("proposal contains backend-owned identity fields")
+	}
+	unknown := hasUnknownFields(root, "subsystems")
 
-	var proposal Proposal
-	if value, exists := root["version"]; exists {
-		if err := json.Unmarshal(value, &proposal.Version); err != nil {
-			return Proposal{}, unknown, fmt.Errorf("proposal version has invalid type")
-		}
-	}
+	var proposal synthesisWireProposal
 	if value, exists := root["subsystems"]; exists {
 		var rawSubsystems []json.RawMessage
 		if err := json.Unmarshal(value, &rawSubsystems); err != nil {
-			return Proposal{}, unknown, fmt.Errorf("proposal subsystems have invalid type")
+			return synthesisWireProposal{}, unknown, fmt.Errorf("proposal subsystems have invalid type")
 		}
-		proposal.Subsystems = make([]ProposedSubsystem, 0, len(rawSubsystems))
+		proposal.Subsystems = make([]synthesisWireSubsystem, 0, len(rawSubsystems))
 		for _, rawSubsystem := range rawSubsystems {
-			subsystem, itemUnknown, err := decodeProposedSubsystem(rawSubsystem)
+			subsystem, itemUnknown, err := decodeSynthesisWireSubsystem(rawSubsystem)
 			if err != nil {
-				return Proposal{}, unknown || itemUnknown, err
+				return synthesisWireProposal{}, unknown || itemUnknown, err
 			}
 			unknown = unknown || itemUnknown
 			proposal.Subsystems = append(proposal.Subsystems, subsystem)
@@ -863,31 +1325,34 @@ func decodeProposalJSON(raw []byte) (Proposal, bool, error) {
 	return proposal, unknown, nil
 }
 
-func decodeProposedSubsystem(raw json.RawMessage) (ProposedSubsystem, bool, error) {
+func decodeSynthesisWireSubsystem(raw json.RawMessage) (synthesisWireSubsystem, bool, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return ProposedSubsystem{}, false, fmt.Errorf("proposal subsystem is not an object")
+		return synthesisWireSubsystem{}, false, fmt.Errorf("proposal subsystem is not an object")
+	}
+	if hasForbiddenSynthesisFields(fields, "id", "version", "catalog_ref", "hash") {
+		return synthesisWireSubsystem{}, false, fmt.Errorf("proposal subsystem contains backend-owned identity fields")
 	}
 	unknown := hasUnknownFields(fields, "name", "description", "components")
 	name, err := decodeProposalString(fields, "name")
 	if err != nil {
-		return ProposedSubsystem{}, unknown, err
+		return synthesisWireSubsystem{}, unknown, err
 	}
 	description, err := decodeProposalString(fields, "description")
 	if err != nil {
-		return ProposedSubsystem{}, unknown, err
+		return synthesisWireSubsystem{}, unknown, err
 	}
-	result := ProposedSubsystem{Name: name, Description: description}
+	result := synthesisWireSubsystem{Name: name, Description: description}
 	if value, exists := fields["components"]; exists {
 		var rawComponents []json.RawMessage
 		if err := json.Unmarshal(value, &rawComponents); err != nil {
-			return ProposedSubsystem{}, unknown, fmt.Errorf("proposal components have invalid type")
+			return synthesisWireSubsystem{}, unknown, fmt.Errorf("proposal components have invalid type")
 		}
-		result.Components = make([]ProposedComponent, 0, len(rawComponents))
+		result.Components = make([]synthesisWireComponent, 0, len(rawComponents))
 		for _, rawComponent := range rawComponents {
-			component, itemUnknown, err := decodeProposedComponent(rawComponent)
+			component, itemUnknown, err := decodeSynthesisWireComponent(rawComponent)
 			if err != nil {
-				return ProposedSubsystem{}, unknown || itemUnknown, err
+				return synthesisWireSubsystem{}, unknown || itemUnknown, err
 			}
 			unknown = unknown || itemUnknown
 			result.Components = append(result.Components, component)
@@ -896,77 +1361,161 @@ func decodeProposedSubsystem(raw json.RawMessage) (ProposedSubsystem, bool, erro
 	return result, unknown, nil
 }
 
-func decodeProposedComponent(raw json.RawMessage) (ProposedComponent, bool, error) {
+func decodeSynthesisWireComponent(raw json.RawMessage) (synthesisWireComponent, bool, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return ProposedComponent{}, false, fmt.Errorf("proposal component is not an object")
+		return synthesisWireComponent{}, false, fmt.Errorf("proposal component is not an object")
 	}
-	unknown := hasUnknownFields(fields, "name", "description", "member_ids", "anchor_ids", "hypothesis")
+	if hasForbiddenSynthesisFields(fields,
+		"id", "member_ids", "anchor_ids", "catalog_ref", "hash", "location", "provenance",
+	) {
+		return synthesisWireComponent{}, false, fmt.Errorf("proposal component contains backend-owned identity fields")
+	}
+	unknown := hasUnknownFields(fields, "name", "description", "member_refs", "anchor_refs", "hypothesis")
 	name, err := decodeProposalString(fields, "name")
 	if err != nil {
-		return ProposedComponent{}, unknown, err
+		return synthesisWireComponent{}, unknown, err
 	}
 	description, err := decodeProposalString(fields, "description")
 	if err != nil {
-		return ProposedComponent{}, unknown, err
+		return synthesisWireComponent{}, unknown, err
 	}
-	result := ProposedComponent{Name: name, Description: description}
-	if value, exists := fields["member_ids"]; exists {
-		var rawMemberIDs []json.RawMessage
-		if err := json.Unmarshal(value, &rawMemberIDs); err != nil {
-			return ProposedComponent{}, unknown, fmt.Errorf("proposal member ids have invalid type")
+	result := synthesisWireComponent{Name: name, Description: description}
+	if value, exists := fields["member_refs"]; exists {
+		var rawMemberRefs []json.RawMessage
+		if err := json.Unmarshal(value, &rawMemberRefs); err != nil {
+			return synthesisWireComponent{}, unknown, fmt.Errorf("proposal member refs have invalid type")
 		}
-		result.MemberIDs = make([]MemberID, 0, len(rawMemberIDs))
-		for _, rawMemberID := range rawMemberIDs {
-			memberID, itemUnknown, err := decodeProposedMemberID(rawMemberID)
+		result.MemberRefs = make([]SynthesisMemberRef, 0, len(rawMemberRefs))
+		for _, rawMemberRef := range rawMemberRefs {
+			memberRef, itemUnknown, err := decodeSynthesisMemberRef(rawMemberRef)
 			if err != nil {
-				return ProposedComponent{}, unknown || itemUnknown, err
+				return synthesisWireComponent{}, unknown || itemUnknown, err
 			}
 			unknown = unknown || itemUnknown
-			result.MemberIDs = append(result.MemberIDs, memberID)
+			result.MemberRefs = append(result.MemberRefs, memberRef)
 		}
 	}
-	if value, exists := fields["anchor_ids"]; exists {
-		if err := json.Unmarshal(value, &result.AnchorIDs); err != nil {
-			return ProposedComponent{}, unknown, fmt.Errorf("proposal anchor ids have invalid type")
+	if value, exists := fields["anchor_refs"]; exists {
+		var rawAnchorRefs []json.RawMessage
+		if err := json.Unmarshal(value, &rawAnchorRefs); err != nil {
+			return synthesisWireComponent{}, unknown, fmt.Errorf("proposal anchor refs have invalid type")
+		}
+		result.AnchorRefs = make([]SynthesisAnchorRef, 0, len(rawAnchorRefs))
+		for _, rawAnchorRef := range rawAnchorRefs {
+			anchorRef, itemUnknown, err := decodeSynthesisAnchorRef(rawAnchorRef)
+			if err != nil {
+				return synthesisWireComponent{}, unknown || itemUnknown, err
+			}
+			unknown = unknown || itemUnknown
+			result.AnchorRefs = append(result.AnchorRefs, anchorRef)
 		}
 	}
 	if value, exists := fields["hypothesis"]; exists {
 		if err := json.Unmarshal(value, &result.Hypothesis); err != nil {
-			return ProposedComponent{}, unknown, fmt.Errorf("proposal hypothesis has invalid type")
+			return synthesisWireComponent{}, unknown, fmt.Errorf("proposal hypothesis has invalid type")
 		}
 	}
 	return result, unknown, nil
 }
 
-func cloneBehaviorAnchors(values []BehaviorAnchor) []BehaviorAnchor {
-	if values == nil {
-		return nil
-	}
-	result := make([]BehaviorAnchor, len(values))
-	for index, value := range values {
-		result[index] = value
-		result[index].MemberIDs = append([]MemberID(nil), value.MemberIDs...)
-		result[index].Limitations = append([]string(nil), value.Limitations...)
-	}
-	return result
-}
-
-func decodeProposedMemberID(raw json.RawMessage) (MemberID, bool, error) {
+func decodeSynthesisMemberRef(raw json.RawMessage) (SynthesisMemberRef, bool, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return MemberID{}, false, fmt.Errorf("proposal member id is not an object")
+		return SynthesisMemberRef{}, false, fmt.Errorf("proposal member ref is not an object")
 	}
-	unknown := hasUnknownFields(fields, "kind", "value")
+	if hasForbiddenSynthesisFields(fields, "id", "value", "member_id", "canonical_id") {
+		return SynthesisMemberRef{}, false, fmt.Errorf("proposal member ref contains backend-owned identity fields")
+	}
+	unknown := hasUnknownFields(fields, "kind", "ref")
 	kind, err := decodeProposalString(fields, "kind")
 	if err != nil {
-		return MemberID{}, unknown, err
+		return SynthesisMemberRef{}, unknown, err
 	}
-	value, err := decodeProposalString(fields, "value")
+	ref, err := decodeProposalString(fields, "ref")
 	if err != nil {
-		return MemberID{}, unknown, err
+		return SynthesisMemberRef{}, unknown, err
 	}
-	return MemberID{Kind: MemberKind(kind), Value: value}, unknown, nil
+	return SynthesisMemberRef{Kind: MemberKind(kind), Ref: ref}, unknown, nil
+}
+
+func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, bool, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return SynthesisAnchorRef{}, false, fmt.Errorf("proposal anchor ref is not an object")
+	}
+	if hasForbiddenSynthesisFields(fields, "id", "value", "anchor_id", "canonical_id") {
+		return SynthesisAnchorRef{}, false, fmt.Errorf("proposal anchor ref contains backend-owned identity fields")
+	}
+	unknown := hasUnknownFields(fields, "kind", "ref")
+	kind, err := decodeProposalString(fields, "kind")
+	if err != nil {
+		return SynthesisAnchorRef{}, unknown, err
+	}
+	ref, err := decodeProposalString(fields, "ref")
+	if err != nil {
+		return SynthesisAnchorRef{}, unknown, err
+	}
+	return SynthesisAnchorRef{Kind: BehaviorAnchorKind(kind), Ref: ref}, unknown, nil
+}
+
+func resolveSynthesisWireProposal(
+	catalog synthesisPrivateCatalog,
+	wire synthesisWireProposal,
+) (Proposal, *synthesisResponseError) {
+	proposal := Proposal{Version: ProposalVersion, Subsystems: make([]ProposedSubsystem, 0, len(wire.Subsystems))}
+	for _, wireSubsystem := range wire.Subsystems {
+		subsystem := ProposedSubsystem{
+			Name: wireSubsystem.Name, Description: wireSubsystem.Description,
+			Components: make([]ProposedComponent, 0, len(wireSubsystem.Components)),
+		}
+		for _, wireComponent := range wireSubsystem.Components {
+			component := ProposedComponent{
+				Name: wireComponent.Name, Description: wireComponent.Description,
+				Hypothesis: wireComponent.Hypothesis,
+				MemberIDs:  make([]MemberID, 0, len(wireComponent.MemberRefs)),
+				AnchorIDs:  make([]string, 0, len(wireComponent.AnchorRefs)),
+			}
+			for _, memberRef := range wireComponent.MemberRefs {
+				if expectedKind, exists := catalog.memberKinds[memberRef.Ref]; exists && expectedKind != memberRef.Kind {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.unknown_member_id", message: "proposal member ref has the wrong request-local kind",
+					}
+				}
+				memberID, exists := catalog.membersByRef[memberRef.key()]
+				if !exists {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.unknown_member_id", message: "proposal references an unknown request-local member ref",
+					}
+				}
+				component.MemberIDs = append(component.MemberIDs, memberID)
+			}
+			seenAnchors := make(map[string]struct{}, len(wireComponent.AnchorRefs))
+			for _, anchorRef := range wireComponent.AnchorRefs {
+				if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.unknown_anchor_id", message: "proposal anchor ref has the wrong request-local kind",
+					}
+				}
+				anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
+				if !exists {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.unknown_anchor_id", message: "proposal references an unknown request-local anchor ref",
+					}
+				}
+				if _, duplicate := seenAnchors[anchorID]; duplicate {
+					return Proposal{}, &synthesisResponseError{
+						code: "response.invalid_proposal", message: "proposal repeats an anchor ref within one component",
+					}
+				}
+				seenAnchors[anchorID] = struct{}{}
+				component.AnchorIDs = append(component.AnchorIDs, anchorID)
+			}
+			subsystem.Components = append(subsystem.Components, component)
+		}
+		proposal.Subsystems = append(proposal.Subsystems, subsystem)
+	}
+	return proposal, nil
 }
 
 func decodeProposalString(fields map[string]json.RawMessage, name string) (string, error) {
@@ -988,6 +1537,15 @@ func hasUnknownFields(fields map[string]json.RawMessage, allowed ...string) bool
 	}
 	for field := range fields {
 		if _, exists := known[field]; !exists {
+			return true
+		}
+	}
+	return false
+}
+
+func hasForbiddenSynthesisFields(fields map[string]json.RawMessage, forbidden ...string) bool {
+	for _, field := range forbidden {
+		if _, exists := fields[field]; exists {
 			return true
 		}
 	}

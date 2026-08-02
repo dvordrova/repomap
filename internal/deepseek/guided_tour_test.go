@@ -271,7 +271,7 @@ func TestEditGuidedTourMeasuredDoesNotRetryMalformedJSON(t *testing.T) {
 	if err == nil || !errors.Is(err, errJSONCompletionInvalid) {
 		t.Fatalf("EditGuidedTourMeasured() error = %v, want invalid JSON", err)
 	}
-	if string(result.Content) != `{"version":1` || result.Attempts != 1 {
+	if string(result.Content) != `{"version":1` || result.Attempts != 1 || !result.UsageReported {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(maxTokens) != 1 || maxTokens[0] != client.MaxTokens {
@@ -325,7 +325,7 @@ func TestEditGuidedTourMeasuredFailsClosedOnLengthWithoutRetry(t *testing.T) {
 	}
 	if string(result.Content) != `{"version":1` || result.Attempts != 1 ||
 		result.InputTokens != 120 || result.OutputTokens != 6000 ||
-		result.FinishReason != "length" {
+		result.FinishReason != "length" || !result.UsageReported {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(maxTokens) != 1 || maxTokens[0] != client.MaxTokens {
@@ -367,7 +367,8 @@ func TestEditGuidedTourMeasuredTransportRetryReusesExactRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Attempts != 2 || len(bodies) != 2 || !bytes.Equal(bodies[0], bodies[1]) {
+	if result.Attempts != 2 || result.UsageReported ||
+		len(bodies) != 2 || !bytes.Equal(bodies[0], bodies[1]) {
 		t.Fatalf("attempts = %d, bodies identical = %t", result.Attempts, len(bodies) == 2 && bytes.Equal(bodies[0], bodies[1]))
 	}
 	var request chatRequest

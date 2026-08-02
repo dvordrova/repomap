@@ -70,6 +70,7 @@ func (c *Client) EditGuidedTourMeasured(
 		measured.Attempts = attempt
 		measured.RequestBytes += len(body)
 		measured.ResponseBytes += result.ResponseBytes
+		measured.UsageReported = measured.UsageReported || result.UsageReported
 		measured.InputTokens += result.InputTokens
 		measured.OutputTokens += result.OutputTokens
 		measured.ReasoningTokens += result.ReasoningTokens

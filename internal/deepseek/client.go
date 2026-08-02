@@ -48,9 +48,10 @@ const (
 // request contract used by Orient and OrientPromptJSON.
 const OrientationPromptVersionJSON = "orientation-json-v13"
 
-// SemanticOutputLanguageContractVersion identifies the shared language
-// contract applied to every non-localization model request. Localization uses
-// its own source/target-locale contract and deliberately bypasses this one.
+// SemanticOutputLanguageContractVersion identifies the default shared
+// language contract. A stage whose versioned prompt owns a closed output
+// language bypasses this wrapper; localization likewise owns its separate
+// source/target-locale contract.
 const SemanticOutputLanguageContractVersion = "canonical-english-output-v1"
 
 const canonicalEnglishSystemContract = `CANONICAL OUTPUT LANGUAGE CONTRACT (canonical-english-output-v1):
@@ -260,15 +261,17 @@ type chatResponse struct {
 		FinishReason string      `json:"finish_reason"`
 		Message      chatMessage `json:"message"`
 	} `json:"choices"`
-	Usage struct {
-		PromptTokens           int `json:"prompt_tokens"`
-		CompletionTokens       int `json:"completion_tokens"`
-		PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens"`
-		PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens"`
-		CompletionTokenDetails struct {
-			ReasoningTokens int `json:"reasoning_tokens"`
-		} `json:"completion_tokens_details"`
-	} `json:"usage"`
+	Usage *chatUsage `json:"usage"`
+}
+
+type chatUsage struct {
+	PromptTokens           int `json:"prompt_tokens"`
+	CompletionTokens       int `json:"completion_tokens"`
+	PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens"`
+	CompletionTokenDetails struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
 const maxRetries = 3
@@ -392,11 +395,26 @@ func (c *Client) canonicalSemanticRequest(
 	systemContent string,
 	jsonMode bool,
 ) chatRequest {
+	return c.semanticRequest(
+		withCanonicalEnglishUserContract(userContent),
+		withCanonicalEnglishSystemContract(systemContent),
+		jsonMode,
+	)
+}
+
+// semanticRequest builds one provider request without imposing a shared
+// output-language contract. It is reserved for stages whose versioned prompt
+// owns an explicit closed output language itself.
+func (c *Client) semanticRequest(
+	userContent,
+	systemContent string,
+	jsonMode bool,
+) chatRequest {
 	request := chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: withCanonicalEnglishSystemContract(systemContent)},
-			{Role: "user", Content: withCanonicalEnglishUserContract(userContent)},
+			{Role: "system", Content: systemContent},
+			{Role: "user", Content: userContent},
 		},
 		Temperature: float64Pointer(0.1),
 		MaxTokens:   c.MaxTokens,
@@ -562,6 +580,7 @@ func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelre
 		measured.Attempts++
 		measured.RequestBytes += len(body)
 		measured.ResponseBytes += result.ResponseBytes
+		measured.UsageReported = measured.UsageReported || result.UsageReported
 		measured.InputTokens += result.InputTokens
 		measured.OutputTokens += result.OutputTokens
 		measured.ReasoningTokens += result.ReasoningTokens
@@ -597,6 +616,7 @@ func providerResultFromCompletion(
 		Content:  append([]byte(nil), completion.Content...),
 		Attempts: attempts, RequestBytes: requestBytes,
 		ResponseBytes: completion.ResponseBytes,
+		UsageReported: completion.UsageReported,
 		InputTokens:   completion.InputTokens, OutputTokens: completion.OutputTokens,
 		ReasoningTokens:       completion.ReasoningTokens,
 		FinishReason:          completion.FinishReason,
@@ -651,6 +671,7 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 type chatCompletion struct {
 	Content               []byte
 	ResponseBytes         int
+	UsageReported         bool
 	InputTokens           int
 	OutputTokens          int
 	ReasoningTokens       int
@@ -711,13 +732,19 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return chatCompletion{}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
 	}
+	usage := chatUsage{}
+	usageReported := parsed.Usage != nil
+	if usageReported {
+		usage = *parsed.Usage
+	}
 	completion := chatCompletion{
 		ResponseBytes:         len(respBody),
-		InputTokens:           parsed.Usage.PromptTokens,
-		OutputTokens:          parsed.Usage.CompletionTokens,
-		ReasoningTokens:       parsed.Usage.CompletionTokenDetails.ReasoningTokens,
-		PromptCacheHitTokens:  parsed.Usage.PromptCacheHitTokens,
-		PromptCacheMissTokens: parsed.Usage.PromptCacheMissTokens,
+		UsageReported:         usageReported,
+		InputTokens:           usage.PromptTokens,
+		OutputTokens:          usage.CompletionTokens,
+		ReasoningTokens:       usage.CompletionTokenDetails.ReasoningTokens,
+		PromptCacheHitTokens:  usage.PromptCacheHitTokens,
+		PromptCacheMissTokens: usage.PromptCacheMissTokens,
 	}
 	if len(parsed.Choices) == 0 {
 		return completion, false, fmt.Errorf("llm response contains no choices")
@@ -729,11 +756,11 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	if choice.FinishReason == "length" {
 		return completion, false, modelresearch.NewResourceLimitError(ResourceLimitError{
 			Kind:            ResourceLimitOutputTokens,
-			Observed:        parsed.Usage.CompletionTokens,
-			ObservedKnown:   parsed.Usage.CompletionTokens > 0,
-			InputTokens:     parsed.Usage.PromptTokens,
-			OutputTokens:    parsed.Usage.CompletionTokens,
-			ReasoningTokens: parsed.Usage.CompletionTokenDetails.ReasoningTokens,
+			Observed:        usage.CompletionTokens,
+			ObservedKnown:   usageReported,
+			InputTokens:     usage.PromptTokens,
+			OutputTokens:    usage.CompletionTokens,
+			ReasoningTokens: usage.CompletionTokenDetails.ReasoningTokens,
 			FinishReason:    "length",
 		}, completion.Content)
 	}
@@ -742,13 +769,13 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
 			details = append(details, "finish_reason="+finishReason)
 		}
-		if parsed.Usage.CompletionTokens > 0 {
-			details = append(details, fmt.Sprintf("completion_tokens=%d", parsed.Usage.CompletionTokens))
+		if usage.CompletionTokens > 0 {
+			details = append(details, fmt.Sprintf("completion_tokens=%d", usage.CompletionTokens))
 		}
-		if parsed.Usage.CompletionTokenDetails.ReasoningTokens > 0 {
+		if usage.CompletionTokenDetails.ReasoningTokens > 0 {
 			details = append(details, fmt.Sprintf(
 				"reasoning_tokens=%d",
-				parsed.Usage.CompletionTokenDetails.ReasoningTokens,
+				usage.CompletionTokenDetails.ReasoningTokens,
 			))
 		} else if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 			details = append(details, "reasoning_content_present")

@@ -62,16 +62,25 @@ func (product Product) Catalog() []CatalogObject {
 }
 
 type wireProjection struct {
-	Version      int              `json:"version"`
-	Language     Language         `json:"language"`
-	Architecture wireArchitecture `json:"architecture"`
-	Units        []wireUnit       `json:"units"`
-	Subsystems   []wireSubsystem  `json:"subsystems"`
-	Components   []wireComponent  `json:"components"`
-	Surfaces     []wireSurface    `json:"surfaces,omitempty"`
-	Targets      []wireTarget     `json:"reading_targets"`
-	Evidence     []wireEvidence   `json:"evidence,omitempty"`
-	Documents    []wireDocument   `json:"documented_claims,omitempty"`
+	Version             int                      `json:"version"`
+	Language            Language                 `json:"language"`
+	Architecture        wireArchitecture         `json:"architecture"`
+	BriefSupportChoices []wireBriefSupportChoice `json:"brief_support_choices"`
+	Units               []wireUnit               `json:"units"`
+	Subsystems          []wireSubsystem          `json:"subsystems"`
+	Components          []wireComponent          `json:"components"`
+	Surfaces            []wireSurface            `json:"surfaces,omitempty"`
+	Targets             []wireTarget             `json:"reading_targets"`
+	Evidence            []wireEvidence           `json:"evidence,omitempty"`
+	Documents           []wireDocument           `json:"documented_claims,omitempty"`
+}
+
+// wireBriefSupportChoice is the complete model-visible allowlist for Brief
+// support_refs. Units remain useful route-principal context, but never appear
+// here and therefore cannot be selected as Brief evidence.
+type wireBriefSupportChoice struct {
+	Ref  string  `json:"ref"`
+	Kind RefKind `json:"kind"`
 }
 
 type wireArchitecture struct {
@@ -478,6 +487,13 @@ func buildWire(
 		Version: Version, Language: input.Language,
 		Architecture: wireArchitecture{Title: input.Architecture.Title, Subtitle: input.Architecture.Subtitle},
 	}
+	addBriefSupport := func(kind RefKind, ref string) {
+		if briefSupportKind(kind) {
+			wire.BriefSupportChoices = append(wire.BriefSupportChoices, wireBriefSupportChoice{
+				Ref: ref, Kind: kind,
+			})
+		}
+	}
 	for _, unit := range input.Atlas.Units {
 		wire.Units = append(wire.Units, wireUnit{
 			Ref: refs[CanonicalRef{Kind: RefUnit, ID: unit.ID}], Kind: unit.Kind,
@@ -485,18 +501,21 @@ func buildWire(
 		})
 	}
 	for _, subsystem := range input.Architecture.Subsystems {
+		ref := refs[CanonicalRef{Kind: RefSubsystem, ID: subsystem.ID}]
 		item := wireSubsystem{
-			Ref:   refs[CanonicalRef{Kind: RefSubsystem, ID: subsystem.ID}],
+			Ref:   ref,
 			Label: subsystem.Name, Description: subsystem.Description, Authority: subsystem.Authority,
 		}
 		for _, componentID := range subsystem.ComponentIDs {
 			item.ComponentRefs = append(item.ComponentRefs, refs[CanonicalRef{Kind: RefComponent, ID: componentID}])
 		}
 		wire.Subsystems = append(wire.Subsystems, item)
+		addBriefSupport(RefSubsystem, ref)
 	}
 	for _, component := range input.Architecture.Components {
+		ref := refs[CanonicalRef{Kind: RefComponent, ID: component.ID}]
 		item := wireComponent{
-			Ref:          refs[CanonicalRef{Kind: RefComponent, ID: component.ID}],
+			Ref:          ref,
 			SubsystemRef: refs[CanonicalRef{Kind: RefSubsystem, ID: component.SubsystemID}],
 			Label:        component.Name, Description: component.Description, Authority: component.Authority,
 		}
@@ -505,10 +524,12 @@ func buildWire(
 				refs[CanonicalRef{Kind: RefReadingTarget, ID: targetID}])
 		}
 		wire.Components = append(wire.Components, item)
+		addBriefSupport(RefComponent, ref)
 	}
 	for _, surface := range input.Surfaces {
+		ref := refs[CanonicalRef{Kind: RefSurface, ID: surface.ID}]
 		item := wireSurface{
-			Ref:     refs[CanonicalRef{Kind: RefSurface, ID: surface.ID}],
+			Ref:     ref,
 			UnitRef: refs[CanonicalRef{Kind: RefUnit, ID: surface.UnitID}],
 			Label:   surface.Name, Kind: surface.Kind, Authority: surface.Authority,
 		}
@@ -517,29 +538,36 @@ func buildWire(
 				refs[CanonicalRef{Kind: RefReadingTarget, ID: targetID}])
 		}
 		wire.Surfaces = append(wire.Surfaces, item)
+		addBriefSupport(RefSurface, ref)
 	}
 	for _, target := range input.ReadingTargets {
+		ref := refs[CanonicalRef{Kind: RefReadingTarget, ID: target.ID}]
 		wire.Targets = append(wire.Targets, wireTarget{
-			Ref:      refs[CanonicalRef{Kind: RefReadingTarget, ID: target.ID}],
+			Ref:      ref,
 			OwnerRef: refs[target.Owner], Kind: target.Kind, Label: target.Label,
 			Fact: target.Fact, Authority: target.Authority,
 		})
+		addBriefSupport(RefReadingTarget, ref)
 	}
 	for _, fact := range input.Evidence {
+		ref := refs[CanonicalRef{Kind: RefEvidence, ID: fact.ID}]
 		item := wireEvidence{
-			Ref:  refs[CanonicalRef{Kind: RefEvidence, ID: fact.ID}],
+			Ref:  ref,
 			Fact: fact.Fact, Authority: fact.Authority,
 		}
 		for _, subject := range fact.SubjectRefs {
 			item.SubjectRefs = append(item.SubjectRefs, refs[subject])
 		}
 		wire.Evidence = append(wire.Evidence, item)
+		addBriefSupport(RefEvidence, ref)
 	}
 	for _, document := range input.Documents {
+		ref := refs[CanonicalRef{Kind: RefDocument, ID: document.ID}]
 		wire.Documents = append(wire.Documents, wireDocument{
-			Ref:   refs[CanonicalRef{Kind: RefDocument, ID: document.ID}],
+			Ref:   ref,
 			Label: document.Label, Claim: document.Claim, Authority: document.Authority,
 		})
+		addBriefSupport(RefDocument, ref)
 	}
 	encoded, err := json.Marshal(wire)
 	if err != nil {

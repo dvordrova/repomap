@@ -25,6 +25,7 @@ type ProviderResult struct {
 	Attempts              int
 	RequestBytes          int
 	ResponseBytes         int
+	UsageReported         bool
 	InputTokens           int
 	OutputTokens          int
 	ReasoningTokens       int

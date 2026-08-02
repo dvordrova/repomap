@@ -7,10 +7,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
@@ -23,7 +25,43 @@ type architectureSynthesisStub struct {
 	maxTokens int
 	endpoint  string
 	prompts   []componentmap.SynthesisPrompt
+	pending   *componentmap.SynthesisPrompt
+	bodies    [][]byte
+	finish    string
 	onCall    func()
+}
+
+type architectureSynthesisWireResponse struct {
+	Subsystems []architectureSynthesisWireSubsystem `json:"subsystems"`
+}
+
+type architectureSynthesisWireSubsystem struct {
+	Name        string                               `json:"name"`
+	Description string                               `json:"description,omitempty"`
+	Components  []architectureSynthesisWireComponent `json:"components"`
+}
+
+type architectureSynthesisWireComponent struct {
+	Name        string                            `json:"name"`
+	Description string                            `json:"description,omitempty"`
+	MemberRefs  []componentmap.SynthesisMemberRef `json:"member_refs"`
+	AnchorRefs  []componentmap.SynthesisAnchorRef `json:"anchor_refs,omitempty"`
+	Hypothesis  bool                              `json:"hypothesis,omitempty"`
+}
+
+func architectureSynthesisOutcomeFixture(
+	validation componentmap.ValidationOutcome,
+) architectureSynthesisOutcome {
+	return architectureSynthesisOutcome{
+		InputBytes: 1200, ResponseBytes: 500, ResponseContentBytes: 450,
+		Attempted: true, TransportAttempts: 1,
+		ProviderCallSucceeded: true, ResponseParsed: true,
+		ValidationOutcome: validation, ArchitectureSource: componentmap.SourceValidatedModel,
+		ArchitectureLevel: 2, UsageReported: true, InputTokens: 100, OutputTokens: 50,
+		FinishReason: "stop", ResponseComplete: true, ResponseState: componentmap.ResponseCaptured,
+		CandidateCount: 2, AnchorCount: 1,
+		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
+	}
 }
 
 func (stub *architectureSynthesisStub) ArchitectureProviderEndpointSHA256() string {
@@ -35,16 +73,33 @@ func (stub *architectureSynthesisStub) ArchitectureProviderEndpointSHA256() stri
 	return digest
 }
 
-func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeMeasured(
+func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeBodyMeasured(
 	_ context.Context,
-	prompt componentmap.SynthesisPrompt,
+	body []byte,
 ) (modelresearch.ProviderResult, error) {
 	stub.calls++
-	stub.prompts = append(stub.prompts, prompt)
+	stub.bodies = append(stub.bodies, append([]byte(nil), body...))
+	if stub.pending != nil {
+		stub.prompts = append(stub.prompts, *stub.pending)
+		stub.pending = nil
+	}
 	if stub.onCall != nil {
 		stub.onCall()
 	}
-	return modelresearch.ProviderResult{Content: append([]byte(nil), stub.response...), Attempts: 1}, stub.err
+	result := modelresearch.ProviderResult{
+		Content: append([]byte(nil), stub.response...), Attempts: 1,
+		RequestBytes: len(body), ResponseBytes: len(stub.response),
+	}
+	if stub.err == nil {
+		result.UsageReported = true
+		result.InputTokens = 101
+		result.OutputTokens = 53
+		result.FinishReason = stub.finish
+		if result.FinishReason == "" {
+			result.FinishReason = "stop"
+		}
+	}
+	return result, stub.err
 }
 
 func TestArchitectureAcceptedRecordIsRemovedWhenResearchStateWriteFails(t *testing.T) {
@@ -81,6 +136,8 @@ func TestArchitectureAcceptedRecordIsRemovedWhenResearchStateWriteFails(t *testi
 }
 
 func (stub *architectureSynthesisStub) ComponentSynthesisPromptJSON(prompt componentmap.SynthesisPrompt) ([]byte, error) {
+	promptCopy := prompt
+	stub.pending = &promptCopy
 	maxTokens := stub.maxTokens
 	if maxTokens == 0 {
 		maxTokens = 64_000
@@ -174,6 +231,280 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 	if landscape.Fallback || landscape.Subsystems[0].Components[0].Name != "Runtime" {
 		t.Fatalf("cached landscape = %#v", landscape)
+	}
+}
+
+func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *testing.T) {
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, bundle)}
+	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBody, err := provider.ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.pending = nil
+
+	runDir := t.TempDir()
+	writer, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, runDir, "revision-exact-body",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, exchangeWriter: writer,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if closeErr := writer.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || len(provider.bodies) != 1 ||
+		!bytes.Equal(provider.bodies[0], wantBody) || outcome.InputBytes != len(wantBody) {
+		t.Fatalf("exact provider body/call outcome = calls %d bodies %d outcome %#v", provider.calls, len(provider.bodies), outcome)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, nil); err != nil {
+		t.Fatal(err)
+	}
+	statusJSON, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusJSON, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Version != 4 || status.RequestBytes != len(wantBody) ||
+		status.ResponseBytes != len(provider.response) ||
+		status.ResponseContentBytes != len(provider.response) ||
+		status.CandidateCount != 1 || status.AnchorCount != 0 ||
+		!status.MembershipCounted || status.MemberOccurrences != 1 || status.DistinctMembers != 1 ||
+		!status.UsageReported || status.InputTokens != 101 || status.OutputTokens != 53 ||
+		status.FinishReason != "stop" || !status.ResponseComplete ||
+		status.ResponseState != string(componentmap.ResponseCaptured) || status.TransportAttempts != 1 {
+		t.Fatalf("closed Architecture parity status = %#v", status)
+	}
+
+	directories, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil || len(directories) != 1 {
+		t.Fatalf("semantic exchange directories = %v / %v", directories, err)
+	}
+	metadata, err := os.ReadFile(filepath.Join(
+		runDir, debugdump.SemanticExchangesDir, directories[0].Name(),
+		debugdump.SemanticExchangeMetaFile,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exchange debugdump.SemanticExchangeRecord
+	if err := json.Unmarshal(metadata, &exchange); err != nil {
+		t.Fatal(err)
+	}
+	if exchange.RequestProvenance != debugdump.SemanticRequestExactSent ||
+		exchange.SemanticCalls != 1 || exchange.TransportAttempts != 1 {
+		t.Fatalf("semantic exchange = %#v", exchange)
+	}
+	savedRequest, err := os.ReadFile(filepath.Join(
+		runDir, debugdump.SemanticExchangesDir, directories[0].Name(),
+		exchange.Request.File,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(savedRequest, wantBody) {
+		t.Fatal("journaled Architecture request differs from the exact sent provider body")
+	}
+}
+
+func TestArchitectureResponseMembershipCountsExactCanonicalAndRequestLocalShapes(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		response   string
+		counted    bool
+		occurrence int
+		distinct   int
+	}{
+		{
+			name:     "canonical bridge duplicate",
+			response: `{"subsystems":[{"components":[{"member_ids":[{"kind":"package","value":"a"}]},{"member_ids":[{"kind":"package","value":"a"},{"kind":"file","value":"b"}]}]}]}`,
+			counted:  true, occurrence: 3, distinct: 2,
+		},
+		{
+			name:     "request local refs",
+			response: `{"subsystems":[{"components":[{"member_refs":[{"kind":"package","ref":"p1"},{"kind":"file","ref":"f1"}]}]}]}`,
+			counted:  true, occurrence: 2, distinct: 2,
+		},
+		{name: "not exact json", response: "```json\n{}\n```"},
+		{name: "mixed identities", response: `{"subsystems":[{"components":[{"member_ids":[],"member_refs":[]}]}]}`},
+		{name: "non-closed ref", response: `{"subsystems":[{"components":[{"member_refs":[{"kind":"package","ref":"p1","path":"private"}]}]}]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			counted, occurrence, distinct := architectureResponseMembershipCounts([]byte(test.response))
+			if counted != test.counted || occurrence != test.occurrence || distinct != test.distinct {
+				t.Fatalf("counts = %t/%d/%d", counted, occurrence, distinct)
+			}
+		})
+	}
+}
+
+func TestArchitectureSynthesisDiagnosticCodesRetainsAllDistinctCodes(t *testing.T) {
+	diagnostics := []componentmap.Diagnostic{
+		{Code: "proposal.first"},
+		{Code: "proposal.second"},
+		{Code: "proposal.third"},
+		{Code: "proposal.fourth"},
+		{Code: "proposal.fifth"},
+		{Code: "proposal.sixth"},
+		{Code: "proposal.second"},
+	}
+	want := []string{
+		"proposal.first",
+		"proposal.second",
+		"proposal.third",
+		"proposal.fourth",
+		"proposal.fifth",
+		"proposal.sixth",
+	}
+	if got := architectureSynthesisDiagnosticCodes(diagnostics); !slices.Equal(got, want) {
+		t.Fatalf("diagnostic codes = %v, want %v", got, want)
+	}
+}
+
+func TestEnsureArchitectureSynthesisPersistsConflictingMembershipEvidence(t *testing.T) {
+	bundle := architectureSynthesisTestBundle()
+	second := bundle.Candidates[0]
+	second.ID = componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-storage"}
+	second.Name = "local storage"
+	second.Facts = append([]componentmap.LocalFact(nil), second.Facts...)
+	second.Facts[0].Value = "storage package"
+	bundle.Candidates = append(bundle.Candidates, second)
+
+	request, _, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Candidates) != 2 {
+		t.Fatalf("request candidates = %d", len(request.Candidates))
+	}
+	response, err := json.Marshal(architectureSynthesisWireResponse{
+		Subsystems: []architectureSynthesisWireSubsystem{{
+			Name: "Repository",
+			Components: []architectureSynthesisWireComponent{
+				{Name: "Runtime", MemberRefs: []componentmap.SynthesisMemberRef{request.Candidates[0].Ref}},
+				{Name: "Storage", MemberRefs: []componentmap.SynthesisMemberRef{
+					request.Candidates[0].Ref,
+					request.Candidates[1].Ref,
+				}},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &architectureSynthesisStub{response: response}
+	runDir := t.TempDir()
+	outcome, err := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, runDir, "revision-conflict",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache:           true,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if !errors.Is(err, errArchitectureSynthesisRejected) {
+		t.Fatalf("conflicting synthesis error = %v", err)
+	}
+	if !outcome.MembershipCounted || outcome.MemberOccurrences != 3 || outcome.DistinctMembers != 2 ||
+		strings.Join(outcome.ValidationCodes, ",") != "proposal.conflicting_membership" {
+		t.Fatalf("conflicting synthesis evidence = %#v", outcome)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, err); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.State != report.ArchitectureSynthesisFailed || status.MemberOccurrences != 3 ||
+		status.DistinctMembers != 2 ||
+		strings.Join(status.ValidationCodes, ",") != "proposal.conflicting_membership" {
+		t.Fatalf("persisted conflicting synthesis status = %#v", status)
+	}
+}
+
+func TestEnsureArchitectureSynthesisRejectsIncompleteParityEvidenceBeforeWrites(t *testing.T) {
+	bundle := architectureSynthesisTestBundle()
+	validResponse := architectureSynthesisTestResponse(t, bundle)
+	for _, test := range []struct {
+		name         string
+		response     []byte
+		finishReason string
+		wantCode     string
+	}{
+		{
+			name:     "normalized fenced response has no exact membership envelope",
+			response: append(append([]byte("```json\n"), validResponse...), []byte("\n```")...),
+			wantCode: "response.membership_unavailable",
+		},
+		{
+			name:     "provider did not report complete response",
+			response: validResponse, finishReason: "content_filter",
+			wantCode: "response.incomplete",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runsDir := t.TempDir()
+			runDir := filepath.Join(runsDir, "run")
+			if err := os.Mkdir(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			provider := &architectureSynthesisStub{
+				response: test.response,
+				finish:   test.finishReason,
+			}
+			outcome, err := ensureArchitectureSynthesisWithOptions(
+				t.Context(), bundle, runDir, "revision-incomplete-evidence",
+				"openai-compatible/bearer", "test-model", provider,
+				architectureSynthesisOptions{
+					providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+				},
+			)
+			if !errors.Is(err, errArchitectureSynthesisRejected) {
+				t.Fatalf("incomplete evidence error = %v", err)
+			}
+			if outcome.ValidationOutcome != componentmap.ValidationRejected ||
+				len(outcome.ValidationCodes) == 0 || outcome.ValidationCodes[0] != test.wantCode {
+				t.Fatalf("incomplete parity evidence outcome = %#v", outcome)
+			}
+			if _, statErr := os.Stat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("incomplete parity evidence wrote accepted run record: %v", statErr)
+			}
+			cacheFiles, globErr := filepath.Glob(filepath.Join(
+				runsDir,
+				architectureSynthesisCacheDirectory,
+				"*.json",
+			))
+			if globErr != nil {
+				t.Fatal(globErr)
+			}
+			if len(cacheFiles) != 0 {
+				t.Fatalf("incomplete parity evidence wrote accepted cache: %v", cacheFiles)
+			}
+			if err := persistArchitectureSynthesisStatus(runDir, outcome, err); err != nil {
+				t.Fatalf("persist closed incomplete-evidence status: %v", err)
+			}
+		})
 	}
 }
 
@@ -408,7 +739,8 @@ func TestEnsureArchitectureSynthesisRejectsInvalidOutputWithoutPublishingOrCachi
 		t.Fatal(err)
 	}
 	if status.State != report.ArchitectureSynthesisFailed || status.ErrorCode != "invalid_response" ||
-		!status.ProposalRejected || status.FallbackSelected || status.FallbackReason != "" {
+		!status.ProposalRejected || status.FallbackSelected || status.FallbackReason != "" ||
+		strings.Join(status.ValidationCodes, ",") != "response.no_json,proposal.unsupported_version" {
 		t.Fatalf("closed rejection status = %#v", status)
 	}
 	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, architectureSynthesisCacheDirectory, "*.json"))
@@ -570,7 +902,9 @@ func TestPersistArchitectureSynthesisStatusRetainsNonResourceFailure(t *testing.
 	runDir := t.TempDir()
 	if err := persistArchitectureSynthesisStatus(
 		runDir,
-		architectureSynthesisOutcome{InputBytes: 1200, Attempted: true},
+		architectureSynthesisOutcome{
+			InputBytes: 1200, Attempted: true, TransportAttempts: 1, CandidateCount: 2,
+		},
 		errors.New("architecture synthesis: provider call: unavailable"),
 	); err != nil {
 		t.Fatal(err)
@@ -584,10 +918,9 @@ func TestArchitectureSemanticFailureIsPublishableOnlyAfterDurableFailedStatus(t 
 	cause := &architectureResponseRejected{
 		cause: errors.New("architecture synthesis: validate response: malformed fixture"),
 	}
-	outcome := architectureSynthesisOutcome{
-		InputBytes: 1200, Attempted: true,
-		ValidationOutcome: componentmap.ValidationRejected,
-	}
+	outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationRejected)
+	outcome.MemberOccurrences = 3
+	outcome.ValidationCodes = []string{"proposal.conflicting_membership"}
 
 	t.Run("durable failed status permits continuation", func(t *testing.T) {
 		runDir := t.TempDir()
@@ -648,13 +981,16 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 	t.Parallel()
 
 	status := architectureSynthesisStatus(
-		architectureSynthesisOutcome{InputBytes: 1200, LatencyMillis: 4321, Attempted: true},
+		architectureSynthesisOutcome{
+			InputBytes: 1200, LatencyMillis: 4321, Attempted: true,
+			TransportAttempts: 1, CandidateCount: 2,
+		},
 		errors.New("architecture synthesis: provider call: llm response content is empty"),
 	)
 	if status.State != report.ArchitectureSynthesisFailed ||
 		status.ErrorCode != "empty_response" ||
 		status.ProviderRequestCount != 1 ||
-		status.PromptBytes != 1200 ||
+		status.RequestBytes != 1200 ||
 		status.LatencyMillis != 4321 {
 		t.Fatalf("status = %#v", status)
 	}
@@ -673,40 +1009,33 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 		synthesisErr error
 	}{
 		{
-			name: "accepted",
-			outcome: architectureSynthesisOutcome{
-				ProviderCallSucceeded: true,
-				ResponseParsed:        true,
-				ValidationOutcome:     componentmap.ValidationAccepted,
-				ArchitectureSource:    componentmap.SourceValidatedModel,
-				ArchitectureLevel:     1,
-			},
+			name:     "accepted",
+			outcome:  architectureSynthesisOutcomeFixture(componentmap.ValidationAccepted),
 			accepted: true,
 		},
 		{
 			name: "normalized",
-			outcome: architectureSynthesisOutcome{
-				Cached:                true,
-				ProviderCallSucceeded: true,
-				ResponseParsed:        true,
-				ValidationOutcome:     componentmap.ValidationAcceptedNormalized,
-				ArchitectureSource:    componentmap.SourceNormalizedModel,
-				ArchitectureLevel:     2,
-				NormalizationCount:    1,
-			},
+			outcome: func() architectureSynthesisOutcome {
+				outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationAcceptedNormalized)
+				outcome.Cached = true
+				outcome.Attempted = false
+				outcome.TransportAttempts = 0
+				outcome.ArchitectureSource = componentmap.SourceNormalizedModel
+				outcome.NormalizationCount = 1
+				return outcome
+			}(),
 			accepted: true, normalized: true,
 		},
 		{
 			name: "rejected enrichment preserves local canvas",
-			outcome: architectureSynthesisOutcome{
-				ProviderCallSucceeded: true,
-				ResponseParsed:        true,
-				ValidationOutcome:     componentmap.ValidationRejected,
-				ArchitectureSource:    componentmap.SourceLocalAnchors,
-				ArchitectureLevel:     3,
-				FallbackSelected:      true,
-				FallbackReason:        componentmap.FallbackRejectedUnknownAnchor,
-			},
+			outcome: func() architectureSynthesisOutcome {
+				outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationRejected)
+				outcome.ArchitectureSource = componentmap.SourceLocalAnchors
+				outcome.ArchitectureLevel = 3
+				outcome.FallbackSelected = true
+				outcome.FallbackReason = componentmap.FallbackRejectedUnknownAnchor
+				return outcome
+			}(),
 			rejected: true, synthesisErr: errArchitectureSynthesisRejected,
 		},
 	}
@@ -1083,12 +1412,24 @@ func architectureSynthesisTestBundle() componentmap.CandidateBundle {
 
 func architectureSynthesisTestResponse(t *testing.T, bundle componentmap.CandidateBundle) []byte {
 	t.Helper()
-	proposal := componentmap.Proposal{
-		Version: componentmap.ContractVersion,
-		Subsystems: []componentmap.ProposedSubsystem{{
+	request, _, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberRefs := make([]componentmap.SynthesisMemberRef, 0, len(request.Candidates))
+	for _, candidate := range request.Candidates {
+		memberRefs = append(memberRefs, candidate.Ref)
+	}
+	anchorRefs := make([]componentmap.SynthesisAnchorRef, 0, len(request.BehaviorAnchors))
+	for _, anchor := range request.BehaviorAnchors {
+		anchorRefs = append(anchorRefs, anchor.Ref)
+	}
+	proposal := architectureSynthesisWireResponse{
+		Subsystems: []architectureSynthesisWireSubsystem{{
 			Name: "Application",
-			Components: []componentmap.ProposedComponent{{
-				Name: "Runtime", MemberIDs: []componentmap.MemberID{bundle.Candidates[0].ID},
+			Components: []architectureSynthesisWireComponent{{
+				Name: "Runtime", MemberRefs: memberRefs, AnchorRefs: anchorRefs,
+				Hypothesis: len(anchorRefs) == 0 && bundle.GroundingMode != componentmap.GroundingPackages,
 			}},
 		}},
 	}

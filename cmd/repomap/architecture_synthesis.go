@@ -96,7 +96,7 @@ func isPublishableArchitectureFailure(err error) bool {
 
 type componentLandscapeSynthesizer interface {
 	ComponentSynthesisPromptJSON(componentmap.SynthesisPrompt) ([]byte, error)
-	SynthesizeComponentLandscapeMeasured(context.Context, componentmap.SynthesisPrompt) (modelresearch.ProviderResult, error)
+	SynthesizeComponentLandscapeBodyMeasured(context.Context, []byte) (modelresearch.ProviderResult, error)
 }
 
 type architectureSynthesisOutcome struct {
@@ -105,6 +105,7 @@ type architectureSynthesisOutcome struct {
 	LatencyMillis         int64
 	FallbackReason        componentmap.FallbackReason
 	ResponseBytes         int
+	ResponseContentBytes  int
 	Attempted             bool
 	TransportAttempts     int
 	ProviderCallSucceeded bool
@@ -116,6 +117,16 @@ type architectureSynthesisOutcome struct {
 	FallbackSelected      bool
 	InputTokens           int
 	OutputTokens          int
+	UsageReported         bool
+	FinishReason          string
+	ResponseComplete      bool
+	ResponseState         componentmap.ResponseState
+	CandidateCount        int
+	AnchorCount           int
+	MembershipCounted     bool
+	MemberOccurrences     int
+	DistinctMembers       int
+	ValidationCodes       []string
 }
 
 func synthesizeArchitectureForRun(
@@ -325,7 +336,11 @@ func ensureArchitectureSynthesisWithOptions(
 	} else if !errors.Is(stateErr, os.ErrNotExist) {
 		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: read research budget: %w", stateErr)
 	}
-	outcome := architectureSynthesisOutcome{InputBytes: len(requestJSON)}
+	outcome := architectureSynthesisOutcome{
+		InputBytes:     len(requestJSON),
+		CandidateCount: len(bundle.Candidates),
+		AnchorCount:    len(bundle.BehaviorAnchors),
+	}
 	if allowed, reason := policy.Allows(policy.Architecture, usage, len(requestJSON)); !allowed {
 		outcome.FallbackReason = componentmap.FallbackReason(reason)
 		budgetErr := architectureSynthesisBudgetError(reason, policy, usage, len(requestJSON))
@@ -400,6 +415,19 @@ func ensureArchitectureSynthesisWithOptions(
 				}
 				cachedOutcome.Cached = true
 				cachedOutcome.InputBytes = len(requestJSON)
+				cachedOutcome.CandidateCount = len(bundle.Candidates)
+				cachedOutcome.AnchorCount = len(bundle.BehaviorAnchors)
+				cachedOutcome.MembershipCounted,
+					cachedOutcome.MemberOccurrences,
+					cachedOutcome.DistinctMembers = architectureResponseMembershipCounts(
+					cachedRecord.Call.Response,
+				)
+				if architectureSynthesisAcceptedEvidenceCode(cachedOutcome) != "" {
+					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove incomplete cache evidence: %w", removeErr)
+					}
+					continue
+				}
 				recordArchitectureSemanticExchange(
 					options.exchangeWriter,
 					requestJSON,
@@ -442,19 +470,26 @@ func ensureArchitectureSynthesisWithOptions(
 
 	outcome.Attempted = true
 	started := time.Now()
-	providerResult, err := provider.SynthesizeComponentLandscapeMeasured(ctx, prompt)
+	providerResult, err := provider.SynthesizeComponentLandscapeBodyMeasured(ctx, requestJSON)
 	raw := providerResult.Content
-	responseBytes := providerResultResponseBytes(providerResult)
+	providerResponseBytes := providerResultResponseBytes(providerResult)
 	latency := time.Since(started)
 	outcome.LatencyMillis = latency.Milliseconds()
-	outcome.ResponseBytes = responseBytes
+	outcome.ResponseBytes = len(raw)
+	outcome.ResponseContentBytes = len(raw)
 	outcome.TransportAttempts = providerResult.Attempts
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
+	outcome.UsageReported = providerResult.UsageReported
+	outcome.FinishReason = providerResult.FinishReason
+	outcome.ResponseComplete = providerResult.FinishReason == "stop"
+	outcome.MembershipCounted,
+		outcome.MemberOccurrences,
+		outcome.DistinctMembers = architectureResponseMembershipCounts(raw)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		recordArchitectureSemanticExchange(
 			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
-			responseBytes, providerResult.Attempts,
+			providerResponseBytes, providerResult.Attempts,
 			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
 		)
 		return outcome, ctxErr
@@ -463,7 +498,7 @@ func ensureArchitectureSynthesisWithOptions(
 		recordArchitectureSemanticExchange(
 			options.exchangeWriter, requestJSON,
 			providerFailureContentForExchange(err, raw), componentmap.ResponseCaptured,
-			responseBytes, providerResult.Attempts,
+			providerResponseBytes, providerResult.Attempts,
 			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
 		)
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
@@ -487,7 +522,7 @@ func ensureArchitectureSynthesisWithOptions(
 	if err != nil {
 		recordArchitectureSemanticExchange(
 			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
-			responseBytes, providerResult.Attempts,
+			providerResponseBytes, providerResult.Attempts,
 			debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
 		)
 		validationErr := fmt.Errorf("architecture synthesis: validate response: %w", err)
@@ -501,11 +536,16 @@ func ensureArchitectureSynthesisWithOptions(
 	}
 	result.Record.Call.Metadata.InputTokens = providerResult.InputTokens
 	result.Record.Call.Metadata.OutputTokens = providerResult.OutputTokens
+	result.Record.Call.Metadata.UsageReported = providerResult.UsageReported
+	result.Record.Call.Metadata.FinishReason = providerResult.FinishReason
+	result.Record.Call.Metadata.TransportAttempts = providerResult.Attempts
+	result.Record.Call.Metadata.ResponseComplete = providerResult.FinishReason == "stop"
 	outcome = architectureSynthesisOutcome{
 		InputBytes:            len(requestJSON),
 		LatencyMillis:         result.Record.Call.Metadata.LatencyMillis,
 		FallbackReason:        result.Landscape.FallbackReason,
-		ResponseBytes:         responseBytes,
+		ResponseBytes:         result.Record.Call.ResponseBytes,
+		ResponseContentBytes:  len(result.Record.Call.Response),
 		Attempted:             true,
 		TransportAttempts:     providerResult.Attempts,
 		ProviderCallSucceeded: true,
@@ -517,12 +557,37 @@ func ensureArchitectureSynthesisWithOptions(
 		FallbackSelected:      result.Landscape.Fallback,
 		InputTokens:           providerResult.InputTokens,
 		OutputTokens:          providerResult.OutputTokens,
+		UsageReported:         providerResult.UsageReported,
+		FinishReason:          providerResult.FinishReason,
+		ResponseComplete:      providerResult.FinishReason == "stop",
+		ResponseState:         result.Record.Call.ResponseState,
+		CandidateCount:        len(bundle.Candidates),
+		AnchorCount:           len(bundle.BehaviorAnchors),
+		ValidationCodes:       architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
 	}
-	state := debugdump.SemanticStateAccepted
-	validationCode := debugdump.SemanticValidationAccepted
-	if result.Landscape.ValidationOutcome == componentmap.ValidationRejected {
-		state = debugdump.SemanticStateRejected
-		validationCode = debugdump.SemanticValidationResponse
+	outcome.MembershipCounted,
+		outcome.MemberOccurrences,
+		outcome.DistinctMembers = architectureResponseMembershipCounts(raw)
+	accepted := !result.Landscape.Fallback &&
+		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
+			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
+	if accepted {
+		if evidenceCode := architectureSynthesisAcceptedEvidenceCode(outcome); evidenceCode != "" {
+			accepted = false
+			outcome.ValidationOutcome = componentmap.ValidationRejected
+			outcome.FallbackSelected = false
+			outcome.FallbackReason = ""
+			outcome.ValidationCodes = prependArchitectureSynthesisDiagnosticCode(
+				outcome.ValidationCodes,
+				evidenceCode,
+			)
+		}
+	}
+	state := debugdump.SemanticStateRejected
+	validationCode := debugdump.SemanticValidationResponse
+	if accepted {
+		state = debugdump.SemanticStateAccepted
+		validationCode = debugdump.SemanticValidationAccepted
 	}
 	recordArchitectureSemanticExchange(
 		options.exchangeWriter,
@@ -534,9 +599,6 @@ func ensureArchitectureSynthesisWithOptions(
 		state,
 		validationCode,
 	)
-	accepted := !result.Landscape.Fallback &&
-		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
-			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
 	if !accepted {
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(
@@ -655,7 +717,7 @@ func recordArchitectureSemanticExchange(
 		Stage:                  debugdump.SemanticStageArchitecture,
 		InstanceOrdinal:        1,
 		SemanticAttemptOrdinal: 1,
-		RequestProvenance:      debugdump.SemanticRequestPrepared,
+		RequestProvenance:      debugdump.SemanticRequestExactSent,
 		State:                  state,
 		ValidationCode:         validationCode,
 		SemanticCalls:          semanticCalls,
@@ -678,6 +740,9 @@ func recordArchitectureSemanticExchange(
 			Code:          unavailableCode,
 			OriginalBytes: responseBytes,
 		}
+	}
+	if state == debugdump.SemanticStateCacheHit {
+		exchange.RequestProvenance = debugdump.SemanticRequestPrepared
 	}
 	writer.RecordSemanticExchange(exchange)
 }
@@ -713,9 +778,7 @@ func recordArchitectureResearch(
 }
 
 func architectureSynthesisDiagnosticCodes(diagnostics []componentmap.Diagnostic) []string {
-	const maxCodes = 4
-
-	codes := make([]string, 0, min(len(diagnostics), maxCodes))
+	codes := make([]string, 0, len(diagnostics))
 	seen := make(map[string]struct{}, len(diagnostics))
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Code == "" {
@@ -726,11 +789,106 @@ func architectureSynthesisDiagnosticCodes(diagnostics []componentmap.Diagnostic)
 		}
 		seen[diagnostic.Code] = struct{}{}
 		codes = append(codes, diagnostic.Code)
-		if len(codes) == maxCodes {
-			break
-		}
 	}
 	return codes
+}
+
+func architectureSynthesisAcceptedEvidenceCode(outcome architectureSynthesisOutcome) string {
+	switch {
+	case outcome.ResponseState != componentmap.ResponseCaptured:
+		return "response.not_captured"
+	case !outcome.ResponseComplete:
+		return "response.incomplete"
+	case !outcome.MembershipCounted || outcome.MemberOccurrences == 0:
+		return "response.membership_unavailable"
+	case outcome.MemberOccurrences != outcome.DistinctMembers:
+		return "proposal.conflicting_membership"
+	}
+	if err := architectureSynthesisStatus(outcome, nil).Validate(); err != nil {
+		return "status.invalid_evidence"
+	}
+	return ""
+}
+
+func prependArchitectureSynthesisDiagnosticCode(codes []string, code string) []string {
+	result := make([]string, 0, len(codes)+1)
+	result = append(result, code)
+	for _, candidate := range codes {
+		if candidate == "" || candidate == code {
+			continue
+		}
+		result = append(result, candidate)
+	}
+	return result
+}
+
+// architectureResponseMembershipCounts extracts only cardinality from an
+// exact JSON proposal. It deliberately does not recover fenced or partial JSON
+// and does not resolve or repair any member identity. Both the retired
+// canonical member_ids shape and the current request-local member_refs shape
+// are understood so a rejected response can retain closed parity evidence.
+func architectureResponseMembershipCounts(raw []byte) (bool, int, int) {
+	var response struct {
+		Subsystems []struct {
+			Components []struct {
+				MemberIDs  []json.RawMessage `json:"member_ids"`
+				MemberRefs []json.RawMessage `json:"member_refs"`
+			} `json:"components"`
+		} `json:"subsystems"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &response) != nil || len(response.Subsystems) == 0 {
+		return false, 0, 0
+	}
+
+	seenComponent := false
+	occurrences := 0
+	distinct := make(map[string]struct{})
+	for _, subsystem := range response.Subsystems {
+		for _, component := range subsystem.Components {
+			seenComponent = true
+			if (component.MemberIDs == nil) == (component.MemberRefs == nil) {
+				return false, 0, 0
+			}
+			members := component.MemberRefs
+			requestLocal := true
+			if members == nil {
+				members = component.MemberIDs
+				requestLocal = false
+			}
+			for _, member := range members {
+				identity, ok := architectureResponseMemberIdentity(member, requestLocal)
+				if !ok {
+					return false, 0, 0
+				}
+				occurrences++
+				distinct[identity] = struct{}{}
+			}
+		}
+	}
+	if !seenComponent {
+		return false, 0, 0
+	}
+	return true, occurrences, len(distinct)
+}
+
+func architectureResponseMemberIdentity(raw json.RawMessage, requestLocal bool) (string, bool) {
+	var fields map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &fields) != nil || len(fields) != 2 {
+		return "", false
+	}
+	identityField := "ref"
+	shape := "request_ref"
+	if !requestLocal {
+		identityField = "value"
+		shape = "canonical_id"
+	}
+	var kind, identity string
+	if json.Unmarshal(fields["kind"], &kind) != nil ||
+		json.Unmarshal(fields[identityField], &identity) != nil ||
+		kind == "" || identity == "" {
+		return "", false
+	}
+	return shape + "\x00" + kind + "\x00" + identity, true
 }
 
 func architectureResearchStatus(outcome architectureSynthesisOutcome) string {
@@ -778,7 +936,6 @@ func replayArchitectureSynthesisOutcome(
 		InputBytes:            record.Call.Metadata.InputBytes,
 		LatencyMillis:         record.Call.Metadata.LatencyMillis,
 		FallbackReason:        landscape.FallbackReason,
-		ResponseBytes:         record.Call.ResponseBytes,
 		ProviderCallSucceeded: true,
 		ResponseParsed:        architectureResponseParsed(landscape),
 		ValidationOutcome:     landscape.ValidationOutcome,
@@ -786,8 +943,16 @@ func replayArchitectureSynthesisOutcome(
 		ArchitectureLevel:     landscape.Level,
 		NormalizationCount:    len(landscape.Normalizations),
 		FallbackSelected:      landscape.Fallback,
+		UsageReported:         record.Call.Metadata.UsageReported,
 		InputTokens:           record.Call.Metadata.InputTokens,
 		OutputTokens:          record.Call.Metadata.OutputTokens,
+		FinishReason:          record.Call.Metadata.FinishReason,
+		ResponseComplete:      record.Call.Metadata.ResponseComplete,
+		TransportAttempts:     0,
+		ResponseState:         record.Call.ResponseState,
+		ResponseBytes:         record.Call.ResponseBytes,
+		ResponseContentBytes:  len(record.Call.Response),
+		ValidationCodes:       architectureSynthesisDiagnosticCodes(landscape.Diagnostics),
 	}, nil
 }
 
@@ -797,8 +962,23 @@ func architectureSynthesisStatus(
 ) report.ArchitectureSynthesisStatus {
 	status := report.ArchitectureSynthesisStatus{
 		Version:               report.ArchitectureSynthesisStatusVersion,
-		PromptBytes:           outcome.InputBytes,
+		RequestBytes:          outcome.InputBytes,
+		ResponseBytes:         outcome.ResponseBytes,
+		ResponseContentBytes:  outcome.ResponseContentBytes,
 		LatencyMillis:         outcome.LatencyMillis,
+		TransportAttempts:     outcome.TransportAttempts,
+		CandidateCount:        outcome.CandidateCount,
+		AnchorCount:           outcome.AnchorCount,
+		MembershipCounted:     outcome.MembershipCounted,
+		MemberOccurrences:     outcome.MemberOccurrences,
+		DistinctMembers:       outcome.DistinctMembers,
+		UsageReported:         outcome.UsageReported,
+		InputTokens:           outcome.InputTokens,
+		OutputTokens:          outcome.OutputTokens,
+		FinishReason:          outcome.FinishReason,
+		ResponseComplete:      outcome.ResponseComplete,
+		ResponseState:         string(outcome.ResponseState),
+		ValidationCodes:       append([]string(nil), outcome.ValidationCodes...),
 		ProviderCallSucceeded: outcome.ProviderCallSucceeded,
 		ResponseParsed:        outcome.ResponseParsed,
 		ProposalAccepted:      outcome.ValidationOutcome == componentmap.ValidationAccepted || outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,

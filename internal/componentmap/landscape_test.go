@@ -277,6 +277,7 @@ func TestApplyBoundsExcessComponentsAndPreservesRemainder(t *testing.T) {
 
 	bundle := landscapeTestBundle()
 	bundle.Candidates = nil
+	bundle.BehaviorAnchors = nil
 	bundle.Relations = nil
 	bundle.AnchorBindings = nil
 	components := make([]ProposedComponent, maxComponents+1)
@@ -649,6 +650,16 @@ func landscapeTestBundle() CandidateBundle {
 	flowID := FlowID("backup")
 	return CandidateBundle{
 		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
+		BehaviorAnchors: []BehaviorAnchor{{
+			ID: "run-backup", Kind: AnchorProcessEntry, Label: "backup process entry",
+			Location: evidence.Location{Path: "cmd/backup.go", Line: 20, Column: 1},
+			Scenario: ScenarioContext{ID: "go:test", Name: "test build"},
+			Producer: evidence.Provenance{
+				Provider: "fixture", Version: "v1", Operation: "classify_process_entry",
+			},
+			Certainty: evidence.CertaintyStatic, MemberIDs: []MemberID{entrypointID},
+			Limitations: []string{"Static fixture evidence; runtime execution is not observed."},
+		}},
 		Flows: []Flow{{
 			ID: flowID, Name: "Backup",
 			Facts: []LocalFact{testLocalFact(FactDeclaration, "saved flowproof v2", "cmd/backup.go", 20)},

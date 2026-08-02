@@ -400,7 +400,7 @@ func atlasFirstAcceptanceRequestStage(
 	switch {
 	case strings.Contains(combined, "atlas-navigator-startup-json-v1"):
 		return atlasFirstStageNavigator, combined, nil
-	case strings.Contains(combined, "architecture-grounding-v5") &&
+	case strings.Contains(combined, "Use member, anchor, and flow refs as opaque request-local typed values.") &&
 		strings.Contains(combined, "Bounded candidate request:\n"):
 		return atlasFirstStageArchitecture, combined, nil
 	case strings.Contains(combined, "Catalog JSON:\n") &&
@@ -425,24 +425,37 @@ func atlasFirstAcceptanceArchitectureResponse(
 	if len(request.Candidates) == 0 {
 		return nil, fmt.Errorf("Architecture request has no candidates")
 	}
-	members := make([]componentmap.MemberID, 0, len(request.Candidates))
+	members := make([]componentmap.SynthesisMemberRef, 0, len(request.Candidates))
 	for _, candidate := range request.Candidates {
-		members = append(members, candidate.ID)
+		members = append(members, candidate.Ref)
 	}
 	if reject {
-		members[0].Value += "-unknown-provider-member"
+		members[0].Ref += "-unknown-provider-member"
 	}
-	anchors := make([]string, 0, len(request.BehaviorAnchors))
+	anchors := make([]componentmap.SynthesisAnchorRef, 0, len(request.BehaviorAnchors))
 	for _, anchor := range request.BehaviorAnchors {
-		anchors = append(anchors, anchor.ID)
+		anchors = append(anchors, anchor.Ref)
 	}
-	proposal := componentmap.Proposal{
-		Version: componentmap.ProposalVersion,
-		Subsystems: []componentmap.ProposedSubsystem{{
+	type architectureWireComponent struct {
+		Name        string                            `json:"name"`
+		Description string                            `json:"description"`
+		MemberRefs  []componentmap.SynthesisMemberRef `json:"member_refs"`
+		AnchorRefs  []componentmap.SynthesisAnchorRef `json:"anchor_refs,omitempty"`
+		Hypothesis  bool                              `json:"hypothesis,omitempty"`
+	}
+	type architectureWireSubsystem struct {
+		Name        string                      `json:"name"`
+		Description string                      `json:"description"`
+		Components  []architectureWireComponent `json:"components"`
+	}
+	proposal := struct {
+		Subsystems []architectureWireSubsystem `json:"subsystems"`
+	}{
+		Subsystems: []architectureWireSubsystem{{
 			Name: "Repository system", Description: "Conceptual grouping over exact local facts.",
-			Components: []componentmap.ProposedComponent{{
+			Components: []architectureWireComponent{{
 				Name: "Repository core", Description: "Groups the supplied local responsibilities.",
-				MemberIDs: members, AnchorIDs: anchors, Hypothesis: len(anchors) == 0,
+				MemberRefs: members, AnchorRefs: anchors, Hypothesis: len(anchors) == 0,
 			}},
 		}},
 	}

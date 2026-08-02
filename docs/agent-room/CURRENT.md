@@ -1,15 +1,26 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/199-atlas-first-architecture-study.md
+    decisions/200-architecture-short-refs-study-contract.md
 
 Status:
-    Decision 199 active; Atlas-first Architecture and Study restoration authorized
+    Decision 200 active; Architecture short refs and Atlas Study contract hardening authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 200 keeps the Decision 199 Atlas-first product sequence and
+    replaces its Architecture parity wire with deterministic private
+    request-local typed refs. Canonical opaque identities remain local,
+    collision and wrong-kind refs fail closed, D177 local Canvas remains the
+    canonical visible base, Architecture and Study own one truthful language
+    instruction, Atlas Brief exposes only valid typed support choices, routes
+    resolve independently, and status v4 records exact request/usage/completion
+    evidence with a closed diagnostic registry. The saved 14:44 Casdoor Study
+    response is a provider-free regression fixture. No raw Orientation, old
+    semantic fan-out, UI branch, fuzzy repair, sharding, legacy reader,
+    migration or live-provider development call is restored.
     Decision 199 restores the useful model-assisted Architecture, Repository
     Brief and Study products on top of the accepted Atlas-first run. It does
     not restore raw-signal Orientation. Architecture reuses the existing

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestCanonicalEnglishContractWrapsEverySemanticRequestSeam(t *testing.T) {
+func TestCanonicalEnglishContractWrapsDefaultSemanticRequestSeams(t *testing.T) {
 	t.Parallel()
 
 	client := &Client{Model: "test", MaxTokens: 1000}
@@ -80,7 +80,7 @@ func TestChatRequestConstructionHasOneSemanticChokePointAndOneLocalizationExcept
 	t.Parallel()
 
 	want := map[string]int{
-		"canonicalSemanticRequest": 1,
+		"semanticRequest":          1,
 		"BuildLocalizationRequest": 1,
 	}
 	got := make(map[string]int)

@@ -17,7 +17,7 @@ func (c *Client) ComponentSynthesisPromptJSON(prompt componentmap.SynthesisPromp
 	if err := validateComponentSynthesisPrompt(prompt); err != nil {
 		return nil, err
 	}
-	request := c.flowExplainRequest(prompt.User, prompt.System, true)
+	request := c.semanticRequest(prompt.User, prompt.System, true)
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
 		request.Thinking = &thinkingConfig{Type: "disabled"}
 	}
@@ -39,22 +39,35 @@ func (c *Client) SynthesizeComponentLandscapeMeasured(
 	ctx context.Context,
 	prompt componentmap.SynthesisPrompt,
 ) (modelresearch.ProviderResult, error) {
-	stopWaiting := c.startWaitProgress(ctx, "architecture synthesis")
-	defer stopWaiting()
 	body, err := c.ComponentSynthesisPromptJSON(prompt)
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
 	}
+	return c.SynthesizeComponentLandscapeBodyMeasured(ctx, body)
+}
+
+// SynthesizeComponentLandscapeBodyMeasured sends one already-built exact provider body.
+// It does not rebuild, normalize, or re-marshal the request, so callers may
+// bind the bytes they inspected to the bytes sent on the wire.
+func (c *Client) SynthesizeComponentLandscapeBodyMeasured(
+	ctx context.Context,
+	exactBody []byte,
+) (modelresearch.ProviderResult, error) {
+	if len(exactBody) == 0 {
+		return modelresearch.ProviderResult{}, fmt.Errorf("llm: component synthesis request body is required")
+	}
+	stopWaiting := c.startWaitProgress(ctx, "architecture synthesis")
+	defer stopWaiting()
 	result, _, err := doChatMeasured(
 		ctx,
 		c.HTTPClient,
 		c.Endpoint,
 		c.APIKey,
 		c.Auth,
-		body,
+		exactBody,
 		false,
 	)
-	return providerResultFromCompletion(result, 1, len(body)),
+	return providerResultFromCompletion(result, 1, len(exactBody)),
 		annotateResourceLimit(err, "architecture_synthesis", c.MaxTokens)
 }
 
@@ -63,6 +76,12 @@ func validateComponentSynthesisPrompt(prompt componentmap.SynthesisPrompt) error
 		return fmt.Errorf(
 			"llm: unsupported component synthesis prompt version %q",
 			prompt.Version,
+		)
+	}
+	if prompt.OutputLanguage != "en" && prompt.OutputLanguage != "ru" {
+		return fmt.Errorf(
+			"llm: unsupported component synthesis output language %q",
+			prompt.OutputLanguage,
 		)
 	}
 	if strings.TrimSpace(prompt.System) == "" {

@@ -238,12 +238,11 @@ func TestRunManifestRequiresCalledAtlasStudyAfterAcceptedArchitecture(t *testing
 	reportJSON, err := json.Marshal(&ReportData{
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
 		Navigator: &navigatorFixture.projection,
-		ArchitectureSynthesis: &ArchitectureSynthesisStatus{
-			Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisSucceeded,
-			ProviderRequestCount: 1, ProviderCallSucceeded: true, ResponseParsed: true,
-			ProposalAccepted: true, ArchitectureSource: string(componentmap.SourceValidatedModel),
-			ArchitectureLevel: 2,
-		},
+		ArchitectureSynthesis: func() *ArchitectureSynthesisStatus {
+			status := architectureSynthesisV4AcceptedFixture()
+			status.ArchitectureSource = string(componentmap.SourceValidatedModel)
+			return &status
+		}(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -506,12 +505,11 @@ func atlasStudyReportFixture(t *testing.T) *ReportData {
 				Evidence: []SurfaceLocation{{Path: "cmd/app/main.go", Line: 7}},
 			}},
 		},
-		ArchitectureSynthesis: &ArchitectureSynthesisStatus{
-			Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisSucceeded,
-			ProviderRequestCount: 1, ProviderCallSucceeded: true, ResponseParsed: true,
-			ProposalAccepted: true, ArchitectureSource: string(componentmap.SourceValidatedModel),
-			ArchitectureLevel: 2,
-		},
+		ArchitectureSynthesis: func() *ArchitectureSynthesisStatus {
+			status := architectureSynthesisV4AcceptedFixture()
+			status.ArchitectureSource = string(componentmap.SourceValidatedModel)
+			return &status
+		}(),
 	}
 }
 
