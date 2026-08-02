@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -795,6 +796,38 @@ func TestBuildArchitectureCanvasInputUsesExactPackageWitnessesWithoutDirectionBi
 	if len(input.CandidateBundle.AnchorBindings) != 0 || len(input.Flows) != 0 ||
 		len(input.CandidateBundle.Flows) != 0 {
 		t.Fatalf("CandidateDirection proof became an architecture overlay: %#v", input)
+	}
+}
+
+func TestBuildArchitectureCanvasInputPreservesCandidateBundleLimitError(t *testing.T) {
+	t.Parallel()
+
+	const candidateLimit = 512
+	packages := make([]PackageInfo, 0, candidateLimit+1)
+	for index := 0; index <= candidateLimit; index++ {
+		packagePath := fmt.Sprintf("example.com/project/package-%03d", index)
+		packages = append(packages, PackageInfo{
+			CanonicalPath: packagePath,
+			Name:          fmt.Sprintf("package-%03d", index),
+			ModulePath:    "example.com/project",
+			DisplayPath:   fmt.Sprintf("package-%03d", index),
+			Locality:      "local",
+		})
+	}
+
+	_, err := BuildArchitectureCanvasInput(&ReportData{RepositoryGraph: &RepositoryGraph{
+		Packages: packages,
+	}})
+	var limitErr *componentmap.CandidateBundleLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("BuildArchitectureCanvasInput() error = %v, want CandidateBundleLimitError", err)
+	}
+	if limitErr.Kind != componentmap.CandidateBundleLimitCandidates ||
+		limitErr.Observed != candidateLimit+1 || limitErr.Limit != candidateLimit {
+		t.Fatalf("preserved limit error = %#v", limitErr)
+	}
+	if !strings.Contains(err.Error(), "architecture canvas build: candidate bundle") {
+		t.Fatalf("wrapped error lost build context: %v", err)
 	}
 }
 

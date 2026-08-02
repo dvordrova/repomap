@@ -2,14 +2,30 @@ package report
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/workspaceedgeselection"
 	"github.com/dvordrova/repomap/internal/workspacegraph"
 	"github.com/dvordrova/repomap/internal/workspacepackageselection"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
+
+// ExactWorkspaceGraphUnavailableError means a Go-backed local package graph
+// could not be materialized completely from the captured producer facts. It
+// never authorizes a partial Architecture model request.
+type ExactWorkspaceGraphUnavailableError struct{}
+
+func (*ExactWorkspaceGraphUnavailableError) Error() string {
+	return "exact workspace graph is unavailable"
+}
+
+// IsExactWorkspaceGraphUnavailable reports the closed, provider-free local
+// precondition failure used by Architecture synthesis.
+func IsExactWorkspaceGraphUnavailable(err error) bool {
+	var target *ExactWorkspaceGraphUnavailableError
+	return errors.As(err, &target)
+}
 
 const (
 	maxReportGraphFactModules      = 600
@@ -20,6 +36,8 @@ const (
 	maxReportGraphScalarBytes      = 4096
 	maxReportGraphAggregateScalars = 4 * 1024 * 1024
 	maxReportGraphProjectedModules = 2 * maxReportGraphFactModules
+
+	workspaceGraphUnavailableWarning = "workspace graph unavailable: exact local Go package relations were not attached"
 )
 
 type snapshotExactGoFacts struct {
@@ -47,14 +65,18 @@ type snapshotExactPackageFact struct {
 }
 
 // attachAuthorizedWorkspacePackageGraph replaces only the existing
-// RepositoryGraph projection. Every failure deliberately retains the complete
-// legacy graph without adding a new report warning or partial result.
+// RepositoryGraph projection. Every failure retains the complete legacy graph
+// transactionally and records that the exact local graph was unavailable.
 func attachAuthorizedWorkspacePackageGraph(data *ReportData, authority *RunAuthority) {
-	if data == nil || authority == nil || data.RepositoryGraph == nil ||
-		data.repositoryGoFacts == nil {
+	if data == nil || authority == nil || data.RepositoryGraph == nil {
+		return
+	}
+	if data.repositoryGoFacts == nil {
+		appendWorkspaceGraphUnavailableWarning(data)
 		return
 	}
 	if err := authority.validate(); err != nil {
+		appendWorkspaceGraphUnavailableWarning(data)
 		return
 	}
 	snapshot, err := workspacesnapshot.New(workspacesnapshot.Input{
@@ -64,6 +86,7 @@ func attachAuthorizedWorkspacePackageGraph(data *ReportData, authority *RunAutho
 		AllowedPaths:   data.OpenablePaths,
 	})
 	if err != nil {
+		appendWorkspaceGraphUnavailableWarning(data)
 		return
 	}
 	graph, err := workspacegraph.New(workspacegraph.Input{
@@ -71,9 +94,71 @@ func attachAuthorizedWorkspacePackageGraph(data *ReportData, authority *RunAutho
 		GoFacts:  *data.repositoryGoFacts,
 	})
 	if err != nil {
+		appendWorkspaceGraphUnavailableWarning(data)
 		return
 	}
-	_ = attachWorkspacePackageGraph(data, *data.repositoryGoFacts, graph)
+	if err := attachWorkspacePackageGraph(data, *data.repositoryGoFacts, graph); err != nil {
+		appendWorkspaceGraphUnavailableWarning(data)
+	}
+}
+
+func appendWorkspaceGraphUnavailableWarning(data *ReportData) {
+	for _, warning := range data.Warnings {
+		if warning == workspaceGraphUnavailableWarning {
+			return
+		}
+	}
+	data.Warnings = append(data.Warnings, workspaceGraphUnavailableWarning)
+}
+
+func requireCompleteExactWorkspaceGraph(data *ReportData) error {
+	if data == nil {
+		return &ExactWorkspaceGraphUnavailableError{}
+	}
+	facts := data.repositoryGoFacts
+	if data.RepositoryGraph == nil {
+		if facts == nil || len(facts.Modules) == 0 && len(facts.Packages) == 0 &&
+			len(facts.InternalEdges) == 0 {
+			return nil
+		}
+		return &ExactWorkspaceGraphUnavailableError{}
+	}
+	if facts == nil || len(facts.InternalEdges) > maxReportGraphFactEdges {
+		return &ExactWorkspaceGraphUnavailableError{}
+	}
+	for _, warning := range data.Warnings {
+		if warning == workspaceGraphUnavailableWarning {
+			return &ExactWorkspaceGraphUnavailableError{}
+		}
+	}
+
+	type edgeKey struct {
+		from string
+		to   string
+	}
+	want := make(map[edgeKey]struct{}, len(facts.InternalEdges))
+	for _, edge := range facts.InternalEdges {
+		if edge.From == "" || edge.To == "" {
+			return &ExactWorkspaceGraphUnavailableError{}
+		}
+		want[edgeKey{from: edge.From, to: edge.To}] = struct{}{}
+	}
+	if len(data.RepositoryGraph.PackageEdges) != len(want) {
+		return &ExactWorkspaceGraphUnavailableError{}
+	}
+	var previous edgeKey
+	for index, edge := range data.RepositoryGraph.PackageEdges {
+		key := edgeKey{from: edge.From, to: edge.To}
+		if _, ok := want[key]; !ok {
+			return &ExactWorkspaceGraphUnavailableError{}
+		}
+		if index > 0 && (key.from < previous.from ||
+			key.from == previous.from && key.to <= previous.to) {
+			return &ExactWorkspaceGraphUnavailableError{}
+		}
+		previous = key
+	}
+	return nil
 }
 
 func decodeSnapshotExactGoFacts(snapshotJSON []byte) (gofacts.Facts, error) {
@@ -151,8 +236,7 @@ func projectWorkspacePackageGraph(
 	if len(legacy.Modules) < len(facts.Modules) ||
 		len(legacy.Modules) > maxReportGraphProjectedModules ||
 		len(legacy.Packages) != len(facts.Packages) ||
-		len(legacy.Packages) > maxReportGraphFactPackages ||
-		len(legacy.PackageEdges) > maxReportGraphFactEdges {
+		len(legacy.Packages) > maxReportGraphFactPackages {
 		return nil, fmt.Errorf("workspace graph: legacy projection shape differs")
 	}
 	totalFiles := 0
@@ -196,28 +280,10 @@ func projectWorkspacePackageGraph(
 	}
 	selectedPackages := packageSelection.Packages()
 
-	var candidates []workspaceedgeselection.Candidate
-	if legacy.PackageEdges != nil {
-		candidates = make(
-			[]workspaceedgeselection.Candidate,
-			0,
-			min(len(legacy.PackageEdges), workspaceedgeselection.MaxRows),
-		)
-	}
-	for _, legacyEdge := range legacy.PackageEdges {
-		candidates = append(candidates, workspaceedgeselection.Candidate{
-			From: legacyEdge.From,
-			To:   legacyEdge.To,
-		})
-	}
-	selection, err := workspaceedgeselection.New(workspaceedgeselection.Input{
-		Graph:      graph,
-		Candidates: candidates,
-	})
+	selectedEdges, err := exactWorkspacePackageEdges(facts, graph)
 	if err != nil {
 		return nil, fmt.Errorf("workspace graph: edge projection is unavailable")
 	}
-	selectedEdges := selection.Edges()
 
 	projected := cloneRepositoryGraph(legacy)
 	for index, fact := range facts.Modules {
@@ -271,15 +337,51 @@ func projectWorkspacePackageGraph(
 	if selectedEdges == nil {
 		projected.PackageEdges = nil
 	} else {
-		if projected.PackageEdges == nil {
-			projected.PackageEdges = make([]EdgeInfo, len(selectedEdges))
-		}
+		projected.PackageEdges = make([]EdgeInfo, len(selectedEdges))
 		for index, edge := range selectedEdges {
 			projected.PackageEdges[index].From = edge.From
 			projected.PackageEdges[index].To = edge.To
 		}
 	}
 	return projected, nil
+}
+
+func exactWorkspacePackageEdges(
+	facts gofacts.Facts,
+	graph workspacegraph.Graph,
+) ([]EdgeInfo, error) {
+	if len(facts.InternalEdges) > maxReportGraphFactEdges {
+		return nil, fmt.Errorf("workspace graph: exact edge facts exceed bounds")
+	}
+
+	type edgeKey struct {
+		from string
+		to   string
+	}
+	want := make(map[edgeKey]struct{}, len(facts.InternalEdges))
+	for _, fact := range facts.InternalEdges {
+		edge, ok := graph.Edge(fact.From, fact.To)
+		if !ok {
+			return nil, fmt.Errorf("workspace graph: exact edge fact is unavailable")
+		}
+		want[edgeKey{from: edge.FromPackage, to: edge.ToPackage}] = struct{}{}
+	}
+
+	graphEdges := graph.Edges()
+	if len(graphEdges) != len(want) {
+		return nil, fmt.Errorf("workspace graph: exact edge set differs")
+	}
+	if graphEdges == nil {
+		return nil, nil
+	}
+	result := make([]EdgeInfo, len(graphEdges))
+	for index, edge := range graphEdges {
+		if _, ok := want[edgeKey{from: edge.FromPackage, to: edge.ToPackage}]; !ok {
+			return nil, fmt.Errorf("workspace graph: exact edge set differs")
+		}
+		result[index] = EdgeInfo{From: edge.FromPackage, To: edge.ToPackage}
+	}
+	return result, nil
 }
 
 func cloneRepositoryGraph(graph *RepositoryGraph) *RepositoryGraph {

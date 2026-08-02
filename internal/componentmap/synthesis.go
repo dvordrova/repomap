@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 6
-	SynthesisRecordVersion  = 6
-	SynthesisPromptVersion  = "architecture-grounding-v9"
+	SynthesisRequestVersion = 7
+	SynthesisRecordVersion  = 7
+	SynthesisPromptVersion  = "architecture-grounding-v10"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -707,7 +707,7 @@ Return exactly one compact JSON proposal object with one ordered records array. 
 
 The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Omit an uncertain member because local validation retains omissions separately. Every component must contain at least one supplied member ref.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Every supplied candidate member ref must appear in at least one component; an incomplete proposal is rejected rather than repaired or supplemented locally. Every component must contain at least one supplied member ref.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. Every non-hypothesis component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -1169,7 +1169,7 @@ func evaluateSynthesisResponse(
 	if landscape.ValidationOutcome != ValidationRejected {
 		// Accepted status describes the canonical model-authored relation after
 		// local readable-shape normalization, not a raw response cardinality that
-		// normalization may have merged. The deterministic remainder is excluded.
+		// normalization may have merged.
 		membership = acceptedSynthesisMembershipCounts(landscape)
 	}
 	warnings := make([]Diagnostic, 0, 1)

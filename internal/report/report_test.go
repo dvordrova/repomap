@@ -2469,6 +2469,15 @@ func TestBoundedDocumentedPurposeSkipsReadmeChrome(t *testing.T) {
 	}
 }
 
+func TestBoundedDocumentedPurposeProjectsInlineREADMEHTMLAsPlainText(t *testing.T) {
+	readme := "# Project\n\n" +
+		"Supporting OAuth&nbsp;2.0, OIDC, SAML,<br> LDAP, SCIM, WebAuthn, and MFA.\n"
+	want := "Supporting OAuth 2.0, OIDC, SAML, LDAP, SCIM, WebAuthn, and MFA."
+	if got := boundedDocumentedPurpose(readme); got != want {
+		t.Fatalf("documented purpose = %q, want %q", got, want)
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

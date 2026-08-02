@@ -115,10 +115,12 @@ func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("saved etcd response did not complete against its bounded shape: %v", err)
 	}
-	if result.Landscape.Fallback ||
-		(result.Landscape.ValidationOutcome != ValidationAccepted &&
-			result.Landscape.ValidationOutcome != ValidationAcceptedNormalized) {
-		t.Fatalf("saved etcd response was not accepted: %#v", result.Landscape)
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
+		t.Fatalf("incomplete saved etcd response was not rejected closed: %#v", result.Landscape)
+	}
+	if !result.Membership.Counted || result.Membership.DistinctMembers >= len(fixture.Bundle.Candidates) {
+		t.Fatalf("saved etcd response coverage = %#v over %d candidates", result.Membership, len(fixture.Bundle.Candidates))
 	}
 	requestText := string(requestJSON)
 	for _, forbidden := range []string{
@@ -146,10 +148,10 @@ func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 	}
 	for member, want := range wantMembers {
 		if len(gotMembers[member]) != 1 {
-			t.Fatalf("accepted membership %q count = %d, want exactly one", member, len(gotMembers[member]))
+			t.Fatalf("local D177 membership %q count = %d, want exactly one", member, len(gotMembers[member]))
 		}
 		if !reflect.DeepEqual(gotMembers[member][0], want) {
-			t.Fatalf("accepted model grouping changed exact local candidate %q", member)
+			t.Fatalf("rejected model grouping changed exact local candidate %q", member)
 		}
 	}
 	if !reflect.DeepEqual(result.Landscape.Relations, fixture.Bundle.Relations) {
@@ -160,15 +162,15 @@ func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 	}
 	if result.Record.PrivateCatalogSHA256 == "" || len(result.Record.PrivateCatalogSHA256) != 64 ||
 		result.Record.Call == nil || result.Record.Call.ResponseState != ResponseCaptured {
-		t.Fatalf("active etcd structural record lacks private catalog/captured response state: %#v", result.Record)
+		t.Fatalf("rejected etcd structural record lacks private catalog/captured response state: %#v", result.Record)
 	}
 	if result.Record.Call.Metadata.OutputTokens != 0 || result.Record.Call.Metadata.ResponseComplete {
 		t.Fatalf("mechanically converted response claimed live short-ref completion: %#v", result.Record.Call.Metadata)
 	}
 	t.Logf(
-		"etcd short-ref structural bridge: candidates=%d members=%d anchors=%d request_json=%d prompt_bytes=%d response_bytes=%d legacy_reference_output_tokens=%d live_completion_proven=false",
-		len(fixture.Bundle.Candidates), len(gotMembers), len(fixture.Bundle.BehaviorAnchors),
-		len(requestJSON), synthesisPromptSize(prompt), len(response), saved.Call.Metadata.OutputTokens,
+		"etcd incomplete short-ref bridge: candidates=%d local_members=%d response_distinct_members=%d anchors=%d request_json=%d prompt_bytes=%d response_bytes=%d legacy_reference_output_tokens=%d live_completion_proven=false",
+		len(fixture.Bundle.Candidates), len(gotMembers), result.Membership.DistinctMembers,
+		len(fixture.Bundle.BehaviorAnchors), len(requestJSON), synthesisPromptSize(prompt), len(response), saved.Call.Metadata.OutputTokens,
 	)
 	if len(request.Candidates) != len(fixture.Bundle.Candidates) {
 		t.Fatalf("request candidates = %d, want %d", len(request.Candidates), len(fixture.Bundle.Candidates))
@@ -280,10 +282,15 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis",
 		"Do not nest records or emit a second root object",
 		"silently validate the complete JSON syntax",
+		"Every supplied candidate member ref must appear in at least one component",
+		"an incomplete proposal is rejected rather than repaired or supplemented locally",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis nesting contract misses %q", required)
 		}
+	}
+	if strings.Contains(prompt.System, "Omit an uncertain member") {
+		t.Fatal("synthesis prompt still permits incomplete candidate coverage")
 	}
 
 	firstKey, err := SynthesisCacheKey("revision-a", firstBundle)
@@ -334,6 +341,132 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	}
 	if russianKey == englishKey {
 		t.Fatalf("Russian cache key %q reused English identity", russianKey)
+	}
+}
+
+func TestSynthesisResponseRequiresCompleteDistinctCandidateCoverage(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	fullRaw := validSynthesisProposalJSON(t, bundle)
+	full, err := RecordSynthesisResponse(
+		bundle, "complete-coverage", "test", "test", time.Millisecond, fullRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.Landscape.Fallback || !full.Membership.Counted ||
+		full.Membership.DistinctMembers != len(bundle.Candidates) {
+		t.Fatalf("complete synthesis result = %#v", full)
+	}
+
+	wire, err := decodeSynthesisWireProposalJSON(fullRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	component := &wire.Records[1]
+	component.MemberRefs = component.MemberRefs[:len(component.MemberRefs)-1]
+	partialRaw, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := RecordSynthesisResponse(
+		bundle, "incomplete-coverage", "test", "test", time.Millisecond, partialRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !partial.Landscape.Fallback || partial.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(partial.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
+		t.Fatalf("incomplete synthesis was not rejected atomically: %#v", partial.Landscape)
+	}
+	if !partial.Membership.Counted || partial.Membership.DistinctMembers != len(bundle.Candidates)-1 ||
+		partial.Membership.MemberOccurrences != len(bundle.Candidates)-1 {
+		t.Fatalf("incomplete response diagnostics = %#v", partial.Membership)
+	}
+	if got := landscapeMemberCount(partial.Landscape); got != len(bundle.Candidates) {
+		t.Fatalf("rejected synthesis changed local coverage to %d of %d", got, len(bundle.Candidates))
+	}
+	if !reflect.DeepEqual(partial.Landscape.Relations, bundle.Relations) ||
+		!reflect.DeepEqual(partial.Landscape.AnchorBindings, bundle.AnchorBindings) {
+		t.Fatal("rejected incomplete synthesis changed local facts or relations")
+	}
+
+	reorderedWire, err := decodeSynthesisWireProposalJSON(fullRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := reorderedWire.Records[1].MemberRefs
+	for left, right := 0, len(refs)-1; left < right; left, right = left+1, right-1 {
+		refs[left], refs[right] = refs[right], refs[left]
+	}
+	reorderedRaw, err := json.Marshal(reorderedWire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered, err := RecordSynthesisResponse(
+		bundle, "complete-coverage-reordered", "test", "test", time.Millisecond, reorderedRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reordered.Landscape.Fallback ||
+		!reflect.DeepEqual(full.Landscape.ConceptualMemberships, reordered.Landscape.ConceptualMemberships) {
+		t.Fatal("complete conceptual membership depends on member-ref order")
+	}
+}
+
+func TestSynthesisV10CacheIdentityDoesNotReuseV9Record(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	const (
+		revision = "cache-contract-version"
+		profile  = "deepseek-compatible"
+		model    = "deepseek-v4-flash"
+	)
+	currentKey, err := SynthesisCacheKeyForProvider(revision, bundle, profile, model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, requestJSON, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyHash := sha256.New()
+	fmt.Fprintf(
+		legacyHash,
+		"componentmap-synthesis\nrevision=%s\nrequest_contract=6\nproposal_contract=6\nprompt=architecture-grounding-v9\nprofile=%s\nmodel=%s\n",
+		revision, profile, model,
+	)
+	fmt.Fprintf(
+		legacyHash, "request=%s\nprivate_catalog=%s\n",
+		sha256String(requestJSON), catalog.identitySHA256,
+	)
+	legacyKey := "component-synthesis-" + hex.EncodeToString(legacyHash.Sum(nil))
+	if currentKey == legacyKey {
+		t.Fatalf("v10 cache key reused v9 identity %q", currentKey)
+	}
+
+	result, err := RecordSynthesisResponse(
+		bundle, revision, profile, model, time.Millisecond, validSynthesisProposalJSON(t, bundle),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRecord := result.Record
+	oldRecord.Version = SynthesisRecordVersion - 1
+	saved, err := json.Marshal(oldRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplaySynthesisResult(bundle, revision, saved); err == nil ||
+		!strings.Contains(err.Error(), "unsupported synthesis record version") {
+		t.Fatalf("old synthesis record replay error = %v", err)
 	}
 }
 
@@ -929,7 +1062,7 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	}
 }
 
-func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
+func TestSavedCasdoorP21ManyToManyResponseIsRejectedWhenCoverageIsIncomplete(t *testing.T) {
 	t.Parallel()
 
 	legacyRaw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
@@ -960,8 +1093,9 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Landscape.Fallback || result.Landscape.ValidationOutcome == ValidationRejected {
-		t.Fatalf("saved Casdoor response was rejected: %#v", result.Landscape.Diagnostics)
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
+		t.Fatalf("incomplete saved Casdoor response was not rejected: %#v", result.Landscape)
 	}
 	if !result.Membership.Counted || result.Membership.MemberOccurrences != 29 ||
 		result.Membership.DistinctMembers != 28 {
@@ -972,30 +1106,8 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 		result.Record.Call.Metadata.DistinctMembers != 28 {
 		t.Fatalf("saved Casdoor record counts = %#v", result.Record.Call)
 	}
-	shared := MemberID{Kind: MemberPackage, Value: "casdoor-package-21"}
-	sharedComponents := make([]ComponentID, 0, 2)
-	for _, membership := range result.Landscape.ConceptualMemberships {
-		if membership.MemberID == shared {
-			sharedComponents = append(sharedComponents, membership.ComponentID)
-		}
-	}
-	if len(sharedComponents) != 2 || sharedComponents[0] == sharedComponents[1] {
-		t.Fatalf("p21 conceptual memberships = %#v, want two distinct components", sharedComponents)
-	}
-	for _, subsystem := range result.Landscape.Subsystems {
-		if subsystem.Category != SubsystemCategoryDiagnostic {
-			continue
-		}
-		for _, component := range subsystem.Components {
-			for _, member := range component.Members {
-				if member.ID == shared {
-					t.Fatal("p21 leaked into the distinct-member remainder")
-				}
-			}
-		}
-	}
 	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
-		t.Fatal("saved Casdoor grouping changed either exact local relation")
+		t.Fatal("rejected saved Casdoor grouping changed exact local relations")
 	}
 
 	saved, err := json.Marshal(result.Record)
@@ -1023,33 +1135,6 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
 		t.Fatalf("tampered membership count replay error = %v", err)
 	}
 
-	wire, err := decodeSynthesisWireProposalJSON(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for left, right := 0, len(wire.Records)-1; left < right; left, right = left+1, right-1 {
-		wire.Records[left], wire.Records[right] = wire.Records[right], wire.Records[left]
-	}
-	for recordIndex := range wire.Records {
-		refs := wire.Records[recordIndex].MemberRefs
-		for left, right := 0, len(refs)-1; left < right; left, right = left+1, right-1 {
-			refs[left], refs[right] = refs[right], refs[left]
-		}
-	}
-	reorderedRaw, err := json.Marshal(wire)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reordered, err := RecordSynthesisResponseForLanguage(
-		bundle, "casdoor-many-to-many-records-v2", "openai-compatible/bearer",
-		"deepseek-v4-flash", "ru", time.Millisecond, reorderedRaw,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(result.Landscape.ConceptualMemberships, reordered.Landscape.ConceptualMemberships) {
-		t.Fatal("canonical conceptual membership relation depends on provider order")
-	}
 }
 
 func savedCasdoorManyToManyBundle() CandidateBundle {
@@ -1674,9 +1759,10 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 		Version: ProposalVersion,
 		Subsystems: []ProposedSubsystem{{
 			Name: "Runtime",
-			Components: []ProposedComponent{{
-				Name: "Process", MemberIDs: []MemberID{bundle.Candidates[0].ID},
-			}},
+			Components: []ProposedComponent{
+				{Name: "Process", MemberIDs: []MemberID{bundle.Candidates[0].ID}},
+				{Name: "Other exact members", MemberIDs: candidateIDsExcept(bundle, bundle.Candidates[0].ID), Hypothesis: true},
+			},
 		}},
 	}
 	raw := synthesisWireProposalJSON(t, bundle, proposal)
@@ -1692,6 +1778,7 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 	proposal.Subsystems[0].Components[0] = ProposedComponent{
 		Name: "Source file", MemberIDs: []MemberID{bundle.Candidates[2].ID},
 	}
+	proposal.Subsystems[0].Components[1].MemberIDs = candidateIDsExcept(bundle, bundle.Candidates[2].ID)
 	raw = synthesisWireProposalJSON(t, bundle, proposal)
 	result, err = RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
 	if err != nil {
@@ -1705,6 +1792,7 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 		Name: "Process", MemberIDs: []MemberID{bundle.Candidates[0].ID},
 	}
 	proposal.Subsystems[0].Components[0].AnchorIDs = []string{"process"}
+	proposal.Subsystems[0].Components[1].MemberIDs = candidateIDsExcept(bundle, bundle.Candidates[0].ID)
 	raw = synthesisWireProposalJSON(t, bundle, proposal)
 	result, err = RecordSynthesisResponse(bundle, "revision-grounded", "test", "test", time.Millisecond, raw)
 	if err != nil {

@@ -13,13 +13,12 @@ import (
 
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/workspaceedgeselection"
 	"github.com/dvordrova/repomap/internal/workspacegraph"
 	"github.com/dvordrova/repomap/internal/workspacepackageselection"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
-func TestWorkspacePackageGraphProjectionPreservesLegacyBytes(t *testing.T) {
+func TestWorkspacePackageGraphProjectionMaterializesExactEdges(t *testing.T) {
 	tests := []struct {
 		name            string
 		repositoryRoot  string
@@ -74,8 +73,6 @@ func TestWorkspacePackageGraphProjectionPreservesLegacyBytes(t *testing.T) {
 				test.moduleSummaries,
 			)
 			legacy := cloneRepositoryGraph(data.RepositoryGraph)
-			legacyJSON := mustJSON(t, legacy)
-
 			if data.repositoryGoFacts == nil {
 				t.Fatal("exact graph facts were not captured")
 			}
@@ -97,11 +94,13 @@ func TestWorkspacePackageGraphProjectionPreservesLegacyBytes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("projectWorkspacePackageGraph: %v", err)
 			}
-			if !reflect.DeepEqual(projected, legacy) {
-				t.Fatalf("projection changed graph:\nlegacy: %#v\nnew:    %#v", legacy, projected)
+			want := cloneRepositoryGraph(legacy)
+			want.PackageEdges = reportEdgesFromWorkspaceGraph(graph)
+			if !reflect.DeepEqual(projected, want) {
+				t.Fatalf("projection differs:\nwant: %#v\nnew:  %#v", want, projected)
 			}
-			if got := mustJSON(t, projected); string(got) != string(legacyJSON) {
-				t.Fatalf("projection changed serialized bytes:\nlegacy: %s\nnew:    %s", legacyJSON, got)
+			if got, expected := mustJSON(t, projected), mustJSON(t, want); string(got) != string(expected) {
+				t.Fatalf("projection bytes differ:\nwant: %s\nnew:  %s", expected, got)
 			}
 			if projected.Version != 2 {
 				t.Fatalf("graph version = %d, want 2", projected.Version)
@@ -118,12 +117,138 @@ func TestWorkspacePackageGraphProjectionPreservesLegacyBytes(t *testing.T) {
 					}) {
 					t.Fatalf("compatibility modules changed: %#v", projected.Modules)
 				}
-				if len(projected.PackageEdges) != 3 ||
-					projected.PackageEdges[1] != projected.PackageEdges[2] {
-					t.Fatalf("selected edge order/duplicates changed: %#v", projected.PackageEdges)
+				if len(projected.PackageEdges) != 2 ||
+					projected.PackageEdges[0].From != "example.com/repo/cmd/app" {
+					t.Fatalf("exact edges were not sorted and deduplicated: %#v", projected.PackageEdges)
 				}
 			}
 		})
+	}
+}
+
+func TestWorkspacePackageGraphCasdoorShapeFeedsArchitectureRelations(t *testing.T) {
+	const edgeCount = 90
+	facts := casdoorShapedGraphFacts(edgeCount)
+	legacy := &RepositoryGraph{
+		Version: 2,
+		Modules: []ModuleInfo{{
+			ID: "root-id", Path: "github.com/casdoor/casdoor", Dir: "",
+		}},
+		Packages: make([]PackageInfo, len(facts.Packages)),
+	}
+	for index, fact := range facts.Packages {
+		legacy.Packages[index] = PackageInfo{
+			CanonicalPath:     fact.CanonicalPath,
+			Name:              fact.Name,
+			ModuleID:          fact.ModuleID,
+			ModulePath:        fact.ModulePath,
+			Dir:               fact.PackageDir,
+			ModuleRelativeDir: fact.ModuleRelativeDir,
+			DisplayPath:       fact.PackageDir,
+			Locality:          "local",
+		}
+	}
+
+	const repositoryRoot = "/workspacegraph-report-casdoor"
+	graph, err := workspacegraph.New(workspacegraph.Input{
+		Snapshot: reportGraphSnapshot(t, repositoryRoot, repositoryRoot, nil),
+		GoFacts:  facts,
+	})
+	if err != nil {
+		t.Fatalf("workspacegraph.New: %v", err)
+	}
+	projected, err := projectWorkspacePackageGraph(legacy, facts, graph)
+	if err != nil {
+		t.Fatalf("projectWorkspacePackageGraph: %v", err)
+	}
+	if got := len(projected.PackageEdges); got != edgeCount {
+		t.Fatalf("exact projected edges = %d, want %d", got, edgeCount)
+	}
+
+	input, err := BuildArchitectureCanvasInput(&ReportData{
+		RepoName:        "github.com/casdoor/casdoor",
+		RepositoryGraph: projected,
+	})
+	if err != nil {
+		t.Fatalf("BuildArchitectureCanvasInput: %v", err)
+	}
+	if got := len(input.CandidateBundle.Relations); got != edgeCount {
+		t.Fatalf("Architecture supporting relations = %d, want %d", got, edgeCount)
+	}
+}
+
+func TestReadRunDirForAuthorizedArchitectureIsExactAndByteStable(t *testing.T) {
+	const edgeCount = 90
+	facts := casdoorShapedGraphFacts(edgeCount)
+	runDir := t.TempDir()
+	mkdirAll(t, filepath.Join(runDir, "flows"))
+	writeTestFile(t, runDir, "snapshot.json", string(mustJSON(t, map[string]any{
+		"repo_name": "github.com/casdoor/casdoor",
+		"go_facts":  facts,
+	})))
+	writeTestFile(t, runDir, "llm_bundle.json", `{}`)
+	authority := reportGraphAuthority(
+		t,
+		"/workspacegraph-authorized-casdoor",
+		"/workspacegraph-authorized-casdoor",
+		nil,
+	)
+
+	first, err := ReadRunDirForAuthorizedArchitecture(runDir, authority)
+	if err != nil {
+		t.Fatalf("first authorized read: %v", err)
+	}
+	second, err := ReadRunDirForAuthorizedArchitecture(runDir, authority)
+	if err != nil {
+		t.Fatalf("second authorized read: %v", err)
+	}
+	if got := len(first.RepositoryGraph.PackageEdges); got != edgeCount {
+		t.Fatalf("authorized exact edges = %d, want %d", got, edgeCount)
+	}
+	input, err := BuildArchitectureCanvasInput(first)
+	if err != nil {
+		t.Fatalf("BuildArchitectureCanvasInput: %v", err)
+	}
+	if got := len(input.CandidateBundle.Relations); got != edgeCount {
+		t.Fatalf("authorized Architecture relations = %d, want %d", got, edgeCount)
+	}
+	if got, want := mustJSON(t, second), mustJSON(t, first); string(got) != string(want) {
+		t.Fatalf("authorized replay changed bytes:\nfirst:  %s\nsecond: %s", want, got)
+	}
+}
+
+func TestReadRunDirForAuthorizedArchitectureRejectsIncompleteExactGraph(t *testing.T) {
+	facts := casdoorShapedGraphFacts(1)
+	facts.InternalEdges = make([]gofacts.Edge, maxReportGraphFactEdges+1)
+	for index := range facts.InternalEdges {
+		facts.InternalEdges[index] = gofacts.Edge{
+			From: facts.Packages[0].CanonicalPath,
+			To:   facts.Packages[1].CanonicalPath,
+		}
+	}
+	runDir := t.TempDir()
+	mkdirAll(t, filepath.Join(runDir, "flows"))
+	writeTestFile(t, runDir, "snapshot.json", string(mustJSON(t, map[string]any{
+		"repo_name": "fixture",
+		"go_facts":  facts,
+	})))
+	writeTestFile(t, runDir, "llm_bundle.json", `{}`)
+	authority := reportGraphAuthority(
+		t,
+		"/workspacegraph-authorized-incomplete",
+		"/workspacegraph-authorized-incomplete",
+		nil,
+	)
+
+	data, err := ReadRunDirForAuthorizedArchitecture(runDir, authority)
+	if !IsExactWorkspaceGraphUnavailable(err) {
+		t.Fatalf("authorized read error = %T / %v, want exact graph unavailable", err, err)
+	}
+	if data == nil || data.ArchitectureCanvas == nil || data.RepositoryGraph == nil {
+		t.Fatalf("local D177 Canvas did not survive incomplete exact graph: %#v", data)
+	}
+	if len(data.RepositoryGraph.PackageEdges) != 0 {
+		t.Fatalf("incomplete exact graph published partial edges: %#v", data.RepositoryGraph.PackageEdges)
 	}
 }
 
@@ -257,7 +382,7 @@ func TestWorkspacePackageGraphPreservesArchitectureComponentAndSearchConsumers(t
 	}
 }
 
-func TestWorkspacePackageEdgeSelectionPreservesNilAndEmptyShape(t *testing.T) {
+func TestWorkspacePackageEdgeProjectionIgnoresLegacyNilAndEmptySeed(t *testing.T) {
 	facts := reportRootFacts()
 	allowed := []string{
 		"cmd/app/main.go",
@@ -294,17 +419,13 @@ func TestWorkspacePackageEdgeSelectionPreservesNilAndEmptyShape(t *testing.T) {
 			if (cloned.PackageEdges == nil) != (test.edges == nil) {
 				t.Fatalf("clone PackageEdges = %#v, want shape %#v", cloned.PackageEdges, test.edges)
 			}
-			before := mustJSON(t, legacy)
 			projected, err := projectWorkspacePackageGraph(legacy, facts, graph)
 			if err != nil {
 				t.Fatalf("projectWorkspacePackageGraph: %v", err)
 			}
-			if (projected.PackageEdges == nil) != (test.edges == nil) {
-				t.Fatalf("projected PackageEdges = %#v, want shape %#v", projected.PackageEdges, test.edges)
-			}
-			if !reflect.DeepEqual(projected, legacy) ||
-				string(mustJSON(t, projected)) != string(before) {
-				t.Fatalf("edge shape projection changed graph: %#v", projected)
+			want := reportEdgesFromWorkspaceGraph(graph)
+			if !reflect.DeepEqual(projected.PackageEdges, want) {
+				t.Fatalf("projected PackageEdges = %#v, want exact %#v", projected.PackageEdges, want)
 			}
 		})
 	}
@@ -334,7 +455,6 @@ func TestWorkspacePackageEdgeSelectionPreservesAuthorizedSelfEdge(t *testing.T) 
 		{From: "example.com/repo/cmd/app", To: "example.com/repo/internal/core"},
 		self,
 	}, nil).RepositoryGraph
-	before := mustJSON(t, legacy)
 	graph, err := workspacegraph.New(workspacegraph.Input{
 		Snapshot: reportGraphSnapshot(
 			t,
@@ -354,9 +474,9 @@ func TestWorkspacePackageEdgeSelectionPreservesAuthorizedSelfEdge(t *testing.T) 
 	if err != nil {
 		t.Fatalf("projectWorkspacePackageGraph: %v", err)
 	}
-	if !reflect.DeepEqual(projected.PackageEdges, legacy.PackageEdges) ||
-		string(mustJSON(t, projected)) != string(before) {
-		t.Fatalf("authorized self edge/order/duplicates changed: %#v", projected.PackageEdges)
+	want := reportEdgesFromWorkspaceGraph(graph)
+	if !reflect.DeepEqual(projected.PackageEdges, want) {
+		t.Fatalf("exact self edge set = %#v, want %#v", projected.PackageEdges, want)
 	}
 }
 
@@ -381,7 +501,6 @@ func TestWorkspacePackageSelectionPreservesOrderDuplicatesFilesAndEditorialField
 		legacy.Packages[index].DisplayPath = fmt.Sprintf("editorial/%d", index)
 		legacy.Packages[index].Locality = fmt.Sprintf("locality-%d", index)
 	}
-	before := mustJSON(t, legacy)
 	graph, err := workspacegraph.New(workspacegraph.Input{
 		Snapshot: reportGraphSnapshot(
 			t,
@@ -399,8 +518,10 @@ func TestWorkspacePackageSelectionPreservesOrderDuplicatesFilesAndEditorialField
 	if err != nil {
 		t.Fatalf("projectWorkspacePackageGraph: %v", err)
 	}
-	if !reflect.DeepEqual(projected, legacy) ||
-		string(mustJSON(t, projected)) != string(before) {
+	want := cloneRepositoryGraph(legacy)
+	want.PackageEdges = reportEdgesFromWorkspaceGraph(graph)
+	if !reflect.DeepEqual(projected, want) ||
+		string(mustJSON(t, projected)) != string(mustJSON(t, want)) {
 		t.Fatalf("package projection changed graph: %#v", projected)
 	}
 	if projected.Packages[1].CanonicalPath !=
@@ -501,19 +622,21 @@ func TestWorkspacePackageSelectionPreflightsBeforeGraphProjection(t *testing.T) 
 }
 
 func TestWorkspacePackageEdgeSelectionPreflightsBeforeGraphProjection(t *testing.T) {
-	oversized := strings.Repeat("x", workspaceedgeselection.MaxEndpointBytes+1)
+	oversized := strings.Repeat("x", maxReportGraphScalarBytes+1)
 	legacy := &RepositoryGraph{
 		Modules: []ModuleInfo{{
 			ID: "legacy-id", Path: "example.com/legacy", Dir: "",
 		}},
-		PackageEdges: []EdgeInfo{{
+	}
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "fact-id", ModulePath: "example.com/repo", ModuleDir: ".",
+		}},
+		InternalEdges: []gofacts.Edge{{
 			From: oversized,
 			To:   "example.com/repo/internal/core",
 		}},
 	}
-	facts := gofacts.Facts{Modules: []gofacts.ModuleFact{{
-		ID: "fact-id", ModulePath: "example.com/repo", ModuleDir: ".",
-	}}}
 	_, err := projectWorkspacePackageGraph(legacy, facts, workspacegraph.Graph{})
 	if err == nil || err.Error() != "workspace graph: edge projection is unavailable" {
 		t.Fatalf("projection error = %v, want edge preflight before module lookup", err)
@@ -523,16 +646,11 @@ func TestWorkspacePackageEdgeSelectionPreflightsBeforeGraphProjection(t *testing
 	}
 }
 
-func TestWorkspacePackageEdgeSelectionBudgetFailureIsTransactional(t *testing.T) {
-	if maxReportGraphFactEdges != workspaceedgeselection.MaxRows {
-		t.Fatalf(
-			"report/selection row budgets differ: %d != %d",
-			maxReportGraphFactEdges,
-			workspaceedgeselection.MaxRows,
-		)
-	}
-	fromPackage := strings.Repeat("a", workspaceedgeselection.MaxEndpointBytes)
-	toPackage := strings.Repeat("b", workspaceedgeselection.MaxEndpointBytes)
+func TestWorkspacePackageExactEdgeBudgetIsTransactional(t *testing.T) {
+	const (
+		fromPackage = "example.com/repo/a"
+		toPackage   = "example.com/repo/b"
+	)
 	facts := gofacts.Facts{
 		Modules: []gofacts.ModuleFact{{
 			ID: "root-id", ModulePath: "example.com/repo", ModuleDir: ".",
@@ -551,12 +669,6 @@ func TestWorkspacePackageEdgeSelectionBudgetFailureIsTransactional(t *testing.T)
 		},
 		InternalEdges: []gofacts.Edge{{From: fromPackage, To: toPackage}},
 	}
-	edgeCount := workspaceedgeselection.MaxAggregateEndpointBytes/
-		(2*workspaceedgeselection.MaxEndpointBytes) + 1
-	selected := make([]EdgeInfo, edgeCount)
-	for index := range selected {
-		selected[index] = EdgeInfo{From: fromPackage, To: toPackage}
-	}
 	original := &RepositoryGraph{
 		Version: 2,
 		Modules: []ModuleInfo{{
@@ -574,7 +686,6 @@ func TestWorkspacePackageEdgeSelectionBudgetFailureIsTransactional(t *testing.T)
 				Dir: "b", ModuleRelativeDir: "b",
 			},
 		},
-		PackageEdges: selected,
 	}
 	const repositoryRoot = "/workspacegraph-report-edge-budget"
 	snapshot := reportGraphSnapshot(t, repositoryRoot, repositoryRoot, nil)
@@ -585,27 +696,37 @@ func TestWorkspacePackageEdgeSelectionBudgetFailureIsTransactional(t *testing.T)
 	if err != nil {
 		t.Fatalf("workspacegraph.New: %v", err)
 	}
-	if _, err := projectWorkspacePackageGraph(original, facts, graph); err == nil {
-		t.Fatal("projectWorkspacePackageGraph unexpectedly accepted aggregate endpoint budget")
-	} else if strings.Contains(err.Error(), fromPackage[:64]) ||
-		strings.Contains(err.Error(), toPackage[:64]) ||
+	exactlyAtLimit := facts
+	exactlyAtLimit.InternalEdges = make([]gofacts.Edge, maxReportGraphFactEdges)
+	for index := range exactlyAtLimit.InternalEdges {
+		exactlyAtLimit.InternalEdges[index] = facts.InternalEdges[0]
+	}
+	projected, err := projectWorkspacePackageGraph(original, exactlyAtLimit, graph)
+	if err != nil {
+		t.Fatalf("projectWorkspacePackageGraph at exact edge bound: %v", err)
+	}
+	if got := projected.PackageEdges; !reflect.DeepEqual(got, []EdgeInfo{{
+		From: fromPackage,
+		To:   toPackage,
+	}}) {
+		t.Fatalf("deduplicated exact edge set = %#v", got)
+	}
+
+	overLimit := exactlyAtLimit
+	overLimit.InternalEdges = append(
+		append([]gofacts.Edge(nil), exactlyAtLimit.InternalEdges...),
+		facts.InternalEdges[0],
+	)
+	before := mustJSON(t, original)
+	if _, err := projectWorkspacePackageGraph(original, overLimit, graph); err == nil {
+		t.Fatal("projectWorkspacePackageGraph unexpectedly accepted N+1 exact edges")
+	} else if strings.Contains(err.Error(), fromPackage) ||
+		strings.Contains(err.Error(), toPackage) ||
 		strings.Contains(err.Error(), repositoryRoot) {
 		t.Fatalf("projection error exposed caller scalar or absolute root: %v", err)
 	}
-
-	warnings := []string{"existing warning"}
-	data := &ReportData{
-		RepositoryGraph:   original,
-		Warnings:          append([]string(nil), warnings...),
-		repositoryGoFacts: &facts,
-	}
-	authority := reportGraphAuthority(t, repositoryRoot, repositoryRoot, nil)
-	before := mustJSON(t, original)
-	attachAuthorizedWorkspacePackageGraph(data, &authority)
-	if data.RepositoryGraph != original ||
-		string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
-		!reflect.DeepEqual(data.Warnings, warnings) {
-		t.Fatalf("budget failure changed pointer, bytes, or warnings")
+	if string(mustJSON(t, original)) != string(before) {
+		t.Fatal("N+1 projection failure mutated the original graph")
 	}
 }
 
@@ -641,12 +762,13 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
 		if data.RepositoryGraph != original ||
-			string(mustJSON(t, data.RepositoryGraph)) != string(before) {
-			t.Fatalf("construction failure mutated graph: %#v", data.RepositoryGraph)
+			string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
+			!reflect.DeepEqual(data.Warnings, []string{workspaceGraphUnavailableWarning}) {
+			t.Fatalf("construction failure did not remain explicit and transactional: graph=%#v warnings=%#v", data.RepositoryGraph, data.Warnings)
 		}
 	})
 
-	t.Run("adapter failure retains original pointer and bytes", func(t *testing.T) {
+	t.Run("stale legacy edge seed is ignored", func(t *testing.T) {
 		original := cloneRepositoryGraph(legacyData.RepositoryGraph)
 		original.PackageEdges = []EdgeInfo{{
 			From: "example.com/repo/cmd/app",
@@ -657,11 +779,14 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 			OpenablePaths:     append([]string(nil), allowed...),
 			repositoryGoFacts: &facts,
 		}
-		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
-		if data.RepositoryGraph != original ||
-			string(mustJSON(t, data.RepositoryGraph)) != string(before) {
-			t.Fatalf("adapter failure mutated graph: %#v", data.RepositoryGraph)
+		if data.RepositoryGraph == original {
+			t.Fatal("successful attachment retained original pointer")
+		}
+		want := cloneRepositoryGraph(original)
+		want.PackageEdges = exactReportEdges(t, facts, authority)
+		if !reflect.DeepEqual(data.RepositoryGraph, want) || len(data.Warnings) != 0 {
+			t.Fatalf("stale legacy edge seed affected exact graph: graph=%#v warnings=%#v", data.RepositoryGraph, data.Warnings)
 		}
 	})
 
@@ -677,9 +802,10 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 		}
 		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
+		wantWarnings := append(append([]string(nil), warnings...), workspaceGraphUnavailableWarning)
 		if data.RepositoryGraph != original ||
 			string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
-			!reflect.DeepEqual(data.Warnings, warnings) {
+			!reflect.DeepEqual(data.Warnings, wantWarnings) {
 			t.Fatalf("package identity failure changed pointer, bytes, or warnings")
 		}
 	})
@@ -696,9 +822,10 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 		}
 		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
+		wantWarnings := append(append([]string(nil), warnings...), workspaceGraphUnavailableWarning)
 		if data.RepositoryGraph != original ||
 			string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
-			!reflect.DeepEqual(data.Warnings, warnings) {
+			!reflect.DeepEqual(data.Warnings, wantWarnings) {
 			t.Fatalf("package file failure changed pointer, bytes, or warnings")
 		}
 	})
@@ -710,19 +837,20 @@ func TestAttachAuthorizedWorkspacePackageGraphIsTransactional(t *testing.T) {
 			OpenablePaths:     append([]string(nil), allowed...),
 			repositoryGoFacts: &facts,
 		}
-		before := mustJSON(t, data.RepositoryGraph)
 		attachAuthorizedWorkspacePackageGraph(data, &authority)
 		if data.RepositoryGraph == original {
 			t.Fatal("successful attachment retained original pointer")
 		}
-		if !reflect.DeepEqual(data.RepositoryGraph, original) ||
-			string(mustJSON(t, data.RepositoryGraph)) != string(before) {
-			t.Fatalf("successful attachment changed graph: %#v", data.RepositoryGraph)
+		want := cloneRepositoryGraph(original)
+		want.PackageEdges = exactReportEdges(t, facts, authority)
+		if !reflect.DeepEqual(data.RepositoryGraph, want) ||
+			string(mustJSON(t, data.RepositoryGraph)) != string(mustJSON(t, want)) {
+			t.Fatalf("successful attachment did not materialize exact graph: %#v", data.RepositoryGraph)
 		}
 	})
 }
 
-func TestAuthorizedReadRunDirUsesGraphWithoutChangingReportBytes(t *testing.T) {
+func TestAuthorizedReadRunDirUsesExactGraphWithoutLegacyEdgeSeed(t *testing.T) {
 	facts := reportRootFacts()
 	allowed := []string{
 		"cmd/app/main.go",
@@ -766,15 +894,18 @@ func TestAuthorizedReadRunDirUsesGraphWithoutChangingReportBytes(t *testing.T) {
 	if adapted.repositoryGoFacts == nil {
 		t.Fatal("authorized readRunDir did not retain exact facts for attachment")
 	}
-	if !reflect.DeepEqual(adapted.RepositoryGraph, legacy.RepositoryGraph) {
+	wantGraph := cloneRepositoryGraph(legacy.RepositoryGraph)
+	wantGraph.PackageEdges = exactReportEdges(t, facts, authority)
+	if !reflect.DeepEqual(adapted.RepositoryGraph, wantGraph) {
 		t.Fatalf(
-			"authorized graph changed:\nlegacy: %#v\nnew:    %#v",
-			legacy.RepositoryGraph,
+			"authorized graph differs:\nwant: %#v\nnew:  %#v",
+			wantGraph,
 			adapted.RepositoryGraph,
 		)
 	}
+	legacy.RepositoryGraph = wantGraph
 	if got, want := string(mustJSON(t, adapted)), string(mustJSON(t, legacy)); got != want {
-		t.Fatalf("authorized report bytes changed:\nlegacy: %s\nnew:    %s", want, got)
+		t.Fatalf("authorized report bytes differ beyond exact graph:\nwant: %s\nnew:  %s", want, got)
 	}
 }
 
@@ -818,7 +949,8 @@ func TestMalformedNewExactFieldsKeepLegacySnapshotProjection(t *testing.T) {
 	)
 	attachAuthorizedWorkspacePackageGraph(data, &authority)
 	if data.RepositoryGraph != original ||
-		string(mustJSON(t, data.RepositoryGraph)) != string(before) {
+		string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
+		!reflect.DeepEqual(data.Warnings, []string{workspaceGraphUnavailableWarning}) {
 		t.Fatalf("malformed exact extension changed legacy graph: %#v", data.RepositoryGraph)
 	}
 }
@@ -878,7 +1010,8 @@ func TestSnapshotExactGoFactsPreflightRejectsOversizedEdgeBeforeCapture(t *testi
 	)
 	attachAuthorizedWorkspacePackageGraph(data, &authority)
 	after := mustJSON(t, data.RepositoryGraph)
-	if data.RepositoryGraph != original || string(after) != string(before) {
+	if data.RepositoryGraph != original || string(after) != string(before) ||
+		!reflect.DeepEqual(data.Warnings, []string{workspaceGraphUnavailableWarning}) {
 		t.Fatalf("oversized exact facts changed legacy graph: %s", after)
 	}
 	if strings.Contains(string(after), oversized[:maxReportGraphScalarBytes+1]) ||
@@ -1071,7 +1204,8 @@ func assertSnapshotExactGoFactsAliasRejected(t *testing.T, snapshot string) {
 	before := mustJSON(t, original)
 	attachAuthorizedWorkspacePackageGraph(data, &RunAuthority{})
 	if data.RepositoryGraph != original ||
-		string(mustJSON(t, data.RepositoryGraph)) != string(before) {
+		string(mustJSON(t, data.RepositoryGraph)) != string(before) ||
+		!reflect.DeepEqual(data.Warnings, []string{workspaceGraphUnavailableWarning}) {
 		t.Fatalf("alias changed legacy graph: %#v", data.RepositoryGraph)
 	}
 }
@@ -1215,6 +1349,69 @@ func reportSubdirectoryFacts() gofacts.Facts {
 			To:   "example.com/service/internal/core",
 		}},
 	}
+}
+
+func casdoorShapedGraphFacts(edgeCount int) gofacts.Facts {
+	const modulePath = "github.com/casdoor/casdoor"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "root-id", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages:      make([]gofacts.PackageFact, edgeCount+1),
+		InternalEdges: make([]gofacts.Edge, edgeCount),
+	}
+	for index := range facts.Packages {
+		directory := fmt.Sprintf("pkg%03d", index)
+		canonicalPath := modulePath + "/" + directory
+		facts.Packages[index] = gofacts.PackageFact{
+			CanonicalPath:     canonicalPath,
+			Name:              directory,
+			ModuleID:          "root-id",
+			ModulePath:        modulePath,
+			PackageDir:        directory,
+			ModuleRelativeDir: directory,
+		}
+		if index > 0 {
+			facts.InternalEdges[index-1] = gofacts.Edge{
+				From: facts.Packages[index-1].CanonicalPath,
+				To:   canonicalPath,
+			}
+		}
+	}
+	return facts
+}
+
+func reportEdgesFromWorkspaceGraph(graph workspacegraph.Graph) []EdgeInfo {
+	edges := graph.Edges()
+	if edges == nil {
+		return nil
+	}
+	result := make([]EdgeInfo, len(edges))
+	for index, edge := range edges {
+		result[index] = EdgeInfo{From: edge.FromPackage, To: edge.ToPackage}
+	}
+	return result
+}
+
+func exactReportEdges(
+	t *testing.T,
+	facts gofacts.Facts,
+	authority RunAuthority,
+) []EdgeInfo {
+	t.Helper()
+	snapshot, err := workspacesnapshot.New(workspacesnapshot.Input{
+		AnalysisRoot:   authority.analysisRoot,
+		Repository:     authority.repository,
+		CapturedInputs: authority.inputs,
+	})
+	if err != nil {
+		t.Fatalf("workspacesnapshot.New: %v", err)
+	}
+	graph, err := workspacegraph.New(workspacegraph.Input{Snapshot: snapshot, GoFacts: facts})
+	if err != nil {
+		t.Fatalf("workspacegraph.New: %v", err)
+	}
+	return reportEdgesFromWorkspaceGraph(graph)
 }
 
 func reportGraphSnapshot(

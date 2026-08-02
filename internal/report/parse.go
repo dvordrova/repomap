@@ -379,6 +379,27 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	return readRunDir(runDir, "", nil, nil)
 }
 
+// ReadRunDirForAuthorizedArchitecture replays a saved run against confirmed
+// scoped repository authority and requires its producer-owned Go package graph
+// to be complete before it can become an Architecture provider input. A
+// non-Go run does not require a package graph.
+func ReadRunDirForAuthorizedArchitecture(
+	runDir string,
+	authority RunAuthority,
+) (*ReportData, error) {
+	if err := authority.validate(); err != nil {
+		return nil, fmt.Errorf("read authorized Architecture run: %w", err)
+	}
+	data, err := readRunDir(runDir, "", &authority, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireCompleteExactWorkspaceGraph(data); err != nil {
+		return data, err
+	}
+	return data, nil
+}
+
 type savedArchitectureArtifacts struct {
 	status    ArchitectureSynthesisStatus
 	synthesis []byte
@@ -944,7 +965,7 @@ func boundedDocumentedPurpose(readme string) string {
 		if len(strings.Fields(value)) < 6 {
 			continue
 		}
-		text = value
+		text = atlasStudyDocumentedPurpose(value)
 		break
 	}
 	text = strings.Join(strings.Fields(text), " ")

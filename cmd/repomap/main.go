@@ -694,6 +694,44 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			"Architecture and Study remain independent and will continue",
 		)
 	}
+	var architectureAuthority report.RunAuthority
+	if !*offline {
+		architectureAuthorityStarted := time.Now()
+		humanOutput.Stage("Repository authority", "confirming Architecture inputs")
+		architectureReportData, readErr := report.ReadRunDir(runDir)
+		if readErr != nil {
+			return fmt.Errorf("read captured Architecture inputs: %w", readErr)
+		}
+		architectureState, captureErr := captureRepo(ctx, repo)
+		if captureErr != nil {
+			return fmt.Errorf("capture repository state before Architecture: %w", captureErr)
+		}
+		if staticSourceHost != "" && architectureState.Head != initialState.Head {
+			return fmt.Errorf(
+				"standalone %s reports require HEAD to remain at the captured commit until report publication",
+				staticSourceHost,
+			)
+		}
+		architectureAuthority, err = report.ConfirmRunAuthorityScoped(
+			ctx,
+			analysisRoot,
+			initialState,
+			architectureState,
+			report.CapturedInputPaths(architectureReportData),
+			*strictSnapshot,
+		)
+		if err != nil {
+			return fmt.Errorf("confirm Architecture input authority: %w", err)
+		}
+		humanOutput.State(
+			"Repository authority", "Architecture inputs confirmed",
+			fmt.Sprintf(
+				"captured inputs: %d",
+				len(report.CapturedInputPaths(architectureReportData)),
+			),
+			formatRunOutputDuration(time.Since(architectureAuthorityStarted).Milliseconds()),
+		)
+	}
 	var architectureOutcome architectureSynthesisOutcome
 	var architectureErr error
 	if *offline {
@@ -703,7 +741,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		humanOutput.State("Architecture", "unavailable", "provider calls: 0", "reason: offline requested")
 	} else {
 		architectureOutcome, architectureErr = synthesizeArchitectureForRun(
-			ctx, runDir, humanOutput, *noCache, reportLanguage,
+			ctx, runDir, architectureAuthority, humanOutput, *noCache, reportLanguage,
 		)
 	}
 	if diagnosticErr := recordAtlasFirstStageDiagnostic(
@@ -721,7 +759,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		if !isPublishableArchitectureFailure(architectureErr) {
 			return architectureErr
 		}
-		if !errors.Is(architectureErr, errArchitectureSynthesisRejected) {
+		if report.IsExactWorkspaceGraphUnavailable(architectureErr) {
+			humanOutput.State(
+				"Architecture", "unavailable", "provider calls: 0",
+				"reason: exact local package graph unavailable",
+			)
+		} else if !errors.Is(architectureErr, errArchitectureSynthesisRejected) {
 			humanOutput.Warn(
 				"Architecture model stage failed",
 				"state: failed",
@@ -731,8 +774,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	}
 	reconciliationStarted := time.Now()
 	humanOutput.Stage("Repository authority", "reconciling captured inputs")
-	reportData, err := report.ReadRunDir(runDir)
-	if err != nil {
+	var reportData *report.ReportData
+	if *offline {
+		reportData, err = report.ReadRunDir(runDir)
+	} else {
+		reportData, err = report.ReadRunDirForAuthorizedArchitecture(runDir, architectureAuthority)
+	}
+	if err != nil && !(report.IsExactWorkspaceGraphUnavailable(err) && reportData != nil &&
+		report.IsExactWorkspaceGraphUnavailable(architectureErr)) {
 		return fmt.Errorf("read captured report inputs: %w", err)
 	}
 	currentState, err := captureRepo(ctx, repo)

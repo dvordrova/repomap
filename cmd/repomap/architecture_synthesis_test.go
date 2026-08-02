@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,8 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 )
@@ -927,7 +930,7 @@ func TestArchitectureSemanticFailureIsPublishableOnlyAfterDurableFailedStatus(t 
 	}
 	outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationRejected)
 	outcome.MemberOccurrences = 3
-	outcome.ValidationCodes = []string{"proposal.conflicting_membership"}
+	outcome.ValidationCodes = []string{"proposal.duplicate_member_id"}
 
 	t.Run("durable failed status permits continuation", func(t *testing.T) {
 		runDir := t.TempDir()
@@ -1279,6 +1282,220 @@ func TestArchitectureSynthesisBudgetFailuresAreTypedTerminalResources(t *testing
 	}
 }
 
+func TestPrepareAuthorizedArchitectureUsesCompleteCasdoorGraph(t *testing.T) {
+	const edgeCount = 90
+	runDir, authority := architectureAuthorizedGraphRun(
+		t,
+		architectureCasdoorGraphFacts(edgeCount),
+	)
+	before, err := report.ReadRunDirForAuthorizedArchitecture(runDir, authority)
+	if err != nil {
+		t.Fatalf("authorized read before synthesis: %v", err)
+	}
+	input, err := report.BuildArchitectureCanvasInput(before)
+	if err != nil {
+		t.Fatalf("BuildArchitectureCanvasInput: %v", err)
+	}
+	requestBefore, requestBytesBefore, err := componentmap.BuildSynthesisRequest(input.CandidateBundle)
+	if err != nil {
+		t.Fatalf("BuildSynthesisRequest: %v", err)
+	}
+	if len(requestBefore.Relations) != edgeCount {
+		t.Fatalf("pre-provider relations = %d, want %d", len(requestBefore.Relations), edgeCount)
+	}
+
+	provider := &architectureSynthesisStub{
+		response: architectureSynthesisTestResponse(t, input.CandidateBundle),
+	}
+	outcome, err := prepareArchitectureSynthesisWithOptions(
+		context.Background(), runDir, "revision-authorized-casdoor",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, runAuthority: &authority,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if err != nil {
+		t.Fatalf("prepareArchitectureSynthesisWithOptions: %v", err)
+	}
+	if provider.calls != 1 || len(provider.prompts) != 1 {
+		t.Fatalf("provider calls/prompts = %d/%d, want 1/1", provider.calls, len(provider.prompts))
+	}
+	var sent componentmap.SynthesisRequest
+	const userPrefix = "Bounded candidate request:\n"
+	if !strings.HasPrefix(provider.prompts[0].User, userPrefix) {
+		t.Fatalf("Architecture user prompt omitted bounded request prefix")
+	}
+	if err := json.Unmarshal(
+		[]byte(strings.TrimPrefix(provider.prompts[0].User, userPrefix)),
+		&sent,
+	); err != nil {
+		t.Fatalf("decode exact sent Architecture request: %v", err)
+	}
+	if len(sent.Relations) != edgeCount {
+		t.Fatalf("exact sent supporting_relations = %d, want %d", len(sent.Relations), edgeCount)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, nil); err != nil {
+		t.Fatalf("persist Architecture status: %v", err)
+	}
+
+	replayed, err := report.ReadRunDirForAuthorizedArchitecture(runDir, authority)
+	if err != nil {
+		t.Fatalf("authorized replay: %v", err)
+	}
+	replayedInput, err := report.BuildArchitectureCanvasInput(replayed)
+	if err != nil {
+		t.Fatalf("BuildArchitectureCanvasInput after replay: %v", err)
+	}
+	_, requestBytesAfter, err := componentmap.BuildSynthesisRequest(replayedInput.CandidateBundle)
+	if err != nil {
+		t.Fatalf("BuildSynthesisRequest after replay: %v", err)
+	}
+	if !bytes.Equal(requestBytesAfter, requestBytesBefore) {
+		t.Fatalf("authorized Architecture request changed after replay")
+	}
+	replayedPrompt, err := componentmap.BuildSynthesisPromptForLanguage(
+		replayedInput.CandidateBundle,
+		"en",
+	)
+	if err != nil {
+		t.Fatalf("BuildSynthesisPromptForLanguage after replay: %v", err)
+	}
+	replayProvider := &architectureSynthesisStub{}
+	replayedBody, err := replayProvider.ComponentSynthesisPromptJSON(replayedPrompt)
+	if err != nil {
+		t.Fatalf("ComponentSynthesisPromptJSON after replay: %v", err)
+	}
+	if len(provider.bodies) != 1 || !bytes.Equal(replayedBody, provider.bodies[0]) {
+		t.Fatalf("authorized external Architecture body changed after replay")
+	}
+}
+
+func TestPrepareAuthorizedArchitectureSkipsProviderWithoutExactGraph(t *testing.T) {
+	facts := architectureCasdoorGraphFacts(1)
+	facts.InternalEdges = make([]gofacts.Edge, 1001)
+	for index := range facts.InternalEdges {
+		facts.InternalEdges[index] = gofacts.Edge{
+			From: facts.Packages[0].CanonicalPath,
+			To:   facts.Packages[1].CanonicalPath,
+		}
+	}
+	runDir, authority := architectureAuthorizedGraphRun(t, facts)
+	provider := &architectureSynthesisStub{err: errors.New("provider must not be called")}
+	outcome, synthesisErr := prepareArchitectureSynthesisWithOptions(
+		context.Background(), runDir, "revision-incomplete-graph",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, runAuthority: &authority,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if !report.IsExactWorkspaceGraphUnavailable(synthesisErr) {
+		t.Fatalf("synthesis error = %T / %v, want exact graph unavailable", synthesisErr, synthesisErr)
+	}
+	if provider.calls != 0 || outcome.Attempted {
+		t.Fatalf("incomplete exact graph reached provider: calls=%d outcome=%#v", provider.calls, outcome)
+	}
+	publishable := persistAndClassifyArchitectureSynthesisStatus(runDir, outcome, synthesisErr)
+	if !isPublishableArchitectureFailure(publishable) ||
+		!report.IsExactWorkspaceGraphUnavailable(publishable) {
+		t.Fatalf("durable incomplete-graph outcome = %T / %v", publishable, publishable)
+	}
+	encoded, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatalf("read Architecture status: %v", err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		t.Fatalf("decode Architecture status: %v", err)
+	}
+	if status.State != report.ArchitectureSynthesisUnavailable ||
+		status.UnavailableCode != report.ArchitectureSynthesisUnavailableExactWorkspaceGraphCode ||
+		status.ProviderRequestCount != 0 {
+		t.Fatalf("exact-graph unavailable status = %#v", status)
+	}
+}
+
+func TestSynthesizeArchitecturePreflightsExactGraphBeforeProviderConfiguration(t *testing.T) {
+	facts := architectureCasdoorGraphFacts(1)
+	facts.InternalEdges = make([]gofacts.Edge, 1001)
+	for index := range facts.InternalEdges {
+		facts.InternalEdges[index] = gofacts.Edge{
+			From: facts.Packages[0].CanonicalPath,
+			To:   facts.Packages[1].CanonicalPath,
+		}
+	}
+	runDir, authority := architectureAuthorizedGraphRun(t, facts)
+
+	// This configuration is deliberately invalid. The provider-free exact
+	// graph preflight owns the earlier failure and must make provider setup
+	// unreachable.
+	t.Setenv("REPOMAP_LLM_AUTH", "invalid")
+	outcome, synthesisErr := synthesizeArchitectureForRun(
+		context.Background(),
+		runDir,
+		authority,
+		newRunOutput(nil),
+		true,
+		"en",
+	)
+	if !isPublishableArchitectureFailure(synthesisErr) ||
+		!report.IsExactWorkspaceGraphUnavailable(synthesisErr) {
+		t.Fatalf(
+			"synthesis error = %T / %v, want durable exact graph unavailable",
+			synthesisErr,
+			synthesisErr,
+		)
+	}
+	if outcome.Attempted {
+		t.Fatalf("provider-free preflight outcome = %#v, want unattempted", outcome)
+	}
+	encoded, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatalf("read Architecture status: %v", err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(encoded, &status); err != nil {
+		t.Fatalf("decode Architecture status: %v", err)
+	}
+	if status.State != report.ArchitectureSynthesisUnavailable ||
+		status.UnavailableCode != report.ArchitectureSynthesisUnavailableExactWorkspaceGraphCode ||
+		status.ProviderRequestCount != 0 {
+		t.Fatalf("pre-provider exact-graph status = %#v", status)
+	}
+}
+
+func TestPrepareAuthorizedArchitectureReportsCandidateExhaustionAsTypedResource(t *testing.T) {
+	runDir, authority := architectureAuthorizedGraphRun(
+		t,
+		architectureCasdoorGraphFacts(512),
+	)
+	provider := &architectureSynthesisStub{err: errors.New("provider must not be called")}
+	outcome, synthesisErr := prepareArchitectureSynthesisWithOptions(
+		context.Background(),
+		runDir,
+		"revision-candidate-limit",
+		"openai-compatible/bearer",
+		"test-model",
+		provider,
+		architectureSynthesisOptions{
+			disableCache: true, runAuthority: &authority,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	var resourceErr *modelresearch.ResourceLimitError
+	if !errors.As(synthesisErr, &resourceErr) ||
+		resourceErr.Kind != modelresearch.ResourceLimitCatalogItems ||
+		resourceErr.Stage != "architecture_input_candidates" ||
+		resourceErr.Limit != 512 || resourceErr.Observed <= resourceErr.Limit ||
+		!resourceErr.ObservedKnown {
+		t.Fatalf("candidate exhaustion = %#v / %v", resourceErr, synthesisErr)
+	}
+	if provider.calls != 0 || outcome.Attempted {
+		t.Fatalf("candidate exhaustion reached provider: calls=%d outcome=%#v", provider.calls, outcome)
+	}
+}
+
 func TestPrepareArchitectureSynthesisSupportsLandscapeWithoutFlowProof(t *testing.T) {
 	t.Parallel()
 
@@ -1396,6 +1613,102 @@ func writeArchitectureSynthesisFixture(t *testing.T, dir, name, contents string)
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func architectureAuthorizedGraphRun(
+	t *testing.T,
+	facts gofacts.Facts,
+) (string, report.RunAuthority) {
+	t.Helper()
+	repository := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(repository, "go.mod"),
+		[]byte("module github.com/casdoor/casdoor\n\ngo 1.24\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod")
+	commitTestRepository(t, repository)
+	initial, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatalf("capture initial repository: %v", err)
+	}
+
+	runDir := filepath.Join(t.TempDir(), "run")
+	if err := os.MkdirAll(filepath.Join(runDir, "flows"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeArchitectureSynthesisFixture(
+		t,
+		runDir,
+		"snapshot.json",
+		string(mustArchitectureJSON(t, map[string]any{
+			"repo_name": "github.com/casdoor/casdoor",
+			"go_facts":  facts,
+		})),
+	)
+	writeArchitectureSynthesisFixture(t, runDir, "llm_bundle.json", `{}`)
+	data, err := report.ReadRunDir(runDir)
+	if err != nil {
+		t.Fatalf("read saved graph run: %v", err)
+	}
+	current, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatalf("capture current repository: %v", err)
+	}
+	authority, err := report.ConfirmRunAuthorityScoped(
+		context.Background(),
+		repository,
+		initial,
+		current,
+		report.CapturedInputPaths(data),
+		false,
+	)
+	if err != nil {
+		t.Fatalf("ConfirmRunAuthorityScoped: %v", err)
+	}
+	return runDir, authority
+}
+
+func architectureCasdoorGraphFacts(edgeCount int) gofacts.Facts {
+	const modulePath = "github.com/casdoor/casdoor"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "root-id", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages:      make([]gofacts.PackageFact, edgeCount+1),
+		InternalEdges: make([]gofacts.Edge, edgeCount),
+	}
+	for index := range facts.Packages {
+		directory := fmt.Sprintf("pkg%03d", index)
+		canonicalPath := modulePath + "/" + directory
+		facts.Packages[index] = gofacts.PackageFact{
+			CanonicalPath:     canonicalPath,
+			Name:              directory,
+			ModuleID:          "root-id",
+			ModulePath:        modulePath,
+			PackageDir:        directory,
+			ModuleRelativeDir: directory,
+		}
+		if index > 0 {
+			facts.InternalEdges[index-1] = gofacts.Edge{
+				From: facts.Packages[index-1].CanonicalPath,
+				To:   canonicalPath,
+			}
+		}
+	}
+	return facts
+}
+
+func mustArchitectureJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
 
 func architectureSynthesisTestBundle() componentmap.CandidateBundle {

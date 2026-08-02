@@ -511,11 +511,14 @@ func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *
 		t.Fatal(err)
 	}
 	const dirtySourceMarker = "repomap-dirty-source-must-not-be-embedded-4f764179"
+	const uncapturedDirtyMarker = "repomap-uncaptured-dirty-must-not-enter-report-8ddf6621"
+	dirtySource := "package main\n\nfunc main() { println(\"" + dirtySourceMarker + "\") }\n"
 	writeFile(
 		t,
 		filepath.Join(repository, "main.go"),
-		"package main\n\nfunc main() { println(\""+dirtySourceMarker+"\") }\n",
+		dirtySource,
 	)
+	writeFile(t, filepath.Join(repository, "private-untracked.txt"), uncapturedDirtyMarker+"\n")
 
 	debugDir := t.TempDir()
 	var stderr bytes.Buffer
@@ -549,6 +552,9 @@ func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *
 	if bytes.Contains(html, []byte(dirtySourceMarker)) {
 		t.Fatalf("standalone report embedded dirty source content")
 	}
+	if bytes.Contains(html, []byte(uncapturedDirtyMarker)) {
+		t.Fatalf("standalone report embedded uncaptured dirty content")
+	}
 	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -557,22 +563,83 @@ func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *
 		"gitlab_source_links",
 		"working_tree_dirty",
 		"working_tree_paths",
-		dirtySourceMarker,
+		uncapturedDirtyMarker,
 	} {
 		if bytes.Contains(reportJSON, []byte(forbidden)) {
-			t.Fatalf("canonical report contains HTML-only or source data %q", forbidden)
+			t.Fatalf("canonical report contains HTML-only or uncaptured source data %q", forbidden)
 		}
+	}
+	if !bytes.Contains(reportJSON, []byte(dirtySourceMarker)) {
+		t.Fatal("canonical report lost the exact manifest-authorized dirty source excerpt")
+	}
+	var canonical report.ReportData
+	if err := json.Unmarshal(reportJSON, &canonical); err != nil {
+		t.Fatal(err)
+	}
+	withoutSources := canonical
+	withoutSources.UserSources = nil
+	withoutSourceJSON, err := json.Marshal(withoutSources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(withoutSourceJSON, []byte(dirtySourceMarker)) {
+		t.Fatal("dirty source bytes escaped the exact UserSources projection")
 	}
 	manifest, err := report.ReadRunManifest(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.RepositoryState.Dirty) != 1 ||
-		manifest.RepositoryState.Dirty[0].Path != "main.go" {
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		t.Fatalf("manifest does not authorize canonical report: %v", err)
+	}
+	if len(manifest.RepositoryState.Dirty) != 2 {
 		t.Fatalf("manifest dirty repository state = %#v", manifest.RepositoryState.Dirty)
 	}
+	catalog, err := manifest.SourceCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainSource, ok := catalog.Lookup("main.go")
+	if !ok {
+		t.Fatal("manifest source catalog does not authorize main.go")
+	}
+	if _, ok := catalog.Lookup("private-untracked.txt"); ok {
+		t.Fatal("manifest source catalog authorized an untracked dirty file")
+	}
+	var dirtyMainDigest string
+	for _, dirty := range manifest.RepositoryState.Dirty {
+		if dirty.Path == "main.go" {
+			dirtyMainDigest = dirty.ContentSHA256
+		}
+	}
+	if dirtyMainDigest == "" || mainSource.ContentSHA256 != dirtyMainDigest {
+		t.Fatalf("manifest-authorized main.go digest = %q, dirty capture = %q",
+			mainSource.ContentSHA256, dirtyMainDigest)
+	}
+	foundAuthorizedDirtySource := false
+	for index, source := range canonical.UserSources {
+		if err := source.Validate(); err != nil {
+			t.Fatalf("canonical UserSources[%d] is invalid: %v", index, err)
+		}
+		if _, ok := catalog.Lookup(source.Path); !ok {
+			t.Fatalf("canonical UserSources[%d] path %q is not manifest-authorized", index, source.Path)
+		}
+		if source.Revision != manifest.RepositoryState.Head {
+			t.Fatalf("canonical UserSources[%d] revision = %q, want %q",
+				index, source.Revision, manifest.RepositoryState.Head)
+		}
+		if strings.Contains(source.Content, dirtySourceMarker) {
+			if source.Path != "main.go" {
+				t.Fatalf("dirty source marker attached to %q", source.Path)
+			}
+			foundAuthorizedDirtySource = true
+		}
+	}
+	if !foundAuthorizedDirtySource {
+		t.Fatal("manifest-authorized dirty source marker is absent from exact UserSources")
+	}
 	if !strings.Contains(stderr.String(), "report contains stable local changes") ||
-		!strings.Contains(stderr.String(), "changed inputs: 1") ||
+		!strings.Contains(stderr.String(), "changed inputs: 2") ||
 		!strings.Contains(stderr.String(), "changed source paths are local-only") {
 		t.Fatalf("stderr missing dirty report explanation:\n%s", stderr.String())
 	}

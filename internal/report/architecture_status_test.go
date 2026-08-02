@@ -25,10 +25,15 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	status := ArchitectureSynthesisStatus{
 		Version:         ArchitectureSynthesisStatusVersion,
 		State:           ArchitectureSynthesisUnavailable,
-		UnavailableCode: "offline",
+		UnavailableCode: ArchitectureSynthesisUnavailableOfflineCode,
 	}
 	if err := status.Validate(); err != nil {
 		t.Fatalf("offline Architecture status: %v", err)
+	}
+	exactGraphUnavailable := status
+	exactGraphUnavailable.UnavailableCode = ArchitectureSynthesisUnavailableExactWorkspaceGraphCode
+	if err := exactGraphUnavailable.Validate(); err != nil {
+		t.Fatalf("exact-graph Architecture status: %v", err)
 	}
 
 	invalid := status
@@ -90,7 +95,7 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
-func TestArchitectureSynthesisV5SuccessRequiresAcceptedEnrichmentAndExactEvidence(t *testing.T) {
+func TestArchitectureSynthesisV6SuccessRequiresAcceptedEnrichmentAndCompleteDistinctCoverage(t *testing.T) {
 	t.Parallel()
 	base := architectureSynthesisV4AcceptedFixture()
 	if err := base.Validate(); err != nil {
@@ -119,6 +124,9 @@ func TestArchitectureSynthesisV5SuccessRequiresAcceptedEnrichmentAndExactEvidenc
 		"empty membership": func(value *ArchitectureSynthesisStatus) {
 			value.MemberOccurrences = 0
 			value.DistinctMembers = 0
+		},
+		"incomplete distinct coverage": func(value *ArchitectureSynthesisStatus) {
+			value.DistinctMembers = value.CandidateCount - 1
 		},
 		"incomplete stop": func(value *ArchitectureSynthesisStatus) { value.ResponseComplete = false },
 		"completion unknown": func(value *ArchitectureSynthesisStatus) {
@@ -191,15 +199,15 @@ func TestArchitectureSynthesisV4UncalledFailureRejectsProviderResponseEvidence(t
 	}
 }
 
-func TestArchitectureSynthesisV5AcceptsExactClosedProducerDiagnosticRegistry(t *testing.T) {
+func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *testing.T) {
 	producerCodes := []string{
 		"proposal.components_per_subsystem_above_preferred",
-		"proposal.conflicting_membership",
 		"proposal.duplicate_component_identity",
 		"proposal.duplicate_member_id",
 		"proposal.invalid_component",
 		"proposal.invalid_member_id",
 		"proposal.invalid_members",
+		"proposal.incomplete_member_coverage",
 		"proposal.member_participation_limit_exceeded",
 		"proposal.membership_limit_exceeded",
 		"proposal.invalid_subsystem",
@@ -210,9 +218,6 @@ func TestArchitectureSynthesisV5AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.normalized_package_only_hypothesis",
 		"proposal.normalized_primary_subsystems",
 		"proposal.normalized_total_components",
-		"proposal.omitted_members_exceed_bounds",
-		"proposal.omitted_members_preserved",
-		"proposal.omitted_process_entry_member",
 		"proposal.primary_subsystems_above_preferred",
 		"proposal.total_components_above_preferred",
 		"proposal.ungrounded_primary_component",
@@ -220,12 +225,9 @@ func TestArchitectureSynthesisV5AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.unknown_member_id",
 		"proposal.unsupported_version",
 		"response.ambiguous_json",
-		"response.embedded_json_extracted",
-		"response.fenced_json_extracted",
 		"response.invalid_proposal",
 		"response.no_json",
 		"response.sensitive_omitted",
-		"response.unknown_fields_ignored",
 		"response.incomplete",
 		"response.membership_unavailable",
 		"response.not_captured",
@@ -254,6 +256,25 @@ func TestArchitectureSynthesisV5AcceptsExactClosedProducerDiagnosticRegistry(t *
 	base.ValidationCodes = producerCodes
 	if err := base.Validate(); err != nil {
 		t.Fatalf("complete closed producer diagnostics: %v", err)
+	}
+}
+
+func TestArchitectureSynthesisV6RejectsRetiredDiagnosticsWhileV5RemainsReadable(t *testing.T) {
+	for code := range architectureStatusHistoricalValidationCodes {
+		t.Run(code, func(t *testing.T) {
+			historical := architectureSynthesisV4AcceptedFixture()
+			historical.Version = 5
+			historical.ValidationCodes = []string{code}
+			if err := historical.Validate(); err != nil {
+				t.Fatalf("historical v5 diagnostic %q is unreadable: %v", code, err)
+			}
+
+			current := historical
+			current.Version = ArchitectureSynthesisStatusVersion
+			if err := current.Validate(); err == nil {
+				t.Fatalf("current status accepted retired diagnostic %q", code)
+			}
+		})
 	}
 }
 

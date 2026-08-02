@@ -66,6 +66,12 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	}
 	assertNavigatorAcceptanceSemanticMinimum(t, data)
 	assertAtlasFirstNavigatorRequestArtifact(t, runDir, data)
+	if data.RepositoryGraph == nil || len(data.RepositoryGraph.PackageEdges) != 1 {
+		t.Fatalf(
+			"top-level Atlas-first exact package edges = %#v, want one preserved edge",
+			data.RepositoryGraph,
+		)
+	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data, 1)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
@@ -579,6 +585,7 @@ func atlasFirstAcceptanceStudyResponse(
 		} `json:"surfaces"`
 		ReadingTargets []struct {
 			Ref           string   `json:"ref"`
+			Path          string   `json:"path"`
 			PrincipalRefs []string `json:"principal_refs"`
 		} `json:"reading_targets"`
 	}
@@ -608,6 +615,9 @@ func atlasFirstAcceptanceStudyResponse(
 	}
 	addPrincipal(componentRef)
 	for _, target := range wire.ReadingTargets {
+		if target.Path == "a_package.go" {
+			return nil, fmt.Errorf("package-declaration-only source became a Study reading target")
+		}
 		targetPrincipal := ""
 		for _, principal := range target.PrincipalRefs {
 			if _, known := knownPrincipals[principal]; known {
@@ -760,23 +770,34 @@ func (provider *atlasFirstAcceptanceProvider) assertStages(
 func atlasFirstAcceptanceRepository(t *testing.T, fixtureDir string) string {
 	t.Helper()
 	repo := t.TempDir()
-	entries, err := os.ReadDir(fixtureDir)
+	var names []string
+	err := filepath.WalkDir(fixtureDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(fixtureDir, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(repo, relative)
+		if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(destination, data, 0o600); err != nil {
+			return err
+		}
+		names = append(names, filepath.ToSlash(relative))
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	var names []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(fixtureDir, entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(repo, entry.Name()), data, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		names = append(names, entry.Name())
 	}
 	sort.Strings(names)
 	runGit(t, repo, "init", "--quiet")

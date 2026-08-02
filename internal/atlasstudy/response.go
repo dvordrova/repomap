@@ -49,12 +49,12 @@ type responseEnvelope struct {
 }
 
 type providerBrief struct {
-	WhatItIs              providerStatement    `json:"what_it_is"`
-	Problem               providerStatement    `json:"problem"`
-	MainInput             providerStatement    `json:"main_input"`
-	CentralResponsibility providerStatement    `json:"central_responsibility"`
-	ObservableResult      providerStatement    `json:"observable_result"`
-	DomainTerms           []providerDomainTerm `json:"domain_terms,omitempty"`
+	WhatItIs              providerStatement `json:"what_it_is"`
+	Problem               providerStatement `json:"problem"`
+	MainInput             providerStatement `json:"main_input"`
+	CentralResponsibility providerStatement `json:"central_responsibility"`
+	ObservableResult      providerStatement `json:"observable_result"`
+	DomainTerms           []json.RawMessage `json:"domain_terms,omitempty"`
 }
 
 type providerStatement struct {
@@ -103,11 +103,15 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 	if !envelope.RepositoryType.Valid() {
 		return ResultRecord{}, Diagnostics{}, fmt.Errorf("atlas study response: invalid repository type")
 	}
-	brief, err := product.resolveBrief(envelope.Brief)
+	brief, diagnostics, err := product.resolveBrief(envelope.Brief)
 	if err != nil {
 		return ResultRecord{}, Diagnostics{}, err
 	}
-	directions, diagnostics := product.resolveDirections(envelope.Directions)
+	directions, directionDiagnostics := product.resolveDirections(envelope.Directions)
+	diagnostics.DirectionsReceived = directionDiagnostics.DirectionsReceived
+	diagnostics.DirectionsAccepted = directionDiagnostics.DirectionsAccepted
+	diagnostics.DirectionsRejected = directionDiagnostics.DirectionsRejected
+	diagnostics.Issues = directionDiagnostics.Issues
 	if len(directions) == 0 {
 		return ResultRecord{}, diagnostics, fmt.Errorf("atlas study response: no valid Study directions")
 	}
@@ -119,7 +123,8 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 	return result, diagnostics, nil
 }
 
-func (product Product) resolveBrief(provider providerBrief) (Brief, error) {
+func (product Product) resolveBrief(provider providerBrief) (Brief, Diagnostics, error) {
+	diagnostics := Diagnostics{DomainTermsReceived: len(provider.DomainTerms)}
 	resolve := func(field string, statement providerStatement) (SupportedStatement, error) {
 		refs, err := product.resolveSupportRefs(field+".support_refs", statement.SupportRefs)
 		if err != nil {
@@ -137,49 +142,68 @@ func (product Product) resolveBrief(provider providerBrief) (Brief, error) {
 	}
 	what, err := resolve("brief.what_it_is", provider.WhatItIs)
 	if err != nil {
-		return Brief{}, err
+		return Brief{}, Diagnostics{}, err
 	}
 	problem, err := resolve("brief.problem", provider.Problem)
 	if err != nil {
-		return Brief{}, err
+		return Brief{}, Diagnostics{}, err
 	}
 	input, err := resolve("brief.main_input", provider.MainInput)
 	if err != nil {
-		return Brief{}, err
+		return Brief{}, Diagnostics{}, err
 	}
 	central, err := resolve("brief.central_responsibility", provider.CentralResponsibility)
 	if err != nil {
-		return Brief{}, err
+		return Brief{}, Diagnostics{}, err
 	}
 	result, err := resolve("brief.observable_result", provider.ObservableResult)
 	if err != nil {
-		return Brief{}, err
+		return Brief{}, Diagnostics{}, err
 	}
-	terms := make([]DomainTerm, 0, len(provider.DomainTerms))
-	for index, term := range provider.DomainTerms {
-		refs, err := product.resolveSupportRefs(
-			fmt.Sprintf("brief.domain_terms[%d].support_refs", index), term.SupportRefs,
-		)
-		if err != nil {
-			return Brief{}, err
-		}
-		if len(refs) == 0 {
-			return Brief{}, fmt.Errorf("atlas study response: domain term requires support")
-		}
-		if err := product.validateModelText(term.Term, 128, true, false); err != nil {
-			return Brief{}, fmt.Errorf("atlas study response: domain_terms[%d].term: %w", index, err)
-		}
-		if err := product.validateModelTextWithTargetLocators(
-			term.Meaning, 512, true, true, product.supportReadingTargets(refs),
-		); err != nil {
-			return Brief{}, fmt.Errorf("atlas study response: domain_terms[%d].meaning: %w", index, err)
-		}
-		terms = append(terms, DomainTerm{Term: term.Term, Meaning: term.Meaning, SupportRefs: refs})
+	limit := len(provider.DomainTerms)
+	if limit > MaxDomainTerms {
+		limit = MaxDomainTerms
 	}
+	terms := make([]DomainTerm, 0, limit)
+	for index := 0; index < limit; index++ {
+		term, code := product.resolveDomainTerm(index, provider.DomainTerms[index])
+		if code != "" {
+			diagnostics.addDomainTermIssue(index, code)
+			continue
+		}
+		terms = append(terms, term)
+	}
+	for index := MaxDomainTerms; index < len(provider.DomainTerms); index++ {
+		diagnostics.addDomainTermIssue(index, DomainTermIssueUnrequestedOutput)
+	}
+	diagnostics.DomainTermsAccepted = len(terms)
+	diagnostics.DomainTermsRejected = diagnostics.DomainTermsReceived - diagnostics.DomainTermsAccepted
 	return Brief{
 		WhatItIs: what, Problem: problem, MainInput: input,
 		CentralResponsibility: central, ObservableResult: result, DomainTerms: terms,
-	}, nil
+	}, diagnostics, nil
+}
+
+func (product Product) resolveDomainTerm(index int, raw json.RawMessage) (DomainTerm, DomainTermIssueCode) {
+	var provider providerDomainTerm
+	if err := decodeStrict(raw, &provider); err != nil {
+		return DomainTerm{}, DomainTermIssueDecodeCandidate
+	}
+	refs, err := product.resolveSupportRefs(
+		fmt.Sprintf("brief.domain_terms[%d].support_refs", index), provider.SupportRefs,
+	)
+	if err != nil || len(refs) == 0 {
+		return DomainTerm{}, DomainTermIssueInvalidSupport
+	}
+	if err := product.validateModelText(provider.Term, 128, true, false); err != nil {
+		return DomainTerm{}, DomainTermIssueInvalidTerm
+	}
+	if err := product.validateModelTextWithTargetLocators(
+		provider.Meaning, 512, true, true, product.supportReadingTargets(refs),
+	); err != nil {
+		return DomainTerm{}, DomainTermIssueInvalidMeaning
+	}
+	return DomainTerm{Term: provider.Term, Meaning: provider.Meaning, SupportRefs: refs}, ""
 }
 
 func (product Product) supportReadingTargets(refs []CanonicalRef) []CatalogObject {
@@ -466,6 +490,15 @@ func (product Product) validateModelTextWithTargetLocators(
 func (diagnostics *Diagnostics) addIssue(position int, code DirectionIssueCode) {
 	if len(diagnostics.Issues) < MaxDirectionDiagnostics {
 		diagnostics.Issues = append(diagnostics.Issues, DirectionIssue{Position: position, Code: code})
+	}
+}
+
+func (diagnostics *Diagnostics) addDomainTermIssue(position int, code DomainTermIssueCode) {
+	if len(diagnostics.DomainTermIssues) < MaxDomainTermDiagnostics {
+		diagnostics.DomainTermIssues = append(
+			diagnostics.DomainTermIssues,
+			DomainTermIssue{Position: position, Code: code},
+		)
 	}
 }
 

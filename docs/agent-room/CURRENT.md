@@ -1,15 +1,23 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/201-conceptual-membership-and-study-independence.md
+    decisions/202-exact-architecture-input-and-complete-enrichment.md
 
 Status:
-    Decision 201 active; conceptual membership and Study independence authorized
+    Decision 202 active; exact Architecture input and complete requested enrichment authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 202 makes the Architecture request and authorized replay consume
+    one byte-identical exact Go package graph, requires complete coverage of
+    every explicitly requested candidate member, and makes invalid optional
+    Study domain terms item-local. Exact-graph absence is provider-free
+    unavailable with the D177 local Canvas retained; it cannot become accepted
+    enrichment over a legacy or partial graph. The owner authorized these root
+    corrections after a fresh Casdoor run lost all 90 exact import relations
+    and accepted only 15 of 50 requested members.
     Decision 201 separates model-authored many-to-many conceptual membership
     from optional independently proven local ownership. Shared members remain
     valid in multiple components; distinct coverage and membership-edge bounds

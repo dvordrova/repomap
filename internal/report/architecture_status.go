@@ -8,29 +8,33 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 5
+	ArchitectureSynthesisStatusVersion = 6
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
 	ArchitectureSynthesisFailed      = "failed"
 	ArchitectureSynthesisUnavailable = "unavailable"
+
+	ArchitectureSynthesisUnavailableOfflineCode             = "offline"
+	ArchitectureSynthesisUnavailableExactWorkspaceGraphCode = "exact_workspace_graph_unavailable"
 )
 
 // architectureStatusValidationCodes is the complete diagnostic vocabulary
 // that the active Architecture response evaluator and its status evidence
 // checks can persist. Keep this boundary closed: accepting merely well-formed
-// opaque strings would make a v4 status claim validation evidence that this
-// reader cannot interpret. Resource-limit outcomes are terminal errors and
-// therefore are deliberately not represented as validation codes here.
+// opaque strings would make a current status claim validation evidence that
+// the active evaluator cannot produce. Resource-limit outcomes are terminal
+// errors and therefore are deliberately not represented as validation codes
+// here.
 var architectureStatusValidationCodes = map[string]struct{}{
 	// Locally applied proposal validation and normalization diagnostics.
 	"proposal.components_per_subsystem_above_preferred": {},
-	"proposal.conflicting_membership":                   {},
 	"proposal.duplicate_component_identity":             {},
 	"proposal.duplicate_member_id":                      {},
 	"proposal.invalid_component":                        {},
 	"proposal.invalid_member_id":                        {},
 	"proposal.invalid_members":                          {},
+	"proposal.incomplete_member_coverage":               {},
 	"proposal.member_participation_limit_exceeded":      {},
 	"proposal.membership_limit_exceeded":                {},
 	"proposal.invalid_subsystem":                        {},
@@ -41,9 +45,6 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.normalized_package_only_hypothesis":       {},
 	"proposal.normalized_primary_subsystems":            {},
 	"proposal.normalized_total_components":              {},
-	"proposal.omitted_members_exceed_bounds":            {},
-	"proposal.omitted_members_preserved":                {},
-	"proposal.omitted_process_entry_member":             {},
 	"proposal.primary_subsystems_above_preferred":       {},
 	"proposal.total_components_above_preferred":         {},
 	"proposal.ungrounded_primary_component":             {},
@@ -52,19 +53,29 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.unsupported_version":                      {},
 
 	// Provider response extraction and request-local reference diagnostics.
-	"response.ambiguous_json":          {},
-	"response.embedded_json_extracted": {},
-	"response.fenced_json_extracted":   {},
-	"response.invalid_proposal":        {},
-	"response.no_json":                 {},
-	"response.sensitive_omitted":       {},
-	"response.unknown_fields_ignored":  {},
+	"response.ambiguous_json":    {},
+	"response.invalid_proposal":  {},
+	"response.no_json":           {},
+	"response.sensitive_omitted": {},
 
 	// Exact response-evidence checks owned by the Architecture stage runner.
 	"response.incomplete":             {},
 	"response.membership_unavailable": {},
 	"response.not_captured":           {},
 	"status.invalid_evidence":         {},
+}
+
+// Versions through v5 used exclusive membership, deterministic remainder,
+// and permissive JSON extraction diagnostics. Historical artifacts remain
+// readable, but a v6 writer cannot claim these retired outcomes.
+var architectureStatusHistoricalValidationCodes = map[string]struct{}{
+	"proposal.conflicting_membership":        {},
+	"proposal.omitted_members_exceed_bounds": {},
+	"proposal.omitted_members_preserved":     {},
+	"proposal.omitted_process_entry_member":  {},
+	"response.embedded_json_extracted":       {},
+	"response.fenced_json_extracted":         {},
+	"response.unknown_fields_ignored":        {},
 }
 
 // ArchitectureSynthesisStatus records whether the optional conceptual
@@ -123,7 +134,7 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			return fmt.Errorf("failed architecture synthesis status requires an error code")
 		}
 	case ArchitectureSynthesisUnavailable:
-		if status.Version < 3 || status.UnavailableCode != "offline" || status.ErrorCode != "" ||
+		if status.Version < 3 || !validArchitectureUnavailableCode(status.UnavailableCode) || status.ErrorCode != "" ||
 			status.PromptBytes != 0 || status.LatencyMillis != 0 || status.ProviderRequestCount != 0 ||
 			status.ProviderCallSucceeded || status.ResponseParsed || status.ProposalAccepted ||
 			status.ProposalNormalized || status.ProposalRejected || status.FallbackSelected ||
@@ -205,6 +216,11 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 	return nil
 }
 
+func validArchitectureUnavailableCode(code string) bool {
+	return code == ArchitectureSynthesisUnavailableOfflineCode ||
+		code == ArchitectureSynthesisUnavailableExactWorkspaceGraphCode
+}
+
 func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() error {
 	if status.PromptBytes != 0 {
 		return fmt.Errorf("architecture synthesis status v4+ cannot use legacy prompt bytes")
@@ -266,6 +282,7 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	if (status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached) &&
 		(!status.ResponseComplete || !status.MembershipCounted || status.MemberOccurrences == 0 ||
 			(status.Version == 4 && status.MemberOccurrences != status.DistinctMembers) ||
+			(status.Version >= 6 && status.DistinctMembers != status.CandidateCount) ||
 			status.ResponseState != "captured") {
 		return fmt.Errorf("accepted live Architecture requires complete exact membership evidence")
 	}
@@ -274,7 +291,7 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	}
 	seen := make(map[string]struct{}, len(status.ValidationCodes))
 	for _, code := range status.ValidationCodes {
-		if !validArchitectureStatusCode(code) {
+		if !validArchitectureStatusCodeForVersion(status.Version, code) {
 			return fmt.Errorf("architecture synthesis status contains invalid validation diagnostic code")
 		}
 		if _, duplicate := seen[code]; duplicate {
@@ -287,6 +304,17 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 
 func validArchitectureStatusCode(code string) bool {
 	_, valid := architectureStatusValidationCodes[code]
+	return valid
+}
+
+func validArchitectureStatusCodeForVersion(version int, code string) bool {
+	if validArchitectureStatusCode(code) {
+		return true
+	}
+	if version > 5 {
+		return false
+	}
+	_, valid := architectureStatusHistoricalValidationCodes[code]
 	return valid
 }
 

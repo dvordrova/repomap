@@ -132,6 +132,7 @@ type architectureSynthesisOutcome struct {
 func synthesizeArchitectureForRun(
 	ctx context.Context,
 	runDir string,
+	authority report.RunAuthority,
 	output *runOutput,
 	noCache bool,
 	outputLanguage string,
@@ -140,6 +141,18 @@ func synthesizeArchitectureForRun(
 		output = newRunOutput(nil)
 	}
 	output.Stage("Architecture", "synthesizing bounded conceptual grouping")
+	bundle, repositoryRevision, err := prepareArchitectureSynthesisInput(
+		runDir,
+		architectureSynthesisRevision,
+		&authority,
+	)
+	if err != nil {
+		return architectureSynthesisOutcome{}, persistAndClassifyArchitectureSynthesisStatus(
+			runDir,
+			architectureSynthesisOutcome{},
+			err,
+		)
+	}
 	exchangeWriter, writerErr := debugdump.OpenWriter(runDir, true)
 	if writerErr == nil {
 		defer exchangeWriter.Close()
@@ -181,16 +194,18 @@ func synthesizeArchitectureForRun(
 		}
 		return architectureSynthesisOutcome{}, stageErr
 	}
-	outcome, err := prepareArchitectureSynthesisWithOptions(
+	outcome, err := ensureArchitectureSynthesisWithOptions(
 		ctx,
+		bundle,
 		runDir,
-		architectureSynthesisRevision,
+		repositoryRevision,
 		"openai-compatible/"+client.Auth,
 		client.Model,
 		client,
 		architectureSynthesisOptions{
 			disableCache: noCache, exchangeWriter: exchangeWriter,
 			providerEndpointSHA256: endpointSHA, outputLanguage: outputLanguage,
+			runAuthority: &authority,
 		},
 	)
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -243,6 +258,7 @@ type architectureSynthesisOptions struct {
 	exchangeWriter         *debugdump.Writer
 	providerEndpointSHA256 string
 	outputLanguage         string
+	runAuthority           *report.RunAuthority
 }
 
 func prepareArchitectureSynthesisWithOptions(
@@ -254,9 +270,48 @@ func prepareArchitectureSynthesisWithOptions(
 	provider componentLandscapeSynthesizer,
 	options architectureSynthesisOptions,
 ) (architectureSynthesisOutcome, error) {
-	data, err := report.ReadRunDir(runDir)
+	bundle, repositoryRevision, err := prepareArchitectureSynthesisInput(
+		runDir,
+		repositoryRevision,
+		options.runAuthority,
+	)
 	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: read saved run: %w", err)
+		return architectureSynthesisOutcome{}, err
+	}
+	return ensureArchitectureSynthesisWithOptions(
+		ctx,
+		bundle,
+		runDir,
+		repositoryRevision,
+		profile,
+		model,
+		provider,
+		options,
+	)
+}
+
+func prepareArchitectureSynthesisInput(
+	runDir string,
+	repositoryRevision string,
+	runAuthority *report.RunAuthority,
+) (componentmap.CandidateBundle, string, error) {
+	var (
+		data *report.ReportData
+		err  error
+	)
+	if runAuthority == nil {
+		data, err = report.ReadRunDir(runDir)
+	} else {
+		data, err = report.ReadRunDirForAuthorizedArchitecture(
+			runDir,
+			*runAuthority,
+		)
+	}
+	if err != nil {
+		return componentmap.CandidateBundle{}, "", fmt.Errorf(
+			"architecture synthesis: read saved run: %w",
+			err,
+		)
 	}
 	if data.ModelResearch != nil {
 		context := data.ModelResearch.Repository
@@ -266,18 +321,25 @@ func prepareArchitectureSynthesisWithOptions(
 	}
 	input, err := report.BuildArchitectureCanvasInput(data)
 	if err != nil {
-		return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: build candidates: %w", err)
+		var limitErr *componentmap.CandidateBundleLimitError
+		if errors.As(err, &limitErr) {
+			return componentmap.CandidateBundle{}, "", fmt.Errorf(
+				"architecture synthesis: build candidates: %w",
+				modelresearch.NewResourceLimitError(modelresearch.ResourceLimitError{
+					Stage:         "architecture_input_" + string(limitErr.Kind),
+					Kind:          modelresearch.ResourceLimitCatalogItems,
+					Limit:         limitErr.Limit,
+					Observed:      limitErr.Observed,
+					ObservedKnown: true,
+				}, nil),
+			)
+		}
+		return componentmap.CandidateBundle{}, "", fmt.Errorf(
+			"architecture synthesis: build candidates: %w",
+			err,
+		)
 	}
-	return ensureArchitectureSynthesisWithOptions(
-		ctx,
-		input.CandidateBundle,
-		runDir,
-		repositoryRevision,
-		profile,
-		model,
-		provider,
-		options,
-	)
+	return input.CandidateBundle, repositoryRevision, nil
 }
 
 func ensureArchitectureSynthesis(
@@ -1004,6 +1066,12 @@ func persistArchitectureSynthesisStatus(
 	if isSemanticResourceLimit(synthesisErr) {
 		return nil
 	}
+	if report.IsExactWorkspaceGraphUnavailable(synthesisErr) {
+		return persistArchitectureSynthesisUnavailableWithCode(
+			runDir,
+			report.ArchitectureSynthesisUnavailableExactWorkspaceGraphCode,
+		)
+	}
 	return writeArchitectureSynthesisStatus(
 		runDir,
 		architectureSynthesisStatus(outcome, synthesisErr),
@@ -1025,6 +1093,9 @@ func persistAndClassifyArchitectureSynthesisStatus(
 	if errors.Is(synthesisErr, errArchitectureSynthesisRejected) {
 		return &publishableArchitectureFailure{cause: synthesisErr}
 	}
+	if report.IsExactWorkspaceGraphUnavailable(synthesisErr) {
+		return &publishableArchitectureFailure{cause: synthesisErr}
+	}
 	var providerFailure *architectureProviderCallFailed
 	if errors.As(synthesisErr, &providerFailure) {
 		return &publishableArchitectureFailure{cause: synthesisErr}
@@ -1033,10 +1104,17 @@ func persistAndClassifyArchitectureSynthesisStatus(
 }
 
 func persistArchitectureSynthesisUnavailable(runDir string) error {
+	return persistArchitectureSynthesisUnavailableWithCode(
+		runDir,
+		report.ArchitectureSynthesisUnavailableOfflineCode,
+	)
+}
+
+func persistArchitectureSynthesisUnavailableWithCode(runDir, code string) error {
 	return writeArchitectureSynthesisStatus(runDir, report.ArchitectureSynthesisStatus{
 		Version:         report.ArchitectureSynthesisStatusVersion,
 		State:           report.ArchitectureSynthesisUnavailable,
-		UnavailableCode: "offline",
+		UnavailableCode: code,
 	})
 }
 

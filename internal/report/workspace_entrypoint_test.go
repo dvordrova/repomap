@@ -286,7 +286,7 @@ func TestAttachAuthorizedWorkspaceEntrypointIndexIsTransactional(t *testing.T) {
 	})
 }
 
-func TestAuthorizedReadRunDirUsesEntrypointIndexWithoutChangingReportBytes(t *testing.T) {
+func TestAuthorizedReadRunDirUsesEntrypointIndexWithoutChangingNonGraphState(t *testing.T) {
 	graphFacts := reportRootFacts()
 	entrypointFacts := reportRootEntrypointFacts()
 	graphFacts.EntrypointPackages = entrypointFacts.EntrypointPackages
@@ -334,6 +334,19 @@ func TestAuthorizedReadRunDirUsesEntrypointIndexWithoutChangingReportBytes(t *te
 	}
 	legacyComparable := *legacy
 	adaptedComparable := *adapted
+	// Exact workspace attachment intentionally replaces the legacy graph and all
+	// of its deterministic Architecture projections. Those are covered by the
+	// workspace-graph tests; this test owns the independent entrypoint adapter.
+	legacyComparable.RepositoryGraph = nil
+	legacyComparable.Components = nil
+	legacyComparable.ComponentRelations = nil
+	legacyComparable.ArchitectureCanvas = nil
+	legacyComparable.ArchitectureGrounding = nil
+	adaptedComparable.RepositoryGraph = nil
+	adaptedComparable.Components = nil
+	adaptedComparable.ComponentRelations = nil
+	adaptedComparable.ArchitectureCanvas = nil
+	adaptedComparable.ArchitectureGrounding = nil
 	adaptedComparable.repositoryGoFacts = nil
 	adaptedComparable.repositoryEntrypointFacts = nil
 	adaptedComparable.studyDocumentSourceRoot = legacyComparable.studyDocumentSourceRoot
@@ -344,8 +357,8 @@ func TestAuthorizedReadRunDirUsesEntrypointIndexWithoutChangingReportBytes(t *te
 			&adaptedComparable,
 		)
 	}
-	if got, want := string(mustJSON(t, adapted)), string(mustJSON(t, legacy)); got != want {
-		t.Fatalf("authorized report bytes changed:\nlegacy: %s\nnew:    %s", want, got)
+	if got, want := string(mustJSON(t, &adaptedComparable)), string(mustJSON(t, &legacyComparable)); got != want {
+		t.Fatalf("authorized non-graph report bytes changed:\nlegacy: %s\nnew:    %s", want, got)
 	}
 	if adapted.DiscoveredSurfaces == nil ||
 		len(adapted.DiscoveredSurfaces.Triggers) != 1 ||

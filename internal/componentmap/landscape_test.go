@@ -1,6 +1,7 @@
 package componentmap
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -27,7 +28,10 @@ func TestApplyKeepsComponentIdentityAcrossRenameAndReorder(t *testing.T) {
 			{
 				Name: "Interface",
 				Components: []ProposedComponent{
-					{Name: "CLI", MemberIDs: []MemberID{testMemberID(MemberEntrypoint, "backup-command")}},
+					{Name: "CLI", MemberIDs: []MemberID{
+						testMemberID(MemberPackage, "cmd"),
+						testMemberID(MemberEntrypoint, "backup-command"),
+					}},
 				},
 			},
 		},
@@ -42,7 +46,10 @@ func TestApplyKeepsComponentIdentityAcrossRenameAndReorder(t *testing.T) {
 			{
 				Name: "Renamed interface",
 				Components: []ProposedComponent{
-					{Name: "Renamed CLI", MemberIDs: []MemberID{testMemberID(MemberEntrypoint, "backup-command")}},
+					{Name: "Renamed CLI", MemberIDs: []MemberID{
+						testMemberID(MemberEntrypoint, "backup-command"),
+						testMemberID(MemberPackage, "cmd"),
+					}},
 				},
 			},
 			{
@@ -153,7 +160,7 @@ func TestApplyAcceptsManyToManyConceptualMembership(t *testing.T) {
 		Subsystems: []ProposedSubsystem{{
 			Name: "Repository",
 			Components: []ProposedComponent{
-				{Name: "First", MemberIDs: []MemberID{packageID, bundle.Candidates[0].ID}},
+				{Name: "First", MemberIDs: candidateIDs(bundle.Candidates)},
 				{Name: "Repeated", MemberIDs: []MemberID{packageID}},
 			},
 		}},
@@ -451,6 +458,95 @@ func TestBundleRequiresWitnessedFlowParticipation(t *testing.T) {
 	}
 }
 
+func TestCandidateBundleNumericLimitBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		kind       CandidateBundleLimitKind
+		limit      int
+		makeBundle func(int) CandidateBundle
+	}{
+		{
+			name: "candidates", kind: CandidateBundleLimitCandidates,
+			limit: maxCandidates, makeBundle: candidateBundleWithPackages,
+		},
+		{
+			name: "relations", kind: CandidateBundleLimitRelations,
+			limit: maxRelations, makeBundle: candidateBundleWithRelations,
+		},
+		{
+			name: "behavior anchors", kind: CandidateBundleLimitBehaviorAnchors,
+			limit: maxBehaviorAnchors, makeBundle: candidateBundleWithBehaviorAnchors,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := test.makeBundle(test.limit).Validate(); err != nil {
+				t.Fatalf("Validate(N=%d) error = %v", test.limit, err)
+			}
+			err := test.makeBundle(test.limit + 1).Validate()
+			var limitErr *CandidateBundleLimitError
+			if !errors.As(err, &limitErr) {
+				t.Fatalf("Validate(N+1=%d) error = %v, want CandidateBundleLimitError", test.limit+1, err)
+			}
+			if limitErr.Kind != test.kind || limitErr.Observed != test.limit+1 || limitErr.Limit != test.limit {
+				t.Fatalf("limit error = %#v", limitErr)
+			}
+		})
+	}
+}
+
+func TestCandidateBundleRemainingNumericLimitsAreTyped(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		kind     CandidateBundleLimitKind
+		observed int
+		limit    int
+		mutate   func(*CandidateBundle)
+	}{
+		{
+			name: "flows", kind: CandidateBundleLimitFlows,
+			observed: maxFlows + 1, limit: maxFlows,
+			mutate: func(bundle *CandidateBundle) { bundle.Flows = make([]Flow, maxFlows+1) },
+		},
+		{
+			name: "anchor bindings", kind: CandidateBundleLimitAnchorBindings,
+			observed: maxAnchorBindings + 1, limit: maxAnchorBindings,
+			mutate: func(bundle *CandidateBundle) {
+				bundle.AnchorBindings = make([]FlowAnchorBinding, maxAnchorBindings+1)
+			},
+		},
+		{
+			name: "research findings", kind: CandidateBundleLimitResearchFindings,
+			observed: maxResearchFindings + 1, limit: maxResearchFindings,
+			mutate: func(bundle *CandidateBundle) {
+				bundle.ResearchFindings = make([]ResearchInterpretation, maxResearchFindings+1)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			bundle := candidateBundleWithPackages(1)
+			test.mutate(&bundle)
+			err := bundle.Validate()
+			var limitErr *CandidateBundleLimitError
+			if !errors.As(err, &limitErr) {
+				t.Fatalf("Validate() error = %v, want CandidateBundleLimitError", err)
+			}
+			if limitErr.Kind != test.kind || limitErr.Observed != test.observed || limitErr.Limit != test.limit {
+				t.Fatalf("limit error = %#v", limitErr)
+			}
+		})
+	}
+}
+
 func TestLandscapePreservesTypedStructuralRelations(t *testing.T) {
 	t.Parallel()
 
@@ -485,7 +581,7 @@ func TestBundleRejectsConflictingScenarioDefinitions(t *testing.T) {
 	}
 }
 
-func TestApplyPreservesCandidatesOmittedByProposal(t *testing.T) {
+func TestApplyRejectsIncompleteMemberCoverageAtomically(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -502,18 +598,19 @@ func TestApplyPreservesCandidatesOmittedByProposal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if result.Fallback {
-		t.Fatal("Apply() replaced a usable partial proposal with the full fallback")
+	if !result.Fallback || result.ValidationOutcome != ValidationRejected {
+		t.Fatalf("partial proposal result = %#v, want rejected local landscape", result)
 	}
-	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_members_preserved") {
-		t.Fatalf("diagnostics = %#v, want omitted-members diagnostic", result.Diagnostics)
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.incomplete_member_coverage") {
+		t.Fatalf("diagnostics = %#v, want incomplete-coverage diagnostic", result.Diagnostics)
 	}
 	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
-		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
+		t.Fatalf("local fallback members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 	}
-	last := result.Subsystems[len(result.Subsystems)-1]
-	if last.Name != "Unassigned local evidence" || last.Category != SubsystemCategoryDiagnostic || len(last.Components) != 1 {
-		t.Fatalf("deterministic remainder = %#v", last)
+	for _, subsystem := range result.Subsystems {
+		if subsystem.Category == SubsystemCategoryDiagnostic {
+			t.Fatalf("rejected proposal created an accepted diagnostic remainder: %#v", subsystem)
+		}
 	}
 }
 
@@ -626,7 +723,7 @@ func TestModuleBaseNameIgnoresSemanticImportVersion(t *testing.T) {
 	}
 }
 
-func TestApplyPreservesOmittedProcessEntryMemberInUnassignedRemainder(t *testing.T) {
+func TestApplyRejectsOmittedProcessEntryWithIncompleteCoverage(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -656,9 +753,8 @@ func TestApplyPreservesOmittedProcessEntryMemberInUnassignedRemainder(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Fallback || result.ValidationOutcome != ValidationAccepted ||
-		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_process_entry_member") ||
-		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.omitted_members_preserved") {
+	if !result.Fallback || result.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.incomplete_member_coverage") {
 		t.Fatalf("process-entry omission result = %#v", result)
 	}
 	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
@@ -693,6 +789,14 @@ func TestApplyNormalizesKnownPackageOnlyGroundedComponent(t *testing.T) {
 				{
 					Name:      "Repository support",
 					MemberIDs: []MemberID{testMemberID(MemberPackage, "repo")},
+				},
+				{
+					Name: "Other exact members", MemberIDs: candidateIDsExcept(
+						bundle,
+						testMemberID(MemberEntrypoint, "backup-command"),
+						testMemberID(MemberPackage, "repo"),
+					),
+					Hypothesis: true,
 				},
 			},
 		}},
@@ -760,6 +864,73 @@ func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.
 			}
 		})
 	}
+}
+
+func candidateBundleWithPackages(count int) CandidateBundle {
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeLibraryFramework,
+		GroundingMode: GroundingPackages,
+		Candidates:    make([]Candidate, 0, count),
+	}
+	for index := 0; index < count; index++ {
+		packagePath := fmt.Sprintf("example.com/project/package-%03d", index)
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID:   MemberID{Kind: MemberPackage, Value: fmt.Sprintf("package-%03d", index)},
+			Name: packagePath,
+			Facts: []LocalFact{{
+				Kind: FactDeclaration, Value: packagePath, Certainty: evidence.CertaintyStatic,
+				Provenance: []evidence.Provenance{{
+					Provider: "fixture", Version: "v1", Operation: "package_declaration",
+				}},
+			}},
+		})
+	}
+	return bundle
+}
+
+func candidateBundleWithRelations(count int) CandidateBundle {
+	// Thirty-three exact package members provide 1,056 distinct directed
+	// witnesses, enough to exercise the 1,024-relation boundary without
+	// manufacturing duplicate relation identities.
+	bundle := candidateBundleWithPackages(33)
+	bundle.Relations = make([]LocalRelation, 0, count)
+	for from := 0; from < len(bundle.Candidates) && len(bundle.Relations) < count; from++ {
+		for to := 0; to < len(bundle.Candidates) && len(bundle.Relations) < count; to++ {
+			if from == to {
+				continue
+			}
+			bundle.Relations = append(bundle.Relations, LocalRelation{
+				ID:        fmt.Sprintf("relation-%04d", len(bundle.Relations)),
+				From:      bundle.Candidates[from].ID,
+				To:        bundle.Candidates[to].ID,
+				Kind:      StructuralRelationPackageImport,
+				Certainty: evidence.CertaintyStatic,
+				Provenance: []evidence.Provenance{{
+					Provider: "fixture", Version: "v1", Operation: "package_import",
+				}},
+				Scenarios: []ScenarioContext{{ID: "go-default", Name: "Default Go build"}},
+			})
+		}
+	}
+	return bundle
+}
+
+func candidateBundleWithBehaviorAnchors(count int) CandidateBundle {
+	bundle := candidateBundleWithPackages(1)
+	bundle.BehaviorAnchors = make([]BehaviorAnchor, 0, count)
+	for index := 0; index < count; index++ {
+		bundle.BehaviorAnchors = append(bundle.BehaviorAnchors, BehaviorAnchor{
+			ID: fmt.Sprintf("anchor-%03d", index), Kind: AnchorUnresolvedFrontier,
+			Label:       fmt.Sprintf("Exact local anchor %d", index),
+			Location:    evidence.Location{Path: "package/file.go", Line: index + 1, Column: 1},
+			Scenario:    ScenarioContext{ID: "go-default", Name: "Default Go build"},
+			Producer:    evidence.Provenance{Provider: "fixture", Version: "v1", Operation: "local_anchor"},
+			Certainty:   evidence.CertaintyStatic,
+			MemberIDs:   []MemberID{bundle.Candidates[0].ID},
+			Limitations: []string{"Static fixture evidence; runtime execution is not observed."},
+		})
+	}
+	return bundle
 }
 
 func landscapeTestBundle() CandidateBundle {
@@ -839,6 +1010,21 @@ func testFlowParticipation(flowID FlowID, path string, line int) FlowParticipati
 
 func testMemberID(kind MemberKind, value string) MemberID {
 	return MemberID{Kind: kind, Value: value}
+}
+
+func candidateIDsExcept(bundle CandidateBundle, excluded ...MemberID) []MemberID {
+	excludedSet := make(map[MemberID]struct{}, len(excluded))
+	for _, memberID := range excluded {
+		excludedSet[memberID] = struct{}{}
+	}
+	result := make([]MemberID, 0, len(bundle.Candidates)-len(excludedSet))
+	for _, candidate := range bundle.Candidates {
+		if _, skip := excludedSet[candidate.ID]; skip {
+			continue
+		}
+		result = append(result, candidate.ID)
+	}
+	return result
 }
 
 func testLocalFact(kind FactKind, value, path string, line int) LocalFact {
