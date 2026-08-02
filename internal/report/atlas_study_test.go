@@ -24,22 +24,27 @@ func TestBuildAtlasStudyInputUsesExactAtlasArchitectureAndSavedSource(t *testing
 		t.Fatalf("BuildAtlasStudyInput: %v", err)
 	}
 	if len(input.Surfaces) != 1 || input.Surfaces[0].ID != "surface-fixture-1" ||
-		input.Surfaces[0].Authority != "resolved" || len(input.ReadingTargets) != 4 {
+		input.Surfaces[0].Authority != "resolved" || len(input.ReadingTargets) != 3 {
 		t.Fatalf("exact Surface/source projection = %#v / %#v", input.Surfaces, input.ReadingTargets)
 	}
-	owners := map[atlasstudy.CanonicalRef]bool{}
-	authorities := map[atlasstudy.CanonicalRef]string{}
+	var entryTarget *atlasstudy.ReadingTarget
 	for _, target := range input.ReadingTargets {
-		owners[target.Owner] = true
-		authorities[target.Owner] = string(target.Authority)
+		if target.Owner != (atlasstudy.CanonicalRef{}) || target.Authority != repositoryatlas.AuthorityObserved ||
+			len(target.RelatedComponentIDs) != 1 || target.RelatedComponentIDs[0] != "component-fixture-app" ||
+			!slicesContainCanonicalRef(target.PrincipalRefs, atlasstudy.CanonicalRef{
+				Kind: atlasstudy.RefComponent, ID: "component-fixture-app",
+			}) {
+			t.Fatalf("locator associations = %#v", target)
+		}
+		if target.Location.Path == "cmd/app/main.go" {
+			targetCopy := target
+			entryTarget = &targetCopy
+		}
 	}
-	if !owners[atlasstudy.CanonicalRef{Kind: atlasstudy.RefSurface, ID: "surface-fixture-1"}] ||
-		!owners[atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-fixture-app"}] {
-		t.Fatalf("same-line Surface and Component owners = %#v", input.ReadingTargets)
-	}
-	if authorities[atlasstudy.CanonicalRef{Kind: atlasstudy.RefSurface, ID: "surface-fixture-1"}] != "resolved" ||
-		authorities[atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-fixture-app"}] != "inferred" {
-		t.Fatalf("same-line target authorities = %#v", authorities)
+	if entryTarget == nil || !slicesContainCanonicalRef(entryTarget.PrincipalRefs, atlasstudy.CanonicalRef{
+		Kind: atlasstudy.RefSurface, ID: "surface-fixture-1",
+	}) || entryTarget.Kind != atlasstudy.ReadingTargetEntrypoint {
+		t.Fatalf("same locator did not retain Surface and Component associations: %#v", entryTarget)
 	}
 	if len(input.Evidence) != 1 || input.Evidence[0].ID != "evidence-fixture-source" {
 		t.Fatalf("Atlas evidence projection = %#v", input.Evidence)
@@ -55,7 +60,11 @@ func TestBuildAtlasStudyInputUsesExactAtlasArchitectureAndSavedSource(t *testing
 	wire := product.WireJSON()
 	for _, private := range [][]byte{
 		[]byte(`cmd/app/main.go`),
+		[]byte(`internal/app/run.go`),
+		[]byte(`internal/app/result.go`),
 		[]byte(`example.com/fixture/cmd/app.main`),
+		[]byte(`example.com/fixture/internal/app.Run`),
+		[]byte(`example.com/fixture/internal/app.Result`),
 		[]byte(`"component-fixture-app"`),
 		[]byte(`"surface-fixture-1"`),
 	} {
@@ -83,12 +92,168 @@ func TestBuildAtlasStudyInputOmitsSurfaceWithoutExactAtlasEntity(t *testing.T) {
 		t.Fatalf("source target did not fall back to its exact component owner: %#v", input.ReadingTargets)
 	}
 	for _, target := range input.ReadingTargets {
-		if target.Owner != (atlasstudy.CanonicalRef{
-			Kind: atlasstudy.RefComponent, ID: "component-fixture-app",
-		}) {
-			t.Fatalf("unexpected unjoined owner: %#v", target)
+		if target.Owner != (atlasstudy.CanonicalRef{}) || len(target.PrincipalRefs) != 1 ||
+			target.PrincipalRefs[0] != (atlasstudy.CanonicalRef{
+				Kind: atlasstudy.RefComponent, ID: "component-fixture-app",
+			}) {
+			t.Fatalf("unexpected unjoined associations: %#v", target)
 		}
 	}
+}
+
+func TestBuildAtlasStudyInputDeduplicatesEquivalentLocatorAndOmitsConflict(t *testing.T) {
+	t.Run("equivalent saved source", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		data.UserSources = append(data.UserSources, data.UserSources[0])
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatalf("BuildAtlasStudyInput: %v", err)
+		}
+		if len(input.ReadingTargets) != 3 || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("equivalent source changed exact catalog: %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("benign broader overlap", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		data.UserSources = append(data.UserSources, atlasStudySourceRangeFixture(
+			t,
+			"cmd/app/main.go",
+			6,
+			8,
+			7,
+			"example.com/fixture/cmd/app.main",
+			[]string{"package main", "func main() {}", ""},
+		))
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatalf("BuildAtlasStudyInput: %v", err)
+		}
+		if len(input.ReadingTargets) != 3 || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("broader exact context changed reading locations: %#v", input.ReadingTargets)
+		}
+	})
+
+	t.Run("conflicting saved source", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		conflicting := atlasStudySourceFixture(
+			t,
+			data.UserSources[0].Path,
+			atlasStudySourceFocusLine(data.UserSources[0]),
+			data.UserSources[0].EnclosingSymbol,
+			"func main() { panic(\"conflicting saved state\") }",
+		)
+		data.UserSources = append(data.UserSources, conflicting)
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatalf("BuildAtlasStudyInput: %v", err)
+		}
+		if len(input.ReadingTargets) != 2 || AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("conflicting source locator remained model-visible: %#v", input.ReadingTargets)
+		}
+		for _, target := range input.ReadingTargets {
+			if target.Location.Path == data.UserSources[0].Path {
+				t.Fatalf("conflicted locator survived as reading target: %#v", target)
+			}
+		}
+	})
+}
+
+func TestBuildAtlasStudyInputKeepsOneLocatorWithPluralConceptualMembership(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	secondSubsystemID := componentmap.SubsystemID("subsystem-cross-cutting")
+	secondComponentID := componentmap.ComponentID("component-cross-cutting")
+	data.ArchitectureCanvas.Subsystems = append(data.ArchitectureCanvas.Subsystems, ArchitectureSubsystem{
+		ID: secondSubsystemID, Name: "Cross-cutting concerns",
+		ComponentIDs: []componentmap.ComponentID{secondComponentID},
+	})
+	data.ArchitectureCanvas.Components = append(data.ArchitectureCanvas.Components, ArchitectureComponent{
+		ID: secondComponentID, SubsystemID: secondSubsystemID, Name: "Startup policy",
+		Members: []componentmap.Candidate{{
+			ID: componentmap.MemberID{Kind: componentmap.MemberFile, Value: "member-cross-cutting"},
+			Facts: []componentmap.LocalFact{{
+				Kind: componentmap.FactRepositoryPath, Value: "cmd/app/main.go",
+				Location: &evidence.Location{Path: "cmd/app/main.go", Line: 7},
+			}},
+		}},
+	})
+
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("BuildAtlasStudyInput: %v", err)
+	}
+	var target *atlasstudy.ReadingTarget
+	for index := range input.ReadingTargets {
+		if input.ReadingTargets[index].Location.Path == "cmd/app/main.go" {
+			target = &input.ReadingTargets[index]
+			break
+		}
+	}
+	if target == nil || target.Owner != (atlasstudy.CanonicalRef{}) ||
+		!reflect.DeepEqual(target.RelatedComponentIDs, []string{
+			"component-cross-cutting", "component-fixture-app",
+		}) ||
+		!slicesContainCanonicalRef(target.PrincipalRefs, atlasstudy.CanonicalRef{
+			Kind: atlasstudy.RefComponent, ID: string(secondComponentID),
+		}) {
+		t.Fatalf("one exact locator lost plural conceptual membership: %#v", target)
+	}
+	if len(input.ReadingTargets) != 3 {
+		t.Fatalf("conceptual membership cloned reading location: %#v", input.ReadingTargets)
+	}
+}
+
+func TestBuildAtlasStudyInputOwnerRequiresOneExactProducerProof(t *testing.T) {
+	t.Run("one exact producer", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		data.ArchitectureCanvas.Surfaces[0].OwningComponentID = "component-fixture-app"
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatalf("BuildAtlasStudyInput: %v", err)
+		}
+		for _, target := range input.ReadingTargets {
+			if target.Location.Path == "cmd/app/main.go" && target.Owner != (atlasstudy.CanonicalRef{
+				Kind: atlasstudy.RefComponent, ID: "component-fixture-app",
+			}) {
+				t.Fatalf("exact Surface producer was not restored: %#v", target)
+			}
+		}
+	})
+
+	t.Run("conflicting exact producers", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		secondSubsystemID := componentmap.SubsystemID("subsystem-second")
+		secondComponentID := componentmap.ComponentID("component-second")
+		data.ArchitectureCanvas.Subsystems = append(data.ArchitectureCanvas.Subsystems, ArchitectureSubsystem{
+			ID: secondSubsystemID, Name: "Second", ComponentIDs: []componentmap.ComponentID{secondComponentID},
+		})
+		data.ArchitectureCanvas.Components = append(data.ArchitectureCanvas.Components, ArchitectureComponent{
+			ID: secondComponentID, SubsystemID: secondSubsystemID, Name: "Second component",
+		})
+		data.ArchitectureCanvas.Surfaces[0].OwningComponentID = "component-fixture-app"
+		data.ArchitectureCanvas.Flows = []ArchitectureFlow{{
+			ID: "flow-conflicting-owner", Name: "Conflicting owner proof",
+			Steps: []ArchitectureFlowStep{{
+				ID: "step-conflicting-owner", ComponentID: secondComponentID,
+				Location: &evidence.Location{Path: "cmd/app/main.go", Line: 7},
+			}},
+		}}
+		input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+		if err != nil {
+			t.Fatalf("BuildAtlasStudyInput: %v", err)
+		}
+		for _, target := range input.ReadingTargets {
+			if target.Location.Path != "cmd/app/main.go" {
+				continue
+			}
+			if target.Owner != (atlasstudy.CanonicalRef{}) ||
+				!slicesContainCanonicalRef(target.PrincipalRefs, atlasstudy.CanonicalRef{
+					Kind: atlasstudy.RefComponent, ID: string(secondComponentID),
+				}) {
+				t.Fatalf("conflicting exact producer proof chose an owner: %#v", target)
+			}
+		}
+	})
 }
 
 func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
@@ -114,6 +279,46 @@ func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 	if _, _, err := readAtlasStudyReportProduct(runDir, data); err == nil {
 		t.Fatal("request bound to prior report input was accepted after purpose tamper")
 	}
+}
+
+func TestProjectAtlasStudyShapeSourceRequiresOneExactOwnedLocator(t *testing.T) {
+	t.Run("one exact producer location", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		data.ArchitectureCanvas.Surfaces[0].OwningComponentID = "component-fixture-app"
+		runDir := t.TempDir()
+		writeAcceptedAtlasStudyArtifacts(t, runDir, data)
+		_, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+		if err != nil {
+			t.Fatalf("read accepted product: %v", err)
+		}
+		if len(studyMap.Shape) != 1 || studyMap.Shape[0].CodeLocation == nil ||
+			studyMap.Shape[0].Source == nil ||
+			studyMap.Shape[0].CodeLocation.Path != "cmd/app/main.go" {
+			t.Fatalf("sole exact owner was not projected: %#v", studyMap.Shape)
+		}
+	})
+
+	t.Run("multiple exact producer locations", func(t *testing.T) {
+		data := atlasStudyReportFixture(t)
+		data.ArchitectureCanvas.Surfaces[0].OwningComponentID = "component-fixture-app"
+		data.ArchitectureCanvas.Flows = []ArchitectureFlow{{
+			ID: "flow-second-owned-locator", Name: "Second exact owned locator",
+			Steps: []ArchitectureFlowStep{{
+				ID: "step-second-owned-locator", ComponentID: "component-fixture-app",
+				Location: &evidence.Location{Path: "internal/app/run.go", Line: 11},
+			}},
+		}}
+		runDir := t.TempDir()
+		writeAcceptedAtlasStudyArtifacts(t, runDir, data)
+		_, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+		if err != nil {
+			t.Fatalf("read accepted product: %v", err)
+		}
+		if len(studyMap.Shape) != 1 || studyMap.Shape[0].CodeLocation != nil ||
+			studyMap.Shape[0].Source != nil {
+			t.Fatalf("conceptual Shape selected an arbitrary owned source: %#v", studyMap.Shape)
+		}
+	})
 }
 
 func TestReadAtlasStudyReportProductTerminalStateMatrix(t *testing.T) {
@@ -199,7 +404,7 @@ func TestRunManifestVerifiesAtlasStudyProjectionAndTampering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal report: %v", err)
 	}
-	manifest := RunManifest{MaterialInputs: MaterialInputs{
+	manifest := RunManifest{Version: CurrentRunManifestVersion, MaterialInputs: MaterialInputs{
 		AtlasStudyRequestSHA256: manifestSHA256(mustReadAtlasStudyFile(t, runDir, atlasstudy.RequestArtifactFilename)),
 		AtlasStudyResultSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, atlasstudy.ResultArtifactFilename)),
 		AtlasStudyStatusSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, atlasstudy.StatusArtifactFilename)),
@@ -228,7 +433,7 @@ func TestRunManifestVerifiesAtlasStudyProjectionAndTampering(t *testing.T) {
 	}
 }
 
-func TestRunManifestRequiresCalledAtlasStudyAfterAcceptedArchitecture(t *testing.T) {
+func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichment(t *testing.T) {
 	atlas := repositoryAtlasWithoutStartup()
 	atlasJSON, err := repositoryatlas.CanonicalJSON(atlas)
 	if err != nil {
@@ -238,11 +443,10 @@ func TestRunManifestRequiresCalledAtlasStudyAfterAcceptedArchitecture(t *testing
 	reportJSON, err := json.Marshal(&ReportData{
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
 		Navigator: &navigatorFixture.projection,
-		ArchitectureSynthesis: func() *ArchitectureSynthesisStatus {
-			status := architectureSynthesisV4AcceptedFixture()
-			status.ArchitectureSource = string(componentmap.SourceValidatedModel)
-			return &status
-		}(),
+		AtlasStudy: &AtlasStudyReportStatus{
+			Version: atlasstudy.Version, State: atlasstudy.ProductStateUnavailable,
+			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -253,9 +457,8 @@ func TestRunManifestRequiresCalledAtlasStudyAfterAcceptedArchitecture(t *testing
 	manifest.MaterialInputs.RepositoryAtlasSHA256 = manifestSHA256(atlasJSON)
 	manifest.MaterialInputs.NavigatorResultSHA256 = manifestSHA256(navigatorFixture.result)
 	manifest.MaterialInputs.NavigatorStatusSHA256 = manifestSHA256(navigatorFixture.status)
-	if err := manifest.VerifyReportJSON(reportJSON); err == nil ||
-		!strings.Contains(err.Error(), "accepted Architecture requires") {
-		t.Fatalf("missing final Atlas Study error = %v", err)
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		t.Fatalf("insufficient exact Study catalog report rejected: %v", err)
 	}
 }
 
@@ -347,8 +550,10 @@ func writeAcceptedAtlasStudyArtifacts(t *testing.T, runDir string, data *ReportD
 		if object.Kind == atlasstudy.RefComponent && object.CanonicalID == "component-fixture-app" {
 			componentRef = object.Ref
 		}
-		if object.Kind == atlasstudy.RefReadingTarget && object.Owner != nil &&
-			object.Owner.Kind == atlasstudy.RefComponent && object.Owner.ID == "component-fixture-app" {
+		if object.Kind == atlasstudy.RefReadingTarget &&
+			slicesContainCanonicalRef(object.PrincipalRefs, atlasstudy.CanonicalRef{
+				Kind: atlasstudy.RefComponent, ID: "component-fixture-app",
+			}) {
 			targetRefs = append(targetRefs, object.Ref)
 		}
 	}
@@ -403,6 +608,15 @@ func writeAcceptedAtlasStudyArtifacts(t *testing.T, runDir string, data *ReportD
 		t.Fatalf("write result: %v", err)
 	}
 	writeAtlasStudyStatus(t, runDir, status)
+}
+
+func slicesContainCanonicalRef(values []atlasstudy.CanonicalRef, want atlasstudy.CanonicalRef) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func writeAtlasStudyRequest(t *testing.T, runDir string, product atlasstudy.Product) {
@@ -533,6 +747,42 @@ func atlasStudySourceFixture(
 	source.PresentationSHA256 = sourceSnippetPresentationSHA(source)
 	if err := source.Validate(); err != nil {
 		t.Fatalf("source fixture: %v", err)
+	}
+	return source
+}
+
+func atlasStudySourceRangeFixture(
+	t *testing.T,
+	sourcePath string,
+	startLine int,
+	endLine int,
+	highlightLine int,
+	symbol string,
+	content []string,
+) SourceSnippet {
+	t.Helper()
+	if len(content) != endLine-startLine+1 {
+		t.Fatalf("range fixture lines = %d, want %d", len(content), endLine-startLine+1)
+	}
+	lines := make([]SourceSnippetLine, 0, len(content))
+	for index, text := range content {
+		line := startLine + index
+		lines = append(lines, SourceSnippetLine{
+			Line: line, Text: text, Highlight: line == highlightLine,
+		})
+	}
+	source := SourceSnippet{
+		Path: sourcePath, Language: "go", EnclosingSymbol: symbol,
+		StartLine: startLine, EndLine: endLine,
+		HighlightRanges: []SourceHighlight{{StartLine: highlightLine, EndLine: highlightLine}},
+		Content:         strings.Join(content, "\n"),
+		Lines:           lines,
+		ContentSHA256:   sourceLinesSHA256(content),
+		Role:            "primary", SourceComplete: true,
+	}
+	source.PresentationSHA256 = sourceSnippetPresentationSHA(source)
+	if err := source.Validate(); err != nil {
+		t.Fatalf("range source fixture: %v", err)
 	}
 	return source
 }

@@ -66,6 +66,9 @@ func TestApplyKeepsComponentIdentityAcrossRenameAndReorder(t *testing.T) {
 	if firstIDs["file:repo-file,package:repo"] == "" {
 		t.Fatalf("component id is missing for the reordered two-member component: %#v", firstIDs)
 	}
+	if !reflect.DeepEqual(first.ConceptualMemberships, second.ConceptualMemberships) {
+		t.Fatalf("canonical conceptual memberships changed after reorder:\nfirst:  %#v\nsecond: %#v", first.ConceptualMemberships, second.ConceptualMemberships)
+	}
 }
 
 func TestApplyRejectsUnknownMemberWithoutChangingLocalEvidence(t *testing.T) {
@@ -140,7 +143,7 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsConflictingMembership(t *testing.T) {
+func TestApplyAcceptsManyToManyConceptualMembership(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -150,7 +153,7 @@ func TestApplyRejectsConflictingMembership(t *testing.T) {
 		Subsystems: []ProposedSubsystem{{
 			Name: "Repository",
 			Components: []ProposedComponent{
-				{Name: "First", MemberIDs: []MemberID{packageID}},
+				{Name: "First", MemberIDs: []MemberID{packageID, bundle.Candidates[0].ID}},
 				{Name: "Repeated", MemberIDs: []MemberID{packageID}},
 			},
 		}},
@@ -158,11 +161,39 @@ func TestApplyRejectsConflictingMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if !result.Fallback || result.FallbackReason != FallbackRejectedOwnership || result.ValidationOutcome != ValidationRejected {
-		t.Fatalf("duplicate placement result = %#v", result)
+	if result.Fallback || result.ValidationOutcome == ValidationRejected {
+		t.Fatalf("many-to-many placement result = %#v", result)
 	}
-	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.conflicting_membership") {
-		t.Fatalf("diagnostics = %#v, want conflicting ownership", result.Diagnostics)
+	count := 0
+	for _, membership := range result.ConceptualMemberships {
+		if membership.MemberID == packageID {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Fatalf("shared member relation count = %d, want 2: %#v", count, result.ConceptualMemberships)
+	}
+}
+
+func TestApplyRejectsDuplicateMemberWithinOneComponent(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	memberID := bundle.Candidates[0].ID
+	result, err := Apply(bundle, Proposal{
+		Version: ProposalVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Repository",
+			Components: []ProposedComponent{{
+				Name: "Repeated", MemberIDs: []MemberID{memberID, memberID},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_member_id") {
+		t.Fatalf("same-component duplicate was not rejected: %#v", result)
 	}
 }
 
@@ -269,6 +300,94 @@ func TestApplyBoundsAndValidatesProposedMemberIDs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestApplyBoundsManyToManyMembershipIndependentlyFromCandidates(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	memberID := bundle.Candidates[0].ID
+	subsystems := make([]ProposedSubsystem, maxConceptualMembershipsPerMember+1)
+	for index := range subsystems {
+		subsystems[index] = ProposedSubsystem{
+			Name: fmt.Sprintf("Cross-cut %d", index),
+			Components: []ProposedComponent{{
+				Name: fmt.Sprintf("Participation %d", index), MemberIDs: []MemberID{memberID},
+			}},
+		}
+	}
+	result, err := Apply(bundle, Proposal{
+		Version: ProposalVersion, Subsystems: subsystems,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.member_participation_limit_exceeded") {
+		t.Fatalf("per-member conceptual bound did not fail closed: %#v", result)
+	}
+
+	large := landscapeTestBundle()
+	large.Candidates = nil
+	large.BehaviorAnchors = nil
+	large.Relations = nil
+	large.AnchorBindings = nil
+	for index := 0; index < maxCandidates; index++ {
+		id := MemberID{Kind: MemberFile, Value: fmt.Sprintf("bounded-member-%03d", index)}
+		large.Candidates = append(large.Candidates, Candidate{
+			ID: id, Name: fmt.Sprintf("member-%03d.go", index),
+			Facts: []LocalFact{testLocalFact(FactRepositoryPath, fmt.Sprintf("member-%03d.go", index), fmt.Sprintf("member-%03d.go", index), 1)},
+		})
+	}
+	components := make([]ProposedComponent, 5)
+	for index := range components {
+		members := make([]MemberID, len(large.Candidates))
+		for candidateIndex, candidate := range large.Candidates {
+			members[candidateIndex] = candidate.ID
+		}
+		components[index] = ProposedComponent{Name: fmt.Sprintf("Cross-cut %d", index), MemberIDs: members}
+	}
+	components[len(components)-1].MemberIDs = components[len(components)-1].MemberIDs[:1]
+	result, err = Apply(large, Proposal{
+		Version:    ProposalVersion,
+		Subsystems: []ProposedSubsystem{{Name: "Repository", Components: components}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.membership_limit_exceeded") {
+		t.Fatalf("total conceptual membership bound did not fail closed: %#v", result.Diagnostics)
+	}
+}
+
+func TestApplyRejectsRawParticipationLimitBeforeComponentNormalization(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	memberID := bundle.Candidates[0].ID
+	components := make([]ProposedComponent, maxConceptualMembershipsPerMember+1)
+	for index := range components {
+		components[index] = ProposedComponent{
+			Name:      fmt.Sprintf("Cross-cut %d", index),
+			MemberIDs: []MemberID{memberID},
+		}
+	}
+	result, err := Apply(bundle, Proposal{
+		Version: ProposalVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name:       "Repository",
+			Components: components,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Fallback || result.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.member_participation_limit_exceeded") {
+		t.Fatalf("raw per-member limit was hidden by component normalization: %#v", result)
+	}
+	if len(result.Normalizations) != 0 {
+		t.Fatalf("rejected raw membership unexpectedly recorded normalization: %#v", result.Normalizations)
 	}
 }
 

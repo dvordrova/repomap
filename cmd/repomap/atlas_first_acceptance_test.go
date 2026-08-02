@@ -48,7 +48,7 @@ type atlasFirstAcceptanceProvider struct {
 }
 
 func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T) {
-	repo := navigatorAcceptanceRepository(t)
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
 		includeBadStudySibling: true,
@@ -65,7 +65,7 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 		t.Fatalf("Navigator report = %#v, want selected recommendation", data.Navigator)
 	}
 	assertNavigatorAcceptanceSemanticMinimum(t, data)
-	assertNavigatorAcceptanceRequestArtifact(t, runDir)
+	assertAtlasFirstNavigatorRequestArtifact(t, runDir, data)
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data, 1)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
@@ -98,6 +98,39 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 		len(result.Diagnostics.Issues) != 1 ||
 		result.Diagnostics.Issues[0].Code != atlasstudy.IssueUnknownRef {
 		t.Fatalf("invalid sibling did not preserve valid Brief/route: %#v", result.Diagnostics)
+	}
+}
+
+func assertAtlasFirstNavigatorRequestArtifact(
+	t *testing.T,
+	runDir string,
+	data *report.ReportData,
+) {
+	t.Helper()
+	if data == nil || data.RepositoryAtlas == nil || data.Navigator == nil ||
+		data.Navigator.Recommendation == nil {
+		t.Fatal("selected Navigator report substrate is absent")
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, navigator.RequestArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := navigator.DecodeRequestRecord(raw)
+	if err != nil {
+		t.Fatalf("DecodeRequestRecord: %v", err)
+	}
+	if err := navigator.ValidateRequestRecordAgainstAtlas(record, *data.RepositoryAtlas); err != nil {
+		t.Fatalf("Navigator request does not match the exact persisted Atlas: %v", err)
+	}
+	found := false
+	for _, action := range record.Actions {
+		if action.Key == data.Navigator.Recommendation.Key {
+			found = reflect.DeepEqual(action, *data.Navigator.Recommendation)
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("selected recommendation is absent from exact request artifact: %#v", record.Actions)
 	}
 }
 
@@ -136,15 +169,15 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 	assertNoLegacyAtlasFirstArtifacts(t, runDir)
 }
 
-func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndSkipsStudy(t *testing.T) {
-	repo := navigatorAcceptanceRepository(t)
+func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t *testing.T) {
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_library")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
 		rejectArchitecture: true,
 	}
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
-	provider.assertStages(t, atlasFirstStageNavigator, atlasFirstStageArchitecture)
+	provider.assertStages(t, atlasFirstStageArchitecture, atlasFirstStageStudy)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
 		!data.ArchitectureSynthesis.ProposalRejected ||
@@ -157,43 +190,40 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndSkipsStudy(t
 		len(data.ArchitectureCanvas.Components) == 0 {
 		t.Fatalf("rejected enrichment erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
-	if data.AtlasStudy == nil ||
-		data.AtlasStudy.State != atlasstudy.ProductStateUnavailable ||
-		data.AtlasStudy.UnavailableCode != report.AtlasStudyUnavailableArchitectureEnrichment ||
-		data.StudyMap != nil {
-		t.Fatalf("rejected Architecture Study state = %#v / %#v", data.AtlasStudy, data.StudyMap)
-	}
+	assertAtlasFirstAcceptedStudy(t, data, 1)
 	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
-		debugdump.SemanticStageNavigator:    "accepted",
+		debugdump.SemanticStageNavigator:    "empty",
 		debugdump.SemanticStageArchitecture: "rejected",
-		debugdump.SemanticStageAtlasStudy:   "not_called",
+		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
 	assertAtlasFirstSemanticStages(t, runDir,
-		debugdump.SemanticStageNavigator,
 		debugdump.SemanticStageArchitecture,
+		debugdump.SemanticStageAtlasStudy,
 	)
 	if _, err := os.Stat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("rejected Architecture persisted enrichment: %v", err)
 	}
 	for _, name := range []string{
+		navigator.StatusArtifactFilename,
+		navigator.RecordArtifactFilename,
+		report.ArchitectureSynthesisStatusFile,
 		atlasstudy.RequestArtifactFilename,
 		atlasstudy.ResultArtifactFilename,
 		atlasstudy.StatusArtifactFilename,
+		"report.json",
+		"report.html",
+		report.RunManifestFilename,
 	} {
-		if _, err := os.Stat(filepath.Join(runDir, name)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("rejected Architecture called/persisted Study artifact %s: %v", name, err)
+		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
+			t.Fatalf("rejected enrichment run missing %s: %v", name, err)
 		}
 	}
-	if manifest.MaterialInputs.AtlasStudyRequestSHA256 != "" ||
-		manifest.MaterialInputs.AtlasStudyResultSHA256 != "" ||
-		manifest.MaterialInputs.AtlasStudyStatusSHA256 != "" {
-		t.Fatalf("rejected Architecture manifest bound Atlas Study: %#v", manifest.MaterialInputs)
-	}
+	assertAtlasFirstAcceptedManifest(t, manifest, false)
 	assertNoLegacyAtlasFirstArtifacts(t, runDir)
 }
 
 func TestRunDefaultAtlasFirstNavigatorFailureDoesNotGateArchitectureOrStudy(t *testing.T) {
-	repo := navigatorAcceptanceRepository(t)
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
 		rejectNavigator: true,
@@ -224,7 +254,7 @@ func TestRunDefaultAtlasFirstNavigatorFailureDoesNotGateArchitectureOrStudy(t *t
 }
 
 func TestRunDefaultAtlasFirstNavigatorProviderFailureDoesNotGateArchitectureOrStudy(t *testing.T) {
-	repo := navigatorAcceptanceRepository(t)
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
 		failNavigatorCall: true,
@@ -273,14 +303,14 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 	}
 	if data.AtlasStudy == nil ||
 		data.AtlasStudy.State != atlasstudy.ProductStateUnavailable ||
-		data.AtlasStudy.UnavailableCode != report.AtlasStudyUnavailableArchitectureEnrichment ||
+		data.AtlasStudy.UnavailableCode != report.AtlasStudyUnavailableInsufficientCatalog ||
 		data.StudyMap != nil {
 		t.Fatalf("provider-failed Architecture Study state = %#v / %#v", data.AtlasStudy, data.StudyMap)
 	}
 	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
 		debugdump.SemanticStageNavigator:    "accepted",
 		debugdump.SemanticStageArchitecture: "failed",
-		debugdump.SemanticStageAtlasStudy:   "not_called",
+		debugdump.SemanticStageAtlasStudy:   "unavailable",
 	})
 }
 
@@ -359,7 +389,7 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 		if provider.rejectNavigator {
 			response, err = atlasFirstAcceptanceRejectedNavigator(combined)
 		} else {
-			response = navigatorAcceptanceFixture(provider.t, "provider_selected.json")
+			response, err = atlasFirstAcceptanceSelectedNavigator(combined)
 		}
 	case atlasFirstStageArchitecture:
 		response, err = atlasFirstAcceptanceArchitectureResponse(combined, provider.rejectArchitecture)
@@ -379,6 +409,55 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	_, _ = writer.Write(response)
+}
+
+func atlasFirstAcceptanceSelectedNavigator(combined string) ([]byte, error) {
+	const marker = "Answer the exact product question using only this request-local projection:\n"
+	index := strings.LastIndex(combined, marker)
+	if index < 0 {
+		return nil, fmt.Errorf("Navigator request marker is absent")
+	}
+	var wire struct {
+		Version      int    `json:"version"`
+		CatalogRef   string `json:"catalog_ref"`
+		DirectTrails []struct {
+			Ref          string   `json:"ref"`
+			SourceRef    string   `json:"source_ref"`
+			TargetRef    string   `json:"target_ref"`
+			EvidenceRefs []string `json:"evidence_refs"`
+		} `json:"direct_trails"`
+		Actions []struct {
+			Ref       string `json:"ref"`
+			TargetRef string `json:"target_ref"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal([]byte(combined[index+len(marker):]), &wire); err != nil {
+		return nil, fmt.Errorf("decode Navigator wire: %w", err)
+	}
+	if len(wire.Actions) == 0 {
+		return nil, fmt.Errorf("Navigator wire has no advertised action")
+	}
+	action := wire.Actions[0]
+	for _, trail := range wire.DirectTrails {
+		if trail.SourceRef != action.TargetRef {
+			continue
+		}
+		content, err := json.Marshal(map[string]any{
+			"version":           wire.Version,
+			"catalog_ref":       wire.CatalogRef,
+			"entity_refs":       []string{trail.SourceRef, trail.TargetRef},
+			"trail_refs":        []string{trail.Ref},
+			"intersection_refs": []string{},
+			"evidence_refs":     trail.EvidenceRefs,
+			"gap_refs":          []string{},
+			"action_refs":       []string{action.Ref},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return atlasFirstAcceptanceCompletion(content, 211, 31), nil
+	}
+	return nil, fmt.Errorf("Navigator action %q has no matching direct trail", action.Ref)
 }
 
 func atlasFirstAcceptanceRequestStage(
@@ -492,8 +571,8 @@ func atlasFirstAcceptanceStudyResponse(
 			ReadingTargetRefs []string `json:"reading_target_refs"`
 		} `json:"surfaces"`
 		ReadingTargets []struct {
-			Ref      string `json:"ref"`
-			OwnerRef string `json:"owner_ref"`
+			Ref           string   `json:"ref"`
+			PrincipalRefs []string `json:"principal_refs"`
 		} `json:"reading_targets"`
 	}
 	if err := json.Unmarshal([]byte(combined[start:start+end]), &wire); err != nil {
@@ -503,12 +582,12 @@ func atlasFirstAcceptanceStudyResponse(
 		return nil, fmt.Errorf("Atlas Study wire has no component")
 	}
 	componentRef := wire.Components[0].Ref
-	knownOwners := make(map[string]struct{}, len(wire.Components)+len(wire.Surfaces))
+	knownPrincipals := make(map[string]struct{}, len(wire.Components)+len(wire.Surfaces))
 	for _, component := range wire.Components {
-		knownOwners[component.Ref] = struct{}{}
+		knownPrincipals[component.Ref] = struct{}{}
 	}
 	for _, surface := range wire.Surfaces {
-		knownOwners[surface.Ref] = struct{}{}
+		knownPrincipals[surface.Ref] = struct{}{}
 	}
 	var targetRefs []string
 	var principalRefs []string
@@ -522,14 +601,21 @@ func atlasFirstAcceptanceStudyResponse(
 	}
 	addPrincipal(componentRef)
 	for _, target := range wire.ReadingTargets {
-		if _, known := knownOwners[target.OwnerRef]; !known {
+		targetPrincipal := ""
+		for _, principal := range target.PrincipalRefs {
+			if _, known := knownPrincipals[principal]; known {
+				targetPrincipal = principal
+				break
+			}
+		}
+		if targetPrincipal == "" {
 			continue
 		}
 		if len(targetRefs) == 3 {
 			break
 		}
 		targetRefs = append(targetRefs, target.Ref)
-		addPrincipal(target.OwnerRef)
+		addPrincipal(targetPrincipal)
 	}
 	if len(targetRefs) < 3 {
 		return nil, fmt.Errorf(

@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	Version       = 1
-	PromptVersion = "atlas-study-prompt-v2"
+	Version       = 2
+	PromptVersion = "atlas-study-prompt-v3"
 
-	RequestArtifactFilename = "atlas_study_request.v1.json"
-	ResultArtifactFilename  = "atlas_study_result.v1.json"
-	StatusArtifactFilename  = "atlas_study_status.v1.json"
+	RequestArtifactFilename = "atlas_study_request.v2.json"
+	ResultArtifactFilename  = "atlas_study_result.v2.json"
+	StatusArtifactFilename  = "atlas_study_status.v2.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
@@ -92,15 +92,17 @@ type CanonicalRef struct {
 // a request-local ref to one canonical identity and, for reading targets, the
 // exact source locator needed by the report source drawer.
 type CatalogObject struct {
-	Ref         string                    `json:"ref"`
-	Kind        RefKind                   `json:"kind"`
-	CanonicalID string                    `json:"canonical_id"`
-	Label       string                    `json:"label,omitempty"`
-	Fact        string                    `json:"fact,omitempty"`
-	Authority   repositoryatlas.Authority `json:"authority"`
-	Owner       *CanonicalRef             `json:"owner,omitempty"`
-	Location    *evidence.Location        `json:"location,omitempty"`
-	Symbol      string                    `json:"symbol,omitempty"`
+	Ref                  string                    `json:"ref"`
+	Kind                 RefKind                   `json:"kind"`
+	CanonicalID          string                    `json:"canonical_id"`
+	Label                string                    `json:"label,omitempty"`
+	Fact                 string                    `json:"fact,omitempty"`
+	Authority            repositoryatlas.Authority `json:"authority"`
+	Owner                *CanonicalRef             `json:"owner,omitempty"`
+	RelatedComponentRefs []CanonicalRef            `json:"related_component_refs,omitempty"`
+	PrincipalRefs        []CanonicalRef            `json:"principal_refs,omitempty"`
+	Location             *evidence.Location        `json:"location,omitempty"`
+	Symbol               string                    `json:"symbol,omitempty"`
 }
 
 type ArchitectureInput struct {
@@ -162,14 +164,16 @@ func (kind ReadingTargetKind) Valid() bool {
 // ReadingTarget retains the exact locator only in the private request
 // artifact. The model-visible wire contains Label, Kind, Authority and Fact.
 type ReadingTarget struct {
-	ID        string                    `json:"id"`
-	Owner     CanonicalRef              `json:"owner"`
-	Kind      ReadingTargetKind         `json:"kind"`
-	Label     string                    `json:"label"`
-	Fact      string                    `json:"fact"`
-	Authority repositoryatlas.Authority `json:"authority"`
-	Location  evidence.Location         `json:"location"`
-	Symbol    string                    `json:"symbol,omitempty"`
+	ID                  string                    `json:"id"`
+	Owner               CanonicalRef              `json:"owner,omitempty"`
+	RelatedComponentIDs []string                  `json:"related_component_ids,omitempty"`
+	PrincipalRefs       []CanonicalRef            `json:"principal_refs"`
+	Kind                ReadingTargetKind         `json:"kind"`
+	Label               string                    `json:"label"`
+	Fact                string                    `json:"fact"`
+	Authority           repositoryatlas.Authority `json:"authority"`
+	Location            evidence.Location         `json:"location"`
+	Symbol              string                    `json:"symbol,omitempty"`
 }
 
 type EvidenceFact struct {
@@ -323,27 +327,27 @@ type Direction struct {
 type DirectionIssueCode string
 
 const (
-	IssueUnrequestedOutput      DirectionIssueCode = "unrequested_output"
-	IssueDecodeCandidate        DirectionIssueCode = "decode_candidate"
-	IssueInvalidQuestion        DirectionIssueCode = "invalid_question"
-	IssueInvalidWhy             DirectionIssueCode = "invalid_why"
-	IssueInvalidOutcome         DirectionIssueCode = "invalid_outcome"
-	IssueInvalidTargetJob       DirectionIssueCode = "invalid_target_job"
-	IssueInvalidLearningStage   DirectionIssueCode = "invalid_learning_stage"
-	IssueInvalidPrincipalCount  DirectionIssueCode = "invalid_principal_count"
-	IssueDuplicatePrincipalRef  DirectionIssueCode = "duplicate_principal_ref"
-	IssueRawCanonicalRef        DirectionIssueCode = "raw_canonical_ref"
-	IssueUnknownRef             DirectionIssueCode = "unknown_ref"
-	IssueWrongKindPrincipalRef  DirectionIssueCode = "wrong_kind_principal_ref"
-	IssueComponentMissing       DirectionIssueCode = "component_principal_missing"
-	IssueInvalidReadingCount    DirectionIssueCode = "invalid_reading_count"
-	IssueDuplicateReadingTarget DirectionIssueCode = "duplicate_reading_target"
-	IssueWrongKindReadingRef    DirectionIssueCode = "wrong_kind_reading_ref"
-	IssueReadingOwnerMissing    DirectionIssueCode = "reading_owner_not_principal"
-	IssueInvalidReadingLabel    DirectionIssueCode = "invalid_reading_label"
-	IssueInvalidReadingCopy     DirectionIssueCode = "invalid_reading_copy"
-	IssueDuplicateDirection     DirectionIssueCode = "duplicate_direction"
-	IssueInvalidRef             DirectionIssueCode = "invalid_ref"
+	IssueUnrequestedOutput       DirectionIssueCode = "unrequested_output"
+	IssueDecodeCandidate         DirectionIssueCode = "decode_candidate"
+	IssueInvalidQuestion         DirectionIssueCode = "invalid_question"
+	IssueInvalidWhy              DirectionIssueCode = "invalid_why"
+	IssueInvalidOutcome          DirectionIssueCode = "invalid_outcome"
+	IssueInvalidTargetJob        DirectionIssueCode = "invalid_target_job"
+	IssueInvalidLearningStage    DirectionIssueCode = "invalid_learning_stage"
+	IssueInvalidPrincipalCount   DirectionIssueCode = "invalid_principal_count"
+	IssueDuplicatePrincipalRef   DirectionIssueCode = "duplicate_principal_ref"
+	IssueRawCanonicalRef         DirectionIssueCode = "raw_canonical_ref"
+	IssueUnknownRef              DirectionIssueCode = "unknown_ref"
+	IssueWrongKindPrincipalRef   DirectionIssueCode = "wrong_kind_principal_ref"
+	IssueComponentMissing        DirectionIssueCode = "component_principal_missing"
+	IssueInvalidReadingCount     DirectionIssueCode = "invalid_reading_count"
+	IssueDuplicateReadingTarget  DirectionIssueCode = "duplicate_reading_target"
+	IssueWrongKindReadingRef     DirectionIssueCode = "wrong_kind_reading_ref"
+	IssueReadingPrincipalMissing DirectionIssueCode = "reading_principal_not_selected"
+	IssueInvalidReadingLabel     DirectionIssueCode = "invalid_reading_label"
+	IssueInvalidReadingCopy      DirectionIssueCode = "invalid_reading_copy"
+	IssueDuplicateDirection      DirectionIssueCode = "duplicate_direction"
+	IssueInvalidRef              DirectionIssueCode = "invalid_ref"
 )
 
 func (code DirectionIssueCode) Valid() bool {
@@ -354,7 +358,7 @@ func (code DirectionIssueCode) Valid() bool {
 		IssueDuplicatePrincipalRef, IssueRawCanonicalRef, IssueUnknownRef,
 		IssueWrongKindPrincipalRef, IssueComponentMissing,
 		IssueInvalidReadingCount, IssueDuplicateReadingTarget,
-		IssueWrongKindReadingRef, IssueReadingOwnerMissing,
+		IssueWrongKindReadingRef, IssueReadingPrincipalMissing,
 		IssueInvalidReadingLabel, IssueInvalidReadingCopy,
 		IssueDuplicateDirection, IssueInvalidRef:
 		return true

@@ -93,8 +93,50 @@ func TestBuildSemanticSearchIndexGroundsTargetsAndAliases(t *testing.T) {
 }
 
 func TestSemanticArtifactSearchIndexVersion(t *testing.T) {
-	if SemanticSearchIndexVersion != 5 {
-		t.Fatalf("SemanticSearchIndexVersion = %d, want 5 for paved path targets", SemanticSearchIndexVersion)
+	if SemanticSearchIndexVersion != 6 {
+		t.Fatalf("SemanticSearchIndexVersion = %d, want 6 for owner-independent exact member targets", SemanticSearchIndexVersion)
+	}
+}
+
+func TestSemanticSearchRejectsHistoricalArchitectureCanvas(t *testing.T) {
+	t.Parallel()
+
+	data := semanticSearchTestReport()
+	data.ArchitectureCanvas.Version = ArchitectureCanvasVersion - 1
+	if _, err := BuildSemanticSearchIndex(data); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
+		t.Fatalf("historical canvas build error = %v", err)
+	}
+	index := SemanticSearchIndex{Version: SemanticSearchIndexVersion}
+	if err := index.Validate(data); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
+		t.Fatalf("historical canvas validation error = %v", err)
+	}
+}
+
+func TestSemanticSearchV6RejectsConceptualComponentAsMemberTarget(t *testing.T) {
+	t.Parallel()
+
+	data := semanticSearchTestReport()
+	index, err := BuildSemanticSearchIndex(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberIndex := -1
+	for itemIndex := range index.Items {
+		if index.Items[itemIndex].Kind == SemanticSearchKindMember {
+			memberIndex = itemIndex
+			break
+		}
+	}
+	if memberIndex < 0 {
+		t.Fatal("member item is absent")
+	}
+	index.Items[memberIndex].Target = SemanticSearchTarget{
+		Kind:        SemanticSearchTargetComponent,
+		ComponentID: data.ArchitectureCanvas.Components[0].ID,
+	}
+	if err := index.Validate(data); err == nil ||
+		!strings.Contains(err.Error(), "member target must be an exact location or the neutral map") {
+		t.Fatalf("conceptual component member target error = %v", err)
 	}
 }
 
@@ -322,6 +364,34 @@ func TestBuildSemanticSearchIndexBoundsAndTruncates(t *testing.T) {
 	}
 }
 
+func TestBuildSemanticSearchIndexFailsBeforeTruncatingDistinctMembers(t *testing.T) {
+	t.Parallel()
+
+	members := make([]componentmap.Candidate, maxSemanticSearchItems)
+	for index := range members {
+		members[index] = componentmap.Candidate{
+			ID: componentmap.MemberID{
+				Kind:  componentmap.MemberPackage,
+				Value: fmt.Sprintf("package-%04d", index),
+			},
+			Name: fmt.Sprintf("example.com/repo/package-%04d", index),
+		}
+	}
+	data := &ReportData{
+		RepoName: "member-capacity",
+		ArchitectureCanvas: &ArchitectureCanvas{
+			Version: ArchitectureCanvasVersion,
+			Components: []ArchitectureComponent{{
+				ID: "component", Name: "Component", Members: members,
+			}},
+		},
+	}
+	_, err := BuildSemanticSearchIndex(data)
+	if err == nil || !strings.Contains(err.Error(), "exact member items exceed global index capacity") {
+		t.Fatalf("member truncation error = %v", err)
+	}
+}
+
 func TestBuildSemanticSearchIndexOmitsInternalSemanticInputs(t *testing.T) {
 	data := semanticSearchTestReport()
 	data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
@@ -376,11 +446,11 @@ func TestBuildSemanticSearchIndexKeepsExactMembersBeyondAliasLimit(t *testing.T)
 	if member.Kind != SemanticSearchKindMember {
 		t.Fatalf("member kind = %q, want %q", member.Kind, SemanticSearchKindMember)
 	}
-	if member.Target.Kind != SemanticSearchTargetComponent || member.Target.ComponentID != component.ID {
-		t.Fatalf("member target = %#v, want owning component %q", member.Target, component.ID)
+	if member.Target.Kind != SemanticSearchTargetMap || member.Target.ComponentID != "" {
+		t.Fatalf("member target = %#v, want owner-independent map target", member.Target)
 	}
 	if member.ID == owner.ID {
-		t.Fatalf("member item reused owning component id %q", owner.ID)
+		t.Fatalf("member item reused conceptual component id %q", owner.ID)
 	}
 }
 
@@ -399,6 +469,7 @@ func semanticSearchTestReport() *ReportData {
 			"internal/report/report.go",
 		},
 		ArchitectureCanvas: &ArchitectureCanvas{
+			Version:  ArchitectureCanvasVersion,
 			Title:    "How repomap becomes a report",
 			Subtitle: "Local facts are connected to verified presentation objects.",
 			Subsystems: []ArchitectureSubsystem{{

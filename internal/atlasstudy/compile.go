@@ -122,12 +122,14 @@ type wireSurface struct {
 }
 
 type wireTarget struct {
-	Ref       string                    `json:"ref"`
-	OwnerRef  string                    `json:"owner_ref"`
-	Kind      ReadingTargetKind         `json:"kind"`
-	Label     string                    `json:"label"`
-	Fact      string                    `json:"fact"`
-	Authority repositoryatlas.Authority `json:"authority"`
+	Ref                  string                    `json:"ref"`
+	OwnerRef             string                    `json:"owner_ref,omitempty"`
+	RelatedComponentRefs []string                  `json:"related_component_refs,omitempty"`
+	PrincipalRefs        []string                  `json:"principal_refs"`
+	Kind                 ReadingTargetKind         `json:"kind"`
+	Label                string                    `json:"label"`
+	Fact                 string                    `json:"fact"`
+	Authority            repositoryatlas.Authority `json:"authority"`
 }
 
 type wireEvidence struct {
@@ -203,7 +205,7 @@ func Compile(input Input) (Product, error) {
 		return Product{}, fmt.Errorf("atlas study: encode private catalog: %w", err)
 	}
 	catalogSHA := digest(materialJSON)
-	catalogRef := "atlas-study-v1-" + catalogSHA
+	catalogRef := "atlas-study-v2-" + catalogSHA
 	wireJSON := projectionJSON
 	if err := enforceLimit("wire_bytes", canonical.Limits.MaxWireBytes, len(wireJSON)); err != nil {
 		return Product{}, err
@@ -237,6 +239,14 @@ func canonicalInput(input Input) (Input, string, string, error) {
 	input.Architecture.Components = cloneComponents(input.Architecture.Components)
 	input.Surfaces = cloneSurfaces(input.Surfaces)
 	input.ReadingTargets = append([]ReadingTarget(nil), input.ReadingTargets...)
+	for index := range input.ReadingTargets {
+		input.ReadingTargets[index].RelatedComponentIDs = append(
+			[]string(nil), input.ReadingTargets[index].RelatedComponentIDs...,
+		)
+		input.ReadingTargets[index].PrincipalRefs = append(
+			[]CanonicalRef(nil), input.ReadingTargets[index].PrincipalRefs...,
+		)
+	}
 	input.Evidence = cloneEvidenceFacts(input.Evidence)
 	input.Documents = append([]DocumentClaim(nil), input.Documents...)
 	sort.Slice(input.Architecture.Subsystems, func(i, j int) bool {
@@ -259,6 +269,15 @@ func canonicalInput(input Input) (Input, string, string, error) {
 	}
 	for index := range input.Surfaces {
 		sort.Strings(input.Surfaces[index].ReadingTargetIDs)
+	}
+	for index := range input.ReadingTargets {
+		sort.Strings(input.ReadingTargets[index].RelatedComponentIDs)
+		sort.Slice(input.ReadingTargets[index].PrincipalRefs, func(i, j int) bool {
+			return canonicalRefLess(
+				input.ReadingTargets[index].PrincipalRefs[i],
+				input.ReadingTargets[index].PrincipalRefs[j],
+			)
+		})
 	}
 	for index := range input.Evidence {
 		sort.Slice(input.Evidence[index].SubjectRefs, func(i, j int) bool {
@@ -284,7 +303,7 @@ func compileCatalog(input Input) (
 	if input.Architecture.Version <= 0 ||
 		len(input.Architecture.Subsystems) == 0 || len(input.Architecture.Components) == 0 ||
 		len(input.ReadingTargets) < 3 {
-		return nil, nil, nil, fmt.Errorf("atlas study: accepted Architecture and at least three reading targets are required")
+		return nil, nil, nil, fmt.Errorf("atlas study: canonical Architecture and at least three reading targets are required")
 	}
 	if err := validateVisibleText(
 		input.Architecture.Source, input.Limits.MaxTextBytes, true, nil,
@@ -299,7 +318,8 @@ func compileCatalog(input Input) (
 	refs := make(map[CanonicalRef]string, cap(objects))
 	seen := make(map[CanonicalRef]struct{}, cap(objects))
 	add := func(kind RefKind, id, label, fact string, authority repositoryatlas.Authority,
-		owner *CanonicalRef, location *evidence.Location, symbol string,
+		owner *CanonicalRef, relatedComponents, principals []CanonicalRef,
+		location *evidence.Location, symbol string,
 	) error {
 		key := CanonicalRef{Kind: kind, ID: id}
 		if id == "" || !kind.Valid() || !authority.Valid() {
@@ -318,6 +338,8 @@ func compileCatalog(input Input) (
 			copyOwner := *owner
 			object.Owner = &copyOwner
 		}
+		object.RelatedComponentRefs = append([]CanonicalRef(nil), relatedComponents...)
+		object.PrincipalRefs = append([]CanonicalRef(nil), principals...)
 		if location != nil {
 			copyLocation := *location
 			object.Location = &copyLocation
@@ -330,7 +352,7 @@ func compileCatalog(input Input) (
 	units := make(map[string]repositoryatlas.Unit, len(input.Atlas.Units))
 	for _, unit := range input.Atlas.Units {
 		units[unit.ID] = unit
-		if err := add(RefUnit, unit.ID, unit.Name, "", repositoryatlas.AuthorityObserved, nil, nil, ""); err != nil {
+		if err := add(RefUnit, unit.ID, unit.Name, "", repositoryatlas.AuthorityObserved, nil, nil, nil, nil, ""); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -341,7 +363,7 @@ func compileCatalog(input Input) (
 		}
 		subsystems[subsystem.ID] = subsystem
 		if err := add(RefSubsystem, subsystem.ID, subsystem.Name, subsystem.Description,
-			subsystem.Authority, nil, nil, ""); err != nil {
+			subsystem.Authority, nil, nil, nil, nil, ""); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -355,7 +377,7 @@ func compileCatalog(input Input) (
 		}
 		components[component.ID] = component
 		if err := add(RefComponent, component.ID, component.Name, component.Description,
-			component.Authority, nil, nil, ""); err != nil {
+			component.Authority, nil, nil, nil, nil, ""); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -396,35 +418,78 @@ func compileCatalog(input Input) (
 		}
 		surfaces[surface.ID] = surface
 		if err := add(RefSurface, surface.ID, surface.Name, surface.Kind,
-			surface.Authority, nil, nil, ""); err != nil {
+			surface.Authority, nil, nil, nil, nil, ""); err != nil {
 			return nil, nil, nil, err
 		}
 	}
 
 	targets := make(map[string]ReadingTarget, len(input.ReadingTargets))
+	locators := make(map[readingLocatorIdentity]string, len(input.ReadingTargets))
 	for _, target := range input.ReadingTargets {
 		if !target.Kind.Valid() || !repositoryLocation(target.Location) ||
-			(target.Owner.Kind != RefComponent && target.Owner.Kind != RefSurface) {
+			len(target.PrincipalRefs) == 0 || !uniqueCanonicalRefs(target.PrincipalRefs) ||
+			!uniqueSorted(target.RelatedComponentIDs) {
 			return nil, nil, nil, fmt.Errorf("atlas study: invalid exact reading target")
 		}
-		if target.Owner.Kind == RefComponent {
-			if _, ok := components[target.Owner.ID]; !ok {
-				return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown component owner")
+		principalSet := make(map[CanonicalRef]struct{}, len(target.PrincipalRefs))
+		for _, principal := range target.PrincipalRefs {
+			switch principal.Kind {
+			case RefComponent:
+				if _, ok := components[principal.ID]; !ok {
+					return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown component principal")
+				}
+			case RefSurface:
+				if _, ok := surfaces[principal.ID]; !ok {
+					return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown Surface principal")
+				}
+			default:
+				return nil, nil, nil, fmt.Errorf("atlas study: reading target has wrong-kind principal")
 			}
-		} else if _, ok := surfaces[target.Owner.ID]; !ok {
-			return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown Surface owner")
+			principalSet[principal] = struct{}{}
+		}
+		related := make([]CanonicalRef, 0, len(target.RelatedComponentIDs))
+		for _, componentID := range target.RelatedComponentIDs {
+			ref := CanonicalRef{Kind: RefComponent, ID: componentID}
+			if _, ok := components[componentID]; !ok {
+				return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown related component")
+			}
+			if _, ok := principalSet[ref]; !ok {
+				return nil, nil, nil, fmt.Errorf("atlas study: related component is not a target principal")
+			}
+			related = append(related, ref)
+		}
+		var owner *CanonicalRef
+		if target.Owner != (CanonicalRef{}) {
+			if target.Owner.Kind != RefComponent {
+				return nil, nil, nil, fmt.Errorf("atlas study: reading target owner must be an exact component proof")
+			}
+			if _, ok := principalSet[target.Owner]; !ok {
+				return nil, nil, nil, fmt.Errorf("atlas study: reading target owner is not a target principal")
+			}
+			if index, found := slices.BinarySearch(target.RelatedComponentIDs, target.Owner.ID); !found || index < 0 {
+				return nil, nil, nil, fmt.Errorf("atlas study: reading target owner is not a related component")
+			}
+			owner = &target.Owner
 		}
 		if _, duplicate := targets[target.ID]; duplicate {
 			return nil, nil, nil, fmt.Errorf("atlas study: duplicate reading target")
 		}
+		locator := readingLocatorKey(target)
+		if existing, duplicate := locators[locator]; duplicate {
+			return nil, nil, nil, fmt.Errorf(
+				"atlas study: reading targets %q and %q duplicate one exact locator",
+				existing, target.ID,
+			)
+		}
+		locators[locator] = target.ID
 		targets[target.ID] = target
-		owner := target.Owner
 		if err := add(RefReadingTarget, target.ID, target.Label, target.Fact,
-			target.Authority, &owner, &target.Location, target.Symbol); err != nil {
+			target.Authority, owner, related, target.PrincipalRefs,
+			&target.Location, target.Symbol); err != nil {
 			return nil, nil, nil, err
 		}
 	}
-	if err := validateTargetOwnership(input.Architecture.Components, input.Surfaces, targets); err != nil {
+	if err := validateTargetAssociations(input.Architecture.Components, input.Surfaces, targets); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -447,13 +512,13 @@ func compileCatalog(input Input) (
 		}
 		location := exact.Location
 		if err := add(RefEvidence, item.ID, "", item.Fact, item.Authority,
-			nil, &location, exact.Symbol); err != nil {
+			nil, nil, nil, &location, exact.Symbol); err != nil {
 			return nil, nil, nil, err
 		}
 	}
 	for _, document := range input.Documents {
 		if err := add(RefDocument, document.ID, document.Label, document.Claim,
-			document.Authority, nil, nil, ""); err != nil {
+			document.Authority, nil, nil, nil, nil, ""); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -542,11 +607,22 @@ func buildWire(
 	}
 	for _, target := range input.ReadingTargets {
 		ref := refs[CanonicalRef{Kind: RefReadingTarget, ID: target.ID}]
-		wire.Targets = append(wire.Targets, wireTarget{
-			Ref:      ref,
-			OwnerRef: refs[target.Owner], Kind: target.Kind, Label: target.Label,
+		item := wireTarget{
+			Ref: ref, Kind: target.Kind, Label: target.Label,
 			Fact: target.Fact, Authority: target.Authority,
-		})
+		}
+		if target.Owner != (CanonicalRef{}) {
+			item.OwnerRef = refs[target.Owner]
+		}
+		for _, componentID := range target.RelatedComponentIDs {
+			item.RelatedComponentRefs = append(item.RelatedComponentRefs,
+				refs[CanonicalRef{Kind: RefComponent, ID: componentID}],
+			)
+		}
+		for _, principal := range target.PrincipalRefs {
+			item.PrincipalRefs = append(item.PrincipalRefs, refs[principal])
+		}
+		wire.Targets = append(wire.Targets, item)
 		addBriefSupport(RefReadingTarget, ref)
 	}
 	for _, fact := range input.Evidence {
@@ -614,6 +690,12 @@ func allPrivateIdentities(input Input) map[string]struct{} {
 	for _, target := range input.ReadingTargets {
 		add(target.ID)
 		add(target.Location.Path)
+		// A qualified source symbol is a private repository identity. A bare
+		// word such as "Run" is also ordinary semantic prose, so treating it as
+		// an identity would reject truthful labels and facts by coincidence.
+		if strings.ContainsAny(target.Symbol, "./()") {
+			add(target.Symbol)
+		}
 	}
 	for _, item := range input.Evidence {
 		add(item.ID)
@@ -624,25 +706,25 @@ func allPrivateIdentities(input Input) map[string]struct{} {
 	return result
 }
 
-func validateTargetOwnership(
+func validateTargetAssociations(
 	components []Component,
 	surfaces []Surface,
 	targets map[string]ReadingTarget,
 ) error {
-	claimed := make(map[string]CanonicalRef, len(targets))
-	claim := func(owner CanonicalRef, values []string) error {
+	claimed := make(map[string]map[CanonicalRef]struct{}, len(targets))
+	claim := func(principal CanonicalRef, values []string) error {
 		if !uniqueSorted(values) {
 			return fmt.Errorf("atlas study: reading target refs must be unique and ordered")
 		}
 		for _, id := range values {
 			target, ok := targets[id]
-			if !ok || target.Owner != owner {
-				return fmt.Errorf("atlas study: reading target ownership is inconsistent")
+			if !ok || !containsCanonicalRef(target.PrincipalRefs, principal) {
+				return fmt.Errorf("atlas study: reading target principal association is inconsistent")
 			}
-			if _, duplicate := claimed[id]; duplicate {
-				return fmt.Errorf("atlas study: reading target has multiple owners")
+			if claimed[id] == nil {
+				claimed[id] = make(map[CanonicalRef]struct{})
 			}
-			claimed[id] = owner
+			claimed[id][principal] = struct{}{}
 		}
 		return nil
 	}
@@ -656,10 +738,49 @@ func validateTargetOwnership(
 			return err
 		}
 	}
-	if len(claimed) != len(targets) {
-		return fmt.Errorf("atlas study: every reading target requires one exact owner")
+	for id, target := range targets {
+		if len(claimed[id]) != len(target.PrincipalRefs) {
+			return fmt.Errorf("atlas study: every reading target principal requires one exact association")
+		}
+		for _, principal := range target.PrincipalRefs {
+			if _, ok := claimed[id][principal]; !ok {
+				return fmt.Errorf("atlas study: reading target principal association is incomplete")
+			}
+		}
 	}
 	return nil
+}
+
+func containsCanonicalRef(values []CanonicalRef, want CanonicalRef) bool {
+	index, found := slices.BinarySearchFunc(values, want, func(left, right CanonicalRef) int {
+		if canonicalRefLess(left, right) {
+			return -1
+		}
+		if canonicalRefLess(right, left) {
+			return 1
+		}
+		return 0
+	})
+	return found && index >= 0
+}
+
+type readingLocatorIdentity struct {
+	Kind      ReadingTargetKind
+	Path      string
+	Line      int
+	Column    int
+	EndLine   int
+	EndColumn int
+	Symbol    string
+}
+
+func readingLocatorKey(target ReadingTarget) readingLocatorIdentity {
+	return readingLocatorIdentity{
+		Kind: target.Kind, Path: target.Location.Path,
+		Line: target.Location.Line, Column: target.Location.Column,
+		EndLine: target.Location.EndLine, EndColumn: target.Location.EndColumn,
+		Symbol: target.Symbol,
+	}
 }
 
 func validateLimits(limits Limits) error {
@@ -743,11 +864,22 @@ func bytesContainIdentity(encoded []byte, identity string) bool {
 }
 
 func repositoryLocation(location evidence.Location) bool {
-	return location.Path != "" && path.Clean(location.Path) == location.Path &&
-		!path.IsAbs(location.Path) && location.Path != "." &&
-		!strings.HasPrefix(location.Path, "../") && !strings.Contains(location.Path, "\\") &&
-		location.Line > 0 && location.Column >= 0 && location.EndLine >= 0 &&
-		(location.EndLine == 0 || location.EndLine >= location.Line)
+	if location.Path == "" || path.Clean(location.Path) != location.Path ||
+		path.IsAbs(location.Path) || location.Path == "." ||
+		strings.HasPrefix(location.Path, "../") || strings.Contains(location.Path, "\\") {
+		return false
+	}
+	if location.Line <= 0 || location.Column < 0 || location.EndLine < 0 || location.EndColumn < 0 {
+		return false
+	}
+	if location.EndLine == 0 {
+		return location.EndColumn == 0
+	}
+	if location.EndLine < location.Line {
+		return false
+	}
+	return location.EndLine != location.Line || location.Column == 0 ||
+		location.EndColumn == 0 || location.EndColumn >= location.Column
 }
 
 func refPrefix(kind RefKind) string {
@@ -886,6 +1018,12 @@ func cloneCatalog(values []CatalogObject) []CatalogObject {
 			owner := *result[index].Owner
 			result[index].Owner = &owner
 		}
+		result[index].RelatedComponentRefs = append(
+			[]CanonicalRef(nil), result[index].RelatedComponentRefs...,
+		)
+		result[index].PrincipalRefs = append(
+			[]CanonicalRef(nil), result[index].PrincipalRefs...,
+		)
 		if result[index].Location != nil {
 			location := *result[index].Location
 			result[index].Location = &location

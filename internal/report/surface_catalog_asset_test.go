@@ -1,7 +1,9 @@
 package report
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -106,6 +108,17 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 				`messageID: "surfaces.metric.partial_trace_candidates"`,
 				`messageID: "surfaces.metric.runtime_activities"`,
 				`messageID: "surfaces.metric.rejected_noisy"`,
+			},
+		},
+		{
+			name:  "plural component participation stays distinct from exact ownership",
+			asset: js,
+			tokens: []string{
+				"surfaceComponentAssociations(record)",
+				"record.participating_component_ids",
+				"componentID !== componentAssociations.owner",
+				`message("architecture.label.participating_components")`,
+				"this.options.openComponent(componentID)",
 			},
 		},
 		{
@@ -226,6 +239,55 @@ func TestSurfaceCatalogAssetContract(t *testing.T) {
 		if !strings.Contains(js, token) {
 			t.Errorf("surface identity classification is missing %q", token)
 		}
+	}
+}
+
+func TestSurfaceCatalogPluralParticipantsDoNotCreateAnOwner(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "surface_catalog.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+const window = { __REPOMAP_SURFACE_TEST__: {} };
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window });
+const state = window.__REPOMAP_SURFACE_TEST__.surfaceComponentAssociations;
+process.stdout.write(JSON.stringify({
+  plural: state({ participating_component_ids: ["a", "b", "a"] }),
+  owned: state({ owning_component_id: "a", participating_component_ids: ["a", "b"] }),
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "surface-participants-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run surface participant projection: %v\n%s", err, output)
+	}
+	var got struct {
+		Plural struct {
+			Owner        string   `json:"owner"`
+			Participants []string `json:"participants"`
+		} `json:"plural"`
+		Owned struct {
+			Owner        string   `json:"owner"`
+			Participants []string `json:"participants"`
+		} `json:"owned"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode surface participant projection: %v\n%s", err, output)
+	}
+	if got.Plural.Owner != "" || strings.Join(got.Plural.Participants, "|") != "a|b" {
+		t.Errorf("plural participation inferred or duplicated an owner: %#v", got.Plural)
+	}
+	if got.Owned.Owner != "a" || strings.Join(got.Owned.Participants, "|") != "a|b" {
+		t.Errorf("exact owner/participant projection = %#v", got.Owned)
 	}
 }
 

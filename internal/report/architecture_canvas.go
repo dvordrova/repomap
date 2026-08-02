@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 5
+const ArchitectureCanvasVersion = 6
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -160,14 +160,15 @@ type ArchitectureFlow struct {
 }
 
 type ArchitectureFlowStep struct {
-	ID            string                          `json:"id"`
-	Kind          flowproof.AnchorKind            `json:"kind"`
-	Label         string                          `json:"label"`
-	QualifiedName string                          `json:"qualified_name,omitempty"`
-	Location      *evidence.Location              `json:"location,omitempty"`
-	BranchID      string                          `json:"branch_id,omitempty"`
-	ComponentID   componentmap.ComponentID        `json:"component_id,omitempty"`
-	Binding       *componentmap.FlowAnchorBinding `json:"binding,omitempty"`
+	ID                        string                          `json:"id"`
+	Kind                      flowproof.AnchorKind            `json:"kind"`
+	Label                     string                          `json:"label"`
+	QualifiedName             string                          `json:"qualified_name,omitempty"`
+	Location                  *evidence.Location              `json:"location,omitempty"`
+	BranchID                  string                          `json:"branch_id,omitempty"`
+	ComponentID               componentmap.ComponentID        `json:"component_id,omitempty"`
+	ParticipatingComponentIDs []componentmap.ComponentID      `json:"participating_component_ids,omitempty"`
+	Binding                   *componentmap.FlowAnchorBinding `json:"binding,omitempty"`
 }
 
 type ArchitectureFlowBranch struct {
@@ -217,9 +218,9 @@ type ArchitectureDiagnostic struct {
 }
 
 type architectureCanvasIndex struct {
-	componentOwners map[componentmap.MemberID][]componentmap.ComponentID
-	bindings        map[architectureBindingKey]componentmap.FlowAnchorBinding
-	flowNames       map[componentmap.FlowID]string
+	memberComponents map[componentmap.MemberID][]componentmap.ComponentID
+	bindings         map[architectureBindingKey]componentmap.FlowAnchorBinding
+	flowNames        map[componentmap.FlowID]string
 }
 
 type architectureBindingKey struct {
@@ -263,7 +264,7 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 	}
 	canvas.Title, canvas.Subtitle = architectureGroundingWording(canvas.ArchitectureSource, canvas.GroundingMode)
 	index := projectArchitectureLandscape(input.CandidateBundle, input.Landscape, &canvas)
-	projectArchitectureStructuralFacts(input.Landscape.Relations, index.componentOwners, &canvas)
+	projectArchitectureStructuralFacts(input.Landscape.Relations, index.memberComponents, &canvas)
 	projectArchitectureFlows(input.Flows, index, &canvas)
 
 	sort.Slice(canvas.StructuralFacts, func(i, j int) bool {
@@ -290,9 +291,9 @@ func projectArchitectureLandscape(
 	canvas *ArchitectureCanvas,
 ) architectureCanvasIndex {
 	index := architectureCanvasIndex{
-		componentOwners: make(map[componentmap.MemberID][]componentmap.ComponentID),
-		bindings:        make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
-		flowNames:       make(map[componentmap.FlowID]string, len(bundle.Flows)),
+		memberComponents: make(map[componentmap.MemberID][]componentmap.ComponentID),
+		bindings:         make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
+		flowNames:        make(map[componentmap.FlowID]string, len(bundle.Flows)),
 	}
 	for _, flow := range bundle.Flows {
 		index.flowNames[flow.ID] = flow.Name
@@ -310,7 +311,7 @@ func projectArchitectureLandscape(
 			members := append([]componentmap.Candidate(nil), component.Members...)
 			participatingFlows := make(map[componentmap.FlowID]struct{})
 			for _, member := range component.Members {
-				index.componentOwners[member.ID] = append(index.componentOwners[member.ID], component.ID)
+				index.memberComponents[member.ID] = append(index.memberComponents[member.ID], component.ID)
 				for _, participation := range member.Participations {
 					participatingFlows[participation.FlowID] = struct{}{}
 				}
@@ -333,7 +334,7 @@ func projectArchitectureLandscape(
 
 func projectArchitectureStructuralFacts(
 	relations []componentmap.LocalRelation,
-	owners map[componentmap.MemberID][]componentmap.ComponentID,
+	memberComponents map[componentmap.MemberID][]componentmap.ComponentID,
 	canvas *ArchitectureCanvas,
 ) {
 	for _, relation := range relations {
@@ -342,22 +343,22 @@ func projectArchitectureStructuralFacts(
 			continue
 		}
 
-		fromOwners := uniqueArchitectureComponentIDs(owners[relation.From])
-		toOwners := uniqueArchitectureComponentIDs(owners[relation.To])
-		if len(fromOwners) != 1 || len(toOwners) != 1 {
+		fromComponents := uniqueArchitectureComponentIDs(memberComponents[relation.From])
+		toComponents := uniqueArchitectureComponentIDs(memberComponents[relation.To])
+		if len(fromComponents) != 1 || len(toComponents) != 1 {
 			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
-				"projection", "warning", "structural.ambiguous_component_owner",
-				fmt.Sprintf("structural fact %q has no unique component endpoints", relation.ID), "", nil,
+				"projection", "warning", "structural.non_unique_conceptual_endpoint",
+				fmt.Sprintf("structural fact %q has no unique conceptual component endpoints", relation.ID), "", nil,
 			))
 			continue
 		}
-		if fromOwners[0] == toOwners[0] {
+		if fromComponents[0] == toComponents[0] {
 			continue
 		}
 		canvas.StructuralEdges = append(canvas.StructuralEdges, ArchitectureStructuralEdge{
 			ID:              architectureStableID("structural-edge", relation.ID),
-			FromComponentID: fromOwners[0],
-			ToComponentID:   toOwners[0],
+			FromComponentID: fromComponents[0],
+			ToComponentID:   toComponents[0],
 			Witness:         relation,
 		})
 	}
@@ -828,21 +829,16 @@ func projectArchitectureAnchorBinding(
 		))
 		return
 	}
-	owners := uniqueArchitectureComponentIDs(index.componentOwners[binding.MemberID])
+	participants := uniqueArchitectureComponentIDs(index.memberComponents[binding.MemberID])
 	bindingCopy := binding
 	step.Binding = &bindingCopy
-	if len(owners) == 1 {
-		step.ComponentID = owners[0]
+	step.ParticipatingComponentIDs = participants
+	if len(participants) > 0 {
 		return
 	}
-	kind := "unassigned_component"
-	reason := "bound member has no component owner"
-	if len(owners) > 1 {
-		kind = "ambiguous_component"
-		reason = "bound member has more than one component owner"
-	}
 	canvas.Frontiers = append(canvas.Frontiers, newArchitectureFrontier(
-		flowID, kind, anchor.ID, "", "", reason, anchor.Location,
+		flowID, "unassigned_component", anchor.ID, "", "",
+		"bound member has no participating conceptual component", anchor.Location,
 	))
 }
 

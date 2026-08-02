@@ -92,7 +92,7 @@ func TestNavigatorReportArtifactsBindOfflineEmptySelectedAndFailedStates(t *test
 				t.Fatal(err)
 			}
 			manifest := validRunManifestFixture(t)
-			if manifest.Version != 9 || manifest.ReportFormatVersion != 29 {
+			if manifest.Version != 10 || manifest.ReportFormatVersion != 29 {
 				t.Fatalf("Atlas-first wire versions = %d/%d", manifest.Version, manifest.ReportFormatVersion)
 			}
 			manifest.OpenablePaths = nil

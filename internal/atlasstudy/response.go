@@ -296,11 +296,11 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		if err != nil {
 			return Direction{}, referenceCode(err)
 		}
-		if object.Kind != RefReadingTarget || object.Owner == nil {
+		if object.Kind != RefReadingTarget || len(object.PrincipalRefs) == 0 {
 			return Direction{}, "wrong_kind_reading_ref"
 		}
-		if _, ok := principalSet[*object.Owner]; !ok {
-			return Direction{}, "reading_owner_not_principal"
+		if !intersectsPrincipalSet(object.PrincipalRefs, principalSet) {
+			return Direction{}, "reading_principal_not_selected"
 		}
 		if !item.Label.Valid() {
 			return Direction{}, "invalid_reading_label"
@@ -320,6 +320,18 @@ func (product Product) resolveDirection(position int, provider providerDirection
 	}
 	direction.ID = stableDirectionID(direction)
 	return direction, ""
+}
+
+func intersectsPrincipalSet(
+	values []CanonicalRef,
+	selected map[CanonicalRef]struct{},
+) bool {
+	for _, value := range values {
+		if _, ok := selected[value]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (product Product) resolveRef(field string, position int, ref string) (CatalogObject, error) {

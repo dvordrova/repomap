@@ -64,6 +64,19 @@
   return value == null ? "" : String(value);
  }
 
+ function surfaceComponentAssociations(record) {
+  const owner = text(record && record.owning_component_id);
+  const participants = [];
+  const seen = new Set();
+  array(record && record.participating_component_ids).forEach((value) => {
+   const componentID = text(value);
+   if (!componentID || seen.has(componentID)) return;
+   seen.add(componentID);
+   participants.push(componentID);
+  });
+  return { owner: owner, participants: participants };
+ }
+
  function element(tag, className, content) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -715,13 +728,36 @@ function hasDynamicEvidence(trigger) {
 
     const progression = element("section", "rm-surface__progression");
     progression.appendChild(element("h4", "", message("surfaces.progression.title")));
-    if (association.owning_component_id && typeof this.options.openComponent === "function") {
+    const componentAssociations = surfaceComponentAssociations(association);
+    if (componentAssociations.owner && typeof this.options.openComponent === "function") {
      const component = element("button", "rm-surface__action", message("surfaces.action.open_owning_component"));
      component.type = "button";
-     this.listen(component, "click", () => this.options.openComponent(association.owning_component_id));
+     this.listen(component, "click", () => this.options.openComponent(componentAssociations.owner));
      progression.appendChild(component);
     } else {
      progression.appendChild(element("p", "rm-surface__caveat", message("surfaces.progression.unassigned")));
+    }
+    const participantIDs = componentAssociations.participants.filter(
+     (componentID) => componentID !== componentAssociations.owner
+    );
+    if (participantIDs.length > 0) {
+     const participants = element("div", "rm-surface__participant-actions");
+     participants.appendChild(element(
+      "span",
+      "rm-surface__caveat",
+      message("architecture.label.participating_components")
+     ));
+     participantIDs.forEach((componentID) => {
+      if (typeof this.options.openComponent === "function") {
+       const component = element("button", "rm-surface__action", componentID);
+       component.type = "button";
+       this.listen(component, "click", () => this.options.openComponent(componentID));
+       participants.appendChild(component);
+      } else {
+       participants.appendChild(element("code", "", componentID));
+      }
+     });
+     progression.appendChild(participants);
     }
     if (association.related_saved_trace_id && typeof this.options.openTrace === "function") {
      const trace = element("button", "rm-surface__action is-primary", message("surfaces.action.open_saved_trace"));
@@ -1114,4 +1150,9 @@ function hasDynamicEvidence(trigger) {
  }
 
  global.RepomapSurfaceCatalog = Object.freeze({ mount: mount });
+ if (global.__REPOMAP_SURFACE_TEST__ && typeof global.__REPOMAP_SURFACE_TEST__ === "object") {
+  Object.assign(global.__REPOMAP_SURFACE_TEST__, {
+   surfaceComponentAssociations: surfaceComponentAssociations,
+  });
+ }
 })(window);

@@ -2,9 +2,9 @@ package report
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
-	"strconv"
-	"strings"
+	"sort"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -17,6 +17,7 @@ const (
 	maxReportExactPathBytes       = 4096
 	maxReportExactComponents      = 512
 	maxReportExactSymbols         = 1024
+	maxReportExactMemberships     = 8192
 	maxReportExactFactsPerMember  = 16
 	maxReportExactEntityIDBytes   = 512
 	maxReportExactEntityNameBytes = 256
@@ -29,6 +30,15 @@ func BuildSemanticSearchIndexWithCatalog(
 	data *ReportData,
 	catalog sourcecatalog.Catalog,
 ) (SemanticSearchIndex, error) {
+	if data == nil {
+		return SemanticSearchIndex{}, fmt.Errorf("semantic search: report data is required")
+	}
+	// Reject incompatible canonical input before the exact adapter applies any
+	// path, component, member, or membership bounds. A historical Canvas must
+	// never be reported as a current-shape capacity failure.
+	if err := validateSemanticSearchCanvasVersion(data.ArchitectureCanvas); err != nil {
+		return SemanticSearchIndex{}, err
+	}
 	exact, err := newReportExactSearch(data, catalog)
 	if err != nil {
 		return SemanticSearchIndex{}, err
@@ -74,8 +84,12 @@ func authorizedExactSearchCatalog(
 }
 
 type reportExactSearch struct {
-	entries  []workspacesearch.Entry
-	entities map[string]struct{}
+	entries []workspacesearch.Entry
+	members []reportExactMember
+}
+
+type reportExactMember struct {
+	member componentmap.Candidate
 }
 
 func newReportExactSearch(data *ReportData, catalog sourcecatalog.Catalog) (*reportExactSearch, error) {
@@ -115,26 +129,68 @@ func newReportExactSearch(data *ReportData, catalog sourcecatalog.Catalog) (*rep
 	}
 
 	symbols := make([]evidence.Entity, 0, maxReportExactSymbols)
+	exactMembers := make([]reportExactMember, 0, maxReportExactSymbols)
 	if canvas := data.ArchitectureCanvas; canvas != nil {
 		if len(canvas.Components) > maxReportExactComponents {
 			return nil, fmt.Errorf("semantic search: exact component input exceeds %d entries", maxReportExactComponents)
 		}
-		rawCandidates := 0
+		type memberAccumulator struct {
+			member     componentmap.Candidate
+			components map[componentmap.ComponentID]struct{}
+		}
+		members := make(map[componentmap.MemberID]*memberAccumulator)
+		membershipCount := 0
 		for _, component := range canvas.Components {
-			if len(component.Members) > maxReportExactSymbols-rawCandidates {
-				return nil, fmt.Errorf("semantic search: exact candidate input exceeds %d entries", maxReportExactSymbols)
-			}
-			rawCandidates += len(component.Members)
 			for _, member := range component.Members {
-				entity, ok := exactMemberEntity(member)
-				if !ok {
-					continue
+				membershipCount++
+				if membershipCount > maxReportExactMemberships {
+					return nil, fmt.Errorf(
+						"semantic search: exact membership input exceeds %d entries",
+						maxReportExactMemberships,
+					)
 				}
-				if len(symbols) == maxReportExactSymbols {
-					return nil, fmt.Errorf("semantic search: exact symbol input exceeds %d entries", maxReportExactSymbols)
+				accumulator := members[member.ID]
+				if accumulator == nil {
+					if len(members) == maxReportExactSymbols {
+						return nil, fmt.Errorf("semantic search: exact member input exceeds %d entries", maxReportExactSymbols)
+					}
+					accumulator = &memberAccumulator{
+						member:     member,
+						components: make(map[componentmap.ComponentID]struct{}),
+					}
+					members[member.ID] = accumulator
+				} else if !reflect.DeepEqual(accumulator.member, member) {
+					return nil, fmt.Errorf("semantic search: shared exact member %q changed across memberships", member.ID.Value)
 				}
+				if _, duplicate := accumulator.components[component.ID]; duplicate {
+					return nil, fmt.Errorf(
+						"semantic search: component %q repeats exact member %q",
+						component.ID,
+						member.ID.Value,
+					)
+				}
+				accumulator.components[component.ID] = struct{}{}
+			}
+		}
+		memberIDs := make([]componentmap.MemberID, 0, len(members))
+		for memberID := range members {
+			memberIDs = append(memberIDs, memberID)
+		}
+		sort.Slice(memberIDs, func(i, j int) bool {
+			if memberIDs[i].Kind != memberIDs[j].Kind {
+				return memberIDs[i].Kind < memberIDs[j].Kind
+			}
+			return memberIDs[i].Value < memberIDs[j].Value
+		})
+		for _, memberID := range memberIDs {
+			accumulator := members[memberID]
+			entity, ok := exactMemberEntity(accumulator.member)
+			if ok {
 				symbols = append(symbols, entity)
 			}
+			exactMembers = append(exactMembers, reportExactMember{
+				member: accumulator.member,
+			})
 		}
 	}
 
@@ -147,13 +203,8 @@ func newReportExactSearch(data *ReportData, catalog sourcecatalog.Catalog) (*rep
 	}
 	entries := index.Entries()
 	exact := &reportExactSearch{
-		entries:  entries,
-		entities: make(map[string]struct{}, min(len(symbols), maxReportExactSymbols)),
-	}
-	for _, entry := range entries {
-		if entry.Kind == workspacesearch.KindSymbol && entry.Entity != nil {
-			exact.entities[exactEntityKey(*entry.Entity)] = struct{}{}
-		}
+		entries: entries,
+		members: exactMembers,
 	}
 	return exact, nil
 }
@@ -181,25 +232,9 @@ func (builder *semanticSearchBuilder) addExactWorkspace(exact *reportExactSearch
 	if !includeArchitecture || builder.data.ArchitectureCanvas == nil {
 		return
 	}
-	for _, component := range builder.data.ArchitectureCanvas.Components {
-		for _, member := range component.Members {
-			if exact.acceptsMember(member) {
-				builder.addMember(component, member)
-			}
-		}
+	for _, exactMember := range exact.members {
+		builder.addMemberWithoutOwner(exactMember.member)
 	}
-}
-
-func (exact *reportExactSearch) acceptsMember(member componentmap.Candidate) bool {
-	if exact == nil {
-		return false
-	}
-	entity, ok := exactMemberEntity(member)
-	if !ok {
-		return false
-	}
-	_, ok = exact.entities[exactEntityKey(entity)]
-	return ok
 }
 
 func exactMemberEntity(member componentmap.Candidate) (evidence.Entity, bool) {
@@ -240,19 +275,26 @@ func exactMemberEntity(member componentmap.Candidate) (evidence.Entity, bool) {
 	return evidence.Entity{}, false
 }
 
-func exactEntityKey(entity evidence.Entity) string {
-	if entity.Location == nil {
-		return ""
+func exactMemberSearchLocation(member componentmap.Candidate) *evidence.Location {
+	// Keep source targeting under the same bounded fact contract used by the
+	// exact workspace entity projection. The member remains searchable when a
+	// producer supplies an oversized fact list, but it must not gain a location
+	// target by scanning input that the exact adapter declined to admit.
+	if len(member.Facts) > maxReportExactFactsPerMember {
+		return nil
 	}
-	location := entity.Location
-	return strings.Join([]string{
-		entity.ID,
-		string(entity.Kind),
-		entity.Name,
-		location.Path,
-		strconv.Itoa(location.Line),
-		strconv.Itoa(location.Column),
-		strconv.Itoa(location.EndLine),
-		strconv.Itoa(location.EndColumn),
-	}, "\x00")
+	locations := make(map[evidence.Location]struct{}, len(member.Facts))
+	for _, fact := range member.Facts {
+		if fact.Location != nil && fact.Location.Path != "" {
+			locations[*fact.Location] = struct{}{}
+		}
+	}
+	if len(locations) != 1 {
+		return nil
+	}
+	for location := range locations {
+		copy := location
+		return &copy
+	}
+	return nil
 }

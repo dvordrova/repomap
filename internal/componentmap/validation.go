@@ -28,9 +28,12 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.invalid_subsystem_count",
 		"proposal.invalid_members",
 		"proposal.invalid_member_id",
+		"proposal.duplicate_member_id",
+		"proposal.duplicate_component_identity",
+		"proposal.membership_limit_exceeded",
+		"proposal.member_participation_limit_exceeded",
 		"proposal.unknown_member_id",
 		"proposal.unknown_anchor_id",
-		"proposal.conflicting_membership",
 		"proposal.invalid_subsystem",
 		"proposal.invalid_component",
 		"proposal.no_usable_subsystems",
@@ -317,8 +320,6 @@ func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) Fal
 			return FallbackRejectedUnknownMember
 		case "proposal.unknown_anchor_id":
 			return FallbackRejectedUnknownAnchor
-		case "proposal.conflicting_membership":
-			return FallbackRejectedOwnership
 		case "proposal.ungrounded_primary_component":
 			return FallbackRejectedUngrounded
 		default:

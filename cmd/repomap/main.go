@@ -760,21 +760,48 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		return fmt.Errorf("prepare exact Atlas Study source coverage: %w", err)
 	}
 
-	architectureAccepted := reportData.ArchitectureSynthesis != nil &&
-		(reportData.ArchitectureSynthesis.State == report.ArchitectureSynthesisSucceeded ||
-			reportData.ArchitectureSynthesis.State == report.ArchitectureSynthesisCached) &&
-		reportData.ArchitectureSynthesis.ProposalAccepted &&
-		!reportData.ArchitectureSynthesis.ProposalRejected &&
-		!reportData.ArchitectureSynthesis.FallbackSelected
 	var studyOutcome atlasStudyRunOutcome
 	var studyErr error
-	studyCalled := false
-	if architectureAccepted {
-		studyCalled = true
+	studyCalled := true
+	switch {
+	case *offline:
+		if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
+			studyErr = cleanupErr
+		} else {
+			studyOutcome = atlasStudyRunOutcome{
+				State: atlasstudy.ProductStateUnavailable, ProviderSkipped: true,
+			}
+			humanOutput.State("Study", "unavailable", "provider calls: 0", "reason: offline requested")
+		}
+	default:
+		studyInput, inputErr := report.BuildAtlasStudyInput(
+			reportData, atlasstudy.Language(reportLanguage),
+		)
+		if inputErr != nil {
+			studyErr = fmt.Errorf("Atlas Study exact input: %w", inputErr)
+			break
+		}
+		if !report.AtlasStudyInputHasMinimumCatalog(studyInput) {
+			if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
+				studyErr = cleanupErr
+				break
+			}
+			studyOutcome = atlasStudyRunOutcome{
+				State: atlasstudy.ProductStateUnavailable, ProviderSkipped: true,
+			}
+			humanOutput.State(
+				"Study", "unavailable", "provider calls: 0",
+				fmt.Sprintf(
+					"reason: fewer than %d distinct exact reading locations",
+					report.AtlasStudyMinimumDistinctReadingLocators,
+				),
+			)
+			break
+		}
 		studyOutcome, studyErr = runAtlasStudyForRun(
 			ctx, reportData, runDir, dDir,
 			researchRepositoryContext(initialState, repo), researchPolicy,
-			*noCache, !*offline, atlasstudy.Language(reportLanguage), humanOutput,
+			*noCache, true, atlasstudy.Language(reportLanguage), humanOutput,
 		)
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil && studyErr == nil {

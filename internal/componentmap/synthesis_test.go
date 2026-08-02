@@ -66,57 +66,6 @@ func TestSavedCaddyArchitectureProposalReplaysWithoutFallback(t *testing.T) {
 	if !reflect.DeepEqual(replayed, result.Landscape) {
 		t.Fatal("saved Caddy response did not replay deterministically")
 	}
-	legacyRecord, err := json.Marshal(map[string]any{
-		"version": 1, "repository_revision": "caddy-saved-run", "cache_key": "legacy", "request_sha256": strings.Repeat("a", 64),
-		"call": map[string]any{
-			"metadata": map[string]any{
-				"prompt_version": "architecture-grounding-v3", "profile": "openai-compatible/bearer",
-				"model": "deepseek-v4-flash", "input_bytes": 119270, "latency_ms": 12009,
-				"validation_warnings": []map[string]string{{"code": "proposal.excess_primary_pillars", "message": "grounded architecture exceeds eight primary pillars"}},
-				"fallback_reason":     "proposal_invalid_or_empty",
-			},
-			"response_state": "captured", "response_bytes": len(canonicalResponse), "response": canonicalResponse,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyReplayed, err := ReplayLegacyCapturedSynthesis(bundle, legacyRecord)
-	if err != nil {
-		t.Fatalf("ReplayLegacyCapturedSynthesis() error = %v", err)
-	}
-	if legacyReplayed.Fallback || len(legacyReplayed.Subsystems) != 6 {
-		t.Fatalf("legacy captured response replay = %#v", legacyReplayed)
-	}
-	var legacyProposal map[string]any
-	if err := json.Unmarshal(canonicalResponse, &legacyProposal); err != nil {
-		t.Fatal(err)
-	}
-	legacyProposal["version"] = 2
-	legacyResponse, err := json.Marshal(legacyProposal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyV2Record, err := json.Marshal(map[string]any{
-		"version": 1, "repository_revision": "caddy-saved-run", "cache_key": "legacy", "request_sha256": strings.Repeat("a", 64),
-		"call": map[string]any{
-			"metadata": map[string]any{
-				"prompt_version": "component-landscape-v2", "profile": "openai-compatible/bearer",
-				"model": "deepseek-v4-flash", "input_bytes": 45271, "latency_ms": 10964,
-			},
-			"response_state": "captured", "response_bytes": len(legacyResponse), "response": legacyResponse,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyV2Replayed, err := ReplayLegacyCapturedSynthesis(bundle, legacyV2Record)
-	if err != nil {
-		t.Fatalf("ReplayLegacyCapturedSynthesis(v2) error = %v", err)
-	}
-	if legacyV2Replayed.Fallback || len(legacyV2Replayed.Subsystems) != 6 {
-		t.Fatalf("legacy v2 captured response replay = %#v", legacyV2Replayed)
-	}
 }
 
 func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
@@ -833,7 +782,7 @@ func TestSynthesisResponseRejectsForbiddenBackendIdentityFields(t *testing.T) {
 	}
 }
 
-func TestFreshCasdoorDuplicateMemberRefRemainsClosedRejection(t *testing.T) {
+func TestFreshCasdoorSharedMemberRefIsAcceptedManyToMany(t *testing.T) {
 	t.Parallel()
 
 	bundle := CandidateBundle{
@@ -865,13 +814,283 @@ func TestFreshCasdoorDuplicateMemberRefRemainsClosedRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.FallbackReason != FallbackRejectedOwnership ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.conflicting_membership") {
-		t.Fatalf("fresh Casdoor duplicate was not rejected as conflicting membership: %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome == ValidationRejected {
+		t.Fatalf("fresh Casdoor shared membership was rejected: %#v", result.Landscape)
+	}
+	if !result.Membership.Counted || result.Membership.MemberOccurrences != 3 ||
+		result.Membership.DistinctMembers != 2 {
+		t.Fatalf("resolved membership counts = %#v", result.Membership)
+	}
+	shared := 0
+	for _, membership := range result.Landscape.ConceptualMemberships {
+		if membership.MemberID == bundle.Candidates[0].ID {
+			shared++
+		}
+	}
+	if shared != 2 {
+		t.Fatalf("shared conceptual relations = %d, want 2", shared)
 	}
 	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
 		t.Fatal("rejected duplicate changed local relations")
 	}
+}
+
+func TestAcceptedNormalizedSynthesisCountsCanonicalMembershipRelation(t *testing.T) {
+	t.Parallel()
+
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
+	}
+	for index := 0; index < 10; index++ {
+		path := fmt.Sprintf("package-%02d/package.go", index)
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID:   MemberID{Kind: MemberPackage, Value: fmt.Sprintf("package-%02d", index)},
+			Name: fmt.Sprintf("package-%02d", index),
+			Facts: []LocalFact{
+				testLocalFact(FactDeclaration, fmt.Sprintf("example/package-%02d", index), path, 1),
+			},
+		})
+	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	components := make([]synthesisWireComponent, MaxComponentsPerSubsystem+1)
+	for index := 0; index < MaxComponentsPerSubsystem-1; index++ {
+		components[index] = synthesisWireComponent{
+			Name:       fmt.Sprintf("Responsibility %02d", index),
+			MemberRefs: []SynthesisMemberRef{catalog.membersByID[bundle.Candidates[index].ID]},
+		}
+	}
+	sharedRef := catalog.membersByID[bundle.Candidates[9].ID]
+	components[7] = synthesisWireComponent{
+		Name: "Cross-cut A",
+		MemberRefs: []SynthesisMemberRef{
+			catalog.membersByID[bundle.Candidates[7].ID], sharedRef,
+		},
+	}
+	components[8] = synthesisWireComponent{
+		Name: "Cross-cut B",
+		MemberRefs: []SynthesisMemberRef{
+			catalog.membersByID[bundle.Candidates[8].ID], sharedRef,
+		},
+	}
+	response, err := json.Marshal(synthesisWireProposal{Subsystems: []synthesisWireSubsystem{{
+		Name: "Repository", Components: components,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(
+		bundle, "normalized-membership-counts", "test", "test", time.Millisecond, response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedNormalized {
+		t.Fatalf("normalized synthesis result = %#v", result.Landscape)
+	}
+	if !result.Membership.Counted || result.Membership.MemberOccurrences != 10 ||
+		result.Membership.DistinctMembers != 10 {
+		t.Fatalf("accepted canonical membership counts = %#v, want 10/10", result.Membership)
+	}
+	if result.Record.Call == nil || result.Record.Call.Metadata.MemberOccurrences != 10 ||
+		result.Record.Call.Metadata.DistinctMembers != 10 {
+		t.Fatalf("saved accepted membership counts = %#v, want canonical 10/10", result.Record.Call)
+	}
+	if len(result.Landscape.ConceptualMemberships) != 10 {
+		t.Fatalf("canonical conceptual memberships = %d, want 10", len(result.Landscape.ConceptualMemberships))
+	}
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesisResult(bundle, "normalized-membership-counts", saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(replayed.Membership, result.Membership) {
+		t.Fatalf("replayed membership counts = %#v, want %#v", replayed.Membership, result.Membership)
+	}
+}
+
+func TestSavedCasdoorP21ManyToManyResponseIsAcceptedExactly(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := savedCasdoorManyToManyBundle()
+	result, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-many-to-many-v1", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, raw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome == ValidationRejected {
+		t.Fatalf("saved Casdoor response was rejected: %#v", result.Landscape.Diagnostics)
+	}
+	if !result.Membership.Counted || result.Membership.MemberOccurrences != 29 ||
+		result.Membership.DistinctMembers != 28 {
+		t.Fatalf("saved Casdoor membership counts = %#v", result.Membership)
+	}
+	if result.Record.Call == nil || !result.Record.Call.Metadata.MembershipCounted ||
+		result.Record.Call.Metadata.MemberOccurrences != 29 ||
+		result.Record.Call.Metadata.DistinctMembers != 28 {
+		t.Fatalf("saved Casdoor record counts = %#v", result.Record.Call)
+	}
+	shared := MemberID{Kind: MemberPackage, Value: "casdoor-package-21"}
+	sharedComponents := make([]ComponentID, 0, 2)
+	for _, membership := range result.Landscape.ConceptualMemberships {
+		if membership.MemberID == shared {
+			sharedComponents = append(sharedComponents, membership.ComponentID)
+		}
+	}
+	if len(sharedComponents) != 2 || sharedComponents[0] == sharedComponents[1] {
+		t.Fatalf("p21 conceptual memberships = %#v, want two distinct components", sharedComponents)
+	}
+	for _, subsystem := range result.Landscape.Subsystems {
+		if subsystem.Category != SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				if member.ID == shared {
+					t.Fatal("p21 leaked into the distinct-member remainder")
+				}
+			}
+		}
+	}
+	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
+		t.Fatal("saved Casdoor grouping changed either exact local relation")
+	}
+
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesisResult(bundle, "casdoor-many-to-many-v1", saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(replayed.Membership, result.Membership) ||
+		!reflect.DeepEqual(replayed.Landscape, result.Landscape) {
+		t.Fatal("saved Casdoor many-to-many result did not replay exactly")
+	}
+	tampered := result.Record
+	tamperedCall := *tampered.Call
+	tamperedCall.Metadata.MemberOccurrences++
+	tampered.Call = &tamperedCall
+	tamperedSaved, err := json.Marshal(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplaySynthesisResult(bundle, "casdoor-many-to-many-v1", tamperedSaved); err == nil ||
+		!strings.Contains(err.Error(), "membership counts do not replay") {
+		t.Fatalf("tampered membership count replay error = %v", err)
+	}
+
+	wire, _, err := decodeSynthesisWireProposalJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for left, right := 0, len(wire.Subsystems)-1; left < right; left, right = left+1, right-1 {
+		wire.Subsystems[left], wire.Subsystems[right] = wire.Subsystems[right], wire.Subsystems[left]
+	}
+	for subsystemIndex := range wire.Subsystems {
+		components := wire.Subsystems[subsystemIndex].Components
+		for left, right := 0, len(components)-1; left < right; left, right = left+1, right-1 {
+			components[left], components[right] = components[right], components[left]
+		}
+		for componentIndex := range components {
+			refs := components[componentIndex].MemberRefs
+			for left, right := 0, len(refs)-1; left < right; left, right = left+1, right-1 {
+				refs[left], refs[right] = refs[right], refs[left]
+			}
+		}
+	}
+	reorderedRaw, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered, err := RecordSynthesisResponseForLanguage(
+		bundle, "casdoor-many-to-many-v1", "openai-compatible/bearer",
+		"deepseek-v4-flash", "ru", time.Millisecond, reorderedRaw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.Landscape.ConceptualMemberships, reordered.Landscape.ConceptualMemberships) {
+		t.Fatal("canonical conceptual membership relation depends on provider order")
+	}
+}
+
+func savedCasdoorManyToManyBundle() CandidateBundle {
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingMixed,
+	}
+	for index := 1; index <= 8; index++ {
+		id := MemberID{Kind: MemberFile, Value: fmt.Sprintf("casdoor-file-%02d", index)}
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: id, Name: fmt.Sprintf("file-%02d.go", index),
+			Facts: []LocalFact{testLocalFact(FactRepositoryPath, fmt.Sprintf("file-%02d.go", index), fmt.Sprintf("fixture/file-%02d.go", index), 1)},
+		})
+	}
+	for index := 1; index <= 34; index++ {
+		id := MemberID{Kind: MemberPackage, Value: fmt.Sprintf("casdoor-package-%02d", index)}
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: id, Name: fmt.Sprintf("package-%02d", index),
+			Facts: []LocalFact{testLocalFact(FactDeclaration, fmt.Sprintf("package-%02d", index), fmt.Sprintf("fixture/package-%02d.go", index), 1)},
+		})
+	}
+	for index := 1; index <= 8; index++ {
+		id := MemberID{Kind: MemberSymbol, Value: fmt.Sprintf("casdoor-symbol-%02d", index)}
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: id, Name: fmt.Sprintf("symbol-%02d", index),
+			Facts: []LocalFact{testLocalFact(FactDeclaration, fmt.Sprintf("symbol-%02d", index), fmt.Sprintf("fixture/symbol-%02d.go", index), 1)},
+		})
+	}
+	anchorKinds := []BehaviorAnchorKind{
+		AnchorProcessEntry, AnchorSecurityBoundary, AnchorLifecycleInterface,
+		AnchorLifecycleStart, AnchorLifecycleStart,
+	}
+	anchorMembers := [][]int{{1}, {4}, {3}, {5}, {2, 5, 6, 7, 8}}
+	for index, kind := range anchorKinds {
+		location := evidence.Location{Path: "fixture/anchors.go", Line: index + 1, Column: 1}
+		members := make([]MemberID, 0, len(anchorMembers[index]))
+		for _, ordinal := range anchorMembers[index] {
+			members = append(members, MemberID{Kind: MemberSymbol, Value: fmt.Sprintf("casdoor-symbol-%02d", ordinal)})
+		}
+		bundle.BehaviorAnchors = append(bundle.BehaviorAnchors, BehaviorAnchor{
+			ID: fmt.Sprintf("casdoor-anchor-%02d", index+1), Kind: kind, Label: string(kind),
+			Location: location, Scenario: ScenarioContext{ID: "go:fixture", Name: "saved Casdoor fixture"},
+			Producer: evidence.Provenance{
+				Provider: "saved_casdoor_run", Version: "20260802-155159",
+				Operation: "replay_architecture_anchor", Location: &location,
+			},
+			Certainty: evidence.CertaintyStatic, MemberIDs: members,
+			Limitations: []string{"Saved deterministic fixture evidence; runtime execution is not implied."},
+		})
+	}
+	relationProvenance := []evidence.Provenance{{
+		Provider: "saved_casdoor_run", Version: "20260802-155159", Operation: "replay_architecture_relation",
+	}}
+	scenario := []ScenarioContext{{ID: "go:fixture", Name: "saved Casdoor fixture"}}
+	bundle.Relations = []LocalRelation{
+		{
+			ID: "casdoor-relation-1", From: MemberID{Kind: MemberSymbol, Value: "casdoor-symbol-01"},
+			To: MemberID{Kind: MemberSymbol, Value: "casdoor-symbol-04"}, Kind: StructuralRelationBehaviorHandoff,
+			Certainty: evidence.CertaintyStatic, Provenance: relationProvenance, Scenarios: scenario,
+		},
+		{
+			ID: "casdoor-relation-2", From: MemberID{Kind: MemberSymbol, Value: "casdoor-symbol-01"},
+			To: MemberID{Kind: MemberSymbol, Value: "casdoor-symbol-05"}, Kind: StructuralRelationBehaviorHandoff,
+			Certainty: evidence.CertaintyStatic, Provenance: relationProvenance, Scenarios: scenario,
+		},
+	}
+	return bundle
 }
 
 func TestAnchorRefsRejectWithinComponentDuplicateButAllowSharedContext(t *testing.T) {

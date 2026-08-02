@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	SemanticSearchIndexVersion = 5
+	SemanticSearchIndexVersion = 6
 
 	maxSemanticSearchItems         = 1024
 	maxSemanticSearchSuggestions   = 8
@@ -129,12 +130,17 @@ func buildSemanticSearchIndex(data *ReportData, exact *reportExactSearch) (Seman
 	if data == nil {
 		return SemanticSearchIndex{}, fmt.Errorf("semantic search: report data is required")
 	}
+	if err := validateSemanticSearchCanvasVersion(data.ArchitectureCanvas); err != nil {
+		return SemanticSearchIndex{}, err
+	}
 
 	builder := newSemanticSearchBuilder(data)
 	architectureUseful := data.RepositoryGuide == nil || data.RepositoryGuide.ArchitectureUseful
 	if architectureUseful {
 		builder.addMap()
-		builder.addCanvas(exact)
+		if err := builder.addCanvas(exact); err != nil {
+			return SemanticSearchIndex{}, err
+		}
 	}
 	builder.addUserMechanisms()
 	builder.addStudyDirections()
@@ -145,7 +151,10 @@ func buildSemanticSearchIndex(data *ReportData, exact *reportExactSearch) (Seman
 		builder.addExactWorkspace(exact, architectureUseful)
 	}
 
-	index := builder.finish()
+	index, err := builder.finish()
+	if err != nil {
+		return SemanticSearchIndex{}, err
+	}
 	if err := index.Validate(data); err != nil {
 		return SemanticSearchIndex{}, err
 	}
@@ -173,6 +182,9 @@ func attachSemanticSearchIndex(data *ReportData) error {
 func (index SemanticSearchIndex) Validate(data *ReportData) error {
 	if data == nil {
 		return fmt.Errorf("semantic search: report data is required")
+	}
+	if err := validateSemanticSearchCanvasVersion(data.ArchitectureCanvas); err != nil {
+		return err
 	}
 	if index.Version != SemanticSearchIndexVersion {
 		return fmt.Errorf("semantic search: unsupported index version %d", index.Version)
@@ -215,6 +227,20 @@ func (index SemanticSearchIndex) Validate(data *ReportData) error {
 			return fmt.Errorf("semantic search: duplicate suggestion %q", itemID)
 		}
 		seenSuggestions[itemID] = struct{}{}
+	}
+	return nil
+}
+
+func validateSemanticSearchCanvasVersion(canvas *ArchitectureCanvas) error {
+	if canvas == nil {
+		return nil
+	}
+	if canvas.Version != ArchitectureCanvasVersion {
+		return fmt.Errorf(
+			"semantic search: unsupported architecture canvas version %d, want %d",
+			canvas.Version,
+			ArchitectureCanvasVersion,
+		)
 	}
 	return nil
 }
@@ -329,10 +355,10 @@ func (builder *semanticSearchBuilder) addMap() {
 	}, 0)
 }
 
-func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) {
+func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) error {
 	canvas := builder.data.ArchitectureCanvas
 	if canvas == nil {
-		return
+		return nil
 	}
 	for _, subsystem := range canvas.Subsystems {
 		builder.add(SemanticSearchItem{
@@ -345,6 +371,7 @@ func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) {
 			Target:    SemanticSearchTarget{Kind: SemanticSearchTargetMap},
 		}, 70)
 	}
+	members := make(map[componentmap.MemberID]componentmap.Candidate)
 	for _, component := range canvas.Components {
 		aliases := make([]string, 0, len(component.Members)+1)
 		for _, member := range component.Members {
@@ -362,11 +389,35 @@ func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) {
 				ComponentID: component.ID,
 			},
 		}, 20)
+		seenComponentMembers := make(map[componentmap.MemberID]struct{}, len(component.Members))
 		for _, member := range component.Members {
-			if exact != nil && exact.acceptsMember(member) {
-				continue
+			if _, duplicate := seenComponentMembers[member.ID]; duplicate {
+				return fmt.Errorf(
+					"semantic search: component %q repeats exact member %q",
+					component.ID,
+					member.ID.Value,
+				)
 			}
-			builder.addMember(component, member)
+			seenComponentMembers[member.ID] = struct{}{}
+			if existing, exists := members[member.ID]; exists && !reflect.DeepEqual(existing, member) {
+				return fmt.Errorf("semantic search: shared exact member %q changed across memberships", member.ID.Value)
+			}
+			members[member.ID] = member
+		}
+	}
+	if exact == nil {
+		memberIDs := make([]componentmap.MemberID, 0, len(members))
+		for memberID := range members {
+			memberIDs = append(memberIDs, memberID)
+		}
+		sort.Slice(memberIDs, func(i, j int) bool {
+			if memberIDs[i].Kind != memberIDs[j].Kind {
+				return memberIDs[i].Kind < memberIDs[j].Kind
+			}
+			return memberIDs[i].Value < memberIDs[j].Value
+		})
+		for _, memberID := range memberIDs {
+			builder.addMemberWithoutOwner(members[memberID])
 		}
 	}
 	for _, flow := range canvas.Flows {
@@ -424,29 +475,26 @@ func (builder *semanticSearchBuilder) addCanvas(exact *reportExactSearch) {
 	for _, anchor := range canvas.BehaviorAnchors {
 		builder.addAnchor(anchor)
 	}
+	return nil
 }
 
-func (builder *semanticSearchBuilder) addMember(
-	component ArchitectureComponent,
-	member componentmap.Candidate,
-) {
+func (builder *semanticSearchBuilder) addMemberWithoutOwner(member componentmap.Candidate) {
+	target := SemanticSearchTarget{Kind: SemanticSearchTargetMap}
+	if location := exactMemberSearchLocation(member); location != nil && builder.pathIsOpenable(location.Path) {
+		target = SemanticSearchTarget{Kind: SemanticSearchTargetLocation, Location: location}
+	}
 	builder.add(SemanticSearchItem{
 		ID: semanticSearchID(
 			SemanticSearchKindMember,
-			"member",
-			string(component.ID),
+			"exact-member",
 			string(member.ID.Kind),
 			member.ID.Value,
 		),
 		Kind:      SemanticSearchKindMember,
 		Title:     member.Name,
-		Summary:   component.Name,
 		Aliases:   []string{string(member.ID.Kind)},
 		Stability: SemanticSearchStabilityExact,
-		Target: SemanticSearchTarget{
-			Kind:        SemanticSearchTargetComponent,
-			ComponentID: component.ID,
-		},
+		Target:    target,
 	}, 55)
 }
 
@@ -824,7 +872,7 @@ func (builder *semanticSearchBuilder) add(item SemanticSearchItem, priority int)
 	builder.candidates[item.ID] = semanticSearchCandidate{item: item, priority: priority}
 }
 
-func (builder *semanticSearchBuilder) finish() SemanticSearchIndex {
+func (builder *semanticSearchBuilder) finish() (SemanticSearchIndex, error) {
 	candidates := make([]semanticSearchCandidate, 0, len(builder.candidates))
 	for _, candidate := range builder.candidates {
 		candidates = append(candidates, candidate)
@@ -848,6 +896,19 @@ func (builder *semanticSearchBuilder) finish() SemanticSearchIndex {
 		Truncated: len(candidates) > maxSemanticSearchItems,
 	}
 	if len(candidates) > maxSemanticSearchItems {
+		// Exact members were admitted under their own distinct-member bound.
+		// Never silently invalidate that contract through the outer mixed-item
+		// projection. Editorial/non-member items retain the historical bounded
+		// truncation behavior, but capacity pressure that would discard a member
+		// is a closed error instead of a partial owner-biased search index.
+		for _, candidate := range candidates[maxSemanticSearchItems:] {
+			if candidate.item.Kind == SemanticSearchKindMember {
+				return SemanticSearchIndex{}, fmt.Errorf(
+					"semantic search: exact member items exceed global index capacity %d",
+					maxSemanticSearchItems,
+				)
+			}
+		}
 		candidates = candidates[:maxSemanticSearchItems]
 	}
 	index.Items = make([]SemanticSearchItem, 0, len(candidates))
@@ -855,7 +916,7 @@ func (builder *semanticSearchBuilder) finish() SemanticSearchIndex {
 		index.Items = append(index.Items, candidate.item)
 	}
 	index.Suggestions = semanticSearchSuggestions(index.Items)
-	return index
+	return index, nil
 }
 
 func semanticSearchSuggestions(items []SemanticSearchItem) []string {
@@ -970,7 +1031,15 @@ func validateSemanticSearchItem(item SemanticSearchItem, data *ReportData) error
 		}
 		seenAliases[alias] = struct{}{}
 	}
-	return validateSemanticSearchTarget(item.Target, data)
+	if err := validateSemanticSearchTarget(item.Target, data); err != nil {
+		return err
+	}
+	if item.Kind == SemanticSearchKindMember &&
+		item.Target.Kind != SemanticSearchTargetMap &&
+		item.Target.Kind != SemanticSearchTargetLocation {
+		return fmt.Errorf("member target must be an exact location or the neutral map")
+	}
+	return nil
 }
 
 func validateSemanticSearchTarget(target SemanticSearchTarget, data *ReportData) error {

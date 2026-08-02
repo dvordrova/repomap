@@ -90,7 +90,7 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
-func TestArchitectureSynthesisV4SuccessRequiresAcceptedEnrichmentAndExactEvidence(t *testing.T) {
+func TestArchitectureSynthesisV5SuccessRequiresAcceptedEnrichmentAndExactEvidence(t *testing.T) {
 	t.Parallel()
 	base := architectureSynthesisV4AcceptedFixture()
 	if err := base.Validate(); err != nil {
@@ -120,8 +120,7 @@ func TestArchitectureSynthesisV4SuccessRequiresAcceptedEnrichmentAndExactEvidenc
 			value.MemberOccurrences = 0
 			value.DistinctMembers = 0
 		},
-		"duplicate membership": func(value *ArchitectureSynthesisStatus) { value.MemberOccurrences++ },
-		"incomplete stop":      func(value *ArchitectureSynthesisStatus) { value.ResponseComplete = false },
+		"incomplete stop": func(value *ArchitectureSynthesisStatus) { value.ResponseComplete = false },
 		"completion unknown": func(value *ArchitectureSynthesisStatus) {
 			value.FinishReason = ""
 			value.ResponseComplete = false
@@ -135,6 +134,16 @@ func TestArchitectureSynthesisV4SuccessRequiresAcceptedEnrichmentAndExactEvidenc
 				t.Fatalf("accepted invalid v3 status: %#v", candidate)
 			}
 		})
+	}
+	manyToMany := base
+	manyToMany.MemberOccurrences = 3
+	if err := manyToMany.Validate(); err != nil {
+		t.Fatalf("v5 rejected many-to-many membership evidence: %v", err)
+	}
+	legacyV4 := manyToMany
+	legacyV4.Version = 4
+	if err := legacyV4.Validate(); err == nil {
+		t.Fatal("v4 status reinterpreted many-to-many membership under the v5 contract")
 	}
 }
 
@@ -182,13 +191,17 @@ func TestArchitectureSynthesisV4UncalledFailureRejectsProviderResponseEvidence(t
 	}
 }
 
-func TestArchitectureSynthesisV4AcceptsExactClosedProducerDiagnosticRegistry(t *testing.T) {
+func TestArchitectureSynthesisV5AcceptsExactClosedProducerDiagnosticRegistry(t *testing.T) {
 	producerCodes := []string{
 		"proposal.components_per_subsystem_above_preferred",
 		"proposal.conflicting_membership",
+		"proposal.duplicate_component_identity",
+		"proposal.duplicate_member_id",
 		"proposal.invalid_component",
 		"proposal.invalid_member_id",
 		"proposal.invalid_members",
+		"proposal.member_participation_limit_exceeded",
+		"proposal.membership_limit_exceeded",
 		"proposal.invalid_subsystem",
 		"proposal.invalid_subsystem_count",
 		"proposal.no_usable_subsystems",

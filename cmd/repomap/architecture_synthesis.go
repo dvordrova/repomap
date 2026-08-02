@@ -20,7 +20,7 @@ import (
 const (
 	architectureSynthesisCacheDirectory = ".component-synthesis"
 	architectureSynthesisRevision       = "captured-bundle-v1"
-	architectureSynthesisCacheContract  = "architecture-external-cache-v2"
+	architectureSynthesisCacheContract  = "architecture-external-cache-v3"
 )
 
 var errArchitectureSynthesisRejected = errors.New(
@@ -417,11 +417,6 @@ func ensureArchitectureSynthesisWithOptions(
 				cachedOutcome.InputBytes = len(requestJSON)
 				cachedOutcome.CandidateCount = len(bundle.Candidates)
 				cachedOutcome.AnchorCount = len(bundle.BehaviorAnchors)
-				cachedOutcome.MembershipCounted,
-					cachedOutcome.MemberOccurrences,
-					cachedOutcome.DistinctMembers = architectureResponseMembershipCounts(
-					cachedRecord.Call.Response,
-				)
 				if architectureSynthesisAcceptedEvidenceCode(cachedOutcome) != "" {
 					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove incomplete cache evidence: %w", removeErr)
@@ -540,6 +535,15 @@ func ensureArchitectureSynthesisWithOptions(
 	result.Record.Call.Metadata.FinishReason = providerResult.FinishReason
 	result.Record.Call.Metadata.TransportAttempts = providerResult.Attempts
 	result.Record.Call.Metadata.ResponseComplete = providerResult.FinishReason == "stop"
+	membershipCounted := result.Membership.Counted
+	memberOccurrences := result.Membership.MemberOccurrences
+	distinctMembers := result.Membership.DistinctMembers
+	if !membershipCounted {
+		// A response that failed before request-local resolution can still retain
+		// closed raw cardinality diagnostics. Accepted responses always use the
+		// authoritative resolver counts above.
+		membershipCounted, memberOccurrences, distinctMembers = architectureResponseMembershipCounts(raw)
+	}
 	outcome = architectureSynthesisOutcome{
 		InputBytes:            len(requestJSON),
 		LatencyMillis:         result.Record.Call.Metadata.LatencyMillis,
@@ -564,10 +568,10 @@ func ensureArchitectureSynthesisWithOptions(
 		CandidateCount:        len(bundle.Candidates),
 		AnchorCount:           len(bundle.BehaviorAnchors),
 		ValidationCodes:       architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
+		MembershipCounted:     membershipCounted,
+		MemberOccurrences:     memberOccurrences,
+		DistinctMembers:       distinctMembers,
 	}
-	outcome.MembershipCounted,
-		outcome.MemberOccurrences,
-		outcome.DistinctMembers = architectureResponseMembershipCounts(raw)
 	accepted := !result.Landscape.Fallback &&
 		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
 			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
@@ -801,8 +805,6 @@ func architectureSynthesisAcceptedEvidenceCode(outcome architectureSynthesisOutc
 		return "response.incomplete"
 	case !outcome.MembershipCounted || outcome.MemberOccurrences == 0:
 		return "response.membership_unavailable"
-	case outcome.MemberOccurrences != outcome.DistinctMembers:
-		return "proposal.conflicting_membership"
 	}
 	if err := architectureSynthesisStatus(outcome, nil).Validate(); err != nil {
 		return "status.invalid_evidence"
@@ -919,10 +921,11 @@ func replayArchitectureSynthesisOutcome(
 	outputLanguage string,
 	saved []byte,
 ) (architectureSynthesisOutcome, error) {
-	landscape, err := componentmap.ReplaySynthesis(bundle, repositoryRevision, saved)
+	result, err := componentmap.ReplaySynthesisResult(bundle, repositoryRevision, saved)
 	if err != nil {
 		return architectureSynthesisOutcome{}, err
 	}
+	landscape := result.Landscape
 	var record componentmap.SynthesisRecord
 	if err := json.Unmarshal(saved, &record); err != nil {
 		return architectureSynthesisOutcome{}, err
@@ -953,6 +956,9 @@ func replayArchitectureSynthesisOutcome(
 		ResponseBytes:         record.Call.ResponseBytes,
 		ResponseContentBytes:  len(record.Call.Response),
 		ValidationCodes:       architectureSynthesisDiagnosticCodes(landscape.Diagnostics),
+		MembershipCounted:     result.Membership.Counted,
+		MemberOccurrences:     result.Membership.MemberOccurrences,
+		DistinctMembers:       result.Membership.DistinctMembers,
 	}, nil
 }
 

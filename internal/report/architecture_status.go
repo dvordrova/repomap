@@ -8,7 +8,7 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 4
+	ArchitectureSynthesisStatusVersion = 5
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -26,9 +26,13 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	// Locally applied proposal validation and normalization diagnostics.
 	"proposal.components_per_subsystem_above_preferred": {},
 	"proposal.conflicting_membership":                   {},
+	"proposal.duplicate_component_identity":             {},
+	"proposal.duplicate_member_id":                      {},
 	"proposal.invalid_component":                        {},
 	"proposal.invalid_member_id":                        {},
 	"proposal.invalid_members":                          {},
+	"proposal.member_participation_limit_exceeded":      {},
+	"proposal.membership_limit_exceeded":                {},
 	"proposal.invalid_subsystem":                        {},
 	"proposal.invalid_subsystem_count":                  {},
 	"proposal.no_usable_subsystems":                     {},
@@ -151,7 +155,7 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		return nil
 	}
 	if status.Version >= 4 {
-		if err := status.validateV4Evidence(); err != nil {
+		if err := status.validateResolvedMembershipEvidence(); err != nil {
 			return err
 		}
 	}
@@ -201,9 +205,9 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 	return nil
 }
 
-func (status ArchitectureSynthesisStatus) validateV4Evidence() error {
+func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() error {
 	if status.PromptBytes != 0 {
-		return fmt.Errorf("architecture synthesis status v4 cannot use legacy prompt bytes")
+		return fmt.Errorf("architecture synthesis status v4+ cannot use legacy prompt bytes")
 	}
 	if status.ProviderRequestCount == 1 {
 		if status.RequestBytes == 0 || status.CandidateCount == 0 || status.TransportAttempts == 0 {
@@ -261,7 +265,7 @@ func (status ArchitectureSynthesisStatus) validateV4Evidence() error {
 	}
 	if (status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached) &&
 		(!status.ResponseComplete || !status.MembershipCounted || status.MemberOccurrences == 0 ||
-			status.MemberOccurrences != status.DistinctMembers ||
+			(status.Version == 4 && status.MemberOccurrences != status.DistinctMembers) ||
 			status.ResponseState != "captured") {
 		return fmt.Errorf("accepted live Architecture requires complete exact membership evidence")
 	}

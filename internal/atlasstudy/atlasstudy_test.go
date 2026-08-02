@@ -103,6 +103,83 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	}
 }
 
+func TestCompileUsesCompleteReadingLocatorIdentity(t *testing.T) {
+	t.Parallel()
+
+	duplicateInput := func() Input {
+		input := cloneTestInput(testInput())
+		location := evidence.Location{
+			Path: "internal/shared/run.go", Line: 20, Column: 3,
+			EndLine: 20, EndColumn: 9,
+		}
+		for _, index := range []int{0, 1} {
+			input.ReadingTargets[index].Kind = ReadingTargetFunction
+			input.ReadingTargets[index].Location = location
+			input.ReadingTargets[index].Symbol = "Run"
+		}
+		return input
+	}
+
+	if _, err := Compile(duplicateInput()); err == nil ||
+		!strings.Contains(err.Error(), "duplicate one exact locator") {
+		t.Fatalf("complete duplicate locator error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		change func(*ReadingTarget)
+	}{
+		{name: "path", change: func(target *ReadingTarget) { target.Location.Path = "internal/shared/other.go" }},
+		{name: "line", change: func(target *ReadingTarget) { target.Location.Line = 19 }},
+		{name: "column", change: func(target *ReadingTarget) { target.Location.Column = 4 }},
+		{name: "end line", change: func(target *ReadingTarget) { target.Location.EndLine = 21 }},
+		{name: "end column", change: func(target *ReadingTarget) { target.Location.EndColumn = 10 }},
+		{name: "symbol", change: func(target *ReadingTarget) { target.Symbol = "RunOther" }},
+		{name: "kind", change: func(target *ReadingTarget) { target.Kind = ReadingTargetMethod }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			input := duplicateInput()
+			test.change(&input.ReadingTargets[1])
+			if _, err := Compile(input); err != nil {
+				t.Fatalf("distinct %s locator rejected: %v", test.name, err)
+			}
+		})
+	}
+}
+
+func TestRepositoryLocationRejectsNegativeAndInconsistentCoordinates(t *testing.T) {
+	t.Parallel()
+
+	valid := []evidence.Location{
+		{Path: "service.go", Line: 10},
+		{Path: "service.go", Line: 10, Column: 3},
+		{Path: "service.go", Line: 10, Column: 3, EndLine: 10, EndColumn: 8},
+		{Path: "service.go", Line: 10, Column: 3, EndLine: 12},
+	}
+	for _, location := range valid {
+		if !repositoryLocation(location) {
+			t.Errorf("valid repository location rejected: %#v", location)
+		}
+	}
+
+	invalid := []evidence.Location{
+		{Path: "service.go", Line: -1},
+		{Path: "service.go", Line: 10, Column: -1},
+		{Path: "service.go", Line: 10, EndLine: -1},
+		{Path: "service.go", Line: 10, EndColumn: -1},
+		{Path: "service.go", Line: 10, EndColumn: 4},
+		{Path: "service.go", Line: 10, EndLine: 9},
+		{Path: "service.go", Line: 10, Column: 8, EndLine: 10, EndColumn: 3},
+	}
+	for _, location := range invalid {
+		if repositoryLocation(location) {
+			t.Errorf("invalid repository location accepted: %#v", location)
+		}
+	}
+}
+
 func TestCompilePublishesDistinctBriefSupportChoicesWithoutUnitRefs(t *testing.T) {
 	t.Parallel()
 	product := mustCompileTestProduct(t, testInput())
@@ -448,7 +525,7 @@ func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoute
 	wantIssues := []DirectionIssue{
 		{Position: 3, Code: IssueInvalidReadingCount},
 		{Position: 4, Code: IssueInvalidReadingCount},
-		{Position: 5, Code: IssueReadingOwnerMissing},
+		{Position: 5, Code: IssueReadingPrincipalMissing},
 	}
 	if !reflect.DeepEqual(diagnostics.Issues, wantIssues) {
 		t.Fatalf("corrected saved-response route diagnostics = %#v, want %#v", diagnostics.Issues, wantIssues)
@@ -584,9 +661,9 @@ func testInput() Input {
 			Kind: "process_entry", Authority: repositoryatlas.AuthorityResolved,
 		}},
 		ReadingTargets: []ReadingTarget{
-			{ID: "anchor-start-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"}, Kind: ReadingTargetEntrypoint, Label: "Server startup", Fact: "Initializes the application shell.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "cmd/server/main.go", Line: 20}, Symbol: "RunServer"},
-			{ID: "anchor-config-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"}, Kind: ReadingTargetFunction, Label: "Configuration load", Fact: "Loads bounded application settings.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/config/load.go", Line: 14}, Symbol: "Load"},
-			{ID: "anchor-route-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"}, Kind: ReadingTargetFunction, Label: "Route registration", Fact: "Registers the public request surface.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/server/routes.go", Line: 31}, Symbol: "RegisterRoutes"},
+			{ID: "anchor-start-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"}, RelatedComponentIDs: []string{"component-api-canonical"}, PrincipalRefs: []CanonicalRef{{Kind: RefComponent, ID: "component-api-canonical"}}, Kind: ReadingTargetEntrypoint, Label: "Server startup", Fact: "Initializes the application shell.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "cmd/server/main.go", Line: 20}, Symbol: "RunServer"},
+			{ID: "anchor-config-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"}, RelatedComponentIDs: []string{"component-api-canonical"}, PrincipalRefs: []CanonicalRef{{Kind: RefComponent, ID: "component-api-canonical"}}, Kind: ReadingTargetFunction, Label: "Configuration load", Fact: "Loads bounded application settings.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/config/load.go", Line: 14}, Symbol: "Load"},
+			{ID: "anchor-route-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"}, RelatedComponentIDs: []string{"component-api-canonical"}, PrincipalRefs: []CanonicalRef{{Kind: RefComponent, ID: "component-api-canonical"}}, Kind: ReadingTargetFunction, Label: "Route registration", Fact: "Registers the public request surface.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/server/routes.go", Line: 31}, Symbol: "RegisterRoutes"},
 		},
 		Evidence: []EvidenceFact{{
 			ID:          "evidence-start-canonical",
@@ -641,7 +718,9 @@ func casdoor144414ShapeInput() Input {
 		owner := ownerByOrdinal[ordinal]
 		input.ReadingTargets = append(input.ReadingTargets, ReadingTarget{
 			ID: id, Owner: CanonicalRef{Kind: RefComponent, ID: owner},
-			Kind: ReadingTargetFunction, Label: fmt.Sprintf("Fixture target %02d", ordinal),
+			RelatedComponentIDs: []string{owner},
+			PrincipalRefs:       []CanonicalRef{{Kind: RefComponent, ID: owner}},
+			Kind:                ReadingTargetFunction, Label: fmt.Sprintf("Fixture target %02d", ordinal),
 			Fact:      "Shows one exact local reading target.",
 			Authority: repositoryatlas.AuthorityObserved,
 			Location: evidence.Location{

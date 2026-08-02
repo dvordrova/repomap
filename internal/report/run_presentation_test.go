@@ -20,6 +20,7 @@ func TestPrepareRunPresentationOwnsLocalizableEnrichmentOnly(t *testing.T) {
 		ProjectGuess:  "repository orientation",
 		OpenablePaths: []string{"README.md"},
 		ArchitectureCanvas: &ArchitectureCanvas{
+			Version:  ArchitectureCanvasVersion,
 			Title:    "Repository architecture",
 			Subtitle: "A bounded architecture view.",
 			Subsystems: []ArchitectureSubsystem{{

@@ -9,8 +9,8 @@
   "flows": null,
   "artifacts_dir": "",
   "architecture_canvas": {
-    "version": 5,
-    "landscape_version": 5,
+    "version": 6,
+    "landscape_version": 6,
     "flowproof_version": 3,
     "fallback": false,
     "validation_outcome": "accepted",

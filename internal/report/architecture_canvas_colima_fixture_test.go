@@ -31,14 +31,20 @@ func TestColimaRuntimeV2FixturePreservesBranching(t *testing.T) {
 	if canvas == nil {
 		t.Fatal("architecture_canvas is missing")
 	}
-	const savedLandscapeVersion = componentmap.ContractVersion
-	if canvas.Version != ArchitectureCanvasVersion ||
+	const (
+		savedCanvasVersion    = 5
+		savedLandscapeVersion = 5
+	)
+	if ArchitectureCanvasVersion <= savedCanvasVersion || componentmap.ContractVersion <= savedLandscapeVersion {
+		t.Fatalf("current contracts did not advance beyond the historical fixture")
+	}
+	if canvas.Version != savedCanvasVersion ||
 		canvas.LandscapeVersion != savedLandscapeVersion ||
 		canvas.FlowProofVersion != flowproof.Version {
 		t.Fatalf(
 			"canvas versions = %d/%d/%d, want %d/%d/%d",
 			canvas.Version, canvas.LandscapeVersion, canvas.FlowProofVersion,
-			ArchitectureCanvasVersion, savedLandscapeVersion, flowproof.Version,
+			savedCanvasVersion, savedLandscapeVersion, flowproof.Version,
 		)
 	}
 	if got := len(canvas.Subsystems); got != 4 {

@@ -1,15 +1,31 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/200-architecture-short-refs-study-contract.md
+    decisions/201-conceptual-membership-and-study-independence.md
 
 Status:
-    Decision 200 active; Architecture short refs and Atlas Study contract hardening authorized
+    Decision 201 active; conceptual membership and Study independence authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 201 separates model-authored many-to-many conceptual membership
+    from optional independently proven local ownership. Shared members remain
+    valid in multiple components; distinct coverage and membership-edge bounds
+    are tracked separately; flow and Surface consumers expose plural
+    participants without choose-first ownership or structural cross-products.
+    Atlas Study uses one target per exact locator with plural principal
+    associations and runs from any complete usable local Canvas rather than
+    depending on ProposalAccepted. Insufficient catalogs are provider-free
+    unavailable local products. Decision 200 identities are not reinterpreted,
+    and no raw Orientation, old fan-out, fuzzy repair, primary/related model
+    owner, legacy reader, migration or UI workaround is restored.
+    After provider-free acceptance and exact installation, the repository
+    owner explicitly authorized the root supervisor to run the live Casdoor
+    comparison with existing credentials and iterate on material product
+    defects; implementation/source subagents remain provider-free and secrets
+    remain closed.
     Decision 200 keeps the Decision 199 Atlas-first product sequence and
     replaces its Architecture parity wire with deterministic private
     request-local typed refs. Canonical opaque identities remain local,
