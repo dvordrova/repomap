@@ -1026,6 +1026,9 @@ type RunManifestAuthoritySeed struct {
 	RepositoryIdentity string
 	AnalysisRoot       string
 	SelectedRevision   string
+	// CapturedInputPaths are analysis-root-relative, matching the input
+	// contract of ConfirmRunAuthorityScoped. The manifest itself stores these
+	// paths relative to RepositoryIdentity.
 	CapturedInputPaths []string
 }
 
@@ -1048,9 +1051,9 @@ func ReadRunManifestAuthoritySeed(runDir string) (RunManifestAuthoritySeed, erro
 	if err != nil {
 		return RunManifestAuthoritySeed{}, err
 	}
-	paths := make([]string, 0, len(manifest.CapturedInputs))
-	for _, input := range manifest.CapturedInputs {
-		paths = append(paths, input.Path)
+	paths, err := analysisRelativeManifestInputPaths(manifest)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, err
 	}
 	return RunManifestAuthoritySeed{
 		RepositoryIdentity: manifest.RepositoryState.Identity,
@@ -1058,6 +1061,23 @@ func ReadRunManifestAuthoritySeed(runDir string) (RunManifestAuthoritySeed, erro
 		SelectedRevision:   manifest.MaterialInputs.SelectedRevision,
 		CapturedInputPaths: paths,
 	}, nil
+}
+
+func analysisRelativeManifestInputPaths(manifest RunManifest) ([]string, error) {
+	paths := make([]string, 0, len(manifest.CapturedInputs))
+	for _, input := range manifest.CapturedInputs {
+		repositoryPath := filepath.Join(manifest.RepositoryState.Identity, filepath.FromSlash(input.Path))
+		relative, err := filepath.Rel(manifest.AnalysisRoot, repositoryPath)
+		if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("report manifest seed: captured input %q is outside analysis root", input.Path)
+		}
+		path := filepath.ToSlash(relative)
+		if err := validateManifestPath(path); err != nil {
+			return nil, fmt.Errorf("report manifest seed: captured input %q: %w", input.Path, err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
 }
 
 // ReadRunManifest reads and verifies run_manifest.json and report.json from a
