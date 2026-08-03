@@ -1526,13 +1526,15 @@ func TestRunDefaultOfflineRussianRequestKeepsUILocaleWithoutModelLocalization(t 
 	}
 	for _, marker := range [][]byte{
 		[]byte(`<html lang="ru">`),
+		[]byte(`rm-localization-status--stage_owned`),
+		[]byte(`data-rm-message="main.localization.ru_active"`),
 	} {
 		if !bytes.Contains(reportHTML, marker) {
 			t.Fatalf("RU Atlas-first report is missing UI locale marker %q", marker)
 		}
 	}
-	if !bytes.Contains(reportHTML, []byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`)) {
-		t.Fatal("offline RU report did not disclose that canonical model prose remains English")
+	if bytes.Contains(reportHTML, []byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`)) {
+		t.Fatal("Atlas-first stage-owned RU report showed the legacy unavailable-localization warning")
 	}
 }
 

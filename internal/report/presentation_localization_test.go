@@ -1388,6 +1388,39 @@ func TestPresentationLocalizationMissingStatusIsExplicitFailureWhenRussianWasReq
 	}
 }
 
+func TestAtlasFirstRussianPresentationIsActiveWithoutLegacyLocalizationStatus(t *testing.T) {
+	t.Parallel()
+
+	canonical := presentationLocalizationFixture()
+	canonical.RepositoryAtlas = repositoryAtlasFixturePtr()
+	canonical.Navigator = &NavigatorReportProduct{Version: 1, State: "empty"}
+	projected, status := LoadPresentationLocalization(
+		t.TempDir(),
+		canonical,
+		localization.LocaleRussian,
+	)
+	if status.State != "" || projected.ReportLanguage != localization.LocaleRussian ||
+		projected.presentationLocalizationState != presentationLocalizationStageOwned {
+		t.Fatalf("stage-owned Russian presentation/status = %#v/%#v", projected, status)
+	}
+	html, err := RenderHTML(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range [][]byte{
+		[]byte(`<html lang="ru">`),
+		[]byte(`rm-localization-status--stage_owned`),
+		[]byte(`data-rm-message="main.localization.ru_active"`),
+	} {
+		if !bytes.Contains(html, marker) {
+			t.Fatalf("stage-owned RU render is missing %q", marker)
+		}
+	}
+	if bytes.Contains(html, []byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`)) {
+		t.Fatal("stage-owned RU render showed the legacy unavailable warning")
+	}
+}
+
 func TestPresentationLocalizationEndToEndRendersEnglishRussianAndDegradation(t *testing.T) {
 	t.Parallel()
 
