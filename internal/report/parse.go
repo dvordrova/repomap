@@ -818,6 +818,11 @@ func collectOpenablePaths(data *ReportData) {
 				add(member.Location.Path)
 			}
 		}
+		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
+			add(handoff.ProcessEntrypoint.Location.Path)
+			add(handoff.Callee.Location.Path)
+			add(handoff.RepresentativeCallsite.Path)
+		}
 	}
 	if data.ModelResearch != nil {
 		for _, fact := range data.ModelResearch.Theory.GroundedFacts {

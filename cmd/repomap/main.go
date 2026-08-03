@@ -824,30 +824,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			humanOutput.State("Study", "unavailable", "provider calls: 0", "reason: offline requested")
 		}
 	default:
-		studyInput, inputErr := report.BuildAtlasStudyInput(
-			reportData, atlasstudy.Language(reportLanguage),
-		)
-		if inputErr != nil {
-			studyErr = fmt.Errorf("Atlas Study exact input: %w", inputErr)
-			break
-		}
-		if !report.AtlasStudyInputHasMinimumCatalog(studyInput) {
-			if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
-				studyErr = cleanupErr
-				break
-			}
-			studyOutcome = atlasStudyRunOutcome{
-				State: atlasstudy.ProductStateUnavailable, ProviderSkipped: true,
-			}
-			humanOutput.State(
-				"Study", "unavailable", "provider calls: 0",
-				fmt.Sprintf(
-					"reason: fewer than %d distinct exact reading locations",
-					report.AtlasStudyMinimumDistinctReadingLocators,
-				),
-			)
-			break
-		}
 		studyOutcome, studyErr = runAtlasStudyForRun(
 			ctx, reportData, runDir, dDir,
 			researchRepositoryContext(initialState, repo), researchPolicy,

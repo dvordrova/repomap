@@ -105,6 +105,8 @@ func atlasStudyAtlasFirstDiagnostic(
 		state = "failed"
 	case outcome.Cached:
 		state = "cache_hit"
+	case outcome.State == atlasstudy.ProductStateAcceptedPartial:
+		state = "accepted_partial"
 	case outcome.State == atlasstudy.ProductStateAccepted:
 		state = "accepted"
 	}

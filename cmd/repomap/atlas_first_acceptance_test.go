@@ -73,7 +73,7 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 		)
 	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
-	assertAtlasFirstAcceptedStudy(t, data, 1)
+	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "accepted",
@@ -98,8 +98,8 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Diagnostics.DirectionsReceived != 2 ||
-		result.Diagnostics.DirectionsAccepted != 1 ||
+	if result.Diagnostics.DirectionsReceived != len(result.Directions)+1 ||
+		result.Diagnostics.DirectionsAccepted != len(result.Directions) ||
 		result.Diagnostics.DirectionsRejected != 1 ||
 		len(result.Diagnostics.Issues) != 1 ||
 		result.Diagnostics.Issues[0].Code != atlasstudy.IssueUnknownRef {
@@ -159,7 +159,7 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 		t.Fatalf("library Atlas relations = %#v, want no synthetic startup relation", data.RepositoryAtlas)
 	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
-	assertAtlasFirstAcceptedStudy(t, data, 1)
+	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
 		debugdump.SemanticStageNavigator:    "empty",
@@ -196,7 +196,7 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 		len(data.ArchitectureCanvas.Components) == 0 {
 		t.Fatalf("rejected enrichment erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
-	assertAtlasFirstAcceptedStudy(t, data, 1)
+	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
 		debugdump.SemanticStageNavigator:    "empty",
 		debugdump.SemanticStageArchitecture: "rejected",
@@ -246,7 +246,7 @@ func TestRunDefaultAtlasFirstNavigatorFailureDoesNotGateArchitectureOrStudy(t *t
 		t.Fatalf("failed Navigator report = %#v", data.Navigator)
 	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
-	assertAtlasFirstAcceptedStudy(t, data, 1)
+	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "failed",
 		debugdump.SemanticStageArchitecture: "accepted",
@@ -278,7 +278,7 @@ func TestRunDefaultAtlasFirstNavigatorProviderFailureDoesNotGateArchitectureOrSt
 		t.Fatalf("provider-failed Navigator report = %#v", data.Navigator)
 	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
-	assertAtlasFirstAcceptedStudy(t, data, 1)
+	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "failed",
 		debugdump.SemanticStageArchitecture: "accepted",
@@ -294,7 +294,11 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 	}
 	runDir, _, data := runAtlasFirstAcceptance(t, repo, provider)
 
-	provider.assertStages(t, atlasFirstStageNavigator, atlasFirstStageArchitecture)
+	provider.assertStages(t,
+		atlasFirstStageNavigator,
+		atlasFirstStageArchitecture,
+		atlasFirstStageStudy,
+	)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
 		data.ArchitectureSynthesis.ProposalAccepted ||
@@ -307,16 +311,11 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 		len(data.ArchitectureCanvas.Components) == 0 {
 		t.Fatalf("provider failure erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
-	if data.AtlasStudy == nil ||
-		data.AtlasStudy.State != atlasstudy.ProductStateUnavailable ||
-		data.AtlasStudy.UnavailableCode != report.AtlasStudyUnavailableInsufficientCatalog ||
-		data.StudyMap != nil {
-		t.Fatalf("provider-failed Architecture Study state = %#v / %#v", data.AtlasStudy, data.StudyMap)
-	}
-	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
+	assertAtlasFirstAcceptedStudy(t, data)
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "accepted",
 		debugdump.SemanticStageArchitecture: "failed",
-		debugdump.SemanticStageAtlasStudy:   "unavailable",
+		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
 }
 
@@ -589,6 +588,13 @@ func atlasFirstAcceptanceStudyResponse(
 			Path          string   `json:"path"`
 			PrincipalRefs []string `json:"principal_refs"`
 		} `json:"reading_targets"`
+		RouteSpans []struct {
+			Ref                 string                   `json:"span_ref"`
+			TargetJob           atlasstudy.TargetJob     `json:"target_job"`
+			LearningStage       atlasstudy.LearningStage `json:"learning_stage"`
+			RequiredSupportRefs []string                 `json:"required_support_refs"`
+			AllowedTargetRefs   []string                 `json:"allowed_target_refs"`
+		} `json:"route_spans"`
 	}
 	if err := json.Unmarshal([]byte(combined[start:start+end]), &wire); err != nil {
 		return nil, fmt.Errorf("decode Atlas Study wire: %w", err)
@@ -598,51 +604,32 @@ func atlasFirstAcceptanceStudyResponse(
 	}
 	componentRef := wire.Components[0].Ref
 	knownPrincipals := make(map[string]struct{}, len(wire.Components)+len(wire.Surfaces))
+	componentPrincipals := make(map[string]struct{}, len(wire.Components))
 	for _, component := range wire.Components {
 		knownPrincipals[component.Ref] = struct{}{}
+		componentPrincipals[component.Ref] = struct{}{}
 	}
 	for _, surface := range wire.Surfaces {
 		knownPrincipals[surface.Ref] = struct{}{}
 	}
-	var targetRefs []string
-	var principalRefs []string
-	principalSet := make(map[string]struct{})
-	addPrincipal := func(ref string) {
-		if _, duplicate := principalSet[ref]; duplicate {
-			return
-		}
-		principalSet[ref] = struct{}{}
-		principalRefs = append(principalRefs, ref)
-	}
-	addPrincipal(componentRef)
+	targetByRef := make(map[string]struct {
+		Path          string
+		PrincipalRefs []string
+	}, len(wire.ReadingTargets))
 	for _, target := range wire.ReadingTargets {
 		if target.Path == "a_package.go" {
 			return nil, fmt.Errorf("package-declaration-only source became a Study reading target")
 		}
-		targetPrincipal := ""
-		for _, principal := range target.PrincipalRefs {
-			if _, known := knownPrincipals[principal]; known {
-				targetPrincipal = principal
-				break
-			}
-		}
-		if targetPrincipal == "" {
-			continue
-		}
-		if len(targetRefs) == 3 {
-			break
-		}
-		targetRefs = append(targetRefs, target.Ref)
-		addPrincipal(targetPrincipal)
+		targetByRef[target.Ref] = struct {
+			Path          string
+			PrincipalRefs []string
+		}{Path: target.Path, PrincipalRefs: target.PrincipalRefs}
 	}
-	if len(targetRefs) < 3 {
-		return nil, fmt.Errorf(
-			"Atlas Study wire has %d exact reading targets across %d components and %d surfaces",
-			len(targetRefs), len(wire.Components), len(wire.Surfaces),
-		)
+	if len(wire.RouteSpans) == 0 {
+		return nil, fmt.Errorf("Atlas Study wire has no typed route span")
 	}
-	if len(principalRefs) > 5 {
-		return nil, fmt.Errorf("Atlas Study fixture requires too many principals")
+	if len(wire.RouteSpans) > atlasstudy.MaxDirections {
+		return nil, fmt.Errorf("Atlas Study wire advertises too many typed route spans")
 	}
 	brief := map[string]any{
 		"what_it_is": map[string]any{
@@ -666,32 +653,77 @@ func atlasFirstAcceptanceStudyResponse(
 			"support_refs": []string{componentRef},
 		},
 	}
-	valid := map[string]any{
-		"question":         "Which exact sources explain the accepted repository component?",
-		"why_it_matters":   "The route keeps the conceptual component tied to exact local reading targets.",
-		"learning_outcome": "The reader can identify three source-backed responsibilities.",
-		"target_job":       string(atlasstudy.JobFirstContact),
-		"learning_stage":   string(atlasstudy.StageOrientation),
-		"principal_refs":   principalRefs,
-		"reading": []any{
-			map[string]any{"target_ref": targetRefs[0], "label": string(atlasstudy.ReadingStart), "what_to_look_for": "Inspect the first exact responsibility."},
-			map[string]any{"target_ref": targetRefs[1], "label": string(atlasstudy.ReadingConnect), "what_to_look_for": "Inspect the related local responsibility."},
-			map[string]any{"target_ref": targetRefs[2], "label": string(atlasstudy.ReadingVerify), "what_to_look_for": "Confirm the third source-backed responsibility."},
-		},
-	}
-	directions := []any{valid}
-	if includeBadSibling {
+	directions := make([]any, 0, len(wire.RouteSpans)+1)
+	for _, span := range wire.RouteSpans {
+		if span.Ref == "" || len(span.RequiredSupportRefs) == 0 || len(span.AllowedTargetRefs) == 0 {
+			return nil, fmt.Errorf("Atlas Study wire has incomplete typed route span")
+		}
+		principalSet := make(map[string]struct{})
+		var principalRefs []string
+		reading := make([]any, 0, len(span.AllowedTargetRefs))
+		for index, targetRef := range span.AllowedTargetRefs {
+			target, ok := targetByRef[targetRef]
+			if !ok {
+				return nil, fmt.Errorf("typed span %s advertises unknown target %s", span.Ref, targetRef)
+			}
+			for _, principal := range target.PrincipalRefs {
+				if _, known := knownPrincipals[principal]; !known {
+					continue
+				}
+				if _, duplicate := principalSet[principal]; duplicate {
+					continue
+				}
+				principalSet[principal] = struct{}{}
+				principalRefs = append(principalRefs, principal)
+			}
+			label := atlasstudy.ReadingContinue
+			if index == 0 {
+				label = atlasstudy.ReadingStart
+			}
+			reading = append(reading, map[string]any{
+				"target_ref": targetRef, "label": string(label),
+				"what_to_look_for": "Inspect the exact producer-supported source boundary.",
+			})
+		}
+		if len(reading) == 0 || len(reading) > atlasstudy.MaxDirectionReadingCount {
+			return nil, fmt.Errorf("typed span %s has invalid target count %d", span.Ref, len(reading))
+		}
+		hasComponent := false
+		for _, principal := range principalRefs {
+			if _, ok := componentPrincipals[principal]; ok {
+				hasComponent = true
+				break
+			}
+		}
+		if !hasComponent {
+			return nil, fmt.Errorf("typed span %s has no component principal", span.Ref)
+		}
+		if len(principalRefs) > 5 {
+			return nil, fmt.Errorf("typed span %s requires too many principals", span.Ref)
+		}
 		directions = append(directions, map[string]any{
-			"question":         "Which invalid route must remain isolated?",
+			"span_ref":         span.Ref,
+			"why_it_matters":   "The route stays bound to exact producer-owned supports.",
+			"learning_outcome": "The reader can inspect the exact source boundaries authorized by this span.",
+			"target_job":       string(span.TargetJob),
+			"learning_stage":   string(span.LearningStage),
+			"principal_refs":   principalRefs,
+			"reading":          reading,
+		})
+	}
+	if includeBadSibling {
+		first := wire.RouteSpans[0]
+		firstTarget := first.AllowedTargetRefs[0]
+		directions = append(directions, map[string]any{
+			"span_ref":         first.Ref,
 			"why_it_matters":   "This deliberately invalid sibling proves item-local rejection.",
 			"learning_outcome": "The valid Brief and route remain available.",
-			"target_job":       string(atlasstudy.JobFirstContact),
-			"learning_stage":   string(atlasstudy.StageOrientation),
-			"principal_refs":   principalRefs,
+			"target_job":       string(first.TargetJob),
+			"learning_stage":   string(first.LearningStage),
+			"principal_refs":   []string{componentRef},
 			"reading": []any{
-				map[string]any{"target_ref": targetRefs[0], "label": string(atlasstudy.ReadingStart), "what_to_look_for": "Inspect the exact source."},
-				map[string]any{"target_ref": targetRefs[1], "label": string(atlasstudy.ReadingConnect), "what_to_look_for": "Inspect the related source."},
-				map[string]any{"target_ref": "r999999", "label": string(atlasstudy.ReadingVerify), "what_to_look_for": "This ref is deliberately unknown."},
+				map[string]any{"target_ref": firstTarget, "label": string(atlasstudy.ReadingStart), "what_to_look_for": "Inspect the exact source."},
+				map[string]any{"target_ref": "a999999", "label": string(atlasstudy.ReadingVerify), "what_to_look_for": "This ref is deliberately unknown."},
 			},
 		})
 	}
@@ -825,16 +857,17 @@ func assertAtlasFirstAcceptedArchitecture(t *testing.T, data *report.ReportData)
 	}
 }
 
-func assertAtlasFirstAcceptedStudy(t *testing.T, data *report.ReportData, wantDirections int) {
+func assertAtlasFirstAcceptedStudy(t *testing.T, data *report.ReportData) {
 	t.Helper()
 	if data.AtlasStudy == nil || data.AtlasStudy.State != atlasstudy.ProductStateAccepted ||
-		data.AtlasStudy.DirectionCount != wantDirections || data.StudyMap == nil ||
-		len(data.StudyMap.Directions) != wantDirections || len(data.StudyMap.Brief.WhatItIs) == 0 {
+		data.AtlasStudy.DirectionCount == 0 || !data.AtlasStudy.CoverageComplete || data.StudyMap == nil ||
+		len(data.StudyMap.Directions) != data.AtlasStudy.DirectionCount || len(data.StudyMap.Brief.WhatItIs) == 0 {
 		t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
 	}
 	for _, direction := range data.StudyMap.Directions {
-		if len(direction.ReadingAnchors) < 3 {
-			t.Fatalf("Study route has fewer than three exact reading anchors: %#v", direction)
+		if len(direction.ReadingAnchors) < atlasstudy.MinDirectionReadingCount ||
+			len(direction.ReadingAnchors) > atlasstudy.MaxDirectionReadingCount {
+			t.Fatalf("Study route has invalid exact reading cardinality: %#v", direction)
 		}
 	}
 }

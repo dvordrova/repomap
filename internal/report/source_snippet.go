@@ -1220,8 +1220,13 @@ func projectOverviewSourceSnippets(data *ReportData) []SourceSnippet {
 }
 
 type overviewSourceTarget struct {
-	path               string
-	line               int
+	path string
+	line int
+	// symbol is an optional exact producer-owned callable identity. It keeps
+	// distinct declarations at the same physical locator separate and lets the
+	// Atlas Study projection bind the authorized excerpt without reparsing or
+	// shortening the canonical symbol.
+	symbol             string
 	relatedEvidenceIDs []string
 }
 
@@ -1566,6 +1571,7 @@ func authorizedOverviewSourceSnippetMatches(
 
 func overviewSourceSnippetCoversTarget(snippet SourceSnippet, target overviewSourceTarget) bool {
 	return snippet.Path == target.path &&
+		(target.symbol == "" || snippet.EnclosingSymbol == target.symbol) &&
 		sourceSnippetContainsRange(snippet.Lines, SourceHighlight{
 			StartLine: target.line,
 			EndLine:   target.line,
@@ -1639,6 +1645,7 @@ func overviewSourceTargetsWithPackageEvidence(
 	appendTarget := func(
 		sourcePath string,
 		line int,
+		symbol string,
 		evidenceIDs ...string,
 	) {
 		if sourcePath == "" || line <= 0 {
@@ -1647,7 +1654,7 @@ func overviewSourceTargetsWithPackageEvidence(
 		if _, ok := openable[sourcePath]; !ok {
 			return
 		}
-		key := overviewSourceTargetKey(sourcePath, line)
+		key := overviewSourceTargetIdentity(sourcePath, line, symbol)
 		if index, duplicate := seen[key]; duplicate {
 			result[index].relatedEvidenceIDs = sortedUniqueSourceEvidenceIDs(append(
 				result[index].relatedEvidenceIDs, evidenceIDs...,
@@ -1656,7 +1663,7 @@ func overviewSourceTargetsWithPackageEvidence(
 		}
 		seen[key] = len(result)
 		result = append(result, overviewSourceTarget{
-			path: sourcePath, line: line,
+			path: sourcePath, line: line, symbol: symbol,
 			relatedEvidenceIDs: sortedUniqueSourceEvidenceIDs(evidenceIDs),
 		})
 	}
@@ -1676,7 +1683,7 @@ func overviewSourceTargetsWithPackageEvidence(
 			}
 			location := overviewEntrySurfaceLocation(trigger)
 			if location != nil {
-				appendTarget(location.Path, location.Line)
+				appendTarget(location.Path, location.Line, "")
 			}
 		}
 	}
@@ -1692,12 +1699,28 @@ func overviewSourceTargetsWithPackageEvidence(
 			if !ok {
 				continue
 			}
-			appendTarget(item.Location.Path, item.Location.Line)
+			appendTarget(item.Location.Path, item.Location.Line, "")
 		}
 	}
 	if includePackageEvidence {
 		for _, item := range exactRepositoryAtlasPackageEvidence(data) {
-			appendTarget(item.Location.Path, item.Location.Line, item.ID)
+			appendTarget(item.Location.Path, item.Location.Line, "", item.ID)
+		}
+	}
+	if grounding := data.ArchitectureGrounding; grounding != nil &&
+		grounding.Version >= ArchitectureGroundingVersion &&
+		validateArchitectureGrounding(*grounding) == nil {
+		for _, handoff := range grounding.EntryHandoffs {
+			appendTarget(
+				handoff.ProcessEntrypoint.Location.Path,
+				handoff.ProcessEntrypoint.Location.Line,
+				handoff.ProcessEntrypoint.ID,
+			)
+			appendTarget(
+				handoff.Callee.Location.Path,
+				handoff.Callee.Location.Line,
+				handoff.Callee.ID,
+			)
 		}
 	}
 
@@ -1715,12 +1738,12 @@ func overviewSourceTargetsWithPackageEvidence(
 			continue
 		}
 		for _, location := range overviewArchitectureComponentLocations(data, component, openable) {
-			appendTarget(location.Path, location.Line)
+			appendTarget(location.Path, location.Line, "")
 		}
 	}
 	for _, locator := range data.ArchitectureCanvas.StructuralLocators {
 		for _, location := range overviewArchitectureStructuralLocatorLocations(locator, openable) {
-			appendTarget(location.Path, location.Line)
+			appendTarget(location.Path, location.Line, "")
 		}
 	}
 	return result
@@ -1860,7 +1883,7 @@ func authorizedOverviewSourceSnippet(
 	}
 	group := sourceSnippetGroup{
 		candidate: savedSourceCandidate{
-			path: target.path, lines: lines,
+			path: target.path, symbol: target.symbol, lines: lines,
 			contentSHA: sourceLinesSHA256(texts),
 		},
 		evidence: []semanticdiscovery.EvidenceRef{{Path: target.path, Line: target.line}},
@@ -1896,7 +1919,8 @@ func mergeExactOverviewSourceSnippet(sources []SourceSnippet, snippet SourceSnip
 		current := &sources[index]
 		if current.Path != snippet.Path || current.StartLine != snippet.StartLine ||
 			current.EndLine != snippet.EndLine || current.Revision != snippet.Revision ||
-			current.ContentSHA256 != snippet.ContentSHA256 || current.Content != snippet.Content {
+			current.ContentSHA256 != snippet.ContentSHA256 || current.Content != snippet.Content ||
+			current.EnclosingSymbol != snippet.EnclosingSymbol {
 			continue
 		}
 		merged := append([]SourceHighlight(nil), current.HighlightRanges...)
@@ -1920,6 +1944,10 @@ func mergeExactOverviewSourceSnippet(sources []SourceSnippet, snippet SourceSnip
 
 func overviewSourceTargetKey(sourcePath string, line int) string {
 	return fmt.Sprintf("%s\x00%d", sourcePath, line)
+}
+
+func overviewSourceTargetIdentity(sourcePath string, line int, symbol string) string {
+	return fmt.Sprintf("%s\x00%d\x00%s", sourcePath, line, symbol)
 }
 
 func normalizeSourceHighlightRanges(values []SourceHighlight) []SourceHighlight {
@@ -1949,8 +1977,9 @@ func resolveOverviewSourceSnippet(sources []SourceSnippet, target overviewSource
 		if !overviewSourceSnippetCoversTarget(snippet, target) {
 			continue
 		}
-		identity := fmt.Sprintf("%s\x00%d\x00%d\x00%s\x00%s",
-			snippet.Path, snippet.StartLine, snippet.EndLine, snippet.Revision, snippet.ContentSHA256)
+		identity := fmt.Sprintf("%s\x00%d\x00%d\x00%s\x00%s\x00%s",
+			snippet.Path, snippet.StartLine, snippet.EndLine, snippet.Revision,
+			snippet.ContentSHA256, snippet.EnclosingSymbol)
 		if _, duplicate := seen[identity]; duplicate {
 			continue
 		}

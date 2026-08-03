@@ -11,24 +11,19 @@ import (
 	"html"
 	"io/fs"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/studymap"
 )
 
-const (
-	// AtlasStudyMinimumDistinctReadingLocators is the smallest exact local
-	// reading catalog that can support a useful bounded Study route.
-	AtlasStudyMinimumDistinctReadingLocators                           = 3
-	AtlasStudyUnavailableInsufficientCatalog AtlasStudyUnavailableCode = "insufficient_catalog"
-)
+const AtlasStudyUnavailableInsufficientCatalog AtlasStudyUnavailableCode = "insufficient_catalog"
 
 // BuildAtlasStudyInput is the one shared adapter used by the runtime producer
 // and report replay. It derives the exact Atlas-first Study input only from
@@ -103,7 +98,11 @@ func BuildAtlasStudyInput(
 	})
 
 	input.Surfaces = atlasStudySurfaces(studyData, atlas)
-	input.ReadingTargets = atlasStudyReadingTargets(studyData, input.Surfaces)
+	shelf := atlasStudyReadingShelf(studyData, input.Surfaces)
+	input.ReadingTargets = shelf.targets
+	input.ReadingSupports = shelf.supports
+	input.ProducerRelations = shelf.relations
+	input.RouteSpans = shelf.spans
 	bindAtlasStudyReadingTargets(&input)
 	input.Evidence = atlasStudyEvidence(atlas, input.Surfaces)
 	if claim := atlasStudyDocumentedPurpose(data.DocumentedPurpose); claim != "" {
@@ -147,18 +146,18 @@ func atlasStudyLocalD177Data(data *ReportData) (*ReportData, error) {
 	)
 	localCanvas.Surfaces = append([]ArchitectureSurface(nil), active.Surfaces...)
 	localCanvas.Flows = append([]ArchitectureFlow(nil), active.Flows...)
+	localCanvas.FlowEdges = append([]ArchitectureFlowEdge(nil), active.FlowEdges...)
 
 	stable := *data
 	stable.ArchitectureCanvas = &localCanvas
 	return &stable, nil
 }
 
-// AtlasStudyInputHasMinimumCatalog reports whether the exact producer-owned
-// reading catalog is large enough to call the Study provider. Build already
-// deduplicates targets by the complete typed locator; this check deliberately
-// does not count conceptual component membership as another place to read.
+// AtlasStudyInputHasMinimumCatalog reports whether the typed local shelf can
+// advertise at least one exact backend-owned span. A focused span legitimately
+// contains one locator; D210 removed the former global three-locator gate.
 func AtlasStudyInputHasMinimumCatalog(input atlasstudy.Input) bool {
-	return len(input.ReadingTargets) >= AtlasStudyMinimumDistinctReadingLocators
+	return len(input.ReadingTargets) > 0 && len(input.ReadingSupports) > 0 && len(input.RouteSpans) > 0
 }
 
 // validateUsableAtlasStudyCanvas verifies the complete D177-visible base map
@@ -317,12 +316,26 @@ func atlasStudySurfaceAuthority(
 	return repositoryatlas.AuthorityUnknown
 }
 
-func atlasStudyReadingTargets(
+type atlasStudyReadingShelfResult struct {
+	targets   []atlasstudy.ReadingTarget
+	supports  []atlasstudy.ReadingSupport
+	relations []atlasstudy.RouteProducerRelation
+	spans     []atlasstudy.RouteSpan
+}
+
+type atlasStudySupportProof struct {
+	role          atlasstudy.SupportRole
+	producerID    string
+	packageBucket string
+	authority     repositoryatlas.Authority
+}
+
+func atlasStudyReadingShelf(
 	data *ReportData,
 	surfaces []atlasstudy.Surface,
-) []atlasstudy.ReadingTarget {
+) atlasStudyReadingShelfResult {
 	if data == nil || data.ArchitectureCanvas == nil {
-		return nil
+		return atlasStudyReadingShelfResult{}
 	}
 	openable := make(map[string]struct{}, len(data.OpenablePaths))
 	for _, sourcePath := range data.OpenablePaths {
@@ -373,10 +386,11 @@ func atlasStudyReadingTargets(
 			continue
 		}
 		line := atlasStudySourceFocusLine(selected)
+		preSymbol, _, _, _ := atlasStudyReadingTargetContext(selected, line, false, nil)
 		association := atlasStudyReadingAssociation(
-			data, advertisedSurfaces, selected.Path, line,
+			data, advertisedSurfaces, selected.Path, line, preSymbol,
 		)
-		if !association.operationalSupport || len(association.principalRefs) == 0 {
+		if len(association.supports) == 0 || len(association.principalRefs) == 0 {
 			continue
 		}
 		symbol, kind, _, _ := atlasStudyReadingTargetContext(
@@ -396,8 +410,9 @@ func atlasStudyReadingTargets(
 			continue
 		}
 		line := atlasStudySourceFocusLine(selected)
+		preSymbol, _, _, _ := atlasStudyReadingTargetContext(selected, line, false, nil)
 		association := atlasStudyReadingAssociation(
-			data, advertisedSurfaces, selected.Path, line,
+			data, advertisedSurfaces, selected.Path, line, preSymbol,
 		)
 		symbol, kind, label, fact := atlasStudyReadingTargetContext(
 			selected, line, association.processEntry, association.surfaceLabels,
@@ -412,11 +427,101 @@ func atlasStudyReadingTargets(
 			Symbol:    symbol,
 		}
 	}
-	result := make([]atlasstudy.ReadingTarget, 0, len(targetsByLocator))
+	// Entry handoffs are producer-owned Study eligibility, not merely one more
+	// use of the saved-source shelf. Project their exact declarations even when
+	// no pre-D210 UserSource happened to include the callee. Source hydration is
+	// a separate local projection and never creates the support identity.
+	physicalTargets := make(map[string]string, len(targetsByLocator))
 	for _, target := range targetsByLocator {
-		result = append(result, target)
+		key := target.Location.Path + "\x00" + fmt.Sprint(target.Location.Line)
+		if existing, ok := physicalTargets[key]; ok && existing != target.Symbol {
+			physicalTargets[key] = ""
+		} else if !ok {
+			physicalTargets[key] = target.Symbol
+		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	addHandoffTarget := func(member ArchitectureAnchorMember, processEntry bool) {
+		if member.Location.Path == "" || member.Location.Line <= 0 || member.ID == "" {
+			return
+		}
+		if _, ok := openable[member.Location.Path]; !ok {
+			return
+		}
+		physicalKey := member.Location.Path + "\x00" + fmt.Sprint(member.Location.Line)
+		if existing, exists := physicalTargets[physicalKey]; exists && existing == member.ID {
+			return
+		}
+		association := atlasStudyReadingAssociation(
+			data, advertisedSurfaces, member.Location.Path, member.Location.Line, member.ID,
+		)
+		if len(association.supports) == 0 || len(association.principalRefs) == 0 {
+			return
+		}
+		kind := atlasStudyReadingTargetKind(member.ID, processEntry)
+		label := strings.TrimSpace(member.Name)
+		if label == "" {
+			label = "Repository declaration"
+		}
+		fact := "Exact producer-owned repository declaration for an observed entry handoff."
+		locatorKey := strings.Join([]string{
+			string(kind), member.Location.Path, fmt.Sprint(member.Location.Line), member.ID,
+		}, "\x00")
+		targetsByLocator[locatorKey] = atlasstudy.ReadingTarget{
+			ID: "reading-target-" + atlasStudyDigest(locatorKey), Owner: association.owner,
+			RelatedComponentIDs: association.relatedComponentIDs,
+			PrincipalRefs:       association.principalRefs,
+			Kind:                kind, Label: label, Fact: fact, Authority: repositoryatlas.AuthorityObserved,
+			Location: evidence.Location{Path: member.Location.Path, Line: member.Location.Line},
+			Symbol:   member.ID,
+		}
+		if existing, exists := physicalTargets[physicalKey]; exists && existing != member.ID {
+			physicalTargets[physicalKey] = ""
+		} else {
+			physicalTargets[physicalKey] = member.ID
+		}
+	}
+	if data.ArchitectureGrounding != nil && data.ArchitectureGrounding.Version >= ArchitectureGroundingVersion {
+		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
+			addHandoffTarget(handoff.ProcessEntrypoint, true)
+			addHandoffTarget(handoff.Callee, false)
+		}
+	}
+	result := atlasStudyReadingShelfResult{
+		targets: make([]atlasstudy.ReadingTarget, 0, len(targetsByLocator)),
+	}
+	associationsByTarget := make(map[string]atlasStudyReadingAssociations, len(targetsByLocator))
+	for _, target := range targetsByLocator {
+		result.targets = append(result.targets, target)
+		associationsByTarget[target.ID] = atlasStudyReadingAssociation(
+			data, advertisedSurfaces, target.Location.Path, target.Location.Line, target.Symbol,
+		)
+	}
+	physicalCounts := make(map[string]int, len(result.targets))
+	for _, target := range result.targets {
+		physicalCounts[target.Location.Path+"\x00"+fmt.Sprint(target.Location.Line)]++
+	}
+	for _, target := range result.targets {
+		key := target.Location.Path + "\x00" + fmt.Sprint(target.Location.Line)
+		if physicalCounts[key] < 2 {
+			continue
+		}
+		association := associationsByTarget[target.ID]
+		association.supports = slices.DeleteFunc(
+			association.supports,
+			func(proof atlasStudySupportProof) bool {
+				return !strings.HasPrefix(proof.producerID, "entry-handoff-entry:") &&
+					!strings.HasPrefix(proof.producerID, "entry-handoff-callee:")
+			},
+		)
+		associationsByTarget[target.ID] = association
+	}
+	result.targets = slices.DeleteFunc(result.targets, func(target atlasstudy.ReadingTarget) bool {
+		return len(associationsByTarget[target.ID].supports) == 0
+	})
+	sort.Slice(result.targets, func(i, j int) bool { return result.targets[i].ID < result.targets[j].ID })
+	result.supports = atlasStudyReadingSupports(result.targets, associationsByTarget)
+	result.relations = atlasStudyProducerRelations(data, result.targets, result.supports)
+	result.spans = atlasStudyRouteSpans(result.targets, result.supports, result.relations)
 	return result
 }
 
@@ -451,7 +556,7 @@ type atlasStudyReadingAssociations struct {
 	principalRefs       []atlasstudy.CanonicalRef
 	surfaceLabels       []string
 	processEntry        bool
-	operationalSupport  bool
+	supports            []atlasStudySupportProof
 }
 
 func atlasStudyReadingAssociation(
@@ -459,6 +564,7 @@ func atlasStudyReadingAssociation(
 	advertisedSurfaces map[string]struct{},
 	sourcePath string,
 	line int,
+	symbol string,
 ) atlasStudyReadingAssociations {
 	knownComponents := make(map[string]struct{}, len(data.ArchitectureCanvas.Components))
 	memberFacts := make(map[componentmap.MemberID][]componentmap.LocalFact)
@@ -483,17 +589,26 @@ func atlasStudyReadingAssociation(
 	}
 	result := atlasStudyReadingAssociations{}
 	for _, surface := range data.ArchitectureCanvas.Surfaces {
-		if surface.Resolution != "exact" {
-			continue
-		}
 		for _, location := range surface.Evidence {
 			if line > 0 && location.Path == sourcePath && location.Line == line {
-				result.operationalSupport = true
 				if surface.Kind == "process_entry" {
 					result.processEntry = true
 				}
 				if _, advertised := advertisedSurfaces[surface.ID]; !advertised {
 					break
+				}
+				authority := atlasStudyAdvertisedSurfaceAuthority(data, surface.ID)
+				role := atlasstudy.SupportSurface
+				if surface.Kind == "process_entry" && authority != repositoryatlas.AuthorityPartial {
+					role = atlasstudy.SupportProcessEntry
+				} else if authority == repositoryatlas.AuthorityPartial {
+					role = atlasstudy.SupportSurfaceCandidate
+				}
+				if packageBucket := atlasStudyExactPackageBucket(data, sourcePath, symbol); packageBucket != "" {
+					result.supports = append(result.supports, atlasStudySupportProof{
+						role: role, producerID: "surface:" + surface.ID,
+						packageBucket: packageBucket, authority: authority,
+					})
 				}
 				principalRefs[atlasstudy.CanonicalRef{Kind: atlasstudy.RefSurface, ID: surface.ID}] = struct{}{}
 				if label := strings.TrimSpace(surface.Name); label != "" {
@@ -517,16 +632,24 @@ func atlasStudyReadingAssociation(
 			}
 		}
 	}
-	if atlasStudyNavigatorSupportsLocation(data, sourcePath, line) {
-		result.operationalSupport = true
-	}
 	for _, flow := range data.ArchitectureCanvas.Flows {
+		acceptedStudyFlow := atlasStudyAcceptedSavedFlow(flow)
 		for _, step := range flow.Steps {
 			if line <= 0 || step.Location == nil || step.Location.Path != sourcePath || step.Location.Line != line {
 				continue
 			}
-			result.operationalSupport = true
 			ownerID := string(step.ComponentID)
+			// Any exact local flow component remains presentation context. Only an
+			// accepted static saved flow is allowed to create Study eligibility.
+			// Conceptual component resolution is optional presentation context and
+			// can never erase an exact producer-owned saved-flow support.
+			if packageBucket := atlasStudyExactPackageBucket(data, sourcePath, symbol); acceptedStudyFlow && packageBucket != "" {
+				result.supports = append(result.supports, atlasStudySupportProof{
+					role:          atlasstudy.SupportSavedFlow,
+					producerID:    "saved-flow:" + string(flow.ID) + ":" + step.ID,
+					packageBucket: packageBucket, authority: repositoryatlas.AuthorityObserved,
+				})
+			}
 			if _, known := knownComponents[ownerID]; ownerID != "" && known {
 				exactOwners[ownerID] = struct{}{}
 				relatedComponents[ownerID] = struct{}{}
@@ -562,10 +685,41 @@ func atlasStudyReadingAssociation(
 		}
 		switch anchor.ProofMode {
 		case componentmap.AnchorProofProcessEntry:
-			result.operationalSupport = true
 			result.processEntry = true
+			if packageBucket := atlasStudyExactPackageBucket(data, sourcePath, symbol); packageBucket != "" {
+				result.supports = append(result.supports, atlasStudySupportProof{
+					role: atlasstudy.SupportProcessEntry, producerID: "behavior-anchor:" + anchor.ID,
+					packageBucket: packageBucket, authority: repositoryatlas.AuthorityObserved,
+				})
+			}
 		case componentmap.AnchorProofCallTarget:
-			result.operationalSupport = true
+			if packageBucket := atlasStudyExactPackageBucket(data, sourcePath, symbol); packageBucket != "" {
+				result.supports = append(result.supports, atlasStudySupportProof{
+					role: atlasstudy.SupportObservedCallBoundary, producerID: "behavior-anchor:" + anchor.ID,
+					packageBucket: packageBucket, authority: repositoryatlas.AuthorityObserved,
+				})
+			}
+		}
+	}
+	if data.ArchitectureGrounding != nil && data.ArchitectureGrounding.Version >= ArchitectureGroundingVersion {
+		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
+			switch {
+			case atlasStudyHandoffMemberMatches(handoff.ProcessEntrypoint, sourcePath, line, symbol):
+				result.processEntry = true
+				result.supports = append(result.supports, atlasStudySupportProof{
+					role:          atlasstudy.SupportProcessEntry,
+					producerID:    "entry-handoff-entry:" + handoff.ID,
+					packageBucket: atlasStudyPackageBucketID(handoff.ProcessEntrypoint.Package),
+					authority:     repositoryatlas.AuthorityObserved,
+				})
+			case atlasStudyHandoffMemberMatches(handoff.Callee, sourcePath, line, symbol):
+				result.supports = append(result.supports, atlasStudySupportProof{
+					role:          atlasstudy.SupportEntryHandoff,
+					producerID:    "entry-handoff-callee:" + handoff.ID,
+					packageBucket: atlasStudyPackageBucketID(handoff.TargetPackage),
+					authority:     repositoryatlas.AuthorityObserved,
+				})
+			}
 		}
 	}
 	if len(exactOwners) == 1 {
@@ -590,27 +744,395 @@ func atlasStudyReadingAssociation(
 		result.surfaceLabels = append(result.surfaceLabels, label)
 	}
 	sort.Strings(result.surfaceLabels)
+	sort.Slice(result.supports, func(i, j int) bool {
+		left, right := result.supports[i], result.supports[j]
+		if left.role != right.role {
+			return left.role < right.role
+		}
+		if left.packageBucket != right.packageBucket {
+			return left.packageBucket < right.packageBucket
+		}
+		return left.producerID < right.producerID
+	})
 	return result
 }
 
-func atlasStudyNavigatorSupportsLocation(data *ReportData, sourcePath string, line int) bool {
-	if data == nil || data.Navigator == nil || data.RepositoryAtlas == nil || line <= 0 ||
-		data.Navigator.State != navigator.ProductStateSelected || data.Navigator.Recommendation == nil {
-		return false
+func atlasStudyAdvertisedSurfaceAuthority(data *ReportData, surfaceID string) repositoryatlas.Authority {
+	if data == nil || data.ArchitectureCanvas == nil {
+		return repositoryatlas.AuthorityUnknown
 	}
-	evidenceIDs := make(map[string]struct{}, len(data.Navigator.Recommendation.EvidenceIDs))
-	for _, evidenceID := range data.Navigator.Recommendation.EvidenceIDs {
-		if evidenceID != "" {
-			evidenceIDs[evidenceID] = struct{}{}
+	for _, surface := range data.ArchitectureCanvas.Surfaces {
+		if surface.ID != surfaceID {
+			continue
+		}
+		switch surface.Resolution {
+		case "partial", "dynamic", "provisional":
+			return repositoryatlas.AuthorityPartial
+		case "exact":
+			return repositoryatlas.AuthorityResolved
+		default:
+			return repositoryatlas.AuthorityUnknown
 		}
 	}
-	for _, item := range data.RepositoryAtlas.Evidence {
-		if _, selected := evidenceIDs[item.ID]; selected &&
-			item.Location.Path == sourcePath && item.Location.Line == line {
-			return true
+	return repositoryatlas.AuthorityUnknown
+}
+
+func atlasStudyHandoffMemberMatches(
+	member ArchitectureAnchorMember,
+	sourcePath string,
+	line int,
+	symbol string,
+) bool {
+	return line > 0 && symbol != "" && member.ID == symbol &&
+		member.Location.Path == sourcePath && member.Location.Line == line
+}
+
+// atlasStudyExactPackageBucket restores the exact producer package identity
+// without treating a repository path prefix or conceptual component as a
+// package. RepositoryGraph is authoritative when present; a qualified saved
+// Go symbol is an exact local producer identity for fixtures and historical
+// reports whose bounded graph projection is absent.
+func atlasStudyExactPackageBucket(data *ReportData, sourcePath, symbol string) string {
+	var packages []string
+	if data != nil && data.RepositoryGraph != nil {
+		for _, pkg := range data.RepositoryGraph.Packages {
+			if pkg.CanonicalPath == "" || !slices.Contains(pkg.Files, sourcePath) {
+				continue
+			}
+			packages = append(packages, pkg.CanonicalPath)
+		}
+		sort.Strings(packages)
+		packages = slices.Compact(packages)
+		if len(packages) == 1 {
+			return atlasStudyPackageBucketID(packages[0])
+		}
+		if len(packages) > 1 {
+			return ""
 		}
 	}
-	return false
+	symbol = strings.TrimSpace(symbol)
+	if index := strings.Index(symbol, ".("); index > 0 {
+		return atlasStudyPackageBucketID(symbol[:index])
+	}
+	if index := strings.LastIndex(symbol, "."); index > 0 {
+		return atlasStudyPackageBucketID(symbol[:index])
+	}
+	return ""
+}
+
+func atlasStudyPackageBucketID(canonicalPackage string) string {
+	canonicalPackage = strings.TrimSpace(canonicalPackage)
+	if canonicalPackage == "" {
+		return ""
+	}
+	return "package-bucket-" + atlasStudyDigest(canonicalPackage)
+}
+
+func atlasStudyReadingSupports(
+	targets []atlasstudy.ReadingTarget,
+	associations map[string]atlasStudyReadingAssociations,
+) []atlasstudy.ReadingSupport {
+	type supportKey struct {
+		targetID      string
+		role          atlasstudy.SupportRole
+		packageBucket string
+	}
+	type supportProofSet struct {
+		producers   []string
+		authorities []repositoryatlas.Authority
+	}
+	proofs := make(map[supportKey]supportProofSet)
+	for _, target := range targets {
+		for _, proof := range associations[target.ID].supports {
+			if proof.producerID == "" || proof.packageBucket == "" {
+				continue
+			}
+			key := supportKey{
+				targetID: target.ID, role: proof.role,
+				packageBucket: proof.packageBucket,
+			}
+			set := proofs[key]
+			set.producers = append(set.producers, proof.producerID)
+			set.authorities = append(set.authorities, proof.authority)
+			proofs[key] = set
+		}
+	}
+	result := make([]atlasstudy.ReadingSupport, 0, len(proofs))
+	for key, set := range proofs {
+		proofIDs := set.producers
+		sort.Strings(proofIDs)
+		proofIDs = slices.Compact(proofIDs)
+		authority := repositoryatlas.AuthorityResolved
+		for _, candidate := range set.authorities {
+			if candidate == repositoryatlas.AuthorityPartial {
+				authority = repositoryatlas.AuthorityPartial
+				break
+			}
+			if candidate == repositoryatlas.AuthorityObserved {
+				authority = repositoryatlas.AuthorityObserved
+			}
+		}
+		identity := strings.Join([]string{
+			key.targetID, string(key.role), key.packageBucket,
+			string(authority), strings.Join(proofIDs, "\x01"),
+		}, "\x00")
+		result = append(result, atlasstudy.ReadingSupport{
+			ID: "route-support-" + atlasStudyDigest(identity), TargetID: key.targetID,
+			PackageBucket: key.packageBucket, Role: key.role, Authority: authority,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func atlasStudyProducerRelations(
+	data *ReportData,
+	targets []atlasstudy.ReadingTarget,
+	supports []atlasstudy.ReadingSupport,
+) []atlasstudy.RouteProducerRelation {
+	supportByTargetRolePackage := make(map[string]string, len(supports))
+	for _, support := range supports {
+		key := strings.Join([]string{support.TargetID, string(support.Role), support.PackageBucket}, "\x00")
+		if _, duplicate := supportByTargetRolePackage[key]; duplicate {
+			// Different producer authorities for the same role/package cannot be
+			// chosen as one relation endpoint.
+			supportByTargetRolePackage[key] = ""
+			continue
+		}
+		supportByTargetRolePackage[key] = support.ID
+	}
+	resolveSupport := func(targetID string, role atlasstudy.SupportRole, packageBucket string) string {
+		return supportByTargetRolePackage[strings.Join([]string{targetID, string(role), packageBucket}, "\x00")]
+	}
+	var result []atlasstudy.RouteProducerRelation
+	if data != nil && data.ArchitectureGrounding != nil &&
+		data.ArchitectureGrounding.Version >= ArchitectureGroundingVersion {
+		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
+			fromTarget := atlasStudyExactHandoffTarget(targets, handoff.ProcessEntrypoint, true)
+			toTarget := atlasStudyExactHandoffTarget(targets, handoff.Callee, false)
+			fromSupport := resolveSupport(fromTarget, atlasstudy.SupportProcessEntry, atlasStudyPackageBucketID(handoff.ProcessEntrypoint.Package))
+			toSupport := resolveSupport(toTarget, atlasstudy.SupportEntryHandoff, atlasStudyPackageBucketID(handoff.TargetPackage))
+			if fromTarget == "" || toTarget == "" || fromTarget == toTarget || fromSupport == "" || toSupport == "" {
+				continue
+			}
+			identity := strings.Join([]string{
+				string(atlasstudy.RouteRelationEntryHandoff), handoff.ID,
+				fromSupport, toSupport, fromTarget, toTarget,
+			}, "\x00")
+			result = append(result, atlasstudy.RouteProducerRelation{
+				ID:   "route-relation-" + atlasStudyDigest(identity),
+				Kind: atlasstudy.RouteRelationEntryHandoff, ProducerID: handoff.ID,
+				FromSupportID: fromSupport, ToSupportID: toSupport,
+				FromTargetID: fromTarget, ToTargetID: toTarget,
+			})
+		}
+	}
+	result = append(result, atlasStudySavedFlowRelations(data, targets, supports)...)
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func atlasStudyExactHandoffTarget(
+	targets []atlasstudy.ReadingTarget,
+	member ArchitectureAnchorMember,
+	processEntry bool,
+) string {
+	wantKind := atlasStudyReadingTargetKind(member.ID, processEntry)
+	matched := ""
+	for _, target := range targets {
+		if target.Kind != wantKind || target.Symbol != member.ID ||
+			target.Location.Path != member.Location.Path || target.Location.Line != member.Location.Line {
+			continue
+		}
+		if matched != "" {
+			return ""
+		}
+		matched = target.ID
+	}
+	return matched
+}
+
+func atlasStudySavedFlowRelations(
+	data *ReportData,
+	targets []atlasstudy.ReadingTarget,
+	supports []atlasstudy.ReadingSupport,
+) []atlasstudy.RouteProducerRelation {
+	if data == nil || data.ArchitectureCanvas == nil {
+		return nil
+	}
+	supportByTarget := make(map[string]string)
+	for _, support := range supports {
+		if support.Role != atlasstudy.SupportSavedFlow {
+			continue
+		}
+		if _, duplicate := supportByTarget[support.TargetID]; duplicate {
+			supportByTarget[support.TargetID] = ""
+		} else {
+			supportByTarget[support.TargetID] = support.ID
+		}
+	}
+	edgeCounts := make(map[string]int)
+	for _, edge := range data.ArchitectureCanvas.FlowEdges {
+		if edge.ID != "" {
+			edgeCounts[edge.ID]++
+		}
+	}
+	var result []atlasstudy.RouteProducerRelation
+	for _, flow := range data.ArchitectureCanvas.Flows {
+		if !atlasStudyAcceptedSavedFlow(flow) {
+			continue
+		}
+		stepTarget := make(map[string]string, len(flow.Steps))
+		duplicateSteps := make(map[string]struct{})
+		for _, step := range flow.Steps {
+			if step.ID == "" {
+				continue
+			}
+			if _, duplicate := stepTarget[step.ID]; duplicate {
+				duplicateSteps[step.ID] = struct{}{}
+				continue
+			}
+			stepTarget[step.ID] = atlasStudyExactFlowStepTarget(targets, step)
+		}
+		transitionCounts := make(map[string]int, len(flow.TransitionIDs))
+		for _, transitionID := range flow.TransitionIDs {
+			if transitionID != "" {
+				transitionCounts[transitionID]++
+			}
+		}
+		for _, edge := range data.ArchitectureCanvas.FlowEdges {
+			_, fromFound := stepTarget[edge.From]
+			_, toFound := stepTarget[edge.To]
+			_, fromDuplicate := duplicateSteps[edge.From]
+			_, toDuplicate := duplicateSteps[edge.To]
+			if edge.FlowID != flow.ID || edge.ID == "" || edgeCounts[edge.ID] != 1 ||
+				transitionCounts[edge.ID] != 1 || edge.Resolution != evidence.ResolutionStatic ||
+				edge.Certainty != evidence.CertaintyStatic || strings.TrimSpace(edge.Provider) == "" ||
+				edge.Evidence.Path == "" || edge.Evidence.Line <= 0 ||
+				!fromFound || !toFound || fromDuplicate || toDuplicate {
+				continue
+			}
+			fromTarget, toTarget := stepTarget[edge.From], stepTarget[edge.To]
+			fromSupport, toSupport := supportByTarget[fromTarget], supportByTarget[toTarget]
+			if fromTarget == "" || toTarget == "" || fromTarget == toTarget || fromSupport == "" || toSupport == "" {
+				continue
+			}
+			identity := strings.Join([]string{
+				string(atlasstudy.RouteRelationSavedFlowEdge), edge.ID,
+				fromSupport, toSupport, fromTarget, toTarget,
+			}, "\x00")
+			result = append(result, atlasstudy.RouteProducerRelation{
+				ID:   "route-relation-" + atlasStudyDigest(identity),
+				Kind: atlasstudy.RouteRelationSavedFlowEdge, ProducerID: edge.ID,
+				FromSupportID: fromSupport, ToSupportID: toSupport,
+				FromTargetID: fromTarget, ToTargetID: toTarget,
+				SavedFlowID: string(flow.ID), FromStepID: edge.From, ToStepID: edge.To,
+				// One saved-flow relation is exactly one accepted directed producer
+				// edge. These ordinals describe that two-step edge locally; the
+				// presentation order of flow.Steps is deliberately irrelevant.
+				FromStepOrdinal: 0, ToStepOrdinal: 1,
+			})
+		}
+	}
+	return result
+}
+
+func atlasStudyAcceptedSavedFlow(flow ArchitectureFlow) bool {
+	return flow.ID != "" && flow.EvidenceBasis == "static" &&
+		(flow.Status == "complete" || flow.Status == "partial")
+}
+
+func atlasStudyExactFlowStepTarget(
+	targets []atlasstudy.ReadingTarget,
+	step ArchitectureFlowStep,
+) string {
+	if step.Location == nil || step.Location.Path == "" || step.Location.Line <= 0 {
+		return ""
+	}
+	wantSymbol := strings.TrimSpace(step.QualifiedName)
+	matched := ""
+	for _, target := range targets {
+		if target.Location.Path != step.Location.Path || target.Location.Line != step.Location.Line ||
+			(wantSymbol != "" && target.Symbol != wantSymbol) {
+			continue
+		}
+		if matched != "" {
+			return ""
+		}
+		matched = target.ID
+	}
+	return matched
+}
+
+func atlasStudyRouteSpans(
+	targets []atlasstudy.ReadingTarget,
+	supports []atlasstudy.ReadingSupport,
+	relations []atlasstudy.RouteProducerRelation,
+) []atlasstudy.RouteSpan {
+	targetByID := make(map[string]atlasstudy.ReadingTarget, len(targets))
+	for _, target := range targets {
+		targetByID[target.ID] = target
+	}
+	var result []atlasstudy.RouteSpan
+	for _, support := range supports {
+		target, ok := targetByID[support.TargetID]
+		if !ok {
+			continue
+		}
+		en, ru, job, stage := atlasStudyFocusedSpanPresentation(support.Role, target)
+		result = append(result, atlasstudy.RouteSpan{
+			ID:              "route-span-" + atlasStudyDigest("focused\x00"+support.ID),
+			Kind:            atlasstudy.RouteSpanFocused,
+			QuestionEnglish: en, QuestionRussian: ru,
+			TargetJob: job, LearningStage: stage,
+			RequiredSupportIDs: []string{support.ID},
+			AllowedTargetIDs:   []string{target.ID},
+		})
+	}
+	for _, relation := range relations {
+		required := []string{relation.FromSupportID, relation.ToSupportID}
+		allowed := []string{relation.FromTargetID, relation.ToTargetID}
+		sort.Strings(required)
+		sort.Strings(allowed)
+		en, ru := "How does this exact saved flow move between these two code locations?", "Как сохранённый точный поток связывает эти два места в коде?"
+		job, stage := atlasstudy.JobFirstContact, atlasstudy.StageCentralOperation
+		if relation.Kind == atlasstudy.RouteRelationEntryHandoff {
+			en = "Which direct static source call connects the process entry to this repository-local callee?"
+			ru = "Какой прямой статический вызов в исходном коде связывает точку входа с этим локальным вызовом репозитория?"
+			stage = atlasstudy.StageOrientation
+		}
+		result = append(result, atlasstudy.RouteSpan{
+			ID:              "route-span-" + atlasStudyDigest("system_path\x00"+relation.ID),
+			Kind:            atlasstudy.RouteSpanSystemPath,
+			QuestionEnglish: en, QuestionRussian: ru,
+			TargetJob: job, LearningStage: stage,
+			RequiredSupportIDs: required, AllowedTargetIDs: allowed,
+			Joins: []atlasstudy.RouteSpanJoin{{RelationID: relation.ID}},
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func atlasStudyFocusedSpanPresentation(
+	role atlasstudy.SupportRole,
+	target atlasstudy.ReadingTarget,
+) (string, string, atlasstudy.TargetJob, atlasstudy.LearningStage) {
+	switch role {
+	case atlasstudy.SupportProcessEntry:
+		return "Where does this application process start?", "Где запускается процесс приложения?", atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+	case atlasstudy.SupportEntryHandoff:
+		return "What repository code is called directly from the process entry?", "Какой код репозитория точка входа вызывает напрямую?", atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+	case atlasstudy.SupportSurface:
+		return "Where is this exact application surface implemented?", "Где реализована эта точная поверхность приложения?", atlasstudy.JobIntegrate, atlasstudy.StageIntegration
+	case atlasstudy.SupportSurfaceCandidate:
+		return "What source marks this partially resolved application surface?", "Какой исходный код отмечает эту частично разрешённую поверхность приложения?", atlasstudy.JobIntegrate, atlasstudy.StageIntegration
+	case atlasstudy.SupportSavedFlow:
+		return "What happens at this exact saved flow step?", "Что происходит на этом точном шаге сохранённого потока?", atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
+	default:
+		_ = target
+		return "What does this observed static call boundary connect?", "Что связывает эта наблюдаемая статическая граница вызова?", atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
+	}
 }
 
 func atlasStudyComponentOwnsPath(
@@ -971,9 +1493,21 @@ func readAtlasStudyReportProduct(
 		State:           status.State,
 		UnavailableCode: AtlasStudyUnavailableCode(status.UnavailableCode),
 		FailureCode:     status.FailureCode, DirectionCount: status.DirectionCount,
+		RequestedSpanCount: status.RequestedSpanCount,
+		CoveredSpanCount:   status.CoveredSpanCount,
+		UncoveredSpanCount: status.UncoveredSpanCount,
+		CoverageComplete:   status.CoverageComplete,
+	}
+	if status.State == atlasstudy.ProductStateAccepted ||
+		status.State == atlasstudy.ProductStateAcceptedPartial ||
+		status.State == atlasstudy.ProductStateFailed {
+		reportStatus.CandidateCoverage, err = projectAtlasStudyCandidateCoverage(status.CandidateCoverage)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	switch status.State {
-	case atlasstudy.ProductStateAccepted:
+	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
 		if !hasResult {
 			return nil, nil, fmt.Errorf("atlas study report: accepted status requires result")
 		}
@@ -1052,11 +1586,19 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 		}
 	}
 	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
-	if err == nil && !AtlasStudyInputHasMinimumCatalog(input) {
-		return &AtlasStudyReportStatus{
-			Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
-			State:           atlasstudy.ProductStateUnavailable,
-			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
+	if err == nil {
+		insufficient := !AtlasStudyInputHasMinimumCatalog(input)
+		if !insufficient {
+			_, compileErr := atlasstudy.Compile(input)
+			var unavailable *atlasstudy.CandidateUnavailableError
+			insufficient = errors.As(compileErr, &unavailable)
+		}
+		if insufficient {
+			return &AtlasStudyReportStatus{
+				Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
+				State:           atlasstudy.ProductStateUnavailable,
+				UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
+			}
 		}
 	}
 	return nil
@@ -1254,7 +1796,7 @@ func atlasStudyDirectionReadingSetKey(
 		}, "\x00"))
 	}
 	sort.Strings(locators)
-	return strings.Join(locators, "\x01"), nil
+	return direction.Span.ID + "\x02" + strings.Join(locators, "\x01"), nil
 }
 
 func exactAtlasStudySource(

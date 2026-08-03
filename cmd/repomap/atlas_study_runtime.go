@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	atlasStudyCacheContract = "atlas-study-accepted-v5"
+	atlasStudyCacheContract = "atlas-study-accepted-v6"
 	atlasStudyCacheStage    = "atlas_study"
 )
 
@@ -80,12 +81,42 @@ func runAtlasStudyForRun(
 	}
 	product, err := atlasstudy.Compile(input)
 	if err != nil {
+		if outcome, handled, unavailableErr := atlasStudyCandidateUnavailableOutcome(
+			err, runDir, output,
+		); handled {
+			return outcome, unavailableErr
+		}
 		return atlasStudyRunOutcome{}, atlasStudyTerminalResource(err, 0)
 	}
 	return runAtlasStudyProductForRun(
 		ctx, runDir, runsDir, repository, policy, noCache, providerEnabled,
 		product, output, defaultAtlasStudyClientFactory,
 	)
+}
+
+func atlasStudyCandidateUnavailableOutcome(
+	err error,
+	runDir string,
+	output *runOutput,
+) (atlasStudyRunOutcome, bool, error) {
+	var unavailable *atlasstudy.CandidateUnavailableError
+	if !errors.As(err, &unavailable) {
+		return atlasStudyRunOutcome{}, false, nil
+	}
+	outcome := atlasStudyRunOutcome{
+		State: atlasstudy.ProductStateUnavailable, ProviderSkipped: true,
+	}
+	if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
+		return outcome, true, cleanupErr
+	}
+	if output != nil {
+		reason := "typed Study catalog is unavailable"
+		if unavailable.Reason != "" {
+			reason = unavailable.Reason
+		}
+		output.State("Study", "unavailable", "provider calls: 0", "reason: "+reason)
+	}
+	return outcome, true, nil
 }
 
 func runAtlasStudyProductForRun(
@@ -217,7 +248,7 @@ func runAtlasStudyProductForRun(
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return outcome, ctxErr
 				}
-				outcome.State = atlasstudy.ProductStateAccepted
+				outcome.State = result.State
 				outcome.Cached = true
 				outcome.DirectionCount = len(result.Directions)
 				outcome.RejectedDirections = diagnostics.DirectionsRejected
@@ -371,7 +402,7 @@ func runAtlasStudyProductForRun(
 		debugdump.SemanticStateAccepted, debugdump.SemanticValidationAccepted,
 		1, providerResult.Attempts, debugdump.SemanticRequestExactSent,
 	)
-	outcome.State = atlasstudy.ProductStateAccepted
+	outcome.State = result.State
 	outcome.DirectionCount = len(result.Directions)
 	outcome.RejectedDirections = diagnostics.DirectionsRejected
 	if err := persistAcceptedAtlasStudy(writer, product, result); err != nil {
@@ -528,7 +559,7 @@ func persistAtlasStudyStatus(
 		if err := product.ValidateStatus(decoded); err != nil {
 			return err
 		}
-		if decoded != status {
+		if !reflect.DeepEqual(decoded, status) {
 			return fmt.Errorf("atlas study status changed before publication")
 		}
 		return nil
@@ -627,7 +658,7 @@ func atlasStudyTerminalResource(err error, maxTokens int) error {
 
 func atlasStudyCatalogCardinalitySection(section string) bool {
 	switch section {
-	case "units", "subsystems", "components", "surfaces", "reading_targets", "evidence", "documents":
+	case "units", "subsystems", "components", "surfaces", "reading_targets", "route_spans", "evidence", "documents":
 		return true
 	default:
 		return false
@@ -713,9 +744,15 @@ func resetAtlasStudyArtifacts(runDir string) error {
 
 func atlasStudyAcceptedOutput(output *runOutput, outcome atlasStudyRunOutcome) {
 	state := "accepted"
+	if outcome.State == atlasstudy.ProductStateAcceptedPartial {
+		state = "accepted partial"
+	}
 	providerCalls := 1
 	if outcome.Cached {
 		state = "cached"
+		if outcome.State == atlasstudy.ProductStateAcceptedPartial {
+			state = "cached partial"
+		}
 		providerCalls = 0
 	}
 	details := []string{

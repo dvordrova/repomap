@@ -6,9 +6,28 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/report"
 )
+
+func TestAtlasStudyDiagnosticPreservesAcceptedPartial(t *testing.T) {
+	diagnostic := atlasStudyAtlasFirstDiagnostic(atlasStudyRunOutcome{
+		State: atlasstudy.ProductStateAcceptedPartial, SemanticCalls: 1,
+		TransportAttempts: 1, RequestBytes: 123,
+	}, nil, true)
+	if diagnostic.State != "accepted_partial" || diagnostic.SemanticCalls != 1 ||
+		diagnostic.TransportAttempts != 1 || diagnostic.RequestBytes != 123 {
+		t.Fatalf("partial Atlas Study diagnostic = %#v", diagnostic)
+	}
+
+	cached := atlasStudyAtlasFirstDiagnostic(atlasStudyRunOutcome{
+		State: atlasstudy.ProductStateAcceptedPartial, Cached: true, RequestBytes: 123,
+	}, nil, true)
+	if cached.State != "cache_hit" || cached.SemanticCalls != 0 || cached.TransportAttempts != 0 {
+		t.Fatalf("partial cached Atlas Study diagnostic = %#v", cached)
+	}
+}
 
 func TestArchitectureDiagnosticReportsExactGraphUnavailableWithoutProviderCall(t *testing.T) {
 	t.Parallel()
