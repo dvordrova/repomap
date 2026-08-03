@@ -843,10 +843,10 @@ const architectureState = api.workspaceStateSnapshot();
 const architectureHash = window.location.hash;
 const exactStart = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 10 });
 const exactEnd = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 12 });
-function renderIsolatedOverview(isolatedReport) {
+function renderIsolatedOverview(isolatedReport, isolatedLocation) {
   const isolatedRoot = new Element("section");
   const isolatedWindow = {
-    location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+    location: isolatedLocation || { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
     __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
   };
   const isolatedDocument = {
@@ -872,6 +872,11 @@ function renderIsolatedOverview(isolatedReport) {
     studyDirectionCount: isolatedNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card")).length,
     surfaceCount: isolatedNodes.filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === "surface").length,
     componentCount: isolatedNodes.filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === "component").length,
+    primaryTargets: isolatedNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-overview-object-primary")).map((node) => ({
+      tag: node.tagName,
+      href: node.attributes && node.attributes.href || "",
+      hasClick: typeof node.onclick === "function",
+    })),
     rendered: text(isolatedRoot),
   };
 }
@@ -883,6 +888,27 @@ atlasFirstReport.repository_atlas = {
   entities: [], evidence: [], relations: [],
 };
 const atlasFirstOverview = renderIsolatedOverview(atlasFirstReport);
+const atlasFirstStudyOnlyReport = JSON.parse(JSON.stringify(atlasFirstReport));
+delete atlasFirstStudyOnlyReport.discovered_surfaces;
+const atlasFirstStudyOnlyOverview = renderIsolatedOverview(atlasFirstStudyOnlyReport);
+const strippedStaticReport = JSON.parse(JSON.stringify(report));
+function stripSourceLines(value) {
+  if (!value || typeof value !== "object") return;
+  if (Object.prototype.hasOwnProperty.call(value, "lines")) delete value.lines;
+  Object.keys(value).forEach((key) => stripSourceLines(value[key]));
+}
+stripSourceLines(strippedStaticReport);
+const strippedStaticOverview = renderIsolatedOverview(strippedStaticReport);
+const mixedServedReport = JSON.parse(JSON.stringify(report));
+delete mixedServedReport.github_source_links;
+mixedServedReport.source_ids = {};
+mixedServedReport.openable_paths.forEach((path, index) => {
+  mixedServedReport.source_ids[path] = "source-" + index;
+});
+const mixedServedOverview = renderIsolatedOverview(mixedServedReport, {
+  search: "", hash: "#/overview", hostname: "127.0.0.1", protocol: "http:",
+  pathname: "/_repomap/token/runs/run/report.html",
+});
 const fallbackReport = JSON.parse(JSON.stringify(report));
 fallbackReport.user_sources = [componentA];
 const fallbackRoot = new Element("section");
@@ -963,6 +989,9 @@ process.stdout.write(JSON.stringify({
   prefix: api.exactOverviewSourceForLocation({ path: "./surface-a.go", line: 10 }),
   stringLine: api.exactOverviewSourceForLocation({ path: "surface-a.go", line: "10" }),
   atlasFirstOverview,
+  atlasFirstStudyOnlyOverview,
+  strippedStaticOverview,
+  mixedServedOverview,
   fallbackAnatomy, fallbackText: text(fallbackRoot),
   noStudyAnatomy, noStudyText: text(noStudyRoot),
   noStudyDirectionCards: walk(noStudyRoot).filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card")).length,
@@ -1028,8 +1057,39 @@ process.stdout.write(JSON.stringify({
 			StudyDirectionCount int      `json:"studyDirectionCount"`
 			SurfaceCount        int      `json:"surfaceCount"`
 			ComponentCount      int      `json:"componentCount"`
-			Rendered            string   `json:"rendered"`
+			PrimaryTargets      []struct {
+				Tag      string `json:"tag"`
+				Href     string `json:"href"`
+				HasClick bool   `json:"hasClick"`
+			} `json:"primaryTargets"`
+			Rendered string `json:"rendered"`
 		} `json:"atlasFirstOverview"`
+		AtlasFirstStudyOnlyOverview struct {
+			Sections            []string `json:"sections"`
+			StudyDirectionCount int      `json:"studyDirectionCount"`
+			SurfaceCount        int      `json:"surfaceCount"`
+			ComponentCount      int      `json:"componentCount"`
+			Rendered            string   `json:"rendered"`
+		} `json:"atlasFirstStudyOnlyOverview"`
+		StrippedStaticOverview struct {
+			SurfaceCount   int `json:"surfaceCount"`
+			ComponentCount int `json:"componentCount"`
+			PrimaryTargets []struct {
+				Tag      string `json:"tag"`
+				Href     string `json:"href"`
+				HasClick bool   `json:"hasClick"`
+			} `json:"primaryTargets"`
+			Rendered string `json:"rendered"`
+		} `json:"strippedStaticOverview"`
+		MixedServedOverview struct {
+			SurfaceCount   int `json:"surfaceCount"`
+			ComponentCount int `json:"componentCount"`
+			PrimaryTargets []struct {
+				Tag      string `json:"tag"`
+				Href     string `json:"href"`
+				HasClick bool   `json:"hasClick"`
+			} `json:"primaryTargets"`
+		} `json:"mixedServedOverview"`
 		FallbackAnatomy   any      `json:"fallbackAnatomy"`
 		FallbackText      string   `json:"fallbackText"`
 		NoStudyAnatomy    any      `json:"noStudyAnatomy"`
@@ -1089,6 +1149,43 @@ process.stdout.write(JSON.stringify({
 		got.AtlasFirstOverview.StudyDirectionCount != 1 || got.AtlasFirstOverview.SurfaceCount != 2 ||
 		got.AtlasFirstOverview.ComponentCount != 2 {
 		t.Fatalf("Atlas-first Overview order/dedup = %#v", got.AtlasFirstOverview)
+	}
+	studyPosition, studyOnlyAtlasPosition := -1, -1
+	for index, className := range got.AtlasFirstStudyOnlyOverview.Sections {
+		if studyPosition < 0 && strings.Contains(className, "rm-study-map-section") {
+			studyPosition = index
+		}
+		if studyOnlyAtlasPosition < 0 && strings.Contains(className, "rm-atlas-shelf") {
+			studyOnlyAtlasPosition = index
+		}
+	}
+	if studyPosition < 0 || studyOnlyAtlasPosition < 0 || studyPosition >= studyOnlyAtlasPosition ||
+		got.AtlasFirstStudyOnlyOverview.StudyDirectionCount != 1 ||
+		got.AtlasFirstStudyOnlyOverview.SurfaceCount != 0 ||
+		got.AtlasFirstStudyOnlyOverview.ComponentCount != 0 ||
+		!strings.Contains(got.AtlasFirstStudyOnlyOverview.Rendered, "Repository brief") ||
+		!strings.Contains(got.AtlasFirstStudyOnlyOverview.Rendered, "Where should I read next?") {
+		t.Fatalf("Atlas-first Study fallback / Atlas order = %#v", got.AtlasFirstStudyOnlyOverview)
+	}
+	if got.StrippedStaticOverview.SurfaceCount != 4 || got.StrippedStaticOverview.ComponentCount != 4 ||
+		len(got.StrippedStaticOverview.PrimaryTargets) != 8 {
+		t.Fatalf("stripped-source static anatomy = %#v", got.StrippedStaticOverview)
+	}
+	for _, target := range got.StrippedStaticOverview.PrimaryTargets {
+		if target.Tag != "a" || target.HasClick ||
+			!strings.HasPrefix(target.Href, "https://github.com/example/fixture/blob/"+strings.Repeat("1", 40)+"/") ||
+			!strings.Contains(target.Href, "#L") {
+			t.Fatalf("stripped-source anatomy target = %#v", target)
+		}
+	}
+	if got.MixedServedOverview.SurfaceCount != 2 || got.MixedServedOverview.ComponentCount != 2 ||
+		len(got.MixedServedOverview.PrimaryTargets) != 4 {
+		t.Fatalf("mixed served report escaped excerpt-only anatomy = %#v", got.MixedServedOverview)
+	}
+	for _, target := range got.MixedServedOverview.PrimaryTargets {
+		if target.Tag != "button" || target.Href != "" || !target.HasClick {
+			t.Fatalf("mixed served anatomy target = %#v", target)
+		}
 	}
 	if got.DrawerState.View != "overview" || got.DrawerState.SourceLocation == nil ||
 		got.DrawerState.SourceLocation.Path != "surface-a.go" || got.DrawerState.SourceLocation.Line != 10 ||
