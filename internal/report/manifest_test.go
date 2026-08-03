@@ -825,6 +825,120 @@ func TestReadRunManifestAuthoritySeedReturnsOnlyValidatedBootstrapInputs(t *test
 	}
 }
 
+func TestReadRunManifestAuthoritySeedConvertsRepositoryPathsToAnalysisRelative(t *testing.T) {
+	runDir := t.TempDir()
+	manifest := validRunManifestFixture(t)
+	manifest.AnalysisRoot = "/repo/services/api"
+	manifest.CapturedInputs = []freshness.CapturedInput{
+		{
+			Version: freshness.CapturedInputVersion, ID: strings.Repeat("c", 64), Path: "services/api/go.mod",
+			Kind: freshness.FileRegular, Mode: "100644", ContentSHA256: strings.Repeat("d", 64),
+			Stages: []string{"report_evidence"},
+		},
+		{
+			Version: freshness.CapturedInputVersion, ID: strings.Repeat("e", 64), Path: "services/api/internal/x.go",
+			Kind: freshness.FileRegular, Mode: "100644", ContentSHA256: strings.Repeat("f", 64),
+			Stages: []string{"report_evidence"},
+		},
+	}
+	manifest.CapturedInputsSHA256 = capturedInputsDigestForTest(t, manifest.CapturedInputs)
+	writeManifestForAuthoritySeedTest(t, runDir, manifest)
+
+	seed, err := ReadRunManifestAuthoritySeed(runDir)
+	if err != nil {
+		t.Fatalf("ReadRunManifestAuthoritySeed: %v", err)
+	}
+	if !slices.Equal(seed.CapturedInputPaths, []string{"go.mod", "internal/x.go"}) {
+		t.Fatalf("captured input paths = %v", seed.CapturedInputPaths)
+	}
+	repositoryPaths, err := repositoryRelativeInputPaths(manifest.RepositoryState.Identity, manifest.AnalysisRoot, seed.CapturedInputPaths)
+	if err != nil {
+		t.Fatalf("repositoryRelativeInputPaths: %v", err)
+	}
+	if !slices.Equal(repositoryPaths, []string{"services/api/go.mod", "services/api/internal/x.go"}) {
+		t.Fatalf("repository input paths = %v", repositoryPaths)
+	}
+}
+
+func TestReadRunManifestAuthoritySeedRejectsInputOutsideAnalysisRoot(t *testing.T) {
+	runDir := t.TempDir()
+	manifest := validRunManifestFixture(t)
+	manifest.AnalysisRoot = "/repo/services/api"
+	manifest.CapturedInputs[0].Path = "other/service/x.go"
+	manifest.CapturedInputsSHA256 = capturedInputsDigestForTest(t, manifest.CapturedInputs)
+	writeManifestForAuthoritySeedTest(t, runDir, manifest)
+
+	if _, err := ReadRunManifestAuthoritySeed(runDir); err == nil || !strings.Contains(err.Error(), "outside analysis root") {
+		t.Fatalf("ReadRunManifestAuthoritySeed error = %v", err)
+	}
+}
+
+func TestAuthoritySeedSubdirectoryPathsCaptureExactRegularInputs(t *testing.T) {
+	repository := t.TempDir()
+	analysisRoot := filepath.Join(repository, "services", "api")
+	mkdirAll(t, filepath.Join(analysisRoot, "internal"))
+	writeTestFile(t, analysisRoot, "go.mod", "module example.invalid/api\n")
+	writeTestFile(t, filepath.Join(analysisRoot, "internal"), "x.go", "package internal\n")
+	runManifestGit(t, repository, "init", "--quiet")
+	runManifestGit(t, repository, "add", "services/api/go.mod", "services/api/internal/x.go")
+	runManifestGit(t, repository,
+		"-c", "user.name=repomap test",
+		"-c", "user.email=repomap@example.invalid",
+		"-c", "commit.gpgsign=false",
+		"commit", "--quiet", "-m", "fixture",
+	)
+	state, err := freshness.CaptureRepository(context.Background(), analysisRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysisRoot = filepath.Join(state.Identity, "services", "api")
+	manifest := RunManifest{
+		RepositoryState: state,
+		AnalysisRoot:    analysisRoot,
+		CapturedInputs: []freshness.CapturedInput{
+			{Path: "services/api/go.mod"},
+			{Path: "services/api/internal/x.go"},
+		},
+	}
+	paths, err := analysisRelativeManifestInputPaths(manifest)
+	if err != nil {
+		t.Fatalf("analysisRelativeManifestInputPaths: %v", err)
+	}
+	authority, err := ConfirmRunAuthorityScoped(context.Background(), analysisRoot, state, state, paths, true)
+	if err != nil {
+		t.Fatalf("ConfirmRunAuthorityScoped: %v", err)
+	}
+	if len(authority.inputs) != 2 {
+		t.Fatalf("captured inputs = %#v", authority.inputs)
+	}
+	for index, want := range []string{"services/api/go.mod", "services/api/internal/x.go"} {
+		if authority.inputs[index].Path != want || authority.inputs[index].Kind != freshness.FileRegular {
+			t.Fatalf("captured input %d = %#v, want regular %q", index, authority.inputs[index], want)
+		}
+	}
+}
+
+func capturedInputsDigestForTest(t *testing.T, inputs []freshness.CapturedInput) string {
+	t.Helper()
+	digest, err := freshness.CapturedInputsDigest(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
+func writeManifestForAuthoritySeedTest(t *testing.T, runDir string, manifest RunManifest) {
+	t.Helper()
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, '\n')
+	if err := os.WriteFile(filepath.Join(runDir, RunManifestFilename), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func validRunManifestFixture(t *testing.T) RunManifest {
 	t.Helper()
 	repository := freshness.RepositoryState{
