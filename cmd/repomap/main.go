@@ -98,7 +98,7 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> | atlas-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | atlas-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -113,11 +113,7 @@ func main() {
 				os.Exit(1)
 			}
 		case "render-report":
-			if len(os.Args) < 4 {
-				fmt.Fprintf(os.Stderr, "Usage: repomap dev render-report <.repomap-runs/<run-id>>\n")
-				os.Exit(2)
-			}
-			if err := runRenderReport(os.Args[3]); err != nil {
+			if err := runRenderReportCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -1573,15 +1569,80 @@ func reportOverviewURL(location string) string {
 	return base + "#/overview"
 }
 
-func runRenderReport(runDir string) error {
+func runRenderReportCLI(args []string, stdout io.Writer) error {
+	return runRenderReportCLIWith(args, stdout, renderReportDependencies{
+		captureRepo:            freshness.CaptureRepository,
+		readAuthoritySeed:      report.ReadRunManifestAuthoritySeed,
+		confirmAuthorityScoped: report.ConfirmRunAuthorityScoped,
+		generate:               report.Generate,
+		generateAuthorized:     report.GenerateAuthorized,
+		resolveAnalysisRoot:    resolveAnalysisRoot,
+	})
+}
+
+type renderReportDependencies struct {
+	captureRepo            func(context.Context, string) (freshness.RepositoryState, error)
+	readAuthoritySeed      func(string) (report.RunManifestAuthoritySeed, error)
+	confirmAuthorityScoped func(context.Context, string, freshness.RepositoryState, freshness.RepositoryState, []string, bool) (report.RunAuthority, error)
+	generate               func(string) error
+	generateAuthorized     func(string, report.RunAuthority) error
+	resolveAnalysisRoot    func(string) (string, error)
+}
+
+func runRenderReportCLIWith(args []string, stdout io.Writer, deps renderReportDependencies) error {
+	if len(args) != 1 && !(len(args) == 3 && args[1] == "--repo" && args[2] != "") {
+		return fmt.Errorf("usage: repomap dev render-report <run-dir> [--repo <repo>]")
+	}
+	if stdout == nil {
+		return fmt.Errorf("render report: stdout is required")
+	}
+	if deps.captureRepo == nil || deps.readAuthoritySeed == nil || deps.confirmAuthorityScoped == nil || deps.generate == nil ||
+		deps.generateAuthorized == nil || deps.resolveAnalysisRoot == nil {
+		return fmt.Errorf("render report: dependencies are not configured")
+	}
+	runDir := args[0]
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
-	if err := report.Generate(absDir); err != nil {
-		return err
+	if len(args) == 1 {
+		if err := deps.generate(absDir); err != nil {
+			return err
+		}
+	} else {
+		repo := args[2]
+		seed, err := deps.readAuthoritySeed(absDir)
+		if err != nil {
+			return fmt.Errorf("render report: read authority seed: %w", err)
+		}
+		analysisRoot, err := deps.resolveAnalysisRoot(repo)
+		if err != nil {
+			return fmt.Errorf("render report: resolve repository authority: %w", err)
+		}
+		ctx := context.Background()
+		before, err := deps.captureRepo(ctx, repo)
+		if err != nil {
+			return fmt.Errorf("render report: capture repository before authority confirmation: %w", err)
+		}
+		after, err := deps.captureRepo(ctx, repo)
+		if err != nil {
+			return fmt.Errorf("render report: capture repository after authority confirmation: %w", err)
+		}
+		if seed.RepositoryIdentity != before.Identity || seed.AnalysisRoot != analysisRoot ||
+			seed.SelectedRevision != before.Head {
+			return fmt.Errorf("render report: copied run authority does not match --repo")
+		}
+		authority, err := deps.confirmAuthorityScoped(
+			ctx, analysisRoot, before, after, seed.CapturedInputPaths, true,
+		)
+		if err != nil {
+			return fmt.Errorf("render report: confirm repository authority: %w", err)
+		}
+		if err := deps.generateAuthorized(absDir, authority); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("Report: %s/report.html\n", absDir)
+	fmt.Fprintf(stdout, "Report: %s/report.html\n", absDir)
 	return nil
 }
 

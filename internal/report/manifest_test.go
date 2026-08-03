@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -798,6 +799,29 @@ func TestDecodeRunManifestRejectsUnknownFields(t *testing.T) {
 	data = append(data[:len(data)-1], []byte(`,"unexpected":true}`)...)
 	if _, err := DecodeRunManifest(data); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("DecodeRunManifest error = %v", err)
+	}
+}
+
+func TestReadRunManifestAuthoritySeedReturnsOnlyValidatedBootstrapInputs(t *testing.T) {
+	runDir := t.TempDir()
+	manifest := validRunManifestFixture(t)
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, '\n')
+	if err := os.WriteFile(filepath.Join(runDir, RunManifestFilename), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := ReadRunManifestAuthoritySeed(runDir)
+	if err != nil {
+		t.Fatalf("ReadRunManifestAuthoritySeed: %v", err)
+	}
+	if seed.RepositoryIdentity != manifest.RepositoryState.Identity ||
+		seed.AnalysisRoot != manifest.AnalysisRoot ||
+		seed.SelectedRevision != manifest.MaterialInputs.SelectedRevision ||
+		!slices.Equal(seed.CapturedInputPaths, []string{"batch.go"}) {
+		t.Fatalf("seed = %+v", seed)
 	}
 }
 
