@@ -47,16 +47,19 @@ type Product struct {
 	byCanonical        map[CanonicalRef]CatalogObject
 	privateIdentities  map[string]struct{}
 	alwaysPrivate      map[string]struct{}
+	coverage           CandidateCoverage
+	selectedSpanIDs    []string
 }
 
 func (product Product) WireJSON() []byte { return append([]byte(nil), product.wire...) }
 
-func (product Product) WireSHA256() string         { return product.wireSHA256 }
-func (product Product) CatalogSHA256() string      { return product.catalogSHA256 }
-func (product Product) CatalogRef() string         { return product.catalogRef }
-func (product Product) AtlasSHA256() string        { return product.atlasSHA256 }
-func (product Product) ArchitectureSHA256() string { return product.architectureSHA256 }
-func (product Product) Language() Language         { return product.input.Language }
+func (product Product) WireSHA256() string          { return product.wireSHA256 }
+func (product Product) CatalogSHA256() string       { return product.catalogSHA256 }
+func (product Product) CatalogRef() string          { return product.catalogRef }
+func (product Product) AtlasSHA256() string         { return product.atlasSHA256 }
+func (product Product) ArchitectureSHA256() string  { return product.architectureSHA256 }
+func (product Product) Language() Language          { return product.input.Language }
+func (product Product) Coverage() CandidateCoverage { return cloneCandidateCoverage(product.coverage) }
 
 func (product Product) Catalog() []CatalogObject {
 	return cloneCatalog(product.catalog)
@@ -75,6 +78,8 @@ type wireProjection struct {
 	Targets             []wireTarget             `json:"reading_targets"`
 	Evidence            []wireEvidence           `json:"evidence,omitempty"`
 	Documents           []wireDocument           `json:"documented_claims,omitempty"`
+	RouteSupports       []wireRouteSupport       `json:"route_supports"`
+	RouteSpans          []wireRouteSpan          `json:"route_spans"`
 }
 
 // wireBriefSupportChoice is the complete model-visible allowlist for Brief
@@ -151,14 +156,32 @@ type wireDocument struct {
 	Authority repositoryatlas.Authority `json:"authority"`
 }
 
+type wireRouteSupport struct {
+	Ref       string                    `json:"ref"`
+	Role      SupportRole               `json:"role"`
+	TargetRef string                    `json:"target_ref"`
+	Authority repositoryatlas.Authority `json:"authority"`
+}
+
+type wireRouteSpan struct {
+	Ref                 string        `json:"span_ref"`
+	Kind                RouteSpanKind `json:"kind"`
+	Question            string        `json:"question"`
+	TargetJob           TargetJob     `json:"target_job"`
+	LearningStage       LearningStage `json:"learning_stage"`
+	RequiredSupportRefs []string      `json:"required_support_refs"`
+	AllowedTargetRefs   []string      `json:"allowed_target_refs"`
+}
+
 type catalogMaterial struct {
-	Version            int             `json:"version"`
-	AtlasSHA256        string          `json:"atlas_sha256"`
-	ArchitectureSHA256 string          `json:"architecture_sha256"`
-	Language           Language        `json:"language"`
-	Limits             Limits          `json:"limits"`
-	ProjectionSHA256   string          `json:"projection_sha256"`
-	Objects            []CatalogObject `json:"objects"`
+	Version            int               `json:"version"`
+	AtlasSHA256        string            `json:"atlas_sha256"`
+	ArchitectureSHA256 string            `json:"architecture_sha256"`
+	Language           Language          `json:"language"`
+	Limits             Limits            `json:"limits"`
+	ProjectionSHA256   string            `json:"projection_sha256"`
+	Coverage           CandidateCoverage `json:"coverage"`
+	Objects            []CatalogObject   `json:"objects"`
 }
 
 func Compile(input Input) (Product, error) {
@@ -167,6 +190,10 @@ func Compile(input Input) (Product, error) {
 		return Product{}, err
 	}
 	if err := validateLimits(canonical.Limits); err != nil {
+		return Product{}, err
+	}
+	canonical, coverage, err := selectStudyCandidates(canonical)
+	if err != nil {
 		return Product{}, err
 	}
 	counts := []struct {
@@ -179,6 +206,7 @@ func Compile(input Input) (Product, error) {
 		{"components", canonical.Limits.MaxComponents, len(canonical.Architecture.Components)},
 		{"surfaces", canonical.Limits.MaxSurfaces, len(canonical.Surfaces)},
 		{"reading_targets", canonical.Limits.MaxReadingTargets, len(canonical.ReadingTargets)},
+		{"route_spans", canonical.Limits.MaxRouteSpans, len(canonical.RouteSpans)},
 		{"evidence", canonical.Limits.MaxEvidence, len(canonical.Evidence)},
 		{"documents", canonical.Limits.MaxDocuments, len(canonical.Documents)},
 	}
@@ -203,7 +231,7 @@ func Compile(input Input) (Product, error) {
 	material := catalogMaterial{
 		Version: Version, AtlasSHA256: atlasSHA, ArchitectureSHA256: architectureSHA,
 		Language: canonical.Language, Limits: canonical.Limits,
-		ProjectionSHA256: digest(projectionJSON), Objects: objects,
+		ProjectionSHA256: digest(projectionJSON), Coverage: coverage, Objects: objects,
 	}
 	materialJSON, err := json.Marshal(material)
 	if err != nil {
@@ -232,7 +260,8 @@ func Compile(input Input) (Product, error) {
 		atlasSHA256: atlasSHA, architectureSHA256: architectureSHA,
 		catalog: objects, byRef: byRef, byCanonical: byCanonical,
 		privateIdentities: identities,
-		alwaysPrivate:     alwaysPrivate,
+		alwaysPrivate:     alwaysPrivate, coverage: coverage,
+		selectedSpanIDs: selectedSpanIDs(canonical.RouteSpans),
 	}, nil
 }
 
@@ -250,6 +279,9 @@ func canonicalInput(input Input) (Input, string, string, error) {
 	input.Architecture.Components = cloneComponents(input.Architecture.Components)
 	input.Surfaces = cloneSurfaces(input.Surfaces)
 	input.ReadingTargets = append([]ReadingTarget(nil), input.ReadingTargets...)
+	input.ReadingSupports = append([]ReadingSupport(nil), input.ReadingSupports...)
+	input.ProducerRelations = append([]RouteProducerRelation(nil), input.ProducerRelations...)
+	input.RouteSpans = cloneRouteSpans(input.RouteSpans)
 	for index := range input.ReadingTargets {
 		input.ReadingTargets[index].RelatedComponentIDs = append(
 			[]string(nil), input.ReadingTargets[index].RelatedComponentIDs...,
@@ -270,6 +302,9 @@ func canonicalInput(input Input) (Input, string, string, error) {
 	sort.Slice(input.ReadingTargets, func(i, j int) bool {
 		return input.ReadingTargets[i].ID < input.ReadingTargets[j].ID
 	})
+	sort.Slice(input.ReadingSupports, func(i, j int) bool { return input.ReadingSupports[i].ID < input.ReadingSupports[j].ID })
+	sort.Slice(input.ProducerRelations, func(i, j int) bool { return input.ProducerRelations[i].ID < input.ProducerRelations[j].ID })
+	sort.Slice(input.RouteSpans, func(i, j int) bool { return input.RouteSpans[i].ID < input.RouteSpans[j].ID })
 	sort.Slice(input.Evidence, func(i, j int) bool { return input.Evidence[i].ID < input.Evidence[j].ID })
 	sort.Slice(input.Documents, func(i, j int) bool { return input.Documents[i].ID < input.Documents[j].ID })
 	for index := range input.Architecture.Subsystems {
@@ -295,6 +330,13 @@ func canonicalInput(input Input) (Input, string, string, error) {
 			return canonicalRefLess(input.Evidence[index].SubjectRefs[i], input.Evidence[index].SubjectRefs[j])
 		})
 	}
+	for index := range input.RouteSpans {
+		sort.Strings(input.RouteSpans[index].RequiredSupportIDs)
+		sort.Strings(input.RouteSpans[index].AllowedTargetIDs)
+		sort.Slice(input.RouteSpans[index].Joins, func(i, j int) bool {
+			return input.RouteSpans[index].Joins[i].RelationID < input.RouteSpans[index].Joins[j].RelationID
+		})
+	}
 	architectureJSON, err := json.Marshal(input.Architecture)
 	if err != nil {
 		return Input{}, "", "", fmt.Errorf("atlas study: encode Architecture identity: %w", err)
@@ -313,8 +355,8 @@ func compileCatalog(input Input) (
 	}
 	if input.Architecture.Version <= 0 ||
 		len(input.Architecture.Subsystems) == 0 || len(input.Architecture.Components) == 0 ||
-		len(input.ReadingTargets) < 3 {
-		return nil, nil, nil, fmt.Errorf("atlas study: canonical Architecture and at least three reading targets are required")
+		len(input.ReadingTargets) == 0 || len(input.ReadingSupports) == 0 || len(input.RouteSpans) == 0 {
+		return nil, nil, nil, fmt.Errorf("atlas study: canonical Architecture and typed reading supports/spans are required")
 	}
 	if err := validateVisibleText(
 		input.Architecture.Source, input.Limits.MaxTextBytes, true, nil,
@@ -325,9 +367,12 @@ func compileCatalog(input Input) (
 	objects := make([]CatalogObject, 0,
 		len(input.Atlas.Units)+len(input.Architecture.Subsystems)+
 			len(input.Architecture.Components)+len(input.Surfaces)+
-			len(input.ReadingTargets)+len(input.Evidence)+len(input.Documents))
+			len(input.ReadingTargets)+len(input.Evidence)+len(input.Documents)+
+			len(input.ReadingSupports)+len(input.ProducerRelations)+len(input.RouteSpans))
 	refs := make(map[CanonicalRef]string, cap(objects))
 	seen := make(map[CanonicalRef]struct{}, cap(objects))
+	seenShortRefs := make(map[string]struct{}, cap(objects))
+	nextRefOrdinal := make(map[RefKind]int)
 	add := func(kind RefKind, id, label, fact string, authority repositoryatlas.Authority,
 		owner *CanonicalRef, relatedComponents, principals []CanonicalRef,
 		location *evidence.Location, symbol string,
@@ -340,7 +385,17 @@ func compileCatalog(input Input) (
 			return fmt.Errorf("atlas study: duplicate canonical %s object", kind)
 		}
 		seen[key] = struct{}{}
-		ref := refPrefix(kind) + fmt.Sprint(countKind(objects, kind)+1)
+		var ref string
+		for {
+			nextRefOrdinal[kind]++
+			ref = refPrefix(kind) + fmt.Sprint(nextRefOrdinal[kind])
+			_, privateCollision := identities[ref]
+			_, shortCollision := seenShortRefs[ref]
+			if !privateCollision && !shortCollision {
+				break
+			}
+		}
+		seenShortRefs[ref] = struct{}{}
 		object := CatalogObject{
 			Ref: ref, Kind: kind, CanonicalID: id, Label: label, Fact: fact,
 			Authority: authority, Symbol: symbol,
@@ -507,6 +562,110 @@ func compileCatalog(input Input) (
 		return nil, nil, nil, err
 	}
 
+	supports := make(map[string]ReadingSupport, len(input.ReadingSupports))
+	for _, support := range input.ReadingSupports {
+		if support.ID == "" || support.TargetID == "" || support.PackageBucket == "" ||
+			!support.Role.Valid() || !validSupportAuthority(support.Role, support.Authority) {
+			return nil, nil, nil, fmt.Errorf("atlas study: invalid route support")
+		}
+		if _, ok := targets[support.TargetID]; !ok {
+			return nil, nil, nil, fmt.Errorf("atlas study: route support references unknown target")
+		}
+		if _, duplicate := supports[support.ID]; duplicate {
+			return nil, nil, nil, fmt.Errorf("atlas study: duplicate route support")
+		}
+		supports[support.ID] = support
+		targetRef := CanonicalRef{Kind: RefReadingTarget, ID: support.TargetID}
+		if err := add(RefRouteSupport, support.ID, "", "", support.Authority,
+			nil, nil, nil, nil, ""); err != nil {
+			return nil, nil, nil, err
+		}
+		objects[len(objects)-1].SupportRole = support.Role
+		objects[len(objects)-1].SupportTarget = &targetRef
+		objects[len(objects)-1].PackageBucket = support.PackageBucket
+	}
+	relations := make(map[string]RouteProducerRelation, len(input.ProducerRelations))
+	producerRelationIDs := make(map[string]struct{}, len(input.ProducerRelations))
+	for _, relation := range input.ProducerRelations {
+		if err := validateRouteProducerRelation(relation, supports, targets); err != nil {
+			return nil, nil, nil, err
+		}
+		if _, duplicate := relations[relation.ID]; duplicate {
+			return nil, nil, nil, fmt.Errorf("atlas study: duplicate route producer relation")
+		}
+		if _, duplicate := producerRelationIDs[relation.ProducerID]; duplicate {
+			return nil, nil, nil, fmt.Errorf("atlas study: duplicate route producer identity")
+		}
+		producerRelationIDs[relation.ProducerID] = struct{}{}
+		relations[relation.ID] = relation
+		if err := add(RefRouteRelation, relation.ID, "", "", repositoryatlas.AuthorityResolved,
+			nil, nil, nil, nil, ""); err != nil {
+			return nil, nil, nil, err
+		}
+		object := &objects[len(objects)-1]
+		object.RelationKind, object.ProducerID = relation.Kind, relation.ProducerID
+		fromSupport := CanonicalRef{Kind: RefRouteSupport, ID: relation.FromSupportID}
+		toSupport := CanonicalRef{Kind: RefRouteSupport, ID: relation.ToSupportID}
+		fromTarget := CanonicalRef{Kind: RefReadingTarget, ID: relation.FromTargetID}
+		toTarget := CanonicalRef{Kind: RefReadingTarget, ID: relation.ToTargetID}
+		object.FromSupport, object.ToSupport = &fromSupport, &toSupport
+		object.FromTarget, object.ToTarget = &fromTarget, &toTarget
+		object.SavedFlowID, object.FromStepID, object.ToStepID = relation.SavedFlowID, relation.FromStepID, relation.ToStepID
+		object.FromStepOrdinal, object.ToStepOrdinal = relation.FromStepOrdinal, relation.ToStepOrdinal
+	}
+	for _, span := range input.RouteSpans {
+		if span.ID == "" || !span.Kind.Valid() || !span.TargetJob.Valid() ||
+			!span.LearningStage.Valid() || !uniqueSorted(span.RequiredSupportIDs) ||
+			!uniqueSorted(span.AllowedTargetIDs) || len(span.RequiredSupportIDs) == 0 ||
+			len(span.AllowedTargetIDs) == 0 {
+			return nil, nil, nil, fmt.Errorf("atlas study: invalid route span")
+		}
+		if err := validateLocalizedSpanQuestions(span, input.Limits.MaxTextBytes, identities); err != nil {
+			return nil, nil, nil, err
+		}
+		required := make([]CanonicalRef, 0, len(span.RequiredSupportIDs))
+		allowed := make([]CanonicalRef, 0, len(span.AllowedTargetIDs))
+		allowedSet := make(map[string]struct{}, len(span.AllowedTargetIDs))
+		for _, targetID := range span.AllowedTargetIDs {
+			if _, ok := targets[targetID]; !ok {
+				return nil, nil, nil, fmt.Errorf("atlas study: route span allows unknown target")
+			}
+			allowedSet[targetID] = struct{}{}
+			allowed = append(allowed, CanonicalRef{Kind: RefReadingTarget, ID: targetID})
+		}
+		coveredTargets := make(map[string]struct{})
+		for _, supportID := range span.RequiredSupportIDs {
+			support, ok := supports[supportID]
+			if !ok {
+				return nil, nil, nil, fmt.Errorf("atlas study: route span requires unknown support")
+			}
+			if _, ok := allowedSet[support.TargetID]; !ok {
+				return nil, nil, nil, fmt.Errorf("atlas study: route span support target is not allowed")
+			}
+			coveredTargets[support.TargetID] = struct{}{}
+			required = append(required, CanonicalRef{Kind: RefRouteSupport, ID: supportID})
+		}
+		if span.Kind == RouteSpanSystemPath && len(coveredTargets) < 2 {
+			return nil, nil, nil, fmt.Errorf("atlas study: system-path span requires two distinct exact locators")
+		}
+		canonicalJoins, err := validateRouteSpanJoins(span, supports, relations, allowedSet)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if err := add(RefRouteSpan, span.ID, "", "", repositoryatlas.AuthorityResolved,
+			nil, nil, nil, nil, ""); err != nil {
+			return nil, nil, nil, err
+		}
+		object := &objects[len(objects)-1]
+		object.SpanKind = span.Kind
+		object.Question = span.question(input.Language)
+		object.TargetJob = span.TargetJob
+		object.LearningStage = span.LearningStage
+		object.RequiredSupportRefs = required
+		object.AllowedTargetRefs = allowed
+		object.SpanJoins = canonicalJoins
+	}
+
 	atlasEvidence := make(map[string]repositoryatlas.Evidence, len(input.Atlas.Evidence))
 	for _, item := range input.Atlas.Evidence {
 		atlasEvidence[item.ID] = item
@@ -538,7 +697,8 @@ func compileCatalog(input Input) (
 	}
 
 	for _, object := range objects {
-		labelRequired := object.Kind != RefEvidence
+		labelRequired := object.Kind != RefEvidence && object.Kind != RefRouteSupport &&
+			object.Kind != RefRouteRelation && object.Kind != RefRouteSpan
 		factRequired := object.Kind == RefSurface || object.Kind == RefReadingTarget ||
 			object.Kind == RefEvidence || object.Kind == RefDocument
 		if err := validateVisibleText(object.Label, input.Limits.MaxTextBytes, labelRequired, identities); err != nil {
@@ -668,6 +828,30 @@ func buildWire(
 		})
 		addBriefSupport(RefDocument, ref)
 	}
+	for _, support := range input.ReadingSupports {
+		wire.RouteSupports = append(wire.RouteSupports, wireRouteSupport{
+			Ref:       refs[CanonicalRef{Kind: RefRouteSupport, ID: support.ID}],
+			Role:      support.Role,
+			TargetRef: refs[CanonicalRef{Kind: RefReadingTarget, ID: support.TargetID}],
+			Authority: support.Authority,
+		})
+	}
+	for _, span := range input.RouteSpans {
+		item := wireRouteSpan{
+			Ref: refs[CanonicalRef{Kind: RefRouteSpan, ID: span.ID}], Kind: span.Kind,
+			Question: span.question(input.Language), TargetJob: span.TargetJob,
+			LearningStage: span.LearningStage,
+		}
+		for _, supportID := range span.RequiredSupportIDs {
+			item.RequiredSupportRefs = append(item.RequiredSupportRefs,
+				refs[CanonicalRef{Kind: RefRouteSupport, ID: supportID}])
+		}
+		for _, targetID := range span.AllowedTargetIDs {
+			item.AllowedTargetRefs = append(item.AllowedTargetRefs,
+				refs[CanonicalRef{Kind: RefReadingTarget, ID: targetID}])
+		}
+		wire.RouteSpans = append(wire.RouteSpans, item)
+	}
 	encoded, err := json.Marshal(wire)
 	if err != nil {
 		return wireProjection{}, err
@@ -743,6 +927,20 @@ func allPrivateIdentities(input Input, includeTargetLocators bool) map[string]st
 	for _, document := range input.Documents {
 		add(document.ID)
 	}
+	for _, support := range input.ReadingSupports {
+		add(support.ID)
+		add(support.PackageBucket)
+	}
+	for _, relation := range input.ProducerRelations {
+		add(relation.ID)
+		add(relation.ProducerID)
+		add(relation.SavedFlowID)
+		add(relation.FromStepID)
+		add(relation.ToStepID)
+	}
+	for _, span := range input.RouteSpans {
+		add(span.ID)
+	}
 	return result
 }
 
@@ -766,6 +964,103 @@ func validateReadingTargetSymbol(symbol string, limit int) error {
 		}
 	}
 	return nil
+}
+
+func validateLocalizedSpanQuestions(span RouteSpan, limit int, identities map[string]struct{}) error {
+	for language, question := range map[Language]string{
+		LanguageEnglish: span.QuestionEnglish,
+		LanguageRussian: span.QuestionRussian,
+	} {
+		if err := validateVisibleText(question, limit, true, identities); err != nil || !naturalQuestion(question) {
+			return fmt.Errorf("atlas study: route span has invalid %s question", language)
+		}
+	}
+	return nil
+}
+
+func validateRouteProducerRelation(
+	relation RouteProducerRelation,
+	supports map[string]ReadingSupport,
+	targets map[string]ReadingTarget,
+) error {
+	if relation.ID == "" || relation.ProducerID == "" || !relation.Kind.Valid() ||
+		relation.FromSupportID == relation.ToSupportID || relation.FromTargetID == relation.ToTargetID {
+		return fmt.Errorf("atlas study: invalid route producer relation")
+	}
+	from, fromOK := supports[relation.FromSupportID]
+	to, toOK := supports[relation.ToSupportID]
+	if !fromOK || !toOK || from.TargetID != relation.FromTargetID || to.TargetID != relation.ToTargetID {
+		return fmt.Errorf("atlas study: route producer relation endpoints do not resolve exactly")
+	}
+	if _, ok := targets[relation.FromTargetID]; !ok {
+		return fmt.Errorf("atlas study: route producer relation has unknown source target")
+	}
+	if _, ok := targets[relation.ToTargetID]; !ok {
+		return fmt.Errorf("atlas study: route producer relation has unknown target")
+	}
+	switch relation.Kind {
+	case RouteRelationEntryHandoff:
+		if from.Role != SupportProcessEntry || to.Role != SupportEntryHandoff || relation.SavedFlowID != "" ||
+			relation.FromStepID != "" || relation.ToStepID != "" || relation.FromStepOrdinal != 0 || relation.ToStepOrdinal != 0 {
+			return fmt.Errorf("atlas study: entry-handoff relation has invalid exact endpoints")
+		}
+	case RouteRelationSavedFlowEdge:
+		if from.Role != SupportSavedFlow || to.Role != SupportSavedFlow || relation.SavedFlowID == "" ||
+			relation.FromStepID == "" || relation.ToStepID == "" || relation.FromStepID == relation.ToStepID ||
+			relation.FromStepOrdinal < 0 || relation.ToStepOrdinal != relation.FromStepOrdinal+1 {
+			return fmt.Errorf("atlas study: saved-flow relation is not one exact adjacent accepted edge")
+		}
+	}
+	return nil
+}
+
+func validateRouteSpanJoins(
+	span RouteSpan,
+	supports map[string]ReadingSupport,
+	relations map[string]RouteProducerRelation,
+	allowedTargets map[string]struct{},
+) ([]CanonicalSpanJoin, error) {
+	if span.Kind == RouteSpanFocused {
+		if len(span.Joins) != 0 {
+			return nil, fmt.Errorf("atlas study: focused span cannot claim a system join")
+		}
+		targets := make(map[string]struct{})
+		for _, supportID := range span.RequiredSupportIDs {
+			targets[supports[supportID].TargetID] = struct{}{}
+		}
+		if len(targets) != 1 {
+			return nil, fmt.Errorf("atlas study: focused span requires one exact locator")
+		}
+		return nil, nil
+	}
+	if len(span.Joins) != 1 {
+		return nil, fmt.Errorf("atlas study: system-path span requires exactly one producer join")
+	}
+	if len(span.RequiredSupportIDs) != 2 || len(allowedTargets) != 2 {
+		return nil, fmt.Errorf("atlas study: system-path span must equal one directed producer relation")
+	}
+	required := make(map[string]struct{}, 2)
+	for _, id := range span.RequiredSupportIDs {
+		required[id] = struct{}{}
+	}
+	join := span.Joins[0]
+	if join.RelationID == "" {
+		return nil, fmt.Errorf("atlas study: invalid route span join")
+	}
+	relation, ok := relations[join.RelationID]
+	if !ok {
+		return nil, fmt.Errorf("atlas study: route span joins unknown producer relation")
+	}
+	_, fromRequired := required[relation.FromSupportID]
+	_, toRequired := required[relation.ToSupportID]
+	_, fromAllowed := allowedTargets[relation.FromTargetID]
+	_, toAllowed := allowedTargets[relation.ToTargetID]
+	if !fromRequired || !toRequired || !fromAllowed || !toAllowed {
+		return nil, fmt.Errorf("atlas study: system-path span does not equal its exact producer relation")
+	}
+	return []CanonicalSpanJoin{{
+		Relation: CanonicalRef{Kind: RefRouteRelation, ID: relation.ID},
+	}}, nil
 }
 
 func validateTargetAssociations(
@@ -858,6 +1153,7 @@ func validateLimits(limits Limits) error {
 		{"max_components", limits.MaxComponents},
 		{"max_surfaces", limits.MaxSurfaces},
 		{"max_reading_targets", limits.MaxReadingTargets},
+		{"max_route_spans", limits.MaxRouteSpans},
 		{"max_evidence", limits.MaxEvidence},
 		{"max_documents", limits.MaxDocuments},
 	}
@@ -960,6 +1256,12 @@ func refPrefix(kind RefKind) string {
 		return "e"
 	case RefDocument:
 		return "d"
+	case RefRouteSupport:
+		return "rs"
+	case RefRouteRelation:
+		return "rr"
+	case RefRouteSpan:
+		return "sp"
 	default:
 		return "x"
 	}
@@ -978,22 +1280,18 @@ func refKindRank(kind RefKind) int {
 	case RefReadingTarget:
 		return 4
 	case RefEvidence:
-		return 5
+		return 8
 	case RefDocument:
+		return 9
+	case RefRouteSupport:
+		return 5
+	case RefRouteRelation:
 		return 6
+	case RefRouteSpan:
+		return 7
 	default:
 		return 99
 	}
-}
-
-func countKind(values []CatalogObject, kind RefKind) int {
-	count := 0
-	for _, value := range values {
-		if value.Kind == kind {
-			count++
-		}
-	}
-	return count
 }
 
 func digest(data []byte) string {
@@ -1090,6 +1388,18 @@ func cloneCatalog(values []CatalogObject) []CatalogObject {
 			location := *result[index].Location
 			result[index].Location = &location
 		}
+		for _, field := range []**CanonicalRef{
+			&result[index].SupportTarget, &result[index].FromSupport, &result[index].ToSupport,
+			&result[index].FromTarget, &result[index].ToTarget,
+		} {
+			if *field != nil {
+				copyRef := **field
+				*field = &copyRef
+			}
+		}
+		result[index].RequiredSupportRefs = append([]CanonicalRef(nil), result[index].RequiredSupportRefs...)
+		result[index].AllowedTargetRefs = append([]CanonicalRef(nil), result[index].AllowedTargetRefs...)
+		result[index].SpanJoins = append([]CanonicalSpanJoin(nil), result[index].SpanJoins...)
 	}
 	return result
 }

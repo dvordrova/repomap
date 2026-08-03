@@ -28,7 +28,10 @@ func runAtlasStudyResponseReplayCLI(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("atlas-study-response-replay", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	runDirFlag := flags.String("run-dir", "", "explicit copied Atlas Study run")
-	requestSHAFlag := flags.String("request-sha256", "", "exact canonical v5 request SHA-256")
+	requestSHAFlag := flags.String(
+		"request-sha256", "",
+		fmt.Sprintf("exact canonical v%d request SHA-256", atlasstudy.Version),
+	)
 	responseFlag := flags.String("response", "", "exact saved provider response")
 	responseSHAFlag := flags.String("response-sha256", "", "exact response SHA-256")
 	if err := flags.Parse(args); err != nil {
@@ -58,7 +61,7 @@ func runAtlasStudyResponseReplayCLI(args []string, stdout io.Writer) error {
 		root, atlasstudy.RequestArtifactFilename, atlasstudy.MaxRequestArtifactBytes,
 	)
 	if err != nil {
-		return fmt.Errorf("atlas study response replay: read canonical v5 request: %w", err)
+		return fmt.Errorf("atlas study response replay: read canonical v%d request: %w", atlasstudy.Version, err)
 	}
 	requestSHA := atlasStudyReplaySHA256(requestRaw)
 	if requestSHA != *requestSHAFlag {
@@ -66,7 +69,7 @@ func runAtlasStudyResponseReplayCLI(args []string, stdout io.Writer) error {
 	}
 	request, err := atlasstudy.DecodeRequestRecord(requestRaw)
 	if err != nil {
-		return fmt.Errorf("atlas study response replay: decode canonical v5 request: %w", err)
+		return fmt.Errorf("atlas study response replay: decode canonical v%d request: %w", atlasstudy.Version, err)
 	}
 
 	responseRaw, err := readAtlasStudyReplayResponse(*responseFlag, runDir)
@@ -134,7 +137,7 @@ func runAtlasStudyResponseReplayCLI(args []string, stdout io.Writer) error {
 			if err != nil {
 				return err
 			}
-			if decoded != status {
+			if !reflect.DeepEqual(decoded, status) {
 				return fmt.Errorf("atlas study replay status changed before publication")
 			}
 			return nil

@@ -67,6 +67,8 @@ type analyzer struct {
 	compositionVisited                        map[*ssa.Function]bool
 	architectureAnchors                       map[string]BehaviorAnchor
 	architectureRelationships                 map[string]BehaviorRelationship
+	entryHandoffs                             []EntryHandoff
+	entryHandoffCoverage                      EntryHandoffCoverage
 	architectureAnchorsConsidered             int
 	architectureRelationshipsConsidered       int
 	architectureAnchorCollectionLimited       bool
@@ -221,6 +223,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
 	entrypoints := a.entrypoints()
+	a.recordEntryHandoffs(entrypoints)
 	finishEntrypoints := a.startPhase("entrypoint_walk", "walking build-selected executable entrypoints")
 	for _, entrypoint := range entrypoints {
 		if err := ctx.Err(); err != nil {
@@ -3032,6 +3035,199 @@ func deduplicateArchitectureSymbols(symbols []Symbol) []Symbol {
 	return result
 }
 
+type entryHandoffWitness struct {
+	processEntrypoint Symbol
+	callee            Symbol
+	callsite          Location
+}
+
+// recordEntryHandoffs inspects only the bodies of already built, exact
+// production process-entry SSA functions. It neither traverses the call graph
+// nor creates Architecture anchors or relationships.
+func (a *analyzer) recordEntryHandoffs(entrypoints []*ssa.Function) {
+	var witnesses []entryHandoffWitness
+	for _, entrypoint := range entrypoints {
+		if a.ctx.Err() != nil || !a.productionProcessEntrypoint(entrypoint) {
+			continue
+		}
+		entrySymbol := a.symbol(entrypoint)
+		for _, block := range entrypoint.Blocks {
+			for _, instruction := range block.Instrs {
+				call, ok := instruction.(ssa.CallInstruction)
+				if !ok || call.Common() == nil || call.Common().IsInvoke() {
+					continue
+				}
+				callee := call.Common().StaticCallee()
+				if callee == nil || callee == entrypoint || callee.Name() == "init" ||
+					!a.repositoryDirectStaticCall(call, callee) {
+					continue
+				}
+				calleeSymbol := a.symbol(callee)
+				callsite := a.location(call.Pos())
+				if !validEntryHandoffSymbol(entrySymbol) || !validEntryHandoffSymbol(calleeSymbol) ||
+					!validEntryHandoffLocation(callsite) {
+					continue
+				}
+				witnesses = append(witnesses, entryHandoffWitness{
+					processEntrypoint: entrySymbol,
+					callee:            calleeSymbol,
+					callsite:          callsite,
+				})
+			}
+		}
+	}
+
+	sort.Slice(witnesses, func(i, j int) bool {
+		left := entryHandoffWitnessKey(witnesses[i])
+		right := entryHandoffWitnessKey(witnesses[j])
+		return left < right
+	})
+
+	all := make([]EntryHandoff, 0, len(witnesses))
+	for start := 0; start < len(witnesses); {
+		end := start + 1
+		edgeKey := entryHandoffEdgeKey(witnesses[start])
+		for end < len(witnesses) && entryHandoffEdgeKey(witnesses[end]) == edgeKey {
+			end++
+		}
+		witness := witnesses[start]
+		handoff := EntryHandoff{
+			ProcessEntrypoint:      witness.processEntrypoint,
+			Callee:                 witness.callee,
+			RepresentativeCallsite: witness.callsite,
+			WitnessCount:           end - start,
+			TargetPackage:          witness.callee.Package,
+			Scenario:               a.scenario,
+			Certainty:              "static",
+			Producer: Provenance{
+				Provider:  "go_ssa",
+				Version:   AnalyzerVersion,
+				Operation: "collect_entry_direct_static_handoff",
+			},
+			Limitations: []string{
+				"Exact repository-local direct static call from a build-selected production process entry; runtime order, successful execution, ownership, and transitive reachability are not observed.",
+			},
+		}
+		handoff.ID = stableEntryHandoffID(handoff)
+		all = append(all, handoff)
+		start = end
+	}
+
+	var coverage EntryHandoffCoverage
+	var collectionLimited bool
+	all, coverage, collectionLimited = boundCollectedEntryHandoffs(
+		all,
+		len(witnesses),
+		maxCollectedEntryHandoffs,
+	)
+	if collectionLimited {
+		a.addBudget("entry_handoff_collection")
+	}
+	a.entryHandoffs = all
+	a.entryHandoffCoverage = coverage
+}
+
+func boundCollectedEntryHandoffs(
+	handoffs []EntryHandoff,
+	witnessesConsidered int,
+	limit int,
+) ([]EntryHandoff, EntryHandoffCoverage, bool) {
+	result := append([]EntryHandoff(nil), handoffs...)
+	coverage := EntryHandoffCoverage{
+		Complete:             true,
+		Reasons:              []GroundingCoverageReason{},
+		CandidateSetSHA256:   entryHandoffCandidateSetSHA256(result),
+		CandidatesConsidered: len(result),
+		CandidatesCollected:  len(result),
+		WitnessesConsidered:  witnessesConsidered,
+	}
+	limited := limit >= 0 && len(result) > limit
+	if limited {
+		result = result[:limit]
+		coverage.CandidatesCollected = len(result)
+		coverage.Complete = false
+		coverage.Reasons = append(coverage.Reasons, GroundingCoverageCollectionLimit)
+	}
+	return result, coverage, limited
+}
+
+func (a *analyzer) productionProcessEntrypoint(function *ssa.Function) bool {
+	if function == nil || function.Blocks == nil || function.Name() != "main" {
+		return false
+	}
+	symbol := a.symbol(function)
+	for _, entrypoint := range a.processEntrypoints {
+		if entrypoint.availability != AvailabilityAvailable ||
+			(entrypoint.role != ExecutableRolePrimaryApplication &&
+				entrypoint.role != ExecutableRoleSecondaryService) {
+			continue
+		}
+		if entrypoint.packagePath == symbol.Package && entrypoint.anchor.Path == symbol.Location.Path &&
+			entrypoint.anchor.Line == symbol.Location.Line {
+			return true
+		}
+	}
+	return false
+}
+
+func validEntryHandoffSymbol(symbol Symbol) bool {
+	return symbol.ID != "" && symbol.Package != "" && symbol.Name != "" &&
+		validEntryHandoffLocation(symbol.Location)
+}
+
+func validEntryHandoffLocation(location Location) bool {
+	return location.Path != "" && location.Path != "." && location.Line > 0 && location.Column >= 0 &&
+		fs.ValidPath(location.Path) && !strings.ContainsRune(location.Path, '\\')
+}
+
+func entryHandoffEdgeKey(witness entryHandoffWitness) string {
+	return strings.Join([]string{
+		witness.processEntrypoint.ID,
+		locationKey(witness.processEntrypoint.Location),
+		witness.callee.ID,
+		locationKey(witness.callee.Location),
+	}, "\x00")
+}
+
+func entryHandoffWitnessKey(witness entryHandoffWitness) string {
+	return entryHandoffEdgeKey(witness) + "\x00" + locationKey(witness.callsite)
+}
+
+func stableEntryHandoffID(handoff EntryHandoff) string {
+	digest := sha256.New()
+	for _, field := range []string{
+		"entry-handoff-v1",
+		handoff.ProcessEntrypoint.ID,
+		locationKey(handoff.ProcessEntrypoint.Location),
+		handoff.Callee.ID,
+		locationKey(handoff.Callee.Location),
+		handoff.Scenario.ID,
+	} {
+		writeArchitectureAnchorIdentityField(digest, field)
+	}
+	return "entry-handoff-" + hex.EncodeToString(digest.Sum(nil)[:12])
+}
+
+func entryHandoffCandidateSetSHA256(handoffs []EntryHandoff) string {
+	digest := sha256.New()
+	for _, handoff := range handoffs {
+		for _, field := range []string{
+			handoff.ID,
+			handoff.ProcessEntrypoint.ID,
+			locationKey(handoff.ProcessEntrypoint.Location),
+			handoff.Callee.ID,
+			locationKey(handoff.Callee.Location),
+			locationKey(handoff.RepresentativeCallsite),
+			strconv.Itoa(handoff.WitnessCount),
+			handoff.TargetPackage,
+			handoff.Scenario.ID,
+		} {
+			writeArchitectureAnchorIdentityField(digest, field)
+		}
+	}
+	return hex.EncodeToString(digest.Sum(nil))
+}
+
 func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	anchors := make([]BehaviorAnchor, 0, len(a.architectureAnchors))
 	for _, anchor := range a.architectureAnchors {
@@ -3071,6 +3267,26 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 		declarationFamilyMembersPublished,
 		groundingBounded,
 	)
+	entryHandoffs := append([]EntryHandoff(nil), a.entryHandoffs...)
+	entryHandoffCoverage := a.entryHandoffCoverage
+	var handoffPersistenceLimited bool
+	entryHandoffs, entryHandoffCoverage, handoffPersistenceLimited = boundEntryHandoffs(
+		entryHandoffs,
+		entryHandoffCoverage,
+		maxPersistedEntryHandoffs,
+	)
+	if handoffPersistenceLimited {
+		a.addBudget("entry_handoff_persistence")
+	}
+	groundingCoverage.EntryHandoffs = entryHandoffCoverage
+	if !entryHandoffCoverage.Complete {
+		groundingCoverage.Complete = false
+		groundingCoverage.Reasons = append(groundingCoverage.Reasons, entryHandoffCoverage.Reasons...)
+		sort.Slice(groundingCoverage.Reasons, func(i, j int) bool {
+			return groundingCoverage.Reasons[i] < groundingCoverage.Reasons[j]
+		})
+		groundingCoverage.Reasons = compactGroundingCoverageReasons(groundingCoverage.Reasons)
+	}
 	operationalAnchorIDs := make(map[string]bool, len(anchors))
 	reachable := make(map[string]bool)
 	queue := make([]string, 0)
@@ -3147,13 +3363,41 @@ func (a *analyzer) finishArchitectureGrounding(entrypoints []*ssa.Function) {
 	a.result.Grounding = ArchitectureGrounding{
 		Version:             ArchitectureGroundingVersion,
 		RepositoryArchetype: ArchetypeAssessment{Selected: archetype, Evidence: evidenceItems, Alternatives: alternatives},
-		GroundingMode:       mode, Anchors: anchors, Relationships: relationships,
+		GroundingMode:       mode, Anchors: anchors, Relationships: relationships, EntryHandoffs: entryHandoffs,
 		Coverage: groundingCoverage,
 	}
 	if a.ctx.Err() != nil {
 		return
 	}
 	a.result.normalize()
+}
+
+func boundEntryHandoffs(
+	handoffs []EntryHandoff,
+	coverage EntryHandoffCoverage,
+	limit int,
+) ([]EntryHandoff, EntryHandoffCoverage, bool) {
+	result := append([]EntryHandoff(nil), handoffs...)
+	if coverage.CandidateSetSHA256 == "" {
+		coverage.CandidateSetSHA256 = entryHandoffCandidateSetSHA256(result)
+		coverage.CandidatesConsidered = len(result)
+		coverage.CandidatesCollected = len(result)
+		for _, handoff := range result {
+			coverage.WitnessesConsidered += handoff.WitnessCount
+		}
+	}
+	limited := limit >= 0 && len(result) > limit
+	if limited {
+		result = result[:limit]
+		coverage.Reasons = append(coverage.Reasons, GroundingCoveragePersistenceLimit)
+	}
+	coverage.CandidatesPublished = len(result)
+	sort.Slice(coverage.Reasons, func(i, j int) bool {
+		return coverage.Reasons[i] < coverage.Reasons[j]
+	})
+	coverage.Reasons = compactGroundingCoverageReasons(coverage.Reasons)
+	coverage.Complete = len(coverage.Reasons) == 0
+	return result, coverage, limited
 }
 
 func architectureOperationalKindSets(
@@ -3276,6 +3520,8 @@ const (
 	maxArchitectureAnchorsPerKind         = 16
 	maxProcessEntryArchitectureAnchors    = 64
 	maxArchitectureRelationshipWitnesses  = 64
+	maxCollectedEntryHandoffs             = 4096
+	maxPersistedEntryHandoffs             = 256
 )
 
 func boundArchitectureGrounding(

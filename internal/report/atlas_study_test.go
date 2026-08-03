@@ -20,6 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestAtlasStudyCasdoorShapedPackageDrawerSourcesDoNotExpandReadingCatalog(t *testing.T) {
@@ -180,7 +181,7 @@ func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *te
 		data := atlasStudyReportFixture(t)
 		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
 		input := build(t, data)
-		if hasRunTarget(input) || len(input.ReadingTargets) != 2 || AtlasStudyInputHasMinimumCatalog(input) {
+		if hasRunTarget(input) || len(input.ReadingTargets) != 2 || !AtlasStudyInputHasMinimumCatalog(input) {
 			t.Fatalf("family-only catalog = %#v", input.ReadingTargets)
 		}
 	})
@@ -192,8 +193,8 @@ func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *te
 			ID: "surface-run-local", Kind: "request_entry", Resolution: "exact", Status: "available",
 			Evidence: []SurfaceLocation{{Path: path, Line: line}},
 		})
-		if input := build(t, data); !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
-			t.Fatalf("surface-supported catalog = %#v", input.ReadingTargets)
+		if input := build(t, data); hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("unadvertised surface changed catalog = %#v", input.ReadingTargets)
 		}
 	})
 
@@ -201,7 +202,8 @@ func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *te
 		data := atlasStudyReportFixture(t)
 		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
 		data.ArchitectureCanvas.Flows = []ArchitectureFlow{{
-			ID: "flow-run", Name: "Run", Steps: []ArchitectureFlowStep{{
+			ID: "flow-run", Name: "Run", Status: "partial", EvidenceBasis: "static",
+			Steps: []ArchitectureFlowStep{{
 				ID: "flow-run-step", Location: &evidence.Location{Path: path, Line: line},
 			}},
 		}}
@@ -223,8 +225,8 @@ func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *te
 				EvidenceIDs: []string{navigatorEvidence.ID},
 			},
 		}
-		if input := build(t, data); !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
-			t.Fatalf("Navigator-supported catalog = %#v", input.ReadingTargets)
+		if input := build(t, data); hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
+			t.Fatalf("Navigator created Study eligibility = %#v", input.ReadingTargets)
 		}
 	})
 
@@ -249,10 +251,148 @@ func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *te
 			}},
 		)
 		input := build(t, data)
-		if hasRunTarget(input) || len(input.ReadingTargets) != 2 || AtlasStudyInputHasMinimumCatalog(input) {
+		if hasRunTarget(input) || len(input.ReadingTargets) != 2 || !AtlasStudyInputHasMinimumCatalog(input) {
 			t.Fatalf("locator-only catalog = %#v", input.ReadingTargets)
 		}
 	})
+}
+
+func TestBuildAtlasStudyInputProjectsNeutralEntryHandoffsWithoutSavedSources(t *testing.T) {
+	t.Parallel()
+	data := atlasStudyReportFixture(t)
+	grounding := architectureGroundingWithEntryHandoff()
+	second := grounding.EntryHandoffs[0]
+	second.Callee = ArchitectureAnchorMember{
+		ID: "example.com/app/internal/worker.Work", Package: "example.com/app/internal/worker", Name: "Work",
+		Location: evidence.Location{Path: "internal/worker/work.go", Line: 12, Column: 6},
+	}
+	second.TargetPackage = second.Callee.Package
+	second.RepresentativeCallsite = evidence.Location{Path: "cmd/app/main.go", Line: 18, Column: 2}
+	second.WitnessCount = 1
+	second.ID = architectureEntryHandoffID(second)
+	grounding.EntryHandoffs = append(grounding.EntryHandoffs, second)
+	grounding.Coverage.EntryHandoffs = ArchitectureEntryHandoffCoverage{
+		Complete: true, Reasons: []surfacediscovery.GroundingCoverageReason{},
+		CandidateSetSHA256:   architectureEntryHandoffCandidateSetSHA256(grounding.EntryHandoffs),
+		CandidatesConsidered: 2, CandidatesCollected: 2, CandidatesPublished: 2,
+		WitnessesConsidered: 3,
+	}
+	data.ArchitectureGrounding = &grounding
+	data.OpenablePaths = append(data.OpenablePaths,
+		"internal/run/run.go", "internal/worker/work.go",
+	)
+	component := &data.ArchitectureCanvas.Components[0]
+	component.Members[0].Facts = append(component.Members[0].Facts,
+		componentmap.LocalFact{Kind: componentmap.FactRepositoryPath, Value: "internal/run/run.go", Location: &evidence.Location{Path: "internal/run/run.go", Line: 8}},
+		componentmap.LocalFact{Kind: componentmap.FactRepositoryPath, Value: "internal/worker/work.go", Location: &evidence.Location{Path: "internal/worker/work.go", Line: 12}},
+		componentmap.LocalFact{Kind: componentmap.FactRepositoryPath, Value: "cmd/app/main.go", Location: &evidence.Location{Path: "cmd/app/main.go", Line: 10}},
+	)
+
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.ProducerRelations) != 2 {
+		t.Fatalf("entry relations = %#v", input.ProducerRelations)
+	}
+	systemSpans := 0
+	for _, span := range input.RouteSpans {
+		if span.Kind == atlasstudy.RouteSpanSystemPath {
+			systemSpans++
+			if len(span.Joins) != 1 || len(span.RequiredSupportIDs) != 2 || len(span.AllowedTargetIDs) != 2 {
+				t.Fatalf("system span = %#v", span)
+			}
+		}
+	}
+	if systemSpans != 2 {
+		t.Fatalf("system spans = %d; all spans=%#v", systemSpans, input.RouteSpans)
+	}
+	for _, location := range []evidence.Location{
+		grounding.EntryHandoffs[0].Callee.Location,
+		grounding.EntryHandoffs[1].Callee.Location,
+	} {
+		found := false
+		for _, target := range input.ReadingTargets {
+			found = found || (target.Location.Path == location.Path && target.Location.Line == location.Line)
+		}
+		if !found {
+			t.Fatalf("handoff target absent without UserSource: %#v", location)
+		}
+	}
+	product, err := atlasstudy.Compile(input)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	for _, handoff := range grounding.EntryHandoffs {
+		if bytes.Contains(product.WireJSON(), []byte(handoff.ID)) {
+			t.Fatalf("private handoff identity leaked: %s", product.WireJSON())
+		}
+	}
+
+	reversed := cloneAtlasStudyReportData(t, data)
+	slices.Reverse(reversed.ArchitectureGrounding.EntryHandoffs)
+	reversedInput, err := BuildAtlasStudyInput(reversed, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedProduct, err := atlasstudy.Compile(reversedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(product.WireJSON(), reversedProduct.WireJSON()) {
+		t.Fatal("handoff input order changed exact Study request")
+	}
+}
+
+func TestBuildAtlasStudyInputPartialSurfaceIsFocusedOnly(t *testing.T) {
+	t.Parallel()
+	data := atlasStudyReportFixture(t)
+	data.ArchitectureCanvas.BehaviorAnchors = nil
+	data.ArchitectureCanvas.Surfaces[0].Resolution = "partial"
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.ReadingSupports) != 1 || input.ReadingSupports[0].Role != atlasstudy.SupportSurfaceCandidate ||
+		input.ReadingSupports[0].Authority != repositoryatlas.AuthorityPartial {
+		t.Fatalf("partial support = %#v", input.ReadingSupports)
+	}
+	if len(input.RouteSpans) != 1 || input.RouteSpans[0].Kind != atlasstudy.RouteSpanFocused ||
+		len(input.ProducerRelations) != 0 {
+		t.Fatalf("partial Surface claimed a system path: spans=%#v relations=%#v", input.RouteSpans, input.ProducerRelations)
+	}
+}
+
+func TestBuildAtlasStudyInputMergesPluralSupportAtOneExactLocator(t *testing.T) {
+	t.Parallel()
+	data := atlasStudyReportFixture(t)
+	data.ArchitectureCanvas.BehaviorAnchors = append(data.ArchitectureCanvas.BehaviorAnchors,
+		componentmap.BehaviorAnchor{
+			ID: "anchor-main-call", Kind: componentmap.AnchorRequestDispatchRoot,
+			ProofMode: componentmap.AnchorProofCallTarget,
+			Location:  evidence.Location{Path: "cmd/app/main.go", Line: 7},
+			Certainty: evidence.CertaintyStatic,
+		},
+	)
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var targetID string
+	for _, target := range input.ReadingTargets {
+		if target.Location.Path == "cmd/app/main.go" && target.Location.Line == 7 {
+			targetID = target.ID
+		}
+	}
+	roles := make(map[atlasstudy.SupportRole]struct{})
+	for _, support := range input.ReadingSupports {
+		if support.TargetID == targetID {
+			roles[support.Role] = struct{}{}
+		}
+	}
+	if targetID == "" || len(roles) != 2 {
+		t.Fatalf("plural support was cloned or lost: target=%q supports=%#v", targetID, input.ReadingSupports)
+	}
 }
 
 func assertAtlasStudyJSONReplayParity(
@@ -382,8 +522,47 @@ func TestAtlasStudyOutputIsInvariantAcrossFullPartialAndRejectedArchitecture(t *
 	full.ArchitectureCanvas.Components[0].Members = []componentmap.Candidate{
 		coveredMember, remainderMember,
 	}
+	full.ArchitectureCanvas.Flows = []ArchitectureFlow{{
+		ID: "flow-saved-branch", Name: "Saved branch", Status: "complete", EvidenceBasis: "static",
+		Steps: []ArchitectureFlowStep{
+			{
+				ID: "step-entry", QualifiedName: "example.com/fixture/cmd/app.main",
+				ComponentID: "component-stale-model",
+				Location:    &evidence.Location{Path: "cmd/app/main.go", Line: 7},
+			},
+			{
+				ID: "step-run", QualifiedName: "example.com/fixture/internal/app.Run",
+				ComponentID: "component-stale-model",
+				Location:    &evidence.Location{Path: "internal/app/run.go", Line: 11},
+			},
+			{
+				ID: "step-result", QualifiedName: "example.com/fixture/internal/app.Result",
+				ComponentID: "component-stale-model",
+				Location:    &evidence.Location{Path: "internal/app/result.go", Line: 19},
+			},
+		},
+		TransitionIDs: []string{"edge-entry-result", "edge-entry-run"},
+	}}
+	full.ArchitectureCanvas.FlowEdges = []ArchitectureFlowEdge{
+		{
+			ID: "edge-entry-run", FlowID: "flow-saved-branch", From: "step-entry", To: "step-run",
+			Relation: evidence.RelationCalls, Resolution: evidence.ResolutionStatic,
+			Certainty: evidence.CertaintyStatic,
+			Evidence:  evidence.Location{Path: "cmd/app/main.go", Line: 7}, Provider: "flowproof",
+		},
+		{
+			ID: "edge-entry-result", FlowID: "flow-saved-branch", From: "step-entry", To: "step-result",
+			Relation: evidence.RelationCalls, Resolution: evidence.ResolutionStatic,
+			Certainty: evidence.CertaintyStatic,
+			Evidence:  evidence.Location{Path: "cmd/app/main.go", Line: 8}, Provider: "flowproof",
+		},
+	}
 
 	partial := cloneAtlasStudyReportData(t, full)
+	partial.ArchitectureCanvas.Flows[0].Steps[0], partial.ArchitectureCanvas.Flows[0].Steps[2] =
+		partial.ArchitectureCanvas.Flows[0].Steps[2], partial.ArchitectureCanvas.Flows[0].Steps[0]
+	partial.ArchitectureCanvas.FlowEdges[0], partial.ArchitectureCanvas.FlowEdges[1] =
+		partial.ArchitectureCanvas.FlowEdges[1], partial.ArchitectureCanvas.FlowEdges[0]
 	partial.ArchitectureCanvas.ValidationOutcome = componentmap.ValidationAcceptedPartial
 	partial.ArchitectureCanvas.ArchitectureSource = componentmap.SourcePartialModel
 	partial.ArchitectureCanvas.ArchitectureLevel = 2
@@ -459,6 +638,27 @@ func TestAtlasStudyOutputIsInvariantAcrossFullPartialAndRejectedArchitecture(t *
 			if len(input.ReadingTargets) != 3 {
 				t.Fatalf("%s Architecture retained %d exact targets, want 3", variant.name, len(input.ReadingTargets))
 			}
+			var savedFlowRelations []atlasstudy.RouteProducerRelation
+			for _, relation := range input.ProducerRelations {
+				if relation.Kind == atlasstudy.RouteRelationSavedFlowEdge {
+					savedFlowRelations = append(savedFlowRelations, relation)
+				}
+			}
+			sort.Slice(savedFlowRelations, func(i, j int) bool {
+				return savedFlowRelations[i].ProducerID < savedFlowRelations[j].ProducerID
+			})
+			if len(savedFlowRelations) != 2 ||
+				savedFlowRelations[0].ProducerID != "edge-entry-result" ||
+				savedFlowRelations[1].ProducerID != "edge-entry-run" {
+				t.Fatalf("%s Architecture saved-flow relations = %#v", variant.name, savedFlowRelations)
+			}
+			for _, relation := range savedFlowRelations {
+				if relation.SavedFlowID != "flow-saved-branch" ||
+					relation.FromStepID != "step-entry" ||
+					relation.FromStepOrdinal != 0 || relation.ToStepOrdinal != 1 {
+					t.Fatalf("%s Architecture saved-flow relation lost exact directed edge: %#v", variant.name, relation)
+				}
+			}
 			for _, target := range input.ReadingTargets {
 				if target.Owner.ID == string(remainderComponentID) ||
 					slices.Contains(target.RelatedComponentIDs, string(remainderComponentID)) {
@@ -489,9 +689,9 @@ func TestAtlasStudyOutputIsInvariantAcrossFullPartialAndRejectedArchitecture(t *
 				baselineTargets = input.ReadingTargets
 				baselineWire = product.WireJSON()
 			} else if !reflect.DeepEqual(input.ReadingTargets, baselineTargets) {
-				t.Fatalf("%s Architecture changed exact Study targets", variant.name)
+				t.Fatalf("%s Architecture changed exact Study targets\nbaseline=%#v\nactual=%#v", variant.name, baselineTargets, input.ReadingTargets)
 			} else if !bytes.Equal(product.WireJSON(), baselineWire) {
-				t.Fatalf("%s Architecture changed exact model-visible Study wire", variant.name)
+				t.Fatalf("%s Architecture changed exact model-visible Study wire\nbaseline=%s\nactual=%s", variant.name, baselineWire, product.WireJSON())
 			}
 
 			runDir := t.TempDir()
@@ -636,7 +836,7 @@ func TestBuildAtlasStudyInputDeduplicatesEquivalentLocatorAndOmitsConflict(t *te
 		if err != nil {
 			t.Fatalf("BuildAtlasStudyInput: %v", err)
 		}
-		if len(input.ReadingTargets) != 2 || AtlasStudyInputHasMinimumCatalog(input) {
+		if len(input.ReadingTargets) != 2 || !AtlasStudyInputHasMinimumCatalog(input) {
 			t.Fatalf("conflicting source locator remained model-visible: %#v", input.ReadingTargets)
 		}
 		for _, target := range input.ReadingTargets {
@@ -775,11 +975,11 @@ func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readAtlasStudyReportProduct: %v", err)
 	}
-	if status == nil || status.State != atlasstudy.ProductStateAccepted ||
+	if status == nil || status.State != atlasstudy.ProductStateAcceptedPartial ||
 		status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
 		status.DirectionCount != 1 || status.PublishedDirectionCount != 1 ||
 		status.HiddenDirectionCount != 0 || studyMap == nil || len(studyMap.Directions) != 1 ||
-		len(studyMap.Directions[0].ReadingAnchors) != 3 || len(studyMap.Shape) != 1 {
+		len(studyMap.Directions[0].ReadingAnchors) != 1 || len(studyMap.Shape) != 1 {
 		t.Fatalf("accepted report projection = %#v / %#v", status, studyMap)
 	}
 	for _, reading := range studyMap.Directions[0].ReadingAnchors {
@@ -938,9 +1138,9 @@ func TestReadAtlasStudyReportProductCountsDistinctPublishedDirections(t *testing
 		t.Fatalf("readAtlasStudyReportProduct: %v", err)
 	}
 	if status == nil || status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
-		status.DirectionCount != 2 || status.PublishedDirectionCount != 1 ||
-		status.HiddenDirectionCount != 1 || studyMap == nil ||
-		len(studyMap.Directions) != 1 || len(studyMap.HiddenDirections) != 1 ||
+		status.DirectionCount != 2 || status.PublishedDirectionCount != 2 ||
+		status.HiddenDirectionCount != 0 || studyMap == nil ||
+		len(studyMap.Directions) != 2 || len(studyMap.HiddenDirections) != 0 ||
 		len(studyMap.Directions)+len(studyMap.HiddenDirections) != 2 {
 		t.Fatalf("published/raw diagnostic count = status:%#v map:%#v", status, studyMap)
 	}
@@ -1184,6 +1384,9 @@ func TestPrepareAuthorizedSourceCoverageMakesCasdoorShapedStudyReplayable(t *tes
 	data := atlasStudyReportFixture(t)
 	data.UserSources = nil
 	data.OpenablePaths = []string{"main.go", "result.go", "run.go"}
+	data.RepositoryGraph = &RepositoryGraph{Packages: []PackageInfo{{
+		CanonicalPath: "example.com/fixture", Files: []string{"main.go", "result.go", "run.go"},
+	}}}
 	data.RepositoryAtlas.Evidence[0].Location.Path = "main.go"
 	data.ArchitectureCanvas.Surfaces[0].Evidence[0].Path = "main.go"
 	paths := []string{"main.go", "run.go", "result.go"}
@@ -1260,6 +1463,64 @@ func TestPrepareAuthorizedSourceCoverageMakesCasdoorShapedStudyReplayable(t *tes
 	}
 }
 
+func TestPrepareAuthorizedSourceCoverageHydratesGroundingHandoffStudyTargets(t *testing.T) {
+	t.Parallel()
+	authority := overviewSourceCoverageAuthority(t, map[string]map[int]string{
+		"main.go": {10: "func main() {}"},
+		"run.go":  {8: "func Begin() {}"},
+	})
+	data := atlasStudyReportFixture(t)
+	grounding := architectureGroundingWithEntryHandoff()
+	grounding.EntryHandoffs[0].ProcessEntrypoint.Location.Path = "main.go"
+	grounding.EntryHandoffs[0].Callee.Location.Path = "run.go"
+	grounding.EntryHandoffs[0].RepresentativeCallsite.Path = "main.go"
+	grounding.EntryHandoffs[0].ID = architectureEntryHandoffID(grounding.EntryHandoffs[0])
+	grounding.Coverage.EntryHandoffs.CandidateSetSHA256 =
+		architectureEntryHandoffCandidateSetSHA256(grounding.EntryHandoffs)
+	data.ArchitectureGrounding = &grounding
+	data.CapturedRevision = authority.repository.Head
+	data.OpenablePaths = []string{"main.go", "run.go"}
+	data.ArchitectureCanvas.Components[0].Members[0].Facts = append(
+		data.ArchitectureCanvas.Components[0].Members[0].Facts,
+		componentmap.LocalFact{Kind: componentmap.FactRepositoryPath, Value: "main.go", Location: &evidence.Location{Path: "main.go", Line: 10}},
+		componentmap.LocalFact{Kind: componentmap.FactRepositoryPath, Value: "run.go", Location: &evidence.Location{Path: "run.go", Line: 8}},
+	)
+	if err := PrepareAuthorizedSourceCoverage(context.Background(), data, &authority); err != nil {
+		t.Fatalf("PrepareAuthorizedSourceCoverage: %v", err)
+	}
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("BuildAtlasStudyInput: %v", err)
+	}
+	for _, member := range []ArchitectureAnchorMember{
+		grounding.EntryHandoffs[0].ProcessEntrypoint,
+		grounding.EntryHandoffs[0].Callee,
+	} {
+		var target *atlasstudy.ReadingTarget
+		for index := range input.ReadingTargets {
+			candidate := &input.ReadingTargets[index]
+			if candidate.Location.Path == member.Location.Path &&
+				candidate.Location.Line == member.Location.Line && candidate.Symbol == member.ID {
+				target = candidate
+				break
+			}
+		}
+		if target == nil {
+			t.Fatalf("Grounding target is absent: %#v", member)
+		}
+		source, sourceErr := exactAtlasStudySource(data, *target)
+		if sourceErr != nil {
+			t.Fatalf("exactAtlasStudySource(%q): %v", member.ID, sourceErr)
+		}
+		if source.EnclosingSymbol != member.ID || source.Validate() != nil ||
+			!sourceSnippetContainsRange(source.Lines, SourceHighlight{
+				StartLine: member.Location.Line, EndLine: member.Location.Line,
+			}) {
+			t.Fatalf("Grounding target lost exact authorized source: %#v", source)
+		}
+	}
+}
+
 func compileAtlasStudyFixture(t *testing.T, data *ReportData) atlasstudy.Product {
 	t.Helper()
 	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
@@ -1291,15 +1552,19 @@ func writeAcceptedAtlasStudyArtifactsWithDirectionCopies(
 		t.Fatalf("RequestRecord: %v", err)
 	}
 	componentRefsByID := make(map[string]string)
+	refsByCanonical := make(map[atlasstudy.CanonicalRef]string)
+	objectsByCanonical := make(map[atlasstudy.CanonicalRef]atlasstudy.CatalogObject)
 	for _, object := range request.Catalog {
+		canonical := atlasstudy.CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}
+		refsByCanonical[canonical] = object.Ref
+		objectsByCanonical[canonical] = object
 		if object.Kind == atlasstudy.RefComponent {
 			componentRefsByID[object.CanonicalID] = object.Ref
 		}
 	}
 	principalRefSet := make(map[string]struct{})
-	var targetRefs []string
 	for _, object := range request.Catalog {
-		if object.Kind != atlasstudy.RefReadingTarget || len(targetRefs) == 3 {
+		if object.Kind != atlasstudy.RefReadingTarget {
 			continue
 		}
 		hasComponentPrincipal := false
@@ -1312,43 +1577,62 @@ func writeAcceptedAtlasStudyArtifactsWithDirectionCopies(
 				hasComponentPrincipal = true
 			}
 		}
-		if hasComponentPrincipal {
-			targetRefs = append(targetRefs, object.Ref)
-		}
+		_ = hasComponentPrincipal
 	}
 	principalRefs := make([]string, 0, len(principalRefSet))
 	for ref := range principalRefSet {
 		principalRefs = append(principalRefs, ref)
 	}
 	sort.Strings(principalRefs)
-	if len(principalRefs) == 0 || len(targetRefs) < 3 {
+	if len(principalRefs) == 0 {
 		t.Fatalf("fixture catalog lacks component routes: %#v", request.Catalog)
 	}
 	statement := func(text string) map[string]any {
 		return map[string]any{"text": text, "support_refs": []string{principalRefs[0]}}
 	}
-	reading := make([]map[string]any, 0, 3)
-	labels := []string{"start", "continue", "verify"}
-	for index, ref := range targetRefs[:3] {
-		reading = append(reading, map[string]any{
-			"target_ref": ref, "label": labels[index],
-			"what_to_look_for": "Inspect the advertised local responsibility.",
-		})
+	var spanObjects []atlasstudy.CatalogObject
+	for _, object := range request.Catalog {
+		if object.Kind == atlasstudy.RefRouteSpan {
+			spanObjects = append(spanObjects, object)
+		}
 	}
-	directions := []map[string]any{{
-		"question":         "How is the fixture responsibility organized?",
-		"why_it_matters":   "This identifies the bounded conceptual area.",
-		"learning_outcome": "Recognize the exact saved reading anchors.",
-		"target_job":       "first_contact", "learning_stage": "orientation",
-		"principal_refs": principalRefs, "reading": reading,
-	}}
-	for index := 1; index < directionCopies; index++ {
+	if directionCopies > len(spanObjects) {
+		directionCopies = len(spanObjects)
+	}
+	if directionCopies < 1 {
+		t.Fatal("fixture catalog lacks typed route spans")
+	}
+	var directions []map[string]any
+	labels := []string{"start", "continue", "connect", "verify", "contrast"}
+	for _, span := range spanObjects[:directionCopies] {
+		var reading []map[string]any
+		selectedPrincipals := make(map[string]struct{})
+		for index, targetRef := range span.AllowedTargetRefs {
+			targetObject, ok := objectsByCanonical[targetRef]
+			if !ok {
+				t.Fatalf("span target missing from catalog: %#v", targetRef)
+			}
+			reading = append(reading, map[string]any{
+				"target_ref": targetObject.Ref, "label": labels[index],
+				"what_to_look_for": "Inspect the advertised local responsibility.",
+			})
+			for _, principal := range targetObject.PrincipalRefs {
+				if ref := refsByCanonical[principal]; ref != "" {
+					selectedPrincipals[ref] = struct{}{}
+				}
+			}
+		}
+		var routePrincipals []string
+		for ref := range selectedPrincipals {
+			routePrincipals = append(routePrincipals, ref)
+		}
+		sort.Strings(routePrincipals)
 		directions = append(directions, map[string]any{
-			"question":         fmt.Sprintf("How is the same fixture route organized, version %d?", index+1),
-			"why_it_matters":   "This is deliberately different prose for the same exact reading set.",
-			"learning_outcome": "Recognize that the local reading locations are unchanged.",
-			"target_job":       "first_contact", "learning_stage": "orientation",
-			"principal_refs": principalRefs, "reading": reading,
+			"span_ref":         span.Ref,
+			"why_it_matters":   "This identifies the bounded conceptual area.",
+			"learning_outcome": "Recognize the exact saved reading anchors.",
+			"target_job":       span.TargetJob, "learning_stage": span.LearningStage,
+			"principal_refs": routePrincipals, "reading": reading,
 		})
 	}
 	response, err := json.Marshal(map[string]any{

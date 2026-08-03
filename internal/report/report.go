@@ -27,7 +27,9 @@ import (
 
 const CurrentFormatVersion = 30
 
-const AtlasStudyReportProjectionVersion = 4
+const AtlasStudyReportProjectionVersion = 5
+
+const maxAtlasStudyReportCoverageCount = 1_000_000
 
 const maxExactDiscoveryDeclarations = 16
 
@@ -279,14 +281,118 @@ type NavigatorReportProduct struct {
 // private request identities. The exact request/result/status artifacts stay
 // hash-bound material inputs of the authorized report.
 type AtlasStudyReportStatus struct {
-	Version                 int                       `json:"version"`
-	ProjectionVersion       int                       `json:"projection_version"`
-	State                   atlasstudy.ProductState   `json:"state"`
-	UnavailableCode         AtlasStudyUnavailableCode `json:"unavailable_code,omitempty"`
-	FailureCode             atlasstudy.FailureCode    `json:"failure_code,omitempty"`
-	DirectionCount          int                       `json:"direction_count,omitempty"`
-	PublishedDirectionCount int                       `json:"published_direction_count,omitempty"`
-	HiddenDirectionCount    int                       `json:"hidden_direction_count,omitempty"`
+	Version                 int                          `json:"version"`
+	ProjectionVersion       int                          `json:"projection_version"`
+	State                   atlasstudy.ProductState      `json:"state"`
+	UnavailableCode         AtlasStudyUnavailableCode    `json:"unavailable_code,omitempty"`
+	FailureCode             atlasstudy.FailureCode       `json:"failure_code,omitempty"`
+	CandidateCoverage       *AtlasStudyCandidateCoverage `json:"candidate_coverage,omitempty"`
+	DirectionCount          int                          `json:"direction_count,omitempty"`
+	PublishedDirectionCount int                          `json:"published_direction_count,omitempty"`
+	HiddenDirectionCount    int                          `json:"hidden_direction_count,omitempty"`
+	RequestedSpanCount      int                          `json:"requested_span_count,omitempty"`
+	CoveredSpanCount        int                          `json:"covered_span_count,omitempty"`
+	UncoveredSpanCount      int                          `json:"uncovered_span_count,omitempty"`
+	CoverageComplete        bool                         `json:"coverage_complete,omitempty"`
+}
+
+// AtlasStudyCandidateCoverage is the public-safe report projection of the
+// exact private candidate shelf bound by the Atlas Study request/status
+// artifacts. It deliberately omits the candidate digest and canonical package
+// bucket IDs. Package bucket counts remain an exact anonymous histogram, so
+// bounded selection loss is visible without publishing backend identities.
+type AtlasStudyCandidateCoverage struct {
+	TargetsConsidered int                               `json:"targets_considered"`
+	TargetsSelected   int                               `json:"targets_selected"`
+	SpansConsidered   int                               `json:"spans_considered"`
+	SpansSelected     int                               `json:"spans_selected"`
+	Complete          bool                              `json:"complete"`
+	PerRole           []AtlasStudyRoleCandidateCoverage `json:"per_role"`
+	PackageBuckets    []AtlasStudyAnonymousCoverage     `json:"package_buckets"`
+}
+
+type AtlasStudyRoleCandidateCoverage struct {
+	Role       atlasstudy.SupportRole `json:"role"`
+	Considered int                    `json:"considered"`
+	Selected   int                    `json:"selected"`
+}
+
+type AtlasStudyAnonymousCoverage struct {
+	Considered int `json:"considered"`
+	Selected   int `json:"selected"`
+}
+
+// projectAtlasStudyCandidateCoverage removes only private candidate and
+// package identities. All counts, every producer-owned role lane, and the
+// anonymous package-bucket histogram remain exact.
+func projectAtlasStudyCandidateCoverage(
+	coverage atlasstudy.CandidateCoverage,
+) (*AtlasStudyCandidateCoverage, error) {
+	projected := &AtlasStudyCandidateCoverage{
+		TargetsConsidered: coverage.TargetsConsidered,
+		TargetsSelected:   coverage.TargetsSelected,
+		SpansConsidered:   coverage.SpansConsidered,
+		SpansSelected:     coverage.SpansSelected,
+		Complete:          coverage.Complete,
+	}
+	for _, count := range coverage.PerRole {
+		role := atlasstudy.SupportRole(count.Key)
+		projected.PerRole = append(projected.PerRole, AtlasStudyRoleCandidateCoverage{
+			Role: role, Considered: count.Considered, Selected: count.Selected,
+		})
+	}
+	for _, count := range coverage.PerPackage {
+		projected.PackageBuckets = append(projected.PackageBuckets, AtlasStudyAnonymousCoverage{
+			Considered: count.Considered, Selected: count.Selected,
+		})
+	}
+	sort.Slice(projected.PerRole, func(i, j int) bool {
+		return projected.PerRole[i].Role < projected.PerRole[j].Role
+	})
+	sort.Slice(projected.PackageBuckets, func(i, j int) bool {
+		if projected.PackageBuckets[i].Considered != projected.PackageBuckets[j].Considered {
+			return projected.PackageBuckets[i].Considered < projected.PackageBuckets[j].Considered
+		}
+		return projected.PackageBuckets[i].Selected < projected.PackageBuckets[j].Selected
+	})
+	if err := projected.validate(); err != nil {
+		return nil, err
+	}
+	return projected, nil
+}
+
+func (coverage AtlasStudyCandidateCoverage) validate() error {
+	validCount := func(value int) bool {
+		return value > 0 && value <= maxAtlasStudyReportCoverageCount
+	}
+	if !validCount(coverage.TargetsConsidered) || !validCount(coverage.TargetsSelected) ||
+		coverage.TargetsSelected > coverage.TargetsConsidered ||
+		!validCount(coverage.SpansConsidered) || !validCount(coverage.SpansSelected) ||
+		coverage.SpansSelected > coverage.SpansConsidered ||
+		coverage.Complete != (coverage.TargetsSelected == coverage.TargetsConsidered &&
+			coverage.SpansSelected == coverage.SpansConsidered) ||
+		len(coverage.PerRole) == 0 || len(coverage.PerRole) > 6 ||
+		len(coverage.PackageBuckets) == 0 || len(coverage.PackageBuckets) > coverage.TargetsConsidered {
+		return fmt.Errorf("atlas study report: invalid candidate coverage")
+	}
+	previousRole := atlasstudy.SupportRole("")
+	for _, count := range coverage.PerRole {
+		if !count.Role.Valid() || count.Role <= previousRole || !validCount(count.Considered) ||
+			count.Selected < 0 || count.Selected > count.Considered {
+			return fmt.Errorf("atlas study report: invalid role candidate coverage")
+		}
+		previousRole = count.Role
+	}
+	previous := AtlasStudyAnonymousCoverage{}
+	for index, count := range coverage.PackageBuckets {
+		if !validCount(count.Considered) || count.Selected < 0 || count.Selected > count.Considered ||
+			(index > 0 && (count.Considered < previous.Considered ||
+				(count.Considered == previous.Considered && count.Selected < previous.Selected))) {
+			return fmt.Errorf("atlas study report: invalid anonymous package candidate coverage")
+		}
+		previous = count
+	}
+	return nil
 }
 
 type AtlasStudyUnavailableCode string

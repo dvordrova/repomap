@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -69,7 +70,7 @@ type providerDomainTerm struct {
 }
 
 type providerDirection struct {
-	Question        string            `json:"question"`
+	SpanRef         string            `json:"span_ref"`
 	WhyItMatters    string            `json:"why_it_matters"`
 	LearningOutcome string            `json:"learning_outcome"`
 	TargetJob       TargetJob         `json:"target_job"`
@@ -116,11 +117,48 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 		return ResultRecord{}, diagnostics, fmt.Errorf("atlas study response: no valid Study directions")
 	}
 	shape := shapeFromDirections(directions)
-	result := product.result(envelope.RepositoryType, brief, directions, shape, diagnostics)
+	spanCoverage := product.spanCoverage(directions)
+	result := product.result(envelope.RepositoryType, brief, directions, shape, spanCoverage, diagnostics)
 	if err := product.ValidateResultRecord(result); err != nil {
 		return ResultRecord{}, diagnostics, err
 	}
 	return result, diagnostics, nil
+}
+
+func (product Product) spanCoverage(directions []Direction) SpanCoverage {
+	coverage := SpanCoverage{}
+	covered := make(map[string]struct{}, len(directions))
+	for _, direction := range directions {
+		covered[direction.Span.ID] = struct{}{}
+	}
+	for _, id := range product.selectedSpanIDs {
+		ref := CanonicalRef{Kind: RefRouteSpan, ID: id}
+		coverage.Requested = append(coverage.Requested, ref)
+		if _, ok := covered[id]; ok {
+			coverage.Covered = append(coverage.Covered, ref)
+		} else {
+			coverage.Uncovered = append(coverage.Uncovered, ref)
+		}
+	}
+	coverage.Complete = len(coverage.Requested) != 0 && len(coverage.Uncovered) == 0
+	return coverage
+}
+
+func cloneSpanCoverage(value SpanCoverage) SpanCoverage {
+	value.Requested = append([]CanonicalRef(nil), value.Requested...)
+	value.Covered = append([]CanonicalRef(nil), value.Covered...)
+	value.Uncovered = append([]CanonicalRef(nil), value.Uncovered...)
+	return value
+}
+
+func (product Product) validateSpanCoverage(coverage SpanCoverage, directions []Direction) error {
+	want := product.spanCoverage(directions)
+	if !slices.Equal(coverage.Requested, want.Requested) ||
+		!slices.Equal(coverage.Covered, want.Covered) ||
+		!slices.Equal(coverage.Uncovered, want.Uncovered) || coverage.Complete != want.Complete {
+		return fmt.Errorf("atlas study result artifact: span coverage does not match exact directions")
+	}
+	return nil
 }
 
 func (product Product) resolveBrief(provider providerBrief) (Brief, Diagnostics, error) {
@@ -258,6 +296,7 @@ func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, 
 	}
 	result := make([]Direction, 0, limit)
 	seenIDs := make(map[string]struct{}, limit)
+	seenSpans := make(map[string]struct{}, limit)
 	for position := 0; position < limit; position++ {
 		var provider providerDirection
 		if err := decodeStrict(items[position], &provider); err != nil {
@@ -269,11 +308,16 @@ func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, 
 			diagnostics.addIssue(position, code)
 			continue
 		}
+		if _, duplicate := seenSpans[direction.Span.ID]; duplicate {
+			diagnostics.addIssue(position, IssueDuplicateSpanRef)
+			continue
+		}
 		if _, duplicate := seenIDs[direction.ID]; duplicate {
 			diagnostics.addIssue(position, "duplicate_direction")
 			continue
 		}
 		seenIDs[direction.ID] = struct{}{}
+		seenSpans[direction.Span.ID] = struct{}{}
 		result = append(result, direction)
 	}
 	for position := MaxDirections; position < len(items) && len(diagnostics.Issues) < MaxDirectionDiagnostics; position++ {
@@ -287,14 +331,21 @@ func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, 
 }
 
 func (product Product) resolveDirection(position int, provider providerDirection) (Direction, DirectionIssueCode) {
-	if !naturalQuestion(provider.Question) {
-		return Direction{}, "invalid_question"
+	spanObject, err := product.resolveRef(fmt.Sprintf("directions[%d].span_ref", position), 0, provider.SpanRef)
+	if err != nil {
+		return Direction{}, referenceCode(err)
+	}
+	if spanObject.Kind != RefRouteSpan || !spanObject.SpanKind.Valid() {
+		return Direction{}, IssueWrongKindSpanRef
 	}
 	if !provider.TargetJob.Valid() {
 		return Direction{}, "invalid_target_job"
 	}
 	if !provider.LearningStage.Valid() {
 		return Direction{}, "invalid_learning_stage"
+	}
+	if provider.TargetJob != spanObject.TargetJob || provider.LearningStage != spanObject.LearningStage {
+		return Direction{}, IssueInvalidSpanRef
 	}
 	if len(provider.PrincipalRefs) == 0 || len(provider.PrincipalRefs) > 5 {
 		return Direction{}, "invalid_principal_count"
@@ -338,6 +389,15 @@ func (product Product) resolveDirection(position int, provider providerDirection
 	reading := make([]ResolvedReading, 0, len(provider.Reading))
 	readingObjects := make([]CatalogObject, 0, len(provider.Reading))
 	seenTargets := make(map[string]struct{}, len(provider.Reading))
+	allowedTargets := make(map[CanonicalRef]struct{}, len(spanObject.AllowedTargetRefs))
+	for _, target := range spanObject.AllowedTargetRefs {
+		allowedTargets[target] = struct{}{}
+	}
+	coveredSupports := make(map[CanonicalRef]struct{}, len(spanObject.RequiredSupportRefs))
+	requiredSupports := make(map[CanonicalRef]struct{}, len(spanObject.RequiredSupportRefs))
+	for _, support := range spanObject.RequiredSupportRefs {
+		requiredSupports[support] = struct{}{}
+	}
 	coveredPrincipals := make(map[CanonicalRef]struct{}, len(principalSet))
 	for index, item := range provider.Reading {
 		if _, duplicate := seenTargets[item.TargetRef]; duplicate {
@@ -352,6 +412,25 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		}
 		if object.Kind != RefReadingTarget || len(object.PrincipalRefs) == 0 {
 			return Direction{}, "wrong_kind_reading_ref"
+		}
+		targetCanonical := CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}
+		if _, allowed := allowedTargets[targetCanonical]; !allowed {
+			return Direction{}, IssueSpanTargetNotAllowed
+		}
+		targetCoversSupport := false
+		for _, support := range product.catalog {
+			if support.Kind != RefRouteSupport || support.SupportTarget == nil ||
+				*support.SupportTarget != targetCanonical {
+				continue
+			}
+			canonicalSupport := CanonicalRef{Kind: RefRouteSupport, ID: support.CanonicalID}
+			if _, required := requiredSupports[canonicalSupport]; required {
+				coveredSupports[canonicalSupport] = struct{}{}
+				targetCoversSupport = true
+			}
+		}
+		if !targetCoversSupport {
+			return Direction{}, IssueSpanTargetNotAllowed
 		}
 		if !intersectsPrincipalSet(object.PrincipalRefs, principalSet) {
 			return Direction{}, "reading_principal_not_selected"
@@ -373,10 +452,11 @@ func (product Product) resolveDirection(position int, provider providerDirection
 	if len(coveredPrincipals) != len(principalSet) {
 		return Direction{}, "principal_not_advertised"
 	}
-	if err := product.validateModelTextWithTargetLocators(
-		provider.Question, 512, true, false, readingObjects,
-	); err != nil {
-		return Direction{}, "invalid_question"
+	if len(coveredSupports) != len(requiredSupports) {
+		return Direction{}, IssueSpanSupportIncomplete
+	}
+	if spanObject.SpanKind == RouteSpanSystemPath && len(readingObjects) < 2 {
+		return Direction{}, IssueSystemPathTooShort
 	}
 	if err := product.validateModelTextWithTargetLocators(
 		provider.WhyItMatters, 1024, true, true, readingObjects,
@@ -396,7 +476,8 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		}
 	}
 	direction := Direction{
-		Question: provider.Question, WhyItMatters: provider.WhyItMatters,
+		Span:     CanonicalRef{Kind: RefRouteSpan, ID: spanObject.CanonicalID},
+		Question: spanObject.Question, WhyItMatters: provider.WhyItMatters,
 		LearningOutcome: provider.LearningOutcome, TargetJob: provider.TargetJob,
 		LearningStage: provider.LearningStage, PrincipalRefs: principals, Reading: reading,
 	}
@@ -524,10 +605,10 @@ func shapeFromDirections(directions []Direction) []CanonicalRef {
 
 func stableDirectionID(direction Direction) string {
 	identity := struct {
-		Question   string         `json:"question"`
+		Span       CanonicalRef   `json:"span"`
 		Principals []CanonicalRef `json:"principals"`
 		Targets    []CanonicalRef `json:"targets"`
-	}{Question: direction.Question, Principals: append([]CanonicalRef(nil), direction.PrincipalRefs...)}
+	}{Span: direction.Span, Principals: append([]CanonicalRef(nil), direction.PrincipalRefs...)}
 	for _, reading := range direction.Reading {
 		identity.Targets = append(identity.Targets, reading.Target)
 	}

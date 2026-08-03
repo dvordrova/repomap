@@ -585,7 +585,7 @@ func TestReadRunDirRetainsValidProducerArchitectureGroundingV4InCanvas(t *testin
 	)
 	family.ProofMode = componentmap.AnchorProofDeclarationFamily
 	grounding := ArchitectureGrounding{
-		Version: ArchitectureGroundingVersion,
+		Version: typedArchitectureGroundingVersion,
 		RepositoryArchetype: ArchitectureArchetype{
 			Selected: componentmap.ArchetypeApplication,
 			Evidence: []string{"Exact producer-owned process entry."},

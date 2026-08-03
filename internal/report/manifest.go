@@ -684,41 +684,14 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			report.AtlasStudy.ProjectionVersion != AtlasStudyReportProjectionVersion {
 			return fmt.Errorf("report manifest: Atlas Study report projection is incomplete")
 		}
-		switch report.AtlasStudy.State {
-		case atlasstudy.ProductStateAccepted:
-			if !hasAtlasStudyRequest || !hasAtlasStudyResult || !hasAtlasStudyStatus ||
-				report.StudyMap == nil ||
-				report.AtlasStudy.UnavailableCode != "" || report.AtlasStudy.FailureCode != "" ||
-				report.AtlasStudy.DirectionCount < 1 ||
-				report.AtlasStudy.PublishedDirectionCount < 1 ||
-				report.AtlasStudy.PublishedDirectionCount != len(report.StudyMap.Directions) ||
-				report.AtlasStudy.HiddenDirectionCount != len(report.StudyMap.HiddenDirections) ||
-				report.AtlasStudy.DirectionCount != report.AtlasStudy.PublishedDirectionCount+
-					report.AtlasStudy.HiddenDirectionCount {
-				return fmt.Errorf("report manifest: accepted Atlas Study projection is invalid")
-			}
-		case atlasstudy.ProductStateUnavailable:
-			if hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus ||
-				report.StudyMap != nil ||
-				(report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableOffline &&
-					report.AtlasStudy.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
-				report.AtlasStudy.FailureCode != "" || report.AtlasStudy.DirectionCount != 0 ||
-				report.AtlasStudy.PublishedDirectionCount != 0 || report.AtlasStudy.HiddenDirectionCount != 0 {
-				return fmt.Errorf("report manifest: unavailable Atlas Study projection is invalid")
-			}
-		case atlasstudy.ProductStateFailed:
-			if !hasAtlasStudyRequest || hasAtlasStudyResult || !hasAtlasStudyStatus ||
-				report.StudyMap != nil ||
-				report.AtlasStudy.UnavailableCode != "" ||
-				!report.AtlasStudy.FailureCode.Valid() ||
-				report.AtlasStudy.FailureCode == atlasstudy.FailureResource ||
-				report.AtlasStudy.FailureCode == atlasstudy.FailureCanceled ||
-				report.AtlasStudy.DirectionCount != 0 ||
-				report.AtlasStudy.PublishedDirectionCount != 0 || report.AtlasStudy.HiddenDirectionCount != 0 {
-				return fmt.Errorf("report manifest: failed Atlas Study projection is invalid")
-			}
-		default:
-			return fmt.Errorf("report manifest: unsupported Atlas Study report state %q", report.AtlasStudy.State)
+		if err := validateAtlasStudyReportProjection(
+			report.AtlasStudy,
+			report.StudyMap,
+			hasAtlasStudyRequest,
+			hasAtlasStudyResult,
+			hasAtlasStudyStatus,
+		); err != nil {
+			return fmt.Errorf("report manifest: %w", err)
 		}
 	} else if report.StudyMap != nil && hasRepositoryAtlas {
 		return fmt.Errorf("report manifest: Atlas-first Study map lacks Atlas Study state")
@@ -750,6 +723,70 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceSHA256) ||
 		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceMarkdownSHA256) {
 		return fmt.Errorf("report manifest: Task Lens artifact identity does not match report")
+	}
+	return nil
+}
+
+func validateAtlasStudyReportProjection(
+	status *AtlasStudyReportStatus,
+	studyMap *RepositoryStudyMap,
+	hasRequest bool,
+	hasResult bool,
+	hasStatus bool,
+) error {
+	if status == nil {
+		return fmt.Errorf("Atlas Study projection is absent")
+	}
+	zeroSpanCoverage := status.RequestedSpanCount == 0 && status.CoveredSpanCount == 0 &&
+		status.UncoveredSpanCount == 0 && !status.CoverageComplete
+	switch status.State {
+	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
+		if !hasRequest || !hasResult || !hasStatus || studyMap == nil ||
+			status.UnavailableCode != "" || status.FailureCode != "" ||
+			status.CandidateCoverage == nil || status.DirectionCount < 1 ||
+			status.PublishedDirectionCount < 1 ||
+			status.PublishedDirectionCount != len(studyMap.Directions) ||
+			status.HiddenDirectionCount != len(studyMap.HiddenDirections) ||
+			status.DirectionCount != status.PublishedDirectionCount+status.HiddenDirectionCount ||
+			status.CoveredSpanCount != status.DirectionCount ||
+			status.RequestedSpanCount != status.CoveredSpanCount+status.UncoveredSpanCount {
+			return fmt.Errorf("accepted Atlas Study projection is invalid")
+		}
+		if err := status.CandidateCoverage.validate(); err != nil {
+			return err
+		}
+		if status.CandidateCoverage.SpansSelected != status.RequestedSpanCount {
+			return fmt.Errorf("accepted Atlas Study candidate/span counts do not match")
+		}
+		if status.State == atlasstudy.ProductStateAccepted {
+			if !status.CoverageComplete || status.UncoveredSpanCount != 0 {
+				return fmt.Errorf("complete Atlas Study projection is invalid")
+			}
+		} else if status.CoverageComplete || status.UncoveredSpanCount <= 0 {
+			return fmt.Errorf("partial Atlas Study projection is invalid")
+		}
+	case atlasstudy.ProductStateUnavailable:
+		if hasRequest || hasResult || hasStatus || studyMap != nil ||
+			(status.UnavailableCode != AtlasStudyUnavailableOffline &&
+				status.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
+			status.FailureCode != "" || status.CandidateCoverage != nil ||
+			status.DirectionCount != 0 || status.PublishedDirectionCount != 0 ||
+			status.HiddenDirectionCount != 0 || !zeroSpanCoverage {
+			return fmt.Errorf("unavailable Atlas Study projection is invalid")
+		}
+	case atlasstudy.ProductStateFailed:
+		if !hasRequest || hasResult || !hasStatus || studyMap != nil ||
+			status.UnavailableCode != "" || status.CandidateCoverage == nil ||
+			!status.FailureCode.Valid() || status.FailureCode == atlasstudy.FailureResource ||
+			status.FailureCode == atlasstudy.FailureCanceled || status.DirectionCount != 0 ||
+			status.PublishedDirectionCount != 0 || status.HiddenDirectionCount != 0 || !zeroSpanCoverage {
+			return fmt.Errorf("failed Atlas Study projection is invalid")
+		}
+		if err := status.CandidateCoverage.validate(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported Atlas Study report state %q", status.State)
 	}
 	return nil
 }

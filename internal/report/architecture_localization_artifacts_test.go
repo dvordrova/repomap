@@ -13,6 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/localization"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestMaterializeArchitectureLocalizationIdentityWritesExactProviderFreeSet(t *testing.T) {
@@ -791,8 +792,11 @@ func architectureLocalizationWriteNormalizedGrounding(t *testing.T, runDir strin
 			Evidence: []string{"Exact fixture process entry."},
 		},
 		GroundingMode: componentmap.GroundingMixed,
+		EntryHandoffs: []ArchitectureEntryHandoff{},
 		Coverage: ArchitectureGroundingCoverage{
-			Complete: true, AnchorsConsidered: 1, AnchorsPublished: 1,
+			Complete: true, Reasons: []surfacediscovery.GroundingCoverageReason{},
+			AnchorsConsidered: 1, AnchorsPublished: 1,
+			EntryHandoffs: emptyArchitectureEntryHandoffCoverage(),
 		},
 		BehaviorAnchors: []ArchitectureBehaviorAnchor{{
 			ID: "fixture-process-entry", Kind: componentmap.AnchorProcessEntry,

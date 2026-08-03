@@ -93,7 +93,57 @@ func TestRunAtlasStudyProductReplaysOnlyAcceptedExactCache(t *testing.T) {
 	}
 }
 
-func TestAtlasStudyCacheV5RejectsV4ContractAndDifferentCatalog(t *testing.T) {
+func TestRunAtlasStudyProductPreservesAcceptedPartialAcrossLiveAndCache(t *testing.T) {
+	product := atlasStudyRuntimeProduct(t, atlasStudyRuntimePartialInput())
+	response := atlasStudyRuntimeResponse(t, product, false)
+	live := newAtlasStudyRuntimeClient(response, nil)
+	runsDir, liveRun := atlasStudyRuntimeDirectories(t, "partial-live")
+
+	liveOutcome, err := runAtlasStudyProductForRun(
+		t.Context(), liveRun, runsDir, atlasStudyRuntimeRepository(),
+		modelresearch.DefaultPolicy(), false, true, product, nil,
+		atlasStudyRuntimeFactory(live, live),
+	)
+	if err != nil {
+		t.Fatalf("run partial live Atlas Study: %v", err)
+	}
+	if liveOutcome.State != atlasstudy.ProductStateAcceptedPartial || liveOutcome.Cached ||
+		liveOutcome.DirectionCount != 1 || live.calls != 1 {
+		t.Fatalf("partial live outcome/client = %#v / %#v", liveOutcome, live)
+	}
+	if result := atlasStudyRuntimeReadResult(t, liveRun); result.State != atlasstudy.ProductStateAcceptedPartial ||
+		result.SpanCoverage.Complete || len(result.SpanCoverage.Uncovered) != 1 {
+		t.Fatalf("partial live result = %#v", result)
+	}
+	if status := atlasStudyRuntimeReadStatus(t, liveRun); status.State != atlasstudy.ProductStateAcceptedPartial ||
+		status.CoverageComplete || status.UncoveredSpanCount != 1 {
+		t.Fatalf("partial live status = %#v", status)
+	}
+
+	cacheRun := filepath.Join(runsDir, "partial-cache")
+	if err := os.Mkdir(cacheRun, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cacheOnly := newAtlasStudyRuntimeClient(nil, errors.New("partial cache hit must not call provider"))
+	cacheOutcome, err := runAtlasStudyProductForRun(
+		t.Context(), cacheRun, runsDir, atlasStudyRuntimeRepository(),
+		modelresearch.DefaultPolicy(), false, true, product, nil,
+		atlasStudyRuntimeFactory(cacheOnly, cacheOnly),
+	)
+	if err != nil {
+		t.Fatalf("replay partial Atlas Study cache: %v", err)
+	}
+	if cacheOutcome.State != atlasstudy.ProductStateAcceptedPartial || !cacheOutcome.Cached ||
+		cacheOutcome.DirectionCount != 1 || cacheOnly.calls != 0 {
+		t.Fatalf("partial cache outcome/client = %#v / %#v", cacheOutcome, cacheOnly)
+	}
+	if status := atlasStudyRuntimeReadStatus(t, cacheRun); status.State != atlasstudy.ProductStateAcceptedPartial ||
+		status.CoverageComplete || status.UncoveredSpanCount != 1 {
+		t.Fatalf("partial cache status = %#v", status)
+	}
+}
+
+func TestAtlasStudyCacheV6RejectsV5ContractAndDifferentCatalog(t *testing.T) {
 	input := atlasStudyRuntimeInput()
 	product := atlasStudyRuntimeProduct(t, input)
 	client := newAtlasStudyRuntimeClient(atlasStudyRuntimeResponse(t, product, false), nil)
@@ -106,18 +156,18 @@ func TestAtlasStudyCacheV5RejectsV4ContractAndDifferentCatalog(t *testing.T) {
 		runsDir, atlasStudyRuntimeRepository(), modelresearch.DefaultPolicy(),
 		client.config, endpointSHA, product, client.request,
 	)
-	if current.Fingerprint.CacheContract != "atlas-study-accepted-v5" {
+	if current.Fingerprint.CacheContract != "atlas-study-accepted-v6" {
 		t.Fatalf("current Atlas Study cache contract = %q", current.Fingerprint.CacheContract)
 	}
 	legacy := current
-	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v4"
+	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v5"
 	if _, err := modelresearch.SaveStageResponse(legacy, modelresearch.StageResponse{
 		Content: []byte(`{"legacy":true}`),
 	}); err != nil {
 		t.Fatalf("save isolated legacy cache: %v", err)
 	}
 	if _, found, err := modelresearch.LoadStageResponse(current); err != nil || found {
-		t.Fatalf("v5 lookup read v4 cache: found=%t err=%v", found, err)
+		t.Fatalf("v6 lookup read v5 cache: found=%t err=%v", found, err)
 	}
 
 	if _, err := modelresearch.SaveStageResponse(current, modelresearch.StageResponse{
@@ -207,6 +257,39 @@ func TestRunAtlasStudyProductOfflineMakesZeroCallsAndPersistsZeroStageArtifacts(
 	atlasStudyRuntimeAssertCacheDirectoryAbsent(t, runsDir)
 }
 
+func TestAtlasStudyCandidateUnavailableIsProviderFreeAndClearsStaleArtifacts(t *testing.T) {
+	runDir := t.TempDir()
+	for _, name := range []string{
+		atlasstudy.RequestArtifactFilename,
+		atlasstudy.ResultArtifactFilename,
+		atlasstudy.StatusArtifactFilename,
+	} {
+		if err := os.WriteFile(filepath.Join(runDir, name), []byte("stale"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outcome, handled, err := atlasStudyCandidateUnavailableOutcome(
+		&atlasstudy.CandidateUnavailableError{Reason: "no observed support roles"},
+		runDir, nil,
+	)
+	if err != nil || !handled || outcome.State != atlasstudy.ProductStateUnavailable ||
+		!outcome.ProviderSkipped || outcome.SemanticCalls != 0 || outcome.TransportAttempts != 0 {
+		t.Fatalf("candidate unavailable outcome = %#v handled=%t err=%v", outcome, handled, err)
+	}
+	for _, name := range []string{
+		atlasstudy.RequestArtifactFilename,
+		atlasstudy.ResultArtifactFilename,
+		atlasstudy.StatusArtifactFilename,
+	} {
+		atlasStudyRuntimeAssertNoFile(t, runDir, name)
+	}
+
+	notCandidate := errors.New("malformed catalog")
+	if _, handled, err := atlasStudyCandidateUnavailableOutcome(notCandidate, runDir, nil); handled || err != nil {
+		t.Fatalf("ordinary compile failure handled as unavailable: handled=%t err=%v", handled, err)
+	}
+}
+
 func TestRunAtlasStudyProductInvalidResponseIsClosedAndNotCached(t *testing.T) {
 	product := atlasStudyRuntimeProduct(t, atlasStudyRuntimeInput())
 	response := atlasStudyRuntimeResponseWithOnlyInvalidRoute(t, product)
@@ -256,12 +339,12 @@ func TestValidateAtlasStudyResponseDistinguishesDecodeReferenceAndValidation(t *
 	if err := json.Unmarshal(atlasStudyRuntimeResponse(t, product, false), &semantic); err != nil {
 		t.Fatal(err)
 	}
-	semantic["directions"].([]any)[0].(map[string]any)["question"] = "Not a natural question"
+	semantic["directions"].([]any)[0].(map[string]any)["learning_outcome"] = ""
 	_, diagnostics, failure, _, err := validateAtlasStudyResponse(
 		product, atlasStudyRuntimeJSON(t, semantic),
 	)
 	if err == nil || failure != atlasstudy.FailureValidation ||
-		diagnostics.DirectionsReceived != 1 || diagnostics.Issues[0].Code != atlasstudy.IssueInvalidQuestion {
+		diagnostics.DirectionsReceived != 1 || diagnostics.Issues[0].Code != atlasstudy.IssueInvalidOutcome {
 		t.Fatalf("semantic validation classification = %q / %#v / %v", failure, diagnostics, err)
 	}
 }
@@ -547,6 +630,19 @@ func atlasStudyRuntimeInput() atlasstudy.Input {
 			{ID: "anchor-config-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, RelatedComponentIDs: []string{"component-api-runtime"}, PrincipalRefs: []atlasstudy.CanonicalRef{{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}}, Kind: atlasstudy.ReadingTargetFunction, Label: "Configuration", Fact: "Loads settings.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/config/load.go", Line: 14}, Symbol: "Load"},
 			{ID: "anchor-route-runtime", Owner: atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}, RelatedComponentIDs: []string{"component-api-runtime"}, PrincipalRefs: []atlasstudy.CanonicalRef{{Kind: atlasstudy.RefComponent, ID: "component-api-runtime"}}, Kind: atlasstudy.ReadingTargetFunction, Label: "Routes", Fact: "Registers handlers.", Authority: repositoryatlas.AuthorityObserved, Location: evidence.Location{Path: "internal/server/routes.go", Line: 31}, Symbol: "RegisterRoutes"},
 		},
+		ReadingSupports: []atlasstudy.ReadingSupport{{
+			ID: "support-start-runtime", TargetID: "anchor-start-runtime",
+			PackageBucket: "package-server-runtime", Role: atlasstudy.SupportProcessEntry,
+			Authority: repositoryatlas.AuthorityObserved,
+		}},
+		RouteSpans: []atlasstudy.RouteSpan{{
+			ID: "span-start-runtime", Kind: atlasstudy.RouteSpanFocused,
+			QuestionEnglish: "Where does this application start?",
+			QuestionRussian: "Где запускается это приложение?",
+			TargetJob:       atlasstudy.JobFirstContact, LearningStage: atlasstudy.StageOrientation,
+			RequiredSupportIDs: []string{"support-start-runtime"},
+			AllowedTargetIDs:   []string{"anchor-start-runtime"},
+		}},
 		Evidence: []atlasstudy.EvidenceFact{{
 			ID:          "evidence-start-runtime",
 			SubjectRefs: []atlasstudy.CanonicalRef{{Kind: atlasstudy.RefSurface, ID: "surface-start-runtime"}},
@@ -560,6 +656,24 @@ func atlasStudyRuntimeInput() atlasstudy.Input {
 	}
 }
 
+func atlasStudyRuntimePartialInput() atlasstudy.Input {
+	input := atlasStudyRuntimeInput()
+	input.ReadingSupports = append(input.ReadingSupports, atlasstudy.ReadingSupport{
+		ID: "support-config-runtime", TargetID: "anchor-config-runtime",
+		PackageBucket: "package-config-runtime", Role: atlasstudy.SupportObservedCallBoundary,
+		Authority: repositoryatlas.AuthorityObserved,
+	})
+	input.RouteSpans = append(input.RouteSpans, atlasstudy.RouteSpan{
+		ID: "span-config-runtime", Kind: atlasstudy.RouteSpanFocused,
+		QuestionEnglish: "Where is configuration loaded?",
+		QuestionRussian: "Где загружается конфигурация?",
+		TargetJob:       atlasstudy.JobMaintain, LearningStage: atlasstudy.StageOperations,
+		RequiredSupportIDs: []string{"support-config-runtime"},
+		AllowedTargetIDs:   []string{"anchor-config-runtime"},
+	})
+	return input
+}
+
 func atlasStudyRuntimeResponse(
 	t *testing.T,
 	product atlasstudy.Product,
@@ -571,15 +685,13 @@ func atlasStudyRuntimeResponse(
 	evidenceRef := atlasStudyRuntimeRef(t, product, atlasstudy.RefEvidence, "evidence-start-runtime")
 	document := atlasStudyRuntimeRef(t, product, atlasstudy.RefDocument, "document-purpose-runtime")
 	targets := []string{
-		atlasStudyRuntimeRef(t, product, atlasstudy.RefReadingTarget, "anchor-config-runtime"),
-		atlasStudyRuntimeRef(t, product, atlasstudy.RefReadingTarget, "anchor-route-runtime"),
 		atlasStudyRuntimeRef(t, product, atlasstudy.RefReadingTarget, "anchor-start-runtime"),
 	}
-	valid := atlasStudyRuntimeDirection(component, targets)
+	span := atlasStudyRuntimeRef(t, product, atlasstudy.RefRouteSpan, "span-start-runtime")
+	valid := atlasStudyRuntimeDirection(component, span, targets)
 	directions := []any{valid}
 	if badSibling {
-		bad := atlasStudyRuntimeDirection(component, targets)
-		bad["question"] = "Which invalid route should be omitted?"
+		bad := atlasStudyRuntimeDirection(component, span, targets)
 		bad["reading"].([]any)[0].(map[string]any)["target_ref"] = "rt999"
 		directions = append(directions, bad)
 	}
@@ -610,18 +722,16 @@ func atlasStudyRuntimeResponseWithOnlyInvalidRoute(
 	return atlasStudyRuntimeJSON(t, response)
 }
 
-func atlasStudyRuntimeDirection(component string, targets []string) map[string]any {
+func atlasStudyRuntimeDirection(component string, span string, targets []string) map[string]any {
 	return map[string]any{
-		"question":         "Where should a reader begin exploring the server?",
+		"span_ref":         span,
 		"why_it_matters":   "This route connects the accepted component to exact reading targets.",
-		"learning_outcome": "The reader can identify configuration and request setup seams.",
+		"learning_outcome": "The reader can identify the exact application entry.",
 		"target_job":       string(atlasstudy.JobFirstContact),
 		"learning_stage":   string(atlasstudy.StageOrientation),
 		"principal_refs":   []string{component},
 		"reading": []any{
-			map[string]any{"target_ref": targets[0], "label": string(atlasstudy.ReadingStart), "what_to_look_for": "Inspect settings."},
-			map[string]any{"target_ref": targets[1], "label": string(atlasstudy.ReadingConnect), "what_to_look_for": "Inspect handlers."},
-			map[string]any{"target_ref": targets[2], "label": string(atlasstudy.ReadingVerify), "what_to_look_for": "Confirm startup."},
+			map[string]any{"target_ref": targets[0], "label": string(atlasstudy.ReadingStart), "what_to_look_for": "Confirm startup."},
 		},
 	}
 }

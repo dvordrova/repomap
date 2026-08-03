@@ -14,11 +14,11 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v11"
+	AnalyzerVersion              = "surface-ssa-v12"
 	TriggerCatalogVersion        = 7
 	CoverageVersion              = 7
 	CatalogVersion               = 1
-	ArchitectureGroundingVersion = 4
+	ArchitectureGroundingVersion = 5
 	// MaxArchitectureAnchorMembers is the producer-owned complete chunk size
 	// for one persisted behavior anchor. Larger declaration families are split
 	// deterministically; they are never silently prefix-truncated.
@@ -292,6 +292,7 @@ type ArchitectureGrounding struct {
 	GroundingMode       string                 `json:"grounding_mode"`
 	Anchors             []BehaviorAnchor       `json:"behavior_anchors"`
 	Relationships       []BehaviorRelationship `json:"relationships"`
+	EntryHandoffs       []EntryHandoff         `json:"entry_handoffs"`
 	Coverage            GroundingCoverage      `json:"coverage"`
 }
 
@@ -311,6 +312,21 @@ type GroundingCoverage struct {
 	RelationshipsPublished             int                       `json:"relationships_published"`
 	DeclarationFamilyMembersConsidered int                       `json:"declaration_family_members_considered"`
 	DeclarationFamilyMembersPublished  int                       `json:"declaration_family_members_published"`
+	EntryHandoffs                      EntryHandoffCoverage      `json:"entry_handoffs"`
+}
+
+// EntryHandoffCoverage describes the complete producer candidate set and the
+// bounded collection persisted in Architecture Grounding. A digest remains
+// meaningful when a bound is reached, while Complete prevents the retained
+// prefix from being presented as exhaustive.
+type EntryHandoffCoverage struct {
+	Complete             bool                      `json:"complete"`
+	Reasons              []GroundingCoverageReason `json:"reasons"`
+	CandidateSetSHA256   string                    `json:"candidate_set_sha256"`
+	CandidatesConsidered int                       `json:"candidates_considered"`
+	CandidatesCollected  int                       `json:"candidates_collected"`
+	CandidatesPublished  int                       `json:"candidates_published"`
+	WitnessesConsidered  int                       `json:"witnesses_considered"`
 }
 
 type ArchetypeAssessment struct {
@@ -346,6 +362,23 @@ type BehaviorRelationship struct {
 	Certainty               string     `json:"certainty"`
 	Producer                Provenance `json:"producer"`
 	witnessPackages         map[string]struct{}
+}
+
+// EntryHandoff is one exact, producer-owned first-hop static source edge from
+// a production process entry. It is deliberately not a BehaviorAnchor or an
+// Architecture relationship: the edge supplies Study eligibility without
+// claiming runtime order, ownership, execution, or transitive reachability.
+type EntryHandoff struct {
+	ID                     string     `json:"id"`
+	ProcessEntrypoint      Symbol     `json:"process_entrypoint"`
+	Callee                 Symbol     `json:"callee"`
+	RepresentativeCallsite Location   `json:"representative_callsite"`
+	WitnessCount           int        `json:"witness_count"`
+	TargetPackage          string     `json:"target_package"`
+	Scenario               Scenario   `json:"scenario"`
+	Certainty              string     `json:"certainty"`
+	Producer               Provenance `json:"producer"`
+	Limitations            []string   `json:"limitations"`
 }
 
 func (r *Result) normalize() {
@@ -456,6 +489,25 @@ func (r *Result) normalize() {
 	if r.Grounding.Relationships == nil {
 		r.Grounding.Relationships = []BehaviorRelationship{}
 	}
+	if r.Grounding.EntryHandoffs == nil {
+		r.Grounding.EntryHandoffs = []EntryHandoff{}
+	}
+	if r.Grounding.Coverage.Reasons == nil {
+		r.Grounding.Coverage.Reasons = []GroundingCoverageReason{}
+	}
+	if r.Grounding.Coverage.EntryHandoffs.Reasons == nil {
+		r.Grounding.Coverage.EntryHandoffs.Reasons = []GroundingCoverageReason{}
+	}
+	sort.Slice(r.Grounding.Coverage.Reasons, func(i, j int) bool {
+		return r.Grounding.Coverage.Reasons[i] < r.Grounding.Coverage.Reasons[j]
+	})
+	r.Grounding.Coverage.Reasons = compactGroundingCoverageReasons(r.Grounding.Coverage.Reasons)
+	sort.Slice(r.Grounding.Coverage.EntryHandoffs.Reasons, func(i, j int) bool {
+		return r.Grounding.Coverage.EntryHandoffs.Reasons[i] < r.Grounding.Coverage.EntryHandoffs.Reasons[j]
+	})
+	r.Grounding.Coverage.EntryHandoffs.Reasons = compactGroundingCoverageReasons(
+		r.Grounding.Coverage.EntryHandoffs.Reasons,
+	)
 	sort.Slice(r.Catalog.Triggers, func(i, j int) bool {
 		return r.Catalog.Triggers[i].ID < r.Catalog.Triggers[j].ID
 	})
@@ -492,6 +544,19 @@ func (r *Result) normalize() {
 	sort.Slice(r.Grounding.Relationships, func(i, j int) bool {
 		return r.Grounding.Relationships[i].ID < r.Grounding.Relationships[j].ID
 	})
+	sort.Slice(r.Grounding.EntryHandoffs, func(i, j int) bool {
+		return r.Grounding.EntryHandoffs[i].ID < r.Grounding.EntryHandoffs[j].ID
+	})
+}
+
+func compactGroundingCoverageReasons(input []GroundingCoverageReason) []GroundingCoverageReason {
+	result := make([]GroundingCoverageReason, 0, len(input))
+	for _, reason := range input {
+		if len(result) == 0 || result[len(result)-1] != reason {
+			result = append(result, reason)
+		}
+	}
+	return result
 }
 
 func normalizeValue(value *Value) {

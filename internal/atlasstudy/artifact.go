@@ -9,6 +9,10 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 var artifactSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -16,10 +20,11 @@ var artifactSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 type ProductState string
 
 const (
-	ProductStatePrepared    ProductState = "prepared"
-	ProductStateAccepted    ProductState = "accepted"
-	ProductStateUnavailable ProductState = "unavailable"
-	ProductStateFailed      ProductState = "failed"
+	ProductStatePrepared        ProductState = "prepared"
+	ProductStateAccepted        ProductState = "accepted"
+	ProductStateAcceptedPartial ProductState = "accepted_partial"
+	ProductStateUnavailable     ProductState = "unavailable"
+	ProductStateFailed          ProductState = "failed"
 )
 
 type UnavailableCode string
@@ -38,51 +43,59 @@ const (
 )
 
 type RequestRecord struct {
-	Version            int             `json:"version"`
-	PromptVersion      string          `json:"prompt_version"`
-	AtlasSHA256        string          `json:"atlas_sha256"`
-	ArchitectureSHA256 string          `json:"architecture_sha256"`
-	WireSHA256         string          `json:"wire_sha256"`
-	CatalogSHA256      string          `json:"catalog_sha256"`
-	CatalogRef         string          `json:"catalog_ref"`
-	Language           Language        `json:"language"`
-	Catalog            []CatalogObject `json:"catalog"`
-	WireJSON           string          `json:"wire_json"`
+	Version            int               `json:"version"`
+	PromptVersion      string            `json:"prompt_version"`
+	AtlasSHA256        string            `json:"atlas_sha256"`
+	ArchitectureSHA256 string            `json:"architecture_sha256"`
+	WireSHA256         string            `json:"wire_sha256"`
+	CatalogSHA256      string            `json:"catalog_sha256"`
+	CatalogRef         string            `json:"catalog_ref"`
+	Language           Language          `json:"language"`
+	CandidateCoverage  CandidateCoverage `json:"candidate_coverage"`
+	Catalog            []CatalogObject   `json:"catalog"`
+	WireJSON           string            `json:"wire_json"`
 }
 
 type ResultRecord struct {
-	Version            int             `json:"version"`
-	State              ProductState    `json:"state"`
-	PromptVersion      string          `json:"prompt_version"`
-	AtlasSHA256        string          `json:"atlas_sha256"`
-	ArchitectureSHA256 string          `json:"architecture_sha256"`
-	WireSHA256         string          `json:"wire_sha256"`
-	CatalogSHA256      string          `json:"catalog_sha256"`
-	CatalogRef         string          `json:"catalog_ref"`
-	Language           Language        `json:"language"`
-	Catalog            []CatalogObject `json:"catalog"`
-	RepositoryType     RepositoryType  `json:"repository_type"`
-	Brief              Brief           `json:"brief"`
-	Directions         []Direction     `json:"directions"`
-	ShapeComponentRefs []CanonicalRef  `json:"shape_component_refs"`
-	Diagnostics        Diagnostics     `json:"diagnostics"`
+	Version            int               `json:"version"`
+	State              ProductState      `json:"state"`
+	PromptVersion      string            `json:"prompt_version"`
+	AtlasSHA256        string            `json:"atlas_sha256"`
+	ArchitectureSHA256 string            `json:"architecture_sha256"`
+	WireSHA256         string            `json:"wire_sha256"`
+	CatalogSHA256      string            `json:"catalog_sha256"`
+	CatalogRef         string            `json:"catalog_ref"`
+	Language           Language          `json:"language"`
+	CandidateCoverage  CandidateCoverage `json:"candidate_coverage"`
+	Catalog            []CatalogObject   `json:"catalog"`
+	RepositoryType     RepositoryType    `json:"repository_type"`
+	Brief              Brief             `json:"brief"`
+	Directions         []Direction       `json:"directions"`
+	ShapeComponentRefs []CanonicalRef    `json:"shape_component_refs"`
+	SpanCoverage       SpanCoverage      `json:"span_coverage"`
+	Diagnostics        Diagnostics       `json:"diagnostics"`
 }
 
 // Status contains no provider prose, source locator, endpoint, model name, or
 // raw error. The semantic exchange journal remains the Q/A recorder.
 type Status struct {
-	Version            int             `json:"version"`
-	State              ProductState    `json:"state"`
-	PromptVersion      string          `json:"prompt_version"`
-	AtlasSHA256        string          `json:"atlas_sha256"`
-	ArchitectureSHA256 string          `json:"architecture_sha256"`
-	WireSHA256         string          `json:"wire_sha256"`
-	CatalogSHA256      string          `json:"catalog_sha256"`
-	CatalogRef         string          `json:"catalog_ref"`
-	Language           Language        `json:"language"`
-	DirectionCount     int             `json:"direction_count"`
-	UnavailableCode    UnavailableCode `json:"unavailable_code,omitempty"`
-	FailureCode        FailureCode     `json:"failure_code,omitempty"`
+	Version            int               `json:"version"`
+	State              ProductState      `json:"state"`
+	PromptVersion      string            `json:"prompt_version"`
+	AtlasSHA256        string            `json:"atlas_sha256"`
+	ArchitectureSHA256 string            `json:"architecture_sha256"`
+	WireSHA256         string            `json:"wire_sha256"`
+	CatalogSHA256      string            `json:"catalog_sha256"`
+	CatalogRef         string            `json:"catalog_ref"`
+	Language           Language          `json:"language"`
+	CandidateCoverage  CandidateCoverage `json:"candidate_coverage"`
+	DirectionCount     int               `json:"direction_count"`
+	RequestedSpanCount int               `json:"requested_span_count"`
+	CoveredSpanCount   int               `json:"covered_span_count"`
+	UncoveredSpanCount int               `json:"uncovered_span_count"`
+	CoverageComplete   bool              `json:"coverage_complete"`
+	UnavailableCode    UnavailableCode   `json:"unavailable_code,omitempty"`
+	FailureCode        FailureCode       `json:"failure_code,omitempty"`
 }
 
 func (product Product) RequestRecord() (RequestRecord, error) {
@@ -91,7 +104,8 @@ func (product Product) RequestRecord() (RequestRecord, error) {
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
-		Catalog: product.Catalog(), WireJSON: string(product.wire),
+		CandidateCoverage: product.Coverage(),
+		Catalog:           product.Catalog(), WireJSON: string(product.wire),
 	}
 	return record, product.ValidateRequestRecord(record)
 }
@@ -101,16 +115,23 @@ func (product Product) result(
 	brief Brief,
 	directions []Direction,
 	shape []CanonicalRef,
+	spanCoverage SpanCoverage,
 	diagnostics Diagnostics,
 ) ResultRecord {
+	state := ProductStateAccepted
+	if !spanCoverage.Complete {
+		state = ProductStateAcceptedPartial
+	}
 	return ResultRecord{
-		Version: ResultVersion, State: ProductStateAccepted, PromptVersion: PromptVersion,
+		Version: ResultVersion, State: state, PromptVersion: PromptVersion,
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
-		Catalog: product.Catalog(), RepositoryType: repositoryType,
+		CandidateCoverage: product.Coverage(),
+		Catalog:           product.Catalog(), RepositoryType: repositoryType,
 		Brief: cloneBrief(brief), Directions: cloneDirections(directions),
 		ShapeComponentRefs: append([]CanonicalRef(nil), shape...),
+		SpanCoverage:       cloneSpanCoverage(spanCoverage),
 		Diagnostics:        cloneDiagnostics(diagnostics),
 	}
 }
@@ -124,6 +145,7 @@ func (product Product) ValidateRequestRecord(record RequestRecord) error {
 		record.WireSHA256 != product.wireSHA256 ||
 		record.CatalogSHA256 != product.catalogSHA256 ||
 		record.CatalogRef != product.catalogRef || record.Language != product.input.Language ||
+		!reflect.DeepEqual(record.CandidateCoverage, product.coverage) ||
 		record.WireJSON != string(product.wire) || !reflect.DeepEqual(record.Catalog, product.catalog) {
 		return fmt.Errorf("atlas study request artifact: does not match the exact compiled product")
 	}
@@ -139,6 +161,7 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 		record.WireSHA256 != product.wireSHA256 ||
 		record.CatalogSHA256 != product.catalogSHA256 ||
 		record.CatalogRef != product.catalogRef || record.Language != product.input.Language ||
+		!reflect.DeepEqual(record.CandidateCoverage, product.coverage) ||
 		!reflect.DeepEqual(record.Catalog, product.catalog) {
 		return fmt.Errorf("atlas study result artifact: does not match the exact compiled product")
 	}
@@ -152,6 +175,7 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 		return fmt.Errorf("atlas study result artifact: invalid direction count")
 	}
 	seen := make(map[string]struct{}, len(record.Directions))
+	seenSpans := make(map[CanonicalRef]struct{}, len(record.Directions))
 	for index, direction := range record.Directions {
 		if err := product.validateResolvedDirection(direction); err != nil {
 			return fmt.Errorf("atlas study result artifact: direction %d: %w", index, err)
@@ -160,6 +184,10 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 			return fmt.Errorf("atlas study result artifact: duplicate direction")
 		}
 		seen[direction.ID] = struct{}{}
+		if _, duplicate := seenSpans[direction.Span]; duplicate {
+			return fmt.Errorf("atlas study result artifact: duplicate span")
+		}
+		seenSpans[direction.Span] = struct{}{}
 	}
 	wantShape := shapeFromDirections(record.Directions)
 	if !slices.Equal(record.ShapeComponentRefs, wantShape) {
@@ -168,32 +196,42 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 	if err := validateDiagnostics(record.Diagnostics, len(record.Directions), len(record.Brief.DomainTerms)); err != nil {
 		return err
 	}
+	if err := product.validateSpanCoverage(record.SpanCoverage, record.Directions); err != nil {
+		return err
+	}
+	wantState := ProductStateAccepted
+	if !record.SpanCoverage.Complete {
+		wantState = ProductStateAcceptedPartial
+	}
+	if record.State != wantState {
+		return fmt.Errorf("atlas study result artifact: state does not match exact span coverage")
+	}
 	return nil
 }
 
 func (product Product) PreparedStatus() Status {
-	return product.status(ProductStatePrepared, 0, "", "")
+	return product.status(ProductStatePrepared, 0, SpanCoverage{}, "", "")
 }
 
 func (product Product) AcceptedStatus(record ResultRecord) (Status, error) {
 	if err := product.ValidateResultRecord(record); err != nil {
 		return Status{}, err
 	}
-	return product.status(ProductStateAccepted, len(record.Directions), "", ""), nil
+	return product.status(record.State, len(record.Directions), record.SpanCoverage, "", ""), nil
 }
 
 func (product Product) UnavailableStatus(code UnavailableCode) (Status, error) {
 	if code != UnavailableOffline {
 		return Status{}, fmt.Errorf("atlas study status: unsupported unavailable code %q", code)
 	}
-	return product.status(ProductStateUnavailable, 0, code, ""), nil
+	return product.status(ProductStateUnavailable, 0, SpanCoverage{}, code, ""), nil
 }
 
 func (product Product) FailureStatus(code FailureCode) (Status, error) {
 	if !code.Valid() {
 		return Status{}, fmt.Errorf("atlas study status: unsupported failure code %q", code)
 	}
-	return product.status(ProductStateFailed, 0, "", code), nil
+	return product.status(ProductStateFailed, 0, SpanCoverage{}, "", code), nil
 }
 
 func (code FailureCode) Valid() bool {
@@ -209,6 +247,7 @@ func (code FailureCode) Valid() bool {
 func (product Product) status(
 	state ProductState,
 	directionCount int,
+	spanCoverage SpanCoverage,
 	unavailable UnavailableCode,
 	failure FailureCode,
 ) Status {
@@ -217,7 +256,11 @@ func (product Product) status(
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
-		DirectionCount: directionCount, UnavailableCode: unavailable, FailureCode: failure,
+		CandidateCoverage:  product.Coverage(),
+		DirectionCount:     directionCount,
+		RequestedSpanCount: len(spanCoverage.Requested), CoveredSpanCount: len(spanCoverage.Covered),
+		UncoveredSpanCount: len(spanCoverage.Uncovered), CoverageComplete: spanCoverage.Complete,
+		UnavailableCode: unavailable, FailureCode: failure,
 	}
 }
 
@@ -229,8 +272,15 @@ func (product Product) ValidateStatus(status Status) error {
 		status.ArchitectureSHA256 != product.architectureSHA256 ||
 		status.WireSHA256 != product.wireSHA256 ||
 		status.CatalogSHA256 != product.catalogSHA256 ||
-		status.CatalogRef != product.catalogRef || status.Language != product.input.Language {
+		status.CatalogRef != product.catalogRef || status.Language != product.input.Language ||
+		!reflect.DeepEqual(status.CandidateCoverage, product.coverage) {
 		return fmt.Errorf("atlas study status artifact: does not match the exact compiled product")
+	}
+	if status.State == ProductStateAccepted || status.State == ProductStateAcceptedPartial {
+		if status.RequestedSpanCount != len(product.selectedSpanIDs) ||
+			status.CoveredSpanCount+status.UncoveredSpanCount != len(product.selectedSpanIDs) {
+			return fmt.Errorf("atlas study status artifact: span counts do not match exact compiled product")
+		}
 	}
 	return nil
 }
@@ -322,11 +372,21 @@ func validateRequestRecord(record RequestRecord) error {
 		digest([]byte(record.WireJSON)) != record.WireSHA256 {
 		return fmt.Errorf("atlas study request artifact: invalid identity or wire")
 	}
-	return validateCatalog(record.Catalog)
+	if err := validateCandidateCoverage(record.CandidateCoverage); err != nil {
+		return err
+	}
+	if err := validateCatalog(record.Catalog); err != nil {
+		return err
+	}
+	return validateCatalogDigest(
+		record.AtlasSHA256, record.ArchitectureSHA256, record.WireSHA256,
+		record.CatalogSHA256, record.Language, record.CandidateCoverage, record.Catalog,
+	)
 }
 
 func validateResultIdentity(record ResultRecord) error {
-	if record.Version != ResultVersion || record.State != ProductStateAccepted ||
+	if record.Version != ResultVersion ||
+		(record.State != ProductStateAccepted && record.State != ProductStateAcceptedPartial) ||
 		record.PromptVersion != PromptVersion || !validArtifactSHA(record.AtlasSHA256) ||
 		!validArtifactSHA(record.ArchitectureSHA256) || !validArtifactSHA(record.WireSHA256) ||
 		!validArtifactSHA(record.CatalogSHA256) ||
@@ -334,7 +394,16 @@ func validateResultIdentity(record ResultRecord) error {
 		len(record.Catalog) == 0 {
 		return fmt.Errorf("atlas study result artifact: invalid identity")
 	}
-	return validateCatalog(record.Catalog)
+	if err := validateCandidateCoverage(record.CandidateCoverage); err != nil {
+		return err
+	}
+	if err := validateCatalog(record.Catalog); err != nil {
+		return err
+	}
+	return validateCatalogDigest(
+		record.AtlasSHA256, record.ArchitectureSHA256, record.WireSHA256,
+		record.CatalogSHA256, record.Language, record.CandidateCoverage, record.Catalog,
+	)
 }
 
 func validateStatus(status Status) error {
@@ -345,25 +414,91 @@ func validateStatus(status Status) error {
 		status.DirectionCount < 0 || status.DirectionCount > MaxDirections {
 		return fmt.Errorf("atlas study status artifact: invalid identity")
 	}
+	if err := validateCandidateCoverage(status.CandidateCoverage); err != nil {
+		return err
+	}
 	switch status.State {
 	case ProductStatePrepared:
-		if status.DirectionCount != 0 || status.UnavailableCode != "" || status.FailureCode != "" {
+		if status.DirectionCount != 0 || status.RequestedSpanCount != 0 || status.CoveredSpanCount != 0 ||
+			status.UncoveredSpanCount != 0 || status.CoverageComplete ||
+			status.UnavailableCode != "" || status.FailureCode != "" {
 			return fmt.Errorf("atlas study status artifact: invalid prepared status")
 		}
-	case ProductStateAccepted:
+	case ProductStateAccepted, ProductStateAcceptedPartial:
 		if status.DirectionCount == 0 || status.UnavailableCode != "" || status.FailureCode != "" {
 			return fmt.Errorf("atlas study status artifact: invalid accepted status")
 		}
+		if status.RequestedSpanCount <= 0 || status.CoveredSpanCount != status.DirectionCount ||
+			status.CoveredSpanCount+status.UncoveredSpanCount != status.RequestedSpanCount ||
+			status.CoverageComplete != (status.UncoveredSpanCount == 0) ||
+			(status.State == ProductStateAccepted) != status.CoverageComplete {
+			return fmt.Errorf("atlas study status artifact: invalid accepted span coverage")
+		}
 	case ProductStateUnavailable:
-		if status.DirectionCount != 0 || status.UnavailableCode != UnavailableOffline || status.FailureCode != "" {
+		if status.DirectionCount != 0 || status.RequestedSpanCount != 0 || status.CoveredSpanCount != 0 ||
+			status.UncoveredSpanCount != 0 || status.CoverageComplete ||
+			status.UnavailableCode != UnavailableOffline || status.FailureCode != "" {
 			return fmt.Errorf("atlas study status artifact: invalid unavailable status")
 		}
 	case ProductStateFailed:
-		if status.DirectionCount != 0 || status.UnavailableCode != "" || !status.FailureCode.Valid() {
+		if status.DirectionCount != 0 || status.RequestedSpanCount != 0 || status.CoveredSpanCount != 0 ||
+			status.UncoveredSpanCount != 0 || status.CoverageComplete ||
+			status.UnavailableCode != "" || !status.FailureCode.Valid() {
 			return fmt.Errorf("atlas study status artifact: invalid failed status")
 		}
 	default:
 		return fmt.Errorf("atlas study status artifact: unsupported state %q", status.State)
+	}
+	return nil
+}
+
+func validateCandidateCoverage(coverage CandidateCoverage) error {
+	if !validArtifactSHA(coverage.CandidateSHA256) ||
+		coverage.TargetsConsidered <= 0 || coverage.TargetsSelected <= 0 ||
+		coverage.TargetsSelected > coverage.TargetsConsidered ||
+		coverage.SpansConsidered <= 0 || coverage.SpansSelected <= 0 ||
+		coverage.SpansSelected > coverage.SpansConsidered ||
+		coverage.Complete != (coverage.TargetsSelected == coverage.TargetsConsidered &&
+			coverage.SpansSelected == coverage.SpansConsidered) {
+		return fmt.Errorf("atlas study artifact: invalid candidate coverage")
+	}
+	validateCounts := func(name string, values []CandidateCoverageCount) error {
+		if len(values) == 0 {
+			return fmt.Errorf("atlas study artifact: candidate coverage %s is empty", name)
+		}
+		previous := ""
+		for _, value := range values {
+			if value.Key == "" || value.Key <= previous || value.Considered <= 0 ||
+				value.Selected < 0 || value.Selected > value.Considered {
+				return fmt.Errorf("atlas study artifact: invalid candidate coverage %s", name)
+			}
+			previous = value.Key
+		}
+		return nil
+	}
+	if err := validateCounts("per_role", coverage.PerRole); err != nil {
+		return err
+	}
+	return validateCounts("per_package", coverage.PerPackage)
+}
+
+func validateCatalogDigest(
+	atlasSHA, architectureSHA, wireSHA, catalogSHA string,
+	language Language,
+	coverage CandidateCoverage,
+	catalog []CatalogObject,
+) error {
+	material := catalogMaterial{
+		Version: Version, AtlasSHA256: atlasSHA, ArchitectureSHA256: architectureSHA,
+		Language: language, Limits: DefaultLimits(), ProjectionSHA256: wireSHA,
+		Coverage: cloneCandidateCoverage(coverage), Objects: cloneCatalog(catalog),
+	}
+	encoded, err := json.Marshal(material)
+	if err != nil {
+		return fmt.Errorf("atlas study artifact: encode catalog identity: %w", err)
+	}
+	if digest(encoded) != catalogSHA {
+		return fmt.Errorf("atlas study artifact: catalog identity mismatch")
 	}
 	return nil
 }
@@ -373,10 +508,21 @@ func validateCatalog(values []CatalogObject) error {
 	previousID := ""
 	seenRefs := make(map[string]struct{}, len(values))
 	seenCanonical := make(map[CanonicalRef]struct{}, len(values))
-	counts := make(map[RefKind]int)
+	seenProducerIDs := make(map[string]struct{})
+	ordinals := make(map[RefKind]int)
 	identities := make(map[string]struct{}, 3*len(values))
 	for _, object := range values {
 		identities[object.CanonicalID] = struct{}{}
+		if object.PackageBucket != "" {
+			identities[object.PackageBucket] = struct{}{}
+		}
+		for _, private := range []string{
+			object.ProducerID, object.SavedFlowID, object.FromStepID, object.ToStepID,
+		} {
+			if private != "" {
+				identities[private] = struct{}{}
+			}
+		}
 		if object.Location != nil {
 			identities[object.Location.Path] = struct{}{}
 		}
@@ -401,10 +547,23 @@ func validateCatalog(values []CatalogObject) error {
 			return fmt.Errorf("atlas study artifact: duplicate canonical object")
 		}
 		seenCanonical[canonical] = struct{}{}
-		counts[object.Kind]++
-		if object.Ref != refPrefix(object.Kind)+fmt.Sprint(counts[object.Kind]) {
+		prefix := refPrefix(object.Kind)
+		if !strings.HasPrefix(object.Ref, prefix) {
 			return fmt.Errorf("atlas study artifact: noncanonical private ref")
 		}
+		ordinal, err := strconv.Atoi(strings.TrimPrefix(object.Ref, prefix))
+		if err != nil || ordinal <= ordinals[object.Kind] || ordinal <= 0 {
+			return fmt.Errorf("atlas study artifact: noncanonical private ref")
+		}
+		for skipped := ordinals[object.Kind] + 1; skipped < ordinal; skipped++ {
+			if _, collision := identities[prefix+strconv.Itoa(skipped)]; !collision {
+				return fmt.Errorf("atlas study artifact: noncanonical private ref gap")
+			}
+		}
+		if _, collision := identities[object.Ref]; collision {
+			return fmt.Errorf("atlas study artifact: private ref collides with private identity")
+		}
+		ordinals[object.Kind] = ordinal
 		seenRefs[object.Ref] = struct{}{}
 		previousRank, previousID = rank, object.CanonicalID
 		if object.Kind == RefReadingTarget {
@@ -423,7 +582,79 @@ func validateCatalog(values []CatalogObject) error {
 		if object.Kind == RefEvidence && (object.Location == nil || !repositoryLocation(*object.Location)) {
 			return fmt.Errorf("atlas study artifact: evidence lacks exact private locator")
 		}
-		labelRequired := object.Kind != RefEvidence
+		switch object.Kind {
+		case RefRouteSupport:
+			if !validSupportAuthority(object.SupportRole, object.Authority) || object.SupportTarget == nil ||
+				object.SupportTarget.Kind != RefReadingTarget || object.PackageBucket == "" ||
+				object.SpanKind != "" || object.Question != "" || object.TargetJob != "" ||
+				object.LearningStage != "" || len(object.RequiredSupportRefs) != 0 ||
+				len(object.AllowedTargetRefs) != 0 || len(object.SpanJoins) != 0 ||
+				object.Location != nil || object.Symbol != "" {
+				return fmt.Errorf("atlas study artifact: invalid route support")
+			}
+			if err := validateVisibleText(object.PackageBucket, DefaultLimits().MaxTextBytes, true, nil); err != nil {
+				return fmt.Errorf("atlas study artifact: invalid route support package bucket")
+			}
+			if hasRouteRelationMetadata(object) {
+				return fmt.Errorf("atlas study artifact: route support has producer relation metadata")
+			}
+		case RefRouteRelation:
+			if object.Authority != repositoryatlas.AuthorityResolved || !object.RelationKind.Valid() ||
+				object.ProducerID == "" || object.FromSupport == nil || object.ToSupport == nil ||
+				object.FromTarget == nil || object.ToTarget == nil ||
+				object.FromSupport.Kind != RefRouteSupport || object.ToSupport.Kind != RefRouteSupport ||
+				object.FromTarget.Kind != RefReadingTarget || object.ToTarget.Kind != RefReadingTarget ||
+				*object.FromSupport == *object.ToSupport || *object.FromTarget == *object.ToTarget ||
+				object.SupportRole != "" || object.SupportTarget != nil || object.PackageBucket != "" ||
+				object.SpanKind != "" || object.Question != "" || object.TargetJob != "" ||
+				object.LearningStage != "" || len(object.RequiredSupportRefs) != 0 ||
+				len(object.AllowedTargetRefs) != 0 || len(object.SpanJoins) != 0 ||
+				object.Location != nil || object.Symbol != "" {
+				return fmt.Errorf("atlas study artifact: invalid route producer relation")
+			}
+			if err := validateVisibleText(object.ProducerID, DefaultLimits().MaxTextBytes, true, nil); err != nil {
+				return fmt.Errorf("atlas study artifact: invalid route producer identity")
+			}
+			if _, duplicate := seenProducerIDs[object.ProducerID]; duplicate {
+				return fmt.Errorf("atlas study artifact: duplicate route producer identity")
+			}
+			seenProducerIDs[object.ProducerID] = struct{}{}
+			switch object.RelationKind {
+			case RouteRelationEntryHandoff:
+				if object.SavedFlowID != "" || object.FromStepID != "" || object.ToStepID != "" ||
+					object.FromStepOrdinal != 0 || object.ToStepOrdinal != 0 {
+					return fmt.Errorf("atlas study artifact: entry-handoff relation has flow metadata")
+				}
+			case RouteRelationSavedFlowEdge:
+				if object.SavedFlowID == "" || object.FromStepID == "" || object.ToStepID == "" ||
+					object.FromStepID == object.ToStepID || object.FromStepOrdinal < 0 ||
+					object.ToStepOrdinal != object.FromStepOrdinal+1 {
+					return fmt.Errorf("atlas study artifact: invalid saved-flow relation")
+				}
+			}
+		case RefRouteSpan:
+			if !object.SpanKind.Valid() || !object.TargetJob.Valid() || !object.LearningStage.Valid() ||
+				!naturalQuestion(object.Question) || len(object.RequiredSupportRefs) == 0 ||
+				len(object.AllowedTargetRefs) == 0 ||
+				!uniqueCanonicalRefs(object.RequiredSupportRefs) ||
+				!uniqueCanonicalRefs(object.AllowedTargetRefs) || object.SupportRole != "" ||
+				object.SupportTarget != nil || object.PackageBucket != "" || hasRouteRelationMetadata(object) || object.Location != nil ||
+				object.Symbol != "" {
+				return fmt.Errorf("atlas study artifact: invalid route span")
+			}
+			if err := validateVisibleText(object.Question, DefaultLimits().MaxTextBytes, true, identities); err != nil {
+				return fmt.Errorf("atlas study artifact: invalid route span question")
+			}
+		default:
+			if object.SupportRole != "" || object.SupportTarget != nil || object.PackageBucket != "" || hasRouteRelationMetadata(object) ||
+				object.SpanKind != "" || object.Question != "" || object.TargetJob != "" ||
+				object.LearningStage != "" || len(object.RequiredSupportRefs) != 0 ||
+				len(object.AllowedTargetRefs) != 0 || len(object.SpanJoins) != 0 {
+				return fmt.Errorf("atlas study artifact: unexpected route metadata")
+			}
+		}
+		labelRequired := object.Kind != RefEvidence && object.Kind != RefRouteSupport &&
+			object.Kind != RefRouteRelation && object.Kind != RefRouteSpan
 		factRequired := object.Kind == RefSurface || object.Kind == RefReadingTarget ||
 			object.Kind == RefEvidence || object.Kind == RefDocument
 		if err := validateVisibleText(object.Label, DefaultLimits().MaxTextBytes, labelRequired, identities); err != nil {
@@ -434,6 +665,96 @@ func validateCatalog(values []CatalogObject) error {
 		}
 	}
 	for _, object := range values {
+		if object.Kind == RefRouteSupport {
+			if _, ok := seenCanonical[*object.SupportTarget]; !ok {
+				return fmt.Errorf("atlas study artifact: route support target is outside private catalog")
+			}
+			continue
+		}
+		if object.Kind == RefRouteRelation {
+			fromSupport, fromOK := catalogObjectByCanonical(values, *object.FromSupport)
+			toSupport, toOK := catalogObjectByCanonical(values, *object.ToSupport)
+			if !fromOK || !toOK || fromSupport.SupportTarget == nil || toSupport.SupportTarget == nil ||
+				*fromSupport.SupportTarget != *object.FromTarget || *toSupport.SupportTarget != *object.ToTarget {
+				return fmt.Errorf("atlas study artifact: route producer relation endpoints do not resolve exactly")
+			}
+			if _, ok := seenCanonical[*object.FromTarget]; !ok {
+				return fmt.Errorf("atlas study artifact: route producer relation source is outside private catalog")
+			}
+			if _, ok := seenCanonical[*object.ToTarget]; !ok {
+				return fmt.Errorf("atlas study artifact: route producer relation target is outside private catalog")
+			}
+			switch object.RelationKind {
+			case RouteRelationEntryHandoff:
+				if fromSupport.SupportRole != SupportProcessEntry || toSupport.SupportRole != SupportEntryHandoff {
+					return fmt.Errorf("atlas study artifact: entry-handoff relation has wrong support roles")
+				}
+			case RouteRelationSavedFlowEdge:
+				if fromSupport.SupportRole != SupportSavedFlow || toSupport.SupportRole != SupportSavedFlow {
+					return fmt.Errorf("atlas study artifact: saved-flow relation has wrong support roles")
+				}
+			}
+			continue
+		}
+		if object.Kind == RefRouteSpan {
+			allowedTargets := make(map[CanonicalRef]struct{}, len(object.AllowedTargetRefs))
+			for _, target := range object.AllowedTargetRefs {
+				if target.Kind != RefReadingTarget {
+					return fmt.Errorf("atlas study artifact: route span has wrong-kind allowed target")
+				}
+				if _, ok := seenCanonical[target]; !ok {
+					return fmt.Errorf("atlas study artifact: route span target is outside private catalog")
+				}
+				allowedTargets[target] = struct{}{}
+			}
+			coveredTargets := make(map[CanonicalRef]struct{})
+			requiredSupports := make(map[CanonicalRef]CatalogObject, len(object.RequiredSupportRefs))
+			for _, supportRef := range object.RequiredSupportRefs {
+				if supportRef.Kind != RefRouteSupport {
+					return fmt.Errorf("atlas study artifact: route span has wrong-kind support")
+				}
+				support, ok := catalogObjectByCanonical(values, supportRef)
+				if !ok || support.SupportTarget == nil {
+					return fmt.Errorf("atlas study artifact: route span support is outside private catalog")
+				}
+				if _, allowed := allowedTargets[*support.SupportTarget]; !allowed {
+					return fmt.Errorf("atlas study artifact: route span support target is not allowed")
+				}
+				coveredTargets[*support.SupportTarget] = struct{}{}
+				requiredSupports[supportRef] = support
+			}
+			if object.SpanKind == RouteSpanFocused {
+				if len(coveredTargets) != 1 || len(object.SpanJoins) != 0 {
+					return fmt.Errorf("atlas study artifact: focused span has invalid exact shape")
+				}
+				continue
+			}
+			if len(coveredTargets) != 2 || len(requiredSupports) != 2 || len(allowedTargets) != 2 || len(object.SpanJoins) != 1 {
+				return fmt.Errorf("atlas study artifact: system-path span must equal one directed producer relation")
+			}
+			join := object.SpanJoins[0]
+			if join.Relation.Kind != RefRouteRelation {
+				return fmt.Errorf("atlas study artifact: invalid route span join")
+			}
+			relation, ok := catalogObjectByCanonical(values, join.Relation)
+			if !ok || relation.FromSupport == nil || relation.ToSupport == nil ||
+				relation.FromTarget == nil || relation.ToTarget == nil {
+				return fmt.Errorf("atlas study artifact: route span joins unknown producer relation")
+			}
+			if _, fromOK := requiredSupports[*relation.FromSupport]; !fromOK {
+				return fmt.Errorf("atlas study artifact: route span join source is outside exact clauses")
+			}
+			if _, toOK := requiredSupports[*relation.ToSupport]; !toOK {
+				return fmt.Errorf("atlas study artifact: route span join target is outside exact clauses")
+			}
+			if _, fromAllowed := allowedTargets[*relation.FromTarget]; !fromAllowed {
+				return fmt.Errorf("atlas study artifact: route span join source target is not allowed")
+			}
+			if _, toAllowed := allowedTargets[*relation.ToTarget]; !toAllowed {
+				return fmt.Errorf("atlas study artifact: route span join target is not allowed")
+			}
+			continue
+		}
 		principalSet := make(map[CanonicalRef]struct{}, len(object.PrincipalRefs))
 		for _, principal := range object.PrincipalRefs {
 			if principal.Kind != RefComponent && principal.Kind != RefSurface {
@@ -468,13 +789,30 @@ func validateCatalog(values []CatalogObject) error {
 	return nil
 }
 
+func catalogObjectByCanonical(values []CatalogObject, ref CanonicalRef) (CatalogObject, bool) {
+	for _, object := range values {
+		if object.Kind == ref.Kind && object.CanonicalID == ref.ID {
+			return object, true
+		}
+	}
+	return CatalogObject{}, false
+}
+
+func hasRouteRelationMetadata(object CatalogObject) bool {
+	return object.RelationKind != "" || object.ProducerID != "" || object.FromSupport != nil ||
+		object.ToSupport != nil || object.FromTarget != nil || object.ToTarget != nil ||
+		object.SavedFlowID != "" || object.FromStepID != "" || object.ToStepID != "" ||
+		object.FromStepOrdinal != 0 || object.ToStepOrdinal != 0
+}
+
 func validateStandaloneResult(record ResultRecord) error {
 	if err := validateResultIdentity(record); err != nil {
 		return err
 	}
 	product := productFromArtifact(
 		record.AtlasSHA256, record.ArchitectureSHA256, record.WireSHA256,
-		record.CatalogSHA256, record.CatalogRef, record.Language, record.Catalog,
+		record.CatalogSHA256, record.CatalogRef, record.Language,
+		record.CandidateCoverage, record.Catalog,
 	)
 	return product.ValidateResultRecord(record)
 }
@@ -486,6 +824,7 @@ func productFromArtifact(
 	catalogSHA string,
 	catalogRef string,
 	language Language,
+	coverage CandidateCoverage,
 	catalog []CatalogObject,
 ) Product {
 	byRef := make(map[string]CatalogObject, len(catalog))
@@ -517,6 +856,11 @@ func productFromArtifact(
 		byCanonical[CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}] = object
 		addAlwaysPrivate(object.Ref)
 		addAlwaysPrivate(object.CanonicalID)
+		addAlwaysPrivate(object.PackageBucket)
+		addAlwaysPrivate(object.ProducerID)
+		addAlwaysPrivate(object.SavedFlowID)
+		addAlwaysPrivate(object.FromStepID)
+		addAlwaysPrivate(object.ToStepID)
 		if object.Location != nil {
 			identities[object.Location.Path] = struct{}{}
 			if _, visible := visiblePaths[object.Location.Path]; !visible {
@@ -530,12 +874,19 @@ func productFromArtifact(
 			}
 		}
 	}
+	selectedSpanIDs := make([]string, 0)
+	for _, object := range catalog {
+		if object.Kind == RefRouteSpan {
+			selectedSpanIDs = append(selectedSpanIDs, object.CanonicalID)
+		}
+	}
 	return Product{
 		input:      Input{Language: language, Limits: DefaultLimits()},
 		wireSHA256: wireSHA, catalogSHA256: catalogSHA, catalogRef: catalogRef,
 		atlasSHA256: atlasSHA, architectureSHA256: architectureSHA,
 		catalog: cloneCatalog(catalog), byRef: byRef, byCanonical: byCanonical,
 		privateIdentities: identities, alwaysPrivate: alwaysPrivate,
+		coverage: cloneCandidateCoverage(coverage), selectedSpanIDs: selectedSpanIDs,
 	}
 }
 
@@ -605,6 +956,21 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		len(direction.Reading) > MaxDirectionReadingCount {
 		return fmt.Errorf("invalid canonical direction")
 	}
+	span, ok := product.byCanonical[direction.Span]
+	if !ok || span.Kind != RefRouteSpan || !span.SpanKind.Valid() ||
+		direction.Question != span.Question || direction.TargetJob != span.TargetJob ||
+		direction.LearningStage != span.LearningStage {
+		return fmt.Errorf("unknown or mismatched route span")
+	}
+	allowedTargets := make(map[CanonicalRef]struct{}, len(span.AllowedTargetRefs))
+	for _, target := range span.AllowedTargetRefs {
+		allowedTargets[target] = struct{}{}
+	}
+	requiredSupports := make(map[CanonicalRef]struct{}, len(span.RequiredSupportRefs))
+	for _, support := range span.RequiredSupportRefs {
+		requiredSupports[support] = struct{}{}
+	}
+	coveredSupports := make(map[CanonicalRef]struct{}, len(requiredSupports))
 	principalSet := make(map[CanonicalRef]struct{}, len(direction.PrincipalRefs))
 	hasComponent := false
 	if !uniqueCanonicalRefs(direction.PrincipalRefs) {
@@ -639,6 +1005,24 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		if !ok || object.Kind != RefReadingTarget || len(object.PrincipalRefs) == 0 {
 			return fmt.Errorf("unknown or wrong-kind reading target")
 		}
+		if _, allowed := allowedTargets[reading.Target]; !allowed {
+			return fmt.Errorf("reading target is outside exact route span")
+		}
+		coversRequiredSupport := false
+		for _, support := range product.catalog {
+			if support.Kind != RefRouteSupport || support.SupportTarget == nil ||
+				*support.SupportTarget != reading.Target {
+				continue
+			}
+			ref := CanonicalRef{Kind: RefRouteSupport, ID: support.CanonicalID}
+			if _, required := requiredSupports[ref]; required {
+				coveredSupports[ref] = struct{}{}
+				coversRequiredSupport = true
+			}
+		}
+		if !coversRequiredSupport {
+			return fmt.Errorf("reading target does not cover a required route clause")
+		}
 		if !intersectsPrincipalSet(object.PrincipalRefs, principalSet) {
 			return fmt.Errorf("reading target has no selected principal")
 		}
@@ -659,6 +1043,12 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 	}
 	if len(coveredPrincipals) != len(principalSet) {
 		return fmt.Errorf("principal is not advertised by the selected reading targets")
+	}
+	if len(coveredSupports) != len(requiredSupports) {
+		return fmt.Errorf("route span support is incomplete")
+	}
+	if span.SpanKind == RouteSpanSystemPath && len(readingObjects) < 2 {
+		return fmt.Errorf("system-path route is too short")
 	}
 	if product.validateModelTextWithTargetLocators(
 		direction.Question, 512, true, false, readingObjects,

@@ -12,22 +12,25 @@ import (
 
 const (
 	// Version and PromptVersion own the byte-identical provider request and
-	// private request catalog contract. D209 changes neither.
-	Version       = 5
-	PromptVersion = "atlas-study-prompt-v11"
+	// private request catalog contract.
+	Version       = 6
+	PromptVersion = "atlas-study-prompt-v12"
 
 	// ResultVersion owns local response validation plus result/status replay.
 	// It advances independently so the unchanged v5 provider request cannot
 	// reinterpret a result accepted by the earlier question validator.
-	ResultVersion = 6
+	ResultVersion = 7
 
-	RequestArtifactFilename = "atlas_study_request.v5.json"
-	ResultArtifactFilename  = "atlas_study_result.v6.json"
-	StatusArtifactFilename  = "atlas_study_status.v6.json"
+	RequestArtifactFilename = "atlas_study_request.v6.json"
+	ResultArtifactFilename  = "atlas_study_result.v7.json"
+	StatusArtifactFilename  = "atlas_study_status.v7.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
-	MaxStatusArtifactBytes  = 64 << 10
+	// Status repeats the complete exact CandidateCoverage from the request.
+	// Its bound must therefore be able to represent every request-encodable
+	// compiled product without trimming package buckets after a provider call.
+	MaxStatusArtifactBytes = MaxRequestArtifactBytes
 
 	MaxDirections            = studymap.MaxCandidates
 	MinDirectionReadingCount = 1
@@ -59,6 +62,7 @@ type Limits struct {
 	MaxComponents     int `json:"max_components"`
 	MaxSurfaces       int `json:"max_surfaces"`
 	MaxReadingTargets int `json:"max_reading_targets"`
+	MaxRouteSpans     int `json:"max_route_spans"`
 	MaxEvidence       int `json:"max_evidence"`
 	MaxDocuments      int `json:"max_documents"`
 }
@@ -67,7 +71,7 @@ func DefaultLimits() Limits {
 	return Limits{
 		MaxWireBytes: 1 << 20, MaxResponseBytes: 16 << 20, MaxTextBytes: 4096,
 		MaxUnits: 512, MaxSubsystems: 64, MaxComponents: 256,
-		MaxSurfaces: 128, MaxReadingTargets: 512, MaxEvidence: 512,
+		MaxSurfaces: 128, MaxReadingTargets: 512, MaxRouteSpans: MaxDirections, MaxEvidence: 512,
 		MaxDocuments: 64,
 	}
 }
@@ -82,12 +86,15 @@ const (
 	RefReadingTarget RefKind = "reading_target"
 	RefEvidence      RefKind = "evidence"
 	RefDocument      RefKind = "document"
+	RefRouteSupport  RefKind = "route_support"
+	RefRouteRelation RefKind = "route_relation"
+	RefRouteSpan     RefKind = "route_span"
 )
 
 func (kind RefKind) Valid() bool {
 	switch kind {
 	case RefUnit, RefSubsystem, RefComponent, RefSurface, RefReadingTarget,
-		RefEvidence, RefDocument:
+		RefEvidence, RefDocument, RefRouteSupport, RefRouteRelation, RefRouteSpan:
 		return true
 	default:
 		return false
@@ -114,6 +121,27 @@ type CatalogObject struct {
 	PrincipalRefs        []CanonicalRef            `json:"principal_refs,omitempty"`
 	Location             *evidence.Location        `json:"location,omitempty"`
 	Symbol               string                    `json:"symbol,omitempty"`
+	SupportRole          SupportRole               `json:"support_role,omitempty"`
+	SupportTarget        *CanonicalRef             `json:"support_target,omitempty"`
+	PackageBucket        string                    `json:"package_bucket,omitempty"`
+	SpanKind             RouteSpanKind             `json:"span_kind,omitempty"`
+	Question             string                    `json:"question,omitempty"`
+	TargetJob            TargetJob                 `json:"target_job,omitempty"`
+	LearningStage        LearningStage             `json:"learning_stage,omitempty"`
+	RequiredSupportRefs  []CanonicalRef            `json:"required_support_refs,omitempty"`
+	AllowedTargetRefs    []CanonicalRef            `json:"allowed_target_refs,omitempty"`
+	SpanJoins            []CanonicalSpanJoin       `json:"span_joins,omitempty"`
+	RelationKind         RouteProducerRelationKind `json:"relation_kind,omitempty"`
+	ProducerID           string                    `json:"producer_id,omitempty"`
+	FromSupport          *CanonicalRef             `json:"from_support,omitempty"`
+	ToSupport            *CanonicalRef             `json:"to_support,omitempty"`
+	FromTarget           *CanonicalRef             `json:"from_target,omitempty"`
+	ToTarget             *CanonicalRef             `json:"to_target,omitempty"`
+	SavedFlowID          string                    `json:"saved_flow_id,omitempty"`
+	FromStepID           string                    `json:"from_step_id,omitempty"`
+	ToStepID             string                    `json:"to_step_id,omitempty"`
+	FromStepOrdinal      int                       `json:"from_step_ordinal,omitempty"`
+	ToStepOrdinal        int                       `json:"to_step_ordinal,omitempty"`
 }
 
 type ArchitectureInput struct {
@@ -189,6 +217,127 @@ type ReadingTarget struct {
 	Symbol              string                    `json:"symbol,omitempty"`
 }
 
+// SupportRole is a producer-owned evidence shape. It is deliberately not an
+// application-domain label and never implies runtime order or ownership.
+type SupportRole string
+
+const (
+	SupportProcessEntry         SupportRole = "process_entry"
+	SupportEntryHandoff         SupportRole = "entry_handoff"
+	SupportSurface              SupportRole = "surface"
+	SupportSurfaceCandidate     SupportRole = "surface_candidate"
+	SupportObservedCallBoundary SupportRole = "observed_call_boundary"
+	SupportSavedFlow            SupportRole = "saved_flow"
+)
+
+func (role SupportRole) Valid() bool {
+	switch role {
+	case SupportProcessEntry, SupportEntryHandoff, SupportSurface,
+		SupportSurfaceCandidate, SupportObservedCallBoundary, SupportSavedFlow:
+		return true
+	default:
+		return false
+	}
+}
+
+// ReadingSupport binds one exact producer proof to one exact reading target.
+// PackageBucket is a canonical private package identity used only for bounded
+// breadth selection; it is never model-authored authority.
+type ReadingSupport struct {
+	ID            string                    `json:"id"`
+	TargetID      string                    `json:"target_id"`
+	PackageBucket string                    `json:"package_bucket"`
+	Role          SupportRole               `json:"role"`
+	Authority     repositoryatlas.Authority `json:"authority"`
+}
+
+type RouteSpanKind string
+
+const (
+	RouteSpanFocused    RouteSpanKind = "focused"
+	RouteSpanSystemPath RouteSpanKind = "system_path"
+)
+
+func (kind RouteSpanKind) Valid() bool {
+	return kind == RouteSpanFocused || kind == RouteSpanSystemPath
+}
+
+type RouteProducerRelationKind string
+
+const (
+	RouteRelationEntryHandoff  RouteProducerRelationKind = "entry_handoff"
+	RouteRelationSavedFlowEdge RouteProducerRelationKind = "saved_flow_edge"
+)
+
+func (kind RouteProducerRelationKind) Valid() bool {
+	return kind == RouteRelationEntryHandoff || kind == RouteRelationSavedFlowEdge
+}
+
+type RouteSpanJoin struct {
+	RelationID string `json:"relation_id"`
+}
+
+type CanonicalSpanJoin struct {
+	Relation CanonicalRef `json:"relation"`
+}
+
+// RouteProducerRelation is a private exact producer edge. It never appears on
+// the provider wire and is the only authority for a system-path join.
+type RouteProducerRelation struct {
+	ID              string                    `json:"id"`
+	Kind            RouteProducerRelationKind `json:"kind"`
+	ProducerID      string                    `json:"producer_id"`
+	FromSupportID   string                    `json:"from_support_id"`
+	ToSupportID     string                    `json:"to_support_id"`
+	FromTargetID    string                    `json:"from_target_id"`
+	ToTargetID      string                    `json:"to_target_id"`
+	SavedFlowID     string                    `json:"saved_flow_id,omitempty"`
+	FromStepID      string                    `json:"from_step_id,omitempty"`
+	ToStepID        string                    `json:"to_step_id,omitempty"`
+	FromStepOrdinal int                       `json:"from_step_ordinal,omitempty"`
+	ToStepOrdinal   int                       `json:"to_step_ordinal,omitempty"`
+}
+
+// RouteSpan is a backend-owned promise. Questions are localized presentation;
+// canonical direction identity is derived only from the span ID and exact
+// canonical refs.
+type RouteSpan struct {
+	ID                 string          `json:"id"`
+	Kind               RouteSpanKind   `json:"kind"`
+	QuestionEnglish    string          `json:"question_en"`
+	QuestionRussian    string          `json:"question_ru"`
+	TargetJob          TargetJob       `json:"target_job"`
+	LearningStage      LearningStage   `json:"learning_stage"`
+	RequiredSupportIDs []string        `json:"required_support_ids"`
+	AllowedTargetIDs   []string        `json:"allowed_target_ids"`
+	Joins              []RouteSpanJoin `json:"joins,omitempty"`
+}
+
+func (span RouteSpan) question(language Language) string {
+	if language == LanguageRussian {
+		return span.QuestionRussian
+	}
+	return span.QuestionEnglish
+}
+
+type CandidateCoverageCount struct {
+	Key        string `json:"key"`
+	Considered int    `json:"considered"`
+	Selected   int    `json:"selected"`
+}
+
+// CandidateCoverage makes bounded shelf loss explicit and request-bound.
+type CandidateCoverage struct {
+	CandidateSHA256   string                   `json:"candidate_sha256"`
+	TargetsConsidered int                      `json:"targets_considered"`
+	TargetsSelected   int                      `json:"targets_selected"`
+	SpansConsidered   int                      `json:"spans_considered"`
+	SpansSelected     int                      `json:"spans_selected"`
+	Complete          bool                     `json:"complete"`
+	PerRole           []CandidateCoverageCount `json:"per_role"`
+	PerPackage        []CandidateCoverageCount `json:"per_package"`
+}
+
 type EvidenceFact struct {
 	ID          string                    `json:"id"`
 	SubjectRefs []CanonicalRef            `json:"subject_refs"`
@@ -204,14 +353,17 @@ type DocumentClaim struct {
 }
 
 type Input struct {
-	Atlas          repositoryatlas.Atlas `json:"atlas"`
-	Architecture   ArchitectureInput     `json:"architecture"`
-	Language       Language              `json:"language"`
-	Surfaces       []Surface             `json:"surfaces"`
-	ReadingTargets []ReadingTarget       `json:"reading_targets"`
-	Evidence       []EvidenceFact        `json:"evidence"`
-	Documents      []DocumentClaim       `json:"documents"`
-	Limits         Limits                `json:"limits"`
+	Atlas             repositoryatlas.Atlas   `json:"atlas"`
+	Architecture      ArchitectureInput       `json:"architecture"`
+	Language          Language                `json:"language"`
+	Surfaces          []Surface               `json:"surfaces"`
+	ReadingTargets    []ReadingTarget         `json:"reading_targets"`
+	ReadingSupports   []ReadingSupport        `json:"reading_supports"`
+	ProducerRelations []RouteProducerRelation `json:"producer_relations"`
+	RouteSpans        []RouteSpan             `json:"route_spans"`
+	Evidence          []EvidenceFact          `json:"evidence"`
+	Documents         []DocumentClaim         `json:"documents"`
+	Limits            Limits                  `json:"limits"`
 }
 
 type Prompt struct {
@@ -328,6 +480,7 @@ type ResolvedReading struct {
 
 type Direction struct {
 	ID              string            `json:"id"`
+	Span            CanonicalRef      `json:"span"`
 	Question        string            `json:"question"`
 	WhyItMatters    string            `json:"why_it_matters"`
 	LearningOutcome string            `json:"learning_outcome"`
@@ -337,12 +490,27 @@ type Direction struct {
 	Reading         []ResolvedReading `json:"reading"`
 }
 
+// SpanCoverage distinguishes a complete answer from a useful exact partial
+// answer without inventing or padding routes locally.
+type SpanCoverage struct {
+	Requested []CanonicalRef `json:"requested"`
+	Covered   []CanonicalRef `json:"covered"`
+	Uncovered []CanonicalRef `json:"uncovered"`
+	Complete  bool           `json:"complete"`
+}
+
 type DirectionIssueCode string
 
 const (
 	IssueUnrequestedOutput       DirectionIssueCode = "unrequested_output"
 	IssueDecodeCandidate         DirectionIssueCode = "decode_candidate"
 	IssueInvalidQuestion         DirectionIssueCode = "invalid_question"
+	IssueInvalidSpanRef          DirectionIssueCode = "invalid_span_ref"
+	IssueWrongKindSpanRef        DirectionIssueCode = "wrong_kind_span_ref"
+	IssueDuplicateSpanRef        DirectionIssueCode = "duplicate_span_ref"
+	IssueSpanTargetNotAllowed    DirectionIssueCode = "span_target_not_allowed"
+	IssueSpanSupportIncomplete   DirectionIssueCode = "span_support_incomplete"
+	IssueSystemPathTooShort      DirectionIssueCode = "system_path_too_short"
 	IssueInvalidWhy              DirectionIssueCode = "invalid_why"
 	IssueInvalidOutcome          DirectionIssueCode = "invalid_outcome"
 	IssueInvalidTargetJob        DirectionIssueCode = "invalid_target_job"
@@ -367,6 +535,8 @@ const (
 func (code DirectionIssueCode) Valid() bool {
 	switch code {
 	case IssueUnrequestedOutput, IssueDecodeCandidate, IssueInvalidQuestion,
+		IssueInvalidSpanRef, IssueWrongKindSpanRef, IssueDuplicateSpanRef,
+		IssueSpanTargetNotAllowed, IssueSpanSupportIncomplete, IssueSystemPathTooShort,
 		IssueInvalidWhy, IssueInvalidOutcome, IssueInvalidTargetJob,
 		IssueInvalidLearningStage, IssueInvalidPrincipalCount,
 		IssueDuplicatePrincipalRef, IssuePrincipalNotAdvertised,
