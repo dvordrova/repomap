@@ -22,8 +22,9 @@ const (
 	PresentationLocalizationStatusVersion = 2
 	PresentationLocalizationRecordVersion = 1
 
-	PresentationLocalizationSucceeded = "succeeded"
-	PresentationLocalizationFailed    = "failed"
+	PresentationLocalizationSucceeded  = "succeeded"
+	PresentationLocalizationFailed     = "failed"
+	presentationLocalizationStageOwned = "stage_owned"
 
 	maxPresentationLocalizationStatusBytes = 64 << 10
 	maxPresentationLocalizationRecordBytes = 5 << 20
@@ -376,7 +377,9 @@ func validPresentationLocalizationScalar(value string, limit int) bool {
 // fresh copy of canonical data only when Russian was explicitly requested.
 // Missing, failed, corrupt, or stale projection state keeps the requested
 // Russian product catalog while leaving canonical model-authored prose in
-// English with an explicit localization warning.
+// English with an explicit localization warning. Atlas-first reports are the
+// exception for a missing status: their stages own their Russian prose and
+// intentionally do not produce the legacy whole-report localization sidecar.
 func LoadPresentationLocalization(
 	runDir string,
 	data *ReportData,
@@ -400,6 +403,9 @@ func LoadPresentationLocalization(
 		maxPresentationLocalizationStatusBytes,
 	)
 	if os.IsNotExist(statusErr) {
+		if hasStageOwnedPresentation(data) {
+			return stageOwnedRussianPresentation(data), PresentationLocalizationStatus{}
+		}
 		return failedRussianPresentation(data), failedPresentationLocalizationStatus(
 			LocalizationFailureStatusUnavailable,
 			LocalizationValidationStatus,
@@ -529,6 +535,18 @@ func canonicalEnglishPresentation(data *ReportData) *ReportData {
 	cloned.ReportLanguage = ""
 	cloned.presentationLocalizationState = ""
 	cloned.presentationLocalizationMessageID = ""
+	return &cloned
+}
+
+func hasStageOwnedPresentation(data *ReportData) bool {
+	return data != nil && data.RepositoryAtlas != nil && data.Navigator != nil
+}
+
+func stageOwnedRussianPresentation(data *ReportData) *ReportData {
+	cloned := *data
+	cloned.ReportLanguage = localization.LocaleRussian
+	cloned.presentationLocalizationState = presentationLocalizationStageOwned
+	cloned.presentationLocalizationMessageID = "main.localization.ru_active"
 	return &cloned
 }
 

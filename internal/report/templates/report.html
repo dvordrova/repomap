@@ -16,8 +16,8 @@
   </noscript>
 {{if .LocalizationState}}  <section class="rm-localization-status rm-localization-status--{{.LocalizationState}}" role="status" aria-live="polite">
     <strong data-rm-message="main.localization.status_label">Localization</strong>
-{{if eq .LocalizationState "succeeded"}}    <span data-rm-message="main.localization.ru_active">Russian localization is active.</span>
-{{else}}    <span data-rm-message="main.localization.ru_unavailable_canonical_en">Russian localization is unavailable; canonical English is shown.</span>
+{{if eq .LocalizationState "failed"}}    <span data-rm-message="main.localization.ru_unavailable_canonical_en">Russian localization is unavailable; canonical English is shown.</span>
+{{else}}    <span data-rm-message="main.localization.ru_active">Russian localization is active.</span>
 {{end}}  </section>
 {{end}}
   <header>

@@ -1,9 +1,13 @@
 package reportserver
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +16,73 @@ import (
 	reportpkg "github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
+
+func TestServeAtlasFirstRussianReportWithoutLegacyLocalizationStatusShowsActive(t *testing.T) {
+	repository := t.TempDir()
+	runsDir := t.TempDir()
+	const runID = "20260803-005724-atlas-first-ru"
+	writeRun(t, runsDir, runID, repository, "saved report")
+	runDir := filepath.Join(runsDir, runID)
+	writeAtlasFirstMaterial(t, runDir)
+
+	metadataPath := filepath.Join(runDir, "metadata.json")
+	metadataJSON, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runMetadata metadata
+	if err := json.Unmarshal(metadataJSON, &runMetadata); err != nil {
+		t.Fatal(err)
+	}
+	runMetadata.EffectiveOptions.ReportLanguage = "ru"
+	metadataJSON, err = json.Marshal(runMetadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metadataPath, metadataJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, reportpkg.PresentationLocalizationStatusFile)); !os.IsNotExist(err) {
+		t.Fatalf("Atlas-first fixture unexpectedly has a legacy localization status: %v", err)
+	}
+
+	handler, err := NewHandler(Options{
+		RunsDir:      runsDir,
+		InitialRunID: runID,
+		Capability:   testCapability,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	response, err := server.Client().Get(
+		server.URL + capabilityURLPrefix(testCapability) + "/runs/" + runID + "/report.html",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, readErr := io.ReadAll(response.Body)
+	response.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("serve status = %d: %s", response.StatusCode, body)
+	}
+	for _, marker := range [][]byte{
+		[]byte(`<html lang="ru">`),
+		[]byte(`rm-localization-status--stage_owned`),
+		[]byte(`data-rm-message="main.localization.ru_active"`),
+	} {
+		if !bytes.Contains(body, marker) {
+			t.Fatalf("served stage-owned RU report is missing %q", marker)
+		}
+	}
+	if bytes.Contains(body, []byte(`data-rm-message="main.localization.ru_unavailable_canonical_en"`)) {
+		t.Fatal("served stage-owned RU report showed the legacy unavailable warning")
+	}
+}
 
 func TestLoadRunsUsesFullManifestAuthorityForAtlasFirstMaterial(t *testing.T) {
 	tests := []struct {
