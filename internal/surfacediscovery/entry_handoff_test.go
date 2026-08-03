@@ -102,6 +102,53 @@ func TestAnalyzeEntryHandoffProjectionIsPermutationStable(t *testing.T) {
 	}
 }
 
+func TestAnalyzeEntryHandoffsRoundTripChineseLocatorsWithoutLexicalClassification(t *testing.T) {
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/cjk\n\ngo 1.25\n")
+	writeFixtureFile(t, filepath.Join(repository, "服务.go"), `package main
+
+func 启动服务() {}
+`)
+	writeFixtureFile(t, filepath.Join(repository, "main.go"), `package main
+
+func main() {
+	启动服务()
+}
+`)
+	input := Input{
+		RepositoryName: "cjk",
+		ModuleDirs:     []string{"."},
+		Entrypoints: []EntrypointInput{
+			{
+				Package: "example.com/cjk", PackageDir: ".", ModuleDir: ".", Kind: "primary_binary",
+				Anchors: []EntrypointAnchorInput{{Kind: ProcessEntryAnchorGoMain, Path: "main.go", Line: 3}},
+			},
+		},
+	}
+	result, err := AnalyzeWithInput(DefaultOptions(repository), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Grounding.EntryHandoffs) != 1 {
+		t.Fatalf("entry handoffs = %#v, want one Chinese-identified callee", result.Grounding.EntryHandoffs)
+	}
+	handoff := result.Grounding.EntryHandoffs[0]
+	if handoff.Callee.Name != "启动服务" ||
+		handoff.Callee.Package != "example.com/cjk" ||
+		handoff.Callee.Location.Path != "服务.go" ||
+		handoff.Callee.Location.Line != 3 ||
+		!strings.Contains(handoff.Callee.ID, "启动服务") {
+		t.Fatalf("Chinese callee locator did not round-trip exactly: %#v", handoff.Callee)
+	}
+	if handoff.ProcessEntrypoint.Name != "main" || handoff.ProcessEntrypoint.Location.Path != "main.go" ||
+		handoff.ProcessEntrypoint.Location.Line != 3 {
+		t.Fatalf("process entry locator = %#v", handoff.ProcessEntrypoint)
+	}
+	if handoff.RepresentativeCallsite.Path != "main.go" || handoff.RepresentativeCallsite.Line != 4 {
+		t.Fatalf("Chinese handoff callsite = %#v", handoff.RepresentativeCallsite)
+	}
+}
+
 func TestBoundEntryHandoffsNeverClaimsCompleteAfterPersistenceLimit(t *testing.T) {
 	handoffs := make([]EntryHandoff, 3)
 	for index := range handoffs {
