@@ -1,16 +1,52 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/210-observed-entry-handoffs-and-typed-study-spans.md
+    decisions/211-automatic-study-portfolio-d210-frontier.md
 
 Status:
-    Decision 210 active; observed entry handoffs and typed backend-owned Study
-    route spans authorized after final D209 acceptance
+    Decision 211 active; the ordered Atlas Study directions array is the ranked
+    Study portfolio over the D210 frontier, with four distinct span stages and
+    independent coverage flags, authorized after the D210 Unicode handoff gate
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 211 makes the Atlas Study directions array itself the ranked
+    portfolio: the ordered returned directions are the model's comparative
+    selection, array order is rank and why_it_matters is the bounded rationale;
+    the backend derives authoritative selected span refs only from locally valid
+    directions. There is no separate portfolio field and no focus flag. The
+    desired direction count is six through ten, but the valid production
+    cardinality is one through ten with zero valid directions a failure and no
+    filler or padding. Four stages stay distinct: considered (the complete
+    locally supported D210 span set, bounded only by existing hard
+    producer/resource limits), advertised (the MaxAdvertisedSpans frontier,
+    initially 32), model-selected (spans referenced by returned directions) and
+    locally accepted (spans of directions that pass exact item-local
+    validation); advertised-but-not-selected is normal not_selected, never
+    uncovered and never accepted_partial. Status is accepted when every returned
+    selected item is locally valid, accepted_partial when at least one returned
+    sibling is rejected, and failure when zero valid directions exist. Frontier
+    completeness, selected-item completeness, support coverage and portfolio
+    target are recorded as independent flags instead of one overloaded
+    coverage_complete; the old MaxRouteSpans meaning is removed and MaxDirections
+    becomes 10. Questions stay backend-owned and target-specific, using only the
+    exact source-card symbol/label for a focused span and both exact endpoint
+    symbols/labels for a system path; the model authors no question, path,
+    relation, authority or canonical ID. Omission diagnostics are bounded
+    aggregate counts by closed reason plus bounded representative typed refs and
+    the complete candidate SHA. On semantic failure the local Architecture
+    remains visible, no synthetic Study portfolio is created, the failed new
+    Study run is honestly unavailable and historical reports are untouched. One
+    final fresh Casdoor semantic acceptance run is owner-authorized after every
+    provider-free gate is green; it is one product acceptance run, not a
+    prompt-tuning loop, and must review the actual default shelf for
+    target-specific titles, useful comparative selection, no forced filler,
+    exact source navigation, the four-stage diagnostics and material improvement
+    over the accepted D210 shelf. No focus lane, second semantic call, GoSurvey,
+    Boundary/Resource producer, Tree-sitter, deeper SSA/DFS, fuzzy repair,
+    hidden fallback, compatibility reader or migration is authorized.
     Decision 210 fixes the upstream cause of the narrow TLS-heavy Study shelf.
     It records exact direct static handoffs from production process entries by
     reusing the already built SSA program, without another package load, SSA
