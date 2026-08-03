@@ -1018,6 +1018,48 @@ func DecodeRunManifest(data []byte) (RunManifest, error) {
 	return manifest, nil
 }
 
+// RunManifestAuthoritySeed exposes only the exact repository identity and
+// captured input paths needed to re-confirm authority before an authorized
+// provider-free report render. It is not a verified interactive manifest:
+// callers must capture the repository again and publish a new manifest.
+type RunManifestAuthoritySeed struct {
+	RepositoryIdentity string
+	AnalysisRoot       string
+	SelectedRevision   string
+	CapturedInputPaths []string
+}
+
+// ReadRunManifestAuthoritySeed strictly reads the existing bounded manifest
+// without interpreting its report projection under the current contract. This
+// narrow bootstrap seam lets a copied historical run recover the exact input
+// set needed by ConfirmRunAuthorityScoped; the resulting render still replays
+// every saved product and writes a fresh current manifest fail-closed.
+func ReadRunManifestAuthoritySeed(runDir string) (RunManifestAuthoritySeed, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, fmt.Errorf("report manifest seed: open run directory: %w", err)
+	}
+	defer root.Close()
+	raw, err := readManifestFile(root, RunManifestFilename, maxRunManifestBytes)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, fmt.Errorf("report manifest seed: %w", err)
+	}
+	manifest, err := DecodeRunManifest(raw)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, err
+	}
+	paths := make([]string, 0, len(manifest.CapturedInputs))
+	for _, input := range manifest.CapturedInputs {
+		paths = append(paths, input.Path)
+	}
+	return RunManifestAuthoritySeed{
+		RepositoryIdentity: manifest.RepositoryState.Identity,
+		AnalysisRoot:       manifest.AnalysisRoot,
+		SelectedRevision:   manifest.MaterialInputs.SelectedRevision,
+		CapturedInputPaths: paths,
+	}, nil
+}
+
 // ReadRunManifest reads and verifies run_manifest.json and report.json from a
 // run directory. Both files must be bounded, regular files (not symlinks).
 func ReadRunManifest(runDir string) (RunManifest, error) {
