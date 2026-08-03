@@ -128,6 +128,7 @@ const report = {
     brief: {
       what_it_is: "A saved repository brief.", problem: "It solves a bounded problem.",
       main_input: "Input", central_responsibility: "Responsibility", observable_result: "Result",
+	  domain_terms: [{ term: "Fixture term", meaning: "Fixture meaning" }],
     },
     shape: [], directions,
   },
@@ -209,9 +210,11 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
+api.renderOverviewWorkspace();
 const nav = roots["rm-tabs"].children.slice();
 const navLabels = nav.map((node) => text(node));
 const navViews = nav.map((node) => node.attributes["data-workspace-view"]);
+const overviewText = text(roots["rm-overview"]);
 const studyTab = nav.find((node) => node.attributes["data-workspace-view"] === "study_overview");
 studyTab.onclick();
 const studyOverviewText = text(roots["rm-study-overview"]);
@@ -246,7 +249,7 @@ directionCards.forEach((directionCard, directionIndex) => {
 const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "architecture");
 architectureTab.onclick();
 process.stdout.write(JSON.stringify({
-  navLabels, navViews, studyOverviewText,
+  navLabels, navViews, overviewText, studyOverviewText,
   directionCards: directionCards.length, routeResults,
   architectureText: text(roots["rm-architecture"]),
   architectureCurrent: architectureTab.attributes["aria-current"] || "",
@@ -265,6 +268,7 @@ process.stdout.write(JSON.stringify({
 	var got struct {
 		NavLabels         []string `json:"navLabels"`
 		NavViews          []string `json:"navViews"`
+		OverviewText      string   `json:"overviewText"`
 		StudyOverviewText string   `json:"studyOverviewText"`
 		DirectionCards    int      `json:"directionCards"`
 		RouteResults      []struct {
@@ -302,11 +306,20 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("Atlas-first product navigation = labels %#v views %#v", got.NavLabels, got.NavViews)
 	}
 	if got.DirectionCards != 6 || len(got.RouteResults) != 6 ||
-		!strings.Contains(got.StudyOverviewText, "Repository brief") ||
-		!strings.Contains(got.StudyOverviewText, "A saved repository brief.") ||
+		strings.Contains(got.StudyOverviewText, "Repository brief") ||
+		strings.Contains(got.StudyOverviewText, "A saved repository brief.") ||
 		strings.Contains(got.StudyOverviewText, "Study unavailable for this run") {
 		t.Fatalf("Atlas-first Study overview = directions %d routes %d text %q",
 			got.DirectionCards, len(got.RouteResults), got.StudyOverviewText)
+	}
+	for _, field := range []string{
+		"A saved repository brief.", "It solves a bounded problem.", "Input",
+		"Responsibility", "Result", "Fixture term", "Fixture meaning",
+	} {
+		if strings.Count(got.OverviewText, field) != 1 || strings.Contains(got.StudyOverviewText, field) {
+			t.Fatalf("canonical Brief field %q was duplicated, lost, or left on Study: overview=%q study=%q",
+				field, got.OverviewText, got.StudyOverviewText)
+		}
 	}
 	wantReadings := []int{1, 4, 1, 2, 1, 1}
 	for index, route := range got.RouteResults {

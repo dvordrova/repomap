@@ -1124,10 +1124,13 @@ process.stdout.write(JSON.stringify({
 	if got.ComponentASourcePath != "component-a.go" {
 		t.Fatalf("component with two exact sources chose %q, want first deterministic Architecture source", got.ComponentASourcePath)
 	}
-	for _, token := range []string{"Entry surfaces", "Components", "No saved exact integration evidence", "Study directions", "Where should I read next?"} {
+	for _, token := range []string{"Entry surfaces", "Components", "Study directions", "Where should I read next?"} {
 		if !strings.Contains(got.RenderedText, token) {
 			t.Errorf("Overview anatomy is missing %q: %q", token, got.RenderedText)
 		}
+	}
+	if strings.Contains(got.RenderedText, "No saved exact integration evidence") {
+		t.Fatalf("Overview rendered an empty Integrations product section: %q", got.RenderedText)
 	}
 	for _, card := range got.CardText {
 		for _, forbidden := range []string{"→", "execution", "reachability", "connected", "depends on"} {
@@ -1163,7 +1166,6 @@ process.stdout.write(JSON.stringify({
 		got.AtlasFirstStudyOnlyOverview.StudyDirectionCount != 1 ||
 		got.AtlasFirstStudyOnlyOverview.SurfaceCount != 0 ||
 		got.AtlasFirstStudyOnlyOverview.ComponentCount != 0 ||
-		!strings.Contains(got.AtlasFirstStudyOnlyOverview.Rendered, "Repository brief") ||
 		!strings.Contains(got.AtlasFirstStudyOnlyOverview.Rendered, "Where should I read next?") {
 		t.Fatalf("Atlas-first Study fallback / Atlas order = %#v", got.AtlasFirstStudyOnlyOverview)
 	}
@@ -1210,7 +1212,7 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("exact source resolver accepted repair/conflict or missed most-specific overlap: start=%q end=%q ambiguous=%#v basename=%#v prefix=%#v string=%#v",
 			got.ExactStart, got.ExactEnd, got.Ambiguous, got.Basename, got.Prefix, got.StringLine)
 	}
-	if got.FallbackAnatomy != nil || !strings.Contains(got.FallbackText, "Repository brief") ||
+	if got.FallbackAnatomy != nil ||
 		!strings.Contains(got.FallbackText, "A useful path through the repository") ||
 		strings.Contains(got.FallbackText, "Entry surfaces") {
 		t.Fatalf("missing-zone report did not preserve Study fallback: anatomy=%#v text=%q",

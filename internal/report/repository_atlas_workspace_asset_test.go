@@ -92,7 +92,12 @@ function run(report, language) {
   const compactStatusItems = compactStatus.length ? walk(compactStatus[0]).filter((node) => node.attributes && node.attributes["data-rm-status-code"]) : [];
   const section = root.children[0];
   const sectionClasses = section ? section.children.map((node) => String(node.className || "")) : [];
-  const packageSourceStates = packageActions.map((action) => {
+	const packageActionTargets = packageActions.map((action) => ({
+		tag: String(action.tagName || "").toLowerCase(),
+		href: action.getAttribute("href") || "",
+		hasClick: typeof action.onclick === "function",
+	}));
+  const packageSourceStates = packageActions.filter((action) => typeof action.onclick === "function").map((action) => {
     action.onclick();
     return api.workspaceStateSnapshot().sourceLocation;
   });
@@ -116,6 +121,7 @@ function run(report, language) {
     packageUnavailable: packageUnavailable.map((node) => node.getAttribute("data-rm-source-state")),
     packagePrefixes: packagePrefixes.map((node) => String(node.textContent || "")),
     packageNames: packageNames.map((node) => String(node.textContent || "")),
+	packageActionTargets,
     packageSourceStates,
     packageSourceSummaries: packageSourceSummaries.map((node) => text(node)),
     compactStatusCount: compactStatus.length,
@@ -286,12 +292,29 @@ const multipleDeclarations = run(multipleDeclarationsReport, "en");
 const mixedPrefixReport = JSON.parse(JSON.stringify(etcdReport));
 mixedPrefixReport.repository_atlas.units.find((unit) => unit.id === "etcd-package-182").name = "example.net/outside";
 const mixedPrefix = run(mixedPrefixReport, "en");
+const strippedStaticReport = JSON.parse(JSON.stringify(report));
+strippedStaticReport.user_sources = [];
+delete strippedStaticReport.study_map;
+strippedStaticReport.repository_atlas.units.forEach((unit) => {
+  unit.name = "github.com/example/repository";
+});
+strippedStaticReport.openable_paths = ["internal/server/start.go"];
+strippedStaticReport.github_source_links = {
+  repository_url: "https://github.com/example/repository",
+  revision: "a".repeat(40),
+};
+strippedStaticReport.repository_atlas.evidence.push({
+  id: "evidence-secret-package-static", unit_id: "unit-secret-package",
+  location: { path: "internal/server/start.go", line: 10 },
+  provenance: { provider: "gofacts", version: "package-declaration-v1", operation: "package_declaration" },
+});
+const strippedStatic = run(strippedStaticReport, "en");
 const prototypeNameReport = JSON.parse(JSON.stringify(report));
 prototypeNameReport.repository_atlas.units.forEach((unit) => {
   if (unit.kind !== "package") unit.name = "__proto__";
 });
 const prototypeName = run(prototypeNameReport, "en");
-process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, empty, unavailable, nonUserSource, missingBinding, etcdEN, etcdRU, conflict, multipleDeclarations, mixedPrefix, prototypeName }));
+process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, empty, unavailable, nonUserSource, missingBinding, etcdEN, etcdRU, conflict, multipleDeclarations, mixedPrefix, strippedStatic, prototypeName }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "repository-atlas-workspace-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -302,32 +325,37 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		t.Fatalf("run Repository Atlas workspace smoke: %v\n%s", err, output)
 	}
 	type result struct {
-		Units                  int        `json:"units"`
-		Relations              int        `json:"relations"`
-		Omitted                int        `json:"omitted"`
-		Rendered               string     `json:"rendered"`
-		UnitAuthorityBadges    int        `json:"unitAuthorityBadges"`
-		SourceButtons          int        `json:"sourceButtons"`
-		NavigatorButtons       int        `json:"navigatorButtons"`
-		TopologyCards          int        `json:"topologyCards"`
-		UnitTags               []string   `json:"unitTags"`
-		TopologyUnitIDs        [][]string `json:"topologyUnitIDs"`
-		RelationUnitIDs        []string   `json:"relationUnitIDs"`
-		PackageRows            int        `json:"packageRows"`
-		PackageActions         int        `json:"packageActions"`
-		PackageUnavailable     []string   `json:"packageUnavailable"`
-		PackagePrefixes        []string   `json:"packagePrefixes"`
-		PackageNames           []string   `json:"packageNames"`
-		PackageSourceSummaries []string   `json:"packageSourceSummaries"`
-		CompactStatusCount     int        `json:"compactStatusCount"`
-		CompactStatusCodes     []string   `json:"compactStatusCodes"`
-		PackageSummary         string     `json:"packageSummary"`
-		PackageDisclosureOpen  bool       `json:"packageDisclosureOpen"`
-		RelationPosition       int        `json:"relationPosition"`
-		NavigatorPosition      int        `json:"navigatorPosition"`
-		UnitsPosition          int        `json:"unitsPosition"`
-		PackagePosition        int        `json:"packagePosition"`
-		CompactStatusPosition  int        `json:"compactStatusPosition"`
+		Units                int        `json:"units"`
+		Relations            int        `json:"relations"`
+		Omitted              int        `json:"omitted"`
+		Rendered             string     `json:"rendered"`
+		UnitAuthorityBadges  int        `json:"unitAuthorityBadges"`
+		SourceButtons        int        `json:"sourceButtons"`
+		NavigatorButtons     int        `json:"navigatorButtons"`
+		TopologyCards        int        `json:"topologyCards"`
+		UnitTags             []string   `json:"unitTags"`
+		TopologyUnitIDs      [][]string `json:"topologyUnitIDs"`
+		RelationUnitIDs      []string   `json:"relationUnitIDs"`
+		PackageRows          int        `json:"packageRows"`
+		PackageActions       int        `json:"packageActions"`
+		PackageUnavailable   []string   `json:"packageUnavailable"`
+		PackagePrefixes      []string   `json:"packagePrefixes"`
+		PackageNames         []string   `json:"packageNames"`
+		PackageActionTargets []struct {
+			Tag      string `json:"tag"`
+			Href     string `json:"href"`
+			HasClick bool   `json:"hasClick"`
+		} `json:"packageActionTargets"`
+		PackageSourceSummaries []string `json:"packageSourceSummaries"`
+		CompactStatusCount     int      `json:"compactStatusCount"`
+		CompactStatusCodes     []string `json:"compactStatusCodes"`
+		PackageSummary         string   `json:"packageSummary"`
+		PackageDisclosureOpen  bool     `json:"packageDisclosureOpen"`
+		RelationPosition       int      `json:"relationPosition"`
+		NavigatorPosition      int      `json:"navigatorPosition"`
+		UnitsPosition          int      `json:"unitsPosition"`
+		PackagePosition        int      `json:"packagePosition"`
+		CompactStatusPosition  int      `json:"compactStatusPosition"`
 		SourceState            *struct {
 			Path        string `json:"path"`
 			Line        int    `json:"line"`
@@ -354,6 +382,7 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		Conflict             result `json:"conflict"`
 		MultipleDeclarations result `json:"multipleDeclarations"`
 		MixedPrefix          result `json:"mixedPrefix"`
+		StrippedStatic       result `json:"strippedStatic"`
 		PrototypeName        result `json:"prototypeName"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
@@ -506,6 +535,13 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		got.MixedPrefix.PackageNames[0] != "go.etcd.io/etcd" ||
 		got.MixedPrefix.PackageNames[182] != "example.net/outside" {
 		t.Fatalf("non-exact module prefix was factored: %#v", got.MixedPrefix)
+	}
+	if got.StrippedStatic.PackageActions != 1 || len(got.StrippedStatic.PackageActionTargets) != 1 ||
+		got.StrippedStatic.PackageActionTargets[0].Tag != "a" ||
+		got.StrippedStatic.PackageActionTargets[0].HasClick ||
+		!strings.Contains(got.StrippedStatic.PackageActionTargets[0].Href, "/blob/") ||
+		!strings.Contains(got.StrippedStatic.PackageActionTargets[0].Href, "internal/server/start.go#L10") {
+		t.Fatalf("stripped-static package did not preserve exact pinned source action: %#v", got.StrippedStatic)
 	}
 	if got.PrototypeName.TopologyCards != 1 || len(got.PrototypeName.UnitTags) != 3 {
 		t.Fatalf("prototype-like exact unit name broke coalescing: %#v", got.PrototypeName)

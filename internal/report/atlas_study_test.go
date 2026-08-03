@@ -821,7 +821,30 @@ func TestProjectAtlasStudyMapDeduplicatesExactReadingSetsAndKeepsDiagnostic(t *t
 			{ID: "later-duplicate", Question: "Different wording, same reading set?", Reading: reversed},
 		},
 	}
-	studyMap, err := projectAtlasStudyMap(data, input, result)
+	if len(input.Architecture.Components) == 0 {
+		t.Fatal("fixture has no Architecture component")
+	}
+	localRef := atlasstudy.CanonicalRef{
+		Kind: atlasstudy.RefComponent, ID: input.Architecture.Components[0].ID,
+	}
+	result.ShapeComponentRefs = []atlasstudy.CanonicalRef{localRef}
+	for index := range result.Directions {
+		result.Directions[index].PrincipalRefs = []atlasstudy.CanonicalRef{localRef}
+	}
+	var localComponent ArchitectureComponent
+	for _, component := range data.ArchitectureCanvas.Components {
+		if string(component.ID) == localRef.ID {
+			localComponent = component
+			break
+		}
+	}
+	if len(localComponent.Members) == 0 {
+		t.Fatalf("fixture local component %q has no exact members", localRef.ID)
+	}
+	publishedCanvas := &ArchitectureCanvas{Components: []ArchitectureComponent{{
+		ID: "published-visible-component", Members: localComponent.Members,
+	}}}
+	studyMap, err := projectAtlasStudyMap(data, publishedCanvas, input, result)
 	if err != nil {
 		t.Fatalf("projectAtlasStudyMap: %v", err)
 	}
@@ -830,11 +853,71 @@ func TestProjectAtlasStudyMapDeduplicatesExactReadingSetsAndKeepsDiagnostic(t *t
 		t.Fatalf("visible/diagnostic directions = %#v / %#v",
 			studyMap.Directions, studyMap.HiddenDirections)
 	}
+	if len(studyMap.Shape) != 1 || studyMap.Shape[0].MapTarget == nil ||
+		studyMap.Shape[0].MapTarget.ComponentID != "published-visible-component" ||
+		len(studyMap.Directions[0].Areas) != 1 ||
+		studyMap.Directions[0].Areas[0].MapTarget == nil ||
+		studyMap.Directions[0].Areas[0].MapTarget.ComponentID != "published-visible-component" {
+		t.Fatalf("Study projection did not bridge exact local identity to visible Architecture: %#v", studyMap)
+	}
 	hiddenCoverage := studyMap.HiddenDirections[0].DebugCoverage
 	if hiddenCoverage == nil || hiddenCoverage.UserVisible ||
 		!containsString(hiddenCoverage.Reasons, "duplicate_reading_set") ||
 		len(studyMap.Directions)+len(studyMap.HiddenDirections) != len(result.Directions) {
 		t.Fatalf("duplicate diagnostic = %#v", hiddenCoverage)
+	}
+}
+
+func TestExactPublishedStudyComponentTargetRequiresOneExactVisibleMatch(t *testing.T) {
+	member := func(kind componentmap.MemberKind, value string) componentmap.Candidate {
+		return componentmap.Candidate{ID: componentmap.MemberID{Kind: kind, Value: value}}
+	}
+	local := ArchitectureComponent{
+		ID: "local-d177-component",
+		Members: []componentmap.Candidate{
+			member(componentmap.MemberPackage, "package-main"),
+			member(componentmap.MemberSymbol, "symbol-run"),
+		},
+	}
+	published := &ArchitectureCanvas{
+		LocalRemainderComponentID: "published-remainder",
+		Components: []ArchitectureComponent{
+			{ID: "published-entry", Members: []componentmap.Candidate{
+				member(componentmap.MemberPackage, "package-main"),
+			}},
+			{ID: "published-unrelated", Members: []componentmap.Candidate{
+				member(componentmap.MemberPackage, "package-storage"),
+			}},
+			{ID: "published-remainder", Members: []componentmap.Candidate{
+				member(componentmap.MemberSymbol, "symbol-run"),
+			}},
+		},
+	}
+	target := exactPublishedStudyComponentTarget(local, published)
+	if target == nil || target.Kind != SemanticSearchTargetComponent ||
+		target.ComponentID != "published-entry" {
+		t.Fatalf("exact visible target = %#v", target)
+	}
+
+	// A second exact conceptual association is valid many-to-many membership,
+	// but cannot be collapsed into one navigation owner by array order.
+	published.Components = append(published.Components, ArchitectureComponent{
+		ID: "published-runtime", Members: []componentmap.Candidate{
+			member(componentmap.MemberSymbol, "symbol-run"),
+		},
+	})
+	if target := exactPublishedStudyComponentTarget(local, published); target != nil {
+		t.Fatalf("ambiguous conceptual membership chose a target: %#v", target)
+	}
+
+	published.Components = published.Components[:2]
+	if target := exactPublishedStudyComponentTarget(
+		ArchitectureComponent{ID: "local-missing", Members: []componentmap.Candidate{
+			member(componentmap.MemberPackage, "package-missing"),
+		}},
+		published,
+	); target != nil {
+		t.Fatalf("missing exact membership produced target: %#v", target)
 	}
 }
 

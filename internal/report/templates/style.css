@@ -42,7 +42,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-anatomy-zone { display: grid; gap: .75rem; }
 .rm-overview-object-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .rm-overview-object-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; display: grid; overflow: hidden; }
-.rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; width: 100%; }
+.rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; text-decoration: none; width: 100%; }
 .rm-overview-object-primary:hover { background: #f8fafc; }
 .rm-overview-object-primary:focus-visible, .rm-overview-object-architecture:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: -2px; }
 .rm-overview-object-detail { color: var(--rm-dim); font-size: .78rem; }
@@ -81,7 +81,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-package-groups { display: grid; gap: .75rem; margin-top: .7rem; }
 .rm-atlas-package-group { display: grid; gap: .35rem; }
 .rm-atlas-package-prefix { color: #475569; font-size: .69rem; overflow-wrap: anywhere; padding: 0 .25rem; }
-.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); list-style: none; margin: 0; padding: 0; }
 .rm-atlas-package-row { min-width: 0; }
 .rm-atlas-package-action, .rm-atlas-package-unavailable { align-items: center; border-radius: 6px; box-sizing: border-box; display: flex; gap: .45rem; justify-content: space-between; min-height: 1.8rem; padding: .3rem .45rem; width: 100%; }
 .rm-atlas-package-action { background: #fff; border: 1px solid var(--rm-border); color: var(--rm-fg); cursor: pointer; font: inherit; text-align: left; }

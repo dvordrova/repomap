@@ -1560,16 +1560,32 @@
  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
  padding: 0;
  text-align: left;
- text-decoration: underline;
- text-decoration-color: #bfdbfe;
- text-underline-offset: 3px;
+ text-decoration: none;
  width: 100%;
 }
 
 .rm-arch__compact-package-action:hover,
 .rm-arch__compact-package-action:focus-visible {
  color: var(--rm-arch-accent);
- text-decoration-color: currentColor;
+ text-decoration: underline;
+ text-underline-offset: 3px;
+}
+
+.rm-arch__partial-member-action {
+ background: transparent;
+ border: 0;
+ color: #334155;
+ cursor: pointer;
+ font: inherit;
+ padding: 0;
+ text-align: left;
+}
+
+.rm-arch__partial-member-action:hover,
+.rm-arch__partial-member-action:focus-visible {
+ color: var(--rm-arch-accent);
+ text-decoration: underline;
+ text-underline-offset: 3px;
 }
 
 .rm-arch__compact-package + .rm-arch__compact-package {

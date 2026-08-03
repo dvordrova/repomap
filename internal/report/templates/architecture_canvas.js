@@ -281,22 +281,31 @@
   return [text(memberID.kind), text(memberID.value)].filter(Boolean).join(":");
  }
 
- function architecturePartialTruth(data) {
+function architecturePartialTruth(data) {
   if (text(data && data.validation_outcome) !== "accepted_partial") return null;
   const remainderComponentID = text(data && data.local_remainder_component_id);
   const component = array(data && data.components).find((candidate) =>
    text(candidate && candidate.id) === remainderComponentID
   );
-  const memberLabels = component ? array(component.members).map((member) => {
+  const members = component ? array(component.members).map((member) => {
    const name = text(member && member.name);
-   if (name) return name;
    const id = member && member.id;
-   if (typeof id === "string") return text(id);
-   return [text(id && id.kind), text(id && id.value)].filter(Boolean).join(":");
-  }).filter(Boolean) : [];
+   const label = name || (typeof id === "string" ? text(id) :
+    [text(id && id.kind), text(id && id.value)].filter(Boolean).join(":"));
+   const locations = new Map();
+   array(member && member.facts).forEach((fact) => {
+    const location = fact && fact.location;
+    if (!location || !text(location.path) || !(Number(location.line) > 0)) return;
+    const key = [text(location.path), Number(location.line), Number(location.column) || 0].join("\u0000");
+    locations.set(key, {
+     path: text(location.path), line: Number(location.line), column: Number(location.column) || 0,
+    });
+   });
+   return { label: label, location: locations.size === 1 ? Array.from(locations.values())[0] : null };
+  }).filter((member) => member.label) : [];
   return {
    remainderComponentID: remainderComponentID,
-   memberLabels: memberLabels,
+   members: members,
   };
  }
 
@@ -560,7 +569,10 @@
 
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
-   this.structuralEdges = array(this.data.structural_edges);
+   this.structuralEdges = array(this.data.structural_edges).filter((edge) => (
+    text(edge && edge.from_component_id) && text(edge && edge.to_component_id) &&
+    text(edge.from_component_id) !== text(edge.to_component_id)
+   ));
      this.flows = array(this.data.flows).filter((flow) => (
       !this.userMode || array(flow && flow.steps).length >= 2
      ));
@@ -833,18 +845,27 @@
       "rm-arch__copy",
       this.msg("architecture.copy.accepted_partial")
      ));
-     if (this.partialTruth.memberLabels.length > 0) {
+     if (this.partialTruth.members.length > 0) {
       const details = element("details", "rm-arch__details rm-arch__partial-members");
       details.appendChild(element(
        "summary",
        null,
-       this.msg("architecture.count.local_remainder_members", {
-        count: this.partialTruth.memberLabels.length,
+        this.msg("architecture.count.local_remainder_members", {
+        count: this.partialTruth.members.length,
        })
       ));
       const members = element("div", "rm-arch__partial-member-list");
-      this.partialTruth.memberLabels.forEach((label) => {
-       members.appendChild(element("span", "rm-arch__member-id", label));
+      this.partialTruth.members.forEach((member) => {
+       if (member.location && typeof this.options.openLocation === "function") {
+        const action = element("button", "rm-arch__partial-member-action", member.label);
+        action.type = "button";
+        this.listen(action, "click", () => this.options.openLocation(
+         member.location.path, member.location.line, member.location.column
+        ));
+        members.appendChild(action);
+        return;
+       }
+       members.appendChild(element("span", "rm-arch__member-id", member.label));
       });
       details.appendChild(members);
       partial.appendChild(details);
@@ -1647,8 +1668,8 @@
         metadata.push(this.msg("architecture.count.suggested_investigations", { count: suggestionCount }));
        }
        const anchorCount = array(component.anchor_ids).length;
-       if (anchorCount > 0) metadata.push(this.msg("architecture.count.exact_anchors", { count: anchorCount }));
-       if (metadata.length === 0) {
+       if (!this.userMode && anchorCount > 0) metadata.push(this.msg("architecture.count.exact_anchors", { count: anchorCount }));
+       if (!this.userMode && metadata.length === 0) {
         const memberCount = array(component.members).length;
         if (memberCount > 0) metadata.push(this.msg("architecture.count.exact_members", { count: memberCount }));
        }
@@ -3798,7 +3819,8 @@
    return !!(context && (
     this.userComponentActions(component).length > 0 ||
     array(context.surface_starts).length > 0 ||
-    array(context.package_paths).length > 0
+    array(context.package_paths).length > 0 ||
+    array(context.structural_relations).length > 0
    ));
   }
 
@@ -3839,6 +3861,29 @@
       this.msg("architecture.count.repository_files", { count: Number(context.file_count) })
      ));
     }
+   }
+
+   if (array(context.structural_relations).length > 0) {
+    const relations = this.inspectorSection(this.msg("architecture.section.code_relations"));
+    array(context.structural_relations).forEach((relation) => {
+     const from = text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message);
+     const to = text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message);
+     const location = relation && relation.location;
+     if (location && locationLabel(location) && typeof this.options.openLocation === "function") {
+      const action = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      action.type = "button";
+      action.appendChild(element("strong", null, from + " → " + to));
+      action.appendChild(element("span", null, locationLabel(location)));
+      this.listen(action, "click", () => this.options.openLocation(
+       location.path, location.line || 0, location.column || 0
+      ));
+      relations.appendChild(action);
+      return;
+     }
+     const reference = element("div", "rm-arch__compact-reference");
+     reference.appendChild(element("strong", null, from + " → " + to));
+     relations.appendChild(reference);
+    });
    }
 
    const surfaceStarts = array(context.surface_starts).filter((start) => (

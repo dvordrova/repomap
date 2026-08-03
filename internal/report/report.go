@@ -27,7 +27,7 @@ import (
 
 const CurrentFormatVersion = 30
 
-const AtlasStudyReportProjectionVersion = 2
+const AtlasStudyReportProjectionVersion = 3
 
 const maxExactDiscoveryDeclarations = 16
 

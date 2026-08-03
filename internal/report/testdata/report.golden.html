@@ -49,7 +49,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-anatomy-zone { display: grid; gap: .75rem; }
 .rm-overview-object-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .rm-overview-object-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; display: grid; overflow: hidden; }
-.rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; width: 100%; }
+.rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; text-decoration: none; width: 100%; }
 .rm-overview-object-primary:hover { background: #f8fafc; }
 .rm-overview-object-primary:focus-visible, .rm-overview-object-architecture:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: -2px; }
 .rm-overview-object-detail { color: var(--rm-dim); font-size: .78rem; }
@@ -88,7 +88,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-package-groups { display: grid; gap: .75rem; margin-top: .7rem; }
 .rm-atlas-package-group { display: grid; gap: .35rem; }
 .rm-atlas-package-prefix { color: #475569; font-size: .69rem; overflow-wrap: anywhere; padding: 0 .25rem; }
-.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); list-style: none; margin: 0; padding: 0; }
 .rm-atlas-package-row { min-width: 0; }
 .rm-atlas-package-action, .rm-atlas-package-unavailable { align-items: center; border-radius: 6px; box-sizing: border-box; display: flex; gap: .45rem; justify-content: space-between; min-height: 1.8rem; padding: .3rem .45rem; width: 100%; }
 .rm-atlas-package-action { background: #fff; border: 1px solid var(--rm-border); color: var(--rm-fg); cursor: pointer; font: inherit; text-align: left; }
@@ -1078,7 +1078,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.integrations_kicker": { params: [], text: "Saved evidence" },
     "main.overview.anatomy.integrations": { params: [], text: "Integrations" },
     "main.overview.anatomy.integrations_copy": { params: [], text: "Only exact integration objects already proven by this saved report can appear here." },
-    "main.overview.anatomy.no_saved_integrations": { params: [], text: "No saved exact integration evidence is available in this report." },
     "main.overview.anatomy.study_kicker": { params: [], text: "Reading routes" },
     "main.overview.anatomy.study_directions": { params: [], text: "Study directions" },
     "main.overview.anatomy.study_directions_copy": { params: [], text: "Open a canonical saved direction as a reading route." },
@@ -1770,6 +1769,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.count.supporting_facts": { params: ["count"], format: function (params) { return formatCountTemplate("{count} supporting fact(s)", params); } },
     "architecture.count.evidence_groups": { params: ["count"], format: function (params) { return formatCountTemplate("{count} evidence group(s)", params); } },
     "architecture.section.related_map_objects": { params: [], text: "Related map objects" },
+    "architecture.section.code_relations": { params: [], text: "Exact code relations" },
     "architecture.section.evidence": { params: [], text: "Evidence" },
     "architecture.copy.no_exact_evidence_record": { params: [], text: "No exact evidence record is attached to this step." },
     "architecture.section.known_gaps": { params: [], text: "Known gaps" },
@@ -2367,7 +2367,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.integrations_kicker": { params: [], text: "Сохранённые свидетельства" },
     "main.overview.anatomy.integrations": { params: [], text: "Интеграции" },
     "main.overview.anatomy.integrations_copy": { params: [], text: "Здесь могут появиться только точные объекты интеграций, уже подтверждённые этим сохранённым отчётом." },
-    "main.overview.anatomy.no_saved_integrations": { params: [], text: "В этом отчёте нет сохранённых точных свидетельств интеграций." },
     "main.overview.anatomy.study_kicker": { params: [], text: "Маршруты чтения" },
     "main.overview.anatomy.study_directions": { params: [], text: "Направления изучения" },
     "main.overview.anatomy.study_directions_copy": { params: [], text: "Откройте каноническое сохранённое направление как маршрут чтения." },
@@ -3059,6 +3058,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.count.supporting_facts": { params: ["count"], format: function (params) { return russianCount(params.count, "подтверждающий факт", "подтверждающих факта", "подтверждающих фактов"); } },
     "architecture.count.evidence_groups": { params: ["count"], format: function (params) { return russianCount(params.count, "группа свидетельств", "группы свидетельств", "групп свидетельств"); } },
     "architecture.section.related_map_objects": { params: [], text: "Связанные объекты карты" },
+    "architecture.section.code_relations": { params: [], text: "Точные связи в коде" },
     "architecture.section.evidence": { params: [], text: "Свидетельства" },
     "architecture.copy.no_exact_evidence_record": { params: [], text: "К этому шагу не привязана точная запись свидетельства." },
     "architecture.section.known_gaps": { params: [], text: "Известные пробелы" },
@@ -8008,7 +8008,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (!root) return;
 		root.replaceChildren();
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
-			renderStudyMapOverview(root);
+			renderStudyMapOverview(root, false);
 			return;
 		}
 		var directions = INCOMPLETE_STUDY_DIRECTIONS;
@@ -8024,8 +8024,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		root.appendChild(directionList);
 	}
 
-	function renderStudyMapOverview(root) {
+	function renderRepositoryBriefHero() {
 		var brief = STUDY_MAP && STUDY_MAP.brief || {};
+		if (!brief.what_it_is && !brief.problem && !brief.main_input &&
+			!brief.central_responsibility && !brief.observable_result &&
+			!(Array.isArray(brief.domain_terms) && brief.domain_terms.length)) return null;
 		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
 		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.repository.brief')));
 		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
@@ -8055,7 +8058,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			});
 			hero.appendChild(termList);
 		}
-		root.appendChild(hero);
+		return hero;
+	}
+
+	function renderStudyMapOverview(root, includeBrief) {
+		if (includeBrief !== false) {
+			var briefHero = renderRepositoryBriefHero();
+			if (briefHero) root.appendChild(briefHero);
+		}
 
 		var areaCards = (Array.isArray(STUDY_MAP.shape) ? STUDY_MAP.shape : []).map(renderRepositoryArea).filter(Boolean);
 		if (areaCards.length) {
@@ -9110,7 +9120,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function overviewComponentObjects() {
 		var canvas = DATA.architecture_canvas || {};
-		var components = Array.isArray(canvas.components) ? canvas.components : [];
+		var remainderComponentID = String(canvas.local_remainder_component_id || '');
+		var components = (Array.isArray(canvas.components) ? canvas.components : []).filter(function (component) {
+			return !remainderComponentID || !component || component.id !== remainderComponentID;
+		});
 		var contexts = architectureComponentContexts();
 		var counts = {};
 		components.forEach(function (component) {
@@ -9224,11 +9237,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function renderRepositoryOverviewAnatomy(root, anatomy) {
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
-		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
-		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
-		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
-		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
-		hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+		var hero = renderRepositoryBriefHero();
+		if (!hero) {
+			var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+			hero = el('section', 'rm-overview-hero rm-purpose-hero');
+			hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
+			hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
+			hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+		}
 		root.appendChild(hero);
 
 		root.appendChild(renderOverviewAnatomyZone(
@@ -9246,18 +9262,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			'component'
 		));
 
-		var integrations = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
-		integrations.appendChild(renderViewHeading(
-			msg('main.overview.anatomy.integrations_kicker'),
-			msg('main.overview.anatomy.integrations'),
-			msg('main.overview.anatomy.integrations_copy')
-		));
-		integrations.appendChild(txt(
-			'p',
-			'rm-empty-state rm-overview-integrations-empty',
-			msg('main.overview.anatomy.no_saved_integrations')
-		));
-		root.appendChild(integrations);
+		if (anatomy.integrations && anatomy.integrations.length) {
+			root.appendChild(renderOverviewAnatomyZone(
+				msg('main.overview.anatomy.integrations_kicker'),
+				msg('main.overview.anatomy.integrations'),
+				msg('main.overview.anatomy.integrations_copy'),
+				anatomy.integrations,
+				'integration'
+			));
+		}
 
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			var directions = el('section', 'rm-workspace-section rm-overview-study-routes');
@@ -9420,7 +9433,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				evidence.provenance.provider !== 'gofacts' ||
 				evidence.provenance.version !== 'package-declaration-v1' ||
 				evidence.provenance.operation !== 'package_declaration') return;
-			var resolution = exactOverviewSourceResolutionFromSnippets(evidence.location, USER_SOURCES);
+			var resolution = exactOverviewActionResolutionForLocation(evidence.location);
 			if (resolution.conflict) {
 				unitSourceConflicts[evidence.unit_id] = true;
 				return;
@@ -9429,11 +9442,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			var relatedEvidenceIDs = resolution.source.snippet &&
 				Array.isArray(resolution.source.snippet.related_evidence_ids)
 				? resolution.source.snippet.related_evidence_ids : [];
-			if (relatedEvidenceIDs.indexOf(evidenceID) < 0) return;
+			if (resolution.source.snippet && relatedEvidenceIDs.indexOf(evidenceID) < 0) return;
 			if (!unitSources[evidence.unit_id]) unitSources[evidence.unit_id] = Object.create(null);
 			var location = resolution.source.location;
 			var key = location.path + '\u0000' + String(location.line) + '\u0000' +
-				String(location.column || 0) + '\u0000' + overviewSnippetStableKey(resolution.source.snippet);
+				String(location.column || 0) + '\u0000' + (resolution.source.snippet
+					? overviewSnippetStableKey(resolution.source.snippet) : 'exact-location');
 			unitSources[evidence.unit_id][key] = resolution.source;
 		});
 		packageUnits.forEach(function (unit) {
@@ -9603,17 +9617,28 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 						unit.name.slice(group.prefix.length + 1))
 					: unit.name;
 				if (unit.source) {
-					var action = el('button', 'rm-atlas-package-action');
-					action.type = 'button';
+					var hasEmbeddedSource = sourceSnippetHasCode(unit.source.snippet);
+					var action = hasEmbeddedSource
+						? el('button', 'rm-atlas-package-action')
+						: sourceActionElement(
+							'',
+							'rm-atlas-package-action',
+							unit.source.location,
+							0,
+							function () { openSourceLocation(unit.source.location); }
+						);
+					if (hasEmbeddedSource) action.type = 'button';
 					action.setAttribute('aria-label', msg(
 						'main.atlas.workspace.open_package_source',
 						{ package: unit.name }
 					));
 					action.appendChild(txt('code', 'rm-atlas-package-name', label));
 					action.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
-					action.onclick = function () {
-						openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
-					};
+					if (hasEmbeddedSource) {
+						action.onclick = function () {
+							openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
+						};
+					}
 					item.appendChild(action);
 				} else {
 					var unavailable = el('span', 'rm-atlas-package-unavailable');
@@ -11093,6 +11118,27 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function architectureComponentContexts() {
 		var canvas = DATA.architecture_canvas || {};
+		var knownComponentIDs = {};
+		var memberNames = {};
+		function memberIdentityKey(memberID) {
+			if (!memberID || typeof memberID !== 'object') return '';
+			var kind = String(memberID.kind || '');
+			var value = String(memberID.value || '');
+			return kind && value ? kind + '\u0000' + value : '';
+		}
+		(canvas.components || []).forEach(function (component) {
+			if (!component || !component.id) return;
+			knownComponentIDs[String(component.id)] = true;
+			(component.members || []).forEach(function (member) {
+				var key = memberIdentityKey(member && member.id);
+				if (key && member && member.name) memberNames[key] = String(member.name);
+			});
+		});
+		(canvas.structural_locators || []).forEach(function (entry) {
+			var locator = entry && entry.locator;
+			var key = memberIdentityKey(locator && locator.id);
+			if (key && locator && locator.name) memberNames[key] = String(locator.name);
+		});
 		var graph = DATA.repository_graph || {};
 		var graphPackages = Array.isArray(graph.packages) ? graph.packages : [];
 		var packageByPath = {};
@@ -11317,6 +11363,42 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 					};
 				}),
 			};
+		});
+		(Array.isArray(canvas.structural_edges) ? canvas.structural_edges : []).forEach(function (edge) {
+			if (!edge || !edge.id || !edge.witness) return;
+			var participantComponentIDs = [];
+			var seenComponentIDs = {};
+			(Array.isArray(edge.from_component_ids) ? edge.from_component_ids : []).concat(
+				Array.isArray(edge.to_component_ids) ? edge.to_component_ids : []
+			).forEach(function (componentID) {
+				componentID = String(componentID || '');
+				if (!componentID || seenComponentIDs[componentID]) return;
+				seenComponentIDs[componentID] = true;
+				participantComponentIDs.push(componentID);
+			});
+			participantComponentIDs.forEach(function (componentID) {
+				var context = contexts[componentID];
+				if (!context && !knownComponentIDs[componentID]) return;
+				if (!context) {
+					context = contexts[componentID] = {
+						package_paths: [], package_targets: [], file_count: 0,
+						sources: [], surface_starts: [], studies: [],
+					};
+				}
+				if (!Array.isArray(context.structural_relations)) context.structural_relations = [];
+				context.structural_relations.push({
+					id: String(edge.id),
+					from: edge.witness.from,
+					to: edge.witness.to,
+					from_label: memberNames[memberIdentityKey(edge.witness.from)] || '',
+					to_label: memberNames[memberIdentityKey(edge.witness.to)] || '',
+					location: edge.witness.location || null,
+				});
+			});
+		});
+		Object.keys(contexts).forEach(function (componentID) {
+			var relations = contexts[componentID].structural_relations || [];
+			relations.sort(function (left, right) { return left.id.localeCompare(right.id); });
 		});
 		return contexts;
 	}
