@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 9
-	SynthesisRecordVersion  = 9
-	SynthesisPromptVersion  = "architecture-grounding-v12"
+	SynthesisRequestVersion = 10
+	SynthesisRecordVersion  = 10
+	SynthesisPromptVersion  = "architecture-grounding-v13"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -173,6 +173,9 @@ type SynthesisMetadata struct {
 	MembershipCounted      bool                     `json:"response_membership_counted"`
 	MemberOccurrences      int                      `json:"response_member_occurrences,omitempty"`
 	DistinctMembers        int                      `json:"response_distinct_members,omitempty"`
+	RequestedMemberIDs     []MemberID               `json:"requested_member_ids,omitempty"`
+	CoveredMemberIDs       []MemberID               `json:"covered_member_ids,omitempty"`
+	UncoveredMemberIDs     []MemberID               `json:"uncovered_member_ids,omitempty"`
 	ValidationWarnings     []Diagnostic             `json:"validation_warnings,omitempty"`
 	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
 	ArchitectureSource     ArchitectureSource       `json:"architecture_source"`
@@ -223,9 +226,16 @@ type SynthesisResult struct {
 // refs have been resolved against the private catalog. It is not inferred by
 // reparsing provider bytes in a downstream owner.
 type SynthesisMembershipCounts struct {
-	Counted           bool
-	MemberOccurrences int
-	DistinctMembers   int
+	Counted            bool
+	MemberOccurrences  int
+	DistinctMembers    int
+	RequestedMemberIDs []MemberID
+	CoveredMemberIDs   []MemberID
+	UncoveredMemberIDs []MemberID
+}
+
+func (counts SynthesisMembershipCounts) CoverageComplete() bool {
+	return counts.Counted && len(counts.RequestedMemberIDs) > 0 && len(counts.UncoveredMemberIDs) == 0
 }
 
 type synthesisPrivateCatalog struct {
@@ -902,9 +912,9 @@ Return exactly one compact JSON proposal object with one ordered records array. 
 
 The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. Treat required_member_refs as the exhaustive flat coverage checklist for conceptual candidates only. Every supplied candidate member ref is present in that checklist and must appear in at least one component member_refs field; an incomplete proposal is rejected rather than repaired or supplemented locally. A candidate parent_ref and every structural_context parent_refs/child_refs link are grouping context only and never satisfy conceptual coverage. Never return a structural_context ref. Before returning, collect the distinct member_refs from every component, self-check them separately by kind, and verify that their exact typed set equals required_member_refs with no missing, structural-locator, unknown, or wrong-kind ref. Cross-cutting repeats count once for this coverage self-check. Every component must contain at least one supplied conceptual member ref.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. required_member_refs is the exhaustive flat set of conceptual candidates available for grouping, not permission to invent or rewrite identities. Group every member you can classify coherently, but an exact partial grouping is valid: omitted refs remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. At least one supplied conceptual member ref must be returned. A candidate parent_ref and every structural_context parent_refs/child_refs link are grouping context only and never satisfy conceptual coverage. Never return a structural_context ref. Before returning, collect the distinct member_refs from every component and self-check them separately by kind against required_member_refs: every returned ref must be an exact typed member of that set, with no structural-locator, unknown, or wrong-kind ref. Cross-cutting repeats count once for this identity self-check. Every component must contain at least one supplied conceptual member ref.
 
-Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. Every non-hypothesis component must cite at least one supplied behavior anchor ref. Set hypothesis true only when a component is explicitly conceptual or package-derived; do not use it merely to avoid available anchors. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. hypothesis is required wire syntax but only advisory model input: the backend derives the product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
 Do not return versions, catalog identity, hashes, canonical IDs, edges, relations, flow definitions or transitions, fact payloads, repository paths, qualified symbols, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`
 	if language == "ru" {
@@ -1137,6 +1147,9 @@ func recordSynthesisResponseForLanguage(
 				MembershipCounted:      membership.Counted,
 				MemberOccurrences:      membership.MemberOccurrences,
 				DistinctMembers:        membership.DistinctMembers,
+				RequestedMemberIDs:     append([]MemberID(nil), membership.RequestedMemberIDs...),
+				CoveredMemberIDs:       append([]MemberID(nil), membership.CoveredMemberIDs...),
+				UncoveredMemberIDs:     append([]MemberID(nil), membership.UncoveredMemberIDs...),
 				ValidationWarnings:     cloneDiagnostics(landscape.Diagnostics),
 				ValidationOutcome:      landscape.ValidationOutcome,
 				ArchitectureSource:     landscape.Source,
@@ -1252,7 +1265,10 @@ func replaySynthesisResult(
 	}
 	if metadata.MembershipCounted != membership.Counted ||
 		metadata.MemberOccurrences != membership.MemberOccurrences ||
-		metadata.DistinctMembers != membership.DistinctMembers {
+		metadata.DistinctMembers != membership.DistinctMembers ||
+		!reflect.DeepEqual(metadata.RequestedMemberIDs, membership.RequestedMemberIDs) ||
+		!reflect.DeepEqual(metadata.CoveredMemberIDs, membership.CoveredMemberIDs) ||
+		!reflect.DeepEqual(metadata.UncoveredMemberIDs, membership.UncoveredMemberIDs) {
 		return SynthesisResult{}, fmt.Errorf("componentmap: saved synthesis membership counts do not replay")
 	}
 	return SynthesisResult{Landscape: landscape, Record: record, Membership: membership}, nil
@@ -1355,12 +1371,8 @@ func validateSynthesisRecord(
 	if metadata.InputTokens < 0 || metadata.OutputTokens < 0 {
 		return fmt.Errorf("componentmap: synthesis record token counts cannot be negative")
 	}
-	if metadata.MemberOccurrences < 0 || metadata.DistinctMembers < 0 ||
-		metadata.DistinctMembers > metadata.MemberOccurrences ||
-		(metadata.MemberOccurrences > 0 && !metadata.MembershipCounted) ||
-		(metadata.MembershipCounted && metadata.MemberOccurrences > 0 && metadata.DistinctMembers == 0) ||
-		(!metadata.MembershipCounted && (metadata.MemberOccurrences != 0 || metadata.DistinctMembers != 0)) {
-		return fmt.Errorf("componentmap: synthesis record membership counts are inconsistent")
+	if err := validateSynthesisMembershipMetadata(bundle, metadata); err != nil {
+		return err
 	}
 	if metadata.TransportAttempts < 0 {
 		return fmt.Errorf("componentmap: synthesis record transport attempts cannot be negative")
@@ -1417,6 +1429,59 @@ func validateSynthesisRecord(
 		}
 	default:
 		return fmt.Errorf("componentmap: invalid synthesis response state %q", record.Call.ResponseState)
+	}
+	return nil
+}
+
+func validateSynthesisMembershipMetadata(bundle CandidateBundle, metadata SynthesisMetadata) error {
+	if metadata.MemberOccurrences < 0 || metadata.DistinctMembers < 0 ||
+		metadata.DistinctMembers > metadata.MemberOccurrences {
+		return fmt.Errorf("componentmap: synthesis record membership counts are inconsistent")
+	}
+	if !metadata.MembershipCounted {
+		if metadata.MemberOccurrences != 0 || metadata.DistinctMembers != 0 ||
+			len(metadata.RequestedMemberIDs) != 0 || len(metadata.CoveredMemberIDs) != 0 ||
+			len(metadata.UncoveredMemberIDs) != 0 {
+			return fmt.Errorf("componentmap: uncounted synthesis record carries membership coverage")
+		}
+		return nil
+	}
+	requested := make([]MemberID, 0)
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role == CandidateRoleConceptualMember {
+			requested = append(requested, candidate.ID)
+		}
+	}
+	sortMemberIDs(requested)
+	if !reflect.DeepEqual(metadata.RequestedMemberIDs, requested) {
+		return fmt.Errorf("componentmap: synthesis record requested member identities do not match")
+	}
+	if metadata.DistinctMembers != len(metadata.CoveredMemberIDs) {
+		return fmt.Errorf("componentmap: synthesis record covered member identities do not match counts")
+	}
+	covered := make(map[MemberID]struct{}, len(metadata.CoveredMemberIDs))
+	for index, memberID := range metadata.CoveredMemberIDs {
+		if index > 0 && metadata.CoveredMemberIDs[index-1].key() >= memberID.key() {
+			return fmt.Errorf("componentmap: synthesis record covered member identities are not strictly sorted")
+		}
+		covered[memberID] = struct{}{}
+	}
+	uncovered := make(map[MemberID]struct{}, len(metadata.UncoveredMemberIDs))
+	for index, memberID := range metadata.UncoveredMemberIDs {
+		if index > 0 && metadata.UncoveredMemberIDs[index-1].key() >= memberID.key() {
+			return fmt.Errorf("componentmap: synthesis record uncovered member identities are not strictly sorted")
+		}
+		uncovered[memberID] = struct{}{}
+	}
+	if len(covered)+len(uncovered) != len(requested) {
+		return fmt.Errorf("componentmap: synthesis record membership partition cardinality does not match")
+	}
+	for _, memberID := range requested {
+		_, isCovered := covered[memberID]
+		_, isUncovered := uncovered[memberID]
+		if isCovered == isUncovered {
+			return fmt.Errorf("componentmap: synthesis record membership partition is not exact")
+		}
 	}
 	return nil
 }
@@ -1483,7 +1548,7 @@ func evaluateSynthesisResponse(
 		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
 		return landscape, SynthesisMembershipCounts{}, err
 	}
-	membership := synthesisMembershipCounts(proposal)
+	membership := synthesisMembershipCounts(bundle, proposal)
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, err
@@ -1492,7 +1557,7 @@ func evaluateSynthesisResponse(
 		// Accepted status describes the canonical model-authored relation after
 		// local readable-shape normalization, not a raw response cardinality that
 		// normalization may have merged.
-		membership = acceptedSynthesisMembershipCounts(landscape)
+		membership = acceptedSynthesisMembershipCounts(bundle, landscape)
 	}
 	warnings := make([]Diagnostic, 0, 1)
 	if normalization != nil {
@@ -1507,7 +1572,7 @@ func evaluateSynthesisResponse(
 	return landscape, membership, nil
 }
 
-func synthesisMembershipCounts(proposal Proposal) SynthesisMembershipCounts {
+func synthesisMembershipCounts(bundle CandidateBundle, proposal Proposal) SynthesisMembershipCounts {
 	distinct := make(map[MemberID]struct{})
 	occurrences := 0
 	for _, subsystem := range proposal.Subsystems {
@@ -1518,14 +1583,10 @@ func synthesisMembershipCounts(proposal Proposal) SynthesisMembershipCounts {
 			}
 		}
 	}
-	return SynthesisMembershipCounts{
-		Counted:           len(proposal.Subsystems) > 0,
-		MemberOccurrences: occurrences,
-		DistinctMembers:   len(distinct),
-	}
+	return synthesisMembershipCountsFromSets(bundle, len(proposal.Subsystems) > 0, occurrences, distinct)
 }
 
-func acceptedSynthesisMembershipCounts(landscape Landscape) SynthesisMembershipCounts {
+func acceptedSynthesisMembershipCounts(bundle CandidateBundle, landscape Landscape) SynthesisMembershipCounts {
 	distinct := make(map[MemberID]struct{})
 	occurrences := 0
 	for _, subsystem := range landscape.Subsystems {
@@ -1539,10 +1600,38 @@ func acceptedSynthesisMembershipCounts(landscape Landscape) SynthesisMembershipC
 			}
 		}
 	}
+	return synthesisMembershipCountsFromSets(bundle, true, occurrences, distinct)
+}
+
+func synthesisMembershipCountsFromSets(
+	bundle CandidateBundle,
+	counted bool,
+	occurrences int,
+	covered map[MemberID]struct{},
+) SynthesisMembershipCounts {
+	requestedIDs := make([]MemberID, 0)
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role == CandidateRoleConceptualMember {
+			requestedIDs = append(requestedIDs, candidate.ID)
+		}
+	}
+	sortMemberIDs(requestedIDs)
+	var coveredIDs []MemberID
+	var uncoveredIDs []MemberID
+	for _, memberID := range requestedIDs {
+		if _, exists := covered[memberID]; exists {
+			coveredIDs = append(coveredIDs, memberID)
+		} else {
+			uncoveredIDs = append(uncoveredIDs, memberID)
+		}
+	}
 	return SynthesisMembershipCounts{
-		Counted:           true,
-		MemberOccurrences: occurrences,
-		DistinctMembers:   len(distinct),
+		Counted:            counted,
+		MemberOccurrences:  occurrences,
+		DistinctMembers:    len(coveredIDs),
+		RequestedMemberIDs: requestedIDs,
+		CoveredMemberIDs:   coveredIDs,
+		UncoveredMemberIDs: uncoveredIDs,
 	}
 }
 

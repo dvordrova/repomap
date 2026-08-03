@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -147,6 +148,30 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 				t.Fatalf("fallback members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 			}
 		})
+	}
+}
+
+func TestPackageLandscapeIgnoresProviderGroundingClaim(t *testing.T) {
+	t.Parallel()
+
+	bundle := candidateBundleWithPackages(2)
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Packages",
+			Components: []ProposedComponent{{
+				Name:      "Provider claimed grounded",
+				MemberIDs: candidateIDs(bundle.Candidates),
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAccepted ||
+		result.Source != SourceValidatedModel || len(result.Normalizations) != 0 ||
+		!result.Subsystems[0].Components[0].Hypothesis {
+		t.Fatalf("package landscape trusted provider operational status: %#v", result)
 	}
 }
 
@@ -581,7 +606,7 @@ func TestBundleRejectsConflictingScenarioDefinitions(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsIncompleteMemberCoverageAtomically(t *testing.T) {
+func TestApplyAcceptsExactPartialCoverageWithDeterministicLocalRemainder(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -598,19 +623,51 @@ func TestApplyRejectsIncompleteMemberCoverageAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if !result.Fallback || result.ValidationOutcome != ValidationRejected {
-		t.Fatalf("partial proposal result = %#v, want rejected local landscape", result)
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial || result.Source != SourcePartialModel {
+		t.Fatalf("partial proposal result = %#v, want accepted exact partial landscape", result)
 	}
-	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.incomplete_member_coverage") {
-		t.Fatalf("diagnostics = %#v, want incomplete-coverage diagnostic", result.Diagnostics)
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.partial_member_coverage") {
+		t.Fatalf("diagnostics = %#v, want partial-coverage diagnostic", result.Diagnostics)
 	}
 	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
 		t.Fatalf("local fallback members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 	}
-	for _, subsystem := range result.Subsystems {
-		if subsystem.Category == SubsystemCategoryDiagnostic {
-			t.Fatalf("rejected proposal created an accepted diagnostic remainder: %#v", subsystem)
-		}
+	wantRemainder := candidateIDsExcept(bundle, testMemberID(MemberPackage, "repo"))
+	sortMemberIDs(wantRemainder)
+	if !reflect.DeepEqual(result.LocalRemainderMemberIDs, wantRemainder) {
+		t.Fatalf("local remainder = %#v, want %#v", result.LocalRemainderMemberIDs, wantRemainder)
+	}
+	if len(result.ConceptualMemberships) != 1 || result.ConceptualMemberships[0].MemberID != testMemberID(MemberPackage, "repo") {
+		t.Fatalf("provider conceptual memberships include local remainder: %#v", result.ConceptualMemberships)
+	}
+	tampered := result
+	tampered.ConceptualMemberships = append(tampered.ConceptualMemberships, ConceptualMembership{
+		ComponentID: tampered.Subsystems[len(tampered.Subsystems)-1].Components[0].ID,
+		MemberID:    tampered.LocalRemainderMemberIDs[0],
+	})
+	if err := tampered.Validate(bundle); err == nil || !strings.Contains(err.Error(), "conceptual membership relation") {
+		t.Fatalf("Validate(remainder promoted to provider relation) error = %v", err)
+	}
+
+	reorderedBundle := landscapeTestBundle()
+	for left, right := 0, len(reorderedBundle.Candidates)-1; left < right; left, right = left+1, right-1 {
+		reorderedBundle.Candidates[left], reorderedBundle.Candidates[right] = reorderedBundle.Candidates[right], reorderedBundle.Candidates[left]
+	}
+	reordered, err := Apply(reorderedBundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Storage",
+			Components: []ProposedComponent{{
+				Name: "Repository", MemberIDs: []MemberID{testMemberID(MemberPackage, "repo")},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reordered.LocalRemainderMemberIDs, result.LocalRemainderMemberIDs) ||
+		reordered.Subsystems[len(reordered.Subsystems)-1].ID != result.Subsystems[len(result.Subsystems)-1].ID {
+		t.Fatalf("partial remainder changed with candidate order:\nfirst=%#v\nsecond=%#v", result, reordered)
 	}
 }
 
@@ -723,7 +780,7 @@ func TestModuleBaseNameIgnoresSemanticImportVersion(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsOmittedProcessEntryWithIncompleteCoverage(t *testing.T) {
+func TestApplyRetainsOmittedProcessEntryInExactLocalRemainder(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -754,16 +811,19 @@ func TestApplyRejectsOmittedProcessEntryWithIncompleteCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fallback || result.ValidationOutcome != ValidationRejected ||
-		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.incomplete_member_coverage") {
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial ||
+		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.partial_member_coverage") {
 		t.Fatalf("process-entry omission result = %#v", result)
+	}
+	if !slices.Contains(result.LocalRemainderMemberIDs, entrypointID) {
+		t.Fatalf("process entry %q missing from exact local remainder %#v", entrypointID.key(), result.LocalRemainderMemberIDs)
 	}
 	if got := landscapeMemberCount(result); got != len(bundle.Candidates) {
 		t.Fatalf("landscape members = %d, want all %d exact candidates", got, len(bundle.Candidates))
 	}
 }
 
-func TestApplyNormalizesKnownPackageOnlyGroundedComponent(t *testing.T) {
+func TestApplyDerivesKnownPackageOnlyComponentHypothesisLocally(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -806,13 +866,9 @@ func TestApplyNormalizesKnownPackageOnlyGroundedComponent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Fallback || result.ValidationOutcome != ValidationAcceptedNormalized ||
-		result.Source != SourceNormalizedModel || len(result.Normalizations) != 1 {
-		t.Fatalf("normalized result = %#v", result)
-	}
-	if result.Normalizations[0].Code != "normalized_package_only_hypothesis" ||
-		!hasLandscapeDiagnostic(result.Diagnostics, "proposal.normalized_package_only_hypothesis") {
-		t.Fatalf("normalization = %#v diagnostics = %#v", result.Normalizations, result.Diagnostics)
+	if result.Fallback || result.ValidationOutcome != ValidationAccepted ||
+		result.Source != SourceValidatedModel || len(result.Normalizations) != 0 {
+		t.Fatalf("locally resolved result = %#v", result)
 	}
 	var found bool
 	for _, subsystem := range result.Subsystems {
@@ -845,13 +901,13 @@ func TestDeclarationFamilyAnchorIsStaticContextNotOperationalGrounding(t *testin
 		}},
 	}
 
-	rejected, err := Apply(bundle, proposal)
+	derived, err := Apply(bundle, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !rejected.Fallback || rejected.FallbackReason != FallbackRejectedUngrounded ||
-		!hasLandscapeDiagnostic(rejected.Diagnostics, "proposal.ungrounded_primary_component") {
-		t.Fatalf("family-only proposal = %#v", rejected)
+	if derived.Fallback || derived.ValidationOutcome != ValidationAccepted ||
+		!derived.Subsystems[0].Components[0].Hypothesis {
+		t.Fatalf("family-only proposal was not locally derived as hypothetical: %#v", derived)
 	}
 
 	proposal.Subsystems[0].Components[0].Hypothesis = true
@@ -867,6 +923,15 @@ func TestDeclarationFamilyAnchorIsStaticContextNotOperationalGrounding(t *testin
 
 	bundle.BehaviorAnchors[0].ProofMode = AnchorProofCallTarget
 	proposal.Subsystems[0].Components[0].Hypothesis = false
+	partialProof, err := Apply(bundle, proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partialProof.Fallback || !partialProof.Subsystems[0].Components[0].Hypothesis {
+		t.Fatalf("partially scoped call-target proof grounded the whole component: %#v", partialProof)
+	}
+
+	bundle.BehaviorAnchors[0].MemberIDs = candidateIDs(bundle.Candidates)
 	operational, err := Apply(bundle, proposal)
 	if err != nil {
 		t.Fatal(err)
@@ -905,10 +970,8 @@ func TestDeclarationFamilyPackageContextNormalizesAndLocalDerivationStaysHypothe
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Fallback || result.ValidationOutcome != ValidationAcceptedNormalized ||
-		len(result.Normalizations) != 1 ||
-		result.Normalizations[0].Code != "normalized_package_only_hypothesis" {
-		t.Fatalf("family-context normalization = %#v", result)
+	if result.Fallback || result.ValidationOutcome != ValidationAccepted || len(result.Normalizations) != 0 {
+		t.Fatalf("family-context local resolution = %#v", result)
 	}
 	var normalizedFamily bool
 	for _, subsystem := range result.Subsystems {
@@ -968,11 +1031,12 @@ func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		memberID MemberID
+		name        string
+		memberID    MemberID
+		wantPartial bool
 	}{
 		{name: "unknown package", memberID: testMemberID(MemberPackage, "unknown")},
-		{name: "known file", memberID: testMemberID(MemberFile, "repo-file")},
+		{name: "known file", memberID: testMemberID(MemberFile, "repo-file"), wantPartial: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -999,8 +1063,13 @@ func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !result.Fallback || result.ValidationOutcome != ValidationRejected || len(result.Normalizations) != 0 {
-				t.Fatalf("result = %#v", result)
+			if test.wantPartial {
+				if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial ||
+					!result.Subsystems[0].Components[0].Hypothesis {
+					t.Fatalf("locally derived known-file partial result = %#v", result)
+				}
+			} else if !result.Fallback || result.ValidationOutcome != ValidationRejected || len(result.Normalizations) != 0 {
+				t.Fatalf("unknown identity result = %#v", result)
 			}
 		})
 	}

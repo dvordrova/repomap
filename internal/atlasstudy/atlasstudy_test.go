@@ -51,6 +51,12 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 	if want := fmt.Sprintf("Return 1-%d directions", MaxDirections); !strings.Contains(product.BuildPrompt().System, want) {
 		t.Fatalf("provider prompt does not use the production route bound %q", want)
 	}
+	if want := fmt.Sprintf(
+		"%d-%d distinct reading items",
+		MinDirectionReadingCount, MaxDirectionReadingCount,
+	); !strings.Contains(product.BuildPrompt().System, want) {
+		t.Fatalf("provider prompt does not use the task-sized reading bound %q", want)
+	}
 	for _, exactRule := range []string{
 		"every such path is repeated in allowed_paths",
 		"Identity fields return only short refs",
@@ -795,6 +801,137 @@ func TestResolveResponseDropsOnlyInvalidDirectionItemsWithBoundedDiagnostics(t *
 	}
 }
 
+func TestStudyDirectionReadingBoundsAreItemLocalAndPersisted(t *testing.T) {
+	input := studyRouteBoundaryInput()
+	product := mustCompileTestProduct(t, input)
+	response := responseMap(t, validResponse(t, product))
+	base := response["directions"].([]any)[0].(map[string]any)
+	targets := studyRouteTargetIDs()
+
+	directions := make([]any, 0, 4)
+	for index, count := range []int{0, 1, 5, 6} {
+		direction := cloneMap(base)
+		direction["question"] = fmt.Sprintf(
+			"Which exact target explains bounded route number %d?", index+1,
+		)
+		direction["reading"] = providerReadingItems(t, product, targets[:count])
+		directions = append(directions, direction)
+	}
+	response["directions"] = directions
+
+	result, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, response))
+	if err != nil {
+		t.Fatalf("ResolveResponseJSON: %v", err)
+	}
+	if got := []int{len(result.Directions[0].Reading), len(result.Directions[1].Reading)}; !reflect.DeepEqual(got, []int{1, 5}) {
+		t.Fatalf("accepted route reading counts = %v, want [1 5]", got)
+	}
+	if diagnostics.DirectionsReceived != 4 || diagnostics.DirectionsAccepted != 2 ||
+		diagnostics.DirectionsRejected != 2 || !reflect.DeepEqual(diagnostics.Issues, []DirectionIssue{
+		{Position: 0, Code: IssueInvalidReadingCount},
+		{Position: 3, Code: IssueInvalidReadingCount},
+	}) {
+		t.Fatalf("boundary diagnostics = %#v", diagnostics)
+	}
+	if err := product.ValidateResultRecord(result); err != nil {
+		t.Fatalf("persisted 1..5 result: %v", err)
+	}
+
+	zero := result
+	zero.Directions = cloneDirections(result.Directions)
+	zero.Directions[0].Reading = nil
+	zero.Directions[0].ID = stableDirectionID(zero.Directions[0])
+	if err := product.ValidateResultRecord(zero); err == nil ||
+		!strings.Contains(err.Error(), "invalid canonical direction") {
+		t.Fatalf("persisted zero-reading route error = %v", err)
+	}
+
+	six := result
+	six.Directions = cloneDirections(result.Directions)
+	six.Directions[1].Reading = append(six.Directions[1].Reading, ResolvedReading{
+		Target: CanonicalRef{Kind: RefReadingTarget, ID: targets[5]},
+		Label:  ReadingContinue, WhatToLookFor: "Inspect the final bounded target.",
+	})
+	six.Directions[1].ID = stableDirectionID(six.Directions[1])
+	if err := product.ValidateResultRecord(six); err == nil ||
+		!strings.Contains(err.Error(), "invalid canonical direction") {
+		t.Fatalf("persisted six-reading route error = %v", err)
+	}
+}
+
+func TestStudyAcceptsCompactCasdoorReadingShapeAndReplaysIt(t *testing.T) {
+	input := studyRouteBoundaryInput()
+	product := mustCompileTestProduct(t, input)
+	response := responseMap(t, validResponse(t, product))
+	base := response["directions"].([]any)[0].(map[string]any)
+	targets := studyRouteTargetIDs()
+	selections := [][]string{
+		targets[0:1],
+		targets[0:3],
+		targets[1:5],
+		targets[4:5],
+		targets[5:6],
+	}
+	directions := make([]any, 0, len(selections))
+	for index, selection := range selections {
+		direction := cloneMap(base)
+		direction["question"] = fmt.Sprintf(
+			"Which bounded route answers focused task number %d?", index+1,
+		)
+		direction["reading"] = providerReadingItems(t, product, selection)
+		directions = append(directions, direction)
+	}
+	response["directions"] = directions
+
+	result, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, response))
+	if err != nil {
+		t.Fatalf("ResolveResponseJSON [1,3,4,1,1]: %v", err)
+	}
+	counts := make([]int, 0, len(result.Directions))
+	for _, direction := range result.Directions {
+		counts = append(counts, len(direction.Reading))
+	}
+	if !reflect.DeepEqual(counts, []int{1, 3, 4, 1, 1}) ||
+		diagnostics.DirectionsReceived != 5 || diagnostics.DirectionsAccepted != 5 ||
+		diagnostics.DirectionsRejected != 0 || len(diagnostics.Issues) != 0 {
+		t.Fatalf("compact Casdoor shape = %v / %#v", counts, diagnostics)
+	}
+
+	encoded, err := EncodeResultRecord(result)
+	if err != nil {
+		t.Fatalf("EncodeResultRecord: %v", err)
+	}
+	replayed, err := DecodeResultRecord(encoded)
+	if err != nil {
+		t.Fatalf("DecodeResultRecord: %v", err)
+	}
+	if err := ValidateResultRecordAgainstInput(replayed, input); err != nil {
+		t.Fatalf("provider-free replay: %v", err)
+	}
+}
+
+func TestStudyV5IdentityRejectsV4Artifacts(t *testing.T) {
+	if Version != 5 || PromptVersion != "atlas-study-prompt-v11" ||
+		RequestArtifactFilename != "atlas_study_request.v5.json" ||
+		ResultArtifactFilename != "atlas_study_result.v5.json" ||
+		StatusArtifactFilename != "atlas_study_status.v5.json" {
+		t.Fatalf("Study v5 identity is incomplete: %d %q %q %q %q",
+			Version, PromptVersion, RequestArtifactFilename,
+			ResultArtifactFilename, StatusArtifactFilename)
+	}
+	product := mustCompileTestProduct(t, testInput())
+	request, err := product.RequestRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Version = 4
+	request.PromptVersion = "atlas-study-prompt-v10"
+	request.CatalogRef = fmt.Sprintf("atlas-study-v4-%s", request.CatalogSHA256)
+	if err := product.ValidateRequestRecord(request); err == nil {
+		t.Fatal("Study v4 request replayed under the v5 contract")
+	}
+}
+
 func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoutesAfterCorrection(t *testing.T) {
 	product := mustCompileTestProduct(t, casdoor144414ShapeInput())
 	saved, err := os.ReadFile("testdata/casdoor_20260802_144414_response_shape.json")
@@ -828,15 +965,14 @@ func TestSavedCasdoor144414ResponseRejectsUnitBriefSupportAndPreservesValidRoute
 	if err != nil {
 		t.Fatalf("corrected saved 14:44 response: %v", err)
 	}
-	if diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 2 ||
-		diagnostics.DirectionsRejected != 4 || len(result.Directions) != 2 ||
-		len(diagnostics.Issues) != 4 {
+	if diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 3 ||
+		diagnostics.DirectionsRejected != 3 || len(result.Directions) != 3 ||
+		len(diagnostics.Issues) != 3 {
 		t.Fatalf("corrected saved-response result/diagnostics = %d / %#v", len(result.Directions), diagnostics)
 	}
 	wantIssues := []DirectionIssue{
 		{Position: 1, Code: IssueWrongKindPrincipalRef},
 		{Position: 3, Code: IssuePrincipalNotAdvertised},
-		{Position: 4, Code: IssueInvalidReadingCount},
 		{Position: 5, Code: IssuePrincipalNotAdvertised},
 	}
 	if !reflect.DeepEqual(diagnostics.Issues, wantIssues) {
@@ -965,15 +1101,14 @@ func TestSavedCasdoor190133ResponsePreservesBriefAndAcceptsScopedLocatorRoute(t 
 	if err != nil {
 		t.Fatalf("saved response: %v", err)
 	}
-	if len(result.Brief.WhatItIs.SupportRefs) != 10 || len(result.Directions) != 1 ||
-		diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 1 ||
-		diagnostics.DirectionsRejected != 5 {
+	if len(result.Brief.WhatItIs.SupportRefs) != 10 || len(result.Directions) != 2 ||
+		diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 2 ||
+		diagnostics.DirectionsRejected != 4 {
 		t.Fatalf("saved response result = %#v / %#v", result, diagnostics)
 	}
 	wantIssues := []DirectionIssue{
 		{Position: 1, Code: IssuePrincipalNotAdvertised},
-		{Position: 2, Code: IssueInvalidReadingCount},
-		{Position: 3, Code: IssueInvalidReadingCount},
+		{Position: 2, Code: IssueReadingPrincipalMissing},
 		{Position: 4, Code: IssuePrincipalNotAdvertised},
 		{Position: 5, Code: IssuePrincipalNotAdvertised},
 	}
@@ -1014,9 +1149,11 @@ func TestSavedCasdoor193502ResponsePublishesBriefAndUsefulRoutesWithoutWireRefs(
 	if err != nil {
 		t.Fatalf("saved response: %v", err)
 	}
-	if len(result.Brief.DomainTerms) != 3 || len(result.Directions) != 2 ||
-		diagnostics.DirectionsReceived != 5 || diagnostics.DirectionsAccepted != 2 ||
-		diagnostics.DirectionsRejected != 3 {
+	if len(result.Brief.DomainTerms) != 3 || len(result.Directions) != 4 ||
+		diagnostics.DirectionsReceived != 5 || diagnostics.DirectionsAccepted != 4 ||
+		diagnostics.DirectionsRejected != 1 || !reflect.DeepEqual(diagnostics.Issues, []DirectionIssue{{
+		Position: 0, Code: IssueInvalidReadingCopy,
+	}}) {
 		t.Fatalf("saved response result = %#v / %#v", result, diagnostics)
 	}
 	for _, direction := range result.Directions {
@@ -1177,6 +1314,63 @@ func testInput() Input {
 		}},
 		Limits: DefaultLimits(),
 	}
+}
+
+func studyRouteBoundaryInput() Input {
+	input := cloneTestInput(testInput())
+	for ordinal := 4; ordinal <= 6; ordinal++ {
+		id := fmt.Sprintf("anchor-extra-%02d-canonical", ordinal)
+		input.ReadingTargets = append(input.ReadingTargets, ReadingTarget{
+			ID: id,
+			Owner: CanonicalRef{
+				Kind: RefComponent, ID: "component-api-canonical",
+			},
+			RelatedComponentIDs: []string{"component-api-canonical"},
+			PrincipalRefs: []CanonicalRef{{
+				Kind: RefComponent, ID: "component-api-canonical",
+			}},
+			Kind: ReadingTargetFunction, Label: fmt.Sprintf("Extra target %02d", ordinal),
+			Fact:      "Shows one exact bounded repository target.",
+			Authority: repositoryatlas.AuthorityObserved,
+			Location: evidence.Location{
+				Path: fmt.Sprintf("internal/extra/target_%02d.go", ordinal), Line: ordinal,
+			},
+			Symbol: fmt.Sprintf("Target%02d", ordinal),
+		})
+		input.Architecture.Components[0].ReadingTargetIDs = append(
+			input.Architecture.Components[0].ReadingTargetIDs, id,
+		)
+	}
+	return input
+}
+
+func studyRouteTargetIDs() []string {
+	return []string{
+		"anchor-config-canonical",
+		"anchor-route-canonical",
+		"anchor-start-canonical",
+		"anchor-extra-04-canonical",
+		"anchor-extra-05-canonical",
+		"anchor-extra-06-canonical",
+	}
+}
+
+func providerReadingItems(t *testing.T, product Product, targetIDs []string) []any {
+	t.Helper()
+	labels := []ReadingLabel{
+		ReadingStart, ReadingContinue, ReadingConnect, ReadingVerify, ReadingContrast,
+	}
+	items := make([]any, 0, len(targetIDs))
+	for index, targetID := range targetIDs {
+		items = append(items, map[string]any{
+			"target_ref": refFor(t, product, RefReadingTarget, targetID),
+			"label":      string(labels[index%len(labels)]),
+			"what_to_look_for": fmt.Sprintf(
+				"Inspect bounded evidence item number %d.", index+1,
+			),
+		})
+	}
+	return items
 }
 
 func casdoor144414ShapeInput() Input {

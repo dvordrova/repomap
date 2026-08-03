@@ -22,21 +22,10 @@ func TestReplayArchitectureLocalizationRussianFileIsExactAndReadOnly(t *testing.
 
 			runDir := architectureLocalizationSavedRun(t, normalized)
 			context, canonical, input := architectureLocalizationRussianContext(t, runDir)
-			projectionPath := filepath.Join(
-				"testdata",
-				"architecture-localization",
-				"architecture.ru.projection.v1.json",
-			)
-			if normalized {
-				projection := architectureLocalizationRussianProjection(t, canonical, input)
-				projectionJSON, err := json.Marshal(projection)
-				if err != nil {
-					t.Fatal(err)
-				}
-				projectionPath = filepath.Join(t.TempDir(), "architecture.ru.projection.v1.json")
-				if err := os.WriteFile(projectionPath, projectionJSON, 0o600); err != nil {
-					t.Fatal(err)
-				}
+			projectionPath := filepath.Join(t.TempDir(), "architecture.ru.projection.v1.json")
+			projectionJSON := architectureLocalizationRussianProjectionJSON(t, canonical, input)
+			if err := os.WriteFile(projectionPath, projectionJSON, 0o600); err != nil {
+				t.Fatal(err)
 			}
 			before := architectureLocalizationReplayRunSnapshot(t, runDir)
 
@@ -470,6 +459,20 @@ func architectureLocalizationRussianProjection(
 		Locale:          localization.LocaleRussian,
 		Translations:    translations,
 	}
+}
+
+func architectureLocalizationRussianProjectionJSON(
+	t *testing.T,
+	canonical localization.CanonicalArtifact,
+	input localization.Input,
+) []byte {
+	t.Helper()
+
+	data, err := json.Marshal(architectureLocalizationRussianProjection(t, canonical, input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func architectureLocalizationProviderResponse(

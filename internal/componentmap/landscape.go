@@ -16,8 +16,8 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion = 8
-	ProposalVersion = 8
+	ContractVersion = 9
+	ProposalVersion = 9
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -452,6 +452,7 @@ type ValidationOutcome string
 
 const (
 	ValidationAccepted           ValidationOutcome = "accepted"
+	ValidationAcceptedPartial    ValidationOutcome = "accepted_partial"
 	ValidationAcceptedNormalized ValidationOutcome = "accepted_with_normalization"
 	ValidationRejected           ValidationOutcome = "rejected"
 )
@@ -460,6 +461,7 @@ type ArchitectureSource string
 
 const (
 	SourceValidatedModel  ArchitectureSource = "validated_model"
+	SourcePartialModel    ArchitectureSource = "partial_model"
 	SourceNormalizedModel ArchitectureSource = "normalized_model"
 	SourceLocalAnchors    ArchitectureSource = "local_anchors"
 	SourceLocalPackages   ArchitectureSource = "local_packages"
@@ -493,20 +495,21 @@ const (
 // is explicit so presentation never mistakes deterministic grouping for a
 // provider-authored architecture claim.
 type Landscape struct {
-	Version                int                      `json:"version"`
-	Subsystems             []Subsystem              `json:"subsystems"`
-	StructuralLocators     []Candidate              `json:"structural_locators,omitempty"`
-	ConceptualMemberships  []ConceptualMembership   `json:"conceptual_memberships"`
-	Relations              []LocalRelation          `json:"relations,omitempty"`
-	AnchorBindings         []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
-	Diagnostics            []Diagnostic             `json:"diagnostics,omitempty"`
-	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
-	Source                 ArchitectureSource       `json:"architecture_source"`
-	Level                  int                      `json:"architecture_level"`
-	Normalizations         []NormalizationOperation `json:"normalization_operations,omitempty"`
-	OriginalProposalSHA256 string                   `json:"original_proposal_sha256,omitempty"`
-	Fallback               bool                     `json:"fallback"`
-	FallbackReason         FallbackReason           `json:"fallback_reason,omitempty"`
+	Version                 int                      `json:"version"`
+	Subsystems              []Subsystem              `json:"subsystems"`
+	StructuralLocators      []Candidate              `json:"structural_locators,omitempty"`
+	ConceptualMemberships   []ConceptualMembership   `json:"conceptual_memberships"`
+	LocalRemainderMemberIDs []MemberID               `json:"local_remainder_member_ids,omitempty"`
+	Relations               []LocalRelation          `json:"relations,omitempty"`
+	AnchorBindings          []FlowAnchorBinding      `json:"flow_anchor_bindings,omitempty"`
+	Diagnostics             []Diagnostic             `json:"diagnostics,omitempty"`
+	ValidationOutcome       ValidationOutcome        `json:"validation_outcome"`
+	Source                  ArchitectureSource       `json:"architecture_source"`
+	Level                   int                      `json:"architecture_level"`
+	Normalizations          []NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256  string                   `json:"original_proposal_sha256,omitempty"`
+	Fallback                bool                     `json:"fallback"`
+	FallbackReason          FallbackReason           `json:"fallback_reason,omitempty"`
 }
 
 // CandidateRoleCounts reports the complete local bundle split without
@@ -545,11 +548,11 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		diagnostics = rawDiagnostics
 	} else {
 		normalized, shapeOperations, shapeDiagnostics := normalizeProposalShape(bundle, proposal)
-		groundingOperations, groundingDiagnostics := normalizeStaticContextHypotheses(bundle, &normalized)
-		operations = append(shapeOperations, groundingOperations...)
+		deriveLocalComponentHypotheses(bundle, &normalized)
+		operations = shapeOperations
 		var applyDiagnostics []Diagnostic
 		landscape, applyDiagnostics, usable = applyProposal(bundle, normalized)
-		diagnostics = append(shapeDiagnostics, groundingDiagnostics...)
+		diagnostics = shapeDiagnostics
 		diagnostics = append(diagnostics, applyDiagnostics...)
 	}
 	if !usable && !hasFatalDiagnostics(diagnostics) {
@@ -564,6 +567,14 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 			hasAnyOperationalBehaviorAnchor(bundle.BehaviorAnchors),
 		)
 		landscape.Fallback = true
+	} else if len(landscape.LocalRemainderMemberIDs) > 0 {
+		landscape.ValidationOutcome = ValidationAcceptedPartial
+		landscape.Source = SourcePartialModel
+		landscape.Level = 2
+		if len(operations) > 0 {
+			landscape.Normalizations = operations
+		}
+		landscape.Diagnostics = diagnostics
 	} else if len(operations) > 0 {
 		landscape.ValidationOutcome = ValidationAcceptedNormalized
 		landscape.Source = SourceNormalizedModel
@@ -583,42 +594,34 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 	return landscape, nil
 }
 
-// normalizeStaticContextHypotheses extends the existing package-only
-// normalization to components that cite declaration-family anchors. Those
-// anchors remain exact static context, but do not prove operational grounding.
-func normalizeStaticContextHypotheses(
+// deriveLocalComponentHypotheses derives component-wide operational status
+// only from exact producer-owned proof. Provider-authored hypothesis values
+// are non-authoritative: declaration-family context never grounds a component,
+// and process-entry/call-target anchors ground it only when their exact member
+// scope covers every member in the component. This is ordinary exact local
+// resolution, not a normalization of model-authored product authority.
+func deriveLocalComponentHypotheses(
 	bundle CandidateBundle,
 	proposal *Proposal,
-) ([]NormalizationOperation, []Diagnostic) {
-	if proposal == nil || bundle.GroundingMode == GroundingPackages {
-		return nil, nil
+) {
+	if proposal == nil {
+		return
 	}
-	knownMembers := candidateIndex(bundle)
 	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
-	var operations []NormalizationOperation
-	var diagnostics []Diagnostic
 	for subsystemIndex := range proposal.Subsystems {
 		for componentIndex := range proposal.Subsystems[subsystemIndex].Components {
 			component := &proposal.Subsystems[subsystemIndex].Components[componentIndex]
-			if component.Hypothesis || len(component.AnchorIDs) == 0 ||
-				componentHasUnknownBehaviorAnchor(component.AnchorIDs, knownAnchors) ||
-				hasOperationalBehaviorAnchor(component.AnchorIDs, knownAnchors) ||
-				!knownPackageOnlyMembers(knownMembers, component.MemberIDs) {
+			if componentHasUnknownBehaviorAnchor(component.AnchorIDs, knownAnchors) {
 				continue
 			}
-			component.Hypothesis = true
-			operations = append(operations, NormalizationOperation{
-				Code:               "normalized_package_only_hypothesis",
-				Message:            "marked one package-only conceptual component without operational grounding as an explicit hypothesis",
-				SourceComponentIDs: append([]ComponentID(nil), component.sourceIDs...),
-			})
-			diagnostics = append(diagnostics, newDiagnostic(
-				"proposal.normalized_package_only_hypothesis",
-				"marked a package-only conceptual component without operational grounding as an explicit hypothesis",
-			))
+			hypothesis := !componentHasCompleteOperationalGrounding(
+				component.MemberIDs,
+				component.AnchorIDs,
+				knownAnchors,
+			)
+			component.Hypothesis = hypothesis
 		}
 	}
-	return operations, diagnostics
 }
 
 // Deterministic builds a usable landscape without treating an intentionally
@@ -870,11 +873,23 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	if !validArchitectureSource(landscape.Source) || landscape.Level < 1 || landscape.Level > 4 {
 		return fmt.Errorf("componentmap: invalid architecture source or level")
 	}
-	if landscape.Source == SourceValidatedModel && (landscape.Level != 1 || landscape.Fallback || len(landscape.Normalizations) != 0) {
+	if landscape.Source == SourceValidatedModel && (landscape.Level != 1 || landscape.Fallback ||
+		len(landscape.Normalizations) != 0 || landscape.ValidationOutcome != ValidationAccepted) {
 		return fmt.Errorf("componentmap: validated model source has inconsistent state")
 	}
-	if landscape.Source == SourceNormalizedModel && (landscape.Level != 2 || landscape.Fallback || len(landscape.Normalizations) == 0) {
+	if landscape.Source == SourceNormalizedModel && (landscape.Level != 2 || landscape.Fallback ||
+		len(landscape.Normalizations) == 0 || landscape.ValidationOutcome != ValidationAcceptedNormalized) {
 		return fmt.Errorf("componentmap: normalized model source has inconsistent state")
+	}
+	if landscape.Source == SourcePartialModel && (landscape.Level != 2 || landscape.Fallback ||
+		landscape.ValidationOutcome != ValidationAcceptedPartial || len(landscape.LocalRemainderMemberIDs) == 0) {
+		return fmt.Errorf("componentmap: partial model source has inconsistent state")
+	}
+	if landscape.ValidationOutcome == ValidationAcceptedPartial && landscape.Source != SourcePartialModel {
+		return fmt.Errorf("componentmap: partial validation outcome has inconsistent source")
+	}
+	if landscape.ValidationOutcome != ValidationAcceptedPartial && len(landscape.LocalRemainderMemberIDs) != 0 {
+		return fmt.Errorf("componentmap: non-partial landscape carries local remainder identities")
 	}
 	if landscape.Source == SourceLocalAnchors && landscape.Level != 3 {
 		return fmt.Errorf("componentmap: local-anchor source has inconsistent level")
@@ -909,17 +924,39 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	}
 
 	known := candidateIndex(bundle)
+	remainderSet := make(map[MemberID]struct{}, len(landscape.LocalRemainderMemberIDs))
+	for index, memberID := range landscape.LocalRemainderMemberIDs {
+		candidate, exists := known[memberID]
+		if !exists || candidate.Role != CandidateRoleConceptualMember {
+			return fmt.Errorf("componentmap: local remainder references unknown or structural member %q", memberID.key())
+		}
+		if index > 0 && landscape.LocalRemainderMemberIDs[index-1].key() >= memberID.key() {
+			return fmt.Errorf("componentmap: local remainder identities are not strictly sorted")
+		}
+		remainderSet[memberID] = struct{}{}
+	}
 	expectedStructural := structuralLocatorCandidates(bundle)
 	if !reflect.DeepEqual(landscape.StructuralLocators, expectedStructural) {
 		return fmt.Errorf("componentmap: landscape changed or omitted local structural locators")
 	}
 	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
 	seenMembers := make(map[MemberID]struct{}, len(bundle.Candidates))
+	modelMembers := make(map[MemberID]struct{}, len(bundle.Candidates))
 	seenComponents := make(map[ComponentID]struct{})
 	componentCount := 0
+	modelComponentCount := 0
+	diagnosticSubsystems := 0
 	for subsystemIndex, subsystem := range landscape.Subsystems {
 		if subsystem.Category != "" && subsystem.Category != SubsystemCategoryDiagnostic {
 			return fmt.Errorf("componentmap: subsystem[%d] has unsupported category %q", subsystemIndex, subsystem.Category)
+		}
+		if subsystem.Category == SubsystemCategoryDiagnostic && landscape.ValidationOutcome == ValidationAcceptedPartial {
+			diagnosticSubsystems++
+			if subsystem.Name != "Unclassified by model" ||
+				subsystem.Description != "Exact local conceptual members not classified by the model response." ||
+				len(subsystem.Components) != 1 || len(subsystem.SourceIDs) != 0 {
+				return fmt.Errorf("componentmap: partial local remainder subsystem is malformed")
+			}
 		}
 		if err := validateDisplayText("subsystem name", subsystem.Name, maxNameBytes, true); err != nil {
 			return err
@@ -933,6 +970,16 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 		componentIDs := make([]ComponentID, 0, len(subsystem.Components))
 		for componentIndex, component := range subsystem.Components {
 			componentCount++
+			if subsystem.Category != SubsystemCategoryDiagnostic {
+				modelComponentCount++
+			}
+			if landscape.ValidationOutcome == ValidationAcceptedPartial && subsystem.Category == SubsystemCategoryDiagnostic {
+				if component.Name != "Unclassified by model" ||
+					component.Description != "Exact local conceptual members not classified by the model response." ||
+					len(component.AnchorIDs) != 0 || !component.Hypothesis || len(component.SourceIDs) != 0 {
+					return fmt.Errorf("componentmap: partial local remainder component is malformed")
+				}
+			}
 			if err := validateDisplayText("component name", component.Name, maxNameBytes, true); err != nil {
 				return err
 			}
@@ -955,9 +1002,18 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				}
 				seenAnchorIDs[anchorID] = struct{}{}
 			}
-			if bundle.GroundingMode != GroundingPackages && subsystem.Category != SubsystemCategoryDiagnostic &&
-				!hasOperationalBehaviorAnchor(component.AnchorIDs, knownAnchors) && !component.Hypothesis {
-				return fmt.Errorf("componentmap: grounded component lacks an operational anchor or explicit hypothesis")
+			if subsystem.Category != SubsystemCategoryDiagnostic {
+				if isModelArchitectureSource(landscape.Source) {
+					wantHypothesis := !componentHasCompleteOperationalGrounding(
+						candidateIDs(component.Members), component.AnchorIDs, knownAnchors,
+					)
+					if component.Hypothesis != wantHypothesis {
+						return fmt.Errorf("componentmap: model component hypothesis is not derived from exact local operational proof")
+					}
+				} else if bundle.GroundingMode != GroundingPackages &&
+					!hasOperationalBehaviorAnchor(component.AnchorIDs, knownAnchors) && !component.Hypothesis {
+					return fmt.Errorf("componentmap: grounded component lacks an operational anchor or explicit hypothesis")
+				}
 			}
 			memberIDs := make([]MemberID, 0, len(component.Members))
 			seenComponentMembers := make(map[MemberID]struct{}, len(component.Members))
@@ -977,6 +1033,19 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				}
 				seenComponentMembers[member.ID] = struct{}{}
 				seenMembers[member.ID] = struct{}{}
+				if landscape.ValidationOutcome == ValidationAcceptedPartial {
+					_, isRemainder := remainderSet[member.ID]
+					if subsystem.Category == SubsystemCategoryDiagnostic {
+						if !isRemainder {
+							return fmt.Errorf("componentmap: partial diagnostic component contains a model-covered member")
+						}
+					} else {
+						if isRemainder {
+							return fmt.Errorf("componentmap: partial model component contains a local remainder member")
+						}
+						modelMembers[member.ID] = struct{}{}
+					}
+				}
 				memberIDs = append(memberIDs, member.ID)
 			}
 			if expected := componentID(memberIDs); component.ID != expected {
@@ -992,10 +1061,22 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 			return fmt.Errorf("componentmap: subsystem id %q does not match exact components", subsystem.ID)
 		}
 	}
-	if componentCount > maxComponents {
+	if modelComponentCount > maxComponents ||
+		(componentCount > maxComponents && !(landscape.ValidationOutcome == ValidationAcceptedPartial && componentCount == maxComponents+1)) {
 		return fmt.Errorf("componentmap: landscape exceeds %d components", maxComponents)
 	}
-	expectedMemberships := conceptualMembershipsFromSubsystems(landscape.Subsystems)
+	if landscape.ValidationOutcome == ValidationAcceptedPartial {
+		if diagnosticSubsystems != 1 || len(modelMembers) == 0 {
+			return fmt.Errorf("componentmap: partial landscape must contain model coverage and one local remainder")
+		}
+		if len(seenMembers) != len(modelMembers)+len(remainderSet) {
+			return fmt.Errorf("componentmap: partial model and local remainder membership overlap")
+		}
+	}
+	expectedMemberships := conceptualMembershipsFromSubsystemsExcluding(
+		landscape.Subsystems,
+		remainderSet,
+	)
 	if len(expectedMemberships) > maxConceptualMemberships {
 		return fmt.Errorf("componentmap: landscape exceeds %d conceptual memberships", maxConceptualMemberships)
 	}
@@ -1052,11 +1133,8 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		Relations:          cloneLocalRelations(bundle.Relations),
 		AnchorBindings:     cloneFlowAnchorBindings(bundle.AnchorBindings),
 	}
-	componentBudget := maxComponents - 1
+	componentCount := 0
 	for _, proposedSubsystem := range proposedSubsystems {
-		if componentBudget == 0 {
-			break
-		}
 		name := strings.TrimSpace(proposedSubsystem.Name)
 		description := strings.TrimSpace(proposedSubsystem.Description)
 		if validateDisplayText("subsystem name", name, maxNameBytes, true) != nil ||
@@ -1067,10 +1145,11 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		}
 		subsystem := Subsystem{Name: name, Description: description, Components: make([]Component, 0, len(proposedSubsystem.Components))}
 		for _, proposedComponent := range proposedSubsystem.Components {
-			if componentBudget == 0 {
-				break
+			componentCount++
+			if componentCount > maxComponents {
+				invalid("proposal.invalid_component_count", "proposal exceeds the complete component limit")
+				return Landscape{}, diagnostics, false
 			}
-			componentBudget--
 			componentName := strings.TrimSpace(proposedComponent.Name)
 			componentDescription := strings.TrimSpace(proposedComponent.Description)
 			if validateDisplayText("component name", componentName, maxNameBytes, true) != nil ||
@@ -1107,9 +1186,10 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				anchorIDs = append(anchorIDs, anchorID)
 			}
 			sort.Strings(anchorIDs)
-			if bundle.GroundingMode != GroundingPackages &&
-				!hasOperationalBehaviorAnchor(anchorIDs, knownAnchors) && !proposedComponent.Hypothesis {
-				invalid("proposal.ungrounded_primary_component", "a primary component lacks a supplied operational behavior anchor or explicit hypothesis")
+			if proposedComponent.Hypothesis != !componentHasCompleteOperationalGrounding(
+				proposedComponent.MemberIDs, anchorIDs, knownAnchors,
+			) {
+				invalid("proposal.ungrounded_primary_component", "component hypothesis is not derived from exact local operational proof for every member")
 				return Landscape{}, diagnostics, false
 			}
 			sortCandidates(members)
@@ -1137,19 +1217,50 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		invalid("proposal.no_usable_subsystems", "no proposed subsystem retained a unique known member")
 		return Landscape{}, diagnostics, false
 	}
-	conceptualCount, _ := bundle.CandidateRoleCounts()
-	if len(seenMembers) != conceptualCount {
-		invalid(
-			"proposal.incomplete_member_coverage",
-			fmt.Sprintf(
-				"proposal covers %d of %d requested distinct conceptual members",
-				len(seenMembers), conceptualCount,
-			),
-		)
+	if len(seenMembers) == 0 {
+		invalid("proposal.empty_member_coverage", "proposal covers none of the requested conceptual members")
 		return Landscape{}, diagnostics, false
 	}
+	remainder := make([]Candidate, 0)
+	for memberID, candidate := range known {
+		if _, covered := seenMembers[memberID]; covered {
+			continue
+		}
+		remainder = append(remainder, cloneCandidate(candidate))
+	}
+	sortCandidates(remainder)
+	if len(remainder) > 0 {
+		remainderIDs := candidateIDs(remainder)
+		componentID := componentID(remainderIDs)
+		remainderComponent := Component{
+			ID:          componentID,
+			Name:        "Unclassified by model",
+			Description: "Exact local conceptual members not classified by the model response.",
+			Members:     remainder,
+			Hypothesis:  true,
+		}
+		subsystemID := subsystemID([]ComponentID{componentID})
+		landscape.Subsystems = append(landscape.Subsystems, Subsystem{
+			ID:          subsystemID,
+			Name:        "Unclassified by model",
+			Description: "Exact local conceptual members not classified by the model response.",
+			Category:    SubsystemCategoryDiagnostic,
+			Components:  []Component{remainderComponent},
+		})
+		landscape.LocalRemainderMemberIDs = append([]MemberID(nil), remainderIDs...)
+		diagnostics = append(diagnostics, newDiagnostic(
+			"proposal.partial_member_coverage",
+			fmt.Sprintf(
+				"accepted exact model grouping for %d members; retained %d members in the deterministic local remainder",
+				len(seenMembers), len(remainder),
+			),
+		))
+	}
 	landscape.Diagnostics = diagnostics
-	landscape.ConceptualMemberships = conceptualMembershipsFromSubsystems(landscape.Subsystems)
+	landscape.ConceptualMemberships = conceptualMembershipsFromSubsystemsExcluding(
+		landscape.Subsystems,
+		memberIDSet(landscape.LocalRemainderMemberIDs),
+	)
 	return landscape, diagnostics, true
 }
 
@@ -1164,7 +1275,6 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 	memberReferenceCounts := make(map[MemberID]int)
 	distinctReferencedMembers := make(map[MemberID]struct{})
 	knownMembers := conceptualCandidateIndex(bundle)
-	conceptualCount, _ := bundle.CandidateRoleCounts()
 	for _, subsystem := range proposal.Subsystems {
 		if len(subsystem.Components) == 0 {
 			return []Diagnostic{newDiagnostic(
@@ -1224,13 +1334,10 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 			}
 		}
 	}
-	if len(distinctReferencedMembers) != conceptualCount {
+	if len(distinctReferencedMembers) == 0 {
 		return []Diagnostic{newDiagnostic(
-			"proposal.incomplete_member_coverage",
-			fmt.Sprintf(
-				"proposal covers %d of %d requested distinct conceptual members",
-				len(distinctReferencedMembers), conceptualCount,
-			),
+			"proposal.empty_member_coverage",
+			"proposal covers none of the requested conceptual members",
 		)}
 	}
 	return nil
@@ -1997,6 +2104,32 @@ func hasOperationalBehaviorAnchor(anchorIDs []string, known map[string]BehaviorA
 	return false
 }
 
+func componentHasCompleteOperationalGrounding(
+	memberIDs []MemberID,
+	anchorIDs []string,
+	known map[string]BehaviorAnchor,
+) bool {
+	if len(memberIDs) == 0 || len(anchorIDs) == 0 {
+		return false
+	}
+	grounded := make(map[MemberID]struct{}, len(memberIDs))
+	for _, anchorID := range anchorIDs {
+		anchor, exists := known[anchorID]
+		if !exists || !behaviorAnchorProvidesOperationalGrounding(anchor) {
+			continue
+		}
+		for _, memberID := range anchor.MemberIDs {
+			grounded[memberID] = struct{}{}
+		}
+	}
+	for _, memberID := range memberIDs {
+		if _, exists := grounded[memberID]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
 func componentHasUnknownBehaviorAnchor(anchorIDs []string, known map[string]BehaviorAnchor) bool {
 	for _, anchorID := range anchorIDs {
 		if _, exists := known[anchorID]; !exists {
@@ -2432,6 +2565,10 @@ func sortCandidates(candidates []Candidate) {
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ID.key() < candidates[j].ID.key() })
 }
 
+func sortMemberIDs(memberIDs []MemberID) {
+	sort.Slice(memberIDs, func(i, j int) bool { return memberIDs[i].key() < memberIDs[j].key() })
+}
+
 func candidateIDs(candidates []Candidate) []MemberID {
 	result := make([]MemberID, len(candidates))
 	for index, candidate := range candidates {
@@ -2449,10 +2586,20 @@ func componentIDs(components []Component) []ComponentID {
 }
 
 func conceptualMembershipsFromSubsystems(subsystems []Subsystem) []ConceptualMembership {
+	return conceptualMembershipsFromSubsystemsExcluding(subsystems, nil)
+}
+
+func conceptualMembershipsFromSubsystemsExcluding(
+	subsystems []Subsystem,
+	excluded map[MemberID]struct{},
+) []ConceptualMembership {
 	memberships := make([]ConceptualMembership, 0)
 	for _, subsystem := range subsystems {
 		for _, component := range subsystem.Components {
 			for _, member := range component.Members {
+				if _, skip := excluded[member.ID]; skip {
+					continue
+				}
 				memberships = append(memberships, ConceptualMembership{
 					ComponentID: component.ID,
 					MemberID:    member.ID,
@@ -2467,4 +2614,19 @@ func conceptualMembershipsFromSubsystems(subsystems []Subsystem) []ConceptualMem
 		return memberships[i].MemberID.key() < memberships[j].MemberID.key()
 	})
 	return memberships
+}
+
+func memberIDSet(memberIDs []MemberID) map[MemberID]struct{} {
+	if len(memberIDs) == 0 {
+		return nil
+	}
+	result := make(map[MemberID]struct{}, len(memberIDs))
+	for _, memberID := range memberIDs {
+		result[memberID] = struct{}{}
+	}
+	return result
+}
+
+func isModelArchitectureSource(source ArchitectureSource) bool {
+	return source == SourceValidatedModel || source == SourceNormalizedModel || source == SourcePartialModel
 }

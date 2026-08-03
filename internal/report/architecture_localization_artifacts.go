@@ -267,7 +267,7 @@ func buildArchitectureLocalizationIdentityPayloads(
 	case componentmap.ValidationAccepted:
 		if metadata.ArchitectureSource != componentmap.SourceValidatedModel ||
 			len(metadata.Normalizations) != 0 ||
-			status.ProposalNormalized {
+			status.ProposalNormalized || status.ProposalPartial {
 			return nil, fmt.Errorf(
 				"architecture localization artifacts: accepted synthesis metadata is inconsistent",
 			)
@@ -275,9 +275,16 @@ func buildArchitectureLocalizationIdentityPayloads(
 	case componentmap.ValidationAcceptedNormalized:
 		if metadata.ArchitectureSource != componentmap.SourceNormalizedModel ||
 			len(metadata.Normalizations) == 0 ||
-			!status.ProposalNormalized {
+			!status.ProposalNormalized || status.ProposalPartial {
 			return nil, fmt.Errorf(
 				"architecture localization artifacts: normalized synthesis metadata is inconsistent",
+			)
+		}
+	case componentmap.ValidationAcceptedPartial:
+		if metadata.ArchitectureSource != componentmap.SourcePartialModel ||
+			!status.ProposalPartial {
+			return nil, fmt.Errorf(
+				"architecture localization artifacts: partial synthesis metadata is inconsistent",
 			)
 		}
 	default:
@@ -288,6 +295,13 @@ func buildArchitectureLocalizationIdentityPayloads(
 	if status.ArchitectureSource != string(metadata.ArchitectureSource) ||
 		status.ArchitectureLevel != metadata.ArchitectureLevel ||
 		status.NormalizationCount != len(metadata.Normalizations) ||
+		status.MembershipCounted != metadata.MembershipCounted ||
+		status.MemberOccurrences != metadata.MemberOccurrences ||
+		status.DistinctMembers != metadata.DistinctMembers ||
+		status.RequestedConceptualCount != len(metadata.RequestedMemberIDs) ||
+		status.CoveredConceptualCount != len(metadata.CoveredMemberIDs) ||
+		status.UncoveredConceptualCount != len(metadata.UncoveredMemberIDs) ||
+		!reflect.DeepEqual(status.UncoveredConceptualIDs, metadata.UncoveredMemberIDs) ||
 		canvas.ValidationOutcome != metadata.ValidationOutcome ||
 		canvas.ArchitectureSource != metadata.ArchitectureSource ||
 		canvas.ArchitectureLevel != metadata.ArchitectureLevel ||

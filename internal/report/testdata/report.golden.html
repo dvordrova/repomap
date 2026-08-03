@@ -1449,6 +1449,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.main_handler_branch": { params: [], text: "Main handler branch" },
     "main.no_source_backed_code_path": { params: [], text: "No source-backed code path is available yet." },
     "main.normalized_model": { params: [], text: "Normalized model" },
+    "main.partial_model": { params: [], text: "Partial model grouping" },
     "main.operational": { params: [], text: "Operational" },
     "main.orientation": { params: [], text: "Orientation" },
     "main.other_static_relations": { params: [], text: "Other static relations" },
@@ -1610,6 +1611,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.validation_and_provenance": { params: [], text: "Validation and provenance" },
     "architecture.value.validated_model": { params: [], text: "validated model" },
     "architecture.value.normalized_model": { params: [], text: "normalized model" },
+    "architecture.value.partial_model": { params: [], text: "partial model grouping with local remainder" },
+    "architecture.value.accepted_partial": { params: [], text: "Partially accepted model grouping" },
+    "architecture.copy.accepted_partial": { params: [], text: "The model grouped the covered architecture areas. Exact local items it did not classify are preserved separately." },
+    "architecture.count.local_remainder_members": { params: ["count"], format: function (params) { return englishCount(params.count, "preserved exact local item", "preserved exact local items"); } },
     "architecture.value.local_anchors": { params: [], text: "local anchors" },
     "architecture.value.local_packages": { params: [], text: "local package structure" },
     "architecture.value.package_fallback": { params: [], text: "package fallback" },
@@ -2736,6 +2741,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.main_handler_branch": { params: [], text: "Основная ветвь обработчика" },
     "main.no_source_backed_code_path": { params: [], text: "Путь по коду с опорой на исходники пока недоступен." },
     "main.normalized_model": { params: [], text: "Нормализованная модель" },
+    "main.partial_model": { params: [], text: "Частичная группировка модели" },
     "main.operational": { params: [], text: "Эксплуатация" },
     "main.orientation": { params: [], text: "Ориентация" },
     "main.other_static_relations": { params: [], text: "Другие статические связи" },
@@ -2897,6 +2903,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.validation_and_provenance": { params: [], text: "Проверка и происхождение данных" },
     "architecture.value.validated_model": { params: [], text: "проверенный результат модели" },
     "architecture.value.normalized_model": { params: [], text: "нормализованный результат модели" },
+    "architecture.value.partial_model": { params: [], text: "частичная группировка модели с локальным остатком" },
+    "architecture.value.accepted_partial": { params: [], text: "Частично принятая группировка модели" },
+    "architecture.copy.accepted_partial": { params: [], text: "Модель сгруппировала покрытые области архитектуры. Точные локальные элементы, которые она не классифицировала, сохранены отдельно." },
+    "architecture.count.local_remainder_members": { params: ["count"], format: function (params) { return russianCount(params.count, "сохранённый точный локальный элемент", "сохранённых точных локальных элемента", "сохранённых точных локальных элементов"); } },
     "architecture.value.local_anchors": { params: [], text: "локальные опоры" },
     "architecture.value.local_packages": { params: [], text: "локальная структура пакетов" },
     "architecture.value.package_fallback": { params: [], text: "резервный вариант по пакетам" },
@@ -4986,6 +4996,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function architectureSourceLabel(value) {
     return {
       validated_model: msg('architecture.value.validated_model'),
+      partial_model: msg('architecture.value.partial_model'),
       normalized_model: msg('architecture.value.normalized_model'),
       local_anchors: msg('architecture.value.local_anchors'),
       package_fallback: msg('architecture.value.package_fallback')
@@ -5209,7 +5220,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (DEBUG_MODE && DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
         var architectureValue = msg('main.unavailable');
-        if (DATA.architecture_synthesis.proposal_normalized) {
+        if (DATA.architecture_synthesis.proposal_partial) {
+          architectureValue = msg('main.partial_model');
+        } else if (DATA.architecture_synthesis.proposal_normalized) {
           architectureValue = msg('main.normalized_model');
         } else if (DATA.architecture_synthesis.proposal_accepted) {
           architectureValue = msg('main.validated_model');
@@ -11011,6 +11024,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (!DATA.architecture_canvas || !userArchitectureAvailable()) return null;
     if (DEBUG_MODE) return DATA.architecture_canvas;
     var canvas = JSON.parse(JSON.stringify(DATA.architecture_canvas));
+		if (String(canvas.validation_outcome || '') !== 'accepted_partial') {
+			delete canvas.local_remainder_component_id;
+		}
     delete canvas.suggested_investigations;
     delete canvas.frontiers;
     delete canvas.diagnostics;
@@ -11656,6 +11672,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       workspaceHashForState: workspaceHashForState,
 			workspaceRouteFamily: workspaceRouteFamily,
       userArchitectureAvailable: userArchitectureAvailable,
+		userArchitectureData: userArchitectureData,
       reduceWorkspaceState: reduceWorkspaceState,
       renderExactReferences: renderExactReferences,
       renderSourceCode: renderSourceCode,

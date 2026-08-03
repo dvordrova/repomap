@@ -67,6 +67,7 @@ func architectureSynthesisOutcomeFixture(
 		FinishReason: "stop", ResponseComplete: true, ResponseState: componentmap.ResponseCaptured,
 		LocalCandidateCount: 2, RequestedConceptualCount: 2, AnchorCount: 1,
 		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
+		CoveredConceptualCount: 2,
 	}
 }
 
@@ -348,39 +349,6 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	}
 }
 
-func TestArchitectureResponseMembershipCountsRejectsLegacyAndCountsFlatRequestLocalShape(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		response   string
-		counted    bool
-		occurrence int
-		distinct   int
-	}{
-		{
-			name:     "legacy canonical nested response",
-			response: `{"subsystems":[{"components":[{"member_ids":[{"kind":"package","value":"a"}]},{"member_ids":[{"kind":"package","value":"a"},{"kind":"file","value":"b"}]}]}]}`,
-		},
-		{
-			name:     "flat request local refs",
-			response: `{"records":[{"kind":"subsystem","ref":"g1","name":"Repository","description":""},{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"},{"kind":"file","ref":"f1"}],"anchor_refs":[],"hypothesis":true}]}`,
-			counted:  true, occurrence: 2, distinct: 2,
-		},
-		{name: "not exact json", response: "```json\n{}\n```"},
-		{name: "mixed identities", response: `{"subsystems":[{"components":[{"member_ids":[],"member_refs":[]}]}]}`},
-		{name: "non-closed ref", response: `{"records":[{"kind":"subsystem","ref":"g1","name":"Repository","description":""},{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1","path":"private"}],"anchor_refs":[],"hypothesis":true}]}`},
-		{name: "unknown root field", response: `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[],"hypothesis":true}],"subsystems":[]}`},
-		{name: "unknown component field", response: `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[],"hypothesis":true,"owner_ref":"p1"}]}`},
-		{name: "duplicate member ref field", response: `{"records":[{"kind":"component","subsystem_ref":"g1","name":"Runtime","description":"","member_refs":[{"kind":"package","ref":"p1","ref":"p2"}],"anchor_refs":[],"hypothesis":true}]}`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			counted, occurrence, distinct := architectureResponseMembershipCounts([]byte(test.response))
-			if counted != test.counted || occurrence != test.occurrence || distinct != test.distinct {
-				t.Fatalf("counts = %t/%d/%d", counted, occurrence, distinct)
-			}
-		})
-	}
-}
-
 func TestArchitectureSynthesisDiagnosticCodesRetainsAllDistinctCodes(t *testing.T) {
 	diagnostics := []componentmap.Diagnostic{
 		{Code: "proposal.first"},
@@ -474,6 +442,92 @@ func TestEnsureArchitectureSynthesisPersistsResolvedManyToManyMembershipEvidence
 	if status.State != report.ArchitectureSynthesisSucceeded || status.MemberOccurrences != 3 ||
 		status.DistinctMembers != 2 || !status.ProposalAccepted || len(status.ValidationCodes) != 0 {
 		t.Fatalf("persisted many-to-many synthesis status = %#v", status)
+	}
+}
+
+func TestEnsureArchitectureSynthesisPersistsAndReplaysExactPartialCoverage(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	omitted := bundle.Candidates[0]
+	omitted.ID = componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-storage"}
+	omitted.Name = "local storage"
+	omitted.Facts = append([]componentmap.LocalFact(nil), omitted.Facts...)
+	omitted.Facts[0].Value = "storage package"
+	bundle.Candidates = append(bundle.Candidates, omitted)
+	request, _, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(architectureSynthesisWireResponse{Records: []any{
+		architectureSynthesisWireSubsystem{Kind: "subsystem", Ref: "g1", Name: "Application"},
+		architectureSynthesisWireComponent{
+			Kind: "component", SubsystemRef: "g1", Name: "Runtime",
+			MemberRefs: []componentmap.SynthesisMemberRef{request.Candidates[0].Ref},
+			AnchorRefs: []componentmap.SynthesisAnchorRef{},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &architectureSynthesisStub{response: response}
+	runsDir := t.TempDir()
+	firstRun := filepath.Join(runsDir, "run-one")
+	secondRun := filepath.Join(runsDir, "run-two")
+	for _, runDir := range []string{firstRun, secondRun} {
+		if err := os.Mkdir(runDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options := architectureSynthesisOptions{
+		providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+	}
+	first, err := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, firstRun, "revision-partial",
+		"openai-compatible/bearer", "test-model", provider, options,
+	)
+	if err != nil {
+		t.Fatalf("partial synthesis: %v; outcome=%#v", err, first)
+	}
+	wantUncovered := []componentmap.MemberID{omitted.ID}
+	if first.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		first.CoveredConceptualCount != 1 || first.UncoveredConceptualCount != 1 ||
+		first.DistinctMembers != 1 || first.MemberOccurrences != 1 ||
+		!slices.Equal(first.UncoveredConceptualIDs, wantUncovered) {
+		t.Fatalf("partial outcome = %#v", first)
+	}
+	if err := persistArchitectureSynthesisStatus(firstRun, first, nil); err != nil {
+		t.Fatal(err)
+	}
+	statusBytes, err := os.ReadFile(filepath.Join(firstRun, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusBytes, &status); err != nil {
+		t.Fatal(err)
+	}
+	if err := status.Validate(); err != nil {
+		t.Fatalf("partial status: %v", err)
+	}
+	if !status.ProposalAccepted || !status.ProposalPartial || status.ProposalRejected ||
+		status.CoveredConceptualCount != 1 || status.UncoveredConceptualCount != 1 ||
+		!slices.Equal(status.UncoveredConceptualIDs, wantUncovered) {
+		t.Fatalf("persisted partial status = %#v", status)
+	}
+
+	second, err := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, secondRun, "revision-partial",
+		"openai-compatible/bearer", "test-model", provider, options,
+	)
+	if err != nil {
+		t.Fatalf("replay partial synthesis: %v", err)
+	}
+	if provider.calls != 1 || !second.Cached ||
+		second.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		second.CoveredConceptualCount != 1 || second.UncoveredConceptualCount != 1 ||
+		!slices.Equal(second.UncoveredConceptualIDs, wantUncovered) {
+		t.Fatalf("cached partial outcome calls=%d outcome=%#v", provider.calls, second)
 	}
 }
 
@@ -1136,6 +1190,7 @@ func TestArchitectureSynthesisStatusSeparatesLocalCandidatesFromRequestedConcept
 	outcome.StructuralLocatorCount = 8
 	outcome.MemberOccurrences = 42
 	outcome.DistinctMembers = 42
+	outcome.CoveredConceptualCount = 42
 	status := architectureSynthesisStatus(outcome, nil)
 	if err := status.Validate(); err != nil {
 		t.Fatalf("truthful 50/42/8 Architecture status: %v; status=%#v", err, status)
@@ -1160,6 +1215,7 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 		name         string
 		outcome      architectureSynthesisOutcome
 		accepted     bool
+		partial      bool
 		normalized   bool
 		rejected     bool
 		fallback     bool
@@ -1184,6 +1240,24 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 			accepted: true, normalized: true,
 		},
 		{
+			name: "accepted partial",
+			outcome: func() architectureSynthesisOutcome {
+				outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationAcceptedPartial)
+				outcome.LocalCandidateCount = 3
+				outcome.RequestedConceptualCount = 3
+				outcome.MemberOccurrences = 2
+				outcome.DistinctMembers = 2
+				outcome.CoveredConceptualCount = 2
+				outcome.UncoveredConceptualCount = 1
+				outcome.UncoveredConceptualIDs = []componentmap.MemberID{{
+					Kind: componentmap.MemberPackage, Value: "opaque-storage",
+				}}
+				outcome.ArchitectureSource = componentmap.SourcePartialModel
+				return outcome
+			}(),
+			accepted: true, partial: true,
+		},
+		{
 			name: "rejected enrichment preserves local canvas",
 			outcome: func() architectureSynthesisOutcome {
 				outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationRejected)
@@ -1204,7 +1278,8 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 			if err := status.Validate(); err != nil {
 				t.Fatalf("Validate() error = %v; status = %#v", err, status)
 			}
-			if status.ProposalAccepted != test.accepted || status.ProposalNormalized != test.normalized ||
+			if status.ProposalAccepted != test.accepted || status.ProposalPartial != test.partial ||
+				status.ProposalNormalized != test.normalized ||
 				status.ProposalRejected != test.rejected || status.FallbackSelected != test.fallback {
 				t.Fatalf("status = %#v", status)
 			}

@@ -331,7 +331,8 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		return Direction{}, "component_principal_missing"
 	}
 	sort.Slice(principals, func(i, j int) bool { return canonicalRefLess(principals[i], principals[j]) })
-	if len(provider.Reading) < 3 || len(provider.Reading) > 5 {
+	if len(provider.Reading) < MinDirectionReadingCount ||
+		len(provider.Reading) > MaxDirectionReadingCount {
 		return Direction{}, "invalid_reading_count"
 	}
 	reading := make([]ResolvedReading, 0, len(provider.Reading))

@@ -672,19 +672,8 @@ func architectureLocalizationRecordRequestBuilder(
 func architectureLocalizationRecordFixtureResponse(t *testing.T, runDir string) []byte {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(
-		"testdata",
-		"architecture-localization",
-		"architecture.ru.projection.v1.json",
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	projection, err := decodeArchitectureLocalizationProjection(data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, canonical, input := architectureLocalizationRussianContext(t, runDir)
+	projection := architectureLocalizationRussianProjection(t, canonical, input)
 	return architectureLocalizationProviderResponse(t, canonical, input, projection)
 }
 

@@ -113,6 +113,7 @@
  function architectureSourceLabel(value, message) {
   switch (text(value)) {
    case "validated_model": return productMessage(message, "architecture.value.validated_model");
+   case "partial_model": return productMessage(message, "architecture.value.partial_model");
    case "normalized_model": return productMessage(message, "architecture.value.normalized_model");
    case "local_anchors": return productMessage(message, "architecture.value.local_anchors");
    case "local_packages": return productMessage(message, "architecture.value.local_packages");
@@ -278,6 +279,25 @@
   if (!memberID) return productMessage(message, "architecture.fallback.unknown_member");
   if (typeof memberID === "string") return memberID;
   return [text(memberID.kind), text(memberID.value)].filter(Boolean).join(":");
+ }
+
+ function architecturePartialTruth(data) {
+  if (text(data && data.validation_outcome) !== "accepted_partial") return null;
+  const remainderComponentID = text(data && data.local_remainder_component_id);
+  const component = array(data && data.components).find((candidate) =>
+   text(candidate && candidate.id) === remainderComponentID
+  );
+  const memberLabels = component ? array(component.members).map((member) => {
+   const name = text(member && member.name);
+   if (name) return name;
+   const id = member && member.id;
+   if (typeof id === "string") return text(id);
+   return [text(id && id.kind), text(id && id.value)].filter(Boolean).join(":");
+  }).filter(Boolean) : [];
+  return {
+   remainderComponentID: remainderComponentID,
+   memberLabels: memberLabels,
+  };
  }
 
  function locationLabel(location) {
@@ -550,6 +570,7 @@
    this.flowEdges = array(this.data.flow_edges);
    this.frontiers = this.userMode ? [] : array(this.data.frontiers);
    this.diagnostics = this.userMode ? [] : array(this.data.diagnostics);
+   this.partialTruth = architecturePartialTruth(this.data);
    const guidedTourStory = this.options.guidedTour;
    const activeGuidedTourStory = this.userMode ? null : guidedTourStory;
    const guidedTourSteps = activeGuidedTourStory && typeof activeGuidedTourStory === "object"
@@ -798,6 +819,38 @@
     toolbar.appendChild(controls);
     this.root.appendChild(toolbar);
     if (this.traceList) this.root.appendChild(this.traceList);
+
+    if (this.userMode && this.partialTruth) {
+     const partial = element("aside", "rm-arch__notice is-warning rm-arch__partial-truth");
+     partial.setAttribute("role", "status");
+     partial.appendChild(element(
+      "strong",
+      "rm-arch__partial-truth-label",
+      this.msg("architecture.value.accepted_partial")
+     ));
+     partial.appendChild(element(
+      "p",
+      "rm-arch__copy",
+      this.msg("architecture.copy.accepted_partial")
+     ));
+     if (this.partialTruth.memberLabels.length > 0) {
+      const details = element("details", "rm-arch__details rm-arch__partial-members");
+      details.appendChild(element(
+       "summary",
+       null,
+       this.msg("architecture.count.local_remainder_members", {
+        count: this.partialTruth.memberLabels.length,
+       })
+      ));
+      const members = element("div", "rm-arch__partial-member-list");
+      this.partialTruth.memberLabels.forEach((label) => {
+       members.appendChild(element("span", "rm-arch__member-id", label));
+      });
+      details.appendChild(members);
+      partial.appendChild(details);
+     }
+     this.root.appendChild(partial);
+    }
 
    const workspace = element("div", "rm-arch__workspace");
     this.viewport = element("div", "rm-arch__viewport");
@@ -4740,6 +4793,7 @@
    architectureProvenanceProductMessageID: architectureProvenanceProductMessageID,
    architectureScenarioProductMessageID: architectureScenarioProductMessageID,
    architecturePresentationText: architecturePresentationText,
+   architecturePartialTruth: architecturePartialTruth,
    architectureStepComponentState: (step, componentIDs) => architectureStepComponentState(
     step,
     new Map(array(componentIDs).map((componentID) => [text(componentID), true]))

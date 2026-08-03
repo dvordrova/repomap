@@ -45,6 +45,20 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
+			name:  "ordinary UI shows exact partial Architecture truth without generic diagnostics",
+			asset: js,
+			tokens: []string{
+				"architecturePartialTruth(data)",
+				`validation_outcome) !== "accepted_partial"`,
+				"data.local_remainder_component_id",
+				"this.userMode && this.partialTruth",
+				`"architecture.value.accepted_partial"`,
+				`"architecture.copy.accepted_partial"`,
+				`"architecture.count.local_remainder_members"`,
+				"rm-arch__member-id",
+			},
+		},
+		{
 			name:  "balanced Landscape packing stays deterministic",
 			asset: js,
 			tokens: []string{

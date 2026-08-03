@@ -7,7 +7,7 @@ Use only the exact request-local refs advertised in the catalog. reading_targets
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.
 Every required brief statement needs one or more unique support_refs selected only from brief_support_choices. Each choice has an exact ref kind. Refs found only in other sections, including every unit ref, are not Brief support.
 Return 1-%d directions. Return 0-%d optional domain_terms supported by the bounded catalog. Terms beyond that explicit count are unrequested output. Each requested term is validated independently; one invalid optional term does not invalidate the required Brief or valid sibling terms.
-Each direction needs 1-5 principal_refs and 3-5 distinct reading items. A direction principal_ref must be a component c* or surface sf* ref copied from principal_refs advertised by one of that direction's selected reading targets. Never use unit u*, subsystem ss*, reading-target a*, evidence e*, or document d* refs as direction principals. Include at least one component principal. Every selected principal must be advertised by at least one selected reading target.
+Each direction needs 1-5 principal_refs and %d-%d distinct reading items. A direction principal_ref must be a component c* or surface sf* ref copied from principal_refs advertised by one of that direction's selected reading targets. Never use unit u*, subsystem ss*, reading-target a*, evidence e*, or document d* refs as direction principals. Include at least one component principal. Every selected principal must be advertised by at least one selected reading target.
 Every reading target_ref must be an a* reading_target ref. Every selected reading target must advertise at least one principal_ref also selected by that direction. related_component_refs are conceptual associations only. owner_ref, when present, is separate exact local producer evidence; never invent an owner or treat conceptual membership as ownership.
 Allowed target_job values: first_contact, use_or_operate, extend_or_integrate, contribute, debug_or_maintain.
 Allowed learning_stage values: orientation, central_operation, core_model, integration, operations, contribution.
@@ -18,7 +18,10 @@ func (product Product) BuildPrompt() Prompt {
 	return Prompt{
 		Version:  PromptVersion,
 		Language: product.input.Language,
-		System:   fmt.Sprintf(promptSystemTemplate, MaxDirections, MaxDomainTerms),
+		System: fmt.Sprintf(
+			promptSystemTemplate, MaxDirections, MaxDomainTerms,
+			MinDirectionReadingCount, MaxDirectionReadingCount,
+		),
 		User: fmt.Sprintf(
 			"Requested prose language: %s.\nCatalog JSON:\n%s\n\n"+
 				"Response schema: {\"repository_type\":\"service_application|library_framework|cli_tool|monorepo|mixed\",\"brief\":{\"what_it_is\":{\"text\":\"...\",\"support_refs\":[\"...\"]},\"problem\":{\"text\":\"...\",\"support_refs\":[\"...\"]},\"main_input\":{\"text\":\"...\",\"support_refs\":[\"...\"]},\"central_responsibility\":{\"text\":\"...\",\"support_refs\":[\"...\"]},\"observable_result\":{\"text\":\"...\",\"support_refs\":[\"...\"]},\"domain_terms\":[{\"term\":\"...\",\"meaning\":\"...\",\"support_refs\":[\"...\"]}]},\"directions\":[{\"question\":\"...?\",\"why_it_matters\":\"...\",\"learning_outcome\":\"...\",\"target_job\":\"...\",\"learning_stage\":\"...\",\"principal_refs\":[\"...\"],\"reading\":[{\"target_ref\":\"...\",\"label\":\"start\",\"what_to_look_for\":\"...\"}]}]}",

@@ -128,6 +128,9 @@ type architectureSynthesisOutcome struct {
 	MembershipCounted        bool
 	MemberOccurrences        int
 	DistinctMembers          int
+	CoveredConceptualCount   int
+	UncoveredConceptualCount int
+	UncoveredConceptualIDs   []componentmap.MemberID
 	ValidationCodes          []string
 }
 
@@ -226,8 +229,14 @@ func synthesizeArchitectureForRun(
 		return outcome, err
 	}
 	state := "accepted"
+	if outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial {
+		state = "accepted_partial"
+	}
 	if outcome.Cached {
 		state = "cached"
+		if outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial {
+			state = "cached_partial"
+		}
 	}
 	output.State(
 		"Architecture",
@@ -472,7 +481,8 @@ func ensureArchitectureSynthesisWithOptions(
 				}
 				if cachedOutcome.FallbackSelected ||
 					(cachedOutcome.ValidationOutcome != componentmap.ValidationAccepted &&
-						cachedOutcome.ValidationOutcome != componentmap.ValidationAcceptedNormalized) {
+						cachedOutcome.ValidationOutcome != componentmap.ValidationAcceptedNormalized &&
+						cachedOutcome.ValidationOutcome != componentmap.ValidationAcceptedPartial) {
 					if removeErr := os.Remove(candidate.path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 						return architectureSynthesisOutcome{}, fmt.Errorf("architecture synthesis: remove rejected cache: %w", removeErr)
 					}
@@ -552,9 +562,6 @@ func ensureArchitectureSynthesisWithOptions(
 	outcome.UsageReported = providerResult.UsageReported
 	outcome.FinishReason = providerResult.FinishReason
 	outcome.ResponseComplete = providerResult.FinishReason == "stop"
-	outcome.MembershipCounted,
-		outcome.MemberOccurrences,
-		outcome.DistinctMembers = architectureResponseMembershipCounts(raw)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		recordArchitectureSemanticExchange(
 			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
@@ -610,15 +617,6 @@ func ensureArchitectureSynthesisWithOptions(
 	result.Record.Call.Metadata.FinishReason = providerResult.FinishReason
 	result.Record.Call.Metadata.TransportAttempts = providerResult.Attempts
 	result.Record.Call.Metadata.ResponseComplete = providerResult.FinishReason == "stop"
-	membershipCounted := result.Membership.Counted
-	memberOccurrences := result.Membership.MemberOccurrences
-	distinctMembers := result.Membership.DistinctMembers
-	if !membershipCounted {
-		// A response that failed before request-local resolution can still retain
-		// closed raw cardinality diagnostics. Accepted responses always use the
-		// authoritative resolver counts above.
-		membershipCounted, memberOccurrences, distinctMembers = architectureResponseMembershipCounts(raw)
-	}
 	outcome = architectureSynthesisOutcome{
 		InputBytes:               len(requestJSON),
 		LatencyMillis:            result.Record.Call.Metadata.LatencyMillis,
@@ -645,13 +643,17 @@ func ensureArchitectureSynthesisWithOptions(
 		StructuralLocatorCount:   structuralLocatorCount,
 		AnchorCount:              len(bundle.BehaviorAnchors),
 		ValidationCodes:          architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
-		MembershipCounted:        membershipCounted,
-		MemberOccurrences:        memberOccurrences,
-		DistinctMembers:          distinctMembers,
+		MembershipCounted:        result.Membership.Counted,
+		MemberOccurrences:        result.Membership.MemberOccurrences,
+		DistinctMembers:          result.Membership.DistinctMembers,
+		CoveredConceptualCount:   len(result.Membership.CoveredMemberIDs),
+		UncoveredConceptualCount: len(result.Membership.UncoveredMemberIDs),
+		UncoveredConceptualIDs:   append([]componentmap.MemberID(nil), result.Membership.UncoveredMemberIDs...),
 	}
 	accepted := !result.Landscape.Fallback &&
 		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
-			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized)
+			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedNormalized ||
+			result.Landscape.ValidationOutcome == componentmap.ValidationAcceptedPartial)
 	if accepted {
 		if evidenceCode := architectureSynthesisAcceptedEvidenceCode(outcome); evidenceCode != "" {
 			accepted = false
@@ -901,17 +903,10 @@ func prependArchitectureSynthesisDiagnosticCode(codes []string, code string) []s
 	return result
 }
 
-// architectureResponseMembershipCounts extracts only cardinality from an
-// exact current flat-wire JSON proposal. It deliberately does not recover
-// fenced or partial JSON, accept retired shapes, or resolve or repair any
-// member identity. This lets a rejected current response retain closed parity
-// evidence without reinterpreting legacy provider bytes.
-func architectureResponseMembershipCounts(raw []byte) (bool, int, int) {
-	return componentmap.SynthesisResponseMembershipCounts(raw)
-}
-
 func architectureResearchStatus(outcome architectureSynthesisOutcome) string {
 	switch outcome.ValidationOutcome {
+	case componentmap.ValidationAcceptedPartial:
+		return "accepted_partial"
 	case componentmap.ValidationAcceptedNormalized:
 		return "normalized"
 	case componentmap.ValidationAccepted:
@@ -983,6 +978,9 @@ func replayArchitectureSynthesisOutcome(
 		MembershipCounted:        result.Membership.Counted,
 		MemberOccurrences:        result.Membership.MemberOccurrences,
 		DistinctMembers:          result.Membership.DistinctMembers,
+		CoveredConceptualCount:   len(result.Membership.CoveredMemberIDs),
+		UncoveredConceptualCount: len(result.Membership.UncoveredMemberIDs),
+		UncoveredConceptualIDs:   append([]componentmap.MemberID(nil), result.Membership.UncoveredMemberIDs...),
 		LocalCandidateCount:      len(bundle.Candidates),
 		RequestedConceptualCount: conceptualCount,
 		StructuralLocatorCount:   structuralLocatorCount,
@@ -1007,6 +1005,9 @@ func architectureSynthesisStatus(
 		MembershipCounted:        outcome.MembershipCounted,
 		MemberOccurrences:        outcome.MemberOccurrences,
 		DistinctMembers:          outcome.DistinctMembers,
+		CoveredConceptualCount:   outcome.CoveredConceptualCount,
+		UncoveredConceptualCount: outcome.UncoveredConceptualCount,
+		UncoveredConceptualIDs:   append([]componentmap.MemberID(nil), outcome.UncoveredConceptualIDs...),
 		UsageReported:            outcome.UsageReported,
 		InputTokens:              outcome.InputTokens,
 		OutputTokens:             outcome.OutputTokens,
@@ -1016,14 +1017,17 @@ func architectureSynthesisStatus(
 		ValidationCodes:          append([]string(nil), outcome.ValidationCodes...),
 		ProviderCallSucceeded:    outcome.ProviderCallSucceeded,
 		ResponseParsed:           outcome.ResponseParsed,
-		ProposalAccepted:         outcome.ValidationOutcome == componentmap.ValidationAccepted || outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ProposalNormalized:       outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized,
-		ProposalRejected:         outcome.ValidationOutcome == componentmap.ValidationRejected,
-		FallbackSelected:         outcome.FallbackSelected,
-		ArchitectureSource:       string(outcome.ArchitectureSource),
-		ArchitectureLevel:        outcome.ArchitectureLevel,
-		NormalizationCount:       outcome.NormalizationCount,
-		FallbackReason:           string(outcome.FallbackReason),
+		ProposalAccepted: outcome.ValidationOutcome == componentmap.ValidationAccepted ||
+			outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized ||
+			outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial,
+		ProposalPartial:    outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial,
+		ProposalNormalized: outcome.NormalizationCount > 0,
+		ProposalRejected:   outcome.ValidationOutcome == componentmap.ValidationRejected,
+		FallbackSelected:   outcome.FallbackSelected,
+		ArchitectureSource: string(outcome.ArchitectureSource),
+		ArchitectureLevel:  outcome.ArchitectureLevel,
+		NormalizationCount: outcome.NormalizationCount,
+		FallbackReason:     string(outcome.FallbackReason),
 	}
 	if synthesisErr == nil {
 		if outcome.Cached {
@@ -1047,7 +1051,11 @@ func architectureSynthesisStatus(
 	// canonical local Canvas is published separately under Decision 177, so a
 	// failed status must not carry an apparent selected architecture source.
 	status.ProposalAccepted = false
+	status.ProposalPartial = false
 	status.ProposalNormalized = false
+	status.CoveredConceptualCount = 0
+	status.UncoveredConceptualCount = 0
+	status.UncoveredConceptualIDs = nil
 	status.ArchitectureSource = ""
 	status.ArchitectureLevel = 0
 	status.NormalizationCount = 0
