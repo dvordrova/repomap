@@ -133,9 +133,9 @@ func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("saved etcd response did not complete against its bounded shape: %v", err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
-		t.Fatalf("incomplete saved etcd response was not rejected closed: %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.partial_member_coverage") {
+		t.Fatalf("incomplete saved etcd response was not accepted as exact partial: %#v", result.Landscape)
 	}
 	if !result.Membership.Counted || result.Membership.DistinctMembers >= len(fixture.Bundle.Candidates) {
 		t.Fatalf("saved etcd response coverage = %#v over %d candidates", result.Membership, len(fixture.Bundle.Candidates))
@@ -165,11 +165,13 @@ func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 		t.Fatalf("accepted member cardinality = %d, want %d", len(gotMembers), len(wantMembers))
 	}
 	for member, want := range wantMembers {
-		if len(gotMembers[member]) != 1 {
-			t.Fatalf("local D177 membership %q count = %d, want exactly one", member, len(gotMembers[member]))
+		if len(gotMembers[member]) == 0 {
+			t.Fatalf("local D177 membership %q disappeared", member)
 		}
-		if !reflect.DeepEqual(gotMembers[member][0], want) {
-			t.Fatalf("rejected model grouping changed exact local candidate %q", member)
+		for _, got := range gotMembers[member] {
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("partial model grouping changed exact local candidate %q", member)
+			}
 		}
 	}
 	if !reflect.DeepEqual(result.Landscape.Relations, fixture.Bundle.Relations) {
@@ -180,7 +182,7 @@ func TestSavedEtcdSizedArchitectureStructuralBridgeGate(t *testing.T) {
 	}
 	if result.Record.PrivateCatalogSHA256 == "" || len(result.Record.PrivateCatalogSHA256) != 64 ||
 		result.Record.Call == nil || result.Record.Call.ResponseState != ResponseCaptured {
-		t.Fatalf("rejected etcd structural record lacks private catalog/captured response state: %#v", result.Record)
+		t.Fatalf("partial etcd structural record lacks private catalog/captured response state: %#v", result.Record)
 	}
 	if result.Record.Call.Metadata.OutputTokens != 0 || result.Record.Call.Metadata.ResponseComplete {
 		t.Fatalf("mechanically converted response claimed live short-ref completion: %#v", result.Record.Call.Metadata)
@@ -312,12 +314,12 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis",
 		"Do not nest records or emit a second root object",
 		"silently validate the complete JSON syntax",
-		"Every supplied candidate member ref is present in that checklist and must appear in at least one component",
-		"Treat required_member_refs as the exhaustive flat coverage checklist",
+		"required_member_refs is the exhaustive flat set of conceptual candidates available for grouping",
+		"an exact partial grouping is valid",
+		"deterministic local unclassified remainder",
 		"every structural_context parent_refs/child_refs link are grouping context only and never satisfy conceptual coverage",
 		"self-check them separately by kind",
-		"their exact typed set equals required_member_refs",
-		"an incomplete proposal is rejected rather than repaired or supplemented locally",
+		"every returned ref must be an exact typed member of that set",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis nesting contract misses %q", required)
@@ -423,7 +425,7 @@ func TestSynthesisRequestRejectsRequiredChecklistMismatch(t *testing.T) {
 	}
 }
 
-func TestSynthesisResponseRequiresCompleteDistinctCandidateCoverage(t *testing.T) {
+func TestSynthesisResponseReportsExactFullAndPartialCoverage(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -455,20 +457,28 @@ func TestSynthesisResponseRequiresCompleteDistinctCandidateCoverage(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !partial.Landscape.Fallback || partial.Landscape.ValidationOutcome != ValidationRejected ||
-		!hasLandscapeDiagnostic(partial.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
-		t.Fatalf("incomplete synthesis was not rejected atomically: %#v", partial.Landscape)
+	if partial.Landscape.Fallback || partial.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
+		!hasLandscapeDiagnostic(partial.Landscape.Diagnostics, "proposal.partial_member_coverage") {
+		t.Fatalf("exact partial synthesis was not accepted honestly: %#v", partial.Landscape)
 	}
 	if !partial.Membership.Counted || partial.Membership.DistinctMembers != len(bundle.Candidates)-1 ||
 		partial.Membership.MemberOccurrences != len(bundle.Candidates)-1 {
-		t.Fatalf("incomplete response diagnostics = %#v", partial.Membership)
+		t.Fatalf("partial response diagnostics = %#v", partial.Membership)
+	}
+	if len(partial.Membership.RequestedMemberIDs) != len(bundle.Candidates) ||
+		len(partial.Membership.CoveredMemberIDs) != len(bundle.Candidates)-1 ||
+		len(partial.Membership.UncoveredMemberIDs) != 1 || partial.Membership.CoverageComplete() {
+		t.Fatalf("partial membership partition = %#v", partial.Membership)
+	}
+	if !reflect.DeepEqual(partial.Landscape.LocalRemainderMemberIDs, partial.Membership.UncoveredMemberIDs) {
+		t.Fatalf("landscape remainder %#v != authoritative membership %#v", partial.Landscape.LocalRemainderMemberIDs, partial.Membership)
 	}
 	if got := landscapeMemberCount(partial.Landscape); got != len(bundle.Candidates) {
-		t.Fatalf("rejected synthesis changed local coverage to %d of %d", got, len(bundle.Candidates))
+		t.Fatalf("partial synthesis changed total local coverage to %d of %d", got, len(bundle.Candidates))
 	}
 	if !reflect.DeepEqual(partial.Landscape.Relations, bundle.Relations) ||
 		!reflect.DeepEqual(partial.Landscape.AnchorBindings, bundle.AnchorBindings) {
-		t.Fatal("rejected incomplete synthesis changed local facts or relations")
+		t.Fatal("partial synthesis changed local facts or relations")
 	}
 
 	reorderedWire, err := decodeSynthesisWireProposalJSON(fullRaw)
@@ -1309,7 +1319,7 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	}
 }
 
-func TestSavedCasdoorP21ManyToManyResponseIsRejectedWhenCoverageIsIncomplete(t *testing.T) {
+func TestSavedCasdoorP21ManyToManyResponseIsAcceptedWithExactLocalRemainder(t *testing.T) {
 	t.Parallel()
 
 	legacyRaw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
@@ -1340,12 +1350,12 @@ func TestSavedCasdoorP21ManyToManyResponseIsRejectedWhenCoverageIsIncomplete(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.incomplete_member_coverage") {
-		t.Fatalf("incomplete saved Casdoor response was not rejected: %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.partial_member_coverage") {
+		t.Fatalf("incomplete saved Casdoor response was not accepted as exact partial: %#v", result.Landscape)
 	}
 	if !result.Membership.Counted || result.Membership.MemberOccurrences != 29 ||
-		result.Membership.DistinctMembers != 28 {
+		result.Membership.DistinctMembers != 28 || len(result.Membership.UncoveredMemberIDs) == 0 {
 		t.Fatalf("saved Casdoor membership counts = %#v", result.Membership)
 	}
 	if result.Record.Call == nil || !result.Record.Call.Metadata.MembershipCounted ||
@@ -1354,7 +1364,7 @@ func TestSavedCasdoorP21ManyToManyResponseIsRejectedWhenCoverageIsIncomplete(t *
 		t.Fatalf("saved Casdoor record counts = %#v", result.Record.Call)
 	}
 	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
-		t.Fatal("rejected saved Casdoor grouping changed exact local relations")
+		t.Fatal("partial saved Casdoor grouping changed exact local relations")
 	}
 
 	result = bindSynthesisResultForTest(t, bundle, "casdoor-many-to-many-records-v2", result)
@@ -1713,7 +1723,8 @@ func TestRecordSynthesisResponseReplaysDeterministically(t *testing.T) {
 		metadata.Model != "deepseek-v4-flash" ||
 		metadata.OutputLanguage != "en" ||
 		metadata.InputBytes <= 0 || metadata.LatencyMillis != 1450 ||
-		len(metadata.ValidationWarnings) != 0 || metadata.FallbackReason != "" {
+		len(metadata.ValidationWarnings) != 0 ||
+		metadata.FallbackReason != "" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	result.Record.Call.Metadata.UsageReported = true
@@ -2133,7 +2144,7 @@ func TestUnknownSynthesisResponseFieldsRejectWholeProposal(t *testing.T) {
 	}
 }
 
-func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGrounding(t *testing.T) {
+func TestGroundedSynthesisDerivesHypothesisFromExactScopedOperationalProof(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
@@ -2168,8 +2179,8 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedNormalized ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.normalized_package_only_hypothesis") {
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAccepted ||
+		!result.Landscape.Subsystems[0].Components[0].Hypothesis {
 		t.Fatalf("package-only proposal = %#v", result.Landscape)
 	}
 
@@ -2182,8 +2193,8 @@ func TestGroundedSynthesisNormalizesPackageOnlyComponentButRequiresOtherGroundin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.ungrounded_primary_component") {
-		t.Fatalf("ungrounded non-package proposal = %#v", result.Landscape)
+	if result.Landscape.Fallback || !result.Landscape.Subsystems[0].Components[0].Hypothesis {
+		t.Fatalf("unanchored non-package component was not derived as hypothetical: %#v", result.Landscape)
 	}
 
 	proposal.Subsystems[0].Components[0] = ProposedComponent{

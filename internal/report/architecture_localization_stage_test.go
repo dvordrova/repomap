@@ -56,7 +56,7 @@ func TestBuildArchitectureLocalizationRussianPromptIsExactAndReadOnly(t *testing
 		t.Fatalf("stage prompt does not match localization contract:\n%s\n%s", first, want)
 	}
 	digest := sha256.Sum256(first)
-	const wantPromptSHA256 = "f8f2f57e684d2a0e68b4f798048e38d3893a4688e442246ad8692ef5871abc59"
+	const wantPromptSHA256 = "b80fdbac1a3c8faa836a838a485bcc4141e3e3344087e8ed832a2c8c145e5a32"
 	if got := hex.EncodeToString(digest[:]); got != wantPromptSHA256 {
 		t.Fatalf("Architecture prompt SHA-256 = %q, want %q", got, wantPromptSHA256)
 	}
@@ -71,19 +71,9 @@ func TestReplayArchitectureLocalizationRussianStageCallsOnceAndMatchesDirectRepl
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectionJSON, err := os.ReadFile(filepath.Join(
-		"testdata",
-		"architecture-localization",
-		"architecture.ru.projection.v1.json",
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, canonical, input := architectureLocalizationRussianContext(t, runDir)
-	projection, err := decodeArchitectureLocalizationProjection(projectionJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
+	projection := architectureLocalizationRussianProjection(t, canonical, input)
+	projectionJSON := architectureLocalizationRussianProjectionJSON(t, canonical, input)
 	response := architectureLocalizationProviderResponse(t, canonical, input, projection)
 	calls := 0
 	got, err := replayArchitectureLocalizationRussianStage(
@@ -124,20 +114,13 @@ func TestReplayArchitectureLocalizationRussianStageFileIsProviderFree(t *testing
 	t.Parallel()
 
 	runDir := architectureLocalizationSavedRun(t, false)
-	projectionPath := filepath.Join(
-		"testdata",
-		"architecture-localization",
-		"architecture.ru.projection.v1.json",
-	)
-	projectionJSON, err := os.ReadFile(projectionPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, canonical, input := architectureLocalizationRussianContext(t, runDir)
-	projection, err := decodeArchitectureLocalizationProjection(projectionJSON)
-	if err != nil {
+	projectionJSON := architectureLocalizationRussianProjectionJSON(t, canonical, input)
+	projectionPath := filepath.Join(t.TempDir(), "architecture.ru.projection.v1.json")
+	if err := os.WriteFile(projectionPath, projectionJSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	projection := architectureLocalizationRussianProjection(t, canonical, input)
 	responsePath := filepath.Join(t.TempDir(), "provider-response.json")
 	if err := os.WriteFile(
 		responsePath,
@@ -282,19 +265,8 @@ func TestReplayArchitectureLocalizationRussianStageCancellationAndSafeError(t *t
 		t.Fatalf("pre-canceled stage error = %v, calls = %d", err, calls)
 	}
 
-	projectionJSON, readErr := os.ReadFile(filepath.Join(
-		"testdata",
-		"architecture-localization",
-		"architecture.ru.projection.v1.json",
-	))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
 	_, canonical, input := architectureLocalizationRussianContext(t, runDir)
-	projection, decodeErr := decodeArchitectureLocalizationProjection(projectionJSON)
-	if decodeErr != nil {
-		t.Fatal(decodeErr)
-	}
+	projection := architectureLocalizationRussianProjection(t, canonical, input)
 	response := architectureLocalizationProviderResponse(t, canonical, input, projection)
 	ctx, cancel = context.WithCancel(context.Background())
 	_, err = replayArchitectureLocalizationRussianStage(

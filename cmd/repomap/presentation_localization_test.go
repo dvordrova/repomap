@@ -2048,6 +2048,7 @@ func presentationLocalizationCoherenceFixture() *report.ReportData {
 		ProjectGuess:  "repository orientation",
 		OpenablePaths: []string{"batch.go"},
 		ArchitectureCanvas: &report.ArchitectureCanvas{
+			Version:  report.ArchitectureCanvasVersion,
 			Title:    "Repository architecture",
 			Subtitle: "A bounded architecture view.",
 			Subsystems: []report.ArchitectureSubsystem{{

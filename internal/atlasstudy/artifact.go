@@ -601,7 +601,8 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 	if direction.ID != stableDirectionID(direction) || !naturalQuestion(direction.Question) ||
 		!direction.TargetJob.Valid() || !direction.LearningStage.Valid() ||
 		len(direction.PrincipalRefs) == 0 || len(direction.PrincipalRefs) > 5 ||
-		len(direction.Reading) < 3 || len(direction.Reading) > 5 {
+		len(direction.Reading) < MinDirectionReadingCount ||
+		len(direction.Reading) > MaxDirectionReadingCount {
 		return fmt.Errorf("invalid canonical direction")
 	}
 	principalSet := make(map[CanonicalRef]struct{}, len(direction.PrincipalRefs))

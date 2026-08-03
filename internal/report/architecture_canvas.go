@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 7
+const ArchitectureCanvasVersion = 8
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -32,32 +32,33 @@ type ArchitectureFlowInput struct {
 }
 
 type ArchitectureCanvas struct {
-	Version                int                                   `json:"version"`
-	LandscapeVersion       int                                   `json:"landscape_version"`
-	FlowProofVersion       int                                   `json:"flowproof_version"`
-	Fallback               bool                                  `json:"fallback"`
-	FallbackReason         componentmap.FallbackReason           `json:"fallback_reason,omitempty"`
-	ValidationOutcome      componentmap.ValidationOutcome        `json:"validation_outcome"`
-	ArchitectureSource     componentmap.ArchitectureSource       `json:"architecture_source"`
-	ArchitectureLevel      int                                   `json:"architecture_level"`
-	Normalizations         []componentmap.NormalizationOperation `json:"normalization_operations,omitempty"`
-	OriginalProposalSHA256 string                                `json:"original_proposal_sha256,omitempty"`
-	RepositoryArchetype    componentmap.RepositoryArchetype      `json:"repository_archetype"`
-	GroundingMode          componentmap.GroundingMode            `json:"grounding_mode"`
-	Title                  string                                `json:"title"`
-	Subtitle               string                                `json:"subtitle"`
-	BehaviorAnchors        []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
-	Subsystems             []ArchitectureSubsystem               `json:"subsystems"`
-	Components             []ArchitectureComponent               `json:"components"`
-	StructuralLocators     []ArchitectureStructuralLocator       `json:"structural_locators,omitempty"`
-	Surfaces               []ArchitectureSurface                 `json:"surfaces,omitempty"`
-	Suggestions            []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
-	StructuralFacts        []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
-	StructuralEdges        []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
-	Flows                  []ArchitectureFlow                    `json:"flows,omitempty"`
-	FlowEdges              []ArchitectureFlowEdge                `json:"flow_edges,omitempty"`
-	Frontiers              []ArchitectureFrontier                `json:"frontiers,omitempty"`
-	Diagnostics            []ArchitectureDiagnostic              `json:"diagnostics,omitempty"`
+	Version                   int                                   `json:"version"`
+	LandscapeVersion          int                                   `json:"landscape_version"`
+	FlowProofVersion          int                                   `json:"flowproof_version"`
+	Fallback                  bool                                  `json:"fallback"`
+	FallbackReason            componentmap.FallbackReason           `json:"fallback_reason,omitempty"`
+	ValidationOutcome         componentmap.ValidationOutcome        `json:"validation_outcome"`
+	ArchitectureSource        componentmap.ArchitectureSource       `json:"architecture_source"`
+	ArchitectureLevel         int                                   `json:"architecture_level"`
+	Normalizations            []componentmap.NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256    string                                `json:"original_proposal_sha256,omitempty"`
+	RepositoryArchetype       componentmap.RepositoryArchetype      `json:"repository_archetype"`
+	GroundingMode             componentmap.GroundingMode            `json:"grounding_mode"`
+	Title                     string                                `json:"title"`
+	Subtitle                  string                                `json:"subtitle"`
+	BehaviorAnchors           []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
+	Subsystems                []ArchitectureSubsystem               `json:"subsystems"`
+	Components                []ArchitectureComponent               `json:"components"`
+	LocalRemainderComponentID componentmap.ComponentID              `json:"local_remainder_component_id,omitempty"`
+	StructuralLocators        []ArchitectureStructuralLocator       `json:"structural_locators,omitempty"`
+	Surfaces                  []ArchitectureSurface                 `json:"surfaces,omitempty"`
+	Suggestions               []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
+	StructuralFacts           []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
+	StructuralEdges           []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
+	Flows                     []ArchitectureFlow                    `json:"flows,omitempty"`
+	FlowEdges                 []ArchitectureFlowEdge                `json:"flow_edges,omitempty"`
+	Frontiers                 []ArchitectureFrontier                `json:"frontiers,omitempty"`
+	Diagnostics               []ArchitectureDiagnostic              `json:"diagnostics,omitempty"`
 }
 
 type ArchitectureSubsystem struct {
@@ -272,6 +273,11 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 		GroundingMode:          input.CandidateBundle.GroundingMode,
 		BehaviorAnchors:        append([]componentmap.BehaviorAnchor(nil), input.CandidateBundle.BehaviorAnchors...),
 	}
+	remainderComponentID, err := architectureLocalRemainderComponentID(input.Landscape)
+	if err != nil {
+		return ArchitectureCanvas{}, fmt.Errorf("architecture canvas: local remainder: %w", err)
+	}
+	canvas.LocalRemainderComponentID = remainderComponentID
 	canvas.Title, canvas.Subtitle = architectureGroundingWording(canvas.ArchitectureSource, canvas.GroundingMode)
 	index := projectArchitectureLandscape(input.CandidateBundle, input.Landscape, &canvas)
 	projectArchitectureStructuralLocators(input.CandidateBundle, input.Landscape, &index, &canvas)
@@ -302,6 +308,45 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 	sort.Slice(canvas.Frontiers, func(i, j int) bool { return canvas.Frontiers[i].ID < canvas.Frontiers[j].ID })
 	sort.Slice(canvas.Diagnostics, func(i, j int) bool { return canvas.Diagnostics[i].ID < canvas.Diagnostics[j].ID })
 	return canvas, nil
+}
+
+func architectureLocalRemainderComponentID(landscape componentmap.Landscape) (componentmap.ComponentID, error) {
+	if len(landscape.LocalRemainderMemberIDs) == 0 {
+		return "", nil
+	}
+	remainder := make(map[componentmap.MemberID]struct{}, len(landscape.LocalRemainderMemberIDs))
+	for _, memberID := range landscape.LocalRemainderMemberIDs {
+		remainder[memberID] = struct{}{}
+	}
+	var matched componentmap.ComponentID
+	for _, subsystem := range landscape.Subsystems {
+		if subsystem.Category != componentmap.SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, component := range subsystem.Components {
+			if len(component.Members) != len(remainder) {
+				continue
+			}
+			exact := true
+			for _, member := range component.Members {
+				if _, exists := remainder[member.ID]; !exists {
+					exact = false
+					break
+				}
+			}
+			if !exact {
+				continue
+			}
+			if matched != "" {
+				return "", fmt.Errorf("multiple diagnostic components match exact local remainder identities")
+			}
+			matched = component.ID
+		}
+	}
+	if matched == "" {
+		return "", fmt.Errorf("no diagnostic component matches exact local remainder identities")
+	}
+	return matched, nil
 }
 
 func projectArchitectureStructuralLocators(
@@ -383,10 +428,12 @@ func projectArchitectureLandscape(
 			projected.ComponentIDs = append(projected.ComponentIDs, component.ID)
 			members := append([]componentmap.Candidate(nil), component.Members...)
 			participatingFlows := make(map[componentmap.FlowID]struct{})
-			for _, member := range component.Members {
-				index.memberComponents[member.ID] = append(index.memberComponents[member.ID], component.ID)
-				for _, participation := range member.Participations {
-					participatingFlows[participation.FlowID] = struct{}{}
+			if component.ID != canvas.LocalRemainderComponentID {
+				for _, member := range component.Members {
+					index.memberComponents[member.ID] = append(index.memberComponents[member.ID], component.ID)
+					for _, participation := range member.Participations {
+						participatingFlows[participation.FlowID] = struct{}{}
+					}
 				}
 			}
 			canvas.Components = append(canvas.Components, ArchitectureComponent{

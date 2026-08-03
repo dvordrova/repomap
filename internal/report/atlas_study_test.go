@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -332,6 +333,183 @@ func TestBuildAtlasStudyInputUsesExactAtlasArchitectureAndSavedSource(t *testing
 		!bytes.Contains(wire, []byte(`"allowed_paths":["cmd/app/main.go","internal/app/result.go","internal/app/run.go"]`)) ||
 		!bytes.Contains(wire, []byte(`"path":"cmd/app/main.go","line":7,"symbol":"example.com/fixture/cmd/app.main"`)) {
 		t.Fatalf("provider wire lost bounded Study facts: %s", wire)
+	}
+}
+
+func TestAtlasStudyOutputIsInvariantAcrossFullPartialAndRejectedArchitecture(t *testing.T) {
+	const (
+		remainderSubsystemID = componentmap.SubsystemID("subsystem-zz-local-remainder")
+		remainderComponentID = componentmap.ComponentID("component-zz-local-remainder")
+	)
+	full := atlasStudyReportFixture(t)
+	full.RepositoryGraph = &RepositoryGraph{Packages: []PackageInfo{
+		{
+			CanonicalPath: "example.com/fixture/cmd/app", DisplayPath: "cmd/app",
+			Files: []string{"cmd/app/main.go"},
+		},
+		{
+			CanonicalPath: "example.com/fixture/internal/app", DisplayPath: "internal/app",
+			Files: []string{"internal/app/result.go", "internal/app/run.go"},
+		},
+	}}
+	// None of these exact operational targets has a Surface or ordinary local
+	// diagnostic component to provide a substitute principal. Stable package
+	// principals must therefore come from the rebuilt local D177 projection.
+	full.ArchitectureCanvas.Surfaces = nil
+	full.ArchitectureCanvas.BehaviorAnchors[1].Location = evidence.Location{
+		Path: "internal/app/run.go", Line: 11,
+	}
+	coveredMember := componentmap.Candidate{
+		ID: componentmap.MemberID{Kind: componentmap.MemberFile, Value: "covered-member"},
+		Facts: []componentmap.LocalFact{
+			{
+				Kind: componentmap.FactRepositoryPath, Value: "cmd/app/main.go",
+				Location: &evidence.Location{Path: "cmd/app/main.go", Line: 7},
+			},
+			{
+				Kind: componentmap.FactRepositoryPath, Value: "internal/app/run.go",
+				Location: &evidence.Location{Path: "internal/app/run.go", Line: 11},
+			},
+		},
+	}
+	remainderMember := componentmap.Candidate{
+		ID: componentmap.MemberID{Kind: componentmap.MemberFile, Value: "remainder-member"},
+		Facts: []componentmap.LocalFact{{
+			Kind: componentmap.FactRepositoryPath, Value: "internal/app/result.go",
+			Location: &evidence.Location{Path: "internal/app/result.go", Line: 19},
+		}},
+	}
+	full.ArchitectureCanvas.Components[0].Members = []componentmap.Candidate{
+		coveredMember, remainderMember,
+	}
+
+	partial := cloneAtlasStudyReportData(t, full)
+	partial.ArchitectureCanvas.ValidationOutcome = componentmap.ValidationAcceptedPartial
+	partial.ArchitectureCanvas.ArchitectureSource = componentmap.SourcePartialModel
+	partial.ArchitectureCanvas.ArchitectureLevel = 2
+	partial.ArchitectureCanvas.LocalRemainderComponentID = remainderComponentID
+	partial.ArchitectureCanvas.Components[0].Members = []componentmap.Candidate{coveredMember}
+	partial.ArchitectureCanvas.Subsystems = append(
+		partial.ArchitectureCanvas.Subsystems,
+		ArchitectureSubsystem{
+			ID: remainderSubsystemID, Name: "Unclassified by model",
+			Category:     componentmap.SubsystemCategoryDiagnostic,
+			ComponentIDs: []componentmap.ComponentID{remainderComponentID},
+		},
+	)
+	partial.ArchitectureCanvas.Components = append(
+		partial.ArchitectureCanvas.Components,
+		ArchitectureComponent{
+			ID: remainderComponentID, SubsystemID: remainderSubsystemID,
+			Name: "Unclassified by model", Members: []componentmap.Candidate{remainderMember},
+		},
+	)
+	partial.ArchitectureCanvas.Flows = append(partial.ArchitectureCanvas.Flows, ArchitectureFlow{
+		ID: "flow-local-remainder", Name: "Local remainder",
+		Steps: []ArchitectureFlowStep{{
+			ID: "step-local-remainder", ComponentID: remainderComponentID,
+			Location: &evidence.Location{Path: "internal/app/result.go", Line: 19},
+		}},
+	})
+	partialStatus := *partial.ArchitectureSynthesis
+	partialStatus.MemberOccurrences = 1
+	partialStatus.DistinctMembers = 1
+	partialStatus.CoveredConceptualCount = 1
+	partialStatus.UncoveredConceptualCount = 1
+	partialStatus.UncoveredConceptualIDs = []componentmap.MemberID{remainderMember.ID}
+	partialStatus.ProposalPartial = true
+	partialStatus.ArchitectureSource = string(componentmap.SourcePartialModel)
+	partialStatus.ArchitectureLevel = 2
+	partial.ArchitectureSynthesis = &partialStatus
+	if err := validateAcceptedAtlasStudyArchitecture(partial); err != nil {
+		t.Fatalf("accepted partial Architecture: %v", err)
+	}
+
+	rejected := cloneAtlasStudyReportData(t, full)
+	rejected.ArchitectureCanvas.ValidationOutcome = componentmap.ValidationRejected
+	rejected.ArchitectureCanvas.ArchitectureSource = componentmap.SourceLocalAnchors
+	rejected.ArchitectureCanvas.ArchitectureLevel = 3
+	rejected.ArchitectureSynthesis = &ArchitectureSynthesisStatus{
+		Version:   ArchitectureSynthesisStatusVersion,
+		State:     ArchitectureSynthesisFailed,
+		ErrorCode: "response_invalid",
+	}
+
+	variants := []struct {
+		name string
+		data *ReportData
+	}{
+		{name: "full", data: full},
+		{name: "partial", data: partial},
+		{name: "rejected", data: rejected},
+	}
+	var baselineTargets []atlasstudy.ReadingTarget
+	var baselineWire []byte
+	var baselineStatus *AtlasStudyReportStatus
+	var baselineMap *RepositoryStudyMap
+	for index, variant := range variants {
+		t.Run(variant.name, func(t *testing.T) {
+			input, err := BuildAtlasStudyInput(variant.data, atlasstudy.LanguageEnglish)
+			if err != nil {
+				t.Fatalf("BuildAtlasStudyInput: %v", err)
+			}
+			if !AtlasStudyInputHasMinimumCatalog(input) {
+				t.Fatalf("%s Architecture changed Study availability", variant.name)
+			}
+			if len(input.ReadingTargets) != 3 {
+				t.Fatalf("%s Architecture retained %d exact targets, want 3", variant.name, len(input.ReadingTargets))
+			}
+			for _, target := range input.ReadingTargets {
+				if target.Owner.ID == string(remainderComponentID) ||
+					slices.Contains(target.RelatedComponentIDs, string(remainderComponentID)) {
+					t.Fatalf("local remainder entered Study owner/related associations: %#v", target)
+				}
+				hasLocalComponentPrincipal := false
+				for _, ref := range target.PrincipalRefs {
+					if ref.ID == string(remainderComponentID) {
+						t.Fatalf("local remainder became a Study principal: %#v", target)
+					}
+					hasLocalComponentPrincipal = hasLocalComponentPrincipal || ref.Kind == atlasstudy.RefComponent
+				}
+				if !hasLocalComponentPrincipal {
+					t.Fatalf("exact target lost its stable local component principal: %#v", target)
+				}
+			}
+			product, err := atlasstudy.Compile(input)
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
+			}
+			for _, object := range product.Catalog() {
+				if object.CanonicalID == string(remainderSubsystemID) ||
+					object.CanonicalID == string(remainderComponentID) {
+					t.Fatalf("model remainder entered private Study catalog: %#v", object)
+				}
+			}
+			if index == 0 {
+				baselineTargets = input.ReadingTargets
+				baselineWire = product.WireJSON()
+			} else if !reflect.DeepEqual(input.ReadingTargets, baselineTargets) {
+				t.Fatalf("%s Architecture changed exact Study targets", variant.name)
+			} else if !bytes.Equal(product.WireJSON(), baselineWire) {
+				t.Fatalf("%s Architecture changed exact model-visible Study wire", variant.name)
+			}
+
+			runDir := t.TempDir()
+			writeAcceptedAtlasStudyArtifacts(t, runDir, variant.data)
+			status, studyMap, err := readAtlasStudyReportProduct(runDir, variant.data)
+			if err != nil {
+				t.Fatalf("readAtlasStudyReportProduct: %v", err)
+			}
+			if index == 0 {
+				baselineStatus, baselineMap = status, studyMap
+				return
+			}
+			if !reflect.DeepEqual(status, baselineStatus) ||
+				!reflect.DeepEqual(studyMap, baselineMap) {
+				t.Fatalf("%s Architecture changed Study output/status: %#v / %#v",
+					variant.name, status, studyMap)
+			}
+		})
 	}
 }
 
@@ -982,24 +1160,42 @@ func writeAcceptedAtlasStudyArtifactsWithDirectionCopies(
 	if err != nil {
 		t.Fatalf("RequestRecord: %v", err)
 	}
-	componentRef := ""
+	componentRefsByID := make(map[string]string)
+	for _, object := range request.Catalog {
+		if object.Kind == atlasstudy.RefComponent {
+			componentRefsByID[object.CanonicalID] = object.Ref
+		}
+	}
+	principalRefSet := make(map[string]struct{})
 	var targetRefs []string
 	for _, object := range request.Catalog {
-		if object.Kind == atlasstudy.RefComponent && object.CanonicalID == "component-fixture-app" {
-			componentRef = object.Ref
+		if object.Kind != atlasstudy.RefReadingTarget || len(targetRefs) == 3 {
+			continue
 		}
-		if object.Kind == atlasstudy.RefReadingTarget &&
-			slicesContainCanonicalRef(object.PrincipalRefs, atlasstudy.CanonicalRef{
-				Kind: atlasstudy.RefComponent, ID: "component-fixture-app",
-			}) {
+		hasComponentPrincipal := false
+		for _, principal := range object.PrincipalRefs {
+			if principal.Kind != atlasstudy.RefComponent {
+				continue
+			}
+			if ref := componentRefsByID[principal.ID]; ref != "" {
+				principalRefSet[ref] = struct{}{}
+				hasComponentPrincipal = true
+			}
+		}
+		if hasComponentPrincipal {
 			targetRefs = append(targetRefs, object.Ref)
 		}
 	}
-	if componentRef == "" || len(targetRefs) < 3 {
+	principalRefs := make([]string, 0, len(principalRefSet))
+	for ref := range principalRefSet {
+		principalRefs = append(principalRefs, ref)
+	}
+	sort.Strings(principalRefs)
+	if len(principalRefs) == 0 || len(targetRefs) < 3 {
 		t.Fatalf("fixture catalog lacks component routes: %#v", request.Catalog)
 	}
 	statement := func(text string) map[string]any {
-		return map[string]any{"text": text, "support_refs": []string{componentRef}}
+		return map[string]any{"text": text, "support_refs": []string{principalRefs[0]}}
 	}
 	reading := make([]map[string]any, 0, 3)
 	labels := []string{"start", "continue", "verify"}
@@ -1014,7 +1210,7 @@ func writeAcceptedAtlasStudyArtifactsWithDirectionCopies(
 		"why_it_matters":   "This identifies the bounded conceptual area.",
 		"learning_outcome": "Recognize the exact saved reading anchors.",
 		"target_job":       "first_contact", "learning_stage": "orientation",
-		"principal_refs": []string{componentRef}, "reading": reading,
+		"principal_refs": principalRefs, "reading": reading,
 	}}
 	for index := 1; index < directionCopies; index++ {
 		directions = append(directions, map[string]any{
@@ -1022,7 +1218,7 @@ func writeAcceptedAtlasStudyArtifactsWithDirectionCopies(
 			"why_it_matters":   "This is deliberately different prose for the same exact reading set.",
 			"learning_outcome": "Recognize that the local reading locations are unchanged.",
 			"target_job":       "first_contact", "learning_stage": "orientation",
-			"principal_refs": []string{componentRef}, "reading": reading,
+			"principal_refs": principalRefs, "reading": reading,
 		})
 	}
 	response, err := json.Marshal(map[string]any{
@@ -1196,6 +1392,19 @@ func atlasStudyReportFixture(t *testing.T) *ReportData {
 			return &status
 		}(),
 	}
+}
+
+func cloneAtlasStudyReportData(t *testing.T, data *ReportData) *ReportData {
+	t.Helper()
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloned ReportData
+	if err := json.Unmarshal(encoded, &cloned); err != nil {
+		t.Fatal(err)
+	}
+	return &cloned
 }
 
 func atlasStudySourceFixture(

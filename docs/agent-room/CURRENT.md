@@ -1,15 +1,31 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/205-operational-anchor-and-study-integrity.md
+    decisions/207-task-sized-study-routes.md
 
 Status:
-    Decision 205 active; operational anchor and Study integrity authorized
+    Decision 207 active; task-sized Study routes authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 207 keeps the global pre-call Study breadth gate at three distinct
+    eligible exact locators, but lets each independently validated route use
+    one through five exact readings. Zero, oversize, duplicate, unknown,
+    wrong-kind and every existing identity/privacy failure remain item-local.
+    Prompt, resolver, artifact, replay and report share the same versioned
+    contract; old cache identities miss closed and no route is padded or
+    repaired.
+    Decision 206 accepts an exact partial model Architecture projection over
+    the complete canonical D177 Canvas. Every returned typed ref remains
+    fail-closed, while uncovered requested conceptual members are computed
+    locally into one explicit deterministic unclassified-by-model remainder.
+    Status distinguishes full and partial coverage, old cache identities miss
+    closed, and model prose or flags cannot grant operational authority.
+    Declaration-family evidence never removes hypothesis status; only exact
+    scoped producer-owned process-entry or call-target proof can do so. Study
+    remains independent of Architecture full/partial/rejected state.
     Decision 205 gives every behavior anchor a producer-owned proof mode,
     prevents name-only declaration families from becoming primary operational
     Canvas or Study evidence, removes silent family prefixes behind truthful

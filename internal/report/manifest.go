@@ -578,15 +578,16 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: report sha256 mismatch")
 	}
 	var report struct {
-		FormatVersion     int                          `json:"format_version"`
-		OpenablePaths     []string                     `json:"openable_paths"`
-		Components        []Component                  `json:"components"`
-		RepositoryAtlas   *repositoryatlas.Atlas       `json:"repository_atlas"`
-		Navigator         *NavigatorReportProduct      `json:"navigator"`
-		Architecture      *ArchitectureSynthesisStatus `json:"architecture_synthesis"`
-		AtlasStudy        *AtlasStudyReportStatus      `json:"atlas_study"`
-		StudyMap          *RepositoryStudyMap          `json:"study_map"`
-		TaskInvestigation *struct {
+		FormatVersion      int                          `json:"format_version"`
+		OpenablePaths      []string                     `json:"openable_paths"`
+		Components         []Component                  `json:"components"`
+		RepositoryAtlas    *repositoryatlas.Atlas       `json:"repository_atlas"`
+		Navigator          *NavigatorReportProduct      `json:"navigator"`
+		ArchitectureCanvas *ArchitectureCanvas          `json:"architecture_canvas"`
+		Architecture       *ArchitectureSynthesisStatus `json:"architecture_synthesis"`
+		AtlasStudy         *AtlasStudyReportStatus      `json:"atlas_study"`
+		StudyMap           *RepositoryStudyMap          `json:"study_map"`
+		TaskInvestigation  *struct {
 			BundleSHA256                 string `json:"bundle_sha256"`
 			AttemptSHA256                string `json:"attempt_sha256"`
 			PackSHA256                   string `json:"pack_sha256"`
@@ -600,6 +601,18 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	}
 	if report.FormatVersion != m.ReportFormatVersion {
 		return fmt.Errorf("report manifest: report format version mismatch")
+	}
+	if report.ArchitectureCanvas != nil && report.ArchitectureCanvas.Version != ArchitectureCanvasVersion {
+		return fmt.Errorf(
+			"report manifest: unsupported architecture canvas version %d, want %d",
+			report.ArchitectureCanvas.Version,
+			ArchitectureCanvasVersion,
+		)
+	}
+	if report.Architecture != nil {
+		if err := report.Architecture.Validate(); err != nil {
+			return fmt.Errorf("report manifest: architecture synthesis status: %w", err)
+		}
 	}
 	hasRepositoryAtlas := m.MaterialInputs.RepositoryAtlasSHA256 != ""
 	if (report.RepositoryAtlas != nil) != hasRepositoryAtlas {

@@ -2,6 +2,7 @@ package report
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -473,6 +474,128 @@ func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testin
 	}
 	if canvas.Subsystems[0].Category != componentmap.SubsystemCategoryDiagnostic {
 		t.Fatalf("subsystem category = %q, want diagnostic", canvas.Subsystems[0].Category)
+	}
+	if canvas.LocalRemainderComponentID != "" {
+		t.Fatalf("ordinary local diagnostic component became D206 remainder %q", canvas.LocalRemainderComponentID)
+	}
+	retainedFlowAssociation := false
+	for _, component := range canvas.Components {
+		if len(component.ParticipatingFlowIDs) != 0 {
+			retainedFlowAssociation = true
+			break
+		}
+	}
+	if !retainedFlowAssociation {
+		t.Fatal("ordinary local diagnostic components lost exact flow associations")
+	}
+}
+
+func TestProjectArchitectureCanvasKeepsPartialRemainderOutOfModelAssociations(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureBundle()
+	landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Command Surface",
+			Components: []componentmap.ProposedComponent{{
+				Name: "Backup command",
+				MemberIDs: []componentmap.MemberID{
+					architectureMember(componentmap.MemberPackage, "cmd"),
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landscape.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		len(landscape.LocalRemainderMemberIDs) != 1 ||
+		landscape.LocalRemainderMemberIDs[0] != architectureMember(componentmap.MemberPackage, "archiver") {
+		t.Fatalf("partial landscape = %#v", landscape)
+	}
+	canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+		CandidateBundle: bundle,
+		Landscape:       landscape,
+		Flows: []ArchitectureFlowInput{{
+			ID: "backup", Name: "Backup operation",
+			Session: flowproof.Session{Version: flowproof.SessionVersion, Proof: architectureResticProof()},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(canvas.StructuralFacts, bundle.Relations) {
+		t.Fatalf("partial enrichment changed exact local relations: %#v", canvas.StructuralFacts)
+	}
+	if len(canvas.StructuralLocators) != 0 {
+		t.Fatalf("partial enrichment invented structural locators: %#v", canvas.StructuralLocators)
+	}
+	diagnosticComponents := make(map[componentmap.ComponentID]struct{})
+	for _, subsystem := range canvas.Subsystems {
+		if subsystem.Category != componentmap.SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, componentID := range subsystem.ComponentIDs {
+			diagnosticComponents[componentID] = struct{}{}
+		}
+	}
+	if len(diagnosticComponents) != 1 {
+		t.Fatalf("partial remainder components = %#v", diagnosticComponents)
+	}
+	if _, exists := diagnosticComponents[canvas.LocalRemainderComponentID]; canvas.LocalRemainderComponentID == "" || !exists {
+		t.Fatalf("persisted local remainder component = %q, diagnostics = %#v", canvas.LocalRemainderComponentID, diagnosticComponents)
+	}
+	for _, component := range canvas.Components {
+		if _, remainder := diagnosticComponents[component.ID]; !remainder {
+			continue
+		}
+		if len(component.Members) != 1 ||
+			component.Members[0].ID != architectureMember(componentmap.MemberPackage, "archiver") ||
+			len(component.ParticipatingFlowIDs) != 0 || len(component.AnchorIDs) != 0 {
+			t.Fatalf("local remainder gained model association: %#v", component)
+		}
+	}
+	scan := architectureStep(t, architectureFlow(t, canvas, "backup"), "scan")
+	if scan.Binding == nil || scan.ComponentID != "" || len(scan.ParticipatingComponentIDs) != 0 {
+		t.Fatalf("local remainder became flow ownership/participation: %#v", scan)
+	}
+}
+
+func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing.T) {
+	t.Parallel()
+
+	if ArchitectureCanvasVersion != 8 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 8 for exact persisted remainder identity", ArchitectureCanvasVersion)
+	}
+	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
+		t.Fatalf("historical Architecture Canvas version error = %v", err)
+	}
+}
+
+func TestArchitectureCanvasRejectsRemainderIdentityNotBoundToExactMembers(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureBundle()
+	landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Command Surface",
+			Components: []componentmap.ProposedComponent{{
+				Name:      "Backup command",
+				MemberIDs: []componentmap.MemberID{architectureMember(componentmap.MemberPackage, "cmd")},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	landscape.LocalRemainderMemberIDs = []componentmap.MemberID{
+		architectureMember(componentmap.MemberPackage, "cmd"),
+	}
+	if _, err := architectureLocalRemainderComponentID(landscape); err == nil ||
+		!strings.Contains(err.Error(), "no diagnostic component matches") {
+		t.Fatalf("mismatched local remainder identity error = %v", err)
 	}
 }
 

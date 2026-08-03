@@ -3,6 +3,8 @@ package report
 import (
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/componentmap"
 )
 
 func architectureSynthesisV4AcceptedFixture() ArchitectureSynthesisStatus {
@@ -13,7 +15,8 @@ func architectureSynthesisV4AcceptedFixture() ArchitectureSynthesisStatus {
 		LocalCandidateCount: 3, RequestedConceptualCount: 2, StructuralLocatorCount: 1,
 		AnchorCount:       1,
 		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
-		UsageReported: true, InputTokens: 25, OutputTokens: 11,
+		CoveredConceptualCount: 2,
+		UsageReported:          true, InputTokens: 25, OutputTokens: 11,
 		FinishReason: "stop", ResponseComplete: true, ResponseState: "captured",
 		ProviderCallSucceeded: true, ResponseParsed: true, ProposalAccepted: true,
 		ArchitectureSource: "model", ArchitectureLevel: 2,
@@ -160,8 +163,86 @@ func TestArchitectureSynthesisV7SuccessRequiresExactConceptualCoverageAndTruthfu
 	legacyV4.LocalCandidateCount = 0
 	legacyV4.RequestedConceptualCount = 0
 	legacyV4.StructuralLocatorCount = 0
+	legacyV4.CoveredConceptualCount = 0
 	if err := legacyV4.Validate(); err == nil {
 		t.Fatal("v4 status reinterpreted many-to-many membership under the v5 contract")
+	}
+}
+
+func TestArchitectureSynthesisV8AcceptsExactPartialCoverage(t *testing.T) {
+	t.Parallel()
+
+	status := architectureSynthesisV4AcceptedFixture()
+	status.LocalCandidateCount = 4
+	status.RequestedConceptualCount = 3
+	status.StructuralLocatorCount = 1
+	status.MemberOccurrences = 2
+	status.DistinctMembers = 2
+	status.CoveredConceptualCount = 2
+	status.UncoveredConceptualCount = 1
+	status.UncoveredConceptualIDs = []componentmap.MemberID{{
+		Kind: componentmap.MemberPackage, Value: "member-package-service",
+	}}
+	status.ProposalPartial = true
+	status.ArchitectureSource = "partial_model"
+	if err := status.Validate(); err != nil {
+		t.Fatalf("valid partial Architecture status: %v", err)
+	}
+
+	cached := status
+	cached.State = ArchitectureSynthesisCached
+	cached.ProviderRequestCount = 0
+	cached.TransportAttempts = 0
+	if err := cached.Validate(); err != nil {
+		t.Fatalf("valid cached partial Architecture status: %v", err)
+	}
+
+	for name, mutate := range map[string]func(*ArchitectureSynthesisStatus){
+		"missing partial flag": func(value *ArchitectureSynthesisStatus) { value.ProposalPartial = false },
+		"covered mismatch":     func(value *ArchitectureSynthesisStatus) { value.CoveredConceptualCount++ },
+		"uncovered mismatch":   func(value *ArchitectureSynthesisStatus) { value.UncoveredConceptualCount++ },
+		"missing exact id":     func(value *ArchitectureSynthesisStatus) { value.UncoveredConceptualIDs = nil },
+		"duplicate exact id": func(value *ArchitectureSynthesisStatus) {
+			value.UncoveredConceptualCount = 2
+			value.RequestedConceptualCount = 4
+			value.LocalCandidateCount = 5
+			value.UncoveredConceptualIDs = append(value.UncoveredConceptualIDs, value.UncoveredConceptualIDs[0])
+		},
+		"invalid exact id": func(value *ArchitectureSynthesisStatus) {
+			value.UncoveredConceptualIDs[0].Kind = "unknown"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := status
+			candidate.UncoveredConceptualIDs = append([]componentmap.MemberID(nil), status.UncoveredConceptualIDs...)
+			mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatalf("partial Architecture status accepted %s", name)
+			}
+		})
+	}
+}
+
+func TestArchitectureSynthesisV8KeepsV7FullCoverageReadable(t *testing.T) {
+	t.Parallel()
+
+	historical := architectureSynthesisV4AcceptedFixture()
+	historical.Version = 7
+	historical.CoveredConceptualCount = 0
+	if err := historical.Validate(); err != nil {
+		t.Fatalf("historical v7 full Architecture status is unreadable: %v", err)
+	}
+}
+
+func TestArchitectureSynthesisV7RejectsD206PartialCoverageDiagnostic(t *testing.T) {
+	t.Parallel()
+
+	historical := architectureSynthesisV4AcceptedFixture()
+	historical.Version = 7
+	historical.CoveredConceptualCount = 0
+	historical.ValidationCodes = []string{"proposal.partial_member_coverage"}
+	if err := historical.Validate(); err == nil {
+		t.Fatal("historical v7 status accepted the D206 partial-coverage diagnostic")
 	}
 }
 
@@ -174,6 +255,7 @@ func TestArchitectureSynthesisV7DoesNotReinterpretHistoricalCandidateCoverage(t 
 	historical.LocalCandidateCount = 0
 	historical.RequestedConceptualCount = 0
 	historical.StructuralLocatorCount = 0
+	historical.CoveredConceptualCount = 0
 	if err := historical.Validate(); err != nil {
 		t.Fatalf("historical v6 Architecture status is unreadable: %v", err)
 	}
@@ -249,6 +331,7 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.normalized_package_only_hypothesis",
 		"proposal.normalized_primary_subsystems",
 		"proposal.normalized_total_components",
+		"proposal.partial_member_coverage",
 		"proposal.primary_subsystems_above_preferred",
 		"proposal.total_components_above_preferred",
 		"proposal.ungrounded_primary_component",
@@ -281,6 +364,7 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 	base.State = ArchitectureSynthesisFailed
 	base.ErrorCode = "invalid_response"
 	base.ProposalAccepted = false
+	base.CoveredConceptualCount = 0
 	base.ProposalRejected = true
 	base.ArchitectureSource = ""
 	base.ArchitectureLevel = 0
@@ -299,6 +383,7 @@ func TestArchitectureSynthesisV6RejectsRetiredDiagnosticsWhileV5RemainsReadable(
 			historical.LocalCandidateCount = 0
 			historical.RequestedConceptualCount = 0
 			historical.StructuralLocatorCount = 0
+			historical.CoveredConceptualCount = 0
 			historical.ValidationCodes = []string{code}
 			if err := historical.Validate(); err != nil {
 				t.Fatalf("historical v5 diagnostic %q is unreadable: %v", code, err)

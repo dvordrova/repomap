@@ -103,6 +103,86 @@ func TestRunManifestBindsRepositoryAtlasArtifactAndEmbeddedValue(t *testing.T) {
 	})
 }
 
+func TestRunManifestRejectsHistoricalArchitectureCanvas(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	manifest.OpenablePaths = nil
+	manifest.Components = nil
+	reportJSON, err := json.Marshal(struct {
+		FormatVersion      int                 `json:"format_version"`
+		ArchitectureCanvas *ArchitectureCanvas `json:"architecture_canvas"`
+	}{
+		FormatVersion: CurrentFormatVersion,
+		ArchitectureCanvas: &ArchitectureCanvas{
+			Version: ArchitectureCanvasVersion - 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+
+	err = manifest.VerifyReportJSON(reportJSON)
+	if err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
+		t.Fatalf("VerifyReportJSON error = %v", err)
+	}
+}
+
+func TestRunManifestRejectsMalformedPartialArchitectureStatus(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	manifest.OpenablePaths = nil
+	manifest.Components = nil
+	reportJSON, err := json.Marshal(struct {
+		FormatVersion int                          `json:"format_version"`
+		Architecture  *ArchitectureSynthesisStatus `json:"architecture_synthesis"`
+	}{
+		FormatVersion: CurrentFormatVersion,
+		Architecture: &ArchitectureSynthesisStatus{
+			Version:         ArchitectureSynthesisStatusVersion,
+			State:           ArchitectureSynthesisUnavailable,
+			UnavailableCode: ArchitectureSynthesisUnavailableOfflineCode,
+			ProposalPartial: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+
+	err = manifest.VerifyReportJSON(reportJSON)
+	if err == nil || !strings.Contains(err.Error(), "architecture synthesis status") {
+		t.Fatalf("VerifyReportJSON error = %v", err)
+	}
+}
+
+func TestRunManifestAllowsLocalReportWithoutArchitectureStatus(t *testing.T) {
+	t.Parallel()
+
+	manifest := validRunManifestFixture(t)
+	manifest.OpenablePaths = nil
+	manifest.Components = nil
+	reportJSON, err := json.Marshal(struct {
+		FormatVersion      int                 `json:"format_version"`
+		ArchitectureCanvas *ArchitectureCanvas `json:"architecture_canvas"`
+	}{
+		FormatVersion: CurrentFormatVersion,
+		ArchitectureCanvas: &ArchitectureCanvas{
+			Version: ArchitectureCanvasVersion,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		t.Fatalf("VerifyReportJSON: %v", err)
+	}
+}
+
 func TestVersionTenManifestIsRejectedBeforeAtlasStudyV3Artifacts(t *testing.T) {
 	t.Parallel()
 

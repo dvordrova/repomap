@@ -48,6 +48,10 @@ func BuildAtlasStudyInput(
 	if err := validateUsableAtlasStudyCanvas(data); err != nil {
 		return atlasstudy.Input{}, err
 	}
+	studyData, err := atlasStudyLocalD177Data(data)
+	if err != nil {
+		return atlasstudy.Input{}, err
+	}
 	atlas, err := repositoryatlas.Canonical(*data.RepositoryAtlas)
 	if err != nil {
 		return atlasstudy.Input{}, fmt.Errorf("atlas study report: repository Atlas: %w", err)
@@ -56,13 +60,24 @@ func BuildAtlasStudyInput(
 	input := atlasstudy.Input{
 		Atlas: atlas, Language: language, Limits: atlasstudy.DefaultLimits(),
 		Architecture: atlasstudy.ArchitectureInput{
-			Version:  data.ArchitectureCanvas.Version,
-			Source:   string(data.ArchitectureCanvas.ArchitectureSource),
-			Title:    strings.TrimSpace(data.ArchitectureCanvas.Title),
-			Subtitle: strings.TrimSpace(data.ArchitectureCanvas.Subtitle),
+			Version:  studyData.ArchitectureCanvas.Version,
+			Source:   string(studyData.ArchitectureCanvas.ArchitectureSource),
+			Title:    strings.TrimSpace(studyData.ArchitectureCanvas.Title),
+			Subtitle: strings.TrimSpace(studyData.ArchitectureCanvas.Subtitle),
 		},
 	}
-	for _, subsystem := range data.ArchitectureCanvas.Subsystems {
+	remainderComponentID := studyData.ArchitectureCanvas.LocalRemainderComponentID
+	var remainderSubsystemID componentmap.SubsystemID
+	for _, component := range studyData.ArchitectureCanvas.Components {
+		if component.ID == remainderComponentID && remainderComponentID != "" {
+			remainderSubsystemID = component.SubsystemID
+			break
+		}
+	}
+	for _, subsystem := range studyData.ArchitectureCanvas.Subsystems {
+		if subsystem.ID == remainderSubsystemID && remainderSubsystemID != "" {
+			continue
+		}
 		input.Architecture.Subsystems = append(input.Architecture.Subsystems, atlasstudy.Subsystem{
 			ID: string(subsystem.ID), Name: strings.TrimSpace(subsystem.Name),
 			Description:  strings.TrimSpace(subsystem.Description),
@@ -70,7 +85,10 @@ func BuildAtlasStudyInput(
 			ComponentIDs: atlasStudyComponentIDStrings(subsystem.ComponentIDs),
 		})
 	}
-	for _, component := range data.ArchitectureCanvas.Components {
+	for _, component := range studyData.ArchitectureCanvas.Components {
+		if component.ID == remainderComponentID && remainderComponentID != "" {
+			continue
+		}
 		input.Architecture.Components = append(input.Architecture.Components, atlasstudy.Component{
 			ID: string(component.ID), SubsystemID: string(component.SubsystemID),
 			Name: strings.TrimSpace(component.Name), Description: strings.TrimSpace(component.Description),
@@ -84,8 +102,8 @@ func BuildAtlasStudyInput(
 		return input.Architecture.Components[i].ID < input.Architecture.Components[j].ID
 	})
 
-	input.Surfaces = atlasStudySurfaces(data, atlas)
-	input.ReadingTargets = atlasStudyReadingTargets(data, input.Surfaces)
+	input.Surfaces = atlasStudySurfaces(studyData, atlas)
+	input.ReadingTargets = atlasStudyReadingTargets(studyData, input.Surfaces)
 	bindAtlasStudyReadingTargets(&input)
 	input.Evidence = atlasStudyEvidence(atlas, input.Surfaces)
 	if claim := atlasStudyDocumentedPurpose(data.DocumentedPurpose); claim != "" {
@@ -96,6 +114,43 @@ func BuildAtlasStudyInput(
 		}}
 	}
 	return input, nil
+}
+
+// atlasStudyLocalD177Data keeps Study independent from optional Architecture
+// grouping. The complete exact RepositoryGraph and grounding facts rebuild the
+// same deterministic D177 landscape for full, partial, and rejected model
+// outcomes. Producer-owned anchors, Surfaces, and saved flows remain exact
+// local evidence; only their model-derived component joins are ignored when
+// they do not resolve in the rebuilt local landscape.
+func atlasStudyLocalD177Data(data *ReportData) (*ReportData, error) {
+	if data == nil || data.ArchitectureCanvas == nil {
+		return nil, fmt.Errorf("atlas study report: architecture canvas is required")
+	}
+	localInput, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		// Some historical/provider-free report fixtures contain only an already
+		// local Canvas and no reconstructable graph or grounding candidates. The
+		// same fallback applies regardless of model outcome; current partial
+		// synthesis cannot arise without the exact graph required by D202.
+		if errors.Is(err, errNoCanonicalArchitectureCandidates) {
+			return data, nil
+		}
+		return nil, fmt.Errorf("atlas study report: rebuild local D177 input: %w", err)
+	}
+	localCanvas, err := ProjectArchitectureCanvas(localInput)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study report: rebuild local D177 canvas: %w", err)
+	}
+	active := data.ArchitectureCanvas
+	localCanvas.BehaviorAnchors = append(
+		[]componentmap.BehaviorAnchor(nil), active.BehaviorAnchors...,
+	)
+	localCanvas.Surfaces = append([]ArchitectureSurface(nil), active.Surfaces...)
+	localCanvas.Flows = append([]ArchitectureFlow(nil), active.Flows...)
+
+	stable := *data
+	stable.ArchitectureCanvas = &localCanvas
+	return &stable, nil
 }
 
 // AtlasStudyInputHasMinimumCatalog reports whether the exact producer-owned
@@ -160,7 +215,8 @@ func validateUsableAtlasStudyCanvas(data *ReportData) error {
 		}
 		rejected := status.State == ArchitectureSynthesisFailed || status.ProposalRejected
 		modelCanvas := canvas.ArchitectureSource == componentmap.SourceValidatedModel ||
-			canvas.ArchitectureSource == componentmap.SourceNormalizedModel
+			canvas.ArchitectureSource == componentmap.SourceNormalizedModel ||
+			canvas.ArchitectureSource == componentmap.SourcePartialModel
 		if rejected && modelCanvas {
 			return fmt.Errorf("atlas study report: rejected enrichment cannot authorize a model Architecture Canvas")
 		}
@@ -181,12 +237,19 @@ func validateAcceptedAtlasStudyArchitecture(data *ReportData) error {
 		!status.ProposalAccepted || status.ProposalRejected || status.FallbackSelected ||
 		canvas.Fallback ||
 		(canvas.ValidationOutcome != componentmap.ValidationAccepted &&
-			canvas.ValidationOutcome != componentmap.ValidationAcceptedNormalized) ||
+			canvas.ValidationOutcome != componentmap.ValidationAcceptedNormalized &&
+			canvas.ValidationOutcome != componentmap.ValidationAcceptedPartial) ||
 		(canvas.ArchitectureSource != componentmap.SourceValidatedModel &&
-			canvas.ArchitectureSource != componentmap.SourceNormalizedModel) ||
+			canvas.ArchitectureSource != componentmap.SourceNormalizedModel &&
+			canvas.ArchitectureSource != componentmap.SourcePartialModel) ||
 		status.ArchitectureSource != string(canvas.ArchitectureSource) ||
 		status.ArchitectureLevel != canvas.ArchitectureLevel {
 		return fmt.Errorf("atlas study report: Architecture is not an accepted model result")
+	}
+	partial := canvas.ValidationOutcome == componentmap.ValidationAcceptedPartial
+	if partial != (canvas.ArchitectureSource == componentmap.SourcePartialModel) ||
+		partial != status.ProposalPartial {
+		return fmt.Errorf("atlas study report: Architecture partial outcome is inconsistent")
 	}
 	return nil
 }
@@ -405,10 +468,14 @@ func atlasStudyReadingAssociation(
 	surfaceLabels := make(map[string]struct{})
 	for _, component := range data.ArchitectureCanvas.Components {
 		componentID := string(component.ID)
-		knownComponents[componentID] = struct{}{}
 		for _, member := range component.Members {
 			memberFacts[member.ID] = append(memberFacts[member.ID], member.Facts...)
 		}
+		if component.ID == data.ArchitectureCanvas.LocalRemainderComponentID &&
+			data.ArchitectureCanvas.LocalRemainderComponentID != "" {
+			continue
+		}
+		knownComponents[componentID] = struct{}{}
 		if atlasStudyComponentOwnsPath(data, component, sourcePath) {
 			relatedComponents[componentID] = struct{}{}
 			principalRefs[atlasstudy.CanonicalRef{Kind: atlasstudy.RefComponent, ID: componentID}] = struct{}{}
@@ -920,7 +987,11 @@ func readAtlasStudyReportProduct(
 		if status.DirectionCount != len(result.Directions) {
 			return nil, nil, fmt.Errorf("atlas study report: result/status direction count mismatch")
 		}
-		studyMap, projectErr := projectAtlasStudyMap(data, input, result)
+		studyData, localErr := atlasStudyLocalD177Data(data)
+		if localErr != nil {
+			return nil, nil, localErr
+		}
+		studyMap, projectErr := projectAtlasStudyMap(studyData, input, result)
 		if projectErr != nil {
 			return nil, nil, projectErr
 		}

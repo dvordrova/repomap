@@ -1426,6 +1426,7 @@
   function architectureSourceLabel(value) {
     return {
       validated_model: msg('architecture.value.validated_model'),
+      partial_model: msg('architecture.value.partial_model'),
       normalized_model: msg('architecture.value.normalized_model'),
       local_anchors: msg('architecture.value.local_anchors'),
       package_fallback: msg('architecture.value.package_fallback')
@@ -1649,7 +1650,9 @@
       if (DEBUG_MODE && DATA.architecture_synthesis) {
         var architectureState = DATA.architecture_synthesis.state || 'unknown';
         var architectureValue = msg('main.unavailable');
-        if (DATA.architecture_synthesis.proposal_normalized) {
+        if (DATA.architecture_synthesis.proposal_partial) {
+          architectureValue = msg('main.partial_model');
+        } else if (DATA.architecture_synthesis.proposal_normalized) {
           architectureValue = msg('main.normalized_model');
         } else if (DATA.architecture_synthesis.proposal_accepted) {
           architectureValue = msg('main.validated_model');
@@ -7592,6 +7595,9 @@
 		if (!DATA.architecture_canvas || !userArchitectureAvailable()) return null;
     if (DEBUG_MODE) return DATA.architecture_canvas;
     var canvas = JSON.parse(JSON.stringify(DATA.architecture_canvas));
+		if (String(canvas.validation_outcome || '') !== 'accepted_partial') {
+			delete canvas.local_remainder_component_id;
+		}
     delete canvas.suggested_investigations;
     delete canvas.frontiers;
     delete canvas.diagnostics;
@@ -8237,6 +8243,7 @@
       workspaceHashForState: workspaceHashForState,
 			workspaceRouteFamily: workspaceRouteFamily,
       userArchitectureAvailable: userArchitectureAvailable,
+		userArchitectureData: userArchitectureData,
       reduceWorkspaceState: reduceWorkspaceState,
       renderExactReferences: renderExactReferences,
       renderSourceCode: renderSourceCode,

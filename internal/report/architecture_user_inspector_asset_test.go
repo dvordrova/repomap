@@ -501,6 +501,89 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+func TestArchitectureUserProjectionRetainsOnlyExactPartialTruth(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+const script = fs.readFileSync(process.argv[2], "utf8");
+const messages = fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8");
+function project(canvas) {
+  const report = {
+    user_mechanisms: [], user_sources: [], openable_paths: [], source_ids: {},
+    architecture_canvas: canvas,
+  };
+  const window = {
+    location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+    __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  };
+  const document = {
+    getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
+    querySelectorAll() { return []; },
+  };
+  document.documentElement = { lang: "en" };
+  window.document = document;
+  vm.runInNewContext(messages, { window });
+  vm.runInNewContext(script, { window, document, URLSearchParams, Set, Map, AbortController });
+  return window.__REPOMAP_WORKSPACE_TEST__.userArchitectureData();
+}
+const partial = project({
+  validation_outcome: "accepted_partial",
+  architecture_source: "partial_model",
+  local_remainder_component_id: "remainder",
+  diagnostics: [{ code: "generic-noise" }],
+  components: [{ id: "remainder", members: [
+    { name: "cmd/server/main.go" },
+    { id: { kind: "package", value: "example.test/internal/local" } },
+  ] }],
+});
+const full = project({
+  validation_outcome: "accepted",
+  local_remainder_component_id: "stale-remainder",
+  components: [{ id: "core", members: [] }],
+});
+process.stdout.write(JSON.stringify({
+  partialOutcome: partial.validation_outcome,
+  partialRemainder: partial.local_remainder_component_id,
+  partialMembers: partial.components[0].members,
+  partialHasDiagnostics: Object.prototype.hasOwnProperty.call(partial, "diagnostics"),
+  partialHasSource: Object.prototype.hasOwnProperty.call(partial, "architecture_source"),
+  fullHasRemainder: Object.prototype.hasOwnProperty.call(full, "local_remainder_component_id"),
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "architecture-partial-user-projection-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run partial Architecture user projection: %v\n%s", err, output)
+	}
+	var got struct {
+		PartialOutcome        string `json:"partialOutcome"`
+		PartialRemainder      string `json:"partialRemainder"`
+		PartialMembers        []any  `json:"partialMembers"`
+		PartialHasDiagnostics bool   `json:"partialHasDiagnostics"`
+		PartialHasSource      bool   `json:"partialHasSource"`
+		FullHasRemainder      bool   `json:"fullHasRemainder"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode partial Architecture user projection: %v\n%s", err, output)
+	}
+	if got.PartialOutcome != "accepted_partial" || got.PartialRemainder != "remainder" ||
+		len(got.PartialMembers) != 2 || got.PartialHasDiagnostics || got.PartialHasSource ||
+		got.FullHasRemainder {
+		t.Fatalf("partial Architecture user projection = %#v", got)
+	}
+}
+
 func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 	js := readCanvasAsset(t, "architecture_canvas.js")
 	css := readCanvasAsset(t, "architecture_canvas.css")

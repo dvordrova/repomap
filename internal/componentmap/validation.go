@@ -27,6 +27,7 @@ func diagnosticSeverity(code string) FindingSeverity {
 	switch code {
 	case "proposal.unsupported_version",
 		"proposal.invalid_subsystem_count",
+		"proposal.invalid_component_count",
 		"proposal.invalid_members",
 		"proposal.invalid_member_id",
 		"proposal.duplicate_member_id",
@@ -34,6 +35,7 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.membership_limit_exceeded",
 		"proposal.member_participation_limit_exceeded",
 		"proposal.incomplete_member_coverage",
+		"proposal.empty_member_coverage",
 		"proposal.unknown_member_id",
 		"proposal.unknown_anchor_id",
 		"proposal.invalid_subsystem",
@@ -72,7 +74,6 @@ func normalizeProposalShape(bundle CandidateBundle, proposal Proposal) (Proposal
 	annotateProposalSources(&normalized)
 	operations := make([]NormalizationOperation, 0)
 	findings := make([]Diagnostic, 0)
-	known := candidateIndex(bundle)
 
 	for index := range normalized.Subsystems {
 		subsystem := &normalized.Subsystems[index]
@@ -86,19 +87,6 @@ func normalizeProposalShape(bundle CandidateBundle, proposal Proposal) (Proposal
 		}
 		for componentIndex := range subsystem.Components {
 			component := &subsystem.Components[componentIndex]
-			if bundle.GroundingMode != GroundingPackages && len(component.AnchorIDs) == 0 &&
-				!component.Hypothesis && knownPackageOnlyMembers(known, component.MemberIDs) {
-				component.Hypothesis = true
-				operations = append(operations, NormalizationOperation{
-					Code:               "normalized_package_only_hypothesis",
-					Message:            "marked one package-only conceptual component as an explicit hypothesis",
-					SourceComponentIDs: append([]ComponentID(nil), component.sourceIDs...),
-				})
-				findings = append(findings, newDiagnostic(
-					"proposal.normalized_package_only_hypothesis",
-					"marked an unanchored package-only conceptual component as an explicit hypothesis",
-				))
-			}
 			if len(component.Description) > maxDescriptionBytes {
 				component.Description = truncateDisplayText(component.Description, maxDescriptionBytes)
 				operations = append(operations, NormalizationOperation{
@@ -360,11 +348,12 @@ func validFallbackReason(reason FallbackReason) bool {
 }
 
 func validValidationOutcome(outcome ValidationOutcome) bool {
-	return outcome == ValidationAccepted || outcome == ValidationAcceptedNormalized || outcome == ValidationRejected
+	return outcome == ValidationAccepted || outcome == ValidationAcceptedPartial ||
+		outcome == ValidationAcceptedNormalized || outcome == ValidationRejected
 }
 
 func validArchitectureSource(source ArchitectureSource) bool {
-	return source == SourceValidatedModel || source == SourceNormalizedModel ||
+	return source == SourceValidatedModel || source == SourcePartialModel || source == SourceNormalizedModel ||
 		source == SourceLocalAnchors || source == SourceLocalPackages ||
 		source == SourcePackageFallback
 }

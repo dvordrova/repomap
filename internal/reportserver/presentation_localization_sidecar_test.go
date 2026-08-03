@@ -47,6 +47,7 @@ func TestServeRussianProjectionUsesSharedRunPresentation(t *testing.T) {
 		ProjectGuess:  "repository orientation",
 		OpenablePaths: []string{"batch.go"},
 		ArchitectureCanvas: &reportpkg.ArchitectureCanvas{
+			Version:  reportpkg.ArchitectureCanvasVersion,
 			Title:    "Repository architecture",
 			Subtitle: "A bounded architecture view.",
 			Subsystems: []reportpkg.ArchitectureSubsystem{{

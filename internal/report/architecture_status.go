@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/dvordrova/repomap/internal/componentmap"
 )
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 7
+	ArchitectureSynthesisStatusVersion = 8
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -45,6 +48,7 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.normalized_package_only_hypothesis":       {},
 	"proposal.normalized_primary_subsystems":            {},
 	"proposal.normalized_total_components":              {},
+	"proposal.partial_member_coverage":                  {},
 	"proposal.primary_subsystems_above_preferred":       {},
 	"proposal.total_components_above_preferred":         {},
 	"proposal.ungrounded_primary_component":             {},
@@ -97,33 +101,37 @@ type ArchitectureSynthesisStatus struct {
 	// CandidateCount is retained only for reading status versions 1-6. Version
 	// 7 separates the complete local candidate set from the smaller exact set
 	// of conceptual members requested from the provider.
-	CandidateCount           int      `json:"candidate_count,omitempty"`
-	LocalCandidateCount      int      `json:"local_candidate_count,omitempty"`
-	RequestedConceptualCount int      `json:"requested_conceptual_count,omitempty"`
-	StructuralLocatorCount   int      `json:"structural_locator_count,omitempty"`
-	AnchorCount              int      `json:"anchor_count,omitempty"`
-	MembershipCounted        bool     `json:"response_membership_counted,omitempty"`
-	MemberOccurrences        int      `json:"response_member_occurrences,omitempty"`
-	DistinctMembers          int      `json:"response_distinct_members,omitempty"`
-	UsageReported            bool     `json:"usage_reported,omitempty"`
-	InputTokens              int      `json:"input_tokens,omitempty"`
-	OutputTokens             int      `json:"output_tokens,omitempty"`
-	FinishReason             string   `json:"finish_reason,omitempty"`
-	ResponseComplete         bool     `json:"response_complete,omitempty"`
-	ResponseState            string   `json:"response_state,omitempty"`
-	ValidationCodes          []string `json:"validation_diagnostic_codes,omitempty"`
-	ProviderCallSucceeded    bool     `json:"provider_call_succeeded,omitempty"`
-	ResponseParsed           bool     `json:"response_parsed,omitempty"`
-	ProposalAccepted         bool     `json:"proposal_accepted,omitempty"`
-	ProposalNormalized       bool     `json:"proposal_normalized,omitempty"`
-	ProposalRejected         bool     `json:"proposal_rejected,omitempty"`
-	FallbackSelected         bool     `json:"fallback_selected,omitempty"`
-	ArchitectureSource       string   `json:"architecture_source,omitempty"`
-	ArchitectureLevel        int      `json:"architecture_level,omitempty"`
-	NormalizationCount       int      `json:"normalization_count,omitempty"`
-	FallbackReason           string   `json:"fallback_reason,omitempty"`
-	ErrorCode                string   `json:"error_code,omitempty"`
-	UnavailableCode          string   `json:"unavailable_code,omitempty"`
+	CandidateCount           int                     `json:"candidate_count,omitempty"`
+	LocalCandidateCount      int                     `json:"local_candidate_count,omitempty"`
+	RequestedConceptualCount int                     `json:"requested_conceptual_count,omitempty"`
+	StructuralLocatorCount   int                     `json:"structural_locator_count,omitempty"`
+	AnchorCount              int                     `json:"anchor_count,omitempty"`
+	MembershipCounted        bool                    `json:"response_membership_counted,omitempty"`
+	MemberOccurrences        int                     `json:"response_member_occurrences,omitempty"`
+	DistinctMembers          int                     `json:"response_distinct_members,omitempty"`
+	CoveredConceptualCount   int                     `json:"covered_conceptual_count,omitempty"`
+	UncoveredConceptualCount int                     `json:"uncovered_conceptual_count,omitempty"`
+	UncoveredConceptualIDs   []componentmap.MemberID `json:"uncovered_conceptual_member_ids,omitempty"`
+	UsageReported            bool                    `json:"usage_reported,omitempty"`
+	InputTokens              int                     `json:"input_tokens,omitempty"`
+	OutputTokens             int                     `json:"output_tokens,omitempty"`
+	FinishReason             string                  `json:"finish_reason,omitempty"`
+	ResponseComplete         bool                    `json:"response_complete,omitempty"`
+	ResponseState            string                  `json:"response_state,omitempty"`
+	ValidationCodes          []string                `json:"validation_diagnostic_codes,omitempty"`
+	ProviderCallSucceeded    bool                    `json:"provider_call_succeeded,omitempty"`
+	ResponseParsed           bool                    `json:"response_parsed,omitempty"`
+	ProposalAccepted         bool                    `json:"proposal_accepted,omitempty"`
+	ProposalPartial          bool                    `json:"proposal_partial,omitempty"`
+	ProposalNormalized       bool                    `json:"proposal_normalized,omitempty"`
+	ProposalRejected         bool                    `json:"proposal_rejected,omitempty"`
+	FallbackSelected         bool                    `json:"fallback_selected,omitempty"`
+	ArchitectureSource       string                  `json:"architecture_source,omitempty"`
+	ArchitectureLevel        int                     `json:"architecture_level,omitempty"`
+	NormalizationCount       int                     `json:"normalization_count,omitempty"`
+	FallbackReason           string                  `json:"fallback_reason,omitempty"`
+	ErrorCode                string                  `json:"error_code,omitempty"`
+	UnavailableCode          string                  `json:"unavailable_code,omitempty"`
 }
 
 func (status ArchitectureSynthesisStatus) Validate() error {
@@ -143,7 +151,7 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		if status.Version < 3 || !validArchitectureUnavailableCode(status.UnavailableCode) || status.ErrorCode != "" ||
 			status.PromptBytes != 0 || status.LatencyMillis != 0 || status.ProviderRequestCount != 0 ||
 			status.ProviderCallSucceeded || status.ResponseParsed || status.ProposalAccepted ||
-			status.ProposalNormalized || status.ProposalRejected || status.FallbackSelected ||
+			status.ProposalPartial || status.ProposalNormalized || status.ProposalRejected || status.FallbackSelected ||
 			status.ArchitectureSource != "" || status.ArchitectureLevel != 0 ||
 			status.NormalizationCount != 0 || status.FallbackReason != "" ||
 			status.RequestBytes != 0 || status.ResponseBytes != 0 ||
@@ -152,7 +160,9 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			status.RequestedConceptualCount != 0 || status.StructuralLocatorCount != 0 ||
 			status.AnchorCount != 0 ||
 			status.MembershipCounted || status.MemberOccurrences != 0 ||
-			status.DistinctMembers != 0 || status.UsageReported ||
+			status.DistinctMembers != 0 || status.CoveredConceptualCount != 0 ||
+			status.UncoveredConceptualCount != 0 || len(status.UncoveredConceptualIDs) != 0 ||
+			status.UsageReported ||
 			status.InputTokens != 0 || status.OutputTokens != 0 ||
 			status.FinishReason != "" || status.ResponseComplete ||
 			status.ResponseState != "" || len(status.ValidationCodes) != 0 {
@@ -169,7 +179,8 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		status.LocalCandidateCount < 0 || status.RequestedConceptualCount < 0 ||
 		status.StructuralLocatorCount < 0 ||
 		status.AnchorCount < 0 || status.MemberOccurrences < 0 ||
-		status.DistinctMembers < 0 || status.InputTokens < 0 || status.OutputTokens < 0 {
+		status.DistinctMembers < 0 || status.CoveredConceptualCount < 0 ||
+		status.UncoveredConceptualCount < 0 || status.InputTokens < 0 || status.OutputTokens < 0 {
 		return fmt.Errorf("architecture synthesis status contains invalid metrics")
 	}
 	if status.Version == 1 {
@@ -186,11 +197,14 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 	if status.ProposalNormalized && !status.ProposalAccepted {
 		return fmt.Errorf("normalized architecture proposal must also be accepted")
 	}
+	if status.ProposalPartial && !status.ProposalAccepted {
+		return fmt.Errorf("partial architecture proposal must also be accepted")
+	}
 	if status.ProposalAccepted && status.ProposalRejected {
 		return fmt.Errorf("architecture proposal cannot be accepted and rejected")
 	}
 	if status.State == ArchitectureSynthesisFailed {
-		if status.Version >= 3 && (status.ProposalAccepted || status.ProposalNormalized ||
+		if status.Version >= 3 && (status.ProposalAccepted || status.ProposalPartial || status.ProposalNormalized ||
 			status.FallbackSelected || status.FallbackReason != "" ||
 			status.ArchitectureSource != "" || status.ArchitectureLevel != 0 ||
 			status.NormalizationCount != 0) {
@@ -246,6 +260,11 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 		status.StructuralLocatorCount != 0 {
 		return fmt.Errorf("historical architecture synthesis status cannot use v7 candidate role counts")
 	}
+	if status.Version < 8 && (status.CoveredConceptualCount != 0 ||
+		status.UncoveredConceptualCount != 0 || len(status.UncoveredConceptualIDs) != 0 ||
+		status.ProposalPartial) {
+		return fmt.Errorf("historical architecture synthesis status cannot use v8 coverage evidence")
+	}
 	if status.ProviderRequestCount == 1 {
 		candidateEvidence := status.CandidateCount
 		if status.Version >= 7 {
@@ -263,7 +282,9 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 			status.UsageReported || status.InputTokens != 0 || status.OutputTokens != 0 ||
 			status.FinishReason != "" || status.ResponseComplete || status.ResponseState != "" ||
 			len(status.ValidationCodes) != 0 || status.ProviderCallSucceeded || status.ResponseParsed ||
-			status.ProposalAccepted || status.ProposalNormalized || status.ProposalRejected) {
+			status.ProposalAccepted || status.ProposalPartial || status.ProposalNormalized || status.ProposalRejected ||
+			status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
+			len(status.UncoveredConceptualIDs) != 0) {
 		return fmt.Errorf("uncalled architecture synthesis cannot contain provider response evidence")
 	}
 	if status.ResponseContentBytes > status.ResponseBytes {
@@ -276,6 +297,9 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 		}
 	} else if status.MemberOccurrences != 0 || status.DistinctMembers != 0 {
 		return fmt.Errorf("uncounted architecture response cannot contain membership counts")
+	}
+	if err := status.validateConceptualCoverage(); err != nil {
+		return err
 	}
 	if !status.UsageReported && (status.InputTokens != 0 || status.OutputTokens != 0) {
 		return fmt.Errorf("architecture token counts require reported provider usage")
@@ -308,7 +332,7 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 		(!status.ResponseComplete || !status.MembershipCounted || status.MemberOccurrences == 0 ||
 			(status.Version == 4 && status.MemberOccurrences != status.DistinctMembers) ||
 			(status.Version == 6 && status.DistinctMembers != status.CandidateCount) ||
-			(status.Version >= 7 && status.DistinctMembers != status.RequestedConceptualCount) ||
+			(status.Version == 7 && status.DistinctMembers != status.RequestedConceptualCount) ||
 			status.ResponseState != "captured") {
 		return fmt.Errorf("accepted live Architecture requires complete exact membership evidence")
 	}
@@ -328,12 +352,73 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	return nil
 }
 
+func (status ArchitectureSynthesisStatus) validateConceptualCoverage() error {
+	if status.Version < 8 {
+		return nil
+	}
+	accepted := status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached
+	if !accepted {
+		if status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
+			len(status.UncoveredConceptualIDs) != 0 || status.ProposalPartial {
+			return fmt.Errorf("unaccepted architecture synthesis cannot contain accepted coverage evidence")
+		}
+		return nil
+	}
+	if !status.ProposalAccepted || !status.MembershipCounted || status.CoveredConceptualCount == 0 {
+		return fmt.Errorf("accepted architecture synthesis requires non-empty resolved conceptual coverage")
+	}
+	if status.CoveredConceptualCount != status.DistinctMembers {
+		return fmt.Errorf("architecture synthesis covered count does not match resolved distinct membership")
+	}
+	if status.CoveredConceptualCount+status.UncoveredConceptualCount != status.RequestedConceptualCount {
+		return fmt.Errorf("architecture synthesis conceptual coverage counts are inconsistent")
+	}
+	if len(status.UncoveredConceptualIDs) != status.UncoveredConceptualCount {
+		return fmt.Errorf("architecture synthesis uncovered member identities are incomplete")
+	}
+	if status.ProposalPartial != (status.UncoveredConceptualCount > 0) {
+		return fmt.Errorf("architecture synthesis partial outcome does not match uncovered members")
+	}
+	for index, id := range status.UncoveredConceptualIDs {
+		if !validArchitectureConceptualMemberID(id) {
+			return fmt.Errorf("architecture synthesis uncovered member identity is invalid")
+		}
+		if index > 0 && !architectureMemberIDBefore(status.UncoveredConceptualIDs[index-1], id) {
+			return fmt.Errorf("architecture synthesis uncovered member identities are not unique and sorted")
+		}
+	}
+	return nil
+}
+
+func validArchitectureConceptualMemberID(id componentmap.MemberID) bool {
+	if strings.TrimSpace(id.Value) == "" || id.Value != strings.TrimSpace(id.Value) {
+		return false
+	}
+	switch id.Kind {
+	case componentmap.MemberPackage, componentmap.MemberFile, componentmap.MemberSymbol,
+		componentmap.MemberEntrypoint, componentmap.MemberFlow:
+		return true
+	default:
+		return false
+	}
+}
+
+func architectureMemberIDBefore(left, right componentmap.MemberID) bool {
+	if left.Kind != right.Kind {
+		return left.Kind < right.Kind
+	}
+	return left.Value < right.Value
+}
+
 func validArchitectureStatusCode(code string) bool {
 	_, valid := architectureStatusValidationCodes[code]
 	return valid
 }
 
 func validArchitectureStatusCodeForVersion(version int, code string) bool {
+	if code == "proposal.partial_member_coverage" && version < 8 {
+		return false
+	}
 	if validArchitectureStatusCode(code) {
 		return true
 	}

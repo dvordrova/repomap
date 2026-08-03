@@ -20,7 +20,7 @@ func TestMaterializeArchitectureLocalizationIdentityWritesExactProviderFreeSet(t
 
 	for _, normalized := range []bool{false, true} {
 		normalized := normalized
-		t.Run(map[bool]string{false: "accepted", true: "accepted_normalized"}[normalized], func(t *testing.T) {
+		t.Run(map[bool]string{false: "accepted", true: "accepted_mixed_grounding"}[normalized], func(t *testing.T) {
 			t.Parallel()
 
 			runDir := architectureLocalizationSavedRun(t, normalized)
@@ -113,6 +113,43 @@ func TestMaterializeArchitectureLocalizationIdentityWritesExactProviderFreeSet(t
 				t.Fatalf("localization entries = %v, want exact three files", entries)
 			}
 		})
+	}
+}
+
+func TestMaterializeArchitectureLocalizationIdentityReplaysAcceptedPartialExactly(t *testing.T) {
+	t.Parallel()
+
+	runDir := architectureLocalizationPartialSavedRun(t)
+	artifactDir, err := MaterializeArchitectureLocalizationIdentity(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloads := readArchitectureLocalizationPayloadSet(t, artifactDir)
+	data, err := ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.ArchitectureCanvas == nil ||
+		data.ArchitectureCanvas.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		data.ArchitectureCanvas.ArchitectureSource != componentmap.SourcePartialModel {
+		t.Fatalf("partial Canvas = %#v", data.ArchitectureCanvas)
+	}
+	canvasJSON, err := json.Marshal(data.ArchitectureCanvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateArchitectureLocalizationIdentityPayloads(canvasJSON, payloads); err != nil {
+		t.Fatalf("partial provider-free identity replay: %v", err)
+	}
+	first := append([]architectureLocalizationArtifactPayload(nil), payloads...)
+	if _, err := MaterializeArchitectureLocalizationIdentity(runDir); err != nil {
+		t.Fatalf("second partial materialization: %v", err)
+	}
+	second := readArchitectureLocalizationPayloadSet(t, artifactDir)
+	for index := range first {
+		if !bytes.Equal(first[index].data, second[index].data) {
+			t.Fatalf("partial %s changed across exact replay", first[index].name)
+		}
 	}
 }
 
@@ -558,6 +595,14 @@ func TestValidateArchitectureLocalizationIdentityPayloadsRejectsOversizeBeforeDe
 }
 
 func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
+	return architectureLocalizationSavedRunMode(t, normalized, false)
+}
+
+func architectureLocalizationPartialSavedRun(t *testing.T) string {
+	return architectureLocalizationSavedRunMode(t, false, true)
+}
+
+func architectureLocalizationSavedRunMode(t *testing.T, normalized, partial bool) string {
 	t.Helper()
 
 	runDir := t.TempDir()
@@ -621,20 +666,13 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 			components[index].Hypothesis = false
 		}
 	}
-	description := "Groups the exact saved fixture runtime."
-	if normalized {
-		normalizedIndex := -1
-		for index, component := range components {
-			if len(component.AnchorRefs) == 0 && component.MemberRefs[0].Kind == componentmap.MemberPackage {
-				normalizedIndex = index
-				break
-			}
+	if partial {
+		if len(components) < 2 {
+			t.Fatal("partial localization fixture needs at least two conceptual members")
 		}
-		if normalizedIndex < 0 {
-			t.Fatal("normalized fixture has no unanchored package-only component")
-		}
-		components[normalizedIndex].Hypothesis = false
+		components = components[:len(components)-1]
 	}
+	description := "Groups the exact saved fixture runtime."
 	response := marshalArchitectureTestWireResponse(t, architectureTestWireResponse{
 		Subsystems: []architectureTestWireSubsystem{{
 			Name:        "Runtime",
@@ -669,17 +707,19 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	if result.Landscape.Fallback {
 		t.Fatalf("fixture synthesis fell back: %#v", result.Landscape)
 	}
-	if normalized && result.Landscape.ValidationOutcome != componentmap.ValidationAcceptedNormalized {
-		t.Fatalf("normalized fixture outcome = %q", result.Landscape.ValidationOutcome)
+	if normalized && result.Landscape.ValidationOutcome != componentmap.ValidationAccepted {
+		t.Fatalf("mixed-grounding fixture outcome = %q", result.Landscape.ValidationOutcome)
 	}
-	if normalized && (len(result.Landscape.Normalizations) != 1 ||
-		result.Landscape.Normalizations[0].Code != "normalized_package_only_hypothesis") {
-		t.Fatalf("normalized fixture operations = %#v", result.Landscape.Normalizations)
+	if partial && result.Landscape.ValidationOutcome != componentmap.ValidationAcceptedPartial {
+		t.Fatalf("partial fixture outcome = %q", result.Landscape.ValidationOutcome)
 	}
-	if !normalized && result.Landscape.ValidationOutcome != componentmap.ValidationAccepted {
+	if normalized && len(result.Landscape.Normalizations) != 0 {
+		t.Fatalf("mixed-grounding fixture unexpectedly normalized = %#v", result.Landscape.Normalizations)
+	}
+	if !normalized && !partial && result.Landscape.ValidationOutcome != componentmap.ValidationAccepted {
 		t.Fatalf("accepted fixture outcome = %q", result.Landscape.ValidationOutcome)
 	}
-	if !normalized && len(result.Landscape.Normalizations) != 0 {
+	if !normalized && !partial && len(result.Landscape.Normalizations) != 0 {
 		t.Fatalf("accepted fixture unexpectedly normalized = %#v", result.Landscape.Normalizations)
 	}
 	result.Record.Call.Metadata.UsageReported = true
@@ -691,6 +731,16 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	recordJSON, err := json.Marshal(result.Record)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if partial {
+		if _, replayErr := componentmap.ReplaySynthesisResult(
+			input.CandidateBundle, "revision-localization", recordJSON,
+		); replayErr != nil {
+			t.Fatalf("partial fixture direct replay (%s/%s/%d): %v",
+				result.Record.Call.Metadata.ValidationOutcome,
+				result.Record.Call.Metadata.ArchitectureSource,
+				len(result.Record.Call.Metadata.Normalizations), replayErr)
+		}
 	}
 	writeArchitectureBuildFixture(t, runDir, ArchitectureSynthesisFile, recordJSON)
 
@@ -708,9 +758,15 @@ func architectureLocalizationSavedRun(t *testing.T, normalized bool) string {
 	status.RequestedConceptualCount = conceptualCount
 	status.StructuralLocatorCount = structuralLocatorCount
 	status.AnchorCount = len(input.CandidateBundle.BehaviorAnchors)
-	status.MemberOccurrences = conceptualCount
-	status.DistinctMembers = conceptualCount
-	status.ProposalNormalized = metadata.ValidationOutcome == componentmap.ValidationAcceptedNormalized
+	status.MemberOccurrences = metadata.MemberOccurrences
+	status.DistinctMembers = metadata.DistinctMembers
+	status.CoveredConceptualCount = len(metadata.CoveredMemberIDs)
+	status.UncoveredConceptualCount = len(metadata.UncoveredMemberIDs)
+	status.UncoveredConceptualIDs = append(
+		[]componentmap.MemberID(nil), metadata.UncoveredMemberIDs...,
+	)
+	status.ProposalPartial = metadata.ValidationOutcome == componentmap.ValidationAcceptedPartial
+	status.ProposalNormalized = len(metadata.Normalizations) > 0
 	status.ArchitectureSource = string(metadata.ArchitectureSource)
 	status.ArchitectureLevel = metadata.ArchitectureLevel
 	status.NormalizationCount = len(metadata.Normalizations)

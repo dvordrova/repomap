@@ -59,6 +59,23 @@ process.stdout.write(JSON.stringify({
     api.diagnosticSubsystemIDs([{ id: "a", category: "diagnostic" }, { id: "b" }], []),
     api.diagnosticSubsystemIDs([{ id: "a" }, { id: "b" }], [{ code: "proposal.omitted_members_preserved" }]),
   ],
+  partialTruth: api.architecturePartialTruth({
+    validation_outcome: "accepted_partial",
+    local_remainder_component_id: "remainder",
+    diagnostics: [{ code: "noisy-generic-diagnostic" }],
+    components: [
+      { id: "ordinary-diagnostic", members: [{ name: "must not appear" }] },
+      { id: "remainder", members: [
+        { name: "cmd/server/main.go" },
+        { id: { kind: "package", value: "example.test/internal/local" } },
+      ] },
+    ],
+  }),
+  fullTruth: api.architecturePartialTruth({
+    validation_outcome: "accepted",
+    local_remainder_component_id: "remainder",
+    components: [{ id: "remainder", members: [{ name: "must not appear" }] }],
+  }),
   fitScales: [
     api.readableFitScale({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 28),
     api.readableFitScale({ x: 0, y: 0, width: 500, height: 300 }, { width: 1204, height: 718 }, 28),
@@ -103,9 +120,14 @@ process.stdout.write(JSON.stringify({
 		Singleton    []bool     `json:"singleton"`
 		Placements   []int      `json:"placements"`
 		Diagnostics  [][]string `json:"diagnostics"`
-		FitScales    []float64  `json:"fitScales"`
-		FocusScales  []float64  `json:"focusScales"`
-		Transforms   []struct {
+		PartialTruth *struct {
+			RemainderComponentID string   `json:"remainderComponentID"`
+			MemberLabels         []string `json:"memberLabels"`
+		} `json:"partialTruth"`
+		FullTruth   any       `json:"fullTruth"`
+		FitScales   []float64 `json:"fitScales"`
+		FocusScales []float64 `json:"focusScales"`
+		Transforms  []struct {
 			X     float64 `json:"x"`
 			Y     float64 `json:"y"`
 			Scale float64 `json:"scale"`
@@ -141,6 +163,12 @@ process.stdout.write(JSON.stringify({
 	}
 	if want := [][]string{{"a"}, {"b"}}; !reflect.DeepEqual(result.Diagnostics, want) {
 		t.Errorf("diagnostic subsystem ids = %v, want %v", result.Diagnostics, want)
+	}
+	if result.PartialTruth == nil || result.PartialTruth.RemainderComponentID != "remainder" ||
+		!reflect.DeepEqual(result.PartialTruth.MemberLabels, []string{
+			"cmd/server/main.go", "package:example.test/internal/local",
+		}) || result.FullTruth != nil {
+		t.Errorf("partial Architecture truth projection = %#v / full=%#v", result.PartialTruth, result.FullTruth)
 	}
 	if want := []float64{0.65, 1.35}; !reflect.DeepEqual(result.FitScales, want) {
 		t.Errorf("readable Fit scales = %v, want %v", result.FitScales, want)
