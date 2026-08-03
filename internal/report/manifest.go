@@ -578,16 +578,17 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: report sha256 mismatch")
 	}
 	var report struct {
-		FormatVersion      int                          `json:"format_version"`
-		OpenablePaths      []string                     `json:"openable_paths"`
-		Components         []Component                  `json:"components"`
-		RepositoryAtlas    *repositoryatlas.Atlas       `json:"repository_atlas"`
-		Navigator          *NavigatorReportProduct      `json:"navigator"`
-		ArchitectureCanvas *ArchitectureCanvas          `json:"architecture_canvas"`
-		Architecture       *ArchitectureSynthesisStatus `json:"architecture_synthesis"`
-		AtlasStudy         *AtlasStudyReportStatus      `json:"atlas_study"`
-		StudyMap           *RepositoryStudyMap          `json:"study_map"`
-		TaskInvestigation  *struct {
+		FormatVersion                   int                                        `json:"format_version"`
+		OpenablePaths                   []string                                   `json:"openable_paths"`
+		Components                      []Component                                `json:"components"`
+		RepositoryAtlas                 *repositoryatlas.Atlas                     `json:"repository_atlas"`
+		Navigator                       *NavigatorReportProduct                    `json:"navigator"`
+		ArchitectureCanvas              *ArchitectureCanvas                        `json:"architecture_canvas"`
+		ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation"`
+		Architecture                    *ArchitectureSynthesisStatus               `json:"architecture_synthesis"`
+		AtlasStudy                      *AtlasStudyReportStatus                    `json:"atlas_study"`
+		StudyMap                        *RepositoryStudyMap                        `json:"study_map"`
+		TaskInvestigation               *struct {
 			BundleSHA256                 string `json:"bundle_sha256"`
 			AttemptSHA256                string `json:"attempt_sha256"`
 			PackSHA256                   string `json:"pack_sha256"`
@@ -608,6 +609,13 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			report.ArchitectureCanvas.Version,
 			ArchitectureCanvasVersion,
 		)
+	}
+	if err := ValidateArchitectureComponentNavigation(
+		report.ArchitectureCanvas,
+		report.OpenablePaths,
+		report.ArchitectureComponentNavigation,
+	); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
 	}
 	if report.Architecture != nil {
 		if err := report.Architecture.Validate(); err != nil {
@@ -672,7 +680,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: Atlas Study artifact identity does not match report")
 	}
 	if report.AtlasStudy != nil {
-		if !hasRepositoryAtlas || report.AtlasStudy.Version != atlasstudy.Version ||
+		if !hasRepositoryAtlas || report.AtlasStudy.Version != atlasstudy.ResultVersion ||
 			report.AtlasStudy.ProjectionVersion != AtlasStudyReportProjectionVersion {
 			return fmt.Errorf("report manifest: Atlas Study report projection is incomplete")
 		}

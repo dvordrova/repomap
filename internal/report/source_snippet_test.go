@@ -1444,7 +1444,7 @@ func TestCompleteOverviewSourceCoverageOmitsStaleNonTargetAndPreservesValidExtra
 	}
 }
 
-func TestOverviewSourceTargetsUsesAnchorsOnlyWithoutPreciseComponentMembers(t *testing.T) {
+func TestOverviewSourceTargetsDoesNotPromotePackagesOrAnchorsToSymbolSources(t *testing.T) {
 	t.Parallel()
 
 	data := &ReportData{
@@ -1453,6 +1453,7 @@ func TestOverviewSourceTargetsUsesAnchorsOnlyWithoutPreciseComponentMembers(t *t
 			CanonicalPath: "example/pkg", Files: []string{"member.go"},
 		}}},
 		ArchitectureCanvas: &ArchitectureCanvas{
+			Version: ArchitectureCanvasVersion,
 			BehaviorAnchors: []componentmap.BehaviorAnchor{
 				{ID: "anchor-member", Location: evidence.Location{Path: "member.go", Line: 30}},
 				{ID: "anchor-outside", Location: evidence.Location{Path: "anchor.go", Line: 40}},
@@ -1470,20 +1471,19 @@ func TestOverviewSourceTargetsUsesAnchorsOnlyWithoutPreciseComponentMembers(t *t
 				},
 				{
 					ID: "component-precise",
-					Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{{
-						Location: &evidence.Location{Path: "member.go", Line: 12},
-					}}}},
+					Members: []componentmap.Candidate{{
+						ID: componentmap.MemberID{Kind: componentmap.MemberFile, Value: "member-file"},
+						Facts: []componentmap.LocalFact{{
+							Location: &evidence.Location{Path: "member.go", Line: 12},
+						}},
+					}},
 					AnchorIDs: []string{"anchor-member"},
 				},
 			},
 		},
 	}
-	want := []overviewSourceTarget{
-		{path: "member.go", line: 30},
-		{path: "member.go", line: 12},
-	}
-	if got := overviewSourceTargets(data); !reflect.DeepEqual(got, want) {
-		t.Fatalf("overviewSourceTargets() = %#v, want %#v", got, want)
+	if got := overviewSourceTargets(data); len(got) != 0 {
+		t.Fatalf("package/file members or anchors became semantic source starts: %#v", got)
 	}
 }
 
@@ -1691,12 +1691,31 @@ func TestCompleteOverviewSourceCoverageLateFailurePreservesExistingNestedSources
 	if err := completeOverviewSourceCoverage(context.Background(), data, &authority); err != nil {
 		t.Fatal(err)
 	}
-	data.ArchitectureCanvas = &ArchitectureCanvas{Components: []ArchitectureComponent{{
-		ID: "component-unsafe",
-		Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{{
-			Location: &evidence.Location{Path: "unsafe.go", Line: 20},
-		}}}},
-	}}}
+	fileID := componentmap.MemberID{Kind: componentmap.MemberFile, Value: "unsafe-file"}
+	data.ArchitectureCanvas = &ArchitectureCanvas{
+		Version: ArchitectureCanvasVersion,
+		Components: []ArchitectureComponent{{
+			ID: "component-unsafe",
+			Members: []componentmap.Candidate{{
+				ID:   componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "unsafe-symbol"},
+				Role: componentmap.CandidateRoleConceptualMember, Name: "connect", ParentID: &fileID,
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactDeclaration, Value: "connect",
+					Location: &evidence.Location{Path: "unsafe.go", Line: 20},
+				}},
+			}},
+		}},
+		StructuralLocators: []ArchitectureStructuralLocator{{
+			Locator: componentmap.Candidate{
+				ID: fileID, Role: componentmap.CandidateRoleStructuralLocator, Name: "unsafe.go",
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactRepositoryPath, Value: "unsafe.go",
+					Location: &evidence.Location{Path: "unsafe.go", Line: 20},
+				}},
+			},
+			ParticipatingComponentIDs: []componentmap.ComponentID{"component-unsafe"},
+		}},
+	}
 	before, err := json.Marshal(data.UserSources)
 	if err != nil {
 		t.Fatal(err)
@@ -1725,6 +1744,23 @@ func TestCompleteOverviewSourceCoverageLateFailurePreservesExistingNestedSources
 }
 
 func overviewSourceCoverageReport(revision string) *ReportData {
+	fileID := componentmap.MemberID{Kind: componentmap.MemberFile, Value: "component-file"}
+	loadID := componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "component-load"}
+	storeID := componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "component-store"}
+	load := componentmap.Candidate{
+		ID: loadID, Role: componentmap.CandidateRoleConceptualMember, Name: "Load", ParentID: &fileID,
+		Facts: []componentmap.LocalFact{{
+			Kind: componentmap.FactDeclaration, Value: "Load",
+			Location: &evidence.Location{Path: "component.go", Line: 6},
+		}},
+	}
+	store := componentmap.Candidate{
+		ID: storeID, Role: componentmap.CandidateRoleConceptualMember, Name: "Store", ParentID: &fileID,
+		Facts: []componentmap.LocalFact{{
+			Kind: componentmap.FactDeclaration, Value: "Store",
+			Location: &evidence.Location{Path: "component.go", Line: 24},
+		}},
+	}
 	return &ReportData{
 		CapturedRevision: revision,
 		OpenablePaths:    []string{"component.go", "main.go"},
@@ -1744,14 +1780,22 @@ func overviewSourceCoverageReport(revision string) *ReportData {
 				HandlerLocation:  &SurfaceLocation{Path: "main.go", Line: 20},
 			},
 		}},
-		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{{
-			ID: "component-store",
-			Members: []componentmap.Candidate{{Facts: []componentmap.LocalFact{
-				{Location: &evidence.Location{Path: "component.go", Line: 24}},
-				{Location: &evidence.Location{Path: "component.go", Line: 6}},
-				{Location: &evidence.Location{Path: "component.go", Line: 24}},
-			}}},
-		}}},
+		ArchitectureCanvas: &ArchitectureCanvas{
+			Version: ArchitectureCanvasVersion,
+			Components: []ArchitectureComponent{{
+				ID: "component-store", Members: []componentmap.Candidate{load, store},
+			}},
+			StructuralLocators: []ArchitectureStructuralLocator{{
+				Locator: componentmap.Candidate{
+					ID: fileID, Role: componentmap.CandidateRoleStructuralLocator, Name: "component.go",
+					Facts: []componentmap.LocalFact{
+						{Kind: componentmap.FactRepositoryPath, Value: "component.go", Location: &evidence.Location{Path: "component.go", Line: 6}},
+						{Kind: componentmap.FactRepositoryPath, Value: "component.go", Location: &evidence.Location{Path: "component.go", Line: 24}},
+					},
+				},
+				ParticipatingComponentIDs: []componentmap.ComponentID{"component-store"},
+			}},
+		},
 	}
 }
 

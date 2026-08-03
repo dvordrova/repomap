@@ -1046,7 +1046,7 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 	if status := data.ArchitectureSynthesis; status != nil &&
 		status.State == ArchitectureSynthesisUnavailable && status.UnavailableCode == "offline" {
 		return &AtlasStudyReportStatus{
-			Version: atlasstudy.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableOffline,
 		}
@@ -1054,7 +1054,7 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
 	if err == nil && !AtlasStudyInputHasMinimumCatalog(input) {
 		return &AtlasStudyReportStatus{
-			Version: atlasstudy.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
 		}
@@ -1157,6 +1157,7 @@ func projectAtlasStudyMap(
 			}
 			projected.ReadingAnchors = append(projected.ReadingAnchors, StudyReadingAnchor{
 				Label: string(reading.Label), WhatToLookFor: reading.WhatToLookFor,
+				Symbol:   target.Symbol,
 				Location: UserCodeLocation{Path: target.Location.Path, Line: target.Location.Line},
 				Source:   source,
 			})

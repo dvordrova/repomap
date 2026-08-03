@@ -22,7 +22,6 @@ func TestUserWorkspaceMakesFailedStudyPublicationVisible(t *testing.T) {
 		"renderStudyPublicationNotice(root);",
 		"main.study.unavailable.for.this.run",
 		"main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result",
-		"label + ' · ' + path",
 	} {
 		if !strings.Contains(script, marker) {
 			t.Fatalf("workspace script does not expose failed Study stage marker %q", marker)
@@ -238,9 +237,9 @@ const reading = {
     { path: "context.go", symbol: "Reset", line: 31 },
   ],
   reading_anchors: [
-    { label: "Start here", what_to_look_for: "Inspect the public boundary.", location: { path: "router.go", line: 11 }, source: snippet("router.go", "Route", 10) },
-    { label: "Then inspect", what_to_look_for: "Inspect the core data lookup.", location: { path: "tree.go", line: 21 }, source: snippet("tree.go", "Find", 20) },
-    { label: "Related implementation", what_to_look_for: "Inspect request-local state.", location: { path: "context.go", line: 31 }, source: snippet("context.go", "Reset", 30) },
+    { label: "Start here", symbol: "Route", what_to_look_for: "Inspect the public boundary.", location: { path: "router.go", line: 11 }, source: snippet("router.go", "Route", 10) },
+    { label: "Then inspect", symbol: "Find", what_to_look_for: "Inspect the core data lookup.", location: { path: "tree.go", line: 21 }, source: snippet("tree.go", "Find", 20) },
+    { label: "Related implementation", symbol: "Reset", what_to_look_for: "Inspect request-local state.", location: { path: "context.go", line: 31 }, source: snippet("context.go", "Reset", 30) },
   ],
   areas: [{ id: "area-router", name: "Router", responsibility: "Matches requests.", code_location: { path: "router.go", line: 11 } }],
 };
@@ -587,7 +586,12 @@ process.stdout.write(JSON.stringify({
 			t.Errorf("empty-shelf Study Map fallback is missing %q: %q", token, got.EmptyShelfOverviewText)
 		}
 	}
-	if !strings.Contains(got.CardText, "Explore this direction →") || strings.Contains(got.CardText, "runtime") {
+	for _, token := range []string{"Route", "Find", "Reset"} {
+		if !strings.Contains(got.CardText, token) {
+			t.Fatalf("Study Direction card is missing symbol action %q: %q", token, got.CardText)
+		}
+	}
+	if strings.Contains(got.CardText, "Explore this direction") || strings.Contains(got.CardText, "runtime") {
 		t.Fatalf("Study Direction card = %q", got.CardText)
 	}
 	for _, token := range []string{
@@ -603,18 +607,10 @@ process.stdout.write(JSON.stringify({
 			t.Errorf("canonical Study overview is missing %q: %q", token, got.IncompleteOverviewText)
 		}
 	}
-	studyDirectionActions := func(text string) int {
-		return strings.Count(text, "Explore this direction →") +
-			strings.Count(text, "Open ready deep dive →")
-	}
-	if count := studyDirectionActions(got.IncompleteOverviewText); count != 6 {
-		t.Fatalf("canonical Study rendered %d directions, want 6: %q", count, got.IncompleteOverviewText)
-	}
-	if count := studyDirectionActions(got.EmptyShelfOverviewText); count != 6 {
-		t.Fatalf("canonical Overview rendered %d directions, want 6: %q", count, got.EmptyShelfOverviewText)
-	}
-	if count := studyDirectionActions(got.ShelfOverviewText); count != 6 {
-		t.Fatalf("canonical Overview with a ready Mechanism rendered %d directions, want 6: %q", count, got.ShelfOverviewText)
+	for _, rendered := range []string{got.IncompleteOverviewText, got.EmptyShelfOverviewText, got.ShelfOverviewText} {
+		if strings.Contains(rendered, "Explore this direction") || strings.Contains(rendered, "Open ready deep dive") {
+			t.Fatalf("canonical Study retained a generic route CTA: %q", rendered)
+		}
 	}
 	for _, forbidden := range []string{
 		"Where should I begin examining request admission?",
@@ -629,11 +625,10 @@ process.stdout.write(JSON.stringify({
 	}
 	for _, token := range []string{
 		"Incomplete Study direction",
-		"What you can learn",
-		"one exact place to begin",
-		"It does not yet explain the complete reading path.",
+		"Where should I begin examining request admission?",
+		"You can locate the exact saved admission declaration.",
+		"Route",
 		"router.go:11",
-		"Open exact source",
 	} {
 		if !strings.Contains(got.IncompleteDetailText, token) {
 			t.Errorf("incomplete Study detail is missing %q: %q", token, got.IncompleteDetailText)
@@ -752,6 +747,34 @@ const report = {
       component("component-duplicate", "Duplicate two", "duplicate.go", 70),
     ],
   },
+  architecture_component_navigation: {
+    version: 1,
+    components: [
+      {
+        component_id: "component-a",
+        map_target: { kind: "component", component_id: "component-a" },
+        symbol_sources: [
+          { member_id: { kind: "symbol", value: "component-a" }, symbol: "ComponentA", location: { path: "component-a.go", line: 30 } },
+          { member_id: { kind: "symbol", value: "component-a-2" }, symbol: "ComponentASecond", location: { path: "component-a2.go", line: 35 } },
+        ],
+      },
+      {
+        component_id: "component-b",
+        map_target: { kind: "component", component_id: "component-b" },
+        symbol_sources: [
+          { member_id: { kind: "symbol", value: "component-b" }, symbol: "ComponentB", location: { path: "component-b.go", line: 40 } },
+        ],
+      },
+      {
+        component_id: "component-ambiguous",
+        map_target: { kind: "component", component_id: "component-ambiguous" },
+        symbol_sources: [
+          { member_id: { kind: "symbol", value: "component-ambiguous" }, symbol: "Ambiguous", location: { path: "ambiguous.go", line: 50 } },
+        ],
+      },
+      { component_id: "component-dead", map_target: { kind: "component", component_id: "component-dead" } },
+    ],
+  },
   discovered_surfaces: { triggers: [
     surface("surface-a", "surface-a.go", 10),
     surface("surface-b", "surface-b.go", 20),
@@ -771,6 +794,7 @@ const report = {
     principal_anchors: [{ path: "study.go", symbol: "Study", line: 80 }],
     reading_anchors: [{
       label: "Start here", what_to_look_for: "Read the saved declaration.",
+      symbol: "Study",
       location: { path: "study.go", line: 80 }, source: snippet("study.go", 80, "9"),
     }],
   }] },
@@ -835,10 +859,10 @@ const drawerHash = window.location.hash;
 const drawerHistory = window.history.state && window.history.state.sourceDrawer;
 const drawerHidden = roots["rm-source-drawer"].hidden;
 const studyCard = walk(roots["rm-overview"]).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card"));
-studyCard.onclick();
+walk(studyCard).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__title")).onclick();
 const studyState = api.workspaceStateSnapshot();
 const studyHash = window.location.hash;
-componentCards[0].children[1].onclick();
+componentCards[0].children[0].onclick();
 const architectureState = api.workspaceStateSnapshot();
 const architectureHash = window.location.hash;
 const exactStart = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 10 });
@@ -873,6 +897,11 @@ function renderIsolatedOverview(isolatedReport, isolatedLocation) {
     surfaceCount: isolatedNodes.filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === "surface").length,
     componentCount: isolatedNodes.filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === "component").length,
     primaryTargets: isolatedNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-overview-object-primary")).map((node) => ({
+      tag: node.tagName,
+      href: node.attributes && node.attributes.href || "",
+      hasClick: typeof node.onclick === "function",
+    })),
+    sourceTargets: isolatedNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-overview-object-source")).map((node) => ({
       tag: node.tagName,
       href: node.attributes && node.attributes.href || "",
       hasClick: typeof node.onclick === "function",
@@ -976,7 +1005,7 @@ const ruSurfaceKindLabels = savedSurfaceKinds.map((kind) => api.overviewSurfaceK
 document.documentElement.lang = "en";
 process.stdout.write(JSON.stringify({
   entries: anatomy.entries, components: anatomy.components,
-  componentASourcePath: anatomy.components.objects.find((object) => object.id === "component-a").location.path,
+  componentASourcePaths: anatomy.components.objects.find((object) => object.id === "component-a").sources.map((source) => source.location.path),
   surfaceIDs: surfaceCards.map((card) => card.attributes["data-rm-object-id"]),
   componentIDs: componentCards.map((card) => card.attributes["data-rm-object-id"]),
   cardText: surfaceCards.concat(componentCards).map(text), renderedText,
@@ -1015,12 +1044,12 @@ process.stdout.write(JSON.stringify({
 			Total   int `json:"total"`
 			Omitted int `json:"omitted"`
 		} `json:"components"`
-		SurfaceIDs           []string `json:"surfaceIDs"`
-		ComponentIDs         []string `json:"componentIDs"`
-		ComponentASourcePath string   `json:"componentASourcePath"`
-		CardText             []string `json:"cardText"`
-		RenderedText         string   `json:"renderedText"`
-		DrawerState          struct {
+		SurfaceIDs            []string `json:"surfaceIDs"`
+		ComponentIDs          []string `json:"componentIDs"`
+		ComponentASourcePaths []string `json:"componentASourcePaths"`
+		CardText              []string `json:"cardText"`
+		RenderedText          string   `json:"renderedText"`
+		DrawerState           struct {
 			View           string `json:"view"`
 			SourceLocation *struct {
 				Path        string `json:"path"`
@@ -1062,6 +1091,11 @@ process.stdout.write(JSON.stringify({
 				Href     string `json:"href"`
 				HasClick bool   `json:"hasClick"`
 			} `json:"primaryTargets"`
+			SourceTargets []struct {
+				Tag      string `json:"tag"`
+				Href     string `json:"href"`
+				HasClick bool   `json:"hasClick"`
+			} `json:"sourceTargets"`
 			Rendered string `json:"rendered"`
 		} `json:"atlasFirstOverview"`
 		AtlasFirstStudyOnlyOverview struct {
@@ -1079,6 +1113,11 @@ process.stdout.write(JSON.stringify({
 				Href     string `json:"href"`
 				HasClick bool   `json:"hasClick"`
 			} `json:"primaryTargets"`
+			SourceTargets []struct {
+				Tag      string `json:"tag"`
+				Href     string `json:"href"`
+				HasClick bool   `json:"hasClick"`
+			} `json:"sourceTargets"`
 			Rendered string `json:"rendered"`
 		} `json:"strippedStaticOverview"`
 		MixedServedOverview struct {
@@ -1089,6 +1128,11 @@ process.stdout.write(JSON.stringify({
 				Href     string `json:"href"`
 				HasClick bool   `json:"hasClick"`
 			} `json:"primaryTargets"`
+			SourceTargets []struct {
+				Tag      string `json:"tag"`
+				Href     string `json:"href"`
+				HasClick bool   `json:"hasClick"`
+			} `json:"sourceTargets"`
 		} `json:"mixedServedOverview"`
 		FallbackAnatomy   any      `json:"fallbackAnatomy"`
 		FallbackText      string   `json:"fallbackText"`
@@ -1102,11 +1146,11 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("decode Overview anatomy workspace smoke: %v\n%s", err, output)
 	}
 	if strings.Join(got.SurfaceIDs, ",") != "surface-a,surface-b" ||
-		strings.Join(got.ComponentIDs, ",") != "component-a,component-b" {
+		strings.Join(got.ComponentIDs, ",") != "component-a,component-b,component-ambiguous,component-dead" {
 		t.Fatalf("exact-ID cards = surfaces %#v components %#v", got.SurfaceIDs, got.ComponentIDs)
 	}
 	if got.Entries.Total != 5 || got.Entries.Omitted != 3 ||
-		got.Components.Total != 5 || got.Components.Omitted != 3 {
+		got.Components.Total != 5 || got.Components.Omitted != 1 {
 		t.Fatalf("bounded anatomy counts = entries %#v components %#v", got.Entries, got.Components)
 	}
 	if strings.Count(strings.Join(got.CardText, "\n"), "Same visible entry") != 2 ||
@@ -1116,13 +1160,13 @@ process.stdout.write(JSON.stringify({
 	if joined := strings.Join(got.CardText, "\n"); strings.Count(joined, "Process entry") != 2 || strings.Contains(joined, "process_entry") {
 		t.Fatalf("Overview Surface cards did not use typed kind labels: %#v", got.CardText)
 	}
-	for _, forbidden := range []string{"surface-ambiguous", "surface-dead", "surface-duplicate", "surface-dynamic", "surface-test", "surface-unknown", "component-ambiguous", "component-dead", "component-duplicate"} {
+	for _, forbidden := range []string{"surface-ambiguous", "surface-dead", "surface-duplicate", "surface-dynamic", "surface-test", "surface-unknown", "component-duplicate"} {
 		if strings.Contains(strings.Join(got.SurfaceIDs, "\n")+strings.Join(got.ComponentIDs, "\n"), forbidden) {
 			t.Fatalf("Overview rendered rejected or dead object %q", forbidden)
 		}
 	}
-	if got.ComponentASourcePath != "component-a.go" {
-		t.Fatalf("component with two exact sources chose %q, want first deterministic Architecture source", got.ComponentASourcePath)
+	if strings.Join(got.ComponentASourcePaths, ",") != "component-a.go,component-a2.go" {
+		t.Fatalf("component plural exact sources = %#v", got.ComponentASourcePaths)
 	}
 	for _, token := range []string{"Entry surfaces", "Components", "Study directions", "Where should I read next?"} {
 		if !strings.Contains(got.RenderedText, token) {
@@ -1148,43 +1192,52 @@ process.stdout.write(JSON.stringify({
 			atlasPosition = index
 		}
 	}
-	if anatomyPosition < 0 || atlasPosition < 0 || anatomyPosition >= atlasPosition ||
+	if anatomyPosition < 0 || atlasPosition < 0 || atlasPosition >= anatomyPosition ||
 		got.AtlasFirstOverview.StudyDirectionCount != 1 || got.AtlasFirstOverview.SurfaceCount != 2 ||
-		got.AtlasFirstOverview.ComponentCount != 2 {
+		got.AtlasFirstOverview.ComponentCount != 4 {
 		t.Fatalf("Atlas-first Overview order/dedup = %#v", got.AtlasFirstOverview)
 	}
 	studyPosition, studyOnlyAtlasPosition := -1, -1
 	for index, className := range got.AtlasFirstStudyOnlyOverview.Sections {
-		if studyPosition < 0 && strings.Contains(className, "rm-study-map-section") {
+		if studyPosition < 0 && (strings.Contains(className, "rm-study-map-section") ||
+			strings.Contains(className, "rm-overview-study-routes")) {
 			studyPosition = index
 		}
 		if studyOnlyAtlasPosition < 0 && strings.Contains(className, "rm-atlas-shelf") {
 			studyOnlyAtlasPosition = index
 		}
 	}
-	if studyPosition < 0 || studyOnlyAtlasPosition < 0 || studyPosition >= studyOnlyAtlasPosition ||
+	if studyPosition < 0 || studyOnlyAtlasPosition < 0 || studyOnlyAtlasPosition >= studyPosition ||
 		got.AtlasFirstStudyOnlyOverview.StudyDirectionCount != 1 ||
 		got.AtlasFirstStudyOnlyOverview.SurfaceCount != 0 ||
-		got.AtlasFirstStudyOnlyOverview.ComponentCount != 0 ||
+		got.AtlasFirstStudyOnlyOverview.ComponentCount != 4 ||
 		!strings.Contains(got.AtlasFirstStudyOnlyOverview.Rendered, "Where should I read next?") {
 		t.Fatalf("Atlas-first Study fallback / Atlas order = %#v", got.AtlasFirstStudyOnlyOverview)
 	}
 	if got.StrippedStaticOverview.SurfaceCount != 4 || got.StrippedStaticOverview.ComponentCount != 4 ||
-		len(got.StrippedStaticOverview.PrimaryTargets) != 8 {
+		len(got.StrippedStaticOverview.PrimaryTargets) != 8 ||
+		len(got.StrippedStaticOverview.SourceTargets) != 4 {
 		t.Fatalf("stripped-source static anatomy = %#v", got.StrippedStaticOverview)
 	}
 	for _, target := range got.StrippedStaticOverview.PrimaryTargets {
+		if target.Tag == "button" && target.HasClick && target.Href == "" {
+			continue
+		}
 		if target.Tag != "a" || target.HasClick ||
-			!strings.HasPrefix(target.Href, "https://github.com/example/fixture/blob/"+strings.Repeat("1", 40)+"/") ||
-			!strings.Contains(target.Href, "#L") {
+			!strings.HasPrefix(target.Href, "https://github.com/example/fixture/blob/"+strings.Repeat("1", 40)+"/") {
 			t.Fatalf("stripped-source anatomy target = %#v", target)
 		}
 	}
-	if got.MixedServedOverview.SurfaceCount != 2 || got.MixedServedOverview.ComponentCount != 2 ||
-		len(got.MixedServedOverview.PrimaryTargets) != 4 {
+	for _, target := range got.StrippedStaticOverview.SourceTargets {
+		if target.Tag != "a" || target.HasClick || !strings.Contains(target.Href, "#L") {
+			t.Fatalf("stripped-source component source target = %#v", target)
+		}
+	}
+	if got.MixedServedOverview.SurfaceCount != 2 || got.MixedServedOverview.ComponentCount != 4 ||
+		len(got.MixedServedOverview.PrimaryTargets) != 6 || len(got.MixedServedOverview.SourceTargets) != 3 {
 		t.Fatalf("mixed served report escaped excerpt-only anatomy = %#v", got.MixedServedOverview)
 	}
-	for _, target := range got.MixedServedOverview.PrimaryTargets {
+	for _, target := range append(got.MixedServedOverview.PrimaryTargets, got.MixedServedOverview.SourceTargets...) {
 		if target.Tag != "button" || target.Href != "" || !target.HasClick {
 			t.Fatalf("mixed served anatomy target = %#v", target)
 		}
@@ -1212,10 +1265,11 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("exact source resolver accepted repair/conflict or missed most-specific overlap: start=%q end=%q ambiguous=%#v basename=%#v prefix=%#v string=%#v",
 			got.ExactStart, got.ExactEnd, got.Ambiguous, got.Basename, got.Prefix, got.StringLine)
 	}
-	if got.FallbackAnatomy != nil ||
-		!strings.Contains(got.FallbackText, "A useful path through the repository") ||
+	if got.FallbackAnatomy == nil ||
+		!strings.Contains(got.FallbackText, "Components") ||
+		!strings.Contains(got.FallbackText, "Where should I read next?") ||
 		strings.Contains(got.FallbackText, "Entry surfaces") {
-		t.Fatalf("missing-zone report did not preserve Study fallback: anatomy=%#v text=%q",
+		t.Fatalf("source-less component report lost map navigation or Study routes: anatomy=%#v text=%q",
 			got.FallbackAnatomy, got.FallbackText)
 	}
 	if got.NoStudyAnatomy == nil || got.NoStudyDirections != 0 {
@@ -1253,7 +1307,7 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-func TestUserWorkspaceOverviewAnatomyPreservesStudyFallbackWithoutBothZones(t *testing.T) {
+func TestUserWorkspaceOverviewKeepsSourceLessComponentsWithoutSurfaceZone(t *testing.T) {
 	t.Parallel()
 
 	raw, err := os.ReadFile(filepath.Join("templates", "script.js"))
@@ -1262,11 +1316,13 @@ func TestUserWorkspaceOverviewAnatomyPreservesStudyFallbackWithoutBothZones(t *t
 	}
 	script := string(raw)
 	for _, marker := range []string{
-		"if (!entries.objects.length || !components.objects.length) return null;",
+		"if (!entries.objects.length && !components.objects.length) return null;",
+		"if (anatomy.components.objects.length)",
 		"var anatomy = repositoryOverviewAnatomy();",
-		"renderStudyMapOverview(root);",
+		"renderStudyMapOverview(root, false);",
 		"if (conflict) return { source: null, conflict: true };",
-		"if (conflict || !resolved.length) return;",
+		"sources: resolved,",
+		"mapTarget: context.map_target",
 		"exactOverviewSourcePath(snippet.path) !== location.path",
 	} {
 		if !strings.Contains(script, marker) {

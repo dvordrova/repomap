@@ -27,7 +27,7 @@ import (
 
 const CurrentFormatVersion = 30
 
-const AtlasStudyReportProjectionVersion = 3
+const AtlasStudyReportProjectionVersion = 4
 
 const maxExactDiscoveryDeclarations = 16
 
@@ -157,12 +157,17 @@ type ReportData struct {
 	// Navigator is the deliberately small report projection of the exact
 	// persisted Atlas-first result. The full request and action catalog remain
 	// separate, hash-bound run artifacts.
-	Navigator          *NavigatorReportProduct      `json:"navigator,omitempty"`
-	Components         []Component                  `json:"components,omitempty"`
-	ComponentRelations []ComponentRelation          `json:"component_relations,omitempty"`
-	ArchitectureCanvas *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
-	GuidedTour         *guidedtour.Story            `json:"guided_tour,omitempty"`
-	SemanticArtifacts  []semanticdiscovery.Artifact `json:"semantic_artifacts,omitempty"`
+	Navigator          *NavigatorReportProduct `json:"navigator,omitempty"`
+	Components         []Component             `json:"components,omitempty"`
+	ComponentRelations []ComponentRelation     `json:"component_relations,omitempty"`
+	ArchitectureCanvas *ArchitectureCanvas     `json:"architecture_canvas,omitempty"`
+	// ArchitectureComponentNavigation is a report-owned navigation projection
+	// over the exact accepted Canvas. It keeps conceptual map targets separate
+	// from producer-owned source starts and never selects a representative
+	// package, file, or symbol by presentation order.
+	ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation,omitempty"`
+	GuidedTour                      *guidedtour.Story                          `json:"guided_tour,omitempty"`
+	SemanticArtifacts               []semanticdiscovery.Artifact               `json:"semantic_artifacts,omitempty"`
 	// UserMechanisms is a presentation-only supported slice of independently
 	// replayed canonical Mechanisms. Raw artifacts remain available for replay
 	// and provenance, but default onboarding renders this narrower projection.

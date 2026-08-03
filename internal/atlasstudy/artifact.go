@@ -104,7 +104,7 @@ func (product Product) result(
 	diagnostics Diagnostics,
 ) ResultRecord {
 	return ResultRecord{
-		Version: Version, State: ProductStateAccepted, PromptVersion: PromptVersion,
+		Version: ResultVersion, State: ProductStateAccepted, PromptVersion: PromptVersion,
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
@@ -213,7 +213,7 @@ func (product Product) status(
 	failure FailureCode,
 ) Status {
 	return Status{
-		Version: Version, State: state, PromptVersion: PromptVersion,
+		Version: ResultVersion, State: state, PromptVersion: PromptVersion,
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
@@ -326,7 +326,7 @@ func validateRequestRecord(record RequestRecord) error {
 }
 
 func validateResultIdentity(record ResultRecord) error {
-	if record.Version != Version || record.State != ProductStateAccepted ||
+	if record.Version != ResultVersion || record.State != ProductStateAccepted ||
 		record.PromptVersion != PromptVersion || !validArtifactSHA(record.AtlasSHA256) ||
 		!validArtifactSHA(record.ArchitectureSHA256) || !validArtifactSHA(record.WireSHA256) ||
 		!validArtifactSHA(record.CatalogSHA256) ||
@@ -338,7 +338,7 @@ func validateResultIdentity(record ResultRecord) error {
 }
 
 func validateStatus(status Status) error {
-	if status.Version != Version || status.PromptVersion != PromptVersion ||
+	if status.Version != ResultVersion || status.PromptVersion != PromptVersion ||
 		!validArtifactSHA(status.AtlasSHA256) || !validArtifactSHA(status.ArchitectureSHA256) ||
 		!validArtifactSHA(status.WireSHA256) || !validArtifactSHA(status.CatalogSHA256) ||
 		status.CatalogRef != fmt.Sprintf("atlas-study-v%d-%s", Version, status.CatalogSHA256) || !status.Language.Valid() ||

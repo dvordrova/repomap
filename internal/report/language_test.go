@@ -82,7 +82,6 @@ const message = sandbox.window.RepomapUI.message;
 process.stdout.write(JSON.stringify([
   message("main.what.to.study"),
   message("main.purpose"),
-  message("main.action.start_with", {target: "runServer"}),
   message("main.source.location_lines", {path: "cli/cmd/run.go", start: 85, end: 144}),
   message("main.toast.opened_vscode", {location: "pglogrepl.go:74"}),
   message("main.map.context", {title: "Как работает репликация?"}),
@@ -99,7 +98,6 @@ process.stdout.write(JSON.stringify([
 	want := []string{
 		"Что изучать",
 		"Назначение",
-		"Начать с runServer →",
 		"cli/cmd/run.go · строки 85–144",
 		"Открыто в VS Code: pglogrepl.go:74",
 		"Контекст на карте: «Как работает репликация?»",

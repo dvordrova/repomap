@@ -623,6 +623,11 @@ func projectCanonicalArchitectureCanvas(data *ReportData) string {
 		return fmt.Sprintf("architecture canvas projection: %v", err)
 	}
 	data.ArchitectureCanvas = &canvas
+	navigation, err := ProjectArchitectureComponentNavigation(&canvas, data.OpenablePaths)
+	if err != nil {
+		return fmt.Sprintf("architecture component navigation projection: %v", err)
+	}
+	data.ArchitectureComponentNavigation = navigation
 	return ""
 }
 
@@ -714,6 +719,11 @@ func projectSavedArchitectureCanvasBytes(data *ReportData, saved []byte) string 
 		return fmt.Sprintf("architecture canvas projection: %v", err)
 	}
 	data.ArchitectureCanvas = &canvas
+	navigation, err := ProjectArchitectureComponentNavigation(&canvas, data.OpenablePaths)
+	if err != nil {
+		return fmt.Sprintf("architecture component navigation projection: %v", err)
+	}
+	data.ArchitectureComponentNavigation = navigation
 	return ""
 }
 

@@ -11,12 +11,19 @@ import (
 )
 
 const (
+	// Version and PromptVersion own the byte-identical provider request and
+	// private request catalog contract. D209 changes neither.
 	Version       = 5
 	PromptVersion = "atlas-study-prompt-v11"
 
+	// ResultVersion owns local response validation plus result/status replay.
+	// It advances independently so the unchanged v5 provider request cannot
+	// reinterpret a result accepted by the earlier question validator.
+	ResultVersion = 6
+
 	RequestArtifactFilename = "atlas_study_request.v5.json"
-	ResultArtifactFilename  = "atlas_study_result.v5.json"
-	StatusArtifactFilename  = "atlas_study_status.v5.json"
+	ResultArtifactFilename  = "atlas_study_result.v6.json"
+	StatusArtifactFilename  = "atlas_study_status.v6.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20

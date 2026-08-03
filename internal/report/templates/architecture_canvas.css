@@ -1572,12 +1572,15 @@
 }
 
 .rm-arch__partial-member-action {
- background: transparent;
- border: 0;
+ background: #fff;
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 8px;
  color: #334155;
  cursor: pointer;
+ display: grid;
  font: inherit;
- padding: 0;
+ gap: 2px;
+ padding: 7px 9px;
  text-align: left;
 }
 
@@ -1586,6 +1589,43 @@
  color: var(--rm-arch-accent);
  text-decoration: underline;
  text-underline-offset: 3px;
+}
+
+.rm-arch__partial-truth {
+ background: #f8fafc;
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 10px;
+ color: #475569;
+ display: grid;
+ gap: 5px;
+ margin: 10px 14px 0;
+ padding: 9px 11px;
+}
+
+.rm-arch__partial-truth-label,
+.rm-arch__partial-count {
+ font-size: .68rem;
+}
+
+.rm-arch__partial-truth .rm-arch__copy {
+ margin-top: 0;
+}
+
+.rm-arch__partial-member-list {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 6px;
+}
+
+.rm-arch__partial-member-action strong {
+ font-size: .69rem;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__partial-member-action span {
+ color: var(--rm-arch-muted);
+ font-size: .61rem;
+ overflow-wrap: anywhere;
 }
 
 .rm-arch__compact-package + .rm-arch__compact-package {

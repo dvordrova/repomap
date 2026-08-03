@@ -910,13 +910,13 @@ func TestStudyAcceptsCompactCasdoorReadingShapeAndReplaysIt(t *testing.T) {
 	}
 }
 
-func TestStudyV5IdentityRejectsV4Artifacts(t *testing.T) {
-	if Version != 5 || PromptVersion != "atlas-study-prompt-v11" ||
+func TestStudyV5RequestAndV6ResultIdentityRejectEarlierArtifacts(t *testing.T) {
+	if Version != 5 || ResultVersion != 6 || PromptVersion != "atlas-study-prompt-v11" ||
 		RequestArtifactFilename != "atlas_study_request.v5.json" ||
-		ResultArtifactFilename != "atlas_study_result.v5.json" ||
-		StatusArtifactFilename != "atlas_study_status.v5.json" {
-		t.Fatalf("Study v5 identity is incomplete: %d %q %q %q %q",
-			Version, PromptVersion, RequestArtifactFilename,
+		ResultArtifactFilename != "atlas_study_result.v6.json" ||
+		StatusArtifactFilename != "atlas_study_status.v6.json" {
+		t.Fatalf("Study v5 request / v6 result identity is incomplete: %d %d %q %q %q %q",
+			Version, ResultVersion, PromptVersion, RequestArtifactFilename,
 			ResultArtifactFilename, StatusArtifactFilename)
 	}
 	product := mustCompileTestProduct(t, testInput())
@@ -929,6 +929,121 @@ func TestStudyV5IdentityRejectsV4Artifacts(t *testing.T) {
 	request.CatalogRef = fmt.Sprintf("atlas-study-v4-%s", request.CatalogSHA256)
 	if err := product.ValidateRequestRecord(request); err == nil {
 		t.Fatal("Study v4 request replayed under the v5 contract")
+	}
+
+	result, _, err := product.ResolveResponseJSON(validResponse(t, product))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Version = Version
+	if err := product.ValidateResultRecord(result); err == nil {
+		t.Fatal("Study v5 result replayed under the v6 local validator contract")
+	}
+	status := product.PreparedStatus()
+	status.Version = Version
+	if err := product.ValidateStatus(status); err == nil {
+		t.Fatal("Study v5 status replayed under the v6 local artifact contract")
+	}
+}
+
+func TestConciseUnicodeQuestionKeepsExistingQuestionBoundaries(t *testing.T) {
+	product := mustCompileTestProduct(t, testInput())
+	base := responseMap(t, validResponse(t, product))["directions"].([]any)[0].(map[string]any)
+	directions := make([]any, 0, 6)
+	for _, question := range []string{
+		"Как обрабатываются ECC-ключи?",
+		"Как запускается прокси-сервис?",
+		"",
+		"Без вопросительного знака",
+		" Лишний начальный пробел?",
+		strings.Repeat("я", 513) + "?",
+	} {
+		direction := cloneMap(base)
+		direction["question"] = question
+		directions = append(directions, direction)
+	}
+	response := responseMap(t, validResponse(t, product))
+	response["directions"] = directions
+
+	result, diagnostics, err := product.ResolveResponseJSON(marshalTestJSON(t, response))
+	if err != nil {
+		t.Fatalf("concise Unicode questions: %v", err)
+	}
+	if got := []string{result.Directions[0].Question, result.Directions[1].Question}; !reflect.DeepEqual(got, []string{
+		"Как обрабатываются ECC-ключи?", "Как запускается прокси-сервис?",
+	}) || diagnostics.DirectionsReceived != 6 || diagnostics.DirectionsAccepted != 2 ||
+		diagnostics.DirectionsRejected != 4 || !reflect.DeepEqual(diagnostics.Issues, []DirectionIssue{
+		{Position: 2, Code: IssueInvalidQuestion},
+		{Position: 3, Code: IssueInvalidQuestion},
+		{Position: 4, Code: IssueInvalidQuestion},
+		{Position: 5, Code: IssueInvalidQuestion},
+	}) {
+		t.Fatalf("concise/bounded question result = %#v / %#v", result.Directions, diagnostics)
+	}
+}
+
+func TestSavedD208CasdoorResponseReplaysFiveRoutesProviderFree(t *testing.T) {
+	requestJSON, err := os.ReadFile("testdata/casdoor_20260803_075743_request_v5.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(requestJSON); got != "cf42141cda77aabf3db5ab3ae6ba0023bee87218c83af63b011c36ccfdab0563" {
+		t.Fatalf("saved D208 request SHA-256 = %s", got)
+	}
+	request, err := DecodeRequestRecord(requestJSON)
+	if err != nil {
+		t.Fatalf("decode unchanged v5 request artifact: %v", err)
+	}
+	reencoded, err := EncodeRequestRecord(request)
+	if err != nil || !bytes.Equal(reencoded, requestJSON) {
+		t.Fatalf("v5 request artifact bytes changed: %v", err)
+	}
+	product := productFromArtifact(
+		request.AtlasSHA256, request.ArchitectureSHA256, request.WireSHA256,
+		request.CatalogSHA256, request.CatalogRef, request.Language, request.Catalog,
+	)
+	product.wire = []byte(request.WireJSON)
+
+	providerCalls := 0
+	response, err := os.ReadFile("testdata/casdoor_20260803_075743_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(response); got != "abdeb1c0738bb2fe0457d5e8d3662bcd05b3e1c6beccfd1283cb74102f0655eb" {
+		t.Fatalf("saved D208 response SHA-256 = %s", got)
+	}
+	result, diagnostics, err := product.ResolveResponseJSON(response)
+	if err != nil {
+		t.Fatalf("provider-free D208 response replay: %v", err)
+	}
+	counts := make([]int, 0, len(result.Directions))
+	questions := make([]string, 0, len(result.Directions))
+	for _, direction := range result.Directions {
+		counts = append(counts, len(direction.Reading))
+		questions = append(questions, direction.Question)
+	}
+	if providerCalls != 0 || !reflect.DeepEqual(counts, []int{1, 3, 4, 1, 1}) ||
+		!reflect.DeepEqual(questions, []string{
+			"Как приложение запускается и обрабатывает входящие запросы?",
+			"Как обеспечивается безопасность TLS и управление сертификатами?",
+			"Как приложение получает сертификаты от внешних провайдеров (GoDaddy, Ali)?",
+			"Как обрабатываются ECC-ключи?",
+			"Как запускается прокси-сервис?",
+		}) || diagnostics.DirectionsReceived != 5 || diagnostics.DirectionsAccepted != 5 ||
+		diagnostics.DirectionsRejected != 0 || len(diagnostics.Issues) != 0 {
+		t.Fatalf("saved D208 replay = calls:%d counts:%v questions:%#v diagnostics:%#v",
+			providerCalls, counts, questions, diagnostics)
+	}
+	encoded, err := EncodeResultRecord(result)
+	if err != nil {
+		t.Fatalf("encode v6 replay result: %v", err)
+	}
+	replayed, err := DecodeResultRecord(encoded)
+	if err != nil {
+		t.Fatalf("decode v6 replay result: %v", err)
+	}
+	if err := product.ValidateResultRecord(replayed); err != nil {
+		t.Fatalf("validate v6 replay result: %v", err)
 	}
 }
 
