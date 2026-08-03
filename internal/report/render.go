@@ -64,6 +64,9 @@ func writeReportJSON(data *ReportData, path string, maxBytes int) error {
 	if maxBytes <= 0 {
 		return fmt.Errorf("report: positive artifact byte limit is required")
 	}
+	if err := ensureArchitectureComponentNavigation(data); err != nil {
+		return err
+	}
 	persisted := reportDataForPersistence(data)
 	// SourceIDs are issued by the local report server after manifest
 	// verification. They are session navigation IDs, not persistent evidence.
@@ -112,6 +115,9 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
 	}
+	if err := ensureArchitectureComponentNavigation(data); err != nil {
+		return nil, err
+	}
 	return buildHTML(data)
 }
 
@@ -121,6 +127,9 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
+	}
+	if err := ensureArchitectureComponentNavigation(data); err != nil {
+		return nil, err
 	}
 	canonicalEpisode, err := projectApprovedSourceEpisode(data, episodeJSON)
 	if err != nil {

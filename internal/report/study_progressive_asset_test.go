@@ -71,6 +71,7 @@ const documentSource = snippet("README.mdx", "", [
 ]);
 const reading = {
   label: "Start here",
+  symbol: "Server.Run",
   what_to_look_for: "Run() starts the HTTP server.",
   location: { path: "serve.go", line: 2 },
   source: codeSource,
@@ -115,19 +116,6 @@ function walk(root) {
 function text(node) {
   return String(node.textContent || "") + (node.children || []).map(text).join("");
 }
-const firstContact = api.studyStartReference({
-  target_user_job: "first_contact", documents: [documentReference], reading_anchors: [reading],
-});
-const useOrOperate = api.studyStartReference({
-  target_user_job: "use_or_operate", documents: [documentReference], reading_anchors: [reading],
-});
-const integrate = api.studyStartReference({
-  target_user_job: "integrate", documents: [documentReference], reading_anchors: [reading],
-});
-const noSourcedDocument = api.studyStartReference({
-  target_user_job: "first_contact", documents: [{ label: "Guide", location: { path: "GUIDE.md" } }], reading_anchors: [reading],
-});
-
 const anchorCard = api.renderStudyReadingAnchor(reading, 0);
 const anchorNodes = walk(anchorCard);
 const readable = api.renderReadableDocument(documentSource);
@@ -146,10 +134,6 @@ rawButton.onclick();
 const rawSourceAfter = walk(documentCard).some((node) => node.attributes["data-source-content"] === "true");
 
 process.stdout.write(JSON.stringify({
-  firstContactKind: firstContact && firstContact.kind,
-  useOrOperateKind: useOrOperate && useOrOperate.kind,
-  integrateKind: integrate && integrate.kind,
-  noSourcedDocumentKind: noSourcedDocument && noSourcedDocument.kind,
   anchorText: text(anchorCard),
   anchorHasSourceDOM: anchorNodes.some((node) => node.attributes["data-source-content"] === "true"),
   readableText: text(readable),
@@ -172,38 +156,33 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run progressive Study asset: %v\n%s", err, output)
 	}
 	var got struct {
-		FirstContactKind      string   `json:"firstContactKind"`
-		UseOrOperateKind      string   `json:"useOrOperateKind"`
-		IntegrateKind         string   `json:"integrateKind"`
-		NoSourcedDocumentKind string   `json:"noSourcedDocumentKind"`
-		AnchorText            string   `json:"anchorText"`
-		AnchorHasSourceDOM    bool     `json:"anchorHasSourceDOM"`
-		ReadableText          string   `json:"readableText"`
-		ReadableTags          []string `json:"readableTags"`
-		LinkTarget            string   `json:"linkTarget"`
-		LinkHref              string   `json:"linkHref"`
-		UnsafeLinkHref        string   `json:"unsafeLinkHref"`
-		RawLabelBefore        string   `json:"rawLabelBefore"`
-		RawLabelAfter         string   `json:"rawLabelAfter"`
-		RawSourceBefore       bool     `json:"rawSourceBefore"`
-		RawSourceAfter        bool     `json:"rawSourceAfter"`
+		AnchorText         string   `json:"anchorText"`
+		AnchorHasSourceDOM bool     `json:"anchorHasSourceDOM"`
+		ReadableText       string   `json:"readableText"`
+		ReadableTags       []string `json:"readableTags"`
+		LinkTarget         string   `json:"linkTarget"`
+		LinkHref           string   `json:"linkHref"`
+		UnsafeLinkHref     string   `json:"unsafeLinkHref"`
+		RawLabelBefore     string   `json:"rawLabelBefore"`
+		RawLabelAfter      string   `json:"rawLabelAfter"`
+		RawSourceBefore    bool     `json:"rawSourceBefore"`
+		RawSourceAfter     bool     `json:"rawSourceAfter"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode progressive Study asset: %v\n%s", err, output)
 	}
-	if got.FirstContactKind != "document" || got.UseOrOperateKind != "document" ||
-		got.IntegrateKind != "anchor" || got.NoSourcedDocumentKind != "anchor" {
-		t.Fatalf("Study start selection = %#v", got)
-	}
 	for _, token := range []string{
-		"Start here",
 		"Server.Run",
 		"serve.go:2",
 		"Run() starts the HTTP server.",
-		"Open exact source",
 	} {
 		if !strings.Contains(got.AnchorText, token) {
 			t.Errorf("compact anchor is missing %q: %q", token, got.AnchorText)
+		}
+	}
+	for _, generic := range []string{"Start here", "Open exact source"} {
+		if strings.Contains(got.AnchorText, generic) {
+			t.Errorf("compact anchor retained generic copy %q: %q", generic, got.AnchorText)
 		}
 	}
 	if got.AnchorHasSourceDOM || strings.Contains(got.AnchorText, "ListenAndServe") {
@@ -254,9 +233,8 @@ func TestStudyProgressiveAssetContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, token := range []string{
-		"var start = studyStartReference(direction);",
+		"function renderStudySourceAction(",
 		"function renderStudyReadingAnchor(",
-		"'main.open.exact.source'",
 		"function renderReadableDocument(",
 		"function renderReadableDocumentCard(",
 		"'main.show.raw.exact.source'",
@@ -264,6 +242,15 @@ func TestStudyProgressiveAssetContract(t *testing.T) {
 	} {
 		if !strings.Contains(string(script), token) {
 			t.Errorf("Study progressive asset is missing %q", token)
+		}
+	}
+	for _, forbidden := range []string{
+		"var start = studyStartReference(direction);",
+		"rm-study-order-note",
+		"rm-study-start-actions",
+	} {
+		if strings.Contains(string(script), forbidden) {
+			t.Errorf("Study detail retains obsolete presentation %q", forbidden)
 		}
 	}
 	for _, token := range []string{

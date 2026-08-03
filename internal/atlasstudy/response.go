@@ -536,7 +536,7 @@ func stableDirectionID(direction Direction) string {
 }
 
 func naturalQuestion(value string) bool {
-	return strings.HasSuffix(value, "?") && len(strings.Fields(value)) >= 4
+	return strings.HasSuffix(value, "?")
 }
 
 func impliesRuntimeOrder(value string) bool {

@@ -93,7 +93,7 @@ func TestRunAtlasStudyProductReplaysOnlyAcceptedExactCache(t *testing.T) {
 	}
 }
 
-func TestAtlasStudyCacheV4RejectsPreviousContractAndDifferentCatalog(t *testing.T) {
+func TestAtlasStudyCacheV5RejectsV4ContractAndDifferentCatalog(t *testing.T) {
 	input := atlasStudyRuntimeInput()
 	product := atlasStudyRuntimeProduct(t, input)
 	client := newAtlasStudyRuntimeClient(atlasStudyRuntimeResponse(t, product, false), nil)
@@ -106,18 +106,18 @@ func TestAtlasStudyCacheV4RejectsPreviousContractAndDifferentCatalog(t *testing.
 		runsDir, atlasStudyRuntimeRepository(), modelresearch.DefaultPolicy(),
 		client.config, endpointSHA, product, client.request,
 	)
-	if current.Fingerprint.CacheContract != "atlas-study-accepted-v4" {
+	if current.Fingerprint.CacheContract != "atlas-study-accepted-v5" {
 		t.Fatalf("current Atlas Study cache contract = %q", current.Fingerprint.CacheContract)
 	}
 	legacy := current
-	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v3"
+	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v4"
 	if _, err := modelresearch.SaveStageResponse(legacy, modelresearch.StageResponse{
 		Content: []byte(`{"legacy":true}`),
 	}); err != nil {
 		t.Fatalf("save isolated legacy cache: %v", err)
 	}
 	if _, found, err := modelresearch.LoadStageResponse(current); err != nil || found {
-		t.Fatalf("v4 lookup read v3 cache: found=%t err=%v", found, err)
+		t.Fatalf("v5 lookup read v4 cache: found=%t err=%v", found, err)
 	}
 
 	if _, err := modelresearch.SaveStageResponse(current, modelresearch.StageResponse{

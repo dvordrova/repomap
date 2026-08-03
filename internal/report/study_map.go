@@ -197,6 +197,7 @@ type StudyCodeAnchor struct {
 type StudyReadingAnchor struct {
 	Label         string           `json:"label"`
 	WhatToLookFor string           `json:"what_to_look_for"`
+	Symbol        string           `json:"symbol"`
 	Location      UserCodeLocation `json:"location"`
 	Source        SourceSnippet    `json:"source"`
 }
@@ -432,6 +433,7 @@ func projectIncompleteStudy(
 			})
 			projected.ReadingAnchors = append(projected.ReadingAnchors, StudyReadingAnchor{
 				Label: reading.Label, WhatToLookFor: reading.WhatToLookFor,
+				Symbol:   anchor.Symbol,
 				Location: UserCodeLocation{Path: anchor.Path, Line: anchor.Line},
 				Source:   source,
 			})
@@ -536,6 +538,7 @@ func projectRepositoryStudyMap(
 			}
 			projected.ReadingAnchors = append(projected.ReadingAnchors, StudyReadingAnchor{
 				Label: reading.Label, WhatToLookFor: reading.WhatToLookFor,
+				Symbol:   anchor.Symbol,
 				Location: UserCodeLocation{Path: anchor.Path, Line: anchor.Line},
 				Source:   source,
 			})

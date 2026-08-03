@@ -1757,93 +1757,41 @@ func overviewArchitectureComponentLocations(
 	component ArchitectureComponent,
 	openable map[string]struct{},
 ) []SurfaceLocation {
-	locations := make([]SurfaceLocation, 0)
-	seen := make(map[string]struct{})
-	appendLocation := func(sourcePath string, line, column int) {
-		if sourcePath == "" || line <= 0 {
-			return
-		}
-		if _, ok := openable[sourcePath]; !ok {
-			return
-		}
-		key := overviewSourceTargetKey(sourcePath, line)
-		if _, duplicate := seen[key]; duplicate {
-			return
-		}
-		seen[key] = struct{}{}
-		locations = append(locations, SurfaceLocation{Path: sourcePath, Line: line, Column: column})
+	if data == nil || data.ArchitectureCanvas == nil || component.ID == "" {
+		return nil
 	}
-
-	componentFiles := make(map[string]struct{})
-	packageByPath := make(map[string]PackageInfo)
-	if data.RepositoryGraph != nil {
-		for _, pkg := range data.RepositoryGraph.Packages {
-			if pkg.CanonicalPath != "" {
-				packageByPath[pkg.CanonicalPath] = pkg
-			}
+	projection := data.ArchitectureComponentNavigation
+	if projection == nil {
+		var err error
+		projection, err = ProjectArchitectureComponentNavigation(
+			data.ArchitectureCanvas,
+			data.OpenablePaths,
+		)
+		if err != nil {
+			return nil
 		}
 	}
-	for _, member := range component.Members {
-		if member.ID.Kind == "package" {
-			for _, fact := range member.Facts {
-				if fact.Kind != "declaration" {
-					continue
-				}
-				pkg, ok := packageByPath[fact.Value]
-				if !ok {
-					continue
-				}
-				for _, sourcePath := range pkg.Files {
-					if _, ok := openable[sourcePath]; ok {
-						componentFiles[sourcePath] = struct{}{}
-					}
-				}
-				break
-			}
+	for _, navigation := range projection.Components {
+		if navigation.ComponentID != component.ID {
+			continue
 		}
-		for _, fact := range member.Facts {
-			if fact.Location == nil {
+		locations := make([]SurfaceLocation, 0, len(navigation.SymbolSources))
+		for _, source := range navigation.SymbolSources {
+			if source.Location.Path == "" || source.Location.Line <= 0 {
 				continue
 			}
-			if _, ok := openable[fact.Location.Path]; !ok {
+			if _, ok := openable[source.Location.Path]; !ok {
 				continue
 			}
-			componentFiles[fact.Location.Path] = struct{}{}
-			appendLocation(fact.Location.Path, fact.Location.Line, fact.Location.Column)
+			// Preserve the exact plural source order. Any later content-window
+			// deduplication is a storage optimization, never source primacy.
+			locations = append(locations, SurfaceLocation{
+				Path: source.Location.Path, Line: source.Location.Line, Column: source.Location.Column,
+			})
 		}
+		return locations
 	}
-	hasPreciseMemberSource := len(locations) > 0
-	hasExactComponentFiles := len(componentFiles) > 0
-	if !hasPreciseMemberSource {
-		anchorByID := make(map[string]componentmap.BehaviorAnchor)
-		for _, anchor := range data.ArchitectureCanvas.BehaviorAnchors {
-			if anchor.ID != "" {
-				anchorByID[anchor.ID] = anchor
-			}
-		}
-		for _, anchorID := range component.AnchorIDs {
-			anchor, ok := anchorByID[anchorID]
-			if !ok || anchor.Location.Line <= 0 {
-				continue
-			}
-			if _, ok := openable[anchor.Location.Path]; !ok {
-				continue
-			}
-			if hasExactComponentFiles {
-				if _, ok := componentFiles[anchor.Location.Path]; !ok {
-					continue
-				}
-			}
-			appendLocation(anchor.Location.Path, anchor.Location.Line, anchor.Location.Column)
-		}
-	}
-	sort.SliceStable(locations, func(i, j int) bool {
-		if locations[i].Path != locations[j].Path {
-			return locations[i].Path < locations[j].Path
-		}
-		return locations[i].Line < locations[j].Line
-	})
-	return locations
+	return nil
 }
 
 func overviewArchitectureStructuralLocatorLocations(

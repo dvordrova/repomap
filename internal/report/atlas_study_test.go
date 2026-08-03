@@ -815,7 +815,7 @@ func TestProjectAtlasStudyMapDeduplicatesExactReadingSetsAndKeepsDiagnostic(t *t
 		reversed[left], reversed[right] = reversed[right], reversed[left]
 	}
 	result := atlasstudy.ResultRecord{
-		Version: atlasstudy.Version, RepositoryType: atlasstudy.RepositoryService,
+		Version: atlasstudy.ResultVersion, RepositoryType: atlasstudy.RepositoryService,
 		Directions: []atlasstudy.Direction{
 			{ID: "first-accepted", Question: "First wording?", Reading: readings},
 			{ID: "later-duplicate", Question: "Different wording, same reading set?", Reading: reversed},
@@ -859,6 +859,14 @@ func TestProjectAtlasStudyMapDeduplicatesExactReadingSetsAndKeepsDiagnostic(t *t
 		studyMap.Directions[0].Areas[0].MapTarget == nil ||
 		studyMap.Directions[0].Areas[0].MapTarget.ComponentID != "published-visible-component" {
 		t.Fatalf("Study projection did not bridge exact local identity to visible Architecture: %#v", studyMap)
+	}
+	for index, target := range input.ReadingTargets {
+		if got := studyMap.Directions[0].ReadingAnchors[index].Symbol; got != target.Symbol {
+			t.Fatalf("reading[%d] symbol = %q, want exact target symbol %q", index, got, target.Symbol)
+		}
+		if got := studyMap.HiddenDirections[0].ReadingAnchors[len(reversed)-1-index].Symbol; got != target.Symbol {
+			t.Fatalf("reversed reading[%d] symbol = %q, want %q", index, got, target.Symbol)
+		}
 	}
 	hiddenCoverage := studyMap.HiddenDirections[0].DebugCoverage
 	if hiddenCoverage == nil || hiddenCoverage.UserVisible ||
@@ -1132,7 +1140,7 @@ func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichm
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
 		Navigator: &navigatorFixture.projection,
 		AtlasStudy: &AtlasStudyReportStatus{
-			Version: atlasstudy.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
 		},
@@ -1180,10 +1188,49 @@ func TestPrepareAuthorizedSourceCoverageMakesCasdoorShapedStudyReplayable(t *tes
 	data.ArchitectureCanvas.Surfaces[0].Evidence[0].Path = "main.go"
 	paths := []string{"main.go", "run.go", "result.go"}
 	lines := []int{7, 11, 19}
-	for index := range data.ArchitectureCanvas.Components[0].Members[0].Facts {
-		fact := &data.ArchitectureCanvas.Components[0].Members[0].Facts[index]
-		fact.Value = paths[index]
-		fact.Location = &evidence.Location{Path: paths[index], Line: lines[index]}
+	symbols := []string{"main", "Run", "Result"}
+	componentID := data.ArchitectureCanvas.Components[0].ID
+	for index := range paths {
+		fileID := componentmap.MemberID{
+			Kind: componentmap.MemberFile, Value: fmt.Sprintf("casdoor-file-%d", index),
+		}
+		symbolID := componentmap.MemberID{
+			Kind: componentmap.MemberSymbol, Value: fmt.Sprintf("casdoor-symbol-%d", index),
+		}
+		data.ArchitectureCanvas.Components[0].Members = append(
+			data.ArchitectureCanvas.Components[0].Members,
+			componentmap.Candidate{
+				ID:   symbolID,
+				Role: componentmap.CandidateRoleConceptualMember, Name: symbols[index], ParentID: &fileID,
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactDeclaration, Value: symbols[index],
+					Location: &evidence.Location{Path: paths[index], Line: lines[index]},
+				}},
+			},
+		)
+		data.ArchitectureCanvas.BehaviorAnchors = append(
+			data.ArchitectureCanvas.BehaviorAnchors,
+			componentmap.BehaviorAnchor{
+				ID:   fmt.Sprintf("casdoor-source-%d", index),
+				Kind: componentmap.AnchorRequestDispatchRoot, ProofMode: componentmap.AnchorProofCallTarget,
+				Location:  evidence.Location{Path: paths[index], Line: lines[index]},
+				MemberIDs: []componentmap.MemberID{symbolID},
+				Certainty: evidence.CertaintyStatic,
+			},
+		)
+		data.ArchitectureCanvas.StructuralLocators = append(
+			data.ArchitectureCanvas.StructuralLocators,
+			ArchitectureStructuralLocator{
+				Locator: componentmap.Candidate{
+					ID: fileID, Role: componentmap.CandidateRoleStructuralLocator, Name: paths[index],
+					Facts: []componentmap.LocalFact{{
+						Kind: componentmap.FactRepositoryPath, Value: paths[index],
+						Location: &evidence.Location{Path: paths[index], Line: lines[index]},
+					}},
+				},
+				ParticipatingComponentIDs: []componentmap.ComponentID{componentID},
+			},
+		)
 	}
 	if err := PrepareAuthorizedSourceCoverage(context.Background(), data, &authority); err != nil {
 		t.Fatalf("PrepareAuthorizedSourceCoverage: %v", err)

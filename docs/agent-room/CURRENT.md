@@ -1,15 +1,29 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/208-truthful-atlas-first-product-projection.md
+    decisions/209-source-centric-study-product-ia.md
 
 Status:
-    Decision 208 active; truthful Atlas-first product projection authorized
+    Decision 209 active; provider-free source-centric Study product projection
+    and exact saved-route recovery authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 209 removes a language-dependent local four-word question floor
+    that discarded two otherwise valid directions from the saved D208 response.
+    The exact saved response must publish all five routes with zero provider
+    calls; provider request bytes and prompt remain unchanged, while local
+    validator/result, accepted cache/artifact and report projection identities
+    advance and older identities miss closed. Study becomes symbol-first and
+    source-centric without reordering same-file readings. Overview and
+    Architecture stop selecting a sorted-first source, retain plural exact
+    typed sources, distinguish package participants from symbol ancestry and
+    keep every accepted conceptual component map-navigable. Brief and Atlas
+    remain distinct authority objects in one visual Overview. A diverse typed
+    target shelf, support-span semantics, route-promise validation and any new
+    provider call are explicitly deferred to a later owner-approved decision.
     Decision 208 preserves exact local structural relations at member level
     with zero-or-many conceptual participants, bridges Study to the currently
     visible Architecture only through exact typed membership, and consolidates

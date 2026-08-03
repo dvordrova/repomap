@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestArchitectureComponentContextsUseExactPackageFileStudyJoin(t *testing.T) {
+func TestArchitectureComponentContextsUseTypedNavigationWithoutRepresentativePackageSource(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -102,6 +102,33 @@ const report = {
       },
     ],
   },
+  architecture_component_navigation: {
+    version: 1,
+    components: [
+      {
+        component_id: "core", map_target: { kind: "component", component_id: "core" },
+        package_participant_ids: [{ kind: "package", value: "opaque-package-id" }],
+        symbol_sources: [{
+          member_id: { kind: "symbol", value: "core-a" }, symbol: "example.test/project/core.A",
+          location: { path: "core/a.go", line: 7, column: 9 },
+        }],
+      },
+      { component_id: "same-name-only", map_target: { kind: "component", component_id: "same-name-only" } },
+      {
+        component_id: "exact-member-only", map_target: { kind: "component", component_id: "exact-member-only" },
+        symbol_sources: [{
+          member_id: { kind: "symbol", value: "opaque-symbol-id" }, symbol: "ValidateFunctionURL",
+          location: { path: "other.go", line: 41 },
+        }],
+      },
+      {
+        component_id: "package-only", map_target: { kind: "component", component_id: "package-only" },
+        package_participant_ids: [{ kind: "package", value: "opaque-package-id-3" }],
+      },
+      { component_id: "anchor-only", map_target: { kind: "component", component_id: "anchor-only" } },
+      { component_id: "relation-only", map_target: { kind: "component", component_id: "relation-only" } },
+    ],
+  },
   discovered_surfaces: {
     total_count: 1,
     triggers: [
@@ -136,34 +163,38 @@ const report = {
     {
       id: "study-one", question: "How does core work?",
       reading_anchors: [
-        { label: "Start here", location: { path: "core/a.go", line: 11 }, source: snippet("core/a.go", "A", 11) },
-        { label: "Then inspect", location: { path: "core/b.go", line: 21 }, source: snippet("core/b.go", "B", 21) },
+        { label: "Start here", symbol: "A", location: { path: "core/a.go", line: 11 }, source: snippet("core/a.go", "A", 11) },
+        { label: "Then inspect", symbol: "B", location: { path: "core/b.go", line: 21 }, source: snippet("core/b.go", "B", 21) },
       ],
+      areas: [{ map_target: { kind: "component", component_id: "core" } }],
     },
     {
       id: "study-other", question: "How does another package work?",
       reading_anchors: [
-        { label: "Start here", location: { path: "other.go", line: 31 }, source: snippet("other.go", "Other", 31) },
+        { label: "Start here", symbol: "Other", location: { path: "other.go", line: 31 }, source: snippet("other.go", "Other", 31) },
       ],
+      areas: [{ map_target: { kind: "component", component_id: "exact-member-only" } }],
     },
     {
       id: "study-shared", question: "How does the shared family work?",
       reading_anchors: [
-        { label: "Start here", location: { path: "shared.go", line: 3 }, source: snippet("shared.go", "Shared", 3) },
+        { label: "Start here", symbol: "Shared", location: { path: "shared.go", line: 3 }, source: snippet("shared.go", "Shared", 3) },
       ],
+      areas: [{ map_target: { kind: "component", component_id: "anchor-only" } }],
     },
     {
       id: "study-worker", question: "How does the worker run?",
       reading_anchors: [
-        { label: "Start here", location: { path: "worker/b.go", line: 21 }, source: snippet("worker/b.go", "Worker", 21) },
+        { label: "Start here", symbol: "Worker", location: { path: "worker/b.go", line: 21 }, source: snippet("worker/b.go", "Worker", 21) },
       ],
+      areas: [{ map_target: { kind: "component", component_id: "package-only" } }],
     },
   ] },
   incomplete_study: { directions: [
     {
       id: "incomplete-study-one", question: "How does core work?",
       reading_anchors: [
-        { label: "Start here", location: { path: "core/a.go", line: 11 }, source: snippet("core/a.go", "A", 11) },
+        { label: "Start here", symbol: "A", location: { path: "core/a.go", line: 11 }, source: snippet("core/a.go", "A", 11) },
       ],
     },
   ] },
@@ -240,8 +271,8 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 	if len(core.PackageTargets) != 1 ||
 		core.PackageTargets[0].Path != "example.test/project/core" ||
-		core.PackageTargets[0].Location.Path != "core/a.go" ||
-		core.PackageTargets[0].Location.Line != 7 ||
+		core.PackageTargets[0].Location.Path != "" ||
+		core.PackageTargets[0].Location.Line != 0 ||
 		core.PackageTargets[0].Actionable {
 		t.Fatalf("package targets = %#v", core.PackageTargets)
 	}
@@ -266,8 +297,8 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
 		t.Fatalf("Study joins = %#v", core.Studies)
 	}
-	if _, ok := contexts["same-name-only"]; ok {
-		t.Fatalf("package-name similarity created a non-exact join: %#v", contexts["same-name-only"])
+	if sameName, ok := contexts["same-name-only"]; !ok || len(sameName.Sources) != 0 || len(sameName.Studies) != 0 {
+		t.Fatalf("source-less conceptual component navigation = %#v, present %v", sameName, ok)
 	}
 	memberOnly, ok := contexts["exact-member-only"]
 	if !ok {
@@ -285,18 +316,14 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 0 ||
 		len(packageOnly.PackageTargets) != 1 ||
 		packageOnly.PackageTargets[0].Path != "example.test/project/worker" ||
-		packageOnly.PackageTargets[0].Location.Path != "worker/a.go" ||
+		packageOnly.PackageTargets[0].Location.Path != "" ||
 		packageOnly.PackageTargets[0].Location.Line != 0 ||
 		packageOnly.PackageTargets[0].Actionable ||
 		len(packageOnly.Studies) != 1 || packageOnly.Studies[0].ID != "study-worker" {
 		t.Fatalf("package-only context = %#v, present %v", packageOnly, ok)
 	}
 	anchorOnly, ok := contexts["anchor-only"]
-	if !ok || anchorOnly.FileCount != 2 || len(anchorOnly.Sources) != 2 ||
-		anchorOnly.Sources[0].Location.Path != "shared.go" ||
-		anchorOnly.Sources[0].Location.Line != 3 ||
-		anchorOnly.Sources[1].Location.Path != "shared2.go" ||
-		anchorOnly.Sources[1].Location.Line != 8 ||
+	if !ok || anchorOnly.FileCount != 2 || len(anchorOnly.Sources) != 0 ||
 		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].ID != "study-shared" {
 		t.Fatalf("anchor-only context = %#v, present %v", anchorOnly, ok)
 	}
@@ -615,12 +642,12 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 
 	for _, token := range []string{
 		"architecturePackagePathForMember(member, packageByPath)",
-		"componentFiles[String(location.path || '')]",
+		"ARCHITECTURE_COMPONENT_NAVIGATION.components",
 		"options.componentContexts = architectureComponentContexts()",
 		"message: msg",
 		"this.msg(",
 		"userComponentActions(component)",
-		"array(context.sources).find((candidate)",
+		"array(context.sources).forEach((source)",
 		"array(context.studies).slice(0, 3)",
 		"package_targets: packageTargets",
 		"surface_starts: surfaceStarts",
@@ -636,12 +663,20 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"var handlerLocation = trigger.handler_location",
 		"trigger.registration_site",
 		"surfaceName + ' → ' + handlerName",
-		"detail: member.name || filePath",
+		"detail: symbol",
 		"lowInformationComponent",
 		"has-user-compact-inspector",
 	} {
 		if !strings.Contains(reportJS+js+css, token) {
 			t.Errorf("compact architecture inspector is missing %q", token)
+		}
+	}
+	for _, forbidden := range []string{
+		"array(context.sources).find((candidate)",
+		"packageFiles[0]",
+	} {
+		if strings.Contains(reportJS+js, forbidden) {
+			t.Errorf("compact architecture inspector retains choose-first source logic %q", forbidden)
 		}
 	}
 

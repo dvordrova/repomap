@@ -58,6 +58,7 @@
 	);
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
+	var ARCHITECTURE_COMPONENT_NAVIGATION = DATA.architecture_component_navigation || null;
 	var STUDY_PUBLICATION = DATA.study_publication || null;
 	var COMPLETE_STUDY_DIRECTIONS = STUDY_MAP && Array.isArray(STUDY_MAP.directions) ? STUDY_MAP.directions : [];
 	var INCOMPLETE_STUDY = DATA.incomplete_study || null;
@@ -4376,10 +4377,9 @@
 	}
 
 	function renderStudyDirectionCard(direction, index) {
-		var card = el('button', 'rm-study-direction-card');
-		card.type = 'button';
+		var card = el('article', 'rm-study-direction-card');
 		card.appendChild(txt('span', 'rm-study-direction-card__order', String(index + 1)));
-		var body = el('span', 'rm-study-direction-card__body');
+		var body = el('div', 'rm-study-direction-card__body');
 			if (direction.incomplete) {
 				body.appendChild(txt(
 					'span',
@@ -4389,25 +4389,23 @@
 					})
 				));
 		}
-		body.appendChild(txt('strong', '', direction.question || msg('main.chrome.explore.this.code.area')));
+		var title = txt(
+			'button',
+			'rm-study-direction-card__title',
+			direction.question || msg('main.chrome.explore.this.code.area')
+		);
+		title.type = 'button';
+		title.onclick = function () { openStudyDirection(direction.id); };
+		body.appendChild(title);
 		if (direction.why_it_matters) body.appendChild(txt('span', 'rm-study-direction-card__reason', direction.why_it_matters));
 		if (direction.learning_outcome) body.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
-		var anchors = el('span', 'rm-study-direction-card__anchors');
-		(direction.principal_anchors || []).slice(0, 4).forEach(function (anchor) {
-			anchors.appendChild(txt('code', '', anchor.symbol || anchor.path));
+		var anchors = el('div', 'rm-study-direction-card__anchors');
+		(direction.reading_anchors || []).forEach(function (reading) {
+			var action = renderStudySourceAction(reading, 'rm-study-direction-card__source', true);
+			if (action) anchors.appendChild(action);
 		});
 		if (anchors.childNodes.length) body.appendChild(anchors);
-		body.appendChild(txt(
-			'span',
-				'rm-study-direction-card__action',
-				direction.mechanism_id
-					? msg('main.study.open_ready_deep_dive')
-					: direction.incomplete
-						? msg('main.study.inspect_starting_point')
-						: msg('main.explore.this.direction')
-		));
 		card.appendChild(body);
-		card.onclick = function () { openStudyDirection(direction.id); };
 		return card;
 	}
 
@@ -4422,21 +4420,6 @@
 
 	function studyStageLabel(stage) {
 		return msg(STUDY_STAGE_MESSAGE_IDS[String(stage || '')] || 'main.study.stage.study');
-	}
-
-	var STUDY_READING_LABEL_MESSAGE_IDS = {
-		'Start here': 'main.study.reading_label.start_here',
-		'Then inspect': 'main.study.reading_label.then_inspect',
-		'Related implementation': 'main.study.reading_label.related_implementation',
-		'Public boundary': 'main.study.reading_label.public_boundary',
-		'Core data type': 'main.study.reading_label.core_data_type',
-	};
-
-	function studyReadingLabel(label) {
-		return msg(
-			STUDY_READING_LABEL_MESSAGE_IDS[String(label || '')] ||
-			'main.study.reading_label.unknown'
-		);
 	}
 
 	function renderIncompleteStudyOverview() {
@@ -4639,16 +4622,6 @@
 			if (briefHero) root.appendChild(briefHero);
 		}
 
-		var areaCards = (Array.isArray(STUDY_MAP.shape) ? STUDY_MAP.shape : []).map(renderRepositoryArea).filter(Boolean);
-		if (areaCards.length) {
-			var shapeSection = el('section', 'rm-workspace-section');
-			shapeSection.appendChild(renderViewHeading(msg('main.repository.shape'), msg('main.code.areas.to.know'), msg('main.a.compact.map.of.the.production.areas.worth.recognizing.first')));
-			var areaGrid = el('div', 'rm-repository-area-grid');
-			areaCards.forEach(function (card) { areaGrid.appendChild(card); });
-			shapeSection.appendChild(areaGrid);
-			root.appendChild(shapeSection);
-		}
-
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			var studySection = el('section', 'rm-workspace-section rm-study-map-section');
 			studySection.appendChild(renderViewHeading(msg('main.what.to.study'), msg('main.a.useful.path.through.the.repository'), msg('main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace')));
@@ -4669,20 +4642,6 @@
 			root.appendChild(deepDiveSection);
 		}
 
-		var hasArchitecture = userArchitectureAvailable();
-		if (hasArchitecture) {
-			var exploreSection = el('section', 'rm-workspace-section rm-overview-explore');
-			exploreSection.appendChild(renderViewHeading(msg('main.explore'), msg('main.open.the.full.architecture'), msg('main.use.the.study.map.as.a.starting.point.then.inspect.the.wider.repository.map')));
-			var actions = el('div', 'rm-overview-actions');
-			if (hasArchitecture) {
-				var architecture = txt('button', 'rm-secondary-action', msg('main.full.architecture'));
-				architecture.type = 'button';
-				architecture.onclick = function () { openArchitectureTarget(null, null); };
-				actions.appendChild(architecture);
-			}
-			exploreSection.appendChild(actions);
-			root.appendChild(exploreSection);
-		}
 	}
 
 	function renderStudyDetailWorkspace() {
@@ -4691,171 +4650,78 @@
 		root.replaceChildren();
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
-		var incomplete = !!direction.incomplete;
 		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.all.study.directions'));
 		back.type = 'button';
 		back.onclick = function () { navigateWorkspace('study_overview'); };
 		root.appendChild(back);
-			root.appendChild(renderViewHeading(
-				incomplete ? msg('main.study.incomplete_direction') : msg('main.reading.path'),
+		root.appendChild(renderViewHeading(
+				direction.incomplete ? msg('main.study.incomplete_direction') : '',
 				direction.question,
 				direction.why_it_matters
 		));
 		if (direction.learning_outcome) {
 			var outcome = el('aside', 'rm-study-outcome');
-			outcome.appendChild(txt('span', '', incomplete ? msg('main.what.you.can.learn') : msg('main.after.this.reading.path')));
 			outcome.appendChild(txt('strong', '', direction.learning_outcome));
 			root.appendChild(outcome);
 		}
-		if (incomplete) {
-			var incompleteAnchorCount = Array.isArray(direction.reading_anchors) ? direction.reading_anchors.length : 0;
-				root.appendChild(txt(
-					'p',
-					'rm-study-order-note',
-					msg('main.study.incomplete_places_copy', { count: incompleteAnchorCount })
-				));
-		} else {
-			root.appendChild(txt('p', 'rm-study-order-note', msg('main.these.anchors.are.ordered.for.learning.they.do.not.claim.runtime.execution.order')));
-		}
-		var start = studyStartReference(direction);
-		if (start) {
-			var startActions = el('div', 'rm-study-start-actions');
-			var startButton = sourceActionElement(
-				msg('main.action.start_with', { target: start.label }),
-				'rm-primary-action rm-source-action-link',
-				start.location,
-				0,
-				function () { openSourceLocation(start.location); }
-			);
-			startActions.appendChild(startButton);
-			root.appendChild(startActions);
-		}
-		root.appendChild(renderViewHeading(
-				'',
-				incomplete
-					? ((direction.reading_anchors || []).length === 1
-						? msg('main.study.exact_place_to_start')
-						: msg('main.exact.places.to.start'))
-					: msg('main.you.will.inspect'),
-			msg('main.open.an.anchor.at.its.exact.repository.location')
-		));
 		var anchors = el('div', 'rm-study-reading-list');
 		(direction.reading_anchors || []).forEach(function (reading, index) {
 			var card = renderStudyReadingAnchor(reading, index);
 			if (card) anchors.appendChild(card);
 		});
 		root.appendChild(anchors);
-
-		var related = el('section', 'rm-workspace-section rm-study-related');
-		related.appendChild(renderViewHeading(msg('main.continue.exploring'), msg('main.related.repository.context'), msg('main.open.a.referenced.document.or.inspect.the.full.architecture')));
-		var actions = el('div', 'rm-overview-actions');
-		(direction.documents || []).forEach(function (document) {
-			var documentLocation = document && (document.location || sourceSnippetLocation(document.source));
-			if (!document || !repositoryLocationAvailable(documentLocation)) return;
-			var button = sourceActionElement(
-				studyDocumentActionLabel(document),
-				'rm-secondary-action rm-source-action-link',
-				documentLocation,
-				0,
-				function () { openSourceLocation(documentLocation); }
-			);
-			actions.appendChild(button);
-		});
-		if (userArchitectureAvailable()) {
-			var areaTarget = null;
-			(direction.areas || []).some(function (area) {
-				if (area && area.map_target) { areaTarget = area.map_target; return true; }
-				return false;
-			});
-			var architecture = txt('button', 'rm-secondary-action', msg('main.architecture'));
-			architecture.type = 'button';
-			architecture.onclick = function () {
-				openArchitectureTarget(areaTarget, { directionID: direction.id });
-			};
-			actions.appendChild(architecture);
-		}
-		related.appendChild(actions);
-		root.appendChild(related);
 	}
 
-	function firstSourcedStudyDocument(direction) {
-		var documents = direction && Array.isArray(direction.documents) ? direction.documents : [];
-		for (var index = 0; index < documents.length; index++) {
-			if (documents[index] && sourceSnippetAvailable(documents[index].source)) return documents[index];
-		}
-		return null;
-	}
-
-	function studyDocumentActionLabel(document) {
-		if (!document) return msg('main.open.documentation');
-		var location = document.location || sourceSnippetLocation(document.source);
-		var path = location && location.path || '';
-		var label = document.label || msg('main.open.documentation');
-		return path ? label + ' · ' + path : label;
-	}
-
-	function firstSourcedStudyAnchor(direction) {
-		var anchors = direction && Array.isArray(direction.reading_anchors) ? direction.reading_anchors : [];
-		for (var index = 0; index < anchors.length; index++) {
-			if (anchors[index] && sourceSnippetAvailable(anchors[index].source)) return anchors[index];
-		}
-		return null;
-	}
-
-	function studyStartReference(direction) {
-		if (!direction) return null;
-		var documentFirst = direction.target_user_job === 'first_contact' ||
-			direction.target_user_job === 'use_or_operate';
-		var documentReference = documentFirst ? firstSourcedStudyDocument(direction) : null;
-		if (documentReference) {
-			return {
-				kind: 'document',
-				label: studyDocumentActionLabel(documentReference),
-				location: documentReference.location || sourceSnippetLocation(documentReference.source),
-				source: documentReference.source,
-			};
-		}
-		var reading = firstSourcedStudyAnchor(direction);
+	function studyReadingLocation(reading) {
 		if (!reading) return null;
+		var location = reading.location || sourceSnippetLocation(reading.source);
+		if (!location || !location.path) return null;
 		return {
-			kind: 'anchor',
-			label: reading.source.enclosing_symbol ||
-				(reading.label ? studyReadingLabel(reading.label) : reading.location.path),
-			location: reading.location || sourceSnippetLocation(reading.source),
-			source: reading.source,
+			path: location.path,
+			line: Number(location.line) || Number(reading.source && reading.source.start_line) || 0,
+			column: Number(location.column) || 0,
+			end_line: Number(reading.source && reading.source.end_line) || 0,
 		};
 	}
 
+	function renderStudySourceAction(reading, cls, includeLocation) {
+		var location = studyReadingLocation(reading);
+		var symbol = String(reading && reading.symbol || '');
+		var embedded = reading && sourceSnippetAvailable(reading.source) ? reading.source : null;
+		if (!location || !symbol || (!embedded && !sourceLocationActionAvailable(location))) return null;
+		var action = sourceActionElement(
+			symbol,
+			(cls || '') + ' rm-source-action-link',
+			location,
+			location.end_line,
+			function () {
+				if (embedded) {
+					openSourceSnippet(embedded, location, false, { drawerFirst: true });
+					return;
+				}
+				openSourceLocation(location);
+			}
+		);
+		action.setAttribute('aria-label', symbol + ' · ' + formatCodeLocation(location));
+		if (includeLocation) {
+			action.textContent = '';
+			action.appendChild(txt('strong', '', symbol));
+			action.appendChild(txt('code', '', formatCodeLocation(location)));
+		}
+		return action;
+	}
+
 	function renderStudyReadingAnchor(reading, index) {
-		if (!reading || !sourceSnippetAvailable(reading.source)) return null;
-		var location = reading.location || sourceSnippetLocation(reading.source);
+		var location = studyReadingLocation(reading);
+		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', false);
+		if (!location || !open) return null;
 		var card = el('article', 'rm-study-reading-anchor');
 		card.appendChild(txt('span', 'rm-study-reading-anchor__order', String(index + 1)));
 		var copy = el('div', 'rm-study-reading-anchor__copy');
-		if (reading.label) {
-			copy.appendChild(txt(
-				'span',
-				'rm-study-reading-anchor__label',
-				studyReadingLabel(reading.label)
-			));
-		}
-		copy.appendChild(txt('strong', '', reading.source.enclosing_symbol || location.path));
-		copy.appendChild(renderFileReference(
-			location.path,
-			'rm-study-reading-anchor__location',
-			location.line || 0,
-			formatCodeLocation(location)
-		));
+		copy.appendChild(open);
+		copy.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
 		if (reading.what_to_look_for) copy.appendChild(txt('p', '', reading.what_to_look_for));
 		card.appendChild(copy);
-		var open = sourceActionElement(
-			staticSourceMode() ? staticSourceOpenLabel() : msg('main.open.exact.source'),
-			'rm-secondary-action rm-study-reading-anchor__open rm-source-action-link',
-			location,
-			Number(reading.source.end_line) || 0,
-			function () { openSourceLocation(location); }
-		);
-		card.appendChild(open);
 		return card;
 	}
 
@@ -5709,13 +5575,9 @@
 			var context = contexts[component.id] || {};
 			var resolved = [];
 			var resolvedSeen = {};
-			var conflict = false;
 			(Array.isArray(context.sources) ? context.sources : []).forEach(function (source) {
 				var resolution = exactOverviewActionResolutionForLocation(source && source.location);
-				if (resolution.conflict) {
-					conflict = true;
-					return;
-				}
+				if (resolution.conflict) return;
 				if (!resolution.source) return;
 				var location = resolution.source.location;
 				var key = location.path + '\u0000' + String(location.line) + '\u0000' +
@@ -5724,15 +5586,18 @@
 						: 'exact-location');
 				if (resolvedSeen[key]) return;
 				resolvedSeen[key] = true;
-				resolved.push(resolution.source);
+				resolved.push({
+					symbol: String(source.symbol || source.label || source.detail || ''),
+					snippet: resolution.source.snippet,
+					location: resolution.source.location,
+				});
 			});
-			if (conflict || !resolved.length) return;
 			objects.push({
 				id: component.id,
 				title: String(component.name || component.id),
 				detail: String(component.description || ''),
-				snippet: resolved[0].snippet,
-				location: resolved[0].location,
+				mapTarget: context.map_target || { kind: 'component', component_id: component.id },
+				sources: resolved,
 			});
 		});
 		return {
@@ -5743,10 +5608,10 @@
 	}
 
 	function repositoryOverviewAnatomy() {
-		if (!DATA.architecture_canvas || !DATA.discovered_surfaces) return null;
+		if (!DATA.architecture_canvas) return null;
 		var entries = overviewEntrySurfaceObjects();
 		var components = overviewComponentObjects();
-		if (!entries.objects.length || !components.objects.length) return null;
+		if (!entries.objects.length && !components.objects.length) return null;
 		return { entries: entries, components: components, integrations: [] };
 	}
 
@@ -5754,6 +5619,39 @@
 		var card = el('article', 'rm-overview-object-card');
 		card.setAttribute('data-rm-object-kind', kind);
 		card.setAttribute('data-rm-object-id', object.id);
+		if (kind === 'component') {
+			var mapAction = el('button', 'rm-overview-object-primary rm-overview-object-map');
+			mapAction.type = 'button';
+			mapAction.appendChild(txt('strong', '', object.title));
+			if (object.detail) mapAction.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
+			mapAction.onclick = function () { openArchitectureTarget(object.mapTarget, null); };
+			card.appendChild(mapAction);
+			var sources = el('div', 'rm-overview-object-sources');
+			(Array.isArray(object.sources) ? object.sources : []).forEach(function (source) {
+				if (!source || !source.symbol || !source.location) return;
+				var hasEmbeddedSource = sourceSnippetHasCode(source.snippet);
+				var sourceAction = hasEmbeddedSource
+					? el('button', 'rm-overview-object-source rm-source-action-link')
+					: sourceActionElement(
+						'',
+						'rm-overview-object-source rm-source-action-link',
+						source.location,
+						0,
+						function () { openSourceLocation(source.location); }
+					);
+				if (hasEmbeddedSource) sourceAction.type = 'button';
+				sourceAction.appendChild(txt('strong', '', source.symbol));
+				sourceAction.appendChild(txt('code', '', formatCodeLocation(source.location)));
+				if (hasEmbeddedSource) {
+					sourceAction.onclick = function () {
+						openSourceSnippet(source.snippet, source.location, false, { drawerFirst: true });
+					};
+				}
+				sources.appendChild(sourceAction);
+			});
+			if (sources.childNodes.length) card.appendChild(sources);
+			return card;
+		}
 		var hasEmbeddedSource = sourceSnippetHasCode(object.snippet);
 		var primary = hasEmbeddedSource
 			? el('button', 'rm-overview-object-primary')
@@ -5775,18 +5673,6 @@
 			};
 		}
 		card.appendChild(primary);
-		if (kind === 'component' && userArchitectureAvailable()) {
-			var architecture = txt(
-				'button',
-				'rm-overview-object-architecture',
-				msg('main.overview.anatomy.inspect_same_component')
-			);
-			architecture.type = 'button';
-			architecture.onclick = function () {
-				openArchitectureTarget({ kind: 'component', component_id: object.id }, null);
-			};
-			card.appendChild(architecture);
-		}
 		return card;
 	}
 
@@ -5807,7 +5693,7 @@
 		return section;
 	}
 
-	function renderRepositoryOverviewAnatomy(root, anatomy) {
+	function renderRepositoryOverviewLead(root) {
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
 		var hero = renderRepositoryBriefHero();
 		if (!hero) {
@@ -5818,21 +5704,29 @@
 			hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
 		}
 		root.appendChild(hero);
+	}
 
-		root.appendChild(renderOverviewAnatomyZone(
-			msg('main.overview.anatomy.entry_surfaces_kicker'),
-			msg('main.overview.anatomy.entry_surfaces'),
-			msg('main.overview.anatomy.entry_surfaces_copy'),
-			anatomy.entries,
-			'surface'
-		));
-		root.appendChild(renderOverviewAnatomyZone(
-			msg('main.overview.anatomy.components_kicker'),
-			msg('main.overview.anatomy.components'),
-			msg('main.overview.anatomy.components_copy'),
-			anatomy.components,
-			'component'
-		));
+	function renderRepositoryOverviewAnatomy(root, anatomy, includeBrief) {
+		if (includeBrief !== false) renderRepositoryOverviewLead(root);
+
+		if (anatomy.entries.objects.length) {
+			root.appendChild(renderOverviewAnatomyZone(
+				msg('main.overview.anatomy.entry_surfaces_kicker'),
+				msg('main.overview.anatomy.entry_surfaces'),
+				msg('main.overview.anatomy.entry_surfaces_copy'),
+				anatomy.entries,
+				'surface'
+			));
+		}
+		if (anatomy.components.objects.length) {
+			root.appendChild(renderOverviewAnatomyZone(
+				msg('main.overview.anatomy.components_kicker'),
+				msg('main.overview.anatomy.components'),
+				msg('main.overview.anatomy.components_copy'),
+				anatomy.components,
+				'component'
+			));
+		}
 
 		if (anatomy.integrations && anatomy.integrations.length) {
 			root.appendChild(renderOverviewAnatomyZone(
@@ -6299,15 +6193,23 @@
 		return diagnostics;
 	}
 
-	function renderRepositoryAtlasWorkspaceShelf(root) {
+	function renderRepositoryAtlasWorkspaceShelf(root, compactOverview) {
 		var shelf = repositoryAtlasWorkspaceShelf();
-		var section = el('section', 'rm-workspace-section rm-atlas-shelf');
-		section.appendChild(renderViewHeading(
-			msg('main.atlas.workspace.kicker'),
-			msg('main.atlas.workspace.title'),
-			msg('main.atlas.workspace.copy')
-		));
+		var section = el(
+			'section',
+			'rm-workspace-section rm-atlas-shelf' + (compactOverview ? ' rm-atlas-shelf--overview' : '')
+		);
+		if (!compactOverview) {
+			section.appendChild(renderViewHeading(
+				msg('main.atlas.workspace.kicker'),
+				msg('main.atlas.workspace.title'),
+				msg('main.atlas.workspace.copy')
+			));
+		}
 		if (!shelf || !shelf.units.length) {
+			if (compactOverview) section.appendChild(txt(
+				'h3', 'rm-atlas-shelf-heading', msg('main.atlas.workspace.units')
+			));
 			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.workspace.unavailable')));
 			root.appendChild(section);
 			return;
@@ -6327,10 +6229,10 @@
 			section.appendChild(packageDisclosure);
 		}
 
-		if (ATLAS_FIRST && shelf.recommendation) {
+		if (!compactOverview && ATLAS_FIRST && shelf.recommendation) {
 			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
 		}
-		if (shelf.relations.length) {
+		if (!compactOverview && shelf.relations.length) {
 			section.appendChild(txt(
 				'h3',
 				'rm-atlas-shelf-heading rm-atlas-relations-heading',
@@ -6358,14 +6260,24 @@
 			});
 			section.appendChild(relationGrid);
 		}
-		if (shelf.relations.length && shelf.omittedRelations > 0) {
+		if (!compactOverview && shelf.relations.length && shelf.omittedRelations > 0) {
 			section.appendChild(txt('p', 'rm-atlas-omitted', msg(
 				'main.atlas.workspace.omitted_relations',
 				{ count: shelf.omittedRelations }
 			)));
 		}
-		var compactDiagnostics = renderRepositoryAtlasCompactDiagnostics(shelf);
-		if (compactDiagnostics) section.appendChild(compactDiagnostics);
+		if (!compactOverview) {
+			var compactDiagnostics = renderRepositoryAtlasCompactDiagnostics(shelf);
+			if (compactDiagnostics) section.appendChild(compactDiagnostics);
+		} else if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
+			section.appendChild(txt(
+				'p',
+				'rm-atlas-overview-status',
+				msg(NAVIGATOR.unavailable_code === 'offline'
+					? 'main.atlas.navigator.unavailable_offline'
+					: 'main.atlas.navigator.unavailable')
+			));
+		}
 		root.appendChild(section);
 	}
 
@@ -6375,21 +6287,19 @@
 		root.replaceChildren();
 		renderStudyPublicationNotice(root);
 		var anatomy = repositoryOverviewAnatomy();
-		if (ATLAS_FIRST) {
-			if (anatomy) renderRepositoryOverviewAnatomy(root, anatomy);
-			else if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) renderStudyMapOverview(root);
-			renderRepositoryAtlasWorkspaceShelf(root);
-			return;
-		}
-		renderRepositoryAtlasWorkspaceShelf(root);
 		if (anatomy) {
-			renderRepositoryOverviewAnatomy(root, anatomy);
+			renderRepositoryOverviewLead(root);
+			renderRepositoryAtlasWorkspaceShelf(root, true);
+			renderRepositoryOverviewAnatomy(root, anatomy, false);
 			return;
 		}
 		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
-			renderStudyMapOverview(root);
+			renderRepositoryOverviewLead(root);
+			renderRepositoryAtlasWorkspaceShelf(root, true);
+			renderStudyMapOverview(root, false);
 			return;
 		}
+		renderRepositoryAtlasWorkspaceShelf(root);
 		if (renderMixedLearningShelf(root)) return;
 		if (STUDY_MAP) {
 			renderStudyMapOverview(root);
@@ -7697,6 +7607,16 @@
 		var canvas = DATA.architecture_canvas || {};
 		var knownComponentIDs = {};
 		var memberNames = {};
+		var navigationByComponentID = {};
+		if (ARCHITECTURE_COMPONENT_NAVIGATION &&
+			Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) === 1) {
+			(ARCHITECTURE_COMPONENT_NAVIGATION.components || []).forEach(function (entry) {
+				var componentID = String(entry && entry.component_id || '');
+				if (componentID && !navigationByComponentID[componentID]) {
+					navigationByComponentID[componentID] = entry;
+				}
+			});
+		}
 		function memberIdentityKey(memberID) {
 			if (!memberID || typeof memberID !== 'object') return '';
 			var kind = String(memberID.kind || '');
@@ -7778,48 +7698,34 @@
 			var componentStudyDirections = COMPLETE_STUDY_DIRECTIONS.length
 				? COMPLETE_STUDY_DIRECTIONS
 				: INCOMPLETE_STUDY_DIRECTIONS;
-			componentStudyDirections.forEach(function (direction, directionIndex) {
+			componentStudyDirections.forEach(function (direction) {
 				if (!direction || !direction.id) return;
-				var matchedAnchors = (direction.reading_anchors || []).filter(function (anchor) {
-					var location = anchor && (anchor.location || (anchor.source && {
-						path: anchor.source.path,
-						line: anchor.source.start_line,
-					}));
-					return !!(location && componentFiles[String(location.path || '')]);
+				var exactTarget = (direction.areas || []).some(function (area) {
+					var target = area && area.map_target;
+					return target && target.kind === 'component' &&
+						String(target.component_id || '') === String(component.id);
 				});
-				if (!matchedAnchors.length) return;
-				matches.push({ direction: direction, directionIndex: directionIndex, anchors: matchedAnchors });
-			});
-			matches.sort(function (left, right) {
-				return right.anchors.length - left.anchors.length ||
-					left.directionIndex - right.directionIndex ||
-					String(left.direction.id).localeCompare(String(right.direction.id));
+				if (exactTarget) matches.push({ direction: direction });
 			});
 
-				var sourceSeen = {};
 				var sources = [];
-				var hasPreciseMemberSource = false;
-				(component.members || []).forEach(function (member) {
-					(member && member.facts || []).forEach(function (fact) {
-						var location = fact && fact.location;
-						var filePath = String(location && location.path || '');
-						if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
-						var line = Number(location.line) || 0;
-						if (line <= 0) return;
-						var key = filePath + '\u0000' + String(line);
-						if (sourceSeen[key]) return;
-						sourceSeen[key] = true;
-						hasPreciseMemberSource = true;
-						sources.push({
-							label: member.name || filePath,
-							detail: member.name || filePath,
-							location: {
-								path: filePath,
-								line: line,
-								column: Number(location.column) || 0,
-							},
-							priority: line > 0 ? 0 : 3,
-						});
+				var navigation = navigationByComponentID[String(component.id)] || null;
+				(navigation && Array.isArray(navigation.symbol_sources)
+					? navigation.symbol_sources : []).forEach(function (source) {
+					var location = source && source.location;
+					var symbol = String(source && source.symbol || '');
+					if (!symbol || !location || !location.path || Number(location.line) <= 0) return;
+					sources.push({
+						member_id: source.member_id,
+						symbol: symbol,
+						label: symbol,
+						detail: symbol,
+						location: {
+							path: String(location.path),
+							line: Number(location.line),
+							column: Number(location.column) || 0,
+						},
+						actionable: sourceLocationActionAvailable(location),
 					});
 				});
 				var surfaceStarts = [];
@@ -7868,65 +7774,22 @@
 						Number(left && left.location && left.location.line) -
 							Number(right && right.location && right.location.line);
 				});
-				(component.anchor_ids || []).forEach(function (anchorID) {
-					var anchor = behaviorAnchorByID[String(anchorID || '')];
-					var location = anchor && anchor.location;
-					var filePath = String(location && location.path || '');
-					if (!filePath || !OPENABLE_PATH_SET[filePath]) return;
-					if (hasPreciseMemberSource) return;
-					if (hasExactComponentFiles && !componentFiles[filePath]) return;
-					var line = Number(location.line) || 0;
-					var key = filePath + '\u0000' + String(line);
-					if (sourceSeen[key]) return;
-					sourceSeen[key] = true;
-					sources.push({
-						label: anchor.label || filePath,
-						detail: anchor.label || filePath,
-						location: {
-							path: filePath,
-							line: line,
-							column: Number(location.column) || 0,
-						},
-						priority: 1,
-					});
-				});
-			sources.sort(function (left, right) {
-				var leftLine = Number(left && left.location && left.location.line) || 0;
-				var rightLine = Number(right && right.location && right.location.line) || 0;
-				return Number(left && left.priority) - Number(right && right.priority) ||
-					String(left && left.location && left.location.path || '').localeCompare(
-						String(right && right.location && right.location.path || '')
-					) ||
-					leftLine - rightLine;
-			});
-			sources.forEach(function (source) {
-				delete source.priority;
-			});
-
 			var packageTargets = packagePaths.map(function (packagePath) {
-				var packageFileSet = {};
 				var packageFiles = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
-					if (!filePath || !OPENABLE_PATH_SET[filePath]) return false;
-					packageFileSet[filePath] = true;
-					return true;
+					return !!(filePath && OPENABLE_PATH_SET[filePath]);
 				}).sort();
-				var source = sources.find(function (candidate) {
-					var filePath = String(candidate && candidate.location && candidate.location.path || '');
-					return !!packageFileSet[filePath];
-				});
-				var location = source && source.location ? source.location : (
-					packageFiles.length ? { path: packageFiles[0], line: 0 } : null
-				);
 				return {
 					path: packagePath,
 					file_count: packageFiles.length,
-					location: location,
-					actionable: sourceLocationActionAvailable(location),
+					location: null,
+					actionable: false,
 				};
 			});
 
-			if (!packagePaths.length && !sources.length && !surfaceStarts.length && !matches.length) return;
 			contexts[String(component.id)] = {
+				map_target: navigation && navigation.map_target || {
+					kind: 'component', component_id: String(component.id),
+				},
 				package_paths: packagePaths,
 				package_targets: packageTargets,
 				file_count: Object.keys(componentFiles).length,
@@ -8374,7 +8237,6 @@
       renderIncompleteStudyOverview: renderIncompleteStudyOverview,
 		renderStudyDirectionCard: renderStudyDirectionCard,
 		renderStudyReadingAnchor: renderStudyReadingAnchor,
-		studyStartReference: studyStartReference,
 		renderReadableDocument: renderReadableDocument,
 		renderReadableDocumentCard: renderReadableDocumentCard,
 		renderOperateDetailWorkspace: renderOperateDetailWorkspace,

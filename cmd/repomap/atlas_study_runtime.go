@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	atlasStudyCacheContract = "atlas-study-accepted-v4"
+	atlasStudyCacheContract = "atlas-study-accepted-v5"
 	atlasStudyCacheStage    = "atlas_study"
 )
 

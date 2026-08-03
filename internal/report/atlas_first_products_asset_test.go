@@ -89,6 +89,7 @@ const directions = readingCounts.map((count, directionIndex) => {
     paths.push(path);
     readings.push({
       label: readingIndex === 0 ? "Start here" : "Then inspect",
+      symbol: "Read" + (directionIndex + 1) + "_" + (readingIndex + 1),
       what_to_look_for: "Inspect exact reading " + (readingIndex + 1) + ".",
       location: { path, line },
       source: snippet(path, "Read" + (directionIndex + 1) + "_" + (readingIndex + 1), line),
@@ -221,7 +222,19 @@ const studyOverviewText = text(roots["rm-study-overview"]);
 const directionCards = byClass(roots["rm-study-overview"], "rm-study-direction-card");
 const routeResults = [];
 directionCards.forEach((directionCard, directionIndex) => {
-  directionCard.onclick();
+  const directionTitle = byClass(directionCard, "rm-study-direction-card__title")[0];
+  const directionSources = byClass(directionCard, "rm-study-direction-card__source");
+  const directionExactClicks = directionSources.map((action, readingIndex) => {
+    action.onclick();
+    const state = api.workspaceStateSnapshot();
+    return {
+      path: state.sourceLocation && state.sourceLocation.path,
+      line: state.sourceLocation && state.sourceLocation.line,
+      expectedPath: directions[directionIndex].reading_anchors[readingIndex].location.path,
+      expectedLine: directions[directionIndex].reading_anchors[readingIndex].location.line,
+    };
+  });
+  directionTitle.onclick();
   const detail = roots["rm-study-detail"];
   const readingCards = byClass(detail, "rm-study-reading-anchor");
   const readingActions = byClass(detail, "rm-study-reading-anchor__open");
@@ -243,6 +256,9 @@ directionCards.forEach((directionCard, directionIndex) => {
     detailText: text(detail),
     readingCards: readingCards.length,
     readingActions: readingActions.length,
+    directionTitleTag: String(directionTitle && directionTitle.tagName || "").toLowerCase(),
+    directionSources: directionSources.length,
+    directionExactClicks,
     exactClicks,
   });
 });
@@ -272,11 +288,19 @@ process.stdout.write(JSON.stringify({
 		StudyOverviewText string   `json:"studyOverviewText"`
 		DirectionCards    int      `json:"directionCards"`
 		RouteResults      []struct {
-			ID             string `json:"id"`
-			DetailText     string `json:"detailText"`
-			ReadingCards   int    `json:"readingCards"`
-			ReadingActions int    `json:"readingActions"`
-			ExactClicks    []struct {
+			ID                   string `json:"id"`
+			DetailText           string `json:"detailText"`
+			ReadingCards         int    `json:"readingCards"`
+			ReadingActions       int    `json:"readingActions"`
+			DirectionTitleTag    string `json:"directionTitleTag"`
+			DirectionSources     int    `json:"directionSources"`
+			DirectionExactClicks []struct {
+				Path         string `json:"path"`
+				Line         int    `json:"line"`
+				ExpectedPath string `json:"expectedPath"`
+				ExpectedLine int    `json:"expectedLine"`
+			} `json:"directionExactClicks"`
+			ExactClicks []struct {
 				Path         string `json:"path"`
 				Line         int    `json:"line"`
 				DrawerHidden bool   `json:"drawerHidden"`
@@ -324,9 +348,16 @@ process.stdout.write(JSON.stringify({
 	wantReadings := []int{1, 4, 1, 2, 1, 1}
 	for index, route := range got.RouteResults {
 		if route.ReadingCards != wantReadings[index] || route.ReadingActions != wantReadings[index] ||
+			route.DirectionTitleTag != "button" || route.DirectionSources != wantReadings[index] ||
+			len(route.DirectionExactClicks) != wantReadings[index] ||
 			len(route.ExactClicks) != wantReadings[index] ||
 			!strings.Contains(route.DetailText, "Study question "+string(rune('1'+index))+"?") {
 			t.Fatalf("Study route %d = %#v", index+1, route)
+		}
+		for _, click := range route.DirectionExactClicks {
+			if click.Path != click.ExpectedPath || click.Line != click.ExpectedLine {
+				t.Fatalf("Study card exact source click = %#v", click)
+			}
 		}
 		for _, click := range route.ExactClicks {
 			if click.Path != click.ExpectedPath || click.Line != click.ExpectedLine || click.DrawerHidden ||

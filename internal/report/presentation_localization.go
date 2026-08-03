@@ -1124,6 +1124,7 @@ func guidedGapLocalizationOwner(candidateID string, gapIDs []string) string {
 func studyReadingLocalizationOwner(directionID string, anchor StudyReadingAnchor) string {
 	location := anchor.Location
 	return directionID + ":reading:" + presentationOwnerDigest(
+		anchor.Symbol,
 		location.Path,
 		strconv.Itoa(location.Line),
 		strconv.Itoa(location.Column),

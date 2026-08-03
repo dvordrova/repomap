@@ -301,7 +301,7 @@ function architecturePartialTruth(data) {
      path: text(location.path), line: Number(location.line), column: Number(location.column) || 0,
     });
    });
-   return { label: label, location: locations.size === 1 ? Array.from(locations.values())[0] : null };
+   return { label: label, sources: Array.from(locations.values()) };
   }).filter((member) => member.label) : [];
   return {
    remainderComponentID: remainderComponentID,
@@ -833,8 +833,7 @@ function architecturePartialTruth(data) {
     if (this.traceList) this.root.appendChild(this.traceList);
 
     if (this.userMode && this.partialTruth) {
-     const partial = element("aside", "rm-arch__notice is-warning rm-arch__partial-truth");
-     partial.setAttribute("role", "status");
+	 const partial = element("aside", "rm-arch__partial-truth");
      partial.appendChild(element(
       "strong",
       "rm-arch__partial-truth-label",
@@ -845,31 +844,34 @@ function architecturePartialTruth(data) {
       "rm-arch__copy",
       this.msg("architecture.copy.accepted_partial")
      ));
-     if (this.partialTruth.members.length > 0) {
-      const details = element("details", "rm-arch__details rm-arch__partial-members");
-      details.appendChild(element(
-       "summary",
-       null,
-        this.msg("architecture.count.local_remainder_members", {
-        count: this.partialTruth.members.length,
-       })
-      ));
-      const members = element("div", "rm-arch__partial-member-list");
-      this.partialTruth.members.forEach((member) => {
-       if (member.location && typeof this.options.openLocation === "function") {
-        const action = element("button", "rm-arch__partial-member-action", member.label);
-        action.type = "button";
-        this.listen(action, "click", () => this.options.openLocation(
-         member.location.path, member.location.line, member.location.column
-        ));
-        members.appendChild(action);
-        return;
-       }
-       members.appendChild(element("span", "rm-arch__member-id", member.label));
-      });
-      details.appendChild(members);
-      partial.appendChild(details);
-     }
+	 if (this.partialTruth.members.length > 0) {
+	  partial.appendChild(element(
+	   "span",
+	   "rm-arch__partial-count",
+	   this.msg("architecture.count.local_remainder_members", {
+	    count: this.partialTruth.members.length,
+	   })
+	  ));
+	  const members = element("div", "rm-arch__partial-member-list");
+	  this.partialTruth.members.forEach((member) => {
+	   const sources = array(member.sources);
+	   if (sources.length > 0 && typeof this.options.openLocation === "function") {
+	    sources.forEach((location) => {
+	     const action = element("button", "rm-arch__partial-member-action");
+	     action.type = "button";
+	     action.appendChild(element("strong", null, member.label));
+	     action.appendChild(element("span", null, locationLabel(location)));
+	     this.listen(action, "click", () => this.options.openLocation(
+	      location.path, location.line, location.column
+	     ));
+	     members.appendChild(action);
+	    });
+	    return;
+	   }
+	   members.appendChild(element("span", "rm-arch__member-id", member.label));
+	  });
+	  partial.appendChild(members);
+	 }
      this.root.appendChild(partial);
     }
 
@@ -3802,8 +3804,10 @@ function architecturePartialTruth(data) {
    if (!context) return [];
    const actions = [];
    if (typeof this.options.openSourceLocation === "function") {
-    const source = array(context.sources).find((candidate) => candidate && locationLabel(candidate.location));
-    if (source) actions.push({ kind: "source", value: source });
+	array(context.sources).forEach((source) => {
+	 if (!source || source.actionable === false || !locationLabel(source.location)) return;
+	 actions.push({ kind: "source", value: source });
+	});
    }
    if (typeof this.options.openStudyDirection === "function") {
     array(context.studies).slice(0, 3).forEach((study) => {

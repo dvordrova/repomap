@@ -115,6 +115,18 @@ elements["rm-report-data"].textContent = JSON.stringify({
     relations: [],
     surfaces: [],
   },
+  architecture_component_navigation: {
+    version: 1,
+    components: [{
+      component_id: "component-one",
+      map_target: { kind: "component", component_id: "component-one" },
+      symbol_sources: [{
+        member_id: { kind: "symbol", value: "Serve" },
+        symbol: "Serve",
+        location: { path: "dir/space #.go", line: 12, column: 4 },
+      }],
+    }],
+  },
   discovered_surfaces: { surfaces: [] },
   user_sources: [],
   user_mechanisms: [],
@@ -239,8 +251,16 @@ const reference = api.renderFileReference(location.path, "source-ref", 12, locat
 const card = api.renderSourceSnippetCard(snippet, { location });
 const studyCard = api.renderStudyReadingAnchor({
   label: "Study anchor",
+  symbol: "Serve",
   location,
   source: snippet,
+}, 0);
+const studyDirectionCard = api.renderStudyDirectionCard({
+  id: "study-static",
+  question: "Где начинается обработка запроса?",
+  why_it_matters: "Точный сохранённый маршрут чтения.",
+  learning_outcome: "Можно открыть объявление Serve.",
+  reading_anchors: [{ symbol: "Serve", location, source: snippet }],
 }, 0);
 const operationalCard = api.renderOperationalLandmark({
   label: "Operational anchor",
@@ -308,6 +328,14 @@ api.renderArchitectureWorkspace();
     })),
     cardButtonTexts: cardNodes.filter((node) => node.tagName === "BUTTON").map(text),
     studyLinks: anchorHrefs(studyCard),
+    studyDirection: {
+      tagName: String(studyDirectionCard.tagName || "").toLowerCase(),
+      text: text(studyDirectionCard),
+      titleTags: walk(studyDirectionCard)
+        .filter((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__title"))
+        .map((node) => String(node.tagName || "").toLowerCase()),
+      links: anchorHrefs(studyDirectionCard),
+    },
     operationalLinks: anchorHrefs(operationalCard),
     repositoryArea: {
       tagName: repositoryArea.tagName,
@@ -359,8 +387,14 @@ api.renderArchitectureWorkspace();
 			Text string `json:"text"`
 			Href string `json:"href"`
 		} `json:"cardLinks"`
-		CardButtonTexts  []string `json:"cardButtonTexts"`
-		StudyLinks       []string `json:"studyLinks"`
+		CardButtonTexts []string `json:"cardButtonTexts"`
+		StudyLinks      []string `json:"studyLinks"`
+		StudyDirection  struct {
+			TagName   string   `json:"tagName"`
+			Text      string   `json:"text"`
+			TitleTags []string `json:"titleTags"`
+			Links     []string `json:"links"`
+		} `json:"studyDirection"`
 		OperationalLinks []string `json:"operationalLinks"`
 		RepositoryArea   struct {
 			TagName string `json:"tagName"`
@@ -439,6 +473,14 @@ api.renderArchitectureWorkspace();
 		t.Fatalf("source card links = %#v, want English GitLab action", got.CardLinks)
 	}
 	wantLine := "https://gitlab.example/team/sub/project/-/blob/0123456789abcdef0123456789abcdef01234567/nested%20worktree/dir/space%20%23.go#L12"
+	if got.StudyDirection.TagName != "article" ||
+		strings.Join(got.StudyDirection.TitleTags, ",") != "button" ||
+		len(got.StudyDirection.Links) != 1 || got.StudyDirection.Links[0] != wantRange ||
+		!strings.Contains(got.StudyDirection.Text, "Serve") ||
+		strings.Count(got.StudyDirection.Text, "dir/space #.go:12") != 1 ||
+		!strings.Contains(got.StudyDirection.Text, "Где начинается обработка запроса?") {
+		t.Fatalf("Russian static Study direction = %#v", got.StudyDirection)
+	}
 	for label, links := range map[string][]string{
 		"Study":      got.StudyLinks,
 		"Operations": got.OperationalLinks,
