@@ -1,16 +1,35 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/209-source-centric-study-product-ia.md
+    decisions/210-observed-entry-handoffs-and-typed-study-spans.md
 
 Status:
-    Decision 209 active; provider-free source-centric Study product projection
-    and exact saved-route recovery authorized
+    Decision 210 active; observed entry handoffs and typed backend-owned Study
+    route spans authorized after final D209 acceptance
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 210 fixes the upstream cause of the narrow TLS-heavy Study shelf.
+    It records exact direct static handoffs from production process entries by
+    reusing the already built SSA program, without another package load, SSA
+    build, depth walk or name classifier. Study targets carry closed
+    producer-owned evidence-shape supports; package declarations and
+    declaration-family motifs remain drawer-only, and partial Surfaces remain
+    explicitly partial. A deterministic observed-lane selector records the
+    complete candidate digest and considered/selected coverage instead of
+    hiding first-N loss. The backend compiles focused or exact joined system
+    route spans with local EN/RU questions, required support refs and allowed
+    targets. The provider returns a span ref rather than inventing the
+    question; exact support coverage is item-local and unrelated readings are
+    rejected as padding. Complete and partial requested-span coverage remain
+    distinct across result, cache, report and manifest. Grounding, request,
+    prompt, result/status, cache and report identities advance; D209 responses
+    miss closed. Provider-free producer, contract and saved-response gates run
+    before one final installed-binary Casdoor acceptance. No Casdoor checklist,
+    all-symbol taxonomy, deeper SSA/DFS, library expansion, raw Orientation,
+    fuzzy repair, semantic retry, migration or UI redesign is authorized.
     Decision 209 removes a language-dependent local four-word question floor
     that discarded two otherwise valid directions from the saved D208 response.
     The exact saved response must publish all five routes with zero provider
