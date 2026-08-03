@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 8
+const ArchitectureCanvasVersion = 9
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -136,10 +136,12 @@ type ArchitectureSuggestion struct {
 }
 
 type ArchitectureStructuralEdge struct {
-	ID              string                     `json:"id"`
-	FromComponentID componentmap.ComponentID   `json:"from_component_id"`
-	ToComponentID   componentmap.ComponentID   `json:"to_component_id"`
-	Witness         componentmap.LocalRelation `json:"witness"`
+	ID               string                     `json:"id"`
+	FromComponentIDs []componentmap.ComponentID `json:"from_component_ids,omitempty"`
+	ToComponentIDs   []componentmap.ComponentID `json:"to_component_ids,omitempty"`
+	FromComponentID  componentmap.ComponentID   `json:"from_component_id,omitempty"`
+	ToComponentID    componentmap.ComponentID   `json:"to_component_id,omitempty"`
+	Witness          componentmap.LocalRelation `json:"witness"`
 }
 
 type ArchitectureFlow struct {
@@ -465,22 +467,21 @@ func projectArchitectureStructuralFacts(
 
 		fromComponents := uniqueArchitectureComponentIDs(memberComponents[relation.From])
 		toComponents := uniqueArchitectureComponentIDs(memberComponents[relation.To])
-		if len(fromComponents) != 1 || len(toComponents) != 1 {
-			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
-				"projection", "warning", "structural.non_unique_conceptual_endpoint",
-				fmt.Sprintf("structural fact %q has no unique conceptual component endpoints", relation.ID), "", nil,
-			))
-			continue
+		edge := ArchitectureStructuralEdge{
+			ID:               architectureStableID("structural-edge", relation.ID),
+			FromComponentIDs: fromComponents, ToComponentIDs: toComponents,
+			Witness: relation,
 		}
-		if fromComponents[0] == toComponents[0] {
-			continue
+		// Singular endpoints are a presentation convenience only. Plural or
+		// absent conceptual participation remains preserved on the exact
+		// member-level relation and must never be collapsed by array order.
+		if len(fromComponents) == 1 {
+			edge.FromComponentID = fromComponents[0]
 		}
-		canvas.StructuralEdges = append(canvas.StructuralEdges, ArchitectureStructuralEdge{
-			ID:              architectureStableID("structural-edge", relation.ID),
-			FromComponentID: fromComponents[0],
-			ToComponentID:   toComponents[0],
-			Witness:         relation,
-		})
+		if len(toComponents) == 1 {
+			edge.ToComponentID = toComponents[0]
+		}
+		canvas.StructuralEdges = append(canvas.StructuralEdges, edge)
 	}
 }
 

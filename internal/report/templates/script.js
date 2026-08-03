@@ -4444,7 +4444,7 @@
 		if (!root) return;
 		root.replaceChildren();
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
-			renderStudyMapOverview(root);
+			renderStudyMapOverview(root, false);
 			return;
 		}
 		var directions = INCOMPLETE_STUDY_DIRECTIONS;
@@ -4591,13 +4591,11 @@
 	}
 // repomap-source-episode:end
 
-	function renderStudyMapOverview(root) {
-// repomap-source-episode:start
-		var episode = renderSourceEpisode(SOURCE_EPISODE);
-		if (episode) root.appendChild(episode);
-// repomap-source-episode:end
-
+	function renderRepositoryBriefHero() {
 		var brief = STUDY_MAP && STUDY_MAP.brief || {};
+		if (!brief.what_it_is && !brief.problem && !brief.main_input &&
+			!brief.central_responsibility && !brief.observable_result &&
+			!(Array.isArray(brief.domain_terms) && brief.domain_terms.length)) return null;
 		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
 		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.repository.brief')));
 		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
@@ -4627,7 +4625,19 @@
 			});
 			hero.appendChild(termList);
 		}
-		root.appendChild(hero);
+		return hero;
+	}
+
+	function renderStudyMapOverview(root, includeBrief) {
+// repomap-source-episode:start
+		var episode = renderSourceEpisode(SOURCE_EPISODE);
+		if (episode) root.appendChild(episode);
+// repomap-source-episode:end
+
+		if (includeBrief !== false) {
+			var briefHero = renderRepositoryBriefHero();
+			if (briefHero) root.appendChild(briefHero);
+		}
 
 		var areaCards = (Array.isArray(STUDY_MAP.shape) ? STUDY_MAP.shape : []).map(renderRepositoryArea).filter(Boolean);
 		if (areaCards.length) {
@@ -5682,7 +5692,10 @@
 
 	function overviewComponentObjects() {
 		var canvas = DATA.architecture_canvas || {};
-		var components = Array.isArray(canvas.components) ? canvas.components : [];
+		var remainderComponentID = String(canvas.local_remainder_component_id || '');
+		var components = (Array.isArray(canvas.components) ? canvas.components : []).filter(function (component) {
+			return !remainderComponentID || !component || component.id !== remainderComponentID;
+		});
 		var contexts = architectureComponentContexts();
 		var counts = {};
 		components.forEach(function (component) {
@@ -5796,11 +5809,14 @@
 
 	function renderRepositoryOverviewAnatomy(root, anatomy) {
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
-		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
-		var hero = el('section', 'rm-overview-hero rm-purpose-hero');
-		hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
-		hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
-		hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+		var hero = renderRepositoryBriefHero();
+		if (!hero) {
+			var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+			hero = el('section', 'rm-overview-hero rm-purpose-hero');
+			hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
+			hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
+			hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+		}
 		root.appendChild(hero);
 
 		root.appendChild(renderOverviewAnatomyZone(
@@ -5818,18 +5834,15 @@
 			'component'
 		));
 
-		var integrations = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
-		integrations.appendChild(renderViewHeading(
-			msg('main.overview.anatomy.integrations_kicker'),
-			msg('main.overview.anatomy.integrations'),
-			msg('main.overview.anatomy.integrations_copy')
-		));
-		integrations.appendChild(txt(
-			'p',
-			'rm-empty-state rm-overview-integrations-empty',
-			msg('main.overview.anatomy.no_saved_integrations')
-		));
-		root.appendChild(integrations);
+		if (anatomy.integrations && anatomy.integrations.length) {
+			root.appendChild(renderOverviewAnatomyZone(
+				msg('main.overview.anatomy.integrations_kicker'),
+				msg('main.overview.anatomy.integrations'),
+				msg('main.overview.anatomy.integrations_copy'),
+				anatomy.integrations,
+				'integration'
+			));
+		}
 
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			var directions = el('section', 'rm-workspace-section rm-overview-study-routes');
@@ -5992,7 +6005,7 @@
 				evidence.provenance.provider !== 'gofacts' ||
 				evidence.provenance.version !== 'package-declaration-v1' ||
 				evidence.provenance.operation !== 'package_declaration') return;
-			var resolution = exactOverviewSourceResolutionFromSnippets(evidence.location, USER_SOURCES);
+			var resolution = exactOverviewActionResolutionForLocation(evidence.location);
 			if (resolution.conflict) {
 				unitSourceConflicts[evidence.unit_id] = true;
 				return;
@@ -6001,11 +6014,12 @@
 			var relatedEvidenceIDs = resolution.source.snippet &&
 				Array.isArray(resolution.source.snippet.related_evidence_ids)
 				? resolution.source.snippet.related_evidence_ids : [];
-			if (relatedEvidenceIDs.indexOf(evidenceID) < 0) return;
+			if (resolution.source.snippet && relatedEvidenceIDs.indexOf(evidenceID) < 0) return;
 			if (!unitSources[evidence.unit_id]) unitSources[evidence.unit_id] = Object.create(null);
 			var location = resolution.source.location;
 			var key = location.path + '\u0000' + String(location.line) + '\u0000' +
-				String(location.column || 0) + '\u0000' + overviewSnippetStableKey(resolution.source.snippet);
+				String(location.column || 0) + '\u0000' + (resolution.source.snippet
+					? overviewSnippetStableKey(resolution.source.snippet) : 'exact-location');
 			unitSources[evidence.unit_id][key] = resolution.source;
 		});
 		packageUnits.forEach(function (unit) {
@@ -6175,17 +6189,28 @@
 						unit.name.slice(group.prefix.length + 1))
 					: unit.name;
 				if (unit.source) {
-					var action = el('button', 'rm-atlas-package-action');
-					action.type = 'button';
+					var hasEmbeddedSource = sourceSnippetHasCode(unit.source.snippet);
+					var action = hasEmbeddedSource
+						? el('button', 'rm-atlas-package-action')
+						: sourceActionElement(
+							'',
+							'rm-atlas-package-action',
+							unit.source.location,
+							0,
+							function () { openSourceLocation(unit.source.location); }
+						);
+					if (hasEmbeddedSource) action.type = 'button';
 					action.setAttribute('aria-label', msg(
 						'main.atlas.workspace.open_package_source',
 						{ package: unit.name }
 					));
 					action.appendChild(txt('code', 'rm-atlas-package-name', label));
 					action.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
-					action.onclick = function () {
-						openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
-					};
+					if (hasEmbeddedSource) {
+						action.onclick = function () {
+							openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
+						};
+					}
 					item.appendChild(action);
 				} else {
 					var unavailable = el('span', 'rm-atlas-package-unavailable');
@@ -7670,6 +7695,27 @@
 
 	function architectureComponentContexts() {
 		var canvas = DATA.architecture_canvas || {};
+		var knownComponentIDs = {};
+		var memberNames = {};
+		function memberIdentityKey(memberID) {
+			if (!memberID || typeof memberID !== 'object') return '';
+			var kind = String(memberID.kind || '');
+			var value = String(memberID.value || '');
+			return kind && value ? kind + '\u0000' + value : '';
+		}
+		(canvas.components || []).forEach(function (component) {
+			if (!component || !component.id) return;
+			knownComponentIDs[String(component.id)] = true;
+			(component.members || []).forEach(function (member) {
+				var key = memberIdentityKey(member && member.id);
+				if (key && member && member.name) memberNames[key] = String(member.name);
+			});
+		});
+		(canvas.structural_locators || []).forEach(function (entry) {
+			var locator = entry && entry.locator;
+			var key = memberIdentityKey(locator && locator.id);
+			if (key && locator && locator.name) memberNames[key] = String(locator.name);
+		});
 		var graph = DATA.repository_graph || {};
 		var graphPackages = Array.isArray(graph.packages) ? graph.packages : [];
 		var packageByPath = {};
@@ -7894,6 +7940,42 @@
 					};
 				}),
 			};
+		});
+		(Array.isArray(canvas.structural_edges) ? canvas.structural_edges : []).forEach(function (edge) {
+			if (!edge || !edge.id || !edge.witness) return;
+			var participantComponentIDs = [];
+			var seenComponentIDs = {};
+			(Array.isArray(edge.from_component_ids) ? edge.from_component_ids : []).concat(
+				Array.isArray(edge.to_component_ids) ? edge.to_component_ids : []
+			).forEach(function (componentID) {
+				componentID = String(componentID || '');
+				if (!componentID || seenComponentIDs[componentID]) return;
+				seenComponentIDs[componentID] = true;
+				participantComponentIDs.push(componentID);
+			});
+			participantComponentIDs.forEach(function (componentID) {
+				var context = contexts[componentID];
+				if (!context && !knownComponentIDs[componentID]) return;
+				if (!context) {
+					context = contexts[componentID] = {
+						package_paths: [], package_targets: [], file_count: 0,
+						sources: [], surface_starts: [], studies: [],
+					};
+				}
+				if (!Array.isArray(context.structural_relations)) context.structural_relations = [];
+				context.structural_relations.push({
+					id: String(edge.id),
+					from: edge.witness.from,
+					to: edge.witness.to,
+					from_label: memberNames[memberIdentityKey(edge.witness.from)] || '',
+					to_label: memberNames[memberIdentityKey(edge.witness.to)] || '',
+					location: edge.witness.location || null,
+				});
+			});
+		});
+		Object.keys(contexts).forEach(function (componentID) {
+			var relations = contexts[componentID].structural_relations || [];
+			relations.sort(function (left, right) { return left.id.localeCompare(right.id); });
 		});
 		return contexts;
 	}

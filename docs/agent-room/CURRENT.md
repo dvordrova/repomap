@@ -1,15 +1,22 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/207-task-sized-study-routes.md
+    decisions/208-truthful-atlas-first-product-projection.md
 
 Status:
-    Decision 207 active; task-sized Study routes authorized
+    Decision 208 active; truthful Atlas-first product projection authorized
 
 Approved by:
     Repository owner in the current session
 
 Notes:
+    Decision 208 preserves exact local structural relations at member level
+    with zero-or-many conceptual participants, bridges Study to the currently
+    visible Architecture only through exact typed membership, and consolidates
+    the full Repository Brief on Overview. Empty Integrations and the local
+    model-remainder diagnostic no longer masquerade as product components;
+    compact packages retain working exact source actions in embedded and
+    stripped static reports. No provider contract or Study cardinality changes.
     Decision 207 keeps the global pre-call Study breadth gate at three distinct
     eligible exact locators, but lets each independently validated route use
     one through five exact readings. Zero, oversize, duplicate, unknown,

@@ -121,8 +121,10 @@ process.stdout.write(JSON.stringify({
 		Placements   []int      `json:"placements"`
 		Diagnostics  [][]string `json:"diagnostics"`
 		PartialTruth *struct {
-			RemainderComponentID string   `json:"remainderComponentID"`
-			MemberLabels         []string `json:"memberLabels"`
+			RemainderComponentID string `json:"remainderComponentID"`
+			Members              []struct {
+				Label string `json:"label"`
+			} `json:"members"`
 		} `json:"partialTruth"`
 		FullTruth   any       `json:"fullTruth"`
 		FitScales   []float64 `json:"fitScales"`
@@ -164,8 +166,14 @@ process.stdout.write(JSON.stringify({
 	if want := [][]string{{"a"}, {"b"}}; !reflect.DeepEqual(result.Diagnostics, want) {
 		t.Errorf("diagnostic subsystem ids = %v, want %v", result.Diagnostics, want)
 	}
+	var partialLabels []string
+	if result.PartialTruth != nil {
+		for _, member := range result.PartialTruth.Members {
+			partialLabels = append(partialLabels, member.Label)
+		}
+	}
 	if result.PartialTruth == nil || result.PartialTruth.RemainderComponentID != "remainder" ||
-		!reflect.DeepEqual(result.PartialTruth.MemberLabels, []string{
+		!reflect.DeepEqual(partialLabels, []string{
 			"cmd/server/main.go", "package:example.test/internal/local",
 		}) || result.FullTruth != nil {
 		t.Errorf("partial Architecture truth projection = %#v / full=%#v", result.PartialTruth, result.FullTruth)

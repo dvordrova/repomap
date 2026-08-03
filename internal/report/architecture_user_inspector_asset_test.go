@@ -73,7 +73,21 @@ const report = {
         facts: [{ kind: "declaration", value: "example.test/project/worker" }],
       }] },
       { id: "anchor-only", anchor_ids: ["shared-anchor", "second-anchor"], members: [] },
+	  { id: "relation-only", members: [{
+		id: { kind: "symbol", value: "relation-source" }, name: "Request dispatcher", facts: [],
+	  }] },
     ],
+	structural_edges: [{
+	  id: "relation-exact",
+	  from_component_ids: ["relation-only"],
+	  to_component_ids: ["exact-member-only"],
+	  witness: {
+		id: "relation-exact", kind: "bounded_direct_call",
+		from: { kind: "symbol", value: "relation-source" },
+		to: { kind: "symbol", value: "opaque-symbol-id" },
+		location: { path: "other.go", line: 41 },
+	  },
+	}],
     surfaces: [
       {
         id: "http-get-widgets", name: "GET /widgets",
@@ -209,6 +223,10 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		Studies []struct {
 			ID string `json:"id"`
 		} `json:"studies"`
+		StructuralRelations []struct {
+			FromLabel string `json:"from_label"`
+			ToLabel   string `json:"to_label"`
+		} `json:"structural_relations"`
 	}
 	if err := json.Unmarshal(output, &contexts); err != nil {
 		t.Fatalf("decode architecture contexts: %v\n%s", err, output)
@@ -281,6 +299,12 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		anchorOnly.Sources[1].Location.Line != 8 ||
 		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].ID != "study-shared" {
 		t.Fatalf("anchor-only context = %#v, present %v", anchorOnly, ok)
+	}
+	relationOnly, ok := contexts["relation-only"]
+	if !ok || len(relationOnly.StructuralRelations) != 1 ||
+		relationOnly.StructuralRelations[0].FromLabel != "Request dispatcher" ||
+		relationOnly.StructuralRelations[0].ToLabel != "ValidateFunctionURL" {
+		t.Fatalf("relation-only context lost exact named relation: %#v, present %v", relationOnly, ok)
 	}
 }
 

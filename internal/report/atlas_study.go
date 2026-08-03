@@ -991,7 +991,12 @@ func readAtlasStudyReportProduct(
 		if localErr != nil {
 			return nil, nil, localErr
 		}
-		studyMap, projectErr := projectAtlasStudyMap(studyData, input, result)
+		studyMap, projectErr := projectAtlasStudyMap(
+			studyData,
+			data.ArchitectureCanvas,
+			input,
+			result,
+		)
 		if projectErr != nil {
 			return nil, nil, projectErr
 		}
@@ -1059,6 +1064,7 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 
 func projectAtlasStudyMap(
 	data *ReportData,
+	publishedCanvas *ArchitectureCanvas,
 	input atlasstudy.Input,
 	result atlasstudy.ResultRecord,
 ) (*RepositoryStudyMap, error) {
@@ -1081,10 +1087,8 @@ func projectAtlasStudyMap(
 		}
 		projected := RepositoryStudyArea{
 			ID: ref.ID, Name: component.Name, Responsibility: component.Description,
-			MapTarget: &UserMapTarget{
-				Kind: SemanticSearchTargetComponent, ComponentID: componentmap.ComponentID(ref.ID),
-			},
 		}
+		projected.MapTarget = exactPublishedStudyComponentTarget(component, publishedCanvas)
 		var owned []atlasstudy.ReadingTarget
 		for _, target := range input.ReadingTargets {
 			if target.Owner != ref {
@@ -1184,6 +1188,53 @@ func projectAtlasStudyMap(
 		studyMap.Directions = append(studyMap.Directions, projected)
 	}
 	return studyMap, nil
+}
+
+// exactPublishedStudyComponentTarget bridges the local D177 component used by
+// Atlas Study to the independently accepted component projection that is
+// actually visible in this report. The join uses only exact typed member IDs.
+// Ambiguous many-to-many conceptual membership deliberately produces no
+// singular focus instead of choosing a component by order.
+func exactPublishedStudyComponentTarget(
+	local ArchitectureComponent,
+	published *ArchitectureCanvas,
+) *UserMapTarget {
+	if published == nil {
+		return nil
+	}
+	localMembers := make(map[componentmap.MemberID]struct{}, len(local.Members))
+	for _, member := range local.Members {
+		localMembers[member.ID] = struct{}{}
+	}
+	if len(localMembers) == 0 {
+		return nil
+	}
+	var matched componentmap.ComponentID
+	for _, component := range published.Components {
+		if component.ID == published.LocalRemainderComponentID {
+			continue
+		}
+		intersects := false
+		for _, member := range component.Members {
+			if _, ok := localMembers[member.ID]; ok {
+				intersects = true
+				break
+			}
+		}
+		if !intersects {
+			continue
+		}
+		if matched != "" {
+			return nil
+		}
+		matched = component.ID
+	}
+	if matched == "" {
+		return nil
+	}
+	return &UserMapTarget{
+		Kind: SemanticSearchTargetComponent, ComponentID: matched,
+	}
 }
 
 func atlasStudyDirectionReadingSetKey(

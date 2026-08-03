@@ -235,9 +235,14 @@ func TestProjectArchitectureCanvasSharedBindingUsesParticipantsWithoutOwnershipO
 			secondStep.ParticipatingComponentIDs,
 		)
 	}
-	if len(first.StructuralFacts) != 1 || len(first.StructuralEdges) != 0 ||
-		!architectureHasDiagnostic(first, "structural.non_unique_conceptual_endpoint") {
-		t.Fatalf("shared endpoint created a cross-product edge: %#v", first)
+	if len(first.StructuralFacts) != 1 || len(first.StructuralEdges) != 1 {
+		t.Fatalf("shared endpoint lost its exact member relation: %#v", first)
+	}
+	edge := first.StructuralEdges[0]
+	if edge.Witness.From != first.StructuralFacts[0].From || edge.Witness.To != first.StructuralFacts[0].To ||
+		edge.FromComponentID == "" || edge.ToComponentID != "" ||
+		len(edge.FromComponentIDs) != 1 || len(edge.ToComponentIDs) != 2 {
+		t.Fatalf("shared endpoint relation chose or expanded conceptual endpoints: %#v", edge)
 	}
 	if architectureHasAnchorFrontier(first, "ambiguous_component", "scan") {
 		t.Fatalf("valid shared binding was presented as unresolved: %#v", first.Frontiers)
@@ -565,8 +570,8 @@ func TestProjectArchitectureCanvasKeepsPartialRemainderOutOfModelAssociations(t 
 func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureCanvasVersion != 8 {
-		t.Fatalf("ArchitectureCanvasVersion = %d, want 8 for exact persisted remainder identity", ArchitectureCanvasVersion)
+	if ArchitectureCanvasVersion != 9 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 9 for member-level structural relation identity", ArchitectureCanvasVersion)
 	}
 	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
 		t.Fatalf("historical Architecture Canvas version error = %v", err)
