@@ -66,9 +66,7 @@
 			return Object.assign({}, direction, { incomplete: true });
 		})
 		: [];
-	var STUDY_DIRECTIONS = ATLAS_FIRST
-		? []
-		: COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
+	var STUDY_DIRECTIONS = COMPLETE_STUDY_DIRECTIONS.concat(INCOMPLETE_STUDY_DIRECTIONS);
 // repomap-source-episode:start
 	var SOURCE_EPISODE = DATA.source_episode || null;
 // repomap-source-episode:end
@@ -3970,7 +3968,7 @@
   }
 
 	function userArchitectureAvailable() {
-		if (ATLAS_FIRST) return false;
+		if (ATLAS_FIRST) return !!DATA.architecture_canvas;
 		if (DEBUG_MODE) return !!(DATA.architecture_canvas || (DATA.high_level_map || []).length);
 		if (STUDY_MAP) return !!DATA.architecture_canvas;
 		if (REPOSITORY_GUIDE) {
@@ -4445,27 +4443,16 @@
 		var root = document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
-		if (ATLAS_FIRST) {
-			root.appendChild(renderViewHeading(
-				msg('main.study'),
-				msg('main.atlas_first.unavailable'),
-				msg('main.atlas_first.study_copy')
-			));
+		if (COMPLETE_STUDY_DIRECTIONS.length) {
+			renderStudyMapOverview(root);
 			return;
 		}
-		var canonical = COMPLETE_STUDY_DIRECTIONS.length > 0;
-		var directions = canonical ? COMPLETE_STUDY_DIRECTIONS : INCOMPLETE_STUDY_DIRECTIONS;
-		root.appendChild(canonical
-			? renderViewHeading(
-				msg('main.study'),
-				msg('main.a.useful.path.through.the.repository'),
-				msg('main.choose.a.question.and.begin.with.concrete.source.anchors.the.order.is.for.learning.not.an.execution.trace')
-			)
-			: renderViewHeading(
-				msg('main.study.incomplete.directions'),
-				msg('main.what.is.worth.understanding.next'),
-				msg('main.questions.backed.by.exact.starting.points.they.are.places.to.begin.not.answers.or.ordered.mechanisms')
-			));
+		var directions = INCOMPLETE_STUDY_DIRECTIONS;
+		root.appendChild(renderViewHeading(
+			msg('main.study.incomplete.directions'),
+			msg('main.what.is.worth.understanding.next'),
+			msg('main.questions.backed.by.exact.starting.points.they.are.places.to.begin.not.answers.or.ordered.mechanisms')
+		));
 		var directionList = el('div', 'rm-study-direction-list');
 		directions.forEach(function (direction, index) {
 			directionList.appendChild(renderStudyDirectionCard(direction, index));
@@ -4692,14 +4679,6 @@
 		var root = document.getElementById('rm-study-detail');
 		if (!root) return;
 		root.replaceChildren();
-		if (ATLAS_FIRST) {
-			root.appendChild(renderViewHeading(
-				msg('main.study'),
-				msg('main.atlas_first.unavailable'),
-				msg('main.atlas_first.study_copy')
-			));
-			return;
-		}
 		var direction = studyDirectionByID(workspaceState.directionID);
 		if (!direction) return;
 		var incomplete = !!direction.incomplete;
@@ -5603,6 +5582,33 @@
 		return exactOverviewSourceResolutionForLocation(location).source;
 	}
 
+	function exactOverviewActionResolutionForLocation(location) {
+		var sourceResolution = exactOverviewSourceResolutionForLocation(location);
+		if (sourceResolution.conflict || sourceResolution.source) return sourceResolution;
+		if (!location || exactOverviewSourcePath(location.path) !== location.path ||
+			!Number.isInteger(location.line) || location.line <= 0 ||
+			!overviewLocationOnlyActionAvailable(location)) {
+			return { source: null, conflict: false };
+		}
+		return { source: {
+			snippet: null,
+			location: {
+				path: location.path,
+				line: location.line,
+				column: Number.isInteger(location.column) && location.column > 0 ? location.column : 0,
+			},
+		}, conflict: false };
+	}
+
+	function overviewLocationOnlyActionAvailable(location) {
+		if (allEmbeddedSourceSnippets().some(sourceSnippetHasCode)) return false;
+		if (serverMode() && currentRunID() && SOURCE_IDS[location && location.path]) {
+			return sourceLocationActionAvailable(location);
+		}
+		if (!staticSourceMode()) return false;
+		return sourceLocationActionAvailable(location);
+	}
+
 	function overviewSurfaceLocation(trigger) {
 		if (!trigger) return null;
 		return trigger.handler_location || trigger.registration_site || trigger.descriptor_site ||
@@ -5657,7 +5663,7 @@
 		var objects = [];
 		eligible.forEach(function (trigger) {
 			if (counts[trigger.id] !== 1) return;
-			var source = exactOverviewSourceForLocation(overviewSurfaceLocation(trigger));
+			var source = exactOverviewActionResolutionForLocation(overviewSurfaceLocation(trigger)).source;
 			if (!source) return;
 			objects.push({
 				id: trigger.id,
@@ -5692,7 +5698,7 @@
 			var resolvedSeen = {};
 			var conflict = false;
 			(Array.isArray(context.sources) ? context.sources : []).forEach(function (source) {
-				var resolution = exactOverviewSourceResolutionForLocation(source && source.location);
+				var resolution = exactOverviewActionResolutionForLocation(source && source.location);
 				if (resolution.conflict) {
 					conflict = true;
 					return;
@@ -5700,8 +5706,9 @@
 				if (!resolution.source) return;
 				var location = resolution.source.location;
 				var key = location.path + '\u0000' + String(location.line) + '\u0000' +
-					String(location.column || 0) + '\u0000' +
-					overviewSnippetStableKey(resolution.source.snippet);
+					String(location.column || 0) + '\u0000' + (resolution.source.snippet
+						? overviewSnippetStableKey(resolution.source.snippet)
+						: 'exact-location');
 				if (resolvedSeen[key]) return;
 				resolvedSeen[key] = true;
 				resolved.push(resolution.source);
@@ -5734,15 +5741,26 @@
 		var card = el('article', 'rm-overview-object-card');
 		card.setAttribute('data-rm-object-kind', kind);
 		card.setAttribute('data-rm-object-id', object.id);
-		var primary = el('button', 'rm-overview-object-primary');
-		primary.type = 'button';
+		var hasEmbeddedSource = sourceSnippetHasCode(object.snippet);
+		var primary = hasEmbeddedSource
+			? el('button', 'rm-overview-object-primary')
+			: sourceActionElement(
+				'',
+				'rm-overview-object-primary',
+				object.location,
+				0,
+				function () { openSourceLocation(object.location); }
+			);
+		if (hasEmbeddedSource) primary.type = 'button';
 		primary.appendChild(txt('strong', '', object.title));
 		if (object.detail) primary.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
 		primary.appendChild(txt('code', 'rm-overview-object-location', formatCodeLocation(object.location)));
 		primary.appendChild(txt('span', 'rm-overview-object-action', msg('main.open.exact.source')));
-		primary.onclick = function () {
-			openSourceSnippet(object.snippet, object.location, false, { drawerFirst: true });
-		};
+		if (hasEmbeddedSource) {
+			primary.onclick = function () {
+				openSourceSnippet(object.snippet, object.location, false, { drawerFirst: true });
+			};
+		}
 		card.appendChild(primary);
 		if (kind === 'component' && userArchitectureAvailable()) {
 			var architecture = txt(
@@ -6334,6 +6352,7 @@
 		var anatomy = repositoryOverviewAnatomy();
 		if (ATLAS_FIRST) {
 			if (anatomy) renderRepositoryOverviewAnatomy(root, anatomy);
+			else if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) renderStudyMapOverview(root);
 			renderRepositoryAtlasWorkspaceShelf(root);
 			return;
 		}
@@ -6438,7 +6457,8 @@
   }
 
 	function renderStudyPublicationNotice(root) {
-		if (ATLAS_FIRST || !root || !STUDY_PUBLICATION || STUDY_PUBLICATION.state === 'published') return;
+		if (!root || COMPLETE_STUDY_DIRECTIONS.length || !STUDY_PUBLICATION ||
+			STUDY_PUBLICATION.state === 'published') return;
 		var notice = el('section', 'rm-study-publication-notice');
 		notice.appendChild(txt('h2', '', msg('main.study.unavailable.for.this.run')));
 		notice.appendChild(txt(
@@ -7920,14 +7940,6 @@
     var root = document.getElementById('rm-architecture');
     if (!root) return;
     root.replaceChildren();
-		if (ATLAS_FIRST) {
-			root.appendChild(renderViewHeading(
-				msg('main.architecture'),
-				msg('main.atlas_first.unavailable'),
-				msg('main.atlas_first.architecture_copy')
-			));
-			return;
-		}
     root.appendChild(renderViewHeading(
       msg('main.architecture'),
       msg('main.explore.the.repository.map'),
@@ -8188,6 +8200,21 @@
     }
   }
 
+	function renderWorkspaceTabs() {
+		var tabs = document.getElementById('rm-tabs');
+		if (!tabs) return;
+		tabs.replaceChildren();
+		if (TASK_INVESTIGATION) {
+			addWorkspaceTab(msg('main.task'), 'investigate');
+		} else {
+			addWorkspaceTab(msg('main.overview'), 'overview');
+			if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
+			if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
+			if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
+		}
+		if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');
+	}
+
   function render() {
     DATA.flows = DATA.flows || [];
     componentSelectionViews = {};
@@ -8199,19 +8226,7 @@
     setupServerFeatures();
     renderRunDetails();
 
-    var tabs = document.getElementById('rm-tabs');
-    if (tabs) {
-      tabs.replaceChildren();
-			if (TASK_INVESTIGATION) {
-				addWorkspaceTab(msg('main.task'), 'investigate');
-			} else {
-				addWorkspaceTab(msg('main.overview'), 'overview');
-				if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
-				if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
-				if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
-			}
-      if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');
-    }
+		renderWorkspaceTabs();
 
 		if (TASK_INVESTIGATION) {
 			renderTaskInvestigationWorkspace();
@@ -8328,6 +8343,7 @@
       runPickerShortID: runPickerShortID,
       runPickerLabel: runPickerLabel,
       renderArchitectureWorkspace: renderArchitectureWorkspace,
+		renderWorkspaceTabs: renderWorkspaceTabs,
       mountArchitectureCanvas: mountArchitectureCanvas,
       mountDebugSurfaceCatalog: mountDebugSurfaceCatalog,
       txt: txt,
