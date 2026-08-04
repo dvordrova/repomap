@@ -952,6 +952,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
     "main.architecture": { params: [], text: "Architecture" },
+    "main.architecture.synthesis_failed": { params: [], text: "Architecture synthesis failed; showing the locally available architecture." },
     "main.provenance": { params: [], text: "Provenance" },
     "main.source.locations": { params: [], text: "Source locations" },
     "main.close.source.drawer": { params: [], text: "Close source drawer" },
@@ -994,6 +995,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.unavailable.for.this.run": { params: [], text: "Study unavailable for this run" },
     "main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result": { params: [], text: "No Study directions were published because the editing stage did not pass its required checks. The Overview below uses independently accepted inputs; it is not a substitute Study result." },
     "main.study.stage.did.not.finish.so.no.study.directions.were.published.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result": { params: [], text: "Study stage did not finish, so no Study directions were published. The Overview below uses independently accepted inputs; it is not a substitute Study result." },
+    "main.study.diagnostics": { params: [], text: "Study diagnostics" },
+    "main.study.diagnostics_copy": { params: [], text: "Four-stage span counts, independent coverage flags, and bounded frontier omissions for this run." },
+    "main.study.diagnostics.considered_spans": { params: [], text: "Considered spans" },
+    "main.study.diagnostics.advertised_spans": { params: [], text: "Advertised spans" },
+    "main.study.diagnostics.model_selected_spans": { params: [], text: "Model-selected spans" },
+    "main.study.diagnostics.accepted_spans": { params: [], text: "Locally accepted spans" },
+    "main.study.diagnostics.frontier_complete": { params: [], text: "Frontier complete" },
+    "main.study.diagnostics.selected_items_complete": { params: [], text: "Selected items complete" },
+    "main.study.diagnostics.support_coverage_complete": { params: [], text: "Support coverage complete" },
+    "main.study.diagnostics.portfolio_target_met": { params: [], text: "Portfolio target met" },
+    "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
+    "main.study.diagnostics.omission_count": { params: ["count"], format: function (params) { return "Omitted: " + params.count; } },
+    "main.study.diagnostics.omission_representatives": { params: ["count"], format: function (params) { return "Representative refs: " + params.count; } },
+    "main.study.diagnostics.yes": { params: [], text: "Yes" },
+    "main.study.diagnostics.no": { params: [], text: "No" },
     "main.back.to.reading.path": { params: [], text: "← Back to reading path" },
     "main.retrieval.details": { params: [], text: "Retrieval details" },
     "main.no.candidate.directions.were.produced": { params: [], text: "No candidate directions were produced." },
@@ -1072,6 +1088,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.components_kicker": { params: [], text: "Saved architecture" },
     "main.overview.anatomy.components": { params: [], text: "Components" },
     "main.overview.anatomy.components_copy": { params: [], text: "Accepted conceptual components open on the map; exact symbol sources remain available when present." },
+    "main.overview.anatomy.components_copy_synthesis_failed": { params: [], text: "Architecture synthesis failed; showing the locally available architecture with exact symbol sources." },
     "main.overview.anatomy.integrations_kicker": { params: [], text: "Saved evidence" },
     "main.overview.anatomy.integrations": { params: [], text: "Integrations" },
     "main.overview.anatomy.integrations_copy": { params: [], text: "Only exact integration objects already proven by this saved report can appear here." },
@@ -2215,6 +2232,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
     "main.architecture": { params: [], text: "Архитектура" },
+    "main.architecture.synthesis_failed": { params: [], text: "Синтез архитектуры не выполнен; показана локально доступная архитектура." },
     "main.provenance": { params: [], text: "Происхождение данных" },
     "main.source.locations": { params: [], text: "Исходные позиции" },
     "main.close.source.drawer": { params: [], text: "Закрыть панель исходников" },
@@ -2257,6 +2275,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.unavailable.for.this.run": { params: [], text: "Раздел «Изучение» недоступен для этого запуска" },
     "main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result": { params: [], text: "Направления изучения не опубликованы: этап редактирования не прошёл обязательные проверки. Обзор ниже использует независимо принятые данные и не подменяет результат изучения." },
     "main.study.stage.did.not.finish.so.no.study.directions.were.published.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result": { params: [], text: "Этап изучения не завершился, поэтому направления не опубликованы. Обзор ниже использует независимо принятые данные и не подменяет результат изучения." },
+    "main.study.diagnostics": { params: [], text: "Диагностика изучения" },
+    "main.study.diagnostics_copy": { params: [], text: "Количество спанов на четырёх этапах, независимые флаги покрытия и ограниченные сведения об опущенных спанах фронтира для этого запуска." },
+    "main.study.diagnostics.considered_spans": { params: [], text: "Рассмотренные спаны" },
+    "main.study.diagnostics.advertised_spans": { params: [], text: "Предложенные спаны" },
+    "main.study.diagnostics.model_selected_spans": { params: [], text: "Спаны, выбранные моделью" },
+    "main.study.diagnostics.accepted_spans": { params: [], text: "Локально принятые спаны" },
+    "main.study.diagnostics.frontier_complete": { params: [], text: "Фронтир выбора полон" },
+    "main.study.diagnostics.selected_items_complete": { params: [], text: "Все выбранные элементы приняты локально" },
+    "main.study.diagnostics.support_coverage_complete": { params: [], text: "Покрытие поддержки полное" },
+    "main.study.diagnostics.portfolio_target_met": { params: [], text: "Целевой размер портфеля достигнут" },
+    "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
+    "main.study.diagnostics.omission_count": { params: ["count"], format: function (params) { return "Опущено: " + params.count; } },
+    "main.study.diagnostics.omission_representatives": { params: ["count"], format: function (params) { return "Представительных ссылок: " + params.count; } },
+    "main.study.diagnostics.yes": { params: [], text: "Да" },
+    "main.study.diagnostics.no": { params: [], text: "Нет" },
     "main.back.to.reading.path": { params: [], text: "← Назад к пути изучения" },
     "main.retrieval.details": { params: [], text: "Детали извлечения" },
     "main.no.candidate.directions.were.produced": { params: [], text: "Не удалось получить ни одного направления." },
@@ -2335,6 +2368,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.components_kicker": { params: [], text: "Сохранённая архитектура" },
     "main.overview.anatomy.components": { params: [], text: "Компоненты" },
     "main.overview.anatomy.components_copy": { params: [], text: "Принятые концептуальные компоненты открываются на карте; точные исходники символов доступны, когда они есть." },
+    "main.overview.anatomy.components_copy_synthesis_failed": { params: [], text: "Синтез архитектуры не выполнен; показана локально доступная архитектура с точными исходниками символов." },
     "main.overview.anatomy.integrations_kicker": { params: [], text: "Сохранённые свидетельства" },
     "main.overview.anatomy.integrations": { params: [], text: "Интеграции" },
     "main.overview.anatomy.integrations_copy": { params: [], text: "Здесь могут появиться только точные объекты интеграций, уже подтверждённые этим сохранённым отчётом." },
@@ -7999,6 +8033,73 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return hero;
 	}
 
+	function renderAtlasStudyDiagnostics() {
+		var study = DATA.atlas_study;
+		if (!study) return null;
+		var stageCounts = [
+			[msg('main.study.diagnostics.considered_spans'), study.considered_span_count],
+			[msg('main.study.diagnostics.advertised_spans'), study.advertised_span_count],
+			[msg('main.study.diagnostics.model_selected_spans'), study.model_selected_span_count],
+			[msg('main.study.diagnostics.accepted_spans'), study.accepted_span_count],
+		];
+		var hasCounts = stageCounts.some(function (pair) { return Number(pair[1]) > 0; });
+		var flags = [
+			[msg('main.study.diagnostics.frontier_complete'), study.frontier_complete],
+			[msg('main.study.diagnostics.selected_items_complete'), study.selected_items_complete],
+			[msg('main.study.diagnostics.support_coverage_complete'), study.support_coverage_complete],
+			[msg('main.study.diagnostics.portfolio_target_met'), study.portfolio_target_met],
+		];
+		var omissions = Array.isArray(study.omissions) ? study.omissions : [];
+		if (!hasCounts && !omissions.length) return null;
+		var panel = el('section', 'rm-workspace-section rm-study-diagnostics');
+		panel.appendChild(renderViewHeading(
+			msg('main.study'),
+			msg('main.study.diagnostics'),
+			msg('main.study.diagnostics_copy')
+		));
+		if (hasCounts) {
+			var counts = el('div', 'rm-study-diagnostics-stages');
+			stageCounts.forEach(function (pair) {
+				if (!(Number(pair[1]) > 0)) return;
+				var item = el('div', 'rm-study-diagnostics-stage');
+				item.appendChild(txt('span', '', pair[0]));
+				item.appendChild(txt('strong', '', String(pair[1])));
+				counts.appendChild(item);
+			});
+			if (counts.childNodes.length) panel.appendChild(counts);
+		}
+		var flagList = el('ul', 'rm-study-diagnostics-flags');
+		flags.forEach(function (pair) {
+			var item = el('li', 'rm-study-diagnostics-flag');
+			item.appendChild(txt('span', '', pair[0]));
+			item.appendChild(txt('strong', '', pair[1] ? msg('main.study.diagnostics.yes') : msg('main.study.diagnostics.no')));
+			flagList.appendChild(item);
+		});
+		panel.appendChild(flagList);
+		if (omissions.length) {
+			var omissionList = el('ul', 'rm-study-diagnostics-omissions');
+			omissions.forEach(function (omission) {
+				if (!omission || !omission.reason || !(Number(omission.count) > 0)) return;
+				var item = el('li', 'rm-study-diagnostics-omission');
+				var details = txt('span', '', msg('main.study.diagnostics.omission_count', { count: omission.count }));
+				if (Number(omission.representative_count) > 0) {
+					details.appendChild(document.createTextNode(' · '));
+					details.appendChild(document.createTextNode(msg('main.study.diagnostics.omission_representatives', { count: omission.representative_count })));
+				}
+				item.appendChild(txt('code', '', omission.reason));
+				item.appendChild(details);
+				omissionList.appendChild(item);
+			});
+			if (omissionList.childNodes.length) {
+				var omissionHeading = el('h3', 'rm-study-diagnostics-subheading');
+				omissionHeading.appendChild(document.createTextNode(msg('main.study.diagnostics.omissions')));
+				panel.appendChild(omissionHeading);
+				panel.appendChild(omissionList);
+			}
+		}
+		return panel;
+	}
+
 	function renderStudyMapOverview(root, includeBrief) {
 		if (includeBrief !== false) {
 			var briefHero = renderRepositoryBriefHero();
@@ -8015,6 +8116,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			studySection.appendChild(directionList);
 			root.appendChild(studySection);
 		}
+
+		var studyDiagnostics = renderAtlasStudyDiagnostics();
+		if (studyDiagnostics) root.appendChild(studyDiagnostics);
 
 		renderOperationsOverview(root);
 
@@ -9105,7 +9209,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			root.appendChild(renderOverviewAnatomyZone(
 				msg('main.overview.anatomy.components_kicker'),
 				msg('main.overview.anatomy.components'),
-				msg('main.overview.anatomy.components_copy'),
+				DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
+					msg('main.overview.anatomy.components_copy_synthesis_failed') :
+					msg('main.overview.anatomy.components_copy'),
 				anatomy.components,
 				'component'
 			));
@@ -11268,6 +11374,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       msg('main.explore.the.repository.map'),
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
+    if (DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed') {
+      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', msg('main.architecture.synthesis_failed')));
+    }
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var card = el('section', 'rm-card rm-architecture-canvas-card');
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');

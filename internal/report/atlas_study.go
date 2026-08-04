@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
@@ -1195,16 +1196,26 @@ func atlasStudyFocusedSpanPresentation(
 // atlasStudyReadableTargetReference returns the exact bounded natural-language
 // reference a backend-owned question may use for one reading target, plus
 // whether that reference is the exact source symbol (rather than a natural
-// label). Only the target's own source-card symbol (a bare identifier) or its
-// natural label qualifies; qualified symbols, canonical IDs, repository paths,
-// package buckets and generic fallback labels are private and never injected
-// into a question. An empty reference means the target has no readable value
-// and callers must keep the generic wording.
+// label). A bare identifier symbol or the package.Symbol segment after the
+// last '/' of a fully-qualified symbol qualifies; canonical IDs, repository
+// paths, package buckets and generic fallback labels are private and never
+// injected into a question. An empty reference means the target has no
+// readable value and callers must keep the generic wording.
 func atlasStudyReadableTargetReference(target atlasstudy.ReadingTarget) (string, bool) {
-	if symbol := strings.TrimSpace(target.Symbol); symbol != "" &&
-		!strings.ContainsAny(symbol, "./()") && utf8.ValidString(symbol) &&
+	symbol := strings.TrimSpace(target.Symbol)
+	if symbol != "" && !strings.ContainsAny(symbol, "./()") && utf8.ValidString(symbol) &&
 		utf8.RuneCountInString(symbol) <= 128 {
 		return symbol, true
+	}
+	// Fully-qualified symbols (containing '/', '.', '(' or ')') carry the
+	// repository import path. The segment after the last '/' is the exact
+	// package.Symbol reading target and a strict substring of the target's own
+	// advertised symbol, so it remains a bounded backend-owned question
+	// reference that item-local question validation accepts.
+	if symbol != "" && strings.ContainsAny(symbol, "./()") {
+		if derived := atlasStudyDerivedQualifiedSymbol(symbol); derived != "" {
+			return derived, true
+		}
 	}
 	label := strings.TrimSpace(target.Label)
 	if label == "" || strings.ContainsAny(label, "./()") || !utf8.ValidString(label) ||
@@ -1217,6 +1228,33 @@ func atlasStudyReadableTargetReference(target atlasstudy.ReadingTarget) (string,
 		return "", false
 	}
 	return label, false
+}
+
+// atlasStudyDerivedQualifiedSymbol reduces a fully-qualified symbol to a
+// bounded question-safe reference. With a '/' present the segment after the
+// last '/' (the exact package.Symbol) is used; otherwise the segment after
+// the last '.' (the bare identifier) is used, because a symbol without a
+// module path such as "http.ListenAndServe" is itself a private identity and
+// must never be injected into a question. The derived value must remain
+// bounded exact UTF-8 text with no control characters or spaces; otherwise it
+// is not a readable question reference and callers keep the generic wording.
+func atlasStudyDerivedQualifiedSymbol(symbol string) string {
+	derived := symbol
+	if lastSlash := strings.LastIndex(symbol, "/"); lastSlash >= 0 {
+		derived = symbol[lastSlash+1:]
+	} else if lastDot := strings.LastIndex(symbol, "."); lastDot >= 0 {
+		derived = symbol[lastDot+1:]
+	}
+	derived = strings.TrimSpace(derived)
+	if derived == "" || !utf8.ValidString(derived) || utf8.RuneCountInString(derived) > 128 {
+		return ""
+	}
+	for _, value := range derived {
+		if unicode.IsControl(value) || value == ' ' {
+			return ""
+		}
+	}
+	return derived
 }
 
 // atlasStudyQuestionReference renders a readable target reference inside a

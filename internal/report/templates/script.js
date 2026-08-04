@@ -4611,6 +4611,73 @@
 		return hero;
 	}
 
+	function renderAtlasStudyDiagnostics() {
+		var study = DATA.atlas_study;
+		if (!study) return null;
+		var stageCounts = [
+			[msg('main.study.diagnostics.considered_spans'), study.considered_span_count],
+			[msg('main.study.diagnostics.advertised_spans'), study.advertised_span_count],
+			[msg('main.study.diagnostics.model_selected_spans'), study.model_selected_span_count],
+			[msg('main.study.diagnostics.accepted_spans'), study.accepted_span_count],
+		];
+		var hasCounts = stageCounts.some(function (pair) { return Number(pair[1]) > 0; });
+		var flags = [
+			[msg('main.study.diagnostics.frontier_complete'), study.frontier_complete],
+			[msg('main.study.diagnostics.selected_items_complete'), study.selected_items_complete],
+			[msg('main.study.diagnostics.support_coverage_complete'), study.support_coverage_complete],
+			[msg('main.study.diagnostics.portfolio_target_met'), study.portfolio_target_met],
+		];
+		var omissions = Array.isArray(study.omissions) ? study.omissions : [];
+		if (!hasCounts && !omissions.length) return null;
+		var panel = el('section', 'rm-workspace-section rm-study-diagnostics');
+		panel.appendChild(renderViewHeading(
+			msg('main.study'),
+			msg('main.study.diagnostics'),
+			msg('main.study.diagnostics_copy')
+		));
+		if (hasCounts) {
+			var counts = el('div', 'rm-study-diagnostics-stages');
+			stageCounts.forEach(function (pair) {
+				if (!(Number(pair[1]) > 0)) return;
+				var item = el('div', 'rm-study-diagnostics-stage');
+				item.appendChild(txt('span', '', pair[0]));
+				item.appendChild(txt('strong', '', String(pair[1])));
+				counts.appendChild(item);
+			});
+			if (counts.childNodes.length) panel.appendChild(counts);
+		}
+		var flagList = el('ul', 'rm-study-diagnostics-flags');
+		flags.forEach(function (pair) {
+			var item = el('li', 'rm-study-diagnostics-flag');
+			item.appendChild(txt('span', '', pair[0]));
+			item.appendChild(txt('strong', '', pair[1] ? msg('main.study.diagnostics.yes') : msg('main.study.diagnostics.no')));
+			flagList.appendChild(item);
+		});
+		panel.appendChild(flagList);
+		if (omissions.length) {
+			var omissionList = el('ul', 'rm-study-diagnostics-omissions');
+			omissions.forEach(function (omission) {
+				if (!omission || !omission.reason || !(Number(omission.count) > 0)) return;
+				var item = el('li', 'rm-study-diagnostics-omission');
+				var details = txt('span', '', msg('main.study.diagnostics.omission_count', { count: omission.count }));
+				if (Number(omission.representative_count) > 0) {
+					details.appendChild(document.createTextNode(' · '));
+					details.appendChild(document.createTextNode(msg('main.study.diagnostics.omission_representatives', { count: omission.representative_count })));
+				}
+				item.appendChild(txt('code', '', omission.reason));
+				item.appendChild(details);
+				omissionList.appendChild(item);
+			});
+			if (omissionList.childNodes.length) {
+				var omissionHeading = el('h3', 'rm-study-diagnostics-subheading');
+				omissionHeading.appendChild(document.createTextNode(msg('main.study.diagnostics.omissions')));
+				panel.appendChild(omissionHeading);
+				panel.appendChild(omissionList);
+			}
+		}
+		return panel;
+	}
+
 	function renderStudyMapOverview(root, includeBrief) {
 // repomap-source-episode:start
 		var episode = renderSourceEpisode(SOURCE_EPISODE);
@@ -4632,6 +4699,9 @@
 			studySection.appendChild(directionList);
 			root.appendChild(studySection);
 		}
+
+		var studyDiagnostics = renderAtlasStudyDiagnostics();
+		if (studyDiagnostics) root.appendChild(studyDiagnostics);
 
 		renderOperationsOverview(root);
 
@@ -5722,7 +5792,9 @@
 			root.appendChild(renderOverviewAnatomyZone(
 				msg('main.overview.anatomy.components_kicker'),
 				msg('main.overview.anatomy.components'),
-				msg('main.overview.anatomy.components_copy'),
+				DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
+					msg('main.overview.anatomy.components_copy_synthesis_failed') :
+					msg('main.overview.anatomy.components_copy'),
 				anatomy.components,
 				'component'
 			));
@@ -7890,6 +7962,9 @@
       msg('main.explore.the.repository.map'),
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
+    if (DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed') {
+      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', msg('main.architecture.synthesis_failed')));
+    }
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var card = el('section', 'rm-card rm-architecture-canvas-card');
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
